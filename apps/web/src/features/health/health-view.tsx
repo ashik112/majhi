@@ -47,7 +47,7 @@ export function HealthView() {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
-        title="Health and usage"
+        title="Health & usage"
         subtitle={
           <span>
             <span className={cn(bad && "text-red")}>{headline}</span>

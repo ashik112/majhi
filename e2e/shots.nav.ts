@@ -152,7 +152,7 @@ for (const kind of ["short", "long"] as const) {
         await stub(page, kind);
         await page.goto("/agents");
         await theme(page, t);
-        await expect(nav(page).getByRole("button", { name: /^Setup/ })).toContainText("Agents");
+        await expect(nav(page).getByRole("button", { name: /^Settings/ })).toContainText("Agents");
         await page.waitForTimeout(700);
         await page.screenshot({ path: `${SHOTS}/sidebar-${kind}-${w}x${h}-${t}.png` });
         await fits(page, h);
@@ -234,20 +234,20 @@ test("choosing a workspace on Agents stays on Agents and filters it; All shows e
   // The choice stays while the owner moves between pages.
   await page
     .getByRole("navigation", { name: "Main" })
-    .getByRole("button", { name: /^Setup/ })
+    .getByRole("button", { name: /^Settings/ })
     .click();
   await page
-    .getByRole("menu", { name: "Setup" })
+    .getByRole("menu", { name: "Settings" })
     .getByRole("menuitem", { name: /^Accounts/ })
     .click();
   await expect(page).toHaveURL(/\/accounts$/);
   await expect(switcher(page)).toHaveAccessibleName("Workspace: Acme. Change workspace");
   await page
     .getByRole("navigation", { name: "Main" })
-    .getByRole("button", { name: /^Setup/ })
+    .getByRole("button", { name: /^Settings/ })
     .click();
   await page
-    .getByRole("menu", { name: "Setup" })
+    .getByRole("menu", { name: "Settings" })
     .getByRole("menuitem", { name: /^Agents/ })
     .click();
 
@@ -269,7 +269,7 @@ test("every sidebar item opens its page", async ({ page }) => {
     ["Decisions", "/decisions", "Decisions"],
     ["Board", "/", "Board"],
     ["Chats", "/chats", undefined],
-    ["Business", "/business", "Business"],
+    ["Knowledge", "/knowledge", "Knowledge"],
     ["Captain", "/captain", "Captain"],
     ["Playbooks", "/playbooks", "Playbooks"],
   ] as const) {
@@ -291,18 +291,18 @@ test("every sidebar item opens its page", async ({ page }) => {
     ["Automations", "/automations", "Automations"],
     ["Limits", "/limits", "Limits"],
     ["Hub setup", "/setup", "Hub setup"],
-    ["Health and usage", "/usage", "Health and usage"],
+    ["Health & usage", "/usage", "Health & usage"],
     ["Audit log", "/audit", "Audit log"],
   ] as const) {
     await nav(page)
-      .getByRole("button", { name: /^Setup/ })
+      .getByRole("button", { name: /^Settings/ })
       .click();
     await page
-      .getByRole("menu", { name: "Setup" })
+      .getByRole("menu", { name: "Settings" })
       .getByRole("menuitem", { name: new RegExp(`^${name}`) })
       .click();
     await expect(page).toHaveURL(new RegExp(`${path}$`));
-    await expect(nav(page).getByRole("button", { name: /^Setup/ })).toContainText(name);
+    await expect(nav(page).getByRole("button", { name: /^Settings/ })).toContainText(name);
     await expect(page.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
   }
 

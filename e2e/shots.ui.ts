@@ -11,7 +11,7 @@ test("agents", async ({ page }) => {
 
 test("health", async ({ page }) => {
   await page.goto("/usage");
-  await expect(page.getByRole("heading", { name: "Health and usage" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Health & usage" })).toBeVisible();
   await page.waitForTimeout(900);
   await shot(page, "health");
 });

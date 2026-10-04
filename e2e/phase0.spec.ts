@@ -55,10 +55,10 @@ test("first run: suggestions list folders with repos, and one click on ~/Work se
   await expect(page.getByRole("heading", { name: "Board", exact: true })).toBeVisible();
   await page
     .getByRole("navigation", { name: "Main" })
-    .getByRole("button", { name: /^Setup/ })
+    .getByRole("button", { name: /^Settings/ })
     .click();
   await page
-    .getByRole("menu", { name: "Setup" })
+    .getByRole("menu", { name: "Settings" })
     .getByRole("menuitem", { name: /^Projects and links/ })
     .click();
   await expect(page).toHaveURL(/\/projects$/);

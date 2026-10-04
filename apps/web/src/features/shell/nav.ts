@@ -10,7 +10,7 @@ export const PAGE_LABEL: Record<PageName, string> = {
   watch: "Watch",
   limits: "Limits",
   decisions: "Decisions",
-  business: "Business",
+  business: "Knowledge",
   agents: "Agents",
   accounts: "Accounts",
   connections: "Connections",
@@ -20,7 +20,7 @@ export const PAGE_LABEL: Record<PageName, string> = {
   automations: "Automations",
   orgs: "Workspaces",
   setup: "Hub setup",
-  usage: "Health and usage",
+  usage: "Health & usage",
   audit: "Audit log",
 };
 
@@ -51,13 +51,11 @@ export const PAGE_KEYWORDS: Record<PageName, string> = {
 };
 
 /**
- * The pages behind the sidebar's one Setup row: what is set up once and tuned now and then. The
- * daily rows (Today, Decisions, Watch, Board, Chats, Business, Captain, Playbooks) stay above it.
- * Workspaces open from the switcher at the top.
+ * The pages behind the sidebar's Settings menu: configuration only, set up once and tuned now and then.
+ * Daily work, the team (Agents, Accounts) and Health & usage keep their own rows. Workspaces open from
+ * the switcher at the top. Backups is a section of Hub setup.
  */
-export const SETUP_PAGES: readonly PageName[] = [
-  "agents",
-  "accounts",
+export const SETTINGS_PAGES: readonly PageName[] = [
   "connections",
   "projects",
   "skills",
@@ -65,6 +63,5 @@ export const SETUP_PAGES: readonly PageName[] = [
   "automations",
   "limits",
   "setup",
-  "usage",
   "audit",
 ];

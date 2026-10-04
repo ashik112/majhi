@@ -521,7 +521,7 @@ function PlanPanel({ today }: { today: AgendaToday }) {
                   <button
                     type="button"
                     onClick={() =>
-                      run({ kind: "page", to: "/business", search: { id: String(d.id), tab: "deadlines" } })
+                      run({ kind: "page", to: "/knowledge", search: { id: String(d.id), tab: "deadlines" } })
                     }
                     className="flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-raised"
                   >

@@ -57,12 +57,8 @@ test("a failed check with no fix says what to do, and counts in the sidebar", as
     .filter({ hasText: "Workspace root ~/NotMounted" });
   await expect(row).toContainText("make up");
   await expect(row.getByRole("button")).toHaveCount(0);
-  await page
-    .getByRole("navigation", { name: "Main" })
-    .getByRole("button", { name: /^Setup/ })
-    .click();
   await expect(
-    page.getByRole("menu", { name: "Setup" }).getByRole("menuitem", { name: /Health and usage/ }),
+    page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: /Health & usage/ }),
   ).toContainText("1 to fix");
   await setRoots(request, [join(HOST_HOME, "Work")]);
 });

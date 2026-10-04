@@ -20,7 +20,7 @@ import { useNeedsYou } from "@/features/decisions/needs-you";
 import { checksNeedingYou } from "@/features/health/model";
 import { reviewTarget } from "@/features/memory/model";
 import { accountsNeedingYou, agentsRightNow, healthCheckedText } from "@/features/shell/model";
-import { PAGE_LABEL, SETUP_PAGES } from "@/features/shell/nav";
+import { PAGE_LABEL, SETTINGS_PAGES } from "@/features/shell/nav";
 import { chordOf } from "@/features/shell/shortcuts";
 import { UpdateNotice } from "@/features/update/update-notice";
 import { useAgentIndex } from "@/lib/agent-index";
@@ -42,8 +42,8 @@ const ITEM =
   "relative flex cursor-pointer items-center rounded-md text-left transition-colors duration-150 hover:bg-raised hover:text-fg";
 
 /**
- * The sidebar, top to bottom: the brand with the bell, the workspace switcher, the daily rows in the
- * order of the loop (see MainNav), one Setup row, and the agents' lamps at the foot.
+ * The sidebar, top to bottom: the brand with the bell, the workspace switcher, the daily work, the team
+ * (see MainNav), one Settings row, and the agents' lamps at the foot.
  */
 export function Sidebar() {
   return (
@@ -123,9 +123,9 @@ function Brand() {
 type NavBadge = { text: string; tone?: "needs" | "check"; dot?: boolean; title?: string };
 
 /**
- * The sidebar's rows, in the order of the daily loop. Brief and decide first (Today, Decisions), then
- * Watch when something is watched; the work the captain is given (Board, Chats, Business); the captain
- * and what it runs on its own (Autonomous, Playbooks); and one Setup row that opens the rest.
+ * The sidebar's rows: daily work (Today, Decisions, Board, Chats), the captain and what it runs on its
+ * own (Autonomous, Playbooks), Watch and Knowledge; then the team (Agents, Accounts, Health & usage);
+ * then one Settings row for configuration.
  */
 function MainNav() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
@@ -142,41 +142,68 @@ function MainNav() {
           active={isActive(PAGE_PATH.decisions)}
           badge={waiting > 0 ? { text: String(waiting), tone: "needs" } : undefined}
         />
-        <WatchRow active={isActive(PAGE_PATH.watch)} />
-      </div>
-      <div className="flex flex-col gap-px">
         <NavRow page="board" active={isActive(PAGE_PATH.board)} />
         <NavRow page="chats" active={isActive(PAGE_PATH.chats)} />
-        <NavRow page="business" active={isActive(PAGE_PATH.business)} />
       </div>
       <div className="flex flex-col gap-px">
         <CaptainRow />
         <AutonomyRow />
         <NavRow page="playbooks" active={isActive(PAGE_PATH.playbooks)} sub />
+        <WatchRow active={isActive(PAGE_PATH.watch)} />
+        <NavRow page="business" active={isActive(PAGE_PATH.business)} />
       </div>
-      <SetupGroup isActive={isActive} />
+      <TeamGroup isActive={isActive} />
+      <SettingsGroup isActive={isActive} />
     </nav>
   );
 }
 
-/**
- * Setup: one row that opens a menu of the pages set up once (Agents, Accounts, Connections, and the
- * rest), so the sidebar keeps its size on any window. When one of them is on screen the row is selected
- * and names it. A dot says that something inside needs a look, and the menu says what. None of it is a
- * decision, so none of it is red.
- */
-function SetupGroup({ isActive }: { isActive: (to: string) => boolean }) {
+/** The team: who works (Agents), what they sign in with (Accounts), and how it all runs (Health & usage). */
+function TeamGroup({ isActive }: { isActive: (to: string) => boolean }) {
   const agents = useAgentIndex();
   const accounts = useAccounts().data;
   const settled = useAfterFirstPaint(6_000);
   const checks = useHealthChecks(settled).data?.checks;
-  const pendingFacts = useFacts({ status: "pending" }, settled).data ?? [];
-  const projects = useProjects().data;
   const signIn = accountsNeedingYou(accounts ?? []).length;
   const toFix = checksNeedingYou(checks);
+  return (
+    <div className="flex flex-col gap-px">
+      <SectionLabel className="px-2.5 pb-1">Team</SectionLabel>
+      <NavRow
+        page="agents"
+        active={isActive(PAGE_PATH.agents)}
+        badge={agents.size > 0 ? { text: String(agents.size) } : undefined}
+      />
+      <NavRow
+        page="accounts"
+        active={isActive(PAGE_PATH.accounts)}
+        badge={
+          (accounts?.length ?? 0) > 0 || signIn > 0
+            ? { text: String(accounts?.length ?? 0), dot: signIn > 0 }
+            : undefined
+        }
+      />
+      <NavRow
+        page="usage"
+        active={isActive(PAGE_PATH.usage)}
+        badge={toFix > 0 ? { text: `${toFix} to fix`, tone: "check" } : undefined}
+      />
+    </div>
+  );
+}
+
+/**
+ * Settings: one row that opens a menu of the configuration pages, so the sidebar keeps its size on any
+ * window. When one of them is on screen the row is selected and names it. A dot says that something
+ * inside needs a look, and the menu says what. None of it is a decision, so none of it is red.
+ */
+function SettingsGroup({ isActive }: { isActive: (to: string) => boolean }) {
+  const settled = useAfterFirstPaint(6_000);
+  const pendingFacts = useFacts({ status: "pending" }, settled).data ?? [];
+  const projects = useProjects().data;
   const toReview = pendingFacts.length;
   const reviewAt = reviewTarget(pendingFacts, new Map((projects ?? []).map((p) => [p.id, p.org])));
-  const current = SETUP_PAGES.find((page) => isActive(PAGE_PATH[page]));
+  const current = SETTINGS_PAGES.find((page) => isActive(PAGE_PATH[page]));
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const id = useId();
@@ -217,16 +244,10 @@ function SetupGroup({ isActive }: { isActive: (to: string) => boolean }) {
     nodes[(next + nodes.length) % nodes.length]?.focus();
   }
 
-  const notes = [
-    toFix > 0 ? `${toFix} to fix` : undefined,
-    signIn > 0 ? `${signIn} to sign in` : undefined,
-    toReview > 0 ? `${toReview} to review` : undefined,
-  ].filter((note): note is string => note !== undefined);
+  const notes = [toReview > 0 ? `${toReview} to review` : undefined].filter(
+    (note): note is string => note !== undefined,
+  );
   const badge: Partial<Record<PageName, NavBadge>> = {};
-  if (agents.size > 0) badge.agents = { text: String(agents.size) };
-  if ((accounts?.length ?? 0) > 0 || signIn > 0)
-    badge.accounts = { text: String(accounts?.length ?? 0), dot: signIn > 0 };
-  if (toFix > 0) badge.usage = { text: `${toFix} to fix`, tone: "check" };
   if (toReview > 0) badge.memory = { text: `${toReview} to review`, tone: "check" };
 
   return (
@@ -237,7 +258,7 @@ function SetupGroup({ isActive }: { isActive: (to: string) => boolean }) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
-        title={notes.length > 0 ? `Setup: ${notes.join(", ")}` : "Setup"}
+        title={notes.length > 0 ? `Settings: ${notes.join(", ")}` : "Settings"}
         onClick={() => setOpen((v) => !v)}
         className={cn(
           ITEM,
@@ -245,7 +266,7 @@ function SetupGroup({ isActive }: { isActive: (to: string) => boolean }) {
           current !== undefined || open ? ROW_SELECTED : "text-fg-muted",
         )}
       >
-        <span className="shrink-0">Setup</span>
+        <span className="shrink-0">Settings</span>
         <span className="ml-auto flex min-w-0 items-center gap-2">
           {current !== undefined && (
             <span className="min-w-0 truncate text-sm font-normal text-fg-muted">{PAGE_LABEL[current]}</span>
@@ -267,7 +288,7 @@ function SetupGroup({ isActive }: { isActive: (to: string) => boolean }) {
             popover="manual"
             id={id}
             role="menu"
-            aria-label="Setup"
+            aria-label="Settings"
             style={style}
             onKeyDown={onKeyDown}
             className={cn(
@@ -275,11 +296,11 @@ function SetupGroup({ isActive }: { isActive: (to: string) => boolean }) {
               GLASS_STRONG,
             )}
           >
-            {SETUP_PAGES.map((page) => {
+            {SETTINGS_PAGES.flatMap((page) => {
               const b = badge[page];
               const chord = chordOf(PAGE_PATH[page]);
               const link = page === "memory" && b !== undefined && reviewAt !== undefined;
-              return (
+              const item = (
                 <Link
                   key={page}
                   to={PAGE_PATH[page]}
@@ -312,6 +333,22 @@ function SetupGroup({ isActive }: { isActive: (to: string) => boolean }) {
                   {b === undefined && chord !== undefined && <Kbd className="ml-auto">{chord}</Kbd>}
                 </Link>
               );
+              // Backups is a section of Hub setup, listed on its own so it is found.
+              return page === "setup"
+                ? [
+                    item,
+                    <Link
+                      key="backups"
+                      to={PAGE_PATH.setup}
+                      search={{ section: "backups" }}
+                      role="menuitem"
+                      onClick={close}
+                      className="flex h-8 min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-sm px-2 text-left text-base text-fg-soft hover:bg-raised focus-visible:bg-raised focus-visible:outline-none"
+                    >
+                      <span className="min-w-0 truncate">Backups</span>
+                    </Link>,
+                  ]
+                : [item];
             })}
           </div>,
           container,
@@ -374,16 +411,14 @@ function NavRow({
 }
 
 /**
- * Watch: what is watched and the incidents. It shows only when something is watched or an incident is
- * open, and carries a lamp only while a service is down or an incident is open, so a quiet day is a quiet row.
+ * Watch: what is watched and the incidents. It carries a lamp only while a service is down or an
+ * incident is open, so a quiet day is a quiet row.
  */
 function WatchRow({ active }: { active: boolean }) {
   const watch = useWatch().data;
   const down = watch?.services.filter((s) => s.status === "down").length ?? 0;
   const open = watch?.incidents.filter((i) => i.status === "open").length ?? 0;
   const lit = Math.max(down, open);
-  const hasAny = (watch?.services.length ?? 0) > 0 || open > 0;
-  if (!hasAny && !active) return null;
   return (
     <NavRow
       page="watch"
@@ -529,7 +564,7 @@ function AgentsNow() {
       <Link
         to={PAGE_PATH.usage}
         search={{}}
-        title="Open Health and usage"
+        title="Open Health & usage"
         className="truncate rounded-sm px-1 text-xs text-fg-faint transition-colors duration-150 hover:text-fg [@media(max-height:799px)]:hidden"
       >
         {healthCheckedText(accounts ?? [], now, checksAt)}

@@ -196,7 +196,7 @@ test("seed", async ({ page }) => {
 });
 
 test("Knowledge", async ({ page }) => {
-  await page.goto("/business?tab=knowledge");
+  await page.goto("/knowledge?tab=knowledge");
   await expect(page.getByRole("listbox").getByRole("option").first()).toBeVisible();
   await shots(page, "knowledge");
   await page.getByPlaceholder("Search the knowledge base").fill("pricing starter");
@@ -205,7 +205,7 @@ test("Knowledge", async ({ page }) => {
 });
 
 test("People", async ({ page }) => {
-  await page.goto("/business?tab=people");
+  await page.goto("/knowledge?tab=people");
   await expect(page.getByRole("listbox").getByRole("option").first()).toBeVisible();
   await shots(page, "people");
   await page.getByRole("button", { name: "Edit" }).first().click();
@@ -213,13 +213,13 @@ test("People", async ({ page }) => {
 });
 
 test("Deadlines", async ({ page }) => {
-  await page.goto("/business?tab=deadlines");
+  await page.goto("/knowledge?tab=deadlines");
   await expect(page.getByRole("listbox").getByRole("option").first()).toBeVisible();
   await shots(page, "deadlines");
 });
 
 test("Voice", async ({ page }) => {
-  await page.goto("/business?tab=voice");
+  await page.goto("/knowledge?tab=voice");
   await expect(page.getByRole("listbox").getByRole("option").first()).toBeVisible();
   await page
     .getByRole("listbox")

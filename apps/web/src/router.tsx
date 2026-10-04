@@ -248,6 +248,14 @@ const editRootsRoute = createRoute({
   component: EditRootsRoute,
 });
 
+// The Knowledge page was called Business at first.
+const oldBusinessRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/business",
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: PAGE_PATH.business, search });
+  },
+});
 // Old addresses from the three-column design.
 const reposRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -296,6 +304,7 @@ export const router = createRouter({
     todayRoute,
     decisionsRoute,
     businessRoute,
+    oldBusinessRoute,
     setupRoute,
     projectsRoute,
     orgsRoute,

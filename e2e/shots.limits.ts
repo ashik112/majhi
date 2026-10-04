@@ -246,8 +246,8 @@ for (const [w, h] of [
     test(`captain's daily caps ${w} ${theme}`, async ({ page }) => {
       await open(page, "/limits", w, h, theme, scene());
       const card = page
-        .getByRole("region", { name: "Captain's daily caps" })
-        .or(page.getByLabel("Captain's daily caps"));
+        .getByRole("region", { name: "Chore limits per day" })
+        .or(page.getByLabel("Chore limits per day"));
       await card.getByRole("button", { name: /^Acme/ }).click();
       await expect(card.getByLabel("Ship finished work, a day")).toBeVisible();
       await card.getByLabel("Ship finished work, a day").scrollIntoViewIfNeeded();

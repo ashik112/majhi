@@ -1123,7 +1123,7 @@ test("cohesion rules: the update row never hides a navigation row", async ({ pag
   for (const name of rows) {
     await expect(nav.getByRole("link", { name })).toBeInViewport();
   }
-  await expect(nav.getByRole("button", { name: /^Setup/ })).toBeInViewport();
+  await expect(nav.getByRole("button", { name: /^Settings/ })).toBeInViewport();
   for (const [w, h] of [
     [1100, 760],
     [900, 700],
@@ -1133,7 +1133,7 @@ test("cohesion rules: the update row never hides a navigation row", async ({ pag
     for (const name of rows) {
       await expect(nav.getByRole("link", { name })).toBeInViewport();
     }
-    await expect(nav.getByRole("button", { name: /^Setup/ })).toBeInViewport();
+    await expect(nav.getByRole("button", { name: /^Settings/ })).toBeInViewport();
   }
   await region.getByRole("button", { name: /Update ready/ }).click();
   await expect(region.getByRole("list", { name: "Changes" })).toContainText("feat(health)");

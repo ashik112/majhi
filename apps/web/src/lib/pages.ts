@@ -20,7 +20,7 @@ export const PAGE_PATH = {
   watch: "/watch",
   limits: "/limits",
   decisions: "/decisions",
-  business: "/business",
+  business: "/knowledge",
 } as const;
 
 export type PageName = keyof typeof PAGE_PATH;

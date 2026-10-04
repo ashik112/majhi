@@ -59,9 +59,9 @@ test("Accounts show who uses them, and a file with a missing account appears wit
   await expect(details).toContainText("Read just now");
   await shot(page, "health-accounts");
 
-  // Health and usage keeps the checks and the usage overview, and points to Accounts to manage them.
+  // Health & usage keeps the checks and the usage overview, and points to Accounts to manage them.
   await page.goto("/usage");
-  await expect(page.getByRole("heading", { name: "Health and usage" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Health & usage" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add account" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Manage accounts" })).toHaveAttribute("href", /\/accounts/);
   // "Run health check" checks every account and the page says so.

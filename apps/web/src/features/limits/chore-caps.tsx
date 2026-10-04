@@ -77,8 +77,8 @@ export function ChoreCapsCard({
 }) {
   const [open, setOpen] = useState<string>();
   return (
-    <Card aria-label="Captain's daily caps">
-      <h2 className="text-base font-semibold text-fg">Captain's daily caps</h2>
+    <Card aria-label="Chore limits per day">
+      <h2 className="text-base font-semibold text-fg">Chore limits per day</h2>
       <p className="text-sm text-fg-muted text-pretty">
         How much each chore may do per day in a workspace before it asks you. Empty keeps the default. No cap
         removes it; the budgets above still hold.
@@ -132,7 +132,7 @@ function WorkspaceCaps({
     save.mutate(
       {
         input: { orgs: { [id]: { chores: out.caps } } },
-        reason: `Owner changed the captain's daily caps in ${name}`,
+        reason: `Owner changed the chore limits per day in ${name}`,
       },
       { onSuccess: () => setDraft(undefined) },
     );

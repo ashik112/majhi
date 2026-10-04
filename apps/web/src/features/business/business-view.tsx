@@ -28,11 +28,11 @@ export function BusinessView() {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
-        title="Business"
+        title="Knowledge"
         subtitle="The facts, the voice, the people and the dates the captain works from. Nothing here leaves this machine."
       >
         <Segmented
-          label="Business section"
+          label="Knowledge section"
           value={tab}
           segments={[
             { value: "knowledge", label: "Knowledge", ...(kb === undefined ? {} : { count: kb }) },
