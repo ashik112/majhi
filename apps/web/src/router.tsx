@@ -206,6 +206,11 @@ const decisionsRoute = createRoute({
   path: PAGE_PATH.decisions,
   component: lazyRouteComponent(() => import("@/pages/decisions-page"), "DecisionsPage"),
 });
+const businessRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.business,
+  component: lazyRouteComponent(() => import("@/pages/business-page"), "BusinessPage"),
+});
 const setupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.setup,
@@ -272,6 +277,7 @@ export const router = createRouter({
     captainRoute,
     limitsRoute,
     decisionsRoute,
+    businessRoute,
     setupRoute,
     projectsRoute,
     orgsRoute,

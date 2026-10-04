@@ -7,6 +7,7 @@ export const PAGE_LABEL: Record<PageName, string> = {
   captain: "Captain",
   limits: "Limits",
   decisions: "Decisions",
+  business: "Business",
   agents: "Agents",
   accounts: "Accounts",
   connections: "Connections",
@@ -26,6 +27,8 @@ export const PAGE_KEYWORDS: Record<PageName, string> = {
   chats: "conversations talk",
   captain: "boss chief of staff autonomous autopilot away rules log summary upkeep workspaces authority",
   limits: "budget budgets spend cost daily weekly floors safety money raise",
+  business:
+    "knowledge base facts voice style people crm contacts leads investors clients deadlines hackathon grant launch renewal",
   decisions: "inbox needs you waiting questions approvals ship recommend answer",
   agents: "team roles models",
   accounts: "sign in claude codex login",

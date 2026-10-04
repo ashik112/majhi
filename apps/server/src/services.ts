@@ -36,6 +36,10 @@ import { alertLine } from "./budgets/alert-line.ts";
 import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
 import { BudgetAlertRepo } from "./budgets/repo.ts";
+import { CrmService } from "./business/crm.ts";
+import { DeadlinesService } from "./business/deadlines.ts";
+import { KbService } from "./business/kb.ts";
+import { VoiceService } from "./business/voice.ts";
 import { Lanes } from "./captain/lanes.ts";
 import { authorityOf } from "./captain/levels.ts";
 import { CaptainRepo } from "./captain/repo.ts";
@@ -206,6 +210,13 @@ export interface ServiceOptions {
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
+export interface BusinessServices {
+  kb: KbService;
+  voice: VoiceService;
+  crm: CrmService;
+  deadlines: DeadlinesService;
+}
+
 export interface Services {
   config: ConfigService;
   runtime: AcpRuntime;
@@ -282,6 +293,8 @@ export interface Services {
   captain: CaptainService;
   /** What playbooks and agents noticed, deduplicated (5.18, Findings). */
   findings: FindingsService;
+  /** The knowledge base, voice, contacts and deadlines (5.19). */
+  business: BusinessServices;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
   captainTell: CaptainTell;
   /** The captain's chat per workspace (5.18). */
@@ -1089,6 +1102,31 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   findingsStore = findings;
   reportFinding = (input, actor) => findings.report(input, actor);
+  const businessChanged = () => events.emit(["business"]);
+  const orgExists = async (org: string) => org === PRIVATE || org in (await config.sections()).orgs;
+  const businessNow = options.runClock === undefined ? {} : { now: options.runClock };
+  const crm = new CrmService({ db: store.raw, orgExists, changed: businessChanged, ...businessNow });
+  const business: BusinessServices = {
+    kb: new KbService({
+      db: store.raw,
+      embed: (texts) => memory.embed(texts),
+      takeUpload: (id, dir) => uploads.take(id, dir),
+      filesDir: (entry) => join(env.majhiHome, "business", "kb", String(entry)),
+      orgExists,
+      changed: businessChanged,
+      ...businessNow,
+    }),
+    voice: new VoiceService({ db: store.raw, orgExists, changed: businessChanged, ...businessNow }),
+    crm,
+    deadlines: new DeadlinesService({
+      db: store.raw,
+      orgExists,
+      contactVisible: (id, actor) => crm.exists(id, actor),
+      findingExists: (id) => findings.exists(id),
+      changed: businessChanged,
+      ...businessNow,
+    }),
+  };
   /** Bound when the server made the dispatcher: the captain's chores run commands as the captain. */
   let captainDispatch: Dispatch | undefined;
   const captain = new CaptainService({
@@ -1382,6 +1420,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     inbox,
     captain,
     findings,
+    business,
     captainTell: new CaptainTell({
       tasks,
       lanes,

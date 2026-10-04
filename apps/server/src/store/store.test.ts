@@ -74,7 +74,7 @@ describe("store", () => {
     expect(store.raw.pragma("foreign_keys", { simple: true })).toBe(1);
     const names = store.raw
       .prepare(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'room_search\\_%' ESCAPE '\\' ORDER BY name",
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'room_search\\_%' ESCAPE '\\' AND name NOT LIKE 'kb\\_fts%' ESCAPE '\\' ORDER BY name",
       )
       .all()
       .map((r) => (r as { name: string }).name);
@@ -99,6 +99,10 @@ describe("store", () => {
       "captain_state",
       "chat_state",
       "clone_jobs",
+      "crm_contacts",
+      "crm_interactions",
+      "crm_keys",
+      "deadlines",
       "decision_calibration",
       "decision_evals",
       "decision_labels",
@@ -109,6 +113,8 @@ describe("store", () => {
       "e2e_runs",
       "e2e_seen",
       "findings",
+      "kb_entries",
+      "kb_versions",
       "migrations",
       "project_cards",
       "room_items",
@@ -125,6 +131,7 @@ describe("store", () => {
       "triggers",
       "turns",
       "usage_events",
+      "voice_profiles",
     ]);
   });
 
