@@ -3,7 +3,6 @@ import type { FollowUpPorts } from "../findings/followups.ts";
 import type { FindingsService } from "../findings/service.ts";
 import type { AnswerResult } from "./keys.ts";
 import type { OwnWorkScope } from "./own-work.ts";
-import type { SecondOpinion } from "./own-work-second.ts";
 import type { UpkeepPorts } from "./upkeep-ports.ts";
 
 /**
@@ -178,11 +177,6 @@ export interface CaptainPorts {
    * it, it is the owner's to keep, or it has no worktree.
    */
   ownScope(org: string, task: string): Promise<OwnWorkScope | undefined>;
-  /**
-   * Laya's second opinion on a request the rule table could not place (SPEC 5.12). Absent or
-   * `approve: false`: the request stays the owner's, as it always was.
-   */
-  ownSecondOpinion?(card: QuestionCard, scope: OwnWorkScope): Promise<SecondOpinion>;
   /** One answer per card: a second answer to the same card changes nothing and says so. */
   answer(org: string, card: QuestionCard, option: string, reason: string): Promise<AnswerResult>;
   /** Why the workspace's lane rests now (its budget, the day budget, its account), or undefined. */

@@ -4,7 +4,6 @@ import { sizeText } from "../tasks/folder-sweep.ts";
 import { judgeReport, summaryLine } from "./answer-check.ts";
 import { shipState } from "./keys.ts";
 import { classifyOwnWork } from "./own-work.ts";
-import type { SecondOpinion } from "./own-work-second.ts";
 import { permissionVerdict } from "./permission-rules.ts";
 import type {
   ApprovalCard,
@@ -64,18 +63,7 @@ export function createChores(
     const { org, ws } = run;
     const scope = await ports.ownScope(org, card.task);
     if (scope === undefined) return false;
-    let verdict = classifyOwnWork(card.text, scope);
-    // The unknown middle only: Laya may say routine, never over a refusal. Down or unsure: the owner, as before.
-    let second: SecondOpinion | undefined;
-    if (verdict.decision === "owner" && verdict.middle === true && ports.ownSecondOpinion !== undefined) {
-      second = await ports.ownSecondOpinion(card, scope).catch(() => undefined);
-      if (second?.approve === true) {
-        verdict = {
-          decision: "approve",
-          why: `a second opinion from Laya called it routine inside the task`,
-        };
-      }
-    }
+    const verdict = classifyOwnWork(card.text, scope);
     const key = `own:${card.task}:${card.item}`;
     const allow = card.options.find((o) => o.effect === "allow");
     if (verdict.decision === "approve" && allow !== undefined) {
@@ -84,7 +72,7 @@ export function createChores(
         key,
         text: `Approved in ${card.task}: ${clip(card.text, 80)}`,
         reason: `Own work: in ${ws.name} the captain approves what it started, and ${verdict.why}`,
-        evidence: `@${card.agent} asked: ${card.text}${second?.approve === true ? ` (${second.why})` : ""}`,
+        evidence: `@${card.agent} asked: ${card.text}`,
         task: card.task,
         irreversible: true,
         recheck: async () => away(card.task),
@@ -101,11 +89,10 @@ export function createChores(
     }
     if (ruleOff(run, "q-ask")) return true;
     const base = verdict.decision === "approve" ? "the prompt has no Allow once option" : verdict.why;
-    const why = second === undefined || second.why === "" ? base : `${base}; second opinion: ${second.why}`;
     await run.act({
       key,
       text: `Left a request in ${card.task} for you: ${clip(card.text, 80)}`,
-      reason: `Own work does not cover it: ${why}`,
+      reason: `Own work does not cover it: ${base}`,
       evidence: `@${card.agent} asked: ${card.text}`,
       task: card.task,
       do: async () => ({ outcome: "asked", undoNote: "Nothing was answered" }),

@@ -44,7 +44,6 @@ import { freshCaptainAfterUpdate } from "./captain/fresh-after-update.ts";
 import { Lanes } from "./captain/lanes.ts";
 import { authorityOf, workspaceIds } from "./captain/levels.ts";
 import { LoopGuard } from "./captain/loop-guard.ts";
-import { labelOwnWork } from "./captain/own-work-second.ts";
 import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
 import { CaptainTell } from "./captain/tell.ts";
@@ -874,8 +873,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onOwnerResumedLimit: (task) => budgets.exempt(task),
     // Bound below: autonomous mode is built after the task service.
     onOwnerResumed: (task) => autonomy.ownerResumed(task),
-    // The owner's answer to a prompt Laya was asked about labels that decision (Allow once: it was routine).
-    onOwnerPermission: (task, item) => labelOwnWork(decisions, task, item),
     store,
     config,
     projects,
