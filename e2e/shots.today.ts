@@ -20,7 +20,11 @@ const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISO
 
 async function seed(page: Page) {
   const dates: [string, string, string][] = [
-    ["hackathon", "Final submission for the Spring Open Source Hackathon with a very long official name", "UTC"],
+    [
+      "hackathon",
+      "Final submission for the Spring Open Source Hackathon with a very long official name",
+      "UTC",
+    ],
     ["grant", "Hooli Grants Office: round two application", "America/Los_Angeles"],
     ["launch", "Product directory launch", "Europe/Berlin"],
     ["client", "Acme quarterly review", "Asia/Kolkata"],
@@ -47,7 +51,14 @@ async function seed(page: Page) {
     ["follow-up", "low", "Write the migration notes", "fu"],
   ];
   for (const [source, severity, title, key] of found) {
-    await cmd(page, "findings.report", { source, severity, title, detail: title, evidence: [], dedupeKey: key });
+    await cmd(page, "findings.report", {
+      source,
+      severity,
+      title,
+      detail: title,
+      evidence: [],
+      dedupeKey: key,
+    });
   }
   for (let i = 0; i < 6; i++) {
     await cmd(page, "crm.upsert", {

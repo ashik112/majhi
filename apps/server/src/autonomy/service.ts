@@ -44,6 +44,8 @@ import { redact, redactText } from "../admin/policy.ts";
 import type { LaneReads } from "../admin/service.ts";
 import { summarize } from "../admin/summary.ts";
 import type { AdminCaller } from "../admin/tokens.ts";
+import { type Overnight, overnightOf } from "../agenda/overnight.ts";
+import { briefDue } from "../agenda/time.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { LaneGate } from "../captain/lane-gate.ts";
 import { forceOrg, narrow, readRefusal, type ScopeWorld } from "../captain/lane-scope.ts";
@@ -102,8 +104,6 @@ import {
   holdsOf,
   spendOf,
 } from "./spend.ts";
-import { type Overnight, overnightOf } from "../agenda/overnight.ts";
-import { briefDue } from "../agenda/time.ts";
 import { buildSummary, summaryLine } from "./summary.ts";
 import { evaluateWaits, waitProblem } from "./waits.ts";
 
@@ -1411,7 +1411,8 @@ export class AutonomyService {
   ): Promise<string | undefined> {
     if (this.repo.state().mode !== "on" || !startsWork(command, input)) return undefined;
     const ceiling = this.deps.ceilingHeld?.();
-    if (ceiling !== undefined) return `Not started: ${ceiling}. It can start when the owner raises the ceiling or the month ends.`;
+    if (ceiling !== undefined)
+      return `Not started: ${ceiling}. It can start when the owner raises the ceiling or the month ends.`;
     const { world, sections } = await this.context(caller, command, raw);
     const hold = holdCovering(
       await this.refreshHolds(),

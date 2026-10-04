@@ -35,6 +35,7 @@ import { findingsHandlers } from "../findings/handlers.ts";
 import { isDirectory } from "../fs.ts";
 import { gitConnectHandlers } from "../gitConnect/handlers.ts";
 import { growthHandlers } from "../growth/handlers.ts";
+import { handoffHandlers } from "../handoff/handlers.ts";
 import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import { inboxHandlers } from "../inbox/handlers.ts";
@@ -52,7 +53,6 @@ import {
 } from "../orgs/gitAccount.ts";
 import { type AdoptDeps, useGitLogin } from "../orgs/gitLogin.ts";
 import { CheckCache, gitStatus } from "../orgs/gitStatus.ts";
-import { handoffHandlers } from "../handoff/handlers.ts";
 import { outcomesHandlers } from "../outcomes/handlers.ts";
 import { playbookHandlers } from "../playbooks/handlers.ts";
 import { attributionOf, orgIdentity } from "../runs/attribution.ts";

@@ -272,7 +272,7 @@ export function NowColumn({
   };
   return (
     // One panel that scrolls as a whole: no box scrolls on its own, so every section is reachable.
-    <div
+    <section
       aria-label="Now"
       className={cn(
         "flex min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain rounded-2xl scroll-fade",
@@ -307,6 +307,6 @@ export function NowColumn({
       >
         {captain === undefined ? <RowsSkeleton rows={2} height={44} /> : <RecentLog orgs={orgs} now={now} />}
       </Box>
-    </div>
+    </section>
   );
 }

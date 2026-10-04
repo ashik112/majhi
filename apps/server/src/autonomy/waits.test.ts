@@ -26,7 +26,9 @@ describe("queue items that wait for an account", () => {
   it("becomes ready, with one line, when the account is signed in again", () => {
     const out = evaluateWaits([item("signed-in")], status("healthy"), NOW, () => true);
     expect(out.queue[0]?.readyAt).toBe(NOW.toISOString());
-    expect(out.lifted.map((l) => l.line)).toEqual(["claude-umbrella-pm is signed in again: UMB-6 can resume"]);
+    expect(out.lifted.map((l) => l.line)).toEqual([
+      "claude-umbrella-pm is signed in again: UMB-6 can resume",
+    ]);
     // Looked at again: nothing new to say.
     const again = evaluateWaits(out.queue, status("healthy"), NOW, () => true);
     expect(again.lifted).toEqual([]);

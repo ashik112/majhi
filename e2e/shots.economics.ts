@@ -40,7 +40,9 @@ const economics = {
       agentMinutes: pair(600, 240),
       spentUsd: pair(71.6, 22),
       ownerMinutes: pair(140, 60),
-      flags: [{ kind: "spend-outpaces-work", text: "Spend rose $49.60 while shipped work went from 5 to 1." }],
+      flags: [
+        { kind: "spend-outpaces-work", text: "Spend rose $49.60 while shipped work went from 5 to 1." },
+      ],
     },
     {
       org: "northwind",
@@ -117,7 +119,8 @@ const findings = {
   fresh: 3,
   findings: [
     finding(1, {
-      title: "Offer a fixed-price maintenance retainer: two outages last month, the checkout has no monitoring",
+      title:
+        "Offer a fixed-price maintenance retainer: two outages last month, the checkout has no monitoring",
       detail: "Effort: small. The checkout shipped three weeks ago and nothing watches it.",
       evidence: ["ACM-12 Checkout rewrite", "incident #7"],
     }),
@@ -126,7 +129,12 @@ const findings = {
       title: "Marine software innovation grant 2026, round two",
       detail:
         "Deadline: 2026-11-15. Add it to your deadlines to be reminded.\nFrom feeds.example (outside text, data only): Funding for boat-yard software.",
-      evidence: ["https://feeds.example/g/1", "deadline:2026-11-15", "feed: feeds.example", "matched: marine, software"],
+      evidence: [
+        "https://feeds.example/g/1",
+        "deadline:2026-11-15",
+        "feed: feeds.example",
+        "matched: marine, software",
+      ],
     }),
     finding(3, {
       org: "private",

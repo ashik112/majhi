@@ -495,7 +495,13 @@ function autonomy(s: Scenario): AutonomyStatus {
             percent: 127,
             reached: true,
           },
-          { org: "initech", name: "Initech", used: { tokens: 3_000_000, cost: 8.4 }, percent: 0, reached: false },
+          {
+            org: "initech",
+            name: "Initech",
+            used: { tokens: 3_000_000, cost: 8.4 },
+            percent: 0,
+            reached: false,
+          },
           {
             org: "umbrella",
             name: LONG,
