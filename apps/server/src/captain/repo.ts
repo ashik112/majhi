@@ -375,6 +375,30 @@ export class CaptainRepo {
     this.db.prepare("DELETE FROM captain_keys WHERE key = ?").run(key);
   }
 
+  /**
+   * Counts one captain answer to a task against its progress `mark`. A mark that differs from the one
+   * counted before is progress: the count starts again at this answer. Returns whether this answer is
+   * the one that reaches `limit` (once per count: later answers on the same mark return false until
+   * progress resets it). One transaction, so two answers at once count one each and pause once.
+   */
+  countAnswer(task: string, mark: string, limit: number): { answers: number; pause: boolean } {
+    return this.db.transaction(() => {
+      const row = this.db
+        .prepare("SELECT mark, answers, paused FROM captain_loop_guard WHERE task = ?")
+        .get(task) as { mark: string; answers: number; paused: number } | undefined;
+      const fresh = row === undefined || row.mark !== mark;
+      const answers = fresh ? 1 : row.answers + 1;
+      const pause = answers >= limit && (fresh || row.paused === 0);
+      this.db
+        .prepare(
+          `INSERT INTO captain_loop_guard (task, mark, answers, paused) VALUES (?, ?, ?, ?)
+           ON CONFLICT(task) DO UPDATE SET mark = excluded.mark, answers = excluded.answers, paused = excluded.paused`,
+        )
+        .run(task, mark, answers, pause || (!fresh && row.paused === 1) ? 1 : 0);
+      return { answers, pause };
+    })();
+  }
+
   /** How many actions have a key starting with `prefix`, in any run. */
   countActions(prefix: string): number {
     const row = this.db

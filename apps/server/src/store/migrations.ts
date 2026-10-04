@@ -1492,6 +1492,21 @@ CREATE TABLE captain_keys (
 CREATE INDEX captain_keys_task ON captain_keys (task);
 `,
   },
+  {
+    // The loop guard's count (D10): the captain's answers to one task since the task last made
+    // progress. `mark` is the progress it was counted against (status and branch heads), so a commit
+    // or a status change starts the count again. `paused` is 1 once the guard paused the task for this count.
+    id: 152,
+    name: "captain loop guard",
+    sql: `
+CREATE TABLE captain_loop_guard (
+  task TEXT PRIMARY KEY,
+  mark TEXT NOT NULL,
+  answers INTEGER NOT NULL,
+  paused INTEGER NOT NULL DEFAULT 0
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

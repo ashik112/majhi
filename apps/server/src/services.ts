@@ -45,6 +45,7 @@ import { BudgetAlertRepo } from "./budgets/repo.ts";
 import { freshCaptainAfterUpdate } from "./captain/fresh-after-update.ts";
 import { Lanes } from "./captain/lanes.ts";
 import { authorityOf, workspaceIds } from "./captain/levels.ts";
+import { LoopGuard } from "./captain/loop-guard.ts";
 import { labelOwnWork } from "./captain/own-work-second.ts";
 import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
@@ -88,6 +89,7 @@ import { HomeWatcher } from "./events/watcher.ts";
 import { FindingsRepo } from "./findings/repo.ts";
 import { FindingsService } from "./findings/service.ts";
 import { triageFinding } from "./findings/triage.ts";
+import { git } from "./git/git.ts";
 import { GitLoginService } from "./git/logins.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { whoAmI } from "./gitConnect/oauth.ts";
@@ -866,8 +868,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   let chatMemory: ChatMemory | undefined;
   // Bound below, after the services it reads: the checked hand-off (5.18).
   let handoffService: HandoffService | undefined;
+  // Bound below, once the captain's tables are read: the loop guard counts the captain's answers.
+  let loopGuard: LoopGuard | undefined;
   const tasks = new TaskService({
     protectedPaths: [env.secretsKeyFile],
+    onCaptainAnswer: (task) => void loopGuard?.answered(task).catch(() => undefined),
     onOwnerResumedLimit: (task) => budgets.exempt(task),
     // Bound below: autonomous mode is built after the task service.
     onOwnerResumed: (task) => autonomy.ownerResumed(task),
@@ -1134,6 +1139,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const admin = new AdminService({ config, room, store, secrets, tasks });
   const scheduleRows = new ScheduleRepo(store.raw);
   const captainRepo = new CaptainRepo(store.raw);
+  loopGuard = new LoopGuard({
+    repo: captainRepo,
+    mark: async (id) => {
+      const task = store.tasks.get(id);
+      if (task === undefined || task.status === "done") return undefined;
+      const heads: string[] = [];
+      for (const r of task.repos) {
+        const tip = await git(r.source, ["rev-parse", "--verify", `refs/heads/${r.branch}`]).catch(() => "");
+        heads.push(`${r.project}@${tip.trim()}`);
+      }
+      return `${task.status}|${heads.join(",")}`;
+    },
+    pause: (id, text) => tasks.pauseForOwner(id, text),
+  });
   const cardActions = new CardActions({ tasks, mrs, room });
   const knownOrg = async (org: string) =>
     org === PRIVATE || (await config.sections()).orgs[org] !== undefined;

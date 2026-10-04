@@ -153,6 +153,8 @@ export interface TaskDeps {
   onOwnerResumed?: (task: string) => void;
   /** The owner answered a permission prompt: what they picked, so a decision about it can be labeled (SPEC 5.12). */
   onOwnerPermission?: (task: string, item: RoomItem) => void;
+  /** The captain answered a card of this task (the loop guard counts it). Never awaited. */
+  onCaptainAnswer?: (task: string) => void;
   /** Files no agent may read, like the secrets key. majhi's home and `~/.ssh` are always protected. */
   protectedPaths?: string[];
   store: Store;
@@ -2091,6 +2093,7 @@ export class TaskService {
     }
     const answered = this.deps.room.get(task, item);
     if (answered === undefined) throw new UserError("The card is gone.", 404);
+    if (captain !== undefined) this.deps.onCaptainAnswer?.(task);
     return answered;
   }
 
@@ -2155,6 +2158,7 @@ export class TaskService {
         mode: "queue",
         agent,
       });
+    if (captain !== undefined) this.deps.onCaptainAnswer?.(task);
     return (
       this.deps.room.get(task, item) ??
       (() => {
@@ -2294,6 +2298,7 @@ export class TaskService {
       this.deps.room.post(current.id, item, fields);
       throw err;
     }
+    if (captain !== undefined) this.deps.onCaptainAnswer?.(task);
     return this.deps.room.get(task, item) ?? card;
   }
 
@@ -3193,6 +3198,12 @@ export class TaskService {
     this.get(id);
     const answered = this.deps.runs.answerPermission(id, item, option, captain !== undefined);
     if (captain === undefined) this.deps.onOwnerPermission?.(id, answered);
+    // An Allow lets the agent go on, which is no loop; a refusal it may ask again about does count.
+    else if (
+      answered.type === "permission" &&
+      answered.options.find((o) => o.id === option)?.kind.startsWith("reject")
+    )
+      this.deps.onCaptainAnswer?.(id);
     return answered;
   }
 

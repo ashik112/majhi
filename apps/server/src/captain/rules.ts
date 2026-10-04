@@ -14,6 +14,12 @@ import { localDay } from "../usage/ranges.ts";
  */
 export const PASS_BOUND = { minutes: 45, tokens: 60_000 } as const;
 
+/**
+ * The loop guard (D10): after this many captain answers to one task with no progress in between (a
+ * new commit in its worktree or a change of its status), majhi pauses the task for the owner.
+ */
+export const LOOP_GUARD_ANSWERS = 3;
+
 /** A workspace with this many memories its memory chore has not looked at runs the chore, not only daily. */
 export const MEMORY_WAITING = 10;
 
