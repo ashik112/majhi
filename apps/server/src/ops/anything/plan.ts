@@ -24,6 +24,9 @@ export type Core = Pick<WatchDef, "name" | "spec" | "condition" | "everyMin"> & 
 /** What the planner may look up about a task: its workspace and the project a started task opens in. */
 export type TaskLookup = (id: string) => { org: string; project: string | undefined } | undefined;
 
+/** The accounts the planner may name: id and the workspace (or `private`) each belongs to. */
+export type AccountList = readonly { id: string; org: string }[];
+
 const TASK_ID = /\b([A-Z][A-Z0-9]{1,9}-\d+)\b/;
 
 /** "then start a task to deploy": the action, when the sentence has one. */
@@ -32,6 +35,8 @@ function runOf(
   task: { project: string | undefined } | undefined,
   taskId: string | undefined,
 ): AutomationAction | undefined {
+  if (/\b(?:then\s+)?resume\b.*\b(?:paused|stopped|held|waiting)?\s*(?:tasks?|work)\b/i.test(t))
+    return { kind: "tasks.resume" };
   const m =
     /\b(?:then\s+)?(?:start|open|create|run)\s+a\s+(?:new\s+)?task\s+(?:to|that|for|:)?\s*(.+)$/i.exec(t);
   if (m === null) return undefined;
@@ -49,8 +54,68 @@ function runOf(
   } as AutomationAction;
 }
 
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Limits in a sentence: an account's 5-hour or weekly window, a weekly budget, the Auto-pilot daily
+ * budget, the monthly ceiling. "at 90%", "reaches its limit" or "resets".
+ */
+function limitsPlan(
+  t: string,
+  accounts: AccountList,
+  run: () => AutomationAction | undefined,
+  base: { everyMin: number },
+): Core | undefined {
+  const low = t.toLowerCase();
+  const pct = /(\d+(?:\.\d+)?)\s*%/.exec(t)?.[1];
+  const resets = /\bresets?\b|\b(?:is|comes?)\s+back\b/i.test(t);
+  const reaches =
+    /\b(?:hits?|reach(?:es|ed)?|exhaust(?:s|ed)?|runs?\s+out)\b|\bat\s+(?:its\s+)?limit\b/i.test(t);
+  if (pct === undefined && !resets && !reaches) return undefined;
+  const named = accounts.find((a) =>
+    new RegExp(`(^|[^a-z0-9-])${escapeRe(a.id.toLowerCase())}($|[^a-z0-9-])`).test(low),
+  );
+  const five = /\b(?:5[- ]?h(?:ours?|r)?|five[- ]hours?)\b/i.test(t);
+  const weekly = /\bweek(?:ly)?\b/i.test(t);
+  const condition: WatchCondition = resets
+    ? { type: "resets" }
+    : pct === undefined
+      ? { type: "atLimit" }
+      : { type: "above", value: Math.max(0, Number(pct) - 0.1), forMin: 0 };
+  const when = resets ? "resets" : pct === undefined ? "at its limit" : `at ${pct}%`;
+  const core = (name: string, spec: unknown): Core => ({
+    name,
+    spec: WatchCheckSchema.parse(spec),
+    condition,
+    run: run(),
+    everyMin: Math.max(base.everyMin, 5),
+  });
+  const account = (): string => {
+    if (named !== undefined) return named.id;
+    const only = accounts.length === 1 ? accounts[0] : undefined;
+    if (only !== undefined) return only.id;
+    throw new PlanProblem("Name the account, like claude-personal.");
+  };
+  if (/\bauto-?pilot\b/i.test(t) && /\b(budget|cap|daily)\b/i.test(t))
+    return core(`Auto-pilot daily budget ${when}`, { kind: "usage", source: "autopilotDay" });
+  if (/\b(?:monthly|month's)\s+(?:ceiling|limit|budget|cap)\b|\bceiling\b/i.test(t))
+    return core(`Monthly ceiling ${when}`, { kind: "usage", source: "monthlyCeiling" });
+  if (/\bbudget\b/i.test(t))
+    return core(`${named === undefined ? "Weekly budget" : `${named.id} weekly budget`} ${when}`, {
+      kind: "usage",
+      source: "budget",
+      ...(named === undefined ? {} : { account: named.id }),
+    });
+  if ((five || weekly || named !== undefined) && /\b(window|limit|usage|quota)\b/i.test(t)) {
+    const id = account();
+    const source = five ? "account5h" : "accountWeek";
+    return core(`${id} ${five ? "5-hour" : "weekly"} window ${when}`, { kind: "usage", source, account: id });
+  }
+  return undefined;
+}
+
 /** Tasks, merge requests, processes and usage in a sentence, when it names a task or a limit. */
-function eventPlan(t: string, tasks: TaskLookup | undefined): Core | undefined {
+function eventPlan(t: string, tasks: TaskLookup | undefined, accounts: AccountList = []): Core | undefined {
   const id = TASK_ID.exec(t)?.[1];
   const known = id === undefined ? undefined : tasks?.(id);
   const any = /\bany task\b|\bevery task\b|\ba task\b/i.test(t);
@@ -67,15 +132,32 @@ function eventPlan(t: string, tasks: TaskLookup | undefined): Core | undefined {
   if (id !== undefined && known === undefined)
     throw new PlanProblem(`I do not know a task ${id} in this workspace.`);
   if (mr && (id !== undefined || any)) {
-    const on = /\bmerged\b/i.test(t)
-      ? "merged"
-      : /\b(open(?:s|ed)?|created|raised)\b/i.test(t)
-        ? "opened"
-        : /\b(fail|failing|red|broken)\b/i.test(t)
-          ? "failed"
-          : "any";
+    const on = /\bapprov(?:ed|es?|al)\b/i.test(t)
+      ? "approved"
+      : /\bchanges?\s+(?:are\s+)?requested\b|\brequest(?:s|ed)?\s+changes\b/i.test(t)
+        ? "changesRequested"
+        : /\b(?:review\s+(?:is\s+)?requested|reviewer\s+(?:is\s+)?(?:asked|requested|added)|asked\s+for\s+(?:a\s+)?review)\b/i.test(
+              t,
+            )
+          ? "reviewRequested"
+          : /\bmerged\b/i.test(t)
+            ? "merged"
+            : /\b(open(?:s|ed)?|created|raised)\b/i.test(t)
+              ? "opened"
+              : /\b(fail|failing|red|broken)\b/i.test(t)
+                ? "failed"
+                : "any";
+    const words = {
+      approved: "approved",
+      changesRequested: "gets changes requested",
+      reviewRequested: "has a reviewer asked",
+      merged: "merged",
+      opened: "opened",
+      failed: "failed",
+      any: "changes",
+    } as const;
     return {
-      name: `${id ?? "Any task"}: merge request ${on === "any" ? "changes" : on}`,
+      name: `${id ?? "Any task"}: merge request ${words[on]}`,
       spec: WatchCheckSchema.parse({ kind: "mr", ...(id === undefined ? {} : { task: id }), on }),
       condition: { type: "changed" },
       run: run(),
@@ -102,6 +184,8 @@ function eventPlan(t: string, tasks: TaskLookup | undefined): Core | undefined {
       ...base,
     };
   }
+  const usage = limitsPlan(t, accounts, run, base);
+  if (usage !== undefined) return usage;
   const limit = /\b(over|above|more than|exceeds?|beyond)\s+\$?\s*([\d][\d,]*(?:\.\d+)?)\s*(k|m)?\b/i.exec(t);
   if (limit !== null && /\b(cost|spend|spent|tokens?|usage|budget)\b/i.test(t)) {
     const tokens = /\btokens?\b/i.test(t);
@@ -195,9 +279,10 @@ export function rulesPlan(
   text: string,
   conns: readonly FixConnection[],
   tasks?: TaskLookup,
+  accounts?: AccountList,
 ): Core | undefined {
   const t = text.trim();
-  const event = eventPlan(t, tasks);
+  const event = eventPlan(t, tasks, accounts);
   if (event !== undefined) return event;
   const low = t.toLowerCase();
   const url = URL_RE.exec(t)?.[0].replace(/[.,;]+$/, "");
@@ -373,7 +458,7 @@ export function modelPrompt(text: string, conns: readonly FixConnection[]): stri
   return [
     "Turn the owner's sentence into one watch. Reply with one JSON object and nothing else.",
     "Shape: {name, spec, condition, everyMin}.",
-    'spec is one of: {kind:"website",url,jsonPath?} | {kind:"database",connection,engine:"postgres"|"mysql",query,label?,unit?} | {kind:"redis",connection,metric:"memory_ratio"|"clients"|"keys"} | {kind:"server",connection,metric:"disk"|"cpu"|"memory"} | {kind:"queue",connection,source:"redis_list",key} | {kind:"queue",connection,source:"sql",engine,query} | {kind:"price",url,mode:"value"|"text",selector?,pattern?} | {kind:"metric",connection,tool,args,path,label?} | {kind:"task",task?,to:"done"|"failed"|"needs-you"} | {kind:"mr",task?,on:"opened"|"merged"|"failed"|"any"} | {kind:"branch",project,branch} | {kind:"process",task,process?,on:"any"|"failure"} | {kind:"usage",metric:"costUsd"|"totalTokens",period:"today"|"week"|"month"} (with condition above) | {kind:"custom",instruction}. task, mr, branch and process use condition changed.',
+    'spec is one of: {kind:"website",url,jsonPath?} | {kind:"database",connection,engine:"postgres"|"mysql",query,label?,unit?} | {kind:"redis",connection,metric:"memory_ratio"|"clients"|"keys"} | {kind:"server",connection,metric:"disk"|"cpu"|"memory"} | {kind:"queue",connection,source:"redis_list",key} | {kind:"queue",connection,source:"sql",engine,query} | {kind:"price",url,mode:"value"|"text",selector?,pattern?} | {kind:"metric",connection,tool,args,path,label?} | {kind:"task",task?,to:"done"|"failed"|"needs-you"} | {kind:"mr",task?,on:"opened"|"merged"|"failed"|"approved"|"changesRequested"|"reviewRequested"|"any"} | {kind:"branch",project,branch} | {kind:"process",task,process?,on:"any"|"failure"} | {kind:"usage",metric:"costUsd"|"totalTokens",period:"today"|"week"|"month"} (with condition above) | {kind:"usage",source:"account5h"|"accountWeek",account} | {kind:"usage",source:"budget",account?} | {kind:"usage",source:"autopilotDay"|"monthlyCeiling"} (these read a percent: condition above N, atLimit or resets) | {kind:"custom",instruction}. task, mr, branch and process use condition changed.',
     'condition is one of: {type:"above",value,forMin} | {type:"below",value,forMin} | {type:"changed"} | {type:"contains",text} | {type:"notContains",text} | {type:"down"}.',
     "A database query must be one SELECT, SHOW or EXPLAIN that returns one number. Use only a connection id from the list. Use custom when nothing else fits. everyMin is minutes.",
     `Connections: ${JSON.stringify(conns.map((c) => ({ id: c.id, name: c.name, type: c.type })))}`,
@@ -462,10 +547,14 @@ export function planLine(
           ? `, and post in ${def.fire.run.task}'s room`
           : def.fire.run?.kind === "process.run"
             ? ", and run a process"
-            : "";
+            : def.fire.run?.kind === "tasks.resume"
+              ? ", and resume the tasks a limit paused"
+              : "";
     const when =
       spec.kind === "usage"
-        ? `it goes **over ${c.type === "above" ? c.value.toLocaleString("en-US") : ""}${spec.metric === "costUsd" ? " USD" : " tokens"}** ${spec.period === "today" ? "today" : `this ${spec.period}`}`
+        ? spec.source !== "spend"
+          ? `**${def.name}** (${c.type === "above" ? `over ${c.value.toLocaleString("en-US")}%` : c.type === "resets" ? "it resets" : "at its limit"})`
+          : `it goes **over ${c.type === "above" ? c.value.toLocaleString("en-US") : ""}${spec.metric === "costUsd" ? " USD" : " tokens"}** ${spec.period === "today" ? "today" : `this ${spec.period}`}`
         : `**${def.name}**`;
     const first = `I'll look **every ${every(def.everyMin)}** and ${who} when ${when}${then}.`;
     return `${first} ${now}`.trim();
@@ -484,7 +573,11 @@ export function planLine(
             ? `it **contains "${c.text}"**`
             : c.type === "notContains"
               ? `it **no longer contains "${c.text}"**`
-              : "it **is down**";
+              : c.type === "atLimit"
+                ? "it **reaches its limit**"
+                : c.type === "resets"
+                  ? "it **resets**"
+                  : "it **is down**";
   const subject =
     def.spec.kind === "custom"
       ? "**the captain**"

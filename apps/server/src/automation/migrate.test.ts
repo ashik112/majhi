@@ -315,7 +315,7 @@ describe("automations folded into playbooks and watch", () => {
     expect(proc.state.baseline).toBe("ACM-9/p1");
 
     const usage = watch("trg-iiiiiiii99");
-    expect(usage.def.spec).toEqual({ kind: "usage", metric: "costUsd", period: "today" });
+    expect(usage.def.spec).toEqual({ kind: "usage", source: "spend", metric: "costUsd", period: "today" });
     expect(usage.def.condition).toEqual({ type: "above", value: 25, forMin: 0 });
     expect(usage.state.firing).toBe(true);
 

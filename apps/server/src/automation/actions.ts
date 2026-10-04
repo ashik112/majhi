@@ -43,6 +43,8 @@ export interface ActionHost {
     cwd: string | undefined;
   }): Promise<{ id: string }>;
   process(task: string, id: string): ProcessInfo | undefined;
+  /** Resumes the org's tasks paused by a limit that nothing holds now. Returns their ids. */
+  resumeLimited(org: string): Promise<string[]>;
 }
 
 /** What starts a run: a schedule or a watch trigger. */
@@ -111,6 +113,8 @@ export class ActionRunner {
         }
         return;
       }
+      case "tasks.resume":
+        return;
       case "room.post":
       case "process.run": {
         refuseSecrets(action.kind === "room.post" ? action.text : action.command);
@@ -173,7 +177,7 @@ export class ActionRunner {
       const started = await this.start(source, action);
       this.history.started(run.id, started);
       // A post has nothing that keeps going.
-      if (action.kind === "room.post")
+      if (action.kind === "room.post" || action.kind === "tasks.resume")
         return this.history.finish(run.id, "ok", started.detail, this.now().toISOString());
       return this.history.get(run.id) ?? run;
     } catch (err) {
@@ -196,6 +200,10 @@ export class ActionRunner {
           team: action.team,
         });
         return { detail: `Started task ${task.id}`, taskId: task.id };
+      }
+      case "tasks.resume": {
+        const ids = await this.host.resumeLimited(source.org);
+        return { detail: ids.length === 0 ? "No task was paused by a limit" : `Resumed ${ids.join(", ")}` };
       }
       case "room.post":
         await this.host.postToTask({ task: action.task, text: action.text, from: source.name });
@@ -282,6 +290,7 @@ export function withEvent(action: AutomationAction, event: string): AutomationAc
     case "task.start":
       return { ...action, title: fill(action.title), text: fill(action.text) };
     case "process.run":
+    case "tasks.resume":
       // A command is never filled in: what matched may hold anything a repo or a page says.
       return action;
   }

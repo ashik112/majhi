@@ -73,6 +73,16 @@ export const WATCH_KIND_ONE: Record<WatchSort, string> = {
 const Url = z.string().trim().min(1).max(500);
 const Conn = IdSchema;
 
+export const USAGE_SOURCES = [
+  "spend",
+  "account5h",
+  "accountWeek",
+  "budget",
+  "autopilotDay",
+  "monthlyCeiling",
+] as const;
+export type UsageSource = (typeof USAGE_SOURCES)[number];
+
 export const WatchCheckSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("website"),
@@ -159,8 +169,11 @@ export const WatchCheckSchema = z.discriminatedUnion("kind", [
     kind: z.literal("mr"),
     /** One task, or every task of the workspace. */
     task: TaskIdSchema.optional(),
-    /** `opened`, `merged`, `failed` (its checks fail) or `any` change of state or checks. */
-    on: z.enum(["opened", "merged", "failed", "any"]),
+    /**
+     * `opened`, `merged`, `failed` (its checks fail), `approved`, `changesRequested`,
+     * `reviewRequested` (a reviewer was asked) or `any` change of state, checks or review.
+     */
+    on: z.enum(["opened", "merged", "failed", "approved", "changesRequested", "reviewRequested", "any"]),
   }),
   z.object({
     kind: z.literal("branch"),
@@ -177,8 +190,16 @@ export const WatchCheckSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("usage"),
-    metric: z.enum(["costUsd", "totalTokens"]),
-    period: z.enum(["today", "week", "month"]),
+    /**
+     * `spend`: what the workspace used (metric and period). The others read a percent of a limit:
+     * an account's 5-hour or weekly window, a workspace's or account's weekly budget, the Auto-pilot
+     * daily budget or the monthly ceiling.
+     */
+    source: z.enum(USAGE_SOURCES).default("spend"),
+    metric: z.enum(["costUsd", "totalTokens"]).default("costUsd"),
+    period: z.enum(["today", "week", "month"]).default("today"),
+    /** The account of `account5h` and `accountWeek`, or of `budget` when it is an account's. Absent on `budget`: the workspace's. */
+    account: IdSchema.optional(),
   }),
   z.object({
     kind: z.literal("command"),
@@ -207,6 +228,10 @@ export const WatchConditionSchema = z.discriminatedUnion("type", [
     forMin: z.number().int().min(0).max(1440).default(0),
   }),
   z.object({ type: z.literal("changed") }),
+  /** A percent at its limit (100 or more). */
+  z.object({ type: z.literal("atLimit") }),
+  /** A window or budget that was at its limit has reset. Fires once per reset. */
+  z.object({ type: z.literal("resets") }),
   z.object({ type: z.literal("contains"), text: z.string().trim().min(1).max(200) }),
   z.object({ type: z.literal("notContains"), text: z.string().trim().min(1).max(200) }),
   z.object({ type: z.literal("down") }),

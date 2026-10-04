@@ -1,6 +1,6 @@
-import { readOnlySqlProblem, taskGroup, type WatchCheck } from "@majhi/shared";
+import { type RepoMr, readOnlySqlProblem, reviewLine, taskGroup, type WatchCheck } from "@majhi/shared";
 import { describeFailure, HTTP_TIMEOUT_MS, numberAt, urlProblem } from "../probes.ts";
-import type { WatchHost, WatchTask } from "./host.ts";
+import type { LimitUse, WatchHost, WatchTask } from "./host.ts";
 import { hashText, jsonLd, mainText, parseHtml, parsePrice, selectFirst, textOf } from "./html.ts";
 
 /**
@@ -29,6 +29,8 @@ export interface Reading {
    * It fires when a subject joins the set, not when one leaves it.
    */
   matched?: string[] | undefined;
+  /** For a percent of a limit: when it starts over (UTC ISO). */
+  resetsAt?: string | undefined;
   /** For `contains`: the text to look in. Never stored. */
   text?: string | undefined;
 }
@@ -614,27 +616,45 @@ function taskStatus(spec: Extract<WatchCheck, { kind: "task" }>, org: string, po
   return { display, healthy: true, signature: matched.join(","), matched };
 }
 
+function reviewKey(review: RepoMr["review"]): string {
+  return review === undefined
+    ? "-"
+    : `${review.approved ? "A" : "a"}${review.approvals}${review.changesRequested ? "C" : "c"}${[...review.pending].sort().join("+")}`;
+}
+
 function mergeRequest(spec: Extract<WatchCheck, { kind: "mr" }>, org: string, ports: WatchPorts): Reading {
   const all = tasksOf(hostOf(ports), org, spec.task).flatMap((t) =>
     t.mrs().map(({ project, mr }) => ({ subject: `${t.id}/${project}`, mr })),
   );
   const display =
     all.length === 1 && all[0] !== undefined
-      ? `MR ${all[0].mr.number} ${all[0].mr.state}, checks ${all[0].mr.ci}`
+      ? `MR ${all[0].mr.number} ${all[0].mr.state}, checks ${all[0].mr.ci}${reviewLine(all[0].mr.review) === undefined ? "" : `, ${reviewLine(all[0].mr.review)}`}`
       : `${all.length} merge requests`;
   if (spec.on === "any") {
     const signature = all
-      .map((m) => `${m.subject}:${m.mr.number} ${m.mr.state} ${m.mr.ci}`)
+      .map((m) => `${m.subject}:${m.mr.number} ${m.mr.state} ${m.mr.ci} ${reviewKey(m.mr.review)}`)
       .sort()
       .join("\n");
     return { display, healthy: true, signature: hashText(signature) };
+  }
+  if (spec.on === "reviewRequested") {
+    // One subject per reviewer asked, so a new request fires even when others are already waiting.
+    const matched = all
+      .filter((m) => m.mr.state === "open")
+      .flatMap((m) => (m.mr.review?.pending ?? []).map((who) => `${m.subject}@${who}`))
+      .sort();
+    return { display, healthy: true, signature: matched.join(","), matched };
   }
   const is = (mr: (typeof all)[number]["mr"]): boolean =>
     spec.on === "opened"
       ? mr.state === "open"
       : spec.on === "merged"
         ? mr.state === "merged"
-        : mr.ci === "failing";
+        : spec.on === "approved"
+          ? mr.state === "open" && mr.review?.approved === true && mr.review.changesRequested !== true
+          : spec.on === "changesRequested"
+            ? mr.state === "open" && mr.review?.changesRequested === true
+            : mr.ci === "failing";
   const matched = all
     .filter((m) => is(m.mr))
     .map((m) => m.subject)
@@ -682,7 +702,80 @@ function processExit(
   };
 }
 
-function usage(spec: Extract<WatchCheck, { kind: "usage" }>, org: string, ports: WatchPorts): Reading {
+/** An account a watch of this workspace may read: the workspace's own, or a private one the owner holds. */
+export function accountAllowed(accountOrg: string, org: string): boolean {
+  return accountOrg === org || accountOrg === "private";
+}
+
+function percentReading(label: string, use: LimitUse): Reading {
+  const n = Math.round(use.percent * 10) / 10;
+  return {
+    number: n,
+    display: `${label} ${fmt(n)}%`,
+    healthy: true,
+    signature: String(n),
+    resetsAt: use.resetsAt,
+  };
+}
+
+/** A limit as a percent: an account's windows, a budget, the Auto-pilot day or the monthly ceiling. */
+async function limitUsage(
+  spec: Extract<WatchCheck, { kind: "usage" }>,
+  org: string,
+  ports: WatchPorts,
+): Promise<Reading> {
+  const limits = hostOf(ports).limits;
+  const account = async (id: string) => {
+    const found = await limits.account(id);
+    if (found === undefined) throw new Unavailable("the account is gone");
+    if (!accountAllowed(found.org, org)) throw new Unavailable("the account belongs to another workspace");
+    return found;
+  };
+  switch (spec.source) {
+    case "account5h":
+    case "accountWeek": {
+      if (spec.account === undefined) throw new Unavailable("name the account");
+      const found = await account(spec.account);
+      const use = spec.source === "account5h" ? found.window : found.weekly;
+      if (use === undefined) throw new Unavailable("the account reports no usage window");
+      return percentReading(
+        `${spec.account} ${spec.source === "account5h" ? "5-hour window" : "weekly window"}`,
+        use,
+      );
+    }
+    case "budget": {
+      if (spec.account !== undefined) await account(spec.account);
+      const use =
+        spec.account === undefined
+          ? await limits.budget("org", org)
+          : await limits.budget("account", spec.account);
+      if (use === undefined) throw new Unavailable("no weekly budget is set for it");
+      return percentReading(
+        spec.account === undefined ? "weekly budget" : `${spec.account} weekly budget`,
+        use,
+      );
+    }
+    case "autopilotDay": {
+      const use = await limits.autopilotDay();
+      if (use === undefined) throw new Unavailable("the Auto-pilot daily budget has no cap");
+      return percentReading("Auto-pilot daily budget", use);
+    }
+    case "monthlyCeiling": {
+      const use = await limits.monthly();
+      if (use === undefined) throw new Unavailable("no monthly ceiling is set");
+      return percentReading("monthly ceiling", use);
+    }
+    case "spend":
+      throw new Unavailable("this check is not a limit");
+  }
+}
+
+function usage(
+  spec: Extract<WatchCheck, { kind: "usage" }>,
+  org: string,
+  ports: WatchPorts,
+): Reading | Promise<Reading> {
+  if (spec.source !== "spend") return guarded(() => limitUsage(spec, org, ports));
   const totals = hostOf(ports).usage(org, spec.period);
   const n = spec.metric === "costUsd" ? totals.costUsd : totals.totalTokens;
   const when = spec.period === "today" ? "today" : `this ${spec.period}`;

@@ -10,6 +10,7 @@ const processes = new Map<string, ProcessInfo>();
 const started: string[] = [];
 
 const host: ActionHost = {
+  resumeLimited: async () => [],
   projects: async () => [{ id: "acme-api", org: "acme", aliases: [] }],
   agent: async () => undefined,
   task: (id) =>

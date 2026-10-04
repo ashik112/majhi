@@ -123,6 +123,8 @@ export function describeAction(action: AutomationAction): string {
       return `Post to ${action.task}: ${clip(action.text, 60)}`;
     case "process.run":
       return `Run ${clip(action.command, 50)} in ${action.task}`;
+    case "tasks.resume":
+      return "Resume the tasks a limit paused";
   }
 }
 

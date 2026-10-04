@@ -6,6 +6,7 @@ import {
   type OpsIncident,
   PRIVATE,
   readOnlySqlProblem,
+  type UsageSource,
   type WatchCondition,
   type WatchDef,
   WatchDefSchema,
@@ -22,6 +23,7 @@ import { errorMessage, UserError } from "../../errors.ts";
 import { urlProblem } from "../probes.ts";
 import type { OpsWatch, Subject } from "../watch.ts";
 import {
+  accountAllowed,
   fmt,
   forgetCommand,
   Pending,
@@ -43,6 +45,7 @@ import {
   runCodeFix,
 } from "./fixes.ts";
 import {
+  type AccountList,
   type Core,
   customPlan,
   modelPrompt,
@@ -128,6 +131,24 @@ const NUMERIC_KINDS = new Set([
 /** Kinds that watch for something to happen: they only alert on a change. */
 const EVENT_KINDS = new Set(["task", "mr", "branch", "process"]);
 
+const MR_EVENT_WORDS = {
+  opened: "is opened",
+  merged: "is merged",
+  failed: "fails its checks",
+  approved: "is approved",
+  changesRequested: "gets changes requested",
+  reviewRequested: "has a reviewer asked",
+  any: "changes",
+} as const;
+
+const USAGE_SOURCE_WORDS: Record<Exclude<UsageSource, "spend">, (account: string | undefined) => string> = {
+  account5h: (a) => `${a ?? "an account"}'s 5-hour window`,
+  accountWeek: (a) => `${a ?? "an account"}'s weekly window`,
+  budget: (a) => (a === undefined ? "the workspace's weekly budget" : `${a}'s weekly budget`),
+  autopilotDay: () => "the Auto-pilot daily budget",
+  monthlyCeiling: () => "the monthly ceiling",
+};
+
 /** What the condition says when it is breached, as a fixed phrase. */
 function breachLine(c: WatchCondition, r: Reading): string {
   switch (c.type) {
@@ -137,6 +158,10 @@ function breachLine(c: WatchCondition, r: Reading): string {
       return `${r.display}, under ${fmt(c.value)}`;
     case "changed":
       return `changed to ${r.display}`;
+    case "atLimit":
+      return `${r.display}, at its limit`;
+    case "resets":
+      return "the limit reset";
     case "contains":
       return "the text you listed is there";
     case "notContains":
@@ -180,6 +205,12 @@ export class WatchEngine {
       !(NUMERIC_KINDS.has(spec.kind) || (spec.kind === "price" && spec.mode === "value"))
     ) {
       return "This check has no number to compare with. Alert on a change instead.";
+    }
+    if (
+      (c.type === "atLimit" || c.type === "resets") &&
+      !(spec.kind === "usage" && spec.source !== "spend")
+    ) {
+      return "Only a limit (an account window, a budget or the ceiling) can alert at its limit or when it resets.";
     }
     if (c.type === "down" && spec.kind !== "website" && spec.kind !== "custom") {
       return "Alert on a number, or on a change: this kind has no down state.";
@@ -298,8 +329,17 @@ export class WatchEngine {
         }
         return undefined;
       }
-      case "usage":
-        return this.deps.ports.host === undefined ? "This watch cannot read usage here." : undefined;
+      case "usage": {
+        const host = this.deps.ports.host;
+        if (host === undefined) return "This watch cannot read usage here.";
+        if ((spec.source === "account5h" || spec.source === "accountWeek") && spec.account === undefined)
+          return "Pick the account to watch.";
+        if (spec.account === undefined || spec.source === "spend") return undefined;
+        const found = await host.limits.account(spec.account);
+        if (found === undefined) return `Account ${spec.account} does not exist.`;
+        if (!accountAllowed(found.org, org)) return `Account ${spec.account} belongs to another workspace.`;
+        return undefined;
+      }
       default:
         return undefined;
     }
@@ -481,7 +521,8 @@ export class WatchEngine {
       const t = this.deps.ports.host?.tasks().find((x) => x.id === id);
       return t?.org === undefined ? undefined : { org: t.org, project: t.project };
     };
-    const org = input.org ?? (await this.orgFor(input.text, lookup));
+    const accounts = (await this.deps.ports.host?.limits.accountList().catch(() => undefined)) ?? [];
+    const org = input.org ?? (await this.orgFor(input.text, lookup, accounts));
     const conns = await this.deps.connections(org);
     let core: Core | undefined;
     let by: "model" | "rules" = "rules";
@@ -506,7 +547,7 @@ export class WatchEngine {
     }
     if (core === undefined) {
       try {
-        core = rulesPlan(input.text, conns, lookup) ?? customPlan(input.text);
+        core = rulesPlan(input.text, conns, lookup, accounts) ?? customPlan(input.text);
       } catch (err) {
         if (err instanceof PlanProblem) throw new UserError(err.message, 400);
         throw err;
@@ -535,11 +576,13 @@ export class WatchEngine {
   }
 
   /** With no workspace given: the one whose connection the sentence names, else Private. */
-  private async orgFor(text: string, lookup: TaskLookup): Promise<string> {
+  private async orgFor(text: string, lookup: TaskLookup, accounts: AccountList): Promise<string> {
     const id = /\b([A-Z][A-Z0-9]{1,9}-\d+)\b/.exec(text)?.[1];
     const taskOrg = id === undefined ? undefined : lookup(id)?.org;
     if (taskOrg !== undefined) return taskOrg;
     const t = text.toLowerCase();
+    const account = accounts.find((a) => t.includes(a.id.toLowerCase()));
+    if (account !== undefined) return account.org;
     const orgs = await this.deps.orgs();
     for (const o of [{ id: PRIVATE, name: "Private" }, ...orgs.filter((x) => x.id !== PRIVATE)]) {
       for (const c of await this.deps.connections(o.id)) {
@@ -663,6 +706,17 @@ export class WatchEngine {
         breach = r.signature !== undefined && state.baseline !== undefined && r.signature !== state.baseline;
         if (!breach && w.def.spec.kind === "price" && w.def.spec.mode === "text") state.display = "no change";
         break;
+      case "atLimit":
+        breach = r.number !== undefined && r.number >= 100;
+        break;
+      case "resets":
+        // Fires once: the look after one at the limit that finds it under, then waits for the next limit.
+        if (r.number !== undefined && r.number >= 100) state.limitHit = true;
+        else if (r.number !== undefined && state.limitHit === true) {
+          breach = true;
+          delete state.limitHit;
+        }
+        break;
       case "contains":
         breach = (r.text ?? "").toLowerCase().includes(c.text.toLowerCase());
         break;
@@ -772,6 +826,10 @@ export class WatchEngine {
         return `${n}: ${w.state.display} is under ${fmt(c.value)}`;
       case "changed":
         return `${n} changed`;
+      case "atLimit":
+        return `${n}: ${w.state.display}, at its limit`;
+      case "resets":
+        return `${n}: the limit reset`;
       case "down":
         return `${n} is down`;
       case "contains":
@@ -1071,6 +1129,10 @@ export class WatchEngine {
     switch (c.type) {
       case "changed":
         return "Changed";
+      case "atLimit":
+        return "At limit";
+      case "resets":
+        return "Reset";
       case "down":
         return "Down";
       case "contains":
@@ -1096,11 +1158,15 @@ export class WatchEngine {
           ? `alert below ${fmt(c.value)}${c.forMin > 0 ? ` for ${c.forMin} min` : ""}`
           : c.type === "changed"
             ? "alert on a change"
-            : c.type === "down"
-              ? "alert when it is down"
-              : c.type === "contains"
-                ? `alert when it contains "${c.text}"`
-                : `alert when it no longer contains "${c.text}"`;
+            : c.type === "atLimit"
+              ? "alert at its limit"
+              : c.type === "resets"
+                ? "act when it resets"
+                : c.type === "down"
+                  ? "alert when it is down"
+                  : c.type === "contains"
+                    ? `alert when it contains "${c.text}"`
+                    : `alert when it no longer contains "${c.text}"`;
     const phone = w.def.fire.alert.on && w.def.fire.alert.phone ? " · phone alert on" : "";
     const acts = w.def.fire.run !== undefined && !w.def.fire.alert.on;
     let what: string;
@@ -1133,7 +1199,7 @@ export class WatchEngine {
         what = `${spec.task === undefined ? "any task" : `task ${spec.task}`} ${spec.to === "needs-you" ? "needs you" : spec.to === "failed" ? "fails" : "is done"}`;
         break;
       case "mr":
-        what = `${spec.task === undefined ? "any task's" : `task ${spec.task}'s`} merge request ${spec.on === "any" ? "changes" : spec.on === "failed" ? "fails its checks" : `is ${spec.on}`}`;
+        what = `${spec.task === undefined ? "any task's" : `task ${spec.task}'s`} merge request ${MR_EVENT_WORDS[spec.on]}`;
         break;
       case "branch":
         what = `branch ${spec.branch} of ${spec.project}`;
@@ -1142,7 +1208,10 @@ export class WatchEngine {
         what = `${spec.process === undefined ? "a process" : `process ${spec.process}`} of ${spec.task} exits${spec.on === "failure" ? " with an error" : ""}`;
         break;
       case "usage":
-        what = `${spec.metric === "costUsd" ? "cost" : "tokens"} ${spec.period === "today" ? "today" : `this ${spec.period}`}`;
+        what =
+          spec.source === "spend"
+            ? `${spec.metric === "costUsd" ? "cost" : "tokens"} ${spec.period === "today" ? "today" : `this ${spec.period}`}`
+            : USAGE_SOURCE_WORDS[spec.source](spec.account);
         break;
       case "command":
         what = `a command in ${spec.task}'s sandbox`;

@@ -1,4 +1,4 @@
-import type { CiState, MrHost, MrState } from "@majhi/shared";
+import type { CiState, MrHost, MrReview, MrState } from "@majhi/shared";
 
 /**
  * One interface for the three MR hosts (SPEC 5.5): open, update the description, read state and
@@ -29,6 +29,8 @@ export interface MrStatus {
   state: MrState;
   ci: CiState;
   url: string;
+  /** Reviews and approvals, when the host said. A failed read of them leaves this out, never the rest. */
+  review?: MrReview | undefined;
 }
 
 export interface MrHostClient {

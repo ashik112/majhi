@@ -1,4 +1,4 @@
-import type { MergePolicy, Task, TaskRepo } from "@majhi/shared";
+import { type MergePolicy, reviewLine, type Task, type TaskRepo } from "@majhi/shared";
 import { ArrowDown, ArrowUp, ExternalLink, GitPullRequest } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -117,6 +117,11 @@ function MrRow({
               {MR_STATE_LABEL[mr.state]}
             </span>
             {mr.state === "open" && <span className={cn(CI_TONE[mr.ci])}>{CI_LABEL[mr.ci]}</span>}
+            {mr.state === "open" && reviewLine(mr.review) !== undefined && (
+              <span className={mr.review?.changesRequested ? "text-red" : "text-fg-muted"}>
+                {reviewLine(mr.review)}
+              </span>
+            )}
           </span>
         ) : (
           <span className="text-xs text-fg-faint">No MR yet</span>

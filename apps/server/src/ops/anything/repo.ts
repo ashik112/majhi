@@ -50,6 +50,8 @@ export const WatchStateSchema = z.object({
   /** When the action last fired, for the cooldown. */
   lastFiredAt: z.string().optional(),
   signature: z.string().optional(),
+  /** A limit watch saw its percent at the limit: the next look under it is a reset. */
+  limitHit: z.boolean().optional(),
   fails: z.number().int().default(0),
 });
 export type WatchState = z.infer<typeof WatchStateSchema>;
