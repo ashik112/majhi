@@ -1,4 +1,4 @@
-import type { CaptainLogResult, OwnerDecision, Scorecard } from "@majhi/shared";
+import type { CommandOutput, OwnerDecision, Scorecard } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
@@ -65,7 +65,7 @@ describe("outcomes and the trust ladder in a real captain turn", { timeout: 120_
     }
     await captain.runner.start("acme", "triage", "test run");
     await captain.settled();
-    const log = (await h.cmd("captain.log", { org: "acme", limit: 50 })).body as CaptainLogResult;
+    const log = (await h.cmd("captain.log", { org: "acme", limit: 50 })).body as CommandOutput<"captain.log">;
     const set = log.actions.filter((a) => a.text.includes("to high priority"));
     expect(set).toHaveLength(5);
     expect(set.every((a) => a.undo === "yes")).toBe(true);

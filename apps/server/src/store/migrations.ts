@@ -1211,6 +1211,7 @@ CREATE TABLE org_rates (
 );
 `,
   },
+  {
     // Sensors (SPEC 5.18, captain v2 step 9): what a sensor remembers between runs, so it asks upstream
     // only when something may have changed: ETags, lockfile hashes, advisory and release answers, and
     // the radar's weekly token count. Public answers and counters only, never a secret or a source line.
