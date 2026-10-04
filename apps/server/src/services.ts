@@ -512,6 +512,17 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     return account === undefined || limit === undefined ? undefined : { account, limit };
   };
   /** Whether a budget holds this agent's task: its org's budget, or its account's. */
+  /** Whether `candidate` can take work over now: it exists, its account is up and under its limits. */
+  const canTakeOver = async (task: string, candidate: string): Promise<boolean> => {
+    const target = await agentStore.get(candidate);
+    if (target === undefined || !target.ok) return false;
+    // The status folds in a sign-in, an unreachable account and a limit mark or a full window.
+    const view = (await accounts.list().catch(() => [])).find(
+      (v) => v.id === target.agent.frontmatter.account,
+    );
+    if (view === undefined || ["needs-login", "at-limit", "unreachable"].includes(view.status)) return false;
+    return (await budgetLimited(task, candidate)) === undefined;
+  };
   const budgetLimited = async (task: string, agent: string): Promise<string | undefined> => {
     const found = store.tasks.get(task);
     // The captain is how the owner raises a budget (SPEC 5.17): its chat is never held.
@@ -714,15 +725,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       const stored = await agentStore.get(agent);
       const fallback = stored?.ok ? stored.agent.frontmatter.fallback : undefined;
       if (fallback === undefined || found.team.includes(fallback)) return undefined;
-      const target = await agentStore.get(fallback);
-      if (target === undefined || !target.ok) return undefined;
-      // The status folds in a sign-in, an unreachable account and a limit mark or a full window.
-      const view = (await accounts.list().catch(() => [])).find(
-        (v) => v.id === target.agent.frontmatter.account,
-      );
-      if (view === undefined || ["needs-login", "at-limit", "unreachable"].includes(view.status))
+      return (await canTakeOver(task, fallback)) ? fallback : undefined;
+    },
+    teammateFor: async (task, agent) => {
+      const found = store.tasks.get(task);
+      if (found === undefined || found.team[0] !== agent || !(await resilience.handoffOn(found)))
         return undefined;
-      return (await budgetLimited(task, fallback)) === undefined ? fallback : undefined;
+      for (const other of found.team) {
+        if (other !== agent && (await canTakeOver(task, other))) return other;
+      }
+      return undefined;
     },
     teamCanRun: async (task, agent) => {
       const team = store.tasks.get(task)?.team ?? [];

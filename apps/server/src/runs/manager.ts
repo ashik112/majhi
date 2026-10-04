@@ -95,6 +95,25 @@ const RESUME_RETRY_MS = 1_000;
 const ACTIVE_EVERY_MS = 5_000;
 const CONTINUE_TEXT = "Continue from where you stopped.";
 /** The first prompt of the fresh session a turn limit moved the agent to (PRV-96). */
+/** Why work moves to another agent: the note's reason, the room's line, and whether a teammate may take it. */
+interface Handoff {
+  carry: string;
+  line: (to: string) => string;
+  teammates: boolean;
+}
+
+const limitHandoff = (from: string, until: string, now: Date): Handoff => ({
+  carry: `@${from}'s account hit its usage limit`,
+  line: (to) => handedOffLine(from, to, until, now),
+  teammates: false,
+});
+
+const signedOutHandoff = (from: string): Handoff => ({
+  carry: `@${from}'s account needs a new sign-in`,
+  line: (to) => `@${from}'s account needs a new sign-in. @${to} continues from the checkpoint.`,
+  teammates: true,
+});
+
 const CONTINUE_FROM_NOTE = "Continue from the handoff note.";
 /** How often a running turn is checked against its turn limits. */
 const LIMIT_CHECK_MS = 15_000;
@@ -198,7 +217,15 @@ export interface RunDeps {
    * `resume.handoff` is on. Else undefined.
    */
   fallbackFor?: (task: string, agent: string) => Promise<string | undefined>;
-  /** Puts `to` in `from`'s place in the task's team, same position and overrides. False when it could not. */
+  /**
+   * When `agent` is the lead and its account is signed out: the first teammate whose account works,
+   * under the same `resume.handoff` switch. Undefined when there is none.
+   */
+  teammateFor?: (task: string, agent: string) => Promise<string | undefined>;
+  /**
+   * Puts `to` in `from`'s place in the task's team, same position and overrides. A teammate already
+   * on the team takes the lead's place and `from` leaves it. False when it could not.
+   */
   takeOver?: (task: string, from: string, to: string) => Promise<boolean>;
   /** A fresh health check of an account, asked after a start failed. Undefined when it cannot be read. */
   checkAccount?: (account: string) => Promise<AccountProbe | undefined>;
@@ -1168,6 +1195,11 @@ export class RunManager {
           run.queue.unshift(entry);
           this.live.refreshQueued(run);
         }
+        // The account is signed out: a fallback or a teammate takes the queue over, or the run waits for the sign-in.
+        const signedOut = run.signedOutAccount;
+        run.signedOutAccount = undefined;
+        if (signedOut !== undefined && !(await this.takeOverFor(run, signedOutHandoff(run.agent))))
+          this.pauseSignedOut(run, signedOut);
         // The account hit its usage limit: the fallback takes the queue over, or the run waits for the reset.
         const mark = run.limitMark;
         run.limitMark = undefined;
@@ -1379,7 +1411,7 @@ export class RunManager {
    * resumes it at the reset.
    */
   private async handOffOrPause(run: AgentRun, account: string, mark: AccountLimit): Promise<void> {
-    if (await this.takeOverFor(run, mark)) return;
+    if (await this.takeOverFor(run, limitHandoff(run.agent, mark.until, this.now()))) return;
     this.pauseForAccount(run, account, mark);
   }
 
@@ -1395,22 +1427,18 @@ export class RunManager {
    * handoff note built from saved state and the queue, and the run's session ends. False when no
    * fallback can take over, and nothing changed.
    */
-  private async takeOverFor(run: AgentRun, mark: AccountLimit): Promise<boolean> {
+  private async takeOverFor(run: AgentRun, why: Handoff): Promise<boolean> {
     const { deps } = this;
-    const to = await deps.fallbackFor?.(run.task, run.agent).catch(() => undefined);
+    const to =
+      (await deps.fallbackFor?.(run.task, run.agent).catch(() => undefined)) ??
+      (why.teammates ? await deps.teammateFor?.(run.task, run.agent).catch(() => undefined) : undefined);
     if (to === undefined || run.closing) return false;
     if (!(await deps.takeOver?.(run.task, run.agent, to).catch(() => false))) return false;
     const task = deps.store.tasks.get(run.task);
     const next = this.runFor(run.task, to);
     if (task !== undefined) {
       try {
-        const built = await buildCarry(
-          deps,
-          task,
-          to,
-          undefined,
-          `@${run.agent}'s account hit its usage limit`,
-        );
+        const built = await buildCarry(deps, task, to, undefined, why.carry);
         next.carry = built.carry;
         next.freshNext = true;
       } catch (err) {
@@ -1432,7 +1460,7 @@ export class RunManager {
     next.queue = [...carried, ...next.queue];
     next.held = false;
     next.paused = undefined;
-    this.live.system(run, "warn", handedOffLine(run.agent, to, mark.until, this.now()));
+    this.live.system(run, "warn", why.line(to));
     this.retire(run);
     this.live.refreshQueued(next);
     void this.drive(next);
@@ -1496,15 +1524,21 @@ export class RunManager {
       });
       return;
     }
-    // Kept in flight: after a restart the turn continues too.
+    // Kept in flight: after a restart the turn continues too. The loop hands off or pauses once the prompt is back in the queue.
     this.markTurn(run, false, false);
     run.requeue = true;
+    run.signedOutAccount = account;
+  }
+
+  /** The run waits for its account's sign-in, with its prompts queued. */
+  private pauseSignedOut(run: AgentRun, account: string): void {
+    const lead = this.deps.store.tasks.get(run.task)?.team[0];
     run.startFailure = { kind: "signed-out", text: `${account} needs a new sign-in.` };
     const nobody = lead === run.agent ? "" : " No teammate with a working account can take its step.";
     this.pause(
       run,
       "signed-out",
-      `${cannot}${nobody} Sign in ${account} on the Accounts page, then the task continues.`,
+      `@${run.agent} cannot run: its account ${account} needs a new sign-in.${nobody} Sign in ${account} on the Accounts page, then the task continues.`,
       true,
     );
   }
@@ -2010,7 +2044,7 @@ export class RunManager {
         ...(failure.resetsAt === undefined ? {} : { resetsAt: failure.resetsAt }),
       });
       if (run.closing) return;
-      if (await this.takeOverFor(run, mark)) return;
+      if (await this.takeOverFor(run, limitHandoff(run.agent, mark.until, this.now()))) return;
       if (!up) {
         this.pauseForAccount(run, run.account, mark);
         return;
@@ -2020,6 +2054,8 @@ export class RunManager {
       this.live.system(run, "warn", `@${run.agent} is out: ${failure.text}`);
       return;
     }
+    // Signed out: a fallback or a teammate takes over, as for a limit.
+    if (failure.kind === "signed-out" && (await this.takeOverFor(run, signedOutHandoff(run.agent)))) return;
     // The paused card carries the cause and the fix, so the pause adds no line of its own.
     this.pause(run, failure.kind === "signed-out" ? "signed-out" : "error", failure.text, true);
   }
