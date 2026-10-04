@@ -190,7 +190,7 @@ export function ConnectCatalog({
           ) : services.length === 0 ? (
             <p className="text-base text-fg-muted">No service matches "{query}".</p>
           ) : (
-            <ul aria-label="Services" className="grid gap-2 @[560px]:grid-cols-2 @[900px]:grid-cols-3">
+            <ul aria-label="Services" className="grid gap-2 @[440px]:grid-cols-2 @[900px]:grid-cols-3">
               {services.map((s) => {
                 const have = connected(s);
                 return (

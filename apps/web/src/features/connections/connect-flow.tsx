@@ -95,7 +95,9 @@ export function ConnectFlowCard({
         <Lamp state={lampState} size={9} />
         {title}
       </p>
-      {view.state !== "connected" && <p className="text-base text-fg-muted text-pretty">{view.message}</p>}
+      {view.state !== "connected" && view.state !== "waiting" && (
+        <p className="text-base text-fg-muted text-pretty">{view.message}</p>
+      )}
       {view.state === "waiting" && view.url !== undefined && (
         <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-line bg-sunken p-3">
           <p className="text-sm text-fg-muted">
