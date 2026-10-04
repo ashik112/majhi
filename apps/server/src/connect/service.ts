@@ -1345,9 +1345,19 @@ export class ConnectService {
     }
     if (probe.kind === "other") {
       const why = probe.reason === "" ? "" : `: ${probe.reason}`;
+      const hint =
+        this.service(grant.service ?? "")?.enableHint ??
+        `Your account may not have ${name}'s MCP server turned on.`;
       return this.result(
         false,
-        `${name} refused majhi's calls (${probe.status}${why}). Your account may not have ${name}'s MCP server enabled. The sign-in is kept.`,
+        `${name} refused majhi's calls (${probe.status}${why}). ${hint} The sign-in is kept.`,
+        started,
+      );
+    }
+    if (probe.kind === "slow") {
+      return this.result(
+        false,
+        `${hostOf(grant.serverUrl)} took the call but did not answer in 15 seconds. The sign-in is kept; try again.`,
         started,
       );
     }

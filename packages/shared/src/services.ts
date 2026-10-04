@@ -132,6 +132,8 @@ export const ServiceEntrySchema = z.object({
   docs: z.url(),
   /** A plan, region or beta the owner should know about before connecting. */
   note: z.string().max(240).optional(),
+  /** The exact setting to turn on when the service refuses a working sign-in. */
+  enableHint: z.string().max(300).optional(),
 });
 export type ServiceEntry = z.infer<typeof ServiceEntrySchema>;
 
@@ -369,7 +371,9 @@ export const SERVICE_CATALOG: readonly ServiceEntry[] = z.array(ServiceEntrySche
     ],
     test: TOOLS_TEST("Lists GitLab's tools."),
     docs: "https://docs.gitlab.com/user/gitlab_duo/model_context_protocol/mcp_server",
-    note: "Beta, and needs a Premium or Ultimate plan. GitLab has one permission for all of it.",
+    note: "Beta. A group Owner turns on MCP client access first. GitLab has one permission for all of it.",
+    enableHint:
+      "In GitLab, open the top-level group, then Settings > General > Permissions and group features. Under MCP client access, select Allow connection to GitLab and save. This needs the group's Owner role.",
   },
   ...[
     ["digitalocean", "DigitalOcean", "droplets", "Droplets"],

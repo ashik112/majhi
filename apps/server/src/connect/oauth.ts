@@ -392,6 +392,8 @@ export type TokenProbe =
   | { kind: "invalid" }
   | { kind: "insufficient-scope"; scope: string[] }
   | { kind: "unreachable" }
+  /** The service took the call and gave no answer in time. */
+  | { kind: "slow" }
   /** The service answered, and refused or failed: its status and a short reason (never the token). */
   | { kind: "other"; status: number; reason: string };
 
@@ -400,7 +402,12 @@ export type TokenProbe =
  * revoked one (401) and from one that lacks a permission (403 insufficient_scope, RFC 6750), and
  * reads the scope the server names. The call is `initialize`, which changes nothing.
  */
-export async function probeToken(url: string, token: string, fetchFn: Fetch): Promise<TokenProbe> {
+export async function probeToken(
+  url: string,
+  token: string,
+  fetchFn: Fetch,
+  timeoutMs = 15_000,
+): Promise<TokenProbe> {
   try {
     const res = await fetchFn(url, {
       method: "POST",
@@ -419,8 +426,9 @@ export async function probeToken(url: string, token: string, fetchFn: Fetch): Pr
           clientInfo: { name: "majhi", version: "1" },
         },
       }),
-      redirect: "error",
-      signal: AbortSignal.timeout(15_000),
+      // A server that sends an unentitled account to a sign-in page answers with a redirect.
+      redirect: "manual",
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (res.ok) {
       await res.body?.cancel().catch(() => undefined);
@@ -431,6 +439,9 @@ export async function probeToken(url: string, token: string, fetchFn: Fetch): Pr
       () => "",
     );
     if (res.status === 401) return { kind: "invalid" };
+    if (res.status >= 300 && res.status < 400) {
+      return { kind: "other", status: res.status, reason: redirectReason(res.headers.get("location"), url) };
+    }
     if (res.status === 403) {
       const header = res.headers.get("www-authenticate") ?? "";
       if (/error="?insufficient_scope"?/i.test(header)) {
@@ -447,8 +458,19 @@ export async function probeToken(url: string, token: string, fetchFn: Fetch): Pr
       status: res.status,
       reason: refusalReason(res.headers.get("www-authenticate"), body),
     };
+  } catch (err) {
+    return err instanceof DOMException && err.name === "TimeoutError" ? { kind: "slow" } : { kind: "unreachable" };
+  }
+}
+
+/** Where a redirect went, as host and path: never its query, which can carry a token. */
+function redirectReason(location: string | null, base: string): string {
+  if (location === null) return "it answered with a redirect";
+  try {
+    const to = new URL(location, base);
+    return `it sent majhi to ${to.host}${to.pathname === "/" ? "" : to.pathname}`.slice(0, 200);
   } catch {
-    return { kind: "unreachable" };
+    return "it answered with a redirect";
   }
 }
 
