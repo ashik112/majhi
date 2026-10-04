@@ -1,5 +1,7 @@
 import { z } from "zod";
+import { CliToolIdSchema } from "./cli-tools.ts";
 import { IdSchema } from "./ids.ts";
+import { EXTRA_SERVICES } from "./services-extra.ts";
 
 /**
  * The service catalog (SPEC 5.14, "Connect"): the outside services majhi can join with one click,
@@ -15,8 +17,8 @@ import { IdSchema } from "./ids.ts";
  * - `device`: the device authorization grant.
  * - `cli-login`: the service's own command line sign-in, in a folder of the workspace.
  * - `api-key`: a key, entered once in a secure input.
- * Only `mcp-oauth` can be connected today; the others are listed so the catalog is the one place
- * that says how each service connects.
+ * `api-key` is used for the services whose app gives tokens instead of a sign-in majhi can run
+ * (Slack, Discord): the guided setup ends with a secure input.
  */
 export const ServiceKindSchema = z.enum(["mcp-oauth", "oauth-loopback", "device", "cli-login", "api-key"]);
 export type ServiceKind = z.infer<typeof ServiceKindSchema>;
@@ -40,8 +42,60 @@ export const ServiceScopeSchema = z.object({
    * service decides what the consent screen offers, and majhi shows what it granted.
    */
   oauth: z.array(z.string().min(1).max(200)).optional(),
+  /**
+   * `send` scopes are asked for only at the `send` level, which the owner turns on for a pack that
+   * sends for them. `readwrite` (drafts, edits) never includes them.
+   */
+  level: z.literal("send").optional(),
 });
 export type ServiceScope = z.infer<typeof ServiceScopeSchema>;
+
+/**
+ * How majhi talks to a service that has no MCP server: its own OAuth with a public client and PKCE
+ * (`loopback`), or the device grant (`device`). Nothing here is a secret: the client ID comes from
+ * `BUILT_IN_CONNECT_APPS` or the owner's own app, and a client secret, where the provider needs
+ * one, is the owner's and lives in secrets.age.
+ */
+export const ServiceProviderSchema = z.object({
+  flow: z.enum(["loopback", "device"]),
+  authorizeUrl: z.url().optional(),
+  tokenUrl: z.url(),
+  deviceUrl: z.url().optional(),
+  revokeUrl: z.url().optional(),
+  /** The issuer a callback's `iss` must match, when the provider sends one. */
+  issuer: z.string().optional(),
+  /** Match `iss` by prefix (Microsoft's issuer carries the tenant). */
+  issuerPrefix: z.boolean().default(false),
+  /** The provider's callback always carries `iss` (RFC 9207), so its absence is an error. */
+  issSent: z.boolean().default(false),
+  pkce: z.boolean().default(true),
+  /** `none`: a public client, no secret. `secret`: the owner's client secret from their own app. */
+  clientAuth: z.enum(["none", "secret"]),
+  scopeSeparator: z.enum([" ", ","]).default(" "),
+  /** Scopes always asked for, so majhi can tell who signed in. */
+  identityScopes: z.array(z.string()).default([]),
+  extraAuthParams: z.record(z.string(), z.string()).default({}),
+  /** `localhost` for providers that register `http://localhost` and not `127.0.0.1`. */
+  redirectHost: z.string().optional(),
+  /** Who signed in, and the one cheap read that proves the token works. */
+  identity: z.object({
+    url: z.url(),
+    method: z.enum(["GET", "POST"]).default("GET"),
+    body: z.string().optional(),
+    labelPaths: z.array(z.array(z.string())).min(1),
+    idPaths: z.array(z.array(z.string())).min(1),
+  }),
+  /** The variable a run gets the short-lived access token in, for a service with no MCP server. */
+  tokenVar: z
+    .string()
+    .regex(/^[A-Z][A-Z0-9_]*$/)
+    .optional(),
+  /** Said on a refused renewal, for a provider whose own setting is the likely cause. */
+  refusedHint: z.string().max(240).optional(),
+  /** Where the owner removes the app's access when majhi cannot revoke it. */
+  accessPage: z.url().optional(),
+});
+export type ServiceProvider = z.infer<typeof ServiceProviderSchema>;
 
 export const ServiceEntrySchema = z.object({
   id: IdSchema,
@@ -51,6 +105,14 @@ export const ServiceEntrySchema = z.object({
   summary: z.string().min(1).max(160),
   /** The remote MCP server's address. */
   mcpUrl: z.url().optional(),
+  /** The provider's OAuth, for a service without one the SDK can discover. */
+  provider: ServiceProviderSchema.optional(),
+  /** The guided app setup (`app-setup.ts`) the owner does first, once per workspace. */
+  app: z.string().max(40).optional(),
+  /** The command-line tool of a `cli-login` service. */
+  cli: CliToolIdSchema.optional(),
+  /** The packs of the captain's business engine this service is for, in the owner's words. */
+  packs: z.array(z.string().max(40)).max(6).default([]),
   /** What majhi can connect today. A service that is not ready shows what comes next. */
   ready: z.boolean(),
   /**
@@ -63,7 +125,10 @@ export const ServiceEntrySchema = z.object({
   verifiedNote: z.string().min(1).max(300),
   scopes: z.array(ServiceScopeSchema).max(12),
   /** The test after connecting: majhi lists the server's tools, which needs a valid token. */
-  test: z.object({ kind: z.literal("mcp-tools"), sentence: z.string().min(1).max(160) }),
+  test: z.object({
+    kind: z.enum(["mcp-tools", "api", "cli", "token"]),
+    sentence: z.string().min(1).max(160),
+  }),
   docs: z.url(),
   /** A plan, region or beta the owner should know about before connecting. */
   note: z.string().max(240).optional(),
@@ -306,24 +371,7 @@ export const SERVICE_CATALOG: readonly ServiceEntry[] = z.array(ServiceEntrySche
     docs: "https://docs.gitlab.com/user/gitlab_duo/model_context_protocol/mcp_server",
     note: "Beta, and needs a Premium or Ultimate plan. GitLab has one permission for all of it.",
   },
-  {
-    id: "github",
-    name: "GitHub",
-    kind: "cli-login",
-    summary: "Repositories, issues and pull requests",
-    mcpUrl: "https://api.githubcopilot.com/mcp",
-    ready: false,
-    verified: true,
-    verifiedNote:
-      "Checked 2026-10-04: the address answers 401, but GitHub's sign-in does not accept dynamic registration. It takes the token of the workspace's own GitHub sign-in as a Bearer header. That is a later step.",
-    scopes: [
-      { id: "read", access: "read", sentence: "Read repositories, issues and pull requests." },
-      { id: "write", access: "write", sentence: "Open issues and pull requests." },
-    ],
-    test: TOOLS_TEST("Lists GitHub's tools."),
-    docs: "https://docs.github.com/en/copilot/how-tos/context/model-context-protocol/using-the-github-mcp-server",
-    note: "Uses the workspace's GitHub sign-in. Coming next.",
-  },
+  ...EXTRA_SERVICES,
 ]);
 
 const BY_ID = new Map(SERVICE_CATALOG.map((s) => [s.id, s]));
@@ -342,4 +390,19 @@ export function serviceByUrl(
 ): ServiceEntry | undefined {
   const norm = (u: string) => u.replace(/\/+$/, "");
   return catalog.find((s) => s.mcpUrl !== undefined && norm(s.mcpUrl) === norm(url));
+}
+
+/**
+ * Public client IDs majhi ships, by service. A public client has no secret, so an ID here is not
+ * one. Empty until the project registers its own apps; until then each workspace's owner creates
+ * the app under their own account in the guided setup (an app under the owner's name, so billing,
+ * verification and rate limits are theirs). Never put a client secret here.
+ */
+export const BUILT_IN_CONNECT_APPS: Readonly<Record<string, string>> = {};
+
+/** The `oauth` scope names of the permissions that count at `access`. */
+export function scopesAt(entry: Pick<ServiceEntry, "scopes">, access: "read" | "readwrite" | "send"): ServiceScope[] {
+  return entry.scopes.filter(
+    (s) => s.access === "read" || access === "send" || (access === "readwrite" && s.level !== "send"),
+  );
 }

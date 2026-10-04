@@ -3,6 +3,9 @@ import { join } from "node:path";
 import type { McpServerSpec, StdioServerSpec } from "@majhi/acp";
 import {
   activeLists,
+  CLI_PROFILE_DIR,
+  cliRunEnv,
+  cliTool,
   type ConnectionConfig,
   type ConnectionListKey,
   type ConnectionType,
@@ -227,6 +230,35 @@ export async function planConnections(
         gate(h);
         use(h, useLine(h));
         break;
+      case "api": {
+        // The owner's sign-in for this workspace, as a short-lived token in one variable. The
+        // refresh token never leaves majhi.
+        const name = textValue(c, "token_var");
+        const answer = deps.oauth === undefined || name === undefined ? { problem: "It has no sign-in." } : await deps.oauth(h.id);
+        if ("problem" in answer || name === undefined) {
+          plan.problems.push(`${h.id}: ${"problem" in answer ? answer.problem : "It has no variable."} The run does not get it.`);
+          break;
+        }
+        setVar(h.id, name, answer.token);
+        plan.secrets.push({ name: `${h.id}.oauth`, value: answer.token });
+        gate(h, { clis: [] });
+        use(h, useLine(h));
+        break;
+      }
+      case "cli": {
+        const tool = cliTool(textValue(c, "tool") ?? "");
+        if (tool === undefined) {
+          plan.problems.push(`${h.id} names no known tool, so the run does not get it.`);
+          break;
+        }
+        // Only this connection's folder, and only the tool's own variables pointing into it.
+        const profile = join(deps.connectionDir(h.id), CLI_PROFILE_DIR);
+        for (const [name, value] of Object.entries(cliRunEnv(tool, profile))) setVar(h.id, name, value);
+        plan.profiles.push(profile);
+        gate(h, { clis: [tool.binary] });
+        use(h, useLine(h));
+        break;
+      }
     }
   }
   return plan;
@@ -304,6 +336,12 @@ export function useLine(h: HeldConnection, current = false): string {
       return `MCP server ${h.id}.`;
     case "browser":
       return `MCP server ${h.id} (${browserServer(textValue(c, "server")).label}), with its own browser profile.`;
+    case "api":
+      return `Variable ${textValue(c, "token_var") ?? "ACCESS_TOKEN"} holds a short-lived token for ${c.name}. Anything that changes something asks the owner first.`;
+    case "cli": {
+      const tool = cliTool(textValue(c, "tool") ?? "");
+      return `${tool?.binary ?? "The tool"} is signed in for this workspace only${textValue(c, "account") === undefined ? "" : ` as ${textValue(c, "account")}`}. Commands that change something ask the owner first.`;
+    }
     case "ssh":
       return `Run a command on it with the majhi-connections ssh tool (connection ${h.id}). Commands that change something wait for the owner.`;
   }

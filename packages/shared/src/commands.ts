@@ -107,6 +107,14 @@ import {
   CaptainUndoResultSchema,
   SlotCapacitySchema,
 } from "./captain.ts";
+import {
+  AppSetupForgetInputSchema,
+  AppSetupInputSchema,
+  AppSetupSaveInputSchema,
+  AppSetupSaveResultSchema,
+  AppSetupStatusSchema,
+  AppSetupViewSchema,
+} from "./app-setup.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
   ConnectCatalogSchema,
@@ -2579,6 +2587,32 @@ export const commands = {
       "Disconnect a service: revokes the grant at the service when it supports that, deletes the tokens and removes the connection. Says what stays at the service when it cannot revoke",
     input: z.object({ connection: IdSchema }),
     output: ConnectDisconnectResultSchema,
+  },
+  "connect.appSetup": {
+    risk: "read",
+    summary:
+      "The guided setup of the app a service needs, for one workspace: the exact pages to open, the values to paste (redirect address, app name), what the app may do in plain words at read, readwrite or send access, and for Slack the manifest. Holds no secret",
+    input: AppSetupInputSchema,
+    output: AppSetupViewSchema,
+  },
+  "connect.appStatus": {
+    risk: "read",
+    summary: "Which guided apps are set up for a workspace, and which majhi ships. Never returns a client ID or secret",
+    input: z.object({ org: IdSchema }),
+    output: AppSetupStatusSchema,
+  },
+  "connect.appSave": {
+    risk: "change",
+    summary:
+      "Save the owner's app for a workspace: a Google client file (parsed, a Desktop client only), a client ID and secret, or Slack and Discord tokens, which also connect the service. Secrets go straight to secrets.age and are never returned. Only the owner does this, on the Connections page",
+    input: AppSetupSaveInputSchema,
+    output: AppSetupSaveResultSchema,
+  },
+  "connect.appForget": {
+    risk: "destructive",
+    summary: "Remove a workspace's saved app (its client ID and secret). Connections already made keep working until their tokens end",
+    input: AppSetupForgetInputSchema,
+    output: z.object({ removed: z.boolean() }),
   },
   "connect.needScope": {
     risk: "change",

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listTools, remoteTransport } from "../connections/mcp-client.ts";
 import { generateKey, SecretStore } from "../secrets/store.ts";
 import { tempDir, writeKeyFile } from "../testing/fixtures.ts";
+import { AppClientStore } from "./app-client.ts";
 import { GrantStore } from "./grant.ts";
 import { ConnectService, FLOW_TTL_MS } from "./service.ts";
 import { FakeAuthServer, FakeMcpServer, fakeService } from "./testing/fakes.ts";
@@ -70,6 +71,9 @@ async function rig(
   const make = () =>
     new ConnectService({
       grants,
+      apps: new AppClientStore(secrets),
+      orgName: async (org) => org,
+      secretOf: async () => undefined,
       connections: {
         async create(input) {
           connections.set(input.id ?? input.name, {
@@ -353,6 +357,9 @@ describe("connecting a remote MCP server with OAuth", () => {
     await otherMcp.start();
     const second = new ConnectService({
       grants: r.grants,
+      apps: new AppClientStore(r.secrets),
+      orgName: async (org) => org,
+      secretOf: async () => undefined,
       connections: {
         create: async () => undefined,
         remove: async () => undefined,

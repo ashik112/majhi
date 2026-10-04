@@ -15,7 +15,9 @@ export const GrantSchema = z.object({
   org: IdSchema,
   /** The catalog entry, when there is one. */
   service: IdSchema.optional(),
-  /** The MCP server's address, which is also the `resource` of the tokens. */
+  /** The tokens come from a provider's own OAuth, not an MCP server's sign-in. */
+  provider: z.literal(true).optional(),
+  /** The MCP server's address, which is also the `resource` of the tokens. For a provider: its identity address. */
   serverUrl: z.string(),
   resource: z.string(),
   /** The authorization server the tokens came from, and the only one they go back to. */
