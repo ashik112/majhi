@@ -37,6 +37,7 @@ import { scopeOfTask } from "./own-work.ts";
 import { ownWorkSecondOpinion } from "./own-work-second.ts";
 import type { ApprovalCard, CaptainPorts, NewRepo, QuestionCard, ShipCheck, SignInStall } from "./ports.ts";
 import type { CaptainRepo } from "./repo.ts";
+import { upkeepWorld } from "./upkeep-world.ts";
 
 /**
  * The upkeep chores' ports over majhi's own services (SPEC 5.18). Each reads only the workspace it
@@ -46,6 +47,8 @@ import type { CaptainRepo } from "./repo.ts";
  */
 
 export interface WorldDeps {
+  /** Why the machine cannot take more work now, or undefined. */
+  machineBusy?: () => string | undefined;
   store: Store;
   accounts: AccountService;
   config: ConfigService;
@@ -409,6 +412,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
     // Follow-ups and findings
 
     findings: deps.findings,
+    upkeep: upkeepWorld({ run, store, now: () => new Date(), machineBusy: deps.machineBusy }),
     followUps: {
       openThreads: (org) =>
         deps.memory.project

@@ -4,6 +4,7 @@ import {
   canWorkIn,
   commands,
   DEFAULT_LEAD_START,
+  TaskDockerRequestSchema,
   type TeamPlan,
   TeamPlanSchema,
 } from "@majhi/shared";
@@ -34,6 +35,7 @@ import {
   CONNECTIONS_SERVER_NAME,
   CONTAINERS_PATH,
   CONTAINERS_SERVER_NAME,
+  DOCKER_PATH,
   MEMORY_PATH,
   MEMORY_SERVER_NAME,
   PROCESSES_PATH,
@@ -308,6 +310,27 @@ export function roomMcpRoutes(deps: RoomMcpDeps): Hono {
   );
   const containers = deps.containers;
   if (containers !== undefined) {
+    app.post(DOCKER_PATH, async (c) => {
+      const origin = c.req.header("origin");
+      if (origin !== undefined && !isLoopbackOrigin(origin)) {
+        return c.json({ error: "docker is not for web pages" }, 403);
+      }
+      const token = bearerOf(c.req.header("authorization"));
+      const caller = token === undefined ? undefined : deps.access.docker.lookup(token);
+      if (caller === undefined) return c.json({ error: "A valid bearer token is required" }, 401);
+      const body = TaskDockerRequestSchema.safeParse(await c.req.json().catch(() => undefined));
+      if (!body.success) return c.json({ error: formatIssues(body.error).join("; ") }, 400);
+      try {
+        return c.json(
+          await containers.containers.taskDocker(caller.task, body.data, {
+            ask: (image) => containers.askImage(caller, image),
+            signal: c.req.raw.signal,
+          }),
+        );
+      } catch (err) {
+        return c.json({ code: 125, stdout: "", stderr: `docker: ${errorMessage(err)}\n` });
+      }
+    });
     app.all(CONTAINERS_PATH, (c) =>
       serve(
         c.req.raw,

@@ -11,6 +11,10 @@ export const CaptainChoreSchema = z.enum([
   "cleanup",
   "stuck",
   "followups",
+  "discover",
+  "tidy",
+  "health",
+  "checklist",
 ]);
 export type CaptainChore = z.infer<typeof CaptainChoreSchema>;
 
@@ -41,4 +45,8 @@ export const DAILY_CHORE_CAPS: Record<CaptainChore, { actions?: number; runs?: n
   cleanup: { runs: 1, actions: 20 },
   stuck: { actions: 10 },
   followups: { runs: 1, actions: 25 },
+  discover: { runs: 1, actions: 6 },
+  tidy: { runs: 1, actions: 25 },
+  health: { runs: 2, actions: 15 },
+  checklist: { runs: 1, actions: 20 },
 };

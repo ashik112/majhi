@@ -25,6 +25,10 @@ export const CHORE_LABEL: Record<CaptainChore, string> = {
   cleanup: "Cleanup",
   stuck: "Stuck tasks",
   followups: "Follow-ups",
+  discover: "Discover tools",
+  tidy: "Tidy up",
+  health: "Health sweep",
+  checklist: "Owner checklist",
 };
 
 /** Who caused an event. The captain's own events never start an upkeep run. */

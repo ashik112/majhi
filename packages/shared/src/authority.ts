@@ -67,3 +67,9 @@ export const ALL_ASK: Authority = {
   push: "ask",
   own: "ask",
 };
+
+/**
+ * The rows full access leaves to their own switch: the owner may give the captain everything else and
+ * still merge, or push, themselves.
+ */
+export const FULL_ACCESS_KEEPS: readonly AuthorityRow[] = ["merge", "push"];

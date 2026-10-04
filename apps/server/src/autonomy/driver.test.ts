@@ -71,6 +71,9 @@ function fakes(wakeGate?: ConstructorParameters<typeof AutonomyDriver>[0]["wakeG
     explained: new Set<string>(),
     /** Whether a workspace has backlog, a finding or a decision waiting. */
     work: true,
+    /** Every task of the store, any workspace. */
+    all: [] as Record<string, unknown>[],
+    incidents: {} as Record<string, string[]>,
   };
   const ticks: string[][] = [];
   const tickOrgs: string[] = [];
@@ -81,6 +84,8 @@ function fakes(wakeGate?: ConstructorParameters<typeof AutonomyDriver>[0]["wakeG
   const autonomy = {
     repo: { state: () => ({ mode: state.mode, queue: [], holds: [] }), tasks: () => [] },
     mode: () => state.mode,
+    machineLine: () => undefined,
+    machineBusy: () => undefined,
     runsOrgs: async () => ["acme"],
     laneChats: () => Object.values(lanes),
     laneOrg: (task: string) => Object.entries(lanes).find(([, chat]) => chat === task)?.[0],
@@ -119,12 +124,13 @@ function fakes(wakeGate?: ConstructorParameters<typeof AutonomyDriver>[0]["wakeG
     store: {
       tasks: {
         get: (id: string) => (state.running.has(id) ? { id, status: "running", org: "acme" } : undefined),
-        list: () => [],
+        list: () => state.all,
       },
     } as unknown as Store,
     events: new EventHub(),
     explained: (task: string) => (state.explained.has(task) ? "held" : undefined),
     pendingWork: async () => state.work,
+    incidentLines: (org: string) => state.incidents[org] ?? [],
     ...(wakeGate === undefined ? {} : { wakeGate }),
   });
   return { driver, state, ticks, tickOrgs, told, toldIn, skipped };
@@ -366,6 +372,70 @@ describe("wakes carry news only", () => {
     f.driver.findingNews("acme", "New finding #5 (low): Acme readme is thin");
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
     expect(f.told[1]).not.toContain("The owner decides when work starts");
+  });
+});
+
+describe("the lane runs the whole workspace", () => {
+  const task = (id: string, org: string, status: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    org,
+    status,
+    title: `Task ${id}`,
+    kind: "code",
+    ...extra,
+  });
+
+  it("shows its own workspace's incidents, review and paused tasks, never another's", async () => {
+    const f = fakes();
+    f.state.all = [
+      task("ACM-5", "acme", "review"),
+      task("GLX-5", "globex", "review"),
+      task("ACM-6", "acme", "paused", { pausedReason: "limit" }),
+      task("ACM-7", "acme", "paused"),
+      task("GLX-6", "globex", "paused", { pausedReason: "error" }),
+    ];
+    f.state.incidents = {
+      acme: ["incident #3 [high, not acknowledged] Acme site is down"],
+      globex: ["incident #4 [high, not acknowledged] Globex api is down"],
+    };
+    f.driver.wake("A card waits", "acme");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    const text = f.told[0] ?? "";
+    expect(text).toContain("incident #3 [high, not acknowledged] Acme site is down");
+    expect(text).toContain("ACM-5 Task ACM-5");
+    expect(text).toContain("ACM-6 Task ACM-6 (because an account limit was reached)");
+    expect(text).toContain("ACM-7 Task ACM-7 (by you: the owner's, leave it paused)");
+    expect(text).not.toContain("Globex");
+    expect(text).not.toContain("GLX-");
+  });
+
+  it("wakes the lane for a task of the workspace that enters review or pauses, and never for an owner pause", async () => {
+    const f = fakes();
+    f.state.all = [task("ACM-8", "acme", "running"), task("ACM-9", "acme", "running")];
+    f.driver.start();
+    f.state.all = [
+      task("ACM-8", "acme", "review"),
+      task("ACM-9", "acme", "paused", { pausedReason: "error" }),
+    ];
+    f.driver.checkTasks();
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.ticks[0]).toEqual([
+      "ACM-8 is ready for review: Task ACM-8",
+      "ACM-9 paused (error): Task ACM-9",
+    ]);
+    expect(changeOf({ id: "ACM-1", title: "T", status: "paused", pausedReason: "owner" })?.wake).toBe(false);
+    expect(changeOf({ id: "ACM-1", title: "T", status: "paused", pausedReason: "limit" })?.wake).toBe(true);
+  });
+
+  it("wakes the lane when its workspace gets a new incident", async () => {
+    const f = fakes();
+    f.driver.wake("A card waits", "acme");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    f.state.incidents = { acme: ["incident #9 [high, not acknowledged] Acme site is down"] };
+    f.driver.wake("Incident #9 (high) in Acme: Acme site is down", "acme");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.ticks.at(-1)).toEqual(["Incident #9 (high) in Acme: Acme site is down"]);
+    expect(f.told.at(-1)).toContain("incident #9");
   });
 });
 

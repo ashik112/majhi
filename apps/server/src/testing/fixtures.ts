@@ -74,6 +74,7 @@ export function testEnv(dir: string, overrides: Partial<ServerEnv> = {}): Server
       network: "majhi-runners",
       mcpHost: "majhi-server",
       memory: "4g",
+      cpus: "2",
       // Never the real CLI: a test must not touch the machine's containers.
       docker: "/nonexistent/docker",
       cliEnv: { PATH: process.env.PATH ?? "/usr/bin:/bin" },

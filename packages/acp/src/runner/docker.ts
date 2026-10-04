@@ -21,6 +21,8 @@ export interface RunnerConfig {
   user?: string | undefined;
   /** Memory cap per run, like `4g`. */
   memory?: string | undefined;
+  /** CPU cap per run, like `2`: one heavy run (a whole test suite) must not take the machine. */
+  cpus?: string | undefined;
   /** Process cap per run. */
   pidsLimit?: number | undefined;
   /** The docker CLI. Default `docker`. */
@@ -194,6 +196,8 @@ export function dockerRunArgs(
     String(cfg.pidsLimit ?? 2048),
     "--memory",
     cfg.memory ?? "4g",
+    "--cpus",
+    cfg.cpus ?? "1",
   ];
   if (cfg.user) args.push("--user", cfg.user);
   args.push("--workdir", req.scratch ? "/tmp" : req.cwd);

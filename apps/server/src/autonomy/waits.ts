@@ -12,9 +12,11 @@ const SIGNED_IN: readonly AccountStatus[] = ["healthy", "running-high", "relogin
 type Wait = NonNullable<QueueItem["waitFor"]>;
 
 /** Whether the account's state meets the wait. A state not known yet (never checked) meets nothing. */
-export function meets(wait: Wait, status: AccountStatus | undefined): boolean {
+export function meets(wait: Wait, status: AccountStatus | undefined, full = false): boolean {
   if (status === undefined || !SIGNED_IN.includes(status)) return false;
-  return wait.state === "signed-in" || status !== "at-limit";
+  if (wait.state === "signed-in") return true;
+  // "available" also needs a free per-account slot: starting refuses while it is full.
+  return status !== "at-limit" && !full;
 }
 
 /** The account's state in words. */
@@ -51,13 +53,14 @@ export function evaluateWaits(
   statusOf: (account: string) => AccountStatus | undefined,
   now: Date,
   paused: (task: string) => boolean,
+  fullOf: (account: string) => boolean = () => false,
 ): { queue: QueueItem[]; lifted: Lifted[]; changed: boolean } {
   const lifted: Lifted[] = [];
   let changed = false;
   const next = queue.map((item) => {
     const wait = item.waitFor;
     if (wait === undefined) return item;
-    const ok = meets(wait, statusOf(wait.account));
+    const ok = meets(wait, statusOf(wait.account), fullOf(wait.account));
     if (ok && item.readyAt === undefined) {
       changed = true;
       const ready = { ...item, readyAt: now.toISOString() };
@@ -89,13 +92,14 @@ export function waitProblem(
   item: QueueItem,
   statusOf: (account: string) => AccountStatus | undefined,
   known: (account: string) => boolean,
+  fullOf: (account: string) => boolean = () => false,
 ): string | undefined {
   const wait = item.waitFor;
   if (wait === undefined) return undefined;
   if (!known(wait.account))
     return `There is no account ${wait.account}. Check majhi_accounts_list for the ids.`;
   const status = statusOf(wait.account);
-  if (!meets(wait, status)) return undefined;
+  if (!meets(wait, status, fullOf(wait.account))) return undefined;
   const what = item.task === undefined ? `"${item.title}"` : item.task;
   return `${wait.account} is ${stateWords(status)} right now, so ${what} does not wait for it. Start or resume it now instead of planning around it.`;
 }

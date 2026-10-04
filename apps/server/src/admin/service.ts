@@ -19,6 +19,7 @@ import { z } from "zod";
 import { auditDetail } from "../audit.ts";
 import type { AutonomyVerdict } from "../autonomy/policy.ts";
 import { BUSINESS_TOOL_COMMANDS } from "../business/handlers.ts";
+import { authorityOf, keptRowOf } from "../captain/levels.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
 import type { ChangeRecord, ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
@@ -305,11 +306,17 @@ export class AdminService {
     return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
   }
 
-  /** Whether the owner gave the captain full access in the workspace of the caller's task. */
-  private async fullAccess(caller: AdminCaller): Promise<boolean> {
+  /**
+   * Whether the owner gave the captain full access in the workspace of the caller's task, for this
+   * command: merging and pushing still follow their own row.
+   */
+  private async fullAccess(caller: AdminCaller, command: string): Promise<boolean> {
     const org = this.deps.store.tasks.get(caller.task)?.org;
     if (org === undefined) return false;
-    return (await this.deps.config.settings()).autonomy.orgs[org]?.fullAccess === true;
+    const { autonomy } = await this.deps.config.settings();
+    if (autonomy.orgs[org]?.fullAccess !== true) return false;
+    const row = keptRowOf(command);
+    return row === undefined || authorityOf(autonomy, org)[row] === "decide";
   }
 
   private async callCommand(
@@ -364,7 +371,7 @@ export class AdminService {
       mode !== "confirm" &&
       !PERMISSION_COMMANDS.has(command) &&
       !isDestructiveCommand(command) &&
-      (await this.fullAccess(caller));
+      (await this.fullAccess(caller, command));
     // A saved rule turns a card that would wait into a run. It is looked up only then.
     const decision = full ? "run" : decideMode(mode, ownerAsked);
     const rule =

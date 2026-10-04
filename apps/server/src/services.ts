@@ -108,6 +108,8 @@ import { clientUpdate } from "./growth/update.ts";
 import type { HandoffService } from "./handoff/service.ts";
 import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
 import type { HostLink } from "./host/link.ts";
+import { busyReason } from "./machine/busy.ts";
+import { MachineSensor } from "./machine/sensor.ts";
 import { RecommendationRepo } from "./inbox/recommendations.ts";
 import { InboxService } from "./inbox/service.ts";
 import { InstallRequests } from "./installs/service.ts";
@@ -137,6 +139,7 @@ import type { WatchEngine } from "./ops/anything/engine.ts";
 import { createWatchHost } from "./ops/anything/host.ts";
 import type { ProbePorts } from "./ops/probes.ts";
 import { opsRunners } from "./ops/runner.ts";
+import { incidentLines } from "./ops/digest-lines.ts";
 import type { OpsWatch } from "./ops/watch.ts";
 import { createOps, type Ops } from "./ops/wire.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
@@ -337,6 +340,8 @@ export interface Services {
   cleanup: CleanupService;
   /** Frees dependency folders and build output of done tasks (5.18 Cleanup). */
   folderSweep: TaskFolderSweep;
+  /** The owner's computer and majhi's containers, polled every 45 s. */
+  machine: MachineSensor;
   mrPoller: MrPoller;
   /** Jira, ClickUp and GitHub Issues per org: pull into Up next, push, write MR links and status back (5.11). */
   trackers: TrackerService;
@@ -1275,7 +1280,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     // Bound below: autonomous mode measures the spend.
     rest: (org, account) => autonomy.laneRest(org, account),
   });
+  const machine = new MachineSensor({
+    host: async () =>
+      options.hostLink?.isConnected() === true
+        ? await options.hostLink.call("machine.read", {}, 15_000)
+        : undefined,
+    docker: dockerCli(env.runner.cliEnv),
+    onChange: () => autonomy.machineRead(),
+  });
   const autonomy = new AutonomyService({
+    machine: () => machine.get(),
     lanes,
     typing: (task) => events.typing.holds(task),
     protectedProjects: async () =>
@@ -1324,6 +1338,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       explained: (task) => autonomy.stallExplained(task),
       pendingWork: (org) => autonomy.pendingWork(org, findingsStore?.openCount(org) ?? 0),
       findingLines: (org) => findingsStore?.digestLines(org) ?? [],
+      incidentLines: (org) => incidentLines(opsWatch?.openIncidents() ?? [], org),
       projectLines: (org) => cards.digestLines(org),
       // Laya reads what changed before a soft wake costs a captain turn; any doubt takes the turn.
       wakeGate: new WakeGate(decisions),
@@ -1469,6 +1484,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     spawner: sessionOptions.spawner ?? localSpawner,
     base: sessionOptions.base,
     repoMounts: (task) => repoMounts(task),
+    // A hand-off check that starts containers (a repo's own test of its deploy files) reaches the task's through majhi.
+    dockerShim: (task) => {
+      const shim = roomAccess.attachDocker({ task, agent: store.tasks.get(task)?.team[0] ?? "handoff" });
+      return shim === undefined
+        ? undefined
+        : { env: shim.env, release: () => roomAccess.revoke([shim.entry]) };
+    },
     mergeDecides: async (org) => authorityOf((await config.settings()).autonomy, org).merge === "decide",
     autonomous: () => autonomy.mode() === "on",
     ruleOff: (org, rule) => ruleSwitches.off(org, rule),
@@ -1500,6 +1522,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     fresh: (chat, agent) => tasks.fresh(chat, agent),
     ports: captainWorld({
+      machineBusy: () => busyReason(machine.get()?.host),
       store,
       accounts,
       config,
@@ -1702,6 +1725,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     accountSignedIn: async (id) => signedIn((await accounts.health(id, true)).account.status),
     ...(options.runClock === undefined ? {} : { now: () => (options.runClock?.() ?? new Date()).getTime() }),
   });
+  if (options.hostLink !== undefined) machine.start();
   options.hostLink?.onWake(() => background.run(() => resilience.wake()));
   background.run(
     () => resilience.startup(),
@@ -2049,6 +2073,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     pendingShips,
     cleanup,
     folderSweep,
+    machine,
     notifier,
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
     trackers,
@@ -2095,6 +2120,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       const settled = background.stop();
       resilience.stop();
       connect.stop();
+      machine.close();
       autonomy.close();
       captain.close();
       playbooks.close();

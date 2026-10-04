@@ -104,7 +104,8 @@ describe("a night with the captain deciding in Private and asking about everythi
     expect(priv).toMatchObject({
       authority: { start: "decide", upkeep: "decide", merge: "decide" },
       effective: { start: "decide", upkeep: "decide", merge: "decide" },
-      summary: "shipped 1",
+      // The owner checklist asks about the backup this world never made.
+      summary: "shipped 1, 2 things for you",
       budget: { cost: 5 },
     });
     expect(priv?.used.cost ?? 0).toBeLessThanOrEqual(5);

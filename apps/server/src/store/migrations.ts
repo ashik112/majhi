@@ -1453,6 +1453,16 @@ ALTER TABLE triggers ADD COLUMN migrated_to TEXT;
 ALTER TABLE task_repos ADD COLUMN mr_review TEXT;
 `,
   },
+  {
+    // What waits for the owner is read on every page and tick: without this, each read scanned every
+    // room item and parsed its JSON. Cards are few next to messages, so their type narrows it. Not an
+    // index on the JSON state: one item with a payload that is not JSON would make it fail.
+    id: 147,
+    name: "room items by type",
+    sql: `
+CREATE INDEX room_items_type ON room_items(type);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

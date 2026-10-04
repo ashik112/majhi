@@ -16,6 +16,11 @@ export interface ExecDeps {
   task: (id: string) => Task | undefined;
   /** Each task repo's `.git`, as a run mounts them. */
   repoMounts: (task: Task) => Promise<RunMount[]>;
+  /**
+   * What the check's `docker` needs to reach this task's containers through majhi: the shim's two
+   * variables, and the end of the token. Absent when majhi cannot run containers.
+   */
+  dockerShim?: ((task: string) => { env: Record<string, string>; release: () => void } | undefined) | undefined;
 }
 
 /** Hides what looks like a secret in text that came out of a command. */
@@ -42,15 +47,17 @@ export function execInTask(deps: ExecDeps) {
     if (task === undefined)
       return { code: null, timedOut: false, output: "", ms: 0, error: "the task is gone" };
     let spawned: Awaited<ReturnType<Spawner>>;
+    const shim = deps.dockerShim?.(taskId);
     try {
       spawned = await deps.spawner({
         command: { command: "/bin/sh", args: ["-c", command] },
-        env: taskTerminalEnv(deps.base),
+        env: { ...taskTerminalEnv(deps.base), ...shim?.env },
         cwd,
         task: taskId,
         mounts: [{ path: task.folder }, ...(await deps.repoMounts(task))],
       });
     } catch (err) {
+      shim?.release();
       return { code: null, timedOut: false, output: "", ms: Date.now() - started, error: errorMessage(err) };
     }
     const { child } = spawned;
@@ -69,6 +76,7 @@ export function execInTask(deps: ExecDeps) {
         if (done) return;
         done = true;
         clearTimeout(timer);
+        shim?.release();
         resolve({
           code,
           timedOut,

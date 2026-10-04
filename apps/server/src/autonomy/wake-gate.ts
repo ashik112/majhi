@@ -26,6 +26,9 @@ export const ALWAYS_TURN: ReadonlySet<string> = new Set([
   "findings",
   "workspace",
   "starts",
+  "incidents",
+  "review",
+  "paused",
 ]);
 
 export interface FactsDiff {

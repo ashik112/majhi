@@ -16,6 +16,7 @@ import {
   type AutonomyNow,
   type AutonomyPatch,
   AutonomyPlanInputSchema,
+  type AutonomyReport,
   type AutonomySettings,
   type AutonomySpend,
   type AutonomyStatus,
@@ -32,7 +33,9 @@ import {
   detectSecrets,
   type GitLoginsResult,
   isCaptainLane,
+  type MachineReading,
   PRIVATE,
+  type QueueItem,
   type RoomItem,
   type Spend,
   type Task,
@@ -65,6 +68,7 @@ import type { ConfigSections } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
+import { busyReason, machineLine, upperFirst } from "../machine/busy.ts";
 import type { RoomService } from "../room/service.ts";
 import { noRoomLine } from "../runs/limits.ts";
 import type { RunManager } from "../runs/manager.ts";
@@ -90,7 +94,8 @@ import {
 import { authorityProblem, leftOutWhy, type OrgNames, orgName, pickLines } from "./pick.ts";
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
 import { AutonomyRepo, type HeldReason, STOPPED_NOW } from "./repo.ts";
-import { areasOf, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
+import { pathsOf, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
+import { finishedByDay, hourlySpend } from "./report.ts";
 import { mayResume, pausedLabel, type ResumeEnv, resumeRefusal } from "./resume.ts";
 import { type SizeOf, type SizeRater, sizeProblem, TaskSizes } from "./sizes.ts";
 import {
@@ -155,6 +160,8 @@ export interface AutonomyDeps {
    * a turn that is running is never stopped by it (SPEC 5.18, one cost ceiling).
    */
   ceilingHeld?: () => string | undefined;
+  /** The last reading of the owner's computer and majhi's containers (the machine sensor). */
+  machine?: () => MachineReading | undefined;
   now?: () => Date;
 }
 
@@ -801,6 +808,26 @@ export class AutonomyService {
     });
   }
 
+  /** Why new work must not start on a loaded computer, or undefined. */
+  machineBusy(): string | undefined {
+    return busyReason(this.deps.machine?.()?.host);
+  }
+
+  /** The "Machine" line of the digest, or undefined when no sensor runs. */
+  machineLine(): string | undefined {
+    const reading = this.deps.machine?.();
+    return this.deps.machine === undefined ? undefined : machineLine(reading);
+  }
+
+  private wasBusy = false;
+
+  /** The sensor read again: wakes the captain once when a busy machine has calmed down. */
+  machineRead(): void {
+    const busy = this.machineBusy() !== undefined;
+    if (this.wasBusy && !busy) this.wake("The machine is no longer busy", undefined, "news");
+    this.wasBusy = busy;
+  }
+
   /** True while the mode is On: agent slots are shared evenly across workspaces (5.18). */
   slotsFair(): boolean {
     try {
@@ -910,8 +937,18 @@ export class AutonomyService {
 
   /** Why the task's agents would only wait for a slot now, or undefined when there is room. */
   private async noRoomFor(task: Pick<Task, "team">): Promise<string | undefined> {
+    const busy = this.machineBusy();
+    if (busy !== undefined) return `${upperFirst(busy)}.`;
     const accounts = await this.teamAccountIds(task);
     return noRoomLine(await this.deps.runs.capacity(accounts), accounts);
+  }
+
+  /** Whether each account a queue item waits for has no free slot now: a full slot is a reason to wait. */
+  private async fullAccounts(queue: readonly QueueItem[]): Promise<(account: string) => boolean> {
+    const accounts = [...new Set(queue.flatMap((q) => (q.waitFor === undefined ? [] : [q.waitFor.account])))];
+    if (accounts.length === 0) return () => false;
+    const capacity = await this.deps.runs.capacity(accounts).catch(() => undefined);
+    return (account) => capacity?.accounts.find((a) => a.account === account)?.free === 0;
   }
 
   /**
@@ -930,6 +967,7 @@ export class AutonomyService {
       (id) => status.get(id),
       this.now(),
       (task) => this.deps.store.tasks.get(task)?.status === "paused",
+      await this.fullAccounts(state.queue),
     );
     if (!found.changed) return;
     this.repo.setQueue(found.queue, state.queuedAt ?? this.now().toISOString());
@@ -1463,6 +1501,7 @@ export class AutonomyService {
       command === "tasks.start" ||
       ((command === "tasks.create" || command === "tasks.split") && input.start === true);
     if (!starts || (await this.callerKind(caller)) !== "boss") return undefined;
+    const busy = this.machineBusy();
     const { world, sections } = await this.context(caller, command, input);
     const named = this.teamAccounts(command, input, world, sections);
     // A new task with no team named gets one picked when it is made: it has room when any account
@@ -1478,11 +1517,13 @@ export class AutonomyService {
     const capacity = await this.deps.runs.capacity([...named, ...candidates]);
     const lines = candidates.map((a) => noRoomLine(capacity, [a]));
     const full =
-      candidates.length === 0
-        ? noRoomLine(capacity, named)
-        : lines.every((l) => l !== undefined)
-          ? lines[0]
-          : undefined;
+      busy !== undefined
+        ? `${upperFirst(busy)}.`
+        : candidates.length === 0
+          ? noRoomLine(capacity, named)
+          : lines.every((l) => l !== undefined)
+            ? lines[0]
+            : undefined;
     const then =
       command === "tasks.start"
         ? `${str(input.id) ?? "The task"} waits.`
@@ -1509,7 +1550,7 @@ export class AutonomyService {
   /**
    * The repo rule for a start the captain asked for: the one line when another task running or in
    * review already changes one of its repos on the same base branch, with no plan showing disjoint
-   * areas. A new task (no id yet) is judged on its repos and the paths its text names.
+   * files. A new task (no id yet) is judged on its repos and the paths its text names.
    */
   private async repoRuleCall(
     command: CommandName,
@@ -1526,7 +1567,7 @@ export class AutonomyService {
     if (command !== "tasks.create" || !Array.isArray(input.repos) || input.readOnly === true)
       return undefined;
     const text = `${str(input.title) ?? ""}\n${str(input.text) ?? ""}`;
-    const areas = areasOf(likelyPaths(text));
+    const paths = pathsOf(likelyPaths(text));
     const repos = (input.repos as { project?: unknown; base?: unknown; writes?: unknown }[]).flatMap((r) =>
       typeof r.project === "string"
         ? [
@@ -1537,7 +1578,7 @@ export class AutonomyService {
                 sections.projects[r.project]?.base ??
                 sections.orgs[org]?.base ??
                 "",
-              areas,
+              paths,
             },
           ]
         : [],
@@ -1569,7 +1610,7 @@ export class AutonomyService {
         .map((r) => ({
           project: r.project,
           base: r.base,
-          areas: areasOf(fps.find((f) => f.project === r.project)?.paths ?? []),
+          paths: pathsOf(fps.find((f) => f.project === r.project)?.paths ?? []),
         })),
     };
   }
@@ -2142,11 +2183,13 @@ export class AutonomyService {
       // A wait for an account is checked now: one that already holds is a stale belief, not a plan.
       const views = await this.deps.accounts.list().catch(() => [] as AccountView[]);
       const status = new Map(views.map((v) => [v.id, v.status]));
+      const full = await this.fullAccounts(parsed.data.items);
       for (const item of parsed.data.items) {
         const problem = waitProblem(
           item,
           (id) => status.get(id),
           (id) => status.has(id),
+          full,
         );
         if (problem !== undefined) return fail(`The queue was not saved. ${problem}`);
       }
@@ -2563,6 +2606,25 @@ export class AutonomyService {
     events: AutonomyEvent[];
   } {
     return { events: this.repo.events(q) };
+  }
+
+  /** The dashboard's charts: today's spend by hour and the tasks finished over the last `days` days. */
+  async report(days: number): Promise<AutonomyReport> {
+    const settings = (await this.deps.config.settings()).autonomy;
+    const tz = zoneOr(settings.tz);
+    const now = this.now();
+    const window = dayWindow(now, tz);
+    const first = dayStart(addDays(window.day, 1 - days), tz).toISOString();
+    return {
+      tz,
+      today: window.day,
+      hours: hourlySpend(
+        this.repo.spendTurns(window.start, window.end, this.spendChats()),
+        window.start,
+        now,
+      ),
+      days: finishedByDay(this.repo.eventsBetween(first, window.end), window.day, days, tz),
+    };
   }
 
   /** Autonomous tasks that are not done, newest first. */

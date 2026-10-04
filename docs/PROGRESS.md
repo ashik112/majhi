@@ -1,5 +1,16 @@
 # Progress
 
+## Auto-pilot runs the workspace, not only its backlog (merged)
+
+- **Dashboard.** The Captain page opens on an Auto-pilot dashboard while Auto-pilot is on: status counts that open their lists, a card per workspace, the captain's log, spend per hour against the day cap, tasks finished per day, and open tasks by state. New command `autonomy.report`.
+- **Beyond tasks.** The digest lists open incidents, tasks in review and paused tasks of the workspace. A task entering review or pausing wakes its lane. The captain works through alerts, review, paused tasks, failing watches and old Needs-you items each turn.
+- **Machine.** The host helper reads load, memory, pressure and disk; majhi reads `docker stats` of its runs. The digest has a Machine line, the captain starts nothing while the machine is busy, and a health check warns on sustained load. Each run takes 1 CPU by default (`MAJHI_RUNNER_CPUS`).
+- **Parallel work.** Tasks on one repo and branch run at once unless they name the same files. PRV-117: autonomy_plan can wait for a free account slot.
+- **Upkeep chores.** Discover tools (MCP servers and skills for the workspace's stack, proposed once, never again after a dismissal; skills installed with full access), Tidy up (failing connections, dirty worktrees named, idle tasks, long previews, dead watches, old Needs-you items), Health sweep (runs fixes, files majhi bugs), Owner checklist (backups, budgets, disk, account slots raised by one up to 4 with full access when the machine is calm).
+- **Docker in tasks.** A `docker` shim in the runner sends allow-listed commands to majhi, which runs them as the task's own hardened containers on its network, binds only inside the task folder, images allowed or built by the task. Hand-off checks get it too. No compose or published ports yet.
+- **Full access keeps Merge and Push.** Full access no longer overrides those two rows, so the captain can push and open MRs while the owner merges.
+- **Owner check:** a real hand-off check that starts containers (Pyzasoft voice test) passes in a runner after the deploy; the host helper is updated so the Machine line shows.
+
 ## Captain can check anything itself: script watches (built, merging)
 
 - **Script watch.** A watch kind that runs a short read-only script the captain writes (curl, jq, python3, node, kubectl, glab, gh) on majhi's clock in a throwaway runner container, with the workspace connections it names: their variables, and ID_TOKEN for a signed-in connection. Output is a number, a word, or JSON read at a path (series folds and formulas apply). Scripts that change something are refused when saved. The captain's fixed text says: no plain kind fits, write a script watch; custom (model) watches only when no script can check it.
