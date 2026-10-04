@@ -88,7 +88,7 @@ Each step ships on its own, with an end-to-end test that drives a real captain t
 6. Playbooks as data, with packs, goals and the per-channel outbound gate; the upkeep chores move onto them. This is the keystone. **Built (2026-10-04):** `apps/server/src/playbooks` (catalog and built-in packs as data, the scheduler, goals, the outbound gate, the uptime check), migration 132, the `playbooks.*`, `goals.*` and `outbound.*` commands and tools, the nine chores scheduled through their Upkeep playbooks, drafts and batches as Decisions, and the Playbooks page. Engineering playbooks are off and say "needs a sensor". No sender is connected to any channel yet.
 6a. Ops watch pack: service health sensors through connections, incidents, read-only investigation, fixes as merge requests, approved runbooks.
 7. Checked hand-off before ship decisions.
-8. Outcomes, scorecard, trust ladder and auto-mute.
+8. Outcomes, scorecard, trust ladder and auto-mute. **Built (2026-10-04):** `apps/server/src/outcomes`, migration 134, the `scorecard.*`, `trust.*` and `money.*` commands, the scorecard strip and sheet on the Captain page, the Trust decision kind, auto-mute, Auto for a channel only through an accepted promotion, and the one monthly cost ceiling with a P&L (Money panel on Health and usage, the Captain header's spend line). Not yet: draft edits as an outcome (drafts cannot be edited), Laya cloud fallback cost in the ceiling, incidents caught and goal progress on the scorecard.
 9. Sensors: CI status, lockfiles with OSV, end-of-life dates; security and dependency sweep and the tech radar as playbooks.
 10. Daily agenda and the morning brief.
 11. Client economics and client update drafts; the opportunities brief.
