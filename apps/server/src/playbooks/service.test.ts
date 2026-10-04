@@ -644,7 +644,7 @@ describe("what the owner changes", () => {
     expect(view).toMatchObject({ enabled: true, cadence: { kind: "daily", at: "12:00" } });
     expect(view?.nextRun).toBeDefined();
     const ids = (await t.service.list("acme")).playbooks.map((p) => p.playbook.pack);
-    expect(new Set(ids)).toEqual(new Set(["upkeep", "engineering", "ops", "business", "growth"]));
+    expect(new Set(ids)).toEqual(new Set(["upkeep", "engineering", "ops", "business"]));
   });
 });
 

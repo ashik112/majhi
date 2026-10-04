@@ -99,11 +99,6 @@ import { GitLoginService } from "./git/logins.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { whoAmI } from "./gitConnect/oauth.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
-import { feedsRunner } from "./growth/feeds.ts";
-import { keywordLines } from "./growth/gather.ts";
-import { OPPORTUNITIES_ID, opportunitiesHooks } from "./growth/opportunities.ts";
-import type { GrowthDeps } from "./growth/ports.ts";
-import { clientUpdate } from "./growth/update.ts";
 import { DEFAULT_HANDOFF_MEMORY, defaultHandoffCpus } from "./handoff/limits.ts";
 import type { HandoffService } from "./handoff/service.ts";
 import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
@@ -366,7 +361,6 @@ export interface Services {
   handoff: HandoffService;
   /** Client economics and the growth playbooks' views (5.18, step 11). */
   economics: EconomicsService;
-  growth: GrowthDeps;
   /** The knowledge base, voice, contacts and deadlines (5.19). */
   business: BusinessServices;
   /** The owner's agenda and the morning brief (5.18). */
@@ -1613,26 +1607,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     minutes: () => rateRepo.minutes(),
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
-  const growth: GrowthDeps = {
-    db: store.raw,
-    now: options.runClock ?? (() => new Date()),
-    findings,
-    ...business,
-    goals,
-    cards: new CardRepo(store.raw),
-    outbound,
-    cache: sensors.cache,
-    orgName: orgLabel,
-    write: async (task, prompt, parse) => {
-      try {
-        return (await housekeeper.ask(task, prompt, parse)).value;
-      } catch (err) {
-        if (err instanceof NoHousekeeper) return undefined;
-        throw err;
-      }
-    },
-  };
-  const opportunities = opportunitiesHooks(growth);
   // The ops watch adds its runner below, once the connections it reads through exist.
   const rulesTable: Record<string, RulesRunner> = {
     ...RULES_RUNNERS,
@@ -1640,12 +1614,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     // The weekly check of Laya's decisions, and a few old findings read each run.
     "laya-eval": layaEvalRunner({ decisions, backlog: findings }),
     economics: economicsRunner(economics, orgLabel),
-    "client-update": clientUpdate(growth),
-    feeds: feedsRunner({
-      net: sensors.net,
-      cache: sensors.cache,
-      keywords: async (org) => keywordLines(growth, org),
-    }),
   };
   const playbooks = new PlaybookService({
     catalog: playbookCatalog,
@@ -1674,8 +1642,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         throw err;
       }
     },
-    preflight: { [OPPORTUNITIES_ID]: (org) => opportunities.preflight(org) },
-    context: { [OPPORTUNITIES_ID]: (org) => opportunities.context(org) },
     repo: new PlaybookRepo(store.raw),
     captain,
     findings,
@@ -2138,7 +2104,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outcomes,
     handoff,
     economics,
-    growth,
     business,
     agenda,
     captainTell: new CaptainTell({

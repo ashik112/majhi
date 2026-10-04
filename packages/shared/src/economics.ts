@@ -1,7 +1,5 @@
 import { z } from "zod";
-import { DeadlineSchema } from "./business.ts";
 import { IdSchema } from "./ids.ts";
-import { DraftSchema } from "./playbooks.ts";
 
 /**
  * Client economics and the growth playbooks' small views (SPEC 5.18, captain v2 step 11). Economics
@@ -87,28 +85,8 @@ export function changeWord(p: Pair): string {
 // ---------------------------------------------------------------------------
 // Opportunities and feeds
 
-/** A finding that carries a deadline holds one evidence line `deadline:YYYY-MM-DD`. */
-export const DEADLINE_EVIDENCE = "deadline:";
-
-/** The deadline day a finding carries, or undefined. */
-export function findingDeadline(evidence: readonly string[]): string | undefined {
-  for (const e of evidence) {
-    const m = /^deadline:(\d{4}-\d{2}-\d{2})$/.exec(e);
-    if (m?.[1] !== undefined) return m[1];
-  }
-  return undefined;
-}
-
 /** The effort an opportunity states in its detail ("Effort: medium."), or undefined. */
 export function opportunityEffort(detail: string): "small" | "medium" | "large" | undefined {
   const m = /^effort:\s*(small|medium|large)\b/im.exec(detail);
   return m?.[1] === undefined ? undefined : (m[1].toLowerCase() as "small" | "medium" | "large");
 }
-
-export const FindingProposalInputSchema = z.object({ id: z.number().int().positive() });
-export const FindingProposalResultSchema = z.object({
-  draft: DraftSchema,
-  text: z.string(),
-});
-export const FindingDeadlineInputSchema = z.object({ id: z.number().int().positive() });
-export const FindingDeadlineResultSchema = z.object({ deadline: DeadlineSchema });
