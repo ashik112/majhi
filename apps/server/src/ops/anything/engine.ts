@@ -121,6 +121,7 @@ function span(ms: number): string {
 }
 
 const NUMERIC_KINDS = new Set([
+  "script",
   "website",
   "database",
   "redis",

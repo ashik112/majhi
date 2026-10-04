@@ -46,10 +46,22 @@ export function sameRule(a: AllowRule, b: AllowRule): boolean {
 const SENSITIVE_KEY = /pass(word|phrase)?|secret|token|api[_-]?key|private|credential|^value$/i;
 export const REDACTED = "[redacted]";
 
+/** What a command answered never names a secret `value` field: `value` there is a reading or a result. */
+const SENSITIVE_OUTPUT_KEY = /pass(word|phrase)?|secret|token|api[_-]?key|private|credential/i;
+
+/** A copy of a command's answer safe to show: secret-looking strings and fields hidden, a plain `value` kept. */
+export function redactOutput(output: unknown): unknown {
+  return redactWith(output, SENSITIVE_OUTPUT_KEY);
+}
+
 /** A copy of the input safe to show in the room: secret-looking fields and strings are hidden. */
 export function redact(input: unknown): unknown {
+  return redactWith(input, SENSITIVE_KEY);
+}
+
+function redactWith(input: unknown, sensitive: RegExp): unknown {
   if (typeof input === "string") return redactText(input);
-  if (Array.isArray(input)) return input.map(redact);
+  if (Array.isArray(input)) return input.map((v) => redactWith(v, sensitive));
   if (typeof input === "object" && input !== null) {
     const out: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(input)) {
@@ -58,9 +70,9 @@ export function redact(input: unknown): unknown {
       // Commands type every secret as text, so a count like `inputTokens: 1200` is not one.
       const plain = typeof value === "number" || typeof value === "boolean";
       out[key] =
-        SENSITIVE_KEY.test(key) && !isRef && !plain && value !== null && value !== ""
+        sensitive.test(key) && !isRef && !plain && value !== null && value !== ""
           ? REDACTED
-          : redact(value);
+          : redactWith(value, sensitive);
     }
     return out;
   }

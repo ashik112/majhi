@@ -12,7 +12,7 @@ import type {
   Remount,
   TaskId,
 } from "@majhi/shared";
-import { RESTART_COMMAND, sameImage } from "@majhi/shared";
+import { PRIVATE, RESTART_COMMAND, sameImage } from "@majhi/shared";
 import type { z } from "zod";
 import { openBossChat, openChat } from "../admin/boss.ts";
 import { cardStats } from "../admin/card-stats.ts";
@@ -549,6 +549,31 @@ export function createHandlers({
     "tasks.list": async (input) =>
       services.tasks.list(input.includeDone === true).filter((t) => t.lane !== true),
     "tasks.get": async (input) => services.tasks.get(input.id),
+    "captain.reportBug": async (input, ctx) => {
+      // majhi's own code: the Private project named majhi, or the one whose folder is called majhi.
+      const own = (await services.projects.list()).find(
+        (p) => p.org === PRIVATE && (p.id === "majhi" || /[\\/]majhi$/.test(p.path)),
+      );
+      if (own === undefined) {
+        throw new UserError(
+          "No project in the Private workspace is majhi's own code. Tell the owner the bug instead.",
+          404,
+        );
+      }
+      const text = `majhi bug: ${input.title}\n\n${input.details}`;
+      const captured = await services.secretService.capture(text);
+      const task = await services.tasks.create({
+        text: captured.text,
+        org: PRIVATE,
+        repos: [{ project: own.id }],
+        attachments: [],
+        start: false,
+        from: ctx.meta.task,
+        byOwner: false,
+      });
+      noteSecrets(services, task.id, captured.saved);
+      return { task: task.id };
+    },
     "tasks.create": async (input, ctx) => {
       // A secret in the task text must not reach TASK.md or the agent.
       const captured = await services.secretService.capture(input.text);

@@ -32,7 +32,7 @@ import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
 import { startingBranches } from "../tasks/brief.ts";
 import type { TaskService } from "../tasks/service.ts";
-import { decide as decideMode, matchRule, redact, redactText, sameRule } from "./policy.ts";
+import { decide as decideMode, matchRule, redact, redactOutput, redactText, sameRule } from "./policy.ts";
 import { summarize } from "./summary.ts";
 import type { AdminCaller } from "./tokens.ts";
 import { adminTools, REQUEST_SECRET_TOOL } from "./tools.ts";
@@ -1082,7 +1082,7 @@ function error(text: string): ToolResult {
 
 /** The whole output for the agent, without secrets, cut at a limit. */
 function textOf(output: unknown): string {
-  const text = JSON.stringify(redact(reposFirst(output)), null, 2) ?? "ok";
+  const text = JSON.stringify(redactOutput(reposFirst(output)), null, 2) ?? "ok";
   return text.length > RESULT_MAX ? `${text.slice(0, RESULT_MAX)}\n... (cut)` : text;
 }
 
@@ -1118,6 +1118,6 @@ function lowerFirst(text: string): string {
 
 /** One short line for the card. */
 function lineOf(output: unknown): string {
-  const text = `${branchesOf(output)}${JSON.stringify(redact(output)) ?? "ok"}`;
+  const text = `${branchesOf(output)}${JSON.stringify(redactOutput(output)) ?? "ok"}`;
   return text.length > LINE_MAX ? `${text.slice(0, LINE_MAX - 3)}...` : text;
 }
