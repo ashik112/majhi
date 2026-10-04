@@ -133,7 +133,7 @@ function NumberField({
 export function ContextSection({ settings }: { settings: Settings }) {
   const context = useSettingsDraft(settings, ["contextCap", "compactAt", "compactTarget", "maxTurns"]);
   const limits = useSettingsDraft(settings, ["agentsMax", "perAccount", "perTask", "idleTimeout"]);
-  const resume = useSettingsDraft(settings, ["resumeAuto"]);
+  const resume = useSettingsDraft(settings, ["resumeAuto", "resumeHandoff"]);
   const commits = useSettingsDraft(settings, ["commitsAttribution"]);
   return (
     <>
@@ -179,11 +179,20 @@ export function ContextSection({ settings }: { settings: Settings }) {
           : the auto-pilot budget, each workspace's budget, account floors and weekly budgets.
         </p>
       </Section>
-      <Section title="Resume" note="Runs that stopped before they finished" draft={resume}>
+      <Section
+        title="Resume"
+        note="Runs that stopped before they finished, and accounts that ran out"
+        draft={resume}
+      >
         <Switch
           label="Resume interrupted runs on their own"
           checked={resume.form.resumeAuto}
           onChange={(v) => resume.set("resumeAuto", v)}
+        />
+        <Switch
+          label="Hand off to the fallback agent at a usage limit"
+          checked={resume.form.resumeHandoff}
+          onChange={(v) => resume.set("resumeHandoff", v)}
         />
       </Section>
       <Section

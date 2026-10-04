@@ -2,7 +2,7 @@ import type { AccountView, OrgView, ToolInfo, UsageBreakdown, UsageTotals } from
 import { PageLink } from "@/components/ui/page-link";
 import { RowsSkeleton } from "@/components/ui/skeleton";
 import { Dot, toneText } from "@/components/ui/status-dot";
-import { orgLabel, statusText } from "@/features/accounts/model";
+import { limitUntilText, orgLabel, statusText } from "@/features/accounts/model";
 import { WindowMeter } from "@/features/accounts/window-meter";
 import { CostText } from "@/features/usage/cost";
 import { cn } from "@/lib/cn";
@@ -127,6 +127,11 @@ function AccountRow({
             · {tool} · {org}
           </span>
         </span>
+        {account.limit && (
+          <span className="cursor-help truncate text-xs text-red" title={account.limit.detail}>
+            {limitUntilText(account.limit, now)}
+          </span>
+        )}
         <span className="truncate text-xs text-fg-faint">{plan.join(" · ")}</span>
       </div>
       {account.auth === "api-key" ? (

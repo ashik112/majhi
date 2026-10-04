@@ -1,5 +1,14 @@
 import type { AgentSession, PermissionAsk } from "@majhi/acp";
-import type { AgentLive, AuthMode, Perm, ProcessInfo, Task, ToolId, TurnsPatch } from "@majhi/shared";
+import type {
+  AccountLimit,
+  AgentLive,
+  AuthMode,
+  Perm,
+  ProcessInfo,
+  Task,
+  ToolId,
+  TurnsPatch,
+} from "@majhi/shared";
 import type { GateWrite } from "../connections/gate.ts";
 import type { RunConnections } from "../connections/run-files.ts";
 import type { ToolServer } from "../rooms/access.ts";
@@ -150,6 +159,12 @@ export class AgentRun {
   startFailure: StartFailure | undefined;
   /** The prompt of the turn that just failed goes back to the front of the queue, to send after a resume. */
   requeue = false;
+  /** The account's limit mark a failed turn just set: the loop hands off or pauses with it once the prompt is back in the queue. */
+  limitMark: AccountLimit | undefined;
+  /** The account whose usage limit paused this run, for the lift at its reset. Cleared when the run resumes. */
+  limitAccount: string | undefined;
+  /** The room already said this run's account limit passed while resuming is off. */
+  limitResetSaid = false;
   /** The running cost the agent reported when the current turn was sent, for the autonomy cap's mid-turn check. */
   costAtTurnStart: number | undefined;
   /** The running cost the agent reported last, USD. Undefined for tools that report none. */

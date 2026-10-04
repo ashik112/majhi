@@ -4,7 +4,7 @@ import type { AccountUsage } from "@majhi/shared";
 import { z } from "zod";
 import { looksExpired, SignInExpired } from "../auth-failure.ts";
 import { killTree } from "../exec.ts";
-import type { ContextCap, ToolDef, UsageContext } from "./types.ts";
+import type { ContextCap, LimitShapes, ToolDef, UsageContext } from "./types.ts";
 
 const RateWindow = z
   .looseObject({
@@ -144,8 +144,34 @@ export function codexCapEnv({ tokens, compactAt }: ContextCap): Record<string, s
   return { CODEX_CONFIG: JSON.stringify({ model_auto_compact_token_limit: Math.round(tokens * compactAt) }) };
 }
 
+/**
+ * What Codex prints when the account is out. Login: "You've hit your usage limit ... try again at
+ * 3:40 PM" or "try again in 2 days 3 hours 4 minutes", code usage_limit_reached. API key: "Rate
+ * limit reached for ... Please try again in 20s", insufficient_quota, "You exceeded your current
+ * quota".
+ */
+export const CODEX_LIMIT_SHAPES: LimitShapes = {
+  error: [
+    /\byou[\u2019']?ve hit your usage limit\b/i,
+    /\busage_limit_reached\b/i,
+    /\blimit reached\b/i,
+    /\brate_limit_exceeded\b/i,
+    /\binsufficient_quota\b/i,
+    /\bexceeded your current quota\b/i,
+    /\b429\b/,
+    /\btoo many requests\b/i,
+  ],
+  line: [
+    /^(?:error:\s*)?you[\u2019']?ve hit your usage limit\b/i,
+    /^(?:error:\s*)?rate limit reached for\b/i,
+    /^(?:error:\s*)?you exceeded your current quota\b/i,
+    /^(?:error|api error)\b.*\b(?:usage_limit_reached|insufficient_quota|rate_limit_exceeded)\b/i,
+  ],
+};
+
 export const codex: ToolDef = {
   capEnv: codexCapEnv,
+  limitShapes: CODEX_LIMIT_SHAPES,
   info: {
     id: "codex",
     name: "Codex",

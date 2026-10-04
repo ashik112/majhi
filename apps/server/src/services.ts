@@ -158,6 +158,7 @@ import type { Inspect } from "./runner/network.ts";
 import { type Runner, runnerSetup } from "./runner/setup.ts";
 import { DEFAULT_IDENTITY } from "./runs/checkpoint.ts";
 import { processLaunch, repoMounts } from "./runs/launch.ts";
+import { limitPauseText } from "./runs/limit.ts";
 import { RunManager } from "./runs/manager.ts";
 import { type Probe, probeFromSetting } from "./runs/network.ts";
 import { Resilience } from "./runs/resilience.ts";
@@ -445,6 +446,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     options: env.runtime,
     onRemoving: (id) => terminals.killKey(`login:${id}`),
     onChanged: () => events.emit(["accounts"]),
+    now: () => options.runClock?.() ?? new Date(),
   });
   const store = Store.open(env.majhiHome);
   const memory = createMemory(env.majhiHome, options.embedder);
@@ -508,18 +510,39 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     onChange: () => events.emit(["budgets"]),
     onLimit: (alert) => atLimit(alert, runs),
-    lift: () =>
-      liftLimits({
+    lift: async () => {
+      // Marks whose time passed go first, so the lift sees the account as free.
+      await accounts.expireLimits().catch(() => undefined);
+      await liftLimits({
         runs,
+        accountLimited: async (account) => (await accounts.limitOf(account)) !== undefined,
+        autoResume: async (task) => {
+          const found = store.tasks.get(task);
+          return found === undefined ? true : resilience.autoResume(found);
+        },
         // A run autonomous mode holds stays held when no budget does.
         limited: async (task, agent) => (await limitedRun(task, agent)) ?? autonomy.holdFor(task)?.why,
         pausedTasks: () =>
           store.tasks.list(false).filter((t) => t.status === "paused" && t.pausedReason === "limit"),
         start: (id) => tasks.start(id, "majhi"),
-      }),
+      });
+    },
   });
+  /** The account a run of this agent in this task uses: the captain's lane account, else the agent's own. */
+  const accountOfRun = async (task: string, agent: string): Promise<string | undefined> => {
+    const swap = await lanes.accountFor(task, agent).catch(() => undefined);
+    if (swap?.account !== undefined) return swap.account;
+    const stored = await agentStore.get(agent);
+    return stored === undefined ? undefined : stored.ok ? stored.agent.frontmatter.account : stored.account;
+  };
+  /** The account of this run and the usage limit that holds it now, if one does. */
+  const accountLimitOf = async (task: string, agent: string) => {
+    const account = await accountOfRun(task, agent);
+    const limit = account === undefined ? undefined : await accounts.limitOf(account);
+    return account === undefined || limit === undefined ? undefined : { account, limit };
+  };
   /** Whether a budget holds this agent's task: its org's budget, or its account's. */
-  const limitedRun = async (task: string, agent: string): Promise<string | undefined> => {
+  const budgetLimited = async (task: string, agent: string): Promise<string | undefined> => {
     const found = store.tasks.get(task);
     // The captain is how the owner raises a budget (SPEC 5.17): its chat is never held.
     if (found !== undefined && isBossChat(found)) return undefined;
@@ -528,6 +551,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     const account =
       stored === undefined ? undefined : stored.ok ? stored.agent.frontmatter.account : stored.account;
     return budgets.limitedFor({ org, account, task });
+  };
+  /** Whether a budget or the account's usage limit holds this agent's task. */
+  const limitedRun = async (task: string, agent: string): Promise<string | undefined> => {
+    const budget = await budgetLimited(task, agent);
+    if (budget !== undefined) return budget;
+    const held = await accountLimitOf(task, agent);
+    return held === undefined
+      ? undefined
+      : limitPauseText(held.account, held.limit.until, options.runClock?.() ?? new Date());
   };
   const usageRecorder = new UsageRecorder({
     repo: usageRepo,
@@ -695,6 +727,25 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     markSignedOut: async (account, detail) => {
       await accounts.markSignedOut(account, detail);
+    },
+    accountLimit: accountLimitOf,
+    markLimit: (account, failure) => accounts.markLimit(account, failure),
+    takeOver: (task, from, to) => tasks.takeOver(task, from, to),
+    fallbackFor: async (task, agent) => {
+      const found = store.tasks.get(task);
+      if (found === undefined || !(await resilience.handoffOn(found))) return undefined;
+      const stored = await agentStore.get(agent);
+      const fallback = stored?.ok ? stored.agent.frontmatter.fallback : undefined;
+      if (fallback === undefined || found.team.includes(fallback)) return undefined;
+      const target = await agentStore.get(fallback);
+      if (target === undefined || !target.ok) return undefined;
+      // The status folds in a sign-in, an unreachable account and a limit mark or a full window.
+      const view = (await accounts.list().catch(() => [])).find(
+        (v) => v.id === target.agent.frontmatter.account,
+      );
+      if (view === undefined || ["needs-login", "at-limit", "unreachable"].includes(view.status))
+        return undefined;
+      return (await budgetLimited(task, fallback)) === undefined ? fallback : undefined;
     },
     teamCanRun: async (task, agent) => {
       const team = store.tasks.get(task)?.team ?? [];

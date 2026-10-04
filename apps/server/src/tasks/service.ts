@@ -1107,6 +1107,35 @@ export class TaskService {
   }
 
   /**
+   * Puts `to` in `from`'s place at the same position, with `from`'s repos override, when
+   * `from`'s account hit its usage limit. It does not close `from`'s run: the run manager calls it
+   * from inside that run's own loop and ends the run itself. False when the swap cannot be made.
+   */
+  async takeOver(id: string, from: string, to: string): Promise<boolean> {
+    const task = this.deps.store.tasks.get(id);
+    if (task === undefined || task.status === "done") return false;
+    if (!task.team.includes(from) || task.team.includes(to)) return false;
+    try {
+      await this.checkMember(task, to);
+    } catch {
+      return false;
+    }
+    const held = await this.stopProcessesOf(id, from);
+    const at = this.now().toISOString();
+    this.deps.store.tasks.setTeam(
+      id,
+      task.team.map((a) => (a === from ? to : a)),
+      at,
+    );
+    // Only the repos carry over: a model or effort set for `from` may not exist on `to`'s account.
+    const { [from]: theirs, [to]: _replaced, ...rest } = task.overrides;
+    const repos = theirs?.repos;
+    this.deps.store.tasks.setOverrides(id, repos === undefined ? rest : { ...rest, [to]: { repos } }, at);
+    await this.afterProcessesOf(id, held, await this.teamChanged(id));
+    return true;
+  }
+
+  /**
    * Makes `agent` the lead (SPEC 5.18, lead handover). The owner, the captain and the current lead
    * may; any other agent is refused. The new lead is on the team or is added (it must be allowed in
    * the task's workspace, on an account that can run). The old lead stays as a builder unless

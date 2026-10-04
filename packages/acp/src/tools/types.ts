@@ -27,6 +27,17 @@ export interface UsageContext {
 }
 
 /**
+ * How a tool says that an account hit its usage, rate or credit limit (5.7). `error` is checked on
+ * an error's text. `line` is stricter, anchored at the start: it is checked on the first line of a
+ * turn's text, where the CLI prints its limit message and where an agent's own prose could also
+ * say "rate limit".
+ */
+export interface LimitShapes {
+  error: readonly RegExp[];
+  line: readonly RegExp[];
+}
+
+/**
  * A `ToolSpec` plus the tool's own CLI argv. These are appended to the adapter
  * command, so `claude-agent-acp --cli auth status --json` is
  * `adapter` + `authStatusArgs`. Adding a tool means writing one of these.
@@ -43,6 +54,8 @@ export interface ToolDef extends ToolSpec {
    * Rejects with a one-line message when the read fails.
    */
   readUsage(ctx: UsageContext): Promise<AccountUsage>;
+  /** The words this CLI uses when the account hit a limit. See `limitFailure`. */
+  limitShapes: LimitShapes;
   /** Extra env for API-key accounts, on top of the key itself. */
   apiKeyEnv?: Record<string, string>;
   /**

@@ -107,9 +107,11 @@ export type TurnsPatch = z.infer<typeof TurnsPatchSchema>;
 export const ResumeSettingsSchema = z.strictObject({
   /** Resume interrupted runs on their own. Orgs can turn it off. */
   auto: z.boolean().default(true),
+  /** When an agent's account hits its limit, its fallback agent takes over (5.7). Orgs can turn it off. */
+  handoff: z.boolean().default(true),
 });
 export type ResumeSettings = z.infer<typeof ResumeSettingsSchema>;
-export const ResumePatchSchema = z.strictObject({ auto: z.boolean() }).partial();
+export const ResumePatchSchema = z.strictObject({ auto: z.boolean(), handoff: z.boolean() }).partial();
 
 /**
  * Who a commit is attributed to (5.7): the agent as committer and a `Majhi-Task` trailer. On unless

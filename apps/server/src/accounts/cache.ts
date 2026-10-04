@@ -1,6 +1,8 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  type AccountLimit,
+  AccountLimitSchema,
   type AccountModels,
   AccountModelsSchema,
   type AccountUsage,
@@ -22,6 +24,8 @@ const CachedAccountSchema = z.object({
    * The account stays `needs-login` until a check confirms the sign-in works again.
    */
   signInFailed: z.object({ at: z.string(), detail: z.string() }).optional(),
+  /** A run hit the account's usage or rate limit. Holds until `until`, then it is cleared (5.7). */
+  limit: AccountLimitSchema.optional(),
 });
 export type CachedAccount = z.infer<typeof CachedAccountSchema>;
 
@@ -61,6 +65,7 @@ export class AccountCache {
     const before = await this.get(id);
     const next: CachedAccount = { health };
     if (before.usage !== undefined) next.usage = before.usage;
+    if (before.limit !== undefined) next.limit = before.limit;
     const failed = health.ok ? undefined : (extra.signInFailed ?? before.signInFailed);
     if (failed !== undefined) next.signInFailed = failed;
     if (extra.signedInAs !== undefined) next.signedInAs = extra.signedInAs;
@@ -86,6 +91,15 @@ export class AccountCache {
     };
     await this.setHealth(id, health, { signInFailed: { at: at.toISOString(), detail } });
     return !was;
+  }
+
+  /** Sets or, with undefined, clears the account's limit mark. Health, models and usage stay as they were. */
+  async setLimit(id: string, limit: AccountLimit | undefined): Promise<CachedAccount> {
+    const { limit: _before, ...rest } = await this.get(id);
+    const next: CachedAccount = limit === undefined ? rest : { ...rest, limit };
+    this.memory.set(id, next);
+    await this.writeDisk(id, next);
+    return next;
   }
 
   /** Stores the account's usage. Health and models stay as they were. */

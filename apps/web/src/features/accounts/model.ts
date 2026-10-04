@@ -1,4 +1,5 @@
 import {
+  type AccountLimit,
   type AccountStatus,
   type AccountUsage,
   type AccountView,
@@ -208,16 +209,115 @@ export function barTone(pct: number): "green" | "amber" | "red" {
   return tone === "neutral" ? "green" : tone === "amber" ? "amber" : "red";
 }
 
+/** When an account at its limit comes back: the run's limit error says, else the window that is full. */
+export function limitResetAt(account: Pick<AccountView, "limit" | "usage">): string | undefined {
+  return account.limit?.until ?? account.usage?.window?.resetsAt ?? account.usage?.weekly?.resetsAt;
+}
+
+/** "At limit until 3:40 PM", or "until about" when majhi guessed the reset. */
+export function limitUntilText(
+  limit: Pick<AccountLimit, "until" | "resetKnown">,
+  now: number,
+  locale?: string,
+) {
+  const about = limit.resetKnown ? "" : "about ";
+  return `At limit until ${about}${resetLabel(limit.until, now, locale)}`;
+}
+
 /** The status column: the status label, and for an account at its limit when it resets, like `Limit reached · 3:40 PM`. */
 export function statusText(
-  account: Pick<AccountView, "status" | "usage">,
+  account: Pick<AccountView, "status" | "usage" | "limit">,
   now: number,
   locale?: string,
 ): StatusInfo {
   if (account.status !== "at-limit") return statusInfo(account.status);
-  const resets = account.usage?.window?.resetsAt ?? account.usage?.weekly?.resetsAt;
+  const resets = limitResetAt(account);
   const label = resets ? `Limit reached · ${resetLabel(resets, now, locale)}` : "Limit reached";
   return { label, tone: "red" };
+}
+
+/** The account whose window is fullest, for the board's top bar. */
+export interface BusiestAccount {
+  id: string;
+  /** The fullest window's share, 100 while a run's limit error holds the account. */
+  pct: number;
+  /** "5h" or "Week". */
+  window: "5h" | "Week";
+  resetsAt?: string;
+  /** Set while a run's limit error holds the account. */
+  limit?: AccountLimit;
+  estimated: boolean;
+}
+
+/**
+ * The account of the workspace (every account when `org` is undefined) whose 5-hour or weekly window
+ * is fullest. An account held by a limit error counts as full. Undefined when no account has usage.
+ */
+export function busiestAccount(
+  accounts: readonly AccountView[],
+  org: string | undefined,
+): BusiestAccount | undefined {
+  let best: BusiestAccount | undefined;
+  for (const account of accounts) {
+    if (org !== undefined && account.org !== org) continue;
+    const usage = account.usage;
+    const windows: { window: "5h" | "Week"; usedPct: number; resetsAt?: string | undefined }[] = [];
+    if (usage?.window) windows.push({ window: "5h", ...usage.window });
+    if (usage?.weekly) windows.push({ window: "Week", ...usage.weekly });
+    let fullest = windows[0];
+    for (const w of windows) if (fullest !== undefined && w.usedPct > fullest.usedPct) fullest = w;
+    if (fullest === undefined && account.limit === undefined) continue;
+    const pct = account.limit ? 100 : (fullest?.usedPct ?? 0);
+    if (best !== undefined && pct <= best.pct) continue;
+    const resetsAt = account.limit?.until ?? fullest?.resetsAt;
+    best = {
+      id: account.id,
+      pct,
+      window: fullest?.window ?? "5h",
+      ...(resetsAt === undefined ? {} : { resetsAt }),
+      ...(account.limit === undefined ? {} : { limit: account.limit }),
+      estimated: usage?.estimated === true,
+    };
+  }
+  return best;
+}
+
+/**
+ * The top bar readout: "acme-claude 82% · resets 3:40 PM", or "acme-claude at limit until 3:40 PM".
+ * `value` is the part that is lit.
+ */
+export function busiestText(
+  b: BusiestAccount,
+  now: number,
+  locale?: string,
+): { head: string; value: string; rest: string } {
+  if (b.limit) {
+    const about = b.limit.resetKnown ? "" : "about ";
+    return {
+      head: b.id,
+      value: "at limit",
+      rest: ` until ${about}${resetLabel(b.limit.until, now, locale)}`,
+    };
+  }
+  const reset = b.resetsAt ? ` · resets ${resetLabel(b.resetsAt, now, locale)}` : "";
+  return { head: b.id, value: formatPct(b.pct), rest: `${reset}${b.estimated ? " est." : ""}` };
+}
+
+/** One line per account for the readout's tooltip: "acme-claude: 5h 82% · 3:40 PM, Week 31% · Thu". */
+export function usageTitle(
+  accounts: readonly AccountView[],
+  org: string | undefined,
+  now: number,
+  locale?: string,
+): string {
+  const lines: string[] = [];
+  for (const account of accounts) {
+    if (org !== undefined && account.org !== org) continue;
+    const parts = usageRows(account.usage, now, locale).map(usageRowText);
+    if (account.limit) parts.unshift(limitUntilText(account.limit, now, locale));
+    if (parts.length > 0) lines.push(`${account.id}: ${parts.join(", ")}`);
+  }
+  return lines.join("\n");
 }
 
 /** The auth column: "Signed in", "API key", or what is wrong with the login. */

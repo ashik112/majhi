@@ -116,7 +116,24 @@ describe("the context budget", () => {
     expect(compactCommand([{ name: "review" }])).toBeUndefined();
     expect(isContextError("prompt is too long: 210000 tokens > 200000 maximum")).toBe(true);
     expect(isContextError("context_length_exceeded")).toBe(true);
+    // Claude Code and Codex, as each CLI words it.
+    expect(
+      isContextError(
+        "API Error: 400 input length and `max_tokens` exceed context limit: 198000 + 32000 > 200000",
+      ),
+    ).toBe(true);
+    expect(
+      isContextError(
+        "Codex ran out of room in the model's context window. Start a new conversation or clear earlier history before retrying.",
+      ),
+    ).toBe(true);
+    expect(
+      isContextError(
+        "Your input exceeds the context window of this model. Please adjust your input and try again.",
+      ),
+    ).toBe(true);
     expect(isContextError("Permission denied")).toBe(false);
+    expect(isContextError("Claude AI usage limit reached|1760000000")).toBe(false);
   });
 });
 

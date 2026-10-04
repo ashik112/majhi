@@ -201,6 +201,15 @@ describe("lifecycle", () => {
     await expect(session.prompt(text("more"))).rejects.toThrow("closed");
   });
 
+  it("fails a prompt with the limit error a directive names, or answers it as the turn's text", async () => {
+    const { session, events } = await start();
+    const line = "Claude AI usage limit reached|1760000000";
+    await expect(session.prompt(text(`limit: ${line}`))).rejects.toThrow(line);
+    const out = await session.prompt(text(`limit-text: ${line}`));
+    expect(out.stopReason).toBe("end_turn");
+    expect(events.some((e) => e.type === "text" && e.text === line)).toBe(true);
+  });
+
   it("close kills the process group", async () => {
     const { session } = await start({ slowMs: 100 });
     const running = session.prompt(text("go"));

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { SignInExpired } from "../auth-failure.ts";
 import { exec } from "../exec.ts";
 import { CLAUDE_USAGE_SCRIPT } from "./claude-usage-helper.ts";
-import type { ContextCap, ToolDef, UsageContext } from "./types.ts";
+import type { ContextCap, LimitShapes, ToolDef, UsageContext } from "./types.ts";
 
 const AuthStatusJson = z.looseObject({
   loggedIn: z.boolean().optional(),
@@ -121,8 +121,36 @@ export function claudeCapEnv({ tokens, compactAt }: ContextCap): Record<string, 
   return { CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(Math.min(tokens, Math.max(CLAUDE_MIN_WINDOW, window))) };
 }
 
+/**
+ * What Claude Code prints when the account is out. Login: "Claude AI usage limit reached|<epoch>",
+ * "Claude usage limit reached. Your limit will reset at 3pm (America/New_York)", "5-hour limit
+ * reached ∙ resets 3pm", "You've hit your limit · resets 3pm (Europe/Berlin)", and the weekly and
+ * Opus weekly forms of these. API key: rate_limit_error and 429, "would exceed the rate limit",
+ * "Credit balance is too low".
+ */
+export const CLAUDE_LIMIT_SHAPES: LimitShapes = {
+  error: [
+    /\blimit reached\b/i,
+    /\byou[\u2019']?ve hit your (?:[\w-]+ )*limit\b/i,
+    /\brate_limit_error\b/i,
+    /\b429\b/,
+    /\btoo many requests\b/i,
+    /\bwould exceed the rate limit\b/i,
+    /\bcredit balance is too low\b/i,
+  ],
+  line: [
+    /^(?:api error:\s*)?(?:(?:claude(?: ai)?|usage|5-hour|five-hour|session|weekly|7-day|opus|sonnet) ){0,3}limit reached\b/i,
+    /^claude(?: ai)? usage limit reached\b/i,
+    /^you[\u2019']?ve hit your (?:[\w-]+ )*limit(?:\s*[\u00b7\u2219.|,\u2014-]|\s*$)/i,
+    /^api error:\s*429\b/i,
+    /^api error:.*\b(?:rate_limit_error|credit balance is too low)\b/i,
+    /^credit balance is too low\b/i,
+  ],
+};
+
 export const claude: ToolDef = {
   capEnv: claudeCapEnv,
+  limitShapes: CLAUDE_LIMIT_SHAPES,
   info: {
     id: "claude",
     name: "Claude Code",

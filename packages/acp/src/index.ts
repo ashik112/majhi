@@ -94,6 +94,7 @@ export { isAuthFailure, looksSignedOut, SignInExpired } from "./auth-failure.ts"
 export { buildEnv, type GitAttribution, type GitIdentity, RUN_GIT_CONFIG } from "./env.ts";
 export { type ExecResult, exec, killTree } from "./exec.ts";
 export { prepareHome } from "./home.ts";
+export { type LimitFailure, limitFailure, limitLine, parseReset } from "./limit-failure.ts";
 export { loginCommand } from "./login.ts";
 export { cliVersion, probeAccount } from "./probe.ts";
 export {
@@ -124,6 +125,6 @@ export { localSpawner, type RunMount, type Spawned, type Spawner, type SpawnRequ
 export { mapClaudeUsage } from "./tools/claude.ts";
 export { mapCodexRateLimits } from "./tools/codex.ts";
 export { getTool, toolInfos, tools } from "./tools/index.ts";
-export type { ContextCap } from "./tools/types.ts";
+export type { ContextCap, LimitShapes } from "./tools/types.ts";
 export { TurnMeter, type TurnUsage, type UsageMode } from "./turn-usage.ts";
 export { readUsage } from "./usage.ts";
