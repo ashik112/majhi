@@ -441,6 +441,11 @@ export const AutonomyOrgSchema = z.strictObject({
   account: z.string().regex(ACCOUNT_ID).optional(),
   /** Limits: the owner's daily caps per chore here (`null`: no cap). Absent: majhi's defaults. */
   chores: ChoreCapsSchema.optional(),
+  /**
+   * Full access: the captain decides every row here and its calls run without a card, except a change
+   * to anyone's permissions and anything destructive. Only the owner sets it.
+   */
+  fullAccess: z.boolean().optional(),
 });
 export type AutonomyOrg = z.infer<typeof AutonomyOrgSchema>;
 
@@ -522,6 +527,7 @@ export const AutonomyOrgPatchSchema = z
     account: z.string().regex(ACCOUNT_ID).nullable(),
     /** Limits: the daily caps per chore, replacing the ones set before. `null`: back to majhi's defaults. */
     chores: ChoreCapsSchema.nullable(),
+    fullAccess: z.boolean().nullable(),
   })
   .partial();
 export type AutonomyOrgPatch = z.infer<typeof AutonomyOrgPatchSchema>;

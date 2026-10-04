@@ -157,6 +157,10 @@ COPY --from=docker:29.8.1-cli /usr/local/bin/docker /usr/local/bin/docker
 # The buildx plugin builds agents' previews, each on its own builder (PRV-53).
 COPY --from=docker:29.8.1-cli /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
 COPY --from=host-clis /out/gh /out/glab /usr/local/bin/
+# Database watches read one number with psql or mysql (SPEC watch checks), from the server.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends postgresql-client default-mysql-client \
+  && rm -rf /var/lib/apt/lists/*
 RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +
 WORKDIR /app
 # Memory (5.6): sqlite-vec (a prebuilt vec0 library per CPU, from its sqlite-vec-linux-<arch> package) and

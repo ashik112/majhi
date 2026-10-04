@@ -11,6 +11,7 @@ import {
   IdSchema,
   isDestructiveCommand,
   McpInstallResultSchema,
+  PERMISSION_COMMANDS,
   type RoomItem,
   type TaskId,
 } from "@majhi/shared";
@@ -304,6 +305,13 @@ export class AdminService {
     return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
   }
 
+  /** Whether the owner gave the captain full access in the workspace of the caller's task. */
+  private async fullAccess(caller: AdminCaller): Promise<boolean> {
+    const org = this.deps.store.tasks.get(caller.task)?.org;
+    if (org === undefined) return false;
+    return (await this.deps.config.settings()).autonomy.orgs[org]?.fullAccess === true;
+  }
+
   private async callCommand(
     caller: AdminCaller,
     command: CommandName,
@@ -348,8 +356,17 @@ export class AdminService {
     // An agent's word that the owner asked counts only for low-risk changes, and for nothing in
     // autonomous mode: the owner is away.
     const ownerAsked = auto === undefined && ask.ownerAsked && !this.alwaysAsks(command, checked.data);
+    // Full access in the caller's workspace: the captain's calls run without a card, except a change to
+    // anyone's permissions and anything destructive, which follow the policy as always.
+    const full =
+      auto === "boss" &&
+      ask.confirm !== true &&
+      mode !== "confirm" &&
+      !PERMISSION_COMMANDS.has(command) &&
+      !isDestructiveCommand(command) &&
+      (await this.fullAccess(caller));
     // A saved rule turns a card that would wait into a run. It is looked up only then.
-    const decision = decideMode(mode, ownerAsked);
+    const decision = full ? "run" : decideMode(mode, ownerAsked);
     const rule =
       decision === "run" || ask.confirm === true
         ? undefined
