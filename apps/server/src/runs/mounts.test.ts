@@ -2,6 +2,7 @@ import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Task } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { isDirectory } from "../fs.ts";
 import { TerminalManager } from "../terminal/manager.ts";
 import { openTaskTerminal } from "../terminal/task-terminal.ts";
 import { git, makeRepo, tempDir } from "../testing/fixtures.ts";
@@ -45,6 +46,18 @@ describe("a run's mounts of a task repo's git folder", () => {
       { path: join(git, "refs", "remotes"), readOnly: true },
       { path: join(git, "refs", "tags"), readOnly: true },
     ]);
+  });
+
+  it("keep the writable task folder when git packs the refs on the host", async () => {
+    const { task, git: gitDir } = await taskOn("task/acm-7-work");
+    await repoMounts(task, { guardRefs: true });
+    const folder = join(gitDir, "refs", "heads", "task");
+    await git(join(gitDir, ".."), "pack-refs", "--all", "--prune");
+    expect(await isDirectory(folder)).toBe(true);
+    // The branch is packed, and git reads the folder with its dot-file as no ref.
+    expect(await git(join(gitDir, ".."), "for-each-ref", "--format=%(refname)", "refs/heads/task")).toBe(
+      "refs/heads/task/acm-7-work",
+    );
   });
 
   it("keep a branch the owner named writable, and the refs of the owner's own terminal", async () => {
