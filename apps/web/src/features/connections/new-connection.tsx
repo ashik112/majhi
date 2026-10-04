@@ -1,5 +1,6 @@
 import {
   activeLists,
+  CONNECT_ONLY_TYPES,
   CONNECTION_TYPES,
   type ConnectionType,
   connectionType,
@@ -73,7 +74,10 @@ export function NewConnection({
         <ChoiceGroup
           label="Type"
           value={type}
-          choices={CONNECTION_TYPES.map((t) => ({ value: t.type, label: t.label }))}
+          choices={CONNECTION_TYPES.filter((t) => !CONNECT_ONLY_TYPES.includes(t.type)).map((t) => ({
+            value: t.type,
+            label: t.label,
+          }))}
           onChange={(next) => {
             setType(next);
             setDraft(emptyDraft(next));

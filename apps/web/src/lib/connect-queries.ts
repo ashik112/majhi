@@ -1,5 +1,7 @@
 import type {
+  AppSetupView,
   CommandInput,
+  ConnectAccess,
   CommandOutput,
   ConnectCatalog,
   ConnectFlowView,
@@ -39,7 +41,31 @@ export function useConnectFlow(flow: string | undefined) {
   });
 }
 
-type ConnectCommand = "connect.start" | "connect.cancel" | "connect.confirmAccount" | "connect.disconnect";
+/** Which guided apps are saved for a workspace. */
+export function useAppStatus(org: string) {
+  return useQuery<CommandOutput<"connect.appStatus">, ApiRequestError>({
+    queryKey: key("apps", org),
+    enabled: org !== "",
+    queryFn: () => cmd("connect.appStatus", { org }),
+  });
+}
+
+/** The guided setup sheet of one app for one workspace. */
+export function useAppSetup(org: string, app: string | undefined, access: ConnectAccess) {
+  return useQuery<AppSetupView, ApiRequestError>({
+    queryKey: key("setup", org, app ?? "", access),
+    enabled: org !== "" && app !== undefined,
+    queryFn: () => cmd("connect.appSetup", { org, app: app ?? "", access }),
+  });
+}
+
+type ConnectCommand =
+  | "connect.start"
+  | "connect.cancel"
+  | "connect.confirmAccount"
+  | "connect.disconnect"
+  | "connect.appSave"
+  | "connect.appForget";
 
 export function useConnectCommand<N extends ConnectCommand>(name: N) {
   const client = useQueryClient();

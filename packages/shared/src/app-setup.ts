@@ -172,7 +172,7 @@ const DEFS: Readonly<Record<string, Def>> = {
         ],
         [{ label: "App name", value: c.appName }],
       ),
-      step("Add the permissions", "Add only the ones listed under What it can do below. Read comes first; the rest only when you turn a pack on.", [
+      step("Add the permissions", "Add only the permissions listed under What the app may do, above. Read comes first; the rest only when you turn a pack on.", [
         { label: "Open Data Access", url: `${GOOGLE_CONSOLE}/auth/scopes` },
       ]),
       step(
@@ -182,7 +182,7 @@ const DEFS: Readonly<Record<string, Def>> = {
         [
           { label: "Application type", value: "Desktop app" },
           { label: "Name", value: c.appName },
-          { label: "Redirect address majhi uses", value: c.redirect },
+          { label: "Redirect address", value: c.redirect },
         ],
       ),
       step("Download the JSON and drop it here", "On the new client, press Download JSON, then drop that file below."),

@@ -285,7 +285,7 @@ describe("a provider's own OAuth with PKCE and a loopback redirect", () => {
     expect(answers.every((a) => "token" in a)).toBe(true);
     // The renewed token is the one saved.
     const saved = await new GrantStore(r.secrets).get(id);
-    expect("token" in answers[0] ? answers[0].token : "").toBe(saved?.tokens.accessToken);
+    expect((answers[0] as { token?: string }).token).toBe(saved?.tokens.accessToken);
 
     r.skip(3600 * 1000);
     r.provider.failRefresh = "invalid_grant";
