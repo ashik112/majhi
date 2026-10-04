@@ -11,6 +11,7 @@ import {
   connectionType,
   type FieldKind,
   serviceByUrl,
+  sshTargetArgs,
   textValue,
 } from "@majhi/shared";
 import { errorCode, errorMessage, UserError } from "../errors.ts";
@@ -363,14 +364,19 @@ export class ConnectionTester {
   private async ssh(v: Values): Promise<Outcome> {
     const alias = v.fields.alias ?? "";
     const hosts = await sshConfigHosts(this.deps.hostHome);
-    if (!hosts.some((h) => h.alias === alias)) return fail(`~/.ssh/config has no Host ${alias}.`);
+    // A name without user, address or dot must be a Host of ~/.ssh/config; anything else ssh resolves itself.
+    if (/^[A-Za-z0-9_-]+$/.test(alias) && !hosts.some((h) => h.alias === alias)) {
+      return fail(`~/.ssh/config has no Host ${alias}. Use user@address, like root@203.0.113.10.`);
+    }
     const run = await (this.deps.ssh ?? runSsh)([
       "-o",
       "BatchMode=yes",
       "-o",
       "ConnectTimeout=5",
-      "--",
-      alias,
+      ...sshTargetArgs(
+        alias,
+        v.fields.key === undefined || v.fields.key === "" ? undefined : { pub: v.fields.key },
+      ),
       "true",
     ]);
     if (run.code === 0) return { ok: true, detail: `Signed in to ${alias} and ran a command.`, warnings: [] };

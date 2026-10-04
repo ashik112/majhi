@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/cn";
-import { useSshHosts } from "@/lib/task-queries";
+import { useSshHosts, useSshKeys } from "@/lib/task-queries";
 import {
   type ConnectionDraft,
   type DraftEntry,
@@ -132,6 +132,8 @@ function FieldControl({
           )
         ) : field.pick === "ssh-alias" ? (
           <SshAliasSelect {...p} value={text} onChange={onText} />
+        ) : field.pick === "ssh-key" ? (
+          <SshKeyInput {...p} value={text} onChange={onText} />
         ) : (
           <Input
             {...p}
@@ -155,7 +157,41 @@ function Later({ id }: { id: string }) {
   );
 }
 
-/** The Host aliases of ~/.ssh/config. A value that is no longer there stays offered, marked. */
+/** One of the owner's public keys, offered as suggestions. Empty: ssh tries every key in the agent. */
+function SshKeyInput({
+  value,
+  onChange,
+  ...p
+}: {
+  id: string;
+  "aria-describedby": string | undefined;
+  "aria-invalid": true | undefined;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const keys = useSshKeys().data ?? [];
+  const list = `${p.id}-keys`;
+  return (
+    <>
+      <Input
+        {...p}
+        list={list}
+        value={value}
+        placeholder={keys[0] ?? "~/.ssh/id_ed25519.pub"}
+        className="font-mono"
+        autoComplete="off"
+        onChange={(e) => onChange(e.target.value.trim())}
+      />
+      <datalist id={list}>
+        {keys.map((k) => (
+          <option key={k} value={k} />
+        ))}
+      </datalist>
+    </>
+  );
+}
+
+/** A Host of ~/.ssh/config, offered as suggestions, or any user@address typed in. */
 function SshAliasSelect({
   value,
   onChange,
@@ -168,18 +204,26 @@ function SshAliasSelect({
   onChange: (value: string) => void;
 }) {
   const hosts = useSshHosts().data ?? [];
-  const known = hosts.some((h) => h.alias === value);
+  const list = `${p.id}-hosts`;
   return (
-    <Select {...p} value={value} onChange={(e) => onChange(e.target.value)} className="font-mono">
-      <option value="">{hosts.length === 0 ? "No Host entries in ~/.ssh/config" : "Pick a host"}</option>
-      {value !== "" && !known && <option value={value}>{value} (not in ~/.ssh/config)</option>}
-      {hosts.map((h) => (
-        <option key={h.alias} value={h.alias}>
-          {h.alias}
-          {h.hostName ? ` · ${h.hostName}` : ""}
-        </option>
-      ))}
-    </Select>
+    <>
+      <Input
+        {...p}
+        list={list}
+        value={value}
+        placeholder="root@203.0.113.10, or a Host of ~/.ssh/config"
+        className="font-mono"
+        autoComplete="off"
+        onChange={(e) => onChange(e.target.value.trim())}
+      />
+      <datalist id={list}>
+        {hosts.map((h) => (
+          <option key={h.alias} value={h.alias}>
+            {h.hostName ?? ""}
+          </option>
+        ))}
+      </datalist>
+    </>
   );
 }
 

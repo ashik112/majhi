@@ -178,6 +178,15 @@ export function useTaskBranches(id: string, enabled: boolean) {
   });
 }
 
+/** The public keys in the owner's ~/.ssh, to pick the key an SSH host uses. */
+export function useSshKeys() {
+  return useQuery<CommandOutput<"ssh.keys">, ApiRequestError>({
+    queryKey: ["ssh-keys"],
+    queryFn: () => cmd("ssh.keys", {}),
+    staleTime: 60_000,
+  });
+}
+
 /** The Host entries of the owner's ~/.ssh/config, for a remote's SSH alias. */
 export function useSshHosts() {
   return useQuery<CommandOutput<"ssh.hosts">, ApiRequestError>({

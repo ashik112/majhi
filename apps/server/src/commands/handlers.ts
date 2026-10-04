@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
 import type {
   Budget,
   BudgetsPatch,
@@ -280,6 +282,13 @@ export function createHandlers({
     },
 
     "ssh.hosts": () => sshConfigHosts(config.paths.hostHome),
+    "ssh.keys": async () => {
+      const names = await readdir(join(config.paths.hostHome, ".ssh")).catch(() => [] as string[]);
+      return names
+        .filter((n) => /^[A-Za-z0-9._-]{1,128}\.pub$/.test(n))
+        .map((n) => `~/.ssh/${n}`)
+        .sort();
+    },
     "git.logins": (input) => services.gitLogins.list(input.refresh === true),
 
     "orgs.useGitLogin": (input, ctx) => useGitLogin(adoptDeps(ctx), input),

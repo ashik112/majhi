@@ -191,12 +191,16 @@ async function ssh(
     ?.connections?.[args.connection];
   const alias = connection === undefined ? undefined : textValue(connection, "alias");
   if (alias === undefined) return fail(`${args.connection} has no host.`);
-  if (!(await sshConfigHosts(deps.hostHome)).some((h) => h.alias === alias)) {
+  if (
+    /^[A-Za-z0-9_-]+$/.test(alias) &&
+    !(await sshConfigHosts(deps.hostHome)).some((h) => h.alias === alias)
+  ) {
     return fail(`~/.ssh/config has no Host ${alias}.`);
   }
+  const key = connection === undefined ? undefined : textValue(connection, "key");
   const remote = deps.remote ?? runRemote;
   const run = async () => {
-    const result = await remote(alias, args.command);
+    const result = await remote(alias, args.command, key);
     const output = redactSecrets(result.output, held.secrets);
     const status =
       result.code === 0

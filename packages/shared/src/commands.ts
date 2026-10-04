@@ -771,6 +771,13 @@ export const commands = {
       choices: z.array(z.object({ alias: z.string().optional(), account: z.string(), label: z.string() })),
     }),
   },
+  "ssh.keys": {
+    risk: "read",
+    summary:
+      "The public SSH keys majhi can see in the owner's ~/.ssh, to pick the key a host uses. Never a private key",
+    input: Empty,
+    output: z.array(z.string()),
+  },
   "ssh.reload": {
     risk: "change",
     summary:

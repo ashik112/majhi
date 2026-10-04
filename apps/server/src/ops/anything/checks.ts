@@ -9,6 +9,8 @@ import {
   readNumber,
   readOnlySqlProblem,
   reviewLine,
+  SSH_PUBKEY,
+  SSH_TARGET,
   scriptProblem,
   scriptValue,
   taskGroup,
@@ -89,7 +91,7 @@ export interface WatchPorts {
   ): Promise<string>;
   /** Runs Redis commands and returns each reply as text. */
   redis(url: string, commands: readonly string[][], timeoutMs: number): Promise<string[]>;
-  ssh(alias: string, command: string): Promise<RemoteResult>;
+  ssh(alias: string, command: string, key?: string | undefined): Promise<RemoteResult>;
   monitor(connection: string, tool: string, args: Record<string, unknown>): Promise<unknown>;
   /**
    * Runs a script watch's script once in a throwaway runner container, with the named connections of
@@ -418,10 +420,17 @@ export function remoteCommandAllowed(command: string): boolean {
 }
 
 /** Runs one of the allowed commands on an SSH host. Refuses anything else before it leaves majhi. */
-export async function runAllowed(ports: WatchPorts, alias: string, command: string): Promise<RemoteResult> {
+export async function runAllowed(
+  ports: WatchPorts,
+  alias: string,
+  command: string,
+  key?: string | undefined,
+): Promise<RemoteResult> {
   if (!remoteCommandAllowed(command)) throw new Unavailable("that command is not one majhi runs on a server");
-  if (!/^[A-Za-z0-9._-]{1,100}$/.test(alias)) throw new Unavailable("the host name is not valid");
-  return guarded(() => ports.ssh(alias, command));
+  if (!SSH_TARGET.test(alias)) throw new Unavailable("the host name is not valid");
+  if (key !== undefined && !SSH_PUBKEY.test(key))
+    throw new Unavailable("the key is not a public key in ~/.ssh");
+  return guarded(() => ports.ssh(alias, command, key));
 }
 
 async function server(
@@ -431,9 +440,10 @@ async function server(
 ): Promise<Reading> {
   const conn = await connectionOf(ports, org, spec.connection, ["ssh"]);
   const alias = conn.fields.alias ?? "";
+  const key = conn.fields.key === undefined || conn.fields.key === "" ? undefined : conn.fields.key;
   if (spec.metric === "disk") {
     const path = spec.path === "" ? "/" : spec.path;
-    const res = await runAllowed(ports, alias, `df -P ${path}`);
+    const res = await runAllowed(ports, alias, `df -P ${path}`, key);
     const line =
       res.output
         .split("\n")
@@ -444,14 +454,14 @@ async function server(
     return { number: Number(pct), display: `disk ${pct}%`, healthy: true, signature: pct };
   }
   if (spec.metric === "cpu") {
-    const res = await runAllowed(ports, alias, "uptime");
+    const res = await runAllowed(ports, alias, "uptime", key);
     const load = /load averages?:\s*([\d.,]+)/i.exec(res.output)?.[1]?.replace(",", ".");
     const n = load === undefined ? undefined : Number(load);
     if (res.code !== 0 || n === undefined || !Number.isFinite(n))
       throw new Unavailable("the host did not report its load");
     return { number: n, display: `load ${fmt(n)}`, healthy: true, signature: String(n) };
   }
-  const res = await runAllowed(ports, alias, "free -m");
+  const res = await runAllowed(ports, alias, "free -m", key);
   const mem = res.output.split("\n").find((l) => /^Mem:/i.test(l));
   const cols = mem?.trim().split(/\s+/).slice(1).map(Number) ?? [];
   const total = cols[0];

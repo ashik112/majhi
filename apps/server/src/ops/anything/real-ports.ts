@@ -156,8 +156,8 @@ export function realWatchPorts(
     ...parts,
     sql: runSql,
     redis: runRedis,
-    ssh: async (alias, command) => {
-      const res = await runRemote(alias, command);
+    ssh: async (alias, command, key) => {
+      const res = await runRemote(alias, command, key);
       return { code: res.code, output: res.output };
     },
   };
