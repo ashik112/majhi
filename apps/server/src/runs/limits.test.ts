@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   capacityOf,
+  defaultRunsTotal,
   type Holder,
   type Limits,
   noRoomLine,
   planGrants,
+  runsTotal,
   type SlotRequest,
   Slots,
 } from "./limits.ts";
@@ -162,5 +164,68 @@ describe("capacityOf", () => {
     expect(noRoomLine(capacityOf(full, { agents_max: 2, per_account: 2 }), ["c"])).toBe(
       "No free agent slot: 2 of 2 in use.",
     );
+  });
+});
+
+describe("machine-wide run cap", () => {
+  const capped: Limits = { agents_max: 6, per_account: 6, per_task: 6, runs_total: 2 };
+  const helper = (key: string, task: string): SlotRequest => ({ key, task, account: "z" });
+  function capSlots() {
+    const box = { limits: capped };
+    const s = new Slots({
+      limits: async () => box.limits,
+      canEvict: () => false,
+      evict: () => undefined,
+      onQueue: () => undefined,
+    });
+    return s;
+  }
+
+  it("queues the extra start across accounts and starts it when a run ends", async () => {
+    const s = capSlots();
+    expect(await s.acquire(req("a", "x"))).toBe(true);
+    expect(await s.acquire(req("b", "y"))).toBe(true);
+    let started = false;
+    const third = s.acquire(req("c", "w")).then((ok) => (started = ok));
+    await s.pump();
+    expect(started).toBe(false);
+    expect(s.position("c")).toBe(1);
+    s.release("a");
+    expect(await third).toBe(true);
+  });
+
+  it("serves the owner's start before earlier captain starts", async () => {
+    const s = capSlots();
+    await s.acquire(req("a", "x"));
+    await s.acquire(req("b", "y"));
+    const order: string[] = [];
+    const captain = s.acquire(req("c", "w")).then(() => order.push("captain"));
+    const owner = s.acquire({ ...req("d", "v"), owner: true }).then(() => order.push("owner"));
+    await s.pump();
+    expect(s.position("d")).toBe(1);
+    s.release("a");
+    await owner;
+    s.release("b");
+    await captain;
+    expect(order).toEqual(["owner", "captain"]);
+  });
+
+  it("counts helper agents of the same task", async () => {
+    const s = capSlots();
+    await s.acquire(helper("t1:lead", "t1"));
+    await s.acquire(helper("t1:helper", "t1"));
+    let started = false;
+    void s.acquire(helper("t1:helper2", "t1")).then((ok) => (started = ok));
+    await s.pump();
+    expect(started).toBe(false);
+    expect(capacityOf(s.state(), capped).agents).toEqual({ inUse: 2, waiting: 1, limit: 2, free: 0 });
+  });
+
+  it("defaults to a third of the cores, at least 2, and 3 without a reading", () => {
+    expect([defaultRunsTotal(8), defaultRunsTotal(12), defaultRunsTotal(2), defaultRunsTotal(undefined)]).toEqual(
+      [2, 4, 2, 3],
+    );
+    expect(runsTotal({ agents_max: 6, per_account: 2, per_task: 3, idle_timeout: "3m" }, 24)).toBe(6);
+    expect(runsTotal({ agents_max: 6, per_account: 2, per_task: 3, idle_timeout: "3m", runs_total: 9 }, 24)).toBe(6);
   });
 });

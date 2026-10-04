@@ -48,7 +48,11 @@ export function heaviest(containers: readonly MachineContainer[], n: number): Ma
 }
 
 /** One line for the digest and the captain. */
-export function machineLine(reading: MachineReading | undefined): string {
+/** `runs`: agent runs in use and the machine-wide cap, shown first so a full cap is plain. */
+export function machineLine(
+  reading: MachineReading | undefined,
+  runs?: { inUse: number; cap: number },
+): string {
   const host = reading?.host;
   if (reading === undefined || host === undefined) return "not known (the host helper is not connected)";
   const parts = [`load ${host.load1.toFixed(1)} on ${host.cores} cores`];
@@ -60,13 +64,14 @@ export function machineLine(reading: MachineReading | undefined): string {
   }
   if (host.diskFreeBytes !== undefined) parts.push(`${gb(host.diskFreeBytes)} disk free`);
   const top = heaviest(reading.containers, 3);
-  const runs =
+  const containers =
     reading.containers.length === 0
       ? "no agent containers"
       : `${reading.containers.length} containers, heaviest ${top
           .map((c) => `${c.name} ${Math.round(c.cpuPct)}% CPU ${gb(c.memBytes)}`)
           .join(", ")}`;
-  return `${parts.join(", ")}; ${runs}`;
+  const use = runs === undefined ? "" : `; ${runs.inUse} of ${runs.cap} agent runs in use`;
+  return `${parts.join(", ")}${use}; ${containers}`;
 }
 
 /** Why health should warn, one sentence each. `idleLowMs`: how long idle CPU has stayed under the minimum. */

@@ -62,6 +62,8 @@ export function durationMs(value: string): number {
 const limitsFields = {
   /** Agent processes running at once, across majhi. */
   agents_max: z.number().int().min(1).max(64),
+  /** Agent runs at once on the whole machine, helpers included. Unset: a share of the CPU cores. */
+  runs_total: z.number().int().min(1).max(64),
   /** Agent processes running at once on one account. */
   per_account: z.number().int().min(1).max(16),
   /** Agent processes running at once in one task. */
@@ -71,6 +73,7 @@ const limitsFields = {
 };
 export const LimitsSettingsSchema = z.strictObject({
   agents_max: limitsFields.agents_max.default(6),
+  runs_total: limitsFields.runs_total.optional(),
   per_account: limitsFields.per_account.default(2),
   per_task: limitsFields.per_task.default(3),
   idle_timeout: limitsFields.idle_timeout.default("3m"),

@@ -93,6 +93,8 @@ export interface SettingsForm {
   compactTarget: string;
   maxTurns: string;
   agentsMax: string;
+  /** Empty: majhi picks from the CPU cores. */
+  runsTotal: string;
   perAccount: string;
   perTask: string;
   idleTimeout: string;
@@ -131,6 +133,7 @@ export function formFromSettings(s: Settings): SettingsForm {
     compactTarget: percent(s.context.compact_target),
     maxTurns: String(s.context.max_turns),
     agentsMax: String(s.limits.agents_max),
+    runsTotal: s.limits.runs_total === undefined ? "" : String(s.limits.runs_total),
     perAccount: String(s.limits.per_account),
     perTask: String(s.limits.per_task),
     idleTimeout: s.limits.idle_timeout,
@@ -150,7 +153,7 @@ export function formFromSettings(s: Settings): SettingsForm {
 
 export type SettingsPatch = {
   context?: { cap?: number; compact_at?: number; compact_target?: number; max_turns?: number };
-  limits?: { agents_max?: number; per_account?: number; per_task?: number; idle_timeout?: string };
+  limits?: { agents_max?: number; runs_total?: number; per_account?: number; per_task?: number; idle_timeout?: string };
   resume?: { auto?: boolean; handoff?: boolean };
   commits?: { attribution?: boolean };
   rooms?: { max_agent_turns?: number; review_rounds?: number };
@@ -194,6 +197,7 @@ export function patchFromForm(
   const target = whole(form.compactTarget, 1, 99, "Target after compaction");
   const turns = whole(form.maxTurns, 0, 10_000, "Turns before a fresh session");
   const agents = whole(form.agentsMax, 1, 64, "Agents at once");
+  const runsTotal = form.runsTotal.trim() === "" ? {} : whole(form.runsTotal, 1, 64, "Runs on this computer");
   const account = whole(form.perAccount, 1, 16, "Per account");
   const task = whole(form.perTask, 1, 16, "Per task");
   const agentTurns = whole(form.maxAgentTurns, 1, 200, "Agent turns without you");
@@ -205,6 +209,7 @@ export function patchFromForm(
   if (target.error) errors.compactTarget = target.error;
   if (turns.error) errors.maxTurns = turns.error;
   if (agents.error) errors.agentsMax = agents.error;
+  if (runsTotal.error) errors.runsTotal = runsTotal.error;
   if (account.error) errors.perAccount = account.error;
   if (task.error) errors.perTask = task.error;
   if (at.value !== undefined && target.value !== undefined && target.value >= at.value) {
@@ -222,6 +227,8 @@ export function patchFromForm(
   if (turns.value !== undefined && turns.value !== current.context.max_turns) context.max_turns = turns.value;
   if (agents.value !== undefined && agents.value !== current.limits.agents_max)
     limits.agents_max = agents.value;
+  if (runsTotal.value !== undefined && runsTotal.value !== current.limits.runs_total)
+    limits.runs_total = runsTotal.value;
   if (account.value !== undefined && account.value !== current.limits.per_account) {
     limits.per_account = account.value;
   }

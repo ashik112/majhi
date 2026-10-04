@@ -8,6 +8,7 @@ import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
 import type { RunManager } from "./manager.ts";
 import { NetworkWatch, type Probe } from "./network.ts";
+import { ResumeDrip, RESUME_GAP_MS } from "./resume-drip.ts";
 
 /** What the coordinator needs of the task service: the status changes that follow pauses and resumes. */
 export interface TaskHooks {
@@ -32,6 +33,12 @@ export interface ResilienceDeps {
   accountSignedIn?: (account: string) => Promise<boolean>;
   /** In ms. Tests pass a fake clock. */
   now?: () => number;
+  /** True when one more run may come back after a restart (a free run, a calm machine). Absent: always. */
+  resumeReady?: () => Promise<boolean>;
+  /** Gap between runs coming back after a restart. */
+  resumeGapMs?: number;
+  /** Waits. Tests pass a fake. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -42,8 +49,14 @@ export interface ResilienceDeps {
 export class Resilience {
   readonly network: NetworkWatch;
   private signInTimer: NodeJS.Timeout | undefined;
+  private readonly drip: ResumeDrip;
 
   constructor(private readonly deps: ResilienceDeps) {
+    this.drip = new ResumeDrip({
+      gapMs: deps.resumeGapMs ?? RESUME_GAP_MS,
+      ready: deps.resumeReady ?? (() => Promise.resolve(true)),
+      sleep: deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms).unref())),
+    });
     this.network = new NetworkWatch({
       probe: deps.probe,
       ...(deps.probeMs === undefined ? {} : { intervalMs: deps.probeMs }),
@@ -63,6 +76,7 @@ export class Resilience {
   }
 
   stop(): void {
+    this.drip.stop();
     this.network.stop();
     if (this.signInTimer !== undefined) clearInterval(this.signInTimer);
     this.signInTimer = undefined;
@@ -124,6 +138,7 @@ export class Resilience {
       if (t.status === "done") await tasks.statusChanged(t.id).catch(() => undefined);
     }
     const handled = new Set<string>();
+    const comeBack: { task: TaskId; agent: string }[] = [];
     for (const { task: id, agent } of store.runs.interrupted()) {
       handled.add(id);
       const task = store.tasks.get(id);
@@ -138,7 +153,7 @@ export class Resilience {
       }
       try {
         if (await this.autoResume(task)) {
-          runs.resumeAfterRestart(task.id, agent);
+          comeBack.push({ task: task.id, agent });
         } else {
           runs.markInterrupted(task.id, agent);
           await tasks.pausedByRuns(task.id, "error");
@@ -151,6 +166,16 @@ export class Resilience {
         this.note(task.id, `Could not resume @${agent} after the restart: ${errorMessage(err)}`);
       }
     }
+    // One by one, in the background: a restart must not start every run in the same minute.
+    void this.drip
+      .run(comeBack, (r) => {
+        try {
+          runs.resumeAfterRestart(r.task, r.agent);
+        } catch (err) {
+          this.note(r.task, `Could not resume @${r.agent} after the restart: ${errorMessage(err)}`);
+        }
+      })
+      .catch(() => undefined);
     await this.wakeStranded(handled);
   }
 

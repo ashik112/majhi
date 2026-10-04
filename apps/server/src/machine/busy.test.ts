@@ -61,8 +61,8 @@ describe("docker stats", () => {
       "postgres\t5%\t90MiB / 8GiB",
     ].join("\n");
     expect(parseDockerStats(out)).toEqual([
-      { name: "majhi-run-acme-1-a", cpuPct: 182.5, memBytes: Math.round(1.5 * 1024 ** 3) },
-      { name: "majhi-preview-acme", cpuPct: 0.1, memBytes: 120 * 1024 ** 2 },
+      { name: "majhi-run-acme-1-a", cpuPct: 182.5, memBytes: Math.round(1.5 * 1024 ** 3), memLimitBytes: 8 * 1024 ** 3 },
+      { name: "majhi-preview-acme", cpuPct: 0.1, memBytes: 120 * 1024 ** 2, memLimitBytes: 8 * 1024 ** 3 },
     ]);
   });
 

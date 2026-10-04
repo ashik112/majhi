@@ -818,7 +818,7 @@ export class AutonomyService {
   /** The "Machine" line of the digest, or undefined when no sensor runs. */
   machineLine(): string | undefined {
     const reading = this.deps.machine?.();
-    return this.deps.machine === undefined ? undefined : machineLine(reading);
+    return this.deps.machine === undefined ? undefined : machineLine(reading, this.deps.runs.runUse());
   }
 
   private readonly calmWake = new CalmWake();
