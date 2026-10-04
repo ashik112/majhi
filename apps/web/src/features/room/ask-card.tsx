@@ -180,15 +180,17 @@ export function PendingAsk({ item }: { item: Ask }) {
         </p>
       )}
       {!single && (
-        <Button
-          size="sm"
-          variant="primary"
-          disabled={send.isPending || !ready}
-          onClick={() => send.mutate(answers)}
-          className="ml-6 self-start"
-        >
-          {send.isPending ? "Sending..." : "Send"}
-        </Button>
+        // Sticks to the bottom of the dock, so Send stays in view however many options scroll past.
+        <div className="sticky bottom-0 z-10 -mx-3.5 -mb-3 rounded-b-lg px-3.5 pt-2 pb-3 pl-[34px] [background:linear-gradient(var(--c-blue-wash),var(--c-blue-wash)),var(--c-glass-strong)]">
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={send.isPending || !ready}
+            onClick={() => send.mutate(answers)}
+          >
+            {send.isPending ? "Sending..." : "Send"}
+          </Button>
+        </div>
       )}
     </section>
   );

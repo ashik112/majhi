@@ -1,5 +1,5 @@
 import type { RoomItem, Task } from "@majhi/shared";
-import { useMutation } from "@tanstack/react-query";
+import { useIsMutating, useMutation } from "@tanstack/react-query";
 import { type KeyboardEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/ui/toast";
 import { type ApiRequestError, cmd } from "@/lib/api";
@@ -74,7 +74,9 @@ export function RoomPane({
     [task, compose, onShowChanges, turningKey],
   );
   // A running task with no agent yet is still being set up (worktrees, session): Esc stops that too.
-  const starting = task.status === "running" && state.agents.length === 0;
+  const startRequests = useIsMutating({ mutationKey: ["tasks.start"] });
+  const starting =
+    startRequests > 0 || (task.status === "running" && state.agents.every((a) => a.status === "stopped"));
   const busy = isBusy(state.agents) || starting;
   // "Stopping..." from Esc or Stop until the agent is no longer busy, with a cap so it never sticks.
   const [stopping, setStopping] = useState(false);

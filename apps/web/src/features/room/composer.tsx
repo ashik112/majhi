@@ -22,6 +22,7 @@ import { cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { MOD_KEY } from "@/lib/format";
+import { useServerOffline } from "@/lib/queries";
 import { useTask } from "@/lib/task-queries";
 import { useTypingSignal } from "@/lib/typing-signal";
 import { attachmentIds, filesFromClipboard, useAttachments, useFileDrop } from "@/lib/use-attachments";

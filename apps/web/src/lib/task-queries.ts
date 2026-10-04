@@ -124,6 +124,7 @@ type TaskAction = "tasks.start" | "tasks.stop" | "tasks.reopen";
 function useTaskAction(name: TaskAction) {
   const client = useQueryClient();
   return useMutation<Task, ApiRequestError, string>({
+    mutationKey: [name],
     mutationFn: (id) => cmd(name, { id }),
     onSuccess: (task) => {
       client.setQueryData([...queryKeys.tasks, "one", task.id], task);
