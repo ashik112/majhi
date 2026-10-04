@@ -233,29 +233,32 @@ export const WatchCheckSchema = z.discriminatedUnion("kind", [
     command: z.string().trim().min(1).max(4_000),
     cwd: z.string().trim().min(1).max(1_000).optional(),
   }),
-  z.object({
-    kind: z.literal("script"),
-    /**
-     * A read-only shell script that prints the value: a number, a word, or JSON read at `path`. It runs
-     * on majhi's clock in a throwaway runner container, with the named connections of the workspace.
-     */
-    script: z
-      .string()
-      .trim()
-      .min(1)
-      .max(4_000)
-      .superRefine((v, ctx) => {
-        const problem = scriptProblem(v);
-        if (problem !== undefined) ctx.addIssue({ code: "custom", message: problem });
-      }),
-    /** The workspace's connections it may use, by id: their variables, and `<ID>_TOKEN` for a sign-in. */
-    connections: z.array(Conn).max(8).default([]),
-    path: z.string().trim().max(200).optional(),
-    agg: MetricAggSchema.optional(),
-    where: MetricReadSchema.shape.where,
-    label: z.string().trim().max(60).optional(),
-    unit: z.string().trim().max(12).optional(),
-  }),
+  z
+    .object({
+      kind: z.literal("script"),
+      /**
+       * A read-only shell script that prints the value: a number, a word, or JSON read at `path`. It runs
+       * on majhi's clock in a throwaway runner container, with the named connections of the workspace.
+       */
+      script: z.string().trim().min(1).max(4_000),
+      /**
+       * `off`: the script runs with no network, for one that only builds a value (a URL, a connection
+       * string) from what the connections give it. `on` (the default): it may call the connections' services,
+       * and the script is checked to only read.
+       */
+      network: z.enum(["on", "off"]).default("on"),
+      /** The workspace's connections it may use, by id: their variables, and `<ID>_TOKEN` for a sign-in. */
+      connections: z.array(Conn).max(8).default([]),
+      path: z.string().trim().max(200).optional(),
+      agg: MetricAggSchema.optional(),
+      where: MetricReadSchema.shape.where,
+      label: z.string().trim().max(60).optional(),
+      unit: z.string().trim().max(12).optional(),
+    })
+    .superRefine((v, ctx) => {
+      const problem = scriptProblem(v.script, v.network);
+      if (problem !== undefined) ctx.addIssue({ code: "custom", message: problem, path: ["script"] });
+    }),
   z.object({
     kind: z.literal("custom"),
     /** What to check, in words. The captain looks on the schedule and reports a value or a state. */

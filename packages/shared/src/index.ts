@@ -58,6 +58,7 @@ export * from "./skills.ts";
 export * from "./task-parse.ts";
 export * from "./tasks.ts";
 export * from "./tiers.ts";
+export * from "./tools.ts";
 export * from "./triggers.ts";
 export * from "./usage.ts";
 export * from "./watch-formula.ts";

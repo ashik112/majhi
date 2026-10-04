@@ -175,19 +175,93 @@ export function evaluate(formula: string, vars: Readonly<Record<string, number>>
   return v;
 }
 
+/** Programs that make an HTTP request. A data flag only sends data to one of these. */
+const HTTP_CLIENTS = new Set(["curl", "wget", "http", "https", "xh", "httpie"]);
+const DATA_FLAGS =
+  /^(?:-d|--data(?:-[\w-]+)?|--json|-F|--form|-T|--upload-file|--post-(?:data|file)|--body-(?:data|file))$/;
+
+/** The words of each simple command in a shell script. Quotes group words; `|`, `;`, `&` and newlines end a command. */
+function commandsOf(script: string): string[][] {
+  const commands: string[][] = [];
+  let words: string[] = [];
+  let word = "";
+  let started = false;
+  let quote: "'" | '"' | undefined;
+  const endWord = () => {
+    if (started) words.push(word);
+    word = "";
+    started = false;
+  };
+  const endCommand = () => {
+    endWord();
+    if (words.length > 0) commands.push(words);
+    words = [];
+  };
+  for (let i = 0; i < script.length; i += 1) {
+    const c = script.charAt(i);
+    if (quote !== undefined) {
+      if (c === quote) quote = undefined;
+      else if (c === "\\" && quote === '"' && i + 1 < script.length) word += script.charAt(++i);
+      else word += c;
+      continue;
+    }
+    if (c === "'" || c === '"') {
+      quote = c;
+      started = true;
+    } else if (c === "\\" && i + 1 < script.length) {
+      word += script.charAt(++i);
+      started = true;
+    } else if (c === " " || c === "\t") endWord();
+    else if (c === "|" || c === ";" || c === "&" || c === "\n" || c === "(" || c === ")") endCommand();
+    else {
+      word += c;
+      started = true;
+    }
+  }
+  endCommand();
+  return commands;
+}
+
 /**
- * Why a script watch's script may change something, or undefined. A watch only reads: HTTP methods
- * other than GET, sent data, and the change verbs of kubectl, glab, gh, git and docker are refused,
- * as are deletes and writes to files outside /tmp. A guard on the text, not a sandbox: the script also
- * runs in a read-only throwaway container.
+ * True when a command of the script calls an HTTP client with a flag that sends data. Read from the
+ * script's commands, not its text: `tr -d`, `psql -d` and a URL with `-d` in it send nothing.
  */
-export function scriptProblem(script: string): string | undefined {
+function sendsData(script: string): boolean {
+  for (const words of commandsOf(script)) {
+    // Skip leading `VAR=value` words and `env`/`sudo`-like prefixes to find the program.
+    const at = words.findIndex((w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w));
+    const program = (words[at] ?? "").split("/").pop() ?? "";
+    if (!HTTP_CLIENTS.has(program)) continue;
+    const flags = words.slice(at + 1).filter((w) => w.startsWith("-"));
+    // `--data=x`, `--post-data=x` and a short flag with its value attached (`-d@file`) are data flags too.
+    if (
+      flags.some(
+        (w) => DATA_FLAGS.test(w.startsWith("--") ? (w.split("=")[0] ?? w) : w) || /^-[dFT]./.test(w),
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Why a script's script may change something, or undefined. `network` is what the script declares and
+ * what its sandbox gets: `off` runs with no network at all, so nothing can be sent, called or changed
+ * outside the throwaway container (its root is read-only) and the script is only read; a script that
+ * builds a URL or a connection string belongs there. `on` has egress, so a watch only reads: HTTP
+ * methods other than GET, data sent by an HTTP client, and the change verbs of kubectl, glab, gh, git
+ * and docker are refused, as are deletes and writes to files outside /tmp. A guard on the text for
+ * what has egress, not a sandbox: the script also runs in a read-only throwaway container.
+ */
+export function scriptProblem(script: string, network: "on" | "off" = "on"): string | undefined {
+  if (network === "off") return undefined;
+  if (sendsData(script)) return "A watch only reads: it sends data.";
   const checks: [RegExp, string][] = [
     [
       /(?:-X|--request)\s*['"]?(?:POST|PUT|PATCH|DELETE)\b/i,
       "it sends a request that changes something (only GET reads)",
     ],
-    [/\s(?:-d|--data(?:-\w+)?|--json|-F|--form|-T|--upload-file)\b/, "it sends data"],
     [
       /\b(?:requests|httpx|axios|session)\.(?:post|put|patch|delete)\b/i,
       "it sends a request that changes something",

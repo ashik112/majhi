@@ -24,8 +24,12 @@ describe("the removed sources migration", () => {
     finding(4, "radar", "task");
     finding(5, "security", "open");
     finding(6, "setup", "open");
-    db.prepare("INSERT INTO outbound_channels (org, channel) VALUES ('acme', 'tracker-comment'), ('acme', 'email')").run();
-    db.prepare("INSERT INTO trust_state (org, key) VALUES ('acme', 'outbound:tracker-comment'), ('acme', 'outbound:email')").run();
+    db.prepare(
+      "INSERT INTO outbound_channels (org, channel) VALUES ('acme', 'tracker-comment'), ('acme', 'email')",
+    ).run();
+    db.prepare(
+      "INSERT INTO trust_state (org, key) VALUES ('acme', 'outbound:tracker-comment'), ('acme', 'outbound:email')",
+    ).run();
 
     expect(migrate(db)).toContain(154);
     expect(db.prepare("SELECT id, status FROM findings ORDER BY id").all()).toEqual([

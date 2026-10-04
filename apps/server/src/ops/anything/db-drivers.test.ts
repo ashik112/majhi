@@ -159,6 +159,32 @@ describe("image checks", () => {
     expect(argv.slice(-3)).toEqual(good.command);
   });
 
+  it("mounts only the workspace's checked programs, read-only, and can run with no network", () => {
+    const limits = { cpus: 1, memory: "512m" };
+    const name = "majhi-dbcheck-0a1b2c3d4e5f";
+    const bin = "/Users/owner/.majhi/tool-installs/acme/bin";
+    const argv = dockerArgv(
+      dbCheckRunArgs(name, good.image, good.command, {}, limits, safety, { toolsBin: bin, offline: true }),
+    );
+    expect(argv).toContain(`type=bind,source=${bin},target=/majhi-tools,readonly`);
+    expect(argv.slice(argv.indexOf("--network"), argv.indexOf("--network") + 2)).toEqual([
+      "--network",
+      "none",
+    ]);
+    // Anything else under the home, or the writable tools folder a run can change, is refused.
+    for (const toolsBin of [
+      "/Users/owner/.majhi/tools/acme/bin",
+      "/Users/owner/.majhi",
+      "/Users/owner/.majhi/tool-installs/acme",
+      "/Users/owner/.majhi/tool-installs/../secrets/bin",
+      "/Users/owner/.ssh",
+    ]) {
+      expect(() => dbCheckRunArgs(name, good.image, good.command, {}, limits, safety, { toolsBin })).toThrow(
+        ContainerRefused,
+      );
+    }
+  });
+
   it("refuses a bad name, a host path and a flag as the image", () => {
     const limits = { cpus: 1, memory: "512m" };
     expect(() => dbCheckRunArgs("majhi-preview-x", good.image, good.command, {}, limits, safety)).toThrow(

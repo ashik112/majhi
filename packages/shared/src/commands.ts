@@ -363,6 +363,13 @@ import {
   UsageSummarySchema,
 } from "./usage.ts";
 import {
+  InstalledToolSchema,
+  ToolInstallInputSchema,
+  ToolRemoveInputSchema,
+  ToolsListInputSchema,
+  ToolsListSchema,
+} from "./tools.ts";
+import {
   WatchIdInputSchema,
   WatchOverviewInputSchema,
   WatchOverviewSchema,
@@ -2584,6 +2591,26 @@ export const commands = {
       "Install skills from a source (owner/repo, a repo or tree URL, a git URL, a SKILL.md or archive URL, a folder) or an uploaded zip. The first call only fetches and returns a preview (name, description, files, source) with a previewId; nothing is installed. Show the owner the preview, and after they agree call again with confirm set to the previewId. An installed skill is not enabled for any agent: use skills.enable",
     input: SkillInstallInputSchema,
     output: SkillInstallResultSchema,
+  },
+  "toolbox.list": {
+    risk: "read",
+    summary:
+      "List the command-line tools installed for a workspace (in its tools folder, on PATH for runs, watch scripts and secret fetches), and the CPU (amd64 or arm64) a download must match",
+    input: ToolsListInputSchema,
+    output: ToolsListSchema,
+  },
+  "toolbox.install": {
+    risk: "change",
+    summary:
+      "Install a command-line tool (a release binary, no sudo) into the workspace's tools folder, where later runs, watch scripts and secret fetches find it on PATH. majhi downloads it itself over https and installs it only when its SHA-256 matches the vendor's: pass sha256, or checksumUrl for the vendor's checksums file. Use {arch} (amd64 or arm64) or {machine} (x86_64 or aarch64) in the url to match the runner's CPU. archive is binary, tar.gz or zip, and path is the program inside it. Prefer this to downloading a binary inside a run",
+    input: ToolInstallInputSchema,
+    output: InstalledToolSchema,
+  },
+  "toolbox.remove": {
+    risk: "change",
+    summary: "Remove a command-line tool from the workspace's tools folder",
+    input: ToolRemoveInputSchema,
+    output: z.object({ name: z.string() }),
   },
   "skills.list": {
     risk: "read",
