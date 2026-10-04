@@ -255,3 +255,15 @@ describe("classifyRemote", () => {
     expect(remote("systemctl  restart api")).toMatchObject({ kind: "write", writes: [{ allowed: true }] });
   });
 });
+
+describe("a git connection's CLI", () => {
+  const held: GateConnection[] = [{ id: "acme-gitlab", type: "git", clis: ["glab"], allow: [] }];
+  it("lets glab reads run and makes changes ask", () => {
+    for (const line of ["glab mr list", "glab mr view 12", "glab ci status", "glab --version"]) {
+      expect(classifyCommand(line, held).kind, line).toBe("read");
+    }
+    for (const line of ["glab mr create --fill", "glab mr merge 12", "glab api projects/1 -X DELETE"]) {
+      expect(classifyCommand(line, held).kind, line).toBe("write");
+    }
+  });
+});

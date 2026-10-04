@@ -47,6 +47,8 @@ export interface RunFilesDeps {
   browsersPath?: string | undefined;
   /** Bearer tokens of connections signed in with OAuth (5.14). */
   oauth?: PlanDeps["oauth"];
+  /** The workspace's own git sign-in, for `git` connections. */
+  gitToken?: PlanDeps["gitToken"];
 }
 
 /**

@@ -61,6 +61,19 @@ export interface PlanDeps {
    * The run gets it as a header at session start; the refresh token never leaves majhi.
    */
   oauth?: ((connection: string) => Promise<{ token: string } | { problem: string }>) | undefined;
+  /** The workspace's own git sign-in for a host, renewed when it ends soon (a `git` connection). */
+  gitToken?:
+    | ((org: string, provider: GitProvider, host: string) => Promise<{ token: string } | { problem: string }>)
+    | undefined;
+}
+
+export type GitProvider = "gitlab" | "github";
+
+/** A `git` connection's service, host and CLI, with gitlab.com or github.com when no host is set. */
+export function gitTarget(c: ConnectionConfig): { provider: GitProvider; host: string; cli: "glab" | "gh" } {
+  const provider: GitProvider = textValue(c, "provider") === "github" ? "github" : "gitlab";
+  const host = textValue(c, "host") ?? (provider === "github" ? "github.com" : "gitlab.com");
+  return { provider, host, cli: provider === "github" ? "gh" : "glab" };
 }
 
 const SECRET = "secret:";
@@ -252,6 +265,30 @@ export async function planConnections(
         use(h, useLine(h));
         break;
       }
+      case "git": {
+        // The workspace's own sign-in for the host, fresh at session start. The CLI reads it from
+        // its variable; its refresh token never leaves majhi.
+        const { provider, host, cli } = gitTarget(c);
+        const answer =
+          deps.gitToken === undefined
+            ? { problem: "It has no sign-in." }
+            : await deps.gitToken(h.org, provider, host);
+        if ("problem" in answer) {
+          plan.problems.push(`${h.id}: ${answer.problem} The run does not get it.`);
+          break;
+        }
+        if (provider === "github") {
+          setVar(h.id, "GH_TOKEN", answer.token);
+          if (host !== "github.com") setVar(h.id, "GH_HOST", host);
+        } else {
+          setVar(h.id, "GITLAB_TOKEN", answer.token);
+          setVar(h.id, "GITLAB_HOST", host);
+        }
+        plan.secrets.push({ name: `${h.id}.token`, value: answer.token });
+        gate(h, { clis: [cli] });
+        use(h, useLine(h));
+        break;
+      }
       case "cli": {
         const tool = cliTool(textValue(c, "tool") ?? "");
         if (tool === undefined) {
@@ -372,6 +409,10 @@ export function useLine(h: HeldConnection, current = false): string {
       return `MCP server ${h.id} (${browserServer(textValue(c, "server")).label}), with its own browser profile.`;
     case "api":
       return `Variable ${textValue(c, "token_var") ?? "ACCESS_TOKEN"} holds a short-lived token for ${c.name}. Anything that changes something asks the owner first.`;
+    case "git": {
+      const { host, cli } = gitTarget(c);
+      return `${cli} is signed in to ${host} as this workspace. Commands that change something ask the owner first.`;
+    }
     case "cli": {
       const tool = cliTool(textValue(c, "tool") ?? "");
       return `${tool?.binary ?? "The tool"} is signed in for this workspace only${textValue(c, "account") === undefined ? "" : ` as ${textValue(c, "account")}`}. Commands that change something ask the owner first.`;

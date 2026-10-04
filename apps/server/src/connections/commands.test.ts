@@ -191,6 +191,7 @@ describe("connections commands", () => {
       "browser",
       "api",
       "cli",
+      "git",
     ]);
   });
 

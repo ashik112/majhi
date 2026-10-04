@@ -18,7 +18,17 @@ import { IdSchema, SecretRefSchema } from "./ids.ts";
 /** Wire scope for owner-approved connections shared by every workspace. Never an org. */
 export const GLOBAL_CONNECTIONS = "global";
 
-export const ConnectionTypeSchema = z.enum(["kubectl", "mcp", "ssh", "env", "mail", "browser", "api", "cli"]);
+export const ConnectionTypeSchema = z.enum([
+  "kubectl",
+  "mcp",
+  "ssh",
+  "env",
+  "mail",
+  "browser",
+  "api",
+  "cli",
+  "git",
+]);
 export type ConnectionType = z.infer<typeof ConnectionTypeSchema>;
 
 /** Where a value is kept: secrets.age, majhi.yaml, or a file of the connection. */
@@ -482,6 +492,34 @@ export const CONNECTION_TYPES: readonly ConnectionTypeDef[] = [
         required: false,
         managed: true,
         help: "Who the tool says is signed in.",
+      },
+    ],
+    lists: [],
+  },
+  {
+    type: "git",
+    label: "GitLab or GitHub CLI",
+    summary: "glab or gh with this workspace's own git sign-in, renewed by majhi. Changes ask first",
+    fields: [
+      {
+        key: "provider",
+        label: "Service",
+        kind: "text",
+        required: true,
+        help: "GitLab gives runs glab with GITLAB_TOKEN, GitHub gives gh with GH_TOKEN.",
+        choices: [
+          { value: "gitlab", label: "GitLab (glab)" },
+          { value: "github", label: "GitHub (gh)" },
+        ],
+      },
+      {
+        key: "host",
+        label: "Host",
+        kind: "text",
+        required: false,
+        format: "host",
+        placeholder: "gitlab.com",
+        help: "Leave empty for gitlab.com or github.com. The workspace must be signed in to this host.",
       },
     ],
     lists: [],

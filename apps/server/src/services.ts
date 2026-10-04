@@ -61,6 +61,7 @@ import { GrantStore } from "./connect/grant.ts";
 import { ConnectService } from "./connect/service.ts";
 import { type BrowserServer, RUNNER_BROWSERS_PATH } from "./connections/browser.ts";
 import { listTools, remoteTransport } from "./connections/mcp-client.ts";
+import type { GitProvider, PlanDeps } from "./connections/plan.ts";
 import { redactSecrets } from "./connections/redact.ts";
 import type { RemoteRunFn } from "./connections/remote.ts";
 import { sweepRunFiles } from "./connections/run-files.ts";
@@ -94,6 +95,7 @@ import { FindingsService } from "./findings/service.ts";
 import { triageFinding } from "./findings/triage.ts";
 import { GitLoginService } from "./git/logins.ts";
 import type { Fetch } from "./gitConnect/http.ts";
+import { whoAmI } from "./gitConnect/oauth.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
 import { feedsRunner } from "./growth/feeds.ts";
 import { keywordLines } from "./growth/gather.ts";
@@ -614,9 +616,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   // Where runs find their connections' files (5.14). In a runner, the image keeps the browsers.
   // Bearer tokens of connections signed in through Connect (5.14); bound once that service exists.
   const oauth: { bearer?: (id: string) => Promise<{ token: string } | { problem: string }> } = {};
+  // The workspaces' own git sign-ins, for `git` connections; bound once the git tokens exist.
+  const gitSignIn: { token?: NonNullable<PlanDeps["gitToken"]> } = {};
   const connectionFiles = {
     connectionDir: (id: string) => connectionDir(env.majhiHome, id),
     oauth: async (id: string) => oauth.bearer?.(id) ?? { problem: "Sign-in is not ready." },
+    gitToken: async (org: string, provider: GitProvider, host: string) =>
+      gitSignIn.token?.(org, provider, host) ?? { problem: "Sign-in is not ready." },
     browsersPath:
       sessionOptions.base.PLAYWRIGHT_BROWSERS_PATH ??
       (env.runner.mode === "container" ? RUNNER_BROWSERS_PATH : undefined),
@@ -1039,6 +1045,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           return [...loaded.state.config.workspaces, loaded.state.config.tasksDir, ...loaded.projectPaths];
         });
   const gitTokens = createGitTokens(config, secrets, options.gitFetch ?? fetch);
+  const signedOut = (org: string, host: string) =>
+    `${org} is not signed in to ${host}. Sign the workspace in to ${host} on the Workspaces page.`;
+  gitSignIn.token = async (org, provider, host) => {
+    const cred = await gitTokens.credential(org, provider, host);
+    if (cred.tokenRef === undefined) return { problem: signedOut(org, host) };
+    const token = await gitTokens.value(cred.tokenRef).catch(() => undefined);
+    return token === undefined ? { problem: signedOut(org, host) } : { token };
+  };
   const mrs = new MrService({
     gitLogins,
     freshToken: (ref) => gitTokens.value(ref),
@@ -1813,6 +1827,19 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const connectionTests = new ConnectionTester({
     oauth: connect,
+    gitWhoAmI: async (org, provider, host) => {
+      const fetchFn = options.gitFetch ?? fetch;
+      const used = await gitTokens
+        .withToken(org, provider, host, (token) => whoAmI(fetchFn, provider, host, token))
+        .catch((err: unknown) => ({ state: "error" as const, message: errorMessage(err) }));
+      if (used.state === "ok") return { account: used.value };
+      if (used.state === "signed-out") return { problem: signedOut(org, host) };
+      if (used.state === "refused")
+        return {
+          problem: `${host} refused the workspace's sign-in. Sign it in again on the Workspaces page.`,
+        };
+      return { problem: used.message };
+    },
     connections,
     secrets,
     spawner: sessionOptions.spawner ?? localSpawner,

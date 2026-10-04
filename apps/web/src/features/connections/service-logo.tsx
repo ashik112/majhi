@@ -84,6 +84,7 @@ export function ServiceLogo({
 export function serviceOf(view: ConnectionView): string | undefined {
   const explicit = view.fields.service?.value;
   if (explicit) return explicit;
+  if (view.type === "git") return view.fields.provider?.value ?? "gitlab";
   const address = view.fields.url?.value;
   if (!address) return undefined;
   const known = serviceByUrl(address)?.id;
