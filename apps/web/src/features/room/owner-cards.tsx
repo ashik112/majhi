@@ -6,16 +6,26 @@ import {
   type Task,
 } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
-import { Check, CircleCheck, CirclePause, MessageSquareReply, RotateCw, SendHorizontal } from "lucide-react";
+import {
+  Check,
+  CircleCheck,
+  CirclePause,
+  MessageSquareReply,
+  RotateCw,
+  SendHorizontal,
+  TriangleAlert,
+} from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PageLink } from "@/components/ui/page-link";
 import { useToast } from "@/components/ui/toast";
 import { SignInAgainDialog } from "@/features/accounts/account-dialogs";
+import { HandoffBlock } from "@/features/handoff/handoff-block";
 import { type RunShip, Ship, type ShipChoices, type ShipTarget } from "@/features/task/ship";
 import { CloseUnshippedDialog, unshippedCount } from "@/features/task/unshipped";
 import { useAgentIndex } from "@/lib/agent-index";
 import { type ApiRequestError, cmd } from "@/lib/api";
+import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { useFixCheck, useHealthChecks } from "@/lib/ops-queries";
 import { useAccounts, useOrgs, useTools } from "@/lib/studio-queries";
@@ -93,6 +103,7 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
   const workspace =
     orgs?.find((o) => o.id === task.org)?.name ?? (task.org === undefined ? "Private" : task.org);
   const lead = item.lead ?? task.team[0];
+  const failed = item.why?.startsWith("Checks failed") === true;
   const act = (
     action: "merge" | "mergePush" | "push" | "mr" | "done",
     target?: ShipTarget,
@@ -132,14 +143,25 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
 
   return (
     <section
-      aria-label="Ready to ship"
-      className="flex max-w-[700px] flex-col gap-2.5 rounded-lg border border-green-line bg-green-wash px-3.5 py-3"
+      aria-label={failed ? "Done, checks failed" : "Ready to ship"}
+      className={cn(
+        "flex max-w-[700px] flex-col gap-2.5 rounded-lg border px-3.5 py-3",
+        failed ? "border-amber-line bg-amber-wash" : "border-green-line bg-green-wash",
+      )}
     >
       <p className="flex items-start gap-2 text-base text-fg">
-        <CircleCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-green" />
+        {failed ? (
+          <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
+        ) : (
+          <CircleCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-green" />
+        )}
         <span className="min-w-0 break-words">
-          <span className="font-medium">Ready to ship.</span>{" "}
-          <span className="text-fg-muted">The agents are done and wait for you.</span>
+          <span className="font-medium">{failed ? "Not ready." : "Ready to ship."}</span>{" "}
+          <span className="text-fg-muted">
+            {failed
+              ? "The agents are done, but the check found a problem."
+              : "The agents are done and wait for you."}
+          </span>
         </span>
       </p>
       {item.why !== undefined && (
@@ -151,6 +173,7 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
           {plainAuthorityText(item.ready, workspace)}
         </p>
       )}
+      {task.repos.length > 0 && <HandoffBlock task={task.id} className="pl-6" />}
       <div className="flex flex-wrap items-center gap-2 pl-6">
         {shipping && <Ship task={task} run={run} lead={lead} align="left" variant="primary" primaryAction />}
         <Button
