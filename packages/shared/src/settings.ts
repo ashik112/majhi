@@ -359,7 +359,10 @@ export const PolicySettingsSchema = z.strictObject({
   commands: z.record(z.string(), ApprovalModeSchema).default({}),
   /** Saved "always allow" choices from approval cards. */
   rules: z.array(AllowRuleSchema).default([]),
-  /** Lets a rule cover a destructive command (remove, delete, forget). Off by default. */
+  /**
+   * No longer read: a destructive command always waits for the owner's click. Kept so a majhi.yaml
+   * that still sets it loads.
+   */
   allow_destructive_rules: z.boolean().default(false),
 });
 export type PolicySettings = z.infer<typeof PolicySettingsSchema>;
@@ -372,7 +375,6 @@ export const PolicyPatchSchema = z
     outbound: ApprovalModeSchema,
     commands: z.record(z.string(), ApprovalModeSchema),
     rules: z.array(AllowRuleSchema),
-    allow_destructive_rules: z.boolean(),
   })
   .partial();
 export type PolicyPatch = z.infer<typeof PolicyPatchSchema>;

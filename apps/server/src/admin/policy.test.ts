@@ -1,17 +1,32 @@
-import { type AllowRule, AllowRuleSchema, isDestructiveCommand, PolicySettingsSchema } from "@majhi/shared";
+import {
+  type AllowRule,
+  AllowRuleSchema,
+  effectiveMode,
+  isDestructiveCommand,
+  PolicySettingsSchema,
+} from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { decide, matchRule, modeFor, redact, redactText } from "./policy.ts";
+import { decide, matchRule, redact, redactText } from "./policy.ts";
 
 const defaults = PolicySettingsSchema.parse({});
 
 describe("approval decision table", () => {
   it("uses the risk class default, and a command override first", () => {
-    expect(modeFor(defaults, "orgs.list", "read")).toBe("auto");
-    expect(modeFor(defaults, "orgs.create", "change")).toBe("when-asked");
-    expect(modeFor(defaults, "agents.remove", "destructive")).toBe("confirm");
-    expect(modeFor(defaults, "system.update", "outbound")).toBe("confirm");
+    expect(effectiveMode(defaults, "orgs.list", "read")).toBe("auto");
+    expect(effectiveMode(defaults, "orgs.create", "change")).toBe("when-asked");
+    expect(effectiveMode(defaults, "agents.remove", "destructive")).toBe("confirm");
+    expect(effectiveMode(defaults, "system.update", "outbound")).toBe("confirm");
     const policy = PolicySettingsSchema.parse({ commands: { "orgs.create": "auto" } });
-    expect(modeFor(policy, "orgs.create", "change")).toBe("auto");
+    expect(effectiveMode(policy, "orgs.create", "change")).toBe("auto");
+  });
+
+  it("keeps a destructive command on confirm whatever the policy says", () => {
+    const policy = PolicySettingsSchema.parse({
+      destructive: "auto",
+      commands: { "agents.remove": "auto", "team.remove": "auto" },
+    });
+    expect(effectiveMode(policy, "agents.remove", "destructive")).toBe("confirm");
+    expect(effectiveMode(policy, "team.remove", "change")).toBe("confirm");
   });
 
   it.each([
@@ -107,14 +122,13 @@ describe("matchRule", () => {
     expect(matchRule(policy([orgRule]), { ...call, task: "LOCAL-1", org: undefined })).toBeUndefined();
   });
 
-  it("skips a destructive command unless the toggle is on", () => {
+  it("never covers a destructive command, even with the old toggle on", () => {
     const rule = { agent: "acme-builder", command: "agents.remove", org: "acme" };
     const remove = { ...call, command: "agents.remove" };
     expect(matchRule(policy([rule]), remove)).toBeUndefined();
-    expect(matchRule(policy([rule], true), remove)).toEqual(rule);
+    expect(matchRule(policy([rule], true), remove)).toBeUndefined();
     const soft = { agent: "acme-builder", command: "team.remove", task: "ACM-1" };
-    expect(matchRule(policy([soft]), { ...call, command: "team.remove" })).toBeUndefined();
-    expect(matchRule(policy([soft], true), { ...call, command: "team.remove" })).toEqual(soft);
+    expect(matchRule(policy([soft], true), { ...call, command: "team.remove" })).toBeUndefined();
   });
 
   it("accepts a rule with exactly one scope", () => {

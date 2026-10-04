@@ -16,6 +16,7 @@ import type { AgentRun } from "./run.ts";
  * For a run that holds connections the gate comes first (5.14): reads of them run, and a write runs
  * only when the connection's `allow` holds it or the owner says so, once. Perms and remembered
  * choices never cover a connection write, and each one is an audit row of kind `connection-write`.
+ * A destructive write is never allowed by `allow`, and the captain cannot approve it: only the owner.
  */
 export class PermissionFlow {
   constructor(
@@ -78,6 +79,7 @@ export class PermissionFlow {
       name: name ?? first?.connection ?? "a connection",
       action: writes.map((w) => w.action).join("; "),
       why: first?.why ?? "it may change something",
+      ...(writes.some((w) => w.destructive) ? { destructive: true } : {}),
     };
     const base = {
       type: "permission" as const,
@@ -115,8 +117,11 @@ export class PermissionFlow {
         `"${option}" is not one of the options: ${pending.ask.options.map((o) => o.id).join(", ")}.`,
       );
     }
-    run.pending.delete(itemId);
     const allowed = chosen.kind === "allow_once" || chosen.kind === "allow_always";
+    if (captain && allowed && pending.writes?.some((w) => w.destructive) === true) {
+      throw new UserError("This deletes or destroys something. Only the owner can approve it.", 409);
+    }
+    run.pending.delete(itemId);
     const by = captain ? "captain" : "owner";
     if (pending.writes !== undefined) {
       this.logWrites(run, pending.writes, allowed ? "allow" : "deny", by);

@@ -672,7 +672,13 @@ function Permission({
             <span>
               <span className="text-fg-muted">{item.agent} wants to change </span>
               {item.connection.name}
-              <span className="text-fg-muted">. This is a write: {item.connection.why}.</span>
+              {item.connection.destructive === true ? (
+                <span className="text-red">
+                  . This deletes or destroys something. Only you can approve it.
+                </span>
+              ) : (
+                <span className="text-fg-muted">. This is a write: {item.connection.why}.</span>
+              )}
             </span>
             <code className="font-mono text-sm text-fg-soft">{item.connection.action}</code>
           </span>
