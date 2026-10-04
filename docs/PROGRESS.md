@@ -1,6 +1,18 @@
 # Progress
 
-## D10: loop, stuck, wake gate, heartbeat, roll-ups, second opinion and echo guard (built, not merged)
+## After D1 to D10: one day of use, then one list
+
+Deployed 2026-10-05 (707aedbf). Collect what you see in one list, not one fix at a time. Watch:
+
+- **Spend.** Chores now run on every relevant event, not up to a daily count. A run that finds nothing new makes no model call. If spend per day goes up, note when and which workspace.
+- **Permission prompts reaching you.** The second-opinion model is gone, so prompts the rule table does not know come to you. Note which programs or tools they are: each one is a rule to add, not a model to bring back.
+- **Stalls.** A task that sits without moving and without a reason you can see. Note the task and what the board says.
+- **Loop pauses.** A task paused as "going in circles" after three answers with no progress. Note whether it was right.
+- **Sign-in handoffs.** A lead whose account needs a new sign-in now hands its task to a fallback or teammate at once. Note any handoff that went to the wrong agent.
+
+Next stage after the list: the task model (one hold per task, one transition table), then one scheduler. See docs/design/task-lifecycle.md section 9.
+
+## D10: loop, stuck, wake gate, heartbeat, roll-ups, second opinion and echo guard (merged)
 
 - **Progress counter first.** After 3 captain answers to one task with no progress in between, majhi pauses the task for the owner with the existing loop pause (`pauseForOwner`, reason `loop`; the paused card says so). `LOOP_GUARD_ANSWERS = 3` in `captain/rules.ts`. The count lives in `captain_loop_guard` (migration 152): per task, the progress mark it was counted against (status plus the head of each branch) and the count. A commit or a status change gives a new mark and the count starts again; answers to another task do not count, and any card of the same task does. It is stored, so a restart keeps it, and the count and the pause happen in one transaction, so answers that land together pause once. A permission Allow is not counted (a rejection is). The prompt gained one line: "After three answers with no progress, majhi pauses the task for the owner."
 - **Removed.** The question-loop similarity rule (word overlap, 10-minute and 5-minute windows) in the questions chore and in `autonomy.answer`, with its room line and nudge, the `q-loop` playbook rule, and the call-outcome reader. The stuck chore (sign-in lead move, wake, pause), its playbook, log words and ports, and the stuck detector's failures and repeated-line rules. The Laya wake gate and its `wake-gate` decision slot. The driver's hourly heartbeat and its `pendingWork` input. The periodic and notable roll-up posts in the root chat. The own-work second opinion and its `own-work-second` slot, the unknown-middle flag in the rule table and the label the owner's answer put on that decision. The echo guard (`markCaused`, `CAUSED_MS`).
