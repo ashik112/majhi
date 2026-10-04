@@ -17,6 +17,13 @@ import {
   ToolIdSchema,
   ToolInfoSchema,
 } from "./accounts.ts";
+import {
+  AgendaBriefInputSchema,
+  AgendaConfigureInputSchema,
+  AgendaDismissInputSchema,
+  AgendaTodayInputSchema,
+  AgendaTodaySchema,
+} from "./agenda.ts";
 import { AgentToolRefSchema, AttachedToolsSchema } from "./agent-tools.ts";
 import {
   ConfigStateSchema,
@@ -146,14 +153,15 @@ import {
   ProviderIdSchema,
 } from "./decisions.ts";
 import { E2ePatchSchema, E2eRunSchema, E2eStatusSchema } from "./e2e.ts";
-import { EmojiSchema } from "./emoji.ts";
 import {
-  AgendaBriefInputSchema,
-  AgendaConfigureInputSchema,
-  AgendaDismissInputSchema,
-  AgendaTodayInputSchema,
-  AgendaTodaySchema,
-} from "./agenda.ts";
+  EconomicsGetInputSchema,
+  EconomicsSchema,
+  FindingDeadlineInputSchema,
+  FindingDeadlineResultSchema,
+  FindingProposalInputSchema,
+  FindingProposalResultSchema,
+} from "./economics.ts";
+import { EmojiSchema } from "./emoji.ts";
 import {
   FindingDismissInputSchema,
   FindingReportInputSchema,
@@ -177,6 +185,7 @@ import {
   SignOutInputSchema,
   SignOutSchema,
 } from "./git-signin.ts";
+import { HandoffCheckInputSchema, HandoffGetInputSchema, HandoffStateSchema } from "./handoff.ts";
 import {
   DirListingSchema,
   EDITOR_PATH_MAX,
@@ -244,6 +253,22 @@ import {
 import { PendingNoticeSchema } from "./notify.ts";
 import { OnboardingStatusSchema } from "./onboarding.ts";
 import {
+  OpsAckInputSchema,
+  OpsIncidentSchema,
+  OpsOverviewInputSchema,
+  OpsOverviewSchema,
+  OpsPhoneSetInputSchema,
+  OpsPhoneSetupInputSchema,
+  OpsPhoneSetupResultSchema,
+  OpsPhoneStatusSchema,
+  OpsPhoneTestResultSchema,
+  OpsServiceIdInputSchema,
+  OpsServiceSaveInputSchema,
+  OpsServiceViewSchema,
+  OpsSettingsInputSchema,
+  OpsSettingsSchema,
+} from "./ops.ts";
+import {
   GoalCreateInputSchema,
   GoalRemoveInputSchema,
   GoalSchema,
@@ -269,16 +294,6 @@ import {
   PlaybookUpdateInputSchema,
   PlaybookViewSchema,
 } from "./playbooks.ts";
-import { HandoffCheckInputSchema, HandoffGetInputSchema, HandoffStateSchema } from "./handoff.ts";
-import {
-  MoneySetInputSchema,
-  MoneyStatusSchema,
-  ScorecardGetInputSchema,
-  ScorecardSchema,
-  ScorecardSetMinutesInputSchema,
-  TrustListSchema,
-  TrustUnmuteInputSchema,
-} from "./scorecard.ts";
 import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
 import { ProjectCardSchema } from "./project-card.ts";
 import {
@@ -299,6 +314,15 @@ import {
   RemoteReposSchema,
 } from "./remote-repos.ts";
 import { CoordinationModeSchema } from "./rooms.ts";
+import {
+  MoneySetInputSchema,
+  MoneyStatusSchema,
+  ScorecardGetInputSchema,
+  ScorecardSchema,
+  ScorecardSetMinutesInputSchema,
+  TrustListSchema,
+  TrustUnmuteInputSchema,
+} from "./scorecard.ts";
 import {
   AllowRuleSchema,
   AutonomyPatchSchema,
@@ -932,6 +956,73 @@ export const commands = {
     input: OutboundBatchInputSchema,
     output: OutboundDecideResultSchema,
   },
+  // Ops watch (5.18) ------------------------------------------------------------
+  "ops.overview": {
+    risk: "read",
+    summary:
+      "The watched services of every workspace with their check state and 24 hour latency, the open and recent incidents with their timelines, the phone push status and the escalation settings. The owner's",
+    input: OpsOverviewInputSchema,
+    output: OpsOverviewSchema,
+  },
+  "ops.serviceSave": {
+    risk: "change",
+    summary:
+      "Add or change a watched service in a workspace: an address with the status, keyword or latency that counts as up, optional certificate and DNS checks, how bad an outage is, the project a fix opens in, and an optional monitoring read through an MCP connection. The owner's",
+    input: OpsServiceSaveInputSchema,
+    output: OpsServiceViewSchema,
+  },
+  "ops.serviceRemove": {
+    risk: "change",
+    summary: "Stop watching a service. Its open incident is resolved. The owner's",
+    input: OpsServiceIdInputSchema,
+    output: z.object({ id: z.string() }),
+  },
+  "ops.checkNow": {
+    risk: "change",
+    summary: "Run every check of one watched service now. The owner's",
+    input: OpsServiceIdInputSchema,
+    output: OpsServiceViewSchema,
+  },
+  "ops.ack": {
+    risk: "change",
+    summary:
+      "Acknowledge an incident: the owner has seen it, so it stops alerting and leaves Decisions. It stays open until its checks are green. The owner's",
+    input: OpsAckInputSchema,
+    output: OpsIncidentSchema,
+  },
+  "ops.settings": {
+    risk: "change",
+    summary:
+      "Set how long an unanswered high incident waits before it alerts again (default 10 minutes) and how long checks stay green before an incident closes (default 10 minutes). The owner's",
+    input: OpsSettingsInputSchema,
+    output: OpsSettingsSchema,
+  },
+  "ops.phoneSetup": {
+    risk: "change",
+    summary:
+      "Set up the phone push through ntfy: makes a long random topic, stores it in secrets.age and returns it once, with the link for the QR code. Calling it again replaces the topic. Off until switched on. The owner's",
+    input: OpsPhoneSetupInputSchema,
+    output: OpsPhoneSetupResultSchema,
+  },
+  "ops.phoneSet": {
+    risk: "change",
+    summary:
+      "Switch the phone push on or off, set the address the phone reaches majhi on, and choose which decisions get Approve and Leave buttons (permissions, merges, drafts). The owner's",
+    input: OpsPhoneSetInputSchema,
+    output: OpsPhoneStatusSchema,
+  },
+  "ops.phoneTest": {
+    risk: "change",
+    summary: "Send one test push to the phone. The owner's",
+    input: z.object({}),
+    output: OpsPhoneTestResultSchema,
+  },
+  "ops.phoneForget": {
+    risk: "change",
+    summary: "Turn the phone push off and delete its topic and tokens. The owner's",
+    input: z.object({}),
+    output: OpsPhoneStatusSchema,
+  },
   // Scorecard, trust ladder and money (5.18) -------------------------------------
   "scorecard.get": {
     risk: "read",
@@ -995,6 +1086,27 @@ export const commands = {
       "Check a task in review again: run its project card's tests, build and lint in its worktree and read the diff against the brief. The same head is not run twice unless force is set. Failures go back to the lead once per head; after three failed hand-offs in a row the owner decides",
     input: HandoffCheckInputSchema,
     output: HandoffStateSchema,
+  },
+  "economics.get": {
+    risk: "read",
+    summary:
+      "Per workspace, this week or this month against the one before: tasks shipped, agent hours, spend, the owner's minutes in reviews and decisions (estimated), and, from rates the owner entered, what the client pays and what is left. With no rate there is no margin. Flags: spend growing faster than shipped work, no shipped work in 14 days, spend near the retainer. A captain lane sees its own workspace only",
+    input: EconomicsGetInputSchema,
+    output: EconomicsSchema,
+  },
+  "findings.proposal": {
+    risk: "change",
+    summary:
+      "Draft a short proposal for an opportunity finding, in the workspace's voice with the business facts, as an email draft to the client's main contact. It goes through the outbound gate and waits for the owner. The owner's",
+    input: FindingProposalInputSchema,
+    output: FindingProposalResultSchema,
+  },
+  "findings.deadline": {
+    risk: "change",
+    summary:
+      "Add the deadline a grant or launch finding carries to the business deadlines, linked to the finding. The owner's confirmation of what a feed proposed",
+    input: FindingDeadlineInputSchema,
+    output: FindingDeadlineResultSchema,
   },
   // Business memory (5.19) -----------------------------------------------------
   "kb.list": {
@@ -1147,7 +1259,8 @@ export const commands = {
   },
   "agenda.configure": {
     risk: "change",
-    summary: "Set the owner's review time per day in minutes (default 45). It decides how much of the agenda shows as today. The owner only",
+    summary:
+      "Set the owner's review time per day in minutes (default 45). It decides how much of the agenda shows as today. The owner only",
     input: AgendaConfigureInputSchema,
     output: AgendaTodaySchema,
   },

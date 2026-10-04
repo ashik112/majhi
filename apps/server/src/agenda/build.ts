@@ -52,6 +52,7 @@ const DECISION_MINUTES: Record<OwnerDecisionKind, number> = {
   draft: 2,
   batch: 3,
   trust: 1,
+  incident: 1,
 };
 
 /** The order of decisions among themselves: what blocks an agent first, then what is ready to ship. */
@@ -66,6 +67,8 @@ const DECISION_WEIGHT: Record<OwnerDecisionKind, number> = {
   batch: 44,
   // A row that went back to You, or a promotion proposal: read when there is time.
   trust: 40,
+  // An incident decision is left out of the agenda: its finding stands for it, with the same weight.
+  incident: 100,
   // A budget hold is handled below: it stops new work.
   budget: 85,
   cap: 85,
@@ -234,7 +237,7 @@ export function compareItems(a: AgendaItem, b: AgendaItem): number {
 /** Every item that could be on the agenda, in order. */
 export function buildItems(input: AgendaInput): AgendaItem[] {
   const items: AgendaItem[] = [
-    ...input.decisions.map((d) => decisionItem(d, input)),
+    ...input.decisions.filter((d) => d.kind !== "incident").map((d) => decisionItem(d, input)),
     ...input.findings.flatMap((f) => findingItem(f, input) ?? []),
     ...input.deadlines.flatMap((d) => deadlineItem(d, input) ?? []),
     ...input.steps.map((s) => stepItem(s, input)),

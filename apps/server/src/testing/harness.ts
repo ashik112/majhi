@@ -69,6 +69,10 @@ export interface HarnessOptions {
   /** Replaces `fetch` for the MCP Registry. */
   mcpFetch?: NonNullable<ServiceOptions["mcpFetch"]>;
   connectCatalog?: NonNullable<ServiceOptions["connectCatalog"]>;
+  /** The ops watch's network. Default: every address fails, so a test never reaches a real host. */
+  opsProbes?: NonNullable<ServiceOptions["opsProbes"]>;
+  /** The phone push's server. Default: unreachable. */
+  ntfyFetch?: typeof fetch;
 }
 
 export async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -118,6 +122,18 @@ function build(
     ...(options.skillsFetch === undefined ? {} : { skillsFetch: options.skillsFetch }),
     ...(options.mcpFetch === undefined ? {} : { mcpFetch: options.mcpFetch }),
     ...(options.connectCatalog === undefined ? {} : { connectCatalog: options.connectCatalog }),
+    // Tests never reach a real address, certificate, name or ntfy server.
+    opsProbes: options.opsProbes ?? {
+      fetch: (async () => {
+        throw new Error("the ops watch is offline in tests");
+      }) as typeof fetch,
+    },
+    ntfyFetch:
+      options.ntfyFetch ??
+      ((async () => {
+        throw new Error("ntfy is offline in tests");
+      }) as typeof fetch),
+    opsRetryMs: 0,
   });
   const h: Harness = {
     dir,

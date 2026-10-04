@@ -89,6 +89,8 @@ export function topicsFor(command: string): EventTopic[] {
     case "outbound":
       // A draft waits in Decisions; a playbook run files findings and shows in the captain's log.
       return ["playbooks", "findings", "captain"];
+    case "ops":
+      return ["ops", "findings", "playbooks"];
     case "findings":
       // A task made from a finding shows on the board too.
       return ["findings", "tasks"];

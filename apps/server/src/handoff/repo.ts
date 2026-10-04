@@ -10,7 +10,7 @@ import {
 import type Database from "better-sqlite3";
 import { z } from "zod";
 
-/** The tables of migration 139: the costly part of a check by head, its history, and the strikes. */
+/** The tables of migration 140: the costly part of a check by head, its history, and the strikes. */
 
 export interface DeepRow {
   task: string;

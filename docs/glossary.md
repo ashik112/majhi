@@ -6,19 +6,26 @@ One word for one thing in the app's text. `apps/web/src/lib/naming.test.ts` fail
 |---|---|---|
 | Something that waits for the owner | Decision (place: Decisions; lamp word: Needs you) | inbox item, card, notification |
 | Count of those | The length of `decisions.list` (`useNeedsYou`) | a count of tasks or cards |
-| Decision kinds | Ship, Question, Access, Money, Paused, Trust | Review, Ready for review, Approvals, Budget or Daily limit as a kind |
+| Decision kinds | Ship, Question, Access, Money, Paused, Trust, Incident | Review, Ready for review, Approvals, Budget or Daily limit as a kind |
 | Work that stopped on the Board | Waiting (the column) | Needs you (the column) |
 | Failed health checks | N to fix | N need you |
 | What the captain may do in a workspace | The plain sentence from `authorityLine`: "In Acme you decide when work is merged." | Keeps things tidy, Runs it, Only when I ask |
 | Money limits | Budget | cap, daily limit |
 | The row that lets the captain approve routine requests of work it started | Own work | self-approve, auto-approve |
 | Approving or rejecting many decisions at once | Batch: "Approve N", "Leave N", "Approve all like this" | bulk, mass approve |
+| A confirmed outage of something watched, or a failing check of majhi itself | Incident (place: Watch) | alert, ticket, outage card |
+| The page of watched services and incidents | Watch | Uptime, Monitoring, Ops |
+| Telling majhi you saw an incident | Acknowledge | ack, dismiss, snooze |
+| The push to your phone | Phone push, through ntfy | SMS, pager, notification (for the push) |
 | What the captain did and how it turned out | Scorecard ("Kept 47/50, $3.10, ~2.5 h saved") | report card, KPIs, accuracy score |
 | A row dropping back to You by itself, or a channel to Draft | "went back to You" (Trust decision) | demoted, downgraded |
 | A proposal to let the captain decide more | "Let it decide", "Move to Batch" (Trust decision) | upgrade, promote automatically |
 | A playbook set to weekly because its findings were dismissed | "now runs weekly" (Undo) | muted, disabled |
 | The one monthly spend limit | Monthly ceiling | monthly budget, hard cap |
-| Spend against what a client pays | Profit and loss; "Retainer less spend" | margin, ROI |
+| Spend against what a client pays | Profit and loss; "Retainer less spend"; per workspace, "Left" | margin, ROI |
+| What each workspace did and cost against the period before | Per workspace (week or month), Your time (est.) | client P&L, utilisation |
+| A grant, hackathon or launch found in a feed | Finding of source Grant or Launch; its deadline waits for "Add to deadlines" | lead, alert |
+| A list of ideas the captain makes from the owner's own work | Opportunities; "Draft a proposal" | leads, upsell queue |
 | The day's ordered list of what needs the owner | Agenda (place: Today) | to-do list |
 | The text made each morning | Brief (the full sheet is still the Daily summary) | digest, briefing |
 | The owner's review time per day | Review time | review budget, minutes cap |

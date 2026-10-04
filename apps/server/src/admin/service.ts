@@ -21,6 +21,7 @@ import type { Dispatch } from "../commands/dispatch.ts";
 import type { ChangeRecord, ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import { FINDINGS_TOOL_COMMANDS } from "../findings/handlers.ts";
+import { GROWTH_TOOL_COMMANDS } from "../growth/handlers.ts";
 import { HANDOFF_TOOL_COMMANDS } from "../handoff/handlers.ts";
 import { OUTCOMES_TOOL_COMMANDS } from "../outcomes/handlers.ts";
 import { PLAYBOOK_TOOL_COMMANDS } from "../playbooks/handlers.ts";
@@ -201,6 +202,7 @@ export class AdminService {
         BUSINESS_TOOL_COMMANDS.has(spec.command) ||
         PLAYBOOK_TOOL_COMMANDS.has(spec.command) ||
         OUTCOMES_TOOL_COMMANDS.has(spec.command) ||
+        GROWTH_TOOL_COMMANDS.has(spec.command) ||
         HANDOFF_TOOL_COMMANDS.has(spec.command)
       ) {
         const checked = commands[spec.command].input.safeParse(input);
