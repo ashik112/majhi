@@ -92,6 +92,7 @@ import type { Fetch } from "./gitConnect/http.ts";
 import { whoAmI } from "./gitConnect/oauth.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
 import { DEFAULT_HANDOFF_MEMORY, defaultHandoffCpus } from "./handoff/limits.ts";
+import { shipReadiness } from "./handoff/ready.ts";
 import type { HandoffService } from "./handoff/service.ts";
 import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
 import type { HostLink } from "./host/link.ts";
@@ -965,6 +966,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           chat: isOwnerChat(task),
           ...(task.org === undefined ? {} : { org: task.org }),
           repos: task.repos,
+          status: task.status,
+          ...(() => {
+            const kids = store.tasks.openSubtasks(id);
+            return {
+              openSubtasks: kids.open,
+              ...(kids.newest === undefined ? {} : { newestSubtask: kids.newest }),
+            };
+          })(),
         };
   };
   const notifier = new Notifier({
@@ -1188,6 +1197,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outbound,
     incidents: () => opsWatch?.unacked() ?? [],
     items: () => store.room.waitingDecisions(),
+    working: () => runs.workingTasks(),
+    // The same live look the captain's ship chore takes: a card never offers a merge that fails.
+    shipBlock: async (task) => {
+      const check = await shipReadiness({ store, room, runs, mrs }, task);
+      return check.ready || check.unmergeable === undefined
+        ? undefined
+        : { why: check.why, empty: check.unmergeable === "empty" };
+    },
     subject: (id) => {
       const task = store.tasks.subjectInfo(id);
       return task === undefined || task.status === "done" ? undefined : subjectOf(id);

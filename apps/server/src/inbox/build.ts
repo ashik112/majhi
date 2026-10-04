@@ -8,6 +8,7 @@ import {
   incidentDecisionId,
   OUTBOUND_CHANNEL_LABEL,
   type OutboundChannel,
+  permissionOptionLabel,
   type Draft as OutboundDraft,
   type OwnerDecision,
   type OwnerDecisionKind,
@@ -33,6 +34,11 @@ export interface DecisionSources {
   /** Accounts the owner has to sign in again. */
   signedOut: readonly { id: string; at: string }[];
   recommendations: ReadonlyMap<string, Recommendation>;
+  /**
+   * Tasks in review that cannot merge now, by task id: why, and whether there is simply nothing to
+   * merge (Mark done still works). A review card of such a task does not offer Merge.
+   */
+  shipBlocked?: ReadonlyMap<string, { why: string; empty: boolean }>;
   /** Drafts that wait for the owner one by one (the outbound gate, Draft mode). */
   drafts?: readonly OutboundDraft[];
   /** Batches that are due in front of the owner: queued drafts of a channel in Batch mode. */
@@ -81,6 +87,8 @@ const PAUSE_TITLE: Record<string, string> = {
 interface Draft {
   kind: OwnerDecisionKind;
   title: string;
+  /** Why the main action cannot succeed now, in one line. */
+  blocked?: string;
   /** What it is in a full sentence. Falls back to the title. */
   sentence?: string;
   options: DecisionOption[];
@@ -106,7 +114,15 @@ function withPrimary(options: readonly DecisionOption[], primary: string | undef
  * The decision a room item stands for, or undefined when it waits for nobody: an answered card, an
  * agent's message, a pause the owner made. The one rule of what is a decision; alerts use it too.
  */
-function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
+function draftOf(
+  item: RoomItem,
+  subject: Subject,
+  shipBlock?: { why: string; empty: boolean },
+): Draft | undefined {
+  // A card waits for the owner only while its task is in the state the card belongs to. A card left
+  // from before (a review card of a task that moved on, a merge approval of a paused task) is no decision.
+  const status = subject.status;
+  const acting = status === undefined || status === "running" || status === "review";
   switch (item.type) {
     case "ask": {
       if (item.state !== "pending") return undefined;
@@ -152,7 +168,7 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
           }
         : undefined;
     case "permission": {
-      if (item.state !== "pending") return undefined;
+      if (item.state !== "pending" || !acting) return undefined;
       const allow =
         item.options.find((o) => o.kind === "allow_once") ??
         item.options.find((o) => o.kind.startsWith("allow"));
@@ -163,7 +179,7 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
         options: withPrimary(
           item.options.map((o) => ({
             id: o.id,
-            label: o.name,
+            label: permissionOptionLabel(o),
             ...(o.kind === "allow_once"
               ? { effect: "approve" as const }
               : o.kind === "reject_once"
@@ -175,7 +191,10 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
       };
     }
     case "approval":
-      return item.state === "pending"
+      // A split the agent asked for is carried out once its subtasks exist: the card has nothing left to ask.
+      if (item.command === "tasks.split" && subject.newestSubtask !== undefined && subject.newestSubtask >= item.at)
+        return undefined;
+      return item.state === "pending" && acting
         ? {
             kind: "approval",
             title: oneLine(item.summary),
@@ -199,7 +218,7 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
           }
         : undefined;
     case "review": {
-      if (item.state !== "pending") return undefined;
+      if (item.state !== "pending" || (status !== undefined && status !== "review")) return undefined;
       const who = item.lead === undefined ? "The team" : `@${item.lead}`;
       const name = `"${subject.title}"`;
       const repos = subject.repos ?? 1;
@@ -213,6 +232,17 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
       const own = (repos === 0 ? [done, changes] : [merge, done, changes]).map((o) =>
         ship(o, repos === 0 ? "done" : "merge"),
       );
+      if (shipBlock !== undefined && repos > 0) {
+        // The server knows Merge fails: say what is wrong, and offer only what can work.
+        const rest = shipBlock.empty ? [done, changes] : [changes];
+        return {
+          kind: "ship",
+          title: `Finished: ${oneLine(subject.title, 120)}`,
+          sentence: `${who} finished ${name}. It cannot be merged: ${shipBlock.why}`.slice(0, 500),
+          blocked: shipBlock.why.slice(0, 300),
+          options: withPrimary(rest, undefined),
+        };
+      }
       if (item.ready === undefined) {
         return {
           kind: "ship",
@@ -243,6 +273,8 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
       const title = PAUSE_TITLE[item.reason];
       if (item.state !== "pending" || PAUSE_TEXT[item.reason] === undefined || title === undefined)
         return undefined;
+      // A task paused only because its subtasks are open waits for them, not for the owner.
+      if ((status !== undefined && status !== "paused") || (subject.openSubtasks ?? 0) > 0) return undefined;
       return {
         kind: "paused",
         title: item.why === undefined ? title : oneLine(`${title.split(":")[0]}: ${item.why}`),
@@ -312,7 +344,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
   for (const item of src.items) {
     const subject = src.subject(item.task);
     if (subject === undefined) continue;
-    const draft = draftOf(item, subject);
+    const draft = draftOf(item, subject, item.type === "review" ? src.shipBlocked?.get(item.task) : undefined);
     if (draft === undefined) continue;
     const id = decisionIdOf(item);
     const workspace = subject.org === undefined ? undefined : src.orgName?.(subject.org);
@@ -325,6 +357,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       ...(subject.chat ? { chat: true as const } : {}),
       title: draft.title,
       sentence: draft.sentence ?? draft.title,
+      ...(draft.blocked === undefined ? {} : { blocked: draft.blocked }),
       ...decorate(id, draft.options, draft.suggestion, workspace, draft.kind === "question"),
       at: item.at,
       link: subject.chat ? { kind: "chat", id: item.task } : { kind: "task", id: item.task, item: item.id },

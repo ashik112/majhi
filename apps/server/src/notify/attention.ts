@@ -1,4 +1,4 @@
-import type { NotifyKind, PausedReason, PendingNotice, RoomItem } from "@majhi/shared";
+import type { NotifyKind, PausedReason, PendingNotice, RoomItem, TaskStatus } from "@majhi/shared";
 
 /** What the owner is told about one item, before settings decide where it goes. */
 export interface Attention {
@@ -15,6 +15,15 @@ export interface Subject {
   org?: string | undefined;
   /** How many repos it has: a task with none has nothing to merge. */
   repos?: number | undefined;
+  /**
+   * Where the task stands now. A card only waits for the owner while the task is in the state that
+   * card belongs to: a review card in review, a pause card while paused. Absent: not checked.
+   */
+  status?: TaskStatus | undefined;
+  /** Subtasks that are not done. A parent that waits on them waits for no decision of the owner's. */
+  openSubtasks?: number | undefined;
+  /** When the newest open subtask was made (ISO): a split approval older than it has been carried out. */
+  newestSubtask?: string | undefined;
 }
 
 export function subjectName(task: Subject): string {
