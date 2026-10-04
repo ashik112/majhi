@@ -91,7 +91,17 @@ const card: Scorecard = {
       runs: 5,
     },
   ],
-  minutes: { start: 10, questions: 3, approvals: 1, upkeep: 2, merge: 5, push: 3, own: 1, draft: 8, finding: 15 },
+  minutes: {
+    start: 10,
+    questions: 3,
+    approvals: 1,
+    upkeep: 2,
+    merge: 5,
+    push: 3,
+    own: 1,
+    draft: 8,
+    finding: 15,
+  },
 };
 
 const money: MoneyStatus = {
@@ -117,7 +127,14 @@ const money: MoneyStatus = {
       marginUsd: 2879.6,
     },
     { org: "globex", spentUsd: 71.6, tokens: 6_000_000, minutesSaved: 140, rates: {} },
-    { org: "northwind", spentUsd: 20, tokens: 3_400_000, minutesSaved: 95, rates: { retainerUsd: 150 }, marginUsd: 130 },
+    {
+      org: "northwind",
+      spentUsd: 20,
+      tokens: 3_400_000,
+      minutesSaved: 95,
+      rates: { retainerUsd: 150 },
+      marginUsd: 130,
+    },
   ],
 };
 
@@ -140,7 +157,9 @@ async function stub(page: Page, held = false) {
   const answer = (name: string, json: () => unknown) =>
     page.route(`**/api/cmd/${name}`, (r) => r.fulfill({ json: json() }));
   await answer("scorecard.get", () => card);
-  await answer("money.get", () => (held ? { ...money, spentUsd: 500, held: true, line: "$500 of $500 this month, new starts held" } : money));
+  await answer("money.get", () =>
+    held ? { ...money, spentUsd: 500, held: true, line: "$500 of $500 this month, new starts held" } : money,
+  );
   await answer("decisions.list", () => ({ decisions: [trust] }));
 }
 
