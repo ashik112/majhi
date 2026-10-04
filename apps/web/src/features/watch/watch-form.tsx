@@ -13,7 +13,15 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
+import {
+  type ActionDraft,
+  ActionFields,
+  actionToDraft,
+  draftToAction,
+  EMPTY_ACTION,
+} from "@/features/actions/action-fields";
 import { useConnections } from "@/lib/connection-queries";
 import { describeError } from "@/lib/errors";
 import { useOrgs } from "@/lib/studio-queries";
@@ -53,6 +61,14 @@ interface Draft {
   text: string;
   everyMin: string;
   project: string;
+  /** "A URL changes": a page's text watched for any change. */
+  urlChange: boolean;
+  /** Run an action when it fires. */
+  actOn: boolean;
+  act: ActionDraft;
+  actSkip: boolean;
+  /** Also raise an alert (an incident). */
+  alert: boolean;
 }
 
 function emptyDraft(kind: WatchSort = "website"): Draft {
@@ -71,7 +87,7 @@ function emptyDraft(kind: WatchSort = "website"): Draft {
     redisMetric: "memory_ratio",
     infoField: "",
     serverMetric: "disk",
-    path: "/",
+    path: kind === "path" ? "" : "/",
     source: "redis_list",
     key: "",
     mode: "value",
@@ -82,12 +98,17 @@ function emptyDraft(kind: WatchSort = "website"): Draft {
     args: "{}",
     metricPath: "",
     instruction: "",
-    ctype: kind === "website" ? "down" : "above",
+    ctype: kind === "website" ? "down" : kind === "path" ? "changed" : "above",
     value: "",
     forMin: "0",
     text: "",
     everyMin: kind === "price" ? "360" : kind === "custom" ? "1440" : "5",
     project: "",
+    urlChange: false,
+    actOn: false,
+    act: EMPTY_ACTION,
+    actSkip: true,
+    alert: true,
   };
 }
 
@@ -96,6 +117,12 @@ function draftOf(def: WatchDef): Draft {
   d.name = def.name;
   d.everyMin = String(def.everyMin);
   d.project = def.project ?? "";
+  d.alert = def.fire.alert.on;
+  if (def.fire.run !== undefined) {
+    d.actOn = true;
+    d.act = actionToDraft(def.fire.run);
+  }
+  d.actSkip = def.fire.runOverlap === "skip";
   const c = def.condition;
   d.ctype = c.type;
   if (c.type === "above" || c.type === "below") {
@@ -141,6 +168,16 @@ function draftOf(def: WatchDef): Draft {
       d.selector = s.selector ?? "";
       d.pattern = s.pattern ?? "";
       d.compare = s.compare.join("\n");
+      d.urlChange =
+        s.mode === "text" &&
+        c.type === "changed" &&
+        d.selector === "" &&
+        d.pattern === "" &&
+        s.compare.length === 0;
+      break;
+    case "path":
+      d.project = s.project;
+      d.path = s.path;
       break;
     case "metric":
       d.connection = s.connection;
@@ -213,6 +250,8 @@ function specOf(d: Draft): unknown {
         ...(opt(d.label).v === undefined ? {} : { label: d.label.trim() }),
         ...(opt(d.unit).v === undefined ? {} : { unit: d.unit.trim() }),
       };
+    case "path":
+      return { kind: "path", project: d.project, path: d.path.trim() };
     case "custom":
       return { kind: "custom", instruction: d.instruction.trim() };
   }
@@ -280,13 +319,28 @@ export function WatchForm({
 
   /** The form as a watch, with the fire settings kept from what was there. */
   const build = (): WatchDef | undefined => {
+    let run: unknown;
+    if (d.actOn) {
+      const built = draftToAction(d.act);
+      if ("error" in built) {
+        setProblem(built.error);
+        return undefined;
+      }
+      run = built.action;
+    }
+    const baseFire = WatchDefSchema.shape.fire.parse(source?.fire ?? {});
     const parsed = WatchDefSchema.safeParse({
       name: d.name.trim() === "" ? "Untitled watch" : d.name.trim(),
       spec: specOf(d),
       condition: conditionOf(d),
       everyMin: Number(d.everyMin),
-      ...(source === undefined ? {} : { fire: source.fire }),
-      ...(d.project === "" ? {} : { project: d.project }),
+      fire: {
+        ...baseFire,
+        alert: { ...baseFire.alert, on: d.alert },
+        run,
+        runOverlap: d.actSkip ? "skip" : "allow",
+      },
+      ...(d.project === "" || d.kind === "path" ? {} : { project: d.project }),
     });
     if (!parsed.success) {
       const issue = parsed.error.issues[0];
@@ -319,7 +373,7 @@ export function WatchForm({
   };
 
   const condNeedsValue = d.ctype === "above" || d.ctype === "below";
-  const numeric = d.kind !== "price" || d.mode === "value";
+  const numeric = d.kind !== "path" && (d.kind !== "price" || d.mode === "value");
   return (
     <Sheet
       title={watch === undefined ? "Set up a watch" : "Edit watch"}
@@ -384,11 +438,24 @@ export function WatchForm({
             {(p) => (
               <Select
                 {...p}
-                value={d.kind}
+                value={d.urlChange ? "urlchange" : d.kind}
                 disabled={watch !== undefined}
                 onChange={(e) => {
-                  const kind = e.target.value as WatchSort;
-                  setD({ ...emptyDraft(kind), name: d.name });
+                  const picked = e.target.value;
+                  if (picked === "urlchange") {
+                    setD({
+                      ...emptyDraft("price"),
+                      name: d.name,
+                      mode: "text",
+                      ctype: "changed",
+                      urlChange: true,
+                      everyMin: "5",
+                      alert: false,
+                    });
+                  } else {
+                    const kind = picked as WatchSort;
+                    setD({ ...emptyDraft(kind), name: d.name, ...(kind === "path" ? { alert: false } : {}) });
+                  }
                   setResult(undefined);
                 }}
               >
@@ -397,6 +464,7 @@ export function WatchForm({
                     {WATCH_KIND_ONE[k]}
                   </option>
                 ))}
+                <option value="urlchange">A URL changes</option>
               </Select>
             )}
           </Field>
@@ -416,6 +484,33 @@ export function WatchForm({
           </Field>
         </div>
 
+        {d.kind === "path" && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Project" hint="Only its checkout is looked at.">
+              {(p) => (
+                <Select {...p} value={d.project} onChange={(e) => set("project", e.target.value)}>
+                  <option value="">Pick a project</option>
+                  {mine.map((pr) => (
+                    <option key={pr.id} value={pr.id}>
+                      {pr.id}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+            <Field label="File or folder" hint="Relative to the project. A folder counts everything in it.">
+              {(p) => (
+                <Input
+                  {...p}
+                  className="font-mono"
+                  value={d.path}
+                  placeholder="docs/plan.md"
+                  onChange={(e) => set("path", e.target.value)}
+                />
+              )}
+            </Field>
+          </div>
+        )}
         {(d.kind === "website" || d.kind === "price") && (
           <Field
             label="Address"
@@ -464,7 +559,7 @@ export function WatchForm({
             </Field>
           </div>
         )}
-        {d.kind === "price" && (
+        {d.kind === "price" && !d.urlChange && (
           <>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Watch">
@@ -816,25 +911,46 @@ export function WatchForm({
             )}
           </div>
         </fieldset>
-        <Field label="A fix opens in" hint="The project a fix task goes to">
-          {(p) => (
-            <Select {...p} value={d.project} onChange={(e) => set("project", e.target.value)}>
-              <option value="">No project</option>
-              {mine.map((pr) => (
-                <option key={pr.id} value={pr.id}>
-                  {pr.id}
-                </option>
-              ))}
-            </Select>
+        {d.kind !== "path" && (
+          <Field label="A fix opens in" hint="The project a fix task goes to">
+            {(p) => (
+              <Select {...p} value={d.project} onChange={(e) => set("project", e.target.value)}>
+                <option value="">No project</option>
+                {mine.map((pr) => (
+                  <option key={pr.id} value={pr.id}>
+                    {pr.id}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+        )}
+        <fieldset className="m-0 flex flex-col gap-3 border-0 p-0">
+          <legend className="mb-1 p-0 text-sm font-medium text-fg">When it fires</legend>
+          <Switch label="Raise an alert (an incident)" checked={d.alert} onChange={(v) => set("alert", v)} />
+          <Switch
+            label="Run an action: start a task, post in a room or run a process"
+            checked={d.actOn}
+            onChange={(v) => set("actOn", v)}
+          />
+          {d.actOn && (
+            <>
+              <ActionFields org={org} draft={d.act} onChange={(next) => set("act", next)} eventHelp />
+              <Switch
+                label="Skip if the last run is still going"
+                checked={d.actSkip}
+                onChange={(v) => set("actSkip", v)}
+              />
+            </>
           )}
-        </Field>
+        </fieldset>
         {result !== undefined && (
           <p className={result.ok ? "m-0 text-sm text-lamp-done" : "m-0 text-sm text-red"}>
             {result.ok ? `Right now: ${result.value}` : result.value}
           </p>
         )}
         <p className="m-0 text-sm text-fg-faint">
-          What happens when it fires (alert, look into it, fixes) is set on the watch after it starts.
+          Looking into it and fixes are set on the watch after it starts.
         </p>
       </form>
     </Sheet>

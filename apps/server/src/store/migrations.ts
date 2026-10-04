@@ -1435,6 +1435,16 @@ CREATE TABLE watch_samples (
 CREATE INDEX watch_samples_at ON watch_samples(watch, at);
 `,
   },
+  {
+    // Automations are folded into Playbooks and Watch. The old rows stay; `migrated_to` names the
+    // playbook or watch each was copied to (see automation/migrate.ts), so nothing runs twice.
+    id: 145,
+    name: "automations folded into playbooks and watch",
+    sql: `
+ALTER TABLE schedules ADD COLUMN migrated_to TEXT;
+ALTER TABLE triggers ADD COLUMN migrated_to TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

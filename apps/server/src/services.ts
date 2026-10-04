@@ -137,6 +137,7 @@ import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
 import { OutcomesRepo } from "./outcomes/repo.ts";
 import { OutcomesService } from "./outcomes/service.ts";
+import { Catalog } from "./playbooks/catalog.ts";
 import { parsePlan, planPrompt } from "./playbooks/custom.ts";
 import { GoalsService } from "./playbooks/goals.ts";
 import { OutboundGate } from "./playbooks/outbound.ts";
@@ -1022,8 +1023,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         });
   const pendingShips = new PendingShips({ store, tasks, mrs, room, events, now: () => new Date() });
   const actionHost = createActionHost({ store, tasks, processes, projects, agents: agentStore });
+  const playbookCatalog = new Catalog();
   const automation = createAutomation({
     db: store.raw,
+    catalog: playbookCatalog,
     host: actionHost,
     watch: createWatchHost({ store, processes, projects, usage: usageService, actions: actionHost }),
     orgIds: async () => new Set(Object.keys((await config.sections()).orgs)),
@@ -1469,11 +1472,25 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     }),
   };
   const playbooks = new PlaybookService({
+    catalog: playbookCatalog,
+    clock: automation.schedules,
     rules: rulesTable,
     plan: async (org, text) => {
       try {
         // The cheapest model, one short question, a JSON answer checked and clamped by parsePlan.
-        const { value } = await housekeeper.ask({ id: "playbook-plan", org }, planPrompt(text), parsePlan);
+        const ctx = {
+          projects: (await projects.infos()).filter((p) => p.org === org).map((p) => p.id),
+          tasks: store.tasks
+            .list(true)
+            .filter((t) => t.org === org && t.status !== "done")
+            .map((t) => t.id)
+            .slice(0, 40),
+        };
+        const { value } = await housekeeper.ask(
+          { id: "playbook-plan", org },
+          planPrompt(text, ctx),
+          (reply: string) => parsePlan(reply, org),
+        );
         return value;
       } catch (err) {
         if (err instanceof NoHousekeeper)
@@ -1712,6 +1729,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     orgName: async (org) =>
       org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org),
     projectOrg: async (id) => (await config.sections()).projects[id]?.org,
+    projectCheckout: async (id) => {
+      const info = (await projects.infos()).find((p) => p.id === id);
+      return info === undefined ? undefined : { org: info.org, path: info.path };
+    },
+    action: {
+      validate: (org, action) => automation.runner.validate(org, action),
+      run: (source, action, overlap) => automation.runner.run(source, action, overlap),
+      runs: (id, limit) => automation.runner.history.list("watch", id, limit),
+      forget: (id) => automation.runner.history.deleteFor("watch", id),
+    },
     connections: {
       list: async (org) =>
         (await connections.list(org)).map((c) => ({ id: c.id, name: c.name, type: c.type })),

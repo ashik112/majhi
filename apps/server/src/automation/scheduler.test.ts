@@ -1,5 +1,6 @@
 import type { AutomationAction, PausedReason, ProcessInfo, ScheduleView, TaskStatus } from "@majhi/shared";
 import { beforeEach, describe, expect, it } from "vitest";
+import { Catalog } from "../playbooks/catalog.ts";
 import { createDb } from "../store/db.ts";
 import type { ActionHost } from "./actions.ts";
 import { type Automation, createAutomation } from "./index.ts";
@@ -79,6 +80,7 @@ beforeEach(() => {
   const { sqlite } = createDb(":memory:");
   const auto = createAutomation({
     db: sqlite,
+    catalog: new Catalog(),
     host: fake.host,
     watch: {} as WatchHost,
     triggersChanged: () => undefined,

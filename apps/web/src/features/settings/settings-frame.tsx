@@ -37,7 +37,6 @@ const GROUPS: { label: string; items: Item[] }[] = [
       { kind: "page", page: "projects", label: "Projects and links" },
       { kind: "page", page: "skills", label: "Skills & MCP" },
       { kind: "page", page: "memory", label: "Memory" },
-      { kind: "page", page: "automations", label: "Automations" },
     ],
   },
   {

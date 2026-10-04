@@ -1,4 +1,5 @@
 import {
+  type AutomationRun,
   type AutonomyMode,
   type Cadence,
   type CaptainChore,
@@ -18,6 +19,7 @@ import {
   PRIVATE,
   type QuietHours,
 } from "@majhi/shared";
+import type { ScheduleService } from "../automation/service.ts";
 import { choresNow, OFF_CHORES } from "../captain/levels.ts";
 import type { CaptainRepo } from "../captain/repo.ts";
 import { dailyCaps } from "../captain/rules.ts";
@@ -79,6 +81,14 @@ export interface PlaybookDeps {
   rules?: Readonly<Record<string, RulesRunner>>;
   /** Turns the owner's sentence into a playbook spec with the cheapest model. Undefined: no one to ask. */
   plan?: (org: string, text: string) => Promise<{ spec: CustomPlaybookSpec; plan: string }>;
+  /**
+   * The clock playbooks (schedules): owner-made playbooks that run an action on a clock, run by
+   * majhi's own scheduler and not by the captain. Absent in tests of the rest.
+   */
+  clock?: Pick<
+    ScheduleService,
+    "create" | "update" | "pause" | "resume" | "runNow" | "delete" | "peek" | "recent" | "reconcile"
+  >;
   fetch?: typeof fetch;
   tellOwner?: (key: string, text: string) => void;
   changed?: () => void;
@@ -264,7 +274,47 @@ export class PlaybookService implements ChorePlaybooks {
   // ---------------------------------------------------------------------------
   // The owner's view
 
+  /** A clock playbook as the owner reads it: its time and action, from the schedule behind it. */
+  private clockView(def: Playbook, org: string): PlaybookView {
+    const sv = this.deps.clock?.peek(def.id);
+    const last = sv?.lastRun ?? undefined;
+    const clock =
+      sv === undefined
+        ? undefined
+        : {
+            org: sv.org,
+            when: sv.spec,
+            timeZone: sv.timeZone,
+            action: sv.action,
+            overlap: sv.overlap,
+            done: sv.done,
+            nextRunAt: sv.nextRunAt,
+            lastRun: sv.lastRun,
+          };
+    return {
+      playbook: def,
+      org,
+      outcomes: [],
+      needsLook: last?.status === "failed",
+      enabled: sv !== undefined && !sv.paused,
+      cadence: { kind: "manual" },
+      settings: {},
+      running: last?.status === "running",
+      ...(last === undefined ? {} : { lastRun: last.startedAt, lastNote: last.detail, result: last.detail }),
+      ...(sv?.nextRunAt == null ? {} : { nextRun: sv.nextRunAt }),
+      counters: {
+        ran: this.deps.clock?.recent(def.id, 100).length ?? 0,
+        findings: 0,
+        accepted: 0,
+        dismissed: 0,
+        acted: 0,
+      },
+      ...(clock === undefined ? {} : { clock }),
+    };
+  }
+
   private view(def: Playbook, org: string, ws: Workspace): PlaybookView {
+    if (def.runner.kind === "action") return this.clockView(def, org);
     const e = this.effective(def, org);
     const chore = def.runner.kind === "chore" ? def.runner.chore : undefined;
     const { repo, captain, findings } = this.deps;
@@ -341,9 +391,11 @@ export class PlaybookService implements ChorePlaybooks {
 
   async list(org: string): Promise<PlaybooksList> {
     const ws = await this.workspace(org);
+    await this.deps.clock?.reconcile();
     const playbooks = this.catalog
       .all()
       .filter((d) => d.scope === "workspace" || org === PRIVATE)
+      .filter((d) => d.clock === undefined || d.clock.org === org)
       .map((d) => this.view(d, org, ws));
     return { org, playbooks };
   }
@@ -352,6 +404,7 @@ export class PlaybookService implements ChorePlaybooks {
     const def = this.catalog.get(input.id);
     if (def === undefined) throw new UserError(`There is no playbook "${input.id}".`, 404);
     const ws = await this.workspace(input.org);
+    if (def.runner.kind === "action") return this.updateClock(def, input);
     if (input.enabled === true && def.needs !== undefined) throw new UserError(def.needs, 409);
     if (input.goal !== undefined && input.goal !== null && !this.deps.goals.linkable(input.goal, input.org)) {
       throw new UserError(`"${input.goal}" is not a goal of ${ws.name} or of the business.`, 404);
@@ -406,9 +459,25 @@ export class PlaybookService implements ChorePlaybooks {
     return this.view(def, input.org, ws);
   }
 
+  /** The switch and the edits of a clock playbook go to the schedule behind it. */
+  private async updateClock(def: Playbook, input: PlaybookUpdateInput): Promise<PlaybookView> {
+    const clock = this.deps.clock;
+    if (clock === undefined || def.clock === undefined || def.clock.org !== input.org) {
+      throw new UserError(`There is no playbook "${input.id}" in ${input.org}.`, 404);
+    }
+    if (input.clock !== undefined) await clock.update({ id: input.id, ...input.clock });
+    if (input.enabled === true) await clock.resume(input.id);
+    if (input.enabled === false) await clock.pause(input.id);
+    this.deps.changed?.();
+    return this.clockView(this.catalog.get(input.id) ?? def, input.org);
+  }
+
   runs(org: string, id: string, limit: number): PlaybookRun[] {
     const def = this.catalog.get(id);
     if (def === undefined) throw new UserError(`There is no playbook "${id}".`, 404);
+    if (def.runner.kind === "action") {
+      return (this.deps.clock?.recent(id, limit) ?? []).map((r) => clockRun(r, id));
+    }
     if (def.runner.kind !== "chore") return this.deps.repo.runs(org, id, limit);
     return this.deps.captain.repo.choreRuns(org, def.runner.chore, limit).map((r) => ({
       id: r.id,
@@ -433,8 +502,31 @@ export class PlaybookService implements ChorePlaybooks {
    * Saves a made playbook, off everywhere until the owner turns it on. It is a captain playbook:
    * it wakes the workspace's lane with its steps and a token budget, like the shipped ones.
    */
-  async create(org: string, spec: CustomPlaybookSpec): Promise<PlaybookView> {
+  async create(
+    org: string,
+    spec: CustomPlaybookSpec,
+    opts: { enabled?: boolean } = {},
+  ): Promise<PlaybookView> {
     const ws = await this.workspace(org);
+    if (spec.clock !== undefined) {
+      if (this.deps.clock === undefined) throw new UserError("Schedules are not available here.", 409);
+      if (spec.clock.org !== org) throw new UserError("A clock playbook acts in its own workspace.", 409);
+      const made = await this.deps.clock.create(
+        {
+          org,
+          name: spec.name,
+          spec: spec.clock.when,
+          timeZone: spec.clock.timeZone,
+          action: spec.clock.action,
+          overlap: spec.clock.overlap,
+        },
+        { enabled: opts.enabled ?? true },
+      );
+      const made_def = this.catalog.get(made.id);
+      if (made_def === undefined) throw new UserError("The playbook was saved but is not listed.", 409);
+      this.deps.changed?.();
+      return this.clockView(made_def, org);
+    }
     const def = customPlaybook(customId(spec.name), spec);
     this.catalog.register(def);
     this.deps.repo.addCustom(def.id, CustomPlaybookSpecSchema.parse(spec), this.now().toISOString());
@@ -448,13 +540,24 @@ export class PlaybookService implements ChorePlaybooks {
     if (this.deps.plan === undefined) {
       throw new UserError("There is no captain to plan with yet. Set one up first.", 409);
     }
+    const ws = await this.workspace(org);
     const planned = await this.deps.plan(org, text);
-    const view = await this.create(org, planned.spec);
+    // An action on a clock reads its times in the workspace's zone.
+    if (planned.spec.clock !== undefined)
+      planned.spec.clock = { ...planned.spec.clock, org, timeZone: ws.tz };
+    // A planned playbook is written by a model, so it waits off until the owner turns it on.
+    const view = await this.create(org, planned.spec, { enabled: false });
     return { view, plan: planLine(planned.spec, planned.plan) };
   }
 
   /** Deletes a playbook the owner made. */
   remove(id: string): void {
+    const def = this.catalog.get(id);
+    if (def?.custom === true && def.runner.kind === "action") {
+      this.deps.clock?.delete(id);
+      this.deps.changed?.();
+      return;
+    }
     if (!this.catalog.unregister(id)) {
       throw new UserError("Only a playbook you made can be deleted.", 409);
     }
@@ -470,6 +573,20 @@ export class PlaybookService implements ChorePlaybooks {
     const def = this.catalog.get(id);
     if (def === undefined) throw new UserError(`There is no playbook "${id}".`, 404);
     const since = new Date(this.now().getTime() - 7 * 86_400_000).toISOString();
+    if (def.runner.kind === "action") {
+      const all = this.deps.clock?.recent(id, 100) ?? [];
+      return {
+        runs: all
+          .slice(0, 8)
+          .map((r) => ({ at: r.startedAt, text: r.detail, bad: r.status === "failed", undo: [] })),
+        week: {
+          runs: all.filter((r) => r.startedAt >= since && r.status !== "skipped").length,
+          results: all.filter((r) => r.startedAt >= since && r.status === "ok").length,
+          undone: 0,
+          tokens: 0,
+        },
+      };
+    }
     if (def.runner.kind === "chore") {
       const chore = def.runner.chore;
       const { repo } = this.deps.captain;
@@ -501,6 +618,14 @@ export class PlaybookService implements ChorePlaybooks {
     const def = this.catalog.get(id);
     if (def === undefined) throw new UserError(`There is no playbook "${id}".`, 404);
     const ws = await this.workspace(org);
+    if (def.runner.kind === "action") {
+      if (this.deps.clock === undefined || def.clock?.org !== org) {
+        throw new UserError(`There is no playbook "${id}" in ${org}.`, 404);
+      }
+      const run = await this.deps.clock.runNow(id);
+      this.deps.changed?.();
+      return { started: run.status === "running" || run.status === "ok", text: run.detail };
+    }
     if (!this.effective(def, org).enabled) {
       return { started: false, text: `${def.name} is off in ${ws.name}. Turn it on first.` };
     }
@@ -523,7 +648,8 @@ export class PlaybookService implements ChorePlaybooks {
       if (ws === undefined) continue;
       for (const def of this.catalog.all()) {
         if (this.closed) return;
-        if (def.runner.kind === "chore") continue;
+        // Chores run in the captain's runner, clock playbooks on the scheduler.
+        if (def.runner.kind === "chore" || def.runner.kind === "action") continue;
         if (def.scope === "business" && org !== PRIVATE) continue;
         const e = this.effective(def, org);
         if (!e.enabled || def.needs !== undefined) continue;
@@ -759,6 +885,30 @@ export class PlaybookService implements ChorePlaybooks {
     const { chat: _chat, ...rest } = run;
     return rest;
   }
+}
+
+/** A run of a clock playbook as a playbook run: a skipped run is "nothing". */
+function clockRun(r: AutomationRun, playbook: string): PlaybookRun {
+  const status: PlaybookRunStatus =
+    r.status === "running"
+      ? "running"
+      : r.status === "ok"
+        ? "done"
+        : r.status === "failed"
+          ? "failed"
+          : "nothing";
+  return {
+    id: r.id,
+    org: r.org,
+    playbook,
+    trigger: "Its clock",
+    status,
+    startedAt: r.startedAt,
+    ...(r.endedAt === null ? {} : { endedAt: r.endedAt }),
+    note: r.detail,
+    findings: 0,
+    tokens: 0,
+  };
 }
 
 function choreStatus(status: string, actions: number): PlaybookRunStatus {

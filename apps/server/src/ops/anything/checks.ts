@@ -49,6 +49,12 @@ export interface WatchPorts {
   redis(url: string, commands: readonly string[][], timeoutMs: number): Promise<string[]>;
   ssh(alias: string, command: string): Promise<RemoteResult>;
   monitor(connection: string, tool: string, args: Record<string, unknown>): Promise<unknown>;
+  /**
+   * The fingerprint of a file or folder inside a project's checkout in this workspace: size and
+   * modification time, never contents. `missing` when it is not there. Throws Unavailable for a
+   * project of another workspace or a path that leaves the checkout.
+   */
+  pathPrint(org: string, project: string, path: string): Promise<string>;
 }
 
 const URL_VARS: Record<"postgres" | "mysql" | "redis", string[]> = {
@@ -533,6 +539,23 @@ async function price(spec: Extract<WatchCheck, { kind: "price" }>, ports: WatchP
   };
 }
 
+/** The size and the number of files of a path print, in words. */
+function pathDisplay(print: string): string {
+  if (print === "missing") return "missing";
+  const [kind, a] = print.split(" ");
+  if (kind === "dir") return `${a} ${a === "1" ? "file" : "files"}`;
+  return `file, ${fmt(Number(a))} bytes`;
+}
+
+async function path(
+  spec: Extract<WatchCheck, { kind: "path" }>,
+  org: string,
+  ports: WatchPorts,
+): Promise<Reading> {
+  const print = await ports.pathPrint(org, spec.project, spec.path);
+  return { display: pathDisplay(print), healthy: true, signature: print };
+}
+
 /** One look. Throws Unavailable (a fixed phrase) when it cannot tell; never anything with remote text. */
 export async function readWatch(spec: WatchCheck, org: string, ports: WatchPorts): Promise<Reading> {
   switch (spec.kind) {
@@ -550,6 +573,8 @@ export async function readWatch(spec: WatchCheck, org: string, ports: WatchPorts
       return price(spec, ports);
     case "metric":
       return metric(spec, org, ports);
+    case "path":
+      return path(spec, org, ports);
     case "custom":
       throw new Unavailable("the captain checks this one");
   }

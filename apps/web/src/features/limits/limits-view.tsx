@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { RowsSkeleton } from "@/components/ui/skeleton";
 import { UsageBar } from "@/components/ui/usage-bar";
-import { BROWSER_ZONE } from "@/features/automations/model";
+import { BROWSER_ZONE } from "@/features/actions/model";
 import {
   type CapDraft,
   capTone,

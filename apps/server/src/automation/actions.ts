@@ -47,7 +47,7 @@ export interface ActionHost {
 
 /** What starts a run: a schedule or a watch trigger. */
 export interface RunSource {
-  kind: "schedule" | "trigger";
+  kind: "schedule" | "trigger" | "watch";
   id: string;
   org: string;
   /** Shown in rooms: "Nightly build". */
@@ -220,7 +220,7 @@ export class ActionRunner {
    * Ends the runs whose task is done, waits for the owner or failed, or whose process exited. A process does not outlive majhi, so
    * a process run left over from before a restart ends as failed. Of one source, or of all.
    */
-  async reconcile(source?: { kind: "schedule" | "trigger"; id: string }): Promise<void> {
+  async reconcile(source?: { kind: "schedule" | "trigger" | "watch"; id: string }): Promise<void> {
     for (const run of this.history.running(source)) {
       if (this.starting.has(run.id)) continue;
       const ended = this.outcome(run);

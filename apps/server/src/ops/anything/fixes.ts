@@ -189,9 +189,10 @@ export function defaultFire(def: Pick<WatchDef, "spec" | "project">, ctx: FixCon
       on: true,
       phone: def.spec.kind === "database" || def.spec.kind === "server" || def.spec.kind === "website",
     },
-    investigate: def.spec.kind !== "price",
+    investigate: def.spec.kind !== "price" && def.spec.kind !== "path",
     fix: { mode: "off", allowed: [], killOverSec: 30, rerunMin: 15 },
     statusNote: false,
+    runOverlap: "skip",
     tellOnRecover: true,
   };
   if (def.spec.kind === "price") return { ...base, alert: { on: true, phone: false }, investigate: true };

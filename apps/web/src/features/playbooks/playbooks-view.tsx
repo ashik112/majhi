@@ -13,6 +13,7 @@ import { Sheet } from "@/components/ui/sheet";
 import { RowsSkeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
+import { describeSpec } from "@/features/actions/model";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { GLASS } from "@/lib/glass";
@@ -97,7 +98,11 @@ function Row({
         <span className={cn("min-w-0 truncate text-base", view.enabled ? "text-fg" : "text-fg-muted")}>
           {view.playbook.name}
         </span>
-        <span className="truncate font-mono text-xs text-fg-faint">{cadenceWords(view.cadence)}</span>
+        <span className="truncate font-mono text-xs text-fg-faint">
+          {view.clock === undefined
+            ? cadenceWords(view.cadence)
+            : describeSpec(view.clock.when).toLowerCase()}
+        </span>
         <span
           className={cn("min-w-0 truncate text-xs", result.look ? "text-accent-text" : "text-fg-faint")}
           title={result.text}

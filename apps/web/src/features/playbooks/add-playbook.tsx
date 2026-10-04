@@ -20,6 +20,7 @@ import {
   useUpdatePlaybook,
 } from "@/lib/playbook-queries";
 import { CadenceFields } from "./cadence-fields";
+import { ClockForm } from "./clock-form";
 import { KIND_LABEL, type Kind, kindOf } from "./model";
 
 const BUDGETS: readonly number[] = [2_000, 5_000, 10_000, CUSTOM_MAX_TOKENS];
@@ -205,6 +206,7 @@ export function AddPlaybook({ org, onSelect }: { org: string; onSelect: (id: str
   const [text, setText] = useState("");
   const [planned, setPlanned] = useState<{ view: PlaybookView; plan: string }>();
   const [form, setForm] = useState<{ initial: CustomPlaybookSpec; replace: string | undefined }>();
+  const [clockForm, setClockForm] = useState(false);
   const fail = (title: string) => (e: unknown) => toast(title, { detail: describeError(e), tone: "error" });
   const send = () => {
     const sentence = text.trim();
@@ -249,6 +251,16 @@ export function AddPlaybook({ org, onSelect }: { org: string; onSelect: (id: str
           }}
         >
           Set up manually
+        </button>
+        <button
+          type="button"
+          className="shrink-0 cursor-pointer text-sm whitespace-nowrap text-accent-text hover:underline"
+          onClick={() => {
+            setPlanned(undefined);
+            setClockForm(true);
+          }}
+        >
+          Schedule an action
         </button>
       </form>
       {planned !== undefined && form === undefined && (
@@ -297,6 +309,7 @@ export function AddPlaybook({ org, onSelect }: { org: string; onSelect: (id: str
           </div>
         </div>
       )}
+      {clockForm && <ClockForm org={org} onClose={() => setClockForm(false)} onDone={onSelect} />}
       {form !== undefined && (
         <div className="pt-2.5">
           <ManualForm

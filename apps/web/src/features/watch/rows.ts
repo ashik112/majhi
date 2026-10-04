@@ -4,6 +4,7 @@ import {
   Anchor,
   BadgeDollarSign,
   Database,
+  FolderGit2,
   Globe,
   type LucideIcon,
   Package,
@@ -39,6 +40,7 @@ export const SORT_ICON: Record<RowSort, LucideIcon> = {
   queue: Package,
   price: BadgeDollarSign,
   metric: Activity,
+  path: FolderGit2,
   custom: Sparkles,
   majhi: Anchor,
 };

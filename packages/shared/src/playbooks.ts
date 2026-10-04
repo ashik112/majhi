@@ -1,4 +1,13 @@
 import { z } from "zod";
+import {
+  AutomationActionSchema,
+  AutomationRunSchema,
+  AutomationTimeZoneSchema,
+  DEFAULT_TIME_ZONE,
+  describeAutomationAction,
+  OverlapPolicySchema,
+  ScheduleSpecSchema,
+} from "./automation.ts";
 import { CaptainChoreSchema } from "./captain.ts";
 import { IdSchema } from "./ids.ts";
 
@@ -105,8 +114,24 @@ export const PlaybookRunnerSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("chore"), chore: CaptainChoreSchema }),
   z.object({ kind: z.literal("rules"), id: IdSchema }),
   z.object({ kind: z.literal("captain") }),
+  /** An owner-made playbook with a clock and an action (`clock`): majhi's own code runs it, no model. */
+  z.object({ kind: z.literal("action") }),
 ]);
 export type PlaybookRunner = z.infer<typeof PlaybookRunnerSchema>;
+
+/**
+ * What a clock playbook does and when: an interval, a cron line or a one-off in a time zone, and an
+ * action (start a task, post to a room, run a process) that majhi's own code runs. These were the
+ * schedules of Automations. The workspace it acts in is fixed.
+ */
+export const ClockActionSchema = z.object({
+  org: IdSchema,
+  when: ScheduleSpecSchema,
+  timeZone: AutomationTimeZoneSchema.default(DEFAULT_TIME_ZONE),
+  action: AutomationActionSchema,
+  overlap: OverlapPolicySchema.default("skip"),
+});
+export type ClockAction = z.infer<typeof ClockActionSchema>;
 
 export const PlaybookSchema = z.object({
   id: IdSchema,
@@ -164,6 +189,8 @@ export const PlaybookSchema = z.object({
     .optional(),
   /** Made by the owner (by a sentence or by hand), not shipped with majhi. */
   custom: z.boolean().optional(),
+  /** Set for a playbook that runs an action on a clock (runner `action`). */
+  clock: ClockActionSchema.optional(),
   /** Names of settings the owner fills in, like the URLs of an uptime check. */
   settings: z
     .array(
@@ -198,6 +225,11 @@ export const PlaybookStateSchema = z.object({
   orDo: z.string().max(500).nullable().optional(),
   /** Actions per day for a chore. `null`: no cap. Absent: majhi's default. */
   dailyLimit: z.number().int().min(1).max(1000).nullable().optional(),
+  /** A clock playbook: its next run (UTC ISO), whether a one-off has run, its last run record and last edit. */
+  next: z.string().nullable().optional(),
+  done: z.boolean().optional(),
+  lastRunId: z.number().int().positive().nullable().optional(),
+  touched: z.string().optional(),
 });
 export type PlaybookState = z.infer<typeof PlaybookStateSchema>;
 
@@ -280,6 +312,12 @@ export const PlaybookViewSchema = z.object({
   /** The last run in plain words ("freed 31 GB", "2 failing: x, y"). */
   result: z.string().optional(),
   needsLook: z.boolean().default(false),
+  /** A clock playbook: when it runs, what it does, and how the last run went. */
+  clock: ClockActionSchema.extend({
+    done: z.boolean(),
+    nextRunAt: z.string().nullable(),
+    lastRun: AutomationRunSchema.nullable(),
+  }).optional(),
 });
 export type PlaybookView = z.infer<typeof PlaybookViewSchema>;
 
@@ -301,6 +339,17 @@ export const PlaybookUpdateInputSchema = z.object({
   outcomes: z.record(IdSchema, z.boolean()).optional(),
   orDo: z.string().trim().max(500).nullable().optional(),
   dailyLimit: z.number().int().min(1).max(1000).nullable().optional(),
+  /** A clock playbook: change its name, time, action or overlap rule. Give `spec` or `phrase`, not both. */
+  clock: z
+    .object({
+      name: z.string().trim().min(1).max(60).optional(),
+      spec: ScheduleSpecSchema.optional(),
+      phrase: z.string().trim().min(1).max(200).optional(),
+      timeZone: AutomationTimeZoneSchema.optional(),
+      action: AutomationActionSchema.optional(),
+      overlap: OverlapPolicySchema.optional(),
+    })
+    .optional(),
 });
 export type PlaybookUpdateInput = z.infer<typeof PlaybookUpdateInputSchema>;
 
@@ -544,6 +593,8 @@ export const CustomPlaybookSpecSchema = z.object({
   steps: z.string().trim().min(1).max(2000),
   outputs: z.array(z.enum(CUSTOM_OUTPUTS)).min(1).max(3),
   tokens: z.number().int().min(1000).max(CUSTOM_MAX_TOKENS),
+  /** Runs an action on a clock instead of waking the captain. `cadence` is then `manual`. */
+  clock: ClockActionSchema.optional(),
 });
 export type CustomPlaybookSpec = z.infer<typeof CustomPlaybookSpecSchema>;
 
@@ -572,3 +623,18 @@ export const PlaybookActivitySchema = z.object({
 });
 
 export type PlaybookActivity = z.infer<typeof PlaybookActivitySchema>;
+
+/** The spec a clock playbook is stored as: no captain, no tokens, one log line a run. */
+export function clockPlaybookSpec(name: string, clock: ClockAction): CustomPlaybookSpec {
+  const text = describeAutomationAction(clock.action);
+  return CustomPlaybookSpecSchema.parse({
+    name: name.slice(0, 60),
+    pack: "upkeep",
+    purpose: `Runs on its own clock, no model: ${text}`.slice(0, 160),
+    cadence: { kind: "manual" },
+    steps: text,
+    outputs: ["log"],
+    tokens: 1000,
+    clock,
+  });
+}

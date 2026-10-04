@@ -190,10 +190,13 @@ const memoryRoute = createRoute({
   path: PAGE_PATH.memory,
   component: lazyRouteComponent(() => import("@/pages/memory-page"), "MemoryPage"),
 });
+// Automations were folded into Playbooks (schedules) and Watch (triggers): old links land on Playbooks.
 const automationsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: PAGE_PATH.automations,
-  component: lazyRouteComponent(() => import("@/pages/automations-page"), "AutomationsPage"),
+  path: "/automations",
+  beforeLoad: () => {
+    throw redirect({ to: PAGE_PATH.playbooks });
+  },
 });
 // The Auto-pilot page is part of the Captain page now: /autonomous lands there, and an old view opens its sheet.
 const autonomousRoute = createRoute({

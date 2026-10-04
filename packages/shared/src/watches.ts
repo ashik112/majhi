@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AutomationActionSchema, AutomationRunSchema, OverlapPolicySchema } from "./automation.ts";
 import { IdSchema } from "./ids.ts";
 import { OpsIncidentSchema } from "./ops.ts";
 
@@ -20,6 +21,7 @@ export const WATCH_KINDS = [
   "queue",
   "price",
   "metric",
+  "path",
   "custom",
 ] as const;
 export const WatchSortSchema = z.enum(WATCH_KINDS);
@@ -33,6 +35,7 @@ export const WATCH_KIND_LABEL: Record<WatchSort, string> = {
   queue: "Queues",
   price: "Prices and pages",
   metric: "Metrics",
+  path: "Files",
   custom: "Custom",
 };
 
@@ -44,6 +47,7 @@ export const WATCH_KIND_ONE: Record<WatchSort, string> = {
   queue: "Queue",
   price: "Price or page",
   metric: "Metric",
+  path: "File or folder",
   custom: "In words",
 };
 
@@ -120,6 +124,12 @@ export const WatchCheckSchema = z.discriminatedUnion("kind", [
     unit: z.string().trim().max(12).optional(),
   }),
   z.object({
+    kind: z.literal("path"),
+    project: IdSchema,
+    /** A file or folder inside the project's checkout, relative to it. A folder counts everything in it. */
+    path: z.string().trim().min(1).max(500),
+  }),
+  z.object({
     kind: z.literal("custom"),
     /** What to check, in words. The captain looks on the schedule and reports a value or a state. */
     instruction: z.string().trim().min(3).max(600),
@@ -187,6 +197,13 @@ export const WatchFireSchema = z.object({
   statusNote: z.boolean().default(false),
   /** Free text the captain follows. */
   orDo: z.string().max(500).optional(),
+  /**
+   * An action majhi's own code runs when it fires, no model: start a task, post to a room or run a
+   * process. `{{event}}` in a message or a task's text becomes a line about what fired. These were
+   * the actions of Automations' triggers.
+   */
+  run: AutomationActionSchema.optional(),
+  runOverlap: OverlapPolicySchema.default("skip"),
   tellOnRecover: z.boolean().default(true),
 });
 export type WatchFire = z.infer<typeof WatchFireSchema>;
@@ -261,6 +278,8 @@ export const WatchViewSchema = z.object({
   fixes: z.array(WatchFixViewSchema),
   /** "How it checks", in one line. */
   how: z.string(),
+  /** The last runs of its action, newest first. */
+  runs: z.array(AutomationRunSchema).default([]),
 });
 export type WatchView = z.infer<typeof WatchViewSchema>;
 

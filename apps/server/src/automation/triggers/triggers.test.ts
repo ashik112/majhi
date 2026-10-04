@@ -11,6 +11,7 @@ import {
   type UsageTotals,
 } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { Catalog } from "../../playbooks/catalog.ts";
 import { createDb } from "../../store/db.ts";
 import type { ActionHost } from "../actions.ts";
 import { type Automation, createAutomation } from "../index.ts";
@@ -128,6 +129,7 @@ let sqlite: ReturnType<typeof createDb>["sqlite"];
 function build(): Automation {
   return createAutomation({
     db: sqlite,
+    catalog: new Catalog(),
     host: world.actionHost,
     watch: world.watch,
     orgIds: async () => new Set(["private", "acme", "globex"]),
