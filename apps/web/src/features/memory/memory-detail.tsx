@@ -4,7 +4,6 @@ import { Globe, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Lamp } from "@/components/ui/lamp";
 import { DetailPane } from "@/components/ui/list-detail";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { useToast } from "@/components/ui/toast";
@@ -133,8 +132,8 @@ export function MemoryDetail({
 function TabCount({ tab, counts }: { tab: MemoryTab; counts: MemoryCounts }) {
   if (tab === "lessons" && counts.waiting > 0)
     return (
-      <span className="flex items-center gap-1 text-lamp-needs">
-        <Lamp state="needs" size={6} />
+      <span className="flex items-center gap-1 text-caution">
+        <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
         <span className="tnum font-mono text-xs">{counts.waiting}</span>
         <span className="sr-only">to review</span>
       </span>

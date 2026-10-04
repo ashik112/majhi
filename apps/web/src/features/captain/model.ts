@@ -128,7 +128,7 @@ export function shortDay(day: string): string {
 
 /**
  * The one sentence under the title that is true right now. Off: what still runs and what waits.
- * On: what runs and what is next. Both end with how many decisions wait for the owner.
+ * On: what runs and what is next. Both end with how many decisions need the owner.
  */
 export function statusSentence(input: {
   mode: AutonomyMode;
@@ -140,8 +140,8 @@ export function statusSentence(input: {
 }): string {
   const waits =
     input.decisions === 0
-      ? "Nothing waits for you."
-      : `${input.decisions} ${input.decisions === 1 ? "decision waits" : "decisions wait"} for you.`;
+      ? "Nothing needs you."
+      : `${input.decisions} ${input.decisions === 1 ? "decision needs" : "decisions need"} you.`;
   switch (input.mode) {
     case "off":
       return `Off: it only answers when you ask${input.upkeep ? ", and keeps memory and cleanup going" : ""}. ${waits}`;

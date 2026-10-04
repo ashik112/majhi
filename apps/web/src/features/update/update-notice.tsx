@@ -17,7 +17,7 @@ import { beginUpdateSession, useUpdateSession } from "./session";
 export function UpdateNotice() {
   // While an update waits for the agents, look often so the "Updating majhi" screen opens in time.
   const [scheduledAt, setScheduledAt] = useState<string>();
-  const version = useSystemVersion(scheduledAt === undefined ? 60_000 : 3_000, useAfterFirstPaint(2_500));
+  const version = useSystemVersion(scheduledAt === undefined ? 60_000 : 3_000, useAfterFirstPaint(6_000));
   const start = useStartUpdate();
   const session = useUpdateSession();
   const [open, setOpen] = useState(false);

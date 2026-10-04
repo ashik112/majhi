@@ -168,7 +168,7 @@ function MainNav() {
 function SetupGroup({ isActive }: { isActive: (to: string) => boolean }) {
   const agents = useAgentIndex();
   const accounts = useAccounts().data;
-  const settled = useAfterFirstPaint(2_000);
+  const settled = useAfterFirstPaint(6_000);
   const checks = useHealthChecks(settled).data?.checks;
   const pendingFacts = useFacts({ status: "pending" }, settled).data ?? [];
   const projects = useProjects().data;
@@ -487,7 +487,7 @@ function AgentsNow() {
   const index = useAgentIndex();
   const tasks = useTasks().data;
   const accounts = useAccounts().data;
-  const checksAt = useHealthChecks(useAfterFirstPaint(2_000)).data?.checkedAt;
+  const checksAt = useHealthChecks(useAfterFirstPaint(6_000)).data?.checkedAt;
   const now = useNow(30_000);
   const pulse = useMemo(
     () => agentsRightNow([...index.values()], tasks ?? [], accounts ?? []),

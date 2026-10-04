@@ -162,7 +162,7 @@ export function CaptainHeader({
           </PageLink>
         </div>
       </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-1.5 min-[1000px]:flex-nowrap">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-1.5 min-[1280px]:flex-nowrap">
         {chip && (
           <button
             type="button"

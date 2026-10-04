@@ -781,7 +781,7 @@ for (const [w, h] of [
     test(`on ${w} ${theme}`, async ({ page }) => {
       await open(page, "/captain", w, h, theme, REAL_ON);
       await expect(page.getByRole("region", { name: "Needs you" })).toBeVisible();
-      await expect(page.getByText("On: 2 running, 3 next. 5 decisions wait for you.")).toBeVisible();
+      await expect(page.getByText("On: 2 running, 3 next. 5 decisions need you.")).toBeVisible();
       await expect(page.getByRole("tab")).toHaveCount(0);
       await page.screenshot({ path: `${SHOTS}/on-${w}-${theme}.png` });
       await noPageScroll(page);
@@ -898,7 +898,7 @@ test("Needs you shows two whole rows and links to the rest, answered inline", as
   await expect(box.getByRole("link", { name: "All 5 in Decisions" })).toBeVisible();
   await box.locator("[data-decision]").first().getByRole("button", { name: "Merge", exact: true }).click();
   await expect(box.locator("[data-decision]")).toHaveCount(2);
-  await expect(page.getByText("4 decisions wait for you.")).toBeVisible();
+  await expect(page.getByText("4 decisions need you.")).toBeVisible();
 });
 
 test("the turn with 40 tool calls folds into one line", async ({ page }) => {
@@ -1076,7 +1076,7 @@ test("cohesion rules: every screen counts the same decisions", async ({ page }) 
   await expect(page.getByRole("button", { name: "Decisions, 5 need you" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Waiting" })).toBeVisible();
   await page.goto("/captain");
-  await expect(page.getByText("5 decisions wait for you.")).toBeVisible();
+  await expect(page.getByText("5 decisions need you.")).toBeVisible();
   await expect(page.getByRole("region", { name: "Needs you" })).toContainText("5");
   await page.goto("/decisions");
   await expect(page.getByText("5 need you")).toBeVisible();
