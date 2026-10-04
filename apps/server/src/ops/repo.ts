@@ -109,7 +109,7 @@ function toIncident(r: IncidentRow): StoredIncident {
     ...(r.resolved_at === null ? {} : { resolvedAt: r.resolved_at }),
     flaps: r.flaps,
     ...(fix === undefined ? {} : { fix }),
-    timeline: parseJson<OpsTimelineEntry[]>(r.timeline, []),
+    timeline: fitTimeline(parseJson<OpsTimelineEntry[]>(r.timeline, [])),
   });
   return {
     ...base,
@@ -294,7 +294,7 @@ export class OpsRepo {
         i.phoneEscalatedAt ?? null,
         i.flaps,
         i.fix === undefined ? null : JSON.stringify(i.fix),
-        JSON.stringify(i.timeline),
+        JSON.stringify(fitTimeline(i.timeline)),
       );
     return Number(res.lastInsertRowid);
   }
@@ -319,7 +319,7 @@ export class OpsRepo {
         i.phoneEscalatedAt ?? null,
         i.flaps,
         i.fix === undefined ? null : JSON.stringify(i.fix),
-        JSON.stringify(i.timeline),
+        JSON.stringify(fitTimeline(i.timeline)),
         i.id,
       );
   }
@@ -398,4 +398,9 @@ export class OpsRepo {
   prunePushed(before: string): void {
     this.db.prepare("DELETE FROM ops_phone_sent WHERE at < ?").run(before);
   }
+}
+
+/** Timeline lines fit the 300 characters the views allow; one long line must not break every list. */
+function fitTimeline(timeline: OpsTimelineEntry[]): OpsTimelineEntry[] {
+  return timeline.map((t) => (t.text.length <= 300 ? t : { ...t, text: `${t.text.slice(0, 299)}…` }));
 }
