@@ -58,8 +58,11 @@ export interface Discovered {
   /** The issuer the tokens will be tied to. */
   issuer: string;
   metadata: AuthorizationServerMetadata;
-  /** The `resource` for the authorization and token requests. */
-  resource: string;
+  /**
+   * The `resource` for the authorization and token requests. Undefined asks for a token not tied to
+   * one server, for a service whose products are separate servers behind one sign-in.
+   */
+  resource: string | undefined;
 }
 
 /** Finds how to sign in to the MCP server: protected resource metadata, then the authorization server's. */
@@ -190,7 +193,7 @@ export async function authorizationUrl(
       clientInformation: info(client, options.redirect),
       redirectUrl: options.redirect,
       state: options.state,
-      resource: found.resource,
+      ...(found.resource === undefined ? {} : { resource: found.resource }),
       ...(options.scope === undefined ? {} : { scope: options.scope }),
     });
     return { url: started.authorizationUrl.href, verifier: started.codeVerifier };
@@ -256,7 +259,7 @@ export async function exchange(
       codeVerifier: options.verifier,
       redirectUri: options.redirect,
       // Verbatim: URL.href adds "/" to a bare origin, which exact-match servers (DigitalOcean) refuse.
-      resource: found.resource,
+      ...(found.resource === undefined ? {} : { resource: found.resource }),
       fetchFn,
     });
     return tokenSet(tokens, now);
@@ -279,7 +282,7 @@ export async function refresh(
       clientInformation: info(client, options.redirect),
       refreshToken: options.refreshToken,
       // Verbatim: URL.href adds "/" to a bare origin, which exact-match servers (DigitalOcean) refuse.
-      resource: found.resource,
+      ...(found.resource === undefined ? {} : { resource: found.resource }),
       fetchFn,
     });
     return tokenSet(tokens, now);

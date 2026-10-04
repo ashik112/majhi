@@ -1701,9 +1701,15 @@ export class ConnectService {
   private async discover(serverUrl: string, issuer?: string): Promise<Discovered> {
     const cached = issuer === undefined ? undefined : this.discovered.get(issuer);
     if (cached !== undefined && this.now().getTime() - cached.at < 10 * 60_000) return cached.found;
-    const found = await discover(serverUrl, this.fetchFn).catch((err: unknown) => {
+    const discovered = await discover(serverUrl, this.fetchFn).catch((err: unknown) => {
       throw this.asUser(err);
     });
+    // A token tied to one product's server is refused by the others (DigitalOcean answers 401 from
+    // its API), so a service with products asks for one that is not tied to any of them.
+    const found =
+      serviceByUrl(serverUrl, this.catalog)?.products === undefined
+        ? discovered
+        : { ...discovered, resource: undefined };
     this.discovered.set(found.issuer, { at: this.now().getTime(), found });
     return found;
   }

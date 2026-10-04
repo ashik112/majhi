@@ -214,6 +214,12 @@ describe("a service with products", () => {
     try {
       const done = await r.connectAs("maria@acme.example", { products: ["beta", "alpha"] });
       expect(done.state).toBe("connected");
+      // One token for every product: the sign-in is not tied to one product's server.
+      const again = await r.connect.start(
+        { org: "acme", service: "fakesvc", access: "read", products: ["alpha"] },
+        OWNER,
+      );
+      expect(new URL(again.url ?? "").searchParams.has("resource")).toBe(false);
       expect(r.connections.get("fakesvc")?.connection.fields?.products).toBe("beta alpha");
       const test = await r.connect.test("fakesvc");
       expect(test.ok).toBe(true);
