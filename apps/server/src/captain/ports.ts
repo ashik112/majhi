@@ -164,6 +164,12 @@ export interface CaptainPorts {
   // Cleanup
   cleanable(org: string): Promise<{ id: string; title: string; steps: string[] }[]>;
   clean(org: string, task: string): Promise<{ removed: string[]; kept: string[] }>;
+  /** What deleting rebuildable folders of done tasks would free in the workspace (code only). */
+  foldersFreeable?(org: string): Promise<{ bytes: number; tasks: number }>;
+  /** Deletes them. Never tracked files, never a task with uncommitted changes or one reopened. */
+  freeFolders?(
+    org: string,
+  ): Promise<{ bytes: number; tasks: { id: string; bytes: number; worktrees: number; folders: number }[] }>;
 
   // Stuck tasks
   /** Running tasks where nobody works and nothing is pending, with when the last turn ended. */

@@ -26,6 +26,7 @@ import { SERENA_COMMAND } from "../runs/serena.ts";
 import type { KeyExportRecord } from "../secrets/backup.ts";
 import type { SecretsKeyState } from "../secrets/store.ts";
 import type { Services } from "../services.ts";
+import { sizeText } from "../tasks/folder-sweep.ts";
 
 const run = promisify(execFile);
 
@@ -88,6 +89,7 @@ export async function collectChecks(ctx: CheckContext): Promise<Check[]> {
     checkSshHosts(ctx.sshHosts, ctx.host, ctx.env.sshAgentOff),
     checkTasksDir(state, home),
     checkDisk(state, home).then((c) => [c]),
+    [checkTaskFolders(ctx.services)],
     checkSecrets(ctx.services),
     checkKeyBackup(ctx),
     checkBackups(ctx),
@@ -423,6 +425,23 @@ async function checkDisk(state: ConfigState, home: string): Promise<Check> {
   } catch (err) {
     return { ...base, status: "fail", detail: `Cannot measure ${probe}: ${errorMessage(err)}` };
   }
+}
+
+/** Task folders above this size are a warning, with a fix that frees what done tasks can rebuild. */
+export const TASK_FOLDERS_WARN_BYTES = 20 * GB;
+
+function checkTaskFolders(services: Services): Check {
+  const base = { id: "task-folders", group: "disk", name: "Task folders" } as const;
+  const m = services.folderSweep.snapshot();
+  if (m === undefined) return { ...base, status: "pass", detail: "Measuring the task folders..." };
+  const detail = `${sizeText(m.rootBytes)} in task folders, ${sizeText(m.rebuildableBytes)} of it rebuildable in ${m.tasks} done ${m.tasks === 1 ? "task" : "tasks"}`;
+  if (m.rootBytes <= TASK_FOLDERS_WARN_BYTES) return { ...base, status: "pass", detail };
+  return {
+    ...base,
+    status: "warn",
+    detail: m.rebuildableBytes > 0 ? detail : `${detail}. Nothing in done tasks can be freed.`,
+    ...(m.rebuildableBytes > 0 ? { fix: { label: "Free space now" } } : {}),
+  };
 }
 
 /** Warn under 5 GB, fail under 1 GB. */

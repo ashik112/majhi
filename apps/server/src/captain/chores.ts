@@ -1,5 +1,6 @@
 import type { CaptainChore } from "@majhi/shared";
 import { runFollowUps } from "../findings/followups.ts";
+import { sizeText } from "../tasks/folder-sweep.ts";
 import { classifyOwnWork } from "./own-work.ts";
 import type { SecondOpinion } from "./own-work-second.ts";
 import { permissionVerdict } from "./permission-rules.ts";
@@ -465,6 +466,27 @@ export function createChores(
           },
         });
       }
+      // Code only: dependency folders and build output of done tasks. A second run finds nothing.
+      const found = await ports.foldersFreeable?.(org);
+      if (found === undefined || found.bytes <= 0) return;
+      run.check();
+      await run.act({
+        key: `folders:${org}:${now().toISOString()}`,
+        text: `Freed about ${sizeText(found.bytes)} in ${found.tasks} done ${found.tasks === 1 ? "task" : "tasks"}`,
+        reason: "Dependencies and build output of done tasks come back with the next install or build",
+        do: async () => {
+          const r = await ports.freeFolders?.(org);
+          const bytes = r?.bytes ?? 0;
+          const n = r?.tasks.length ?? 0;
+          return {
+            text: `Freed ${sizeText(bytes)} in ${n} done ${n === 1 ? "task" : "tasks"}: ${(r?.tasks ?? [])
+              .slice(0, 5)
+              .map((t) => `${t.id} ${sizeText(t.bytes)}`)
+              .join(", ")}${n > 5 ? ", ..." : ""}`,
+            undoNote: "Deleted folders come back with the next install or build",
+          };
+        },
+      });
     },
 
     async followups(run) {

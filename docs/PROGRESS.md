@@ -22,6 +22,13 @@
 - **Follow-up task:** Adapt the application shell below desktop widths. At 390 pixels its existing fixed sidebar clips every page, including Connections. This requires a shell navigation change outside this pass.
 - **Design review:** The independent reviewer approved the desktop composition and scored the Global access and removal copy fix resolved.
 - **Owner-only check:** Real-provider consent, identity and tool access, including DigitalOcean, on the updated live instance.
+## Task folder disk: shared package store and done-task cleanup (built, branch not merged)
+
+- **Shared store.** `apps/server/src/runs/package-cache.ts`: a run and a background process of a workspace get `~/.majhi/cache/<org>` mounted and `npm_config_store_dir`, `PNPM_STORE_DIR`, `npm_config_cache`, `YARN_CACHE_FOLDER`, `PIP_CACHE_DIR` set (`launch.ts`). `packages/acp/src/runner/docker.ts` allows that one mount shape.
+- **Sweep.** `apps/server/src/tasks/folder-sweep.ts` (`TaskFolderSweep`), called by the Cleanup chore (`captain/chores.ts`, ports in `world.ts`) and by Health's fix. Settings `cleanup.free_after_hours` and `cleanup.worktree_after_days`, editable in Health under Cleanup of done tasks.
+- **Health.** Check "Task folders" (size of the task root, rebuildable size in done tasks, warn above 20 GB) with "Free space now" (owner only).
+- **Try it.** Health, Cleanup of done tasks, set the hours, then "Free space now" on the Task folders row. Not tried on the live app.
+- **Left.** The size is measured in the background at most every 30 minutes and shows "Measuring" on the first read. Orphan task folders are not touched. The owner's task terminal does not get the shared store.
 
 ## Cohesion pass 2: the daily loop in the sidebar, honest counts (built)
 

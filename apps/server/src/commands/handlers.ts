@@ -929,7 +929,8 @@ export function createHandlers({
       return e2e ? e2e.runNow(input.project) : notBuilt();
     },
     "health.run": () => (health ? health.run() : notBuilt()),
-    "health.fix": (input) => (health ? health.fix(input.id) : notBuilt()),
+    "health.fix": (input, ctx) =>
+      health ? health.fix(input.id, ctx.meta.actor.kind === "owner" ? "owner" : "agent") : notBuilt(),
     "system.version": () => (system ? system.version() : notBuilt()),
     "system.update": (input) => (system ? system.update(input.when) : notBuilt()),
     "decisions.ask": (input) => services.decisions.ask(input),

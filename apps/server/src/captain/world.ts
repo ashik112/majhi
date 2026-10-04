@@ -28,6 +28,7 @@ import type { RepoScanner } from "../scan/scanner.ts";
 import type { Store } from "../store/index.ts";
 import { captainAnsweredLine } from "../tasks/cards.ts";
 import type { CleanupService } from "../tasks/cleanup.ts";
+import type { TaskFolderSweep } from "../tasks/folder-sweep.ts";
 import type { TaskService } from "../tasks/service.ts";
 import type { Lanes } from "./lanes.ts";
 import { askedSentence, SHIP_ROW } from "./levels.ts";
@@ -59,6 +60,7 @@ export interface WorldDeps {
   curate: (fact: Fact) => Promise<{ reason?: string }>;
   scanner: RepoScanner;
   cleanup: CleanupService;
+  folders?: TaskFolderSweep;
   idle: IdleWatch;
   runs: { working(task: string): string[]; notify(task: string, agent: string, text: string): void };
   lanes: Lanes;
@@ -81,6 +83,10 @@ const PENDING_LIMIT = 1_000;
 const DONE_TASKS_READ = 15;
 
 export function captainWorld(deps: WorldDeps): CaptainPorts {
+  const sweepOptions = async (org: string) => {
+    const { cleanup } = await deps.config.settings();
+    return { hours: cleanup.free_after_hours, worktreeDays: cleanup.worktree_after_days, org };
+  };
   const { store } = deps;
   const orgOfTask = (id: string) => store.tasks.get(id)?.org ?? PRIVATE;
   /** Open tasks of the workspace, without chats and lanes. */
@@ -565,6 +571,28 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         kept: steps
           .filter((s) => s.action === "skip")
           .map((s) => `${s.kind} ${s.name} (${s.reason ?? "kept"})`),
+      };
+    },
+
+    async foldersFreeable(org) {
+      if (deps.folders === undefined) return { bytes: 0, tasks: 0 };
+      const report = await deps.folders.preview(await sweepOptions(org));
+      return { bytes: report.freedBytes, tasks: report.tasks.filter((t) => t.bytes > 0).length };
+    },
+
+    async freeFolders(org) {
+      if (deps.folders === undefined) return { bytes: 0, tasks: [] };
+      const report = await deps.folders.run(await sweepOptions(org));
+      return {
+        bytes: report.freedBytes,
+        tasks: report.tasks
+          .filter((t) => t.bytes > 0)
+          .map((t) => ({
+            id: t.id,
+            bytes: t.bytes,
+            worktrees: t.worktrees.length,
+            folders: t.removed.length,
+          })),
       };
     },
 

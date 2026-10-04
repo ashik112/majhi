@@ -42,6 +42,7 @@ import type { Store } from "../store/index.ts";
 import { blockedPaths, checkReadMount, projectsFor, type ReadPolicy } from "../tasks/read-mounts.ts";
 import { gitAttribution } from "./attribution.ts";
 import type { ContextBudget } from "./context.ts";
+import { packageCache } from "./package-cache.ts";
 import { keepSerenaOutOfGit, type SerenaLaunch, serenaServer } from "./serena.ts";
 import { prepareRunSkills } from "./skills.ts";
 
@@ -172,6 +173,7 @@ export async function launch(
   const worktrees = task.repos.map((r) => r.worktree ?? join(task.folder, r.project));
   // Written before gating: a run that holds a connection gets majhi-connections.
   const held = await heldConnections(deps, task, fm, "session");
+  const packages = await packageCache(deps.majhiHome, task).catch(() => undefined);
   const skills =
     deps.skills === undefined
       ? undefined
@@ -240,13 +242,14 @@ export async function launch(
         })),
         ...hooksMount(attribution.hooks),
         ...(held?.mounts ?? []),
+        ...(packages?.mounts ?? []),
         ...(skills?.mounts ?? []),
       ],
       ...(resume === undefined ? {} : { resume }),
       ...(model === undefined ? {} : { model }),
       ...(effort === undefined ? {} : { effort }),
       ...(mcpServers.length === 0 ? {} : { mcpServers }),
-      ...(held === undefined ? {} : { env: held.env }),
+      ...(held === undefined && packages === undefined ? {} : { env: { ...packages?.env, ...held?.env } }),
       ...(run.budget === undefined || run.budget.cap <= 0
         ? {}
         : { contextCap: { tokens: run.budget.cap, compactAt: run.budget.compactAt } }),
@@ -434,11 +437,12 @@ export async function processLaunch(
   ];
   // A process gets its own copy of the connection files: it may outlive the session.
   const held = await heldConnections(deps, task, resolved.fm, "process");
+  const packages = await packageCache(deps.majhiHome, task).catch(() => undefined);
   return {
     folder: task.folder,
-    env: { ...held?.env, ...buildEnv(account, deps.options.base, attribution.git) },
+    env: { ...packages?.env, ...held?.env, ...buildEnv(account, deps.options.base, attribution.git) },
     account,
-    mounts: [...mounts, ...(held?.mounts ?? [])],
+    mounts: [...mounts, ...(held?.mounts ?? []), ...(packages?.mounts ?? [])],
     ...(held === undefined
       ? {}
       : { cleanup: () => removeRunFiles(held.dir), secrets: held.secrets, gate: held.gate }),
