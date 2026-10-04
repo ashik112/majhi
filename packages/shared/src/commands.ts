@@ -2890,13 +2890,16 @@ export const commands = {
     risk: "read",
     summary:
       "List done tasks older than N days (default: the cleanup.after_days setting) with the worktrees, merged task branches and room items a cleanup would remove, and what it would skip and why",
-    input: z.object({ days: z.number().int().min(1).max(3650).optional() }),
+    input: z.object({
+      days: z.number().int().min(1).max(3650).optional(),
+      cachesOnly: z.boolean().optional(),
+    }),
     output: CleanupPreviewSchema,
   },
   "cleanup.run": {
     risk: "destructive",
     summary:
-      "Clean up the listed done tasks: remove clean worktrees, delete merged task branches and delete room items, keeping one note. Checks each task again and never forces. Dirty worktrees and unmerged branches are kept",
+      "Clean up the listed done tasks: remove ignored dependency caches and clean worktrees, delete merged task branches and delete room items, keeping one note. cachesOnly frees only dependency caches and preserves source, branches and room history. Checks each task again and never forces. Dirty worktrees and unmerged branches are kept",
     input: CleanupRunInputSchema,
     output: CleanupReportSchema,
   },

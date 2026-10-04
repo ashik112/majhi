@@ -913,12 +913,13 @@ export function createHandlers({
     "chats.rename": async (input) => services.tasks.renameChat(input.id, input.title),
     "audit.list": async (input) => services.store.permissions.list(input),
     "cleanup.preview": async (input) =>
-      services.cleanup.preview(input.days ?? (await config.settings()).cleanup.after_days),
+      services.cleanup.preview(input.days ?? (await config.settings()).cleanup.after_days, input.cachesOnly),
     "cleanup.run": async (input, ctx) =>
       services.cleanup.run(
         input.tasks,
         input.days ?? (await config.settings()).cleanup.after_days,
         actorName(ctx.meta.actor),
+        input.cachesOnly,
       ),
     "e2e.status": () => (e2e ? e2e.status() : notBuilt()),
     "e2e.runNow": (input, ctx) => {

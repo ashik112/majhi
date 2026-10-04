@@ -109,6 +109,39 @@ describe("ContainerService", () => {
   });
 
   describe("limits and names", () => {
+    it("reserves a global slot before concurrent starts, and releases it when a container stops", async () => {
+      settings = { ...settings, total: 1 };
+      const results = await Promise.allSettled([
+        service.serviceStart("ACM-1", "acme-builder", db),
+        service.serviceStart("ACM-2", "acme-builder", db),
+      ]);
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
+      expect(docker.containers.size).toBe(1);
+      const live = processes.listAll().find((c) => c.status === "running");
+      expect(live).toBeDefined();
+      const runningTask = [...docker.containers.keys()][0]?.includes("acm-1") ? "ACM-1" : "ACM-2";
+      await service.stop(runningTask, "db", "owner");
+      expect(
+        (await service.serviceStart(runningTask === "ACM-1" ? "ACM-2" : "ACM-1", "acme-builder", db)).status,
+      ).toBe("started");
+    });
+
+    it("limits concurrent builds across tasks before allocating builders", async () => {
+      settings = { ...settings, build_total: 1 };
+      const results = await Promise.allSettled([
+        service.previewBuild("ACM-1", "acme-builder", { dockerfile: "Dockerfile" }),
+        service.previewBuild("ACM-2", "acme-builder", { dockerfile: "Dockerfile" }),
+      ]);
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
+      expect(docker.builders.size).toBe(1);
+      await until(() => processes.listAll().every((p) => p.status !== "running"));
+      expect(await service.previewBuild("ACM-2", "acme-builder", { dockerfile: "Dockerfile" })).toMatchObject(
+        { container: { kind: "build" } },
+      );
+    });
+
     it("stops at containers.per_task, and does not count them against the process limit", async () => {
       settings = { ...settings, per_task: 7 };
       for (let i = 0; i < 6; i++)
@@ -121,9 +154,13 @@ describe("ContainerService", () => {
       await service.serviceStart("ACM-2", "acme-builder", { name: "cache", image: "redis:7-alpine" });
     });
 
-    it("refuses a name that is taken, and frees it on stop", async () => {
-      await service.serviceStart("ACM-1", "acme-builder", db);
-      await expect(service.serviceStart("ACM-1", "acme-builder", db)).rejects.toThrow(/already runs/);
+    it("reuses a matching service, refuses configuration changes until stop, and frees its name on stop", async () => {
+      const first = await service.serviceStart("ACM-1", "acme-builder", db);
+      expect(await service.serviceStart("ACM-1", "acme-builder", { ...db })).toEqual(first);
+      expect(docker.calls.filter((c) => c === "run")).toHaveLength(1);
+      await expect(
+        service.serviceStart("ACM-1", "acme-builder", { ...db, env: { MODE: "different" } }),
+      ).rejects.toThrow(/already runs/);
       const stopped = await service.stop("ACM-1", "db", "agent");
       expect(stopped.status).toBe("stopped");
       expect((await service.serviceStart("ACM-1", "acme-builder", db)).status).toBe("started");
@@ -275,12 +312,13 @@ describe("ContainerService", () => {
       expect(await service.taskRunning("ACM-1")).toEqual({ started: [], failed: [] });
     });
 
-    it("keeps everything running while the task only waits, when a service's data has no named volume", async () => {
+    it("keeps only unsaved service data while stopping the preview and volume-backed services", async () => {
       await upWithPreview();
       // "cache" has no volume: stopping would lose its data.
       expect(await service.taskPaused("ACM-1", { keepUnsaved: true })).toEqual({ kept: ["cache"] });
-      expect(docker.containers.size).toBe(3);
-      expect(await service.taskRunning("ACM-1")).toEqual({ started: [], failed: [] });
+      expect([...docker.containers.keys()]).toEqual(["majhi-acm-1-cache"]);
+      expect(docker.volumes.has("majhi-acm-1-data-pgdata")).toBe(true);
+      expect(await service.taskRunning("ACM-1")).toEqual({ started: ["db", "preview"], failed: [] });
       // The owner's Stop still ends them all.
       expect(await service.taskPaused("ACM-1")).toEqual({ kept: [] });
       expect(docker.containers.size).toBe(0);

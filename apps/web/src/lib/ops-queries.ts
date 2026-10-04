@@ -37,15 +37,19 @@ export function useFixCheck() {
 
 /** Done tasks old enough for cleanup, and what a cleanup would do to each. Read again on every press. */
 export function usePreviewCleanup() {
-  return useMutation<CommandOutput<"cleanup.preview">, ApiRequestError, number>({
-    mutationFn: (days) => cmd("cleanup.preview", { days }),
+  return useMutation<CommandOutput<"cleanup.preview">, ApiRequestError, CommandInput<"cleanup.preview">>({
+    mutationFn: (input) => cmd("cleanup.preview", input),
   });
 }
 
 /** Cleans up the chosen tasks. The server checks each one again. */
 export function useRunCleanup() {
   const client = useQueryClient();
-  return useMutation<CommandOutput<"cleanup.run">, ApiRequestError, { tasks: string[]; days: number }>({
+  return useMutation<
+    CommandOutput<"cleanup.run">,
+    ApiRequestError,
+    { tasks: string[]; days: number; cachesOnly?: boolean }
+  >({
     mutationFn: (input) =>
       cmd("cleanup.run", input as CommandInput<"cleanup.run">, {
         reason: "Owner confirmed a cleanup of done tasks",

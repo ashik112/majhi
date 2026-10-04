@@ -283,6 +283,10 @@ const containersFields = {
   memory: ContainerMemorySchema,
   /** Previews and services running at once in one task. */
   per_task: z.number().int().min(1).max(10),
+  /** Previews and services running across all tasks. */
+  total: z.number().int().min(1).max(100),
+  /** Preview builds running across all tasks. */
+  build_total: z.number().int().min(1).max(10),
   /** CPUs of the preview builder. */
   build_cpus: ContainerCpusSchema,
   /** Memory of the preview builder. */
@@ -293,6 +297,8 @@ export const ContainersSettingsSchema = z.strictObject({
   cpus: containersFields.cpus.default(1),
   memory: containersFields.memory.default("512m"),
   per_task: containersFields.per_task.default(3),
+  total: containersFields.total.default(8),
+  build_total: containersFields.build_total.default(1),
   build_cpus: containersFields.build_cpus.default(2),
   build_memory: containersFields.build_memory.default("4g"),
 });

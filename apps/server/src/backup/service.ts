@@ -185,7 +185,7 @@ export class BackupService {
 
   /** The daily backup when due, then the weekly check when due. */
   async scheduled(): Promise<void> {
-    await this.sweepLeftovers();
+    await this.exclusive("verify", () => this.sweepLeftovers());
     await this.ensureDaily().catch((err: unknown) => {
       console.error(`Daily backup failed: ${errorMessage(err)}`);
     });
@@ -343,6 +343,8 @@ export class BackupService {
       .then(async () => {
         this.busy = label;
         try {
+          // Every operation is serialized: no active backup can own this crash-left scratch data.
+          await rm(join(this.home, "run", "backup-work"), { recursive: true, force: true });
           return await work();
         } finally {
           this.busy = undefined;

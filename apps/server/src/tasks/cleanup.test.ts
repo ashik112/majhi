@@ -1,4 +1,4 @@
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Task } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -155,6 +155,68 @@ describe("preview", () => {
 });
 
 describe("run", () => {
+  it("frees ignored dependency caches in dirty finished worktrees while preserving source, commits and history", async () => {
+    const { worktree, branch } = await seed({ id: "ACM-1", dirty: true, ahead: true });
+    await writeFile(join(worktree, ".gitignore"), "node_modules/\n");
+    const cache = join(worktree, "apps", "web", "node_modules");
+    await mkdir(cache, { recursive: true });
+    await writeFile(join(cache, "dependency.js"), "generated\n");
+    expect((await service.preview(30)).tasks[0]?.steps).toContainEqual(
+      expect.objectContaining({ kind: "cache", name: cache, action: "remove" }),
+    );
+    const report = await service.run(["ACM-1"], 30, "owner", true);
+    expect(report.tasks[0]).toMatchObject({
+      roomItems: 0,
+      steps: [{ kind: "cache", name: cache, action: "remove" }],
+    });
+    expect(await exists(cache)).toBe(false);
+    expect(await readFile(join(worktree, "scratch.txt"), "utf8")).toBe("wip\n");
+    expect(await exists(worktree)).toBe(true);
+    expect(await branches()).toContain(branch);
+    expect(store.room.count("ACM-1", "cleanup-note:")).toBe(3);
+    expect(store.tasks.get("ACM-1")?.repos[0]?.worktree).toBe(worktree);
+  });
+
+  it("allows explicit cache-only cleanup of a recently finished task without changing source retention", async () => {
+    const { worktree } = await seed({ id: "ACM-1", updatedAt: RECENT });
+    await writeFile(join(worktree, ".gitignore"), "node_modules/\n");
+    await mkdir(join(worktree, "node_modules"));
+    await writeFile(join(worktree, "node_modules", "package.js"), "generated\n");
+    expect((await service.preview(30)).tasks).toEqual([]);
+    expect((await service.preview(30, true)).tasks[0]).toMatchObject({
+      roomItems: 0,
+      steps: [{ kind: "cache" }],
+    });
+    expect((await service.run(["ACM-1"], 30, "owner")).tasks[0]?.skipped).toContain("less than 30");
+    expect((await service.run(["ACM-1"], 30, "owner", true)).tasks[0]?.steps[0]?.action).toBe("remove");
+    expect(await exists(worktree)).toBe(true);
+    expect(store.room.count("ACM-1", "cleanup-note:")).toBe(3);
+  });
+
+  it("never frees tracked dependencies, external symlink targets or caches in unfinished tasks", async () => {
+    const { worktree } = await seed({ id: "ACM-1", dirty: true });
+    await writeFile(join(worktree, ".gitignore"), "node_modules/\n");
+    const external = join(dir, "external");
+    await mkdir(external);
+    await writeFile(join(external, "keep.txt"), "keep\n");
+    await symlink(external, join(worktree, "node_modules"));
+    expect((await service.run(["ACM-1"], 30, "owner", true)).tasks[0]?.steps).toEqual([]);
+    expect(await readFile(join(external, "keep.txt"), "utf8")).toBe("keep\n");
+    const active = await seed({ id: "ACM-2", status: "running" });
+    await writeFile(join(active.worktree, ".gitignore"), "node_modules/\n");
+    await mkdir(join(active.worktree, "node_modules"));
+    await writeFile(join(active.worktree, "node_modules", "keep.js"), "keep\n");
+    expect((await service.run(["ACM-2"], 30, "owner", true)).tasks[0]?.skipped).toContain("not done");
+    expect(await exists(join(active.worktree, "node_modules", "keep.js"))).toBe(true);
+    const tracked = await seed({ id: "ACM-3" });
+    await writeFile(join(tracked.worktree, ".gitignore"), "node_modules/\n");
+    await mkdir(join(tracked.worktree, "node_modules"));
+    await writeFile(join(tracked.worktree, "node_modules", "keep.js"), "tracked\n");
+    await git(tracked.worktree, "add", "-f", "node_modules/keep.js");
+    expect((await service.run(["ACM-3"], 30, "owner", true)).tasks[0]?.steps).toEqual([]);
+    expect(await exists(join(tracked.worktree, "node_modules", "keep.js"))).toBe(true);
+  });
+
   it("removes a clean worktree and a merged branch, and deletes the room items but keeps a note", async () => {
     const { worktree, branch } = await seed({ id: "ACM-1" });
     const report = await service.run(["ACM-1"], 30, "owner");

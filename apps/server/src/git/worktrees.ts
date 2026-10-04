@@ -265,7 +265,11 @@ export async function dirtyWorktrees(
       try {
         return { path, changes: await uncommitted(path) };
       } catch {
-        return { path, changes: [] };
+        const missing = await stat(path).then(
+          () => false,
+          (err: unknown) => errorCode(err) === "ENOENT",
+        );
+        return { path, changes: missing ? [] : ["Could not inspect this worktree safely"] };
       }
     }),
   );

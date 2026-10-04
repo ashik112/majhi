@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type {
   ContainerInfo,
   ContainersSettings,
@@ -93,6 +94,7 @@ export class ContainerService {
   private readonly parked = new Map<string, StartedSpec[]>();
   /** Preview builds running, by task. The builder stops when the last one ends. */
   private readonly builds = new Map<string, number>();
+  private pendingStarts = 0;
 
   constructor(private readonly deps: ContainerServiceDeps) {
     this.docker = deps.docker;
@@ -138,26 +140,37 @@ export class ContainerService {
         target: input.target,
         buildArgs: input.build_args,
       });
-      await this.ensureBuilder(docker, safety, settings);
-      const info = await this.deps.processes.start({
-        task,
-        agent,
-        name: "preview build",
-        command: `docker buildx build ${names.previewImage}`,
-        cwd: t.folder,
-        wait: true,
-        managed: {
-          container: { kind: "build", name: "preview build", image: names.previewImage },
-          spawn: async () => {
-            const spawned = await docker.attached(parts, safety, { cwd: context });
-            this.builds.set(task, (this.builds.get(task) ?? 0) + 1);
-            spawned.child.once("exit", () => void this.buildEnded(task));
-            return spawned;
+      if ([...this.builds.values()].reduce((n, count) => n + count, 0) >= settings.build_total) {
+        throw new UserError(
+          `The preview build limit (${settings.build_total}) is reached. Wait for a build to finish.`,
+          409,
+        );
+      }
+      this.builds.set(task, (this.builds.get(task) ?? 0) + 1);
+      try {
+        await this.ensureBuilder(docker, safety, settings);
+        const info = await this.deps.processes.start({
+          task,
+          agent,
+          name: "preview build",
+          command: `docker buildx build ${names.previewImage}`,
+          cwd: t.folder,
+          wait: true,
+          managed: {
+            container: { kind: "build", name: "preview build", image: names.previewImage },
+            spawn: async () => {
+              const spawned = await docker.attached(parts, safety, { cwd: context });
+              spawned.child.once("exit", () => void this.buildEnded(task));
+              return spawned;
+            },
           },
-        },
-      });
-      this.deps.changed?.();
-      return info;
+        });
+        this.deps.changed?.();
+        return info;
+      } catch (err) {
+        void this.buildEnded(task);
+        throw err;
+      }
     });
   }
 
@@ -178,55 +191,56 @@ export class ContainerService {
       }
       const old = this.running(task, "preview", "preview");
       if (old !== undefined) await this.deps.processes.stop(task, old.id, "agent");
-      this.checkLimit(task, settings);
-      const safety = this.safety(t);
-      const parts = previewRunArgs(safety, limitsOf(settings), {
-        port: input.port,
-        env: input.env,
-        command: input.command,
-        scratch: input.scratch,
-        taskNetwork: this.networks.has(task),
-      });
-      const url = `http://${names.previewContainer}:${input.port}`;
-      const container: ProcessContainer = {
-        kind: "preview",
-        name: "preview",
-        image: names.previewImage,
-        url,
-      };
-      const info = await this.deps.processes.start({
-        task,
-        agent,
-        name: "preview",
-        command: `docker run ${names.previewImage}`,
-        cwd: t.folder,
-        wait: false,
-        managed: {
-          container,
-          spawn: async (ctx) => {
-            const spawned = await docker.attached(parts, safety, { cwd: t.folder });
-            const lookup = this.lookupHostPort(
-              docker,
-              names.previewContainer,
-              input.port,
-              spawned.child,
-            ).then((hostPort) => {
-              if (hostPort !== undefined) ctx.update({ hostUrl: `http://127.0.0.1:${hostPort}` });
-            });
-            this.lookups.set(names.previewContainer, lookup);
-            return spawned;
+      return this.withContainerSlot(task, settings, async () => {
+        const safety = this.safety(t);
+        const parts = previewRunArgs(safety, limitsOf(settings), {
+          port: input.port,
+          env: input.env,
+          command: input.command,
+          scratch: input.scratch,
+          taskNetwork: this.networks.has(task),
+        });
+        const url = `http://${names.previewContainer}:${input.port}`;
+        const container: ProcessContainer = {
+          kind: "preview",
+          name: "preview",
+          image: names.previewImage,
+          url,
+        };
+        const info = await this.deps.processes.start({
+          task,
+          agent,
+          name: "preview",
+          command: `docker run ${names.previewImage}`,
+          cwd: t.folder,
+          wait: false,
+          managed: {
+            container,
+            spawn: async (ctx) => {
+              const spawned = await docker.attached(parts, safety, { cwd: t.folder });
+              const lookup = this.lookupHostPort(
+                docker,
+                names.previewContainer,
+                input.port,
+                spawned.child,
+              ).then((hostPort) => {
+                if (hostPort !== undefined) ctx.update({ hostUrl: `http://127.0.0.1:${hostPort}` });
+              });
+              this.lookups.set(names.previewContainer, lookup);
+              return spawned;
+            },
           },
-        },
+        });
+        await this.lookups.get(names.previewContainer);
+        const now = this.deps.processes.get(task, info.id);
+        if (now === undefined || now.status !== "running") {
+          const tail = (now?.tail ?? []).slice(-8).join("\n");
+          throw new UserError(`The preview did not stay up.${tail === "" ? "" : `\n${tail}`}`);
+        }
+        this.remember(task, "preview", { kind: "preview", agent, input });
+        this.deps.changed?.();
+        return this.infoOf(now) as ContainerInfo;
       });
-      await this.lookups.get(names.previewContainer);
-      const now = this.deps.processes.get(task, info.id);
-      if (now === undefined || now.status !== "running") {
-        const tail = (now?.tail ?? []).slice(-8).join("\n");
-        throw new UserError(`The preview did not stay up.${tail === "" ? "" : `\n${tail}`}`);
-      }
-      this.remember(task, "preview", { kind: "preview", agent, input });
-      this.deps.changed?.();
-      return this.infoOf(now) as ContainerInfo;
     });
   }
 
@@ -263,43 +277,49 @@ export class ContainerService {
     // The task's other services that stopped with it start again; this one starts as asked now.
     await this.taskRunning(task, input.name);
     return this.locked(task, async () => {
-      if (this.running(task, "service", input.name) !== undefined) {
+      const existing = this.running(task, "service", input.name);
+      if (existing !== undefined) {
+        const saved = this.specs.get(task)?.get(input.name);
+        if (saved?.kind === "service" && isDeepStrictEqual(saved.input, input)) {
+          return { status: "started" as const, container: this.infoOf(existing) as ContainerInfo };
+        }
         throw new UserError(
           `A service ${input.name} already runs in ${task}. Stop it first, or pick another name.`,
           409,
         );
       }
-      this.checkLimit(task, settings);
-      const safety = this.safety(t);
-      const limits = limitsOf(settings);
-      // Checked before the network and the volumes exist.
-      const parts = serviceRunArgs(safety, limits, {
-        name: input.name,
-        image: input.image,
-        env: input.env,
-        command: input.command,
-        volumes: input.volumes,
+      return this.withContainerSlot(task, settings, async () => {
+        const safety = this.safety(t);
+        const limits = limitsOf(settings);
+        // Checked before the network and the volumes exist.
+        const parts = serviceRunArgs(safety, limits, {
+          name: input.name,
+          image: input.image,
+          env: input.env,
+          command: input.command,
+          volumes: input.volumes,
+        });
+        await this.ensureNetwork(docker, safety);
+        for (const volume of input.volumes ?? []) await this.ensureVolume(docker, safety, volume.name);
+        const container: ProcessContainer = {
+          kind: "service",
+          name: input.name,
+          image: input.image,
+          ...(input.port === undefined ? {} : { url: `${input.name}:${input.port}` }),
+        };
+        const info = await this.deps.processes.start({
+          task,
+          agent,
+          name: `service ${input.name}`,
+          command: `docker run ${names.service(input.name)}`,
+          cwd: t.folder,
+          wait: false,
+          managed: { container, spawn: () => docker.attached(parts, safety, { cwd: t.folder }) },
+        });
+        this.remember(task, input.name, { kind: "service", agent, input });
+        this.deps.changed?.();
+        return { status: "started" as const, container: this.infoOf(info) as ContainerInfo };
       });
-      await this.ensureNetwork(docker, safety);
-      for (const volume of input.volumes ?? []) await this.ensureVolume(docker, safety, volume.name);
-      const container: ProcessContainer = {
-        kind: "service",
-        name: input.name,
-        image: input.image,
-        ...(input.port === undefined ? {} : { url: `${input.name}:${input.port}` }),
-      };
-      const info = await this.deps.processes.start({
-        task,
-        agent,
-        name: `service ${input.name}`,
-        command: `docker run ${names.service(input.name)}`,
-        cwd: t.folder,
-        wait: false,
-        managed: { container, spawn: () => docker.attached(parts, safety, { cwd: t.folder }) },
-      });
-      this.remember(task, input.name, { kind: "service", agent, input });
-      this.deps.changed?.();
-      return { status: "started" as const, container: this.infoOf(info) as ContainerInfo };
     });
   }
 
@@ -350,7 +370,8 @@ export class ContainerService {
    * them; named volumes keep their data. The network goes and the builder stops, as on `taskStopped`.
    */
   async taskPaused(task: string, options: { keepUnsaved?: boolean } = {}): Promise<{ kept: string[] }> {
-    if (this.docker === undefined) return { kept: [] };
+    const docker = this.docker;
+    if (docker === undefined) return { kept: [] };
     // Under the task's lock, so a `taskRunning` that comes meanwhile waits and sees all of it.
     return this.locked(task, async () => {
       const parked = this.parked.get(task) ?? [];
@@ -361,22 +382,27 @@ export class ContainerService {
       // Stopping removes a container (`--rm`): a service with no named volume would lose its data,
       // like a database an agent filled. While the task only waits (review, majhi's pause), its
       // services keep running then; the owner's Stop still ends them.
+      const kept = new Set<string>();
       if (options.keepUnsaved === true) {
         const unsaved = running
           .map((p) => specs?.get(p.container?.name ?? ""))
           .filter((s) => s?.kind === "service" && (s.input.volumes ?? []).length === 0)
           .map((s) => (s === undefined ? "" : nameOf(s)));
-        if (unsaved.length > 0) return { kept: unsaved };
+        for (const name of unsaved) kept.add(name);
       }
       for (const p of running) {
         const name = p.container?.name ?? "";
+        if (kept.has(name)) continue;
         const spec = specs?.get(name);
         if (spec !== undefined && !parked.some((s) => nameOf(s) === name)) parked.push(spec);
       }
       if (parked.length > 0) this.parked.set(task, parked);
-      for (const p of running) await this.deps.processes.stop(task, p.id, "task");
-      await this.taskStopped(task);
-      return { kept: [] };
+      for (const p of running) {
+        if (!kept.has(p.container?.name ?? "")) await this.deps.processes.stop(task, p.id, "task");
+      }
+      if (kept.size === 0) await this.taskStopped(task);
+      else await this.stopBuilder(docker, containerNames(task).builder);
+      return { kept: [...kept] };
     });
   }
 
@@ -624,6 +650,17 @@ export class ContainerService {
   }
 
   private checkLimit(task: string, settings: ContainersSettings): void {
+    const total = this.deps.processes
+      .listAll()
+      .filter(
+        (p) => p.status === "running" && p.container !== undefined && p.container.kind !== "build",
+      ).length;
+    if (total + this.pendingStarts >= settings.total) {
+      throw new UserError(
+        `The container limit across all tasks (${settings.total}) is reached. Stop an unused preview or service first.`,
+        409,
+      );
+    }
     const running = this.all(task).filter(
       (p) => p.status === "running" && p.container !== undefined && p.container.kind !== "build",
     );
@@ -632,6 +669,21 @@ export class ContainerService {
         `${task} already runs ${running.length} container${running.length === 1 ? "" : "s"}, the most it may (${settings.per_task}): ${running.map((p) => p.container?.name).join(", ")}. Stop one first.`,
         409,
       );
+    }
+  }
+
+  /** Reserve before any await so concurrent starts in different tasks cannot overrun the cap. */
+  private async withContainerSlot<T>(
+    task: string,
+    settings: ContainersSettings,
+    start: () => Promise<T>,
+  ): Promise<T> {
+    this.checkLimit(task, settings);
+    this.pendingStarts++;
+    try {
+      return await start();
+    } finally {
+      this.pendingStarts--;
     }
   }
 

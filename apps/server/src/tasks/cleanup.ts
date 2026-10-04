@@ -15,6 +15,7 @@ import { dirtyWorktrees, removeWorktree } from "../git/worktrees.ts";
 import { mrRemoteName } from "../mrs/remote.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
+import { dependencyCaches, removeDependencyCache } from "./dependency-caches.ts";
 
 const DAY_MS = 86_400_000;
 /** Id prefix of the note a cleanup leaves in a room. The note is not counted as a log. */
@@ -54,25 +55,26 @@ export class CleanupService {
   }
 
   /** Done tasks older than `days` that have something to clean up or something to say about it. */
-  async preview(days: number): Promise<CleanupPreview> {
+  async preview(days: number, cachesOnly = false): Promise<CleanupPreview> {
     const tasks: CleanupTask[] = [];
-    for (const { id, doneAt } of this.deps.store.tasks.doneBefore(this.cutoff(days))) {
+    for (const { id, doneAt } of this.deps.store.tasks.doneBefore(this.cutoff(cachesOnly ? 0 : days))) {
       const task = this.deps.store.tasks.get(id);
       if (task === undefined) continue;
-      const steps = await this.plan(task);
-      const roomItems = this.deps.store.room.count(id, NOTE_PREFIX);
+      const planned = await this.plan(task);
+      const steps = cachesOnly ? planned.filter((s) => s.kind === "cache") : planned;
+      const roomItems = cachesOnly ? 0 : this.deps.store.room.count(id, NOTE_PREFIX);
       if (steps.length === 0 && roomItems === 0) continue;
       tasks.push({ id: task.id, title: task.title, doneAt, steps: steps.map(publicStep), roomItems });
     }
-    return { days, tasks };
+    return { days, tasks, ...(cachesOnly ? { cachesOnly: true } : {}) };
   }
 
-  async run(ids: readonly string[], days: number, by: string): Promise<CleanupReport> {
+  async run(ids: readonly string[], days: number, by: string, cachesOnly = false): Promise<CleanupReport> {
     if (this.running) throw new UserError("A cleanup is already running.", 409);
     this.running = true;
     try {
       const report: CleanupReport = { tasks: [] };
-      for (const id of new Set(ids)) report.tasks.push(await this.cleanTask(id, days, by));
+      for (const id of new Set(ids)) report.tasks.push(await this.cleanTask(id, days, by, cachesOnly));
       this.deps.events.emit(["tasks"]);
       return report;
     } finally {
@@ -80,7 +82,12 @@ export class CleanupService {
     }
   }
 
-  private async cleanTask(id: string, days: number, by: string): Promise<CleanupReport["tasks"][number]> {
+  private async cleanTask(
+    id: string,
+    days: number,
+    by: string,
+    cachesOnly: boolean,
+  ): Promise<CleanupReport["tasks"][number]> {
     const { store } = this.deps;
     const task = store.tasks.get(id);
     const left = (title: string, skipped: string, doneAt = "") => ({
@@ -93,12 +100,44 @@ export class CleanupService {
     });
     if (task === undefined) return left(id, "There is no such task.");
     if (task.status !== "done") return left(task.title, `It is ${task.status}, not done.`, task.updatedAt);
-    if (task.updatedAt >= this.cutoff(days)) {
+    if (!cachesOnly && task.updatedAt >= this.cutoff(days)) {
       return left(task.title, `It was closed less than ${days} days ago.`, task.updatedAt);
     }
 
     const steps: CleanupStep[] = [];
     const planned = await this.plan(task);
+    for (const step of planned.filter((p) => p.kind === "cache")) {
+      try {
+        const removed =
+          step.repo.worktree !== undefined && (await removeDependencyCache(step.repo.worktree, step.name));
+        steps.push(
+          removed
+            ? publicStep(step)
+            : { ...publicStep(step), action: "skip", reason: "it is no longer an ignored dependency cache" },
+        );
+      } catch (err) {
+        steps.push({
+          ...publicStep(step),
+          action: "skip",
+          reason: `could not remove it: ${errorMessage(err)}`,
+        });
+      }
+    }
+    if (cachesOnly) {
+      if (steps.some((s) => s.action === "remove")) {
+        this.note(task, steps, 0);
+        store.permissions.log({
+          task: task.id,
+          agent: by,
+          kind: "cleanup",
+          title: summarize(steps, 0),
+          decision: "allow",
+          by: "owner",
+          at: this.now().toISOString(),
+        });
+      }
+      return { id: task.id, title: task.title, doneAt: task.updatedAt, steps, roomItems: 0 };
+    }
     // Worktrees first: a branch that is still checked out cannot be deleted.
     const failedTrees = new Set<string>();
     for (const step of planned.filter((p) => p.kind === "worktree")) {
@@ -221,12 +260,16 @@ export class CleanupService {
 
   /** What a cleanup of this task would do now, worktrees before branches. */
   private async plan(task: Task): Promise<Planned[]> {
+    const caches: Planned[] = [];
     const trees: Planned[] = [];
     const branches: Planned[] = [];
     const stackedOn = this.deps.store.tasks.stackedOn(task.id);
     for (const repo of task.repos) {
       let treeKept = false;
       if (repo.worktree !== undefined) {
+        for (const name of await dependencyCaches(repo.worktree).catch(() => [] as string[])) {
+          caches.push({ kind: "cache", project: repo.project, name, action: "remove", repo });
+        }
         const [dirty] = await dirtyWorktrees([repo.worktree]);
         treeKept = dirty !== undefined;
         trees.push({
@@ -265,7 +308,7 @@ export class CleanupService {
         skip(`it is not merged into ${repo.base}, and its merge request is not merged`);
       }
     }
-    return [...trees, ...branches];
+    return [...caches, ...trees, ...branches];
   }
 }
 
@@ -330,7 +373,10 @@ function publicStep(step: CleanupStep): CleanupStep {
 function summarize(steps: readonly CleanupStep[], roomItems: number): string {
   const parts = steps
     .filter((s) => s.action === "remove")
-    .map((s) => `${s.kind === "worktree" ? "removed worktree" : "deleted branch"} ${s.name}`);
+    .map(
+      (s) =>
+        `${s.kind === "worktree" ? "removed worktree" : s.kind === "cache" ? "removed dependency cache" : "deleted branch"} ${s.name}`,
+    );
   if (roomItems > 0) parts.push(`deleted ${roomItems} room items`);
   return parts.join(", ") || "nothing to remove";
 }

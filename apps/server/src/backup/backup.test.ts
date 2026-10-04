@@ -266,6 +266,16 @@ describe("a backup", () => {
     expect((await readdir(join(home, "backups"))).some((n) => n.endsWith(".part"))).toBe(false);
   });
 
+  it("sweeps crash-left database copies before scheduled work and preserves saved archives", async () => {
+    const saved = await backup.now();
+    const scratch = join(home, "run", "backup-work", "backup-leftover");
+    await mkdir(scratch, { recursive: true });
+    await writeFile(join(scratch, "majhi.db"), "abandoned copy\n");
+    await backup.scheduled();
+    expect(await readdir(join(home, "run", "backup-work")).catch(() => [])).toEqual([]);
+    expect((await archives()).some((name) => name === saved)).toBe(true);
+  });
+
   it("ignores a stray .part file and sweeps an old one", async () => {
     await mkdir(join(home, "backups"), { recursive: true });
     const part = join(home, "backups", "majhi-daily-20260930T030000Z.age.part");
