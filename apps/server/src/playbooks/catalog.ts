@@ -1,5 +1,4 @@
 import { type CaptainChore, type Playbook, PlaybookSchema } from "@majhi/shared";
-import { ENGINEERING_PLAYBOOKS } from "./builtin/engineering.ts";
 import { OPS_PLAYBOOKS } from "./builtin/ops.ts";
 import { UPKEEP_PLAYBOOKS } from "./builtin/upkeep.ts";
 
@@ -56,6 +55,5 @@ export class Catalog {
 
 export const BUILTIN: readonly Playbook[] = [
   ...UPKEEP_PLAYBOOKS,
-  ...ENGINEERING_PLAYBOOKS,
   ...OPS_PLAYBOOKS,
 ];

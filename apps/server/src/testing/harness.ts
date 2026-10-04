@@ -9,7 +9,6 @@ import { type Embedder, HashEmbedder } from "../memory/embedder.ts";
 import type { MrHostOptions } from "../mrs/hosts/index.ts";
 import type { Probe } from "../runs/network.ts";
 import { generateKey } from "../secrets/store.ts";
-import { Net } from "../sensors/net.ts";
 import type { Majhi } from "../server.ts";
 import { createMajhi } from "../server.ts";
 import type { ServiceOptions } from "../services.ts";
@@ -104,13 +103,6 @@ function build(
     ...(options.connectionsRemote === undefined ? {} : { connectionsRemote: options.connectionsRemote }),
     ...(options.idleWatchMs === undefined ? {} : { idleWatchMs: options.idleWatchMs }),
     ...(options.gitFetch === undefined ? {} : { gitFetch: options.gitFetch }),
-    // Tests never reach a real advisory, registry or host.
-    sensorNet: new Net({
-      base: (async () => {
-        throw new Error("sensors are offline in tests");
-      }) as typeof fetch,
-      sleep: async () => undefined,
-    }),
     ...(options.skillsCommand === undefined ? {} : { skillsCommand: options.skillsCommand }),
     ...(options.skillsFetch === undefined ? {} : { skillsFetch: options.skillsFetch }),
     ...(options.mcpFetch === undefined ? {} : { mcpFetch: options.mcpFetch }),

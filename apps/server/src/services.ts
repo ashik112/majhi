@@ -84,7 +84,6 @@ import { DecisionLog } from "./decisions/log.ts";
 import { rulesProvider } from "./decisions/rules.ts";
 import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
-import { classifyInjection } from "./decisions/uses/injection.ts";
 import { layaEvalRunner } from "./decisions/uses/weekly-eval.ts";
 import type { ServerEnv } from "./env.ts";
 import { errorMessage, UserError } from "./errors.ts";
@@ -138,7 +137,6 @@ import type { OpsWatch } from "./ops/watch.ts";
 import { createOps, type Ops } from "./ops/wire.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
-import { OutcomesRepo } from "./outcomes/repo.ts";
 import { OutcomesService } from "./outcomes/service.ts";
 import { Catalog } from "./playbooks/catalog.ts";
 import { parsePlan, planPrompt } from "./playbooks/custom.ts";
@@ -148,7 +146,6 @@ import { PlaybookRepo } from "./playbooks/repo.ts";
 import { RULES_RUNNERS, type RulesRunner } from "./playbooks/rules.ts";
 import { PlaybookService } from "./playbooks/service.ts";
 import { ProcessManager } from "./processes/manager.ts";
-import { CardRepo } from "./projectcard/repo.ts";
 import { suggestRepoAliases } from "./projectcard/scanner.ts";
 import type { ProjectCards } from "./projectcard/service.ts";
 import { createCards } from "./projectcard/wire.ts";
@@ -173,9 +170,6 @@ import { RepoScanner } from "./scan/scanner.ts";
 import { KeyExports } from "./secrets/backup.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
-import type { Net } from "./sensors/net.ts";
-import { sensorRunners } from "./sensors/runners.ts";
-import { createSensorPorts } from "./sensors/wire.ts";
 import { SkillsCli } from "./skills/cli.ts";
 import { skillGitEnv } from "./skills/git-env.ts";
 import { SkillRegistry } from "./skills/registry.ts";
@@ -238,8 +232,6 @@ export interface ServiceOptions {
   idleWatchMs?: number;
   /** Replaces `fetch` for git sign-in and the git hosts' APIs, so tests never reach a real host. */
   gitFetch?: Fetch;
-  /** Replaces the sensors' network (advisories, end-of-life dates, releases, CI), so tests never reach a real host. */
-  sensorNet?: Net;
   /** Replaces the ops watch's network (addresses, certificates, names), so tests never reach a real host. */
   opsProbes?: Partial<ProbePorts>;
   /** Replaces `fetch` for the phone push, so tests never reach an ntfy server. */
@@ -1578,23 +1570,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   captainRef.current = captain;
 
-  // The sensors behind the Engineering playbooks: cheap code that reads checkouts and public advisories.
-  const sensors = createSensorPorts({
-    store,
-    projects,
-    cards: new CardRepo(store.raw),
-    tokens: gitTokens,
-    orgs: async () => (await config.sections()).orgs,
-    housekeeper,
-    injects: async (text) => (await classifyInjection(decisions, text, "release-notes")).flagged,
-    ...(options.sensorNet === undefined ? {} : { net: options.sensorNet }),
-    ...(options.runClock === undefined ? {} : { now: options.runClock }),
-    log: (message) => console.error(message),
-  });
   // The ops watch adds its runner below, once the connections it reads through exist.
   const rulesTable: Record<string, RulesRunner> = {
     ...RULES_RUNNERS,
-    ...sensorRunners(sensors),
     // The weekly check of Laya's decisions, and a few old findings read each run.
     "laya-eval": layaEvalRunner({ decisions, backlog: findings }),
   };

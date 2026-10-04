@@ -20,7 +20,7 @@ import { IdSchema } from "./ids.ts";
 // ---------------------------------------------------------------------------
 // Packs
 
-export const PLAYBOOK_PACKS = ["upkeep", "engineering", "ops", "business", "growth"] as const;
+export const PLAYBOOK_PACKS = ["upkeep", "engineering", "ops", "business"] as const;
 export const PlaybookPackSchema = z.enum(PLAYBOOK_PACKS);
 export type PlaybookPack = z.infer<typeof PlaybookPackSchema>;
 
@@ -29,18 +29,15 @@ export const PLAYBOOK_PACK_LABEL: Record<PlaybookPack, string> = {
   engineering: "Engineering",
   ops: "Ops watch",
   business: "Business",
-  growth: "Growth",
 };
 
 /** One line under a pack's name. */
 export const PLAYBOOK_PACK_NOTE: Record<PlaybookPack, string> = {
   upkeep: "The captain's standing chores: shipping, cards, questions, memory, projects, triage, cleanup.",
-  engineering: "Health checks that file findings. They need sensors that are not built yet.",
+  engineering: "Health checks that file findings.",
   ops: "Checks that a service is up. A failure files an incident and wakes the captain.",
   business:
     "What each client costs and earns, and a weekly update drafted for them. Nothing is sent without you.",
-  growth:
-    "Ideas and openings: opportunities from your own work, and hackathons and grants from feeds you list.",
 };
 
 // ---------------------------------------------------------------------------

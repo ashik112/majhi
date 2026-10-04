@@ -88,7 +88,7 @@ export function cadenceFrom(choice: string, prev: Cadence): Cadence {
   return choice === "events" ? { kind: "events" } : { kind: "manual" };
 }
 
-/** The kinds the page filters by: Upkeep, Code health (the engineering and ops packs) and Business (business and growth). */
+/** The kinds the page filters by: Upkeep, Code health (the engineering and ops packs) and Business. */
 export type Kind = "upkeep" | "code" | "business";
 export const KINDS: readonly Kind[] = ["upkeep", "code", "business"];
 export const KIND_LABEL: Record<Kind, string> = {
