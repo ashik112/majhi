@@ -10,6 +10,7 @@ export * from "./automation.ts";
 export * from "./autonomy.ts";
 export * from "./backup.ts";
 export * from "./budgets.ts";
+export * from "./agenda.ts";
 export * from "./business.ts";
 export * from "./captain.ts";
 export * from "./cleanup.ts";
