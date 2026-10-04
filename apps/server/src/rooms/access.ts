@@ -11,13 +11,23 @@ export const PROCESSES_PATH = "/mcp/processes";
 export const CONTAINERS_SERVER_NAME = "majhi-containers";
 export const CONTAINERS_PATH = "/mcp/containers";
 
+/** The `docker` shim of a runner calls this (`docker/docker-shim.mjs`). Not an MCP server: a plain POST. */
+export const DOCKER_PATH = "/mcp/docker";
+
 export const MEMORY_SERVER_NAME = "majhi-memory";
 export const MEMORY_PATH = "/mcp/memory";
 
 export const CONNECTIONS_SERVER_NAME = "majhi-connections";
 export const CONNECTIONS_PATH = "/mcp/connections";
 
-export type ToolServer = "room" | "tasks" | "processes" | "memory" | "containers" | "connections";
+export type ToolServer =
+  | "room"
+  | "tasks"
+  | "processes"
+  | "memory"
+  | "containers"
+  | "connections"
+  | "docker";
 
 /** The servers RoomAccess issues, in the order a session lists them. */
 const SERVERS: readonly { key: ToolServer; name: string; path: string }[] = [
@@ -70,6 +80,8 @@ export class RoomAccess {
   readonly memory = new ToolTokens();
   readonly containers = new ToolTokens();
   readonly connections = new ToolTokens();
+  /** Tokens of the `docker` shim: one per run, one per hand-off check. They only reach the caller's own task. */
+  readonly docker = new ToolTokens();
 
   /**
    * `mcpUrl` gives majhi-admin's URL; these servers sit next to it. `containersOn` says whether majhi
@@ -102,6 +114,23 @@ export class RoomAccess {
       out.servers.push(spec(server.name, `${base}${server.path}`, token));
     }
     return out;
+  }
+
+  /**
+   * What a run needs for its scripts' `docker` to work: a token for `/mcp/docker` and the two
+   * variables the shim reads. Absent when majhi cannot run containers. Revoke `entry` with the
+   * session's other tokens.
+   */
+  attachDocker(
+    caller: ToolCaller,
+  ): { entry: { server: "docker"; token: string }; env: Record<string, string> } | undefined {
+    if (!this.containersOn()) return undefined;
+    const token = this.docker.issue(caller);
+    const base = this.mcpUrl().replace(/\/mcp$/, "");
+    return {
+      entry: { server: "docker", token },
+      env: { MAJHI_DOCKER_URL: `${base}${DOCKER_PATH}`, MAJHI_DOCKER_TOKEN: token },
+    };
   }
 
   revoke(tokens: readonly { server: ToolServer; token: string }[]): void {

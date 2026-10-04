@@ -27,7 +27,7 @@ import { containerNames } from "./names.ts";
 /** A call majhi would make was refused. The message says why, for the agent. */
 export class ContainerRefused extends UserError {}
 
-const refuse = (message: string): never => {
+export const refuse = (message: string): never => {
   throw new ContainerRefused(message);
 };
 
@@ -78,9 +78,9 @@ export interface Limits {
 }
 
 /** What the capabilities of a container may be: what official images need to drop to their own user. */
-const CAPS = ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETUID", "SETGID"];
+export const CAPS = ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETUID", "SETGID"];
 
-const PIDS_LIMIT = 512;
+export const PIDS_LIMIT = 512;
 
 // ---------------------------------------------------------------------------
 // Scanning for host paths
@@ -117,13 +117,13 @@ export function assertNoHostPaths(args: readonly string[], host: HostPaths): voi
 // Parsing flags against an allow list
 
 /** Flag name to whether it takes a value. */
-type FlagTable = Record<string, boolean>;
-interface Flag {
+export type FlagTable = Record<string, boolean>;
+export interface Flag {
   name: string;
   value: string;
 }
 
-function parseFlags(flags: readonly string[], table: FlagTable): Flag[] {
+export function parseFlags(flags: readonly string[], table: FlagTable): Flag[] {
   const out: Flag[] = [];
   for (let i = 0; i < flags.length; i++) {
     const name = flags[i] ?? "";
@@ -141,24 +141,24 @@ function parseFlags(flags: readonly string[], table: FlagTable): Flag[] {
   return out;
 }
 
-const shown = (text: string) => (text.length > 40 ? `${text.slice(0, 37)}...` : text);
+export const shown = (text: string) => (text.length > 40 ? `${text.slice(0, 37)}...` : text);
 
-const all = (flags: Flag[], name: string): string[] =>
+export const all = (flags: Flag[], name: string): string[] =>
   flags.filter((f) => f.name === name).map((f) => f.value);
 
-function one(flags: Flag[], name: string): string {
+export function one(flags: Flag[], name: string): string {
   const values = all(flags, name);
   if (values.length !== 1) return refuse(`Exactly one ${name} is needed.`);
   return values[0] ?? "";
 }
 
-function atMostOne(flags: Flag[], name: string): string | undefined {
+export function atMostOne(flags: Flag[], name: string): string | undefined {
   const values = all(flags, name);
   if (values.length > 1) return refuse(`${name} can be given once.`);
   return values[0];
 }
 
-function is(flags: Flag[], name: string): boolean {
+export function is(flags: Flag[], name: string): boolean {
   return flags.some((f) => f.name === name);
 }
 
@@ -180,7 +180,7 @@ function labelsOf(flags: Flag[]): Map<string, string> {
   return labels;
 }
 
-function checkLabels(flags: Flag[], s: Safety, kinds: string[]): string {
+export function checkLabels(flags: Flag[], s: Safety, kinds: string[]): string {
   const labels = labelsOf(flags);
   const kind = labels.get("majhi.container") ?? "";
   if (!kinds.includes(kind)) return refuse(`The label majhi.container must be ${kinds.join(" or ")}.`);
@@ -191,7 +191,7 @@ function checkLabels(flags: Flag[], s: Safety, kinds: string[]): string {
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
 /** `NAME=value` pairs. A bare `NAME` would make the CLI pass on a value of majhi's own environment. */
-function checkKeyValues(specs: string[], max: number, maxValue: number, what: string): void {
+export function checkKeyValues(specs: string[], max: number, maxValue: number, what: string): void {
   if (specs.length > max) refuse(`At most ${max} ${what}.`);
   for (const spec of specs) {
     const at = spec.indexOf("=");
@@ -202,10 +202,10 @@ function checkKeyValues(specs: string[], max: number, maxValue: number, what: st
   }
 }
 
-const matches = (schema: { safeParse(v: unknown): { success: boolean } }, value: string): boolean =>
+export const matches = (schema: { safeParse(v: unknown): { success: boolean } }, value: string): boolean =>
   schema.safeParse(value).success;
 
-function checkLimits(flags: Flag[]): void {
+export function checkLimits(flags: Flag[]): void {
   const memory = one(flags, "--memory");
   if (!/^[1-9][0-9]{0,3}[mg]$/.test(memory)) refuse(`The memory limit ${shown(memory)} is not allowed.`);
   const cpus = one(flags, "--cpus");
@@ -361,7 +361,7 @@ function inside(child: string, parent: string): boolean {
  * A path a build reads: absolute, inside the task folder with its symlinks followed, and not
  * holding or inside majhi's config folder, the secrets key or the socket (the refusals of a runner's mounts).
  */
-function assertReadable(path: string, s: Safety, what: string): void {
+export function assertReadable(path: string, s: Safety, what: string): void {
   if (!isAbsolute(path)) refuse(`The ${what} must be an absolute path.`);
   const roots = pathForms(s.taskFolder);
   for (const form of pathForms(path)) {

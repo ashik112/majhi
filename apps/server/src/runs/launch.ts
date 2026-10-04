@@ -34,7 +34,7 @@ import { UserError } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
 import { lockWorktree, type RepairResult, repairWorktree, samePath } from "../git/worktrees.ts";
 import type { ProcessLaunch } from "../processes/manager.ts";
-import type { RoomAccess, ToolServer } from "../rooms/access.ts";
+import { CONTAINERS_SERVER_NAME, type RoomAccess, type ToolServer } from "../rooms/access.ts";
 import { type GatedTool, gateTools, SERENA_SERVER_NAME } from "../rooms/gating.ts";
 import type { AcpRuntime } from "../runtime.ts";
 import type { SecretStore } from "../secrets/store.ts";
@@ -200,6 +200,9 @@ export async function launch(
   const admin = on(ADMIN_SERVER_NAME) ? deps.admin?.attach(caller, fm, boss) : undefined;
   const decide = on(DECIDE_SERVER_NAME) ? deps.decisions?.attachTool(run.task, run.agent) : undefined;
   const rooms = deps.rooms?.attach(caller, gated);
+  // Scripts in this run's shell call `docker`: the shim in the runner reaches this task's containers through majhi.
+  const dockerShim = on(CONTAINERS_SERVER_NAME) ? deps.rooms?.attachDocker(caller) : undefined;
+  const roomTokens = [...(rooms?.tokens ?? []), ...(dockerShim === undefined ? [] : [dockerShim.entry])];
   // Before the mounts: they read each worktree's entry in its repo.
   const notices: string[] = await repairWorktrees(task);
   let serena: StdioServerSpec | undefined;
@@ -253,9 +256,9 @@ export async function launch(
       ...(model === undefined ? {} : { model }),
       ...(effort === undefined ? {} : { effort }),
       ...(mcpServers.length === 0 ? {} : { mcpServers }),
-      ...(held === undefined && packages === undefined && tools === undefined
+      ...(held === undefined && packages === undefined && tools === undefined && dockerShim === undefined
         ? {}
-        : { env: { ...packages?.env, ...held?.env, ...tools?.env } }),
+        : { env: { ...packages?.env, ...held?.env, ...tools?.env, ...dockerShim?.env } }),
       ...(run.budget === undefined || run.budget.cap <= 0
         ? {}
         : { contextCap: { tokens: run.budget.cap, compactAt: run.budget.compactAt } }),
@@ -265,7 +268,7 @@ export async function launch(
     if (skills !== undefined && skills.dir !== "") await removeRunFiles(skills.dir);
     if (admin !== undefined) deps.admin?.revoke(admin.token);
     if (decide !== undefined) deps.decisions?.revoke(decide.token);
-    if (rooms !== undefined) deps.rooms?.revoke(rooms.tokens);
+    deps.rooms?.revoke(roomTokens);
     throw err;
   }
   return {
@@ -275,7 +278,7 @@ export async function launch(
     ranBefore,
     adminToken: admin?.token,
     decideToken: decide?.token,
-    roomTokens: rooms?.tokens,
+    roomTokens: roomTokens.length === 0 ? undefined : roomTokens,
     tools: mcpServers.map((m) => m.name),
     notices,
     model,

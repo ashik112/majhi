@@ -145,6 +145,9 @@ RUN --mount=from=ghcr.io/astral-sh/uv:0.12.21,source=/uv,target=/usr/local/bin/u
 COPY --from=kubectl /kubectl /usr/local/bin/kubectl
 # glab and gh for `git` connections (SPEC 5.14): the run gets the workspace's own sign-in as GITLAB_TOKEN or GH_TOKEN.
 COPY --from=host-clis /out/gh /out/glab /usr/local/bin/
+# `docker` for scripts in a run (a repo's hand-off check, tests): a shim that sends the call to majhi,
+# which runs the task's own containers (apps/server/src/containers/task-docker.ts). No Docker, no socket.
+COPY --chmod=0755 docker/docker-shim.mjs /usr/local/bin/docker
 # /etc/passwd stays read-only, and setuid/setgid bits are stripped from every binary, so an agent
 # process has no path to root.
 RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +

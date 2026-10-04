@@ -11,12 +11,14 @@ import type {
   StoppedBy,
   Task,
 } from "@majhi/shared";
+import type { TaskDockerRequest, TaskDockerResult } from "@majhi/shared";
 import { sameImage } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import type { ProcessManager } from "../processes/manager.ts";
 import {
   buildArgs,
   builderCreateArgs,
+  ContainerRefused,
   type HostPaths,
   type Limits,
   networkCreateArgs,
@@ -25,14 +27,22 @@ import {
   serviceRunArgs,
   volumeCreateArgs,
 } from "./args.ts";
-import type { DockerCli } from "./docker.ts";
+import type { DockerCli, TaskCallResult } from "./docker.ts";
 import { containerNames } from "./names.ts";
+import {
+  ImageNotAllowed,
+  showUserNames,
+  TASK_CONTAINER_ID,
+  TASK_RUN_KIND,
+  type TaskDockerPlan,
+  translateTaskDocker,
+} from "./task-docker.ts";
 import { lastPrune, PRUNE_EVERY_MS, pruneBuilderCache, pruneImages, savePrune } from "./prune.ts";
 
 export const NOT_IN_DOCKER = "Containers need majhi running in Docker.";
 
 /** The docker calls the service makes. A test gives it a fake. */
-export type ContainerDocker = Pick<DockerCli, "exec" | "connect" | "create" | "attached">;
+export type ContainerDocker = Pick<DockerCli, "exec" | "connect" | "create" | "attached" | "task">;
 
 export interface ContainerServiceDeps {
   /** Absent when majhi does not run in Docker: every call then says so. */
@@ -95,6 +105,8 @@ export class ContainerService {
   /** Preview builds running, by task. The builder stops when the last one ends. */
   private readonly builds = new Map<string, number>();
   private pendingStarts = 0;
+  /** Names of the task containers a script is starting or running in the foreground, by task. */
+  private readonly scripted = new Map<string, Set<string>>();
 
   constructor(private readonly deps: ContainerServiceDeps) {
     this.docker = deps.docker;
@@ -362,6 +374,219 @@ export class ContainerService {
   }
 
   // ---------------------------------------------------------------------------
+  // A task's own docker
+
+  /**
+   * A `docker` call from a script in this task's runner (a hand-off check, a test run), sent by the
+   * shim with the run's token. `task-docker.ts` turns it into a call majhi allows or refuses. The
+   * container is the task's: labelled with it, named with its prefix, on its internal network, with
+   * the limits of the settings, and removed when the task stops. The script gets the exit code and
+   * output a real `docker` would give. An image the owner has not allowed asks through `ask`.
+   */
+  async taskDocker(
+    task: string,
+    request: TaskDockerRequest,
+    options: { ask: AskImage; signal?: AbortSignal | undefined },
+  ): Promise<TaskDockerResult> {
+    const docker = this.need();
+    const t = this.task(task);
+    const settings = await this.deps.settings();
+    await this.starting;
+    const safety = this.safety(t);
+    const refused = (message: string): TaskDockerResult => ({
+      code: 125,
+      stdout: "",
+      stderr: `docker: ${showUserNames(task, message)}\n`,
+    });
+    let plan: TaskDockerPlan;
+    try {
+      const first = request.argv[0] === "container" ? request.argv[1] : request.argv[0];
+      plan = translateTaskDocker(request.argv, {
+        safety,
+        limits: limitsOf(settings),
+        cwd: request.cwd,
+        allowedImages: settings.images,
+        builtImages: first === "run" ? await this.builtImages(docker, task) : new Set(),
+        ids: await this.ownIds(docker, task, request.argv),
+      });
+    } catch (err) {
+      if (err instanceof ImageNotAllowed) {
+        const answer = await options.ask(err.image).catch(() => "pending" as const);
+        return refused(
+          answer === "allowed"
+            ? `${err.message} Run the script again.`
+            : `${err.message} majhi asked the owner in the room. Run the script again after the answer.`,
+        );
+      }
+      if (err instanceof ContainerRefused || err instanceof UserError) return refused(err.message);
+      throw err;
+    }
+    try {
+      switch (plan.kind) {
+        case "text":
+          return { code: 0, stdout: plan.stdout, stderr: "" };
+        case "call":
+          return this.scriptResult(task, await docker.task(plan.args, safety, settings.images));
+        case "build":
+          return await this.scriptBuild(docker, safety, settings, plan.args);
+        case "run":
+          return await this.scriptRun(docker, safety, settings, plan, options.signal);
+      }
+    } catch (err) {
+      if (err instanceof ContainerRefused || err instanceof UserError) return refused(err.message);
+      throw err;
+    }
+  }
+
+  private scriptResult(task: string, out: TaskCallResult): TaskDockerResult {
+    return {
+      code: out.code ?? 124,
+      stdout: showUserNames(task, out.stdout),
+      stderr: showUserNames(task, out.code === null ? `${out.stderr}\ndocker: timed out\n` : out.stderr),
+    };
+  }
+
+  private async scriptBuild(
+    docker: ContainerDocker,
+    safety: Safety,
+    settings: ContainersSettings,
+    args: string[],
+  ): Promise<TaskDockerResult> {
+    const task = safety.task;
+    await this.locked(task, async () => {
+      if ([...this.builds.values()].reduce((n, count) => n + count, 0) >= settings.build_total) {
+        throw new UserError(
+          `The build limit (${settings.build_total}) is reached. Wait for a build to finish.`,
+          409,
+        );
+      }
+      this.builds.set(task, (this.builds.get(task) ?? 0) + 1);
+      try {
+        await this.ensureBuilder(docker, safety, settings);
+      } catch (err) {
+        void this.buildEnded(task);
+        throw err;
+      }
+    });
+    try {
+      return this.scriptResult(task, await docker.task(args, safety, settings.images));
+    } finally {
+      void this.buildEnded(task);
+    }
+  }
+
+  private async scriptRun(
+    docker: ContainerDocker,
+    safety: Safety,
+    settings: ContainersSettings,
+    plan: Extract<TaskDockerPlan, { kind: "run" }>,
+    signal: AbortSignal | undefined,
+  ): Promise<TaskDockerResult> {
+    const task = safety.task;
+    const active = this.scripted.get(task) ?? new Set<string>();
+    this.scripted.set(task, active);
+    // Counted from the moment it is allowed until the call returns, so parallel calls cannot overrun the limit.
+    try {
+      await this.locked(task, async () => {
+        await this.checkScriptedLimit(docker, task, settings);
+        active.add(plan.name);
+        await this.ensureNetwork(docker, safety);
+        for (const volume of plan.volumes) await this.ensureVolume(docker, safety, volume);
+      });
+      const stop = () => void this.quietly(() => docker.exec(["rm", "-f", "-v", plan.name]));
+      signal?.addEventListener("abort", stop, { once: true });
+      try {
+        const out = await docker.task(plan.args, safety, settings.images);
+        // A run that hit the timeout leaves its container: it goes now.
+        if (out.code === null) stop();
+        return this.scriptResult(task, out);
+      } finally {
+        signal?.removeEventListener("abort", stop);
+      }
+    } finally {
+      active.delete(plan.name);
+      if (active.size === 0 && this.scripted.get(task) === active) this.scripted.delete(task);
+    }
+  }
+
+  /** At most `per_task` containers in the task and `total` in all, counting the ones that are starting. */
+  private async checkScriptedLimit(
+    docker: ContainerDocker,
+    task: string,
+    settings: ContainersSettings,
+  ): Promise<void> {
+    const mine = new Set([
+      ...(await this.lines(docker, [
+        "ps",
+        "--format",
+        "{{.Names}}",
+        "--filter",
+        "label=majhi.container",
+        "--filter",
+        `label=majhi.task=${task}`,
+      ])),
+      ...(this.scripted.get(task) ?? []),
+    ]);
+    if (mine.size >= settings.per_task) {
+      throw new UserError(
+        `${task} already runs ${mine.size} container${mine.size === 1 ? "" : "s"}, the most it may (${settings.per_task}). Remove one first.`,
+        409,
+      );
+    }
+    const everywhere = new Set([
+      ...(await this.lines(docker, ["ps", "--format", "{{.Names}}", "--filter", "label=majhi.container"])),
+      ...[...this.scripted.values()].flatMap((names) => [...names]),
+    ]);
+    if (everywhere.size >= settings.total) {
+      throw new UserError(
+        `The container limit across all tasks (${settings.total}) is reached. Try again when one has ended.`,
+        409,
+      );
+    }
+  }
+
+  /** Images this task built, as `repository:tag`. */
+  private async builtImages(docker: ContainerDocker, task: string): Promise<Set<string>> {
+    return new Set(
+      await this.lines(docker, [
+        "image",
+        "ls",
+        "--filter",
+        "label=majhi.container=image",
+        "--filter",
+        `label=majhi.task=${task}`,
+        "--format",
+        "{{.Repository}}:{{.Tag}}",
+      ]),
+    );
+  }
+
+  /**
+   * The container ids a script typed, kept only when the container is this task's own. An id of
+   * another task's container (or of majhi's) is left out, so the script sees "no such container".
+   */
+  private async ownIds(docker: ContainerDocker, task: string, argv: readonly string[]): Promise<Map<string, string>> {
+    const found = new Map<string, string>();
+    for (const word of new Set(argv.filter((a) => TASK_CONTAINER_ID.test(a)))) {
+      try {
+        const row = (
+          await docker.exec([
+            "inspect",
+            "--format",
+            '{{.Name}} {{index .Config.Labels "majhi.task"}} {{index .Config.Labels "majhi.container"}}',
+            word,
+          ])
+        ).stdout.trim();
+        const [name, owner, kind] = row.split(" ");
+        if (name !== undefined && owner === task && kind === TASK_RUN_KIND) found.set(word, name.replace(/^\//, ""));
+      } catch {
+        // Not a container: the word is left alone.
+      }
+    }
+    return found;
+  }
+
+  // ---------------------------------------------------------------------------
   // The task stops running, and runs again
 
   /**
@@ -490,6 +715,19 @@ export class ContainerService {
     });
     await this.quietly(() => docker.exec(["buildx", "rm", "--force", names.builder]));
     await this.quietly(() => docker.exec(["image", "rm", "-f", names.previewImage]));
+    // What the task's scripts built: found by label, removed by id.
+    await this.quietly(async () => {
+      const images = await this.lines(docker, [
+        "image",
+        "ls",
+        "-q",
+        "--filter",
+        "label=majhi.container=image",
+        "--filter",
+        `label=majhi.task=${task}`,
+      ]);
+      if (images.length > 0) await docker.exec(["image", "rm", "-f", ...new Set(images)]);
+    });
   }
 
   /**

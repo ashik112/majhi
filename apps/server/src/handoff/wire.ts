@@ -9,7 +9,7 @@ import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
 import { type DiffFacts, parseReview, tokensOf } from "./analysis.ts";
-import { execInTask } from "./exec.ts";
+import { type ExecDeps, execInTask } from "./exec.ts";
 import { shipReadiness } from "./ready.ts";
 import { HandoffRepo } from "./repo.ts";
 import { type HandoffOptions, type HandoffPorts, HandoffService } from "./service.ts";
@@ -26,6 +26,8 @@ export interface HandoffWiring {
   spawner: Spawner;
   base: BaseEnv;
   repoMounts: (task: Task) => Promise<RunMount[]>;
+  /** The check's `docker` shim: see `ExecDeps.dockerShim`. */
+  dockerShim?: ExecDeps["dockerShim"];
   /** The workspace's Merge row is Captain: only then does the captain have a lead resolve a conflict. */
   mergeDecides: (org: string) => Promise<boolean>;
   /** Autonomous is on. */
@@ -104,6 +106,7 @@ export function createHandoff(w: HandoffWiring): HandoffService {
         base: w.base,
         task: (id) => w.store.tasks.get(id),
         repoMounts: w.repoMounts,
+        dockerShim: w.dockerShim,
       }),
     review: async (task, prompt) => {
       const { value } = await w.housekeeper.ask({ id: task.id, org: task.org }, prompt, parseReview);
