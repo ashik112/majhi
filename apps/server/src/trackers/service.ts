@@ -220,6 +220,7 @@ export class TrackerService {
     }
     const item = await adapter.get(key);
     const task = await this.createFromItem(org, config, item, project, ["Project picked by you."]);
+    if (project !== undefined) this.deps.decisions?.resolve?.("tracker", key, project, "the owner picked it");
     this.unrouted.set(
       org,
       (this.unrouted.get(org) ?? []).filter((u) => u.key !== key),

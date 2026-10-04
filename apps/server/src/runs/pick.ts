@@ -25,6 +25,8 @@ export interface PickResult {
   applied?: { model?: string; effort?: string; decisionId?: string };
   /** Options the session refused. */
   warnings: string[];
+  /** The decision that rated the task, when a provider was asked, for the room line's "Wrong?". */
+  decisionId?: string;
 }
 
 /**
@@ -188,9 +190,18 @@ export async function pickForSession(input: {
   }
   if (applied.model !== undefined || applied.effort !== undefined) {
     if (rating !== undefined) applied.decisionId = rating.decisionId;
-    return { line: parts.join(" "), applied, warnings };
+    return {
+      line: parts.join(" "),
+      applied,
+      warnings,
+      ...(rating === undefined ? {} : { decisionId: rating.decisionId }),
+    };
   }
-  return { line: parts.join(" "), warnings };
+  return {
+    line: parts.join(" "),
+    warnings,
+    ...(rating === undefined ? {} : { decisionId: rating.decisionId }),
+  };
 }
 
 /** The sentence on the rating: the level, its confidence and the tiers it gave, or why the role's tiers were kept. */

@@ -907,6 +907,69 @@ CREATE TABLE project_cards (
 );
 `,
   },
+  {
+    // Outcome labels for decisions (SPEC 5.12): the right answer to one question of one decision,
+    // with where it came from. \`decision_links\` holds a decision until its outcome is known (a task
+    // finishes, a woken agent's turn ends, the owner keeps or drops a fact), then the labeler writes
+    // the label and removes the link.
+    id: 128,
+    name: "decision labels and links",
+    sql: `
+CREATE TABLE decision_labels (
+  decision_id TEXT NOT NULL,
+  use TEXT NOT NULL,
+  question TEXT NOT NULL,
+  label TEXT NOT NULL,
+  source TEXT NOT NULL,
+  note TEXT,
+  at TEXT NOT NULL,
+  PRIMARY KEY (decision_id, question, source)
+);
+CREATE INDEX decision_labels_use ON decision_labels (use, question);
+CREATE TABLE decision_links (
+  kind TEXT NOT NULL,
+  ref TEXT NOT NULL,
+  decision_id TEXT NOT NULL,
+  question TEXT NOT NULL,
+  at TEXT NOT NULL,
+  PRIMARY KEY (kind, ref, decision_id, question)
+);
+`,
+  },
+  {
+    // A captain log line can name the decision it came from, so the owner can say it was wrong.
+    id: 129,
+    name: "decision on captain log lines",
+    sql: `ALTER TABLE captain_actions ADD COLUMN decision TEXT;`,
+  },
+  {
+    // Eval runs of the decision provider (SPEC 5.12): one row per run of a slot over the labeled set
+    // or the built-in fixtures, the report as JSON. Kept, so a drift between runs is visible.
+    id: 130,
+    name: "decision eval runs",
+    sql: `
+CREATE TABLE decision_evals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  slot TEXT NOT NULL,
+  set_name TEXT NOT NULL,
+  at TEXT NOT NULL,
+  report TEXT NOT NULL
+);
+CREATE INDEX decision_evals_slot ON decision_evals (slot, set_name, id);
+`,
+  },
+  {
+    // The fitted calibration of each decision slot (SPEC 5.12): the temperature, the bar for the
+    // target precision, and whether the slot acts (live) or only logs (shadow). JSON, one per slot.
+    id: 131,
+    name: "decision calibration per slot",
+    sql: `
+CREATE TABLE decision_calibration (
+  slot TEXT PRIMARY KEY,
+  calibration TEXT NOT NULL
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */
