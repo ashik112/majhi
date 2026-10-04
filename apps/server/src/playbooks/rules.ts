@@ -16,6 +16,8 @@ export interface RulesContext {
   findings: FindingsService;
   now: () => Date;
   fetch: typeof fetch;
+  /** The owner pressed Run now: a playbook that skips a repeat within its period runs anyway. */
+  manual?: boolean;
 }
 
 export interface RulesResult {
@@ -23,6 +25,8 @@ export interface RulesResult {
   findings: number;
   /** One line for the history; empty when nothing happened. */
   note: string;
+  /** Tokens a model spent in the run, estimated. Absent for code. */
+  tokens?: number;
   /** Something to wake the captain with, when a finding is news. The findings store wakes it already. */
 }
 

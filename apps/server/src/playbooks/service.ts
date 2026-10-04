@@ -64,6 +64,11 @@ export interface PlaybookDeps {
   mode: () => AutonomyMode;
   /** What a captain playbook can check in code before any model is woken: undefined means "run it". */
   preflight?: Record<string, (org: string) => Promise<string | undefined> | string | undefined>;
+  /**
+   * Facts code collected for a captain playbook, put in its wake as fenced data so the model reads a
+   * small brief instead of searching. Undefined: none.
+   */
+  context?: Record<string, (org: string) => Promise<string | undefined> | string | undefined>;
   rules?: Readonly<Record<string, RulesRunner>>;
   fetch?: typeof fetch;
   tellOwner?: (key: string, text: string) => void;
@@ -179,8 +184,9 @@ export class PlaybookService implements ChorePlaybooks {
       if (def.runner.kind === "rules") {
         const runner = this.rules[def.runner.id];
         if (runner === undefined) return "Its checker is not installed.";
-        const empty = def.settings.some((s) => (e.settings[s.key] ?? []).length === 0);
-        if (empty) return `Add ${def.settings.map((s) => s.label.toLowerCase()).join(" and ")} first.`;
+        const needed = def.settings.filter((s) => !s.optional);
+        const empty = needed.some((s) => (e.settings[s.key] ?? []).length === 0);
+        if (empty) return `Add ${needed.map((s) => s.label.toLowerCase()).join(" and ")} first.`;
       }
     }
     if (ws.rest !== undefined) return `${ws.name} is resting: ${ws.rest}.`;
@@ -395,7 +401,7 @@ export class PlaybookService implements ChorePlaybooks {
     this.deps.changed?.();
     if (def.runner.kind === "rules") {
       const runner = this.rules[def.runner.id];
-      const task = this.runRules(def, org, id, runner).finally(() => this.active.delete(task));
+      const task = this.runRules(def, org, id, runner, manual).finally(() => this.active.delete(task));
       this.active.add(task);
       return { started: true, text: `Started ${def.name.toLowerCase()}.` };
     }
@@ -407,6 +413,7 @@ export class PlaybookService implements ChorePlaybooks {
     org: string,
     id: number,
     runner: RulesRunner | undefined,
+    manual = false,
   ): Promise<void> {
     const e = this.effective(def, org);
     try {
@@ -418,6 +425,7 @@ export class PlaybookService implements ChorePlaybooks {
         findings: this.deps.findings,
         now: () => this.now(),
         fetch: this.deps.fetch ?? fetch,
+        manual,
       });
       // Majhi shut down while it ran: the database is closed, and a restart ends the run (boot).
       if (this.closed) return;
@@ -429,6 +437,7 @@ export class PlaybookService implements ChorePlaybooks {
         res.note,
         {
           findings: res.findings,
+          ...(res.tokens === undefined ? {} : { tokens: res.tokens }),
         },
       );
     } catch (err) {
@@ -442,12 +451,14 @@ export class PlaybookService implements ChorePlaybooks {
   private async wake(def: Playbook, org: string, id: number, ws: Workspace): Promise<PlaybookRunNowResult> {
     const e = this.effective(def, org);
     const goal = e.goal === undefined ? undefined : this.deps.goals.get(e.goal);
+    const brief = await this.deps.context?.[def.id]?.(org);
     const text = wakeText(
       def,
       ws.name,
       id,
       e.settings,
       goal === undefined ? undefined : { id: goal.id, title: goal.title },
+      brief,
     );
     const sent = await this.deps.lane.tell(org, text, "A playbook is due");
     if (!sent.sent) {
@@ -590,6 +601,7 @@ export function wakeText(
   run: number,
   settings: Readonly<Record<string, readonly string[]>>,
   goal: { id: string; title: string } | undefined,
+  brief?: string,
 ): string {
   const lines = [
     `Playbook "${def.name}" is due in ${workspace} (run ${run}): ${def.purpose}`,
@@ -605,6 +617,7 @@ export function wakeText(
     const values = settings[s.key] ?? [];
     if (values.length > 0) lines.push(`${s.label} (set by the owner, data):`, ...values.map((v) => `- ${v}`));
   }
+  if (brief !== undefined && brief !== "") lines.push("", brief);
   if (goal !== undefined)
     lines.push(`Goal it serves: "${goal.title}". Pass goal "${goal.id}" when you report a finding.`);
   lines.push(

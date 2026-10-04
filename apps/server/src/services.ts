@@ -95,7 +95,7 @@ import { cleanupRepoDocFacts } from "./memory/cleanup.ts";
 import { Curator } from "./memory/curator.ts";
 import type { Embedder } from "./memory/embedder.ts";
 import { curationTask, Extraction } from "./memory/extraction.ts";
-import { Housekeeper } from "./memory/housekeeper.ts";
+import { Housekeeper, NoHousekeeper } from "./memory/housekeeper.ts";
 import { briefAbout, Placer, type Registry } from "./memory/placement.ts";
 import { Promotion } from "./memory/promote.ts";
 import { LESSON_DOC_COSINE, RepoDocs } from "./memory/repo-docs.ts";
@@ -115,6 +115,14 @@ import { OutboundGate } from "./playbooks/outbound.ts";
 import { PlaybookRepo } from "./playbooks/repo.ts";
 import { RULES_RUNNERS } from "./playbooks/rules.ts";
 import { PlaybookService } from "./playbooks/service.ts";
+import { economicsRunner } from "./economics/playbook.ts";
+import { EconomicsService } from "./economics/service.ts";
+import { keywordLines } from "./growth/gather.ts";
+import { OPPORTUNITIES_ID, opportunitiesHooks } from "./growth/opportunities.ts";
+import type { GrowthDeps } from "./growth/ports.ts";
+import { clientUpdate } from "./growth/update.ts";
+import { feedsRunner } from "./growth/feeds.ts";
+import { OutcomesRepo } from "./outcomes/repo.ts";
 import { OutcomesService } from "./outcomes/service.ts";
 import { ProcessManager } from "./processes/manager.ts";
 import { CardRepo } from "./projectcard/repo.ts";
@@ -316,6 +324,9 @@ export interface Services {
   outbound: OutboundGate;
   /** Outcomes, the scorecard, the trust ladder and the monthly ceiling (5.18). */
   outcomes: OutcomesService;
+  /** Client economics and the growth playbooks' views (5.18, step 11). */
+  economics: EconomicsService;
+  growth: GrowthDeps;
   /** The knowledge base, voice, contacts and deadlines (5.19). */
   business: BusinessServices;
   /** The owner's agenda and the morning brief (5.18). */
@@ -1307,8 +1318,52 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
     log: (message) => console.error(message),
   });
+  // Client economics and the growth playbooks (captain v2 step 11): code, plus one small model call where noted.
+  const rateRepo = new OutcomesRepo(store.raw);
+  const orgLabel = async (org: string) =>
+    org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org);
+  const economics = new EconomicsService({
+    db: store.raw,
+    tz: async () => zoneOr((await config.settings()).autonomy.tz),
+    orgs: async () => workspaceIds((await config.sections()).orgs),
+    rates: () => rateRepo.rates(),
+    minutes: () => rateRepo.minutes(),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  const growth: GrowthDeps = {
+    db: store.raw,
+    now: options.runClock ?? (() => new Date()),
+    findings,
+    ...business,
+    goals,
+    cards: new CardRepo(store.raw),
+    outbound,
+    cache: sensors.cache,
+    orgName: orgLabel,
+    write: async (task, prompt, parse) => {
+      try {
+        return (await housekeeper.ask(task, prompt, parse)).value;
+      } catch (err) {
+        if (err instanceof NoHousekeeper) return undefined;
+        throw err;
+      }
+    },
+  };
+  const opportunities = opportunitiesHooks(growth);
   const playbooks = new PlaybookService({
-    rules: { ...RULES_RUNNERS, ...sensorRunners(sensors) },
+    rules: {
+      ...RULES_RUNNERS,
+      ...sensorRunners(sensors),
+      economics: economicsRunner(economics, orgLabel),
+      "client-update": clientUpdate(growth),
+      feeds: feedsRunner({
+        net: sensors.net,
+        cache: sensors.cache,
+        keywords: async (org) => keywordLines(growth, org),
+      }),
+    },
+    preflight: { [OPPORTUNITIES_ID]: (org) => opportunities.preflight(org) },
+    context: { [OPPORTUNITIES_ID]: (org) => opportunities.context(org) },
     repo: new PlaybookRepo(store.raw),
     captain,
     findings,
@@ -1602,6 +1657,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     goals,
     outbound,
     outcomes,
+    economics,
+    growth,
     business,
     agenda,
     captainTell: new CaptainTell({

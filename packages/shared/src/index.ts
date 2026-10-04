@@ -36,6 +36,7 @@ export * from "./notify.ts";
 export * from "./onboarding.ts";
 export * from "./paths.ts";
 export * from "./plain-text.ts";
+export * from "./economics.ts";
 export * from "./playbooks.ts";
 export * from "./scorecard.ts";
 export * from "./processes.ts";

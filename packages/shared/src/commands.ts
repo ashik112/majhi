@@ -155,6 +155,14 @@ import {
   AgendaTodaySchema,
 } from "./agenda.ts";
 import {
+  EconomicsGetInputSchema,
+  EconomicsSchema,
+  FindingDeadlineInputSchema,
+  FindingDeadlineResultSchema,
+  FindingProposalInputSchema,
+  FindingProposalResultSchema,
+} from "./economics.ts";
+import {
   FindingDismissInputSchema,
   FindingReportInputSchema,
   FindingReportResultSchema,
@@ -979,6 +987,27 @@ export const commands = {
       "Set the monthly ceiling (a hard stop on new starts when reached) and a workspace's retainer and hourly rate. The owner's: the captain never changes its own ceiling",
     input: MoneySetInputSchema,
     output: MoneyStatusSchema,
+  },
+  "economics.get": {
+    risk: "read",
+    summary:
+      "Per workspace, this week or this month against the one before: tasks shipped, agent hours, spend, the owner's minutes in reviews and decisions (estimated), and, from rates the owner entered, what the client pays and what is left. With no rate there is no margin. Flags: spend growing faster than shipped work, no shipped work in 14 days, spend near the retainer. A captain lane sees its own workspace only",
+    input: EconomicsGetInputSchema,
+    output: EconomicsSchema,
+  },
+  "findings.proposal": {
+    risk: "change",
+    summary:
+      "Draft a short proposal for an opportunity finding, in the workspace's voice with the business facts, as an email draft to the client's main contact. It goes through the outbound gate and waits for the owner. The owner's",
+    input: FindingProposalInputSchema,
+    output: FindingProposalResultSchema,
+  },
+  "findings.deadline": {
+    risk: "change",
+    summary:
+      "Add the deadline a grant or launch finding carries to the business deadlines, linked to the finding. The owner's confirmation of what a feed proposed",
+    input: FindingDeadlineInputSchema,
+    output: FindingDeadlineResultSchema,
   },
   // Business memory (5.19) -----------------------------------------------------
   "kb.list": {
