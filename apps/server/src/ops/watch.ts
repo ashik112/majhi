@@ -459,7 +459,7 @@ export class OpsWatch {
       // Already open: refresh the evidence, note a check that joined, and raise the severity if it grew.
       const timeline = [...open.timeline];
       for (const line of evidence) {
-        if (!timeline.some((t) => t.kind === "note" && t.text === line)) {
+        if (!timeline.some((t) => t.text.includes(line))) {
           timeline.push({ at, kind: "note", text: line });
         }
       }

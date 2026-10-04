@@ -52,6 +52,17 @@ describe("flapping protection", () => {
     expect(listed(w, "live")).toHaveLength(1);
   });
 
+  it("keeps one timeline while the same failure goes on: no line repeats the evidence", async () => {
+    const w = opsWorld();
+    await addService(w);
+    answers(w, URL_A, down());
+    for (let i = 0; i < 4; i++) {
+      await w.ops.watch.runOrg("acme");
+      w.advance(5 * MIN);
+    }
+    expect(incidents(w)[0]?.timeline.map((t) => t.kind)).toEqual(["opened", "alerted"]);
+  });
+
   it("a service that fails again soon after it closed reopens the same incident, quietly", async () => {
     const w = opsWorld();
     w.ops.watch.setSettings({ resolveMin: 5 });
