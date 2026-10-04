@@ -40,6 +40,8 @@ export interface DecisionActions {
   /** The outbound gate: approve (send) or discard one draft, or a whole batch. */
   decideDraft(id: number, decision: "send" | "discard"): Promise<unknown>;
   decideBatch(org: string, channel: OutboundChannel, decision: "send" | "discard"): Promise<unknown>;
+  /** The ops watch: the owner has seen the incident. */
+  ackIncident?(id: number): Promise<unknown>;
   /** A trust ladder notice: demotion read or given back, a promotion taken or put off, a mute undone. */
   answerTrust?(id: number, option: string): Promise<unknown>;
   /** The monthly ceiling: raise it for the month or keep it. */
@@ -61,6 +63,8 @@ export interface InboxDeps {
   budgets: () => Promise<DecisionSources["budgets"]>;
   signedOut: () => Promise<DecisionSources["signedOut"]>;
   recommendations: RecommendationStore;
+  /** High incidents nobody has acknowledged. */
+  incidents?: () => NonNullable<DecisionSources["incidents"]>;
   /** What the outbound gate holds for the owner. */
   outbound?: {
     pending(): Draft[];
@@ -116,6 +120,7 @@ export class InboxService {
       recommendations: deps.recommendations.all(),
       drafts: deps.outbound?.pending() ?? [],
       batches: (await deps.outbound?.batchesDue()) ?? [],
+      incidents: deps.incidents?.() ?? [],
       orgName: (org) => names[org],
       extras: deps.extras?.() ?? [],
     });
@@ -215,6 +220,7 @@ export class InboxService {
     if (parsed.kind === "cap") await actions.answerCap(parsed.org, parsed.chore, raiseOrLeave(input.option));
     else if (parsed.kind === "budget") await actions.answerBudget(parsed.scope, raiseOrLeave(input.option));
     else if (parsed.kind === "signin") throw new UserError("Sign in from Accounts.", 400);
+    else if (parsed.kind === "incident") await actions.ackIncident?.(parsed.id);
     else if (parsed.kind === "trust") await actions.answerTrust?.(parsed.id, input.option);
     else if (parsed.kind === "ceiling") await actions.answerCeiling?.(parsed.month, input.option);
     else if (parsed.kind === "draft") {

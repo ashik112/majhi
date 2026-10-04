@@ -38,6 +38,8 @@ export interface FindingsDeps {
     title: string;
     text: string;
     byOwner: boolean;
+    /** A change to code, whatever the words say: an incident's fix reads "is down" but is not an investigation. */
+    code?: boolean;
   }): Promise<{ id: string }>;
   /** A task's status, undefined when it is gone. */
   taskStatus(id: string): TaskStatus | undefined;
@@ -280,6 +282,7 @@ export class FindingsService {
       title: found.title,
       text: taskText(found),
       byOwner: actor.kind === "owner",
+      ...(found.source === "incident" ? { code: true } : {}),
     });
     const finding = this.repo.patch(id, { at: this.at(), status: to, task: task.id });
     this.deps.changed?.();

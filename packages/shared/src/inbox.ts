@@ -19,6 +19,7 @@ export const OwnerDecisionKindSchema = z.enum([
   "secret",
   "draft",
   "batch",
+  "incident",
   "trust",
 ]);
 export type OwnerDecisionKind = z.infer<typeof OwnerDecisionKindSchema>;
@@ -54,6 +55,7 @@ export const DecisionLinkSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("limits") }),
   z.object({ kind: z.literal("account"), id: z.string().min(1) }),
   z.object({ kind: z.literal("playbooks") }),
+  z.object({ kind: z.literal("watch") }),
 ]);
 export type DecisionLink = z.infer<typeof DecisionLinkSchema>;
 
@@ -157,6 +159,7 @@ export const DECISION_KIND_LABEL: Record<OwnerDecisionKind, string> = {
   secret: "Access",
   draft: "Draft",
   batch: "Batch",
+  incident: "Incident",
   trust: "Trust",
 };
 
@@ -180,6 +183,7 @@ export type ParsedDecisionId =
   | { kind: "signin"; account: string }
   | { kind: "draft"; id: number }
   | { kind: "batch"; org: string; channel: string }
+  | { kind: "incident"; id: number }
   | { kind: "trust"; id: number }
   | { kind: "ceiling"; month: string };
 
@@ -203,6 +207,9 @@ export function parseDecisionId(id: string): ParsedDecisionId | undefined {
   }
   if (head === "batch" && rest.length === 2 && rest.every((p) => p !== "")) {
     return { kind: "batch", org: rest[0] as string, channel: rest[1] as string };
+  }
+  if (head === "incident" && rest.length === 1 && /^[1-9]\d*$/.test(rest[0] ?? "")) {
+    return { kind: "incident", id: Number(rest[0]) };
   }
   if (head === "trust" && rest.length === 1 && /^[1-9]\d*$/.test(rest[0] ?? "")) {
     return { kind: "trust", id: Number(rest[0]) };
@@ -262,7 +269,8 @@ export function batchPick(
   const option = decision.options.find((o) => o.effect === intent && o.text !== true);
   if (option === undefined) {
     return {
-      reason: intent === "approve" ? "It has no button to approve in bulk" : "It has no button to leave in bulk",
+      reason:
+        intent === "approve" ? "It has no button to approve in bulk" : "It has no button to leave in bulk",
     };
   }
   const suggested = decision.suggestion;
