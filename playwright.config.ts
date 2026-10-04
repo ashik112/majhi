@@ -10,6 +10,10 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
   retries: 0,
+  // A smoke test that signs up, adds an account and starts a captain takes 25 s alone: a loaded
+  // machine needs room beyond the 30 s default.
+  timeout: 60_000,
+  workers: 4,
   // Several servers, browsers and fake agents share the machine, so a step can take a moment longer.
   expect: { timeout: 10_000 },
   reporter: "list",
