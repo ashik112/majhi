@@ -35,6 +35,7 @@ export * from "./memory.ts";
 export * from "./mrs.ts";
 export * from "./notify.ts";
 export * from "./onboarding.ts";
+export * from "./ops.ts";
 export * from "./paths.ts";
 export * from "./plain-text.ts";
 export * from "./playbooks.ts";

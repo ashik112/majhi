@@ -32,7 +32,6 @@ test.beforeAll(async ({ request }) => {
     id: "ops-uptime",
     enabled: true,
     goal: business.id,
-    settings: { urls: ["https://acme.example/health", "https://api.acme.example/ready"] },
   });
   await cmd(request, "playbooks.update", { org: "private", id: "upkeep-triage", enabled: false });
   for (let i = 1; i <= 4; i++) {
@@ -88,7 +87,7 @@ for (const [w, h] of [
       await noPageScroll(page);
       await page.screenshot({ path: `${SHOTS}/list-${w}-${theme}.png` });
       await page.locator('[data-playbook="ops-uptime"]').click();
-      await expect(page.getByRole("heading", { name: "Service up check", level: 2 })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Service watch", level: 2 })).toBeVisible();
       await page.waitForTimeout(300);
       await noPageScroll(page);
       await page.screenshot({ path: `${SHOTS}/uptime-${w}-${theme}.png` });

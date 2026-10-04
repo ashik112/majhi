@@ -1279,6 +1279,76 @@ CREATE TABLE org_rates (
 );
 `,
   },
+  {
+    id: 139,
+    name: "ops watch",
+    sql: `
+CREATE TABLE ops_services (
+  id TEXT PRIMARY KEY,
+  org TEXT NOT NULL,
+  def TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX ops_services_org ON ops_services(org);
+CREATE TABLE ops_state (
+  service TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  recent TEXT NOT NULL DEFAULT '[]',
+  fails INTEGER NOT NULL DEFAULT 0,
+  last_at TEXT,
+  last_ok INTEGER,
+  last_detail TEXT NOT NULL DEFAULT '',
+  last_ms INTEGER,
+  green_since TEXT,
+  unknown INTEGER NOT NULL DEFAULT 0,
+  warn INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (service, kind)
+);
+CREATE TABLE ops_samples (
+  service TEXT NOT NULL,
+  at TEXT NOT NULL,
+  ok INTEGER NOT NULL,
+  ms INTEGER
+);
+CREATE INDEX ops_samples_at ON ops_samples(service, at);
+CREATE TABLE ops_incidents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT NOT NULL,
+  service TEXT,
+  key TEXT NOT NULL,
+  title TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  status TEXT NOT NULL,
+  finding INTEGER,
+  opened_at TEXT NOT NULL,
+  acked_at TEXT,
+  escalated_at TEXT,
+  resolved_at TEXT,
+  phone_at TEXT,
+  phone_escalated_at TEXT,
+  flaps INTEGER NOT NULL DEFAULT 0,
+  fix TEXT,
+  timeline TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX ops_incidents_key ON ops_incidents(key, status);
+CREATE TABLE ops_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE TABLE ops_phone_tokens (
+  jti TEXT PRIMARY KEY,
+  decision TEXT NOT NULL,
+  action TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT
+);
+CREATE INDEX ops_phone_tokens_decision ON ops_phone_tokens(decision);
+CREATE TABLE ops_phone_sent (
+  decision TEXT PRIMARY KEY,
+  at TEXT NOT NULL
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

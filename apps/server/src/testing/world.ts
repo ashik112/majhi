@@ -45,6 +45,8 @@ export interface WorldOptions {
   skillsFetch?: HarnessOptions["skillsFetch"];
   mcpFetch?: HarnessOptions["mcpFetch"];
   connectCatalog?: HarnessOptions["connectCatalog"];
+  opsProbes?: HarnessOptions["opsProbes"];
+  ntfyFetch?: HarnessOptions["ntfyFetch"];
 }
 
 /**
@@ -71,6 +73,8 @@ export async function taskWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.skillsFetch === undefined ? {} : { skillsFetch: options.skillsFetch }),
     ...(options.mcpFetch === undefined ? {} : { mcpFetch: options.mcpFetch }),
     ...(options.connectCatalog === undefined ? {} : { connectCatalog: options.connectCatalog }),
+    ...(options.opsProbes === undefined ? {} : { opsProbes: options.opsProbes }),
+    ...(options.ntfyFetch === undefined ? {} : { ntfyFetch: options.ntfyFetch }),
   });
   const world: World = {
     h,

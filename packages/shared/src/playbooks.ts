@@ -140,6 +140,11 @@ export const PlaybookSchema = z.object({
    * Autonomous is off and when Upkeep is on You, because nothing it does acts on anything.
    */
   readOnly: z.boolean().optional(),
+  /**
+   * A watch (the ops pack): it keeps looking while the workspace rests and through quiet hours,
+   * because an outage does not wait for working hours.
+   */
+  watch: z.boolean().optional(),
   /** Why it cannot run yet ("needs a CI sensor"), when something it depends on is not built. */
   needs: z.string().max(200).optional(),
   /** What turning it on does, in a sentence, shown beside the switch. */

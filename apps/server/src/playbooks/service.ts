@@ -189,7 +189,8 @@ export class PlaybookService implements ChorePlaybooks {
         if (empty) return `Add ${needed.map((s) => s.label.toLowerCase()).join(" and ")} first.`;
       }
     }
-    if (ws.rest !== undefined) return `${ws.name} is resting: ${ws.rest}.`;
+    // A watch keeps looking while the workspace rests: an outage does not wait for working hours.
+    if (ws.rest !== undefined && def.watch !== true) return `${ws.name} is resting: ${ws.rest}.`;
     if (!manual && e.stored.backoffUntil !== undefined) {
       const until = new Date(e.stored.backoffUntil);
       if (until.getTime() > this.now().getTime()) {
@@ -367,7 +368,7 @@ export class PlaybookService implements ChorePlaybooks {
           this.deps.repo.touch(org, def.id, last.toISOString());
         }
         if (!isDue(e.cadence, last, this.now(), ws.tz)) continue;
-        if (inQuiet(e.quiet, this.now(), ws.tz)) continue;
+        if (def.watch !== true && inQuiet(e.quiet, this.now(), ws.tz)) continue;
         if (this.held(def, org, ws, false) !== undefined) continue;
         await this.begin(def, org, ws, cadenceLabel(e.cadence), false);
       }
@@ -413,7 +414,7 @@ export class PlaybookService implements ChorePlaybooks {
     org: string,
     id: number,
     runner: RulesRunner | undefined,
-    manual = false,
+    manual: boolean,
   ): Promise<void> {
     const e = this.effective(def, org);
     try {
@@ -423,9 +424,9 @@ export class PlaybookService implements ChorePlaybooks {
         playbook: def,
         settings: e.settings,
         findings: this.deps.findings,
+        manual,
         now: () => this.now(),
         fetch: this.deps.fetch ?? fetch,
-        manual,
       });
       // Majhi shut down while it ran: the database is closed, and a restart ends the run (boot).
       if (this.closed) return;

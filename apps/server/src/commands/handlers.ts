@@ -40,6 +40,7 @@ import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import { inboxHandlers } from "../inbox/handlers.ts";
 import { mcpHandlers } from "../mcp-servers/handlers.ts";
 import { hostNameOf } from "../mrs/remote.ts";
+import { opsHandlers } from "../ops/handlers.ts";
 import {
   checkSavedLogin,
   checkToken,
@@ -179,6 +180,7 @@ export function createHandlers({
       goals: services.goals,
       outbound: services.outbound,
     }),
+    ...opsHandlers({ watch: services.ops.watch, phone: services.ops.phone, playbooks: services.playbooks }),
     ...outcomesHandlers({
       findings: services.findings,
       lanes: services.lanes,
