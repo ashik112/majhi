@@ -1,5 +1,6 @@
 import {
   PRIVATE,
+  type UsageSource,
   WATCH_KIND_ONE,
   WATCH_KINDS,
   type WatchDef,
@@ -24,7 +25,7 @@ import {
 } from "@/features/actions/action-fields";
 import { useConnections } from "@/lib/connection-queries";
 import { describeError } from "@/lib/errors";
-import { useOrgs } from "@/lib/studio-queries";
+import { useAccounts, useOrgs } from "@/lib/studio-queries";
 import { useProjects } from "@/lib/task-queries";
 import { useSaveWatch, useTestWatch } from "@/lib/watch-queries";
 
@@ -59,7 +60,7 @@ interface Draft {
   args: string;
   metricPath: string;
   instruction: string;
-  ctype: "above" | "below" | "changed" | "contains" | "notContains" | "down";
+  ctype: "above" | "below" | "changed" | "contains" | "notContains" | "down" | "atLimit" | "resets";
   value: string;
   forMin: string;
   text: string;
@@ -76,10 +77,13 @@ interface Draft {
   /** A task id, or empty for any task of the workspace. */
   task: string;
   taskTo: "done" | "failed" | "needs-you";
-  mrOn: "opened" | "merged" | "failed" | "any";
+  mrOn: "opened" | "merged" | "failed" | "approved" | "changesRequested" | "reviewRequested" | "any";
   branch: string;
   proc: string;
   procOn: "any" | "failure";
+  usageSource: UsageSource;
+  /** An account id, for the account windows and an account's budget. */
+  usageAccount: string;
   usageMetric: "costUsd" | "totalTokens";
   usagePeriod: "today" | "week" | "month";
   command: string;
@@ -134,6 +138,8 @@ function emptyDraft(kind: WatchSort = "website"): Draft {
     branch: "",
     proc: "",
     procOn: "failure",
+    usageSource: "spend",
+    usageAccount: "",
     usageMetric: "costUsd",
     usagePeriod: "today",
     command: "",
@@ -238,6 +244,8 @@ function draftOf(def: WatchDef): Draft {
       d.procOn = s.on;
       break;
     case "usage":
+      d.usageSource = s.source;
+      d.usageAccount = s.account ?? "";
       d.usageMetric = s.metric;
       d.usagePeriod = s.period;
       break;
@@ -325,7 +333,13 @@ function specOf(d: Draft): unknown {
         on: d.procOn,
       };
     case "usage":
-      return { kind: "usage", metric: d.usageMetric, period: d.usagePeriod };
+      return {
+        kind: "usage",
+        source: d.usageSource,
+        metric: d.usageMetric,
+        period: d.usagePeriod,
+        ...(d.usageAccount === "" || d.usageSource === "spend" ? {} : { account: d.usageAccount }),
+      };
     case "command":
       return {
         kind: "command",
@@ -397,6 +411,7 @@ export function WatchForm({
   const wanted = CONN_TYPE[d.kind] ?? (d.kind === "queue" ? "env" : undefined);
   const choices = connections.filter((c) => c.org === org && (wanted === undefined || c.type === wanted));
   const mine = projects.filter((p) => p.org === org);
+  const accounts = useAccounts().data ?? [];
 
   /** The form as a watch, with the fire settings kept from what was there. */
   const build = (): WatchDef | undefined => {
@@ -632,6 +647,9 @@ export function WatchForm({
                     <option value="opened">Is opened</option>
                     <option value="merged">Is merged</option>
                     <option value="failed">Fails its checks</option>
+                    <option value="approved">Is approved</option>
+                    <option value="changesRequested">Gets changes requested</option>
+                    <option value="reviewRequested">Has a reviewer asked</option>
                     <option value="any">Changes in any way</option>
                   </Select>
                 )}
@@ -698,31 +716,74 @@ export function WatchForm({
         )}
         {d.kind === "usage" && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="Count">
+            <Field label="Watch">
               {(p) => (
                 <Select
                   {...p}
-                  value={d.usageMetric}
-                  onChange={(e) => set("usageMetric", e.target.value as Draft["usageMetric"])}
+                  value={d.usageSource}
+                  onChange={(e) => {
+                    set("usageSource", e.target.value as Draft["usageSource"]);
+                    set("ctype", e.target.value === "spend" ? "above" : "resets");
+                  }}
                 >
-                  <option value="costUsd">Cost in USD</option>
-                  <option value="totalTokens">Tokens</option>
+                  <option value="spend">What the workspace spent</option>
+                  <option value="account5h">An account's 5-hour window</option>
+                  <option value="accountWeek">An account's weekly window</option>
+                  <option value="budget">A weekly budget</option>
+                  <option value="autopilotDay">The Auto-pilot daily budget</option>
+                  <option value="monthlyCeiling">The monthly ceiling</option>
                 </Select>
               )}
             </Field>
-            <Field label="Over">
-              {(p) => (
-                <Select
-                  {...p}
-                  value={d.usagePeriod}
-                  onChange={(e) => set("usagePeriod", e.target.value as Draft["usagePeriod"])}
-                >
-                  <option value="today">Today</option>
-                  <option value="week">This week</option>
-                  <option value="month">This month</option>
-                </Select>
-              )}
-            </Field>
+            {(d.usageSource === "account5h" ||
+              d.usageSource === "accountWeek" ||
+              d.usageSource === "budget") && (
+              <Field label={d.usageSource === "budget" ? "Budget of" : "Account"}>
+                {(p) => (
+                  <Select {...p} value={d.usageAccount} onChange={(e) => set("usageAccount", e.target.value)}>
+                    <option value="">
+                      {d.usageSource === "budget" ? "This workspace" : "Pick an account"}
+                    </option>
+                    {accounts
+                      .filter((a) => a.org === org || a.org === "private")
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.id}
+                        </option>
+                      ))}
+                  </Select>
+                )}
+              </Field>
+            )}
+            {d.usageSource === "spend" && (
+              <>
+                <Field label="Count">
+                  {(p) => (
+                    <Select
+                      {...p}
+                      value={d.usageMetric}
+                      onChange={(e) => set("usageMetric", e.target.value as Draft["usageMetric"])}
+                    >
+                      <option value="costUsd">Cost in USD</option>
+                      <option value="totalTokens">Tokens</option>
+                    </Select>
+                  )}
+                </Field>
+                <Field label="Over">
+                  {(p) => (
+                    <Select
+                      {...p}
+                      value={d.usagePeriod}
+                      onChange={(e) => set("usagePeriod", e.target.value as Draft["usagePeriod"])}
+                    >
+                      <option value="today">Today</option>
+                      <option value="week">This week</option>
+                      <option value="month">This month</option>
+                    </Select>
+                  )}
+                </Field>
+              </>
+            )}
           </div>
         )}
         {d.kind === "command" && (
@@ -1122,6 +1183,12 @@ export function WatchForm({
                   {numeric && <option value="above">It goes above</option>}
                   {numeric && <option value="below">It goes below</option>}
                   <option value="changed">It changes</option>
+                  {d.kind === "usage" && d.usageSource !== "spend" && (
+                    <option value="atLimit">It reaches its limit</option>
+                  )}
+                  {d.kind === "usage" && d.usageSource !== "spend" && (
+                    <option value="resets">It resets (was at its limit)</option>
+                  )}
                   {(d.kind === "price" || d.kind === "custom" || d.kind === "command") && (
                     <option value="contains">It contains text</option>
                   )}
@@ -1184,7 +1251,7 @@ export function WatchForm({
           <legend className="mb-1 p-0 text-sm font-medium text-fg">When it fires</legend>
           <Switch label="Raise an alert (an incident)" checked={d.alert} onChange={(v) => set("alert", v)} />
           <Switch
-            label="Run an action: start a task, post in a room or run a process"
+            label="Run an action: start a task, post in a room, run a process or resume paused tasks"
             checked={d.actOn}
             onChange={(v) => set("actOn", v)}
           />

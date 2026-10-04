@@ -6,6 +6,8 @@ import {
   IdSchema,
   isCaptainLane,
   isOwnerChat,
+  type MrReview,
+  MrReviewSchema,
   type PausedBy,
   type PausedReason,
   type PendingShip,
@@ -34,6 +36,17 @@ import { attachments, autonomyTasks, taskCounters, taskLinks, taskRepos, tasks }
 
 const TeamSchema = z.array(z.string());
 const OverridesSchema = z.record(z.string(), TeamOverrideSchema);
+
+/** The stored reviews of an MR as a spreadable field, or nothing when there are none or they no longer parse. */
+function reviewOf(json: string | null): { review?: MrReview } {
+  if (json === null) return {};
+  try {
+    const parsed = MrReviewSchema.safeParse(JSON.parse(json));
+    return parsed.success ? { review: parsed.data } : {};
+  } catch {
+    return {};
+  }
+}
 
 /** A stored pending ship, or undefined when there is none or it no longer parses. */
 function parsePendingShip(json: string | null): PendingShip | undefined {
@@ -157,6 +170,7 @@ export class TaskRepo {
             mrNumber: r.mr?.number ?? null,
             mrState: r.mr?.state ?? null,
             ciState: r.mr?.ci ?? null,
+            mrReview: r.mr?.review === undefined ? null : JSON.stringify(r.mr.review),
             pushedAt: r.pushedAt ?? null,
             shippedHead: r.shipped?.head ?? null,
             shippedInto: r.shipped?.into ?? null,
@@ -700,7 +714,13 @@ export class TaskRepo {
   setMr(task: string, project: string, mr: RepoMr): void {
     this.db
       .update(taskRepos)
-      .set({ mrUrl: mr.url, mrNumber: mr.number, mrState: mr.state, ciState: mr.ci })
+      .set({
+        mrUrl: mr.url,
+        mrNumber: mr.number,
+        mrState: mr.state,
+        ciState: mr.ci,
+        mrReview: mr.review === undefined ? null : JSON.stringify(mr.review),
+      })
       .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
       .run();
   }
@@ -864,7 +884,15 @@ function buildTask(
       ...(r.writes ? { writes: true } : {}),
       ...(r.mrUrl === null || r.mrNumber === null || r.mrState === null
         ? {}
-        : { mr: { url: r.mrUrl, number: r.mrNumber, state: r.mrState, ci: r.ciState ?? "none" } }),
+        : {
+            mr: {
+              url: r.mrUrl,
+              number: r.mrNumber,
+              state: r.mrState,
+              ci: r.ciState ?? "none",
+              ...reviewOf(r.mrReview),
+            },
+          }),
     })),
     team: TeamSchema.parse(JSON.parse(row.team)),
     mode: CoordinationModeSchema.catch("lead").parse(row.mode),

@@ -1445,6 +1445,14 @@ ALTER TABLE schedules ADD COLUMN migrated_to TEXT;
 ALTER TABLE triggers ADD COLUMN migrated_to TEXT;
 `,
   },
+  {
+    // The reviews of a merge request as its host last said (approved, changes requested, who is asked).
+    id: 146,
+    name: "merge request reviews",
+    sql: `
+ALTER TABLE task_repos ADD COLUMN mr_review TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

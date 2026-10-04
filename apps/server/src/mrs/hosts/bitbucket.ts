@@ -1,4 +1,5 @@
-import type { CiState, MrState } from "@majhi/shared";
+import type { CiState, MrReview, MrState } from "@majhi/shared";
+import { EtagCache } from "./exec.ts";
 import { type MrHostClient, MrHostError, type MrStatus, type MrTarget, scrub } from "./types.ts";
 
 export const BITBUCKET_API = "https://api.bitbucket.org/2.0";
@@ -17,6 +18,7 @@ export interface BitbucketOptions {
 export class BitbucketHost implements MrHostClient {
   private readonly fetch: typeof fetch;
   private readonly api: string;
+  private readonly etags = new EtagCache();
 
   constructor(options: BitbucketOptions = {}) {
     this.fetch = options.fetch ?? fetch;
@@ -53,7 +55,8 @@ export class BitbucketHost implements MrHostClient {
     // Checks only matter while the MR is open, so a merged one costs one request.
     if (state !== "open") return { state, ci: "none", url };
     const statuses = await this.call(t, "GET", `${path}/statuses`);
-    return { state, ci: ciOf(statuses.values), url };
+    // The reviews ride on the pull request already read: no extra request.
+    return { state, ci: ciOf(statuses.values), url, review: bitbucketReview(pr) };
   }
 
   async merge(t: MrTarget, number: number) {
@@ -77,6 +80,8 @@ export class BitbucketHost implements MrHostClient {
     const auth = t.token.includes(":")
       ? `Basic ${Buffer.from(t.token).toString("base64")}`
       : `Bearer ${t.token}`;
+    const cacheKey = `${t.slug}|${path}`;
+    const known = method === "GET" ? this.etags.get(cacheKey) : undefined;
     let res: Response;
     try {
       res = await this.fetch(`${this.api}${path}`, {
@@ -84,6 +89,7 @@ export class BitbucketHost implements MrHostClient {
         headers: {
           authorization: auth,
           accept: "application/json",
+          ...(known === undefined ? {} : { "if-none-match": known.etag }),
           ...(body === undefined ? {} : { "content-type": "application/json" }),
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -94,17 +100,39 @@ export class BitbucketHost implements MrHostClient {
         scrub(`Could not reach Bitbucket: ${err instanceof Error ? err.message : String(err)}`, t.token),
       );
     }
+    if (res.status === 304 && known !== undefined) return known.value as Record<string, unknown>;
     const text = await res.text();
     if (!res.ok) {
       throw new MrHostError(scrub(`Bitbucket answered ${res.status}: ${errorText(text)}`, t.token));
     }
     if (text === "") return {};
     try {
-      return JSON.parse(text) as Record<string, unknown>;
+      const value = JSON.parse(text) as Record<string, unknown>;
+      if (method === "GET") this.etags.set(cacheKey, res.headers.get("etag") ?? undefined, value);
+      return value;
     } catch {
       throw new MrHostError("Bitbucket answered with something that is not JSON.");
     }
   }
+}
+
+/** The participants of a pull request: who approved, who asked for changes, who was asked and is silent. */
+export function bitbucketReview(pr: Record<string, unknown>): MrReview {
+  const people = Array.isArray(pr.participants)
+    ? (pr.participants as {
+        role?: string;
+        approved?: boolean;
+        state?: string | null;
+        user?: { display_name?: string; nickname?: string };
+      }[])
+    : [];
+  const name = (p: (typeof people)[number]): string => p.user?.display_name ?? p.user?.nickname ?? "someone";
+  const approvals = people.filter((p) => p.approved === true).length;
+  const changesRequested = people.some((p) => p.state === "changes_requested");
+  const pending = people
+    .filter((p) => p.role === "REVIEWER" && p.approved !== true && p.state !== "changes_requested")
+    .map(name);
+  return { approved: approvals > 0 && !changesRequested, approvals, changesRequested, pending };
 }
 
 function errorText(text: string): string {

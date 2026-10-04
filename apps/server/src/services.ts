@@ -1022,8 +1022,66 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           log: (message) => console.error(message),
         });
   const pendingShips = new PendingShips({ store, tasks, mrs, room, events, now: () => new Date() });
-  const actionHost = createActionHost({ store, tasks, processes, projects, agents: agentStore });
-  const watchHost = createWatchHost({ store, processes, usage: usageService, actions: actionHost });
+  const resumeLimited = async (org: string): Promise<string[]> => {
+    const resumed: string[] = [];
+    for (const t of store.tasks.list(false)) {
+      if (t.org !== org || t.status !== "paused" || t.pausedReason !== "limit") continue;
+      let held = false;
+      for (const agent of t.team) held ||= (await limitedRun(t.id, agent)) !== undefined;
+      if (held || autonomy.holdFor(t.id) !== undefined) continue;
+      try {
+        await tasks.start(t.id, "majhi");
+        resumed.push(t.id);
+      } catch (err) {
+        console.error(`Could not resume ${t.id} after its limit: ${errorMessage(err)}`);
+      }
+    }
+    return resumed;
+  };
+  const actionHost = createActionHost({
+    store,
+    tasks,
+    processes,
+    projects,
+    agents: agentStore,
+    resumeLimited,
+  });
+  const watchHost = createWatchHost({
+    store,
+    processes,
+    usage: usageService,
+    actions: actionHost,
+    limits: {
+      accountList: async () => (await accounts.list()).map((a) => ({ id: a.id, org: a.org })),
+      account: async (id) => {
+        const found = (await accounts.list()).find((a) => a.id === id);
+        return found === undefined
+          ? undefined
+          : {
+              org: found.org,
+              window: found.usage?.window && {
+                percent: found.usage.window.usedPct,
+                resetsAt: found.usage.window.resetsAt,
+              },
+              weekly: found.usage?.weekly && {
+                percent: found.usage.weekly.usedPct,
+                resetsAt: found.usage.weekly.resetsAt,
+              },
+            };
+      },
+      budget: async (scope, id) => {
+        const row = (await budgets.status()).rows.find((r) => r.scope === scope && r.id === id);
+        return row === undefined ? undefined : { percent: row.percent, resetsAt: row.resetsAt };
+      },
+      autopilotDay: () => autonomy.dayUse(),
+      monthly: async () => {
+        const m = await outcomes.money();
+        return m.ceilingUsd === undefined
+          ? undefined
+          : { percent: (m.spentUsd / m.ceilingUsd) * 100, resetsAt: m.to };
+      },
+    },
+  });
   const playbookCatalog = new Catalog();
   const automation = createAutomation({
     db: store.raw,

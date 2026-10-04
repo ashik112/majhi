@@ -987,6 +987,13 @@ export class AutonomyService {
     return measured;
   }
 
+  /** How far the Auto-pilot daily budget is today, for a usage watch. Undefined without a cap. */
+  async dayUse(): Promise<{ percent: number; resetsAt: string } | undefined> {
+    const m = await this.measure(false);
+    const total = m.spend.total;
+    return total.cap === undefined ? undefined : { percent: total.percent, resetsAt: m.spend.resetsAt };
+  }
+
   /** "Waiting for Hooli's daily budget, $20 used": the budget that holds, by name, on a held task's card. */
   private waitLine(hold: AutonomyHold): string {
     const m = this.lastMeasure;

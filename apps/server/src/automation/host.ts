@@ -12,10 +12,19 @@ export interface HostParts {
   processes: ProcessManager;
   projects: ProjectService;
   agents: AgentStore;
+  /** Resumes the org's tasks a limit paused that nothing holds now. */
+  resumeLimited: (org: string) => Promise<string[]>;
 }
 
 /** The pieces of majhi an action reaches, through the same service paths as the commands. */
-export function createActionHost({ store, tasks, processes, projects, agents }: HostParts): ActionHost {
+export function createActionHost({
+  store,
+  tasks,
+  processes,
+  projects,
+  agents,
+  resumeLimited,
+}: HostParts): ActionHost {
   return {
     projects: () => projects.infos(),
     agent: async (id) => {
@@ -61,5 +70,6 @@ export function createActionHost({ store, tasks, processes, projects, agents }: 
       return { id: started.id };
     },
     process: (task, id) => processes.get(task, id),
+    resumeLimited,
   };
 }

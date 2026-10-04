@@ -16,6 +16,7 @@ function fakeHost() {
   let created = 0;
   const log = { started: [] as string[], posted: [] as string[], processes: [] as string[] };
   const host: ActionHost = {
+    resumeLimited: async () => [],
     projects: async () => [
       { id: "acme-api", org: "acme", aliases: [] },
       { id: "globex-web", org: "globex", aliases: [] },

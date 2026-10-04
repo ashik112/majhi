@@ -244,7 +244,7 @@ export function watchCheckOf(spec: WatchSpec): { spec: WatchCheck; condition: Wa
       };
     case "usage.over":
       return {
-        spec: { kind: "usage", metric: spec.metric, period: spec.period },
+        spec: { kind: "usage", source: "spend", metric: spec.metric, period: spec.period },
         condition: { type: "above", value: spec.limit, forMin: 0 },
       };
     case "url.changed":

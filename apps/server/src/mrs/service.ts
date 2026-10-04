@@ -1221,8 +1221,14 @@ export class MrService {
           number: repo.mr.number,
           state: status.state,
           ci: status.ci,
+          ...(status.review === undefined ? {} : { review: status.review }),
         };
-        if (next.state !== repo.mr.state || next.ci !== repo.mr.ci || next.url !== repo.mr.url) {
+        if (
+          next.state !== repo.mr.state ||
+          next.ci !== repo.mr.ci ||
+          next.url !== repo.mr.url ||
+          JSON.stringify(next.review) !== JSON.stringify(repo.mr.review)
+        ) {
           this.deps.store.tasks.setMr(task.id, repo.project, next);
           if (next.state === "merged") this.note(task.id, `${repo.project}: the merge request was merged.`);
           if (next.state === "closed")
@@ -1321,6 +1327,7 @@ export class MrService {
             number: repo.mr.number,
             state: status.state,
             ci: status.ci,
+            ...(status.review === undefined ? {} : { review: status.review }),
           });
           // The merge on the host is a merge: the owner's click or the poller's, whichever asked.
           // A poll that finds the host still merging logs it once, not on every pass.

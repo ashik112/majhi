@@ -18,6 +18,32 @@ export type Exec = (command: string, args: readonly string[], options: ExecOptio
 
 export const CLI_TIMEOUT_MS = 60_000;
 
+/** What `gh api -i` and `glab api -i` print: the status line and headers, a blank line, the body. */
+export function splitHttp(out: string): { status: number; etag: string | undefined; body: string } {
+  const at = out.search(/\r?\n\r?\n/);
+  const head = at === -1 ? out : out.slice(0, at);
+  const body = at === -1 ? "" : out.slice(at).replace(/^\r?\n\r?\n/, "");
+  const status = Number(/^HTTP\/\S+\s+(\d{3})/m.exec(head)?.[1] ?? 0);
+  const etag = /^etag:\s*(\S.*?)\s*$/im.exec(head)?.[1];
+  return { status, etag, body };
+}
+
+/**
+ * Remembers the last answer of a GET with its ETag, so the next poll asks "if none match" and a
+ * 304 costs the host nothing against its rate limit. In memory: a restart asks again in full.
+ */
+export class EtagCache {
+  private readonly seen = new Map<string, { etag: string; value: unknown }>();
+  get(key: string): { etag: string; value: unknown } | undefined {
+    return this.seen.get(key);
+  }
+  set(key: string, etag: string | undefined, value: unknown): void {
+    if (etag === undefined) this.seen.delete(key);
+    else this.seen.set(key, { etag, value });
+    if (this.seen.size > 500) this.seen.delete(this.seen.keys().next().value as string);
+  }
+}
+
 /** The variables a host CLI needs to run and find its own config. Tokens are never among them. */
 const BASE_ENV = ["PATH", "HOME", "USER", "LANG", "LC_ALL", "TMPDIR", "XDG_CONFIG_HOME", "SSL_CERT_FILE"];
 

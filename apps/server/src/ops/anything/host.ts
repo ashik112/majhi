@@ -5,6 +5,30 @@ import type { ProcessManager } from "../../processes/manager.ts";
 import type { Store } from "../../store/index.ts";
 import type { UsageService } from "../../usage/service.ts";
 
+/** How far along a limit is, and when it starts over. */
+export interface LimitUse {
+  /** 0 and up. 100 is the limit. */
+  percent: number;
+  /** UTC ISO. */
+  resetsAt?: string | undefined;
+}
+
+/** What the percent usage watches read: windows, budgets and the ceiling. Tests stand in for it. */
+export interface UsageLimits {
+  /** The account's org (an org id or `private`) and its 5-hour and weekly windows; undefined when there is no such account. */
+  account(
+    id: string,
+  ): Promise<{ org: string; window?: LimitUse | undefined; weekly?: LimitUse | undefined } | undefined>;
+  /** The accounts, with the workspace (or `private`) each belongs to. */
+  accountList(): Promise<{ id: string; org: string }[]>;
+  /** A weekly budget of a workspace or an account; undefined when none is set. */
+  budget(scope: "org" | "account", id: string): Promise<LimitUse | undefined>;
+  /** The Auto-pilot daily budget; undefined when it has no cap. */
+  autopilotDay(): Promise<LimitUse | undefined>;
+  /** The monthly ceiling; undefined when none is set. */
+  monthly(): Promise<LimitUse | undefined>;
+}
+
 /** A task as a watch sees it. */
 export interface WatchTask {
   id: string;
@@ -23,6 +47,8 @@ export interface WatchHost {
   tasks(): WatchTask[];
   processes(task: string): ProcessInfo[];
   process(task: string, id: string): ProcessInfo | undefined;
+  /** The limits the percent usage watches read. */
+  limits: UsageLimits;
   /** What the org used over the period. */
   usage(org: string, period: "today" | "week" | "month"): UsageTotals;
   /** The commit a local branch points at, or undefined when there is no such branch. */
@@ -40,12 +66,13 @@ export interface WatchHostParts {
   store: Store;
   processes: ProcessManager;
   usage: UsageService;
+  limits: UsageLimits;
   /** A command watch starts its process the way a `process.run` action does. */
   actions: Pick<ActionHost, "startProcess">;
 }
 
 /** The pieces of majhi a watch looks at. */
-export function createWatchHost({ store, processes, usage, actions }: WatchHostParts): WatchHost {
+export function createWatchHost({ store, processes, usage, actions, limits }: WatchHostParts): WatchHost {
   return {
     tasks: () =>
       store.tasks.list(true).map((t) => ({
@@ -59,6 +86,7 @@ export function createWatchHost({ store, processes, usage, actions }: WatchHostP
             r.mr === undefined ? [] : [{ project: r.project, mr: r.mr }],
           ),
       })),
+    limits,
     processes: (task) => processes.list(task),
     process: (task, id) => processes.get(task, id),
     usage: (org, period) => usage.breakdown({ by: "day", range: period, filters: { org }, limit: 1 }).total,

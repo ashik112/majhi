@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { type ActionHost, ActionRunner } from "../../automation/actions.ts";
 import { RunHistory } from "../../automation/history.ts";
 import { MIN, type OpsWorld, opsWorld } from "../testing.ts";
-import type { WatchHost, WatchTask } from "./host.ts";
+import type { LimitUse, WatchHost, WatchTask } from "./host.ts";
 
 /** The task, merge request, branch, process, usage and command watches fire once per change. */
 
@@ -29,6 +29,7 @@ const started: string[] = [];
 const posted: string[] = [];
 
 const actionHost: ActionHost = {
+  resumeLimited: async () => ["ACM-9"],
   projects: async () => [{ id: "acme-api", org: "acme", aliases: [] }],
   agent: async () => undefined,
   task: (id) =>
@@ -54,7 +55,22 @@ const actionHost: ActionHost = {
   process: (task, id) => procs.get(`${task}/${id}`),
 };
 
+/** What the limit watches read. Tests set these. */
+const limits = {
+  accounts: new Map<string, { org: string; window?: LimitUse; weekly?: LimitUse }>(),
+  budgets: new Map<string, LimitUse>(),
+  day: undefined as LimitUse | undefined,
+  month: undefined as LimitUse | undefined,
+};
+
 const watchHost: WatchHost = {
+  limits: {
+    accountList: async () => [...limits.accounts].map(([id, a]) => ({ id, org: a.org })),
+    account: async (id) => limits.accounts.get(id),
+    budget: async (scope, id) => limits.budgets.get(`${scope}:${id}`),
+    autopilotDay: async () => limits.day,
+    monthly: async () => limits.month,
+  },
   tasks: () =>
     [...tasks].map(
       ([id, t]): WatchTask => ({
@@ -341,7 +357,173 @@ describe("event watches", () => {
     expect(deploy.line).toContain("start a task");
 
     const spend = await w.ops.engine.plan({ text: "alert me when cost today goes over $25", org: "acme" });
-    expect(spend.def.spec).toEqual({ kind: "usage", metric: "costUsd", period: "today" });
+    expect(spend.def.spec).toEqual({ kind: "usage", source: "spend", metric: "costUsd", period: "today" });
     expect(spend.def.condition).toEqual({ type: "above", value: 25, forMin: 0 });
+  });
+});
+
+describe("merge request reviews", () => {
+  const open = (review?: RepoMr["review"]): FakeTask => ({
+    org: "acme",
+    status: "running",
+    mr: { url: "u", number: 4, state: "open", ci: "passing", ...(review === undefined ? {} : { review }) },
+  });
+  const pending = { approved: false, approvals: 0, changesRequested: false, pending: ["ana"] };
+
+  it("an approval fires once, and again only after it was lost and given again", async () => {
+    tasks.set("ACM-9", open(pending));
+    await w.ops.engine.save({ org: "acme", def: def({ kind: "mr", task: "ACM-9", on: "approved" }) });
+    await look();
+    expect(posted).toEqual([]);
+    tasks.set("ACM-9", open({ approved: true, approvals: 1, changesRequested: false, pending: [] }));
+    await look();
+    await look();
+    expect(posted).toHaveLength(1);
+    tasks.set("ACM-9", open({ approved: false, approvals: 0, changesRequested: true, pending: [] }));
+    await look();
+    expect(posted).toHaveLength(1);
+    tasks.set("ACM-9", open({ approved: true, approvals: 1, changesRequested: false, pending: [] }));
+    await look();
+    expect(posted).toHaveLength(2);
+  });
+
+  it("changes requested and a new reviewer asked each fire once", async () => {
+    tasks.set("ACM-9", open(pending));
+    await w.ops.engine.save({
+      org: "acme",
+      def: def({ kind: "mr", task: "ACM-9", on: "changesRequested" }),
+    });
+    await w.ops.engine.save({
+      org: "acme",
+      def: def({ kind: "mr", task: "ACM-9", on: "reviewRequested" }),
+    });
+    await look();
+    expect(posted).toEqual([]);
+    tasks.set("ACM-9", open({ approved: false, approvals: 0, changesRequested: true, pending: ["ana"] }));
+    await look();
+    await look();
+    expect(posted).toHaveLength(1);
+    tasks.set(
+      "ACM-9",
+      open({ approved: false, approvals: 0, changesRequested: true, pending: ["ana", "bo"] }),
+    );
+    await look();
+    await look();
+    expect(posted).toHaveLength(2);
+  });
+
+  it("the planner reads 'tell me when the MR for ACM-9 is approved'", async () => {
+    tasks.set("ACM-9", open(pending));
+    const p = await w.ops.engine.plan({ text: "tell me when the MR for ACM-9 is approved" });
+    expect(p.def.spec).toEqual({ kind: "mr", task: "ACM-9", on: "approved" });
+  });
+});
+
+describe("limit watches", () => {
+  const window = (percent: number, resetsAt = "2026-10-05T00:00:00Z"): LimitUse => ({ percent, resetsAt });
+
+  beforeEach(() => {
+    limits.accounts.clear();
+    limits.budgets.clear();
+    limits.day = undefined;
+    limits.month = undefined;
+    limits.accounts.set("acme-claude", { org: "acme", window: window(10), weekly: window(50) });
+  });
+
+  it("an account's weekly window over N percent fires once per crossing", async () => {
+    await w.ops.engine.save({
+      org: "acme",
+      def: def(
+        { kind: "usage", source: "accountWeek", account: "acme-claude" },
+        { type: "above", value: 90, forMin: 0 },
+      ),
+    });
+    await look();
+    expect(posted).toEqual([]);
+    limits.accounts.set("acme-claude", { org: "acme", weekly: window(92) });
+    await look();
+    await look();
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toContain("92");
+    limits.accounts.set("acme-claude", { org: "acme", weekly: window(40) });
+    await look();
+    limits.accounts.set("acme-claude", { org: "acme", weekly: window(95) });
+    await look();
+    expect(posted).toHaveLength(2);
+  });
+
+  it("resets fires once per reset, and not for a window that never hit its limit", async () => {
+    await w.ops.engine.save({
+      org: "acme",
+      def: def({ kind: "usage", source: "account5h", account: "acme-claude" }, { type: "resets" }),
+    });
+    await look();
+    limits.accounts.set("acme-claude", { org: "acme", window: window(60) });
+    await look();
+    expect(posted).toEqual([]);
+    limits.accounts.set("acme-claude", { org: "acme", window: window(100) });
+    await look();
+    await look();
+    expect(posted).toEqual([]);
+    limits.accounts.set("acme-claude", { org: "acme", window: window(3) });
+    await look();
+    await look();
+    expect(posted).toHaveLength(1);
+    limits.accounts.set("acme-claude", { org: "acme", window: window(100) });
+    await look();
+    limits.accounts.set("acme-claude", { org: "acme", window: window(0) });
+    await look();
+    expect(posted).toHaveLength(2);
+  });
+
+  it("budgets, the Auto-pilot day and the monthly ceiling read as percents", async () => {
+    limits.budgets.set("org:acme", window(85));
+    limits.day = window(70);
+    limits.month = window(100);
+    for (const spec of [
+      { kind: "usage", source: "budget" },
+      { kind: "usage", source: "autopilotDay" },
+      { kind: "usage", source: "monthlyCeiling" },
+    ]) {
+      await w.ops.engine.save({ org: "acme", def: def(spec, { type: "atLimit" }) });
+    }
+    await look();
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toContain("monthly ceiling");
+  });
+
+  it("refuses an account of another workspace, allows a private one, and limit conditions on spend", async () => {
+    limits.accounts.set("globex-codex", { org: "globex", weekly: window(10) });
+    limits.accounts.set("owner-claude", { org: "private", weekly: window(10) });
+    const save = (account: string) =>
+      w.ops.engine.save({
+        org: "acme",
+        def: def({ kind: "usage", source: "accountWeek", account }, { type: "above", value: 90, forMin: 0 }),
+      });
+    await expect(save("globex-codex")).rejects.toThrow(/another workspace/);
+    await expect(save("nobody")).rejects.toThrow(/does not exist/);
+    await expect(save("owner-claude")).resolves.toBeDefined();
+    await expect(
+      w.ops.engine.save({
+        org: "acme",
+        def: def({ kind: "usage", source: "spend" }, { type: "resets" }),
+      }),
+    ).rejects.toThrow(/limit/);
+  });
+
+  it("the planner reads the limit sentences, and 'resume my paused tasks' is an action", async () => {
+    const week = await w.ops.engine.plan({
+      text: "tell me when acme-claude is at 90% of its weekly limit",
+      org: "acme",
+    });
+    expect(week.def.spec).toMatchObject({ kind: "usage", source: "accountWeek", account: "acme-claude" });
+    expect(week.def.condition).toMatchObject({ type: "above" });
+    const reset = await w.ops.engine.plan({
+      text: "when the 5h window of acme-claude resets, resume my paused tasks",
+      org: "acme",
+    });
+    expect(reset.def.spec).toMatchObject({ kind: "usage", source: "account5h", account: "acme-claude" });
+    expect(reset.def.condition).toEqual({ type: "resets" });
+    expect(reset.def.fire.run).toEqual({ kind: "tasks.resume" });
   });
 });

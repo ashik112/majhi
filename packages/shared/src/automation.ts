@@ -92,10 +92,19 @@ export const ProcessRunActionSchema = z.object({
   cwd: z.string().trim().min(1).max(1_000).optional(),
 });
 
+/**
+ * Resumes the workspace's tasks that a limit paused (an account's window, a budget, the monthly
+ * ceiling), the ones nothing holds any more. Made for "when the 5-hour window resets".
+ */
+export const TasksResumeActionSchema = z.object({
+  kind: z.literal("tasks.resume"),
+});
+
 export const AutomationActionSchema = z.discriminatedUnion("kind", [
   TaskStartActionSchema,
   RoomPostActionSchema,
   ProcessRunActionSchema,
+  TasksResumeActionSchema,
 ]);
 export type AutomationAction = z.infer<typeof AutomationActionSchema>;
 
@@ -113,6 +122,8 @@ export function describeAutomationAction(action: AutomationAction): string {
       return `Post to ${action.task}: ${clip(action.text, 60)}`;
     case "process.run":
       return `Run ${clip(action.command, 50)} in ${action.task}`;
+    case "tasks.resume":
+      return "Resume the tasks a limit paused";
   }
 }
 

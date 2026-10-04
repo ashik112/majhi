@@ -1,9 +1,11 @@
-import type { CiState, MrState } from "@majhi/shared";
-import { type Exec, runCli } from "./exec.ts";
+import type { CiState, MrReview, MrState } from "@majhi/shared";
+import { EtagCache, type Exec, runCli, splitHttp } from "./exec.ts";
 import { type MrHostClient, MrHostError, type MrStatus, type MrTarget, scrub } from "./types.ts";
 
 /** GitHub through the `gh` CLI, logged in with `GH_TOKEN` for the call. */
 export class GitHubHost implements MrHostClient {
+  private readonly etags = new EtagCache();
+
   constructor(
     private readonly exec: Exec = runCli,
     private readonly bin = "gh",
@@ -60,14 +62,40 @@ export class GitHubHost implements MrHostClient {
     } catch {
       throw new MrHostError("gh answered with something that is not JSON.");
     }
-    return { state: stateOf(data.state), ci: ciOf(data.statusCheckRollup), url: data.url ?? "" };
+    const state = stateOf(data.state);
+    const review = state === "open" ? await this.review(t, number).catch(() => undefined) : undefined;
+    return { state, ci: ciOf(data.statusCheckRollup), url: data.url ?? "", ...(review ? { review } : {}) };
+  }
+
+  /** The reviews and the asked reviewers: two GETs that answer 304 while nothing changed. */
+  private async review(t: MrTarget, number: number): Promise<MrReview> {
+    const base = `repos/${t.slug}/pulls/${number}`;
+    const [reviews, pr] = await Promise.all([this.get(t, `${base}/reviews?per_page=100`), this.get(t, base)]);
+    return githubReview(reviews, pr);
+  }
+
+  private async get(t: MrTarget, path: string): Promise<unknown> {
+    const key = `${t.hostName ?? ""}|${path}`;
+    const known = this.etags.get(key);
+    const args = ["api", "-i", "-H", "Accept: application/vnd.github+json"];
+    if (known !== undefined) args.push("-H", `If-None-Match: ${known.etag}`);
+    args.push(path);
+    const res = await this.run(t, args);
+    const http = splitHttp(res.stdout);
+    if (http.status === 304 && known !== undefined) return known.value;
+    if (res.code !== 0 || http.status < 200 || http.status >= 300) {
+      throw new MrHostError(`gh api failed: ${scrub(firstLines(res.stderr || res.stdout), t.token)}`);
+    }
+    const value: unknown = JSON.parse(http.body);
+    this.etags.set(key, http.etag, value);
+    return value;
   }
 
   async merge(t: MrTarget, number: number) {
     await this.gh(t, ["pr", "merge", String(number), "--repo", t.slug, "--merge"]);
   }
 
-  private async gh(t: MrTarget, args: string[], input?: string): Promise<string> {
+  private run(t: MrTarget, args: string[], input?: string) {
     const env: Record<string, string> = {
       GH_PROMPT_DISABLED: "1",
       NO_COLOR: "1",
@@ -75,7 +103,11 @@ export class GitHubHost implements MrHostClient {
     };
     if (t.token !== undefined) env.GH_TOKEN = t.token;
     if (t.hostName !== undefined && t.hostName !== "github.com") env.GH_HOST = t.hostName;
-    const res = await this.exec(this.bin, args, { env, input });
+    return this.exec(this.bin, args, { env, input });
+  }
+
+  private async gh(t: MrTarget, args: string[], input?: string): Promise<string> {
+    const res = await this.run(t, args, input);
     if (res.code !== 0) {
       throw new MrHostError(
         `gh ${args.slice(0, 2).join(" ")} failed: ${scrub(firstLines(res.stderr || res.stdout), t.token)}`,
@@ -83,6 +115,30 @@ export class GitHubHost implements MrHostClient {
     }
     return res.stdout;
   }
+}
+
+/**
+ * Reads GitHub's reviews (oldest first) and its pull request: the latest approval or change request
+ * of each reviewer counts, a comment does not, a dismissal clears. Reviewers asked and not yet heard.
+ */
+export function githubReview(reviews: unknown, pr: unknown): MrReview {
+  const latest = new Map<string, "APPROVED" | "CHANGES_REQUESTED">();
+  if (Array.isArray(reviews)) {
+    for (const r of reviews as { user?: { login?: string } | null; state?: string }[]) {
+      const who = r.user?.login;
+      if (who === undefined) continue;
+      if (r.state === "APPROVED" || r.state === "CHANGES_REQUESTED") latest.set(who, r.state);
+      else if (r.state === "DISMISSED") latest.delete(who);
+    }
+  }
+  const approvals = [...latest.values()].filter((s) => s === "APPROVED").length;
+  const changesRequested = [...latest.values()].includes("CHANGES_REQUESTED");
+  const asked = pr as { requested_reviewers?: { login?: string }[]; requested_teams?: { slug?: string }[] };
+  const pending = [
+    ...(asked.requested_reviewers ?? []).map((u) => u.login),
+    ...(asked.requested_teams ?? []).map((x) => x.slug),
+  ].filter((n): n is string => typeof n === "string");
+  return { approved: approvals > 0 && !changesRequested, approvals, changesRequested, pending };
 }
 
 function stateOf(state: string | undefined): MrState {

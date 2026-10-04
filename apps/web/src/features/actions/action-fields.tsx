@@ -51,6 +51,8 @@ export function actionToDraft(action: AutomationAction): ActionDraft {
     }
     case "room.post":
       return { ...EMPTY_ACTION, kind: "room.post", task: action.task, post: action.text };
+    case "tasks.resume":
+      return { ...EMPTY_ACTION, kind: "tasks.resume" };
     case "process.run":
       return {
         ...EMPTY_ACTION,
@@ -80,6 +82,8 @@ export function draftToAction(d: ActionDraft): { action: AutomationAction } | { 
         } as AutomationAction,
       };
     }
+    case "tasks.resume":
+      return { action: { kind: "tasks.resume" } };
     case "room.post":
       if (d.task === "") return { error: "Pick a task." };
       if (d.post.trim() === "") return { error: "Write the message." };
@@ -102,6 +106,7 @@ const KINDS = [
   { value: "task.start", label: "Start a task" },
   { value: "room.post", label: "Post to a room" },
   { value: "process.run", label: "Run a command" },
+  { value: "tasks.resume", label: "Resume the tasks a limit paused" },
 ] as const;
 
 /**
