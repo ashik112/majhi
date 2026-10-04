@@ -1449,16 +1449,14 @@ export class ConnectService {
         failed.push(`${product.name} failed${why === "" ? "" : ` (${why})`}`);
       }
     }
-    if (failed.length > 0) {
-      return this.result(
-        false,
-        `${failed.join(". ")}.${lines.length > 0 ? ` ${lines.join(". ")}.` : ""}`,
-        started,
-        tools,
-      );
-    }
+    if (lines.length === 0) return this.result(false, `${failed.join(". ")}.`, started, tools);
     if (grant.state === "error") await this.markState(grant.connection, "connected", "");
-    return this.result(true, `${lines.join(". ")}.`, started, tools);
+    // A product the account may not use (billing for a member without it) is a warning: the
+    // other products work, and agents get them.
+    return {
+      ...this.result(true, `${lines.join(". ")}.`, started, tools),
+      warnings: failed.map((f) => `${f}. Agents still get the other products.`),
+    };
   }
 
   private result(ok: boolean, detail: string, started: number, tools?: string[]): ConnectionTestResult {

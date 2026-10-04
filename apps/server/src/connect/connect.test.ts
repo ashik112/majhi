@@ -224,6 +224,9 @@ describe("a service with products", () => {
       const test = await r.connect.test("fakesvc");
       expect(test.ok).toBe(true);
       expect(test.detail).toBe("ALPHA: 2 tools. BETA: 2 tools.");
+      r.mcp.rejectAll = true;
+      const none = await r.connect.test("fakesvc");
+      expect(none.ok).toBe(false);
       await expect(
         r.connect.start({ org: "acme", service: "fakesvc", access: "read", products: ["delta"] }, OWNER),
       ).rejects.toThrow("Fake Service has no product delta.");
