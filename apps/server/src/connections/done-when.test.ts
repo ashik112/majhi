@@ -8,7 +8,12 @@ import { type SessionStart, startSession } from "@majhi/acp";
 import { fakeAdapter } from "@majhi/acp/testing";
 import type { RoomItem } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
+import { cacheEnv } from "../runs/package-cache.ts";
 import { taskWorld, type World } from "../testing/world.ts";
+
+/** A run's variables without the workspace package-cache paths every run gets (no secrets in them). */
+const noCaches = (env: Record<string, string> | undefined): Record<string, string> =>
+  Object.fromEntries(Object.entries(env ?? {}).filter(([k]) => !(k in cacheEnv("/x"))));
 
 /**
  * SPEC 7, Phase 10, Done when: asked why the api is down in prod, a root agent investigates with a
@@ -393,7 +398,7 @@ describe("Phase 10, done when", () => {
     })) as { id: string };
     await runs.idle(own.id);
     expect(starts).toHaveLength(1);
-    expect(starts[0]?.env).toEqual({ GLOBEX_TOKEN });
+    expect(noCaches(starts[0]?.env)).toEqual({ GLOBEX_TOKEN });
     const ownServers = (starts[0]?.mcpServers ?? []).map((s) => s.name);
     expect(ownServers).toContain("majhi-connections");
     expect(ownServers).not.toContain("acme-newrelic");
@@ -419,7 +424,7 @@ describe("Phase 10, done when", () => {
     })) as { id: string };
     await runs.idle(other.id);
     expect(starts).toHaveLength(2);
-    expect(starts[1]?.env ?? {}).toEqual({});
+    expect(noCaches(starts[1]?.env)).toEqual({});
     const otherServers = (starts[1]?.mcpServers ?? []).map((s) => s.name);
     expect(otherServers).toContain("majhi-room");
     expect(otherServers).not.toContain("acme-newrelic");
