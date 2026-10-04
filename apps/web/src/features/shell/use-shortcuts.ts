@@ -5,9 +5,19 @@ import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useTasks } from "@/lib/task-queries";
 import { CHORD_MS, resolveShortcut } from "./shortcuts";
 
+/**
+ * Keys belong to the captain drawer while it is open and focus is in it, or nowhere yet (it is
+ * still opening): single-key shortcuts must not fire then.
+ */
+function inCaptainDrawer(target: HTMLElement): boolean {
+  if (target.closest("[data-captain-drawer]") !== null) return true;
+  const open = document.querySelector("[data-captain-drawer]") !== null;
+  return open && (target === document.body || target === document.documentElement);
+}
+
 function typingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  return target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
+  return inCaptainDrawer(target) || target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
 }
 
 function insideOverlay(target: EventTarget | null): boolean {

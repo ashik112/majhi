@@ -21,6 +21,7 @@ export function RoomPane({
   focusItem,
   onFocused,
   foldSteps,
+  initialDraft,
 }: {
   /** Reads as a conversation: steps between messages fold into one line. */
   foldSteps?: boolean | undefined;
@@ -37,10 +38,14 @@ export function RoomPane({
   /** A search match to scroll to, and what to do once it was shown. */
   focusItem?: string | undefined;
   onFocused?: (() => void) | undefined;
+  /** Text for the message box when the room opens; the box takes focus. */
+  initialDraft?: string | undefined;
 }) {
   const toast = useToast();
   // Text a card button puts in the composer; `n` changes on every click.
-  const [draft, setDraft] = useState<{ text: string; n: number }>();
+  const [draft, setDraft] = useState<{ text: string; n: number } | undefined>(
+    initialDraft === undefined ? undefined : { text: initialDraft, n: 1 },
+  );
   const compose = useCallback((text: string) => setDraft((d) => ({ text, n: (d?.n ?? 0) + 1 })), []);
   // Agents in the middle of a turn, each with its oldest queued message, as one string so the
   // cards redraw only when that changes, not on every tool call.
