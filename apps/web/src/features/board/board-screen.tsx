@@ -293,7 +293,7 @@ function AccountReadout({
   org: string | undefined;
   now: number;
 }) {
-  const text = busiestText(busiest, now);
+  const text = busiestText(busiest);
   const lit = busiest.limit !== undefined || busiest.pct >= USAGE_FULL_PCT;
   const high = busiest.pct >= USAGE_HIGH_PCT;
   return (

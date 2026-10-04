@@ -627,6 +627,16 @@ export function serveAcp(o: ServeOptions): void {
         if (text.startsWith("limit:")) {
           throw new RequestError(-32603, text.slice("limit:".length).trim());
         }
+        // A `fake-limit` file in the account's config home puts the whole account at its limit: every
+        // prompt fails with the file's text, so e2e can hit a limit mid-run on one account only.
+        const home = process.env.CLAUDE_CONFIG_DIR ?? process.env.CODEX_HOME;
+        const accountLimit =
+          home === undefined
+            ? undefined
+            : await readFile(join(home, "fake-limit"), "utf8").catch(() => undefined);
+        if (accountLimit !== undefined && accountLimit.trim() !== "") {
+          throw new RequestError(-32603, accountLimit.trim());
+        }
         if (text.startsWith("crash:")) {
           console.error("fake-agent: crashed on purpose");
           process.exit(3);
