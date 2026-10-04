@@ -89,6 +89,7 @@ describe("which fields count", () => {
       "url",
       "protocol",
       "auth",
+      "products",
       "read_tools",
       "write_tools",
     ]);

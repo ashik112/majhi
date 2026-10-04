@@ -21,7 +21,7 @@ type ConnectionCommand =
  * Fields that decide what majhi's gate checks, or which identity a run gets: the CLIs an env
  * connection is for, an MCP server's tool exceptions, a kubeconfig's context. Only the owner changes them.
  */
-const GATE_FIELDS = ["clis", "read_tools", "write_tools", "context"];
+const GATE_FIELDS = ["clis", "read_tools", "write_tools", "context", "products"];
 
 /** Fields that say where a connection's secrets go or what runs with them. */
 const DESTINATION_FIELDS = ["transport", "url", "command", "test", "imap_host", "smtp_host"];

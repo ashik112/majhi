@@ -173,6 +173,44 @@ describe("planConnections", () => {
     expect(JSON.stringify(plan.uses)).not.toMatch(/0123456789/);
   });
 
+  it("gives each picked DigitalOcean product its own server on the one sign-in", async () => {
+    const plan = await planConnections(
+      [
+        held("acme-do", {
+          type: "mcp",
+          name: "DigitalOcean",
+          fields: {
+            transport: "remote",
+            url: "https://accounts.mcp.digitalocean.com/mcp",
+            protocol: "http",
+            auth: "oauth",
+            products: "doks droplets",
+          },
+        }),
+      ],
+      join(dir, "run"),
+      {
+        secrets: { get: async () => undefined },
+        connectionDir,
+        oauth: async () => ({ token: "do-token-0123456789" }),
+      },
+    );
+    const auth = { Authorization: "Bearer do-token-0123456789" };
+    expect(plan.servers).toEqual([
+      {
+        type: "http",
+        name: "acme-do-droplets",
+        url: "https://droplets.mcp.digitalocean.com/mcp",
+        headers: auth,
+      },
+      { type: "http", name: "acme-do-doks", url: "https://doks.mcp.digitalocean.com/mcp", headers: auth },
+    ]);
+    expect(plan.gate.map((g) => g.server)).toEqual(["acme-do-droplets", "acme-do-doks"]);
+    expect(plan.uses.map((u) => u.use)).toEqual([
+      "MCP servers acme-do-droplets (Droplets), acme-do-doks (Kubernetes).",
+    ]);
+  });
+
   it("leaves out what is not set up, and keeps the first of two connections that set a variable", async () => {
     await mkdir(connectionDir("acme-broken"), { recursive: true });
     await writeFile(join(connectionDir("acme-broken"), "kubeconfig"), "not: [yaml");

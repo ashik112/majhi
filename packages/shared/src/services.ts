@@ -97,14 +97,24 @@ export const ServiceProviderSchema = z.object({
 });
 export type ServiceProvider = z.infer<typeof ServiceProviderSchema>;
 
+/** One server of a service that splits its MCP tools by product, all behind the same sign-in. */
+export const ServiceProductSchema = z.object({
+  id: IdSchema,
+  name: z.string().min(1).max(60),
+  mcpUrl: z.url(),
+});
+export type ServiceProduct = z.infer<typeof ServiceProductSchema>;
+
 export const ServiceEntrySchema = z.object({
   id: IdSchema,
   name: z.string().min(1).max(60),
   kind: ServiceKindSchema,
   /** One line: what the service is for. */
   summary: z.string().min(1).max(160),
-  /** The remote MCP server's address. */
+  /** The remote MCP server's address. With `products`, the one the sign-in is made for. */
   mcpUrl: z.url().optional(),
+  /** Servers the owner picks from, all reached with one sign-in. The first ones are picked by default. */
+  products: z.array(ServiceProductSchema).max(30).optional(),
   /** The provider's OAuth, for a service without one the SDK can discover. */
   provider: ServiceProviderSchema.optional(),
   /** The guided app setup (`app-setup.ts`) the owner does first, once per workspace. */
@@ -375,36 +385,46 @@ export const SERVICE_CATALOG: readonly ServiceEntry[] = z.array(ServiceEntrySche
     enableHint:
       "In GitLab, open the top-level group, then Settings > General > Permissions and group features. Under MCP client access, select Allow connection to GitLab and save. This needs the group's Owner role.",
   },
-  ...[
-    ["digitalocean", "DigitalOcean", "droplets", "Droplets"],
-    ["digitalocean-apps", "DigitalOcean App Platform", "apps", "App Platform"],
-    ["digitalocean-kubernetes", "DigitalOcean Kubernetes", "doks", "Kubernetes"],
-    ["digitalocean-databases", "DigitalOcean Databases", "databases", "Databases"],
-    ["digitalocean-networking", "DigitalOcean Networking", "networking", "Networking"],
-    ["digitalocean-spaces", "DigitalOcean Spaces", "spaces", "Spaces"],
-    ["digitalocean-account", "DigitalOcean Account", "accounts", "Account"],
-  ].map(([id, name, host, product]) => ({
-    id,
-    name,
+  {
+    id: "digitalocean",
+    name: "DigitalOcean",
     kind: "mcp-oauth",
-    summary: `${product} on DigitalOcean`,
-    mcpUrl: `https://${host}.mcp.digitalocean.com/mcp`,
+    summary: "Droplets, Kubernetes, databases, apps and more",
+    mcpUrl: "https://accounts.mcp.digitalocean.com/mcp",
+    products: [
+      ["droplets", "Droplets"],
+      ["doks", "Kubernetes"],
+      ["databases", "Databases"],
+      ["apps", "App Platform"],
+      ["networking", "Networking"],
+      ["spaces", "Spaces"],
+      ["volumes", "Volumes"],
+      ["docr", "Container Registry"],
+      ["functions", "Functions"],
+      ["insights", "Monitoring"],
+      ["accounts", "Account and billing"],
+    ].map(([host, name]) => ({ id: host, name, mcpUrl: `https://${host}.mcp.digitalocean.com/mcp` })),
     ready: true,
     verified: true,
     verifiedNote:
-      "Checked 2026-10-04: all seven endpoints return 401 with resource metadata. Authorization metadata supports PKCE S256 and public dynamic registration. Real-account consent remains an owner check.",
+      "Checked 2026-10-04: every product endpoint returns 401 with resource metadata naming cloud.digitalocean.com, which takes PKCE S256 and public registration. One sign-in reaching every product is an owner check.",
     scopes: [
-      { id: "read", access: "read", sentence: `Read ${product} resources and settings.`, oauth: ["read"] },
+      {
+        id: "read",
+        access: "read",
+        sentence: "Read resources and settings of the products you pick.",
+        oauth: ["read"],
+      },
       {
         id: "write",
         access: "write",
-        sentence: `Create, change and delete ${product} resources.`,
+        sentence: "Create, change and delete resources of the products you pick.",
         oauth: ["read", "write"],
       },
     ],
-    test: TOOLS_TEST(`Lists DigitalOcean ${product} tools.`),
+    test: TOOLS_TEST("Lists the tools of each product."),
     docs: "https://docs.digitalocean.com/reference/mcp/configure-mcp/",
-  })),
+  },
   ...EXTRA_SERVICES,
 ]);
 
@@ -423,7 +443,11 @@ export function serviceByUrl(
   catalog: readonly ServiceEntry[] = SERVICE_CATALOG,
 ): ServiceEntry | undefined {
   const norm = (u: string) => u.replace(/\/+$/, "");
-  return catalog.find((s) => s.mcpUrl !== undefined && norm(s.mcpUrl) === norm(url));
+  return catalog.find(
+    (s) =>
+      (s.mcpUrl !== undefined && norm(s.mcpUrl) === norm(url)) ||
+      (s.products ?? []).some((p) => norm(p.mcpUrl) === norm(url)),
+  );
 }
 
 /**

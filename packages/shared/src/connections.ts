@@ -168,6 +168,16 @@ function mcpServer(when: Record<string, string> = {}): Pick<ConnectionTypeDef, "
         when: remote,
       },
       {
+        key: "products",
+        label: "Products",
+        kind: "text",
+        required: false,
+        managed: true,
+        format: "words",
+        help: "The products of the service its agents get, each its own server on the same sign-in.",
+        when: remote,
+      },
+      {
         key: "command",
         label: "Command",
         kind: "text",

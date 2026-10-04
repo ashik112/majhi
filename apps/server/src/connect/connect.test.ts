@@ -31,7 +31,14 @@ interface Rig {
   /** Starts, approves as `account` and finishes the callback; returns the flow view after it. */
   connectAs(
     account: string,
-    options?: { org?: string; connection?: string; access?: "read" | "readwrite"; scope?: string[] },
+    options?: {
+      org?: string;
+      connection?: string;
+      access?: "read" | "readwrite";
+      scope?: string[];
+      name?: string;
+      products?: string[];
+    },
   ): Promise<Awaited<ReturnType<ConnectService["flow"]>>>;
   /** Starts a flow and returns the owner's redirect without calling back. */
   begin(
@@ -48,6 +55,8 @@ async function rig(
     originResource?: boolean;
     helper?: boolean;
     cimdUrl?: string;
+    /** Products of the fake service, each at the fake server's address with its own query. */
+    products?: string[];
   } = {},
 ): Promise<Rig> {
   const { dir, cleanup } = await tempDir();
@@ -101,7 +110,20 @@ async function rig(
       changed: () => undefined,
       listTools: (url, token) =>
         listTools(remoteTransport(url, { Authorization: `Bearer ${token}` }), 10_000),
-      catalog: [fakeService(mcp.url)],
+      catalog: [
+        fakeService(
+          mcp.url,
+          options.products === undefined
+            ? {}
+            : {
+                products: options.products.map((id) => ({
+                  id,
+                  name: id.toUpperCase(),
+                  mcpUrl: `${mcp.url}?product=${id}`,
+                })),
+              },
+        ),
+      ],
       now: () => new Date(Date.now() + offset),
       attention: (item) => attention.push(item),
       remount: (id) => remounted.push(id),
@@ -146,6 +168,8 @@ async function rig(
           service: "fakesvc",
           access: o.access ?? "read",
           ...(o.connection === undefined ? {} : { connection: o.connection }),
+          ...(o.name === undefined ? {} : { name: o.name }),
+          ...(o.products === undefined ? {} : { products: o.products }),
         },
         OWNER,
       );
@@ -178,6 +202,28 @@ describe("a server whose resource is a bare origin", () => {
       expect("token" in fresh).toBe(true);
       expect(r.auth.refreshCalls).toBeGreaterThan(0);
       expect(new Set(r.auth.refreshResources)).toEqual(new Set([`http://127.0.0.1:${r.mcp.port}`]));
+    } finally {
+      await r.cleanup();
+    }
+  });
+});
+
+describe("a service with products", () => {
+  it("one sign-in turns on the picked products, and the Test lists each one's tools", async () => {
+    const r = await rig({ products: ["alpha", "beta", "gamma"] });
+    try {
+      const done = await r.connectAs("maria@acme.example", { products: ["beta", "alpha"] });
+      expect(done.state).toBe("connected");
+      expect(r.connections.get("fakesvc")?.connection.fields?.products).toBe("beta alpha");
+      const test = await r.connect.test("fakesvc");
+      expect(test.ok).toBe(true);
+      expect(test.detail).toBe("ALPHA: 2 tools. BETA: 2 tools.");
+      await expect(
+        r.connect.start({ org: "acme", service: "fakesvc", access: "read", products: ["delta"] }, OWNER),
+      ).rejects.toThrow("Fake Service has no product delta.");
+      await expect(
+        r.connect.start({ org: "acme", service: "fakesvc", access: "read" }, OWNER),
+      ).rejects.toThrow("Pick at least one Fake Service product.");
     } finally {
       await r.cleanup();
     }
@@ -638,11 +684,21 @@ describe("accounts and access", () => {
     expect(await r.grants.get(globexId)).toBeUndefined();
   });
 
-  it("one connection per service in a workspace; asking again points to Reconnect", async () => {
+  it("a workspace holds two of one service, each with its own name, account and token", async () => {
     await r.connectAs("maria@acme.example");
-    await expect(r.connect.start({ org: "acme", service: "fakesvc", access: "read" }, OWNER)).rejects.toThrow(
-      "already connected in acme as fakesvc. Use Reconnect there.",
-    );
+    const second = await r.connectAs("ops@acme.example", { name: "Fake Service ops" });
+    expect(second.state).toBe("connected");
+    expect(second.connection).toBe("fake-service-ops");
+    expect(r.connections.get("fake-service-ops")?.connection.name).toBe("Fake Service ops");
+    expect((await r.connect.status("acme")).map((s) => [s.connection, s.account])).toEqual([
+      ["fakesvc", "maria@acme.example"],
+      ["fake-service-ops", "ops@acme.example"],
+    ]);
+    const a = await r.connect.bearer("fakesvc");
+    const b = await r.connect.bearer("fake-service-ops");
+    if (!("token" in a) || !("token" in b)) throw new Error("no token");
+    expect(r.auth.accessOf(b.token)?.account).toBe("ops@acme.example");
+    expect(a.token).not.toBe(b.token);
   });
 
   it("a connection of another workspace cannot be reconnected from this one", async () => {

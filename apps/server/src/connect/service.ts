@@ -15,6 +15,7 @@ import {
   cliTool,
   SERVICE_CATALOG,
   type ServiceEntry,
+  type ServiceProduct,
   type ServiceProvider,
   scopesAt,
   serviceById,
@@ -164,6 +165,10 @@ interface Flow {
   id: string;
   org: string;
   service: ServiceEntry;
+  /** The name a first connect gives its connection. */
+  name: string;
+  /** The products a first connect turns on, for a service that has them. */
+  products: string[] | undefined;
   access: ConnectAccess;
   /** The connection a reconnect is for, or the id a first connect will create. */
   connection: string;
@@ -421,15 +426,10 @@ export class ConnectService {
         }
       }
     } else {
-      const taken = all.find((c) => c.org === input.org && isOf(c.connection, entry));
-      if (taken !== undefined) {
-        throw new UserError(
-          `${entry.name} is already connected in ${input.org} as ${taken.id}. Use Reconnect there.`,
-          409,
-        );
-      }
-      connection = suggestConnectionId(entry.id, new Set(all.map((c) => c.id)));
+      // A workspace may hold several of one service, like two accounts or two teams.
+      connection = suggestConnectionId(input.name ?? entry.id, new Set(all.map((c) => c.id)));
     }
+    const products = entry.products === undefined ? undefined : this.productsFor(entry, input, all);
 
     // One attempt per connection: a new click replaces the old one.
     for (const f of this.flows.values()) {
@@ -441,6 +441,8 @@ export class ConnectService {
       id: randomBytes(12).toString("base64url"),
       org: input.org,
       service: entry,
+      name: input.name ?? entry.name,
+      products,
       access: input.access,
       connection,
       reconnect,
@@ -478,6 +480,25 @@ export class ConnectService {
     flow.url = started.url;
     flow.pending = { state, verifier: started.verifier, found, client, scope, provider: undefined };
     return this.begin(flow, started.url);
+  }
+
+  /** The products asked for, all known to the service; a reconnect keeps the ones it has. */
+  private productsFor(
+    entry: ServiceEntry,
+    input: ConnectStartInput,
+    all: Awaited<ReturnType<ConnectDeps["connectionIds"]>>,
+  ): string[] {
+    const known = (entry.products ?? []).map((p) => p.id);
+    if (input.products === undefined) {
+      const had = all.find((c) => c.id === input.connection)?.connection;
+      const kept = (textValue(had ?? { type: "mcp", name: "" }, "products") ?? "").split(/\s+/);
+      const picked = kept.filter((p) => known.includes(p));
+      if (picked.length > 0) return picked;
+      throw new UserError(`Pick at least one ${entry.name} product.`);
+    }
+    const unknown = input.products.filter((p) => !known.includes(p));
+    if (unknown.length > 0) throw new UserError(`${entry.name} has no product ${unknown.join(", ")}.`);
+    return unique(input.products);
   }
 
   /** Registers a live flow, opens its page through the helper and tells the screens. */
@@ -703,7 +724,7 @@ export class ConnectService {
             org: flow.org,
             id: flow.connection,
             type: "cli",
-            name: entry.name,
+            name: flow.name,
             description: `${entry.name}, signed in for this workspace only.`,
             fields: { tool, ...(identity === undefined ? {} : { account: identity }) },
           },
@@ -1027,15 +1048,21 @@ export class ConnectService {
           ...(entry.mcpUrl === undefined
             ? {
                 type: "api" as const,
-                name: entry.name,
+                name: flow.name,
                 description: `${entry.summary}. Runs get a short-lived token in ${provider?.tokenVar ?? "ACCESS_TOKEN"}.`,
                 fields: { service: entry.id, auth: "oauth", token_var: provider?.tokenVar ?? "ACCESS_TOKEN" },
               }
             : {
                 type: "mcp" as const,
-                name: entry.name,
+                name: flow.name,
                 description: entry.summary,
-                fields: { transport: "remote", url, protocol: "http", auth: "oauth" },
+                fields: {
+                  transport: "remote",
+                  url,
+                  protocol: "http",
+                  auth: "oauth",
+                  ...(flow.products === undefined ? {} : { products: flow.products.join(" ") }),
+                },
               }),
         },
         "connect.start",
@@ -1376,6 +1403,8 @@ export class ConnectService {
         started,
       );
     }
+    const products = await this.productsOf(grant);
+    if (products !== undefined) return this.testProducts(grant, products, started);
     try {
       const tools = await this.deps.listTools(grant.serverUrl, grant.tokens.accessToken);
       if (grant.state === "error") await this.markState(grant.connection, "connected", "");
@@ -1388,6 +1417,46 @@ export class ConnectService {
     } catch {
       return this.result(false, `${name} signed majhi in but would not list its tools. Try again.`, started);
     }
+  }
+
+  /** The products a connection has turned on, for a service that has them. */
+  private async productsOf(grant: Grant): Promise<ServiceProduct[] | undefined> {
+    const entry = this.service(grant.service ?? "");
+    if (entry?.products === undefined) return undefined;
+    const found = await this.deps.connections.find(grant.connection);
+    const picked = (found === undefined ? "" : (textValue(found.connection, "products") ?? "")).split(/\s+/);
+    return entry.products.filter((p) => picked.includes(p.id));
+  }
+
+  /** Lists the tools of each product with the one sign-in; one that refuses is named. */
+  private async testProducts(
+    grant: Grant,
+    products: readonly ServiceProduct[],
+    started: number,
+  ): Promise<ConnectionTestResult> {
+    if (products.length === 0) return this.result(false, "No product is picked. Pick at least one.", started);
+    const lines: string[] = [];
+    const tools: string[] = [];
+    const failed: string[] = [];
+    for (const product of products) {
+      try {
+        const listed = await this.deps.listTools(product.mcpUrl, grant.tokens.accessToken);
+        tools.push(...listed);
+        lines.push(`${product.name}: ${listed.length} tool${listed.length === 1 ? "" : "s"}`);
+      } catch {
+        failed.push(product.name);
+      }
+    }
+    if (failed.length > 0) {
+      return this.result(
+        false,
+        `${failed.join(", ")} would not list ${failed.length === 1 ? "its" : "their"} tools with this sign-in.${lines.length > 0 ? ` ${lines.join(". ")}.` : ""}`,
+        started,
+        tools,
+      );
+    }
+    if (grant.state === "error") await this.markState(grant.connection, "connected", "");
+    return this.result(true, `${lines.join(". ")}.`, started, tools);
   }
 
   private result(ok: boolean, detail: string, started: number, tools?: string[]): ConnectionTestResult {
