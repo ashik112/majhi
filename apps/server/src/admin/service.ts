@@ -21,13 +21,11 @@ import {
 import { z } from "zod";
 import { auditDetail } from "../audit.ts";
 import type { AutonomyVerdict } from "../autonomy/policy.ts";
-import { BUSINESS_TOOL_COMMANDS } from "../business/handlers.ts";
 import { authorityOf, keptRowOf } from "../captain/levels.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
 import type { ChangeRecord, ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import { FINDINGS_TOOL_COMMANDS } from "../findings/handlers.ts";
-import { GROWTH_TOOL_COMMANDS } from "../growth/handlers.ts";
 import { HANDOFF_TOOL_COMMANDS } from "../handoff/handlers.ts";
 import { OUTCOMES_TOOL_COMMANDS } from "../outcomes/handlers.ts";
 import { PLAYBOOK_TOOL_COMMANDS, playbookLimitRefusal } from "../playbooks/handlers.ts";
@@ -227,10 +225,8 @@ export class AdminService {
       // Findings stay in the caller's own workspace (the handler scopes them), so no card waits for them.
       if (
         FINDINGS_TOOL_COMMANDS.has(spec.command) ||
-        BUSINESS_TOOL_COMMANDS.has(spec.command) ||
         PLAYBOOK_TOOL_COMMANDS.has(spec.command) ||
         OUTCOMES_TOOL_COMMANDS.has(spec.command) ||
-        GROWTH_TOOL_COMMANDS.has(spec.command) ||
         HANDOFF_TOOL_COMMANDS.has(spec.command)
       ) {
         const checked = commands[spec.command].input.safeParse(input);

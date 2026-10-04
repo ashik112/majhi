@@ -67,9 +67,6 @@ export function topicsFor(command: string): EventTopic[] {
     case "connect":
       // A connect attempt changes a connection and its grant; a finding may be filed.
       return ["connections", "config", "findings"];
-    case "trackers":
-      // A pull or a push makes or links tasks; the org page shows the last pull.
-      return ["tasks", "orgs"];
     case "usage":
       return ["usage", "config"];
     case "memory":
@@ -94,11 +91,6 @@ export function topicsFor(command: string): EventTopic[] {
     case "findings":
       // A task made from a finding shows on the board too.
       return ["findings", "tasks"];
-    case "kb":
-    case "voice":
-    case "crm":
-    case "deadlines":
-      return ["business"];
     case "captain":
       // The stop switch also stops autonomous mode; Undo reverts config, tasks or memory.
       return ["captain", "autonomy", "config", "tasks", "memory"];

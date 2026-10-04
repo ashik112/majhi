@@ -228,3 +228,9 @@ export const FindingDismissInputSchema = z.object({
   id: z.number().int().positive(),
   reason: Text(500),
 });
+
+/** The effort an opportunity states in its detail ("Effort: medium."), or undefined. */
+export function opportunityEffort(detail: string): "small" | "medium" | "large" | undefined {
+  const m = /^effort:\s*(small|medium|large)\b/im.exec(detail);
+  return m?.[1] === undefined ? undefined : (m[1].toLowerCase() as "small" | "medium" | "large");
+}

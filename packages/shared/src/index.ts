@@ -12,7 +12,6 @@ export * from "./automation.ts";
 export * from "./autonomy.ts";
 export * from "./backup.ts";
 export * from "./budgets.ts";
-export * from "./business.ts";
 export * from "./captain.ts";
 export {
   type ChoreCap,
@@ -30,7 +29,6 @@ export * from "./connections.ts";
 export * from "./containers.ts";
 export * from "./decision-learning.ts";
 export * from "./decisions.ts";
-export * from "./economics.ts";
 export * from "./emoji.ts";
 export * from "./findings.ts";
 export * from "./git-accounts.ts";
@@ -64,7 +62,6 @@ export * from "./skills.ts";
 export * from "./task-parse.ts";
 export * from "./tasks.ts";
 export * from "./tiers.ts";
-export * from "./trackers.ts";
 export * from "./triggers.ts";
 export * from "./usage.ts";
 export * from "./watch-formula.ts";

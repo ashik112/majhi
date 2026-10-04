@@ -17,7 +17,6 @@ import {
   CircleAlert,
   House,
   KeyRound,
-  Library,
   type LucideIcon,
   MessagesSquare,
   Radar,
@@ -144,7 +143,7 @@ type NavBadge = { text: string; tone?: "needs" | "check"; dot?: boolean; title?:
 const ICON = "size-4 shrink-0";
 
 /**
- * The sidebar's rows: Home, Needs you, Chats, the captain, Playbooks, Watch and Knowledge; then the
+ * The sidebar's rows: Home, Needs you, Chats, the captain, Playbooks, and Watch; then the
  * agents that work now (see AgentsNow); at the foot Agents, Accounts, Health & usage and Settings.
  */
 function MainNav() {
@@ -239,7 +238,6 @@ const MAIN_ICON: Record<Exclude<SidebarMainPage, "captain" | "watch">, LucideIco
   decisions: CircleAlert,
   chats: MessagesSquare,
   playbooks: BookOpen,
-  business: Library,
 };
 const FOOT_ICON: Record<SidebarFootPage, LucideIcon> = { agents: Users, accounts: KeyRound, usage: Activity };
 

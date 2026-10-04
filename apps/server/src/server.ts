@@ -203,7 +203,6 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       services.watcher.start();
       services.usageSweeper.start();
       services.mrPoller.start();
-      services.trackers.start();
       services.cards.start();
       services.resilience.start();
       services.automation.scheduler.start();

@@ -21,7 +21,6 @@ import { agendaHandlers } from "../agenda/handlers.ts";
 import { scheduleHandlers } from "../automation/handlers.ts";
 import { autonomyHandlers } from "../autonomy/handlers.ts";
 import { backupHandlers } from "../backup/handlers.ts";
-import { businessHandlers } from "../business/handlers.ts";
 import { captainHandlers } from "../captain/handlers.ts";
 import type { ConfigService } from "../config/service.ts";
 import { connectHandlers } from "../connect/handlers.ts";
@@ -34,7 +33,6 @@ import { UserError } from "../errors.ts";
 import { findingsHandlers } from "../findings/handlers.ts";
 import { isDirectory } from "../fs.ts";
 import { gitConnectHandlers } from "../gitConnect/handlers.ts";
-import { growthHandlers } from "../growth/handlers.ts";
 import { handoffHandlers } from "../handoff/handlers.ts";
 import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
@@ -70,7 +68,6 @@ import type { SystemService } from "../system/service.ts";
 import { actorName } from "../tasks/cards.ts";
 import { changeTaskBranch } from "../tasks/change-branch.ts";
 import { readReport } from "../tasks/report.ts";
-import { trackerHandlers } from "../trackers/handlers.ts";
 
 /** Loading keys and asking the Keychain or keyring can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
@@ -174,7 +171,6 @@ export function createHandlers({
       lanes: services.lanes,
       store: services.store,
     }),
-    ...businessHandlers({ ...services.business, lanes: services.lanes, store: services.store }),
     ...findingsHandlers({ findings: services.findings, lanes: services.lanes, store: services.store }),
     ...playbookHandlers({
       findings: services.findings,
@@ -206,20 +202,12 @@ export function createHandlers({
       store: services.store,
       handoff: services.handoff,
     }),
-    ...growthHandlers({
-      findings: services.findings,
-      lanes: services.lanes,
-      store: services.store,
-      economics: services.economics,
-      growth: services.growth,
-    }),
     ...backupHandlers(services.backup),
     ...connectHandlers(services.connect),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
     ...skillHandlers(services.skills),
     ...mcpHandlers(services.mcpServers),
     ...gitConnectHandlers({ config, scanner, hostLink, services }),
-    ...trackerHandlers(services.trackers),
 
     "config.get": async () => (await config.load()).state,
 

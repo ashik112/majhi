@@ -1,4 +1,4 @@
-import type { CommandInput, CommandOutput, EconomicsRange, ScorecardRange } from "@majhi/shared";
+import type { CommandInput, CommandOutput, ScorecardRange } from "@majhi/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
@@ -20,16 +20,6 @@ export function useMoney() {
     queryKey: [...queryKeys.captain, "money"],
     queryFn: () => cmd("money.get", {}),
     refetchInterval: 120_000,
-    refetchIntervalInBackground: false,
-  });
-}
-
-/** Per workspace economics, this week or month against the one before. The `captain` topic refetches it. */
-export function useEconomics(range: EconomicsRange) {
-  return useQuery<CommandOutput<"economics.get">, ApiRequestError>({
-    queryKey: [...queryKeys.captain, "economics", range],
-    queryFn: () => cmd("economics.get", { range }),
-    refetchInterval: 300_000,
     refetchIntervalInBackground: false,
   });
 }

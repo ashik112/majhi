@@ -5,11 +5,10 @@ import { createChores } from "../captain/chores.ts";
 import type { CaptainPorts } from "../captain/ports.ts";
 import { CaptainRepo } from "../captain/repo.ts";
 import { ChoreRunner, type Workspace } from "../captain/runner.ts";
-import { type FindingSpec, file, reporterOf } from "../sensors/ports.ts";
 import { Store } from "../store/index.ts";
 import { Catalog } from "./catalog.ts";
 import { PlaybookRepo } from "./repo.ts";
-import { isRuleOn, type RulesContext } from "./rules.ts";
+import { isRuleOn } from "./rules.ts";
 import { PlaybookService } from "./service.ts";
 
 /** An outcome rule the owner switched off really stops its action, and a made playbook starts off. */
@@ -261,55 +260,12 @@ describe("outcome rules of the other chores", () => {
   });
 });
 
-describe("outcome rules of the code health playbooks", () => {
-  const spec: FindingSpec = {
-    project: "acme-api",
-    source: "ci",
-    key: "ci:acme-api:main",
-    title: "CI is failing on main",
-    detail: "",
-    evidence: [],
-    severity: "medium",
-  };
-  /** A findings store that counts what is filed and what is made a task. */
-  function sensorRun(off: string[]) {
-    const calls = { filed: 0, tasks: 0 };
-    const findings = {
-      report: async () => {
-        calls.filed += 1;
-        return { result: "created", finding: { id: 7, status: "open" } };
-      },
-      toTask: async () => {
-        calls.tasks += 1;
-        return { task: "ACM-9" };
-      },
-    };
-    const playbook = new Catalog().get("eng-ci-health");
-    if (playbook === undefined) throw new Error("no CI playbook");
-    const ctx = { org: "acme", playbook, findings, rulesOff: new Set(off) } as unknown as RulesContext;
-    return { calls, r: reporterOf(ctx) };
-  }
+describe("outcome rules of the upkeep playbooks", () => {
   const defaults = (id: string) =>
     (new Catalog().get(id)?.outcomes ?? []).filter((o) => !isRuleOn(o, {})).map((o) => o.id);
 
-  it("files a finding by default and proposes no task, since the task rule starts off", async () => {
-    expect(defaults("eng-ci-health")).toEqual(["ci-task"]);
+  it("proposes no task by default, since the task rule starts off", () => {
     expect(defaults("upkeep-followups")).toEqual(["fu-task"]);
-    const t = sensorRun(defaults("eng-ci-health"));
-    expect(await file(t.r, spec)).toBe("created");
-    expect(t.calls).toEqual({ filed: 1, tasks: 0 });
-  });
-
-  it("files nothing when the finding rule is off and no task is wanted", async () => {
-    const t = sensorRun(["ci-finding", "ci-task"]);
-    expect(await file(t.r, spec)).toBe("skipped");
-    expect(t.calls).toEqual({ filed: 0, tasks: 0 });
-  });
-
-  it("proposes a task from the finding when the task rule is on", async () => {
-    const t = sensorRun([]);
-    await file(t.r, spec);
-    expect(t.calls).toEqual({ filed: 1, tasks: 1 });
   });
 });
 

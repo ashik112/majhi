@@ -42,10 +42,6 @@ import { alertLine } from "./budgets/alert-line.ts";
 import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
 import { BudgetAlertRepo } from "./budgets/repo.ts";
-import { CrmService } from "./business/crm.ts";
-import { DeadlinesService } from "./business/deadlines.ts";
-import { KbService } from "./business/kb.ts";
-import { VoiceService } from "./business/voice.ts";
 import { freshCaptainAfterUpdate } from "./captain/fresh-after-update.ts";
 import { Lanes } from "./captain/lanes.ts";
 import { authorityOf, workspaceIds } from "./captain/levels.ts";
@@ -84,10 +80,7 @@ import { DecisionLog } from "./decisions/log.ts";
 import { rulesProvider } from "./decisions/rules.ts";
 import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
-import { classifyInjection } from "./decisions/uses/injection.ts";
 import { layaEvalRunner } from "./decisions/uses/weekly-eval.ts";
-import { economicsRunner } from "./economics/playbook.ts";
-import { EconomicsService } from "./economics/service.ts";
 import type { ServerEnv } from "./env.ts";
 import { errorMessage, UserError } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
@@ -99,11 +92,6 @@ import { GitLoginService } from "./git/logins.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { whoAmI } from "./gitConnect/oauth.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
-import { feedsRunner } from "./growth/feeds.ts";
-import { keywordLines } from "./growth/gather.ts";
-import { OPPORTUNITIES_ID, opportunitiesHooks } from "./growth/opportunities.ts";
-import type { GrowthDeps } from "./growth/ports.ts";
-import { clientUpdate } from "./growth/update.ts";
 import { DEFAULT_HANDOFF_MEMORY, defaultHandoffCpus } from "./handoff/limits.ts";
 import type { HandoffService } from "./handoff/service.ts";
 import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
@@ -145,7 +133,6 @@ import type { OpsWatch } from "./ops/watch.ts";
 import { createOps, type Ops } from "./ops/wire.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
-import { OutcomesRepo } from "./outcomes/repo.ts";
 import { OutcomesService } from "./outcomes/service.ts";
 import { Catalog } from "./playbooks/catalog.ts";
 import { parsePlan, planPrompt } from "./playbooks/custom.ts";
@@ -155,7 +142,6 @@ import { PlaybookRepo } from "./playbooks/repo.ts";
 import { RULES_RUNNERS, type RulesRunner } from "./playbooks/rules.ts";
 import { PlaybookService } from "./playbooks/service.ts";
 import { ProcessManager } from "./processes/manager.ts";
-import { CardRepo } from "./projectcard/repo.ts";
 import { suggestRepoAliases } from "./projectcard/scanner.ts";
 import type { ProjectCards } from "./projectcard/service.ts";
 import { createCards } from "./projectcard/wire.ts";
@@ -180,9 +166,6 @@ import { RepoScanner } from "./scan/scanner.ts";
 import { KeyExports } from "./secrets/backup.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
-import type { Net } from "./sensors/net.ts";
-import { sensorRunners } from "./sensors/runners.ts";
-import { createSensorPorts } from "./sensors/wire.ts";
 import { SkillsCli } from "./skills/cli.ts";
 import { skillGitEnv } from "./skills/git-env.ts";
 import { SkillRegistry } from "./skills/registry.ts";
@@ -197,9 +180,6 @@ import { PendingShips } from "./tasks/pending-ship.ts";
 import { TaskService } from "./tasks/service.ts";
 import { TerminalManager, type TerminalTimers } from "./terminal/manager.ts";
 import { openTaskTerminal } from "./terminal/task-terminal.ts";
-import { createAdapter } from "./trackers/index.ts";
-import { TrackerService } from "./trackers/service.ts";
-import type { TrackerAdapter, TrackerAdapterInit } from "./trackers/types.ts";
 import { UploadStore } from "./uploads/store.ts";
 import { readPrices } from "./usage/prices.ts";
 import { UsageRecorder } from "./usage/recorder.ts";
@@ -248,8 +228,6 @@ export interface ServiceOptions {
   idleWatchMs?: number;
   /** Replaces `fetch` for git sign-in and the git hosts' APIs, so tests never reach a real host. */
   gitFetch?: Fetch;
-  /** Replaces the sensors' network (advisories, end-of-life dates, releases, CI), so tests never reach a real host. */
-  sensorNet?: Net;
   /** Replaces the ops watch's network (addresses, certificates, names), so tests never reach a real host. */
   opsProbes?: Partial<ProbePorts>;
   /** Replaces `fetch` for the phone push, so tests never reach an ntfy server. */
@@ -260,10 +238,6 @@ export interface ServiceOptions {
   connectFetch?: Fetch;
   /** Replaces the service catalog, so tests connect to a fake server. */
   connectCatalog?: readonly ServiceEntry[];
-  /** Replaces `fetch` for Jira, ClickUp and GitHub Issues, so tests never reach a tracker. */
-  trackerFetch?: typeof fetch;
-  /** Replaces the tracker adapters, so tests can play a tracker without its API. */
-  trackerAdapter?: (init: TrackerAdapterInit) => TrackerAdapter;
   /** Replaces the `skills` program, so tests never run the real CLI or reach a git host. */
   skillsCommand?: Command;
   /** Replaces `fetch` for the skills.sh directory, so tests never reach it. */
@@ -273,13 +247,6 @@ export interface ServiceOptions {
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
-export interface BusinessServices {
-  kb: KbService;
-  voice: VoiceService;
-  crm: CrmService;
-  deadlines: DeadlinesService;
-}
-
 export interface Services {
   config: ConfigService;
   runtime: AcpRuntime;
@@ -345,7 +312,6 @@ export interface Services {
   machine: MachineSensor;
   mrPoller: MrPoller;
   /** Jira, ClickUp and GitHub Issues per org: pull into Up next, push, write MR links and status back (5.11). */
-  trackers: TrackerService;
   /** One notification for each thing that needs the owner: a desktop banner and a browser notice. */
   notifier: Notifier;
   /** Background processes agents start through majhi-processes (5.15). */
@@ -372,11 +338,6 @@ export interface Services {
   outcomes: OutcomesService;
   /** The checked hand-off: tests, build, lint and a review before "Ready to ship" (5.18). */
   handoff: HandoffService;
-  /** Client economics and the growth playbooks' views (5.18, step 11). */
-  economics: EconomicsService;
-  growth: GrowthDeps;
-  /** The knowledge base, voice, contacts and deadlines (5.19). */
-  business: BusinessServices;
   /** The owner's agenda and the morning brief (5.18). */
   agenda: AgendaService;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
@@ -1401,31 +1362,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   findingsStore = findings;
   reportFinding = (input, actor) => findings.report(input, actor);
-  const businessChanged = () => events.emit(["business"]);
-  const orgExists = async (org: string) => org === PRIVATE || org in (await config.sections()).orgs;
-  const businessNow = options.runClock === undefined ? {} : { now: options.runClock };
-  const crm = new CrmService({ db: store.raw, orgExists, changed: businessChanged, ...businessNow });
-  const business: BusinessServices = {
-    kb: new KbService({
-      db: store.raw,
-      embed: (texts) => memory.embed(texts),
-      takeUpload: (id, dir) => uploads.take(id, dir),
-      filesDir: (entry) => join(env.majhiHome, "business", "kb", String(entry)),
-      orgExists,
-      changed: businessChanged,
-      ...businessNow,
-    }),
-    voice: new VoiceService({ db: store.raw, orgExists, changed: businessChanged, ...businessNow }),
-    crm,
-    deadlines: new DeadlinesService({
-      db: store.raw,
-      orgExists,
-      contactVisible: (id, actor) => crm.exists(id, actor),
-      findingExists: (id) => findings.exists(id),
-      changed: businessChanged,
-      ...businessNow,
-    }),
-  };
   const agendaOwner = { kind: "owner" } as const;
   const agenda = new AgendaService({
     repo: new AgendaRepo(store.raw),
@@ -1434,23 +1370,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return { at: a.summary_at, tz: a.tz };
     },
     decisions: (org) => inbox.list(org),
-    deadlines: (within) => business.deadlines.list({ withinDays: within, limit: 500 }, agendaOwner).deadlines,
     findings: () => findings.list({ limit: 500 }, agendaOwner).findings,
     briefHidden: (f) => ruleSwitches.briefHidden(f.org, f.playbook),
-    steps: () =>
-      crm
-        .nextSteps(
-          { until: new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10), limit: 50 },
-          agendaOwner,
-        )
-        .steps.map((s) => ({
-          id: s.contact.id,
-          name: s.contact.name,
-          ...(s.contact.org === undefined ? {} : { org: s.contact.org }),
-          nextStep: s.contact.nextStep,
-          due: s.due,
-          overdue: s.overdue,
-        })),
     goals: () => goals.list({}, agendaOwner),
     running: () =>
       store.tasks
@@ -1470,7 +1391,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ]);
     },
     overnight: (from, to) => autonomy.overnight(from, to),
-    voice: () => business.voice.get(undefined, agendaOwner).effective,
     write: async (prompt) =>
       (
         await housekeeper.ask({ id: "morning-brief" }, prompt, (reply) =>
@@ -1596,64 +1516,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   captainRef.current = captain;
 
-  // The sensors behind the Engineering playbooks: cheap code that reads checkouts and public advisories.
-  const sensors = createSensorPorts({
-    store,
-    projects,
-    cards: new CardRepo(store.raw),
-    tokens: gitTokens,
-    orgs: async () => (await config.sections()).orgs,
-    housekeeper,
-    injects: async (text) => (await classifyInjection(decisions, text, "release-notes")).flagged,
-    ...(options.sensorNet === undefined ? {} : { net: options.sensorNet }),
-    ...(options.runClock === undefined ? {} : { now: options.runClock }),
-    log: (message) => console.error(message),
-  });
-  // Client economics and the growth playbooks (captain v2 step 11): code, plus one small model call where noted.
-  const rateRepo = new OutcomesRepo(store.raw);
-  const orgLabel = async (org: string) =>
-    org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org);
-  const economics = new EconomicsService({
-    db: store.raw,
-    tz: async () => zoneOr((await config.settings()).autonomy.tz),
-    orgs: async () => workspaceIds((await config.sections()).orgs),
-    rates: () => rateRepo.rates(),
-    minutes: () => rateRepo.minutes(),
-    ...(options.runClock === undefined ? {} : { now: options.runClock }),
-  });
-  const growth: GrowthDeps = {
-    db: store.raw,
-    now: options.runClock ?? (() => new Date()),
-    findings,
-    ...business,
-    goals,
-    cards: new CardRepo(store.raw),
-    outbound,
-    cache: sensors.cache,
-    orgName: orgLabel,
-    write: async (task, prompt, parse) => {
-      try {
-        return (await housekeeper.ask(task, prompt, parse)).value;
-      } catch (err) {
-        if (err instanceof NoHousekeeper) return undefined;
-        throw err;
-      }
-    },
-  };
-  const opportunities = opportunitiesHooks(growth);
   // The ops watch adds its runner below, once the connections it reads through exist.
   const rulesTable: Record<string, RulesRunner> = {
     ...RULES_RUNNERS,
-    ...sensorRunners(sensors),
     // The weekly check of Laya's decisions, and a few old findings read each run.
     "laya-eval": layaEvalRunner({ decisions, backlog: findings }),
-    economics: economicsRunner(economics, orgLabel),
-    "client-update": clientUpdate(growth),
-    feeds: feedsRunner({
-      net: sensors.net,
-      cache: sensors.cache,
-      keywords: async (org) => keywordLines(growth, org),
-    }),
   };
   const playbooks = new PlaybookService({
     catalog: playbookCatalog,
@@ -1682,8 +1549,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         throw err;
       }
     },
-    preflight: { [OPPORTUNITIES_ID]: (org) => opportunities.preflight(org) },
-    context: { [OPPORTUNITIES_ID]: (org) => opportunities.context(org) },
     repo: new PlaybookRepo(store.raw),
     captain,
     findings,
@@ -2069,18 +1934,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return found?.status === "ok" ? found.agent.frontmatter.scope : undefined;
     },
   });
-  const trackers = new TrackerService({
-    store,
-    config,
-    secrets,
-    room,
-    events,
-    projects,
-    tasks,
-    decisions,
-    adapter: options.trackerAdapter ?? createAdapter,
-    ...(options.trackerFetch === undefined ? {} : { fetch: options.trackerFetch }),
-  });
   // A new majhi version brings new instructions and tools for the captain; a resumed session keeps the
   // old ones. So after an update each captain thread starts fresh (with its handoff note) once.
   background.run(async () => {
@@ -2145,7 +1998,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     machine,
     notifier,
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
-    trackers,
     processes,
     containers,
     autonomy,
@@ -2158,9 +2010,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outbound,
     outcomes,
     handoff,
-    economics,
-    growth,
-    business,
     agenda,
     captainTell: new CaptainTell({
       tasks,
@@ -2206,7 +2055,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       cards.close();
       layaDocker?.close();
       await runs.closeAll();
-      await trackers.stop();
       // Hooks already running (rewriting TASK.md at review, a restack) end before the stores close.
       // After the runs: a hook can wait on a lock a turn holds.
       await settled;
