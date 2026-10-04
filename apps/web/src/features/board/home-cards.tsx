@@ -12,7 +12,11 @@ import { cn } from "@/lib/cn";
 import { useAnswerDecision, useDecisionDetail } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
 import { useAccounts, useOrgs } from "@/lib/studio-queries";
+import { useTasks } from "@/lib/task-queries";
+import { useNow } from "@/lib/use-now";
 import { limitNote } from "../shell/limit-note";
+import { openDue } from "../tasks/schedule";
+import { DueChip, PriorityChip } from "../tasks/schedule-chips";
 import { cardLine, plainTitle, waitingText } from "./model";
 
 const FRAME = {
@@ -59,6 +63,33 @@ function Meta({ org, id, right }: { org: string | undefined; id?: string | undef
   );
 }
 
+type Scheduled = Pick<TaskSummary, "repos" | "priority" | "due" | "status">;
+
+/** One quiet line: the project (first, "+1" for more), a non-normal priority, the due date. Nothing to say, no line. */
+function TaskMeta({ task }: { task: Scheduled | undefined }) {
+  const now = useNow(60_000);
+  if (!task) return null;
+  const first = task.repos[0]?.project;
+  const project =
+    first === undefined ? undefined : task.repos.length > 1 ? `${first} +${task.repos.length - 1}` : first;
+  const priority = task.priority !== undefined && task.priority !== "normal" ? task.priority : undefined;
+  const due = openDue(task, now);
+  if (project === undefined && !priority && !due) return null;
+  return (
+    <span className="flex h-[18px] min-w-0 items-center gap-1.5">
+      {project !== undefined && (
+        <span title={project} className="min-w-0 flex-1 truncate text-xs text-fg-muted">
+          {project}
+        </span>
+      )}
+      <span className="ml-auto flex shrink-0 items-center gap-1">
+        {priority && <PriorityChip priority={priority} compact />}
+        {due && <DueChip due={due} short />}
+      </span>
+    </span>
+  );
+}
+
 const COVER =
   "after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:after:outline-2 focus-visible:after:outline-accent";
 
@@ -92,6 +123,7 @@ export function DecisionCard({ decision }: { decision: OwnerDecision }) {
   const answer = useAnswerDecision();
   const ship = decision.kind === "ship";
   const detail = useDecisionDetail(ship ? decision.id : undefined).data;
+  const task = useTasks().data?.find((t) => t.id === decision.task);
   const typed = decision.options.some((o) => o.text === true);
   const options = decision.options.filter((o) => o.text !== true && (!ship || o.primary === true));
   const open = () => run(actionOf(decision.link));
@@ -109,6 +141,7 @@ export function DecisionCard({ decision }: { decision: OwnerDecision }) {
         id={decision.task}
         right={ship ? "Ready to ship" : DECISION_KIND_LABEL[decision.kind]}
       />
+      <TaskMeta task={task} />
       <button
         type="button"
         onClick={open}
@@ -173,6 +206,7 @@ export function WorkingCard({ task, ago }: { task: TaskSummary; ago: string }) {
   return (
     <Frame tone={paused ? "paused" : "working"}>
       <Meta org={task.org} id={task.id} />
+      <TaskMeta task={task} />
       <TaskTitle id={task.id} title={plainTitle(task.title)} />
       {line && <StatusLine lamp={line.lamp}>{text}</StatusLine>}
       <span className="flex items-center gap-2 text-xs text-fg-muted">
@@ -196,6 +230,7 @@ export function QueuedCard({ task }: { task: TaskSummary }) {
   return (
     <Frame tone="none">
       <Meta org={task.org} id={task.id} />
+      <TaskMeta task={task} />
       <TaskTitle id={task.id} title={plainTitle(task.title)} />
       <span className="text-sm text-fg-faint">{text}</span>
     </Frame>
@@ -217,6 +252,7 @@ export function DoneCard({
   return (
     <Frame tone="none">
       <Meta org={task.org} id={task.id} />
+      <TaskMeta task={task} />
       <TaskTitle id={task.id} title={plainTitle(task.title)} />
       <span className="flex items-center gap-2 text-sm text-fg-faint">
         <span>
