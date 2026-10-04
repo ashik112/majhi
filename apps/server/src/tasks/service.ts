@@ -197,7 +197,7 @@ export interface TaskDeps {
   guardRemoval?: (task: Task, action: "close" | "remove") => void;
   /** The agents finished and the task reached review: a ship waiting for the lead may run now. */
   onReview?: (id: string) => Promise<void>;
-  /** majhi merged a task's branch into `into` of `project`. Never awaited (background e2e, PRV-72). */
+  /** majhi merged a task's branch into `into` of `project`. Never awaited. */
   onMerged?: (merge: { task: string; project: string; into: string }) => void | Promise<void>;
   /** Token totals per agent, for what each plan version cost. */
   usage?: UsageRepo;

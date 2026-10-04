@@ -2,7 +2,6 @@ import { z } from "zod";
 import { AccountConfigSchema, IdSchema, OrgsConfigSchema } from "./accounts.ts";
 import { ConnectionConfigSchema, duplicateConnectionIds, GLOBAL_CONNECTIONS } from "./connections.ts";
 import { DecisionPatchSchema } from "./decisions.ts";
-import { E2ePatchSchema } from "./e2e.ts";
 import { GitAppsConfigSchema } from "./git-signin.ts";
 import {
   AutonomyFilePatchSchema,
@@ -52,8 +51,8 @@ export const MajhiConfigSchema = z
     memory: MemoryPatchSchema.optional(),
     /** Which editor "Open in editor" uses: VS Code or Cursor. */
     editor: EditorPatchSchema.optional(),
-    /** Background e2e after a merge into main: which projects run the suite (PRV-72). */
-    e2e: E2ePatchSchema.optional(),
+    /** Removed in D1, kept so old config loads. */
+    e2e: z.unknown().optional(),
     /** Cleanup of done tasks: after how many days (PRV-39). */
     cleanup: CleanupPatchSchema.optional(),
     /** Notifications when something needs the owner. */

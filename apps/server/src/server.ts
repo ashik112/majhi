@@ -80,7 +80,6 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       services,
       sshHosts,
       health,
-      ...(services.e2e === undefined ? {} : { e2e: services.e2e }),
       system,
     }),
     (name) => services.events.emit(topicsFor(name)),
@@ -179,12 +178,6 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
               },
             ]
           : []),
-        {
-          id: "self-e2e-size",
-          label: "e2e traces",
-          path: join(env.majhiHome, "e2e"),
-          failBytes: LIMITS.e2eFailBytes,
-        },
       ];
     },
     queueStall: () => services.autonomy.queueStall(),
@@ -211,7 +204,6 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       services.usageSweeper.start();
       services.mrPoller.start();
       services.trackers.start();
-      services.e2e?.start();
       services.cards.start();
       services.resilience.start();
       services.automation.scheduler.start();

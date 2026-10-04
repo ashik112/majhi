@@ -88,7 +88,7 @@ export const SETUP_GROUPS = [
       "containers",
     ],
   },
-  { label: "More", sections: ["editor", "e2e", "appearance", "backups", "history"] },
+  { label: "More", sections: ["editor", "appearance", "backups", "history"] },
 ] as const;
 
 export type SetupSection = (typeof SETUP_GROUPS)[number]["sections"][number];
@@ -107,7 +107,6 @@ export const SECTION_TITLE: Record<SetupSection, string> = {
   approvals: "Approvals",
   notifications: "Notifications",
   editor: "Editor",
-  e2e: "Background e2e",
   containers: "Containers",
   appearance: "Appearance",
   backups: "Backups",
@@ -172,7 +171,6 @@ export const SETTINGS_GROUPS: readonly { label: string; items: readonly Settings
     label: "System",
     items: [
       { kind: "section", section: "containers" },
-      { kind: "section", section: "e2e" },
       { kind: "section", section: "backups" },
       { kind: "section", section: "history" },
       { kind: "page", page: "audit" },

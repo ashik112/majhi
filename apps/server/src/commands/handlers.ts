@@ -29,7 +29,6 @@ import { connectionHandlers } from "../connections/handlers.ts";
 import { redactSecrets } from "../connections/redact.ts";
 import { taskSecrets } from "../connections/run-files.ts";
 import { connectionDir } from "../connections/service.ts";
-import type { E2eService } from "../e2e/service.ts";
 import { editorPath } from "../editor/allowed.ts";
 import { UserError } from "../errors.ts";
 import { findingsHandlers } from "../findings/handlers.ts";
@@ -107,8 +106,6 @@ export interface HandlerDeps {
   sshHosts?: SshHostProbe;
   /** `health.run` and `health.fix`. Without it they answer 501. */
   health?: HealthService;
-  /** `e2e.status` and `e2e.runNow`. Without it they answer 501. */
-  e2e?: E2eService;
   /** `system.version` and `system.update`. Without it they answer 501. */
   system?: SystemService;
 }
@@ -120,7 +117,6 @@ export function createHandlers({
   services,
   sshHosts,
   health,
-  e2e,
   system,
 }: HandlerDeps): CommandHandlers {
   const { orgs, accounts, agents } = services;
@@ -905,7 +901,6 @@ export function createHandlers({
         ...(input.rooms === undefined ? {} : { rooms: input.rooms }),
         ...(input.memory === undefined ? {} : { memory: input.memory }),
         ...(input.editor === undefined ? {} : { editor: input.editor }),
-        ...(input.e2e === undefined ? {} : { e2e: input.e2e }),
         ...(input.cleanup === undefined ? {} : { cleanup: input.cleanup }),
         ...(input.notifications === undefined ? {} : { notifications: input.notifications }),
         ...(input.containers === undefined ? {} : { containers: input.containers }),
@@ -970,13 +965,6 @@ export function createHandlers({
         actorName(ctx.meta.actor),
         input.cachesOnly,
       ),
-    "e2e.status": () => (e2e ? e2e.status() : notBuilt()),
-    "e2e.runNow": (input, ctx) => {
-      // The suite takes the owner's CPU for up to 90 minutes: only they start it by hand.
-      if (ctx.meta.actor.kind !== "owner")
-        throw new UserError("Only the owner starts a background e2e run.", 409);
-      return e2e ? e2e.runNow(input.project) : notBuilt();
-    },
     "health.run": () => (health ? health.run() : notBuilt()),
     "health.fix": (input, ctx) =>
       health ? health.fix(input.id, ctx.meta.actor.kind === "owner" ? "owner" : "agent") : notBuilt(),

@@ -86,8 +86,6 @@ import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
 import { classifyInjection } from "./decisions/uses/injection.ts";
 import { layaEvalRunner } from "./decisions/uses/weekly-eval.ts";
-import type { E2eService } from "./e2e/service.ts";
-import { createE2e } from "./e2e/wire.ts";
 import { economicsRunner } from "./economics/playbook.ts";
 import { EconomicsService } from "./economics/service.ts";
 import type { ServerEnv } from "./env.ts";
@@ -389,8 +387,6 @@ export interface Services {
   bindCaptain(dispatch: Dispatch): void;
   /** Schedules and the action runner they share with watch triggers (PRV-63). */
   automation: Automation;
-  /** Background e2e after a merge into main (PRV-72). Without a host helper link there is none. */
-  e2e: E2eService | undefined;
   /** Project knowledge cards, refreshed when a base branch moves. */
   cards: ProjectCards;
   /** Facts, hybrid search and recall (5.6). */
@@ -907,8 +903,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     say: (id, level, text) => room.post(id, `${level}:${randomUUID()}`, { type: "system", level, text }),
   });
   let chatMemory: ChatMemory | undefined;
-  // Bound below: background e2e is built after the task service, which it creates tasks with.
-  let e2e: E2eService | undefined;
   // Bound below, after the services it reads: the checked hand-off (5.18).
   let handoffService: HandoffService | undefined;
   const tasks = new TaskService({
@@ -953,7 +947,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     onMerged: (merge) => {
       cards.onMerged(merge.project);
-      return e2e?.onMerged(merge);
     },
     usage: usageRepo,
     flushUsage: () => usageRecorder.flush(),
@@ -1088,20 +1081,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     hosts: createMrHosts(options.mrHosts),
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
-  e2e =
-    options.hostLink === undefined
-      ? undefined
-      : createE2e({
-          store,
-          config,
-          projects,
-          hostLink: options.hostLink,
-          room,
-          tasks,
-          uploads,
-          majhiHome: env.majhiHome,
-          log: (message) => console.error(message),
-        });
   const pendingShips = new PendingShips({ store, tasks, mrs, room, events, now: () => new Date() });
   const resumeLimited = async (org: string): Promise<string[]> => {
     const resumed: string[] = [];
@@ -2194,7 +2173,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       captainDispatch = dispatch;
     },
     automation,
-    e2e,
     cards,
     memory,
     extraction,
@@ -2225,7 +2203,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       backup.stop();
       notifier.close();
       automation.scheduler.stop();
-      e2e?.close();
       cards.close();
       layaDocker?.close();
       await runs.closeAll();
