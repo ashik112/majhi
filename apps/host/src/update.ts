@@ -275,8 +275,12 @@ async function keepPrevious(step: Step, image: string, keep: string): Promise<st
   return id;
 }
 
-/** Build cache an update keeps, so the next build stays fast without the cache growing for ever. */
-export const KEEP_BUILD_CACHE = "3gb";
+/**
+ * Build cache an update keeps, so the next build stays fast without the cache growing for ever. The
+ * runner's layers alone (Chromium for Playwright and the browser servers, the agent CLIs, apt) are
+ * about 6 GB; below that every update evicts them and rebuilds the runner from scratch.
+ */
+export const KEEP_BUILD_CACHE = "16gb";
 
 /**
  * Every update builds new images; the ones they replace and the build cache would otherwise stay on
