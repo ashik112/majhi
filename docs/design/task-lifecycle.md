@@ -1,6 +1,6 @@
 # Delete first, then model the task lifecycle
 
-Status: proposed, awaiting owner approval. Nothing here changes product code yet.
+Status: approved by the owner 2026-10-05, with the decisions in section 11. Nothing here changes product code yet.
 Date: 2026-10-05. Inputs: four code audits (holds, loops and limits, captain authority, transitions and schema), three history audits (captain features, loops, peripheral features), all spot-checked against `main` at bbbff1a9. File:line references may drift by a few lines.
 
 ## 1. Problem
@@ -93,7 +93,8 @@ Verdicts: DELETE, MERGE (into the named thing), KEEP (reason).
 | A21 `budgets.lift` 60 s | MERGE into the tick | Week-reset lift is data hygiene, kept |
 | A22 playbooks sweep | KEEP as THE tick | Absorbs A1, A5, A7, A8, A21 |
 | Housekeeping: chatMemory 60 s, projectcard 60 s, ops looks 60 s | MERGE into the tick | Same 60 s clock |
-| Housekeeping: agenda 60 s, outcomes 5 min, trackers 60 s, e2e 60 s | DELETE with their features (2.4) | |
+| Housekeeping: agenda 60 s | MERGE into the tick | Today stays (owner uses it) |
+| Housekeeping: outcomes 5 min, trackers 60 s, e2e 60 s | DELETE with their features (2.4) | |
 | Housekeeping kept as timers: update watch 30 s, prune 24 h, uploads 1 h, ops wire 30 s, ops/self 5 min, backup 1 h, connect 60 s, notify batching, events watcher, host link, Laya idle, host intervals (4) | KEEP | Not decisions about tasks. Check: prune must not touch the Docker build cache (owner rule) |
 | Duplicates: 12 separate 60 s constants, two hourly heartbeats, two daily-chore registries, `dailySummary` twice, budgets vs autonomy caps | COLLAPSE to `tickSec` | |
 
@@ -111,7 +112,7 @@ Built on 2026-10-04 in one wave from the "captain runs the business" brief. Dire
 | economics (client minutes and spend roll-up) | 514 [309], 4 | Leaf once growth goes; minutes are estimates | DELETE | A scorecard table |
 | sensors (CI, osv.dev, EOL, radar) | 2832 [1357], 13 | No UI, 8 commits, one day old; hand-off secret scan and Watch overlap | DELETE | Dependency and EOL alerts |
 | outcomes: scorecard, trust ladder, auto-mute | about 1,200 of 1841 [975], 8 | 50% fix share on a day-old feature, no history to score | DELETE; KEEP the monthly ceiling (`money.ts`, `spend.ts`) inside the budget model | A scorecard on the Captain page |
-| agenda and Today (`/today`) | 1158 [968], 8 + web 892 | Not in the sidebar, overlaps Decisions | MERGE the brief into Needs you, DELETE the page | A second daily list |
+| agenda and Today (`/today`) | 1158 [968], 8 + web 892 | Not in the sidebar, overlaps Decisions | KEEP: the owner uses Today (2026-10-05). The two daily summaries merge into its brief | n/a |
 | business: KB, voice, CRM, deadlines | 1894 [1290], 8 + web 2790 | 3 commits, 0 fixes. Deadlines (web 591) move into Needs you | DELETE (question 2) | A Business page |
 | Small trims: `decisions/jev.ts` ("stays off"), `layaDocker.ts` (Linux and Windows only), `ops/anything/{db-drivers,html,fixes}.ts` (low confidence) | about 1,100 | Speculative | DELETE after a quick check | Little |
 
@@ -123,9 +124,9 @@ Estimates from the audits, not exact. Non-test lines now: server 122,269 in 552 
 
 | | Now | After | Note |
 |---|---|---|---|
-| Peripheral features removed (2.4) | | about 15,400 non-test lines, about 10,000 test lines | steps D1 to D8 |
+| Peripheral features removed (2.4) | | about 13,400 non-test lines, about 9,000 test lines (Today kept) | steps D1 to D8 |
 | Captain and autonomy dirs | 14,400 non-test lines, 9,500 test lines in 41 files | about 10,500 non-test, about 7,500 test | `autonomy/service.ts` 3002 to under 1,600 |
-| Non-test lines overall | about 222,000 | about 203,000 (9% fewer) | Lines are not the main win |
+| Non-test lines overall | about 222,000 | about 205,000 (8% fewer) | Lines are not the main win |
 | Decision loops (A1 to A8) | 8 | 2 | tick and event driver |
 | Interval-style server loops | about 22 | about 12 | |
 | Policy numbers | about 80 | about 25 | section 6 |
@@ -581,12 +582,12 @@ Largest: `runs/manager.ts` (44 plus 20 on `AgentRun.paused / held`), `tasks/serv
 | step | what goes | verified by | undo cost |
 |---|---|---|---|
 | D1 | e2e background runner (server, web panel, setup row) | typecheck; commands registry and screens map lose the entries | Low |
-| D2 | trackers (needs owner yes, question 3) | typecheck; the one label in `decisions` detached | Low |
+| D2 | trackers (owner: delete) | typecheck; the one label in `decisions` detached | Low |
 | D3, D4 | growth, then economics | typecheck | Low |
 | D5 | sensors; Growth, sensor and CI packs out of playbooks | typecheck; `playbooks/*.test.ts` | Low |
 | D6 | outcomes scorecard, ladder, auto-mute; monthly ceiling moved into the budget model | typecheck; `budgets/*.test.ts` | Medium |
-| D7 | agenda and Today; brief merged into Needs you; the two daily summaries become one | typecheck; autonomy summary tests | Medium |
-| D8 | business KB, voice, CRM (needs owner yes, question 2); deadlines move to Needs you | typecheck | Medium |
+| D7 | Today stays; the two daily summaries become its one brief; rollup-post goes | typecheck; autonomy summary tests | Medium |
+| D8 | business KB, voice, CRM (owner: delete); deadlines move to Needs you | typecheck | Medium |
 | D9 | G1 first: state keys on ship, answer, tell (new idempotency tests: same key twice is one action). Then delete chore caps (22 numbers), cap-ask flow, per-chore Limits UI, the tell rate limit; one pass bound | new key tests; `captain/{desk,tell-ship}.test.ts` stay green | Medium. The keys land before the caps go, so there is never a window without a guard |
 | D10 | Question loop word-overlap, stuck repeated-line rule, `stuck` chore, Laya wake gate, driver heartbeat, rollup-post, `own-work-second`, echo guard. Add the progress counter (`loop-guard` after N answers with no progress) before removing the similarity rule | `autonomy/driver.test.ts`, `captain/desk.test.ts`, new progress-counter test | Medium |
 | D11 | Money caps from nine places to one model: Auto-pilot day and org caps, floors into the reserve, CAP_MARGIN, budget-asks, lane budget check | `autonomy/{spend,cap}.test.ts` ported to the budget model, `budgets/limit.test.ts` green | Medium |
@@ -623,10 +624,11 @@ How to encode it, so it is not a sentence that drifts:
 - The coverage test of section 7 stops a rule living only in the prompt.
 - One line in the repo `CLAUDE.md` (Code standards) pointing here, added with step A. Every fix commit and DECISIONS entry names its hold kind, transition, gate or policy key. The census total goes in `docs/PROGRESS.md` at each phase end.
 
-## 11. Open questions for the owner
+## 11. Owner decisions (2026-10-05)
 
-1. SPEC edits. Do you approve the edits in section 8, especially removing `paused` as a status, folding `cap` and `paused` decision kinds, and removing Auto-pilot day and org caps and floors in favour of one budget model (scope, period, reserve)?
-2. Business and Today. Do you use the Business page (knowledge base, voice, CRM) or `/today`? Both are sidebar or palette items, about 5,600 and 3,200 lines with tests. Deadlines would move into Needs you.
-3. Trackers. Do you use Jira, ClickUp or GitHub Issues sync in real work? It has only been run against fakes.
-4. Dependency-closed holds. Should a `dependency-closed` task clear itself when the dependency finally merges (today it waits for you to merge or remove the link)? Default here: keep today's behaviour.
-5. Agent signals. Several fixes need a structured signal from the CLIs (rate limit, auth failure, ask-question, review verdict, tool name; section 3 rows 1, 2, 5, 7). I will check what both adapters expose in step B. If one gives none, do you accept the plain fallback (an unknown failure becomes an `error` hold and resumes by the account poll), or keep one allowlisted text-shape module for that CLI?
+1. SPEC edits in section 8: approved. `paused` is no longer a status; one typed `hold` explains every pause. Auto-pilot day and org caps and floors fold into one budget model (scope, period, reserve).
+2. Today: keep. Business (KB, voice, CRM): delete; deadlines move into Needs you.
+3. Trackers (Jira, ClickUp, GitHub Issues): delete. Sensors, growth and economics: delete.
+4. Dependency-closed holds: today's behaviour stays (waits for the owner). Not asked; revisit only if it bites.
+5. No structured CLI signal for a limit or a failed sign-in: plain fallback. An unknown failure becomes an `error` hold and the account usage poll decides when to resume. No text parsing of CLI errors (section 3 rows 1 and 2).
+6. Text matching exceptions allowed: the secret scan (row 16) and input grammars the owner types on purpose (row 17). Nothing else.
