@@ -6,6 +6,7 @@ import type {
   AutonomyOrgPatch,
   Freeze,
 } from "@majhi/shared";
+import { OWN_WORK_LINE } from "@majhi/shared";
 
 /** The rows of the delegation grid, in the order it shows them. */
 export const AUTHORITY_ROWS_ORDER: readonly AuthorityRow[] = [
@@ -15,15 +16,17 @@ export const AUTHORITY_ROWS_ORDER: readonly AuthorityRow[] = [
   "upkeep",
   "merge",
   "push",
+  "own",
 ];
 
-export const AUTHORITY_ROW_TEXT: Record<AuthorityRow, { label: string; hint: string }> = {
+export const AUTHORITY_ROW_TEXT: Record<AuthorityRow, { label: string; hint: string; detail?: string }> = {
   start: { label: "Start work", hint: "Takes tasks from the backlog" },
   questions: { label: "Answer questions", hint: "When the brief or the code settles them" },
   approvals: { label: "Approvals", hint: "Routine cards your rules allow" },
   upkeep: { label: "Upkeep", hint: "Memory, cleanup, triage, stuck tasks" },
   merge: { label: "Merge", hint: "Into the base branch, after checks pass" },
   push: { label: "Push", hint: "Branches and merge requests" },
+  own: { label: "Own work", hint: "Routine requests of tasks it started", detail: OWN_WORK_LINE },
 };
 
 /** The two quick presets in a workspace's column menu. */
@@ -38,6 +41,7 @@ export const AUTHORITY_PRESETS: readonly { label: string; help: string; rows: Au
       upkeep: "decide",
       merge: "decide",
       push: "ask",
+      own: "decide",
     },
   },
   {
@@ -50,6 +54,7 @@ export const AUTHORITY_PRESETS: readonly { label: string; help: string; rows: Au
       upkeep: "decide",
       merge: "ask",
       push: "ask",
+      own: "ask",
     },
   },
 ];

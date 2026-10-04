@@ -151,7 +151,15 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
         title: `@${item.agent} needs approval: ${oneLine(item.title)}`,
         sentence: `@${item.agent} needs your approval: ${item.title}`,
         options: withPrimary(
-          item.options.map((o) => ({ id: o.id, label: o.name })),
+          item.options.map((o) => ({
+            id: o.id,
+            label: o.name,
+            ...(o.kind === "allow_once"
+              ? { effect: "approve" as const }
+              : o.kind === "reject_once"
+                ? { effect: "leave" as const }
+                : {}),
+          })),
           allow?.id,
         ),
       };
@@ -166,8 +174,8 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
                 ? `@${item.agent} wants to: ${item.summary}`
                 : `@${item.agent} wants to: ${item.summary}. Its reason: ${item.reason}`,
             options: [
-              { id: "approve", label: "Approve", primary: true },
-              { id: "reject", label: "Reject" },
+              { id: "approve", label: "Approve", primary: true, effect: "approve" },
+              { id: "reject", label: "Reject", effect: "leave" },
             ],
           }
         : undefined;
@@ -188,7 +196,13 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
       const merge = { id: "merge", label: "Merge" };
       const done = { id: "done", label: "Mark done" };
       const changes: DecisionOption = { id: "changes", label: "Ask for changes", text: true };
-      const own = repos === 0 ? [done, changes] : [merge, done, changes];
+      // A batch merges only what the captain checked, and only the one option it suggests.
+      const checked = item.ready !== undefined;
+      const ship = (o: DecisionOption, id: string): DecisionOption =>
+        checked && o.id === id ? { ...o, effect: "approve" } : o;
+      const own = (repos === 0 ? [done, changes] : [merge, done, changes]).map((o) =>
+        ship(o, repos === 0 ? "done" : "merge"),
+      );
       if (item.ready === undefined) {
         return {
           kind: "ship",
@@ -220,7 +234,7 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
         kind: "paused",
         title: item.why === undefined ? title : oneLine(`${title.split(":")[0]}: ${item.why}`),
         sentence: `"${subject.title}" ${item.why === undefined ? `${title.charAt(0).toLowerCase()}${title.slice(1)}` : `is paused: ${item.why}`}`,
-        options: [{ id: "resume", label: "Resume", primary: true }],
+        options: [{ id: "resume", label: "Resume", primary: true, effect: "approve" }],
       };
     }
     default:
@@ -252,7 +266,13 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
    * The options and the suggestion. The captain's recommendation wins when it names an option the
    * decision has, else the card's own suggestion; the suggested option goes first, as the primary one.
    */
-  const decorate = (id: string, options: DecisionOption[], own?: DecisionSuggestion, workspace?: string) => {
+  const decorate = (
+    id: string,
+    options: DecisionOption[],
+    own?: DecisionSuggestion,
+    workspace?: string,
+    question = false,
+  ) => {
     const stored = src.recommendations.get(id);
     const picked: DecisionSuggestion | undefined =
       stored !== undefined && options.some((o) => o.id === stored.option)
@@ -263,9 +283,17 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       picked === undefined
         ? undefined
         : { ...picked, reason: plainAuthorityText(picked.reason, workspace).slice(0, 600) };
-    return chosen === undefined
-      ? { options }
-      : { options: withPrimary(options, chosen.option), suggestion: chosen };
+    if (chosen === undefined) return { options };
+    const ordered = withPrimary(options, chosen.option);
+    // On a question, the suggested option is what a batch approves; other kinds mark theirs already.
+    return {
+      options: question
+        ? ordered.map((o) =>
+            o.id === chosen.option && o.text !== true ? { ...o, effect: "approve" as const } : o,
+          )
+        : ordered,
+      suggestion: chosen,
+    };
   };
 
   for (const item of src.items) {
@@ -284,7 +312,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       ...(subject.chat ? { chat: true as const } : {}),
       title: draft.title,
       sentence: draft.sentence ?? draft.title,
-      ...decorate(id, draft.options, draft.suggestion, workspace),
+      ...decorate(id, draft.options, draft.suggestion, workspace, draft.kind === "question"),
       at: item.at,
       link: subject.chat ? { kind: "chat", id: item.task } : { kind: "task", id: item.task, item: item.id },
     });
@@ -293,8 +321,8 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
   for (const ask of src.caps) {
     const id = capDecisionId(ask.org, ask.chore, ask.day);
     const options: DecisionOption[] = [
-      { id: "raise", label: `Raise to ${ask.raiseTo} for today`, primary: true },
-      { id: "leave", label: "Leave it" },
+      { id: "raise", label: `Raise to ${ask.raiseTo} for today`, primary: true, effect: "approve" },
+      { id: "leave", label: "Leave it", effect: "leave" },
     ];
     out.push({
       id,
@@ -311,8 +339,13 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
   for (const ask of src.budgets) {
     const id = budgetDecisionId(ask.scope, ask.day);
     const options: DecisionOption[] = [
-      { id: "raise", label: `Raise to ${budgetText(ask.raiseTo)} for today`, primary: true },
-      { id: "leave", label: "Leave it" },
+      {
+        id: "raise",
+        label: `Raise to ${budgetText(ask.raiseTo)} for today`,
+        primary: true,
+        effect: "approve",
+      },
+      { id: "leave", label: "Leave it", effect: "leave" },
     ];
     out.push({
       id,

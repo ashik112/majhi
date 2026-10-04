@@ -1,4 +1,5 @@
 import { DECISION_KIND_LABEL, type OwnerDecision, type OwnerDecisionKind } from "@majhi/shared";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   CircleDollarSign,
   CirclePause,
@@ -10,7 +11,7 @@ import {
   MessageCircleQuestion,
   ShieldCheck,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { ROW, ROW_SELECTED } from "@/components/ui/list-detail";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { cn } from "@/lib/cn";
@@ -60,35 +61,90 @@ export function WorkspaceName({ id, className }: { id: string; className?: strin
   );
 }
 
+const ROW_ESTIMATE = 62;
+
 /**
- * The queue: two lines per decision. The title first (the task's, not the kind), then what
- * kind it is, whose it is, and the captain's pick as a chip. The selected row follows ROW_SELECTED.
+ * The queue: two lines per decision, with a checkbox for batches. The title first (the task's, not the
+ * kind), then what kind it is, whose it is, and the captain's pick as a chip. The selected row follows
+ * ROW_SELECTED. Only the rows on screen are drawn, so 500 decisions stay fast.
  */
 export function DecisionList({
   decisions,
   selected,
   now,
+  scroller,
+  picked,
+  held,
   onSelect,
+  onPick,
 }: {
   decisions: readonly OwnerDecision[];
   selected: string | undefined;
   now: number;
+  /** The element the queue scrolls in. */
+  scroller: HTMLElement | null;
+  picked: ReadonlySet<string>;
+  /** Decisions in a batch that waits out its undo time. */
+  held: ReadonlySet<string>;
   onSelect: (id: string) => void;
+  /** The checkbox: `range` when shift was held. */
+  onPick: (id: string, range: boolean) => void;
 }) {
+  const virtual = useVirtualizer({
+    count: decisions.length,
+    getScrollElement: () => scroller,
+    estimateSize: () => ROW_ESTIMATE,
+    overscan: 10,
+    getItemKey: (i) => decisions[i]?.id ?? i,
+  });
+  const at = decisions.findIndex((d) => d.id === selected);
+  // The keys move the selection: keep it in view.
+  useEffect(() => {
+    if (at >= 0) virtual.scrollToIndex(at, { align: "auto" });
+  }, [at, virtual]);
+
   return (
-    <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
-      {decisions.map((d) => {
+    <ul
+      className="relative m-0 list-none p-0"
+      style={{ height: virtual.getTotalSize() }}
+      aria-label={`${decisions.length} decisions`}
+    >
+      {virtual.getVirtualItems().map((row) => {
+        const d = decisions[row.index];
+        if (d === undefined) return null;
         const workspace = workspaceOf(d);
         const pick = suggestedLabel(d);
         const on = d.id === selected;
+        const isHeld = held.has(d.id);
+        const checked = picked.has(d.id) || isHeld;
         return (
-          <li key={d.id}>
+          <li
+            key={d.id}
+            ref={virtual.measureElement}
+            data-index={row.index}
+            className={cn(
+              "absolute inset-x-0 top-0 flex items-stretch gap-0.5 pb-0.5",
+              isHeld && "opacity-55",
+            )}
+            style={{ transform: `translateY(${row.start}px)` }}
+          >
+            <label className="flex w-7 shrink-0 cursor-pointer items-start justify-center pt-3">
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={isHeld}
+                aria-label={`Select ${rowTitle(d)}`}
+                onClick={(e) => onPick(d.id, e.shiftKey)}
+                onChange={() => undefined}
+                className="size-4 cursor-pointer accent-[var(--c-accent)]"
+              />
+            </label>
             <button
               type="button"
               data-decision={d.id}
               aria-current={on ? "true" : undefined}
               onClick={() => onSelect(d.id)}
-              className={cn(ROW, "min-w-0 flex-col gap-1 px-2.5 py-2", on && ROW_SELECTED)}
+              className={cn(ROW, "min-w-0 flex-1 flex-col gap-1 px-2 py-2", on && ROW_SELECTED)}
             >
               <span className="flex min-w-0 items-center gap-2">
                 <KindIcon kind={d.kind} />
@@ -102,13 +158,17 @@ export function DecisionList({
                 {workspace !== undefined && (
                   <WorkspaceName id={workspace} className="max-w-[45%] text-fg-muted" />
                 )}
-                {pick !== undefined && (
-                  <span
-                    title={`Captain recommends ${pick}`}
-                    className="ml-auto max-w-[45%] shrink-0 truncate rounded-sm border border-accent-line bg-accent-wash px-1.5 py-px text-accent-text"
-                  >
-                    Captain: {pick}
-                  </span>
+                {isHeld ? (
+                  <span className="ml-auto shrink-0 text-fg-muted">Waiting to be sent</span>
+                ) : (
+                  pick !== undefined && (
+                    <span
+                      title={`Captain recommends ${pick}`}
+                      className="ml-auto max-w-[45%] shrink-0 truncate rounded-sm border border-accent-line bg-accent-wash px-1.5 py-px text-accent-text"
+                    >
+                      Captain: {pick}
+                    </span>
+                  )
                 )}
               </span>
             </button>

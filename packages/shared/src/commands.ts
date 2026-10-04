@@ -184,6 +184,8 @@ import {
 } from "./host.ts";
 import {
   DecisionAnswerInputSchema,
+  DecisionBatchInputSchema,
+  DecisionBatchResultSchema,
   DecisionDetailSchema,
   DecisionListSchema,
   DecisionRecommendInputSchema,
@@ -760,6 +762,13 @@ export const commands = {
       "Answer a decision with one of its options, through the same path as its card (answer, approve, resume, raise or leave). Owner only",
     input: DecisionAnswerInputSchema,
     output: DecisionListSchema,
+  },
+  "decisions.answerBatch": {
+    risk: "change",
+    summary:
+      "Answer many decisions at once with Approve (allow once, merge what the captain checked, resume, raise) or Leave (reject, keep the budget). Each decision is taken on its own: one that fails or has no such button is listed and the rest go on. Sent twice with the same batch key it does nothing the second time. Owner only",
+    input: DecisionBatchInputSchema,
+    output: DecisionBatchResultSchema,
   },
   "decisions.detail": {
     risk: "read",

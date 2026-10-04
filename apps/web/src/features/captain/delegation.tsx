@@ -208,7 +208,10 @@ function Grid({
         </div>
         {AUTHORITY_ROWS_ORDER.map((row) => (
           <div key={row} className="flex items-center gap-2 border-b border-line py-1.5">
-            <div className={cn(FIRST_COLUMN, sticky, "flex flex-col pr-2 leading-snug")}>
+            <div
+              className={cn(FIRST_COLUMN, sticky, "flex flex-col pr-2 leading-snug")}
+              title={AUTHORITY_ROW_TEXT[row].detail}
+            >
               <span className="text-base text-fg">{AUTHORITY_ROW_TEXT[row].label}</span>
               <span className="text-xs text-fg-faint">{AUTHORITY_ROW_TEXT[row].hint}</span>
             </div>

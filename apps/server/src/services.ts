@@ -1065,6 +1065,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const autonomy = new AutonomyService({
     lanes,
     typing: (task) => events.typing.holds(task),
+    protectedProjects: async () =>
+      new Set((await projects.infos()).filter((p) => p.protected).map((p) => p.id)),
     upkeepBetween: (from, to) => captainRepo.actionsBetween(from, to),
     decisions: () => inbox.list(),
     store,
@@ -1202,6 +1204,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       repo: captainRepo,
       typing: (task) => events.typing.holds(task),
       aliasesOf: (path, id) => suggestRepoAliases(path, id),
+      protectedProjects: async () =>
+        new Set((await projects.infos()).filter((p) => p.protected).map((p) => p.id)),
       dispatch: () => captainDispatch,
     }),
     tell: (key, text) => notifier.captain(key, text),

@@ -2,7 +2,12 @@ import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
 import type { InboxService } from "./service.ts";
 
-type DecisionCommand = "decisions.list" | "decisions.detail" | "decisions.answer" | "decisions.recommend";
+type DecisionCommand =
+  | "decisions.list"
+  | "decisions.detail"
+  | "decisions.answer"
+  | "decisions.answerBatch"
+  | "decisions.recommend";
 
 /** The answer is the owner's click: an agent, the captain included, never answers for them here. */
 export function ownerOnly(ctx: CommandContext): void {
@@ -27,6 +32,10 @@ export function inboxHandlers(decisions: InboxService): Pick<CommandHandlers, De
     "decisions.answer": async (input, ctx) => {
       ownerOnly(ctx);
       return { decisions: await decisions.answer(input) };
+    },
+    "decisions.answerBatch": async (input, ctx) => {
+      ownerOnly(ctx);
+      return decisions.answerBatch(input);
     },
     "decisions.recommend": async (_input, ctx) => captainTool(ctx),
   };
