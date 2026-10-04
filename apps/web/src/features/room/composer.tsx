@@ -212,6 +212,8 @@ export function Composer({
     setText(next);
     setCaret(next.length);
     setDismissed(0);
+    // At once, so a key pressed before the next frame is not lost to the page behind.
+    field.current?.focus();
     requestAnimationFrame(() => {
       field.current?.focus();
       field.current?.setSelectionRange(next.length, next.length);

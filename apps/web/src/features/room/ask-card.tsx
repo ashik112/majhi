@@ -65,6 +65,7 @@ export function PendingAsk({ item }: { item: Ask }) {
   const busy = send.isPending || sending !== undefined;
   const answered = (q: Question) => (answers[q.id] ?? "").trim() !== "";
   const ready = item.questions.every(answered);
+  const unanswered = item.questions.filter((q) => !answered(q)).length;
 
   const pick = (q: Question, option: Question["options"][number]) => {
     setTyping((t) => ({ ...t, [q.id]: false }));
@@ -181,7 +182,7 @@ export function PendingAsk({ item }: { item: Ask }) {
       )}
       {!single && (
         // Sticks to the bottom of the dock, so Send stays in view however many options scroll past.
-        <div className="sticky bottom-0 z-10 -mx-3.5 -mb-3 rounded-b-lg px-3.5 pt-2 pb-3 pl-[34px] [background:linear-gradient(var(--c-blue-wash),var(--c-blue-wash)),var(--c-glass-strong)]">
+        <div className="sticky bottom-0 z-10 -mx-3.5 -mb-3 flex items-center gap-3 rounded-b-lg px-3.5 pt-2 pb-3 pl-[34px] [background:linear-gradient(var(--c-blue-wash),var(--c-blue-wash)),var(--c-glass-strong)]">
           <Button
             size="sm"
             variant="primary"
@@ -190,6 +191,11 @@ export function PendingAsk({ item }: { item: Ask }) {
           >
             {send.isPending ? "Sending..." : "Send"}
           </Button>
+          {!ready && (
+            <span className="min-w-0 truncate text-xs text-fg-muted">
+              {unanswered === 1 ? "1 question left to answer" : `${unanswered} questions left to answer`}
+            </span>
+          )}
         </div>
       )}
     </section>
