@@ -76,7 +76,13 @@ function setup(extra: { rules?: RulesRunner; preflight?: (org: string) => string
     now: () => clock.at,
     knownOrg: async (o) => o === PRIVATE || o === "acme" || o === "globex",
   });
-  const catalog = new Catalog([...BUILTIN, rulesPlaybook(), captainPlaybook()]);
+  const catalog = new Catalog([
+    ...BUILTIN,
+    rulesPlaybook(),
+    captainPlaybook(),
+    rulesPlaybook({ id: "t-readonly", readOnly: true }),
+    captainPlaybook({ id: "t-needs", needs: "Needs a sensor that is not built." }),
+  ]);
   const runs: { rules: number } = { rules: 0 };
   const rules: Record<string, RulesRunner> = {
     ...RULES_RUNNERS,
@@ -233,9 +239,9 @@ describe("a playbook that is off", () => {
 
   it("a playbook that needs a sensor cannot be turned on, and says why", async () => {
     const t = setup();
-    await expect(on(t, "eng-ci-health")).rejects.toThrow(/sensor/);
+    await expect(on(t, "t-needs")).rejects.toThrow(/sensor/);
     const list = await t.service.list("acme");
-    const ci = list.playbooks.find((p) => p.playbook.id === "eng-ci-health");
+    const ci = list.playbooks.find((p) => p.playbook.id === "t-needs");
     expect(ci).toMatchObject({ enabled: false });
     expect(ci?.held).toMatch(/sensor/);
   });
@@ -261,6 +267,24 @@ describe("Autonomous off", () => {
     expect(held["upkeep-cleanup"]).toBeUndefined();
     expect(held["upkeep-ship"]).toBe("Autonomous is off.");
     expect(held["upkeep-followups"]).toBe("Autonomous is off.");
+  });
+
+  it("a read-only playbook (a sensor) still runs while Autonomous is off and Upkeep is You, but not while the workspace rests", async () => {
+    const t = setup();
+    await on(t, "t-readonly");
+    t.state.mode = "off";
+    t.state.authority = { ...RUNS, upkeep: "ask" };
+    t.state.rest = "paused by the owner";
+    await t.service.sweep();
+    await t.service.settled();
+    expect(t.runs.rules).toBe(0);
+    t.state.rest = undefined;
+    t.advance(10 * MIN);
+    await t.service.sweep();
+    await t.service.settled();
+    expect(t.runs.rules).toBe(1);
+    const list = await t.service.list("acme");
+    expect(list.playbooks.find((p) => p.playbook.id === "t-readonly")?.held).toBeUndefined();
   });
 
   it("a workspace where Upkeep is You gets no captain or rules playbook", async () => {
