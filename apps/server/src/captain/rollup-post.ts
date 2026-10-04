@@ -63,12 +63,19 @@ function spendLine(s: AutonomySpend): string {
  * Posts the captain's roll-up into the root chat from the minute sweep. No model turn: the text is
  * made from the board (`rollupOf`), and `step` decides whether one is due.
  */
+const READ_EVERY_MS = 5 * 60_000;
+
 export class RollupPoster {
   private readonly states = new Map<string, RollupState>();
+  /** When the board was last read: every 5 minutes is enough, and reading every task each minute costs. */
+  private lastRead = 0;
 
   constructor(private readonly deps: RollupDeps) {}
 
   async sweep(): Promise<string | undefined> {
+    const at = this.deps.now().getTime();
+    if (at - this.lastRead < READ_EVERY_MS) return undefined;
+    this.lastRead = at;
     const boss = await this.deps.bossChat();
     if (boss === undefined) return undefined;
     const settings = (await this.deps.config.settings()).autonomy;
