@@ -34,6 +34,7 @@ import { UserError } from "../errors.ts";
 import { findingsHandlers } from "../findings/handlers.ts";
 import { isDirectory } from "../fs.ts";
 import { gitConnectHandlers } from "../gitConnect/handlers.ts";
+import { growthHandlers } from "../growth/handlers.ts";
 import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import { inboxHandlers } from "../inbox/handlers.ts";
@@ -51,6 +52,7 @@ import {
 } from "../orgs/gitAccount.ts";
 import { type AdoptDeps, useGitLogin } from "../orgs/gitLogin.ts";
 import { CheckCache, gitStatus } from "../orgs/gitStatus.ts";
+import { handoffHandlers } from "../handoff/handlers.ts";
 import { outcomesHandlers } from "../outcomes/handlers.ts";
 import { playbookHandlers } from "../playbooks/handlers.ts";
 import { attributionOf, orgIdentity } from "../runs/attribution.ts";
@@ -185,6 +187,19 @@ export function createHandlers({
       lanes: services.lanes,
       store: services.store,
       outcomes: services.outcomes,
+    }),
+    ...handoffHandlers({
+      findings: services.findings,
+      lanes: services.lanes,
+      store: services.store,
+      handoff: services.handoff,
+    }),
+    ...growthHandlers({
+      findings: services.findings,
+      lanes: services.lanes,
+      store: services.store,
+      economics: services.economics,
+      growth: services.growth,
     }),
     ...backupHandlers(services.backup),
     ...connectHandlers(services.connect),

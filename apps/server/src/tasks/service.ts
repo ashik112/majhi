@@ -3019,6 +3019,29 @@ export class TaskService {
   }
 
   /**
+   * The checked hand-off found a problem the lead can fix (SPEC 5.18): the failures go back to the
+   * lead as majhi's own note, once per head commit. The review card settles and the task runs again,
+   * as for an owner message; the text is data about the failure and grants no approval.
+   */
+  async handoffTell(input: { task: string; text: string }): Promise<void> {
+    const task = this.get(input.task);
+    if (task.status !== "running" && task.status !== "review") {
+      throw new UserError(`${task.id} is ${task.status}, so there is no lead working to tell.`, 409);
+    }
+    const lead = task.team[0];
+    if (lead === undefined) throw new UserError(`${task.id} has no agent.`, 409);
+    const first = input.text.split("\n").slice(0, 3).join(" ").slice(0, 300);
+    this.note(task.id, `The hand-off check found a problem and sent it to @${lead}: ${first}`);
+    await this.tellAgent({
+      task: task.id,
+      agent: lead,
+      text: input.text,
+      settled: "The hand-off check failed",
+      by: "majhi",
+    });
+  }
+
+  /**
    * The captain writes to an agent of a running task (SPEC 5.18, `tasks.tell`). The room shows a
    * note from the Captain, and the agent is woken like by an owner message, but the task is not
    * restarted or stopped, its brief is not edited, and the text is advice: it grants no approval.

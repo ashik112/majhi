@@ -94,7 +94,8 @@ describe("a night with the captain deciding in Private and asking about everythi
       task: own.id,
       text: `Shipped ${own.id} to main: Tidy the notes`,
       reason: "In Private the captain decides when work is merged",
-      evidence: "committed, merges cleanly into main, no card waits, no secret in the diff",
+      evidence:
+        "committed, merges cleanly into main, no card waits, no secret in the diff; no test command, not tested, review not run",
       undo: "yes",
     });
     // Within its budget: the night spent nothing on tokens here.

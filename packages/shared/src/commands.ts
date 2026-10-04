@@ -153,6 +153,14 @@ import {
   ProviderIdSchema,
 } from "./decisions.ts";
 import { E2ePatchSchema, E2eRunSchema, E2eStatusSchema } from "./e2e.ts";
+import {
+  EconomicsGetInputSchema,
+  EconomicsSchema,
+  FindingDeadlineInputSchema,
+  FindingDeadlineResultSchema,
+  FindingProposalInputSchema,
+  FindingProposalResultSchema,
+} from "./economics.ts";
 import { EmojiSchema } from "./emoji.ts";
 import {
   FindingDismissInputSchema,
@@ -177,6 +185,7 @@ import {
   SignOutInputSchema,
   SignOutSchema,
 } from "./git-signin.ts";
+import { HandoffCheckInputSchema, HandoffGetInputSchema, HandoffStateSchema } from "./handoff.ts";
 import {
   DirListingSchema,
   EDITOR_PATH_MAX,
@@ -1062,6 +1071,42 @@ export const commands = {
       "Set the monthly ceiling (a hard stop on new starts when reached) and a workspace's retainer and hourly rate. The owner's: the captain never changes its own ceiling",
     input: MoneySetInputSchema,
     output: MoneyStatusSchema,
+  },
+  // Checked hand-off (5.18) -------------------------------------------------------
+  "handoff.get": {
+    risk: "read",
+    summary:
+      "What the checked hand-off found for a task in review: the tests, build and lint of its project card, committed, merges cleanly, no secret, the brief's acceptance lines and the review notes, for its head commit now, with the last checks, the failed hand-offs in a row and whether the owner now decides",
+    input: HandoffGetInputSchema,
+    output: HandoffStateSchema,
+  },
+  "handoff.check": {
+    risk: "change",
+    summary:
+      "Check a task in review again: run its project card's tests, build and lint in its worktree and read the diff against the brief. The same head is not run twice unless force is set. Failures go back to the lead once per head; after three failed hand-offs in a row the owner decides",
+    input: HandoffCheckInputSchema,
+    output: HandoffStateSchema,
+  },
+  "economics.get": {
+    risk: "read",
+    summary:
+      "Per workspace, this week or this month against the one before: tasks shipped, agent hours, spend, the owner's minutes in reviews and decisions (estimated), and, from rates the owner entered, what the client pays and what is left. With no rate there is no margin. Flags: spend growing faster than shipped work, no shipped work in 14 days, spend near the retainer. A captain lane sees its own workspace only",
+    input: EconomicsGetInputSchema,
+    output: EconomicsSchema,
+  },
+  "findings.proposal": {
+    risk: "change",
+    summary:
+      "Draft a short proposal for an opportunity finding, in the workspace's voice with the business facts, as an email draft to the client's main contact. It goes through the outbound gate and waits for the owner. The owner's",
+    input: FindingProposalInputSchema,
+    output: FindingProposalResultSchema,
+  },
+  "findings.deadline": {
+    risk: "change",
+    summary:
+      "Add the deadline a grant or launch finding carries to the business deadlines, linked to the finding. The owner's confirmation of what a feed proposed",
+    input: FindingDeadlineInputSchema,
+    output: FindingDeadlineResultSchema,
   },
   // Business memory (5.19) -----------------------------------------------------
   "kb.list": {

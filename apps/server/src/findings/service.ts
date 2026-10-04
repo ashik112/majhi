@@ -17,6 +17,7 @@ import {
 import { warnFence } from "../decisions/uses/injection.ts";
 import { UserError } from "../errors.ts";
 import type { FindingsRepo } from "./repo.ts";
+import { opportunityKey, overlap, SAME_IDEA, titleWords } from "./similar.ts";
 import type { TriageResult } from "./triage.ts";
 
 /**
@@ -156,6 +157,26 @@ export class FindingsService {
     return found;
   }
 
+  /**
+   * The key a report is filed under. An opportunity that is worded differently from one already in the
+   * workspace, even a dismissed one, joins that one: it is the same idea and must not come back.
+   */
+  private keyFor(org: string, input: FindingReportInput): string {
+    if (input.source !== "opportunity") return input.dedupeKey ?? defaultDedupeKey(input);
+    if (input.dedupeKey !== undefined && this.repo.byKey(org, input.dedupeKey) !== undefined) {
+      return input.dedupeKey;
+    }
+    const words = titleWords(input.title);
+    let best: { key: string; score: number } | undefined;
+    for (const f of this.repo.list({ org, source: "opportunity", limit: 500 })) {
+      const score = overlap(words, titleWords(f.title));
+      if (score >= SAME_IDEA && (best === undefined || score > best.score)) {
+        best = { key: f.dedupeKey, score };
+      }
+    }
+    return best?.key ?? input.dedupeKey ?? opportunityKey(input.title);
+  }
+
   /** Creates a finding, or refreshes the one with the same dedupe key. */
   async report(input: FindingReportInput, actor: FindingActor): Promise<FindingReportResult> {
     const org = this.scopeOf(actor, input.org) ?? PRIVATE;
@@ -164,7 +185,7 @@ export class FindingsService {
       if (owner === undefined) throw new UserError(`Project ${input.project} does not exist.`, 404);
       if (owner !== org) throw new UserError(`Project ${input.project} belongs to another workspace.`, 409);
     }
-    const key = input.dedupeKey ?? defaultDedupeKey(input);
+    const key = this.keyFor(org, input);
     const at = this.at();
     const known = this.repo.byKey(org, key);
     if (known === undefined) {

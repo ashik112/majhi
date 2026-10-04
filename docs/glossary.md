@@ -22,10 +22,17 @@ One word for one thing in the app's text. `apps/web/src/lib/naming.test.ts` fail
 | A proposal to let the captain decide more | "Let it decide", "Move to Batch" (Trust decision) | upgrade, promote automatically |
 | A playbook set to weekly because its findings were dismissed | "now runs weekly" (Undo) | muted, disabled |
 | The one monthly spend limit | Monthly ceiling | monthly budget, hard cap |
-| Spend against what a client pays | Profit and loss; "Retainer less spend" | margin, ROI |
+| Spend against what a client pays | Profit and loss; "Retainer less spend"; per workspace, "Left" | margin, ROI |
+| What each workspace did and cost against the period before | Per workspace (week or month), Your time (est.) | client P&L, utilisation |
+| A grant, hackathon or launch found in a feed | Finding of source Grant or Launch; its deadline waits for "Add to deadlines" | lead, alert |
+| A list of ideas the captain makes from the owner's own work | Opportunities; "Draft a proposal" | leads, upsell queue |
 | The day's ordered list of what needs the owner | Agenda (place: Today) | to-do list |
 | The text made each morning | Brief (the full sheet is still the Daily summary) | digest, briefing |
 | The owner's review time per day | Review time | review budget, minutes cap |
 | Laya reading a new finding | Laya suggests dismissing ("Dismiss as suggested", "Bring back") | auto-triage, AI filter |
 | Text from outside that tries to instruct an agent | Flagged ("its text tries to instruct an AI agent") | injection alert, malicious |
 | Laya's check of its own decisions each week | Laya check (a playbook); "Got worse" on a decision | model drift, regression alert |
+| Majhi's check of finished work before "Ready to ship" | Hand-off check; "Checked: tests 42 passed (31 s), build ok" | QA, validation, CI, gate |
+| A test that failed and then passed on a retry | flaky, so not green | unstable, intermittent |
+| A failed check sent back to the lead | "sent it to @lead" (once per commit) | rejected, bounced |
+| Three failed hand-offs in a row | "Checks failed 3 times in a row: you decide" | escalated |

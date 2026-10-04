@@ -1350,8 +1350,44 @@ CREATE TABLE ops_phone_sent (
 `,
   },
   {
-    // Laya's triage of a new finding (likely real or noise, with the reason) is kept on the finding, as JSON.
+    // The checked hand-off (SPEC 5.18, captain v2 step 7). `handoff_deep` is the part of a check that
+    // costs something (tests, build, lint, the brief's lines, the review), kept by task and head
+    // commits so the same head is not run twice. `handoff_history` is one row per head that failed or
+    // passed with what was done about it, and `handoff_state` the failed hand-offs in a row.
     id: 140,
+    name: "handoff checks",
+    sql: `
+CREATE TABLE handoff_deep (
+  task TEXT NOT NULL,
+  head TEXT NOT NULL,
+  at TEXT NOT NULL,
+  ms INTEGER NOT NULL,
+  steps TEXT NOT NULL,
+  review TEXT NOT NULL,
+  PRIMARY KEY (task, head)
+);
+CREATE TABLE handoff_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task TEXT NOT NULL,
+  head TEXT NOT NULL,
+  at TEXT NOT NULL,
+  verdict TEXT NOT NULL,
+  failures TEXT NOT NULL,
+  action TEXT NOT NULL DEFAULT 'none',
+  result TEXT NOT NULL DEFAULT '',
+  UNIQUE (task, head)
+);
+CREATE INDEX handoff_history_task ON handoff_history (task, id);
+CREATE TABLE handoff_state (
+  task TEXT PRIMARY KEY,
+  strikes INTEGER NOT NULL DEFAULT 0,
+  escalated INTEGER NOT NULL DEFAULT 0
+);
+`,
+  },
+  {
+    // Laya's triage of a new finding (likely real or noise, with the reason) is kept on the finding, as JSON.
+    id: 141,
     name: "finding triage",
     sql: `ALTER TABLE findings ADD COLUMN triage TEXT;`,
   },

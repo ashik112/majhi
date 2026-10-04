@@ -50,3 +50,31 @@ export function useFindingDismiss() {
     onSuccess: done,
   });
 }
+
+/** Draft a proposal email from an opportunity finding. It waits in Decisions; nothing is sent. */
+export function useFindingProposal() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"findings.proposal">, ApiRequestError, { id: number }>({
+    mutationFn: ({ id }) => cmd("findings.proposal", { id }, { reason: "Owner asked for a proposal draft" }),
+    onSuccess: () =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.findings }),
+        client.invalidateQueries({ queryKey: queryKeys.decisions }),
+        client.invalidateQueries({ queryKey: queryKeys.playbooks }),
+      ]),
+  });
+}
+
+/** Add the deadline a grant or launch finding carries to the deadlines. */
+export function useFindingDeadline() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"findings.deadline">, ApiRequestError, { id: number }>({
+    mutationFn: ({ id }) => cmd("findings.deadline", { id }, { reason: "Owner confirmed a deadline" }),
+    onSuccess: () =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.findings }),
+        client.invalidateQueries({ queryKey: ["business"] }),
+        client.invalidateQueries({ queryKey: ["agenda"] }),
+      ]),
+  });
+}

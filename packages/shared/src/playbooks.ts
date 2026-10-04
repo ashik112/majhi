@@ -11,7 +11,7 @@ import { IdSchema } from "./ids.ts";
 // ---------------------------------------------------------------------------
 // Packs
 
-export const PLAYBOOK_PACKS = ["upkeep", "engineering", "ops"] as const;
+export const PLAYBOOK_PACKS = ["upkeep", "engineering", "ops", "business", "growth"] as const;
 export const PlaybookPackSchema = z.enum(PLAYBOOK_PACKS);
 export type PlaybookPack = z.infer<typeof PlaybookPackSchema>;
 
@@ -19,6 +19,8 @@ export const PLAYBOOK_PACK_LABEL: Record<PlaybookPack, string> = {
   upkeep: "Upkeep",
   engineering: "Engineering",
   ops: "Ops watch",
+  business: "Business",
+  growth: "Growth",
 };
 
 /** One line under a pack's name. */
@@ -26,6 +28,10 @@ export const PLAYBOOK_PACK_NOTE: Record<PlaybookPack, string> = {
   upkeep: "The captain's standing chores: shipping, cards, questions, memory, projects, triage, cleanup.",
   engineering: "Health checks that file findings. They need sensors that are not built yet.",
   ops: "Checks that a service is up. A failure files an incident and wakes the captain.",
+  business:
+    "What each client costs and earns, and a weekly update drafted for them. Nothing is sent without you.",
+  growth:
+    "Ideas and openings: opportunities from your own work, and hackathons and grants from feeds you list.",
 };
 
 // ---------------------------------------------------------------------------
@@ -146,7 +152,15 @@ export const PlaybookSchema = z.object({
   runner: PlaybookRunnerSchema,
   /** Names of settings the owner fills in, like the URLs of an uptime check. */
   settings: z
-    .array(z.object({ key: IdSchema, label: z.string().max(60), hint: z.string().max(160).default("") }))
+    .array(
+      z.object({
+        key: IdSchema,
+        label: z.string().max(60),
+        hint: z.string().max(160).default(""),
+        /** The playbook runs without it. Default: it must be filled in first. */
+        optional: z.boolean().optional(),
+      }),
+    )
     .max(4)
     .default([]),
 });
