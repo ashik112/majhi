@@ -1077,6 +1077,77 @@ CREATE TABLE deadlines (
 CREATE INDEX deadlines_due ON deadlines (status, due_at);
 `,
   },
+  {
+    // Playbooks, goals and the outbound gate (SPEC 5.18, captain v2 step 6): what the owner changed per
+    // playbook and workspace, the run history, goals, each channel's mode and the drafts that wait.
+    id: 133,
+    name: "playbooks goals outbound",
+    sql: `
+CREATE TABLE playbook_state (
+  org TEXT NOT NULL,
+  playbook TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT '{}',
+  failures INTEGER NOT NULL DEFAULT 0,
+  backoff_until TEXT,
+  last_run TEXT,
+  PRIMARY KEY (org, playbook)
+);
+CREATE TABLE playbook_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT NOT NULL,
+  playbook TEXT NOT NULL,
+  trigger TEXT NOT NULL,
+  status TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  ended_at TEXT,
+  note TEXT,
+  findings INTEGER NOT NULL DEFAULT 0,
+  tokens INTEGER NOT NULL DEFAULT 0,
+  chat TEXT
+);
+CREATE INDEX playbook_runs_pb ON playbook_runs (org, playbook, id);
+CREATE UNIQUE INDEX playbook_runs_one_open ON playbook_runs (org, playbook) WHERE status = 'running';
+CREATE TABLE goals (
+  id TEXT PRIMARY KEY,
+  org TEXT NOT NULL,
+  title TEXT NOT NULL,
+  metric TEXT,
+  target TEXT,
+  due TEXT,
+  status TEXT NOT NULL,
+  by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX goals_org ON goals (org, status);
+CREATE TABLE outbound_channels (
+  org TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'draft',
+  batch_at TEXT NOT NULL DEFAULT '09:00',
+  auto_by_owner INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (org, channel)
+);
+CREATE TABLE outbound_drafts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  target TEXT NOT NULL,
+  subject TEXT,
+  body TEXT NOT NULL,
+  voice TEXT,
+  playbook TEXT,
+  finding INTEGER,
+  status TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  result TEXT,
+  by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  decided_at TEXT
+);
+CREATE INDEX outbound_drafts_org ON outbound_drafts (org, status);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

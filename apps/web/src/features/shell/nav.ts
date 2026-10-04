@@ -5,6 +5,7 @@ export const PAGE_LABEL: Record<PageName, string> = {
   board: "Board",
   chats: "Chats",
   captain: "Captain",
+  playbooks: "Playbooks",
   limits: "Limits",
   decisions: "Decisions",
   business: "Business",
@@ -26,6 +27,7 @@ export const PAGE_KEYWORDS: Record<PageName, string> = {
   board: "tasks home columns",
   chats: "conversations talk",
   captain: "boss chief of staff autonomous autopilot away rules log summary upkeep workspaces authority",
+  playbooks: "standing work packs upkeep goals outbound drafts gate cadence schedule uptime incidents",
   limits: "budget budgets spend cost daily weekly floors safety money raise",
   business:
     "knowledge base facts voice style people crm contacts leads investors clients deadlines hackathon grant launch renewal",

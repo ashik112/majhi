@@ -135,6 +135,12 @@ export function CaptainHeader({
             Delegation
           </Button>
           <PageLink
+            page="playbooks"
+            className="px-1 text-sm text-fg-muted underline underline-offset-[3px] hover:text-fg"
+          >
+            Playbooks
+          </PageLink>
+          <PageLink
             page="limits"
             className="px-1 text-sm text-fg-muted underline underline-offset-[3px] hover:text-fg"
           >

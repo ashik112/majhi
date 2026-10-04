@@ -149,6 +149,7 @@ function MainNav() {
         />
         <CaptainRow />
         <AutonomyRow />
+        <PlaybooksRow active={isActive(PAGE_PATH.playbooks)} />
         <NavRow page="business" active={isActive(PAGE_PATH.business)} />
       </div>
       {NAV_GROUPS.map((group) => (
@@ -306,6 +307,24 @@ function AutonomyRow() {
       {toggle}
       {dialogs}
     </div>
+  );
+}
+
+/** Playbooks, a sub-row of Captain beside Autonomous: the captain's standing work, one page. */
+function PlaybooksRow({ active }: { active: boolean }) {
+  return (
+    <Link
+      to={PAGE_PATH.playbooks}
+      search={{}}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        ITEM,
+        "mb-1 ml-2.5 h-8 shrink-0 border-l border-line pl-2 text-body font-medium",
+        active ? ROW_SELECTED : "text-fg-muted",
+      )}
+    >
+      <span className="truncate pl-1.5">Playbooks</span>
+    </Link>
   );
 }
 

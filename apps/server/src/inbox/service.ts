@@ -3,6 +3,8 @@ import {
   type DecisionAnswerInput,
   type DecisionDetail,
   type DecisionRecommendInput,
+  type Draft,
+  type OutboundChannel,
   type OwnerDecision,
   PRIVATE,
   parseDecisionId,
@@ -32,6 +34,9 @@ export interface DecisionActions {
   askChanges(task: string, text: string, lead: string | undefined): Promise<unknown>;
   answerCap(org: string, chore: string, answer: "raise" | "leave"): Promise<unknown>;
   answerBudget(scope: string, answer: "raise" | "leave"): Promise<unknown>;
+  /** The outbound gate: approve (send) or discard one draft, or a whole batch. */
+  decideDraft(id: number, decision: "send" | "discard"): Promise<unknown>;
+  decideBatch(org: string, channel: OutboundChannel, decision: "send" | "discard"): Promise<unknown>;
 }
 
 export interface RecommendationStore {
@@ -49,6 +54,12 @@ export interface InboxDeps {
   budgets: () => Promise<DecisionSources["budgets"]>;
   signedOut: () => Promise<DecisionSources["signedOut"]>;
   recommendations: RecommendationStore;
+  /** What the outbound gate holds for the owner. */
+  outbound?: {
+    pending(): Draft[];
+    batchesDue(): Promise<{ org: string; channel: OutboundChannel; drafts: Draft[] }[]>;
+    get(id: number): Draft | undefined;
+  };
   actions: DecisionActions;
   /** Workspace names by id, for the sentences that name one. */
   orgNames?: () => Promise<Readonly<Record<string, string>>>;
@@ -85,6 +96,8 @@ export class InboxService {
       budgets,
       signedOut,
       recommendations: deps.recommendations.all(),
+      drafts: deps.outbound?.pending() ?? [],
+      batches: (await deps.outbound?.batchesDue()) ?? [],
       orgName: (org) => names[org],
     });
     const now = (deps.now?.() ?? new Date()).getTime();
@@ -109,7 +122,15 @@ export class InboxService {
     if (parsed.kind === "cap") await actions.answerCap(parsed.org, parsed.chore, raiseOrLeave(input.option));
     else if (parsed.kind === "budget") await actions.answerBudget(parsed.scope, raiseOrLeave(input.option));
     else if (parsed.kind === "signin") throw new UserError("Sign in from Accounts.", 400);
-    else {
+    else if (parsed.kind === "draft") {
+      await actions.decideDraft(parsed.id, input.option === "send" ? "send" : "discard");
+    } else if (parsed.kind === "batch") {
+      await actions.decideBatch(
+        parsed.org,
+        parsed.channel as OutboundChannel,
+        input.option === "send" ? "send" : "discard",
+      );
+    } else {
       const item = this.deps.items().find((i) => i.task === parsed.task && i.id === parsed.item);
       if (item === undefined) throw new UserError("That decision is gone: it was answered already.", 409);
       await this.answerCard(item, input);
@@ -173,6 +194,11 @@ export class InboxService {
     const { deps } = this;
     const out: DecisionDetail = { id };
     const parsed = parseDecisionId(id);
+    if (parsed?.kind === "draft") {
+      const draft = deps.outbound?.get(parsed.id);
+      if (draft !== undefined) out.draft = draft;
+      return out;
+    }
     if (parsed?.kind !== "room") return out;
     const item = deps.items().find((i) => i.task === parsed.task && i.id === parsed.item);
     const handback = deps.lastAgentMessage?.(parsed.task);
