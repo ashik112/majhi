@@ -15,6 +15,17 @@ export const RUN_CAPS = { actions: 20, tokens: 60_000, minutes: 10 } as const;
  */
 const RUN_ACTIONS: Partial<Record<CaptainChore, number>> = { memory: 100 };
 
+/**
+ * A chore whose run may take longer than `RUN_CAPS.minutes`: shipping waits on hand-off checks, and
+ * one slow test suite used to end the run before the next task was looked at.
+ */
+const RUN_MINUTES: Partial<Record<CaptainChore, number>> = { ship: 45 };
+
+/** The cap on minutes in one run of the chore. */
+export function runMinutes(chore: CaptainChore): number {
+  return RUN_MINUTES[chore] ?? RUN_CAPS.minutes;
+}
+
 /** The cap on actions in one run of the chore. */
 export function runActions(chore: CaptainChore): number {
   return RUN_ACTIONS[chore] ?? RUN_CAPS.actions;

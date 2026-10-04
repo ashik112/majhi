@@ -36,7 +36,7 @@ export type ChoreCaps = z.infer<typeof ChoreCapsSchema>;
  * handed to the owner, `runs` counts runs. Ship has none where the captain decides merges.
  */
 export const DAILY_CHORE_CAPS: Record<CaptainChore, { actions?: number; runs?: number }> = {
-  ship: { actions: 5 },
+  ship: { actions: 40 },
   cards: { actions: 40 },
   questions: { actions: 20 },
   memory: { runs: 4 },

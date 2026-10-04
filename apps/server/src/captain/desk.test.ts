@@ -1,3 +1,4 @@
+import { DAILY_CHORE_CAPS } from "@majhi/shared";
 import type { AccountStatus, AutonomyEvent, AutonomyStatus, Task } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
@@ -237,7 +238,7 @@ describe("a day at the captain's desk", () => {
     const repo = d.captain.repo;
     const ws = await d.captain.status();
     const day = ws.day;
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < (DAILY_CHORE_CAPS.ship.actions ?? 0); i++) {
       repo.addAction({
         key: `ship:seed:${i}`,
         org: "globex",
@@ -256,7 +257,7 @@ describe("a day at the captain's desk", () => {
       expect.objectContaining({
         org: "globex",
         chore: "ship",
-        text: "Globex: the captain shipped its 5 tasks for today. Raise the limit for today?",
+        text: `Globex: the captain shipped its ${DAILY_CHORE_CAPS.ship.actions} tasks for today. Raise the limit for today?`,
       }),
     ]);
     await d.captain.answerCap("globex", "ship", "raise");

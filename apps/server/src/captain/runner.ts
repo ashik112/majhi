@@ -13,7 +13,7 @@ import { errorMessage } from "../errors.ts";
 import { choresNow } from "./levels.ts";
 import { NEAR_SAME_MS, type PastAnswer } from "./question-loop.ts";
 import type { CaptainRepo } from "./repo.ts";
-import { capAskText, dailyCaps, FAILURES_OFF, RAISE_FACTOR, RUN_CAPS, runActions } from "./rules.ts";
+import { capAskText, dailyCaps, FAILURES_OFF, RAISE_FACTOR, RUN_CAPS, runActions, runMinutes } from "./rules.ts";
 
 /**
  * The guards every upkeep chore runs under (SPEC 5.18, "No runaway, no loops"). Structural, so a chore
@@ -165,8 +165,9 @@ export class ChoreRun {
       throw new RunEnd("capped", `reached its cap of ${actions} actions in one run`);
     }
     const minutes = (this.deps.now().getTime() - this.started) / 60_000;
-    if (minutes >= RUN_CAPS.minutes) {
-      throw new RunEnd("capped", `reached its cap of ${RUN_CAPS.minutes} minutes in one run`);
+    const cap = runMinutes(this.chore);
+    if (minutes >= cap) {
+      throw new RunEnd("capped", `reached its cap of ${cap} minutes in one run`);
     }
     const tokens = this.deps.laneTokens(this.org, this.startedAt);
     if (tokens >= RUN_CAPS.tokens) {

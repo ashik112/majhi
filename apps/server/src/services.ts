@@ -2099,8 +2099,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   // A new majhi version brings new instructions and tools for the captain; a resumed session keeps the
   // old ones. So after an update each captain thread starts fresh (with its handoff note) once.
-  background.run(() =>
-    freshCaptainAfterUpdate({
+  background.run(async () => {
+    const refreshed = await freshCaptainAfterUpdate({
       commit: env.commit,
       file: join(env.majhiHome, "captain-version"),
       chats: () => autonomy.laneChats(),
@@ -2108,8 +2108,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         const agent = store.tasks.get(chat)?.team[0];
         if (agent !== undefined) await tasks.fresh(chat, agent);
       },
-    }),
-  );
+    });
+    // The same update may unblock waiting work: look at it now, not at the next hourly check.
+    if (refreshed.length > 0) {
+      const sections = await config.sections();
+      captain.afterUpdate([PRIVATE, ...Object.keys(sections.orgs)]);
+    }
+  });
   return {
     config,
     runtime,

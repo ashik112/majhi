@@ -352,6 +352,16 @@ export class CaptainService {
   }
 
   /** An org's git accounts or MR tokens changed: cards left for a missing sign-in are looked at again. */
+  /**
+   * A new majhi version may unblock what waited: a fixed check, a new tool, a higher cap. Every
+   * workspace's cards, ship and tidy chores run once right away instead of at the next hourly check.
+   */
+  afterUpdate(orgs: readonly string[]): void {
+    for (const org of new Set(orgs)) {
+      for (const chore of ["cards", "ship", "tidy"] as const) this.trigger(org, chore, "majhi was updated", "majhi");
+    }
+  }
+
   gitChanged(org: string): void {
     this.trigger(org, "cards", "A git account changed", "majhi");
     this.trigger(org, "ship", "A git account changed", "majhi");
