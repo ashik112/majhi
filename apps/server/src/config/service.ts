@@ -50,9 +50,26 @@ export class ConfigService {
   }
 
   async sections(): Promise<ConfigSections> {
-    const sections = await readSections(this.file);
+    const sections = await this.cached("sections", () => readSections(this.file));
     this.boss = sections.boss;
     return sections;
+  }
+
+  /**
+   * The last parse of majhi.yaml per reader, kept while the file's signature holds. Every page and tick
+   * reads the settings many times; parsing YAML each time kept the server busy. A hand edit or a write
+   * changes the signature, so the next read parses again. Callers get their own copy.
+   */
+  private parsed = new Map<string, { signature: string; value: unknown }>();
+
+  private async cached<T>(key: string, read: () => Promise<T>): Promise<T> {
+    const signature = await fileSignature(this.file).catch(() => undefined);
+    const hit = this.parsed.get(key);
+    if (signature !== undefined && hit?.signature === signature) return structuredClone(hit.value as T);
+    const value = await read();
+    if (signature === undefined) this.parsed.delete(key);
+    else this.parsed.set(key, { signature, value: structuredClone(value) });
+    return value;
   }
 
   /** The captain as of the last read of majhi.yaml, for code that cannot wait for a read. */
@@ -116,7 +133,7 @@ export class ConfigService {
 
   /** Context budget, limits, resume and policy from majhi.yaml, with defaults applied. */
   settings(): Promise<Settings> {
-    return readSettings(this.file);
+    return this.cached("settings", () => readSettings(this.file));
   }
 
   /** Writes only the fields in the patch. */
