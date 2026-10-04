@@ -135,6 +135,8 @@ export interface TaskDeps {
   onOwnerResumedLimit?: (task: string) => void;
   /** The owner resumed a paused task by hand: autonomous mode's pause no longer holds it (PRV-74). */
   onOwnerResumed?: (task: string) => void;
+  /** The owner answered a permission prompt: what they picked, so a decision about it can be labeled (SPEC 5.12). */
+  onOwnerPermission?: (task: string, item: RoomItem) => void;
   /** Files no agent may read, like the secrets key. majhi's home and `~/.ssh` are always protected. */
   protectedPaths?: string[];
   store: Store;
@@ -3078,7 +3080,9 @@ export class TaskService {
   /** The owner's answer to a permission prompt, or the captain's (`captain`: its agent id). */
   answerPermission(id: string, item: string, option: string, captain?: string): RoomItem {
     this.get(id);
-    return this.deps.runs.answerPermission(id, item, option, captain !== undefined);
+    const answered = this.deps.runs.answerPermission(id, item, option, captain !== undefined);
+    if (captain === undefined) this.deps.onOwnerPermission?.(id, answered);
+    return answered;
   }
 
   items(id: string, limit: number, beforeSeq: number | undefined, afterSeq?: number) {

@@ -31,7 +31,7 @@ import type { ConfigService } from "../config/service.ts";
 import { UserError } from "../errors.ts";
 import { difficultyQuestion, isDifficulty } from "../runs/difficulty.ts";
 import type { SecretStore } from "../secrets/store.ts";
-import type { Decisions, RateTaskRequest, TaskRating } from "./api.ts";
+import type { DecideUse, Decisions, RateTaskRequest, TaskRating } from "./api.ts";
 import { type CachedDecision, cacheKey, DecisionCache } from "./cache.ts";
 import { baseGate, fitSlot, liveGate, previewGate } from "./calibration.ts";
 import type { CalibrationStore } from "./calibrationStore.ts";
@@ -78,11 +78,7 @@ export interface DecisionServiceDeps {
   now?: () => Date;
 }
 
-interface Use {
-  use: DecisionRecord["use"];
-  task?: string;
-  agent?: string;
-}
+type Use = DecideUse;
 
 /** The decision provider (SPEC 5.12): the chain, the log, model picking and the `majhi-decide` tool. */
 export class DecisionService implements Decisions {
@@ -143,7 +139,15 @@ export class DecisionService implements Decisions {
     const started = performance.now();
     const settings = await this.settings();
     // The rules always close the chain: their answer never counts, so the caller applies its own safe default at once.
-    const order = settings.order.includes("rules") ? settings.order : [...settings.order, "rules" as const];
+    const wanted = use.order ?? settings.order;
+    const order = wanted.includes("rules") ? [...wanted] : [...wanted, "rules" as const];
+    const first = order[0];
+    if (use.perDay !== undefined && first !== undefined && first !== "rules") {
+      const dayStart = new Date(this.now());
+      dayStart.setUTCHours(0, 0, 0, 0);
+      if (this.deps.log.countSince(use.use, first, dayStart.toISOString()) >= use.perDay)
+        throw new UserError(`The daily budget of ${use.perDay} ${first} answers for ${use.use} is spent.`, 409);
+    }
     const model = this.deps.laya.currentVersion();
     const key = cacheKey(request, {
       model: `${order.join(",")}|${model}`,

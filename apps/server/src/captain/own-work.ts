@@ -14,7 +14,18 @@ export type OwnWorkVerdict =
   /** Routine and inside the task's scope: the captain may allow it once. */
   | { decision: "approve"; why: string }
   /** Left for the owner. `danger` is true when the request is something the rules never allow. */
-  | { decision: "owner"; why: string; danger: boolean };
+  | {
+      decision: "owner";
+      why: string;
+      danger: boolean;
+      /**
+       * True only for the unknown middle: a plain command the table has no row for, with every argument
+       * inside the worktree, no secret name, no network word and no chaining. The one case a second
+       * opinion (Laya) may be asked about. It can say "owner" and it can say "routine"; it can never
+       * turn any other refusal into a yes.
+       */
+      middle?: true;
+    };
 
 export interface OwnWorkScope {
   /** The task's worktrees: the only places a request may read or write. */
@@ -24,7 +35,12 @@ export interface OwnWorkScope {
 }
 
 const approve = (why: string): OwnWorkVerdict => ({ decision: "approve", why });
-const owner = (why: string, danger = false): OwnWorkVerdict => ({ decision: "owner", why, danger });
+const owner = (why: string, danger = false, middle = false): OwnWorkVerdict => ({
+  decision: "owner",
+  why,
+  danger,
+  ...(middle && !danger ? { middle: true as const } : {}),
+});
 
 // ---------------------------------------------------------------------------
 // Words in the request that ask to be approved
@@ -192,9 +208,87 @@ function flagProblem(token: string): string | undefined {
   return undefined;
 }
 
-type Check = { ok: true; what: string } | { ok: false; why: string; danger: boolean };
+type Check = { ok: true; what: string } | { ok: false; why: string; danger: boolean; middle: boolean };
 const ok = (what: string): Check => ({ ok: true, what });
-const no = (why: string, danger = false): Check => ({ ok: false, why, danger });
+const no = (why: string, danger = false, middle = false): Check => ({ ok: false, why, danger, middle });
+
+/**
+ * Programs that fetch or install from the network, run what they fetch, run any code they are given
+ * (interpreters, shells) or change the machine. Never the unknown middle, whatever their arguments.
+ */
+const FETCHERS = new Set([
+  "npx",
+  "bunx",
+  "pnpx",
+  "pipx",
+  "pip",
+  "pip3",
+  "uv",
+  "uvx",
+  "brew",
+  "apt",
+  "apt-get",
+  "gem",
+  "bundle",
+  "composer",
+  "poetry",
+  "conda",
+  "nvm",
+  "fnm",
+  "volta",
+  "deno",
+  "node",
+  "python",
+  "python3",
+  "ruby",
+  "perl",
+  "php",
+  "lua",
+  "java",
+  "bash",
+  "sh",
+  "zsh",
+  "eval",
+  "xargs",
+  "open",
+  "osascript",
+  "launchctl",
+  "crontab",
+  "git-credential",
+  "gh",
+  "glab",
+  "hub",
+  "fetch",
+  "download",
+  "upload",
+  "sendmail",
+  "mail",
+  "kill",
+  "pkill",
+  "killall",
+  "systemctl",
+  "service",
+  "defaults",
+  "networksetup",
+  "scutil",
+  "dscl",
+  "tee",
+  "ln",
+  "tar",
+  "zip",
+  "unzip",
+  "gzip",
+  "install",
+]);
+
+/** Words that make a command the owner's, in any position: what leaves the machine, ships or wipes. */
+const RISKY_WORD =
+  /(deploy|publish|release|push|upload|ship|migrat|seed|prod|wipe|purge|clean|reset|drop|delete|remove|destroy|kill|login|logout|auth|token|secret|credential|password|send|mail|post|sync|backup|restore|export|import|install|remote|ssh|sudo)/i;
+
+/** A command name the middle may name: a plain lowercase word, not a tool title like `WebFetch`. */
+function plainProgram(exe: string): boolean {
+  return /^[a-z][a-z0-9._-]{0,40}$/.test(exe) && !FETCHERS.has(exe);
+}
 
 /** Every path-like argument must be inside the worktree. */
 function checkArgs(args: readonly string[], scope: OwnWorkScope): Check | undefined {
@@ -245,7 +339,8 @@ function packageManager(exe: string, args: readonly string[], scope: OwnWorkScop
     if (named === undefined) return no(`${exe} ${verb} needs a script name`);
     script = named;
   }
-  if (!SCRIPT_NAME.test(script)) return no(`${script} is not a test, build or lint script`);
+  if (!SCRIPT_NAME.test(script))
+    return no(`${script} is not a test, build or lint script`, false, /^[a-z][\w:.-]{0,40}$/i.test(script));
   const tail = rest[0] === "--" ? rest.slice(1) : rest;
   const bad = checkArgs(tail, scope);
   if (bad !== undefined) return bad;
@@ -400,7 +495,11 @@ function segmentCheck(segment: string, scope: OwnWorkScope): Check {
   if (tool !== undefined) {
     const first = tokens.find((t) => !t.startsWith("-"));
     if (tool !== true && (first === undefined || !tool.test(first))) {
-      return no(`${exe} ${first ?? ""}`.trim() + " is not a test, build or lint command");
+      return no(
+        `${exe} ${first ?? ""}`.trim() + " is not a test, build or lint command",
+        false,
+        first !== undefined && /^[a-z][a-z0-9:_-]{0,30}$/.test(first),
+      );
     }
     if (
       exe === "go" &&
@@ -414,7 +513,7 @@ function segmentCheck(segment: string, scope: OwnWorkScope): Check {
     const bad = checkArgs(tokens, scope);
     return bad ?? ok(`runs the project's ${exe}`);
   }
-  return no(`${exe} is not a command the rules know as routine`);
+  return no(`${exe} is not a command the rules know as routine`, false, plainProgram(exe));
 }
 
 /** The reason and verdict for a shell command line. */
@@ -429,12 +528,39 @@ export function commandVerdict(command: string, scope: OwnWorkScope): OwnWorkVer
   }
   const parts = text.split("&&");
   const whats: string[] = [];
+  let doubt: Extract<Check, { ok: false }> | undefined;
+  let middle = true;
   for (const part of parts) {
     const checked = segmentCheck(part, scope);
-    if (!checked.ok) return owner(`${checked.why}, so only you decide it`, checked.danger);
-    whats.push(checked.what);
+    if (checked.ok) {
+      whats.push(checked.what);
+      continue;
+    }
+    // A hard refusal anywhere in the chain is the answer; a doubt only counts when every refusal is one.
+    if (checked.danger || !checked.middle)
+      return owner(`${checked.why}, so only you decide it`, checked.danger);
+    doubt ??= checked;
+    middle = middle && middleProblem(part, scope) === undefined;
   }
+  if (doubt !== undefined) return owner(`${doubt.why}, so only you decide it`, false, middle);
   return approve(`it ${whats.filter((w, i) => whats.indexOf(w) === i).join(" and ")}`);
+}
+
+/**
+ * Why a command the table does not know still cannot go to a second opinion: it is too long, names a
+ * program by path, or an argument is not a plain name inside the worktree. The second opinion sees
+ * only what passes this.
+ */
+export function middleProblem(segment: string, scope: OwnWorkScope): string | undefined {
+  if (segment.length > 300) return "it is too long to read at a glance";
+  if (RISKY_WORD.test(segment)) return "it names something that publishes, deploys, deletes or resets";
+  const tokens = tokenize(segment.trim());
+  if (tokens === undefined) return "a quote is not closed";
+  while (tokens[0] !== undefined && SAFE_ENV.test(tokens[0])) tokens.shift();
+  const exe = tokens.shift();
+  if (exe === undefined || !plainProgram(exe)) return "it does not name a plain program";
+  const bad = checkArgs(tokens, scope) ?? everyName(tokens, scope);
+  return bad !== undefined && !bad.ok ? bad.why : undefined;
 }
 
 // ---------------------------------------------------------------------------

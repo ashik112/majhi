@@ -18,7 +18,7 @@ export const LabelSourceSchema = z.enum(["outcome", "owner", "teacher"]);
 export type LabelSource = z.infer<typeof LabelSourceSchema>;
 
 /** What a decision is linked to until its outcome is known. */
-export const LinkKindSchema = z.enum(["task", "wake", "memory", "tracker"]);
+export const LinkKindSchema = z.enum(["task", "wake", "memory", "tracker", "finding", "own-work", "turn"]);
 export type LinkKind = z.infer<typeof LinkKindSchema>;
 
 /** The right answer to one question of one decision, and how we know. */

@@ -91,6 +91,31 @@ export function canMoveFinding(from: FindingStatus, to: FindingStatus): boolean 
 /** Findings that still ask for someone's attention. */
 export const FINDING_LIVE: readonly FindingStatus[] = ["open", "proposed", "task", "decision"];
 
+/**
+ * Laya's read of a new finding (SPEC 5.12, "Finding triage"): is it likely real and worth doing, or noise
+ * (a hit in a test fixture or sample config, an advisory in a dev-only path, an item irrelevant to the
+ * project). A suggestion for the captain and the owner; it dismisses a finding by itself only when its
+ * slot is calibrated and live, the finding is info or low, and the answer is sure.
+ */
+export const FindingTriageSchema = z.object({
+  action: z.enum(["keep", "dismiss"]),
+  /** Why, in a line: "a hit in a test or sample file". Becomes the dismissal reason when it is applied. */
+  reason: z.string().max(300),
+  confidence: z.number().min(0).max(1),
+  /** `laya`: the model said it. `rules`: a plain pattern did (a suggestion only, it never dismisses). */
+  by: z.enum(["laya", "rules"]),
+  /** The slot is not live yet: the suggestion is shown and logged, and acts on nothing. */
+  shadow: z.boolean(),
+  /** The triage dismissed the finding (live, calibrated, info or low). The owner can reopen it. */
+  applied: z.boolean(),
+  /** Why the text was not shown to Laya, or the flag raised on it: the finding's text tries to instruct an agent. */
+  injects: z.string().max(300).optional(),
+  /** Laya's decision in the log, to say it was wrong. */
+  decision: z.string().optional(),
+  at: z.string(),
+});
+export type FindingTriage = z.infer<typeof FindingTriageSchema>;
+
 export const FindingSchema = z.object({
   id: z.number().int().positive(),
   /** The workspace (an org id, or `private`). */
@@ -117,6 +142,8 @@ export const FindingSchema = z.object({
   /** The decision it was handed over as. */
   decision: z.string().optional(),
   dismissedReason: z.string().optional(),
+  /** Laya's triage of it, when it ran. */
+  triage: FindingTriageSchema.optional(),
   /** Who reported it first: `owner`, `captain` or an agent id. */
   by: z.string(),
   /** How many times it was reported. */

@@ -32,6 +32,7 @@ import type { Lanes } from "./lanes.ts";
 import { askedSentence, SHIP_ROW } from "./levels.ts";
 import { laneScopes } from "./memory-scopes.ts";
 import { scopeOfTask } from "./own-work.ts";
+import { ownWorkSecondOpinion } from "./own-work-second.ts";
 import type { ApprovalCard, CaptainPorts, NewRepo, QuestionCard, ShipCheck, SignInStall } from "./ports.ts";
 import type { CaptainRepo } from "./repo.ts";
 
@@ -362,6 +363,13 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       if (!deps.autonomy.isAutonomous(task)) return undefined;
       return scopeOfTask(found, await deps.protectedProjects());
     },
+
+    ownSecondOpinion: (card, scope) =>
+      ownWorkSecondOpinion(
+        deps.decisions,
+        { text: card.text, task: card.task, item: card.item, agent: card.agent },
+        scope,
+      ),
 
     async answer(_org, card, option, reason) {
       // Recorded as the captain's answer, never the owner's (5.18).
