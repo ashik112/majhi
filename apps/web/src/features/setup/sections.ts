@@ -14,7 +14,6 @@ export const SECTION_ABOUT: Record<SetupSection, string> = {
   notifications:
     "A desktop banner and a browser notification when an agent needs you: approvals, questions, stops.",
   editor: "Which editor opens files, worktrees and projects: VS Code or Cursor.",
-  e2e: "When the full e2e suite runs on this computer: off, after each merge into main, or daily.",
   containers: "Previews and test services majhi runs for agents, the images they may use, and their limits.",
   appearance: "Theme and accent. Saved in this browser only.",
   backups: "Encrypted backups of your data: daily, before updates, tested weekly, with restore.",
