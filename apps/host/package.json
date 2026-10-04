@@ -7,6 +7,7 @@
     "dev": "tsx src/main.ts",
     "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/majhi-host.mjs --banner:js=\"import { createRequire as __majhiCreateRequire } from 'node:module'; const require = __majhiCreateRequire(import.meta.url);\"",
     "ssh:dry-run": "tsx src/sshDryRun.ts",
+    "test": "vitest run --root ../.. apps/host/",
     "typecheck": "tsc -p tsconfig.json",
     "embed": "node scripts/embed-layad.mjs"
   },

@@ -139,5 +139,6 @@ describe("a night with the captain deciding in Private and asking about everythi
     expect(pending).toContainEqual(
       expect.objectContaining({ task: client.id, text: `${client.id} is ready to ship` }),
     );
-  });
+    // A whole night with real git: about a thousand git processes, 8 s alone and over 20 s on a busy machine.
+  }, 60_000);
 });
