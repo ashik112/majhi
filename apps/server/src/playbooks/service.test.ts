@@ -253,7 +253,7 @@ describe("Autonomous off", () => {
     await on(t, "t-captain");
     t.state.mode = "off";
     await t.service.sweep();
-    expect((await t.service.runNow("acme", "t-captain")).text).toBe("Autonomous is off.");
+    expect((await t.service.runNow("acme", "t-captain")).text).toBe("Auto-pilot is off.");
     await t.service.settled();
     expect(t.runs.rules).toBe(0);
     expect(t.tells).toEqual([]);
@@ -264,11 +264,11 @@ describe("Autonomous off", () => {
     );
     expect(held["upkeep-memory"]).toBeUndefined();
     expect(held["upkeep-cleanup"]).toBeUndefined();
-    expect(held["upkeep-ship"]).toBe("Autonomous is off.");
-    expect(held["upkeep-followups"]).toBe("Autonomous is off.");
+    expect(held["upkeep-ship"]).toBe("Auto-pilot is off.");
+    expect(held["upkeep-followups"]).toBe("Auto-pilot is off.");
   });
 
-  it("a read-only playbook (a sensor) still runs while Autonomous is off and Upkeep is You, but not while the workspace rests", async () => {
+  it("a read-only playbook (a sensor) still runs while Auto-pilot is off and Upkeep is You, but not while the workspace rests", async () => {
     const t = setup();
     await on(t, "t-readonly");
     t.state.mode = "off";

@@ -530,7 +530,7 @@ export class AutonomyDriver {
 
 /** Why a task paused, in words for the log. The owner is named only when the owner did it. */
 function pauseWhy(t: Pick<Task, "pausedReason" | "pausedBy">): string {
-  if (t.pausedBy === "autonomy-off") return "because Autonomous was turned off";
+  if (t.pausedBy === "autonomy-off") return "because Auto-pilot was turned off";
   if (t.pausedBy === "captain") return "by Captain";
   switch (t.pausedReason ?? "owner") {
     case "owner":

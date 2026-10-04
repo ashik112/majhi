@@ -264,7 +264,7 @@ describe("the captain's own tools", () => {
     expect(answer.text).toBe(`There is no card ask:1 in ${id}.`);
     // Off, the captain acts only when asked: every tool refuses with the same line.
     expect((await t.h.cmd("autonomy.stop", { how: "now" })).body.mode).toBe("off");
-    const off = { isError: true, text: "Autonomous is off, so the captain acts only when you ask." };
+    const off = { isError: true, text: "Auto-pilot is off, so the captain acts only when you ask." };
     expect(await t.call("majhi_autonomy_plan", plan)).toEqual(off);
     expect(await t.call("majhi_autonomy_note", { text: "Off, waiting" })).toEqual(off);
     expect(await t.call("majhi_autonomy_answer", { task: id, item: "ask:1", option: "a" })).toEqual(off);

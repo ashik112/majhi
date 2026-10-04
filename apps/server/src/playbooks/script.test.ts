@@ -250,7 +250,7 @@ describe("a playbook through a captain turn", () => {
       started: boolean;
       text: string;
     };
-    expect(off).toMatchObject({ started: false, text: "Autonomous is off." });
+    expect(off).toMatchObject({ started: false, text: "Auto-pilot is off." });
     expect(await runs(world)).toEqual([]);
   });
 });

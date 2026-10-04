@@ -141,7 +141,7 @@ describe("a day at the captain's desk", () => {
     must(await d.h.cmd("autonomy.start", { resumeStopped: false }));
     expect([a1, a2, g1].map((id) => d.task(id)?.status)).toEqual(["paused", "paused", "paused"]);
     const digestLine = (await d.status()).now.find((n) => n.task === a1)?.pause;
-    expect(digestLine).toEqual({ label: "paused when Autonomous was turned off", mayResume: true });
+    expect(digestLine).toEqual({ label: "paused when Auto-pilot was turned off", mayResume: true });
     expect((await acme("majhi_tasks_start", { id: a1 })).isError).toBe(false);
     expect((await acme("majhi_tasks_start", { id: a2 })).isError).toBe(false);
     expect((await globex("majhi_tasks_start", { id: g1 })).isError).toBe(false);

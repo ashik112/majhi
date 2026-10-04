@@ -70,9 +70,9 @@ export function askText(name: string, cap: Budget, raiseTo: Budget, waiting: num
   return `${name} used its ${budgetWord(cap)} for today. ${tasks}. Raise it to ${budgetWord(raiseTo)} for today?`;
 }
 
-/** What the question is about: "Autonomous work" for the autonomous budget, else the workspace's name. */
+/** What the question is about: "Auto-pilot work" for the autonomous budget, else the workspace's name. */
 export function askName(scope: string, names: Readonly<Record<string, string>>): string {
-  if (scope === DAY_SCOPE) return "Autonomous work";
+  if (scope === DAY_SCOPE) return "Auto-pilot work";
   return names[scope] ?? (scope === PRIVATE ? "Private" : scope);
 }
 
