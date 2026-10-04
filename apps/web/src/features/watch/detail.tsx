@@ -1,6 +1,6 @@
 import { OPS_IMPACT_LABEL, type OpsIncident, type OpsServiceView } from "@majhi/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Pencil, RefreshCw, Trash2, Wrench } from "lucide-react";
+import { ArrowLeft, MessageSquare, Pencil, Plug, RefreshCw, Trash2, Wrench } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,10 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Lamp } from "@/components/ui/lamp";
 import { DetailPane, DetailSection } from "@/components/ui/list-detail";
 import { useToast } from "@/components/ui/toast";
+import { useBoss } from "@/features/boss/boss-context";
+import { wsTab } from "@/features/captain/panel-model";
+import { useAutonomyStatus } from "@/lib/autonomy-queries";
+import { useCaptainStatus } from "@/lib/captain-queries";
 import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 import { useFixCheck } from "@/lib/ops-queries";
@@ -83,7 +87,20 @@ export function IncidentDetail({
   const fix = useFixCheck();
   const toast = useToast();
   const navigate = useNavigate();
+  const boss = useBoss();
+  const mode = useAutonomyStatus().data?.mode;
+  const lane = useCaptainStatus().data?.orgs.find((o) => o.org === incident.org)?.lane;
   const open = incident.status === "open";
+  const looked = incident.timeline.filter((t) => t.kind === "action");
+  const isConnection = incident.fix?.check.startsWith("connection:") === true;
+  const thing = incident.title.replace(/^majhi: /, "").replace(/ is failing$/, "");
+  const asked = `Incident: ${incident.title}. ${incident.timeline[0]?.text ?? ""} What is wrong, and what should I do?`;
+  const noLook =
+    mode !== "on"
+      ? "Auto-pilot is off"
+      : lane === undefined
+        ? `it has no thread in ${workspace} yet`
+        : undefined;
   const runFix = () => {
     if (incident.fix === undefined) return;
     fix.mutate(incident.fix.check, {
@@ -118,7 +135,7 @@ export function IncidentDetail({
                   {incident.fix.label}
                 </Button>
               )}
-              {open && incident.ackedAt === undefined && incident.severity === "high" && (
+              {open && incident.ackedAt === undefined && (
                 <Button
                   variant="primary"
                   disabled={ack.isPending}
@@ -143,22 +160,49 @@ export function IncidentDetail({
         </div>
       }
     >
+      {open && incident.service === undefined && incident.watch === undefined && (
+        <p className="m-0 text-base text-fg-soft text-pretty">
+          {isConnection
+            ? `Agents in ${workspace} can't use ${thing} until this works.`
+            : `${thing} is not healthy. majhi's own work in ${workspace} may be slow or stop until it is fixed.`}
+        </p>
+      )}
+      {open && incident.fix !== undefined && isConnection && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Link to={PAGE_PATH.connections} search={{}} className="no-underline">
+            <Button variant="primary">
+              <Plug aria-hidden="true" />
+              Open the connection
+            </Button>
+          </Link>
+        </div>
+      )}
       <DetailSection title="Timeline" note="Times are yours">
         <Timeline incident={incident} now={now} />
       </DetailSection>
       {incident.finding !== undefined && (
         <DetailSection title="The captain">
-          <p className="m-0 text-base text-fg-soft text-pretty">
-            The captain was woken with the evidence. It may read logs, propose a fix task and draft a status
-            update; what it does is on the timeline.{" "}
-            <Link
-              to={PAGE_PATH.captain}
-              search={{}}
-              className="text-accent-text underline-offset-2 hover:underline"
-            >
-              Open the Captain
-            </Link>
-          </p>
+          {looked.length > 0 ? (
+            <ul className="m-0 flex list-none flex-col gap-1 p-0 text-base text-fg-soft">
+              {looked.map((t) => (
+                <li key={t.text} className="text-pretty">
+                  {t.text}
+                </li>
+              ))}
+            </ul>
+          ) : noLook === undefined ? (
+            <p className="m-0 text-base text-fg-muted">Looking…</p>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="m-0 text-base text-fg-soft text-pretty">The captain did not look: {noLook}.</p>
+              {open && (
+                <Button onClick={() => boss.show(wsTab(incident.org), asked)}>
+                  <MessageSquare aria-hidden="true" />
+                  Ask the captain
+                </Button>
+              )}
+            </div>
+          )}
         </DetailSection>
       )}
     </DetailPane>

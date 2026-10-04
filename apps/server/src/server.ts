@@ -159,6 +159,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
         status: c.status,
         detail: c.detail,
         fix: c.fix,
+        org: c.org,
       })),
     disks: async () => [
       { label: "majhi data", path: env.majhiHome },

@@ -173,6 +173,7 @@ function ThreadActions({ org }: { org: CaptainOrg }) {
   const toast = useToast();
   const fresh = useStartFresh();
   const [asking, setAsking] = useState(false);
+  if (org.lane === undefined) return null;
   return (
     <>
       <Button
@@ -216,7 +217,6 @@ function ThreadActions({ org }: { org: CaptainOrg }) {
 function Thread({ org }: { org: CaptainOrg }) {
   const autonomyStatus = useAutonomyStatus().data;
   const lane = org.lane;
-  if (lane === undefined) return null;
   return (
     <>
       {org.resting !== undefined && (
@@ -225,7 +225,14 @@ function Thread({ org }: { org: CaptainOrg }) {
         </p>
       )}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-raised/40">
-        <ChatLog chat={lane} />
+        {lane === undefined ? (
+          <p className="flex flex-1 items-center justify-center px-6 text-center text-sm text-fg-muted text-pretty">
+            No thread in {org.name} yet. Your first message opens it. The captain reads only {org.name} there,
+            and what it may do follows that workspace's Permissions.
+          </p>
+        ) : (
+          <ChatLog chat={lane} />
+        )}
         {autonomyStatus ? (
           <ChatBox status={autonomyStatus} lane={org.org} />
         ) : (
