@@ -14,8 +14,8 @@ import {
   PERMISSION_COMMANDS,
   PRIVATE,
   type RoomItem,
-  scriptProblem,
   type ShipFix,
+  scriptProblem,
   type TaskId,
 } from "@majhi/shared";
 import { z } from "zod";
@@ -268,7 +268,10 @@ export class AdminService {
     const refused = await this.autonomy.refusal(caller, "tasks.tell", input, why);
     if (refused !== undefined) return error(refused);
     const done = await this.execute("tasks.tell", input, metaFor(caller.agent, why, caller.task));
-    this.autonomy.ran(caller, "tasks.tell", input, why, done);
+    // A note that was not sent (a repeat) is no decision: nothing is logged as sent.
+    if (!(done.ok && NotTold.safeParse(done.output).success)) {
+      this.autonomy.ran(caller, "tasks.tell", input, why, done);
+    }
     return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
   }
 
@@ -1272,6 +1275,9 @@ function textOf(output: unknown): string {
   const text = JSON.stringify(redactOutput(reposFirst(output)), null, 2) ?? "ok";
   return text.length > RESULT_MAX ? `${text.slice(0, RESULT_MAX)}\n... (cut)` : text;
 }
+
+/** The output of `tasks.tell` when nothing was sent. */
+const NotTold = z.object({ told: z.literal(false) });
 
 /** A result that is one task with repos (tasks.create, tasks.update). */
 const TaskWithRepos = z.object({

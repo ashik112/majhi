@@ -2015,6 +2015,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       tasks,
       lanes,
       store,
+      keys: captainRepo,
+      lastTurn: (task, agent) => usageRepo.lastTurnId(task, agent),
       ...(options.runClock === undefined ? {} : { now: options.runClock }),
     }),
     lanes,

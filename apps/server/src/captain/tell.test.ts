@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { Store } from "../store/index.ts";
+import { CaptainRepo } from "./repo.ts";
 import { CaptainTell, TELL_LIMIT, TELL_WINDOW_MS } from "./tell.ts";
 
 /** `tasks.tell`: who may write to a lead, where, and how often. */
@@ -9,6 +11,7 @@ function setup() {
     boss: "boss" as string | undefined,
     fail: undefined as string | undefined,
   };
+  let turn = 0;
   const sent: { task: string; agent?: string | undefined; text: string; by: string }[] = [];
   const tasks = {
     captainTell: async (input: { task: string; agent?: string | undefined; text: string; by: string }) => {
@@ -24,13 +27,16 @@ function setup() {
   };
   const store = {
     tasks: {
-      get: (id: string) => (id in orgs ? { id, org: orgs[id] } : undefined),
+      get: (id: string) => (id in orgs ? { id, org: orgs[id], team: ["acme-builder"] } : undefined),
     },
   };
   const tell = new CaptainTell({
     tasks,
     lanes,
     store,
+    keys: new CaptainRepo(new Store(":memory:").raw),
+    // The lead took a new turn before each note: only the limit is under test here (keys.test.ts has the rest).
+    lastTurn: () => ++turn,
     now: () => state.now,
   } as unknown as ConstructorParameters<typeof CaptainTell>[0]);
   return { state, sent, tell };
@@ -42,7 +48,7 @@ const say = (text = "Please also cover the empty state") => ({ id: "ACM-1", text
 describe("tasks.tell", () => {
   it("sends the captain's note to the lead of a task in its own workspace", async () => {
     const t = setup();
-    expect(await t.tell.tell(say(), lane)).toEqual({ id: "ACM-1", agent: "acme-builder" });
+    expect(await t.tell.tell(say(), lane)).toEqual({ id: "ACM-1", agent: "acme-builder", told: true });
     expect(t.sent).toEqual([
       { id: "ACM-1", task: "ACM-1", text: "Please also cover the empty state", by: "boss" },
     ]);

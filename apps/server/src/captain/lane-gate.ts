@@ -1,7 +1,8 @@
 import type { CaptainCapAsk, CommandName } from "@majhi/shared";
 import { CHORE_LABEL, pageRef } from "@majhi/shared";
+import { shipState } from "./keys.ts";
 import type { CaptainPorts } from "./ports.ts";
-import type { CaptainRepo } from "./repo.ts";
+import type { CaptainRepo, KeyClaim } from "./repo.ts";
 import { branchAllowed, dailyCaps } from "./rules.ts";
 import { askToRaise, type Workspace } from "./runner.ts";
 
@@ -51,9 +52,8 @@ export class LaneGate {
     if (id === undefined) return undefined;
     const key = await this.keyOf(org, command, id, ws.day);
     this.keys.set(`${command}:${id}`, key);
-    if (this.deps.repo.hasAction(key)) {
-      return `Refused: ${id} was already ${command === "tasks.resolveShip" ? "sent to its lead to resolve" : "shipped or handed over"} in this state. Change something first, or leave it for the owner.`;
-    }
+    const early = this.deps.repo.keyState(key, this.deps.now().toISOString());
+    if (early !== "free") return this.repeatText(command, id, early);
     const cap = dailyCaps("ship", this.deps.repo.capRaised(org, "ship", ws.day), ws).actions;
     if (cap !== undefined && this.deps.repo.actionsToday(org, "ship", ws.day) >= cap) {
       askToRaise(
@@ -69,19 +69,35 @@ export class LaneGate {
       );
       return `Refused: ${ws.name} reached today's cap of ${cap} ${CHORE_LABEL.ship.toLowerCase()} actions, counting the ship chore's. The owner can raise it on the Captain page.`;
     }
-    if (command !== "tasks.merge") return undefined;
-    // The chore's own checks, so the lane cannot ship what the chore would leave.
-    const check = await this.deps.ports.shipCheck(org, id);
-    if (!check.ready) return `Refused: ${id} is not ready to ship: ${check.why}.`;
-    const into = typeof input.into === "string" ? input.into : undefined;
-    const targets = (input.targets ?? {}) as Record<string, string>;
-    const outside = check.targets.filter(
-      (t) => !branchAllowed(ws.rules, targets[t.project] ?? into ?? t.into, t.base),
-    );
-    if (outside.length > 0) {
-      return `Refused: ${[...new Set(outside.map((o) => targets[o.project] ?? into ?? o.into))].join(", ")} is not a branch ${ws.name} ships to.`;
+    if (command === "tasks.merge") {
+      // The chore's own checks, so the lane cannot ship what the chore would leave.
+      const check = await this.deps.ports.shipCheck(org, id);
+      if (!check.ready) return `Refused: ${id} is not ready to ship: ${check.why}.`;
+      const into = typeof input.into === "string" ? input.into : undefined;
+      const targets = (input.targets ?? {}) as Record<string, string>;
+      const outside = check.targets.filter(
+        (t) => !branchAllowed(ws.rules, targets[t.project] ?? into ?? t.into, t.base),
+      );
+      if (outside.length > 0) {
+        return `Refused: ${[...new Set(outside.map((o) => targets[o.project] ?? into ?? o.into))].join(", ")} is not a branch ${ws.name} ships to.`;
+      }
     }
-    return undefined;
+    // The key is taken in one insert, after the checks, so two calls for one state cannot both ship.
+    // It is given back when the call fails (`ran`) and its log line holds it when the call worked.
+    const claim = this.claim(key, id);
+    return claim === "taken" ? undefined : this.repeatText(command, id, claim);
+  }
+
+  /** Takes the key of a ship: `taken`, or why not (done before, or running now). Typed. */
+  claim(key: string, task: string): KeyClaim {
+    return this.deps.repo.claimKey("ship", key, task, this.deps.now().toISOString());
+  }
+
+  private repeatText(command: string, id: string, why: "repeat" | "in-flight"): string {
+    if (why === "in-flight") {
+      return `Refused: ${id} is being ${command === "tasks.resolveShip" ? "sent to its lead" : "shipped"} by another call in this state. Wait for it.`;
+    }
+    return `Refused: ${id} was already ${command === "tasks.resolveShip" ? "sent to its lead to resolve" : "shipped or handed over"} in this state. Change something first, or leave it for the owner.`;
   }
 
   /** The lane's call ran: it counts as one ship in the chore's log, so the cap and the key hold for both. */
@@ -114,12 +130,15 @@ export class LaneGate {
       outcome: outcome.ok ? "done" : "failed",
       undoNote: "Shipped by the captain's own call: revert it from the task if needed",
     });
+    // The log line holds the key now; after a failure the key is free to try again.
+    this.deps.repo.releaseKey(key);
   }
 
   /** The key a ship of this task in this state has in the log: the chore's key for a merge. */
   private async keyOf(org: string, command: string, id: string, day: string): Promise<string> {
     // Not in review (a resolve of a done task): the day stands for its state.
-    const heads = (await this.deps.ports.reviewTasks(org)).find((t) => t.id === id)?.heads || `day:${day}`;
+    const found = (await this.deps.ports.reviewTasks(org)).find((t) => t.id === id);
+    const heads = found === undefined || found.heads === "" ? `day:${day}` : shipState(found);
     if (command === "tasks.resolveShip") return `ship:resolve:${id}:${heads}`;
     if (command === "tasks.mergeMrs") return `ship:mrs:${id}:${heads}`;
     return `ship:${id}:${heads}`;

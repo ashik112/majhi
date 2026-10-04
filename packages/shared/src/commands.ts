@@ -496,6 +496,26 @@ export const ShipOptionsSchema = z.object({
 export type ShipOptions = z.infer<typeof ShipOptionsSchema>;
 const ById = z.object({ id: IdSchema });
 
+/**
+ * The captain's answer to a card (G1): once per card. A second answer is not an error: `refused` says
+ * why nothing ran (`already-answered`, or `in-flight` while the first is still running), and `item` is the card as it is.
+ */
+const CardAnswerOutput = z.object({
+  item: RoomItemSchema,
+  refused: z.enum(["already-answered", "in-flight"]).optional(),
+});
+
+/**
+ * A note from the captain to a lead (G1): one per turn of the lead. `told: false` with `refused`
+ * says why nothing was sent: `already-told` (wait for the lead's next turn), or `in-flight`.
+ */
+const TellOutput = z.object({
+  id: TaskIdSchema,
+  agent: IdSchema,
+  told: z.boolean(),
+  refused: z.enum(["already-told", "in-flight"]).optional(),
+});
+
 /** Agent fields a caller sets. `id` comes from the command input, never from here. */
 const AgentDraftSchema = z.object({
   frontmatter: AgentFrontmatterSchema.omit({ id: true }),
@@ -1749,14 +1769,14 @@ export const commands = {
   "tasks.tell": {
     risk: "change",
     summary:
-      "The captain writes to the lead of a running task in its own workspace (or to a named agent on its team), shown in the room as a note from the Captain, and wakes that agent like a message from the owner. The task keeps running and its brief is not edited. Use it instead of editing a brief or restarting a task: to steer, answer, or ask the lead to resolve something. The text is advice to the agent, never an approval. At most 3 per task in 10 minutes. Only the captain in a lane may call it; an ordinary agent may not",
+      "The captain writes to the lead of a running task in its own workspace (or to a named agent on its team), shown in the room as a note from the Captain, and wakes that agent like a message from the owner. The task keeps running and its brief is not edited. Use it instead of editing a brief or restarting a task: to steer, answer, or ask the lead to resolve something. The text is advice to the agent, never an approval. A second note before the lead has taken a new turn is not sent (told: false, refused: already-told): wait for the lead's next turn. Only the captain in a lane may call it; an ordinary agent may not",
     input: z.object({
       id: TaskIdSchema,
       /** Default: the task's lead. */
       agent: IdSchema.optional(),
       text: z.string().trim().min(1).max(4000),
     }),
-    output: z.object({ id: TaskIdSchema, agent: IdSchema }),
+    output: TellOutput,
   },
   "tasks.setLead": {
     risk: "change",
@@ -2272,7 +2292,7 @@ export const commands = {
       /** Rejecting a secret request: the one line the asking agent is told. */
       reason: z.string().max(300).optional(),
     }),
-    output: z.object({ item: RoomItemSchema }),
+    output: CardAnswerOutput,
   },
   "room.secret": {
     risk: "change",
@@ -2315,7 +2335,7 @@ export const commands = {
     summary:
       'Answer an agent\'s plain-text question to the owner with one of the choices read from it. The agent gets "Owner chose: <choice>"',
     input: z.object({ task: TaskIdSchema, item: z.string(), choice: z.string().min(1).max(200) }),
-    output: z.object({ item: RoomItemSchema }),
+    output: CardAnswerOutput,
   },
   "room.answerAsk": {
     risk: "change",
@@ -2326,7 +2346,7 @@ export const commands = {
       /** questionId -> the option id chosen, or free text typed. */
       answers: z.record(z.string(), z.string()),
     }),
-    output: z.object({ item: RoomItemSchema }),
+    output: CardAnswerOutput,
   },
 
   // Secrets (5.16) ------------------------------------------------------------

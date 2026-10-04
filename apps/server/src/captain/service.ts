@@ -364,7 +364,8 @@ export class CaptainService {
    */
   afterUpdate(orgs: readonly string[]): void {
     for (const org of new Set(orgs)) {
-      for (const chore of ["cards", "ship", "tidy"] as const) this.trigger(org, chore, "majhi was updated", "majhi");
+      for (const chore of ["cards", "ship", "tidy"] as const)
+        this.trigger(org, chore, "majhi was updated", "majhi");
     }
   }
 

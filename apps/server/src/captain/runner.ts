@@ -13,7 +13,15 @@ import { errorMessage } from "../errors.ts";
 import { choresNow } from "./levels.ts";
 import { NEAR_SAME_MS, type PastAnswer } from "./question-loop.ts";
 import type { CaptainRepo } from "./repo.ts";
-import { capAskText, dailyCaps, FAILURES_OFF, RAISE_FACTOR, RUN_CAPS, runActions, runMinutes } from "./rules.ts";
+import {
+  capAskText,
+  dailyCaps,
+  FAILURES_OFF,
+  RAISE_FACTOR,
+  RUN_CAPS,
+  runActions,
+  runMinutes,
+} from "./rules.ts";
 
 /**
  * The guards every upkeep chore runs under (SPEC 5.18, "No runaway, no loops"). Structural, so a chore
@@ -123,6 +131,8 @@ export interface StepResult {
   /** Why Undo is not possible. */
   undoNote?: string | undefined;
   evidence?: string | undefined;
+  /** The state was acted on already (another path answered the card first): no line, a repeat. */
+  repeat?: true | undefined;
 }
 
 export type ActOutcome = "done" | "asked" | "repeat" | "blocked" | "failed";
@@ -230,10 +240,13 @@ export class ChoreRun {
     }
     if (a.task !== undefined) this.deps.caused(a.task);
     const at = this.deps.now().toISOString();
+    // The key is taken before the step, in one insert: the lane may be shipping the same state now.
+    if (this.deps.repo.claimKey("chore", a.key, a.task, at) !== "taken") return "repeat";
     let result: StepResult;
     try {
       result = await a.do();
     } catch (err) {
+      this.deps.repo.releaseKey(a.key);
       const error = errorMessage(err);
       this.deps.repo.addAction({
         key: `${a.key}:failed:${at}`,
@@ -261,6 +274,10 @@ export class ChoreRun {
       }
       return "failed";
     }
+    if (result.repeat === true) {
+      this.deps.repo.releaseKey(a.key);
+      return "repeat";
+    }
     this.deps.repo.succeeded(this.org, this.chore);
     const outcome = result.outcome ?? "done";
     const added = this.deps.repo.addAction({
@@ -278,6 +295,8 @@ export class ChoreRun {
       undo: result.undo,
       undoNote: result.undoNote,
     });
+    // The log line holds the key now.
+    this.deps.repo.releaseKey(a.key);
     if (added === undefined) return "repeat";
     this.actions += 1;
     this.deps.repo.countRunAction(this.id);

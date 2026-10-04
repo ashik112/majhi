@@ -2,10 +2,18 @@ import type { CaptainChore } from "@majhi/shared";
 import { runFollowUps } from "../findings/followups.ts";
 import { sizeText } from "../tasks/folder-sweep.ts";
 import { judgeReport, summaryLine } from "./answer-check.ts";
+import { shipState } from "./keys.ts";
 import { classifyOwnWork } from "./own-work.ts";
 import type { SecondOpinion } from "./own-work-second.ts";
 import { permissionVerdict } from "./permission-rules.ts";
-import type { ApprovalCard, CaptainPorts, PendingFact, QuestionCard, ReviewTask, ShipCheck } from "./ports.ts";
+import type {
+  ApprovalCard,
+  CaptainPorts,
+  PendingFact,
+  QuestionCard,
+  ReviewTask,
+  ShipCheck,
+} from "./ports.ts";
 import { loopLine, nudgeText, questionLoop } from "./question-loop.ts";
 import { branchAllowed, typingWhy } from "./rules.ts";
 import type { ChoreRun } from "./runner.ts";
@@ -82,7 +90,8 @@ export function createChores(
         irreversible: true,
         recheck: async () => away(card.task),
         do: async () => {
-          await ports.answer(org, card, allow.id, `Own work: ${verdict.why}`);
+          const done = await ports.answer(org, card, allow.id, `Own work: ${verdict.why}`);
+          if (!done.answered) return { repeat: true };
           return { undoNote: "An answer an agent already read cannot be taken back" };
         },
       });
@@ -168,7 +177,7 @@ export function createChores(
     }
     const reason = `In ${ws.name} the captain decides when work is pushed and you merge, so it opens the merge request on ${ready.host}`;
     await run.act({
-      key: `ship:mr:${t.id}:${t.heads}`,
+      key: `ship:mr:${t.id}:${shipState(t)}`,
       text: `Opened a merge request for ${t.id} on ${ready.host}: ${t.title}`,
       reason,
       evidence,
@@ -235,11 +244,7 @@ export function createChores(
         const out = await ports.openMrs(org, id, reason);
         if (out.failed !== undefined) throw new Error(out.failed);
         const links = out.urls.length === 0 ? "" : ` ${out.urls.join(", ")}`;
-        await ports.settleMergeCard(
-          org,
-          card,
-          `Opened MR${links} on ${out.host} instead: the owner merges`,
-        );
+        await ports.settleMergeCard(org, card, `Opened MR${links} on ${out.host} instead: the owner merges`);
         return {
           undoNote:
             "The branch is pushed and the merge request is open: close it on the host to take it back",
@@ -339,7 +344,7 @@ export function createChores(
           if (check.conflict === true && ws.authority.merge === "decide" && !ruleOff(run, "ship-conflict")) {
             const reason = `${check.why}. In ${ws.name} the captain decides when work is merged`;
             await run.act({
-              key: `ship:resolve:${t.id}:${t.heads}`,
+              key: `ship:resolve:${t.id}:${shipState(t)}`,
               text: `Asked the lead of ${t.id} to resolve the conflicts with main: ${t.title}`,
               reason,
               task: t.id,
@@ -423,7 +428,7 @@ export function createChores(
         const push = ws.authority.push === "decide";
         const reason = `In ${ws.name} the captain decides when work is merged${push ? " and pushed" : ""}`;
         await run.act({
-          key: `ship:${t.id}:${t.heads}`,
+          key: `ship:${t.id}:${shipState(t)}`,
           text: `Shipped ${t.id} to ${into}: ${t.title}`,
           reason,
           evidence: check.checked === undefined ? check.evidence : `${check.evidence}; ${check.checked}`,
@@ -494,6 +499,7 @@ export function createChores(
           recheck: async () => away(card.task),
           do: async () => {
             const done = await ports.decideCard(org, card, verdict);
+            if (done.repeat === true) return { repeat: true };
             if (!done.ok) throw new Error(done.error ?? "the command failed");
             return done.commit === undefined
               ? { undoNote: "It changed no config, so there is nothing to revert" }
@@ -539,12 +545,10 @@ export function createChores(
         }
         // An agent that asks the same thing again and again is stuck: no answer feeds it.
         // A permission whose call then went through is normal use, so its outcome is read first.
-        const past = run
-          .answeredRecently(card.task, card.agent)
-          .map((p) => ({
-            ...p,
-            outcome: p.item === undefined ? undefined : ports.callOutcome?.(card.task, p.item),
-          }));
+        const past = run.answeredRecently(card.task, card.agent).map((p) => ({
+          ...p,
+          outcome: p.item === undefined ? undefined : ports.callOutcome?.(card.task, p.item),
+        }));
         const loop = questionLoop(past, card.text, now());
         if (loop !== undefined) {
           if (ruleOff(run, "q-loop")) continue;
@@ -593,7 +597,8 @@ export function createChores(
                 irreversible: true,
                 recheck: async () => away(card.task),
                 do: async () => {
-                  await ports.answer(org, card, pick.id, `By rule: ${verdict.why}`);
+                  const done = await ports.answer(org, card, pick.id, `By rule: ${verdict.why}`);
+                  if (!done.answered) return { repeat: true };
                   return { undoNote: "An answer an agent already read cannot be taken back" };
                 },
               });

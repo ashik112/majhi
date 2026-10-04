@@ -1,5 +1,5 @@
-import { DAILY_CHORE_CAPS } from "@majhi/shared";
 import type { AccountStatus, AutonomyEvent, AutonomyStatus, Task } from "@majhi/shared";
+import { DAILY_CHORE_CAPS } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { RUNS } from "./authority-fixtures.ts";

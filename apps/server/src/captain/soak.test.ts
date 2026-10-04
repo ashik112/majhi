@@ -208,6 +208,7 @@ class Sim {
         this.act("answer", org, `${card.task}:${card.item}`, card.task);
         const found = this.questions.find((q) => q.item === card.item);
         if (found !== undefined) found.done = true;
+        return { answered: true };
       },
       flagLoop: async (org, card) => {
         this.act("flagLoop", org, `${card.task}:${card.item}`, card.task);
