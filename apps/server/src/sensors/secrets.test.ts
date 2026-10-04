@@ -72,10 +72,10 @@ describe("the secret scan", () => {
     expect(found.length).toBeGreaterThan(0);
     for (const f of found) {
       expect(f).toMatchObject({ project: "acme-api", severity: "high" });
-      expect(f.evidence.every((e) => /^src\/config\.ts:\d+$/.test(e))).toBe(true);
-      expect(f.dedupeKey).toMatch(/^secret:acme-api:src\/config\.ts:/);
+      expect(f.evidence.every((e) => /^src\/config\.ts:\d+ \([a-z-]+\)$/.test(e))).toBe(true);
+      expect(f.dedupeKey).toBe("secrets:acme-api:strong");
     }
-    expect(found.flatMap((f) => f.evidence)).toContain("src/config.ts:3");
+    expect(found.flatMap((f) => f.evidence)).toContain("src/config.ts:3 (github)");
     const all =
       JSON.stringify(found) +
       dump(t.db) +
@@ -86,16 +86,49 @@ describe("the secret scan", () => {
     expect(all).not.toContain("sha512-A1b2");
   });
 
-  it("one finding per file and kind, however many lines; a rerun refreshes it and a removed secret closes it", async () => {
+  it("one finding per project, however many files and lines; a rerun refreshes it and a removed secret closes it", async () => {
     const files: Record<string, string> = { "a.ts": `const x = "${TOKEN}";\nconst y = "${TOKEN}";\n` };
+    for (let i = 0; i < 60; i++) files[`config/map-${i}.yaml`] = `key: "${AWS}"\n`;
     const t = scanner(files);
     await t.run();
     const one = live(t.findings).filter((f) => f.source === "security");
     expect(one).toHaveLength(1);
-    expect(one[0]?.evidence).toEqual(["a.ts:1", "a.ts:2"]);
+    expect(one[0]?.title).toBe("Committed secrets in acme-api: 61 files (aws, github)");
+    expect(one[0]?.evidence).toHaveLength(20);
+    expect(one[0]?.evidence).toContain("a.ts:2 (github)");
+    for (let i = 0; i < 60; i++) delete files[`config/map-${i}.yaml`];
     files["a.ts"] = "const x = process.env.TOKEN;\n";
     await t.run();
     expect(live(t.findings).find((f) => f.source === "security")?.status).toBe("fixed");
+  });
+
+  it("rates heuristic matches medium, apart from provider formats, and folds the old per-file findings", async () => {
+    const t = scanner({
+      "settings.py": `password = "${"q8Zr2Lm4Np6Tx9Vb"}"\n`,
+      "deploy/aws.env": `AWS_KEY=${AWS}\n`,
+    });
+    const old = await t.findings.report(
+      {
+        org: "acme",
+        project: "acme-api",
+        source: "security",
+        title: "Old",
+        detail: "",
+        evidence: [],
+        severity: "high",
+        dedupeKey: "secret:acme-api:x.ts:token",
+      },
+      { kind: "captain", org: "acme" },
+    );
+    await t.run();
+    const found = live(t.findings).filter((f) => f.source === "security" && f.status === "open");
+    expect(found.map((f) => [f.dedupeKey, f.severity]).sort()).toEqual([
+      ["secrets:acme-api:likely", "medium"],
+      ["secrets:acme-api:strong", "high"],
+    ]);
+    const folded = t.findings.get(old.finding.id);
+    expect(folded?.status).toBe("dismissed");
+    expect(folded?.dismissedReason).toBe("Folded into one finding per project");
   });
 
   it("does not rescan a checkout that did not change", async () => {

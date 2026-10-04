@@ -16,9 +16,18 @@ export const MAX_FILES = 5_000;
 export const MAX_TOTAL_BYTES = 60_000_000;
 const RESCAN_MS = 7 * 86_400_000;
 
-/** Files that are noise for this scan: lockfiles hold integrity hashes, the rest is built or binary. */
+/** Files that are noise for this scan: lockfiles hold integrity hashes, the rest is built, vendored or binary. */
 const SKIP =
-  /(^|\/)(node_modules|vendor|dist|build|\.git)\/|\.(lock|lockb|min\.js|min\.css|map|png|jpe?g|gif|webp|ico|pdf|zip|gz|tgz|woff2?|ttf|otf|mp4|mov|wasm|snap)$|(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lock|Cargo\.lock|go\.sum|poetry\.lock|Gemfile\.lock|composer\.lock)$/i;
+  /(^|\/)(node_modules|vendor|dist|build|\.git|staticfiles|third_party|bower_components)\/|\.(lock|lockb|min\.js|min\.css|map|png|jpe?g|gif|webp|ico|pdf|zip|gz|tgz|woff2?|ttf|otf|mp4|mov|wasm|snap)$|(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lock|Cargo\.lock|go\.sum|poetry\.lock|Gemfile\.lock|composer\.lock)$/i;
+
+/**
+ * Kinds a provider's own format proves (a private key block, an AWS key id, a GitHub token): very
+ * likely real. The rest (`assigned`, `token`, `jwt`) come from heuristics and are often sample values.
+ */
+const STRONG = new Set(["private-key", "anthropic", "openai", "github", "gitlab", "slack", "aws"]);
+
+/** How many file:line entries one finding lists; the count in the title covers the rest. */
+const EVIDENCE_MAX = 20;
 
 export interface SecretHit {
   path: string;
@@ -76,28 +85,43 @@ export function secretScan(ports: SensorPorts) {
       let scanned = 0;
       for (const project of projects) {
         const print = await ports.fingerprint(project.path);
-        const key = `secrets:${project.id}`;
+        const key = `secrets-scan:${project.id}`;
         const last = ports.cache.get(key);
         const hash = print === undefined ? undefined : createHash("sha256").update(print).digest("hex");
         if (hash !== undefined && last?.hash === hash && fresh(last, RESCAN_MS, ports.now())) continue;
         const hits = await scan(ports, project);
         scanned += 1;
         const seen = new Set<string>();
-        for (const h of hits) {
-          const k = `secret:${project.id}:${h.path}:${h.kind}`;
+        // One finding per project and strength, not one per file: a repo with config maps full of
+        // keys is one thing to fix, and hundreds of findings bury everything else.
+        for (const strong of [true, false]) {
+          const group = hits.filter((h) => STRONG.has(h.kind) === strong);
+          if (group.length === 0) continue;
+          const k = `secrets:${project.id}:${strong ? "strong" : "likely"}`;
           seen.add(k);
+          const files = new Set(group.map((h) => h.path));
+          const kinds = [...new Set(group.map((h) => (h.kind === "token" ? "token or key" : h.kind)))].sort();
+          const evidence = group.flatMap((h) => h.lines.map((n) => `${h.path}:${n} (${h.kind})`));
           await file(r, {
             project: project.id,
             source: "security",
             key: k,
-            title: `A ${h.kind === "token" ? "token or key" : `${h.kind} secret`} is committed in ${h.path}`,
-            detail: `${h.path} holds what looks like a ${h.kind} secret at line ${h.lines.join(", ")}. The value is not shown or stored. Treat it as leaked: rotate it, then remove it from the code.`,
-            evidence: h.lines.map((n) => `${h.path}:${n}`),
-            severity: "high",
+            title: strong
+              ? `Committed secrets in ${project.id}: ${files.size} ${files.size === 1 ? "file" : "files"} (${kinds.join(", ")})`
+              : `Possible secrets in ${project.id}: ${files.size} ${files.size === 1 ? "file" : "files"} (${kinds.join(", ")})`,
+            detail: strong
+              ? `These files hold values in a provider's own key format. The values are not shown or stored. Treat them as leaked: rotate them, then move them out of the code.${evidence.length > EVIDENCE_MAX ? ` ${evidence.length - EVIDENCE_MAX} more places are not listed.` : ""}`
+              : `These files assign values that look like secrets. Some may be samples or placeholders. Check them, rotate any that are real, then move them out of the code.${evidence.length > EVIDENCE_MAX ? ` ${evidence.length - EVIDENCE_MAX} more places are not listed.` : ""}`,
+            evidence: evidence.slice(0, EVIDENCE_MAX),
+            severity: strong ? "high" : "medium",
           });
           filed += 1;
         }
-        filed += closeUnseen(r, project.id, "security", `secret:${project.id}:`, seen);
+        filed += closeUnseen(r, project.id, "security", `secrets:${project.id}:`, seen);
+        // Findings from before grouping (one per file and kind) fold into the grouped ones.
+        filed += closeUnseen(r, project.id, "security", `secret:${project.id}:`, new Set(), {
+          dismiss: "Folded into one finding per project",
+        });
         ports.cache.put({
           key,
           ...(hash === undefined ? {} : { hash }),
