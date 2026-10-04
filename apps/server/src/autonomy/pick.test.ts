@@ -294,7 +294,10 @@ describe("the captain's lane", () => {
     t.h.majhi.services.store.tasks.setStatus(chat ?? "", "done", undefined, new Date().toISOString());
     expect(await t.autonomy.laneChat("acme")).toBe(chat);
     expect(t.h.majhi.services.store.tasks.get(chat ?? "")?.status).not.toBe("done");
-    // A workspace that is not set to Runs it gets no tick lane; off, no lane at all.
+    // A workspace where the captain neither starts work nor does upkeep gets no lane; one where it
+    // does upkeep only (Start is You) gets one to think in; off, no lane at all.
+    expect(await t.autonomy.laneChat("private")).toBeDefined();
+    await t.h.cmd("autonomy.configure", { orgs: { private: { authority: ASK } } });
     expect(await t.autonomy.laneChat("private")).toBeUndefined();
     await t.h.cmd("autonomy.stop", { how: "now" });
     expect(await t.autonomy.laneChat("acme")).toBeUndefined();

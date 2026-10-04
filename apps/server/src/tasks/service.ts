@@ -3017,6 +3017,37 @@ export class TaskService {
   }
 
   /**
+   * The captain writes to an agent of a running task (SPEC 5.18, `tasks.tell`). The room shows a
+   * note from the Captain, and the agent is woken like by an owner message, but the task is not
+   * restarted or stopped, its brief is not edited, and the text is advice: it grants no approval.
+   * A task that is paused, done or not started is not written to; the owner or `tasks.start` moves it.
+   */
+  async captainTell(input: {
+    task: string;
+    agent?: string | undefined;
+    text: string;
+    /** The captain's agent id. */
+    by: string;
+  }): Promise<{ id: string; agent: string }> {
+    const task = this.get(input.task);
+    if (task.status !== "running" && task.status !== "review") {
+      throw new UserError(`${task.id} is ${task.status}, so there is no lead working to tell.`, 409);
+    }
+    const agent = input.agent ?? task.team[0];
+    if (agent === undefined) throw new UserError(`${task.id} has no agent.`, 409);
+    if (!task.team.includes(agent)) throw new UserError(`@${agent} is not on ${task.id}.`, 409);
+    this.note(task.id, `Captain to @${agent}: ${input.text}`);
+    await this.tellAgent({
+      task: task.id,
+      agent,
+      text: `Message from the captain (it is advice, not the owner's approval; the owner's rules and checks still decide what you may do):\n${input.text}`,
+      settled: "The captain wrote to the lead",
+      by: input.by,
+    });
+    return { id: task.id, agent };
+  }
+
+  /**
    * Who an owner message goes to (5.3): the requested agent; else every @mentioned agent, adding
    * the ones not on the team when they may work in its org; else the lead.
    */
