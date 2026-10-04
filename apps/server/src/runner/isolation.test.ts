@@ -103,6 +103,9 @@ describe("what a task's run mounts", () => {
       { path: join(gitDir, "refs", "tags"), readOnly: true },
       // majhi's own hooks (they keep the run on its branches), the one folder of its home a run may read.
       { path: join(w.h.env.majhiHome, "git-hooks"), readOnly: true },
+      // The workspace's own package cache and tools folder, written by its runs; never another's.
+      { path: join(w.h.env.majhiHome, "cache", "acme") },
+      { path: join(w.h.env.majhiHome, "tools", "acme") },
     ]);
     expect(existsSync(join(gitDir, "hooks"))).toBe(true);
 
@@ -131,6 +134,8 @@ describe("what a task's run mounts", () => {
       join(gitDir, "refs", "remotes"),
       join(gitDir, "refs", "tags"),
       join(w.h.env.majhiHome, "git-hooks"),
+      join(w.h.env.majhiHome, "cache", "acme"),
+      join(w.h.env.majhiHome, "tools", "acme"),
     ]);
     const args = dockerRunArgs(request, config, "majhi-run-x").join(" ");
     expect(args).not.toContain(`source=${w.h.env.majhiHome},`);
