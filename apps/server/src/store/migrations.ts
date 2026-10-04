@@ -1531,6 +1531,26 @@ CREATE INDEX audit_kind ON audit (kind);
 CREATE INDEX audit_agent ON audit (agent);
 `,
   },
+  {
+    // Leftovers of removed features (154). The sensors (radar, ci, dependency, eol, opportunity, tracker)
+    // no longer exist, so the findings they filed can never be refreshed or closed by anything: the open
+    // ones are dismissed once, with the reason. A finding that already has a task, a decision or a
+    // proposal keeps its status. The public tracker comment channel is gone too: its mode rows, drafts,
+    // trust state and trust notices are deleted so no list names it.
+    id: 154,
+    name: "retire findings of removed sources and the tracker comment channel",
+    sql: `
+UPDATE findings
+   SET status = 'dismissed',
+       dismissed_reason = 'Its source was removed from majhi',
+       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+ WHERE status = 'open' AND source IN ('radar', 'ci', 'dependency', 'eol', 'opportunity', 'tracker');
+DELETE FROM outbound_drafts WHERE channel = 'tracker-comment';
+DELETE FROM outbound_channels WHERE channel = 'tracker-comment';
+DELETE FROM trust_state WHERE key = 'outbound:tracker-comment';
+DELETE FROM trust_notices WHERE key = 'outbound:tracker-comment';
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

@@ -89,7 +89,7 @@ export function adminTools(): AdminTool[] {
       command: undefined,
       risk: undefined,
       description:
-        "The captain in its lane only. Fetch a secret through the workspace's connections without the value passing through chat: runs a short read-only script in the runner with the named connections (like doctl with the DigitalOcean connection) and saves what it prints straight into the secret store. You get only the reference secret:<name>, never the value. Pass task and item to answer a pending secret request (saved under its name, the asking agent is told), or name to save a new one. The script is shown to the owner in the room.",
+        "The captain in its lane only. Fetch a secret through the workspace's connections without the value passing through chat: runs a short read-only script in the runner with the named connections (like doctl with the DigitalOcean connection) and saves what it prints straight into the secret store. A script that only builds a value from the connection variables (a URL, a connection string) sets network to off and runs with no network, so it is never taken for a call. Programs installed with majhi_toolbox_install are on its PATH. You get only the reference secret:<name>, never the value. Pass task and item to answer a pending secret request (saved under its name, the asking agent is told), or name to save a new one. The script is shown to the owner in the room.",
       inputSchema: {
         type: "object",
         properties: {
@@ -101,6 +101,11 @@ export function adminTools(): AdminTool[] {
             type: "array",
             items: { type: "string" },
             description: "Ids of this workspace's connections the script needs",
+          },
+          network: {
+            type: "string",
+            enum: ["on", "off"],
+            description: "off: no network, for a script that only builds a value. Default on",
           },
         },
         required: ["script", "connections"],

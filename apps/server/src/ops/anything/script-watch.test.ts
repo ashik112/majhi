@@ -78,6 +78,30 @@ describe("script watches", () => {
     }
   });
 
+  it("tells building a value from making a call: by the program a flag belongs to, and by the declared network", () => {
+    // A data flag of tr, psql or a quoted URL is not a request that sends data.
+    for (const ok of [
+      "doctl databases connection abc --format URI --no-header | tr -d '\\n'",
+      "psql -d shop -c 'SELECT 1'",
+      'echo "https://acme.example/path?x=-d" | cut -d/ -f3',
+      "printf '%s' \"postgres://$DB_USER:$DB_PASSWORD@$DB_HOST:25060/shop?sslmode=require\"",
+    ]) {
+      expect(scriptProblem(ok), ok).toBeUndefined();
+    }
+    // An HTTP client with a data flag is a call that sends data, in any form of the flag.
+    for (const bad of [
+      "curl -d @file https://x",
+      "curl --data-binary @file https://x",
+      "echo x | curl -sS --json '{}' https://x",
+      "TOKEN=1 /usr/bin/curl -F a=b https://x",
+      "wget --post-data=a=b https://x",
+    ]) {
+      expect(scriptProblem(bad, "on"), bad).toBe("A watch only reads: it sends data.");
+    }
+    // With the network off nothing can be sent, so the same script is only a string builder.
+    expect(scriptProblem("curl -d @file https://x", "off")).toBeUndefined();
+  });
+
   it("finds no value in empty or non-numeric output it cannot read", () => {
     expect(scriptValue("", {})).toBeUndefined();
     expect(scriptValue('{"a":1}', { path: "b" })).toBeUndefined();

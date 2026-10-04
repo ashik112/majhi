@@ -275,6 +275,21 @@ const DBCHECK_NAME = /^majhi-dbcheck-[a-z0-9]{8,16}$/;
 const DBCHECK_TMPFS = "/tmp:rw,noexec,nosuid,size=16m";
 const SERVICE_NETWORK = /^name=([^,]+),alias=([^,]+)$/;
 
+/** Where a script run sees the programs majhi installed and checked for its workspace. */
+export const TOOLS_TARGET = "/majhi-tools";
+const TOOLS_MOUNT = /^type=bind,source=([^,]+),target=\/majhi-tools,readonly$/;
+const TOOLS_ORG = /^[a-z0-9][a-z0-9-]{0,62}$/;
+
+/** True for the one bind mount a check may have: `<majhi home>/tool-installs/<org>/bin`, read-only. */
+function isToolsMount(mount: string, s: Safety): boolean {
+  const source = TOOLS_MOUNT.exec(mount)?.[1];
+  if (source === undefined) return false;
+  const prefix = `${join(s.majhiHome, "tool-installs")}${sep}`;
+  if (!source.startsWith(prefix) || !source.endsWith(`${sep}bin`)) return false;
+  const org = source.slice(prefix.length, source.length - `${sep}bin`.length);
+  return TOOLS_ORG.test(org);
+}
+
 function checkRun(parts: DockerParts, s: Safety): void {
   const names = containerNames(s.task);
   const flags = parseFlags(parts.flags, RUN_FLAGS);
@@ -314,8 +329,19 @@ function checkRun(parts: DockerParts, s: Safety): void {
     if (!is(flags, "--read-only")) refuse("A database check runs with a read-only root.");
     if (all(flags, "--tmpfs").join() !== DBCHECK_TMPFS)
       refuse("A database check has one scratch folder, /tmp in memory.");
-    if (networks.length > 0 || mounts.length > 0 || publishes.length > 0 || pull !== undefined) {
-      refuse("A database check has no network flag, mount, published port or pull flag.");
+    if (publishes.length > 0 || pull !== undefined)
+      refuse("A database check has no published port or pull flag.");
+    // `--network none`: a script that reads nothing from the network gets no network at all.
+    if (networks.length > 1 || (networks[0] !== undefined && networks[0] !== "none")) {
+      refuse("A database check may only be given --network none.");
+    }
+    // One read-only folder of programs majhi installed and checked, for the workspace's own scripts.
+    if (mounts.length > 1) refuse("A database check has at most one mount, the checked programs.");
+    const mount = mounts[0];
+    if (mount !== undefined && !isToolsMount(mount, s)) {
+      refuse(
+        `The mount ${shown(mount)} is not allowed. A check mounts only majhi's checked programs, read-only.`,
+      );
     }
     return;
   }
@@ -506,7 +532,10 @@ const CHECKS: Record<string, ((parts: DockerParts, s: Safety) => void) | undefin
 
 /** Throws `ContainerRefused` unless the call is one of the few majhi makes, with only the flags it may have. */
 export function assertSafe(parts: DockerParts, s: Safety): void {
-  assertNoHostPaths(dockerArgv(parts), s);
+  // The one mount of checked programs lies inside majhi's folder on purpose. Its form is checked here,
+  // and `checkRun` allows it only for a database check, so the scan skips just that flag value.
+  const scanned = { ...parts, flags: parts.flags.filter((f) => !isToolsMount(f, s)) };
+  assertNoHostPaths(dockerArgv(scanned), s);
   const check = CHECKS[parts.verb.join(" ")];
   if (check === undefined) refuse(`The docker command ${shown(parts.verb.join(" "))} is not allowed.`);
   else check(parts, s);
@@ -721,6 +750,7 @@ export function dbCheckRunArgs(
   env: Record<string, string>,
   limits: Limits,
   s: Safety,
+  options: { toolsBin?: string | undefined; offline?: boolean | undefined } = {},
 ): DockerParts {
   return safe(
     {
@@ -730,6 +760,10 @@ export function dbCheckRunArgs(
         "--read-only",
         "--tmpfs",
         DBCHECK_TMPFS,
+        ...(options.offline === true ? ["--network", "none"] : []),
+        ...(options.toolsBin === undefined
+          ? []
+          : ["--mount", `type=bind,source=${options.toolsBin},target=${TOOLS_TARGET},readonly`]),
         ...envFlags(env),
       ],
       image,

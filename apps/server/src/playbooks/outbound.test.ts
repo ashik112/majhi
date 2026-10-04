@@ -48,7 +48,7 @@ describe("a channel starts in Draft", () => {
 
   it("holds every channel the same way, and an agent's offer too", async () => {
     const t = setup();
-    for (const channel of ["email", "post", "tracker-comment", "form", "message"] as OutboundChannel[]) {
+    for (const channel of ["email", "post", "form", "message"] as OutboundChannel[]) {
       const { draft } = await t.submit({ channel }, { kind: "agent", id: "acme-builder", org: "acme" });
       expect(draft).toMatchObject({ status: "pending", by: "acme-builder" });
     }
