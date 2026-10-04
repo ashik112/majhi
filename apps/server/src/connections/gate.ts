@@ -528,7 +528,9 @@ function readCommand(
     return;
   }
   const env = held.find(
-    (c) => (c.type === "env" || c.type === "cli" || c.type === "git" || c.type === "mcp") && c.clis?.includes(name),
+    (c) =>
+      (c.type === "env" || c.type === "cli" || c.type === "git" || c.type === "mcp") &&
+      c.clis?.includes(name),
   );
   if (env !== undefined) {
     const verb = cliVerb(args);

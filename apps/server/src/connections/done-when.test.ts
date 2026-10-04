@@ -13,7 +13,9 @@ import { taskWorld, type World } from "../testing/world.ts";
 
 /** A run's variables without the workspace package-cache paths every run gets (no secrets in them). */
 const noCaches = (env: Record<string, string> | undefined): Record<string, string> =>
-  Object.fromEntries(Object.entries(env ?? {}).filter(([k]) => k !== "MAJHI_TOOLS" && !(k in cacheEnv("/x"))));
+  Object.fromEntries(
+    Object.entries(env ?? {}).filter(([k]) => k !== "MAJHI_TOOLS" && !(k in cacheEnv("/x"))),
+  );
 
 /**
  * SPEC 7, Phase 10, Done when: asked why the api is down in prod, a root agent investigates with a

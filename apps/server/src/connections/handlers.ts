@@ -15,6 +15,7 @@ type ConnectionCommand =
   | "connections.setSecret"
   | "connections.setFile"
   | "connections.allow"
+  | "connections.renameVar"
   | "connections.test";
 
 /**
@@ -65,6 +66,8 @@ export function connectionHandlers(
       return connections.update(input, ctx.command, ctx.meta);
     },
     "connections.remove": (input, ctx) => connections.remove(input.id, ctx.command, ctx.meta),
+    // A rename keeps the value where it is: it sends no secret anywhere new, so agents may call it.
+    "connections.renameVar": (input, ctx) => connections.renameVar(input, ctx.command, ctx.meta),
     "connections.setSecret": async (input, ctx) => {
       if (ctx.meta.actor.kind === "agent") {
         // A value from an agent has passed through its chat. Agents get a reference from a secret request.
