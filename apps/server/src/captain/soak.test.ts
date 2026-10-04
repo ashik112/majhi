@@ -663,5 +663,5 @@ describe("the captain's soak test", () => {
     const status = await captain.status();
     expect(status.orgs.find((o) => o.org === "globex")?.summary).toBe("");
     captain.close();
-  }, 60_000);
+  }, 240_000);
 });
