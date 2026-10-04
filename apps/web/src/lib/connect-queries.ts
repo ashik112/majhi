@@ -1,8 +1,8 @@
 import type {
   AppSetupView,
   CommandInput,
-  ConnectAccess,
   CommandOutput,
+  ConnectAccess,
   ConnectCatalog,
   ConnectFlowView,
   ConnectStatus,

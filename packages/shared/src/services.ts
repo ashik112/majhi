@@ -401,7 +401,10 @@ export function serviceByUrl(
 export const BUILT_IN_CONNECT_APPS: Readonly<Record<string, string>> = {};
 
 /** The `oauth` scope names of the permissions that count at `access`. */
-export function scopesAt(entry: Pick<ServiceEntry, "scopes">, access: "read" | "readwrite" | "send"): ServiceScope[] {
+export function scopesAt(
+  entry: Pick<ServiceEntry, "scopes">,
+  access: "read" | "readwrite" | "send",
+): ServiceScope[] {
   return entry.scopes.filter(
     (s) => s.access === "read" || access === "send" || (access === "readwrite" && s.level !== "send"),
   );

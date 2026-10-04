@@ -1,9 +1,9 @@
 import type {
+  CliCheckResult,
+  CliLoginResult,
   DirListing,
   E2eRunResult,
   EditorApp,
-  CliCheckResult,
-  CliLoginResult,
   GitCliLoginResult,
   GitLoginsResult,
   HostCloneProgress,

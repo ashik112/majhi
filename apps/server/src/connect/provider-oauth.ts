@@ -73,7 +73,9 @@ const TokenBodySchema = z.object({
 /** OAuth error codes that mean the grant or the client is gone for good. */
 const PERMANENT = new Set(["invalid_grant", "invalid_client", "unauthorized_client", "access_denied"]);
 
-type Answer = { ok: true; body: z.infer<typeof TokenBodySchema> } | { ok: false; error: string; status: number };
+type Answer =
+  | { ok: true; body: z.infer<typeof TokenBodySchema> }
+  | { ok: false; error: string; status: number };
 
 async function post(
   url: string,
@@ -95,7 +97,10 @@ async function post(
       signal: AbortSignal.timeout(15_000),
     });
   } catch {
-    throw new ConnectError(`majhi could not reach ${hostOf(url)}. Check the connection and try again.`, "network");
+    throw new ConnectError(
+      `majhi could not reach ${hostOf(url)}. Check the connection and try again.`,
+      "network",
+    );
   }
   let json: unknown;
   try {
@@ -116,12 +121,16 @@ function toTokens(body: z.infer<typeof TokenBodySchema>, now: () => Date): Token
   const access = body.access_token;
   if (access === undefined) throw new ConnectError("The service sent no access token.", "protocol");
   const raw = body.scope;
-  const scope = raw === undefined ? undefined : (Array.isArray(raw) ? raw : raw.split(/[\s,]+/)).filter((s) => s !== "");
+  const scope =
+    raw === undefined ? undefined : (Array.isArray(raw) ? raw : raw.split(/[\s,]+/)).filter((s) => s !== "");
   const seconds = body.expires_in === undefined ? Number.NaN : Number(body.expires_in);
   return {
     accessToken: access,
     refreshToken: body.refresh_token,
-    expiresAt: Number.isFinite(seconds) && seconds > 0 ? new Date(now().getTime() + seconds * 1000).toISOString() : undefined,
+    expiresAt:
+      Number.isFinite(seconds) && seconds > 0
+        ? new Date(now().getTime() + seconds * 1000).toISOString()
+        : undefined,
     scope,
     idToken: body.id_token,
   };
@@ -130,7 +139,10 @@ function toTokens(body: z.infer<typeof TokenBodySchema>, now: () => Date): Token
 function failure(answer: Extract<Answer, { ok: false }>, url: string, hint?: string): ConnectError {
   const host = hostOf(url);
   if (PERMANENT.has(answer.error)) {
-    return new ConnectError(`${host} no longer accepts this sign-in.${hint === undefined ? "" : ` ${hint}`}`, "refused");
+    return new ConnectError(
+      `${host} no longer accepts this sign-in.${hint === undefined ? "" : ` ${hint}`}`,
+      "refused",
+    );
   }
   return new ConnectError(`${host} could not complete the sign-in just now. Try again.`, "network");
 }
@@ -210,7 +222,8 @@ export async function startDevice(
   scope: string,
   fetchFn: Fetch,
 ): Promise<DeviceStart> {
-  if (provider.deviceUrl === undefined) throw new ConnectError("This service has no device sign-in.", "unsupported");
+  if (provider.deviceUrl === undefined)
+    throw new ConnectError("This service has no device sign-in.", "unsupported");
   let res: Response;
   try {
     res = await fetchFn(provider.deviceUrl, {
@@ -221,7 +234,10 @@ export async function startDevice(
       signal: AbortSignal.timeout(15_000),
     });
   } catch {
-    throw new ConnectError(`majhi could not reach ${hostOf(provider.deviceUrl)}. Check the connection and try again.`, "network");
+    throw new ConnectError(
+      `majhi could not reach ${hostOf(provider.deviceUrl)}. Check the connection and try again.`,
+      "network",
+    );
   }
   const json: unknown = await res.json().catch(() => undefined);
   const parsed = DeviceBodySchema.safeParse(json);

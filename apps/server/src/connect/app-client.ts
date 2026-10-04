@@ -37,7 +37,10 @@ export class AppClientStore {
   }
 
   async save(client: AppClient): Promise<void> {
-    await this.secrets.set(appClientName(client.app, client.org), JSON.stringify(AppClientSchema.parse(client)));
+    await this.secrets.set(
+      appClientName(client.app, client.org),
+      JSON.stringify(AppClientSchema.parse(client)),
+    );
   }
 
   async delete(app: string, org: string): Promise<boolean> {
@@ -60,7 +63,8 @@ const ClientFileSchema = z.object({
   redirect_uris: z.array(z.string()).optional(),
 });
 
-const NOT_GOOGLE = "That is not a Google client file. Download the JSON from the client's page and drop it again.";
+const NOT_GOOGLE =
+  "That is not a Google client file. Download the JSON from the client's page and drop it again.";
 
 /**
  * Reads the JSON file Google lets the owner download for an OAuth client. Only a Desktop client
@@ -75,7 +79,8 @@ export function parseGoogleClientJson(text: string): { clientId: string; clientS
   } catch {
     throw new ConnectError(NOT_GOOGLE, "protocol");
   }
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new ConnectError(NOT_GOOGLE, "protocol");
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+    throw new ConnectError(NOT_GOOGLE, "protocol");
   const root = raw as Record<string, unknown>;
   if ("web" in root && !("installed" in root)) {
     throw new ConnectError(
@@ -96,7 +101,10 @@ export function parseGoogleClientJson(text: string): { clientId: string; clientS
       throw new ConnectError(NOT_GOOGLE, "protocol");
     }
     if (url.protocol !== "https:" || !GOOGLE_HOSTS.has(url.hostname)) {
-      throw new ConnectError("That file points somewhere other than Google, so majhi did not use it.", "protocol");
+      throw new ConnectError(
+        "That file points somewhere other than Google, so majhi did not use it.",
+        "protocol",
+      );
     }
   }
   return { clientId: file.client_id, clientSecret: file.client_secret };
@@ -121,7 +129,10 @@ export function checkSlackToken(kind: "bot" | "app", value: string): string {
 export function checkDiscordId(value: string): string {
   const id = value.trim();
   if (!/^\d{17,20}$/.test(id)) {
-    throw new ConnectError("The application ID is a number of 17 to 20 digits, from General Information.", "protocol");
+    throw new ConnectError(
+      "The application ID is a number of 17 to 20 digits, from General Information.",
+      "protocol",
+    );
   }
   return id;
 }

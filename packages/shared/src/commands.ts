@@ -32,6 +32,14 @@ import {
   WorkspacesUpdateResultSchema,
   WorkspacesUpdateSchema,
 } from "./api.ts";
+import {
+  AppSetupForgetInputSchema,
+  AppSetupInputSchema,
+  AppSetupSaveInputSchema,
+  AppSetupSaveResultSchema,
+  AppSetupStatusSchema,
+  AppSetupViewSchema,
+} from "./app-setup.ts";
 import { ApprovalStatsSchema } from "./approval-stats.ts";
 import { AuditListInputSchema, AuditListSchema } from "./audit.ts";
 import {
@@ -107,14 +115,6 @@ import {
   CaptainUndoResultSchema,
   SlotCapacitySchema,
 } from "./captain.ts";
-import {
-  AppSetupForgetInputSchema,
-  AppSetupInputSchema,
-  AppSetupSaveInputSchema,
-  AppSetupSaveResultSchema,
-  AppSetupStatusSchema,
-  AppSetupViewSchema,
-} from "./app-setup.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
   ConnectCatalogSchema,
@@ -2597,7 +2597,8 @@ export const commands = {
   },
   "connect.appStatus": {
     risk: "read",
-    summary: "Which guided apps are set up for a workspace, and which majhi ships. Never returns a client ID or secret",
+    summary:
+      "Which guided apps are set up for a workspace, and which majhi ships. Never returns a client ID or secret",
     input: z.object({ org: IdSchema }),
     output: AppSetupStatusSchema,
   },
@@ -2610,7 +2611,8 @@ export const commands = {
   },
   "connect.appForget": {
     risk: "destructive",
-    summary: "Remove a workspace's saved app (its client ID and secret). Connections already made keep working until their tokens end",
+    summary:
+      "Remove a workspace's saved app (its client ID and secret). Connections already made keep working until their tokens end",
     input: AppSetupForgetInputSchema,
     output: z.object({ removed: z.boolean() }),
   },

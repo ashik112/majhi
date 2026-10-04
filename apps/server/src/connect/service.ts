@@ -7,11 +7,11 @@ import {
   type ConnectFlowView,
   type ConnectionConfig,
   type ConnectionTestResult,
+  type ConnectionType,
   type ConnectScopeLine,
   type ConnectStartInput,
   type ConnectState,
   type ConnectStatus,
-  type ConnectionType,
   cliTool,
   SERVICE_CATALOG,
   type ServiceEntry,
@@ -50,11 +50,10 @@ import {
   authorizationPage,
   exchangeCode,
   joinScope,
-  pkce,
   type ProviderClient,
+  pkce,
   pollDevice,
   probeProvider,
-  redirectFor,
   refreshTokens,
   startDevice,
 } from "./provider-oauth.ts";
@@ -417,7 +416,8 @@ export class ConnectService {
         if (grant !== undefined) {
           expected = grant.account;
           // More access: ask for what it already had and what it lacked.
-          if (grant.state === "insufficient-scope") requested = unique([...grant.requested, ...grant.missing]);
+          if (grant.state === "insufficient-scope")
+            requested = unique([...grant.requested, ...grant.missing]);
         }
       }
     } else {
@@ -484,7 +484,8 @@ export class ConnectService {
   private async begin(flow: Flow, page: string): Promise<ConnectFlowView> {
     this.flows.set(flow.id, flow);
     if (flow.pending !== undefined) this.byState.set(flow.pending.state, flow.id);
-    flow.opened = page !== "" && this.deps.helperConnected() ? await this.deps.openUrl(page).catch(() => false) : false;
+    flow.opened =
+      page !== "" && this.deps.helperConnected() ? await this.deps.openUrl(page).catch(() => false) : false;
     // The address is shown only when majhi could not open it, so a screenshot never holds a live link.
     if (flow.opened) flow.url = undefined;
     this.log(`connect: waiting for ${flow.service.id} in ${flow.org}`);
@@ -573,7 +574,8 @@ export class ConnectService {
       try {
         answer = await pollDevice(provider, client, device.deviceCode, this.fetchFn, () => this.now());
       } catch (err) {
-        const message = err instanceof ConnectError ? err.message : `${flow.service.name} could not sign you in.`;
+        const message =
+          err instanceof ConnectError ? err.message : `${flow.service.name} could not sign you in.`;
         this.end(flow, "failed", `${message} Nothing was saved.`);
         return;
       }
@@ -600,7 +602,9 @@ export class ConnectService {
         const message =
           err instanceof ConnectError ? err.message : `Something went wrong connecting ${flow.service.name}.`;
         this.end(flow, "failed", `${message} Nothing was saved. Start again.`);
-        this.log(`connect: ${flow.service.id} failed (${err instanceof ConnectError ? err.kind : "internal"})`);
+        this.log(
+          `connect: ${flow.service.id} failed (${err instanceof ConnectError ? err.kind : "internal"})`,
+        );
       }
       return;
     }
@@ -648,12 +652,14 @@ export class ConnectService {
               : `Enter the code ${page.code} on the ${toolName} page.`;
           this.deps.changed();
           // The page is opened by the tool through the helper; the link stays visible as a fallback.
-          void (this.deps.helperConnected() ? this.deps.openUrl(page.url).catch(() => false) : Promise.resolve(false)).then(
-            (opened) => {
-              if (opened && isLive(flow)) flow.opened = true;
-              this.deps.changed();
-            },
-          );
+          void (
+            this.deps.helperConnected()
+              ? this.deps.openUrl(page.url).catch(() => false)
+              : Promise.resolve(false)
+          ).then((opened) => {
+            if (opened && isLive(flow)) flow.opened = true;
+            this.deps.changed();
+          });
         },
       );
       if (!isLive(flow)) return;
@@ -662,7 +668,11 @@ export class ConnectService {
         return;
       }
       if (result.state === "missing") {
-        this.end(flow, "failed", `${toolName} is not installed on this computer. Install it, then try again.`);
+        this.end(
+          flow,
+          "failed",
+          `${toolName} is not installed on this computer. Install it, then try again.`,
+        );
         return;
       }
       if (result.state === "other-account") {
@@ -676,7 +686,8 @@ export class ConnectService {
       await this.commitCli(flow, entry, result.identity);
     } catch (err) {
       if (!isLive(flow)) return;
-      const message = err instanceof Error && err.message !== "" ? err.message : `${toolName} did not sign in.`;
+      const message =
+        err instanceof Error && err.message !== "" ? err.message : `${toolName} did not sign in.`;
       this.end(flow, "failed", message.endsWith(".") ? message : `${message}.`);
       this.log(`connect: ${entry.id} failed (cli)`);
     }
@@ -707,7 +718,13 @@ export class ConnectService {
     }
     flow.account = identity;
     flow.scopes = scopeLines(entry, [], "readwrite");
-    flow.test = { ok: true, detail: `${entry.name} is signed in${identity === undefined ? "" : ` as ${identity}`}.`, warnings: [], at: this.now().toISOString(), durationMs: 0 };
+    flow.test = {
+      ok: true,
+      detail: `${entry.name} is signed in${identity === undefined ? "" : ` as ${identity}`}.`,
+      warnings: [],
+      at: this.now().toISOString(),
+      durationMs: 0,
+    };
     this.end(flow, "connected", `Connected${identity === undefined ? "" : ` as ${identity}`}.`);
     this.log(`connect: ${entry.id} connected in ${flow.org}`);
   }
@@ -979,7 +996,8 @@ export class ConnectService {
       serverUrl: url,
       resource: found?.resource ?? url,
       issuer: found?.issuer ?? provider?.issuer ?? hostOf(provider?.tokenUrl ?? url),
-      authorizationServerUrl: found?.authorizationServerUrl ?? provider?.authorizeUrl ?? provider?.tokenUrl ?? url,
+      authorizationServerUrl:
+        found?.authorizationServerUrl ?? provider?.authorizeUrl ?? provider?.tokenUrl ?? url,
       ...(revokeAt(found, provider) === undefined ? {} : { revocationEndpoint: revokeAt(found, provider) }),
       ...(provider === undefined ? {} : { provider: true as const }),
       clientId: client.clientId,
@@ -1227,7 +1245,6 @@ export class ConnectService {
     const found = (await this.deps.connectionIds()).find((c) => c.id === connection);
     if (found?.connection.type === "cli") return this.testCli(found.id, found.connection);
     if (found !== undefined && this.isTokenService(found.connection)) {
-      const started = Date.now();
       const service = found.connection.fields?.service ?? "";
       const result = await this.appSvc.test(found.id, service);
       this.tokenStates.set(found.id, {
@@ -1261,7 +1278,9 @@ export class ConnectService {
       this.deps.changed();
       return this.result(
         checked.ok,
-        checked.ok ? `${tool.name}: signed in${checked.identity === undefined ? "" : ` as ${checked.identity}`}.` : checked.detail,
+        checked.ok
+          ? `${tool.name}: signed in${checked.identity === undefined ? "" : ` as ${checked.identity}`}.`
+          : checked.detail,
         started,
       );
     } catch {
@@ -1333,7 +1352,11 @@ export class ConnectService {
     }
     if (apiOnly) {
       if (grant.state === "error") await this.markState(grant.connection, "connected", "");
-      return this.result(true, `Signed in${identityLabel === undefined ? "" : ` as ${identityLabel}`}.`, started);
+      return this.result(
+        true,
+        `Signed in${identityLabel === undefined ? "" : ` as ${identityLabel}`}.`,
+        started,
+      );
     }
     try {
       const tools = await this.deps.listTools(grant.serverUrl, grant.tokens.accessToken);
@@ -1424,7 +1447,8 @@ export class ConnectService {
   }
 
   private whereToRemove(grant: Grant | undefined, name: string): string {
-    const page = (grant?.service === undefined ? undefined : this.service(grant.service))?.provider?.accessPage;
+    const page = (grant?.service === undefined ? undefined : this.service(grant.service))?.provider
+      ?.accessPage;
     return page === undefined
       ? `remove majhi from the authorized apps in your ${name} account settings.`
       : `remove the app's access at ${page}.`;
@@ -1439,7 +1463,8 @@ export class ConnectService {
     const tool = cliTool(textValue(config, "tool") ?? "");
     let revoked = false;
     if (tool !== undefined && this.deps.cli?.connected() === true) {
-      revoked = (await this.deps.cli.logout({ tool: tool.id, connection }).catch(() => ({ revoked: false }))).revoked;
+      revoked = (await this.deps.cli.logout({ tool: tool.id, connection }).catch(() => ({ revoked: false })))
+        .revoked;
     }
     await this.deps.connections.remove(connection, "connect.disconnect", meta);
     this.cliStates.delete(connection);
@@ -1491,8 +1516,14 @@ export class ConnectService {
       grant.provider === true && entry?.app !== undefined
         ? await this.deps.apps.get(entry.app, grant.org)
         : undefined;
-    const registration = grant.provider === true ? undefined : await this.deps.grants.registration(grant.issuer, this.deps.redirect);
-    const client = { clientId: grant.clientId, clientSecret: own?.clientSecret ?? registration?.clientSecret };
+    const registration =
+      grant.provider === true
+        ? undefined
+        : await this.deps.grants.registration(grant.issuer, this.deps.redirect);
+    const client = {
+      clientId: grant.clientId,
+      clientSecret: own?.clientSecret ?? registration?.clientSecret,
+    };
     return this.revokeTokens(grant.revocationEndpoint, client, {
       accessToken: grant.tokens.accessToken,
       refreshToken: grant.tokens.refreshToken,
@@ -1554,7 +1585,12 @@ export class ConnectService {
   private async remind(): Promise<void> {
     for (const connection of await this.deps.grants.connections()) {
       const grant = await this.deps.grants.get(connection);
-      if (grant === undefined || grant.tokens.refreshToken !== undefined || grant.tokens.expiresAt === undefined) continue;
+      if (
+        grant === undefined ||
+        grant.tokens.refreshToken !== undefined ||
+        grant.tokens.expiresAt === undefined
+      )
+        continue;
       if (grant.state === "needs-reconnect" || grant.state === "revoked") continue;
       const left = Date.parse(grant.tokens.expiresAt) - this.now().getTime();
       const key = `connect:${connection}:ends:${grant.tokens.expiresAt}`;

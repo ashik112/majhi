@@ -1,20 +1,20 @@
 import {
   APP_IDS,
   type AppSetupView,
+  appServices,
+  buildAppSetup,
   type CommandMeta,
   type ConnectAccess,
   type ConnectionConfig,
   type ConnectionTestResult,
-  appServices,
-  buildAppSetup,
   discordAddBotUrl,
   suggestConnectionId,
 } from "@majhi/shared";
 import { z } from "zod";
 import { UserError } from "../errors.ts";
 import { type AppClientStore, checkDiscordId, checkSlackToken, parseGoogleClientJson } from "./app-client.ts";
-import type { ConnectConnections } from "./service.ts";
 import { ConnectError, type Fetch } from "./oauth.ts";
+import type { ConnectConnections } from "./service.ts";
 
 /**
  * The guided app setup behind the Connections page (SPEC 5.14): shows the sheet for a service, saves
@@ -81,9 +81,13 @@ export class AppService {
       const services = appServices(app);
       const tokenApp = services.some((s) => s.kind === "api-key");
       const saved = tokenApp
-        ? connections.some((c) => c.org === org && services.some((s) => s.id === c.connection.fields?.service))
+        ? connections.some(
+            (c) => c.org === org && services.some((s) => s.id === c.connection.fields?.service),
+          )
         : (await this.deps.apps.get(app, org)) !== undefined;
-      let builtIn = services.some((s) => (this.deps.builtIn?.[s.id] ?? this.deps.builtIn?.[app] ?? "") !== "");
+      let builtIn = services.some(
+        (s) => (this.deps.builtIn?.[s.id] ?? this.deps.builtIn?.[app] ?? "") !== "",
+      );
       if (!builtIn && app === "github" && (await this.deps.githubClientId?.()) !== undefined) builtIn = true;
       out.push({ app, saved, builtIn });
     }
@@ -132,7 +136,8 @@ export class AppService {
 
   private async saveClient(input: SaveInput, withSecret: boolean): Promise<SaveResult> {
     const id = ClientIdSchema.safeParse(trimmed(input.values, "clientId", "The client ID"));
-    if (!id.success) throw new UserError("That does not look like a client ID: it has spaces or is too short.");
+    if (!id.success)
+      throw new UserError("That does not look like a client ID: it has spaces or is too short.");
     const secret = withSecret ? trimmed(input.values, "clientSecret", "The client secret") : undefined;
     await this.deps.apps.save({
       v: 1,
@@ -172,7 +177,11 @@ export class AppService {
     const bot = checkSlackToken("bot", input.values.botToken ?? "");
     const app = checkSlackToken("app", input.values.appToken ?? "");
     const who = await this.slack<{ team?: string; user?: string }>("auth.test", bot);
-    if (!who.ok) throw new ConnectError("Slack did not accept the bot token. Copy it again from OAuth & Permissions.", "refused");
+    if (!who.ok)
+      throw new ConnectError(
+        "Slack did not accept the bot token. Copy it again from OAuth & Permissions.",
+        "refused",
+      );
     const open = await this.slack("apps.connections.open", app);
     if (!open.ok) {
       throw new ConnectError(
@@ -181,12 +190,27 @@ export class AppService {
       );
     }
     const account = [who.team, who.user].filter((v): v is string => typeof v === "string").join(" / ");
-    const connection = await this.upsert(input, meta, "slack", "Slack", {
-      SLACK_BOT_TOKEN: { kind: "secret" },
-      SLACK_APP_TOKEN: { kind: "secret" },
-    }, account);
-    await this.deps.connections.setSecret?.({ id: connection, field: "SLACK_BOT_TOKEN", list: "vars", value: bot }, "connect.appSave", meta);
-    await this.deps.connections.setSecret?.({ id: connection, field: "SLACK_APP_TOKEN", list: "vars", value: app }, "connect.appSave", meta);
+    const connection = await this.upsert(
+      input,
+      meta,
+      "slack",
+      "Slack",
+      {
+        SLACK_BOT_TOKEN: { kind: "secret" },
+        SLACK_APP_TOKEN: { kind: "secret" },
+      },
+      account,
+    );
+    await this.deps.connections.setSecret?.(
+      { id: connection, field: "SLACK_BOT_TOKEN", list: "vars", value: bot },
+      "connect.appSave",
+      meta,
+    );
+    await this.deps.connections.setSecret?.(
+      { id: connection, field: "SLACK_APP_TOKEN", list: "vars", value: app },
+      "connect.appSave",
+      meta,
+    );
     this.deps.changed();
     this.deps.log?.(`connect: slack connected in ${input.org}`);
     return {
@@ -200,18 +224,39 @@ export class AppService {
     const id = checkDiscordId(input.values.applicationId ?? "");
     const token = (input.values.botToken ?? "").trim();
     if (token.length < 30 || /\s/.test(token)) {
-      throw new ConnectError("The bot token looks wrong. On the Bot page press Reset Token and copy the new one.", "protocol");
+      throw new ConnectError(
+        "The bot token looks wrong. On the Bot page press Reset Token and copy the new one.",
+        "protocol",
+      );
     }
     const me = await this.discordMe(token);
-    if (me === undefined) throw new ConnectError("Discord did not accept the bot token. Reset it on the Bot page and copy it again.", "refused");
+    if (me === undefined)
+      throw new ConnectError(
+        "Discord did not accept the bot token. Reset it on the Bot page and copy it again.",
+        "refused",
+      );
     if (me.id !== id) {
-      throw new ConnectError("That bot token belongs to a different application than the ID you gave.", "protocol");
+      throw new ConnectError(
+        "That bot token belongs to a different application than the ID you gave.",
+        "protocol",
+      );
     }
-    const connection = await this.upsert(input, meta, "discord", "Discord", {
-      DISCORD_BOT_TOKEN: { kind: "secret" },
-      DISCORD_APPLICATION_ID: { kind: "text", value: id },
-    }, me.name);
-    await this.deps.connections.setSecret?.({ id: connection, field: "DISCORD_BOT_TOKEN", list: "vars", value: token }, "connect.appSave", meta);
+    const connection = await this.upsert(
+      input,
+      meta,
+      "discord",
+      "Discord",
+      {
+        DISCORD_BOT_TOKEN: { kind: "secret" },
+        DISCORD_APPLICATION_ID: { kind: "text", value: id },
+      },
+      me.name,
+    );
+    await this.deps.connections.setSecret?.(
+      { id: connection, field: "DISCORD_BOT_TOKEN", list: "vars", value: token },
+      "connect.appSave",
+      meta,
+    );
     this.deps.changed();
     this.deps.log?.(`connect: discord connected in ${input.org}`);
     return {

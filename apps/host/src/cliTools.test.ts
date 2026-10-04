@@ -76,7 +76,12 @@ function toolDef(account: string, mode = "ok"): CliToolDef {
   };
 }
 
-function logins(home: string, bin: string, account: string, extra: { mode?: string; timeoutMs?: number } = {}) {
+function logins(
+  home: string,
+  bin: string,
+  account: string,
+  extra: { mode?: string; timeoutMs?: number } = {},
+) {
   return new CliToolLogins({
     majhiHome: home,
     path: PATH,
@@ -200,7 +205,10 @@ describe("a workspace's own sign-in", () => {
     const home = await temp();
     const bin = await fakeTool(home);
     const l = logins(home, bin, "x", { mode: "hang" });
-    const pending = l.login({ signIn: "cancel-signin", tool: "wrangler", connection: "acme-cf" }, () => undefined);
+    const pending = l.login(
+      { signIn: "cancel-signin", tool: "wrangler", connection: "acme-cf" },
+      () => undefined,
+    );
     await until(() => l.cancel("cancel-signin"));
     await expect(pending).resolves.toEqual({ state: "cancelled" });
     expect(await exists(profileFolder(home, "acme-cf"))).toBe(false);

@@ -22,7 +22,14 @@ const identity = (
 
 const G = "https://www.googleapis.com/auth/";
 
-const google = (id: string, name: string, summary: string, test: string, scopes: unknown[], docs: string) => ({
+const google = (
+  id: string,
+  name: string,
+  summary: string,
+  test: string,
+  scopes: unknown[],
+  docs: string,
+) => ({
   id,
   name,
   kind: "oauth-loopback",
@@ -43,7 +50,11 @@ const google = (id: string, name: string, summary: string, test: string, scopes:
     clientAuth: "secret",
     identityScopes: ["openid", "email"],
     extraAuthParams: { access_type: "offline", prompt: "consent" },
-    identity: identity(test, [["email"], ["emailAddress"], ["user", "emailAddress"]], [["id"], ["emailAddress"], ["user", "emailAddress"]]),
+    identity: identity(
+      test,
+      [["email"], ["emailAddress"], ["user", "emailAddress"]],
+      [["id"], ["emailAddress"], ["user", "emailAddress"]],
+    ),
     refusedHint:
       "If the Google app is still in Testing, Google ends a sign-in after 7 days. Publish the app in the Google console, then connect again.",
     accessPage: "https://myaccount.google.com/permissions",
@@ -74,7 +85,10 @@ export const EXTRA_SERVICES: readonly unknown[] = [
       scopeSeparator: ",",
       identity: identity(
         "https://api.linear.app/graphql",
-        [["data", "viewer", "email"], ["data", "viewer", "name"]],
+        [
+          ["data", "viewer", "email"],
+          ["data", "viewer", "name"],
+        ],
         [["data", "viewer", "id"]],
         { method: "POST", body: '{"query":"{ viewer { id name email } }"}' },
       ),
@@ -122,7 +136,12 @@ export const EXTRA_SERVICES: readonly unknown[] = [
       accessPage: "https://account.microsoft.com/privacy/app-access",
     },
     scopes: [
-      { id: "read", access: "read", sentence: "Read your mail and calendar.", oauth: ["Mail.Read", "Calendars.Read"] },
+      {
+        id: "read",
+        access: "read",
+        sentence: "Read your mail and calendar.",
+        oauth: ["Mail.Read", "Calendars.Read"],
+      },
       {
         id: "draft",
         access: "write",
@@ -159,12 +178,24 @@ export const EXTRA_SERVICES: readonly unknown[] = [
       pkce: true,
       clientAuth: "none",
       identityScopes: ["users.read", "offline.access"],
-      identity: identity("https://api.x.com/2/users/me", [["data", "username"], ["data", "name"]], [["data", "id"]]),
+      identity: identity(
+        "https://api.x.com/2/users/me",
+        [
+          ["data", "username"],
+          ["data", "name"],
+        ],
+        [["data", "id"]],
+      ),
       tokenVar: "X_ACCESS_TOKEN",
     },
     scopes: [
       { id: "read", access: "read", sentence: "Read posts and mentions.", oauth: ["tweet.read"] },
-      { id: "write", access: "write", sentence: "Post and reply as you.", oauth: ["tweet.read", "tweet.write"] },
+      {
+        id: "write",
+        access: "write",
+        sentence: "Post and reply as you.",
+        oauth: ["tweet.read", "tweet.write"],
+      },
     ],
     test: { kind: "api", sentence: "Asks X who you are." },
     docs: "https://docs.x.com/resources/fundamentals/authentication/oauth-2-0/authorization-code",
@@ -201,7 +232,8 @@ export const EXTRA_SERVICES: readonly unknown[] = [
       {
         id: "write",
         access: "write",
-        sentence: "Read and change private repositories, issues and pull requests. GitHub has no read-only option for private code here.",
+        sentence:
+          "Read and change private repositories, issues and pull requests. GitHub has no read-only option for private code here.",
         oauth: ["read:user", "read:org", "repo"],
       },
     ],
@@ -216,7 +248,12 @@ export const EXTRA_SERVICES: readonly unknown[] = [
     "https://gmail.googleapis.com/gmail/v1/users/me/profile",
     [
       { id: "read", access: "read", sentence: "Read your mail and labels.", oauth: [`${G}gmail.readonly`] },
-      { id: "draft", access: "write", sentence: "Write drafts. It does not send.", oauth: [`${G}gmail.compose`] },
+      {
+        id: "draft",
+        access: "write",
+        sentence: "Write drafts. It does not send.",
+        oauth: [`${G}gmail.compose`],
+      },
       {
         id: "send",
         access: "write",
@@ -233,7 +270,12 @@ export const EXTRA_SERVICES: readonly unknown[] = [
     "Read and add events",
     "https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=1",
     [
-      { id: "read", access: "read", sentence: "Read your calendars and events.", oauth: [`${G}calendar.readonly`] },
+      {
+        id: "read",
+        access: "read",
+        sentence: "Read your calendars and events.",
+        oauth: [`${G}calendar.readonly`],
+      },
       { id: "write", access: "write", sentence: "Add and change events.", oauth: [`${G}calendar.events`] },
     ],
     "https://developers.google.com/calendar/api/auth",
@@ -298,9 +340,22 @@ export const EXTRA_SERVICES: readonly unknown[] = [
         id: "read",
         access: "read",
         sentence: "Read messages in channels the app is added to, and see who posted.",
-        oauth: ["channels:history", "groups:history", "im:history", "mpim:history", "channels:read", "groups:read", "users:read"],
+        oauth: [
+          "channels:history",
+          "groups:history",
+          "im:history",
+          "mpim:history",
+          "channels:read",
+          "groups:read",
+          "users:read",
+        ],
       },
-      { id: "write", access: "write", sentence: "Post replies as the app. Each post asks you first.", oauth: ["chat:write"] },
+      {
+        id: "write",
+        access: "write",
+        sentence: "Post replies as the app. Each post asks you first.",
+        oauth: ["chat:write"],
+      },
     ],
     test: { kind: "token", sentence: "Asks Slack which workspace the app is in." },
     docs: "https://docs.slack.dev/app-manifests/",
@@ -316,7 +371,11 @@ export const EXTRA_SERVICES: readonly unknown[] = [
     verifiedNote: DOCS_ONLY,
     packs: ["Social and inbox", "Growth"],
     scopes: [
-      { id: "read", access: "read", sentence: "See channels and read message history where the bot is added." },
+      {
+        id: "read",
+        access: "read",
+        sentence: "See channels and read message history where the bot is added.",
+      },
       { id: "write", access: "write", sentence: "Send messages as the bot. Each message asks you first." },
     ],
     test: { kind: "token", sentence: "Asks Discord who the bot is." },
@@ -324,13 +383,25 @@ export const EXTRA_SERVICES: readonly unknown[] = [
   },
   ...cli("wrangler", "Cloudflare (wrangler)", "Workers, Pages and DNS", ["Ops watch", "Engineering"]),
   ...cli("vercel-cli", "Vercel CLI", "Projects and deployments", ["Ops watch", "Engineering"], "vercel"),
-  ...cli("stripe-cli", "Stripe CLI", "Payments and a 90-day restricted key", ["Growth", "Analysis"], "stripe"),
+  ...cli(
+    "stripe-cli",
+    "Stripe CLI",
+    "Payments and a 90-day restricted key",
+    ["Growth", "Analysis"],
+    "stripe",
+  ),
   ...cli("aws", "AWS", "Your AWS account", ["Ops watch"]),
   ...cli("gcloud", "Google Cloud", "Your Google Cloud projects", ["Ops watch"]),
   ...cli("sentry-cli", "Sentry CLI", "Errors and releases", ["Ops watch", "Engineering"], "sentry"),
 ];
 
-function cli(id: string, name: string, summary: string, packs: string[], tool: CliToolId = id as CliToolId): unknown[] {
+function cli(
+  id: string,
+  name: string,
+  summary: string,
+  packs: string[],
+  tool: CliToolId = id as CliToolId,
+): unknown[] {
   const def = CLI_TOOLS[tool];
   return [
     {
@@ -343,9 +414,7 @@ function cli(id: string, name: string, summary: string, packs: string[], tool: C
       verified: false,
       verifiedNote: `${def.note} Not run against a real install: the first sign-in is the check.`,
       packs,
-      scopes: [
-        { id: "account", access: "write", sentence: def.access },
-      ],
+      scopes: [{ id: "account", access: "write", sentence: def.access }],
       test: { kind: "cli", sentence: "Runs the tool's own who-am-I command." },
       docs: def.docs,
     },

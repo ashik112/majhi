@@ -126,7 +126,10 @@ async function begin(r: Rig, o: { access?: "read" | "readwrite" | "send"; org?: 
       return true;
     },
   });
-  const view = await connect.start({ org: o.org ?? "acme", service: "fakeapi", access: o.access ?? "read" }, OWNER);
+  const view = await connect.start(
+    { org: o.org ?? "acme", service: "fakeapi", access: o.access ?? "read" },
+    OWNER,
+  );
   return { connect, view, page };
 }
 
@@ -180,7 +183,11 @@ describe("a provider's own OAuth with PKCE and a loopback redirect", () => {
     expect(done.scopes.map((s) => s.sentence)).toEqual(["Read mail."]);
     const made = [...r.connections.values()][0];
     expect(made?.connection.type).toBe("api");
-    expect(made?.connection.fields).toMatchObject({ service: "fakeapi", auth: "oauth", token_var: "FAKE_API_TOKEN" });
+    expect(made?.connection.fields).toMatchObject({
+      service: "fakeapi",
+      auth: "oauth",
+      token_var: "FAKE_API_TOKEN",
+    });
     const bearer = await connect.bearer([...r.connections.keys()][0] ?? "");
     expect("token" in bearer).toBe(true);
     const seen = r.provider.secretsSeen();
@@ -200,7 +207,8 @@ describe("a provider's own OAuth with PKCE and a loopback redirect", () => {
 
   it("refuses an answer from another issuer before it redeems anything", async () => {
     r = await rig({
-      entry: (base) => fakeProviderService(base, { provider: { issuer: "https://login.acme.example", issSent: true } }),
+      entry: (base) =>
+        fakeProviderService(base, { provider: { issuer: "https://login.acme.example", issSent: true } }),
     });
     const { connect, view, page } = await begin(r);
     const result = await connect.callback(r.provider.approve(page, { iss: "https://evil.example" }));
@@ -212,7 +220,8 @@ describe("a provider's own OAuth with PKCE and a loopback redirect", () => {
 
   it("refuses an answer with no issuer from a provider that always sends one", async () => {
     r = await rig({
-      entry: (base) => fakeProviderService(base, { provider: { issuer: "https://login.acme.example", issSent: true } }),
+      entry: (base) =>
+        fakeProviderService(base, { provider: { issuer: "https://login.acme.example", issSent: true } }),
     });
     const { connect, page } = await begin(r);
     const result = await connect.callback(r.provider.approve(page, { iss: null }));
@@ -223,7 +232,9 @@ describe("a provider's own OAuth with PKCE and a loopback redirect", () => {
   it("matches a tenant issuer by prefix", async () => {
     r = await rig({
       entry: (base) =>
-        fakeProviderService(base, { provider: { issuer: "https://login.acme.example/", issuerPrefix: true, issSent: true } }),
+        fakeProviderService(base, {
+          provider: { issuer: "https://login.acme.example/", issuerPrefix: true, issSent: true },
+        }),
     });
     const { connect, page } = await begin(r);
     const result = await connect.callback(
@@ -260,9 +271,9 @@ describe("a provider's own OAuth with PKCE and a loopback redirect", () => {
 
   it("asks for the app first when the workspace has none", async () => {
     r = await rig({ noApp: true });
-    await expect(
-      r.connect.start({ org: "acme", service: "fakeapi", access: "read" }, OWNER),
-    ).rejects.toThrow("Set up the Fake API app first");
+    await expect(r.connect.start({ org: "acme", service: "fakeapi", access: "read" }, OWNER)).rejects.toThrow(
+      "Set up the Fake API app first",
+    );
   });
 
   it("uses a workspace's own app and never another workspace's", async () => {
@@ -355,7 +366,9 @@ describe("a provider that needs the owner's client secret", () => {
   });
 
   it("a redirect name the provider registers is used in the page and the token request", async () => {
-    r = await rig({ entry: (base) => fakeProviderService(base, { provider: { redirectHost: "localhost" } }) });
+    r = await rig({
+      entry: (base) => fakeProviderService(base, { provider: { redirectHost: "localhost" } }),
+    });
     const { connect, page } = await begin(r);
     expect(new URL(page).searchParams.get("redirect_uri")).toBe("http://localhost:7070/oauth/callback");
     await connect.callback(r.provider.approve(page));
@@ -414,9 +427,13 @@ describe("the device grant", () => {
   });
 
   it("says so when the provider refuses to start a code sign-in", async () => {
-    r = await rig({ flow: "device", entry: (base) => fakeProviderService(base, { flow: "device", provider: { deviceUrl: `${base}/nowhere` } }) });
-    await expect(
-      r.connect.start({ org: "acme", service: "fakeapi", access: "read" }, OWNER),
-    ).rejects.toThrow(/did not start a code sign-in/);
+    r = await rig({
+      flow: "device",
+      entry: (base) =>
+        fakeProviderService(base, { flow: "device", provider: { deviceUrl: `${base}/nowhere` } }),
+    });
+    await expect(r.connect.start({ org: "acme", service: "fakeapi", access: "read" }, OWNER)).rejects.toThrow(
+      /did not start a code sign-in/,
+    );
   });
 });

@@ -166,5 +166,13 @@ export function cliLoginEnv(tool: CliToolDef, profile: string): Record<string, s
 
 /** Folders a login needs to exist, inside the profile. */
 export function cliProfileFolders(profile: string): string[] {
-  return [`${profile}/home`, `${profile}/xdg/config`, `${profile}/xdg/data`, `${profile}/xdg/state`, `${profile}/xdg/cache`, `${profile}/aws`, `${profile}/gcloud`];
+  return [
+    `${profile}/home`,
+    `${profile}/xdg/config`,
+    `${profile}/xdg/data`,
+    `${profile}/xdg/state`,
+    `${profile}/xdg/cache`,
+    `${profile}/aws`,
+    `${profile}/gcloud`,
+  ];
 }

@@ -193,7 +193,10 @@ for (const [w, h] of [
 
     test(`connected tool ${w} ${theme}`, async ({ page }) => {
       await open(page, w, h, theme);
-      await page.getByRole("button", { name: /Cloudflare \(wrangler\)/ }).first().click();
+      await page
+        .getByRole("button", { name: /Cloudflare \(wrangler\)/ })
+        .first()
+        .click();
       await expect(page.getByRole("region", { name: "Sign-in" })).toBeVisible();
       await shot(page, "tool-connected", w, theme);
     });

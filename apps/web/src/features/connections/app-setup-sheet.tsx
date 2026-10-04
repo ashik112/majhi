@@ -142,7 +142,10 @@ export function AppSetupSheet({
 
   if (view === undefined) {
     return (
-      <p role={setup.isError ? "alert" : "status"} className={cn("text-base", setup.isError ? "text-red" : "text-fg-muted")}>
+      <p
+        role={setup.isError ? "alert" : "status"}
+        className={cn("text-base", setup.isError ? "text-red" : "text-fg-muted")}
+      >
         {setup.isError ? describeError(setup.error) : "Loading the setup"}
       </p>
     );
@@ -172,8 +175,7 @@ export function AppSetupSheet({
     );
   }
   const ready = view.inputs.every((i) => (values[i.key] ?? "").trim() !== "");
-  const submit = () =>
-    save.mutate({ org, app, values, access }, { onSuccess: (out) => setResult(out) });
+  const submit = () => save.mutate({ org, app, values, access }, { onSuccess: (out) => setResult(out) });
 
   return (
     <div className="flex max-w-[660px] flex-col gap-5">
@@ -280,7 +282,11 @@ export function AppSetupSheet({
         )}
         <div className="flex items-center gap-2">
           <Button type="submit" variant="primary" disabled={!ready || save.isPending}>
-            {save.isPending ? "Checking" : view.finishes === "tokens" ? `Connect ${serviceName}` : "Save the app"}
+            {save.isPending
+              ? "Checking"
+              : view.finishes === "tokens"
+                ? `Connect ${serviceName}`
+                : "Save the app"}
           </Button>
           <Button type="button" variant="ghost" onClick={() => onDone(false)}>
             Back

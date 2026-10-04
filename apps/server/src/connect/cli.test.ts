@@ -20,7 +20,10 @@ interface FakeHost extends CliHost {
   logouts: { tool: CliToolId; connection: string }[];
   online: boolean;
   /** What the next login does. */
-  next: (params: FakeHost["logins"][number], onPage: Parameters<CliHost["login"]>[1]) => Promise<CliLoginResult>;
+  next: (
+    params: FakeHost["logins"][number],
+    onPage: Parameters<CliHost["login"]>[1],
+  ) => Promise<CliLoginResult>;
   checkResult: CliCheckResult;
 }
 
@@ -133,9 +136,9 @@ describe("a command-line tool's sign-in", () => {
   it("needs the helper, and says so", async () => {
     r = await rig();
     r.host.online = false;
-    await expect(r.connect.start({ org: "acme", service: "wrangler", access: "read" }, OWNER)).rejects.toThrow(
-      /helper has to be running/,
-    );
+    await expect(
+      r.connect.start({ org: "acme", service: "wrangler", access: "read" }, OWNER),
+    ).rejects.toThrow(/helper has to be running/);
     expect(r.host.logins).toHaveLength(0);
   });
 
@@ -179,7 +182,9 @@ describe("a command-line tool's sign-in", () => {
     };
     const view = await r.connect.start({ org: "acme", service: "wrangler", access: "read" }, OWNER);
     await until(() => r.connect.flow(view.flow).state === "failed");
-    expect(r.connect.flow(view.flow).message).toBe("The Cloudflare (wrangler) sign-in ran out of time. Nothing was saved.");
+    expect(r.connect.flow(view.flow).message).toBe(
+      "The Cloudflare (wrangler) sign-in ran out of time. Nothing was saved.",
+    );
     expect(r.connections.size).toBe(0);
   });
 
@@ -189,7 +194,10 @@ describe("a command-line tool's sign-in", () => {
     await until(() => r.connect.flow(first.flow).state === "connected");
     const id = r.connect.flow(first.flow).connection ?? "";
     r.host.next = async () => ({ state: "other-account", identity: "intruder@other.example" });
-    const again = await r.connect.start({ org: "acme", service: "wrangler", access: "read", connection: id }, OWNER);
+    const again = await r.connect.start(
+      { org: "acme", service: "wrangler", access: "read", connection: id },
+      OWNER,
+    );
     await until(() => r.connect.flow(again.flow).state === "failed");
     expect(r.connect.flow(again.flow).message).toContain("intruder@other.example");
     expect(r.host.logins.at(-1)?.expected).toBe("ops@acme.example");
@@ -242,7 +250,10 @@ describe("a command-line tool's sign-in", () => {
 
   it("signs two workspaces in to the same tool as different accounts, each in its own folder", async () => {
     r = await rig();
-    r.host.next = async (p) => ({ state: "done", identity: p.connection.startsWith("wrangler-") ? "dev@globex.example" : "ops@acme.example" });
+    r.host.next = async (p) => ({
+      state: "done",
+      identity: p.connection.startsWith("wrangler-") ? "dev@globex.example" : "ops@acme.example",
+    });
     const a = await r.connect.start({ org: "acme", service: "wrangler", access: "read" }, OWNER);
     await until(() => r.connect.flow(a.flow).state === "connected");
     const b = await r.connect.start({ org: "globex", service: "wrangler", access: "read" }, OWNER);
@@ -268,7 +279,7 @@ describe("what a run of one workspace gets of a tool's sign-in", () => {
     fields: { tool, account },
   });
   const orgs = {
-    acme: { connections: { "wrangler": cli("wrangler", "ops@acme.example"), "aws": cli("aws", "acme-prod") } },
+    acme: { connections: { wrangler: cli("wrangler", "ops@acme.example"), aws: cli("aws", "acme-prod") } },
     globex: { connections: { "wrangler-2": cli("wrangler", "dev@globex.example") } },
   };
   const deps = (oauth = async () => ({ problem: "none" })) => ({
@@ -285,13 +296,20 @@ describe("what a run of one workspace gets of a tool's sign-in", () => {
     });
     const plan = await planConnections(held, "/run", deps());
     const text = JSON.stringify(plan);
-    expect(plan.profiles.sort()).toEqual([`${home}/connections/aws/profile`, `${home}/connections/wrangler/profile`]);
+    expect(plan.profiles.sort()).toEqual([
+      `${home}/connections/aws/profile`,
+      `${home}/connections/wrangler/profile`,
+    ]);
     expect(plan.env.XDG_CONFIG_HOME).toBe(`${home}/connections/wrangler/profile/xdg/config`);
     expect(plan.env.AWS_CONFIG_FILE).toBe(`${home}/connections/aws/profile/aws/config`);
     // Nothing of workspace B, and nothing that moves the agent's own home.
     expect(text).not.toContain("wrangler-2");
     expect(plan.env.HOME).toBeUndefined();
-    expect(Object.keys(plan.env).sort()).toEqual(["AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "XDG_CONFIG_HOME"]);
+    expect(Object.keys(plan.env).sort()).toEqual([
+      "AWS_CONFIG_FILE",
+      "AWS_SHARED_CREDENTIALS_FILE",
+      "XDG_CONFIG_HOME",
+    ]);
     // Its changes ask first.
     expect(plan.gate.find((g) => g.id === "wrangler")?.clis).toEqual(["wrangler"]);
   });

@@ -101,7 +101,10 @@ export class FakeProvider {
   }
 
   /** The owner approves the page the entry opened: where the browser would be sent back to. */
-  approve(pageUrl: string, options: { account?: string; iss?: string | null; error?: string } = {}): URLSearchParams {
+  approve(
+    pageUrl: string,
+    options: { account?: string; iss?: string | null; error?: string } = {},
+  ): URLSearchParams {
     const page = new URL(pageUrl);
     const state = page.searchParams.get("state") ?? "";
     const back = new URLSearchParams({ state });
@@ -191,7 +194,8 @@ export class FakeProvider {
         if (code.challenge !== undefined && s256(body.get("code_verifier") ?? "") !== code.challenge) {
           return send(res, 400, { error: "invalid_grant" });
         }
-        if (code.redirect !== (body.get("redirect_uri") ?? "")) return send(res, 400, { error: "invalid_grant" });
+        if (code.redirect !== (body.get("redirect_uri") ?? ""))
+          return send(res, 400, { error: "invalid_grant" });
         return send(res, 200, this.token(code.account, code.scope));
       }
       if (grant === "refresh_token") {
@@ -206,8 +210,14 @@ export class FakeProvider {
       if (grant === "urn:ietf:params:oauth:grant-type:device_code") {
         const step = this.options.deviceScript?.[this.devicePolls] ?? "ok";
         this.devicePolls += 1;
-        if (step === "ok") return send(res, 200, this.token(this.options.account ?? "maria@acme.example", "read:user"));
-        const error = { pending: "authorization_pending", slow_down: "slow_down", denied: "access_denied", expired: "expired_token" }[step];
+        if (step === "ok")
+          return send(res, 200, this.token(this.options.account ?? "maria@acme.example", "read:user"));
+        const error = {
+          pending: "authorization_pending",
+          slow_down: "slow_down",
+          denied: "access_denied",
+          expired: "expired_token",
+        }[step];
         return send(res, 400, { error });
       }
     }
@@ -218,7 +228,11 @@ export class FakeProvider {
 /** A catalog entry whose provider is the fake. */
 export function fakeProviderService(
   base: string,
-  overrides: { flow?: "loopback" | "device"; provider?: Partial<ServiceProvider>; entry?: Partial<ServiceEntry> } = {},
+  overrides: {
+    flow?: "loopback" | "device";
+    provider?: Partial<ServiceProvider>;
+    entry?: Partial<ServiceEntry>;
+  } = {},
 ): ServiceEntry {
   const flow = overrides.flow ?? "loopback";
   const provider: ServiceProvider = {

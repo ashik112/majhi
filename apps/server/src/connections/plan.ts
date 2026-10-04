@@ -4,11 +4,11 @@ import type { McpServerSpec, StdioServerSpec } from "@majhi/acp";
 import {
   activeLists,
   CLI_PROFILE_DIR,
-  cliRunEnv,
-  cliTool,
   type ConnectionConfig,
   type ConnectionListKey,
   type ConnectionType,
+  cliRunEnv,
+  cliTool,
   textValue,
   words,
 } from "@majhi/shared";
@@ -234,9 +234,14 @@ export async function planConnections(
         // The owner's sign-in for this workspace, as a short-lived token in one variable. The
         // refresh token never leaves majhi.
         const name = textValue(c, "token_var");
-        const answer = deps.oauth === undefined || name === undefined ? { problem: "It has no sign-in." } : await deps.oauth(h.id);
+        const answer =
+          deps.oauth === undefined || name === undefined
+            ? { problem: "It has no sign-in." }
+            : await deps.oauth(h.id);
         if ("problem" in answer || name === undefined) {
-          plan.problems.push(`${h.id}: ${"problem" in answer ? answer.problem : "It has no variable."} The run does not get it.`);
+          plan.problems.push(
+            `${h.id}: ${"problem" in answer ? answer.problem : "It has no variable."} The run does not get it.`,
+          );
           break;
         }
         setVar(h.id, name, answer.token);

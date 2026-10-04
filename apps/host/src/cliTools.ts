@@ -174,7 +174,8 @@ export class CliToolLogins {
       if (ended === "cancelled") return { state: "cancelled" };
       await rm(browser, { force: true });
       const checked = await this.runCheck(file, def, profile);
-      if (!checked.ok) throw new Error(`${def.name} finished, but it does not show a sign-in. Nothing was saved.`);
+      if (!checked.ok)
+        throw new Error(`${def.name} finished, but it does not show a sign-in. Nothing was saved.`);
       if (
         params.expected !== undefined &&
         checked.identity !== undefined &&
@@ -239,9 +240,18 @@ export class CliToolLogins {
         ended = true;
         clearTimeout(timer);
         if (this.running.get(params.signIn) === run) this.running.delete(params.signIn);
-        if (run.cancelled) return resolve("cancelled");
-        if (timedOut) return reject(new Error(`The ${def.name} sign-in ran out of time. Nothing was saved.`));
-        if (code !== 0) return reject(failure(def, output));
+        if (run.cancelled) {
+          resolve("cancelled");
+          return;
+        }
+        if (timedOut) {
+          reject(new Error(`The ${def.name} sign-in ran out of time. Nothing was saved.`));
+          return;
+        }
+        if (code !== 0) {
+          reject(failure(def, output));
+          return;
+        }
         resolve("done");
       };
       child.on("error", () => end(null));

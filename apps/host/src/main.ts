@@ -307,8 +307,10 @@ async function main(): Promise<void> {
     env: process.env,
   });
   const handlers = {
-    cliLogin: (params: Parameters<CliToolLogins["login"]>[0], progress: Parameters<CliToolLogins["login"]>[1]) =>
-      cliTools.login(params, progress),
+    cliLogin: (
+      params: Parameters<CliToolLogins["login"]>[0],
+      progress: Parameters<CliToolLogins["login"]>[1],
+    ) => cliTools.login(params, progress),
     cliLoginCancel: (params: { signIn: string }) => cliTools.cancel(params.signIn),
     cliCheck: (params: Parameters<CliToolLogins["check"]>[0]) => cliTools.check(params),
     cliLogout: (params: Parameters<CliToolLogins["logout"]>[0]) => cliTools.logout(params),

@@ -250,10 +250,18 @@ export function ConnectCatalog({
               <div className="flex flex-wrap items-center gap-3">
                 <Button
                   variant="primary"
-                  disabled={start.isPending || org === "" || (picked.kind === "cli-login" && catalog.data?.helper === false)}
+                  disabled={
+                    start.isPending ||
+                    org === "" ||
+                    (picked.kind === "cli-login" && catalog.data?.helper === false)
+                  }
                   onClick={() => begin(picked)}
                 >
-                  {start.isPending ? "Opening" : picked.kind === "cli-login" ? `Sign in with ${picked.name}` : `Connect ${picked.name}`}
+                  {start.isPending
+                    ? "Opening"
+                    : picked.kind === "cli-login"
+                      ? `Sign in with ${picked.name}`
+                      : `Connect ${picked.name}`}
                 </Button>
                 {picked.app !== undefined && (
                   <Button variant="ghost" onClick={() => setSheet(true)}>

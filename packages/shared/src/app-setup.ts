@@ -52,7 +52,11 @@ export const AppSetupViewSchema = z.object({
 });
 export type AppSetupView = z.infer<typeof AppSetupViewSchema>;
 
-export const AppSetupInputSchema = z.object({ org: IdSchema, app: z.string().min(1).max(40), access: ConnectAccessSchema.default("read") });
+export const AppSetupInputSchema = z.object({
+  org: IdSchema,
+  app: z.string().min(1).max(40),
+  access: ConnectAccessSchema.default("read"),
+});
 export const AppSetupSaveInputSchema = z.object({
   org: IdSchema,
   app: z.string().min(1).max(40),
@@ -113,7 +117,9 @@ export function slackManifest(appName: string, access: ConnectAccess): Record<st
     features: { bot_user: { display_name: appName, always_online: false } },
     oauth_config: { scopes: { bot: slackBotScopes(access) } },
     settings: {
-      event_subscriptions: { bot_events: ["message.channels", "message.groups", "message.im", "message.mpim"] },
+      event_subscriptions: {
+        bot_events: ["message.channels", "message.groups", "message.im", "message.mpim"],
+      },
       org_deploy_enabled: false,
       socket_mode_enabled: true,
       token_rotation_enabled: false,
@@ -155,9 +161,12 @@ const DEFS: Readonly<Record<string, Def>> = {
       },
     ],
     steps: (c) => [
-      step("Make a project", "Google keeps an app inside a project. Name it as below, or use a project you already have.", [
-        { label: "Open Google Cloud: new project", url: `${GOOGLE_CONSOLE}/projectcreate` },
-      ], [{ label: "Project name", value: c.appName }]),
+      step(
+        "Make a project",
+        "Google keeps an app inside a project. Name it as below, or use a project you already have.",
+        [{ label: "Open Google Cloud: new project", url: `${GOOGLE_CONSOLE}/projectcreate` }],
+        [{ label: "Project name", value: c.appName }],
+      ),
       step("Turn on the three APIs", "Open each page and press Enable. Skip the ones you will not connect.", [
         { label: "Gmail API", url: `${GOOGLE_CONSOLE}/apis/library/gmail.googleapis.com` },
         { label: "Google Calendar API", url: `${GOOGLE_CONSOLE}/apis/library/calendar-json.googleapis.com` },
@@ -172,9 +181,11 @@ const DEFS: Readonly<Record<string, Def>> = {
         ],
         [{ label: "App name", value: c.appName }],
       ),
-      step("Add the permissions", "Add only the permissions listed under What the app may do, above. Read comes first; the rest only when you turn a pack on.", [
-        { label: "Open Data Access", url: `${GOOGLE_CONSOLE}/auth/scopes` },
-      ]),
+      step(
+        "Add the permissions",
+        "Add only the permissions listed under What the app may do, above. Read comes first; the rest only when you turn a pack on.",
+        [{ label: "Open Data Access", url: `${GOOGLE_CONSOLE}/auth/scopes` }],
+      ),
       step(
         "Make a Desktop client",
         "Choose the type Desktop app. Google accepts majhi's local address for it without you adding one.",
@@ -185,7 +196,10 @@ const DEFS: Readonly<Record<string, Def>> = {
           { label: "Redirect address", value: c.redirect },
         ],
       ),
-      step("Download the JSON and drop it here", "On the new client, press Download JSON, then drop that file below."),
+      step(
+        "Download the JSON and drop it here",
+        "On the new client, press Download JSON, then drop that file below.",
+      ),
     ],
   },
   slack: {
@@ -220,7 +234,10 @@ const DEFS: Readonly<Record<string, Def>> = {
       step("Install it", "On the app's page open Install App, then Install to Workspace, and press Allow.", [
         { label: "Your Slack apps", url: "https://api.slack.com/apps" },
       ]),
-      step("Copy the bot token", "Open OAuth & Permissions and copy the Bot User OAuth Token. Paste it below."),
+      step(
+        "Copy the bot token",
+        "Open OAuth & Permissions and copy the Bot User OAuth Token. Paste it below.",
+      ),
       step(
         "Make the app-level token",
         "Open Basic Information, scroll to App-Level Tokens, press Generate Token and Scopes, add connections:write, and copy the token. Paste it below.",
@@ -234,15 +251,35 @@ const DEFS: Readonly<Record<string, Def>> = {
     finishes: "tokens",
     services: ["discord"],
     inputs: [
-      { key: "applicationId", label: "Application ID", kind: "text", help: "General Information, Application ID. A number, not a secret.", placeholder: "123456789012345678" },
-      { key: "botToken", label: "Bot token", kind: "secret", help: "Bot page, Reset Token. Shown by Discord once." },
+      {
+        key: "applicationId",
+        label: "Application ID",
+        kind: "text",
+        help: "General Information, Application ID. A number, not a secret.",
+        placeholder: "123456789012345678",
+      },
+      {
+        key: "botToken",
+        label: "Bot token",
+        kind: "secret",
+        help: "Bot page, Reset Token. Shown by Discord once.",
+      },
     ],
     steps: (c) => [
-      step("Create the application", "Press New Application and name it.", [
-        { label: "Open the Discord developer portal", url: "https://discord.com/developers/applications" },
-      ], [{ label: "Name", value: c.appName }]),
-      step("Open the Bot page", "Turn on Message Content Intent so the bot can read what people write. Press Reset Token and copy it."),
-      step("Copy the Application ID", "On General Information copy the Application ID. Paste both values below."),
+      step(
+        "Create the application",
+        "Press New Application and name it.",
+        [{ label: "Open the Discord developer portal", url: "https://discord.com/developers/applications" }],
+        [{ label: "Name", value: c.appName }],
+      ),
+      step(
+        "Open the Bot page",
+        "Turn on Message Content Intent so the bot can read what people write. Press Reset Token and copy it.",
+      ),
+      step(
+        "Copy the Application ID",
+        "On General Information copy the Application ID. Paste both values below.",
+      ),
     ],
   },
   linkedin: {
@@ -253,66 +290,132 @@ const DEFS: Readonly<Record<string, Def>> = {
     services: ["linkedin"],
     inputs: [
       { key: "clientId", label: "Client ID", kind: "text", help: "Auth tab, Client ID." },
-      { key: "clientSecret", label: "Client secret", kind: "secret", help: "Auth tab, Primary Client Secret." },
+      {
+        key: "clientSecret",
+        label: "Client secret",
+        kind: "secret",
+        help: "Auth tab, Primary Client Secret.",
+      },
     ],
     steps: (c) => [
-      step("Create the app", "Press Create app. Pick your Company Page and a name.", [
-        { label: "Open LinkedIn: create app", url: "https://www.linkedin.com/developers/apps/new" },
-      ], [{ label: "App name", value: c.appName }]),
-      step("Add the products", "On the Products tab request Sign In with LinkedIn using OpenID Connect and, to post, Share on LinkedIn."),
-      step("Add the redirect address", "On the Auth tab, under OAuth 2.0 settings, add this redirect URL.", [], [
-        { label: "Redirect URL", value: c.redirect },
-      ]),
+      step(
+        "Create the app",
+        "Press Create app. Pick your Company Page and a name.",
+        [{ label: "Open LinkedIn: create app", url: "https://www.linkedin.com/developers/apps/new" }],
+        [{ label: "App name", value: c.appName }],
+      ),
+      step(
+        "Add the products",
+        "On the Products tab request Sign In with LinkedIn using OpenID Connect and, to post, Share on LinkedIn.",
+      ),
+      step(
+        "Add the redirect address",
+        "On the Auth tab, under OAuth 2.0 settings, add this redirect URL.",
+        [],
+        [{ label: "Redirect URL", value: c.redirect }],
+      ),
       step("Copy the client ID and secret", "Both are on the Auth tab. Paste them below."),
     ],
   },
   linear: {
     title: "Linear app",
-    intro: "Linear lets you make an OAuth app in your workspace. majhi uses it as a public client, so there is no secret to copy.",
+    intro:
+      "Linear lets you make an OAuth app in your workspace. majhi uses it as a public client, so there is no secret to copy.",
     finishes: "consent",
     services: ["linear-api"],
-    inputs: [{ key: "clientId", label: "Client ID", kind: "text", help: "Shown on the app's page in Linear." }],
+    inputs: [
+      { key: "clientId", label: "Client ID", kind: "text", help: "Shown on the app's page in Linear." },
+    ],
     steps: (c) => [
-      step("Create the application", "Needs an admin of the Linear workspace.", [
-        { label: "Open Linear: new OAuth application", url: "https://linear.app/settings/api/applications/new" },
-      ], [
-        { label: "Application name", value: c.appName },
-        { label: "Callback URL", value: c.redirect },
-      ]),
+      step(
+        "Create the application",
+        "Needs an admin of the Linear workspace.",
+        [
+          {
+            label: "Open Linear: new OAuth application",
+            url: "https://linear.app/settings/api/applications/new",
+          },
+        ],
+        [
+          { label: "Application name", value: c.appName },
+          { label: "Callback URL", value: c.redirect },
+        ],
+      ),
       step("Copy the Client ID", "Paste it below. Leave the client secret in Linear; majhi does not use it."),
     ],
   },
   microsoft: {
     title: "Microsoft app (Outlook)",
-    intro: "Microsoft lets you register an app as a public client, so there is no secret. About three minutes in the Entra portal.",
+    intro:
+      "Microsoft lets you register an app as a public client, so there is no secret. About three minutes in the Entra portal.",
     finishes: "consent",
     services: ["outlook"],
-    inputs: [{ key: "clientId", label: "Application (client) ID", kind: "text", help: "Overview page, a long id with dashes." }],
+    inputs: [
+      {
+        key: "clientId",
+        label: "Application (client) ID",
+        kind: "text",
+        help: "Overview page, a long id with dashes.",
+      },
+    ],
     steps: (c) => [
-      step("Register the app", "Pick Accounts in any organizational directory and personal Microsoft accounts.", [
-        { label: "Open Entra: register an application", url: "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/CreateApplicationBlade/isMSAApp~/false" },
-      ], [{ label: "Name", value: c.appName }]),
-      step("Add the redirect address", "Authentication, Add a platform, Mobile and desktop applications. Microsoft takes localhost, so the name differs from the others.", [], [
-        { label: "Redirect URI", value: c.redirect.replace("127.0.0.1", "localhost") },
-      ]),
-      step("Allow public client flows", "On the same Authentication page, set Allow public client flows to Yes."),
-      step("Copy the Application ID", "Paste it below. majhi asks for the permissions listed under What it can do when you connect."),
+      step(
+        "Register the app",
+        "Pick Accounts in any organizational directory and personal Microsoft accounts.",
+        [
+          {
+            label: "Open Entra: register an application",
+            url: "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/CreateApplicationBlade/isMSAApp~/false",
+          },
+        ],
+        [{ label: "Name", value: c.appName }],
+      ),
+      step(
+        "Add the redirect address",
+        "Authentication, Add a platform, Mobile and desktop applications. Microsoft takes localhost, so the name differs from the others.",
+        [],
+        [{ label: "Redirect URI", value: c.redirect.replace("127.0.0.1", "localhost") }],
+      ),
+      step(
+        "Allow public client flows",
+        "On the same Authentication page, set Allow public client flows to Yes.",
+      ),
+      step(
+        "Copy the Application ID",
+        "Paste it below. majhi asks for the permissions listed under What it can do when you connect.",
+      ),
     ],
   },
   x: {
     title: "X developer app",
-    intro: "X needs your own developer app, and bills you for what it uses. Make it a Native App so there is no secret.",
+    intro:
+      "X needs your own developer app, and bills you for what it uses. Make it a Native App so there is no secret.",
     finishes: "consent",
     services: ["x"],
-    inputs: [{ key: "clientId", label: "Client ID", kind: "text", help: "Keys and tokens, OAuth 2.0 Client ID. Not the client secret." }],
+    inputs: [
+      {
+        key: "clientId",
+        label: "Client ID",
+        kind: "text",
+        help: "Keys and tokens, OAuth 2.0 Client ID. Not the client secret.",
+      },
+    ],
     steps: (c) => [
-      step("Make the app", "Create a project and an app in the developer portal.", [
-        { label: "Open the X developer portal", url: "https://developer.x.com/en/portal/dashboard" },
-      ], [{ label: "App name", value: c.appName }]),
-      step("Set up user authentication", "Turn it on. Choose Native App as the type, and the permission Read (Read and write only for a pack that posts).", [], [
-        { label: "Callback URI", value: c.redirect },
-        { label: "App type", value: "Native App" },
-      ]),
+      step(
+        "Make the app",
+        "Create a project and an app in the developer portal.",
+        [{ label: "Open the X developer portal", url: "https://developer.x.com/en/portal/dashboard" }],
+        [{ label: "App name", value: c.appName }],
+      ),
+      step(
+        "Set up user authentication",
+        "Turn it on. Choose Native App as the type, and the permission Read (Read and write only for a pack that posts).",
+        [],
+        [
+          { label: "Callback URI", value: c.redirect },
+          { label: "App type", value: "Native App" },
+        ],
+      ),
       step("Copy the Client ID", "Paste it below. Leave the client secret in X."),
     ],
   },
@@ -323,12 +426,15 @@ const DEFS: Readonly<Record<string, Def>> = {
     services: ["github"],
     inputs: [{ key: "clientId", label: "Client ID", kind: "text", help: "On the app's page, Client ID." }],
     steps: (c) => [
-      step("Register the app", "GitHub asks for a homepage and a callback; any address works for the homepage.", [
-        { label: "Open GitHub: new OAuth app", url: "https://github.com/settings/applications/new" },
-      ], [
-        { label: "Application name", value: c.appName },
-        { label: "Authorization callback URL", value: c.redirect },
-      ]),
+      step(
+        "Register the app",
+        "GitHub asks for a homepage and a callback; any address works for the homepage.",
+        [{ label: "Open GitHub: new OAuth app", url: "https://github.com/settings/applications/new" }],
+        [
+          { label: "Application name", value: c.appName },
+          { label: "Authorization callback URL", value: c.redirect },
+        ],
+      ),
       step("Turn on device flow", "On the new app's page, tick Enable Device Flow and save."),
       step("Copy the Client ID", "Paste it below."),
     ],
