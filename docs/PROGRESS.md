@@ -1,5 +1,11 @@
 # Progress
 
+## D1: background e2e runner removed (built, not merged)
+
+- **Removed.** `apps/server/src/e2e/` (service, repo, wire, test), the host helper's runner (`apps/host/src/e2e.ts`, its test, the `e2e.run` job and two git-guard tests of it), `packages/shared/src/e2e.ts`, the `e2e.status` and `e2e.runNow` commands, the `e2e_latest` agent tool, the `e2e` settings section and setup row, the Health panel, the screens-map entries, the `e2e traces` self-check and the agent brief's pointer to the runner. The real Playwright suite (`e2e/*.spec.ts`, configs, `scripts/ci.sh`) is untouched.
+- **Verified.** `pnpm -r typecheck` is clean except a `packages/acp/testing/fake-turn.ts` error that is already on main; tests of every touched file pass.
+- **Left.** An `e2e:` key in an old `majhi.yaml` is still accepted and ignored (`MajhiConfigSchema`). The `e2e_runs` table stays in the DB and in `store/schema.ts` until step E2. `~/.majhi/e2e` on disk is no longer used.
+
 ## Needs you holds only what needs the owner (merged)
 
 - **Runs.** A machine-wide cap on agent runs (`limits.runs_total`, auto from the core count, set on Limits). Extra runs queue, owner first. After a restart runs come back one every 20 seconds. A run near its memory limit gets one note.
