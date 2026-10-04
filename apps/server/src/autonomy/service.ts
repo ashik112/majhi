@@ -56,7 +56,7 @@ import { forceOrg, narrow, readRefusal, type ScopeWorld } from "../captain/lane-
 import type { Lanes } from "../captain/lanes.ts";
 import { askedWhy, authorityOf, workspaceIds } from "../captain/levels.ts";
 import { classifyOwnWork, scopeOfTask } from "../captain/own-work.ts";
-import { answerFor, coveredForTask, permissionVerdict } from "../captain/permission-rules.ts";
+import { answerFor, coveredForTask, permissionVerdict, widenedNote } from "../captain/permission-rules.ts";
 import {
   loopLine,
   NEAR_SAME_MS,
@@ -2272,6 +2272,7 @@ export class AutonomyService {
     const stuck = await this.questionLoopLine(input.task, item);
     if (stuck !== undefined) return fail(`${stuck}. It is left for the owner. Do not answer it.`);
     let option = input.option;
+    let widened: string | undefined;
     // The rule table binds the captain too: an empty prompt is the owner's, and a dangerous one is rejected.
     if (item.type === "permission") {
       const rule = permissionVerdict(item.title);
@@ -2300,7 +2301,12 @@ export class AutonomyService {
         return fail("Refused: Allow for this task is only for a tool a rule covers. Use Allow once.");
       }
       // A rule covers the tool for the whole task: the next call must not ask again.
-      if (option !== undefined) option = answerFor(item.title, item.options, option);
+      // Said in the room line and the result, so the captain knows why the card shows another option.
+      if (option !== undefined) {
+        const chosen = option;
+        option = answerFor(item.title, item.options, chosen);
+        widened = widenedNote(item.title, chosen, option);
+      }
     }
     let answered: RoomItem;
     try {
@@ -2337,7 +2343,9 @@ export class AutonomyService {
     this.deps.room.post(input.task as TaskId, `autonomy:${randomUUID()}`, {
       type: "system",
       level: "info",
-      text: redactText(captainAnsweredLine(answered, reason)),
+      text: redactText(
+        `${captainAnsweredLine(answered, reason)}${widened === undefined ? "" : `. ${widened}`}`,
+      ),
     });
     this.event({
       kind: "answer",
@@ -2348,7 +2356,7 @@ export class AutonomyService {
       item: item.id,
       ...this.orgOfTask(input.task),
     });
-    return ok({ item: answered });
+    return ok({ item: answered, ...(widened === undefined ? {} : { note: widened }) });
   }
 
   /** Loops already flagged, so the agent hears of one only once and the room gets one line. */

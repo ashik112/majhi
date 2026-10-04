@@ -37,7 +37,7 @@ import { askedSentence, SHIP_ROW } from "./levels.ts";
 import { laneScopes } from "./memory-scopes.ts";
 import { scopeOfTask } from "./own-work.ts";
 import { ownWorkSecondOpinion } from "./own-work-second.ts";
-import { answerFor } from "./permission-rules.ts";
+import { answerFor, widenedNote } from "./permission-rules.ts";
 import type { ApprovalCard, CaptainPorts, NewRepo, QuestionCard, ShipCheck, SignInStall } from "./ports.ts";
 import type { CaptainRepo } from "./repo.ts";
 import { upkeepWorld } from "./upkeep-world.ts";
@@ -447,11 +447,13 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       // Recorded as the captain's answer, never the owner's (5.18).
       const captain = (await deps.lanes.boss()) ?? "captain";
       let answered: RoomItem;
+      let widened: string | undefined;
       switch (card.kind) {
         case "permission": {
           // A tool a rule covers is allowed for the task, so its next call does not ask again.
           const item = deps.room.get(card.task, card.item);
           const chosen = item?.type === "permission" ? answerFor(item.title, item.options, option) : option;
+          if (item?.type === "permission") widened = widenedNote(item.title, option, chosen);
           answered = deps.tasks.answerPermission(card.task, card.item, chosen, captain);
           break;
         }
@@ -473,7 +475,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       deps.room.post(card.task as TaskId, `captain:${randomUUID()}`, {
         type: "system",
         level: "info",
-        text: captainAnsweredLine(answered, reason),
+        text: `${captainAnsweredLine(answered, reason)}${widened === undefined ? "" : `. ${widened}`}`,
       });
     },
 
