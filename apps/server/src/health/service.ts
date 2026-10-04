@@ -124,10 +124,7 @@ export class HealthService {
       }
       if (id === "backups-verify") {
         const { result } = await services.backup.verify();
-        return {
-          ok: result.ok,
-          detail: result.ok ? `The test restore worked: ${result.detail}` : result.detail,
-        };
+        return { ok: result.ok, detail: result.ok ? `The test restore worked: ${result.detail}` : result.detail };
       }
       if (id === "runner" && this.deps.rebuild !== undefined) {
         this.toolCache.delete("runner");
