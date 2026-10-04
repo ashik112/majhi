@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { PageLink } from "@/components/ui/page-link";
 import { CostChartPanel, SpendPanel } from "@/features/usage/spend-panel";
 import { cn } from "@/lib/cn";
+import { healthCheckedAt } from "@/features/shell/model";
 import { formatAgo } from "@/lib/format";
 import { useHealthChecks } from "@/lib/ops-queries";
 import { useOrgFilter } from "@/lib/org-filter";
@@ -39,7 +40,8 @@ export function HealthView() {
   const all = accounts.data ?? [];
   const rows = orgFilter === undefined ? all : all.filter((a) => a.org === orgFilter);
   const headline = checks.data ? checksHeadline(checks.data.checks) : "Running the checks";
-  const bad = headline.endsWith("need you") || headline.endsWith("needs you");
+  const bad = headline.endsWith("to fix");
+  const checkedAt = healthCheckedAt(all, checks.data?.checkedAt);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -48,9 +50,7 @@ export function HealthView() {
         subtitle={
           <span>
             <span className={cn(bad && "text-red")}>{headline}</span>
-            {checks.data && (
-              <span className="text-fg-faint">. Checked {formatAgo(checks.data.checkedAt, now)}.</span>
-            )}
+            {checkedAt && <span className="text-fg-faint">. Checked {formatAgo(checkedAt, now)}.</span>}
           </span>
         }
       >

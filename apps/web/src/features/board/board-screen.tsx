@@ -5,8 +5,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
+import { PageLink } from "@/components/ui/page-link";
 import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useNeedsYou } from "@/features/decisions/needs-you";
 import { BoardMatches } from "@/features/search/board-matches";
 import { cn } from "@/lib/cn";
 import { formatTokens } from "@/lib/format";
@@ -228,6 +230,7 @@ export function BoardScreen() {
 function Telemetry({ counts, org }: { counts: BoardCounts; org: string | undefined }) {
   const usage = useUsageSummary(org ? { org } : {});
   const today = usage.data?.today;
+  const needs = useNeedsYou(org);
   return (
     <p className="flex min-w-0 items-center gap-3 overflow-hidden text-sm min-[1280px]:gap-4 whitespace-nowrap text-fg-muted">
       <span className="tnum">
@@ -244,13 +247,18 @@ function Telemetry({ counts, org }: { counts: BoardCounts; org: string | undefin
         working
       </span>
       <Divider />
-      <span className="tnum flex items-center gap-1.5">
-        <Lamp state="needs" dim={counts.needs === 0} size={7} />
-        <span className={cn("font-mono text-md font-medium", counts.needs > 0 ? LAMP_TEXT.needs : "text-fg")}>
-          {counts.needs}
+      {/* The same count as the sidebar, the bell and the Captain page: the Decisions inbox. */}
+      <PageLink
+        page="decisions"
+        title={org === undefined ? "Open Decisions" : "Waiting in this workspace. Open Decisions"}
+        className="tnum flex items-center gap-1.5 rounded-sm hover:text-fg"
+      >
+        <Lamp state="needs" dim={!needs} size={7} />
+        <span className={cn("font-mono text-md font-medium", needs ? LAMP_TEXT.needs : "text-fg")}>
+          {needs ?? "–"}
         </span>
-        {counts.needs === 1 ? "needs you" : "need you"}
-      </span>
+        {needs === 1 ? "needs you" : "need you"}
+      </PageLink>
       {today && (
         <>
           <Divider />

@@ -134,7 +134,7 @@ export function ChecksPanel({ onSignIn }: { onSignIn: (accountId: string) => voi
         )}
       </div>
       {problems.length > 0 && !open && (
-        <ul aria-label="Checks that need you" className="flex flex-col border-t border-line px-2 py-1.5">
+        <ul aria-label="Checks to fix" className="flex flex-col border-t border-line px-2 py-1.5">
           {problems.map(item)}
         </ul>
       )}

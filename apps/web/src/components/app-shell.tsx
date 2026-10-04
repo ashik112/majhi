@@ -7,10 +7,9 @@ import { NotifyPrompt } from "@/components/shell/notify-prompt";
 import { ShortcutsDialog } from "@/components/shell/shortcuts-dialog";
 import { Sidebar } from "@/components/shell/sidebar";
 import { AgentDrawer } from "@/features/agent-drawer/agent-drawer";
-import { AutonomyStrip } from "@/features/autonomy/strip";
-import { needsYouCount } from "@/features/board/model";
 import { BossProvider } from "@/features/boss/boss-context";
 import { BossDrawer } from "@/features/boss/boss-drawer";
+import { useNeedsYou } from "@/features/decisions/needs-you";
 import { AppGate } from "@/features/home/app-gate";
 import { NewTaskProvider, useNewTask } from "@/features/new-task/new-task-context";
 import { Palette } from "@/features/search/palette";
@@ -82,7 +81,7 @@ function Frame() {
     () => deriveBanner({ tasks: tasks ?? [], agents, accounts: accounts ?? [], permission, now }),
     [tasks, agents, accounts, permission, now],
   );
-  useAttentionBadge(useMemo(() => needsYouCount(tasks ?? [], accounts ?? []), [tasks, accounts]));
+  useAttentionBadge(useNeedsYou() ?? 0);
   // The page fades in when the section changes (board, task, a page), not on every task switch.
   const section = useRouterState({
     select: (s) =>
@@ -100,7 +99,6 @@ function Frame() {
     <div className="flex min-h-0 flex-1 gap-3 p-3">
       <Sidebar />
       <main id="main" tabIndex={-1} className="flex h-full min-w-0 flex-1 flex-col outline-none">
-        <AutonomyStrip />
         <NotifyPrompt />
         <AttentionBanner banner={banner} />
         <m.div

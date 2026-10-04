@@ -233,7 +233,7 @@ describe("building decisions", () => {
     );
     expect(out.map((d) => d.id)).toEqual(["room:ACM-2:rv1"]);
     expect(out[0]).toMatchObject({
-      title: "Ready for review: Docs",
+      title: "Ready to ship: Docs",
       sentence: '@acme-builder finished "Docs" and waits for your review.',
       options: [
         { id: "merge", label: "Merge", primary: true },

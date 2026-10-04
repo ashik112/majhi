@@ -32,6 +32,7 @@ export * from "./mrs.ts";
 export * from "./notify.ts";
 export * from "./onboarding.ts";
 export * from "./paths.ts";
+export * from "./plain-text.ts";
 export * from "./processes.ts";
 export * from "./project-create.ts";
 export * from "./remote-repos.ts";

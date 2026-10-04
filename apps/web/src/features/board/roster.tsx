@@ -156,7 +156,7 @@ export function Roster({ tasks, org }: { tasks: readonly TaskSummary[]; org: str
         <button
           type="button"
           aria-expanded={open}
-          aria-label={`Agents: ${working} working, ${waiting} waiting for you`}
+          aria-label={`Agents: ${working} working, ${waiting} waiting`}
           onClick={() => setOpen((v) => !v)}
           className={cn(
             "flex w-11 cursor-pointer flex-col items-center gap-3 rounded-2xl py-3 text-fg-muted transition-colors duration-150 hover:text-fg",
@@ -166,7 +166,7 @@ export function Roster({ tasks, org }: { tasks: readonly TaskSummary[]; org: str
         >
           <Users aria-hidden="true" className="size-4" />
           <span className="text-sm font-medium [writing-mode:vertical-rl]">Agents</span>
-          {/* Words beside every lamp: the rail reads "0 working", "3 need you" top to bottom. */}
+          {/* Words beside every lamp: the rail reads "0 working", "3 waiting" top to bottom. */}
           <span className="flex flex-col items-center gap-2 text-xs">
             <Lamp state="working" dim={working === 0} size={7} />
             <span className={cn("[writing-mode:vertical-rl]", working === 0 && "text-fg-faint")}>
@@ -174,7 +174,7 @@ export function Roster({ tasks, org }: { tasks: readonly TaskSummary[]; org: str
             </span>
             <Lamp state="needs" dim={waiting === 0} size={7} className="mt-1" />
             <span className={cn("[writing-mode:vertical-rl]", waiting === 0 && "text-fg-faint")}>
-              <span className="tnum font-mono">{waiting}</span> need you
+              <span className="tnum font-mono">{waiting}</span> waiting
             </span>
           </span>
         </button>

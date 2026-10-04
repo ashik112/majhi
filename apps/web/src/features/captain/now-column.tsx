@@ -12,6 +12,7 @@ import { clockTime } from "@/features/autonomy/model";
 import { TaskRef } from "@/features/autonomy/task-ref";
 import { DecisionRow } from "@/features/decisions/decision-row";
 import { cn } from "@/lib/cn";
+import { useNeedsYou } from "@/features/decisions/needs-you";
 import { useDecisions } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
 import { GLASS } from "@/lib/glass";
@@ -71,7 +72,7 @@ function NeedsYou() {
   const query = useDecisions();
   const decisions = query.data?.decisions;
   const shown = (decisions ?? []).slice(0, SHOWN_DECISIONS);
-  const total = decisions?.length ?? 0;
+  const total = useNeedsYou() ?? 0;
   return (
     <Box
       title="Needs you"

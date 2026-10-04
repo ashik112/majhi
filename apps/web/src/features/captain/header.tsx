@@ -3,10 +3,11 @@ import { SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
 import { PageLink } from "@/components/ui/page-link";
-import { capTone, MODE_LAMP, MODE_WORD, seenSummary } from "@/features/autonomy/model";
+import { capTone, MODE_LAMP, MODE_WORD } from "@/features/autonomy/model";
+import { useUnseenSummary } from "@/features/autonomy/summary-seen";
 import { useAutonomousSwitch } from "@/features/autonomy/switch";
+import { useNeedsYou } from "@/features/decisions/needs-you";
 import { cn } from "@/lib/cn";
-import { useDecisions } from "@/lib/decision-queries";
 import { formatMoney } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { statusSentence } from "./model";
@@ -85,24 +86,20 @@ export function CaptainHeader({
   captain,
   autonomy,
   now,
-  summarySeen,
   onDelegation,
   onSummary,
 }: {
   captain: CaptainStatus;
   autonomy: AutonomyStatus | undefined;
   now: number;
-  /** The day of the summary the owner opened in this session, if any. */
-  summarySeen: string | undefined;
   onDelegation: () => void;
   onSummary: () => void;
 }) {
   const { mode, toggle, dialogs, unavailable } = useAutonomousSwitch();
-  const decisions = useDecisions().data?.decisions.length;
+  const decisions = useNeedsYou();
   const lamp = MODE_LAMP[mode];
-  const summary = autonomy?.summary;
-  const unseen = summary !== undefined && summary.day !== summarySeen && summary.day !== seenSummary();
-  const chip = unseen ? summaryLine(summary, now) : undefined;
+  const unseen = useUnseenSummary(now);
+  const chip = unseen === undefined ? undefined : summaryLine(unseen, now);
   const sentence = statusSentence({
     mode,
     upkeep: captain.orgs.some((o) => o.authority.upkeep === "decide"),
@@ -143,7 +140,7 @@ export function CaptainHeader({
             onClick={onSummary}
             className={cn(
               "flex min-w-0 max-w-full shrink cursor-pointer items-center gap-2 rounded-full border bg-raised px-3 py-0.5 text-left text-sm hover:border-line-hover",
-              chip.over ? "border-red/40 text-red" : "border-line-control text-fg-soft",
+              chip.over ? "border-amber-line text-amber-soft" : "border-line-control text-fg-soft",
             )}
           >
             <span className="min-w-0 truncate">{chip.text}</span>

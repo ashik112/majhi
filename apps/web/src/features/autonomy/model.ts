@@ -151,7 +151,7 @@ export const HOW_WORD: Record<AutonomySummary["shipped"][number]["how"], string>
   pushed: "Pushed",
   "mr-open": "MR open",
   "mr-merged": "MR merged",
-  review: "Ready for review",
+  review: "Ready to ship",
   done: "Done",
 };
 
@@ -164,6 +164,18 @@ export function seenSummary(): string | undefined {
 
 export function markSummarySeen(day: string): void {
   writeStored(SEEN_KEY, day);
+}
+
+/**
+ * Whether a summary of `day` (`YYYY-MM-DD`) is recent enough to call out: today's or yesterday's. A
+ * two-day-old summary is history, not news.
+ */
+export function summaryIsFresh(day: string, now: number): boolean {
+  const at = Date.parse(`${day}T00:00:00`);
+  if (Number.isNaN(at)) return false;
+  const today = Date.parse(`${localDay(now)}T00:00:00`);
+  const age = Math.round((today - at) / 86_400_000);
+  return age >= 0 && age <= 1;
 }
 
 // Tasks ---------------------------------------------------------------------

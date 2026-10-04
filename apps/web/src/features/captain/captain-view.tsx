@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Problem } from "@/components/problem";
 import { Sheet } from "@/components/ui/sheet";
 import { RowsSkeleton } from "@/components/ui/skeleton";
-import { markSummarySeen } from "@/features/autonomy/model";
+import { markSeen } from "@/features/autonomy/summary-seen";
 import { useBoss } from "@/features/boss/boss-context";
 import { useAutonomyStatus } from "@/lib/autonomy-queries";
 import { useCaptainStatus } from "@/lib/captain-queries";
@@ -46,7 +46,6 @@ export function CaptainView() {
   const navigate = useNavigate();
   const { setTab } = useBoss();
   const [open, setOpen] = useState<Open | undefined>(() => sheetOf(search.tab));
-  const [seen, setSeen] = useState<string>();
   const thread = search.thread;
   const tab = search.tab;
   // A link to a thread (an old address of a lane chat) selects it in the conversation.
@@ -74,8 +73,7 @@ export function CaptainView() {
   const summary = autonomy?.summary;
   const openSummary = () => {
     if (summary === undefined) return;
-    markSummarySeen(summary.day);
-    setSeen(summary.day);
+    markSeen(summary.day);
     setOpen("summary");
   };
 
@@ -97,7 +95,6 @@ export function CaptainView() {
         captain={status}
         autonomy={autonomy}
         now={now}
-        summarySeen={seen}
         onDelegation={() => setOpen("delegation")}
         onSummary={openSummary}
       />

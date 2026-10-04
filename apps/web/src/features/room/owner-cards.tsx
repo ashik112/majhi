@@ -1,4 +1,4 @@
-import type { AccountView, CardOutcome, RoomItem, Task } from "@majhi/shared";
+import { type AccountView, type CardOutcome, plainAuthorityText, type RoomItem, type Task } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
 import { Check, CircleCheck, CirclePause, MessageSquareReply, RotateCw, SendHorizontal } from "lucide-react";
 import { useState } from "react";
@@ -12,7 +12,7 @@ import { useAgentIndex } from "@/lib/agent-index";
 import { type ApiRequestError, cmd } from "@/lib/api";
 import { describeError } from "@/lib/errors";
 import { useFixCheck, useHealthChecks } from "@/lib/ops-queries";
-import { useAccounts, useTools } from "@/lib/studio-queries";
+import { useAccounts, useOrgs, useTools } from "@/lib/studio-queries";
 import { useAfterTaskChange, useShipOptions } from "@/lib/task-queries";
 import { questionLine } from "./dock-caption";
 
@@ -55,7 +55,7 @@ function Outcome({ icon, outcome }: { icon: React.ReactNode; outcome: CardOutcom
   );
 }
 
-/** "Ready for review": Ship, Mark done, Ask for changes, Open changes. Settled: what was done. */
+/** "Ready to ship": Ship, Mark done, Ask for changes, Open changes. Settled: what was done. */
 export function ReviewCard({ item, owner }: { item: Of<"review">; owner: OwnerContext | undefined }) {
   if (item.state === "replaced") return null;
   if (item.state === "settled" && item.outcome) {
@@ -70,7 +70,7 @@ export function ReviewCard({ item, owner }: { item: Of<"review">; owner: OwnerCo
     return (
       <p className="flex items-center gap-2 pl-[34px] text-sm text-fg-faint">
         <CircleCheck aria-hidden="true" className="size-3.5 shrink-0" />
-        Was ready for review.
+        Was ready to ship.
       </p>
     );
   }
@@ -82,6 +82,9 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
   const toast = useToast();
   const after = useAfterTaskChange();
   const options = useShipOptions(task, true);
+  const orgs = useOrgs().data;
+  // Cards saved before the authority table name a retired level; show the plain rule instead.
+  const workspace = orgs?.find((o) => o.id === task.org)?.name ?? (task.org === undefined ? "Private" : task.org);
   const lead = item.lead ?? task.team[0];
   const act = (
     action: "merge" | "mergePush" | "push" | "mr" | "done",
@@ -122,21 +125,23 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
 
   return (
     <section
-      aria-label="Ready for review"
+      aria-label="Ready to ship"
       className="flex max-w-[700px] flex-col gap-2.5 rounded-lg border border-green-line bg-green-wash px-3.5 py-3"
     >
       <p className="flex items-start gap-2 text-base text-fg">
         <CircleCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-green" />
         <span className="min-w-0 break-words">
-          <span className="font-medium">Ready for review.</span>{" "}
+          <span className="font-medium">Ready to ship.</span>{" "}
           <span className="text-fg-muted">The agents are done and wait for you.</span>
         </span>
       </p>
-      {item.why !== undefined && <p className="pl-6 text-sm text-amber text-pretty">{item.why}</p>}
+      {item.why !== undefined && (
+        <p className="pl-6 text-sm text-amber text-pretty">{plainAuthorityText(item.why, workspace)}</p>
+      )}
       {item.ready !== undefined && (
         <p className="pl-6 text-sm text-fg-soft text-pretty">
           <span className="font-medium">The captain checked it: </span>
-          {item.ready}
+          {plainAuthorityText(item.ready, workspace)}
         </p>
       )}
       <div className="flex flex-wrap items-center gap-2 pl-6">

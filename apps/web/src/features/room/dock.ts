@@ -10,7 +10,7 @@ export const DOCK_ACTIONS =
 
 /**
  * What the dock shows: the items that wait for the owner. An open question comes first and hides
- * "Ready for review", so two primary buttons never compete and the answer is asked for first.
+ * "Ready to ship", so two primary buttons never compete and the answer is asked for first.
  */
 export function dockItems(items: readonly RoomItem[], status: string | undefined): RoomItem[] {
   // A card that draws nothing for the task's state (a pause on a task that is not paused, a reply
