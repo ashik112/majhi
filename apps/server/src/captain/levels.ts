@@ -38,8 +38,20 @@ function fromLevel(level: CaptainLevel, push: boolean, merge: boolean): Authorit
  * `level`, `push` and `merge` give it. With nothing saved: Private keeps things tidy, any other
  * workspace asks about everything except upkeep.
  */
+/** Full access: every row is the captain's. */
+const ALL_DECIDE: Authority = {
+  start: "decide",
+  questions: "decide",
+  approvals: "decide",
+  upkeep: "decide",
+  merge: "decide",
+  push: "decide",
+  own: "decide",
+};
+
 export function authorityOf(settings: Pick<AutonomySettings, "orgs">, org: string): Authority {
   const own = settings.orgs[org];
+  if (own?.fullAccess === true) return ALL_DECIDE;
   if (own?.authority !== undefined) return own.authority;
   if (own?.level !== undefined) return fromLevel(own.level, own.push === true, own.merge === true);
   const base: Authority =

@@ -433,6 +433,50 @@ export type PolicyModes = Pick<PolicySettings, "read" | "change" | "destructive"
  * What a command does under these modes: its own setting, else its risk class. A destructive command
  * always waits for the owner's click, whatever the modes say.
  */
+/**
+ * Commands that change what an agent may do or reach: approvals, autonomy and the captain's own
+ * switches, spend and trust ceilings, agents' permissions and accounts, secrets and sign-ins, and who
+ * gets a connection or server. Full access never covers them: they always follow the owner's policy.
+ */
+export const PERMISSION_COMMANDS: ReadonlySet<string> = new Set([
+  "policy.set",
+  "policy.removeRule",
+  "settings.set",
+  "history.undo",
+  "autonomy.start",
+  "autonomy.pause",
+  "autonomy.stop",
+  "autonomy.configure",
+  "autonomy.exclude",
+  "captain.stop",
+  "captain.resume",
+  "captain.choreOn",
+  "captain.answerCap",
+  "captain.answerBudget",
+  "money.set",
+  "trust.unmute",
+  "trust.setWindow",
+  "scorecard.setMinutes",
+  "agents.create",
+  "agents.update",
+  "agents.edit",
+  "agents.duplicate",
+  "agents.rename",
+  "agents.remove",
+  "secrets.save",
+  "secrets.remove",
+  "secrets.exportKey",
+  "secrets.restoreKey",
+  "orgs.useGitLogin",
+  "orgs.useSavedLogin",
+  "orgs.setGitAccount",
+  "orgs.removeGitAccount",
+  "connections.allow",
+  "connections.setSecret",
+  "mcp.enable",
+  "mcp.disable",
+]);
+
 export function effectiveMode(policy: PolicyModes, command: string, risk: RiskClass): ApprovalMode {
   if (isDestructiveCommand(command)) return "confirm";
   return policy.commands[command] ?? policy[risk];

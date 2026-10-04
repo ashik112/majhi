@@ -77,3 +77,44 @@ describe("commands the captain does through the owner's approval", () => {
     expect(w.h.majhi.services.ops.watch.settings()).toEqual(before);
   });
 });
+
+describe("full access for the captain", () => {
+  it("runs the captain's change at once, but a permission change or a destructive one still waits", async () => {
+    w = await bossWorld({ real: false });
+    const { admin } = w.h.majhi.services;
+    const on = await w.h.cmd("autonomy.configure", { orgs: { acme: { fullAccess: true } } });
+    expect(on.status).toBe(200);
+    // The captain's thread of Acme: full access is per workspace.
+    const lane = await w.h.cmd("autonomy.guide", {
+      text: "Tidy the uptime playbook.",
+      keep: false,
+      org: "acme",
+    });
+    const caller = { task: String(lane.body.chat), agent: "boss" };
+
+    const playbook = await admin.call(caller, "majhi_playbooks_update", {
+      org: "acme",
+      id: "ops-uptime",
+      orDo: "Tell the owner in one line",
+      ...plain,
+    });
+    expect(playbook.text).not.toBe(WAITING_TEXT);
+    expect(await orDo()).toBe("Tell the owner in one line");
+
+    const allow = await admin.call(caller, "majhi_connections_allow", {
+      id: "acme-box",
+      allow: [],
+      ...plain,
+    });
+    expect(allow).toEqual({ text: WAITING_TEXT, isError: false });
+    const remove = await admin.call(caller, "majhi_watch_remove", { id: "wch-gone", ...plain });
+    expect(remove).toEqual({ text: WAITING_TEXT, isError: false });
+  });
+
+  it("only the owner turns it on", async () => {
+    w = await bossWorld({ real: false });
+    const agent = { actor: { kind: "agent", id: "boss" } };
+    const res = await w.h.cmd("autonomy.configure", { orgs: { acme: { fullAccess: true } } }, agent);
+    expect(res.status).not.toBe(200);
+  });
+});

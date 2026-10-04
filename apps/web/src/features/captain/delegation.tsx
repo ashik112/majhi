@@ -227,6 +227,38 @@ function Grid({
             ))}
           </div>
         ))}
+        <div className="flex items-center gap-2 border-b border-line py-1.5">
+          <div
+            className={cn(FIRST_COLUMN, sticky, "flex flex-col pr-2 leading-snug")}
+            title="The captain decides everything here and acts without a card. It still asks before changing anyone's permissions and before anything destructive."
+          >
+            <span className="text-base text-fg">Full access</span>
+            <span className="text-xs text-fg-faint">No cards, except permissions and deletes</span>
+          </div>
+          {orgs.map((org) => (
+            <div key={org.org} className={COLUMN}>
+              <Cell
+                checked={org.rules.fullAccess === true}
+                label={`Full access in ${org.name}: ${org.rules.fullAccess === true ? "on" : "off"}`}
+                disabled={save.isPending}
+                onToggle={() =>
+                  save.mutate(
+                    {
+                      input: { orgs: { [org.org]: { fullAccess: org.rules.fullAccess !== true } } },
+                      reason: `Owner turned full access ${org.rules.fullAccess === true ? "off" : "on"} in ${org.name}`,
+                    },
+                    {
+                      onSuccess: () =>
+                        toast(`${org.name}: full access ${org.rules.fullAccess === true ? "off" : "on"}`),
+                      onError: (error) =>
+                        toast("Could not change it", { detail: describeError(error), tone: "error" }),
+                    },
+                  )
+                }
+              />
+            </div>
+          ))}
+        </div>
         <div className="flex items-center gap-2 py-1.5">
           <div className={cn(FIRST_COLUMN, sticky, "flex flex-col pr-2 leading-snug")}>
             <span className="text-base text-fg">Daily budget</span>
