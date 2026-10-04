@@ -1,7 +1,9 @@
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import { redactText } from "../admin/policy.ts";
 import { DBCHECK_TASK, dbCheckRunArgs, type HostPaths, type Safety } from "./args.ts";
 import type { ContainerDocker } from "./service.ts";
+import { verifiedBin } from "../tools/installer.ts";
 
 const MAX_OUT = 64 * 1024;
 export const MAJHI_DOCKER =
@@ -19,7 +21,15 @@ export class ImageCheckFailed extends Error {}
 export async function runImageCheck(
   docker: ContainerDocker | undefined,
   paths: HostPaths,
-  input: { image: string; command: readonly string[]; env: Record<string, string> },
+  input: {
+    image: string;
+    command: readonly string[];
+    env: Record<string, string>;
+    /** The workspace whose checked programs (majhi's toolbox) the run sees on PATH, read-only. */
+    toolsOrg?: string | undefined;
+    /** No network at all. */
+    offline?: boolean | undefined;
+  },
   timeoutMs: number,
 ): Promise<string> {
   if (docker === undefined) throw new ImageCheckFailed(MAJHI_DOCKER);
@@ -30,7 +40,11 @@ export async function runImageCheck(
   );
   const safety: Safety = { ...paths, task: DBCHECK_TASK, runnerNetwork: "", taskFolder: "/" };
   const name = `majhi-dbcheck-${randomBytes(6).toString("hex")}`;
-  const parts = dbCheckRunArgs(name, input.image, input.command, env, { cpus: 1, memory: "512m" }, safety);
+  const toolsBin = input.toolsOrg === undefined ? undefined : verifiedBin(paths.majhiHome, input.toolsOrg);
+  const parts = dbCheckRunArgs(name, input.image, input.command, env, { cpus: 1, memory: "512m" }, safety, {
+    toolsBin: toolsBin !== undefined && existsSync(toolsBin) ? toolsBin : undefined,
+    offline: input.offline,
+  });
   const run = await docker.attached(parts, safety);
   return new Promise<string>((resolve, reject) => {
     let out = "";

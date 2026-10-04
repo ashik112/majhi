@@ -97,7 +97,12 @@ export interface WatchPorts {
    * Runs a script watch's script once in a throwaway runner container, with the named connections of
    * the workspace as environment, and returns what it printed. Absent without Docker.
    */
-  script?(input: { org: string; script: string; connections: readonly string[] }): Promise<string>;
+  script?(input: {
+    org: string;
+    script: string;
+    connections: readonly string[];
+    network?: "on" | "off" | undefined;
+  }): Promise<string>;
   /**
    * The fingerprint of a file or folder inside a project's checkout in this workspace: size and
    * modification time, never contents. `missing` when it is not there. Throws Unavailable for a
@@ -1015,7 +1020,7 @@ async function script(
   org: string,
   ports: WatchPorts,
 ): Promise<Reading> {
-  const problem = scriptProblem(spec.script);
+  const problem = scriptProblem(spec.script, spec.network);
   if (problem !== undefined) throw new Unavailable(problem);
   if (ports.script === undefined) {
     throw new Unavailable("majhi problem: Docker is not available to the server, so a script cannot run.");
@@ -1026,7 +1031,9 @@ async function script(
     if (found.org !== org) throw new Unavailable(`the connection ${c} belongs to another workspace`);
   }
   const run = ports.script;
-  const out = await guarded(() => run({ org, script: spec.script, connections: spec.connections }));
+  const out = await guarded(() =>
+    run({ org, script: spec.script, connections: spec.connections, network: spec.network }),
+  );
   const value = scriptValue(out, spec);
   const label = spec.label === undefined || spec.label === "" ? "" : `${spec.label} `;
   if (value === undefined) {

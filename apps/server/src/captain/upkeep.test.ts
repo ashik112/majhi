@@ -19,6 +19,16 @@ function fakeFindings(dismissed: string[] = []) {
       filed.set(input.dedupeKey ?? input.title, "open");
       return {};
     },
+    settle: (_org: string, _source: string, prefix: string, stillTrue: ReadonlySet<string>) => {
+      let n = 0;
+      for (const [k, v] of filed) {
+        if (v === "open" && k.startsWith(prefix) && !stillTrue.has(k)) {
+          filed.set(k, "fixed");
+          n += 1;
+        }
+      }
+      return n;
+    },
   };
 }
 
@@ -113,6 +123,24 @@ describe("discover", () => {
     expect(full.findings.filed.has("discover:mcp:io.acme/postgres")).toBe(true);
   });
 
+  it("a skill that fails to install fails once with its reason and is never tried again", async () => {
+    const installSkill = vi.fn(async () => {
+      throw new Error("The description is longer than 1024 characters.");
+    });
+    const full = setup({
+      upkeep: { profile: async () => ["x"], search, installSkill },
+      rules: { fullAccess: true } as AutonomyOrg,
+    });
+    for (const day of [1, 2, 3]) {
+      await full.runner.start("acme", "discover", `daily${day}`);
+    }
+    expect(installSkill).toHaveBeenCalledTimes(1);
+    expect(full.findings.filed.get("discover:skill:acme/lint")).toBe("open");
+    expect(full.repo.allActions().map((a) => a.text)).toContain(
+      "Could not install the skill acme/lint: The description is longer than 1024 characters.",
+    );
+  });
+
   it("proposes a skill whose registry id is not a valid local name, and never installs it", async () => {
     const installSkill = vi.fn(async () => {});
     const odd = {
@@ -178,6 +206,20 @@ describe("tidy", () => {
     await t.runner.start("acme", "tidy", "daily");
     expect(clean).not.toHaveBeenCalled();
     expect(t.findings.filed.get("tidy:dirty:ACM-1")).toBe("open");
+  });
+
+  it("resolves the dirty-worktree finding once the worktree is clean, and keeps one finding per task", async () => {
+    let dirty = ["src/a.ts has changes"];
+    const t = setup({
+      upkeep: { failingConnections: async () => [], staleSecrets: async () => [], tidy: async () => [] },
+      ports: { cleanable: async () => [{ id: "ACM-1", title: "Done", steps: [], dirty }] },
+    });
+    await t.runner.start("acme", "tidy", "daily");
+    await t.runner.start("acme", "tidy", "daily");
+    expect([...t.findings.filed.entries()]).toEqual([["tidy:dirty:ACM-1", "open"]]);
+    dirty = [];
+    await t.runner.start("acme", "tidy", "daily");
+    expect(t.findings.filed.get("tidy:dirty:ACM-1")).toBe("fixed");
   });
 });
 

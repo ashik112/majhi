@@ -65,6 +65,7 @@ import { sshConfigHosts } from "../scan/sshConfig.ts";
 import { restoreKey } from "../secrets/restore.ts";
 import type { Services } from "../services.ts";
 import { skillHandlers } from "../skills/handlers.ts";
+import { toolsHandlers } from "../tools/handlers.ts";
 import type { SshHostProbe } from "../ssh/hosts.ts";
 import type { SystemService } from "../system/service.ts";
 import { actorName } from "../tasks/cards.ts";
@@ -208,6 +209,12 @@ export function createHandlers({
     ...connectHandlers(services.connect),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
     ...skillHandlers(services.skills),
+    ...toolsHandlers({
+      tools: services.tools,
+      findings: services.findings,
+      lanes: services.lanes,
+      store: services.store,
+    }),
     ...mcpHandlers(services.mcpServers),
     ...gitConnectHandlers({ config, scanner, hostLink, services }),
 
