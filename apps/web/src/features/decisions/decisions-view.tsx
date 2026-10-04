@@ -1,6 +1,6 @@
-import { likeThis } from "@majhi/shared";
+import { batchPlan, likeThis, type OwnerDecision } from "@majhi/shared";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { CircleCheck, Inbox } from "lucide-react";
+import { CircleCheck, GitMerge, Inbox } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Problem } from "@/components/problem";
 import { useRunAttention } from "@/components/shell/banner";
@@ -8,12 +8,13 @@ import { Button } from "@/components/ui/button";
 import { ChoiceChip } from "@/components/ui/choice-chip";
 import { Kbd } from "@/components/ui/kbd";
 import { ListDetail, ListPane } from "@/components/ui/list-detail";
-import { PageHeader } from "@/components/ui/page-header";
+import { Select } from "@/components/ui/select";
 import { RowsSkeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { lastAnsweredAt, useAnswerDecision, useDecisionDetail, useDecisions } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
+import { GLASS } from "@/lib/glass";
 import { useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
 import { useMedia } from "@/lib/use-media";
@@ -36,6 +37,13 @@ import {
 } from "./model";
 import { useNeedsYou } from "./needs-you";
 import { useBatch } from "./use-batch";
+
+function ageWord(ms: number): string {
+  const hours = Math.floor(ms / 3_600_000);
+  if (hours < 1) return `${Math.max(1, Math.floor(ms / 60_000))} min`;
+  if (hours < 48) return `${hours} h`;
+  return `${Math.floor(hours / 24)} days`;
+}
 
 function typing(target: EventTarget | null): boolean {
   return (
@@ -105,10 +113,9 @@ export function DecisionsView() {
     setReplyText("");
   }, [selectedId]);
 
-  const send = (option: string, text?: string) => {
-    if (selected === undefined || answer.isPending) return;
+  const sendFor = (done: OwnerDecision, option: string, text?: string) => {
+    if (answer.isPending) return;
     const queue = shown.map((d) => d.id);
-    const done = selected;
     const label = done.options.find((o) => o.id === option)?.label ?? option;
     setWorking(option);
     answer.mutate(
@@ -123,6 +130,10 @@ export function DecisionsView() {
         onSettled: () => setWorking(undefined),
       },
     );
+  };
+
+  const send = (option: string, text?: string) => {
+    if (selected !== undefined) sendFor(selected, option, text);
   };
 
   const openSelected = () => {
@@ -193,12 +204,15 @@ export function DecisionsView() {
   const total = useNeedsYou();
   const byOrg = useMemo(() => workspaceCounts(all ?? [], kind), [all, kind]);
   const byKind = useMemo(() => kindCounts(all ?? [], org), [all, org]);
+  const oldest =
+    all === undefined || all.length === 0 ? undefined : Math.min(...all.map((d) => Date.parse(d.at)));
   const subtitle =
     all === undefined
-      ? "What waits for you, with a recommendation where the captain has one."
+      ? undefined
       : all.length === 0
-        ? "All answered."
-        : `${total} ${total === 1 ? "needs" : "need"} you`;
+        ? "All answered"
+        : `${total} ${total === 1 ? "decision" : "decisions"}${oldest === undefined ? "" : `, oldest ${ageWord(now - oldest)}`}`;
+  const ready = shown.filter((d) => d.kind === "ship" && batchPlan([d], "approve").ids.length > 0);
   const answered = lastAnswerText(lastAnsweredAt(), (iso) => formatAgo(iso, now));
 
   let body: React.ReactNode;
@@ -223,7 +237,7 @@ export function DecisionsView() {
       <ListPane
         label="Decisions"
         scrollRef={setScroller}
-        className="w-[340px] min-[1320px]:w-[380px] max-[999px]:w-full"
+        className="w-0 flex-[1.15] max-[999px]:w-full min-[1320px]:w-0"
         footer={
           shown.length === 0 ? undefined : (
             <BatchBar
@@ -267,7 +281,10 @@ export function DecisionsView() {
             picked={batch.picked}
             held={batch.held}
             onSelect={(id) => select(id)}
+            busy={answer.isPending}
+            working={working}
             onPick={batch.toggle}
+            onAnswer={sendFor}
           />
         )}
       </ListPane>
@@ -298,30 +315,12 @@ export function DecisionsView() {
             aria-label="Filters"
             className="m-0 mb-3 flex min-w-0 flex-wrap items-center gap-1.5 border-0 p-0"
           >
-            {orgs.length > 1 && (
-              <>
-                <ChoiceChip className={CHIP} pressed={org === undefined} onClick={() => setOrg(undefined)}>
-                  All workspaces
-                  <span className="tnum font-mono text-fg-faint">
-                    {[...byOrg.values()].reduce((n, c) => n + c, 0)}
-                  </span>
-                </ChoiceChip>
-                {orgs
-                  .filter((o) => (byOrg.get(o.id) ?? 0) > 0 || o.id === org)
-                  .map((o) => (
-                    <ChoiceChip
-                      key={o.id}
-                      className={`${CHIP} max-w-[170px]`}
-                      pressed={org === o.id}
-                      onClick={() => setOrg(o.id)}
-                    >
-                      <span className="min-w-0 truncate">{o.name}</span>
-                      <span className="tnum font-mono text-fg-faint">{byOrg.get(o.id) ?? 0}</span>
-                    </ChoiceChip>
-                  ))}
-                <span aria-hidden="true" className="mx-1 h-4 w-px bg-line-strong" />
-              </>
-            )}
+            <ChoiceChip className={CHIP} pressed={kind === undefined} onClick={() => setKind(undefined)}>
+              All
+              <span className="tnum font-mono text-fg-faint">
+                {[...byKind.values()].reduce((n, c) => n + c, 0)}
+              </span>
+            </ChoiceChip>
             {KIND_FILTERS.filter((k) => (byKind.get(k.id) ?? 0) > 0 || k.id === kind).map((k) => (
               <ChoiceChip
                 key={k.id}
@@ -333,6 +332,23 @@ export function DecisionsView() {
                 <span className="tnum font-mono text-fg-faint">{byKind.get(k.id) ?? 0}</span>
               </ChoiceChip>
             ))}
+            {orgs.length > 1 && (
+              <Select
+                aria-label="Workspace"
+                value={org ?? ""}
+                onChange={(e) => setOrg(e.target.value === "" ? undefined : e.target.value)}
+                className="ml-auto h-7 w-auto min-w-0 max-w-[180px] py-0 text-xs"
+              >
+                <option value="">All workspaces</option>
+                {orgs
+                  .filter((o) => (byOrg.get(o.id) ?? 0) > 0 || o.id === org)
+                  .map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+              </Select>
+            )}
           </fieldset>
         )}
         <ListDetail>
@@ -340,25 +356,9 @@ export function DecisionsView() {
           {!narrow && pane}
         </ListDetail>
         {!narrow && (
-          <p className="m-0 mt-2 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-faint">
-            <span>
-              <Kbd>j</Kbd> <Kbd>k</Kbd> move
-            </span>
-            <span>
-              <Kbd>Enter</Kbd> main action
-            </span>
-            <span>
-              <Kbd>1</Kbd> to <Kbd>3</Kbd> pick an answer
-            </span>
-            <span>
-              <Kbd>r</Kbd> reply
-            </span>
-            <span>
-              <Kbd>o</Kbd> open the task
-            </span>
-            <span>
-              <Kbd>Esc</Kbd> close the reply
-            </span>
+          <p className="m-0 mt-2 flex shrink-0 items-center gap-1.5 truncate text-xs text-fg-faint">
+            <Kbd>x</Kbd> pick <Kbd>j</Kbd> <Kbd>k</Kbd> move <Kbd>1</Kbd>-<Kbd>3</Kbd> answer <Kbd>r</Kbd>{" "}
+            reply <Kbd>o</Kbd> open
           </p>
         )}
       </>
@@ -367,7 +367,26 @@ export function DecisionsView() {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <PageHeader title="Decisions" subtitle={subtitle} />
+      <header className={`mb-3 flex min-h-[44px] shrink-0 items-center gap-4 rounded-2xl px-4 py-2 ${GLASS}`}>
+        <h1 className="text-md leading-5 font-semibold text-fg">Needs you</h1>
+        {subtitle !== undefined && <span className="text-sm text-fg-muted">{subtitle}</span>}
+        {ready.length > 0 && (
+          <Button
+            size="sm"
+            className="ml-auto"
+            disabled={batch.hold !== undefined}
+            onClick={() =>
+              batch.start(
+                "approve",
+                ready.map((d) => d.id),
+              )
+            }
+          >
+            <GitMerge aria-hidden="true" />
+            Merge all ready ({ready.length})
+          </Button>
+        )}
+      </header>
       {body}
     </div>
   );

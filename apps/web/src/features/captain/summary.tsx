@@ -42,6 +42,12 @@ export function summaryLine(summary: AutonomySummary, now: number): { text: stri
   };
 }
 
+/** The header chip: "Yesterday: 17 shipped". */
+export function chipLine(summary: AutonomySummary, now: number): { text: string; over: boolean } {
+  const when = summary.day === yesterday(now) ? "Yesterday" : dayLabel(summary.day);
+  return { text: `${when}: ${summary.shipped.length} shipped`, over: capTone(summary.spent.total) === "red" };
+}
+
 /** Shipped work by workspace: the saved groups, or built from the list for a summary made before groups. */
 function shipGroups(summary: AutonomySummary): AutonomySummary["shipGroups"] {
   if (summary.shipGroups.length > 0 || summary.shipped.length === 0) return summary.shipGroups;

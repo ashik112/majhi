@@ -33,8 +33,7 @@ function sheetOf(tab: string | undefined): Open | undefined {
 }
 
 /**
- * The Captain page, one screen and no tabs: the header with the Auto-pilot switch and one status
- * sentence, the conversation on the left, and what needs you, what runs, what is next and what the
+ * The Captain page, one screen and no tabs: the slim header with the Auto-pilot switch and spend, the conversation on the left, and what needs you, what runs, what is next and what the
  * captain did on the right. Delegation, the full log and yesterday's summary open in sheets. Old
  * links with `?tab=` land here and open the sheet they meant.
  */
@@ -90,14 +89,15 @@ export function CaptainView() {
         captain={status}
         autonomy={autonomy}
         now={now}
-        onDelegation={() => setOpen("delegation")}
+        onPermissions={() => setOpen("delegation")}
         onSummary={openSummary}
-        onScorecard={() => setOpen("scorecard")}
+        onResults={() => setOpen("scorecard")}
+        onHistory={() => setOpen("log")}
       />
       <div className="grid min-h-0 min-w-0 flex-1 gap-3 max-[999px]:overflow-y-auto min-[1000px]:grid-cols-[minmax(0,1fr)_minmax(340px,420px)] min-[1000px]:grid-rows-[minmax(0,1fr)]">
         <section
           aria-label="Conversation"
-          className={`flex min-h-0 min-w-0 flex-col rounded-2xl p-4 max-[999px]:min-h-[520px] ${GLASS}`}
+          className={`flex min-h-0 min-w-0 flex-col rounded-2xl max-[999px]:min-h-[520px] ${GLASS}`}
         >
           <Conversation />
         </section>
@@ -112,12 +112,12 @@ export function CaptainView() {
       </div>
       {open === "delegation" && status && <DelegationSheet captain={status} now={now} onClose={close} />}
       {open === "log" && status && (
-        <Sheet title="Log" subtitle="What the captain did, and why" onClose={close}>
+        <Sheet title="History" subtitle="What the captain did, and why" onClose={close}>
           <FullLog orgs={status.orgs} now={now} />
         </Sheet>
       )}
       {open === "scorecard" && (
-        <Sheet title="Scorecard" subtitle="What the captain did and how it turned out" onClose={close} wide>
+        <Sheet title="Results" subtitle="What the captain did and how it turned out" onClose={close} wide>
           <ScorecardSheet />
         </Sheet>
       )}

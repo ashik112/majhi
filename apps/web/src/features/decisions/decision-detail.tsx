@@ -206,7 +206,7 @@ export function DecisionDetailPane({
         <p className="m-0 text-md text-fg text-pretty break-words">{decision.sentence ?? decision.title}</p>
 
         {suggestion !== undefined && (
-          <div className="mt-4 flex flex-col gap-1 border-t border-line pt-4">
+          <div className="mt-4 flex flex-col gap-1 rounded-xl border border-accent-line bg-accent-wash px-3 py-2.5">
             <p className="m-0 flex items-center gap-1.5 text-sm text-fg-muted">
               <Check aria-hidden="true" className="size-3.5 text-accent-text" />
               {suggestion.by === "captain" ? "Captain recommends" : "The agent suggests"}{" "}
@@ -241,14 +241,14 @@ export function DecisionDetailPane({
             </div>
           </Block>
         )}
-        {detail?.diff !== undefined && (
-          <Block title="What changed">
-            <Changes diff={detail.diff} repos={detail.repos} checks={detail.checks} />
-          </Block>
-        )}
         {decision.kind === "ship" && decision.task !== undefined && detail?.diff !== undefined && (
           <Block title="Checks">
             <HandoffBlock task={decision.task} />
+          </Block>
+        )}
+        {detail?.diff !== undefined && (
+          <Block title="What changed">
+            <Changes diff={detail.diff} repos={detail.repos} checks={detail.checks} />
           </Block>
         )}
         {detail?.questions !== undefined && detail.questions.length > 1 && (

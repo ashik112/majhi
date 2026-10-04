@@ -69,12 +69,10 @@ export function FindingsBox({ orgs, onOpen }: { orgs: readonly CaptainOrg[]; onO
   const tasks = taskFindings(all).slice(0, SHOWN_TASKS);
   const names = (org: string) => (orgs.length > 1 ? workspaceName(orgs, org) : undefined);
   return (
-    <section aria-label="Findings" className="flex min-w-0 flex-col border-b border-line px-4 py-3">
+    <section aria-label="It noticed" className="flex min-w-0 flex-col border-b border-line px-4 py-3">
       <div className="flex min-h-7 items-center gap-2">
-        <h2 className="text-base font-semibold text-fg">Findings</h2>
-        {data !== undefined && data.fresh > 0 && (
-          <span className="tnum font-mono text-sm text-fg-faint">{data.fresh} new</span>
-        )}
+        <h2 className="text-base font-semibold text-fg">It noticed</h2>
+        {data !== undefined && <span className="tnum font-mono text-sm text-fg-faint">{data.open}</span>}
         <div className="ml-auto flex items-center gap-2 text-sm">
           <button
             type="button"

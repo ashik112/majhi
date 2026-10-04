@@ -23,8 +23,6 @@ import { describeError } from "@/lib/errors";
 import { useScorecard, useSetMinutes, useUnmute } from "@/lib/scorecard-queries";
 import { useOrgs } from "@/lib/studio-queries";
 
-const SHOWN = 3;
-
 /** Workspace names by id, Private included. */
 function useNames(): (org: string) => string {
   const orgs = useOrgs().data ?? [];
@@ -43,37 +41,16 @@ function keyName(key: string): string {
   return (AUTHORITY_LABEL[key as AuthorityRow] ?? key).split(":")[0] ?? key;
 }
 
-/**
- * One line per workspace under the Captain header: "Acme  Kept 47/50, $3.10, ~2.5 h saved". The
- * week, with the three busiest workspaces and a link to the full scorecard.
- */
-export function ScorecardStrip({ onOpen }: { onOpen: () => void }) {
-  const query = useScorecard("week");
-  const name = useNames();
-  const card = query.data;
-  if (card === undefined) {
-    return query.isError ? null : <Skeleton className="h-5 w-[320px] max-w-full" />;
-  }
-  const lines = card.orgs.flatMap((o) => (o.line === undefined ? [] : [{ org: o.org, line: o.line }]));
+/** "This week: kept 200 of 200, about 14 h saved, $176", from the week's total. */
+export function WeekLine() {
+  const t = useScorecard("week").data?.total;
+  if (t === undefined || (t.judged === 0 && t.costUsd === 0 && t.minutesSaved === 0)) return null;
+  const saved = t.minutesSaved > 0 ? `, about ${hoursWord(t.minutesSaved)} saved` : "";
   return (
-    <div className="flex min-w-0 flex-wrap items-baseline gap-x-5 gap-y-0.5 text-sm text-fg-muted">
-      <span className="text-fg-faint">This week</span>
-      {lines.length === 0 && <span>Nothing to score yet.</span>}
-      {lines.slice(0, SHOWN).map((l) => (
-        <span key={l.org} className="tnum flex min-w-0 items-baseline gap-1.5">
-          <span className="max-w-[140px] truncate text-fg-soft">{name(l.org)}</span>
-          <span className="truncate">{l.line}</span>
-        </span>
-      ))}
-      {lines.length > SHOWN && <span>+{lines.length - SHOWN} more</span>}
-      <button
-        type="button"
-        onClick={onOpen}
-        className="cursor-pointer text-fg-muted underline underline-offset-[3px] hover:text-fg"
-      >
-        Scorecard
-      </button>
-    </div>
+    <p className="tnum text-sm text-fg-muted">
+      This week: kept {t.kept} of {t.judged}
+      {saved}, {moneyWord(t.costUsd)}
+    </p>
   );
 }
 

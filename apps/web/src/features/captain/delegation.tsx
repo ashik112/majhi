@@ -467,7 +467,7 @@ export function DelegationSheet({
   const zone = autonomy?.settings.tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   return (
     <Sheet
-      title="Delegation"
+      title="Permissions"
       subtitle="Who decides what, per workspace"
       wide
       onClose={onClose}

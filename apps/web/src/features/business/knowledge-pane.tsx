@@ -1,6 +1,6 @@
 import { KB_KIND_LABEL, KB_KINDS, type KbEntry, type KbKind, type KbRow } from "@majhi/shared";
 import { useQuery } from "@tanstack/react-query";
-import { Paperclip, X } from "lucide-react";
+import { Paperclip, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChipsInput } from "@/components/ui/chips-input";
@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
 import { Lamp } from "@/components/ui/lamp";
 import { DetailPane, DetailSection } from "@/components/ui/list-detail";
-import { Segmented } from "@/components/ui/segmented";
 import { Select, Textarea } from "@/components/ui/select";
 import { RowsSkeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
@@ -52,7 +51,7 @@ function matches(row: KbRow, words: readonly string[]): boolean {
   return words.every((w) => hay.includes(w));
 }
 
-export function KnowledgePane({ scopes }: { scopes: readonly Scope[] }) {
+export function KnowledgePane({ scopes, newSignal = 0 }: { scopes: readonly Scope[]; newSignal?: number }) {
   const [view, setView] = useState<"live" | "removed">("live");
   const list = useKbList(view === "removed");
   const [scope, setScope] = useState("*");
@@ -61,6 +60,12 @@ export function KnowledgePane({ scopes }: { scopes: readonly Scope[] }) {
   const [selected, setSelected] = useState<number>();
   const [mode, setMode] = useState<Mode>({ kind: "view" });
   const now = useNow(60_000);
+  const verify = useBusinessCommand("kb.verify");
+  const drop = useBusinessCommand("kb.remove");
+  // The header's New fact button bumps the signal.
+  useEffect(() => {
+    if (newSignal > 0) setMode({ kind: "new" });
+  }, [newSignal]);
 
   const words = useMemo(
     () =>
@@ -95,19 +100,6 @@ export function KnowledgePane({ scopes }: { scopes: readonly Scope[] }) {
     setMode((m) => (m.kind === "new" ? m : { kind: "view" }));
   }, []);
   const getId = useCallback((r: KbRow) => r.id, []);
-  const unverified = all.filter((r) => !r.verified).length;
-
-  const newButton = (
-    <Button
-      variant="primary"
-      className="w-full"
-      onClick={() => {
-        setMode({ kind: "new" });
-      }}
-    >
-      New entry <Kbd>n</Kbd>
-    </Button>
-  );
 
   return (
     <>
@@ -115,7 +107,7 @@ export function KnowledgePane({ scopes }: { scopes: readonly Scope[] }) {
         label="Knowledge base"
         search={query}
         onSearch={setQuery}
-        placeholder="Search the knowledge base"
+        placeholder="Search facts"
         filters={
           <>
             <ScopeFilter value={scope} onChange={setScope} scopes={scopes} />
@@ -135,33 +127,23 @@ export function KnowledgePane({ scopes }: { scopes: readonly Scope[] }) {
           </>
         }
         footer={
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <Segmented
-                label="Show entries"
-                value={view}
-                segments={[
-                  {
-                    value: "live",
-                    label: "Live",
-                    ...(view === "live" ? { count: list.data?.total ?? 0 } : {}),
-                  },
-                  { value: "removed", label: "Removed" },
-                ]}
-                onChange={(v) => {
-                  setView(v);
-                  setSelected(undefined);
-                  setMode({ kind: "view" });
-                }}
-                className="[&_button]:h-7"
-              />
-              {unverified > 0 && view === "live" && (
-                <span className="tnum ml-auto font-mono text-xs text-lamp-paused">
-                  {unverified} to verify
-                </span>
-              )}
-            </div>
-            {newButton}
+          <div className="flex items-center gap-2">
+            <Button variant="primary" size="sm" onClick={() => setMode({ kind: "new" })}>
+              <Plus aria-hidden="true" />
+              New fact
+            </Button>
+            <button
+              type="button"
+              aria-pressed={view === "removed"}
+              onClick={() => {
+                setView(view === "removed" ? "live" : "removed");
+                setSelected(undefined);
+                setMode({ kind: "view" });
+              }}
+              className="tnum ml-auto cursor-pointer font-mono text-xs text-fg-faint hover:text-fg"
+            >
+              {view === "removed" ? "Back to facts" : "Removed"}
+            </button>
           </div>
         }
       >
@@ -175,7 +157,7 @@ export function KnowledgePane({ scopes }: { scopes: readonly Scope[] }) {
           </div>
         ) : rows.length === 0 ? (
           <p className="p-4 text-sm text-fg-faint text-pretty">
-            {all.length === 0 ? "No entries yet." : "Nothing matches. Clear the search or the filters."}
+            {all.length === 0 ? "No facts yet." : "Nothing matches. Clear the search or the filters."}
           </p>
         ) : (
           <VirtualRows
@@ -184,21 +166,69 @@ export function KnowledgePane({ scopes }: { scopes: readonly Scope[] }) {
             getId={getId}
             selectedId={selected}
             onSelect={select}
-            row={(r, on) => (
-              <RowFrame selected={on}>
-                <div className="flex min-w-0 items-center gap-2">
-                  <Lamp state={r.verified ? "done" : "paused"} size={7} />
-                  <span className="min-w-0 flex-1 truncate text-base text-fg" title={r.title}>
+            row={(r, on) => {
+              const proposal = !r.verified && r.by !== "owner" && view === "live";
+              return (
+                <RowFrame selected={on}>
+                  <div className="flex min-w-0 items-center gap-2 text-xs text-fg-faint">
+                    <span className="shrink-0">{KB_KIND_LABEL[r.kind]}</span>
+                    <ScopeTag label={scopeLabel(scopes, r.org)} business={r.org === undefined} />
+                    {r.verified ? (
+                      <span className="ml-auto text-green">verified</span>
+                    ) : proposal ? (
+                      <span className="ml-auto text-amber-soft">proposed by the captain</span>
+                    ) : null}
+                  </div>
+                  <span className="min-w-0 truncate text-base font-medium text-fg" title={r.title}>
                     {r.title}
                   </span>
-                </div>
-                <div className="flex min-w-0 items-baseline gap-2 pl-[15px]">
-                  <span className="shrink-0 text-xs text-fg-faint">{KB_KIND_LABEL[r.kind]}</span>
-                  <ScopeTag label={scopeLabel(scopes, r.org)} business={r.org === undefined} />
-                  <Meta className="ml-auto">{formatAgo(r.updatedAt, now)}</Meta>
-                </div>
-              </RowFrame>
-            )}
+                  {r.excerpt !== "" && (
+                    <span className="min-w-0 truncate text-sm text-fg-faint">{r.excerpt}</span>
+                  )}
+                  {r.files.length > 0 && (
+                    <span className="flex items-center gap-1.5 text-sm text-fg-faint">
+                      <Paperclip className="size-3.5" aria-hidden="true" />
+                      {r.files.length} {r.files.length === 1 ? "file" : "files"}
+                    </span>
+                  )}
+                  {proposal && (
+                    <div className="flex gap-1.5 pt-1">
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        disabled={verify.isPending}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          verify.mutate({ id: r.id, verified: true });
+                        }}
+                      >
+                        Verify
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelected(r.id);
+                          setMode({ kind: "edit" });
+                        }}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={drop.isPending}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          drop.mutate({ id: r.id });
+                        }}
+                      >
+                        Drop
+                      </Button>
+                    </div>
+                  )}
+                </RowFrame>
+              );
+            }}
             onKey={(e) => {
               if (e.key === "n") {
                 e.preventDefault();
@@ -212,7 +242,7 @@ export function KnowledgePane({ scopes }: { scopes: readonly Scope[] }) {
         )}
       </ListShell>
       {mode.kind === "new" ? (
-        <DetailPane label="New entry" head={<h2 className="text-md font-semibold">New entry</h2>}>
+        <DetailPane label="New fact" head={<h2 className="text-md font-semibold">New fact</h2>}>
           <EntryForm
             scopes={scopes}
             defaultScope={scope === "*" ? "" : scope}
@@ -227,9 +257,9 @@ export function KnowledgePane({ scopes }: { scopes: readonly Scope[] }) {
       ) : selected === undefined || list.data?.entries.length === 0 ? (
         <DetailPane label="Knowledge base">
           <EmptyState
-            title="What the captain may say about your business"
-            body="Add your bio, products, pricing, wins and metrics once. Grant applications, launches and replies draw on them, and say when a fact is not verified."
-            action={{ label: "Add the first entry", onClick: () => setMode({ kind: "new" }) }}
+            title="No facts yet"
+            body="Add one and the captain can use it."
+            action={{ label: "New fact", onClick: () => setMode({ kind: "new" }) }}
           />
         </DetailPane>
       ) : (
@@ -296,7 +326,7 @@ function EntryDetail({
 
   if (editing && !old && !current.data.removed) {
     return (
-      <DetailPane label="Edit entry" head={<h2 className="text-md font-semibold">Edit entry</h2>}>
+      <DetailPane label="Edit fact" head={<h2 className="text-md font-semibold">Edit fact</h2>}>
         <EntryForm initial={live} scopes={scopes} onCancel={onDone} onSaved={onDone} />
       </DetailPane>
     );
@@ -322,40 +352,6 @@ function EntryDetail({
                 v{entry.version} · {formatAgo(entry.updatedAt, now)}
               </Meta>
             </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {current.data.removed ? (
-              <Button
-                variant="primary"
-                disabled={restore.isPending}
-                onClick={() =>
-                  restore.mutate({ id }, { onSuccess: () => toast("Entry restored", { detail: live.title }) })
-                }
-              >
-                Restore
-              </Button>
-            ) : (
-              <>
-                <Button
-                  variant={live.verified ? "secondary" : "primary"}
-                  disabled={verify.isPending || old}
-                  onClick={() =>
-                    verify.mutate(
-                      { id, verified: !live.verified },
-                      { onSuccess: () => toast(live.verified ? "Verification taken back" : "Verified") },
-                    )
-                  }
-                >
-                  {live.verified ? "Unverify" : "Verify"}
-                </Button>
-                <Button onClick={onEdit} disabled={old}>
-                  Edit <Kbd>e</Kbd>
-                </Button>
-                <Button variant="ghost" onClick={() => setConfirm(true)}>
-                  Remove
-                </Button>
-              </>
-            )}
           </div>
         </div>
       }
@@ -430,32 +426,82 @@ function EntryDetail({
           </ul>
         </DetailSection>
       )}
-      <DetailSection
-        title="History"
-        note="Every change is kept. Pick one to read it, then restore it if it was better."
-        className="mt-5"
-      >
+      <DetailSection title="History" className="mt-5">
         <ul className="flex flex-col">
           {current.data.versions.map((v) => {
             const on = (version ?? live.version) === v.version;
             return (
-              <li key={v.version} className="border-t border-line first:border-t-0">
+              <li key={v.version} className="flex items-center gap-2 border-t border-line first:border-t-0">
                 <button
                   type="button"
                   onClick={() => setVersion(v.version === live.version ? undefined : v.version)}
                   aria-current={on ? "true" : undefined}
-                  className="flex w-full min-w-0 cursor-pointer items-baseline gap-3 rounded-md px-1 py-1.5 text-left text-base hover:bg-raised"
+                  className="flex min-w-0 flex-1 cursor-pointer items-baseline gap-3 rounded-md px-1 py-1.5 text-left text-base hover:bg-raised"
                 >
                   <Meta className="w-8 shrink-0">v{v.version}</Meta>
                   <span className={on ? "text-fg" : "text-fg-soft"}>{CHANGE_WORD[v.change]}</span>
                   <span className="min-w-0 flex-1 truncate text-fg-faint">{v.by}</span>
                   <Meta>{formatAgo(v.at, now)}</Meta>
                 </button>
+                {v.version !== live.version && !current.data.removed && (
+                  <button
+                    type="button"
+                    disabled={restore.isPending}
+                    onClick={() =>
+                      restore.mutate(
+                        { id, version: v.version },
+                        {
+                          onSuccess: () => {
+                            setVersion(undefined);
+                            toast("Version restored", { detail: "Saved as a new version." });
+                          },
+                        },
+                      )
+                    }
+                    className="shrink-0 cursor-pointer font-mono text-xs text-amber-soft hover:underline"
+                  >
+                    Restore v{v.version}
+                  </button>
+                )}
               </li>
             );
           })}
         </ul>
       </DetailSection>
+      <div className="flex shrink-0 items-center gap-2 pt-5">
+        {current.data.removed ? (
+          <Button
+            variant="primary"
+            disabled={restore.isPending}
+            onClick={() =>
+              restore.mutate({ id }, { onSuccess: () => toast("Entry restored", { detail: live.title }) })
+            }
+          >
+            Restore
+          </Button>
+        ) : (
+          <>
+            <Button
+              variant={live.verified ? "secondary" : "primary"}
+              disabled={verify.isPending || old}
+              onClick={() =>
+                verify.mutate(
+                  { id, verified: !live.verified },
+                  { onSuccess: () => toast(live.verified ? "Verification taken back" : "Verified") },
+                )
+              }
+            >
+              {live.verified ? "Unverify" : "Verify"}
+            </Button>
+            <Button onClick={onEdit} disabled={old}>
+              Edit <Kbd>e</Kbd>
+            </Button>
+            <Button variant="ghost" onClick={() => setConfirm(true)}>
+              Remove
+            </Button>
+          </>
+        )}
+      </div>
       {confirm && (
         <ConfirmDialog
           title="Remove this entry?"

@@ -262,14 +262,14 @@ export function Palette({ onClose }: { onClose: () => void }) {
     },
     {
       id: "captain-log",
-      name: "Captain: log of what it did",
-      keywords: "autonomous decisions undo feed history",
+      name: "Captain: history",
+      keywords: "autonomous decisions undo feed log",
       run: () => go(PAGE_PATH.captain, { tab: "log" }),
     },
     {
       id: "captain-rules",
-      name: "Captain: delegation",
-      keywords: "autonomous rules authority who decides what budget leave alone standing instructions",
+      name: "Captain: permissions",
+      keywords: "autonomous delegation rules authority who decides what budget leave alone standing instructions",
       run: () => go(PAGE_PATH.captain, { tab: "rules" }),
     },
   ];

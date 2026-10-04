@@ -105,7 +105,7 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
           <p className="rounded-md border border-amber-line bg-amber-wash px-3 py-2 text-base text-amber text-pretty">
             Nothing would happen yet. Open{" "}
             <PageLink page="captain" search={{ tab: "rules" }} onClick={onClose} className="underline">
-              Delegation on the Captain page
+              Permissions on the Captain page
             </PageLink>
             , let the captain decide something in one workspace, then come back.
           </p>
