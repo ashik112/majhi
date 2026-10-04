@@ -50,6 +50,7 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
     `Push the branch of ${str(i.id)}${i.deleteAfter === true ? ", then delete the local branch and worktree" : ""}`,
   "tasks.resolveShip": (i) =>
     `Ask the lead of ${str(i.id)} to resolve the conflicts with ${targetsText(i.targets) || str(i.into) || "its base"}, then ${i.action === "mergePush" ? "merge and push" : "merge"} by itself`,
+  "tasks.tell": (i) => `Tell ${str(i.agent) || "the lead"} of ${str(i.id)}: ${firstLine(str(i.text))}`,
   "tasks.cancelShip": (i) => `Cancel the ship waiting on the lead of ${str(i.id)}`,
   "tasks.changeBranch": (i) => {
     const n = Array.isArray(i.files) ? i.files.length : 0;

@@ -565,6 +565,12 @@ export function createHandlers({
         agent: ctx.meta.actor.kind === "agent",
       }),
     }),
+    "tasks.tell": (input, ctx) =>
+      services.captainTell.tell(input, {
+        kind: ctx.meta.actor.kind === "agent" ? "agent" : "owner",
+        ...(ctx.meta.actor.kind === "agent" ? { id: ctx.meta.actor.id } : {}),
+        task: ctx.meta.task,
+      }),
     "tasks.cancelShip": async (input) => ({ task: services.pendingShips.cancel(input.id) }),
     "tasks.branches": (input) => services.tasks.branches(input.id),
     "tasks.diff": (input) => services.tasks.diff(input.id),

@@ -38,6 +38,7 @@ import { Lanes } from "./captain/lanes.ts";
 import { authorityOf } from "./captain/levels.ts";
 import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
+import { CaptainTell } from "./captain/tell.ts";
 import { captainWorld } from "./captain/world.ts";
 import type { Dispatch } from "./commands/dispatch.ts";
 import { resolvePath } from "./config/load.ts";
@@ -266,6 +267,8 @@ export interface Services {
   captain: CaptainService;
   /** What playbooks and agents noticed, deduplicated (5.18, Findings). */
   findings: FindingsService;
+  /** `tasks.tell`: the captain writes to a task's lead (5.18). */
+  captainTell: CaptainTell;
   /** The captain's chat per workspace (5.18). */
   lanes: Lanes;
   /** The captain's chores run commands through the dispatcher, made after the services. */
@@ -655,6 +658,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   // Bound below: the findings store is built after the cards.
   let reportFinding: FindingsService["report"] | undefined;
+  let findingsStore: FindingsService | undefined;
   const cards = createCards({
     store,
     projects,
@@ -988,6 +992,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       runs,
       room,
       quiet: (task) => idleWatch.quiet(task),
+      explained: (task) => autonomy.stallExplained(task),
+      pendingWork: (org) => autonomy.pendingWork(org, findingsStore?.openCount(org) ?? 0),
+      findingLines: (org) => findingsStore?.digestLines(org) ?? [],
       projectLines: (org) => cards.digestLines(org),
       store,
       events,
@@ -1014,8 +1021,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return { id: task.id };
     },
     changed: () => events.emit(["findings"]),
+    // A new finding is news to its workspace's lane, where Start is You too (it files a proposal).
+    appeared: (f) => {
+      if (f.severity !== "info") autonomy.news(`New finding #${f.id} (${f.severity}): ${f.title}`, f.org);
+    },
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
+  findingsStore = findings;
   reportFinding = (input, actor) => findings.report(input, actor);
   /** Bound when the server made the dispatcher: the captain's chores run commands as the captain. */
   let captainDispatch: Dispatch | undefined;
@@ -1070,6 +1082,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
   // A backlog of waiting memories runs the memory chore of the workspace that reviews them.
+  autonomy.useLaneGate(captain.laneGate);
   events.typing.onIdle((task) => captain.ownerIdle(task));
   memory.onWaiting((fact) => void captain.memoryWaiting(fact).catch(() => undefined));
   background.run(
@@ -1266,6 +1279,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     inbox,
     captain,
     findings,
+    captainTell: new CaptainTell({
+      tasks,
+      lanes,
+      store,
+      ...(options.runClock === undefined ? {} : { now: options.runClock }),
+    }),
     lanes,
     bindCaptain: (dispatch) => {
       captainDispatch = dispatch;

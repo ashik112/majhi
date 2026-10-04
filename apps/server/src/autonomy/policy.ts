@@ -23,6 +23,8 @@ export interface AutonomyCall {
   org: string;
   /** The caller asked for the owner's click whatever the policy says: a fix task's start. */
   confirm: boolean;
+  /** The caller is the captain in its lane, not an agent of a task. */
+  boss?: boolean | undefined;
 }
 
 export interface PolicyContext {
@@ -118,6 +120,11 @@ export function decideAutonomously(call: AutonomyCall, ctx: PolicyContext): Auto
   const authority = authorityOf(ctx.settings, call.org);
   if (call.confirm) return left("A fix task starts only when the owner approves it");
   if (risk === "destructive" || isDestructiveCommand(command)) return left("Only the owner removes things");
+  // Registering a repo the workspace's folder holds is upkeep, like the projects chore (the lane gate
+  // checked the path). Which repos agents reach is otherwise the owner's.
+  if (command === "projects.register" && call.boss === true && authority.upkeep === "decide") {
+    return approved(`In ${name} the captain decides upkeep, and registering a repo of its folder is upkeep`);
+  }
   if (OWNER_REACH.has(command))
     return left("Only the owner changes which repos, folders and branches agents reach");
   if (OWNER_SETTINGS.has(command)) return left("These are the owner's settings");
@@ -148,6 +155,13 @@ export function decideAutonomously(call: AutonomyCall, ctx: PolicyContext): Auto
   if (command === "tasks.merge") {
     return authority.merge === "decide"
       ? approved(`In ${name} the captain decides when work is merged`)
+      : left(askedSentence("merge", name));
+  }
+  // Asking the lead to resolve conflicts with main is part of a merge: it follows the Merge row. The
+  // merge it ends in never pushes (the hard limits refuse mergePush); a push follows the Push row.
+  if (command === "tasks.resolveShip" && call.boss === true) {
+    return authority.merge === "decide"
+      ? approved(`In ${name} the captain decides when work is merged, and a conflict is part of it`)
       : left(askedSentence("merge", name));
   }
   if (command === "tasks.push" || command === "tasks.openMrs") {

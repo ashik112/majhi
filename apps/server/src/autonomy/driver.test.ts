@@ -1,4 +1,10 @@
-import { type AutonomyMode, AutonomySettingsSchema, type AutonomyStatus } from "@majhi/shared";
+import {
+  ALL_ASK,
+  type AutonomyMode,
+  type AutonomyNow,
+  AutonomySettingsSchema,
+  type AutonomyStatus,
+} from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventHub } from "../events/hub.ts";
 import { estimateText } from "../runs/context.ts";
@@ -36,7 +42,8 @@ const STATUS: AutonomyStatus = {
   },
   accounts: [],
   waiting: [],
-  settings: AutonomySettingsSchema.parse({}),
+  // Acme decides when work starts; Globex (default) leaves it to the owner.
+  settings: AutonomySettingsSchema.parse({ orgs: { acme: { authority: { ...ALL_ASK, start: "decide" } } } }),
   stopped: [],
   raised: {},
 };
@@ -54,9 +61,16 @@ function fakes() {
     /** Autonomous tasks whose agents wait for a slot or start. */
     queued: new Set<string>(),
     running: new Set<string>(),
+    /** What the captain would see in the digest: the tasks of Acme. */
+    now: [] as AutonomyNow[],
+    /** Running tasks whose silence something explains (a cap, a card for the owner, a slot). */
+    explained: new Set<string>(),
+    /** Whether a workspace has backlog, a finding or a decision waiting. */
+    work: true,
   };
   const ticks: string[][] = [];
   const tickOrgs: string[] = [];
+  const skipped: string[][] = [];
   const told: string[] = [];
   const toldIn: string[] = [];
   const lanes: Record<string, string> = { acme: CHAT, globex: "LOCAL-9" };
@@ -74,12 +88,15 @@ function fakes() {
     openTasks: () => [],
     answerable: () => [],
     backlog: () => [],
-    status: async () => STATUS,
+    status: async () => ({ ...STATUS, now: state.now }),
     ticked: (reasons: readonly string[], org: string) => {
       ticks.push([...reasons]);
       tickOrgs.push(org);
     },
     event: () => 1,
+    skipped: (reasons: readonly string[]) => {
+      skipped.push([...reasons]);
+    },
   };
   const driver = new AutonomyDriver({
     // A fake with only what the driver reads.
@@ -102,8 +119,10 @@ function fakes() {
       },
     } as unknown as Store,
     events: new EventHub(),
+    explained: (task: string) => (state.explained.has(task) ? "held" : undefined),
+    pendingWork: async () => state.work,
   });
-  return { driver, state, ticks, tickOrgs, told, toldIn };
+  return { driver, state, ticks, tickOrgs, told, toldIn, skipped };
 }
 
 beforeEach(() => {
@@ -213,7 +232,200 @@ describe("the stuck check", () => {
     f.state.queued.delete("ACM-1");
     f.driver.loopEnded("ACM-1");
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
-    expect(f.ticks).toEqual([["ACM-1 is running, but no agent is working on it"]]);
+    // An alarm is soft: with nothing the captain has seen to compare against, it is not news.
+    expect(f.ticks).toEqual([]);
+  });
+});
+
+const task = (id: string, status: AutonomyNow["status"] = "running"): AutonomyNow => ({
+  task: id,
+  title: `Work on ${id}`,
+  org: "acme",
+  status,
+  agents: [{ id: "acme-builder", nowDoing: "reading" }],
+});
+
+describe("wakes carry news only", () => {
+  it("makes one wake of a storm: 100 events in a second, all reasons, repeats counted", async () => {
+    const f = fakes();
+    for (let i = 0; i < 100; i++) {
+      f.driver.wake(i % 2 === 0 ? "A card waits in ACM-1" : `ACM-${i} is done`, "acme");
+      await vi.advanceTimersByTimeAsync(10);
+    }
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.told).toHaveLength(1);
+    expect(f.told[0]).toContain("A card waits in ACM-1 (x50)");
+    expect(f.told[0]).toContain("- ACM-99 is done");
+    expect(f.ticks).toHaveLength(1);
+  });
+
+  it("sends nothing when the facts and the news are the ones the captain saw", async () => {
+    const f = fakes();
+    f.state.now = [task("ACM-1")];
+    f.driver.wake("ACM-1 is ready for review", "acme");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.ticks).toHaveLength(1);
+    // The same news again with nothing else changed: not sent.
+    f.driver.wake("ACM-1 is ready for review", "acme");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.ticks).toHaveLength(1);
+    expect(f.skipped).toEqual([["ACM-1 is ready for review"]]);
+    // What an agent is doing right now is not a fact: it changes all the time.
+    f.state.now = [{ ...task("ACM-1"), agents: [{ id: "acme-builder", nowDoing: "editing" }] }];
+    f.driver.wake("ACM-1 is ready for review", "acme");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.ticks).toHaveLength(1);
+  });
+
+  it("sends a real change once, and a soft alarm only when the facts changed", async () => {
+    const f = fakes();
+    f.state.now = [task("ACM-1")];
+    f.driver.wake("ACM-1 is ready for review", "acme");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    // An alarm over the same facts: nothing.
+    f.state.running.add("ACM-1");
+    f.driver.loopEnded("ACM-1");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.ticks).toHaveLength(1);
+    // The task finished: news and a changed fact, one wake.
+    f.state.now = [task("ACM-1", "done")];
+    f.driver.wake("ACM-1 is done: Work on ACM-1", "acme");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.ticks).toHaveLength(2);
+    // A soft alarm that comes with a changed fact goes too.
+    f.state.now = [task("ACM-1", "done"), task("ACM-2")];
+    f.driver.loopEnded("ACM-1");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.ticks).toHaveLength(3);
+  });
+
+  it("never wakes for a stall something explains: a cap, a card for the owner, a slot", async () => {
+    const f = fakes();
+    f.state.running.add("ACM-1");
+    f.state.explained.add("ACM-1");
+    for (let i = 0; i < 20; i++) f.driver.loopEnded("ACM-1");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.ticks).toEqual([]);
+    expect(f.told).toEqual([]);
+  });
+
+  it("does not count the captain's own changes as news: the facts after its turn are the baseline", async () => {
+    const f = fakes();
+    f.state.now = [task("ACM-1")];
+    f.driver.wake("ACM-1 is ready for review", "acme");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    // In its turn the captain started ACM-2. Its turn ends; a stall alarm then finds the same facts.
+    f.state.now = [task("ACM-1"), task("ACM-2")];
+    f.driver.loopEnded(CHAT);
+    await vi.advanceTimersByTimeAsync(0);
+    f.state.running.add("ACM-2");
+    f.driver.loopEnded("ACM-2");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.ticks).toHaveLength(1);
+  });
+
+  it("drops the bare hourly check when no work, finding or decision waits, and keeps it when one does", async () => {
+    const f = fakes();
+    f.state.now = [task("ACM-1")];
+    f.driver.wake("ACM-1 is ready for review", "acme");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.ticks).toHaveLength(1);
+    f.state.work = false;
+    await vi.advanceTimersByTimeAsync(61 * 60_000);
+    f.driver.sweep();
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.ticks).toHaveLength(1);
+    // Work waits, but nothing changed since the captain's turn: still nothing to say.
+    f.state.work = true;
+    f.driver.sweep();
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.ticks).toHaveLength(1);
+    // Work waits and a task finished meanwhile: the check goes.
+    f.state.now = [task("ACM-1", "done")];
+    f.driver.sweep();
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.ticks).toHaveLength(2);
+    expect(f.told[1]).toContain("Hourly check");
+  });
+
+  it("tells a lane where Start is You about a finding, and that it only proposes there", async () => {
+    const f = fakes();
+    // Globex: the default authority of a client workspace has Start on "You".
+    f.driver.findingNews("globex", "New finding #4 (high): Globex api has an outdated runtime");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.toldIn).toEqual(["LOCAL-9"]);
+    expect(f.told[0]).toContain("New finding #4 (high)");
+    expect(f.told[0]).toContain("The owner decides when work starts in this workspace");
+    expect(f.told[0]).toContain("majhi_findings_toTask");
+    // Acme decides starts: no such line.
+    f.driver.findingNews("acme", "New finding #5 (low): Acme readme is thin");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.told[1]).not.toContain("The owner decides when work starts");
+  });
+});
+
+describe("a busy hour", () => {
+  /**
+   * The same hour of events, with and without the news rule. "Before" is what the driver did: every
+   * non-empty batch of wakes (debounced 20 s) became a captain turn. "After" is the driver as built.
+   */
+  it("makes far fewer wakes than before, and keeps every real change", async () => {
+    const f = fakes();
+    const hour = 60 * 60_000;
+    const events: { at: number; run: () => void; real: boolean }[] = [];
+    let id = 0;
+    // 40 stall alarms spread over the hour, each over unchanged facts.
+    for (let i = 0; i < 40; i++) {
+      events.push({
+        at: Math.floor(((i + 0.5) / 40) * hour),
+        real: false,
+        run: () => {
+          f.state.running.add("ACM-1");
+          f.driver.loopEnded("ACM-1");
+        },
+      });
+    }
+    // 12 real changes: tasks done, review, a new finding, a card.
+    for (let i = 0; i < 12; i++) {
+      events.push({
+        at: Math.floor(((i + 0.25) / 12) * hour),
+        real: true,
+        run: () => {
+          id += 1;
+          f.state.now = [...f.state.now, task(`ACM-${100 + id}`, i % 2 === 0 ? "done" : "review")];
+          f.driver.wake(`ACM-${100 + id} changed`, "acme");
+        },
+      });
+    }
+    // 59 minute sweeps over a workspace with nothing waiting.
+    f.state.work = false;
+    for (let m = 1; m < 60; m++) events.push({ at: m * 60_000, real: false, run: () => f.driver.sweep() });
+    events.sort((a, b) => a.at - b.at);
+
+    // Before: every stall alarm and change was a wake, batched by the debounce; the old sweep woke once an hour.
+    let before = 1;
+    let batchEnd = -1;
+    for (const e of events.filter((x) => x.real || x.at % 60_000 !== 0)) {
+      if (e.at >= batchEnd) {
+        before += 1;
+        batchEnd = e.at + DEBOUNCE_MS;
+      }
+    }
+
+    let clock = 0;
+    for (const e of events) {
+      await vi.advanceTimersByTimeAsync(e.at - clock);
+      clock = e.at;
+      e.run();
+    }
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    const after = f.ticks.length;
+    console.info(`busy hour: ${before} wakes before, ${after} after (${f.skipped.length} batches held back)`);
+    expect(after).toBeLessThanOrEqual(12);
+    expect(after).toBeLessThan(before / 3);
+    // Every real change reached the captain.
+    const told = f.told.join("\n");
+    for (let n = 1; n <= id; n++) expect(told).toContain(`ACM-${100 + n} changed`);
   });
 });
 

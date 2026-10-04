@@ -44,6 +44,8 @@ export interface FindingsDeps {
   projectOrg(project: string): Promise<string | undefined>;
   /** Tells the screens. */
   changed?: () => void;
+  /** A finding is new, or came back after it was fixed: the workspace's captain lane hears of it. */
+  appeared?: (finding: Finding) => void;
 }
 
 const DAY_MS = 86_400_000;
@@ -131,6 +133,7 @@ export class FindingsService {
         at,
       });
       this.deps.changed?.();
+      this.deps.appeared?.(added);
       return { finding: added, result: "created" };
     }
     // The same finding again: last seen moves, evidence joins, severity only rises. A dismissed one stays so.
@@ -146,7 +149,23 @@ export class FindingsService {
       ...(reopen ? { status: "open" as const, task: null, decision: null } : {}),
     });
     this.deps.changed?.();
+    if (reopen) this.deps.appeared?.(refreshed);
     return { finding: refreshed, result: reopen ? "reopened" : "refreshed" };
+  }
+
+  /** The open findings of a workspace for the captain's digest: worst first, at most `max`. */
+  digestLines(org: string, max = 6): string[] {
+    const open = this.repo.list({ org, statuses: ["open"], limit: 200 });
+    const rank = { high: 3, medium: 2, low: 1, info: 0 } as const;
+    return open
+      .toSorted((a, b) => rank[b.severity] - rank[a.severity] || b.id - a.id)
+      .slice(0, max)
+      .map((f) => `#${f.id} [${f.severity}] ${f.title}${f.project === undefined ? "" : ` (${f.project})`}`);
+  }
+
+  /** How many findings of a workspace are open. */
+  openCount(org: string): number {
+    return this.repo.list({ org, statuses: ["open"], limit: 500 }).length;
   }
 
   list(input: FindingsListInput, actor: FindingActor): FindingsList {

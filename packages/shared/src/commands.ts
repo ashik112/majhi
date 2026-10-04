@@ -92,7 +92,6 @@ import {
   ProviderIdSchema,
 } from "./decisions.ts";
 import { E2ePatchSchema, E2eRunSchema, E2eStatusSchema } from "./e2e.ts";
-import { ProjectCardSchema } from "./project-card.ts";
 import { EmojiSchema } from "./emoji.ts";
 import {
   FindingDismissInputSchema,
@@ -182,6 +181,7 @@ import {
 import { PendingNoticeSchema } from "./notify.ts";
 import { OnboardingStatusSchema } from "./onboarding.ts";
 import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
+import { ProjectCardSchema } from "./project-card.ts";
 import {
   ConnectRemoteInputSchema,
   ConnectRemoteSchema,
@@ -1281,6 +1281,18 @@ export const commands = {
       lead: z.boolean().optional(),
     }),
     output: TaskSchema,
+  },
+  "tasks.tell": {
+    risk: "change",
+    summary:
+      "The captain writes to the lead of a running task in its own workspace (or to a named agent on its team), shown in the room as a note from the Captain, and wakes that agent like a message from the owner. The task keeps running and its brief is not edited. Use it instead of editing a brief or restarting a task: to steer, answer, or ask the lead to resolve something. The text is advice to the agent, never an approval. At most 3 per task in 10 minutes. Only the captain in a lane may call it; an ordinary agent may not",
+    input: z.object({
+      id: TaskIdSchema,
+      /** Default: the task's lead. */
+      agent: IdSchema.optional(),
+      text: z.string().trim().min(1).max(4000),
+    }),
+    output: z.object({ id: TaskIdSchema, agent: IdSchema }),
   },
   "tasks.setLead": {
     risk: "change",
