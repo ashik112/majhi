@@ -8,7 +8,7 @@ import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
 import type { RunManager } from "./manager.ts";
 import { NetworkWatch, type Probe } from "./network.ts";
-import { ResumeDrip, RESUME_GAP_MS } from "./resume-drip.ts";
+import { RESUME_GAP_MS, ResumeDrip } from "./resume-drip.ts";
 
 /** What the coordinator needs of the task service: the status changes that follow pauses and resumes. */
 export interface TaskHooks {
@@ -19,6 +19,8 @@ export interface TaskHooks {
     reason: "offline" | "error" | "limit" | "owner" | "signed-out",
     why?: string,
   ): Promise<void>;
+  /** A task left running that nothing could bring back after a restart: it pauses with an error. */
+  lostByRestart(id: string, why: string): Promise<void>;
   /** A turn ended with nothing queued: the task moves to review when no agent is still working. */
   agentsIdle(id: string): Promise<void>;
 }
@@ -146,12 +148,13 @@ export class Resilience {
     const { store, runs, tasks } = this.deps;
     // One pass, three queries: only done tasks that something waits on, parents or open merge requests need a look.
     const links = store.tasks.allLinks();
-    const hung = new Set<string>([...links.map((l) => l.other), ...links.filter((l) => l.type === "parent").map((l) => l.task)]);
+    const hung = new Set<string>([
+      ...links.map((l) => l.other),
+      ...links.filter((l) => l.type === "parent").map((l) => l.task),
+    ]);
     for (const id of store.tasks.unmergedMrs()) hung.add(id);
     const done = store.tasks.statuses();
-    await tasks
-      .reconcileDone([...hung].filter((id) => done.get(id) === "done"))
-      .catch(() => undefined);
+    await tasks.reconcileDone([...hung].filter((id) => done.get(id) === "done")).catch(() => undefined);
     const handled = new Set<string>();
     const comeBack: { task: TaskId; agent: string }[] = [];
     for (const { task: id, agent } of store.runs.interrupted()) {
@@ -242,7 +245,7 @@ export class Resilience {
   /** A task nothing could bring back after a restart: paused with reason `error`, one line in its room. */
   private async lost(task: TaskId, text: string): Promise<void> {
     this.note(task, text);
-    await this.deps.tasks.pausedByRuns(task, "error", LOST_LINE).catch(() => undefined);
+    await this.deps.tasks.lostByRestart(task, LOST_LINE).catch(() => undefined);
   }
 
   /** The team agent that acted last in the task's room. */

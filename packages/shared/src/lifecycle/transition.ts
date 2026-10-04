@@ -231,7 +231,15 @@ function step(task: TaskState | undefined, event: LifecycleEvent): Transition | 
     }
 
     case "sendBack":
-      if (task.status !== "review") return wrongStatus(event.type, task);
+      // The owner writes to a task with a merge request open (review comments to address): it goes
+      // back to work. Nobody else sends an MR task back; they close the merge request first.
+      if (task.status === "mr" && event.by !== "owner")
+        return refuse(
+          "wrong-status",
+          "A task with a merge request open does not take new work from anyone but the owner.",
+          "Close the merge request first, then send it back.",
+        );
+      if (task.status !== "review" && task.status !== "mr") return wrongStatus(event.type, task);
       if (task.hold !== undefined) return heldRefusal(task.hold);
       return {
         next: { ...task, status: "running" },
@@ -288,7 +296,10 @@ function step(task: TaskState | undefined, event: LifecycleEvent): Transition | 
     case "runResumed": {
       if (!IN_FLIGHT.includes(task.status)) return wrongStatus(event.type, task);
       if (task.hold === undefined) return { next: task, effects: [] };
-      if (!liftersOf(task.hold).includes("majhi")) return refuse("not-allowed", sentenceOf(task.hold));
+      // A run that goes on by itself lifts what majhi may lift, and an error: a turn that failed and
+      // was retried (the computer woke up, the API came back) is working, so the error is no longer true.
+      if (!liftersOf(task.hold).includes("majhi") && task.hold.cause !== "error")
+        return refuse("not-allowed", sentenceOf(task.hold));
       return {
         next: { ...task, hold: undefined },
         effects: [

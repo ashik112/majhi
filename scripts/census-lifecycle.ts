@@ -39,7 +39,7 @@ interface Tracked {
 }
 
 const TRACKED: Tracked[] = [
-  { label: "status writes: TaskRepo.setStatus", file: "apps/server/src/store/tasks.ts", name: "setStatus", within: "TaskRepo" },
+  { label: "status writes: LifecycleRows.commit", file: "apps/server/src/tasks/lifecycle/rows.ts", name: "commit", within: "LifecycleRows" },
   { label: "Task.pausedReason", file: "packages/shared/src/tasks.ts", name: "pausedReason", within: "TaskSchema" },
   { label: "Task.pausedBy", file: "packages/shared/src/tasks.ts", name: "pausedBy", within: "TaskSchema" },
   { label: "tasks.paused_reason column", file: "apps/server/src/store/schema.ts", name: "pausedReason", within: "tasks" },

@@ -1,6 +1,7 @@
 import type { Task } from "@majhi/shared";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
+import { seedStatus } from "../testing/status.ts";
 import { type RoomPayload, Store } from "./index.ts";
 import { MIGRATIONS, type Migration, MigrationConflict, migrate } from "./migrations.ts";
 
@@ -148,6 +149,7 @@ describe("store", () => {
       "sensor_cache",
       "task_allowances",
       "task_counters",
+      "task_events",
       "task_links",
       "task_plans",
       "task_repos",
@@ -231,7 +233,7 @@ describe("store", () => {
   it("updates status, worktrees and attachments, and removes everything with the task", () => {
     const store = new Store(":memory:");
     store.tasks.insert(task("ACME-2"));
-    store.tasks.setStatus("ACME-2", "paused", "owner", "2026-03-01T00:00:00.000Z");
+    seedStatus(store, "ACME-2", "paused", "owner", "2026-03-01T00:00:00.000Z");
     store.tasks.setWorktree("ACME-2", "acme-api", "/tasks/ACME-2/acme-api", false);
     store.tasks.addAttachments("ACME-2", [{ id: "a2", kind: "file", name: "x.txt", path: "x.txt" }]);
     const got = store.tasks.get("ACME-2");

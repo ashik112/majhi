@@ -1690,7 +1690,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   if (options.hostLink !== undefined) machine.start();
   options.hostLink?.onWake(() => background.run(() => resilience.wake()));
   background.run(
-    () => resilience.startup(),
+    async () => {
+      // Effects a crash left in the lifecycle outbox run first, so the reconcile sees their result.
+      await tasks.drainOutbox();
+      await resilience.startup();
+    },
     (err) => console.error(`Could not resume interrupted work: ${errorMessage(err)}`),
   );
   const secretService = new SecretService(secrets, config);

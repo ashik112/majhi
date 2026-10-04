@@ -582,7 +582,7 @@ describe("transition table", () => {
 const LEGAL: [LifecycleEvent, LifecycleStatus[]][] = [
   [{ type: "wishStart" }, ["inbox", "ready"]],
   [{ type: "start", by: "owner" }, ["inbox", "ready", "running"]],
-  [{ type: "sendBack", by: "owner" }, ["review"]],
+  [{ type: "sendBack", by: "owner" }, ["review", "mr"]],
   [{ type: "ownerStop", at: AT }, ["running", "review"]],
   [{ type: "captainStop", at: AT }, ["running", "review"]],
   [{ type: "autopilotOff", at: AT, mode: "now" }, ["running", "review"]],
@@ -800,11 +800,25 @@ describe("lifting a hold", () => {
       ).toBe("not-allowed");
   });
 
-  it("runResumed (the run's own report) cannot lift a hold majhi may not lift", () => {
-    for (const cause of ["owner-stop", "captain-stop", "loop-guard", "error"] as const)
+  it("runResumed (the run's own report) cannot lift a hold only the owner or captain may lift", () => {
+    for (const cause of ["owner-stop", "captain-stop", "loop-guard"] as const)
       expect(
         refused(transition(task({ status: "running", hold: hold(cause) }), { type: "runResumed" })).code,
       ).toBe("not-allowed");
+  });
+
+  it("runResumed lifts an error: a turn that failed and was retried is working again", () => {
+    const out = transition(task({ status: "running", hold: hold("error") }), { type: "runResumed" });
+    if (isRefusal(out)) throw new Error("refused");
+    expect(out.next.hold).toBeUndefined();
+  });
+
+  it("an MR task goes back to work for the owner only", () => {
+    const out = transition(task({ status: "mr" }), { type: "sendBack", by: "owner" });
+    if (isRefusal(out)) throw new Error("refused");
+    expect(out.next.status).toBe("running");
+    for (const by of ["captain", "majhi"] as const)
+      expect(refused(transition(task({ status: "mr" }), { type: "sendBack", by })).code).toBe("wrong-status");
   });
 
   it("majhi lifting a hold for another account's reading does not clear it", () => {

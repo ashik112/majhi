@@ -6,6 +6,7 @@ import { EventHub } from "../events/hub.ts";
 import { RoomService } from "../room/service.ts";
 import { Store } from "../store/index.ts";
 import { git, makeRepo, tempDir } from "../testing/fixtures.ts";
+import { seedStatus } from "../testing/status.ts";
 import { CleanupService } from "./cleanup.ts";
 
 const NOW = new Date("2026-09-30T12:00:00.000Z");
@@ -348,7 +349,7 @@ describe("run", () => {
   it("checks again: a task reopened after the preview is left alone", async () => {
     await seed({ id: "ACM-1" });
     expect((await service.preview(30)).tasks).toHaveLength(1);
-    store.tasks.setStatus("ACM-1", "review", undefined, NOW.toISOString());
+    seedStatus(store, "ACM-1", "review", undefined, NOW.toISOString());
     const report = await service.run(["ACM-1"], 30, "owner");
     expect(report.tasks[0]?.skipped).toBeDefined();
     expect(store.room.count("ACM-1")).toBe(3);
