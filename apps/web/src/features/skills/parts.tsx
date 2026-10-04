@@ -1,9 +1,10 @@
 import type { AgentEntry } from "@majhi/shared";
-import type { ReactNode } from "react";
+import { ChevronRight } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Panel } from "@/components/ui/panel";
-import { SectionLabel } from "@/components/ui/section-label";
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/cn";
 
 export interface AgentChoice {
   id: string;
@@ -36,7 +37,7 @@ export function Block({
     <Panel aria-label={title} className="flex flex-col gap-3 p-4">
       <div className="flex items-start gap-3">
         <div className="flex min-w-0 flex-col gap-1">
-          <SectionLabel>{title}</SectionLabel>
+          <h2 className="text-md font-semibold text-fg">{title}</h2>
           {note && <p className="text-sm text-fg-muted text-pretty">{note}</p>}
         </div>
         {actions && <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>}
@@ -58,7 +59,10 @@ export function ErrorLine({ children }: { children: ReactNode }) {
   );
 }
 
-/** One switch per agent: on when the agent uses the item. */
+/**
+ * One switch per agent, behind a button that says how many use the item, so a long list of rows
+ * stays short until the owner opens one.
+ */
 export function AgentToggles({
   agents,
   on,
@@ -73,22 +77,40 @@ export function AgentToggles({
   noun: string;
   onToggle: (agent: string, next: boolean) => void;
 }) {
+  const [open, setOpen] = useState(false);
   if (agents.length === 0) {
     return <p className="text-sm text-fg-faint">No agent can use this yet.</p>;
   }
+  const count = agents.filter((a) => on.includes(a.id)).length;
   return (
-    <ul aria-label={`Agents using this ${noun}`} className="flex flex-wrap gap-x-5 gap-y-0.5">
-      {agents.map((agent) => (
-        <li key={agent.id}>
-          <Switch
-            label={`@${agent.id}`}
-            checked={on.includes(agent.id)}
-            disabled={pending.has(agent.id)}
-            onChange={(next) => onToggle(agent.id, next)}
-          />
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col gap-1.5">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md text-sm text-fg-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+      >
+        <ChevronRight
+          aria-hidden="true"
+          className={cn("size-3.5 transition-transform", open && "rotate-90")}
+        />
+        {count === 0 ? "No agent uses it" : `${count} of ${agents.length} agents use it`}
+      </button>
+      {open && (
+        <ul aria-label={`Agents using this ${noun}`} className="flex flex-wrap gap-x-5 gap-y-0.5 pl-5">
+          {agents.map((agent) => (
+            <li key={agent.id}>
+              <Switch
+                label={`@${agent.id}`}
+                checked={on.includes(agent.id)}
+                disabled={pending.has(agent.id)}
+                onChange={(next) => onToggle(agent.id, next)}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
