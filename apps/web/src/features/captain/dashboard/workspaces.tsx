@@ -188,7 +188,7 @@ function Row({ row, nowMs }: { row: WorkspaceRow; nowMs: number }) {
 /** What matters now, one line per workspace. */
 export function Workspaces({ rows, nowMs }: { rows: readonly WorkspaceRow[]; nowMs: number }) {
   return (
-    <Panel title="Workspaces" aside={`${rows.length}`} className="max-h-full min-h-0 self-start" flush>
+    <Panel title="Workspaces" aside={`${rows.length}`} className="max-h-[calc(100%-212px)] min-h-0 shrink-0" flush>
       {rows.length === 0 ? (
         <p className="m-0 px-3.5 pb-3 text-sm text-fg-muted">
           No workspace yet. Add one in Orgs and the captain starts a lane there.

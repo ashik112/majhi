@@ -142,8 +142,8 @@ export function StatusStrip({
           className={cn("flex items-center gap-2 text-xs text-fg-muted", LINK)}
         >
           <Bars
-            width={70}
-            height={14}
+            width={84}
+            height={16}
             slots={14}
             values={finished}
             labels={(report?.days ?? []).map((d, i) => `${d.day}: ${finished[i] ?? 0} finished`)}

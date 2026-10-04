@@ -495,6 +495,18 @@ export class AutonomyRepo {
       .all(PRIVATE, start, end, ...chats, PRIVATE) as OrgSpendRow[];
   }
 
+  /** The same turns as `spendRows`, with their workspace, for the per-day chart. */
+  spendTurnsByOrg(start: string, end: string, chats: readonly string[]): (SpendTurn & { org: string })[] {
+    const marks = chats.map(() => "?").join(", ");
+    return this.db
+      .prepare(
+        `SELECT t.at AS at, t.cost_usd AS cost, 0 AS tokens, COALESCE(t.org, ?) AS org
+         FROM turns t LEFT JOIN autonomy_tasks a ON a.task = t.task
+         WHERE t.at >= ? AND t.at < ? AND ((a.task IS NOT NULL AND t.at >= a.since)${chats.length === 0 ? "" : ` OR t.task IN (${marks})`})`,
+      )
+      .all(PRIVATE, start, end, ...chats) as (SpendTurn & { org: string })[];
+  }
+
   /** The same turns as `spendRows`, one row each, for the hourly chart. */
   spendTurns(start: string, end: string, chats: readonly string[]): SpendTurn[] {
     const marks = chats.map(() => "?").join(", ");

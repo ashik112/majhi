@@ -404,6 +404,26 @@ export const AutonomyReportSchema = z.object({
       orgs: z.array(z.object({ org: z.string(), count: z.number().int().positive() })),
     }),
   ),
+  /** Auto-pilot spend per day and workspace over the same days, oldest first. */
+  spend: z
+    .array(
+      z.object({
+        day: z.string(),
+        orgs: z.array(z.object({ org: z.string(), cost: z.number().positive() })),
+      }),
+    )
+    .default([]),
+  /** Tasks started, finished and paused per day over the same days, oldest first. A task counts once per day and kind. */
+  flow: z
+    .array(
+      z.object({
+        day: z.string(),
+        started: z.number().int().nonnegative(),
+        finished: z.number().int().nonnegative(),
+        paused: z.number().int().nonnegative(),
+      }),
+    )
+    .default([]),
   /** Autonomous tasks and cards that are not moving, longest first. */
   stuck: z.array(StuckTaskSchema).default([]),
   /** Absent while the host helper is not connected. */

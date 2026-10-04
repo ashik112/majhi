@@ -96,7 +96,7 @@ import { authorityProblem, leftOutWhy, type OrgNames, orgName, pickLines } from 
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
 import { AutonomyRepo, type HeldReason, STOPPED_NOW } from "./repo.ts";
 import { pathsOf, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
-import { finishedByDay, hourlySpend, machineOf } from "./report.ts";
+import { finishedByDay, flowByDay, hourlySpend, machineOf, spendByDay } from "./report.ts";
 import { mayResume, pausedLabel, type ResumeEnv, resumeRefusal } from "./resume.ts";
 import { type SizeOf, type SizeRater, sizeProblem, TaskSizes } from "./sizes.ts";
 import {
@@ -2617,6 +2617,7 @@ export class AutonomyService {
     const now = this.now();
     const window = dayWindow(now, tz);
     const first = dayStart(addDays(window.day, 1 - days), tz).toISOString();
+    const events = this.repo.eventsBetween(first, window.end);
     return {
       tz,
       today: window.day,
@@ -2625,7 +2626,9 @@ export class AutonomyService {
         window.start,
         now,
       ),
-      days: finishedByDay(this.repo.eventsBetween(first, window.end), window.day, days, tz),
+      days: finishedByDay(events, window.day, days, tz),
+      spend: spendByDay(this.repo.spendTurnsByOrg(first, window.end, this.spendChats()), window.day, days, tz),
+      flow: flowByDay(events, window.day, days, tz),
       stuck: stuckTasks({
         now,
         tasks: this.openTasks().map((t) => ({
