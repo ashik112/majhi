@@ -31,6 +31,7 @@ import { captainAnsweredLine } from "../tasks/cards.ts";
 import type { CleanupService } from "../tasks/cleanup.ts";
 import type { TaskFolderSweep } from "../tasks/folder-sweep.ts";
 import type { TaskService } from "../tasks/service.ts";
+import { isAnswerTask } from "./answer-check.ts";
 import { answerOnce } from "./keys.ts";
 import type { Lanes } from "./lanes.ts";
 import { askedSentence, SHIP_ROW } from "./levels.ts";
@@ -326,6 +327,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         out.push({
           id: task.id,
           title: task.title,
+          investigation: isAnswerTask(task),
           lead,
           report: message?.type === "agent" ? { text: message.text.trim(), at: message.at } : undefined,
         });

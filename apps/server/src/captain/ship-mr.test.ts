@@ -1,7 +1,7 @@
 import type { Authority } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
-import { judgeReport } from "./answer-check.ts";
+import { answerGate, isAnswerTask, judgeReport } from "./answer-check.ts";
 import { RUNS } from "./authority-fixtures.ts";
 import { createChores } from "./chores.ts";
 import type { AnswerTask, CaptainPorts } from "./ports.ts";
@@ -148,6 +148,7 @@ describe("tasks that changed no code", () => {
   const task = (text: string | undefined): AnswerTask => ({
     id: "ACM-2",
     title: "Why did it stay Pending",
+    investigation: true,
     lead: "lead",
     report: text === undefined ? undefined : { text, at: "2026-10-04T09:00:00.000Z" },
   });
@@ -186,6 +187,37 @@ describe("tasks that changed no code", () => {
     const t = setup({ ...RUNS, upkeep: "ask", questions: "ask" }, [task(done)]);
     await t.run();
     expect(t.calls.closed).toEqual([]);
+  });
+
+  it("never bounces a code task that changed nothing for a short report", async () => {
+    const code: AnswerTask = { ...task("done"), id: "ACM-3", investigation: false };
+    const t = setup({ ...RUNS, upkeep: "decide" }, [code]);
+    await t.run();
+    expect(t.calls.changes).toEqual([]);
+    expect(t.calls.closed).toEqual([]);
+  });
+
+  it("sends an investigation with an empty report back", async () => {
+    const t = setup({ ...RUNS, upkeep: "decide" }, [task("")]);
+    await t.run();
+    expect(t.calls.changes).toHaveLength(1);
+    expect(t.calls.changes[0]).toContain("too short");
+  });
+
+  it("spends no turn on a lead when the workspace does not let the captain answer", async () => {
+    const t = setup({ ...RUNS, upkeep: "ask", questions: "ask", merge: "decide" }, [task("")]);
+    await t.run();
+    expect(t.calls.changes).toEqual([]);
+    expect(t.calls.closed).toEqual([]);
+  });
+
+  it("names the refused row, and tells answer tasks from code tasks by structure", () => {
+    expect(answerGate({ upkeep: "ask", questions: "ask" })).toMatchObject({ open: false, row: "upkeep" });
+    expect(answerGate({ upkeep: "ask", questions: "decide" })).toEqual({ open: true });
+    expect(isAnswerTask({ kind: "code", repos: [{}] })).toBe(false);
+    expect(isAnswerTask({ kind: "code", repos: [{}], readMounts: [{}] })).toBe(true);
+    expect(isAnswerTask({ kind: "ops", repos: [{}] })).toBe(true);
+    expect(isAnswerTask({ kind: "code", repos: [] })).toBe(true);
   });
 
   it("reads a report", () => {

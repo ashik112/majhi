@@ -1,7 +1,7 @@
 import type { CaptainChore } from "@majhi/shared";
 import { runFollowUps } from "../findings/followups.ts";
 import { sizeText } from "../tasks/folder-sweep.ts";
-import { judgeReport, summaryLine } from "./answer-check.ts";
+import { answerGate, judgeReport, summaryLine } from "./answer-check.ts";
 import { shipState } from "./keys.ts";
 import { classifyOwnWork } from "./own-work.ts";
 import { permissionVerdict } from "./permission-rules.ts";
@@ -248,9 +248,16 @@ export function createChores(
   const answerChecks = async (run: ChoreRun): Promise<Set<string>> => {
     const { org, ws } = run;
     const seen = new Set<string>();
-    if (ws.authority.upkeep !== "decide" && ws.authority.questions !== "decide") return seen;
+    if (!answerGate(ws.authority).open) return seen;
+    // The workspace's rules, read again right before a turn is spent on a lead.
+    const gateNow = () => {
+      const gate = answerGate(run.ws.authority);
+      return gate.open ? undefined : gate.why;
+    };
     for (const t of await ports.answerTasks(org)) {
       run.check();
+      // A code task that changed nothing has no report to judge: the ship path says why it cannot ship.
+      if (!t.investigation) continue;
       seen.add(t.id);
       const present = away(t.id);
       if (present !== undefined) {
@@ -268,7 +275,7 @@ export function createChores(
           reason: `It changed no code and the lead's report answers the brief. In ${ws.name} the captain decides upkeep`,
           evidence: clip(t.report.text, 300),
           task: t.id,
-          recheck: async () => away(t.id),
+          recheck: async () => away(t.id) ?? gateNow(),
           do: async () => {
             await ports.closeAnswer(org, t.id, `The report answers the brief: ${line}`);
             return { undoNote: "Reopen it from the task" };
@@ -301,7 +308,7 @@ export function createChores(
         text: `Asked the lead of ${t.id} for changes: ${t.title}`,
         reason: why,
         task: t.id,
-        recheck: async () => away(t.id),
+        recheck: async () => away(t.id) ?? gateNow(),
         do: async () => {
           await ports.askChanges(org, t.id, `Captain: ${why}`);
           return { undoNote: "A message to the lead: nothing to undo" };
