@@ -3,7 +3,6 @@ import {
   ABSTAIN,
   type CommandName,
   commands,
-  detectSecrets,
   type Fact,
   PRIVATE,
   type RoomItem,
@@ -18,6 +17,8 @@ import type { ConfigService } from "../config/service.ts";
 import type { DecisionService } from "../decisions/service.ts";
 import type { FindingsService } from "../findings/service.ts";
 import { defaultBranch, git } from "../git/git.ts";
+import { shipReadiness } from "../handoff/ready.ts";
+import type { HandoffService } from "../handoff/service.ts";
 import type { MemoryService } from "../memory/service.ts";
 import { repoFacts } from "../memory/task-git.ts";
 import type { MrService } from "../mrs/service.ts";
@@ -69,6 +70,8 @@ export interface WorldDeps {
   protectedProjects: () => Promise<ReadonlySet<string>>;
   /** The command dispatcher, bound once the server made it. */
   dispatch: () => Dispatch | undefined;
+  /** The checked hand-off, bound once the server made it. Absent: ship readiness is the cheap checks only. */
+  handoff?: (() => HandoffService | undefined) | undefined;
 }
 
 /** The most waiting memories one look reads. */
@@ -202,43 +205,17 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
     },
 
     async shipCheck(_org, id): Promise<ShipCheck> {
-      const task = store.tasks.get(id);
-      if (task === undefined || task.status !== "review") return { ready: false, why: "it is not in review" };
-      if (deps.runs.working(id).length > 0) return { ready: false, why: "an agent is still working" };
-      const room = deps.room;
-      room.flush(id);
-      const waiting = (
-        ["approval", "ask", "choice", "owner-question", "secret-request", "permission"] as const
-      ).find((type) => store.room.pendingOfType(id, type).length > 0);
-      if (waiting !== undefined)
-        return { ready: false, why: `a ${waiting.replace("-", " ")} card waits for you` };
-      const options = await deps.mrs.shipOptions(id);
-      if ((options.protected ?? []).length > 0) {
-        return { ready: false, why: "it changes a protected repo, which only you ship" };
+      const base = await shipReadiness(deps, id);
+      if (!base.ready) return base;
+      // The checked hand-off (SPEC 5.18): tests, build, lint and the review of this head, run once.
+      const handoff = deps.handoff?.();
+      if (handoff === undefined) return base;
+      const checked = await handoff.ensure(id, { force: false });
+      if (checked.verdict === "red") {
+        const first = [...checked.failures, ...checked.held][0] ?? "the check did not pass";
+        return { ready: false, why: `the hand-off check failed: ${first.split("\n")[0]}` };
       }
-      const changed = options.changed ?? [];
-      if (changed.length === 0) return { ready: false, why: "nothing changed since it started" };
-      if (!options.merge.ok) return { ready: false, why: options.merge.why ?? "it cannot merge now" };
-      const diffs = await deps.tasks.diff(id);
-      for (const d of diffs) {
-        if (d.error !== undefined) return { ready: false, why: `the diff of ${d.project} could not be read` };
-        if (d.uncommitted) return { ready: false, why: `${d.project} has uncommitted changes` };
-        if (d.omitted > 0 || d.files.some((f) => f.truncated)) {
-          return { ready: false, why: `the diff of ${d.project} is too large to check for secrets` };
-        }
-        const added = d.files
-          .flatMap((f) => f.patch.split("\n"))
-          .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
-          .join("\n");
-        if (detectSecrets(added).length > 0)
-          return { ready: false, why: `the diff of ${d.project} holds what looks like a secret` };
-      }
-      const into = [...new Set(changed.map((c) => c.base))].join(", ");
-      return {
-        ready: true,
-        evidence: `committed, merges cleanly into ${into}, no card waits, no secret in the diff`,
-        targets: changed.map((c) => ({ project: c.project, into: c.base, base: c.base })),
-      };
+      return { ...base, checked: checked.summary.replace(/^Checked: /, "") };
     },
 
     async ship(_org, id, how, reason) {

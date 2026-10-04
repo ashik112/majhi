@@ -19,11 +19,20 @@ export interface ReviewTask {
 
 /** Why a task in review is not ready to ship, or what it would ship and the checks that passed. */
 export type ShipCheck =
-  | { ready: false; why: string }
+  | {
+      ready: false;
+      why: string;
+      /** Only the owner can clear it (a card waits, a protected repo): a lead is not told. */
+      owner?: boolean;
+      /** It conflicts with its base. Who resolves that follows the workspace's Merge row. */
+      conflict?: boolean;
+    }
   | {
       ready: true;
       /** The checks that passed, one line. */
       evidence: string;
+      /** What the checked hand-off ran, one line, for the log. The card shows it in its own block. */
+      checked?: string;
       /** Each changed repo and the branch it ships to. */
       targets: { project: string; into: string; base: string }[];
     };

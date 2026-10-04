@@ -212,7 +212,10 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
           sentence:
             repos === 0
               ? `${who} finished ${name}. It has no repo, so there is nothing to merge: read it, then mark it done or ask for changes.`
-              : `${who} finished ${name} and waits for your review.`,
+              : `${who} finished ${name} and waits for your review.${item.why?.startsWith("Checks failed") === true ? ` ${item.why}` : ""}`.slice(
+                  0,
+                  500,
+                ),
           options: withPrimary(own, undefined),
         };
       }
