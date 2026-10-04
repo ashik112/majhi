@@ -458,8 +458,13 @@ export const AutonomyOrgSchema = z.strictObject({
    * to anyone's permissions and anything destructive. Only the owner sets it.
    */
   fullAccess: z.boolean().optional(),
+  /** How many tasks the captain keeps working at once in this workspace. Absent: 1. */
+  tasksAtOnce: z.number().int().min(1).max(10).optional(),
 });
 export type AutonomyOrg = z.infer<typeof AutonomyOrgSchema>;
+
+/** Tasks the captain works on at once in a workspace when the owner set nothing. */
+export const TASKS_AT_ONCE = 1;
 
 /** Guidance the owner gave on the Autonomous page, which the captain follows until it is removed. */
 export const AutonomyInstructionSchema = z.strictObject({
@@ -540,6 +545,7 @@ export const AutonomyOrgPatchSchema = z
     /** Limits: the daily caps per chore, replacing the ones set before. `null`: back to majhi's defaults. */
     chores: ChoreCapsSchema.nullable(),
     fullAccess: z.boolean().nullable(),
+    tasksAtOnce: z.number().int().min(1).max(10).nullable(),
   })
   .partial();
 export type AutonomyOrgPatch = z.infer<typeof AutonomyOrgPatchSchema>;

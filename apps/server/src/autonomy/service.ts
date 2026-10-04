@@ -35,6 +35,7 @@ import {
   isCaptainLane,
   type MachineReading,
   PRIVATE,
+  TASKS_AT_ONCE,
   type QueueItem,
   type RoomItem,
   type Spend,
@@ -938,10 +939,34 @@ export class AutonomyService {
     this.event({ kind: "task", text: `${id} resumed: ${why}`, task: id, ...orgOf(task) });
   }
 
+  /**
+   * The workspace's limit on tasks the captain works on at once (`tasksAtOnce`, default 1): the line
+   * when it is reached, or undefined. Counts the workspace's running tasks, not chats or the lanes.
+   */
+  private async workspaceFull(org: string, except?: string): Promise<string | undefined> {
+    const settings = (await this.deps.config.settings()).autonomy;
+    const limit = settings.orgs[org]?.tasksAtOnce ?? TASKS_AT_ONCE;
+    const running = this.deps.store.tasks
+      .list(false)
+      .filter(
+        (t) =>
+          t.status === "running" &&
+          t.kind !== "chat" &&
+          t.id !== except &&
+          (t.org ?? PRIVATE) === org &&
+          this.deps.lanes.orgOf(t.id) === undefined,
+      );
+    if (running.length < limit) return undefined;
+    const names = running.map((t) => t.id).join(", ");
+    return `This workspace works on ${limit} ${limit === 1 ? "task" : "tasks"} at once and ${names} ${running.length === 1 ? "is" : "are"} running.`;
+  }
+
   /** Why the task's agents would only wait for a slot now, or undefined when there is room. */
-  private async noRoomFor(task: Pick<Task, "team">): Promise<string | undefined> {
+  private async noRoomFor(task: Pick<Task, "team" | "id" | "org">): Promise<string | undefined> {
     const busy = this.machineBusy();
     if (busy !== undefined) return `${upperFirst(busy)}.`;
+    const full = await this.workspaceFull(task.org ?? PRIVATE, task.id);
+    if (full !== undefined) return full;
     const accounts = await this.teamAccountIds(task);
     return noRoomLine(await this.deps.runs.capacity(accounts), accounts);
   }
@@ -1519,9 +1544,12 @@ export class AutonomyService {
           ];
     const capacity = await this.deps.runs.capacity([...named, ...candidates]);
     const lines = candidates.map((a) => noRoomLine(capacity, [a]));
+    const atOnce = await this.workspaceFull(world.org, str(input.id));
     const full =
       busy !== undefined
         ? `${upperFirst(busy)}.`
+        : atOnce !== undefined
+          ? atOnce
         : candidates.length === 0
           ? noRoomLine(capacity, named)
           : lines.every((l) => l !== undefined)
