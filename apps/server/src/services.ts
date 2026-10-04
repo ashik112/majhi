@@ -75,6 +75,8 @@ import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
 import type { E2eService } from "./e2e/service.ts";
 import { createE2e } from "./e2e/wire.ts";
+import { economicsRunner } from "./economics/playbook.ts";
+import { EconomicsService } from "./economics/service.ts";
 import type { ServerEnv } from "./env.ts";
 import { errorMessage, UserError } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
@@ -84,6 +86,11 @@ import { FindingsService } from "./findings/service.ts";
 import { GitLoginService } from "./git/logins.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
+import { feedsRunner } from "./growth/feeds.ts";
+import { keywordLines } from "./growth/gather.ts";
+import { OPPORTUNITIES_ID, opportunitiesHooks } from "./growth/opportunities.ts";
+import type { GrowthDeps } from "./growth/ports.ts";
+import { clientUpdate } from "./growth/update.ts";
 import type { HostLink } from "./host/link.ts";
 import { RecommendationRepo } from "./inbox/recommendations.ts";
 import { InboxService } from "./inbox/service.ts";
@@ -95,7 +102,7 @@ import { cleanupRepoDocFacts } from "./memory/cleanup.ts";
 import { Curator } from "./memory/curator.ts";
 import type { Embedder } from "./memory/embedder.ts";
 import { curationTask, Extraction } from "./memory/extraction.ts";
-import { Housekeeper } from "./memory/housekeeper.ts";
+import { Housekeeper, NoHousekeeper } from "./memory/housekeeper.ts";
 import { briefAbout, Placer, type Registry } from "./memory/placement.ts";
 import { Promotion } from "./memory/promote.ts";
 import { LESSON_DOC_COSINE, RepoDocs } from "./memory/repo-docs.ts";
@@ -114,6 +121,7 @@ import type { OpsWatch } from "./ops/watch.ts";
 import { createOps, type Ops } from "./ops/wire.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
+import { OutcomesRepo } from "./outcomes/repo.ts";
 import { OutcomesService } from "./outcomes/service.ts";
 import { GoalsService } from "./playbooks/goals.ts";
 import { OutboundGate } from "./playbooks/outbound.ts";
@@ -328,6 +336,9 @@ export interface Services {
   outbound: OutboundGate;
   /** Outcomes, the scorecard, the trust ladder and the monthly ceiling (5.18). */
   outcomes: OutcomesService;
+  /** Client economics and the growth playbooks' views (5.18, step 11). */
+  economics: EconomicsService;
+  growth: GrowthDeps;
   /** The knowledge base, voice, contacts and deadlines (5.19). */
   business: BusinessServices;
   /** The owner's agenda and the morning brief (5.18). */
@@ -1326,10 +1337,54 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
     log: (message) => console.error(message),
   });
+  // Client economics and the growth playbooks (captain v2 step 11): code, plus one small model call where noted.
+  const rateRepo = new OutcomesRepo(store.raw);
+  const orgLabel = async (org: string) =>
+    org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org);
+  const economics = new EconomicsService({
+    db: store.raw,
+    tz: async () => zoneOr((await config.settings()).autonomy.tz),
+    orgs: async () => workspaceIds((await config.sections()).orgs),
+    rates: () => rateRepo.rates(),
+    minutes: () => rateRepo.minutes(),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  const growth: GrowthDeps = {
+    db: store.raw,
+    now: options.runClock ?? (() => new Date()),
+    findings,
+    ...business,
+    goals,
+    cards: new CardRepo(store.raw),
+    outbound,
+    cache: sensors.cache,
+    orgName: orgLabel,
+    write: async (task, prompt, parse) => {
+      try {
+        return (await housekeeper.ask(task, prompt, parse)).value;
+      } catch (err) {
+        if (err instanceof NoHousekeeper) return undefined;
+        throw err;
+      }
+    },
+  };
+  const opportunities = opportunitiesHooks(growth);
   // The ops watch adds its runner below, once the connections it reads through exist.
-  const rulesTable: Record<string, RulesRunner> = { ...RULES_RUNNERS, ...sensorRunners(sensors) };
+  const rulesTable: Record<string, RulesRunner> = {
+    ...RULES_RUNNERS,
+    ...sensorRunners(sensors),
+    economics: economicsRunner(economics, orgLabel),
+    "client-update": clientUpdate(growth),
+    feeds: feedsRunner({
+      net: sensors.net,
+      cache: sensors.cache,
+      keywords: async (org) => keywordLines(growth, org),
+    }),
+  };
   const playbooks = new PlaybookService({
     rules: rulesTable,
+    preflight: { [OPPORTUNITIES_ID]: (org) => opportunities.preflight(org) },
+    context: { [OPPORTUNITIES_ID]: (org) => opportunities.context(org) },
     repo: new PlaybookRepo(store.raw),
     captain,
     findings,
@@ -1659,6 +1714,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ops,
     outbound,
     outcomes,
+    economics,
+    growth,
     business,
     agenda,
     captainTell: new CaptainTell({

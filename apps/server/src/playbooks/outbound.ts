@@ -361,6 +361,15 @@ export class OutboundGate {
    * under an Auto channel's limit. Without a transport it is approved and waits, honestly said.
    */
   private async release(draft: Draft, by: "owner" | "auto"): Promise<Draft> {
+    // An email with no address (a draft for a client with no main contact) cannot go anywhere.
+    if (draft.channel === "email" && !/@[^\s@]+\.[^\s@]+/.test(draft.target)) {
+      this.setStatus(
+        draft.id,
+        "failed",
+        "Not sent: the draft has no email address. Mark a contact as the main contact in Business, then draft it again",
+      );
+      return this.must(draft.id);
+    }
     const transport = this.deps.transports?.[draft.channel];
     if (transport === undefined) {
       this.setStatus(

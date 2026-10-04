@@ -34,6 +34,7 @@ import { UserError } from "../errors.ts";
 import { findingsHandlers } from "../findings/handlers.ts";
 import { isDirectory } from "../fs.ts";
 import { gitConnectHandlers } from "../gitConnect/handlers.ts";
+import { growthHandlers } from "../growth/handlers.ts";
 import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import { inboxHandlers } from "../inbox/handlers.ts";
@@ -185,6 +186,13 @@ export function createHandlers({
       lanes: services.lanes,
       store: services.store,
       outcomes: services.outcomes,
+    }),
+    ...growthHandlers({
+      findings: services.findings,
+      lanes: services.lanes,
+      store: services.store,
+      economics: services.economics,
+      growth: services.growth,
     }),
     ...backupHandlers(services.backup),
     ...connectHandlers(services.connect),
