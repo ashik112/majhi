@@ -267,3 +267,21 @@ describe("a git connection's CLI", () => {
     }
   });
 });
+
+describe("tool names with the verb after the object", () => {
+  const held: GateConnection[] = [{ id: "acme-do", type: "mcp", server: "acme-do-droplets", allow: [] }];
+  it("reads DigitalOcean's list and get tools, and asks for its changes", () => {
+    for (const tool of ["droplet-list", "db-cluster-list", "alert-policy-get", "droplet-snapshot-list"]) {
+      expect(classifyTool("acme-do-droplets", tool, held).kind, tool).toBe("read");
+    }
+    for (const tool of [
+      "droplet-create",
+      "droplet-reboot",
+      "droplet-resize",
+      "get_or_create_alert",
+      "droplet-power-off",
+    ]) {
+      expect(classifyTool("acme-do-droplets", tool, held).kind, tool).toBe("write");
+    }
+  });
+});
