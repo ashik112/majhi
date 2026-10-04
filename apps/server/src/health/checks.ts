@@ -3,6 +3,7 @@ import { constants, existsSync } from "node:fs";
 import { access, stat, statfs } from "node:fs/promises";
 import { dirname } from "node:path";
 import { promisify } from "node:util";
+import type { BackupList } from "@majhi/shared";
 import {
   type AccountView,
   type ConfigState,
@@ -89,6 +90,7 @@ export async function collectChecks(ctx: CheckContext): Promise<Check[]> {
     checkDisk(state, home).then((c) => [c]),
     checkSecrets(ctx.services),
     checkKeyBackup(ctx),
+    checkBackups(ctx),
     checkTools(ctx),
     checkRunner(ctx),
     checkSerenaTool(ctx),
@@ -704,4 +706,98 @@ export function accountCheck(
 
 function firstLine(text: string): string {
   return text.split("\n", 1)[0] ?? text;
+}
+
+/** A newest backup older than this is stale: the daily one is overdue. */
+const BACKUP_STALE_MS = 36 * 60 * 60 * 1000;
+/** A check older than this is overdue: majhi checks weekly. */
+const VERIFY_STALE_MS = 10 * 24 * 60 * 60 * 1000;
+
+async function checkBackups(ctx: CheckContext): Promise<Check[]> {
+  const list = await ctx.services.backup.list().catch(() => undefined);
+  return list === undefined ? [] : backupChecks(list, (ctx.now ?? Date.now)());
+}
+
+function ago(iso: string, now: number): string {
+  const hours = Math.max(0, Math.round((now - Date.parse(iso)) / 3_600_000));
+  return hours < 1
+    ? "under an hour ago"
+    : hours < 48
+      ? `${hours} h ago`
+      : `${Math.round(hours / 24)} days ago`;
+}
+
+/** Two checks: is there a recent backup, and did the last test restore work. */
+export function backupChecks(list: BackupList, now: number): Check[] {
+  const fresh = { id: "backups", group: "majhi", name: "Backups" } as const;
+  const verify = { id: "backups-verify", group: "majhi", name: "Backup test restore" } as const;
+  const checks: Check[] = [];
+  if (list.lastError !== undefined && (list.lastAt === undefined || list.lastError.at > list.lastAt)) {
+    checks.push({
+      ...fresh,
+      status: "fail",
+      detail: `The last backup failed: ${list.lastError.detail}`,
+      fix: { label: "Back up now" },
+    });
+  } else if (list.lastAt === undefined) {
+    checks.push({
+      ...fresh,
+      status: "warn",
+      detail: "No backup yet. majhi takes the first one soon after it starts.",
+      fix: { label: "Back up now" },
+    });
+  } else if (now - Date.parse(list.lastAt) > BACKUP_STALE_MS) {
+    checks.push({
+      ...fresh,
+      status: "warn",
+      detail: `The newest backup is from ${ago(list.lastAt, now)}. One is due every day.`,
+      fix: { label: "Back up now" },
+    });
+  } else {
+    checks.push({
+      ...fresh,
+      status: "pass",
+      detail: `Backed up ${ago(list.lastAt, now)}, ${list.backups.length} kept in ${list.destination.path}`,
+    });
+  }
+  if (list.destination.error !== undefined) {
+    checks.push({
+      id: "backups-folder",
+      group: "majhi",
+      name: "Backup folder",
+      status: "fail",
+      detail: list.destination.error,
+    });
+  }
+  if (list.lastAt !== undefined) {
+    if (list.lastVerify === undefined) {
+      checks.push({
+        ...verify,
+        status: "warn",
+        detail: "Not tested yet. majhi restores the newest backup into a temporary folder every week.",
+        fix: { label: "Test now" },
+      });
+    } else if (!list.lastVerify.ok) {
+      checks.push({
+        ...verify,
+        status: "fail",
+        detail: `The test restore failed: ${list.lastVerify.detail}`,
+        fix: { label: "Test now" },
+      });
+    } else if (now - Date.parse(list.lastVerify.at) > VERIFY_STALE_MS) {
+      checks.push({
+        ...verify,
+        status: "warn",
+        detail: `Last tested ${ago(list.lastVerify.at, now)}.`,
+        fix: { label: "Test now" },
+      });
+    } else {
+      checks.push({
+        ...verify,
+        status: "pass",
+        detail: `Tested ${ago(list.lastVerify.at, now)}: ${list.lastVerify.detail}`,
+      });
+    }
+  }
+  return checks;
 }

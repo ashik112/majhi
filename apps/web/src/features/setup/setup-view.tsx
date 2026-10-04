@@ -283,7 +283,7 @@ export function SetupView() {
               <AppearanceControls className="max-w-[320px]" />
             </DetailSection>
           )}
-          {section === "backups" && <BackupsSection />}
+          {section === "backups" && <BackupsSection home={home} />}
           {section === "history" && <HistorySection />}
         </DetailPane>
       </ListDetail>
@@ -315,7 +315,9 @@ function containersStatus(data: ReturnType<typeof useContainers>["data"]): strin
 
 function backupsStatus(data: ReturnType<typeof useBackups>["data"]): string | undefined {
   if (data === undefined) return undefined;
-  return data.pending ? "Restore waiting" : data.lastDaily ? "Daily, 7 kept" : "No snapshot yet";
+  if (data.pending) return "Restore waiting";
+  if (data.lastError && (data.lastAt === undefined || data.lastError.at > data.lastAt)) return "Failing";
+  return data.lastAt ? "Daily, tested weekly" : "No backup yet";
 }
 
 function WithSettings({

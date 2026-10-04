@@ -43,7 +43,9 @@ export function formatBytes(bytes: number): string {
   const kb = bytes / 1000;
   if (kb < 1000) return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} kB`;
   const mb = kb / 1000;
-  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
+  if (mb < 1000) return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
+  const gb = mb / 1000;
+  return `${gb < 10 ? gb.toFixed(1) : Math.round(gb)} GB`;
 }
 
 const USD = new Intl.NumberFormat("en-US", {

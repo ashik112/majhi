@@ -746,6 +746,19 @@ The **Limits screen** (`/limits`) is the one place for them: the autonomous budg
 - **Configurable.** Every limit lives in `majhi.yaml` under `limits` and can be changed live, by hand, in Studio, or by the captain.
 - **Targets**, measured in Phase 9: task switch under 100 ms, room updates on screen under 50 ms after the server receives them, server memory under 200 MB with no agents running.
 
+### 5.19 Backups and restore
+
+Everything majhi cannot rebuild is backed up as one encrypted archive: the SQLite databases (`majhi.db` with tasks, rooms, decisions and labels, findings, captain state, project cards and whatever tables come later; `memory/memory.db`), the config folder's history (a git bundle) with its visible files (`majhi.yaml`, agents, skills), and `secrets.age` exactly as it is on disk. Never in an archive: the secrets key or any age identity (files holding one are skipped), account logins and agent homes, connection credentials, caches, task folders and worktrees. The manifest says so.
+
+- **Consistent copies.** Databases are copied with SQLite's online backup API, never by copying a live WAL file, and each copy passes `quick_check` before it is packed. The archive is tar, gzip level 3, then age, streamed to `<name>.part` and renamed after fsync, so a full disk or a crash leaves no file that looks like a backup. The manifest holds the majhi version and commit, each database's newest migration id and a SHA-256 for every file.
+- **Locks.** Archives are encrypted to the secrets key, so the key (Keychain copy or passphrase export) is what opens them. "Back up with a passphrase" makes one locked with a passphrase the owner types; majhi never keeps it.
+- **When.** Daily (the first check 30 s after start, then hourly, catching up after sleep), before every `system.update` (skipped when a backup under 5 minutes old exists), before any migration (at start, before a database is opened, when it is behind this build), before a restore, and on request (`backup.now`).
+- **Where.** `<majhi home>/backups` by default, or any folder the owner picks with the host helper's folder browser (`backup.setDestination`), for example an iCloud or Dropbox folder. Inside the server container a folder must be covered by a bind mount, or majhi refuses it: otherwise the archives would vanish with the container. A folder inside the majhi home is refused.
+- **Retention.** The newest 7 daily backups, the newest daily one of each of the 4 weeks before them, and the newest 3 of each other kind. A backup that failed its check takes no slot and goes once a good one is kept. The newest good backup is never deleted, whatever the rules say.
+- **Test restore.** `backup.verify` restores a backup into a temporary folder, checks every file against the manifest, opens both databases read-only, runs `integrity_check`, compares each migration id with this build's, and rebuilds the config history from the bundle. Nothing live is touched. majhi runs it weekly on the newest key-locked backup. The result shows in Hub setup, Backups, and as the Health checks "Backups" and "Backup test restore". A backup that cannot be opened with this computer's key is "locked", not "damaged".
+- **Restore.** `backup.restore { name }` (owner only, destructive): check the backup as above in `restore-staging/<id>`, take a `before-restore` backup of what is there, write `restore-journal.json`, and restart majhi (under docker compose the container restarts itself). At the start of the next process, before any file opens, each replaced path (databases with their `-wal` and `-shm`, `memory/memory.db`, `secrets.age`, `.git`, `majhi.yaml`, `agents/`, `skills/` and the other visible config files) moves to `rollback/<id>/` and the verified copy takes its place. Any failure, or a start that finds a swap that never finished, moves everything back and records why. A backup whose `secrets.age` the current key cannot open keeps the live secrets file. A backup from a newer migration than the code knows is refused. The two newest rollbacks are kept.
+- **UI.** Hub setup, Backups: last backup and size, next daily, folder (Change), test restore result, Back up now, Test restore, and a list with Test and Restore per row. Restore confirms with the list of what is replaced.
+
 ---
 
 ## 6. Security
@@ -816,7 +829,7 @@ Delivered in two parts, each usable and reviewed on its own.
 - Commands `usage.summary` and `usage.breakdown`, so the captain can answer questions like "what did Acme cost this week?"
 - Runner isolation (4.2, 6): agents run in a separate runner container, not in majhi's own. Each run mounts only its task folder (with its worktrees) and its account's config home, never `~/.majhi`, the secrets key, other accounts' homes or other orgs' files. Secrets and connection values reach a run only through its environment. The runner has the dev toolchain (pnpm, build tools, Playwright).
 - Desktop notifications when a task needs the owner (review, permission prompt, limit, failed run), with per-event settings.
-- Backups: the secrets key kept in the OS keyring (the macOS Keychain or a Secret Service keyring) with a passphrase-protected export; a daily snapshot of `majhi.db` kept for 7 days, with restore.
+- Backups: the secrets key kept in the OS keyring (the macOS Keychain or a Secret Service keyring) with a passphrase-protected export; encrypted backups of majhi's data with restore (5.19).
 - **Done when:** after a few runs on two orgs, the page shows correct totals per org, project, agent and model that match the sum of the recorded turns, and the captain answers a cost question from the same data; and an agent run cannot read `~/.majhi`, the secrets key or another account's home.
 
 ### Phase 3: Teams, rooms and decisions

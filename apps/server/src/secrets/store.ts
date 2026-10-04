@@ -34,7 +34,7 @@ export function generateKey(): Promise<string> {
 export type SecretsKeyState = "ok" | "missing" | "lost" | "wrong";
 
 /** True when the identity decrypts the file. False for a line age cannot read as an identity. */
-async function decrypts(identity: string, sealed: Uint8Array): Promise<boolean> {
+export async function decrypts(identity: string, sealed: Uint8Array): Promise<boolean> {
   try {
     const decrypter = new Decrypter();
     decrypter.addIdentity(identity);
@@ -65,6 +65,14 @@ export class SecretStore {
   /** True when the key file exists and holds an identity. */
   async available(): Promise<boolean> {
     return (await this.readIdentity()) !== undefined;
+  }
+
+  /**
+   * The age identity line, for locking and opening backups with the same key that opens secrets.age.
+   * Callers hand it to age and nothing else: it is never logged, stored or returned over HTTP.
+   */
+  async identityForBackups(): Promise<string | undefined> {
+    return this.readIdentity();
   }
 
   /** The key's fingerprint, to compare it with a backup. Undefined when secrets are not set up. */

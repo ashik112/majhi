@@ -79,6 +79,11 @@ export class MemoryService {
   /** Task records, project briefs and open threads, in the same database. */
   readonly project: ProjectMemory;
 
+  /** The open `memory.db`, for the backup service's online copy of it. */
+  get rawDatabase(): import("better-sqlite3").Database {
+    return this.store.database;
+  }
+
   constructor(private readonly deps: MemoryDeps) {
     this.store = deps.store;
     this.now = deps.now ?? (() => new Date());
