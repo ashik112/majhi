@@ -451,7 +451,9 @@ describe("a busy hour with the wake gate", () => {
   ) {
     const slot: SlotDef = { ...base, startMode };
     const { svc } = service(laya, undefined, [slot]);
-    const wakeGate = gate ? new WakeGate(svc) : undefined;
+    // Fake timers move on while the decision does real I/O: a long time limit keeps a slow machine from
+    // turning a Laya answer into a timeout (which takes the turn).
+    const wakeGate = gate ? new WakeGate(svc, { timeoutMs: 3_600_000 }) : undefined;
     const f = fakes(wakeGate);
     f.state.now = [task("ACM-1")];
     // A news wake sets the baseline the later wakes are compared with.

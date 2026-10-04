@@ -22,6 +22,7 @@ const NOW = Date.now();
 const DAY = "2026-10-04";
 
 const RUNS: Authority = {
+  own: "ask",
   start: "decide",
   questions: "decide",
   approvals: "decide",

@@ -88,6 +88,7 @@ const ROWS = (
   approvals: answers ? "decide" : "ask",
   upkeep: upkeep ? "decide" : "ask",
   merge: merge ? "decide" : "ask",
+  own: "ask",
   push: push ? "decide" : "ask",
 });
 const RUNS_ROWS = ROWS(true, true, true, false, false);
