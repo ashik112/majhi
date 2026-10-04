@@ -78,7 +78,6 @@ function setup(authority: Authority, mr: MrReady = { ok: true, host: "GitHub" })
     workspace: async () => ws(),
     stopped: () => false,
     tellOwner: () => undefined,
-    caused: () => undefined,
     laneTokens: () => 0,
     chores: createChores(ports, NOW),
   });

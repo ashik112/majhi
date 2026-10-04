@@ -28,7 +28,6 @@ function setup(ports: Partial<CaptainPorts>) {
     }),
     stopped: () => false,
     tellOwner: () => {},
-    caused: () => {},
     laneTokens: () => 0,
     chores: chores as RunnerDeps["chores"],
   });

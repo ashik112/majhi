@@ -76,14 +76,13 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     trigger: { cadence: HOURLY, events: ["An agent asks"] },
     inputs: ["Pending questions and permission prompts"],
     steps:
-      "Settle a permission prompt by the rule table. Answer a question only when the brief, memory or the code settles it; otherwise leave it. An agent that asks the same thing again and again is left for the owner.",
+      "Settle a permission prompt by the rule table. Answer a question only when the brief, memory or the code settles it; otherwise leave it.",
     outputs: ["decision", "log"],
     cost: { tier: "small", tokens: PASS_BOUND.tokens },
     turnOn: "Answers agents' questions where Questions is Captain.",
     outcomes: [
       { id: "q-answer", text: "Sure of the answer: answer it" },
       { id: "q-ask", text: "Not sure: ask me" },
-      { id: "q-loop", text: "The same agent keeps asking: tell me it may be stuck" },
     ],
     runner: { kind: "chore", chore: "questions" },
   }),
@@ -159,24 +158,6 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
       { id: "cleanup-ask", text: "Uncommitted changes: ask me, never remove" },
     ],
     runner: { kind: "chore", chore: "cleanup" },
-  }),
-  upkeep({
-    id: "upkeep-stuck",
-    name: "Stuck tasks",
-    purpose: "Wake a lead once when nobody works and nothing is pending, then tell you.",
-    trigger: { cadence: HOURLY, events: ["A running task goes quiet"] },
-    inputs: ["Running tasks with no agent working"],
-    steps:
-      "Move a step off an account that needs a sign-in to a teammate. Wake the lead of a quiet task once. If it stays quiet, pause the task and tell the owner.",
-    outputs: ["log"],
-    cost: { tier: "rules", tokens: PASS_BOUND.tokens },
-    turnOn: "Watches running tasks that go quiet where Upkeep is Captain.",
-    outcomes: [
-      { id: "stuck-signin", text: "An account needs a sign-in: move the step to a teammate" },
-      { id: "stuck-wake", text: "A stuck run: wake the lead once" },
-      { id: "stuck-tell", text: "Still stuck: pause it and tell me" },
-    ],
-    runner: { kind: "chore", chore: "stuck" },
   }),
   upkeep({
     id: "upkeep-followups",

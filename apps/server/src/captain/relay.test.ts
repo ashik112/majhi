@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { relayLine } from "./rollup-post.ts";
+import { relayLine } from "./relay.ts";
 
 describe("a lane message in the root chat", () => {
   it("keeps the first paragraph on one line", () => {

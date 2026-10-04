@@ -264,7 +264,7 @@ describe("the upkeep chores on playbooks", () => {
     const { h } = await lane();
     const list = (await h.cmd("playbooks.list", { org: "acme" })).body as PlaybooksList;
     const upkeep = list.playbooks.filter((p) => p.playbook.pack === "upkeep");
-    expect(upkeep.map((p) => p.playbook.runner)).toHaveLength(13);
+    expect(upkeep.map((p) => p.playbook.runner)).toHaveLength(12);
     expect(upkeep.every((p) => p.enabled)).toBe(true);
 
     await h.cmd("playbooks.update", { org: "acme", id: "upkeep-triage", enabled: false });

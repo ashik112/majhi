@@ -29,8 +29,8 @@ import type { Lanes } from "./lanes.ts";
 import { authorityOf, choresNow, effectiveAuthority, migratePickOrgs, workspaceIds } from "./levels.ts";
 import { laneOfScope } from "./memory-scopes.ts";
 import type { CaptainPorts } from "./ports.ts";
+import { type RelayDeps, RootRelay } from "./relay.ts";
 import { CaptainRepo, type StoredAction } from "./repo.ts";
-import { type RollupDeps, RollupPoster } from "./rollup-post.ts";
 import { MEMORY_WAITING, restWhy } from "./rules.ts";
 import { ChoreRunner, type Workspace } from "./runner.ts";
 import { summaryOf } from "./summary.ts";
@@ -40,8 +40,6 @@ import { type Identity, revertMerge } from "./undo.ts";
 export const CAPTAIN_SWEEP_MS = 60_000;
 /** Chores that run when something happens also look once an hour, for what a restart missed. */
 const HOURLY_MS = 60 * 60_000;
-/** Events about a task the captain just acted in count as the captain's for this long. */
-const CAUSED_MS = 2 * 60_000;
 /** A burst of triggers is looked at once. */
 const TRIGGER_MS = 1_500;
 
@@ -76,8 +74,8 @@ export interface CaptainDeps {
   ownerCommand: (command: string, input: unknown, meta: CommandMeta) => Promise<void>;
   /** The workspace of a task, `undefined` when it is unknown or a chat. Default: majhi's tasks. */
   taskOrg?: (task: string) => string | undefined;
-  /** What the roll-up post into the root chat reads and writes. Without it, no roll-ups. */
-  rollup?: Pick<RollupDeps, "spend" | "incidents" | "bossChat" | "post">;
+  /** What the relay of a lane captain's message into the root chat reads and writes. Without it, no relay. */
+  relay?: Pick<RelayDeps, "bossChat" | "post">;
   /** How long a burst of triggers is batched. Default `TRIGGER_MS`. */
   triggerMs?: number;
   now?: () => Date;
@@ -94,7 +92,6 @@ export class CaptainService {
   /** What the lane's ships and repo registrations are held to: the chores' own rules (SPEC 5.18, One rule set). */
   readonly laneGate: LaneGate;
   private sweep: NodeJS.Timeout | undefined;
-  private readonly caused = new Map<string, number>();
   /** The captain as last read, so a room write can tell the captain's own cards at once. */
   private boss: string | undefined;
   private closed = false;
@@ -102,21 +99,19 @@ export class CaptainService {
   private plays: ChorePlaybooks;
   /** The rest of the playbook scheduler, run in the same minute sweep. */
   private playbookSweep: (() => Promise<void>) | undefined;
-  private readonly rollup: RollupPoster | undefined;
+  private readonly relay: RootRelay | undefined;
   private readonly pending = new Map<string, { timer: NodeJS.Timeout; why: string; subject?: string }>();
 
   constructor(private readonly deps: CaptainDeps) {
     this.plays = new DefaultChorePlays(undefined, () => this.now());
     this.repo = new CaptainRepo(deps.store.raw);
-    this.rollup =
-      deps.rollup === undefined
+    this.relay =
+      deps.relay === undefined
         ? undefined
-        : new RollupPoster({
-            ...deps.rollup,
-            store: deps.store,
+        : new RootRelay({
+            ...deps.relay,
             config: deps.config,
             lanes: deps.lanes,
-            mode: () => deps.autonomy.mode(),
             now: () => this.now(),
           });
     this.laneGate = new LaneGate({
@@ -131,7 +126,6 @@ export class CaptainService {
       workspace: (org) => this.workspace(org),
       stopped: () => this.stopped(),
       tellOwner: (org, text) => this.deps.tell(`captain:${org}:${this.now().toISOString()}`, text),
-      caused: (subject) => this.markCaused(subject),
       laneTokens: (org, since) => {
         const chat = this.repo.lane(org);
         return chat === undefined ? 0 : this.repo.laneSpend(chat, since).tokens;
@@ -229,26 +223,10 @@ export class CaptainService {
     }
     await this.playbookSweep?.().catch(() => undefined);
     await this.dailySummary();
-    await this.rollup?.sweep().catch((err: unknown) => console.error(`Roll-up failed: ${errorMessage(err)}`));
   }
 
   // ---------------------------------------------------------------------------
   // What happens in majhi
-
-  /** The captain acted in this task: events about it count as its own for a while. */
-  markCaused(subject: string): void {
-    this.caused.set(subject, this.now().getTime() + CAUSED_MS);
-    if (this.caused.size > 2_000) {
-      const now = this.now().getTime();
-      for (const [k, until] of this.caused) if (until < now) this.caused.delete(k);
-    }
-  }
-
-  /** Whether the captain caused events about this subject now. */
-  causedByCaptain(subject: string): boolean {
-    const until = this.caused.get(subject);
-    return until !== undefined && until >= this.now().getTime();
-  }
 
   /**
    * A trigger from an event: tagged with its cause, batched for a moment, then handed to the runner,
@@ -309,14 +287,13 @@ export class CaptainService {
   reviewReached(task: string): void {
     const org = this.orgOfTask(task);
     if (org === undefined) return;
-    const cause = this.causedByCaptain(task) ? "captain" : "agent";
-    this.trigger(org, "ship", `${task} reached review`, cause, task);
+    this.trigger(org, "ship", `${task} reached review`, "agent", task);
   }
 
   /** A turn ended: a workspace captain's message to the owner is relayed to the root chat. */
   turnEnded(turn: { task: string; agent: string; text: string }): void {
-    if (this.rollup === undefined || turn.agent !== this.boss) return;
-    void this.rollup.relay(turn.task, turn.text).catch(() => undefined);
+    if (this.relay === undefined || turn.agent !== this.boss) return;
+    void this.relay.relay(turn.task, turn.text).catch(() => undefined);
   }
 
   /** A room item was written: a new card or question wakes the chore that answers it. */
@@ -374,8 +351,7 @@ export class CaptainService {
   async memoryWaiting(fact: Pick<Fact, "scope" | "task">): Promise<void> {
     // Not by agent: the Housekeeper is the captain's agent unless the owner picked another.
     const task = fact.task;
-    const own =
-      task !== undefined && (this.causedByCaptain(task) || this.deps.lanes.orgOf(task) !== undefined);
+    const own = task !== undefined && this.deps.lanes.orgOf(task) !== undefined;
     const org = laneOfScope(fact.scope, (await this.deps.config.sections()).projects);
     if (org === undefined) return;
     this.trigger(org, "memory", "Memories wait", own ? "captain" : "agent", undefined, async () => {

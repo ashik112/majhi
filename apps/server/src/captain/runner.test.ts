@@ -28,7 +28,6 @@ function setup(chore: (run: ChoreRun) => Promise<void>) {
     minutes: 0,
   };
   const told: string[] = [];
-  const caused: string[] = [];
   const ws = (): Workspace => ({
     org: "acme",
     name: "Acme",
@@ -40,9 +39,10 @@ function setup(chore: (run: ChoreRun) => Promise<void>) {
     ...(state.rest === undefined ? {} : { rest: state.rest }),
   });
   const chores = Object.fromEntries(
-    (
-      ["ship", "cards", "questions", "memory", "projects", "triage", "cleanup", "stuck"] as CaptainChore[]
-    ).map((c) => [c, chore]),
+    (["ship", "cards", "questions", "memory", "projects", "triage", "cleanup"] as CaptainChore[]).map((c) => [
+      c,
+      chore,
+    ]),
   ) as RunnerDeps["chores"];
   const runner = new ChoreRunner({
     repo,
@@ -50,11 +50,10 @@ function setup(chore: (run: ChoreRun) => Promise<void>) {
     workspace: async () => ws(),
     stopped: () => state.stopped,
     tellOwner: (_org, text) => told.push(text),
-    caused: (s) => caused.push(s),
     laneTokens: () => state.tokens,
     chores,
   });
-  return { repo, state, told, caused, runner };
+  return { repo, state, told, runner };
 }
 
 describe("the chore runner", () => {
@@ -199,7 +198,7 @@ describe("the chore runner", () => {
   it("runs only memory and cleanup while Autonomous is off, and only where upkeep is the captain's", async () => {
     const t = setup(async () => {});
     t.state.mode = "off";
-    for (const chore of ["ship", "cards", "questions", "projects", "triage", "stuck"] as const) {
+    for (const chore of ["ship", "cards", "questions", "projects", "triage"] as const) {
       expect(await t.runner.start("acme", chore, "test")).toBeUndefined();
     }
     expect(await t.runner.start("acme", "memory", "test")).toBe("done");

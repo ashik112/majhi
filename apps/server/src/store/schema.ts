@@ -214,6 +214,14 @@ export const captainKeys = sqliteTable(
   (t) => [index("captain_keys_task").on(t.task)],
 );
 
+/** The loop guard's count of captain answers per task since its last progress (migration 152). */
+export const captainLoopGuard = sqliteTable("captain_loop_guard", {
+  task: text("task").primaryKey(),
+  mark: text("mark").notNull(),
+  answers: integer("answers").notNull(),
+  paused: integer("paused").notNull().default(0),
+});
+
 /** The tasks autonomous mode runs (PRV-74). The rest of its tables are read in `autonomy/repo.ts`. */
 export const autonomyTasks = sqliteTable("autonomy_tasks", {
   task: text("task").primaryKey(),

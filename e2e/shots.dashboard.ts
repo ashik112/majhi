@@ -151,9 +151,9 @@ function report(v: Volume): AutonomyReport {
               task: "GLO-103",
               title: TITLES[0] as string,
               org: "globex",
-              kind: "loop",
+              kind: "idle",
               since: iso(310),
-              text: "Same step 6 times: Woke the builder to retry the export test",
+              text: "Running with no progress",
             },
             {
               task: "NOR-105",
@@ -161,8 +161,7 @@ function report(v: Volume): AutonomyReport {
               org: "northwind",
               kind: "waiting",
               since: iso(260),
-              text: "Push to origin needs your approval",
-              item: "i1",
+              text: "In review, not shipped",
             },
             {
               task: "ACM-101",
@@ -178,9 +177,9 @@ function report(v: Volume): AutonomyReport {
                     task: "UMB-109",
                     title: TITLES[3] as string,
                     org: "umbrella",
-                    kind: "failures" as const,
+                    kind: "idle" as const,
                     since: iso(150),
-                    text: "4 failed or refused calls in a day",
+                    text: "Running with no progress",
                   },
                   {
                     task: "HOO-112",

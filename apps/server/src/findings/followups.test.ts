@@ -111,7 +111,6 @@ function setup(fixtures: {
     }),
     stopped: () => false,
     tellOwner: () => undefined,
-    caused: () => undefined,
     laneTokens: () => 0,
     chores: { followups: chore } as unknown as RunnerDeps["chores"],
   });

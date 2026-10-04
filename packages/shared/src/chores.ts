@@ -9,7 +9,6 @@ export const CaptainChoreSchema = z.enum([
   "projects",
   "triage",
   "cleanup",
-  "stuck",
   "followups",
   "discover",
   "tidy",

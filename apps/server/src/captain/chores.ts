@@ -4,7 +4,6 @@ import { sizeText } from "../tasks/folder-sweep.ts";
 import { judgeReport, summaryLine } from "./answer-check.ts";
 import { shipState } from "./keys.ts";
 import { classifyOwnWork } from "./own-work.ts";
-import type { SecondOpinion } from "./own-work-second.ts";
 import { permissionVerdict } from "./permission-rules.ts";
 import type {
   ApprovalCard,
@@ -14,7 +13,6 @@ import type {
   ReviewTask,
   ShipCheck,
 } from "./ports.ts";
-import { loopLine, nudgeText, questionLoop } from "./question-loop.ts";
 import { branchAllowed, typingWhy } from "./rules.ts";
 import type { ChoreRun } from "./runner.ts";
 import { createUpkeepChores } from "./upkeep.ts";
@@ -65,18 +63,7 @@ export function createChores(
     const { org, ws } = run;
     const scope = await ports.ownScope(org, card.task);
     if (scope === undefined) return false;
-    let verdict = classifyOwnWork(card.text, scope);
-    // The unknown middle only: Laya may say routine, never over a refusal. Down or unsure: the owner, as before.
-    let second: SecondOpinion | undefined;
-    if (verdict.decision === "owner" && verdict.middle === true && ports.ownSecondOpinion !== undefined) {
-      second = await ports.ownSecondOpinion(card, scope).catch(() => undefined);
-      if (second?.approve === true) {
-        verdict = {
-          decision: "approve",
-          why: `a second opinion from Laya called it routine inside the task`,
-        };
-      }
-    }
+    const verdict = classifyOwnWork(card.text, scope);
     const key = `own:${card.task}:${card.item}`;
     const allow = card.options.find((o) => o.effect === "allow");
     if (verdict.decision === "approve" && allow !== undefined) {
@@ -85,7 +72,7 @@ export function createChores(
         key,
         text: `Approved in ${card.task}: ${clip(card.text, 80)}`,
         reason: `Own work: in ${ws.name} the captain approves what it started, and ${verdict.why}`,
-        evidence: `@${card.agent} asked: ${card.text}${second?.approve === true ? ` (${second.why})` : ""}`,
+        evidence: `@${card.agent} asked: ${card.text}`,
         task: card.task,
         irreversible: true,
         recheck: async () => away(card.task),
@@ -102,11 +89,10 @@ export function createChores(
     }
     if (ruleOff(run, "q-ask")) return true;
     const base = verdict.decision === "approve" ? "the prompt has no Allow once option" : verdict.why;
-    const why = second === undefined || second.why === "" ? base : `${base}; second opinion: ${second.why}`;
     await run.act({
       key,
       text: `Left a request in ${card.task} for you: ${clip(card.text, 80)}`,
-      reason: `Own work does not cover it: ${why}`,
+      reason: `Own work does not cover it: ${base}`,
       evidence: `@${card.agent} asked: ${card.text}`,
       task: card.task,
       do: async () => ({ outcome: "asked", undoNote: "Nothing was answered" }),
@@ -543,33 +529,6 @@ export function createChores(
           });
           continue;
         }
-        // An agent that asks the same thing again and again is stuck: no answer feeds it.
-        // A permission whose call then went through is normal use, so its outcome is read first.
-        const past = run.answeredRecently(card.task, card.agent).map((p) => ({
-          ...p,
-          outcome: p.item === undefined ? undefined : ports.callOutcome?.(card.task, p.item),
-        }));
-        const loop = questionLoop(past, card.text, now());
-        if (loop !== undefined) {
-          if (ruleOff(run, "q-loop")) continue;
-          // The same loop has one key, so the cards that follow it add no second line and no second message.
-          const line = loopLine(card.agent, card.task, loop);
-          await run.act({
-            key: `question-loop:${card.task}:${card.agent}:${loop.since}`,
-            text: line,
-            reason: "Answering the same question again does not help it",
-            evidence: card.text,
-            task: card.task,
-            do: async () => {
-              await ports.flagLoop(org, card, line, nudgeText(card.task, loop));
-              return {
-                outcome: "asked",
-                undoNote: "A line for you and one message to the agent: nothing to undo",
-              };
-            },
-          });
-          continue;
-        }
         // A permission prompt is settled by the rule table or not at all: no model decides it.
         if (card.kind === "permission") {
           const verdict = permissionVerdict(card.text);
@@ -815,92 +774,6 @@ export function createChores(
         findings: ports.findings,
         askLane: (org, text) => ports.askLane(org, text),
       });
-    },
-
-    async stuck(run) {
-      const { org } = run;
-      // An account that needs a new sign-in holds the task up: the step goes to a teammate whose
-      // account works, in every task of the workspace, autonomous or not.
-      const signIns = new Set<string>();
-      for (const s of await ports.signInStalls(org)) {
-        run.check();
-        if (ruleOff(run, "stuck-signin")) break;
-        if (away(s.id) !== undefined) continue;
-        signIns.add(s.id);
-        const key = `stuck:signin:${s.id}:${s.agent}:${s.since}`;
-        const to = s.to;
-        if (to === undefined) {
-          run.note(
-            key,
-            `${s.id} waits for a sign-in`,
-            `@${s.agent}'s account ${s.account} needs a new sign-in, and no teammate's account works`,
-            s.id,
-          );
-          continue;
-        }
-        if (s.agent === s.lead) {
-          const reason = `@${s.agent} cannot run until ${s.account} is signed in again, and @${to}'s account works`;
-          await run.act({
-            key,
-            text: `Moved ${s.id} from @${s.agent} to @${to}: ${s.account} needs a new sign-in`,
-            reason,
-            task: s.id,
-            recheck: async () => away(s.id),
-            do: async () => {
-              await ports.moveLead(org, s.id, to, reason);
-              return {
-                undoNote: `Move ${s.id} back to @${s.agent} on its page once ${s.account} is signed in`,
-              };
-            },
-          });
-          continue;
-        }
-        await run.act({
-          key,
-          text: `Woke @${s.lead} in ${s.id} to give @${s.agent}'s step to a teammate`,
-          reason: `${s.account} needs a new sign-in, so @${s.agent} cannot run`,
-          task: s.id,
-          do: async () => {
-            ports.handBack(org, s.id, s.agent, s.account);
-            return { undoNote: "A message to the lead: nothing to undo" };
-          },
-        });
-      }
-      for (const s of ports.stalled(org)) {
-        run.check();
-        if (signIns.has(s.id)) continue;
-        const present = away(s.id);
-        if (present !== undefined) continue;
-        const wake = `stuck:wake:${s.id}:${s.quietSince}`;
-        if (!run.done(wake) && !ruleOff(run, "stuck-wake")) {
-          await run.act({
-            key: wake,
-            text: `Woke @${s.lead} in ${s.id}: nobody was working and nothing was pending`,
-            reason: "A running task went quiet",
-            task: s.id,
-            do: async () => {
-              ports.wakeLead(org, s.id);
-              return { undoNote: "A message to the lead: nothing to undo" };
-            },
-          });
-          continue;
-        }
-        if (ruleOff(run, "stuck-tell")) continue;
-        await run.act({
-          key: `stuck:owner:${s.id}:${s.quietSince}`,
-          text: `Paused ${s.id} for you: still quiet after the captain woke @${s.lead}`,
-          reason: "The captain wakes the lead once, then tells the owner",
-          task: s.id,
-          do: async () => {
-            await ports.pauseForOwner(
-              org,
-              s.id,
-              `Nobody is working on ${s.id} and nothing is pending, even after the captain woke @${s.lead}.`,
-            );
-            return { outcome: "asked", undoNote: "Resume the task to undo the pause" };
-          },
-        });
-      }
     },
   };
 }

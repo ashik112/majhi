@@ -6,16 +6,12 @@ import {
   type AutonomyStatus,
 } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BUILTIN_SLOTS } from "../decisions/builtinSlots.ts";
-import type { SlotDef } from "../decisions/slots.ts";
-import { fakeLaya, type LayaScript, service, sure } from "../decisions/testkit.ts";
 import { EventHub } from "../events/hub.ts";
 import { estimateText } from "../runs/context.ts";
 import type { Store } from "../store/index.ts";
 import { backlogOrder, DIGEST_MAX_CHARS, type DigestInput, digest } from "./digest.ts";
 import { AutonomyDriver, changeOf, DEBOUNCE_MS } from "./driver.ts";
 import type { AutonomyService } from "./service.ts";
-import { WakeGate } from "./wake-gate.ts";
 
 const CHAT = "LOCAL-1";
 
@@ -56,7 +52,7 @@ const STATUS: AutonomyStatus = {
  * A driver over fakes: the mode, whether the captain works and the day cap are the test's to set. Two
  * workspaces run: Acme (lane LOCAL-1) and Globex (lane LOCAL-9).
  */
-function fakes(wakeGate?: ConstructorParameters<typeof AutonomyDriver>[0]["wakeGate"]) {
+function fakes() {
   const state = {
     mode: "on" as AutonomyMode,
     busy: false,
@@ -69,8 +65,6 @@ function fakes(wakeGate?: ConstructorParameters<typeof AutonomyDriver>[0]["wakeG
     now: [] as AutonomyNow[],
     /** Running tasks whose silence something explains (a cap, a card for the owner, a slot). */
     explained: new Set<string>(),
-    /** Whether a workspace has backlog, a finding or a decision waiting. */
-    work: true,
     /** Every task of the store, any workspace. */
     all: [] as Record<string, unknown>[],
     incidents: {} as Record<string, string[]>,
@@ -129,9 +123,7 @@ function fakes(wakeGate?: ConstructorParameters<typeof AutonomyDriver>[0]["wakeG
     } as unknown as Store,
     events: new EventHub(),
     explained: (task: string) => (state.explained.has(task) ? "held" : undefined),
-    pendingWork: async () => state.work,
     incidentLines: (org: string) => state.incidents[org] ?? [],
-    ...(wakeGate === undefined ? {} : { wakeGate }),
   });
   return { driver, state, ticks, tickOrgs, told, toldIn, skipped };
 }
@@ -335,28 +327,21 @@ describe("wakes carry news only", () => {
     expect(f.ticks).toHaveLength(1);
   });
 
-  it("drops the bare hourly check when no work, finding or decision waits, and keeps it when one does", async () => {
+  it("makes no wake of its own on the hour: unchanged facts and a quiet hour tell the captain nothing", async () => {
     const f = fakes();
     f.state.now = [task("ACM-1")];
     f.driver.wake("ACM-1 is ready for review", "acme");
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
     expect(f.ticks).toHaveLength(1);
-    f.state.work = false;
-    await vi.advanceTimersByTimeAsync(61 * 60_000);
+    await vi.advanceTimersByTimeAsync(3 * 60 * 60_000);
     f.driver.sweep();
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
     expect(f.ticks).toHaveLength(1);
-    // Work waits, but nothing changed since the captain's turn: still nothing to say.
-    f.state.work = true;
-    f.driver.sweep();
-    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
-    expect(f.ticks).toHaveLength(1);
-    // Work waits and a task finished meanwhile: the check goes.
+    // A task that finished meanwhile is news: it wakes the captain on the next look.
     f.state.now = [task("ACM-1", "done")];
-    f.driver.sweep();
+    f.driver.wake("ACM-1 is done: Work on ACM-1", "acme");
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
     expect(f.ticks).toHaveLength(2);
-    expect(f.told[1]).toContain("Hourly check");
   });
 
   it("tells a lane where Start is You about a finding, and that it only proposes there", async () => {
@@ -470,7 +455,6 @@ describe("a busy hour", () => {
       });
     }
     // 59 minute sweeps over a workspace with nothing waiting.
-    f.state.work = false;
     for (let m = 1; m < 60; m++) events.push({ at: m * 60_000, real: false, run: () => f.driver.sweep() });
     events.sort((a, b) => a.at - b.at);
 
@@ -498,96 +482,6 @@ describe("a busy hour", () => {
     // Every real change reached the captain.
     const told = f.told.join("\n");
     for (let n = 1; n <= id; n++) expect(told).toContain(`ACM-${100 + n} changed`);
-  });
-});
-
-describe("a busy hour with the wake gate", () => {
-  const SLOT = BUILTIN_SLOTS.find((s) => s.id === "wake-gate");
-  if (SLOT === undefined) throw new Error("the wake-gate slot is missing");
-  const base: SlotDef = SLOT;
-
-  /**
-   * Fifty soft wakes in an hour, each over facts that changed: 42 are routine movement of work that is
-   * going fine (another helper joins ACM-1), 8 are real (a task reaches review). Laya is played by a table
-   * that reads the diff. The same hour runs with and without the gate.
-   */
-  async function hour(
-    gate: boolean,
-    laya = fakeLaya({ script: layaSays }),
-    startMode: "live" | "shadow" = "live",
-  ) {
-    const slot: SlotDef = { ...base, startMode };
-    const { svc } = service(laya, undefined, [slot]);
-    // Fake timers move on while the decision does real I/O: a long time limit keeps a slow machine from
-    // turning a Laya answer into a timeout (which takes the turn).
-    const wakeGate = gate ? new WakeGate(svc, { timeoutMs: 3_600_000 }) : undefined;
-    const f = fakes(wakeGate);
-    f.state.now = [task("ACM-1")];
-    // A news wake sets the baseline the later wakes are compared with.
-    f.driver.wake("ACM-1 started", "acme");
-    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
-    const baseline = f.ticks.length;
-    let real = 0;
-    for (let i = 0; i < 50; i++) {
-      await vi.advanceTimersByTimeAsync(60_000);
-      const isReal = i % 6 === 0;
-      if (isReal) {
-        real += 1;
-        f.state.now = [...f.state.now, task(`ACM-${100 + i}`, "review")];
-      } else {
-        f.state.now = f.state.now.map((t, n) =>
-          n === 0 ? { ...t, agents: [...t.agents.slice(0, 1), { id: `acme-helper-${i}` }] } : t,
-        );
-      }
-      f.state.running.add("ACM-1");
-      f.driver.loopEnded("ACM-1");
-      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
-      // The captain's turn ends: the digest as it now stands is what it has seen.
-      f.driver.loopEnded(CHAT);
-      await vi.advanceTimersByTimeAsync(0);
-    }
-    return { ticks: f.ticks.length - baseline, real, told: f.told.join("\n"), laya, wakeGate };
-  }
-
-  const layaSays: LayaScript = async (r) =>
-    Object.fromEntries(
-      Object.entries(r.questions).map(([k, q]) => [
-        k,
-        sure(q, JSON.stringify(r.state).includes("review") ? "turn" : "skip", 0.97),
-      ]),
-    );
-
-  it("takes far fewer captain turns than without it, and every real change still gets one", async () => {
-    const without = await hour(false);
-    const gated = await hour(true);
-    console.info(
-      `soft wakes over changed facts: ${without.ticks} turns without the gate, ${gated.ticks} with it ` +
-        `(${gated.wakeGate?.stats.skipped} skipped, ${gated.wakeGate?.stats.audited} audited, ${gated.laya.calls} Laya calls)`,
-    );
-    expect(without.ticks).toBeGreaterThanOrEqual(45);
-    expect(gated.ticks).toBeLessThan(without.ticks / 2);
-    // Every task that reached review was in a digest the captain got.
-    for (let i = 0; i < 50; i += 6) expect(gated.told).toContain(`ACM-${100 + i}`);
-  });
-
-  it("takes every turn while the slot is in shadow, and keeps asking so it can be compared", async () => {
-    const without = await hour(false);
-    const shadow = await hour(true, fakeLaya({ script: layaSays }), "shadow");
-    expect(shadow.ticks).toBe(without.ticks);
-    expect(shadow.laya.calls).toBeGreaterThan(30);
-  });
-
-  it("takes every turn when Laya is down", async () => {
-    const without = await hour(false);
-    const down = await hour(
-      true,
-      fakeLaya({
-        script: async () => {
-          throw new Error("Laya is down");
-        },
-      }),
-    );
-    expect(down.ticks).toBe(without.ticks);
   });
 });
 

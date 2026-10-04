@@ -690,7 +690,6 @@ describe("the upkeep chores as playbooks", () => {
         "projects",
         "questions",
         "ship",
-        "stuck",
         "tidy",
         "triage",
       ].toSorted(),

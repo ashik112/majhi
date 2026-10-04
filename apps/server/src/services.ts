@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { type Command, dockerTty, localSpawner } from "@majhi/acp";
 import {
   BUILT_IN_CONNECT_APPS,
-  type CaptainChore,
   GLOBAL_CONNECTIONS,
   isOwnerChat,
   NotificationsSettingsSchema,
@@ -35,7 +34,6 @@ import { watchIdOf } from "./automation/migrate.ts";
 import { ScheduleRepo } from "./automation/schedules.ts";
 import { AutonomyDriver } from "./autonomy/driver.ts";
 import { AutonomyService, zoneOr } from "./autonomy/service.ts";
-import { WakeGate } from "./autonomy/wake-gate.ts";
 import { Background } from "./background.ts";
 import { BackupService } from "./backup/service.ts";
 import { alertLine } from "./budgets/alert-line.ts";
@@ -45,7 +43,7 @@ import { BudgetAlertRepo } from "./budgets/repo.ts";
 import { freshCaptainAfterUpdate } from "./captain/fresh-after-update.ts";
 import { Lanes } from "./captain/lanes.ts";
 import { authorityOf, workspaceIds } from "./captain/levels.ts";
-import { labelOwnWork } from "./captain/own-work-second.ts";
+import { LoopGuard } from "./captain/loop-guard.ts";
 import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
 import { CaptainTell } from "./captain/tell.ts";
@@ -88,6 +86,7 @@ import { HomeWatcher } from "./events/watcher.ts";
 import { FindingsRepo } from "./findings/repo.ts";
 import { FindingsService } from "./findings/service.ts";
 import { triageFinding } from "./findings/triage.ts";
+import { git } from "./git/git.ts";
 import { GitLoginService } from "./git/logins.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { whoAmI } from "./gitConnect/oauth.ts";
@@ -866,13 +865,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   let chatMemory: ChatMemory | undefined;
   // Bound below, after the services it reads: the checked hand-off (5.18).
   let handoffService: HandoffService | undefined;
+  // Bound below, once the captain's tables are read: the loop guard counts the captain's answers.
+  let loopGuard: LoopGuard | undefined;
   const tasks = new TaskService({
     protectedPaths: [env.secretsKeyFile],
+    onCaptainAnswer: (task) => void loopGuard?.answered(task).catch(() => undefined),
     onOwnerResumedLimit: (task) => budgets.exempt(task),
     // Bound below: autonomous mode is built after the task service.
     onOwnerResumed: (task) => autonomy.ownerResumed(task),
-    // The owner's answer to a prompt Laya was asked about labels that decision (Allow once: it was routine).
-    onOwnerPermission: (task, item) => labelOwnWork(decisions, task, item),
     store,
     config,
     projects,
@@ -1134,6 +1134,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const admin = new AdminService({ config, room, store, secrets, tasks });
   const scheduleRows = new ScheduleRepo(store.raw);
   const captainRepo = new CaptainRepo(store.raw);
+  loopGuard = new LoopGuard({
+    repo: captainRepo,
+    mark: async (id) => {
+      const task = store.tasks.get(id);
+      if (task === undefined || task.status === "done") return undefined;
+      const heads: string[] = [];
+      for (const r of task.repos) {
+        const tip = await git(r.source, ["rev-parse", "--verify", `refs/heads/${r.branch}`]).catch(() => "");
+        heads.push(`${r.project}@${tip.trim()}`);
+      }
+      return `${task.status}|${heads.join(",")}`;
+    },
+    pause: (id, text) => tasks.pauseForOwner(id, text),
+  });
   const cardActions = new CardActions({ tasks, mrs, room });
   const knownOrg = async (org: string) =>
     org === PRIVATE || (await config.sections()).orgs[org] !== undefined;
@@ -1308,12 +1322,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       room,
       quiet: (task) => idleWatch.quiet(task),
       explained: (task) => autonomy.stallExplained(task),
-      pendingWork: (org) => autonomy.pendingWork(org, findingsStore?.openCount(org) ?? 0),
       findingLines: (org) => findingsStore?.digestLines(org) ?? [],
       incidentLines: (org) => incidentLines(opsWatch?.openIncidents() ?? [], org),
       projectLines: (org) => cards.digestLines(org),
-      // Laya reads what changed before a soft wake costs a captain turn; any doubt takes the turn.
-      wakeGate: new WakeGate(decisions),
       store,
       events,
       ...(options.runClock === undefined ? {} : { now: options.runClock }),
@@ -1461,9 +1472,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
             : "idle";
     },
     fresh: (chat, agent) => tasks.fresh(chat, agent),
-    rollup: {
-      spend: () => autonomy.daySpend(),
-      incidents: () => (opsWatch?.unacked() ?? []).map((i) => ({ id: i.id, title: i.title })),
+    relay: {
       bossChat: async () => {
         const boss = await lanes.boss();
         const chat = boss === undefined ? undefined : findBossChat({ store, tasks }, boss);

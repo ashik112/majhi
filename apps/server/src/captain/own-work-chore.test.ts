@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
 import { createChores } from "./chores.ts";
 import type { OwnWorkScope } from "./own-work.ts";
-import type { SecondOpinion } from "./own-work-second.ts";
 import type { CaptainPorts, QuestionCard } from "./ports.ts";
 import { CaptainRepo } from "./repo.ts";
 import { ChoreRunner } from "./runner.ts";
@@ -19,11 +18,7 @@ import { ChoreRunner } from "./runner.ts";
 
 const OWN: Authority = { ...ALL_ASK, own: "decide" };
 
-function desk(
-  authority: Authority = OWN,
-  started: readonly string[] = ["ACM-1"],
-  second?: (card: QuestionCard, scope: OwnWorkScope) => Promise<SecondOpinion>,
-) {
+function desk(authority: Authority = OWN, started: readonly string[] = ["ACM-1"]) {
   const tree = join(mkdtempSync(join(tmpdir(), "own-chore-")), "ACM-1", "acme-api");
   mkdirSync(tree, { recursive: true });
   const scope: OwnWorkScope = { worktrees: [tree], cwd: tree };
@@ -35,12 +30,10 @@ function desk(
     questions: () => cards.filter((c) => !answers.some((a) => a.item === c.item)),
     typing: () => false,
     ownScope: async (_org: string, task: string) => (started.includes(task) ? scope : undefined),
-    ...(second === undefined ? {} : { ownSecondOpinion: second }),
     answer: async (_org: string, card: QuestionCard, option: string, reason: string) => {
       answers.push({ task: card.task, item: card.item, option, reason });
       return { answered: true as const };
     },
-    flagLoop: async () => {},
     laneRest: async () => undefined,
     askLane: async (_org: string, text: string) => {
       lane.push(text);
@@ -61,7 +54,6 @@ function desk(
     }),
     stopped: () => false,
     tellOwner: () => {},
-    caused: () => {},
     laneTokens: () => 0,
     chores: createChores(ports, () => new Date(Date.UTC(2026, 9, 4, 12, 0, 0))),
   });
@@ -141,65 +133,12 @@ describe("Own work in the questions chore", () => {
     expect(d.log()).toHaveLength(1);
   });
 
-  describe("with Laya's second opinion", () => {
-    const yes: SecondOpinion = {
-      approve: true,
-      why: "Laya said routine (0.95)",
-      decision: "dec_1",
-      shadow: false,
-    };
-    const shadow: SecondOpinion = {
-      approve: false,
-      why: "Laya said routine (0.99), in shadow",
-      decision: "dec_1",
-      shadow: true,
-    };
-
-    it("approves the unknown middle when Laya, live and sure, calls it routine, and says so in the log", async () => {
-      const d = desk(OWN, ["ACM-1"], async () => yes);
-      await d.ask("Bash: nx test acme-api");
-      expect(d.answers.map((a) => a.option)).toEqual(["once"]);
-      expect(String(d.log()[0]?.[2])).toContain("second opinion from Laya");
-    });
-
-    it("leaves it to the owner, with Laya's words, while the slot is in shadow", async () => {
-      const d = desk(OWN, ["ACM-1"], async () => shadow);
-      await d.ask("Bash: nx test acme-api");
-      expect(d.answers).toEqual([]);
-      expect(String(d.log()[0]?.[2])).toContain("second opinion: Laya said routine (0.99), in shadow");
-    });
-
-    it("leaves it to the owner when asking Laya throws", async () => {
-      const d = desk(OWN, ["ACM-1"], async () => {
-        throw new Error("Laya fell over");
-      });
-      await d.ask("Bash: nx test acme-api");
-      expect(d.answers).toEqual([]);
-      expect(d.log()[0]?.[0]).toBe("asked");
-    });
-
-    it("is never asked about a refusal, and a yes cannot override one", async () => {
-      let asked = 0;
-      const d = desk(OWN, ["ACM-1"], async () => {
-        asked += 1;
-        return yes;
-      });
-      for (const text of [
-        "Bash: git push origin acme-fix",
-        "Read .env",
-        "Bash: curl https://globex.example.com/x",
-      ]) {
-        await d.ask(text);
-      }
-      expect(asked).toBe(0);
-      expect(d.answers).toEqual([]);
-    });
-
-    it("never approves a request of a task the captain did not start, whatever Laya says", async () => {
-      const d = desk(OWN, ["ACM-2"], async () => yes);
-      await d.ask("Bash: nx test acme-api", "ACM-1");
-      expect(d.answers).toEqual([]);
-    });
+  it("leaves a program the rule table does not know to the owner: no model is asked", async () => {
+    const d = desk();
+    await d.ask("Bash: nx test acme-api");
+    expect(d.answers).toEqual([]);
+    expect(d.log()[0]?.[0]).toBe("asked");
+    expect(String(d.log()[0]?.[2])).toContain("Own work does not cover it");
   });
 
   it("with Questions on Captain too, does not approve what its rules reject", async () => {

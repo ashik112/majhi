@@ -292,17 +292,9 @@ export class IdleWatch {
     );
   }
 
-  /** The teammate whose turn failed on its account's sign-in, while the task still waits on its step. */
-  failedSignIn(task: string): { agent: string; account: string } | undefined {
-    const f = this.failed.get(task);
-    return f?.ending === "signed-out" && f.account !== undefined
-      ? { agent: f.agent, account: f.account }
-      : undefined;
-  }
-
   /**
    * Whether a running task is quiet right now: nobody works, waits for a slot or starts, no owner
-   * card waits, no background process is waited on and no subtask moves. The captain's stuck-task chore (5.18) reads it.
+   * card waits, no background process is waited on and no subtask moves.
    */
   quiet(id: string): boolean {
     const task = this.deps.store.tasks.get(id);

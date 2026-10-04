@@ -30,8 +30,6 @@ export function summaryOf(actions: readonly Pick<CaptainAction, "chore" | "outco
   if (triaged > 0) parts.push(`set ${triaged} priorit${triaged === 1 ? "y" : "ies"}`);
   const cleaned = done("cleanup");
   if (cleaned > 0) parts.push(`cleaned up ${cleaned} old task${cleaned === 1 ? "" : "s"}`);
-  const woke = done("stuck");
-  if (woke > 0) parts.push(`woke ${woke} quiet task${woke === 1 ? "" : "s"}`);
   if (forYou > 0) parts.push(`${forYou} thing${forYou === 1 ? "" : "s"} for you`);
   return { line: parts.join(", "), forYou };
 }

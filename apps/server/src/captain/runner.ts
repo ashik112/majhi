@@ -10,7 +10,6 @@ import type {
 import { CHORE_LABEL } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
 import { choresNow } from "./levels.ts";
-import { NEAR_SAME_MS, type PastAnswer } from "./question-loop.ts";
 import type { CaptainRepo } from "./repo.ts";
 import { FAILURES_OFF, PASS_BOUND } from "./rules.ts";
 
@@ -49,8 +48,6 @@ export interface RunnerDeps {
   stopped(): boolean;
   /** Tells the owner through the bell. */
   tellOwner(org: string, text: string): void;
-  /** Marks a subject (a task) as touched by the captain, so the events it causes start nothing. */
-  caused(subject: string): void;
   /** Tokens the workspace's lane spent since `since`. */
   laneTokens(org: string, since: string): number;
   chores: Record<CaptainChore, (run: ChoreRun) => Promise<void>>;
@@ -155,19 +152,6 @@ export class ChoreRun {
     return this.deps.repo.countActions(prefix);
   }
 
-  /** What the captain answered to `agent` in `task` in the last ten minutes, oldest first. */
-  answeredRecently(task: string, agent: string): PastAnswer[] {
-    const since = new Date(this.deps.now().getTime() - NEAR_SAME_MS).toISOString();
-    const prefix = `Answered @${agent} in ${task}: `;
-    return this.deps.repo.answersSince(this.org, task, agent, since).map((a) => ({
-      at: a.at,
-      question: a.evidence ?? "",
-      // The action's key ends in the card's item id: `question:<task>:<item>` or `own:<task>:<item>`.
-      item: a.key.split(`:${task}:`)[1],
-      answer: a.text.startsWith(prefix) ? a.text.slice(prefix.length) : undefined,
-    }));
-  }
-
   /** Takes one step under every guard. */
   async act(a: ActInput): Promise<ActOutcome> {
     this.check();
@@ -179,7 +163,6 @@ export class ChoreRun {
         return "blocked";
       }
     }
-    if (a.task !== undefined) this.deps.caused(a.task);
     const at = this.deps.now().toISOString();
     // The key is taken before the step, in one insert: the lane may be shipping the same state now.
     if (this.deps.repo.claimKey("chore", a.key, a.task, at) !== "taken") return "repeat";
