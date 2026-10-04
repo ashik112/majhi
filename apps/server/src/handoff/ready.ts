@@ -5,7 +5,7 @@ import { changeBase } from "../git/since-start.ts";
 import type { MrService } from "../mrs/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
-import { scanForSecrets } from "./secret-scan.ts";
+import { describeHit, scanForSecrets } from "./secret-scan.ts";
 
 /**
  * The cheap checks of a task in review, read live each time: it is in review and no agent works in
@@ -79,7 +79,7 @@ export async function shipReadiness(deps: ReadyDeps, id: string, except?: string
     if (scan.kind === "secret")
       return {
         ready: false,
-        why: `the diff of ${repo.project} holds what looks like a secret in ${scan.path}`,
+        why: `the diff of ${repo.project} holds what looks like a secret: ${describeHit(scan.hit)}`,
       };
     if (scan.kind === "too-large") {
       return {

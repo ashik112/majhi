@@ -11,6 +11,19 @@ Branch `fix/live-state-counts`.
 - **desk.test.** It was failing because the default is one task at once and the test starts two per workspace; it now sets `tasksAtOnce: 2` as its comments assume.
 - **Tests.** `autonomy/live-state.test.ts`. done-when.test updated for the new count.
 - **Known.** approvals.test "counts an agent of an autonomous task" fails on main too (ENOTEMPTY on cleanup).
+## Secrets off process argv (built, not merged)
+
+Branch `fix/no-secrets-in-argv`. Closes the leak behind PRV-127.
+
+- **The leak.** The Claude adapter starts `claude --mcp-config '<json>'`, and the JSON holds every MCP header and every stdio server variable. That covers majhi's own bearer tokens (`majhi-room`, `majhi-tasks`, `majhi-processes`, `majhi-containers`, `majhi-memory`, `majhi-connections`) and the OAuth token of a signed-in connection such as DigitalOcean. Any process in the container could read them from `/proc/*/cmdline`. Checked in the runner image: the argv held the token. Codex keeps headers in memory and showed none.
+- **The fix.** `packages/acp/src/mcp-env.ts` swaps each header and stdio variable value for `${MAJHI_MCP_<server>_<H|E><n>}`, and the values go in the adapter's environment. Claude expands them itself (checked end to end through the real adapter in the runner image: the server got the header, argv held only the placeholder). Only tools with `mcpOnArgv` (Claude) do this. The docker runner already passes variables by name, so the values are on no command line anywhere.
+- **Service, preview and database-check containers.** Their `--env NAME=value` flags put passwords on the docker CLI's line inside the server container. `envByName` (`containers/args.ts`) now moves them into the CLI's environment. No agent could see these, but any process of the server could.
+- **PID namespaces.** Each run is its own container with no `--pid`, `--ipc`, `--uts`, `--userns` or `--privileged`, so an agent sees only its own container's processes, not another task's, the server's or the host helper's. Agent-started containers refuse those flags too. Tested on the built args.
+- **Per-task tokens.** Already per task and agent, in memory, per server, revoked when the session ends. Tests added for that.
+- **Hand-off secret scan.** It reads only the diff (`git diff -U0`), never output or argv. A block now says the file, line, rule and a masked value (`src/app.ts line 3, rule github, value ghp_[hidden, 44 chars]`). Before it named only the file.
+- **Agent guidance.** The captain prompt now says to feed a token to curl on stdin, not as an argument.
+- **Known limit.** The environment of a process is readable by the same user (`/proc/<pid>/environ`), and the agent runs as that user in its own container. The tokens are per task, so what an agent can read is its own task's; they are on no process list. Anything an agent types itself (`curl -H "Authorization: Bearer $VAR"`) still shows in the argv of that curl while it runs.
+- **Owner action.** Rotate: (1) the DigitalOcean token, by signing the DigitalOcean connection out and in again in Connections (the old OAuth token stays valid until it expires or is revoked at cloud.digitalocean.com under API, Tokens); (2) any other OAuth or `env` connection whose token an agent printed or ran through `ps`. majhi's own MCP tokens need no action: they live in memory and ended with their sessions (a restart also clears them). The old tokens may still sit in agent transcripts and the room history of the task that showed them (PRV-127): delete those transcripts. No token value is written here.
 
 ## Lifecycle A and B: census guard and pure model (built, not merged)
 
