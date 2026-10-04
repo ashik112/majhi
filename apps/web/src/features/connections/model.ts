@@ -6,6 +6,7 @@ import {
   type ConnectionView,
   connectionType,
   type FieldKind,
+  GLOBAL_CONNECTIONS,
   HeaderNameSchema,
   reservedVariable,
   VariableNameSchema,
@@ -162,13 +163,19 @@ export function createInput(input: {
   return out;
 }
 
-/** The connections of one org, in the orgs' order; every org shows, so each offers its add button. */
+/**
+ * The connections by workspace, in the workspaces' order, then Global. Every workspace shows, so
+ * each offers its connect button; Global shows only when it holds one. `filter` keeps one
+ * workspace and Global.
+ */
 export function connectionGroups(
   connections: readonly ConnectionView[],
   orgs: readonly { id: string }[],
   filter: string | undefined,
 ): { org: string; items: ConnectionView[] }[] {
-  return orgs
+  const groups = orgs
     .filter((o) => filter === undefined || o.id === filter)
     .map((o) => ({ org: o.id, items: connections.filter((c) => c.org === o.id) }));
+  const global = connections.filter((c) => c.org === GLOBAL_CONNECTIONS);
+  return global.length > 0 ? [...groups, { org: GLOBAL_CONNECTIONS, items: global }] : groups;
 }

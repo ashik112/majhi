@@ -12,10 +12,12 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useAppStatus, useConnectCatalog, useConnectCommand, useConnectStatus } from "@/lib/connect-queries";
+import { useConnections } from "@/lib/connection-queries";
 import { describeError } from "@/lib/errors";
 import { AppSetupSheet } from "./app-setup-sheet";
 import { ConnectFlowCard, ScopeList } from "./connect-flow";
-import { ScopePicker } from "./scope-picker";
+import { defaultProducts, ProductPicker } from "./product-picker";
+import { ScopePicker, scopeName, WorkspaceTag } from "./scope-picker";
 import { ServiceLogo } from "./service-logo";
 
 /** Matches the name and the one-line summary, ignoring case. */
@@ -45,6 +47,7 @@ export function ConnectCatalog({
 }) {
   const catalog = useConnectCatalog();
   const status = useConnectStatus();
+  const saved = useConnections();
   const start = useConnectCommand("connect.start");
   const [org, setOrg] = useState(defaultOrg ?? PRIVATE);
   const apps = useAppStatus(org);
@@ -54,6 +57,8 @@ export function ConnectCatalog({
   const [access, setAccess] = useState<ConnectAccess>("read");
   const [flow, setFlow] = useState<string>();
   const [sheet, setSheet] = useState(false);
+  const [name, setName] = useState("");
+  const [products, setProducts] = useState<string[]>([]);
   const busy = flow !== undefined || start.isPending;
   useEffect(() => {
     onBusyChange(busy);
@@ -63,20 +68,16 @@ export function ConnectCatalog({
   const services = useMemo(
     () =>
       (catalog.data?.services ?? [])
-        .filter(
-          (s) =>
-            matchesService(s, query) &&
-            (category === "all" || categoryOf(s.id) === category) &&
-            (!s.id.startsWith("digitalocean-") || query.trim() !== ""),
-        )
+        .filter((s) => matchesService(s, query) && (category === "all" || categoryOf(s.id) === category))
         .sort((a, b) => a.name.localeCompare(b.name)),
     [catalog.data, query, category],
   );
   const tools = services.filter((s) => s.kind === "cli-login");
   const others = services.filter((s) => s.kind !== "cli-login");
-  const connected = (service: ServiceEntry): ConnectStatus | undefined =>
-    (status.data ?? []).find((s) => s.org === org && s.service === service.id);
-  const pickedConnection = picked ? connected(picked) : undefined;
+  /** This workspace's connections of the service. A workspace may hold several. */
+  const connectedIn = (service: ServiceEntry): ConnectStatus[] =>
+    (status.data ?? []).filter((s) => s.org === org && s.service === service.id);
+  const existing = picked ? connectedIn(picked) : [];
   /** True when the service needs the owner's own app and the workspace has none yet. */
   const needsApp = (service: ServiceEntry): boolean => {
     if (service.app === undefined) return false;
@@ -85,16 +86,29 @@ export function ConnectCatalog({
   };
 
   const begin = (service: ServiceEntry) =>
-    start.mutate({ org, service: service.id, access }, { onSuccess: (view) => setFlow(view.flow) });
+    start.mutate(
+      {
+        org,
+        service: service.id,
+        access,
+        ...(name.trim() === "" || name.trim() === service.name ? {} : { name: name.trim() }),
+        ...(service.products === undefined ? {} : { products }),
+      },
+      { onSuccess: (view) => setFlow(view.flow) },
+    );
   const pick = (service: ServiceEntry) => {
+    const count = connectedIn(service).length;
     setPicked(service);
     setAccess("read");
+    setName(count === 0 ? service.name : `${service.name} ${count + 1}`);
+    setProducts(defaultProducts(service.products));
     setSheet(false);
     start.reset();
   };
 
   const tile = (service: ServiceEntry) => {
-    const have = connected(service);
+    const have = connectedIn(service);
+    const stale = have.some((h) => h.state !== "connected");
     const shared =
       org !== GLOBAL_CONNECTIONS &&
       (status.data ?? []).some(
@@ -111,7 +125,7 @@ export function ConnectCatalog({
         <button
           type="button"
           disabled={!service.ready || start.isPending || status.isPending || status.isError}
-          onClick={() => (have && service.id !== "digitalocean" ? onOpen(have.connection) : pick(service))}
+          onClick={() => pick(service)}
           className="group flex h-full w-full cursor-pointer flex-col gap-3 rounded-xl border border-line-strong bg-card p-4 text-left transition-colors duration-150 hover:border-line-hover hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
         >
           <span className="flex min-w-0 items-center gap-3">
@@ -122,11 +136,7 @@ export function ConnectCatalog({
               className="ml-auto size-4 shrink-0 text-fg-faint group-hover:text-fg"
             />
           </span>
-          <span className="text-sm text-fg-muted">
-            {service.id === "digitalocean"
-              ? "Droplets, Kubernetes, databases, apps and more"
-              : service.summary}
-          </span>
+          <span className="text-sm text-fg-muted">{service.summary}</span>
           <span className="mt-auto flex flex-wrap items-center justify-between gap-2 text-xs text-fg-faint">
             <span>
               {!service.ready
@@ -135,9 +145,9 @@ export function ConnectCatalog({
                   ? "App setup required"
                   : method}
             </span>
-            {have ? (
-              <Badge tone={have.state === "connected" ? "green" : "amber"}>
-                {have.state === "connected" ? "Connected" : "Reconnect"}
+            {have.length > 0 ? (
+              <Badge tone={stale ? "amber" : "green"}>
+                {stale ? "Reconnect" : have.length === 1 ? "Connected" : `${have.length} connected`}
               </Badge>
             ) : shared ? (
               <Badge>Available globally</Badge>
@@ -199,34 +209,43 @@ export function ConnectCatalog({
           )}
           <div className="flex items-center gap-3">
             <ServiceLogo service={picked.id} className="size-12" />
-            <div>
-              <h3 className="text-md font-semibold">Connect {picked.name}</h3>
+            <div className="min-w-0">
+              <h3 className="flex flex-wrap items-center gap-x-2 text-md font-semibold">
+                Connect {picked.name} to
+                <WorkspaceTag org={org} orgs={orgs} />
+              </h3>
               <p className="text-sm text-fg-muted">{picked.summary}</p>
             </div>
           </div>
-          {picked.id.startsWith("digitalocean") && flow === undefined && (
-            <Field label="DigitalOcean service">
-              {(props) => (
-                <Select
-                  {...props}
-                  aria-label="DigitalOcean service"
-                  className="max-w-[380px]"
-                  value={picked.id}
-                  onChange={(e) => {
-                    const next = catalog.data?.services.find((s) => s.id === e.target.value);
-                    if (next) pick(next);
-                  }}
-                >
-                  {(catalog.data?.services ?? [])
-                    .filter((s) => s.id.startsWith("digitalocean"))
-                    .map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.id === "digitalocean" ? "Droplets" : s.name.replace("DigitalOcean ", "")}
-                      </option>
-                    ))}
-                </Select>
-              )}
-            </Field>
+          {flow === undefined && existing.length > 0 && (
+            <section
+              aria-label={`${picked.name} in ${scopeName(org, orgs)}`}
+              className="flex max-w-[620px] flex-col gap-2"
+            >
+              <p className="text-base text-fg-muted">
+                {scopeName(org, orgs)} already has{" "}
+                {existing.length === 1 ? "this connection. Open it" : "these connections. Open one"}, or add
+                another below, for example for a second account.
+              </p>
+              <ul className="flex flex-col divide-y divide-line rounded-lg border border-line">
+                {existing.map((c) => (
+                  <li key={c.connection} className="flex items-center gap-3 px-3 py-2">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-base font-medium">
+                        {saved.data?.find((v) => v.id === c.connection)?.name ?? c.connection}
+                      </span>
+                      <span className="block truncate text-sm text-fg-muted">{c.account ?? c.reason}</span>
+                    </span>
+                    <Badge tone={c.state === "connected" ? "green" : "amber"}>
+                      {c.state === "connected" ? "Connected" : "Reconnect"}
+                    </Badge>
+                    <Button size="sm" onClick={() => onOpen(c.connection)}>
+                      Open
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
           {flow !== undefined ? (
             <ConnectFlowCard
@@ -241,13 +260,6 @@ export function ConnectCatalog({
                 else setPicked(undefined);
               }}
             />
-          ) : pickedConnection ? (
-            <div className="flex flex-col items-start gap-3">
-              <p className="text-base text-fg-muted">This service already has a connection for this scope.</p>
-              <Button variant="primary" onClick={() => onOpen(pickedConnection.connection)}>
-                Open connection
-              </Button>
-            </div>
           ) : picked.app !== undefined && (sheet || picked.kind === "api-key" || needsApp(picked)) ? (
             <AppSetupSheet
               org={org}
@@ -272,6 +284,27 @@ export function ConnectCatalog({
                     : `Continue to ${picked.name} to sign in and approve access. You'll return here when it's connected.`}
               </p>
 
+              <Field
+                label="Name"
+                hint={
+                  existing.length === 0
+                    ? "Agents see this name."
+                    : `Tells it apart from the ${existing.length === 1 ? "one" : "ones"} already here.`
+                }
+              >
+                {(p) => (
+                  <Input
+                    {...p}
+                    className="max-w-[320px]"
+                    value={name}
+                    maxLength={80}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                )}
+              </Field>
+              {picked.products !== undefined && (
+                <ProductPicker products={picked.products} value={products} onChange={setProducts} />
+              )}
               {picked.kind === "cli-login" && catalog.data?.helper === false && (
                 <p role="alert" className="text-base text-amber text-pretty">
                   majhi's helper is not running, so the tool cannot sign in now. Start the helper first.
@@ -320,7 +353,7 @@ export function ConnectCatalog({
                     ? "Opening"
                     : picked.kind === "cli-login"
                       ? `Sign in with ${picked.name}`
-                      : `Connect ${picked.name}`}
+                      : `Connect to ${scopeName(org, orgs)}`}
                 </Button>
                 {picked.app !== undefined && (
                   <Button variant="ghost" onClick={() => setSheet(true)}>
