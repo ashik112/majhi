@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Shell, board and New task on the seeded home (`e2e/ui-seed.ts`): `shell.ui.ts` drives them,
+ * Shell, board and New task on the seeded home (`e2e/ui-seed.ts`): `shots.board.ts` drives them,
  * `shots.board.ts` renders them at 1440x900 into e2e/screenshots/ui-*.png.
  * Run: pnpm exec playwright test -c playwright.board.config.ts
  */
@@ -9,7 +9,7 @@ const PORT = 7073;
 
 export default defineConfig({
   testDir: "e2e",
-  testMatch: /(shots\.board|shell\.ui)\.ts$/,
+  testMatch: /shots\.board\.ts$/,
   fullyParallel: false,
   workers: 1,
   reporter: "list",

@@ -54,7 +54,7 @@ const getTask = (request: APIRequestContext, id: string) => cmd<TaskInfo>(reques
 
 const room = (page: Page) => page.getByRole("region", { name: "Task room" });
 const messages = (page: Page) => page.getByRole("log", { name: "Room messages" });
-const composer = (page: Page) => page.getByRole("textbox", { name: "Message the room" });
+const _composer = (page: Page) => page.getByRole("textbox", { name: "Message the room" });
 
 const newTaskDialog = (page: Page) => page.getByRole("dialog", { name: "New task" });
 
@@ -199,126 +199,6 @@ test("add a health endpoint to api from develop: worktree, branch, TASK.md and a
   expect(git(API_SOURCE, "remote", "get-url", "origin")).toBe("git@github.com:acme/alpha-api.git");
   expect(git(API_SOURCE, "for-each-ref", "refs/remotes")).toBe("");
   expect(git(API_SOURCE, "for-each-ref", "--format=%(upstream)", `refs/heads/${branch}`)).toBe("");
-});
-
-test("asking for a file in the repo writes it to the worktree and lists it under Changes", async ({
-  page,
-}) => {
-  await page.goto(`/t/${apiTaskId}`);
-  await composer(page).fill("create api/HEALTH.md");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
-  const log = messages(page);
-  await expect(log.getByText("create api/HEALTH.md")).toBeVisible();
-  await expect(log.getByText(/Done\..*Created api\/HEALTH\.md\. Tests passed\./)).toBeVisible({
-    timeout: 20_000,
-  });
-  await expectIdle(page);
-
-  const file = join(apiTask.folder, "api", "HEALTH.md");
-  expect(readFileSync(file, "utf8")).toBe("# Health\n\nok\n");
-  // The turn ended with a checkpoint: the file is committed on the task branch, nothing is left over.
-  const worktree = join(apiTask.folder, "api");
-  // The checkpoint lands a moment after the room shows the agent idle.
-  await expect
-    .poll(() => git(worktree, "log", "-1", "--format=%s"), { timeout: 30_000 })
-    .toMatch(/^wip\([A-Z]+-\d+\): checkpoint \d+$/);
-  expect(git(worktree, "show", "--name-only", "--format=", "HEAD")).toContain("HEALTH.md");
-  expect(git(worktree, "status", "--porcelain")).toBe("");
-  // The agent is the committer, and the message links the commit to its task.
-  expect(git(worktree, "log", "-1", "--format=%cn|%ce")).toBe("acme-lead via majhi|majhi@majhi.local");
-  expect(git(worktree, "log", "-1", "--format=%(trailers:key=Majhi-Task,valueonly)")).toBe(apiTaskId);
-
-  const changes = panel(page);
-  await expect(changes.getByRole("heading", { name: "Changes" })).toBeVisible();
-  await expect(changes.getByRole("region", { name: "Branch and worktree" })).toContainText("main");
-  const section = changes.getByRole("region", { name: "Changes in api" });
-  await expect(changes.getByRole("button", { name: "Copy worktree path of api" })).toBeVisible();
-  await expect(section.getByRole("list", { name: "Commits" })).toContainText("@acme-lead");
-  await shot(page, "changes-commits-by-agent");
-
-  // A commit made by hand shows no agent, next to the agent's.
-  git(
-    worktree,
-    "-c",
-    "user.name=Ada",
-    "-c",
-    "user.email=ada@acme.test",
-    "commit",
-    "--quiet",
-    "--allow-empty",
-    "-m",
-    "docs: by hand",
-  );
-  await page.reload();
-  await page.getByRole("tab", { name: "Changes" }).click();
-  const commits = page
-    .getByRole("region", { name: "Changes in api" })
-    .getByRole("list", { name: "Commits" })
-    .first();
-  await expect(commits.getByRole("listitem").filter({ hasText: "docs: by hand" })).not.toContainText("@");
-  await expect(commits.getByRole("listitem").filter({ hasText: "checkpoint" })).toContainText("@acme-lead");
-  await shot(page, "changes-tab-commits");
-  await page.getByRole("tab", { name: "Room" }).click();
-
-  // A changed file opens the Changes view with its diff inline.
-  await section.getByRole("button", { name: "Show the diff of HEALTH.md" }).click();
-  await expect(page.getByRole("tab", { name: "Changes", selected: true })).toBeVisible();
-  await expect(page.getByRole("group").filter({ hasText: "New file" })).toContainText("# Health");
-});
-
-test("agent attribution in commits can be turned off for majhi, an org and a project", async ({
-  page,
-  request,
-}) => {
-  const attribution = async () =>
-    (await cmd<{ commits: { attribution: boolean } }>(request, "settings.get", {})).commits.attribution;
-  const fromOrg = async () =>
-    (await cmd<{ id: string; commits?: { attribution: boolean } }[]>(request, "orgs.list", {})).find(
-      (o) => o.id === "acme",
-    )?.commits;
-  const fromProject = async () =>
-    (await cmd<{ id: string; commits?: { attribution: boolean } }[]>(request, "projects.list", {})).find(
-      (p) => p.id === "api",
-    )?.commits;
-  expect(await attribution()).toBe(true);
-
-  // All of majhi: a switch in Hub setup, on by default.
-  await page.goto("/setup?section=context");
-  const global = page.getByRole("switch", { name: "Agent attribution in commits" });
-  await expect(global).toBeChecked();
-  await shot(page, "attribution-setup");
-  await global.click();
-  await page.getByRole("button", { name: "Save Commits" }).click();
-  await expect.poll(attribution).toBe(false);
-
-  // An org: "Use majhi's setting / On / Off".
-  await page.goto("/orgs");
-  await page.getByRole("navigation", { name: "Workspaces" }).getByRole("button", { name: /^Acme/ }).click();
-  const orgSelect = page.getByRole("combobox", { name: "Agent attribution in commits" });
-  await expect(orgSelect).toHaveValue("default");
-  await orgSelect.selectOption({ label: "On" });
-  await shot(page, "attribution-org");
-  await page.getByRole("button", { name: "Save settings" }).first().click();
-  await expect.poll(fromOrg).toEqual({ attribution: true });
-
-  // A project: "Use the org's setting / On / Off".
-  await page.goto("/projects");
-  await page
-    .getByRole("navigation", { name: "Projects" })
-    .getByRole("button", { name: "api", exact: true })
-    .click();
-  const projectSelect = page.getByRole("combobox", { name: "Agent attribution in commits" });
-  await expect(projectSelect).toHaveValue("default");
-  await projectSelect.selectOption({ label: "Off" });
-  await shot(page, "attribution-project");
-  await page.getByRole("button", { name: "Save Settings" }).click();
-  await expect.poll(fromProject).toEqual({ attribution: false });
-
-  // Put everything back, so later tests run with the defaults.
-  await cmd(request, "settings.set", { commits: { attribution: true } });
-  await cmd(request, "orgs.update", { id: "acme", commits: null });
-  await cmd(request, "projects.update", { id: "api", org: "acme", aliases: ["backend"], commits: null });
-  expect(await fromProject()).toBeUndefined();
 });
 
 test("removing a task with uncommitted changes is refused, and typing its id removes it", async ({

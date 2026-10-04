@@ -16,7 +16,7 @@ import type {
  *
  * Screenshots go to SHOTS. Run: `pnpm exec playwright test -c playwright.onboarding.config.ts`.
  */
-const SHOTS = "/private/tmp/claude-501/onb-demo";
+const _SHOTS = "/private/tmp/claude-501/onb-demo";
 const HOME = "/Users/owner";
 const NOW = Date.now();
 const iso = (minutesAgo: number) => new Date(NOW - minutesAgo * 60_000).toISOString();
@@ -146,7 +146,7 @@ const job = (fullName: string, rest: Partial<CloneJob> & Pick<CloneJob, "state">
     ...rest,
   }) as CloneJob;
 
-const MIXED_JOBS: CloneJob[] = [
+const _MIXED_JOBS: CloneJob[] = [
   job("acme/billing-api", { state: "cloning", phase: "receiving", percent: 62 }),
   job("acme/storefront", { state: "queued" }),
   job("acme/mobile-app", { state: "cloning", phase: "resolving", percent: 88 }),
@@ -480,7 +480,7 @@ async function open(
   await expect(page.getByRole("navigation", { name: "Setup progress" })).toBeVisible();
 }
 
-async function noPageScroll(page: Page) {
+async function _noPageScroll(page: Page) {
   const overflow = await page.evaluate(() => ({
     x: document.documentElement.scrollWidth - window.innerWidth,
     y: document.documentElement.scrollHeight - window.innerHeight,

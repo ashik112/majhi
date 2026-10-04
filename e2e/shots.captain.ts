@@ -561,7 +561,7 @@ function autonomy(s: Scenario): AutonomyStatus {
 }
 
 function decisions(): OwnerDecision[] {
-  const ship = (id: string, task: string, org: string, title: string, why: string): OwnerDecision => ({
+  const ship = (_id: string, task: string, org: string, title: string, why: string): OwnerDecision => ({
     id: `room:${task}:1`,
     kind: "ship",
     org,
