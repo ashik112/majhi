@@ -3,8 +3,8 @@ import { Hono } from "hono";
 import type { PhoneChannel } from "./phone.ts";
 
 /**
- * The links behind the phone's buttons: `/ops/phone/<decision>/<action>?t=<token>`. The token is the
- * only credential. A GET only shows a page with a button (mail scanners and link previews open links);
+ * The links behind the phone's buttons: `/ops/phone/<ref>/<action>?t=<token>`. The reference is random and
+ * names no decision; the token is the only credential. A GET only shows a page with a button (mail scanners and link previews open links);
  * the POST spends the token. majhi is not on the internet, so these answer only a phone that can reach
  * it. Too many wrong tries and the route stops answering for a while.
  */
@@ -37,9 +37,10 @@ export function opsPhoneRoutes(deps: { phone: PhoneChannel; now?: () => number }
   };
   const headers = { "cache-control": "no-store", "referrer-policy": "no-referrer" };
 
-  app.get("/ops/phone/:decision/:action", (c) => {
+  app.get("/ops/phone/:ref/:action", (c) => {
     const action = c.req.param("action");
-    if (!(PHONE_ACTIONS as readonly string[]).includes(action)) return c.text(PHONE_LINK_REFUSED, 404, headers);
+    if (!(PHONE_ACTIONS as readonly string[]).includes(action))
+      return c.text(PHONE_LINK_REFUSED, 404, headers);
     const url = new URL(c.req.url);
     return c.html(
       page("majhi", `${LABEL[action] ?? "Confirm"} this?`, {
@@ -51,14 +52,14 @@ export function opsPhoneRoutes(deps: { phone: PhoneChannel; now?: () => number }
     );
   });
 
-  app.post("/ops/phone/:decision/:action", async (c) => {
+  app.post("/ops/phone/:ref/:action", async (c) => {
     const action = c.req.param("action");
     const token = c.req.query("t") ?? "";
     if (!(PHONE_ACTIONS as readonly string[]).includes(action) || token === "") {
       return c.text(PHONE_LINK_REFUSED, 404, headers);
     }
     if (limited()) return c.text(PHONE_LINK_REFUSED, 429, headers);
-    const res = await deps.phone.act(c.req.param("decision"), action, token);
+    const res = await deps.phone.act(c.req.param("ref"), action, token);
     if (!res.ok) refused.push(now());
     return c.text(res.text, res.ok ? 200 : 403, headers);
   });

@@ -3,19 +3,19 @@ import type { PhoneAction } from "@majhi/shared";
 import type { OpsRepo } from "./repo.ts";
 
 /**
- * Single-use links for the phone's action buttons. A token is bound to one decision and one action,
- * signed with a key that lives in secrets.age, valid for a short time, and spent by its first use:
- * a copy of the link, a replay, a changed decision or action, a changed byte, or a stale link all get
- * the same refusal. Taking one button of a decision voids its others.
+ * Single-use links for the phone's action buttons. A link names an opaque reference, never a decision:
+ * `/ops/phone/<ref>/<action>?t=<token>`. The decision lives in majhi's database next to the reference,
+ * so a push on ntfy.sh carries no task id and no decision id. The token is signed with a key from
+ * secrets.age over the reference, the action, the expiry and the decision it is bound to; it is valid for
+ * a short time and spent by its first use. A copy, a replay, another decision, another action, a changed
+ * byte or a stale link all get the same refusal. Taking one button of a decision voids its others.
  */
 
 export const TOKEN_TTL_MS = 60 * 60_000;
 
 interface Payload {
-  /** Token id. */
+  /** Reference: random, also the link's path. */
   j: string;
-  /** Decision id. */
-  d: string;
   /** Action. */
   a: PhoneAction;
   /** Expires, epoch ms. */
@@ -26,8 +26,8 @@ function b64(buf: Buffer | string): string {
   return Buffer.from(buf).toString("base64url");
 }
 
-function sign(key: Buffer, body: string): Buffer {
-  return createHmac("sha256", key).update(body).digest();
+function sign(key: Buffer, body: string, decision: string): Buffer {
+  return createHmac("sha256", key).update(`${body}\n${decision}`).digest();
 }
 
 export type TokenVerdict =
@@ -43,37 +43,27 @@ export class PhoneTokens {
     private readonly ttlMs = TOKEN_TTL_MS,
   ) {}
 
-  /** A link token for one action on one decision. Undefined when no key is set up. */
-  async mint(decision: string, action: PhoneAction): Promise<string | undefined> {
+  /** A link for one action on one decision: the reference and the token. Undefined when no key is set up. */
+  async mint(decision: string, action: PhoneAction): Promise<{ ref: string; token: string } | undefined> {
     const key = await this.key();
     if (key === undefined) return undefined;
-    const jti = randomBytes(12).toString("base64url");
+    const ref = randomBytes(12).toString("base64url");
     const expires = this.now().getTime() + this.ttlMs;
-    this.repo.addToken(jti, decision, action, new Date(expires).toISOString());
-    const body = b64(JSON.stringify({ j: jti, d: decision, a: action, e: expires } satisfies Payload));
-    return `${body}.${b64(sign(key, body))}`;
+    this.repo.addToken(ref, decision, action, new Date(expires).toISOString());
+    const body = b64(JSON.stringify({ j: ref, a: action, e: expires } satisfies Payload));
+    return { ref, token: `${body}.${b64(sign(key, body, decision))}` };
   }
 
   /**
-   * Checks a token for the decision and action its link names and spends it. Everything that is wrong
+   * Checks a token for the reference and action its link names, and spends it. Everything that is wrong
    * with it is a refusal; the caller says one sentence for all of them.
    */
-  async redeem(token: string, decision: string, action: string): Promise<TokenVerdict> {
+  async redeem(token: string, ref: string, action: string): Promise<TokenVerdict> {
     const key = await this.key();
     if (key === undefined) return { ok: false, why: "unknown" };
     const [body, sig, extra] = token.split(".");
     if (body === undefined || sig === undefined || extra !== undefined || body === "" || sig === "") {
       return { ok: false, why: "malformed" };
-    }
-    const expected = sign(key, body);
-    let given: Buffer;
-    try {
-      given = Buffer.from(sig, "base64url");
-    } catch {
-      return { ok: false, why: "malformed" };
-    }
-    if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
-      return { ok: false, why: "signature" };
     }
     let payload: Payload;
     try {
@@ -81,21 +71,23 @@ export class PhoneTokens {
     } catch {
       return { ok: false, why: "malformed" };
     }
-    if (
-      typeof payload.j !== "string" ||
-      typeof payload.d !== "string" ||
-      typeof payload.a !== "string" ||
-      typeof payload.e !== "number"
-    ) {
+    if (typeof payload.j !== "string" || typeof payload.a !== "string" || typeof payload.e !== "number") {
       return { ok: false, why: "malformed" };
     }
-    if (payload.d !== decision || payload.a !== action) return { ok: false, why: "mismatch" };
-    if (payload.e < this.now().getTime()) return { ok: false, why: "expired" };
-    const stored = this.repo.token(payload.j);
+    if (payload.j !== ref || payload.a !== action) return { ok: false, why: "mismatch" };
+    const stored = this.repo.token(ref);
     if (stored === undefined) return { ok: false, why: "unknown" };
-    if (stored.decision !== payload.d || stored.action !== payload.a) return { ok: false, why: "mismatch" };
-    if (!this.repo.useToken(payload.j, this.now().toISOString())) return { ok: false, why: "used" };
-    return { ok: true, decision: payload.d, action: payload.a };
+    const expected = sign(key, body, stored.decision);
+    const given = Buffer.from(sig, "base64url");
+    if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+      return { ok: false, why: "signature" };
+    }
+    if (stored.action !== payload.a) return { ok: false, why: "mismatch" };
+    if (payload.e < this.now().getTime() || Date.parse(stored.expiresAt) < this.now().getTime()) {
+      return { ok: false, why: "expired" };
+    }
+    if (!this.repo.useToken(ref, this.now().toISOString())) return { ok: false, why: "used" };
+    return { ok: true, decision: stored.decision, action: payload.a };
   }
 
   /** Once a decision is answered, its remaining buttons are dead. */

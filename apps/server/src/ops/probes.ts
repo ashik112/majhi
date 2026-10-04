@@ -139,7 +139,10 @@ export async function httpProbe(def: OpsServiceDef, ports: ProbePorts): Promise<
     void res.body?.cancel().catch(() => undefined);
     return {
       ok: false,
-      detail: def.expectStatus === undefined ? `status ${res.status}` : `status ${res.status}, expected ${def.expectStatus}`,
+      detail:
+        def.expectStatus === undefined
+          ? `status ${res.status}`
+          : `status ${res.status}, expected ${def.expectStatus}`,
       ms,
     };
   }
@@ -171,7 +174,8 @@ export async function tlsProbe(def: OpsServiceDef, ports: ProbePorts): Promise<P
   try {
     const cert = await ports.tls(url.hostname, url.port === "" ? 443 : Number(url.port), TLS_TIMEOUT_MS);
     const days = Math.floor((cert.validTo.getTime() - ports.now().getTime()) / DAY_MS);
-    if (days < 0) return { ok: false, detail: `certificate expired ${-days} ${-days === 1 ? "day" : "days"} ago` };
+    if (days < 0)
+      return { ok: false, detail: `certificate expired ${-days} ${-days === 1 ? "day" : "days"} ago` };
     if (!cert.authorized) return { ok: false, detail: "certificate is not trusted" };
     if (days <= TLS_FAIL_DAYS) {
       return { ok: false, detail: `certificate expires in ${days} ${days === 1 ? "day" : "days"}` };
@@ -195,7 +199,10 @@ export async function dnsProbe(def: OpsServiceDef, ports: ProbePorts): Promise<P
   try {
     const addresses = await ports.lookup(host);
     return addresses.length > 0
-      ? { ok: true, detail: `resolves to ${addresses.length} ${addresses.length === 1 ? "address" : "addresses"}` }
+      ? {
+          ok: true,
+          detail: `resolves to ${addresses.length} ${addresses.length === 1 ? "address" : "addresses"}`,
+        }
       : { ok: false, detail: "name does not resolve" };
   } catch {
     return { ok: false, detail: "name does not resolve" };
@@ -223,7 +230,9 @@ export async function monitorProbe(
   const monitor = def.monitor;
   if (monitor === undefined) return { ok: true, detail: "no monitor" };
   if (ports.monitor === undefined) return "unavailable";
-  const read = await ports.monitor(org, monitor).catch((): MonitorRead => ({ state: "unavailable", why: "failed" }));
+  const read = await ports
+    .monitor(org, monitor)
+    .catch((): MonitorRead => ({ state: "unavailable", why: "failed" }));
   if (read.state === "unavailable") return "unavailable";
   const text = `${monitor.label} ${read.value}`;
   return read.value > monitor.max
@@ -239,14 +248,17 @@ export function systemPorts(
     ...parts,
     tls: (host, port, timeoutMs) =>
       new Promise((resolve, reject) => {
-        const socket = tlsConnect({ host, port, servername: host, rejectUnauthorized: false, timeout: timeoutMs }, () => {
-          const cert = socket.getPeerCertificate();
-          const authorized = socket.authorized;
-          socket.end();
-          const validTo = cert?.valid_to === undefined ? undefined : new Date(cert.valid_to);
-          if (validTo === undefined || Number.isNaN(validTo.getTime())) reject(new Error("no certificate"));
-          else resolve({ validTo, authorized });
-        });
+        const socket = tlsConnect(
+          { host, port, servername: host, rejectUnauthorized: false, timeout: timeoutMs },
+          () => {
+            const cert = socket.getPeerCertificate();
+            const authorized = socket.authorized;
+            socket.end();
+            const validTo = cert?.valid_to === undefined ? undefined : new Date(cert.valid_to);
+            if (validTo === undefined || Number.isNaN(validTo.getTime())) reject(new Error("no certificate"));
+            else resolve({ validTo, authorized });
+          },
+        );
         socket.once("timeout", () => {
           socket.destroy();
           reject(Object.assign(new Error("timeout"), { name: "TimeoutError" }));

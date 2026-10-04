@@ -139,7 +139,12 @@ export class Notifier {
    * never muted and never folded into a burst, and the desktop banner goes out even while a tab is open,
    * because it must be seen. A medium one waits out quiet hours like a decision. Low ones never come here.
    */
-  async incident(n: { id: number; text: string; severity: "high" | "medium"; repeat: boolean }): Promise<void> {
+  async incident(n: {
+    id: number;
+    text: string;
+    severity: "high" | "medium";
+    repeat: boolean;
+  }): Promise<void> {
     const settings = await this.deps.settings();
     const now = this.now();
     if (

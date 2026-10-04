@@ -28,7 +28,15 @@ export interface SelfCheck {
 }
 
 /** The Health checks whose failure is urgent. The rest are medium. */
-const HIGH_HEALTH = new Set(["disk", "host-helper", "backups", "secrets-key", "runner", "config", "config-folder"]);
+const HIGH_HEALTH = new Set([
+  "disk",
+  "host-helper",
+  "backups",
+  "secrets-key",
+  "runner",
+  "config",
+  "config-folder",
+]);
 
 export const LIMITS = {
   /** Event loop p99 delay, ms. */
@@ -214,7 +222,10 @@ export class SelfChecks {
 
   /** Health's checks and the measurements together, as the watch reads them. */
   async all(): Promise<SelfCheck[]> {
-    const [health, own] = await Promise.all([this.deps.health().catch((): HealthLike[] => []), this.measure()]);
+    const [health, own] = await Promise.all([
+      this.deps.health().catch((): HealthLike[] => []),
+      this.measure(),
+    ]);
     return [
       ...health.map(
         (h): SelfCheck => ({

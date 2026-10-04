@@ -92,7 +92,8 @@ function parseJson<T>(raw: string, fallback: T): T {
 }
 
 function toIncident(r: IncidentRow): StoredIncident {
-  const fix = r.fix === null ? undefined : parseJson<{ check: string; label: string } | undefined>(r.fix, undefined);
+  const fix =
+    r.fix === null ? undefined : parseJson<{ check: string; label: string } | undefined>(r.fix, undefined);
   const base = OpsIncidentSchema.parse({
     id: r.id,
     org: r.org,
@@ -176,9 +177,9 @@ export class OpsRepo {
   // Check state ---------------------------------------------------------------
 
   state(service: string, kind: OpsCheckKind): CheckState | undefined {
-    const row = this.db.prepare("SELECT * FROM ops_state WHERE service = ? AND kind = ?").get(service, kind) as
-      | StateRow
-      | undefined;
+    const row = this.db
+      .prepare("SELECT * FROM ops_state WHERE service = ? AND kind = ?")
+      .get(service, kind) as StateRow | undefined;
     return row === undefined ? undefined : toState(row);
   }
 
@@ -237,7 +238,9 @@ export class OpsRepo {
   // Incidents -----------------------------------------------------------------
 
   incident(id: number): StoredIncident | undefined {
-    const row = this.db.prepare("SELECT * FROM ops_incidents WHERE id = ?").get(id) as IncidentRow | undefined;
+    const row = this.db.prepare("SELECT * FROM ops_incidents WHERE id = ?").get(id) as
+      | IncidentRow
+      | undefined;
     return row === undefined ? undefined : toIncident(row);
   }
 
@@ -251,14 +254,18 @@ export class OpsRepo {
 
   open(): StoredIncident[] {
     return (
-      this.db.prepare("SELECT * FROM ops_incidents WHERE status = 'open' ORDER BY id DESC").all() as IncidentRow[]
+      this.db
+        .prepare("SELECT * FROM ops_incidents WHERE status = 'open' ORDER BY id DESC")
+        .all() as IncidentRow[]
     ).map(toIncident);
   }
 
   recent(limit: number): StoredIncident[] {
     return (
       this.db
-        .prepare("SELECT * FROM ops_incidents WHERE status = 'resolved' ORDER BY resolved_at DESC, id DESC LIMIT ?")
+        .prepare(
+          "SELECT * FROM ops_incidents WHERE status = 'resolved' ORDER BY resolved_at DESC, id DESC LIMIT ?",
+        )
         .all(limit) as IncidentRow[]
     ).map(toIncident);
   }
@@ -348,8 +355,9 @@ export class OpsRepo {
   /** Marks one token used. True only for the first caller: a replay finds it used and gets false. */
   useToken(jti: string, at: string): boolean {
     return (
-      this.db.prepare("UPDATE ops_phone_tokens SET used_at = ? WHERE jti = ? AND used_at IS NULL").run(at, jti)
-        .changes === 1
+      this.db
+        .prepare("UPDATE ops_phone_tokens SET used_at = ? WHERE jti = ? AND used_at IS NULL")
+        .run(at, jti).changes === 1
     );
   }
 

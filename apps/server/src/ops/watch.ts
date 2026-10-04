@@ -18,7 +18,15 @@ import {
 import { UserError } from "../errors.ts";
 import type { FindingsService } from "../findings/service.ts";
 import type { PhoneChannel } from "./phone.ts";
-import { dnsProbe, httpProbe, monitorProbe, type ProbePorts, type ProbeResult, tlsProbe, urlProblem } from "./probes.ts";
+import {
+  dnsProbe,
+  httpProbe,
+  monitorProbe,
+  type ProbePorts,
+  type ProbeResult,
+  tlsProbe,
+  urlProblem,
+} from "./probes.ts";
 import type { CheckState, OpsRepo, StoredIncident, StoredService } from "./repo.ts";
 
 /**
@@ -172,7 +180,8 @@ export class OpsWatch {
     if (def.monitor !== undefined) {
       try {
         const args: unknown = JSON.parse(def.monitor.args);
-        if (args === null || typeof args !== "object" || Array.isArray(args)) throw new Error("not an object");
+        if (args === null || typeof args !== "object" || Array.isArray(args))
+          throw new Error("not an object");
       } catch {
         throw new UserError("The monitor's arguments must be a JSON object, like {}.", 400);
       }
@@ -294,17 +303,27 @@ export class OpsWatch {
   ): Promise<Look | undefined> {
     let result = await run();
     if (result === "unavailable") {
-      await this.record(service.id, kind, { ok: false, unknown: true, detail: "the monitoring connection did not answer" });
+      await this.record(service.id, kind, {
+        ok: false,
+        unknown: true,
+        detail: "the monitoring connection did not answer",
+      });
       return undefined;
     }
     if (!result.ok && retry) {
       // The slow checks have no cadence to confirm them: look again once, a moment later.
-      await (this.deps.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms))))(this.deps.retryMs ?? RETRY_MS);
+      await (this.deps.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms))))(
+        this.deps.retryMs ?? RETRY_MS,
+      );
       result = await run().then((r) => (r === "unavailable" ? result : r));
       if (result === "unavailable") return undefined;
     }
     if (!result.ok && kind !== "monitor" && !(await this.deps.online())) {
-      const unknown: Look = { ok: false, unknown: true, detail: "no network on this machine, so majhi cannot tell" };
+      const unknown: Look = {
+        ok: false,
+        unknown: true,
+        detail: "no network on this machine, so majhi cannot tell",
+      };
       await this.record(service.id, kind, unknown);
       return unknown;
     }
@@ -317,7 +336,15 @@ export class OpsWatch {
   async record(subject: string, kind: OpsCheckKind, look: Look): Promise<CheckState> {
     const prev = this.deps.repo.state(subject, kind);
     const at = this.at();
-    const base: CheckState = prev ?? { service: subject, kind, recent: [], fails: 0, lastDetail: "", unknown: false, warn: false };
+    const base: CheckState = prev ?? {
+      service: subject,
+      kind,
+      recent: [],
+      fails: 0,
+      lastDetail: "",
+      unknown: false,
+      warn: false,
+    };
     let next: CheckState;
     if (look.unknown === true) {
       // Nothing is learned: the window and the counts stay as they were.
@@ -403,7 +430,8 @@ export class OpsWatch {
     if (subject.id.startsWith("self:")) return `majhi: ${subject.name} is failing`;
     if (first.kind === "url") {
       if (first.lastDetail.startsWith("slow")) return `${subject.name} is slow`;
-      if (first.lastDetail.startsWith("the expected text")) return `${subject.name} answers with the wrong page`;
+      if (first.lastDetail.startsWith("the expected text"))
+        return `${subject.name} answers with the wrong page`;
       return `${subject.name} is down`;
     }
     return `${subject.name}: ${first.lastDetail}`;
@@ -417,7 +445,11 @@ export class OpsWatch {
   }
 
   /** A confirmed failure. True when something changed that is news (a new, reopened or worse incident). */
-  private async fail(subject: Subject, failing: readonly CheckState[], open: StoredIncident | undefined): Promise<boolean> {
+  private async fail(
+    subject: Subject,
+    failing: readonly CheckState[],
+    open: StoredIncident | undefined,
+  ): Promise<boolean> {
     const severity = this.severityOf(subject, failing);
     const title = this.titleOf(subject, failing);
     const evidence = this.evidenceOf(subject, failing);
@@ -432,7 +464,11 @@ export class OpsWatch {
         }
       }
       const raised = RANK[severity] > RANK[open.severity];
-      const next: StoredIncident = { ...open, severity: raised ? severity : open.severity, timeline: cap(timeline) };
+      const next: StoredIncident = {
+        ...open,
+        severity: raised ? severity : open.severity,
+        timeline: cap(timeline),
+      };
       this.deps.repo.saveIncident(next);
       await this.reportFinding(subject, next, title, evidence);
       if (raised) {
@@ -456,7 +492,10 @@ export class OpsWatch {
         status: "open",
         severity: RANK[severity] > RANK[last.severity] ? severity : last.severity,
         flaps: last.flaps + 1,
-        timeline: cap([...last.timeline, { at, kind: "reopened", text: `Failing again: ${evidence.join("; ")}` }]),
+        timeline: cap([
+          ...last.timeline,
+          { at, kind: "reopened", text: `Failing again: ${evidence.join("; ")}` },
+        ]),
       };
       delete next.resolvedAt;
       this.deps.repo.saveIncident(next);
@@ -526,10 +565,7 @@ export class OpsWatch {
       ...inc,
       status: "resolved",
       resolvedAt: at,
-      timeline: cap([
-        ...inc.timeline,
-        { at, kind: "resolved", text: `${why}. Open for ${span(duration)}.` },
-      ]),
+      timeline: cap([...inc.timeline, { at, kind: "resolved", text: `${why}. Open for ${span(duration)}.` }]),
     };
     this.deps.repo.saveIncident(next);
     if (next.finding !== undefined) {
@@ -555,10 +591,16 @@ export class OpsWatch {
       ? `${ws}: an incident has not been acknowledged yet`
       : `${ws}: incident, ${inc.severity}. Open Watch.`;
     // A failing notification must never stop the rest: ntfy down, no helper, a closed tab.
-    await this.deps.notify({ id: inc.id, org: inc.org, severity: inc.severity, text, repeat }).catch(() => undefined);
+    await this.deps
+      .notify({ id: inc.id, org: inc.org, severity: inc.severity, text, repeat })
+      .catch(() => undefined);
     const stored = this.deps.repo.incident(inc.id) ?? inc;
     const next: StoredIncident = { ...stored, timeline: [...stored.timeline] };
-    next.timeline.push({ at: this.at(), kind: repeat ? "escalated" : "alerted", text: repeat ? "Not acknowledged: alerted again" : "Alerted you" });
+    next.timeline.push({
+      at: this.at(),
+      kind: repeat ? "escalated" : "alerted",
+      text: repeat ? "Not acknowledged: alerted again" : "Alerted you",
+    });
     if (inc.severity === "high") {
       const sent = await this.deps.phone.pushIncident(inc, repeat).catch(() => ({ sent: false }));
       if (sent.sent) {
@@ -618,11 +660,18 @@ export class OpsWatch {
           } else if (next.phoneAt === undefined && next.escalatedAt === undefined) {
             // The phone was down at the start, or set up since: try again.
             const sent = await this.deps.phone.pushIncident(next, false).catch(() => ({ sent: false }));
-            if (sent.sent) this.deps.repo.saveIncident({ ...(this.deps.repo.incident(next.id) ?? next), phoneAt: this.at() });
+            if (sent.sent)
+              this.deps.repo.saveIncident({
+                ...(this.deps.repo.incident(next.id) ?? next),
+                phoneAt: this.at(),
+              });
           } else if (next.escalatedAt !== undefined && next.phoneEscalatedAt === undefined) {
             const sent = await this.deps.phone.pushIncident(next, true).catch(() => ({ sent: false }));
             if (sent.sent) {
-              this.deps.repo.saveIncident({ ...(this.deps.repo.incident(next.id) ?? next), phoneEscalatedAt: this.at() });
+              this.deps.repo.saveIncident({
+                ...(this.deps.repo.incident(next.id) ?? next),
+                phoneEscalatedAt: this.at(),
+              });
             }
           }
         }
@@ -648,7 +697,13 @@ export class OpsWatch {
     const fresh = lines.filter((l) => !inc.timeline.some((t) => t.kind === "action" && t.text === l));
     if (fresh.length === 0) return inc;
     const at = this.at();
-    const next = { ...inc, timeline: cap([...inc.timeline, ...fresh.map((text): OpsTimelineEntry => ({ at, kind: "action", text: text.slice(0, 300) }))]) };
+    const next = {
+      ...inc,
+      timeline: cap([
+        ...inc.timeline,
+        ...fresh.map((text): OpsTimelineEntry => ({ at, kind: "action", text: text.slice(0, 300) })),
+      ]),
+    };
     this.deps.repo.saveIncident(next);
     return next;
   }
@@ -675,7 +730,13 @@ export class OpsWatch {
     return this.deps.repo
       .open()
       .filter((i) => i.severity === "high" && i.ackedAt === undefined)
-      .map((i) => ({ id: i.id, org: i.org, title: i.title, at: i.openedAt, escalated: i.escalatedAt !== undefined }));
+      .map((i) => ({
+        id: i.id,
+        org: i.org,
+        title: i.title,
+        at: i.openedAt,
+        escalated: i.escalatedAt !== undefined,
+      }));
   }
 
   /** Open incidents, newest first, for the sidebar lamp and the page. */
@@ -743,7 +804,15 @@ export class OpsWatch {
       .sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind))
       .map((s) => ({
         kind: s.kind,
-        status: s.unknown ? "unknown" : s.lastOk === undefined ? "new" : s.lastOk ? "up" : this.confirmed(s) ? "down" : "checking",
+        status: s.unknown
+          ? "unknown"
+          : s.lastOk === undefined
+            ? "new"
+            : s.lastOk
+              ? "up"
+              : this.confirmed(s)
+                ? "down"
+                : "checking",
         detail: s.lastDetail,
         ...(s.lastAt === undefined ? {} : { at: s.lastAt }),
         ...(s.lastMs === undefined ? {} : { ms: s.lastMs }),
@@ -782,7 +851,9 @@ export class OpsWatch {
 
   async overview(org?: string): Promise<OpsOverview> {
     const services = this.deps.repo.services(org).map((s) => this.view(s));
-    const incidents = [...this.deps.repo.open(), ...this.deps.repo.recent(30)].filter((i) => org === undefined || i.org === org);
+    const incidents = [...this.deps.repo.open(), ...this.deps.repo.recent(30)].filter(
+      (i) => org === undefined || i.org === org,
+    );
     return {
       services,
       incidents: incidents.map(({ key: _key, phoneAt: _p, phoneEscalatedAt: _pe, ...rest }) => rest),
@@ -809,7 +880,10 @@ function cap(t: OpsTimelineEntry[]): OpsTimelineEntry[] {
 /** The incident as text for its finding: what happened, in order. */
 export function renderTimeline(inc: OpsIncident): string {
   const lines = inc.timeline.map((t) => `${clock(t.at)}  ${t.text}`);
-  const head = inc.status === "resolved" ? `Resolved. ${inc.flaps > 0 ? `Came back ${inc.flaps} ${inc.flaps === 1 ? "time" : "times"}. ` : ""}` : "Open. ";
+  const head =
+    inc.status === "resolved"
+      ? `Resolved. ${inc.flaps > 0 ? `Came back ${inc.flaps} ${inc.flaps === 1 ? "time" : "times"}. ` : ""}`
+      : "Open. ";
   return `${head}Timeline (UTC):\n${lines.join("\n")}`.slice(0, 4000);
 }
 

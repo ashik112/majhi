@@ -1,12 +1,11 @@
-import type { NotificationsSettings, OwnerDecision } from "@majhi/shared";
+import type { Draft, NotificationsSettings, OwnerDecision } from "@majhi/shared";
 import type Database from "better-sqlite3";
 import type { ConnectionTester } from "../connections/tester.ts";
 import type { FindingsService } from "../findings/service.ts";
 import { inQuietHours } from "../notify/attention.ts";
 import type { Notifier } from "../notify/service.ts";
-import type { Draft } from "@majhi/shared";
+import { PhoneChannel, SECRET_KEY, type SecretsPort } from "./phone.ts";
 import { numberAt, type ProbePorts, systemPorts } from "./probes.ts";
-import { PhoneChannel, type SecretsPort, SECRET_KEY } from "./phone.ts";
 import { OpsRepo } from "./repo.ts";
 import { PhoneTokens } from "./tokens.ts";
 import { OpsWatch } from "./watch.ts";
@@ -28,7 +27,10 @@ export interface OpsWiring {
     orgOf: (id: string) => Promise<string | undefined>;
   };
   tester: Pick<ConnectionTester, "callRemoteTool">;
-  inbox: { list(): Promise<OwnerDecision[]>; answer(input: { id: string; option: string }): Promise<unknown> };
+  inbox: {
+    list(): Promise<OwnerDecision[]>;
+    answer(input: { id: string; option: string }): Promise<unknown>;
+  };
   drafts: (org: string) => Draft[];
   notifications: () => Promise<NotificationsSettings>;
   /** False when this machine has no network. */

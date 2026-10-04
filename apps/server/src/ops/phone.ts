@@ -106,7 +106,10 @@ export function serverProblem(raw: string): string | undefined {
 }
 
 export function addressProblem(raw: string): string | undefined {
-  return serverProblem(raw)?.replace("Use https://ntfy.sh or your own ntfy server.", "Use an address like http://192.168.1.20:7070.");
+  return serverProblem(raw)?.replace(
+    "Use https://ntfy.sh or your own ntfy server.",
+    "Use an address like http://192.168.1.20:7070.",
+  );
 }
 
 function origin(raw: string): string {
@@ -164,10 +167,14 @@ export class PhoneChannel {
   }
 
   /** Makes the topic and the signing key. The topic goes back once, to the screen that shows the QR. */
-  async setup(input: { server?: string | undefined; token?: string | undefined }): Promise<OpsPhoneSetupResult> {
-    const server = origin(input.server ?? NTFY_DEFAULT);
-    const problem = serverProblem(server);
+  async setup(input: {
+    server?: string | undefined;
+    token?: string | undefined;
+  }): Promise<OpsPhoneSetupResult> {
+    const given = input.server ?? NTFY_DEFAULT;
+    const problem = serverProblem(given);
     if (problem !== undefined) throw new UserError(problem, 400);
+    const server = origin(given);
     const topic = `majhi-${randomBytes(18).toString("base64url")}`;
     await this.deps.secrets.set(SECRET_TOPIC, topic);
     await this.deps.secrets.set(SECRET_KEY, randomBytes(32).toString("base64"));
@@ -256,7 +263,11 @@ export class PhoneChannel {
     const { lastError: _e, lastSentAt: _l, ...rest } = s;
     this.save({
       ...rest,
-      ...(error === undefined ? { lastSentAt: now } : s.lastSentAt === undefined ? {} : { lastSentAt: s.lastSentAt }),
+      ...(error === undefined
+        ? { lastSentAt: now }
+        : s.lastSentAt === undefined
+          ? {}
+          : { lastSentAt: s.lastSentAt }),
       ...(error === undefined ? {} : { lastError: error }),
     });
     this.deps.changed();
@@ -270,8 +281,9 @@ export class PhoneChannel {
     );
   }
 
-  private link(address: string, decision: string, action: PhoneAction, token: string): string {
-    return `${address}/ops/phone/${encodeURIComponent(decision)}/${action}?t=${token}`;
+  /** A button's link: an opaque reference and the signed token. It names no decision and no task. */
+  private link(address: string, minted: { ref: string; token: string }, action: PhoneAction): string {
+    return `${address}/ops/phone/${minted.ref}/${action}?t=${minted.token}`;
   }
 
   /** The push for an incident. `repeat` is the second, louder one. */
@@ -297,7 +309,7 @@ export class PhoneChannel {
         push.actions.unshift({
           action: "http",
           label: "Acknowledge",
-          url: this.link(s.address, decision, "ack", token),
+          url: this.link(s.address, token, "ack"),
           method: "POST",
           clear: true,
         });
@@ -334,8 +346,20 @@ export class PhoneChannel {
         const leave = await this.deps.tokens.mint(d.id, "leave");
         if (approve !== undefined && leave !== undefined) {
           push.actions.unshift(
-            { action: "http", label: "Approve", url: this.link(s.address, d.id, "approve", approve), method: "POST", clear: true },
-            { action: "http", label: "Leave", url: this.link(s.address, d.id, "leave", leave), method: "POST", clear: true },
+            {
+              action: "http",
+              label: "Approve",
+              url: this.link(s.address, approve, "approve"),
+              method: "POST",
+              clear: true,
+            },
+            {
+              action: "http",
+              label: "Leave",
+              url: this.link(s.address, leave, "leave"),
+              method: "POST",
+              clear: true,
+            },
           );
         }
       }
@@ -351,12 +375,13 @@ export class PhoneChannel {
    * A button was pressed: spend the token, then do what the owner would have done in Decisions. Every
    * refusal is the same sentence.
    */
-  async act(decision: string, action: string, token: string): Promise<{ ok: boolean; text: string }> {
+  async act(ref: string, action: string, token: string): Promise<{ ok: boolean; text: string }> {
     const refused = { ok: false, text: "This link does not work. Open majhi to answer." };
     const s = this.load();
     if (s === undefined || !s.enabled) return refused;
-    const verdict = await this.deps.tokens.redeem(token, decision, action);
+    const verdict = await this.deps.tokens.redeem(token, ref, action);
     if (!verdict.ok) return refused;
+    const decision = verdict.decision;
     if (verdict.action === "ack") {
       const parsed = /^incident:([1-9]\d*)$/.exec(decision);
       if (parsed === null) return refused;

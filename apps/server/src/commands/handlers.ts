@@ -38,6 +38,7 @@ import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import { inboxHandlers } from "../inbox/handlers.ts";
 import { mcpHandlers } from "../mcp-servers/handlers.ts";
 import { hostNameOf } from "../mrs/remote.ts";
+import { opsHandlers } from "../ops/handlers.ts";
 import {
   checkSavedLogin,
   checkToken,
@@ -49,7 +50,6 @@ import {
 } from "../orgs/gitAccount.ts";
 import { type AdoptDeps, useGitLogin } from "../orgs/gitLogin.ts";
 import { CheckCache, gitStatus } from "../orgs/gitStatus.ts";
-import { opsHandlers } from "../ops/handlers.ts";
 import { playbookHandlers } from "../playbooks/handlers.ts";
 import { attributionOf, orgIdentity } from "../runs/attribution.ts";
 import { commitBy } from "../runs/checkpoint.ts";

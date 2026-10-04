@@ -21,7 +21,12 @@ export interface BossWorld extends World {
  * processes can reach `/mcp`), and sessions that run the fake ACP adapter.
  */
 export async function bossWorld(
-  options: { real?: boolean; runClock?: () => Date; opsProbes?: WorldOptions["opsProbes"]; ntfyFetch?: WorldOptions["ntfyFetch"] } = {},
+  options: {
+    real?: boolean;
+    runClock?: () => Date;
+    opsProbes?: WorldOptions["opsProbes"];
+    ntfyFetch?: WorldOptions["ntfyFetch"];
+  } = {},
 ): Promise<BossWorld> {
   const w = await taskWorld({
     ...(options.runClock === undefined ? {} : { runClock: options.runClock }),

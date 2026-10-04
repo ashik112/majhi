@@ -1143,7 +1143,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         text: n.text,
         ...(n.project === undefined
           ? { org: n.org, kind: "ops" as const }
-          : { repos: [{ project: n.project }] }),
+          : { repos: [{ project: n.project }], ...(n.code === true ? { kind: "code" as const } : {}) }),
         byOwner: n.byOwner,
         attachments: [],
         start: false,
@@ -1433,7 +1433,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org),
     projectOrg: async (id) => (await config.sections()).projects[id]?.org,
     connections: {
-      list: async (org) => (await connections.list(org)).map((c) => ({ id: c.id, name: c.name, type: c.type })),
+      list: async (org) =>
+        (await connections.list(org)).map((c) => ({ id: c.id, name: c.name, type: c.type })),
       orgOf: async (id) => (await connections.find(id))?.org,
     },
     tester: connectionTests,

@@ -26,7 +26,8 @@ export const OPS_PLAYBOOKS: Playbook[] = [
     enabledByDefault: false,
     readOnly: true,
     watch: true,
-    turnOn: "Checks your services every 5 minutes. A confirmed failure opens an incident and wakes the captain.",
+    turnOn:
+      "Checks your services every 5 minutes. A confirmed failure opens an incident and wakes the captain.",
     runner: { kind: "rules", id: "uptime" },
     settings: [],
   },
