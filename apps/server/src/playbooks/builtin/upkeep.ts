@@ -221,6 +221,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     outcomes: [
       { id: "tidy-retest", text: "A failing connection: test it again" },
       { id: "tidy-propose", text: "Something stale: propose closing it" },
+      { id: "tidy-secrets", text: "A secret request unanswered for 3 days and no longer needed: withdraw it" },
       { id: "tidy-dirty", text: "A worktree with uncommitted changes: ask me, never remove" },
     ],
     runner: { kind: "chore", chore: "tidy" },

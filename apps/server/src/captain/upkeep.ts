@@ -1,8 +1,8 @@
 import type { CaptainChore } from "@majhi/shared";
+import { upperFirst } from "../machine/busy.ts";
 import type { CaptainPorts } from "./ports.ts";
 import type { ChoreRun } from "./runner.ts";
 import { type Candidate, MAX_ACCOUNT_SLOTS, type Signal } from "./upkeep-ports.ts";
-import { upperFirst } from "../machine/busy.ts";
 
 /**
  * The self-upkeep chores: the captain keeps majhi itself in shape. Each run is cheap, one pass over
@@ -176,6 +176,23 @@ export function createUpkeepChores(ports: CaptainPorts): Chores {
             };
             if (await file(run, s, false)) left += 1;
           }
+        }
+      }
+      // A secret request nobody answered for days: withdrawn when the task closed or the secret came another way.
+      if (!off(run, "tidy-secrets")) {
+        for (const r of await u.staleSecrets(org)) {
+          if (r.obsolete === undefined) continue;
+          run.check();
+          const outcome = await run.act({
+            key: `tidy:secret:${r.task}:${r.item}`,
+            text: `Withdrew the secret request ${clip(r.label, 60)} in ${r.task}`,
+            reason: r.obsolete,
+            do: async () => {
+              await u.withdrawSecret(r.task, r.item, r.obsolete ?? "");
+              return { undoNote: "The agent can ask again" };
+            },
+          });
+          if (outcome === "done") fixed += 1;
         }
       }
       // Worktrees of done tasks: the cleanup chore removes the clean ones. Here the dirty ones are

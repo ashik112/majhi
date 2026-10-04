@@ -38,6 +38,15 @@ export interface AccountSlots {
   headroom: boolean;
 }
 
+/** A secret request that waited for the owner past the stale limit, and whether anything still needs it. */
+export interface StaleSecret {
+  task: string;
+  item: string;
+  label: string;
+  /** Why it is no longer needed. Absent while the task is open and the secret is not saved. */
+  obsolete?: string | undefined;
+}
+
 export interface HealthCheckView {
   id: string;
   group: string;
@@ -56,6 +65,10 @@ export interface UpkeepPorts {
 
   /** Stale inbox items, old previews, dead watches, items that wait for the owner too long. */
   tidy(org: string): Promise<Signal[]>;
+  /** Secret requests of the workspace's tasks that waited more than 3 days with no answer. */
+  staleSecrets(org: string): Promise<StaleSecret[]>;
+  /** Ends a stale secret request: the asking agent is told it was withdrawn and why. */
+  withdrawSecret(task: string, item: string, reason: string): Promise<void>;
   /** Connections whose last test failed. */
   failingConnections(org: string): Promise<{ id: string; name: string }[]>;
   /** Tests it again: true when it passes now. */

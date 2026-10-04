@@ -2480,6 +2480,8 @@ export const commands = {
       item: z.string(),
       decision: z.enum(["approve", "reject"]),
       always: z.object({ scope: z.enum(["task", "org"]) }).optional(),
+      /** Rejecting a secret request: the one line the asking agent is told. */
+      reason: z.string().max(300).optional(),
     }),
     output: z.object({ item: RoomItemSchema }),
   },

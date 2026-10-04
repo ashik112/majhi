@@ -838,6 +838,7 @@ export function createHandlers({
               scope: input.always.scope,
               change: { command: ctx.command, meta: ctx.meta, summary: "saved an always-allow rule" },
             },
+        { by: ctx.meta.actor.kind === "agent" ? "captain" : "owner", reason: input.reason },
       ),
     }),
     "room.secret": async (input) => ({

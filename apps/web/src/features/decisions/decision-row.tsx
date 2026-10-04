@@ -3,12 +3,13 @@ import { useRunAttention } from "@/components/shell/banner";
 import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
 import { useToast } from "@/components/ui/toast";
+import { SecretAnswer } from "@/features/room/secret-answer";
 import { useAnswerDecision } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 import { useNow } from "@/lib/use-now";
 import { WorkspaceName } from "./decision-list";
-import { actionOf, openLabel, workspaceOf } from "./model";
+import { actionOf, openLabel, secretCardOf, workspaceOf } from "./model";
 
 export { workspaceOf };
 
@@ -51,6 +52,7 @@ export function DecisionRow({
   const now = useNow(60_000);
   const workspace = workspaceOf(decision);
   const busy = answer.isPending;
+  const secret = secretCardOf(decision);
   // Work to ship has several answers on its page; here the main one is enough.
   const options = decision.options.filter(
     (o) => o.text !== true && (decision.kind !== "ship" || o.primary === true),
@@ -87,6 +89,9 @@ export function DecisionRow({
         {decision.kind === "ship" && decision.taskTitle !== undefined ? decision.taskTitle : decision.title}
       </button>
       <Suggestion decision={decision} dense={dense} />
+      {secret !== undefined && (
+        <SecretAnswer task={secret.task} item={secret.item} label={decision.title} compact />
+      )}
       <div className="flex min-w-0 flex-wrap items-center gap-2 pt-0.5">
         {options.map((option) => (
           <Button
@@ -102,9 +107,9 @@ export function DecisionRow({
         ))}
         <Button
           size="sm"
-          variant={options.length === 0 ? "primary" : "ghost"}
+          variant={options.length === 0 && secret === undefined ? "primary" : "ghost"}
           data-notice=""
-          className={options.length === 0 ? undefined : "ml-auto px-2"}
+          className={options.length === 0 && secret === undefined ? undefined : "ml-auto px-2"}
           onClick={() => {
             onOpen?.();
             run(actionOf(decision.link));

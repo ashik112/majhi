@@ -47,6 +47,15 @@ export function workspaceOf(decision: Pick<OwnerDecision, "org" | "task">): stri
   return decision.org ?? (decision.task === undefined ? undefined : PRIVATE);
 }
 
+/** The room card a secret decision answers (`room:<task>:<item>`), or undefined for any other decision. */
+export function secretCardOf(decision: OwnerDecision): { task: string; item: string } | undefined {
+  if (decision.kind !== "secret" || decision.task === undefined) return undefined;
+  const prefix = `room:${decision.task}:`;
+  return decision.id.startsWith(prefix)
+    ? { task: decision.task, item: decision.id.slice(prefix.length) }
+    : undefined;
+}
+
 /** What the queue shows for a decision: the task's title for work, else the line itself. */
 export function rowTitle(decision: OwnerDecision): string {
   if ((decision.kind === "ship" || decision.kind === "paused") && decision.taskTitle !== undefined) {

@@ -22,7 +22,13 @@ function fakeFindings(dismissed: string[] = []) {
   };
 }
 
-const mcp = (id: string): Candidate => ({ kind: "mcp", id, title: id, description: "A server", installed: false });
+const mcp = (id: string): Candidate => ({
+  kind: "mcp",
+  id,
+  title: id,
+  description: "A server",
+  installed: false,
+});
 const skill = (id: string, installs: number): Candidate => ({
   kind: "skill",
   id,
@@ -109,11 +115,41 @@ describe("discover", () => {
   });
 });
 
+describe("tidy stale secret requests", () => {
+  it("withdraws a request that is no longer needed and leaves one that is", async () => {
+    const pending = new Map([
+      ["secret:a", "waiting"],
+      ["secret:b", "waiting"],
+    ]);
+    const withdrawn: string[] = [];
+    const t = setup({
+      upkeep: {
+        failingConnections: async () => [],
+        tidy: async () => [],
+        staleSecrets: async () =>
+          [...pending.keys()].map((item) => ({
+            task: "ACM-1",
+            item,
+            label: "A key",
+            obsolete: item === "secret:a" ? "Its task is closed" : undefined,
+          })),
+        withdrawSecret: async (_task, item, reason) => {
+          withdrawn.push(`${item}: ${reason}`);
+          pending.delete(item);
+        },
+      },
+    });
+    await t.runner.start("acme", "tidy", "daily");
+    expect(withdrawn).toEqual(["secret:a: Its task is closed"]);
+    expect([...pending.keys()]).toEqual(["secret:b"]);
+  });
+});
+
 describe("tidy", () => {
   it("never removes a worktree with uncommitted changes, and names it for the owner", async () => {
     const clean = vi.fn(async () => ({ removed: [], kept: [] }));
     const t = setup({
-      upkeep: { failingConnections: async () => [], tidy: async () => [] },
+      upkeep: { failingConnections: async () => [], staleSecrets: async () => [], tidy: async () => [] },
       ports: {
         clean,
         cleanable: async () => [
@@ -174,7 +210,11 @@ describe("agent slots", () => {
   it("never raises while the machine is busy", async () => {
     const setAccountSlots = vi.fn(async () => {});
     const t = setup({
-      upkeep: { ...slots(2), setAccountSlots, machineBusy: () => "the machine is busy: load 30.0 on 10 cores" },
+      upkeep: {
+        ...slots(2),
+        setAccountSlots,
+        machineBusy: () => "the machine is busy: load 30.0 on 10 cores",
+      },
       rules: { fullAccess: true } as AutonomyOrg,
     });
     await t.runner.start("acme", "checklist", "daily");
