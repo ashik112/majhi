@@ -186,7 +186,11 @@ describe("the helper's git in a repo whose config names commands", () => {
         await plain(work, "config", key, value);
       }
 
-      const deps = { run: runCommand, home: dir, path: PATH, kind: async () => "directory" as const };
+      // Like `plain`, without the machine's system config: on a Mac it names the Keychain as the
+      // credential helper, which this test would ask for a password and then store the fake one in.
+      const hermetic: typeof runCommand = (file, args, o) =>
+        runCommand(file, args, { ...o, env: { ...o.env, GIT_CONFIG_NOSYSTEM: "1" } });
+      const deps = { run: hermetic, home: dir, path: PATH, kind: async () => "directory" as const };
       await gitPush(deps, { path: work, url, branch: "main", setUpstream: true });
       expect(await plain(join(root, "up.git"), "rev-parse", "main")).toBe(
         await plain(work, "rev-parse", "main"),
@@ -213,7 +217,8 @@ describe("the helper's git in a repo whose config names commands", () => {
     } finally {
       server.close();
     }
-  });
+    // Real git, a local git server and a dozen hooks and helpers: 7 s alone, over 20 s on a busy machine.
+  }, 60_000);
 });
 
 describe("the helper's git in a majhi checkout whose shared .git/config names commands", () => {
