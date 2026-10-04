@@ -20,7 +20,7 @@ import { type BrowserServer, browserServer } from "./browser.ts";
 import { cutKubeconfig, KubeconfigError } from "./kubeconfig.ts";
 import { imapLogin, smtpGreeting } from "./mail.ts";
 import { callTool, listTools, remoteTransport, SpawnedTransport } from "./mcp-client.ts";
-import { gitTarget } from "./plan.ts";
+import { gitTarget, productsOf } from "./plan.ts";
 import { type ConnectionService, ownerOnlyDir } from "./service.ts";
 
 const KUBECTL_TIMEOUT_MS = 45_000;
@@ -112,7 +112,13 @@ interface RunResult {
  * can open, removed when the Test ends. SSH runs from majhi the way its git does; mail and remote
  * MCP servers are reached from majhi. No secret value ever reaches a result.
  */
+/** How long a product server's tool list is trusted before it is asked again. */
+const PRODUCT_TOOLS_TTL_MS = 10 * 60_000;
+
 export class ConnectionTester {
+  /** Each product server's tool names, by `<connection> <product>`. */
+  private readonly productTools = new Map<string, { at: number; names: Set<string> }>();
+
   constructor(private readonly deps: TesterDeps) {}
 
   async test(id: string): Promise<ConnectionTestResult> {
@@ -189,8 +195,11 @@ export class ConnectionTester {
       const bearer = await this.deps.oauth?.bearer?.(id);
       if (bearer === undefined || "problem" in bearer) throw new Error("the connection is not signed in");
       headers.Authorization = `Bearer ${bearer.token}`;
-      const url = textValue(found.connection, "url") ?? "";
       const protocol = textValue(found.connection, "protocol") === "sse" ? "sse" : "http";
+      const url =
+        (await this.productServer(id, found.connection, tool, headers, protocol)) ??
+        textValue(found.connection, "url") ??
+        "";
       return callTool(remoteTransport(url, headers, protocol), tool, args, timeoutMs);
     }
     const values = await this.resolve(id, found.connection);
@@ -198,6 +207,37 @@ export class ConnectionTester {
     for (const e of values.lists.headers ?? []) if (e.value !== undefined) headers[e.name] = e.value;
     const protocol = values.fields.protocol === "sse" ? "sse" : "http";
     return callTool(remoteTransport(values.fields.url ?? "", headers, protocol), tool, args, timeoutMs);
+  }
+
+  /**
+   * For a connection with products (DigitalOcean), the product server that has the tool: each
+   * product is its own server, and the connection's own address is only the one it signs in with.
+   * The tool lists are kept a few minutes. Undefined for a connection without products.
+   */
+  private async productServer(
+    id: string,
+    connection: ConnectionConfig,
+    tool: string,
+    headers: Record<string, string>,
+    protocol: "http" | "sse",
+  ): Promise<string | undefined> {
+    const products = productsOf(connection);
+    if (products.length === 0) return undefined;
+    const now = Date.now();
+    for (const product of products) {
+      const key = `${id} ${product.id}`;
+      let known = this.productTools.get(key);
+      if (known === undefined || now - known.at > PRODUCT_TOOLS_TTL_MS) {
+        const names = await listTools(
+          remoteTransport(product.mcpUrl, headers, protocol),
+          MCP_TIMEOUT_MS,
+        ).catch(() => [] as string[]);
+        known = { at: now, names: new Set(names) };
+        this.productTools.set(key, known);
+      }
+      if (known.names.has(tool)) return product.mcpUrl;
+    }
+    throw new Error(`no picked product of ${connection.name} has the tool ${tool}`);
   }
 
   /**
