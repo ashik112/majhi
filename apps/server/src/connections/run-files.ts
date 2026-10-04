@@ -56,12 +56,12 @@ export interface RunFilesDeps {
 export async function prepareRunConnections(
   deps: RunFilesDeps,
   task: Pick<Task, "org" | "connections">,
-  fm: Pick<AgentFrontmatter, "scope" | "connections">,
+  fm: Pick<AgentFrontmatter, "id" | "scope">,
   kind: "session" | "process",
 ): Promise<PreparedRun | undefined> {
   const sections = await deps.config.sections();
   const held = runConnections({
-    agent: { scope: fm.scope, connections: fm.connections },
+    agent: { id: fm.id, scope: fm.scope },
     task: { org: task.org, connections: task.connections ?? [] },
     orgs: sections.orgs,
     global: sections.connections,
@@ -101,7 +101,7 @@ export async function taskSecrets(
 ): Promise<HeldSecret[]> {
   const sections = await deps.config.sections();
   const held = runConnections({
-    agent: { scope: "root", connections: [] },
+    agent: { scope: "root" },
     task: { org: task.org, connections: task.connections ?? [] },
     orgs: sections.orgs,
     global: sections.connections,

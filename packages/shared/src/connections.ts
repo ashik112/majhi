@@ -674,6 +674,8 @@ export const ConnectionConfigSchema = z
     env: z.record(VariableNameSchema, ConnectionEntrySchema).optional(),
     /** The exact write actions the org allows without asking the owner. */
     allow: z.array(z.string().trim().min(1).max(500)).max(200).optional(),
+    /** Agents of the workspace this connection never reaches. Every other agent of it gets it. */
+    agents_off: z.array(IdSchema).max(200).optional(),
   })
   .superRefine((conn, ctx) => {
     for (const issue of storageIssues(conn)) ctx.addIssue({ code: "custom", ...issue });
@@ -867,8 +869,10 @@ export const ConnectionViewSchema = z.object({
   headers: z.record(z.string(), ConnectionValueViewSchema),
   env: z.record(z.string(), ConnectionValueViewSchema),
   allow: z.array(z.string()),
-  /** The agents whose `connections` list it. */
+  /** The agents it reaches: every agent of its workspace and every root agent, minus `agentsOff`. */
   agents: z.array(IdSchema),
+  /** The agents it is switched off for. */
+  agentsOff: z.array(IdSchema),
   /** Why it would not work yet, like a required field not set. Empty when it is ready. */
   problems: z.array(z.string()),
   /** The last Test since majhi started. */
@@ -911,6 +915,8 @@ export const ConnectionUpdateInputSchema = z.object({
   fields: z.record(z.string(), ConnectionTextSchema.nullable()).optional(),
   /** Each list given replaces the old one. A left-out entry goes, with its secret or file. */
   ...listInputs,
+  /** Replaces the agents it is switched off for. Only the owner sets it. */
+  agentsOff: z.array(IdSchema).max(200).optional(),
 });
 export type ConnectionUpdateInput = z.infer<typeof ConnectionUpdateInputSchema>;
 

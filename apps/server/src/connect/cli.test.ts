@@ -290,7 +290,7 @@ describe("what a run of one workspace gets of a tool's sign-in", () => {
 
   it("gives a run in workspace A only A's folders and the tool's own variables", async () => {
     const held = runConnections({
-      agent: { scope: "acme", connections: ["wrangler", "aws"] },
+      agent: { id: "acme-dev", scope: "acme" },
       task: { org: "acme", connections: [] },
       orgs,
     });
@@ -316,7 +316,7 @@ describe("what a run of one workspace gets of a tool's sign-in", () => {
 
   it("gives a run in workspace B B's folder and never A's", async () => {
     const held = runConnections({
-      agent: { scope: "globex", connections: ["wrangler-2", "wrangler", "aws"] },
+      agent: { id: "globex-dev", scope: "globex" },
       task: { org: "globex", connections: [] },
       orgs,
     });
@@ -330,7 +330,7 @@ describe("what a run of one workspace gets of a tool's sign-in", () => {
   it("an agent of workspace A in a task of workspace B gets nothing", () => {
     expect(
       runConnections({
-        agent: { scope: "acme", connections: ["wrangler"] },
+        agent: { id: "acme-dev", scope: "acme" },
         task: { org: "globex", connections: [] },
         orgs,
       }),
@@ -342,7 +342,7 @@ describe("what a run of one workspace gets of a tool's sign-in", () => {
       acme: { connections: { wrangler: cli("wrangler", "a"), stripe: cli("stripe", "b") } },
     };
     const held = runConnections({
-      agent: { scope: "acme", connections: ["wrangler", "stripe"] },
+      agent: { id: "acme-dev", scope: "acme" },
       task: { org: "acme", connections: [] },
       orgs: both,
     });

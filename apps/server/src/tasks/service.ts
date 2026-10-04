@@ -2492,7 +2492,7 @@ export class TaskService {
     const found = new Map<string, BriefConnection>();
     for (const fm of agents.filter((a) => task.team.includes(a.id))) {
       const held = runConnections({
-        agent: { scope: fm.scope, connections: fm.connections },
+        agent: { id: fm.id, scope: fm.scope },
         task: { org: task.org, connections: task.connections ?? [] },
         orgs,
         global: sections.connections,

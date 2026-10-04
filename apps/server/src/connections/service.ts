@@ -158,10 +158,18 @@ export class ConnectionService {
   /** Changes what the input names. A list given replaces the old one; what it drops is deleted. */
   async update(input: ConnectionUpdateInput, command: string, meta: CommandMeta): Promise<ConnectionView> {
     const released: string[] = [];
+    let switched: string[] = [];
     await this.deps.config.change({ command, meta, summary: `edited connection ${input.id}` }, async () => {
       const found = await this.require(input.id);
       assertGlobalOwner(found.org, meta);
       const next: ConnectionConfig = { ...found.connection };
+      if (input.agentsOff !== undefined) {
+        const before = new Set(next.agents_off ?? []);
+        const after = new Set(input.agentsOff);
+        switched = [...before, ...after].filter((a) => before.has(a) !== after.has(a));
+        if (after.size > 0) next.agents_off = [...after].sort();
+        else delete next.agents_off;
+      }
       if (input.name !== undefined) next.name = input.name;
       if (input.description === "") delete next.description;
       else if (input.description !== undefined) next.description = input.description;
@@ -180,6 +188,8 @@ export class ConnectionService {
       }
       await writeConnection(this.deps.config.file, found.org, found.entry, input.id, checked(next));
     });
+    // A session gains or loses the connection at its next turn end.
+    if (switched.length > 0) this.deps.agentsChanged?.(switched);
     await this.release(input.id, released);
     return this.get(input.id);
   }
@@ -541,11 +551,14 @@ function viewOf(
     allow: connection.allow ?? [],
     agents: known.agents.flatMap((a) =>
       a.ok &&
+      !(connection.agents_off ?? []).includes(a.id) &&
       (org === GLOBAL_CONNECTIONS ||
-        (a.agent.frontmatter.scope === org && a.agent.frontmatter.connections.includes(id)))
+        a.agent.frontmatter.scope === org ||
+        a.agent.frontmatter.scope === "root")
         ? [a.id]
         : [],
     ),
+    agentsOff: connection.agents_off ?? [],
     problems: connectionProblems(connection, stored),
   };
   if (known.lastTest !== undefined) view.lastTest = known.lastTest;

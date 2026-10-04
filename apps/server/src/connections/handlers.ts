@@ -42,7 +42,7 @@ export function connectionHandlers(
         const given = (keys: readonly string[]) =>
           keys.filter((key) => input.fields !== undefined && key in input.fields);
         // An agent could otherwise loosen the gate that checks its own commands.
-        const gate = given(GATE_FIELDS);
+        const gate = [...given(GATE_FIELDS), ...(input.agentsOff === undefined ? [] : ["agents"])];
         if (gate.length > 0) {
           throw new UserError(
             `Only the owner changes the ${gate.join(", ")} of a connection, on the Connections page.`,
