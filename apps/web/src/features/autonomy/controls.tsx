@@ -1,4 +1,5 @@
 import type { AutonomyStatus } from "@majhi/shared";
+import { PAGE_PATH } from "@majhi/shared";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,6 @@ import { useAutonomyCommand } from "@/lib/autonomy-queries";
 import { useCaptainStatus } from "@/lib/captain-queries";
 import { describeError } from "@/lib/errors";
 import { formatMoney } from "@/lib/format";
-import { PAGE_PATH } from "@/lib/pages";
 import { budgetText } from "./model";
 
 /** Auto-pilot has one switch: turning it on, and turning it off in one of two ways. */

@@ -3,6 +3,7 @@ import {
   OUTBOUND_CHANNEL_LABEL,
   OUTBOUND_MODE_LABEL,
   type OutboundMode,
+  PAGE_PATH,
 } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,6 @@ import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
-import { PAGE_PATH } from "@/lib/pages";
 import { useOutbound, useSetChannelMode } from "@/lib/playbook-queries";
 import { useNow } from "@/lib/use-now";
 

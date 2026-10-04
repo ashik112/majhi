@@ -1,5 +1,5 @@
 import type { CaptainCapAsk, CommandName } from "@majhi/shared";
-import { CHORE_LABEL } from "@majhi/shared";
+import { CHORE_LABEL, pageRef } from "@majhi/shared";
 import type { CaptainPorts } from "./ports.ts";
 import type { CaptainRepo } from "./repo.ts";
 import { branchAllowed, dailyCaps } from "./rules.ts";
@@ -132,7 +132,7 @@ export class LaneGate {
     if (path !== undefined && repos.some((r) => r.path === path)) return undefined;
     const listed = repos.map((r) => r.path).slice(0, 5);
     return listed.length === 0
-      ? "Refused: no unregistered repo sits in this workspace's folder, so there is nothing to register. Which repos agents reach is the owner's."
+      ? `Refused: no unregistered repo sits in this workspace's folder, so there is nothing to register. Which repos agents reach is the owner's, on ${pageRef("projects")}.`
       : `Refused: ${path ?? "that path"} is not an unregistered repo in this workspace's folder. These are: ${listed.join(", ")}.`;
   }
 }

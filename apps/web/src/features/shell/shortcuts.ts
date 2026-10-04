@@ -1,4 +1,4 @@
-import { PAGE_PATH, type PagePath } from "../../lib/pages";
+import { PAGE_PATH, type PagePath } from "@majhi/shared";
 
 export type GoTarget = PagePath;
 

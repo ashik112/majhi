@@ -1,4 +1,4 @@
-import { OPS_IMPACT_LABEL, type OpsIncident, type OpsServiceView } from "@majhi/shared";
+import { OPS_IMPACT_LABEL, type OpsIncident, type OpsServiceView, PAGE_PATH } from "@majhi/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, MessageSquare, Pencil, Plug, RefreshCw, Trash2, Wrench } from "lucide-react";
 import { useState } from "react";
@@ -15,7 +15,6 @@ import { useCaptainStatus } from "@/lib/captain-queries";
 import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 import { useFixCheck } from "@/lib/ops-queries";
-import { PAGE_PATH } from "@/lib/pages";
 import { useAckIncident, useCheckNow, useRemoveService } from "@/lib/watch-queries";
 import {
   CHECK_LAMP,

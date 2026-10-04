@@ -1,3 +1,4 @@
+import { PAGE_PATH } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { Check, ChevronsUpDown, Layers, Settings2 } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
@@ -8,7 +9,6 @@ import { type OrgRow, orgRows } from "@/features/shell/model";
 import { cn } from "@/lib/cn";
 import { GLASS_STRONG } from "@/lib/glass";
 import { useOrgFilter } from "@/lib/org-filter";
-import { PAGE_PATH } from "@/lib/pages";
 import { useOrgs } from "@/lib/studio-queries";
 import { useTasks } from "@/lib/task-queries";
 

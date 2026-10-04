@@ -1,4 +1,13 @@
 import type { AccountView, TaskSummary } from "@majhi/shared";
+import {
+  PAGE_PATH,
+  type PageName,
+  SIDEBAR_FOOT,
+  SIDEBAR_MAIN,
+  type SidebarFootPage,
+  type SidebarMainPage,
+  sidebarLabel,
+} from "@majhi/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
@@ -31,7 +40,6 @@ import { checksNeedingYou } from "@/features/health/model";
 import { isSettingsPath } from "@/features/settings/settings-frame";
 import { limitNote } from "@/features/shell/limit-note";
 import { accountsNeedingYou, isOpen } from "@/features/shell/model";
-import { PAGE_LABEL } from "@/features/shell/nav";
 import { chordOf } from "@/features/shell/shortcuts";
 import { UpdateNotice } from "@/features/update/update-notice";
 import { type AgentInfo, useAgentIndex } from "@/lib/agent-index";
@@ -41,7 +49,6 @@ import { MOD_KEY } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useFacts } from "@/lib/memory-queries";
 import { useHealthChecks } from "@/lib/ops-queries";
-import { PAGE_PATH, type PageName } from "@/lib/pages";
 import { useHealth, useHostStatus } from "@/lib/queries";
 import { useAccounts } from "@/lib/studio-queries";
 import { useTasks } from "@/lib/task-queries";
@@ -147,19 +154,21 @@ function MainNav() {
     to === "/" ? pathname === "/" || pathname.startsWith("/t/") : pathname.startsWith(to);
   return (
     <nav aria-label="Main" className="flex flex-col gap-px">
-      <NavRow page="board" label="Home" icon={House} active={isActive(PAGE_PATH.board)} />
-      <NavRow
-        page="decisions"
-        label="Needs you"
-        icon={CircleAlert}
-        active={isActive(PAGE_PATH.decisions)}
-        badge={waiting > 0 ? { text: String(waiting), tone: "needs" } : undefined}
-      />
-      <NavRow page="chats" icon={MessagesSquare} active={isActive(PAGE_PATH.chats)} />
-      <CaptainRow />
-      <NavRow page="playbooks" icon={BookOpen} active={isActive(PAGE_PATH.playbooks)} />
-      <WatchRow active={isActive(PAGE_PATH.watch)} />
-      <NavRow page="business" icon={Library} active={isActive(PAGE_PATH.business)} />
+      {SIDEBAR_MAIN.map((page) =>
+        page === "captain" ? (
+          <CaptainRow key={page} />
+        ) : page === "watch" ? (
+          <WatchRow key={page} active={isActive(PAGE_PATH.watch)} />
+        ) : (
+          <NavRow
+            key={page}
+            page={page}
+            icon={MAIN_ICON[page]}
+            active={isActive(PAGE_PATH[page])}
+            badge={page === "decisions" && waiting > 0 ? { text: String(waiting), tone: "needs" } : undefined}
+          />
+        ),
+      )}
     </nav>
   );
 }
@@ -176,32 +185,27 @@ function FootNav() {
   const signIn = accountsNeedingYou(accounts ?? []).length;
   const toFix = checksNeedingYou(checks);
   const settings = isSettingsPath(pathname) || isActive(PAGE_PATH.setup);
+  const badge: Record<SidebarFootPage, NavBadge | undefined> = {
+    agents: agents.size > 0 ? { text: String(agents.size) } : undefined,
+    accounts:
+      signIn > 0
+        ? { text: `${signIn} sign in`, tone: "needs" }
+        : (accounts?.length ?? 0) > 0
+          ? { text: String(accounts?.length ?? 0) }
+          : undefined,
+    usage: toFix > 0 ? { text: `${toFix} to fix`, tone: "check" } : undefined,
+  };
   return (
     <div className="flex shrink-0 flex-col gap-px border-t border-line pt-2">
-      <NavRow
-        page="agents"
-        icon={Users}
-        active={isActive(PAGE_PATH.agents)}
-        badge={agents.size > 0 ? { text: String(agents.size) } : undefined}
-      />
-      <NavRow
-        page="accounts"
-        icon={KeyRound}
-        active={isActive(PAGE_PATH.accounts)}
-        badge={
-          signIn > 0
-            ? { text: `${signIn} sign in`, tone: "needs" }
-            : (accounts?.length ?? 0) > 0
-              ? { text: String(accounts?.length ?? 0) }
-              : undefined
-        }
-      />
-      <NavRow
-        page="usage"
-        icon={Activity}
-        active={isActive(PAGE_PATH.usage)}
-        badge={toFix > 0 ? { text: `${toFix} to fix`, tone: "check" } : undefined}
-      />
+      {SIDEBAR_FOOT.map((page) => (
+        <NavRow
+          key={page}
+          page={page}
+          icon={FOOT_ICON[page]}
+          active={isActive(PAGE_PATH[page])}
+          badge={badge[page]}
+        />
+      ))}
       <div className="flex items-center gap-1">
         <Link
           to={PAGE_PATH.setup}
@@ -229,21 +233,29 @@ function FootNav() {
   );
 }
 
+/** The icon of each sidebar row. Captain and Watch draw their own rows. The rows and their order are in @majhi/shared. */
+const MAIN_ICON: Record<Exclude<SidebarMainPage, "captain" | "watch">, LucideIcon> = {
+  board: House,
+  decisions: CircleAlert,
+  chats: MessagesSquare,
+  playbooks: BookOpen,
+  business: Library,
+};
+const FOOT_ICON: Record<SidebarFootPage, LucideIcon> = { agents: Users, accounts: KeyRound, usage: Activity };
+
 function NavRow({
   page,
-  label,
   icon: Icon,
   active,
   badge,
 }: {
   page: PageName;
-  label?: string;
   icon: LucideIcon;
   active: boolean;
   badge?: NavBadge | undefined;
 }) {
   const chord = chordOf(PAGE_PATH[page]);
-  const name = label ?? PAGE_LABEL[page];
+  const name = sidebarLabel(page);
   return (
     <Link
       to={PAGE_PATH[page]}

@@ -1,3 +1,4 @@
+import { PAGE_PATH } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { Bell as BellIcon } from "lucide-react";
 import { useCallback, useEffect, useId, useRef } from "react";
@@ -9,7 +10,6 @@ import { cn } from "@/lib/cn";
 import { useDecisions } from "@/lib/decision-queries";
 import { GLASS_STRONG } from "@/lib/glass";
 import { setNoticesOpen, useNoticesOpen } from "@/lib/notices";
-import { PAGE_PATH } from "@/lib/pages";
 
 /** Where the panel sits: 12px right of the sidebar, level with its top, as tall as the window allows. */
 function besideSidebar(trigger: HTMLElement | null): React.CSSProperties | undefined {

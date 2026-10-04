@@ -1,3 +1,4 @@
+import { PAGE_PATH } from "@majhi/shared";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Ship } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -9,7 +10,6 @@ import { useAutonomyStatus } from "@/lib/autonomy-queries";
 import { useCaptainStatus } from "@/lib/captain-queries";
 import { describeError } from "@/lib/errors";
 import { GLASS } from "@/lib/glass";
-import { PAGE_PATH } from "@/lib/pages";
 import { useNow } from "@/lib/use-now";
 import type { AppSearch } from "@/router";
 import { Conversation } from "./conversation";

@@ -1,4 +1,5 @@
 import type { AccountView, TaskSummary } from "@majhi/shared";
+import { PAGE_PATH } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { Users, X } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -11,7 +12,6 @@ import { type AgentInfo, useAgentIndex } from "@/lib/agent-index";
 import { cn } from "@/lib/cn";
 import { GLASS } from "@/lib/glass";
 import { orgSearch } from "@/lib/org-filter";
-import { PAGE_PATH } from "@/lib/pages";
 import { useAccounts } from "@/lib/studio-queries";
 import { isYourTurn } from "../tasks/model";
 

@@ -1,3 +1,4 @@
+import type { SetupSection } from "@majhi/shared";
 import {
   collapseHome,
   type HostInfo,
@@ -19,7 +20,6 @@ import { useSshReload } from "@/lib/queries";
 import { reopenOnboarding } from "@/onboarding/reopen";
 import { SetupJourneyList } from "@/onboarding/setup-list";
 import type { CardState, Tone } from "./model";
-import type { SetupSection } from "./sections";
 
 const DOT: Record<Tone, DotTone> = { green: "green", coral: "coral", blue: "neutral", neutral: "neutral" };
 
