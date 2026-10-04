@@ -1,5 +1,6 @@
-import { readOnlySqlProblem, type WatchCheck } from "@majhi/shared";
+import { readOnlySqlProblem, taskGroup, type WatchCheck } from "@majhi/shared";
 import { describeFailure, HTTP_TIMEOUT_MS, numberAt, urlProblem } from "../probes.ts";
+import type { WatchHost, WatchTask } from "./host.ts";
 import { hashText, jsonLd, mainText, parseHtml, parsePrice, selectFirst, textOf } from "./html.ts";
 
 /**
@@ -12,6 +13,9 @@ import { hashText, jsonLd, mainText, parseHtml, parsePrice, selectFirst, textOf 
 /** The look could not tell. The message is a fixed phrase the owner can read. */
 export class Unavailable extends Error {}
 
+/** A command watch started its command and waits for it to end. The next look asks again. */
+export class Pending extends Error {}
+
 export interface Reading {
   number?: number | undefined;
   /** The value as the row shows it. */
@@ -20,6 +24,11 @@ export interface Reading {
   healthy: boolean;
   /** For `changed`: a number or a hash of the page's main text. */
   signature?: string | undefined;
+  /**
+   * For watches of a set (tasks, merge requests, processes): the subjects that are in the state now.
+   * It fires when a subject joins the set, not when one leaves it.
+   */
+  matched?: string[] | undefined;
   /** For `contains`: the text to look in. Never stored. */
   text?: string | undefined;
 }
@@ -55,6 +64,10 @@ export interface WatchPorts {
    * project of another workspace or a path that leaves the checkout.
    */
   pathPrint(org: string, project: string, path: string): Promise<string>;
+  /** The checkout folder of a project of this workspace. Throws Unavailable for another workspace's. */
+  checkout?(org: string, project: string): Promise<string>;
+  /** What the task, process, usage, branch and command watches look at. */
+  host?: WatchHost;
 }
 
 const URL_VARS: Record<"postgres" | "mysql" | "redis", string[]> = {
@@ -557,7 +570,192 @@ async function path(
 }
 
 /** One look. Throws Unavailable (a fixed phrase) when it cannot tell; never anything with remote text. */
-export async function readWatch(spec: WatchCheck, org: string, ports: WatchPorts): Promise<Reading> {
+// Tasks, merge requests, branches, processes, usage and commands --------------------------
+
+function hostOf(ports: WatchPorts): WatchHost {
+  if (ports.host === undefined) throw new Unavailable("this check is not available here");
+  return ports.host;
+}
+
+/** The tasks of the workspace the watch names (or all of them). */
+function tasksOf(host: WatchHost, org: string, only: string | undefined): WatchTask[] {
+  const own = host.tasks().filter((t) => t.org === org && (only === undefined || t.id === only));
+  if (only !== undefined && own.length === 0)
+    throw new Unavailable("the task is gone or is in another workspace");
+  return own;
+}
+
+const STATUS_WORD = { done: "done", failed: "failed", "needs-you": "needs you" } as const;
+
+function matchesStatus(task: WatchTask, to: "done" | "failed" | "needs-you"): boolean {
+  switch (to) {
+    case "done":
+      return task.status === "done";
+    case "failed":
+      return task.status === "paused" && task.pausedReason === "error";
+    case "needs-you":
+      return taskGroup(task.status) === "needs-you";
+  }
+}
+
+function taskStatus(spec: Extract<WatchCheck, { kind: "task" }>, org: string, ports: WatchPorts): Reading {
+  const all = tasksOf(hostOf(ports), org, spec.task);
+  const matched = all
+    .filter((t) => matchesStatus(t, spec.to))
+    .map((t) => t.id)
+    .sort();
+  const word = STATUS_WORD[spec.to];
+  const display =
+    spec.task === undefined
+      ? `${matched.length} of ${all.length} tasks ${word}`
+      : matched.length > 0
+        ? `${spec.task} is ${word}`
+        : `${spec.task} not ${word} yet`;
+  return { display, healthy: true, signature: matched.join(","), matched };
+}
+
+function mergeRequest(spec: Extract<WatchCheck, { kind: "mr" }>, org: string, ports: WatchPorts): Reading {
+  const all = tasksOf(hostOf(ports), org, spec.task).flatMap((t) =>
+    t.mrs().map(({ project, mr }) => ({ subject: `${t.id}/${project}`, mr })),
+  );
+  const display =
+    all.length === 1 && all[0] !== undefined
+      ? `MR ${all[0].mr.number} ${all[0].mr.state}, checks ${all[0].mr.ci}`
+      : `${all.length} merge requests`;
+  if (spec.on === "any") {
+    const signature = all
+      .map((m) => `${m.subject}:${m.mr.number} ${m.mr.state} ${m.mr.ci}`)
+      .sort()
+      .join("\n");
+    return { display, healthy: true, signature: hashText(signature) };
+  }
+  const is = (mr: (typeof all)[number]["mr"]): boolean =>
+    spec.on === "opened"
+      ? mr.state === "open"
+      : spec.on === "merged"
+        ? mr.state === "merged"
+        : mr.ci === "failing";
+  const matched = all
+    .filter((m) => is(m.mr))
+    .map((m) => m.subject)
+    .sort();
+  return { display, healthy: true, signature: matched.join(","), matched };
+}
+
+async function branch(
+  spec: Extract<WatchCheck, { kind: "branch" }>,
+  org: string,
+  ports: WatchPorts,
+): Promise<Reading> {
+  if (ports.checkout === undefined) throw new Unavailable("this check is not available here");
+  const folder = await ports.checkout(org, spec.project);
+  const tip = await hostOf(ports).branchTip(folder, spec.branch);
+  return {
+    display: tip === undefined ? "branch missing" : `at ${tip.slice(0, 8)}`,
+    healthy: tip !== undefined,
+    signature: tip ?? "missing",
+  };
+}
+
+function processExit(
+  spec: Extract<WatchCheck, { kind: "process" }>,
+  org: string,
+  ports: WatchPorts,
+): Reading {
+  const host = hostOf(ports);
+  tasksOf(host, org, spec.task);
+  const list = host
+    .processes(spec.task)
+    .filter((p) => spec.process === undefined || p.id === spec.process || p.name === spec.process);
+  const matched = list
+    .filter(
+      (p) => p.status !== "running" && (spec.on === "any" || (p.status === "exited" && p.exitCode !== 0)),
+    )
+    .map((p) => `${spec.task}/${p.id}`)
+    .sort();
+  const running = list.filter((p) => p.status === "running").length;
+  return {
+    display: `${running} running, ${matched.length} ended${spec.on === "failure" ? " with an error" : ""}`,
+    healthy: true,
+    signature: matched.join(","),
+    matched,
+  };
+}
+
+function usage(spec: Extract<WatchCheck, { kind: "usage" }>, org: string, ports: WatchPorts): Reading {
+  const totals = hostOf(ports).usage(org, spec.period);
+  const n = spec.metric === "costUsd" ? totals.costUsd : totals.totalTokens;
+  const when = spec.period === "today" ? "today" : `this ${spec.period}`;
+  return {
+    number: n,
+    display: spec.metric === "costUsd" ? `$${fmt(n)} ${when}` : `${fmt(n)} tokens ${when}`,
+    healthy: true,
+    signature: String(n),
+  };
+}
+
+/** The process of a command watch that has not ended yet, by watch. Lives as long as majhi runs. */
+const commandRuns = new Map<string, { task: string; process: string }>();
+
+/** Forgets a command watch's process in flight: it was edited or deleted. */
+export function forgetCommand(watch: string): void {
+  commandRuns.delete(watch);
+}
+
+/**
+ * Runs the command as a process of the task, in the task's sandbox like the task's own processes
+ * (never in majhi's environment), and reads its exit and the end of its output when it has ended.
+ * Between the start and the end the look is Pending. The output is never shown or stored: only a
+ * hash of it, and "exit N".
+ */
+async function command(
+  id: string | undefined,
+  spec: Extract<WatchCheck, { kind: "command" }>,
+  org: string,
+  ports: WatchPorts,
+): Promise<Reading> {
+  const host = hostOf(ports);
+  if (id === undefined) throw new Unavailable("this command runs on its schedule");
+  tasksOf(host, org, spec.task);
+  const going = commandRuns.get(id);
+  if (going !== undefined) {
+    const proc = host.process(going.task, going.process);
+    if (proc === undefined) {
+      commandRuns.delete(id);
+    } else if (proc.status === "running") {
+      throw new Pending();
+    } else {
+      commandRuns.delete(id);
+      const text = proc.tail.join("\n");
+      const code = proc.exitCode ?? undefined;
+      return {
+        display:
+          proc.status === "stopped" ? "stopped" : code === undefined ? "ended by a signal" : `exit ${code}`,
+        healthy: proc.status === "exited" && code === 0,
+        signature: hashText(`${proc.status} ${code ?? "-"}\n${text}`),
+        text,
+      };
+    }
+  }
+  const started = await guarded(() =>
+    host.startProcess({
+      task: spec.task,
+      command: spec.command,
+      name: `watch: ${spec.command}`.slice(0, 80),
+      cwd: spec.cwd,
+    }),
+  );
+  commandRuns.set(id, { task: spec.task, process: started.id });
+  throw new Pending();
+}
+
+/** `id` is the watch's, which a command watch needs to keep its process between looks. */
+export async function readWatch(
+  spec: WatchCheck,
+  org: string,
+  ports: WatchPorts,
+  id?: string,
+): Promise<Reading> {
   switch (spec.kind) {
     case "website":
       return website(spec, ports);
@@ -575,6 +773,18 @@ export async function readWatch(spec: WatchCheck, org: string, ports: WatchPorts
       return metric(spec, org, ports);
     case "path":
       return path(spec, org, ports);
+    case "task":
+      return taskStatus(spec, org, ports);
+    case "mr":
+      return mergeRequest(spec, org, ports);
+    case "branch":
+      return branch(spec, org, ports);
+    case "process":
+      return processExit(spec, org, ports);
+    case "usage":
+      return usage(spec, org, ports);
+    case "command":
+      return command(id, spec, org, ports);
     case "custom":
       throw new Unavailable("the captain checks this one");
   }

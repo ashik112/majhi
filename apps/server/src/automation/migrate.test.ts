@@ -6,7 +6,6 @@ import type { ActionHost } from "./actions.ts";
 import { createAutomation } from "./index.ts";
 import { migrateAutomations, watchIdOf } from "./migrate.ts";
 import type { Timers } from "./scheduler.ts";
-import type { WatchHost } from "./triggers/observe.ts";
 
 /** Schedules become clock playbooks and path and URL triggers become watches: nothing lost, once. */
 
@@ -122,6 +121,71 @@ function seed() {
     "2026-10-01T00:00:06.000Z",
     "2026-10-01T00:00:06.000Z",
   );
+  trig.run(
+    "trg-hhhhhhhh88",
+    "acme",
+    "Build exits",
+    '{"kind":"process.exit","task":"ACM-9","on":"failure"}',
+    JSON.stringify(startTask),
+    "skip",
+    0,
+    null,
+    '{"ACM-9/p1":"on","ACM-9/p2":"off"}',
+    "2026-10-01T00:00:07.000Z",
+    "2026-10-01T00:00:07.000Z",
+  );
+  trig.run(
+    "trg-iiiiiiii99",
+    "acme",
+    "Spend",
+    '{"kind":"usage.over","metric":"costUsd","period":"today","limit":25}',
+    JSON.stringify(runCmd),
+    "skip",
+    0,
+    null,
+    '{"":"on"}',
+    "2026-10-01T00:00:08.000Z",
+    "2026-10-01T00:00:08.000Z",
+  );
+  trig.run(
+    "trg-jjjjjjjj00",
+    "acme",
+    "Main moves",
+    '{"kind":"branch.changed","project":"acme-api","branch":"main"}',
+    JSON.stringify(startTask),
+    "skip",
+    0,
+    null,
+    '{"":"a1b2c3d4"}',
+    "2026-10-01T00:00:09.000Z",
+    "2026-10-01T00:00:09.000Z",
+  );
+  trig.run(
+    "trg-kkkkkkkk11",
+    "acme",
+    "Lint output",
+    '{"kind":"command.changed","task":"ACM-9","command":"pnpm lint"}',
+    JSON.stringify(runCmd),
+    "skip",
+    0,
+    null,
+    null,
+    "2026-10-01T00:00:10.000Z",
+    "2026-10-01T00:00:10.000Z",
+  );
+  trig.run(
+    "trg-llllllll22",
+    "acme",
+    "Broken trigger",
+    "{not json",
+    "{}",
+    "skip",
+    0,
+    null,
+    null,
+    "2026-10-01T00:00:11.000Z",
+    "2026-10-01T00:00:11.000Z",
+  );
   const run = sqlite.prepare(
     "INSERT INTO automation_runs (source_kind, source_id, org, started_at, ended_at, status, detail) VALUES (?, ?, ?, ?, ?, ?, ?)",
   );
@@ -170,10 +234,8 @@ describe("automations folded into playbooks and watch", () => {
       db,
       catalog: new Catalog(),
       host: {} as ActionHost,
-      watch: {} as WatchHost,
       orgIds: async () => new Set(["acme", "globex"]),
       changed: () => undefined,
-      triggersChanged: () => undefined,
       timers: { set: () => 0, clear: () => undefined } satisfies Timers,
     });
     const nightly = auto.schedules.peek("sch-aaaaaa1111");
@@ -203,45 +265,77 @@ describe("automations folded into playbooks and watch", () => {
     expect(db.prepare("SELECT COUNT(*) AS n FROM schedules").get()).toEqual({ n: 4 });
   });
 
-  it("moves path and URL triggers to watches with their action and history, and leaves the other kinds running", () => {
+  it("moves every trigger to a watch with its action, guards and history", () => {
     const db = seed();
     const report = migrateAutomations(db);
-    expect(report.triggers).toBe(2);
-    expect(report.left.triggers).toEqual(["trg-gggggggg77"]);
+    expect(report.triggers).toBe(7);
+    // Only the row that does not parse is left, unmarked.
+    expect(report.left.triggers).toEqual(["trg-llllllll22"]);
 
-    const path = db.prepare("SELECT * FROM watches WHERE id = ?").get(watchIdOf("trg-eeeeeeee55")) as {
-      org: string;
-      def: string;
-      state: string;
-      paused: number;
+    const watch = (id: string) => {
+      const row = db.prepare("SELECT * FROM watches WHERE id = ?").get(watchIdOf(id)) as {
+        org: string;
+        def: string;
+        state: string;
+        paused: number;
+      };
+      return { def: JSON.parse(row.def), state: JSON.parse(row.state), paused: row.paused };
     };
-    const def = JSON.parse(path.def);
-    expect(def.spec).toEqual({ kind: "path", project: "acme-api", path: "docs" });
-    expect(def.condition).toEqual({ type: "changed" });
-    expect(def.fire).toMatchObject({ alert: { on: false }, run: runCmd, runOverlap: "skip" });
-    expect(def.everyMin).toBe(1);
-    expect(JSON.parse(path.state).baseline).toBe("dir 3 abc");
 
-    const url = db.prepare("SELECT * FROM watches WHERE id = ?").get(watchIdOf("trg-ffffffff66")) as {
-      def: string;
-      paused: number;
-    };
+    const path = watch("trg-eeeeeeee55");
+    expect(path.def.spec).toEqual({ kind: "path", project: "acme-api", path: "docs" });
+    expect(path.def.condition).toEqual({ type: "changed" });
+    expect(path.def.fire).toMatchObject({
+      alert: { on: false },
+      run: runCmd,
+      runOverlap: "skip",
+      cooldownMin: 5,
+      settleMin: 0,
+    });
+    expect(path.def.everyMin).toBe(1);
+    expect(path.state.baseline).toBe("dir 3 abc");
+
+    const url = watch("trg-ffffffff66");
     expect(url.paused).toBe(1);
-    expect(JSON.parse(url.def)).toMatchObject({
+    expect(url.def).toMatchObject({
       spec: { kind: "price", url: "https://status.acme.example/", mode: "text" },
       everyMin: 2,
-      fire: { runOverlap: "allow" },
+      fire: { runOverlap: "allow", settleMin: 0, cooldownMin: 5 },
+    });
+
+    const task = watch("trg-gggggggg77");
+    expect(task.def.spec).toEqual({ kind: "task", to: "done" });
+    expect(task.def.fire.run).toEqual(startTask);
+    // Nothing was seen yet: the first look sets the baseline.
+    expect(task.state.baseline).toBeUndefined();
+
+    // What was on stays on, so a process that already failed does not fire again.
+    const proc = watch("trg-hhhhhhhh88");
+    expect(proc.def.spec).toEqual({ kind: "process", task: "ACM-9", on: "failure" });
+    expect(proc.state.baseline).toBe("ACM-9/p1");
+
+    const usage = watch("trg-iiiiiiii99");
+    expect(usage.def.spec).toEqual({ kind: "usage", metric: "costUsd", period: "today" });
+    expect(usage.def.condition).toEqual({ type: "above", value: 25, forMin: 0 });
+    expect(usage.state.firing).toBe(true);
+
+    expect(watch("trg-jjjjjjjj00").state.baseline).toBe("a1b2c3d4");
+    expect(watch("trg-kkkkkkkk11").def.spec).toEqual({
+      kind: "command",
+      task: "ACM-9",
+      command: "pnpm lint",
     });
 
     // The run history of the trigger now belongs to the watch.
     expect(
       db.prepare("SELECT source_kind, source_id, status FROM automation_runs WHERE detail = 'boom'").get(),
     ).toEqual({ source_kind: "watch", source_id: watchIdOf("trg-eeeeeeee55"), status: "failed" });
-    // The task-status trigger stays where it was, unmarked, and the old engine still sees it.
-    expect(db.prepare("SELECT migrated_to FROM triggers WHERE id = 'trg-gggggggg77'").get()).toEqual({
-      migrated_to: null,
+    // Old rows are kept and marked; the row that did not parse is untouched.
+    expect(db.prepare("SELECT COUNT(*) AS n FROM triggers").get()).toEqual({ n: 8 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM triggers WHERE migrated_to IS NULL").get()).toEqual({
+      n: 1,
     });
-    expect(db.prepare("SELECT COUNT(*) AS n FROM triggers").get()).toEqual({ n: 3 });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM watches").get()).toEqual({ n: 7 });
   });
 
   it("is safe to run again: nothing is copied twice and nothing changes", () => {
@@ -267,7 +361,7 @@ describe("automations folded into playbooks and watch", () => {
     ).toBe(snapshot);
   });
 
-  it("the old trigger engine no longer sees a migrated trigger, and the scheduler runs a migrated schedule once", async () => {
+  it("the scheduler runs a migrated schedule once", async () => {
     const db = seed();
     const started: string[] = [];
     const host = {
@@ -284,14 +378,11 @@ describe("automations folded into playbooks and watch", () => {
       db,
       catalog: new Catalog(),
       host,
-      watch: {} as WatchHost,
       orgIds: async () => new Set(["acme", "globex"]),
       changed: () => undefined,
-      triggersChanged: () => undefined,
       now: () => new Date(clock.t),
       timers: { set: () => 0, clear: () => undefined },
     });
-    expect((await auto.triggers.list()).map((t) => t.id)).toEqual(["trg-gggggggg77"]);
     await auto.scheduler.tick();
     await auto.scheduler.tick();
     // The migrated schedule was due and ran once, however many ticks came after.

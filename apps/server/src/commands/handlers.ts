@@ -17,7 +17,6 @@ import { cardStats } from "../admin/card-stats.ts";
 import { sameRule } from "../admin/policy.ts";
 import { agendaHandlers } from "../agenda/handlers.ts";
 import { scheduleHandlers } from "../automation/handlers.ts";
-import { triggerHandlers } from "../automation/triggers/handlers.ts";
 import { autonomyHandlers } from "../autonomy/handlers.ts";
 import { backupHandlers } from "../backup/handlers.ts";
 import { businessHandlers } from "../business/handlers.ts";
@@ -41,6 +40,7 @@ import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import { inboxHandlers } from "../inbox/handlers.ts";
 import { mcpHandlers } from "../mcp-servers/handlers.ts";
 import { hostNameOf } from "../mrs/remote.ts";
+import { TriggerAlias, triggerHandlers } from "../ops/anything/triggers.ts";
 import { opsHandlers } from "../ops/handlers.ts";
 import {
   checkSavedLogin,
@@ -166,7 +166,7 @@ export function createHandlers({
   };
   return {
     ...scheduleHandlers(services.automation.schedules),
-    ...triggerHandlers(services.automation.triggers),
+    ...triggerHandlers(new TriggerAlias(services.ops.engine)),
     ...autonomyHandlers(services.autonomy),
     ...captainHandlers(services.captain, services.autonomy),
     ...inboxHandlers(services.inbox),

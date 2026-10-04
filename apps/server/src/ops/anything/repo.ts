@@ -47,6 +47,8 @@ export const WatchStateSchema = z.object({
     })
     .optional(),
   lastCustomAt: z.string().optional(),
+  /** When the action last fired, for the cooldown. */
+  lastFiredAt: z.string().optional(),
   signature: z.string().optional(),
   fails: z.number().int().default(0),
 });

@@ -28,6 +28,10 @@ import { useOrgs } from "@/lib/studio-queries";
 import { useProjects } from "@/lib/task-queries";
 import { useSaveWatch, useTestWatch } from "@/lib/watch-queries";
 
+/** Kinds that fire when something happens: they alert on a change and start without an alert. */
+const EVENT_KINDS: readonly WatchSort[] = ["path", "task", "mr", "branch", "process", "command"];
+const isEvent = (kind: WatchSort): boolean => EVENT_KINDS.includes(kind);
+
 /** The plain form: every field of a watch, for the owner who would rather not use a sentence. */
 interface Draft {
   name: string;
@@ -69,6 +73,21 @@ interface Draft {
   actSkip: boolean;
   /** Also raise an alert (an incident). */
   alert: boolean;
+  /** A task id, or empty for any task of the workspace. */
+  task: string;
+  taskTo: "done" | "failed" | "needs-you";
+  mrOn: "opened" | "merged" | "failed" | "any";
+  branch: string;
+  proc: string;
+  procOn: "any" | "failure";
+  usageMetric: "costUsd" | "totalTokens";
+  usagePeriod: "today" | "week" | "month";
+  command: string;
+  cwd: string;
+  /** Minutes a change must hold before it fires. */
+  settle: string;
+  /** Minutes to wait after it fired. */
+  cooldown: string;
 }
 
 function emptyDraft(kind: WatchSort = "website"): Draft {
@@ -98,7 +117,7 @@ function emptyDraft(kind: WatchSort = "website"): Draft {
     args: "{}",
     metricPath: "",
     instruction: "",
-    ctype: kind === "website" ? "down" : kind === "path" ? "changed" : "above",
+    ctype: kind === "website" ? "down" : isEvent(kind) ? "changed" : "above",
     value: "",
     forMin: "0",
     text: "",
@@ -109,6 +128,18 @@ function emptyDraft(kind: WatchSort = "website"): Draft {
     act: EMPTY_ACTION,
     actSkip: true,
     alert: true,
+    task: "",
+    taskTo: "done",
+    mrOn: "merged",
+    branch: "",
+    proc: "",
+    procOn: "failure",
+    usageMetric: "costUsd",
+    usagePeriod: "today",
+    command: "",
+    cwd: "",
+    settle: "0",
+    cooldown: "0",
   };
 }
 
@@ -123,6 +154,8 @@ function draftOf(def: WatchDef): Draft {
     d.act = actionToDraft(def.fire.run);
   }
   d.actSkip = def.fire.runOverlap === "skip";
+  d.settle = String(def.fire.settleMin);
+  d.cooldown = String(def.fire.cooldownMin);
   const c = def.condition;
   d.ctype = c.type;
   if (c.type === "above" || c.type === "below") {
@@ -186,6 +219,32 @@ function draftOf(def: WatchDef): Draft {
       d.metricPath = s.path;
       d.label = s.label ?? "";
       d.unit = s.unit ?? "";
+      break;
+    case "task":
+      d.task = s.task ?? "";
+      d.taskTo = s.to;
+      break;
+    case "mr":
+      d.task = s.task ?? "";
+      d.mrOn = s.on;
+      break;
+    case "branch":
+      d.project = s.project;
+      d.branch = s.branch;
+      break;
+    case "process":
+      d.task = s.task;
+      d.proc = s.process ?? "";
+      d.procOn = s.on;
+      break;
+    case "usage":
+      d.usageMetric = s.metric;
+      d.usagePeriod = s.period;
+      break;
+    case "command":
+      d.task = s.task;
+      d.command = s.command;
+      d.cwd = s.cwd ?? "";
       break;
     case "custom":
       d.instruction = s.instruction;
@@ -252,6 +311,28 @@ function specOf(d: Draft): unknown {
       };
     case "path":
       return { kind: "path", project: d.project, path: d.path.trim() };
+    case "task":
+      return { kind: "task", ...(d.task.trim() === "" ? {} : { task: d.task.trim() }), to: d.taskTo };
+    case "mr":
+      return { kind: "mr", ...(d.task.trim() === "" ? {} : { task: d.task.trim() }), on: d.mrOn };
+    case "branch":
+      return { kind: "branch", project: d.project, branch: d.branch.trim() };
+    case "process":
+      return {
+        kind: "process",
+        task: d.task.trim(),
+        ...(d.proc.trim() === "" ? {} : { process: d.proc.trim() }),
+        on: d.procOn,
+      };
+    case "usage":
+      return { kind: "usage", metric: d.usageMetric, period: d.usagePeriod };
+    case "command":
+      return {
+        kind: "command",
+        task: d.task.trim(),
+        command: d.command.trim(),
+        ...(d.cwd.trim() === "" ? {} : { cwd: d.cwd.trim() }),
+      };
     case "custom":
       return { kind: "custom", instruction: d.instruction.trim() };
   }
@@ -339,8 +420,10 @@ export function WatchForm({
         alert: { ...baseFire.alert, on: d.alert },
         run,
         runOverlap: d.actSkip ? "skip" : "allow",
+        settleMin: Number(d.settle || "0"),
+        cooldownMin: Number(d.cooldown || "0"),
       },
-      ...(d.project === "" || d.kind === "path" ? {} : { project: d.project }),
+      ...(d.project === "" || isEvent(d.kind) ? {} : { project: d.project }),
     });
     if (!parsed.success) {
       const issue = parsed.error.issues[0];
@@ -373,7 +456,7 @@ export function WatchForm({
   };
 
   const condNeedsValue = d.ctype === "above" || d.ctype === "below";
-  const numeric = d.kind !== "path" && (d.kind !== "price" || d.mode === "value");
+  const numeric = !isEvent(d.kind) && (d.kind !== "price" || d.mode === "value");
   return (
     <Sheet
       title={watch === undefined ? "Set up a watch" : "Edit watch"}
@@ -454,7 +537,7 @@ export function WatchForm({
                     });
                   } else {
                     const kind = picked as WatchSort;
-                    setD({ ...emptyDraft(kind), name: d.name, ...(kind === "path" ? { alert: false } : {}) });
+                    setD({ ...emptyDraft(kind), name: d.name, ...(isEvent(kind) ? { alert: false } : {}) });
                   }
                   setResult(undefined);
                 }}
@@ -506,6 +589,178 @@ export function WatchForm({
                   value={d.path}
                   placeholder="docs/plan.md"
                   onChange={(e) => set("path", e.target.value)}
+                />
+              )}
+            </Field>
+          </div>
+        )}
+        {(d.kind === "task" || d.kind === "mr") && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Task" hint="Empty: any task in this workspace.">
+              {(p) => (
+                <Input
+                  {...p}
+                  className="font-mono"
+                  value={d.task}
+                  placeholder="ACM-3"
+                  onChange={(e) => set("task", e.target.value)}
+                />
+              )}
+            </Field>
+            {d.kind === "task" ? (
+              <Field label="Fires when it">
+                {(p) => (
+                  <Select
+                    {...p}
+                    value={d.taskTo}
+                    onChange={(e) => set("taskTo", e.target.value as Draft["taskTo"])}
+                  >
+                    <option value="done">Is done</option>
+                    <option value="failed">Fails</option>
+                    <option value="needs-you">Needs you</option>
+                  </Select>
+                )}
+              </Field>
+            ) : (
+              <Field label="Merge request">
+                {(p) => (
+                  <Select
+                    {...p}
+                    value={d.mrOn}
+                    onChange={(e) => set("mrOn", e.target.value as Draft["mrOn"])}
+                  >
+                    <option value="opened">Is opened</option>
+                    <option value="merged">Is merged</option>
+                    <option value="failed">Fails its checks</option>
+                    <option value="any">Changes in any way</option>
+                  </Select>
+                )}
+              </Field>
+            )}
+          </div>
+        )}
+        {d.kind === "branch" && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Project" hint="Only its checkout is looked at.">
+              {(p) => (
+                <Select {...p} value={d.project} onChange={(e) => set("project", e.target.value)}>
+                  <option value="">Pick a project</option>
+                  {mine.map((pr) => (
+                    <option key={pr.id} value={pr.id}>
+                      {pr.id}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+            <Field label="Branch" hint="Fires when it gets new commits.">
+              {(p) => (
+                <Input
+                  {...p}
+                  className="font-mono"
+                  value={d.branch}
+                  placeholder="main"
+                  onChange={(e) => set("branch", e.target.value)}
+                />
+              )}
+            </Field>
+          </div>
+        )}
+        {d.kind === "process" && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Field label="Task">
+              {(p) => (
+                <Input
+                  {...p}
+                  className="font-mono"
+                  value={d.task}
+                  placeholder="ACM-3"
+                  onChange={(e) => set("task", e.target.value)}
+                />
+              )}
+            </Field>
+            <Field label="Process" hint="Its id or name. Empty: any.">
+              {(p) => <Input {...p} value={d.proc} onChange={(e) => set("proc", e.target.value)} />}
+            </Field>
+            <Field label="Fires when it">
+              {(p) => (
+                <Select
+                  {...p}
+                  value={d.procOn}
+                  onChange={(e) => set("procOn", e.target.value as Draft["procOn"])}
+                >
+                  <option value="failure">Exits with an error</option>
+                  <option value="any">Exits</option>
+                </Select>
+              )}
+            </Field>
+          </div>
+        )}
+        {d.kind === "usage" && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Count">
+              {(p) => (
+                <Select
+                  {...p}
+                  value={d.usageMetric}
+                  onChange={(e) => set("usageMetric", e.target.value as Draft["usageMetric"])}
+                >
+                  <option value="costUsd">Cost in USD</option>
+                  <option value="totalTokens">Tokens</option>
+                </Select>
+              )}
+            </Field>
+            <Field label="Over">
+              {(p) => (
+                <Select
+                  {...p}
+                  value={d.usagePeriod}
+                  onChange={(e) => set("usagePeriod", e.target.value as Draft["usagePeriod"])}
+                >
+                  <option value="today">Today</option>
+                  <option value="week">This week</option>
+                  <option value="month">This month</option>
+                </Select>
+              )}
+            </Field>
+          </div>
+        )}
+        {d.kind === "command" && (
+          <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field
+                label="Task"
+                hint="The command runs in this task's sandbox, never in majhi's own environment."
+              >
+                {(p) => (
+                  <Input
+                    {...p}
+                    className="font-mono"
+                    value={d.task}
+                    placeholder="ACM-3"
+                    onChange={(e) => set("task", e.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label="Folder" hint="Inside the task folder. Empty: the task folder.">
+                {(p) => (
+                  <Input
+                    {...p}
+                    className="font-mono"
+                    value={d.cwd}
+                    onChange={(e) => set("cwd", e.target.value)}
+                  />
+                )}
+              </Field>
+            </div>
+            <Field label="Command" hint="Run on every look. Put no secrets in it.">
+              {(p) => (
+                <Input
+                  {...p}
+                  className="font-mono"
+                  value={d.command}
+                  placeholder="pnpm lint --quiet"
+                  onChange={(e) => set("command", e.target.value)}
                 />
               )}
             </Field>
@@ -867,10 +1122,10 @@ export function WatchForm({
                   {numeric && <option value="above">It goes above</option>}
                   {numeric && <option value="below">It goes below</option>}
                   <option value="changed">It changes</option>
-                  {(d.kind === "price" || d.kind === "custom") && (
+                  {(d.kind === "price" || d.kind === "custom" || d.kind === "command") && (
                     <option value="contains">It contains text</option>
                   )}
-                  {(d.kind === "price" || d.kind === "custom") && (
+                  {(d.kind === "price" || d.kind === "custom" || d.kind === "command") && (
                     <option value="notContains">It stops containing text</option>
                   )}
                   {(d.kind === "website" || d.kind === "custom") && <option value="down">It is down</option>}
@@ -911,7 +1166,7 @@ export function WatchForm({
             )}
           </div>
         </fieldset>
-        {d.kind !== "path" && (
+        {!isEvent(d.kind) && (
           <Field label="A fix opens in" hint="The project a fix task goes to">
             {(p) => (
               <Select {...p} value={d.project} onChange={(e) => set("project", e.target.value)}>
@@ -941,6 +1196,28 @@ export function WatchForm({
                 checked={d.actSkip}
                 onChange={(v) => set("actSkip", v)}
               />
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label="Wait for a change to hold (minutes)" hint="0: fire at once">
+                  {(p) => (
+                    <Input
+                      {...p}
+                      inputMode="numeric"
+                      value={d.settle}
+                      onChange={(e) => set("settle", e.target.value)}
+                    />
+                  )}
+                </Field>
+                <Field label="Wait after it fires (minutes)" hint="A change in between fires after the wait">
+                  {(p) => (
+                    <Input
+                      {...p}
+                      inputMode="numeric"
+                      value={d.cooldown}
+                      onChange={(e) => set("cooldown", e.target.value)}
+                    />
+                  )}
+                </Field>
+              </div>
             </>
           )}
         </fieldset>
