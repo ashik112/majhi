@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
 import { CaptainRepo } from "./repo.ts";
-import { CaptainTell, TELL_LIMIT, TELL_WINDOW_MS } from "./tell.ts";
+import { CaptainTell } from "./tell.ts";
 
-/** `tasks.tell`: who may write to a lead, where, and how often. */
+/** `tasks.tell`: who may write to a lead, and where. How often is keyed by the lead's turns: keys.test.ts. */
 
 function setup() {
   const state = {
@@ -35,7 +35,7 @@ function setup() {
     lanes,
     store,
     keys: new CaptainRepo(new Store(":memory:").raw),
-    // The lead took a new turn before each note: only the limit is under test here (keys.test.ts has the rest).
+    // The lead took a new turn before each note, so the key never refuses here (keys.test.ts has the repeats).
     lastTurn: () => ++turn,
     now: () => state.now,
   } as unknown as ConstructorParameters<typeof CaptainTell>[0]);
@@ -72,32 +72,6 @@ describe("tasks.tell", () => {
     t.state.boss = undefined;
     await expect(t.tell.tell(say(), lane)).rejects.toThrow(/Only the captain/);
     expect(t.sent).toEqual([]);
-  });
-
-  it("limits a task to three notes in ten minutes, and counts each task apart", async () => {
-    const t = setup();
-    for (let i = 0; i < TELL_LIMIT; i++) await t.tell.tell(say(`note ${i}`), lane);
-    await expect(t.tell.tell(say("one more"), lane)).rejects.toThrow(/3 times in the last 10 minutes/);
-    // Another task of the workspace is its own count (the lane still reaches only its own workspace).
-    expect(t.sent).toHaveLength(TELL_LIMIT);
-    // The window moves on.
-    t.state.now = new Date(t.state.now.getTime() + TELL_WINDOW_MS + 1);
-    await expect(t.tell.tell(say("again"), lane)).resolves.toMatchObject({ id: "ACM-1" });
-  });
-
-  it("holds a hundred notes at once to three, and gives the slot back when a send is refused", async () => {
-    const t = setup();
-    const results = await Promise.allSettled(
-      Array.from({ length: 100 }, (_, i) => t.tell.tell(say(`n${i}`), lane)),
-    );
-    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(TELL_LIMIT);
-    expect(t.sent).toHaveLength(TELL_LIMIT);
-
-    const u = setup();
-    u.state.fail = "ACM-1 is paused, so there is no lead working to tell.";
-    for (let i = 0; i < 10; i++) await expect(u.tell.tell(say(), lane)).rejects.toThrow(/paused/);
-    u.state.fail = undefined;
-    await expect(u.tell.tell(say(), lane)).resolves.toMatchObject({ id: "ACM-1" });
   });
 
   it("passes the text on untouched: words that look like orders stay words", async () => {
