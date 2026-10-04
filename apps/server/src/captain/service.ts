@@ -32,6 +32,7 @@ import { authorityOf, choresNow, effectiveAuthority, migratePickOrgs, workspaceI
 import { laneOfScope } from "./memory-scopes.ts";
 import type { CaptainPorts } from "./ports.ts";
 import { CaptainRepo, type StoredAction } from "./repo.ts";
+import { type RollupDeps, RollupPoster } from "./rollup-post.ts";
 import { dailyCaps, MEMORY_WAITING, restWhy } from "./rules.ts";
 import { ChoreRunner, type Workspace } from "./runner.ts";
 import { summaryOf } from "./summary.ts";
@@ -80,6 +81,8 @@ export interface CaptainDeps {
   ownerCommand: (command: string, input: unknown, meta: CommandMeta) => Promise<void>;
   /** The workspace of a task, `undefined` when it is unknown or a chat. Default: majhi's tasks. */
   taskOrg?: (task: string) => string | undefined;
+  /** What the roll-up post into the root chat reads and writes. Without it, no roll-ups. */
+  rollup?: Pick<RollupDeps, "spend" | "incidents" | "bossChat" | "post">;
   /** How long a burst of triggers is batched. Default `TRIGGER_MS`. */
   triggerMs?: number;
   now?: () => Date;
@@ -104,11 +107,23 @@ export class CaptainService {
   private plays: ChorePlaybooks;
   /** The rest of the playbook scheduler, run in the same minute sweep. */
   private playbookSweep: (() => Promise<void>) | undefined;
+  private readonly rollup: RollupPoster | undefined;
   private readonly pending = new Map<string, { timer: NodeJS.Timeout; why: string; subject?: string }>();
 
   constructor(private readonly deps: CaptainDeps) {
     this.plays = new DefaultChorePlays(undefined, () => this.now());
     this.repo = new CaptainRepo(deps.store.raw);
+    this.rollup =
+      deps.rollup === undefined
+        ? undefined
+        : new RollupPoster({
+            ...deps.rollup,
+            store: deps.store,
+            config: deps.config,
+            lanes: deps.lanes,
+            mode: () => deps.autonomy.mode(),
+            now: () => this.now(),
+          });
     this.laneGate = new LaneGate({
       repo: this.repo,
       ports: deps.ports,
@@ -227,6 +242,7 @@ export class CaptainService {
     }
     await this.playbookSweep?.().catch(() => undefined);
     await this.dailySummary();
+    await this.rollup?.sweep().catch((err: unknown) => console.error(`Roll-up failed: ${errorMessage(err)}`));
   }
 
   // ---------------------------------------------------------------------------
