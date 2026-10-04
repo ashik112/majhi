@@ -15,7 +15,7 @@ import {
   Settings,
   Users,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { AppearanceButton } from "@/components/shell/appearance";
 import { Bell } from "@/components/shell/bell";
 import { WorkspaceSwitcher } from "@/components/shell/workspace-switcher";
@@ -67,8 +67,8 @@ export function Sidebar() {
     >
       <Brand />
       <WorkspaceSwitcher />
-      {/* The middle scrolls only when a short window needs the room. The update row sits below it, never over it. */}
-      <div className="-mx-3 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-3 pt-0.5 pb-2 scroll-fade">
+      {/* The navigation never scrolls. Only the agent list does, inside itself, once it is opened past its first rows. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
         <MainNav />
         <AgentsNow />
       </div>
@@ -389,8 +389,12 @@ function agentRows(
   return { rows, working: rows.filter((r) => r.lamp === "working").length, idle };
 }
 
+/** Rows shown before "Show N more": the list keeps the sidebar short. */
+const AGENTS_SHOWN = 4;
+
 /** Who works right now and what each agent does; an account near its limit says so with its reset time. */
 function AgentsNow() {
+  const [all, setAll] = useState(false);
   const index = useAgentIndex();
   const tasks = useTasks().data;
   const accounts = useAccounts().data;
@@ -400,13 +404,13 @@ function AgentsNow() {
     [index, tasks, accounts, now],
   );
   return (
-    <section aria-label="Agents now" className="flex shrink-0 flex-col gap-1">
+    <section aria-label="Agents now" className="flex min-h-0 flex-1 flex-col gap-1">
       <div className="flex items-center gap-2 px-2.5">
         <SectionLabel className="min-w-0 flex-1 truncate">Agents now</SectionLabel>
         <span className="font-mono text-xs text-fg-faint">{working} working</span>
       </div>
-      <ul className="flex flex-col">
-        {rows.map((row) => (
+      <ul className={cn("flex min-h-0 flex-col", all && "overflow-y-auto overscroll-contain scroll-fade")}>
+        {(all ? rows : rows.slice(0, AGENTS_SHOWN)).map((row) => (
           <li
             key={row.id}
             title={`@${row.id}: ${row.line}${row.limit ? `. ${row.limit}` : ""}`}
@@ -422,22 +426,32 @@ function AgentsNow() {
                 )}
                 <span className="truncate">@{row.id}</span>
               </span>
-              <span className="truncate text-xs text-fg-faint">{row.line}</span>
-              {row.limit && (
-                <span
-                  className={cn(
-                    "truncate text-xs",
-                    row.lamp === "paused" ? "text-lamp-paused" : "text-caution",
-                  )}
-                >
-                  {row.limit}
-                </span>
-              )}
+              <span className="truncate text-xs text-fg-faint">
+                {row.line}
+                {row.limit && (
+                  <span className={row.lamp === "paused" ? "text-lamp-paused" : "text-caution"}>
+                    {" · "}
+                    {row.limit}
+                  </span>
+                )}
+              </span>
             </span>
           </li>
         ))}
-        {idle > 0 && <li className="px-2.5 py-1 pl-[27px] text-xs text-fg-faint">{idle} idle</li>}
       </ul>
+      {(rows.length > AGENTS_SHOWN || idle > 0) && (
+        <button
+          type="button"
+          onClick={() => setAll((v) => !v)}
+          className="shrink-0 cursor-pointer rounded-md px-2.5 py-1 pl-[27px] text-left text-xs text-fg-faint hover:bg-raised hover:text-fg"
+        >
+          {all
+            ? "Show fewer"
+            : rows.length > AGENTS_SHOWN
+              ? `Show ${rows.length - AGENTS_SHOWN} more${idle > 0 ? `, ${idle} idle` : ""}`
+              : `${idle} idle`}
+        </button>
+      )}
     </section>
   );
 }
