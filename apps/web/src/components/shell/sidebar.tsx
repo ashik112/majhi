@@ -140,6 +140,7 @@ function MainNav() {
   return (
     <nav aria-label="Main" className="flex flex-col gap-4 [@media(max-height:799px)]:gap-2.5">
       <div className="flex flex-col gap-px">
+        <NavRow page="today" active={isActive(PAGE_PATH.today)} />
         <NavRow page="board" active={isActive(PAGE_PATH.board)} />
         <NavRow page="chats" active={isActive(PAGE_PATH.chats)} />
         <NavRow

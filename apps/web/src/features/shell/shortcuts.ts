@@ -9,7 +9,7 @@ export interface Press {
   shift?: boolean;
 }
 
-export type ShortcutGroup = "Anywhere" | "Go to" | "Task" | "Board" | "Decisions" | "Message box";
+export type ShortcutGroup = "Anywhere" | "Go to" | "Task" | "Board" | "Decisions" | "Today" | "Message box";
 
 /**
  * One row of the shortcut table. The table is the single source: the handlers match key presses
@@ -68,6 +68,7 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
     group: "Go to",
     press: { key: "g" },
   },
+  go("y", PAGE_PATH.today, "Go to Today (brief, agenda, plan)"),
   go("b", PAGE_PATH.board, "Go to the board"),
   go("a", PAGE_PATH.agents, "Go to agents"),
   go("c", PAGE_PATH.chats, "Go to chats"),
@@ -119,6 +120,9 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   },
   { id: "decisions-reply", keys: ["r"], what: "Write a reply", group: "Decisions" },
   { id: "decisions-open", keys: ["o"], what: "Open the task", group: "Decisions" },
+  { id: "today-move", keys: ["j", "k"], what: "Next or previous item (arrows too)", group: "Today" },
+  { id: "today-open", keys: ["Enter"], what: "Take the item's action", group: "Today" },
+  { id: "today-done", keys: ["e"], what: "Dismiss a finding or close a date", group: "Today" },
   { id: "board-open", keys: ["Enter"], what: "Open the card you are on", group: "Board" },
 ];
 

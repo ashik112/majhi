@@ -288,7 +288,16 @@ function FindingRow({
  * on screen, and the two actions, Make a task and Dismiss with a reason. Keys: arrows or j and k move,
  * Enter opens the detail, t makes a task, d dismisses.
  */
-export function FindingsSheet({ orgs, now }: { orgs: readonly CaptainOrg[]; now: number }) {
+export function FindingsSheet({
+  orgs,
+  now,
+  focus,
+}: {
+  orgs: readonly CaptainOrg[];
+  now: number;
+  /** A finding to select first, from a link. */
+  focus?: number | undefined;
+}) {
   const query = useFindings();
   const toTask = useFindingToTask();
   const dismiss = useFindingDismiss();
@@ -297,7 +306,7 @@ export function FindingsSheet({ orgs, now }: { orgs: readonly CaptainOrg[]; now:
   const [group, setGroup] = useState<FindingGroup>("open");
   const [org, setOrg] = useState("");
   const [source, setSource] = useState("");
-  const [selectedId, setSelectedId] = useState<number>();
+  const [selectedId, setSelectedId] = useState<number | undefined>(focus);
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
   const [dismissing, setDismissing] = useState(false);
 
