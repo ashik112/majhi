@@ -206,8 +206,12 @@ describe("planConnections", () => {
       { type: "http", name: "acme-do-doks", url: "https://doks.mcp.digitalocean.com/mcp", headers: auth },
     ]);
     expect(plan.gate.map((g) => g.server)).toEqual(["acme-do-droplets", "acme-do-doks"]);
+    // doctl reads the same sign-in, and the gate checks its commands.
+    expect(plan.env).toEqual({ DIGITALOCEAN_ACCESS_TOKEN: "do-token-0123456789" });
+    expect(plan.gate.map((g) => g.clis)).toEqual([["doctl"], ["doctl"]]);
+    expect(plan.secrets).toContainEqual({ name: "acme-do.oauth", value: "do-token-0123456789" });
     expect(plan.uses.map((u) => u.use)).toEqual([
-      "MCP servers acme-do-droplets (Droplets), acme-do-doks (Kubernetes).",
+      "MCP servers acme-do-droplets (Droplets), acme-do-doks (Kubernetes). Variable DIGITALOCEAN_ACCESS_TOKEN holds the sign-in for doctl. Commands that change something ask the owner first.",
     ]);
   });
 

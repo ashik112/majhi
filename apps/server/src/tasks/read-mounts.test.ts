@@ -207,7 +207,7 @@ describe("registered projects in every run", () => {
     expect(own).toContainEqual({ path: w.repo("api"), readOnly: true });
     expect(own.map((m) => m.path)).not.toContain(w.repo("ledger"));
     // The task's own folder is not a mount here: the runner adds it, read-write.
-    expect(own.every((m) => m.readOnly === true || m.path.endsWith(".git"))).toBe(true);
+    expect(own.every((m) => m.readOnly === true || m.path.endsWith(".git") || /\/(cache|tools)\//.test(m.path))).toBe(true);
 
     await must("tasks.create", {
       text: "look around as the captain",

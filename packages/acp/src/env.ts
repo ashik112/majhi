@@ -101,3 +101,10 @@ export function buildEnv(
   }
   return env;
 }
+
+/** Puts the workspace's tools folder (`MAJHI_TOOLS`, when the run has one) first on PATH. */
+export function withToolsPath(env: Record<string, string>): Record<string, string> {
+  const tools = env.MAJHI_TOOLS;
+  if (tools === undefined || tools === "") return env;
+  return { ...env, PATH: `${tools}/bin:${env.PATH ?? ""}` };
+}
