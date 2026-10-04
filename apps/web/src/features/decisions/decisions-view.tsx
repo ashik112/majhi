@@ -198,7 +198,7 @@ export function DecisionsView() {
       ? "What waits for you, with a recommendation where the captain has one."
       : all.length === 0
         ? "All answered."
-        : `${total} waiting for you`;
+        : `${total} ${total === 1 ? "needs" : "need"} you`;
   const answered = lastAnswerText(lastAnsweredAt(), (iso) => formatAgo(iso, now));
 
   let body: React.ReactNode;

@@ -51,13 +51,20 @@ export const PAGE_KEYWORDS: Record<PageName, string> = {
 };
 
 /**
- * The sidebar under the daily rows (Board, Chats, Captain): the pages the owner sets up
- * once and tunes, then the ones opened rarely. Workspaces open from the switcher at the top.
+ * The pages behind the sidebar's one Setup row: what is set up once and tuned now and then. The
+ * daily rows (Today, Decisions, Watch, Board, Chats, Business, Captain, Playbooks) stay above it.
+ * Workspaces open from the switcher at the top.
  */
-export const NAV_GROUPS: readonly { label: string; pages: readonly PageName[] }[] = [
-  {
-    label: "Setup",
-    pages: ["agents", "accounts", "connections", "projects", "skills", "memory", "automations"],
-  },
-  { label: "System", pages: ["setup", "usage", "audit"] },
+export const SETUP_PAGES: readonly PageName[] = [
+  "agents",
+  "accounts",
+  "connections",
+  "projects",
+  "skills",
+  "memory",
+  "automations",
+  "limits",
+  "setup",
+  "usage",
+  "audit",
 ];

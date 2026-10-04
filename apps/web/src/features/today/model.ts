@@ -1,5 +1,13 @@
-import type { AgendaItem, AgendaKind, AgendaTarget } from "@majhi/shared";
+import {
+  AGENDA_KIND_LABEL,
+  type AgendaItem,
+  type AgendaKind,
+  type AgendaTarget,
+  DECISION_KIND_LABEL,
+  type OwnerDecision,
+} from "@majhi/shared";
 import type { LampState } from "@/components/ui/lamp";
+import { rowTitle } from "@/features/decisions/model";
 import type { BannerAction } from "@/features/shell/model";
 
 /** Where an agenda item's one action goes. Each target is a place that already exists. */
@@ -61,11 +69,29 @@ export function dayText(day: string): string {
     : d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
 }
 
-/** The header's one sentence. */
-export function subtitleOf(input: { day: string; count: number; minutes: number }): string {
+/**
+ * The header's one sentence. The agenda holds decisions and also dates, follow-ups and findings, so
+ * it never says "need you": that word counts decisions only (Decisions, the bell, the Board).
+ */
+export function subtitleOf(input: { day: string; count: number; minutes: number; later: number }): string {
   const date = dayText(input.day);
-  if (input.count === 0) return `${date}. Nothing needs you.`;
-  return `${date}. ${input.count} ${input.count === 1 ? "thing needs" : "things need"} you, about ${minutesText(input.minutes)}.`;
+  const later = input.later > 0 ? `, ${input.later} more later` : "";
+  if (input.count === 0) return `${date}. Nothing on today's agenda${later}.`;
+  return `${date}. ${input.count} on today's agenda, about ${minutesText(input.minutes)}${later}.`;
+}
+
+/** What an agenda row calls itself: a decision uses its Decisions kind and title, so both screens agree. */
+export function rowLabels(
+  item: Pick<AgendaItem, "kind" | "title" | "target">,
+  decisions: readonly OwnerDecision[] | undefined,
+): { kind: string; title: string } {
+  if (item.target.to === "decision") {
+    const id = item.target.id;
+    const decision = decisions?.find((d) => d.id === id);
+    if (decision !== undefined)
+      return { kind: DECISION_KIND_LABEL[decision.kind], title: rowTitle(decision) };
+  }
+  return { kind: AGENDA_KIND_LABEL[item.kind], title: item.title };
 }
 
 /** The brief's time on the owner's clock, in the zone the server names. */

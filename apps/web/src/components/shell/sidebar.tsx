@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { MessageSquare } from "lucide-react";
-import { useMemo } from "react";
+import { ChevronRight, MessageSquare } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { AppearanceButton } from "@/components/shell/appearance";
 import { Bell } from "@/components/shell/bell";
 import { WorkspaceSwitcher } from "@/components/shell/workspace-switcher";
@@ -18,7 +18,8 @@ import { useNeedsYou } from "@/features/decisions/needs-you";
 import { checksNeedingYou } from "@/features/health/model";
 import { reviewTarget } from "@/features/memory/model";
 import { accountsNeedingYou, agentsRightNow, healthCheckedText } from "@/features/shell/model";
-import { NAV_GROUPS, PAGE_LABEL } from "@/features/shell/nav";
+import { PAGE_LABEL, SETUP_PAGES } from "@/features/shell/nav";
+import { chordOf } from "@/features/shell/shortcuts";
 import { UpdateNotice } from "@/features/update/update-notice";
 import { useAgentIndex } from "@/lib/agent-index";
 import { prefetchCaptain } from "@/lib/captain-queries";
@@ -31,6 +32,7 @@ import { PAGE_PATH, type PageName } from "@/lib/pages";
 import { useHealth, useHostStatus } from "@/lib/queries";
 import { useAccounts } from "@/lib/studio-queries";
 import { useProjects, useTasks } from "@/lib/task-queries";
+import { useAfterFirstPaint } from "@/lib/use-after-paint";
 import { useNow } from "@/lib/use-now";
 import { useWatch } from "@/lib/watch-queries";
 
@@ -38,9 +40,8 @@ const ITEM =
   "relative flex cursor-pointer items-center rounded-md text-left transition-colors duration-150 hover:bg-raised hover:text-fg";
 
 /**
- * The sidebar, top to bottom: the brand with the bell, the workspace switcher, the daily rows (Board,
- * Chats, Captain, Autonomous), the pages set up once (Setup), the ones opened rarely (System), and the
- * agents' lamps at the foot.
+ * The sidebar, top to bottom: the brand with the bell, the workspace switcher, the daily rows in the
+ * order of the loop (see MainNav), one Setup row, and the agents' lamps at the foot.
  */
 export function Sidebar() {
   return (
@@ -116,49 +117,130 @@ function Brand() {
   );
 }
 
-type NavBadge = { text: string; alert?: boolean; dot?: boolean };
+/** How a row's count reads: red is for what waits for the owner (Decisions only); amber is a thing to look at. */
+type NavBadge = { text: string; tone?: "needs" | "check"; dot?: boolean; title?: string };
 
+/**
+ * The sidebar's rows, in the order of the daily loop. Brief and decide first (Today, Decisions), then
+ * Watch when something is watched; the work the captain is given (Board, Chats, Business); the captain
+ * and what it runs on its own (Autonomous, Playbooks); and one Setup row that opens the rest.
+ */
 function MainNav() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const waiting = useNeedsYou() ?? 0;
+  const isActive = (to: string) =>
+    to === "/" ? pathname === "/" || pathname.startsWith("/t/") : pathname.startsWith(to);
+  const gap = "gap-4 [@media(max-height:799px)]:gap-2.5";
+  return (
+    <nav aria-label="Main" className={cn("flex flex-col", gap)}>
+      <div className="flex flex-col gap-px">
+        <NavRow page="today" active={isActive(PAGE_PATH.today)} />
+        <NavRow
+          page="decisions"
+          active={isActive(PAGE_PATH.decisions)}
+          badge={waiting > 0 ? { text: String(waiting), tone: "needs" } : undefined}
+        />
+        <WatchRow active={isActive(PAGE_PATH.watch)} />
+      </div>
+      <div className="flex flex-col gap-px">
+        <NavRow page="board" active={isActive(PAGE_PATH.board)} />
+        <NavRow page="chats" active={isActive(PAGE_PATH.chats)} />
+        <NavRow page="business" active={isActive(PAGE_PATH.business)} />
+      </div>
+      <div className="flex flex-col gap-px">
+        <CaptainRow />
+        <AutonomyRow />
+        <NavRow page="playbooks" active={isActive(PAGE_PATH.playbooks)} sub />
+      </div>
+      <SetupGroup isActive={isActive} />
+    </nav>
+  );
+}
+
+const SETUP_OPEN_KEY = "majhi.sidebar.setup";
+
+function readSetupOpen(): boolean {
+  try {
+    return window.localStorage.getItem(SETUP_OPEN_KEY) === "open";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Setup: one row that opens the pages set up once (Agents, Accounts, Connections, and the rest). It opens
+ * by itself when one of them is the page on screen. Closed, a dot says that something inside needs a
+ * look, and its tooltip says what. None of it is a decision, so none of it is red.
+ */
+function SetupGroup({ isActive }: { isActive: (to: string) => boolean }) {
   const agents = useAgentIndex();
   const accounts = useAccounts().data;
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const checks = useHealthChecks().data?.checks;
-  const signIn = accountsNeedingYou(accounts ?? []).length;
-  const needYou = checksNeedingYou(checks);
-  const waiting = useNeedsYou() ?? 0;
-  const pendingFacts = useFacts({ status: "pending" }).data ?? [];
+  const settled = useAfterFirstPaint(2_000);
+  const checks = useHealthChecks(settled).data?.checks;
+  const pendingFacts = useFacts({ status: "pending" }, settled).data ?? [];
   const projects = useProjects().data;
+  const signIn = accountsNeedingYou(accounts ?? []).length;
+  const toFix = checksNeedingYou(checks);
   const toReview = pendingFacts.length;
   const reviewAt = reviewTarget(pendingFacts, new Map((projects ?? []).map((p) => [p.id, p.org])));
+  const current = SETUP_PAGES.find((page) => isActive(PAGE_PATH[page]));
+  const inSetup = current !== undefined;
+  const [open, setOpen] = useState(readSetupOpen);
+  // Landing on one of its pages (a link, a chord, the palette) opens the group, so the row you are on is visible.
+  useEffect(() => {
+    if (inSetup) setOpen(true);
+  }, [inSetup]);
+  // On a short window the list scrolls; keep the row you are on in view.
+  useEffect(() => {
+    if (open && current !== undefined) {
+      document.querySelector('#sidebar-setup [aria-current="page"]')?.scrollIntoView({ block: "nearest" });
+    }
+  }, [open, current]);
+  const toggle = () =>
+    setOpen((was) => {
+      try {
+        window.localStorage.setItem(SETUP_OPEN_KEY, was ? "closed" : "open");
+      } catch {
+        // The row still works without a place to remember it.
+      }
+      return !was;
+    });
+  const notes = [
+    toFix > 0 ? `${toFix} to fix` : undefined,
+    signIn > 0 ? `${signIn} to sign in` : undefined,
+    toReview > 0 ? `${toReview} to review` : undefined,
+  ].filter((note): note is string => note !== undefined);
   const badge: Partial<Record<PageName, NavBadge>> = {};
   if (agents.size > 0) badge.agents = { text: String(agents.size) };
   if ((accounts?.length ?? 0) > 0 || signIn > 0)
     badge.accounts = { text: String(accounts?.length ?? 0), dot: signIn > 0 };
-  if (needYou > 0) badge.usage = { text: `${needYou} to fix`, alert: true };
-  const isActive = (to: string) =>
-    to === "/" ? pathname === "/" || pathname.startsWith("/t/") : pathname.startsWith(to);
-
+  if (toFix > 0) badge.usage = { text: `${toFix} to fix`, tone: "check" };
   return (
-    <nav aria-label="Main" className="flex flex-col gap-4 [@media(max-height:799px)]:gap-2.5">
-      <div className="flex flex-col gap-px">
-        <NavRow page="today" active={isActive(PAGE_PATH.today)} />
-        <NavRow page="board" active={isActive(PAGE_PATH.board)} />
-        <NavRow page="chats" active={isActive(PAGE_PATH.chats)} />
-        <NavRow
-          page="decisions"
-          active={isActive(PAGE_PATH.decisions)}
-          badge={waiting > 0 ? { text: String(waiting), alert: true } : undefined}
+    <div className="flex flex-col gap-px">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls="sidebar-setup"
+        title={notes.length > 0 ? `Setup: ${notes.join(", ")}` : "Setup"}
+        onClick={toggle}
+        className={cn(ITEM, "h-8 shrink-0 gap-1.5 px-2.5 text-body font-medium", "text-fg-muted")}
+      >
+        <ChevronRight
+          aria-hidden="true"
+          className={cn("size-3.5 shrink-0 transition-transform duration-150", open && "rotate-90")}
         />
-        <CaptainRow />
-        <AutonomyRow />
-        <PlaybooksRow active={isActive(PAGE_PATH.playbooks)} />
-        <WatchRow active={isActive(PAGE_PATH.watch)} />
-        <NavRow page="business" active={isActive(PAGE_PATH.business)} />
-      </div>
-      {NAV_GROUPS.map((group) => (
-        <div key={group.label} className="flex flex-col gap-px">
-          <SectionLabel className="mb-1 px-2.5">{group.label}</SectionLabel>
-          {group.pages.map((page) =>
+        <span className="min-w-0 truncate">Setup</span>
+        {!open && notes.length > 0 && (
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs font-normal text-caution">
+            <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
+            <span className="sr-only">{notes.join(", ")}</span>
+            {notes.length > 1 ? notes.length : notes[0]}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div id="sidebar-setup" className="ml-2.5 flex flex-col gap-px border-l border-line pl-1.5">
+          {SETUP_PAGES.map((page) =>
             page === "memory" && toReview > 0 && reviewAt !== undefined ? (
               <div key={page} className="relative flex">
                 <NavRow page={page} active={isActive(PAGE_PATH[page])} className="flex-1" />
@@ -166,8 +248,8 @@ function MainNav() {
                 <Link
                   to={PAGE_PATH.memory}
                   search={{ project: reviewAt, tab: "lessons" }}
-                  title="Open the lessons that wait for you"
-                  className="tnum absolute top-1 right-1 flex h-6 items-center rounded-[5px] px-1.5 text-xs text-lamp-needs transition-colors duration-150 hover:bg-raised hover:underline"
+                  title="Open the lessons to review"
+                  className="tnum absolute top-1 right-1 flex h-6 items-center rounded-[5px] px-1.5 text-xs text-caution transition-colors duration-150 hover:bg-raised hover:underline"
                 >
                   {toReview} to review
                 </Link>
@@ -177,8 +259,8 @@ function MainNav() {
             ),
           )}
         </div>
-      ))}
-    </nav>
+      )}
+    </div>
   );
 }
 
@@ -187,30 +269,39 @@ function NavRow({
   active,
   badge,
   className,
+  sub,
 }: {
   page: PageName;
   active: boolean;
   badge?: NavBadge | undefined;
   className?: string;
+  /** A row under Captain: indented behind a rule. */
+  sub?: boolean;
 }) {
+  const chord = chordOf(PAGE_PATH[page]);
   return (
     <Link
       to={PAGE_PATH[page]}
       search={{}}
       aria-current={active ? "page" : undefined}
+      title={chord === undefined ? PAGE_LABEL[page] : `${PAGE_LABEL[page]} (${chord})`}
       className={cn(
         ITEM,
         "h-8 shrink-0 px-2.5 text-body font-medium",
+        sub && "ml-2.5 border-l border-line pl-2",
         active ? ROW_SELECTED : "text-fg-muted",
         className,
       )}
     >
-      <span className="min-w-0 truncate">{PAGE_LABEL[page]}</span>
+      <span className={cn("min-w-0 truncate", sub && "pl-1.5")}>{PAGE_LABEL[page]}</span>
       {badge && (
         <span
+          title={badge.title}
           className={cn(
             "tnum ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-xs font-normal",
-            badge.alert ? "text-lamp-needs" : "text-fg-faint",
+            badge.tone === "needs" && "text-lamp-needs",
+            badge.tone === "check" && "text-caution",
+            badge.tone === undefined && "text-fg-faint",
           )}
         >
           {badge.dot && (
@@ -223,6 +314,28 @@ function NavRow({
         </span>
       )}
     </Link>
+  );
+}
+
+/**
+ * Watch: what is watched and the incidents. It shows only when something is watched or an incident is
+ * open, and carries a lamp only while a service is down or an incident is open, so a quiet day is a quiet row.
+ */
+function WatchRow({ active }: { active: boolean }) {
+  const watch = useWatch().data;
+  const down = watch?.services.filter((s) => s.status === "down").length ?? 0;
+  const open = watch?.incidents.filter((i) => i.status === "open").length ?? 0;
+  const lit = Math.max(down, open);
+  const hasAny = (watch?.services.length ?? 0) > 0 || open > 0;
+  if (!hasAny && !active) return null;
+  return (
+    <NavRow
+      page="watch"
+      active={active}
+      badge={
+        lit > 0 ? { text: down > 0 ? `${down} down` : `${open} open`, tone: "needs", dot: false } : undefined
+      }
+    />
   );
 }
 
@@ -295,7 +408,7 @@ function AutonomyRow() {
   return (
     <div
       title={hold ?? unavailable}
-      className="mb-1 ml-2.5 flex shrink-0 items-center gap-1 border-l border-line pl-2"
+      className="ml-2.5 flex shrink-0 items-center gap-1 border-l border-line pl-2"
     >
       <div className="flex min-h-8 min-w-0 flex-1 flex-col justify-center px-1.5 py-1 text-body font-medium text-fg-muted">
         <span className="flex min-w-0 items-center gap-2">
@@ -313,65 +426,12 @@ function AutonomyRow() {
   );
 }
 
-/** Playbooks, a sub-row of Captain beside Autonomous: the captain's standing work, one page. */
-function PlaybooksRow({ active }: { active: boolean }) {
-  return (
-    <Link
-      to={PAGE_PATH.playbooks}
-      search={{}}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        ITEM,
-        "mb-1 ml-2.5 h-8 shrink-0 border-l border-line pl-2 text-body font-medium",
-        active ? ROW_SELECTED : "text-fg-muted",
-      )}
-    >
-      <span className="truncate pl-1.5">Playbooks</span>
-    </Link>
-  );
-}
-
-/**
- * Watch, a sub-row of Captain beside Playbooks: what is watched and the incidents. It shows a lamp only
- * while a service is down or an incident is open, so a quiet day is a quiet row.
- */
-function WatchRow({ active }: { active: boolean }) {
-  const watch = useWatch().data;
-  const down = watch?.services.filter((s) => s.status === "down").length ?? 0;
-  const open = watch?.incidents.filter((i) => i.status === "open").length ?? 0;
-  const lit = Math.max(down, open);
-  const hasAny = (watch?.services.length ?? 0) > 0 || open > 0;
-  if (!hasAny && !active) return null;
-  return (
-    <Link
-      to={PAGE_PATH.watch}
-      search={{}}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        ITEM,
-        "mb-1 ml-2.5 h-8 shrink-0 border-l border-line pl-2 text-body font-medium",
-        active ? ROW_SELECTED : "text-fg-muted",
-      )}
-    >
-      <span className="flex min-w-0 items-center gap-2 pl-1.5">
-        <span className="truncate">Watch</span>
-        {lit > 0 && (
-          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs font-normal text-lamp-needs">
-            <Lamp state="needs" size={7} />
-            {down > 0 ? `${down} down` : `${open} open`}
-          </span>
-        )}
-      </span>
-    </Link>
-  );
-}
-
 /** Four lamps with counts, every agent counted once, and the Appearance button. */
 function AgentsNow() {
   const index = useAgentIndex();
   const tasks = useTasks().data;
   const accounts = useAccounts().data;
-  const checksAt = useHealthChecks().data?.checkedAt;
+  const checksAt = useHealthChecks(useAfterFirstPaint(2_000)).data?.checkedAt;
   const now = useNow(30_000);
   const pulse = useMemo(
     () => agentsRightNow([...index.values()], tasks ?? [], accounts ?? []),
@@ -410,9 +470,14 @@ function AgentsNow() {
           </li>
         ))}
       </ul>
-      <p className="truncate px-1 text-xs text-fg-faint [@media(max-height:799px)]:hidden">
+      <Link
+        to={PAGE_PATH.usage}
+        search={{}}
+        title="Open Health and usage"
+        className="truncate rounded-sm px-1 text-xs text-fg-faint transition-colors duration-150 hover:text-fg [@media(max-height:799px)]:hidden"
+      >
         {healthCheckedText(accounts ?? [], now, checksAt)}
-      </p>
+      </Link>
       <div className="hidden items-center gap-3 pl-1 [@media(max-height:799px)]:flex">
         <ul aria-label="Agents right now" className="flex min-w-0 flex-1 items-center gap-3">
           {rows.map((row) => (

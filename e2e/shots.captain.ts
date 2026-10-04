@@ -1079,7 +1079,7 @@ test("cohesion rules: every screen counts the same decisions", async ({ page }) 
   await expect(page.getByText("5 decisions wait for you.")).toBeVisible();
   await expect(page.getByRole("region", { name: "Needs you" })).toContainText("5");
   await page.goto("/decisions");
-  await expect(page.getByText("5 waiting for you")).toBeVisible();
+  await expect(page.getByText("5 need you")).toBeVisible();
 });
 
 test("cohesion rules: a kind has one name in the chips and the rows", async ({ page }) => {

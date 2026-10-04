@@ -1,4 +1,4 @@
-import { AGENDA_KIND_LABEL, type AgendaItem, type AgendaToday } from "@majhi/shared";
+import type { AgendaItem, AgendaToday } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight, CircleCheck, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -13,6 +13,7 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { UsageBar } from "@/components/ui/usage-bar";
+import { incidentLamp } from "@/features/watch/model";
 import {
   useAgendaToday,
   useCloseDeadline,
@@ -22,12 +23,23 @@ import {
   useSetReviewBudget,
 } from "@/lib/agenda-queries";
 import { cn } from "@/lib/cn";
+import { useDecisions } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
 import { formatMoney } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useOrgFilter } from "@/lib/org-filter";
 import { PAGE_PATH } from "@/lib/pages";
-import { actionOf, clockText, doneWord, lampOf, minutesText, REVIEW_CHOICES, subtitleOf } from "./model";
+import { useWatch } from "@/lib/watch-queries";
+import {
+  actionOf,
+  clockText,
+  doneWord,
+  lampOf,
+  minutesText,
+  REVIEW_CHOICES,
+  rowLabels,
+  subtitleOf,
+} from "./model";
 
 /** How many "later" rows are drawn; the rest are counted. The Decisions page holds the full queue. */
 const LATER_SHOWN = 100;
@@ -252,6 +264,7 @@ function Row({
   onDone: () => void;
 }) {
   const word = doneWord(item);
+  const labels = rowLabels(item, useDecisions().data?.decisions);
   return (
     <div
       role="option"
@@ -267,9 +280,9 @@ function Row({
     >
       <Lamp state={lampOf(item)} size={7} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-body text-fg">{item.title}</span>
+        <span className="truncate text-body text-fg">{labels.title}</span>
         <span className="flex min-w-0 items-center gap-1.5 text-sm text-fg-muted">
-          <span className="shrink-0">{AGENDA_KIND_LABEL[item.kind]}</span>
+          <span className="shrink-0">{labels.kind}</span>
           {item.orgName !== undefined && (
             <>
               <span aria-hidden="true">·</span>
@@ -333,7 +346,7 @@ function AgendaPanel({
       <Panel title="Agenda" className="min-h-[220px] flex-1">
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
           <CircleCheck aria-hidden="true" className="size-7 text-lamp-done" />
-          <p className="m-0 text-lg font-semibold">Nothing needs you.</p>
+          <p className="m-0 text-lg font-semibold">Nothing on today's agenda.</p>
           <p className="m-0 max-w-[460px] text-base text-fg-muted text-pretty">
             {today.plan.captainNext.length === 0
               ? "The captain has nothing queued."
@@ -348,7 +361,7 @@ function AgendaPanel({
     <Panel
       title="Agenda"
       className="min-h-[260px] flex-1"
-      meta={`${today.today.length} today${today.later.length > 0 ? `, ${today.later.length} later` : ""}`}
+      meta={today.later.length > 0 ? `${today.later.length} later` : undefined}
     >
       <BudgetBar today={today} />
       <div
@@ -407,14 +420,25 @@ function AgendaPanel({
   );
 }
 
-function WatchPanel({ today }: { today: AgendaToday }) {
+/**
+ * Right now: today's spend, the incidents the captain is on and what is running. Open incidents of watched
+ * services show here too and open on the Watch page; one that is also a finding is listed once.
+ */
+function RightNowPanel({ today, org }: { today: AgendaToday; org: string | undefined }) {
   const { watch } = today;
   const run = useRunAttention();
+  const asFinding = new Set(watch.incidents.map((i) => i.id));
+  const services = (useWatch().data?.incidents ?? []).filter(
+    (i) =>
+      i.status === "open" &&
+      (org === undefined || i.org === org) &&
+      (i.finding === undefined || !asFinding.has(i.finding)),
+  );
   const pct = watch.budget === undefined || watch.budget === 0 ? 0 : (watch.spent / watch.budget) * 100;
-  const quiet = watch.running.length === 0 && watch.incidents.length === 0;
+  const quiet = watch.running.length === 0 && watch.incidents.length === 0 && services.length === 0;
   return (
     <Panel
-      title="Watch"
+      title="Right now"
       className="shrink-0"
       meta={
         <span className="tnum font-mono text-xs">
@@ -428,6 +452,19 @@ function WatchPanel({ today }: { today: AgendaToday }) {
       )}
       {quiet && <p className="m-0 text-sm text-fg-muted">Nothing is running and no incident is open.</p>}
       <ul className="m-0 flex max-h-[220px] list-none flex-col gap-0.5 overflow-y-auto overscroll-contain p-0">
+        {services.map((i) => (
+          <li key={`s${i.id}`}>
+            <Link
+              to={PAGE_PATH.watch}
+              search={{ id: `inc-${i.id}` }}
+              className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-raised"
+            >
+              <Lamp state={incidentLamp(i)} size={7} />
+              <span className="min-w-0 flex-1 truncate text-base text-fg">{i.title}</span>
+              <span className="shrink-0 text-sm text-lamp-needs">Open in Watch</span>
+            </Link>
+          </li>
+        ))}
         {watch.incidents.map((i) => (
           <li key={`i${i.id}`}>
             <button
@@ -636,7 +673,7 @@ export function TodayView() {
           />
         </div>
         <div className="flex min-h-0 min-w-0 flex-col gap-3">
-          <WatchPanel today={today} />
+          <RightNowPanel today={today} org={org} />
           <PlanPanel today={today} />
         </div>
       </div>
@@ -648,11 +685,12 @@ export function TodayView() {
         title="Today"
         subtitle={
           today === undefined
-            ? "The brief, what needs you and what is coming."
+            ? "The brief, the agenda and what is coming."
             : subtitleOf({
                 day: today.day,
-                count: today.today.length + today.later.length,
-                minutes: today.usedMinutes + today.laterMinutes,
+                count: today.today.length,
+                minutes: today.usedMinutes,
+                later: today.later.length,
               })
         }
       />
