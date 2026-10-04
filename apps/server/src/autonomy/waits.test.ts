@@ -52,6 +52,25 @@ describe("queue items that wait for an account", () => {
     );
   });
 
+  it("a full per-account slot is a reason to wait for 'available', and it lifts when a slot frees", () => {
+    const known = () => true;
+    const full = () => true;
+    expect(waitProblem(item("available"), status("healthy"), known, full)).toBeUndefined();
+    expect(waitProblem(item("available"), status("healthy"), known)).toContain("does not wait for it");
+    const held = evaluateWaits([item("available")], status("healthy"), NOW, () => false, full);
+    expect(held.lifted).toEqual([]);
+    const freed = evaluateWaits(
+      held.queue,
+      status("healthy"),
+      NOW,
+      () => false,
+      () => false,
+    );
+    expect(freed.lifted[0]?.line).toBe("claude-umbrella-pm is available again: UMB-6 can start");
+    // Signed-in waits do not care about slots.
+    expect(waitProblem(item("signed-in"), status("healthy"), known, full)).toContain("does not wait for it");
+  });
+
   it("refuses a wait the account already meets, and an account that does not exist", () => {
     const known = (id: string) => id === "claude-umbrella-pm";
     expect(waitProblem(item("signed-in"), status("healthy"), known)).toBe(

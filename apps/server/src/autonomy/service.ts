@@ -34,6 +34,7 @@ import {
   isCaptainLane,
   type MachineReading,
   PRIVATE,
+  type QueueItem,
   type RoomItem,
   type Spend,
   type Task,
@@ -92,7 +93,7 @@ import {
 import { authorityProblem, leftOutWhy, type OrgNames, orgName, pickLines } from "./pick.ts";
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
 import { AutonomyRepo, type HeldReason, STOPPED_NOW } from "./repo.ts";
-import { areasOf, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
+import { pathsOf, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
 import { mayResume, pausedLabel, type ResumeEnv, resumeRefusal } from "./resume.ts";
 import { type SizeOf, type SizeRater, sizeProblem, TaskSizes } from "./sizes.ts";
 import {
@@ -940,6 +941,14 @@ export class AutonomyService {
     return noRoomLine(await this.deps.runs.capacity(accounts), accounts);
   }
 
+  /** Whether each account a queue item waits for has no free slot now: a full slot is a reason to wait. */
+  private async fullAccounts(queue: readonly QueueItem[]): Promise<(account: string) => boolean> {
+    const accounts = [...new Set(queue.flatMap((q) => (q.waitFor === undefined ? [] : [q.waitFor.account])))];
+    if (accounts.length === 0) return () => false;
+    const capacity = await this.deps.runs.capacity(accounts).catch(() => undefined);
+    return (account) => capacity?.accounts.find((a) => a.account === account)?.free === 0;
+  }
+
   /**
    * Reads the accounts the queue waits for. An item whose account is signed in again becomes ready
    * (`readyAt`), and the captain of its workspace is woken with one line. An item whose account fell
@@ -956,6 +965,7 @@ export class AutonomyService {
       (id) => status.get(id),
       this.now(),
       (task) => this.deps.store.tasks.get(task)?.status === "paused",
+      await this.fullAccounts(state.queue),
     );
     if (!found.changed) return;
     this.repo.setQueue(found.queue, state.queuedAt ?? this.now().toISOString());
@@ -1538,7 +1548,7 @@ export class AutonomyService {
   /**
    * The repo rule for a start the captain asked for: the one line when another task running or in
    * review already changes one of its repos on the same base branch, with no plan showing disjoint
-   * areas. A new task (no id yet) is judged on its repos and the paths its text names.
+   * files. A new task (no id yet) is judged on its repos and the paths its text names.
    */
   private async repoRuleCall(
     command: CommandName,
@@ -1555,7 +1565,7 @@ export class AutonomyService {
     if (command !== "tasks.create" || !Array.isArray(input.repos) || input.readOnly === true)
       return undefined;
     const text = `${str(input.title) ?? ""}\n${str(input.text) ?? ""}`;
-    const areas = areasOf(likelyPaths(text));
+    const paths = pathsOf(likelyPaths(text));
     const repos = (input.repos as { project?: unknown; base?: unknown; writes?: unknown }[]).flatMap((r) =>
       typeof r.project === "string"
         ? [
@@ -1566,7 +1576,7 @@ export class AutonomyService {
                 sections.projects[r.project]?.base ??
                 sections.orgs[org]?.base ??
                 "",
-              areas,
+              paths,
             },
           ]
         : [],
@@ -1598,7 +1608,7 @@ export class AutonomyService {
         .map((r) => ({
           project: r.project,
           base: r.base,
-          areas: areasOf(fps.find((f) => f.project === r.project)?.paths ?? []),
+          paths: pathsOf(fps.find((f) => f.project === r.project)?.paths ?? []),
         })),
     };
   }
@@ -2171,11 +2181,13 @@ export class AutonomyService {
       // A wait for an account is checked now: one that already holds is a stale belief, not a plan.
       const views = await this.deps.accounts.list().catch(() => [] as AccountView[]);
       const status = new Map(views.map((v) => [v.id, v.status]));
+      const full = await this.fullAccounts(parsed.data.items);
       for (const item of parsed.data.items) {
         const problem = waitProblem(
           item,
           (id) => status.get(id),
           (id) => status.has(id),
+          full,
         );
         if (problem !== undefined) return fail(`The queue was not saved. ${problem}`);
       }
