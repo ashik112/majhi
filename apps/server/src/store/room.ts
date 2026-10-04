@@ -166,6 +166,34 @@ export class RoomRepo {
       .flatMap(readable);
   }
 
+  /**
+   * Pending items of the given types in the given tasks, oldest first, in one query (`pendingOfType` runs
+   * one per task and type). Tasks with none are not in the map.
+   */
+  pendingOfTypes(tasks: readonly string[], types: readonly RoomItem["type"][]): Map<string, RoomItem[]> {
+    const out = new Map<string, RoomItem[]>();
+    for (let from = 0; from < tasks.length; from += 400) {
+      const rows = this.db
+        .select()
+        .from(roomItems)
+        .where(
+          and(
+            inArray(roomItems.task, tasks.slice(from, from + 400)),
+            inArray(roomItems.type, [...types]),
+            PENDING,
+          ),
+        )
+        .orderBy(asc(roomItems.at))
+        .all();
+      for (const item of rows.flatMap(readable)) {
+        const own = out.get(item.task);
+        if (own === undefined) out.set(item.task, [item]);
+        else own.push(item);
+      }
+    }
+    return out;
+  }
+
   /** Tasks with something pending for the owner: an approval, a permission, a secret, a question. One query. */
   tasksWaitingOnOwner(): Set<string> {
     const rows = this.db

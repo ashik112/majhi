@@ -48,8 +48,8 @@ export interface AutonomyLink {
   mode(): AutonomyMode;
   stopNowForCaptain(): Promise<void>;
   startForCaptain(): Promise<void>;
-  /** Today's spend of the captain and autonomous work in a workspace, and its daily budget. */
-  orgSpend(org: string): Promise<{ used: Spend; tz: string }>;
+  /** Today's spend of the captain and autonomous work in every workspace, read once. */
+  orgSpends(): Promise<{ of: (org: string) => Spend; tz: string }>;
 }
 
 export interface CaptainDeps {
@@ -62,7 +62,8 @@ export interface CaptainDeps {
   /** Tells the owner through the bell, once per key. */
   tell: (key: string, text: string) => void;
   /** What a thread is doing now: the captain in a turn, an item waiting on the owner, or neither. */
-  threadState?: (chat: string, org: string) => "working" | "waiting" | "idle";
+  /** Takes the state of the room once, then answers per lane: a status asks for every workspace. */
+  threadState?: () => (chat: string, org: string) => "working" | "waiting" | "idle";
   /** Replaces the thread's session with a fresh one that carries a summary (the room's "fresh session"). */
   fresh?: (chat: string, agent: string) => Promise<RoomItem>;
   /** Cancels the captain's turn in a lane. */
@@ -396,15 +397,17 @@ export class CaptainService {
     const state = this.repo.state();
     const mode = this.deps.autonomy.mode();
     const orgs: CaptainOrg[] = [];
+    const threadOf = this.deps.threadState?.();
+    const spends = await this.deps.autonomy
+      .orgSpends()
+      .catch(() => ({ of: (): Spend => ({ tokens: 0, cost: 0 }), tz: "" }));
     let day = localDay(this.now(), zoneOr(settings.autonomy.tz));
     for (const org of workspaceIds(sections.orgs)) {
       const ws = this.workspaceOf(org, settings.autonomy, sections.orgs[org]?.name);
       if (org === PRIVATE) day = ws.day;
       const authority = authorityOf(settings.autonomy, org);
       const { line, forYou } = summaryOf(this.repo.dayActions(org, ws.day));
-      const spend = await this.deps.autonomy
-        .orgSpend(org)
-        .catch(() => ({ used: { tokens: 0, cost: 0 }, tz: ws.tz }));
+      const spend = { used: spends.of(org) };
       const lane = this.deps.lanes.chat(org);
       const cap = settings.autonomy.orgs[org]?.cap;
       orgs.push({
@@ -419,7 +422,7 @@ export class CaptainService {
         forYou,
         ...(ws.rest === undefined ? {} : { resting: ws.rest }),
         ...(lane === undefined ? {} : { lane }),
-        thread: lane === undefined ? "idle" : (this.deps.threadState?.(lane, org) ?? "idle"),
+        thread: lane === undefined ? "idle" : (threadOf?.(lane, org) ?? "idle"),
         chores: choresNow(authority, mode).map((chore) => {
           const c = this.repo.chore(org, chore);
           const caps = dailyCaps(chore, this.repo.capRaised(org, chore, ws.day));

@@ -1077,6 +1077,15 @@ CREATE TABLE deadlines (
 CREATE INDEX deadlines_due ON deadlines (status, due_at);
 `,
   },
+  {
+    // The captain's day lines are read per workspace and day on every Captain page load. (A partial index on
+    // pending room items was left out: a room row whose payload is not JSON would fail json_extract in it.)
+    id: 133,
+    name: "index for the captain's day lines",
+    sql: `
+CREATE INDEX captain_actions_org_day ON captain_actions (org, day);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

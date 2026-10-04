@@ -52,12 +52,12 @@ export class Lanes {
   /** The lane's chat, when it exists. */
   chat(org: string): string | undefined {
     const id = this.deps.repo.lane(org);
-    return id !== undefined && this.deps.store.tasks.get(id) !== undefined ? id : undefined;
+    return id !== undefined && this.deps.store.tasks.has(id) ? id : undefined;
   }
 
   /** Every lane with a chat that still exists. */
   all(): { org: string; chat: string }[] {
-    return this.deps.repo.lanes().filter((l) => this.deps.store.tasks.get(l.chat) !== undefined);
+    return this.deps.repo.lanes().filter((l) => this.deps.store.tasks.has(l.chat));
   }
 
   /** The lane's chat, made on first use and reopened when it was closed. A new captain gets a new one. */

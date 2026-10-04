@@ -25,7 +25,7 @@ import {
   type TeamOverride,
   TeamOverrideSchema,
 } from "@majhi/shared";
-import { and, asc, desc, eq, isNotNull, lt, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { parseRoomState, type RoomState } from "../rooms/state.ts";
 import { type LinkRow, parentIsComplete, unmetDependencies } from "../tasks/relations.ts";
@@ -78,7 +78,29 @@ function parseOverrides(json: string): Record<string, TeamOverride> {
 
 /** A task row with its repos, links and attachments, as the store keeps it. */
 export class TaskRepo {
+  private subjectQueries: ReturnType<typeof subjectStatements> | undefined;
+
   constructor(private readonly db: Db) {}
+
+  /**
+   * What a notice or a decision names a task by: id, title, kind, brief, workspace, status and how many
+   * repos. Two prepared queries where `get` builds four from scratch, for lists that ask per item.
+   */
+  subjectInfo(id: string): TaskSubjectInfo | undefined {
+    this.subjectQueries ??= subjectStatements(this.db);
+    const row = this.subjectQueries.row.get({ id });
+    if (row === undefined) return undefined;
+    const repos = this.subjectQueries.repos.get({ id })?.n ?? 0;
+    return {
+      id: row.id,
+      title: row.title,
+      kind: TaskSchema.shape.kind.parse(row.kind),
+      brief: row.brief,
+      ...(row.org === null ? {} : { org: row.org }),
+      status: TaskSchema.shape.status.parse(row.status),
+      repos,
+    };
+  }
 
   /** Hands out the next id for a key prefix: `GLX-1`, `GLX-2`, ... Numbers are never reused. */
   allocateKey(prefix: string): TaskId {
@@ -156,6 +178,11 @@ export class TaskRepo {
     });
   }
 
+  /** Whether the task exists: one cheap query where `get` runs four. */
+  has(id: string): boolean {
+    return this.db.select({ id: tasks.id }).from(tasks).where(eq(tasks.id, id)).get() !== undefined;
+  }
+
   get(id: string): Task | undefined {
     const row = this.db.select().from(tasks).where(eq(tasks.id, id)).get();
     if (row === undefined) return undefined;
@@ -172,55 +199,47 @@ export class TaskRepo {
       .where(eq(attachments.task, id))
       .orderBy(asc(attachments.pos))
       .all();
-    const pending = parsePendingShip(row.pendingShip);
-    return TaskSchema.parse({
-      id: row.id,
-      title: row.title,
-      brief: row.brief,
-      kind: row.kind,
-      ...(row.org === null ? {} : { org: row.org }),
-      status: row.status,
-      ...(row.pausedReason === null ? {} : { pausedReason: row.pausedReason }),
-      ...(row.pausedBy === null ? {} : { pausedBy: row.pausedBy }),
-      ...priorityAndDue(row),
-      ...(row.noAutonomy ? { noAutonomy: true } : {}),
-      folder: row.folder,
-      repos: repos.map((r) => ({
-        project: r.project,
-        source: r.source,
-        base: r.base,
-        branch: r.branch,
-        ...(r.worktree === null ? {} : { worktree: r.worktree }),
-        createdBranch: r.createdBranch,
-        ...(r.stackTask === null || r.stackBranch === null || r.stackCommit === null
-          ? {}
-          : { stack: { task: r.stackTask, branch: r.stackBranch, commit: r.stackCommit } }),
-        ...(r.mergeOrder === null ? {} : { mergeOrder: r.mergeOrder }),
-        ...(r.pushedAt === null ? {} : { pushedAt: r.pushedAt }),
-        ...(r.shippedHead === null || r.shippedInto === null
-          ? {}
-          : { shipped: { head: r.shippedHead, into: r.shippedInto } }),
-        ...(r.startCommit === null ? {} : { startCommit: r.startCommit }),
-        ...(r.writes ? { writes: true } : {}),
-        ...(r.mrUrl === null || r.mrNumber === null || r.mrState === null
-          ? {}
-          : { mr: { url: r.mrUrl, number: r.mrNumber, state: r.mrState, ci: r.ciState ?? "none" } }),
-      })),
-      team: TeamSchema.parse(JSON.parse(row.team)),
-      mode: CoordinationModeSchema.catch("lead").parse(row.mode),
-      overrides: parseOverrides(row.overrides),
-      ...(row.readMounts === "[]" ? {} : { readMounts: parseReadMounts(row.readMounts) }),
-      ...(row.connections === "[]" ? {} : { connections: parseConnectionIds(row.connections) }),
-      links: links.map((l) => ({
-        type: TaskLinkTypeSchema.parse(l.type),
-        task: l.other,
-        ...(l.when === null ? {} : { when: l.when }),
-      })),
-      attachments: files.map(attachmentFromRow),
-      ...(pending === undefined ? {} : { pendingShip: pending }),
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    });
+    return buildTask(row, repos, links, files);
+  }
+
+  /**
+   * Several tasks in four queries however many ids there are (`get` runs four per task). Ids that do not
+   * exist are left out; the rest keep the order asked for.
+   */
+  getMany(ids: readonly string[]): Task[] {
+    const found = new Map<string, Task>();
+    for (let from = 0; from < ids.length; from += MANY_CHUNK) {
+      const chunk = ids.slice(from, from + MANY_CHUNK);
+      const rows = this.db.select().from(tasks).where(inArray(tasks.id, chunk)).all();
+      const repos = groupBy(
+        this.db
+          .select()
+          .from(taskRepos)
+          .where(inArray(taskRepos.task, chunk))
+          .orderBy(asc(taskRepos.pos))
+          .all(),
+        (r) => r.task,
+      );
+      const links = groupBy(
+        this.db.select().from(taskLinks).where(inArray(taskLinks.task, chunk)).all(),
+        (r) => r.task,
+      );
+      const files = groupBy(
+        this.db
+          .select()
+          .from(attachments)
+          .where(inArray(attachments.task, chunk))
+          .orderBy(asc(attachments.pos))
+          .all(),
+        (r) => r.task,
+      );
+      for (const row of rows)
+        found.set(
+          row.id,
+          buildTask(row, repos.get(row.id) ?? [], links.get(row.id) ?? [], files.get(row.id) ?? []),
+        );
+    }
+    return ids.flatMap((id) => found.get(id) ?? []);
   }
 
   /** Newest first. Two queries however many tasks there are. `working` is filled by the caller. */
@@ -772,4 +791,107 @@ function attachmentFromRow(r: typeof attachments.$inferSelect): Attachment {
   if (r.path !== null) out.path = r.path;
   if (r.error !== null) out.error = r.error;
   return TaskSchema.shape.attachments.element.parse(out);
+}
+
+export interface TaskSubjectInfo {
+  id: string;
+  title: string;
+  kind: Task["kind"];
+  brief: string;
+  org?: string;
+  status: TaskStatus;
+  repos: number;
+}
+
+function subjectStatements(db: Db) {
+  return {
+    row: db
+      .select({
+        id: tasks.id,
+        title: tasks.title,
+        kind: tasks.kind,
+        brief: tasks.brief,
+        org: tasks.org,
+        status: tasks.status,
+      })
+      .from(tasks)
+      .where(eq(tasks.id, sql.placeholder("id")))
+      .prepare(),
+    repos: db
+      .select({ n: sql<number>`count(*)` })
+      .from(taskRepos)
+      .where(eq(taskRepos.task, sql.placeholder("id")))
+      .prepare(),
+  };
+}
+
+/** A task from its rows. `get` and `getMany` share it. */
+function buildTask(
+  row: typeof tasks.$inferSelect,
+  repos: (typeof taskRepos.$inferSelect)[],
+  links: (typeof taskLinks.$inferSelect)[],
+  files: (typeof attachments.$inferSelect)[],
+): Task {
+  const pending = parsePendingShip(row.pendingShip);
+  return TaskSchema.parse({
+    id: row.id,
+    title: row.title,
+    brief: row.brief,
+    kind: row.kind,
+    ...(row.org === null ? {} : { org: row.org }),
+    status: row.status,
+    ...(row.pausedReason === null ? {} : { pausedReason: row.pausedReason }),
+    ...(row.pausedBy === null ? {} : { pausedBy: row.pausedBy }),
+    ...priorityAndDue(row),
+    ...(row.noAutonomy ? { noAutonomy: true } : {}),
+    folder: row.folder,
+    repos: repos.map((r) => ({
+      project: r.project,
+      source: r.source,
+      base: r.base,
+      branch: r.branch,
+      ...(r.worktree === null ? {} : { worktree: r.worktree }),
+      createdBranch: r.createdBranch,
+      ...(r.stackTask === null || r.stackBranch === null || r.stackCommit === null
+        ? {}
+        : { stack: { task: r.stackTask, branch: r.stackBranch, commit: r.stackCommit } }),
+      ...(r.mergeOrder === null ? {} : { mergeOrder: r.mergeOrder }),
+      ...(r.pushedAt === null ? {} : { pushedAt: r.pushedAt }),
+      ...(r.shippedHead === null || r.shippedInto === null
+        ? {}
+        : { shipped: { head: r.shippedHead, into: r.shippedInto } }),
+      ...(r.startCommit === null ? {} : { startCommit: r.startCommit }),
+      ...(r.writes ? { writes: true } : {}),
+      ...(r.mrUrl === null || r.mrNumber === null || r.mrState === null
+        ? {}
+        : { mr: { url: r.mrUrl, number: r.mrNumber, state: r.mrState, ci: r.ciState ?? "none" } }),
+    })),
+    team: TeamSchema.parse(JSON.parse(row.team)),
+    mode: CoordinationModeSchema.catch("lead").parse(row.mode),
+    overrides: parseOverrides(row.overrides),
+    ...(row.readMounts === "[]" ? {} : { readMounts: parseReadMounts(row.readMounts) }),
+    ...(row.connections === "[]" ? {} : { connections: parseConnectionIds(row.connections) }),
+    links: links.map((l) => ({
+      type: TaskLinkTypeSchema.parse(l.type),
+      task: l.other,
+      ...(l.when === null ? {} : { when: l.when }),
+    })),
+    attachments: files.map(attachmentFromRow),
+    ...(pending === undefined ? {} : { pendingShip: pending }),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  });
+}
+
+const MANY_CHUNK = 400;
+
+function groupBy<T>(rows: readonly T[], key: (row: T) => string): Map<string, T[]> {
+  const out = new Map<string, T[]>();
+  for (const r of rows) {
+    const k = key(r);
+    const own = out.get(k);
+    if (own === undefined) out.set(k, [r]);
+    else own.push(r);
+  }
+  return out;
 }
