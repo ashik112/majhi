@@ -4,6 +4,7 @@ import type {
   AutonomyStatus,
   CommandInput,
   CommandOutput,
+  SlotCapacity,
 } from "@majhi/shared";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiRequestError, cmd } from "./api";
@@ -37,6 +38,17 @@ export function useAutonomyReport(days = 14) {
     queryFn: () => cmd("autonomy.report", { days }),
     retry: (count, error) => !autonomyMissing(error) && count < 2,
     refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
+/** `tasks.slots`: agent slots in use per account. Read every 15 s while a page shows it. */
+export function useSlots() {
+  return useQuery<SlotCapacity, ApiRequestError>({
+    queryKey: [...queryKeys.tasks, "slots"],
+    queryFn: () => cmd("tasks.slots", {}),
+    retry: false,
+    refetchInterval: 15_000,
     refetchIntervalInBackground: false,
   });
 }

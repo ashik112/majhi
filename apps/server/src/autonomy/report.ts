@@ -1,4 +1,5 @@
-import { type AutonomyEvent, type AutonomyReport, PRIVATE } from "@majhi/shared";
+import { type AutonomyEvent, type AutonomyReport, type MachineReading, PRIVATE } from "@majhi/shared";
+import { busyReason } from "../machine/busy.ts";
 import { addDays, localDay } from "../usage/ranges.ts";
 
 /** The charts of the Auto-pilot dashboard: pure sums over turns and feed events. */
@@ -82,4 +83,24 @@ export function finishedByDay(
       .map(([org, count]) => ({ org, count }))
       .sort((a, b) => b.count - a.count || a.org.localeCompare(b.org)),
   }));
+}
+
+/** The report's machine line, or nothing while the host helper is not connected. */
+export function machineOf(reading: MachineReading | undefined): Pick<AutonomyReport, "machine"> {
+  const host = reading?.host;
+  if (reading === undefined || host === undefined) return {};
+  const busy = busyReason(host);
+  return {
+    machine: {
+      cores: host.cores,
+      load1: host.load1,
+      containers: reading.containers.length,
+      ...(host.idleCpuPct === undefined ? {} : { idleCpuPct: host.idleCpuPct }),
+      ...(host.memAvailableBytes === undefined || host.memTotalBytes <= 0
+        ? {}
+        : { memFreePct: (host.memAvailableBytes / host.memTotalBytes) * 100 }),
+      ...(host.diskFreeBytes === undefined ? {} : { diskFreeGb: host.diskFreeBytes / 1_000_000_000 }),
+      ...(busy === undefined ? {} : { busy }),
+    },
+  };
 }
