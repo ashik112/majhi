@@ -37,6 +37,7 @@ export * from "./onboarding.ts";
 export * from "./paths.ts";
 export * from "./plain-text.ts";
 export * from "./playbooks.ts";
+export * from "./scorecard.ts";
 export * from "./processes.ts";
 export * from "./project-card.ts";
 export * from "./project-create.ts";

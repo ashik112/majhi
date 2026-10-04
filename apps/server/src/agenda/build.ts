@@ -51,6 +51,7 @@ const DECISION_MINUTES: Record<OwnerDecisionKind, number> = {
   secret: 1,
   draft: 2,
   batch: 3,
+  trust: 1,
 };
 
 /** The order of decisions among themselves: what blocks an agent first, then what is ready to ship. */
@@ -63,6 +64,8 @@ const DECISION_WEIGHT: Record<OwnerDecisionKind, number> = {
   paused: 48,
   draft: 45,
   batch: 44,
+  // A row that went back to You, or a promotion proposal: read when there is time.
+  trust: 40,
   // A budget hold is handled below: it stops new work.
   budget: 85,
   cap: 85,

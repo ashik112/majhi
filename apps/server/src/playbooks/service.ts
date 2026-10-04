@@ -1,5 +1,6 @@
 import {
   type AutonomyMode,
+  type Cadence,
   type CaptainChore,
   cadenceLabel,
   type Playbook,
@@ -124,6 +125,14 @@ export class PlaybookService implements ChorePlaybooks {
       goal: st.goal === null ? undefined : st.goal,
       settings: st.settings ?? {},
     };
+  }
+
+  /** The cadence and switch a playbook has in a workspace now. The trust ladder reads it to mute and to undo. */
+  stateOf(org: string, id: string): { cadence: Cadence; enabled: boolean } | undefined {
+    const def = this.catalog.get(id);
+    if (def === undefined) return undefined;
+    const e = this.effective(def, org);
+    return { cadence: e.cadence, enabled: e.enabled && def.needs === undefined };
   }
 
   /** Whether an upkeep chore is on for a workspace (ChorePlaybooks). */

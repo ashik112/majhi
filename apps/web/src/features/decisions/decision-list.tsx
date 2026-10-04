@@ -9,6 +9,7 @@ import {
   Mail,
   Mails,
   MessageCircleQuestion,
+  Scale,
   ShieldCheck,
 } from "lucide-react";
 import { type ReactNode, useEffect } from "react";
@@ -30,6 +31,7 @@ const ICON: Record<OwnerDecisionKind, ReactNode> = {
   "sign-in": <LogIn aria-hidden="true" />,
   draft: <Mail aria-hidden="true" />,
   batch: <Mails aria-hidden="true" />,
+  trust: <Scale aria-hidden="true" />,
 };
 
 export function KindIcon({ kind, className }: { kind: OwnerDecisionKind; className?: string }) {
