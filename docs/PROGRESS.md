@@ -1,5 +1,17 @@
 # Progress
 
+## Captain closes the loop on review, secrets and reports (merged)
+
+- **MRs.** When Merge is the owner's and Push the captain's, the ship chore pushes the branch and opens the MR once checks pass, and the card leaves Needs you. The task sits in Open MRs until it is merged on the host.
+- **Answer tasks.** A review task with no code change whose lead report answers the brief is marked done; one that ends on a question goes back to the lead, twice at most, then waits for the owner.
+- **Secrets.** Secret cards on Home, Needs you and the bell take the value or a dismissal in place. A dismissal tells the agent to find another way. The captain tries connections first, and Tidy withdraws requests over 3 days old that are no longer needed.
+- **Root chat.** The root captain posts a roll-up in All: a morning post, every 3 hours in Auto-pilot, and on notable events, at most one per 15 minutes, never the same twice.
+- **Dashboard.** One screen, no page scroll: status strip (Auto-pilot, spend with burn rate, accounts, machine), a workspaces table, a Stuck list and the captain's actions.
+- **Task cards** show project, priority and due.
+- **Branches.** New tasks get `<type>/<id>-<slug>`, following the repo's own pattern when it has one, or `branch_pattern` on the project or org. Agents write Conventional Commits when the repo uses them; MR titles follow.
+- **Speed.** majhi.yaml is parsed once per change, room items have a type index, the roll-up reads the board every 5 minutes.
+- **Owner check:** an MR opens on GitLab for a Pyzasoft task in review after the next deploy.
+
 ## Auto-pilot runs the workspace, not only its backlog (merged)
 
 - **Dashboard.** The Captain page opens on an Auto-pilot dashboard while Auto-pilot is on: status counts that open their lists, a card per workspace, the captain's log, spend per hour against the day cap, tasks finished per day, and open tasks by state. New command `autonomy.report`.
