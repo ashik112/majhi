@@ -40,7 +40,6 @@ function desk(
       answers.push({ task: card.task, item: card.item, option, reason });
       return { answered: true as const };
     },
-    flagLoop: async () => {},
     laneRest: async () => undefined,
     askLane: async (_org: string, text: string) => {
       lane.push(text);

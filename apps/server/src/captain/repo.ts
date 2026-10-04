@@ -407,29 +407,6 @@ export class CaptainRepo {
     return row.n;
   }
 
-  /** The answers the questions chore gave to one agent in one task since `since`, oldest first. */
-  answersSince(
-    org: string,
-    task: string,
-    agent: string,
-    since: string,
-  ): { at: string; key: string; text: string; evidence: string | undefined }[] {
-    const rows = this.db
-      .prepare(
-        `SELECT at, key, text, evidence FROM captain_actions
-         WHERE org = ? AND chore = 'questions' AND task = ? AND outcome = 'done' AND at >= ?
-           AND instr(text, ?) = 1
-         ORDER BY at`,
-      )
-      .all(org, task, since, `Answered @${agent} in `) as {
-      at: string;
-      key: string;
-      text: string;
-      evidence: string | null;
-    }[];
-    return rows.map((r) => ({ at: r.at, key: r.key, text: r.text, evidence: r.evidence ?? undefined }));
-  }
-
   /** Adds a line. False when the key is there already: the action was taken before. */
   addAction(a: NewAction): number | undefined {
     const res = this.db

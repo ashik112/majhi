@@ -6,7 +6,7 @@ import { RUNS } from "./authority-fixtures.ts";
 /**
  * A day at the captain's desk, in two workspaces (Acme and Globex), with the fake agent runtime so no
  * token is spent. The owner turns Autonomous off and on, pauses a task by hand, an account signs out
- * and in again, an agent keeps asking the same thing, and the chores that may run while Autonomous
+ * and in again, an agent asks again and again, and the chores that may run while Autonomous
  * is off do. Everything is asserted on what the owner can see: task states, the log, the queue.
  */
 
@@ -198,23 +198,18 @@ describe("a day at the captain's desk", () => {
     expect(stale.text).toContain("claude-globex is signed in right now");
   });
 
-  it("catches an agent that keeps asking the same thing, and raises a capped chore on the owner's word", async () => {
+  it("pauses a task for the owner after three answers with no progress in it", async () => {
     const d = await desk();
     must(await d.h.cmd("autonomy.start"));
     const globex = await d.lane("globex");
     const g1 = await d.make("Fix the invoice export", "globex-web", ["globex-builder"]);
-    const told: string[] = [];
-    d.runs.notify = (_task, agent, text) => {
-      told.push(`${agent}: ${text}`);
-    };
 
-    // The agent asks the same question five times; the captain answers the first and no more.
-    const outcomes: boolean[] = [];
-    for (let i = 1; i <= 5; i++) {
+    // The agent asks five times; no commit and no status change come in between.
+    for (let i = 1; i <= 3; i++) {
       d.room.post(g1, `q${i}`, {
         type: "choice",
         agent: "globex-builder",
-        question: "Should I go on with the export?",
+        question: `Should I go on with step ${i} of the export?`,
         options: [
           { id: "yes", label: "Yes" },
           { id: "no", label: "No" },
@@ -222,19 +217,17 @@ describe("a day at the captain's desk", () => {
         state: "pending",
       });
       const res = await globex("majhi_autonomy_answer", { task: g1, item: `q${i}`, option: "yes" });
-      outcomes.push(res.isError);
-      if (i > 1) {
-        expect(res.text).toBe(
-          `@globex-builder keeps asking in ${g1} (2 times in 10 minutes); it may be stuck. It is left for the owner. Do not answer it.`,
-        );
-      }
+      expect(res.isError).toBe(false);
     }
-    expect(outcomes).toEqual([false, true, true, true, true]);
-    expect(told).toHaveLength(1);
-    expect(told[0]).toContain("do not ask it again");
+    const pausedLine = () =>
+      d.store.room
+        .page(g1, 50, undefined)
+        .items.some((i) => i.type === "system" && i.text.includes("3 times with no progress"));
+    for (let tries = 0; tries < 50 && !pausedLine(); tries++) await new Promise((r) => setTimeout(r, 20));
+    expect(pausedLine()).toBe(true);
   });
 
-  it("holds up when things go wrong: a resume racing a pause, a restart, a flapping account, a new question inside a loop, injected text", async () => {
+  it("holds up when things go wrong: a resume racing a pause, a restart, a flapping account, injected text", async () => {
     const d = await desk();
     must(await d.h.cmd("autonomy.start"));
     const acme = await d.lane("acme");
@@ -291,7 +284,7 @@ describe("a day at the captain's desk", () => {
     );
     expect(lines).toHaveLength(2);
 
-    // A loop with a genuine new question inside it: the repeat is left, the new one is answered.
+    // Two questions in one task are both answered: no count of words decides.
     const g2 = await d.make("Add the VAT field", "globex-web", ["globex-builder"]);
     const post = (id: string, question: string) =>
       d.room.post(g2, id, {
@@ -307,8 +300,6 @@ describe("a day at the captain's desk", () => {
     const answer = (id: string) => globex("majhi_autonomy_answer", { task: g2, item: id, option: "yes" });
     post("q1", "Should I go on with the export?");
     expect((await answer("q1")).isError).toBe(false);
-    post("q2", "Should I go on with the export?");
-    expect((await answer("q2")).text).toContain("keeps asking");
     post("q3", "Which currency does the VAT field use?");
     expect((await answer("q3")).isError).toBe(false);
 

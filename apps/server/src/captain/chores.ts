@@ -14,7 +14,6 @@ import type {
   ReviewTask,
   ShipCheck,
 } from "./ports.ts";
-import { loopLine, nudgeText, questionLoop } from "./question-loop.ts";
 import { branchAllowed, typingWhy } from "./rules.ts";
 import type { ChoreRun } from "./runner.ts";
 import { createUpkeepChores } from "./upkeep.ts";
@@ -540,33 +539,6 @@ export function createChores(
             reason: "It needs words only the owner can give",
             task: card.task,
             do: async () => ({ outcome: "asked", undoNote: "Nothing was answered" }),
-          });
-          continue;
-        }
-        // An agent that asks the same thing again and again is stuck: no answer feeds it.
-        // A permission whose call then went through is normal use, so its outcome is read first.
-        const past = run.answeredRecently(card.task, card.agent).map((p) => ({
-          ...p,
-          outcome: p.item === undefined ? undefined : ports.callOutcome?.(card.task, p.item),
-        }));
-        const loop = questionLoop(past, card.text, now());
-        if (loop !== undefined) {
-          if (ruleOff(run, "q-loop")) continue;
-          // The same loop has one key, so the cards that follow it add no second line and no second message.
-          const line = loopLine(card.agent, card.task, loop);
-          await run.act({
-            key: `question-loop:${card.task}:${card.agent}:${loop.since}`,
-            text: line,
-            reason: "Answering the same question again does not help it",
-            evidence: card.text,
-            task: card.task,
-            do: async () => {
-              await ports.flagLoop(org, card, line, nudgeText(card.task, loop));
-              return {
-                outcome: "asked",
-                undoNote: "A line for you and one message to the agent: nothing to undo",
-              };
-            },
           });
           continue;
         }

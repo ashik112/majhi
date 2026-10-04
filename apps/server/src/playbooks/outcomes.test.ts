@@ -248,7 +248,6 @@ describe("outcome rules of the other chores", () => {
           options: [{ id: "a", label: "Allow once", effect: "allow" }],
         },
       ],
-      answeredRecently: () => [],
       laneRest: async () => "resting",
       answer: async (_o: string, _c: unknown, option: string) => {
         answered.push(option);

@@ -35,10 +35,10 @@ import {
   isCaptainLane,
   type MachineReading,
   PRIVATE,
-  TASKS_AT_ONCE,
   type QueueItem,
   type RoomItem,
   type Spend,
+  TASKS_AT_ONCE,
   type Task,
   type TaskId,
   ToolIdSchema,
@@ -51,20 +51,12 @@ import type { AdminCaller } from "../admin/tokens.ts";
 import { type Overnight, overnightOf } from "../agenda/overnight.ts";
 import { briefDue } from "../agenda/time.ts";
 import type { AgentStore } from "../agents/store.ts";
-import { callOutcome, toolItemIdOf } from "../captain/call-outcome.ts";
 import type { LaneGate } from "../captain/lane-gate.ts";
 import { forceOrg, narrow, readRefusal, type ScopeWorld } from "../captain/lane-scope.ts";
 import type { Lanes } from "../captain/lanes.ts";
 import { askedWhy, authorityOf, workspaceIds } from "../captain/levels.ts";
 import { classifyOwnWork, scopeOfTask } from "../captain/own-work.ts";
 import { answerFor, coveredForTask, permissionVerdict } from "../captain/permission-rules.ts";
-import {
-  loopLine,
-  NEAR_SAME_MS,
-  nudgeText,
-  type PastAnswer,
-  questionLoop,
-} from "../captain/question-loop.ts";
 import { restWhy, typingWhy } from "../captain/rules.ts";
 import type { ConfigSections } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
@@ -1550,11 +1542,11 @@ export class AutonomyService {
         ? `${upperFirst(busy)}.`
         : atOnce !== undefined
           ? atOnce
-        : candidates.length === 0
-          ? noRoomLine(capacity, named)
-          : lines.every((l) => l !== undefined)
-            ? lines[0]
-            : undefined;
+          : candidates.length === 0
+            ? noRoomLine(capacity, named)
+            : lines.every((l) => l !== undefined)
+              ? lines[0]
+              : undefined;
     const then =
       command === "tasks.start"
         ? `${str(input.id) ?? "The task"} waits.`
@@ -2296,9 +2288,6 @@ export class AutonomyService {
     if (waiting !== undefined) {
       return fail(`${waiting}. The captain tries again when you send or leave.`);
     }
-    // An agent that asks the same thing again and again is stuck: no answer feeds it.
-    const stuck = await this.questionLoopLine(input.task, item);
-    if (stuck !== undefined) return fail(`${stuck}. It is left for the owner. Do not answer it.`);
     let option = input.option;
     // The rule table binds the captain too: an empty prompt is the owner's, and a dangerous one is rejected.
     if (item.type === "permission") {
@@ -2377,51 +2366,6 @@ export class AutonomyService {
       ...this.orgOfTask(input.task),
     });
     return ok({ item: answered });
-  }
-
-  /** Loops already flagged, so the agent hears of one only once and the room gets one line. */
-  private readonly flaggedLoops = new Set<string>();
-
-  /**
-   * The line "@agent keeps asking in TASK (...)" when this card is the same question again, or the
-   * third in five minutes, from the same agent in the same task as the captain answered before. The
-   * first time, the line goes into the room and the agent gets one message. Undefined: not a loop.
-   */
-  private async questionLoopLine(task: string, item: RoomItem): Promise<string | undefined> {
-    const found = this.deps.store.tasks.get(task);
-    const agent = "agent" in item && typeof item.agent === "string" ? item.agent : found?.team[0];
-    const text = plainQuestion(item);
-    if (agent === undefined || text === undefined) return undefined;
-    const since = new Date(this.now().getTime() - NEAR_SAME_MS).toISOString();
-    const past: PastAnswer[] = [];
-    for (const e of this.repo.events({ limit: 50, decisions: false, task }).slice().reverse()) {
-      if (e.kind !== "answer" || e.item === undefined || e.at < since) continue;
-      const before = this.deps.room.get(task, e.item);
-      const asked = before === undefined ? undefined : plainQuestion(before);
-      const by = before !== undefined && "agent" in before ? before.agent : found?.team[0];
-      if (before === undefined || asked === undefined || by !== agent) continue;
-      // A call that went through is normal use, however often the same tool is asked for.
-      const toolId = toolItemIdOf(before);
-      const outcome = callOutcome(
-        before,
-        toolId === undefined ? undefined : this.deps.room.get(task, toolId),
-      );
-      past.push({ at: e.at, question: asked, item: e.item, outcome });
-    }
-    const loop = questionLoop(past, text, this.now());
-    if (loop === undefined) return undefined;
-    const line = loopLine(agent, task, loop);
-    const key = `${task}:${agent}:${loop.since}`;
-    if (!this.flaggedLoops.has(key)) {
-      this.flaggedLoops.add(key);
-      this.deps.room.post(task as TaskId, `autonomy:${randomUUID()}`, {
-        type: "system",
-        level: "warn",
-        text: `${line}. The captain left its question for the owner.`,
-      });
-      this.deps.runs.notify(task, agent, nudgeText(task, loop));
-    }
-    return line;
   }
 
   // ---------------------------------------------------------------------------
@@ -2669,7 +2613,12 @@ export class AutonomyService {
         now,
       ),
       days: finishedByDay(events, window.day, days, tz),
-      spend: spendByDay(this.repo.spendTurnsByOrg(first, window.end, this.spendChats()), window.day, days, tz),
+      spend: spendByDay(
+        this.repo.spendTurnsByOrg(first, window.end, this.spendChats()),
+        window.day,
+        days,
+        tz,
+      ),
       flow: flowByDay(events, window.day, days, tz),
       stuck: stuckTasks({
         now,
@@ -2982,21 +2931,5 @@ function withChanged(spend: AutonomySpend, changed: readonly string[]): Autonomy
   };
 }
 
-/** The words an agent asked, without ids, so the same question compares equal. */
 /** A backlog task with its size and why the pick rules leave it out, if they do. */
 type Rated = { item: BacklogTask & { task: Task }; size: SizeOf; leftOut: string | undefined };
-
-function plainQuestion(item: RoomItem): string | undefined {
-  switch (item.type) {
-    case "choice":
-      return item.question;
-    case "ask":
-      return item.questions.map((q) => q.question).join(" / ");
-    case "owner-question":
-      return item.text ?? item.choices.join(" / ");
-    case "permission":
-      return item.title;
-    default:
-      return undefined;
-  }
-}

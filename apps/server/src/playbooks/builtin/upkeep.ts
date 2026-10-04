@@ -76,14 +76,13 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     trigger: { cadence: HOURLY, events: ["An agent asks"] },
     inputs: ["Pending questions and permission prompts"],
     steps:
-      "Settle a permission prompt by the rule table. Answer a question only when the brief, memory or the code settles it; otherwise leave it. An agent that asks the same thing again and again is left for the owner.",
+      "Settle a permission prompt by the rule table. Answer a question only when the brief, memory or the code settles it; otherwise leave it.",
     outputs: ["decision", "log"],
     cost: { tier: "small", tokens: PASS_BOUND.tokens },
     turnOn: "Answers agents' questions where Questions is Captain.",
     outcomes: [
       { id: "q-answer", text: "Sure of the answer: answer it" },
       { id: "q-ask", text: "Not sure: ask me" },
-      { id: "q-loop", text: "The same agent keeps asking: tell me it may be stuck" },
     ],
     runner: { kind: "chore", chore: "questions" },
   }),

@@ -31,7 +31,6 @@ import { captainAnsweredLine } from "../tasks/cards.ts";
 import type { CleanupService } from "../tasks/cleanup.ts";
 import type { TaskFolderSweep } from "../tasks/folder-sweep.ts";
 import type { TaskService } from "../tasks/service.ts";
-import { callOutcome, toolItemIdOf } from "./call-outcome.ts";
 import { answerOnce } from "./keys.ts";
 import type { Lanes } from "./lanes.ts";
 import { askedSentence, SHIP_ROW } from "./levels.ts";
@@ -489,21 +488,6 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
           text: captainAnsweredLine(answered, reason),
         });
       });
-    },
-
-    callOutcome(task, item) {
-      const perm = deps.room.get(task, item);
-      const toolId = perm === undefined ? undefined : toolItemIdOf(perm);
-      return callOutcome(perm, toolId === undefined ? undefined : deps.room.get(task, toolId));
-    },
-
-    async flagLoop(_org, card, line, nudge) {
-      deps.room.post(card.task as TaskId, `captain:${randomUUID()}`, {
-        type: "system",
-        level: "warn",
-        text: `${line}. The captain left its question for the owner.`,
-      });
-      deps.runs.notify(card.task, card.agent, nudge);
     },
 
     laneRest: (org) => deps.lanes.rest(org),
