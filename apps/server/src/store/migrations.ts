@@ -1149,9 +1149,27 @@ CREATE INDEX outbound_drafts_org ON outbound_drafts (org, status);
 `,
   },
   {
+    // Sensors (SPEC 5.18, captain v2 step 9): what a sensor remembers between runs, so it asks upstream
+    // only when something may have changed: ETags, lockfile hashes, advisory and release answers, and
+    // the radar's weekly token count. Public answers and counters only, never a secret or a source line.
+    id: 134,
+    name: "sensor cache",
+    sql: `
+CREATE TABLE sensor_cache (
+  key TEXT PRIMARY KEY,
+  etag TEXT,
+  hash TEXT,
+  body TEXT NOT NULL DEFAULT '',
+  at TEXT NOT NULL,
+  fails INTEGER NOT NULL DEFAULT 0,
+  next_at TEXT
+);
+`,
+  },
+  {
     // The morning brief and the agenda's review budget (SPEC 5.18, captain v2 step 10): one brief per local
     // day (the primary key is what makes it once per day), and the owner's small agenda settings.
-    id: 134,
+    id: 135,
     name: "morning briefs",
     sql: `
 CREATE TABLE morning_briefs (
