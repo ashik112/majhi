@@ -27,6 +27,8 @@ export interface AppSearch {
   create?: string;
   /** A file of the open task, shown in the viewer drawer. */
   file?: string;
+  /** The task whose file `file` is, when the viewer opens on another page (the Captain page, Chats). */
+  fileTask?: string;
   /** A room item of the open task to scroll to, from a search match. */
   item?: string;
   /** A task shown in the task drawer, opened from a task id in a message. */
@@ -65,6 +67,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const connection = text(search.connection);
   const create = text(search.create);
   const file = text(search.file);
+  const fileTask = TaskIdSchema.safeParse(search.fileTask).data;
   const task = TaskIdSchema.safeParse(search.task).data;
   const peek = text(search.peek);
   const item = text(search.item);
@@ -89,6 +92,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
     ...(connection ? { connection } : {}),
     ...(create ? { create } : {}),
     ...(file ? { file } : {}),
+    ...(file && fileTask ? { fileTask } : {}),
     ...(task ? { task } : {}),
     ...(peek ? { peek } : {}),
     ...(item ? { item } : {}),

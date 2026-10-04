@@ -1,7 +1,11 @@
 import { type MediaRef, mediaKindOfPath, taskFileUrl, type ViewerKind } from "@majhi/shared";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { ExternalLink, FileCode2, FileText, Film, Globe, ImageIcon, Music } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { createContext, type ReactNode, useContext, useState } from "react";
+
+/** The task whose room is showing, so a file link opens the viewer on any page. */
+export const RoomTaskContext = createContext<string | undefined>(undefined);
+
 import { createPortal } from "react-dom";
 import { Modal } from "@/components/ui/modal";
 
@@ -140,10 +144,15 @@ export function TaskFileLink({
   project?: string | undefined;
 }) {
   const Icon = FILE_ICON[kind];
+  const task = useContext(RoomTaskContext);
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const file = project ? `repo:${project}/${path}` : path;
+  // On the task's own page its viewer opens; anywhere else the app's viewer, told which task.
+  const own = task === undefined || pathname.startsWith(`/t/${task}`);
   return (
     <Link
       to="."
-      search={(prev: object) => ({ ...prev, file: project ? `repo:${project}/${path}` : path })}
+      search={(prev: object) => ({ ...prev, file, ...(own ? {} : { fileTask: task }) })}
       title={path}
       aria-label={card && typeof label === "string" ? `Open ${label}` : undefined}
       className={card ? "md-file-card" : "md-link md-file-link"}
