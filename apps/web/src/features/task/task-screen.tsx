@@ -39,7 +39,7 @@ function TaskView({ taskId }: { taskId: string }) {
   useLaneRedirect(task.data);
   const room = useRoom(taskId);
   const { org } = useOrgFilter();
-  const { file, item } = useSearch({ from: "/t/$taskId" });
+  const { file, fileTask, item } = useSearch({ from: "/t/$taskId" });
   const navigate = useNavigate();
   // A search match opened this task: the room scrolls to it, then the address forgets it.
   const clearItem = useCallback(() => {
@@ -184,7 +184,7 @@ function TaskView({ taskId }: { taskId: string }) {
           onShowChanges={data.repos.length > 0 ? showChanges : undefined}
         />
       </div>
-      {file !== undefined && (
+      {file !== undefined && fileTask === undefined && (
         <Suspense fallback={null}>
           <FileViewer
             taskId={data.id}

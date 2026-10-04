@@ -20,6 +20,7 @@ import { deriveBanner } from "@/features/shell/model";
 import { useShortcuts } from "@/features/shell/use-shortcuts";
 import { TaskDrawer } from "@/features/task-drawer/task-drawer";
 import { UpdateOverlay } from "@/features/update/update-overlay";
+import { GlobalFileViewer } from "@/features/viewer/global-file-viewer";
 import { useAgentIndex } from "@/lib/agent-index";
 import { usePendingPermission } from "@/lib/attention";
 import { useAttentionBadge } from "@/lib/browser-notify";
@@ -142,6 +143,7 @@ function Frame() {
         </m.div>
       </main>
       <BossDrawer />
+      <GlobalFileViewer />
       {drawerTask !== undefined && <TaskDrawer id={drawerTask} />}
       {peek !== undefined && drawerTask === undefined && <AgentDrawer id={peek} />}
       {helpOpen && <ShortcutsDialog onClose={() => setHelpOpen(false)} />}

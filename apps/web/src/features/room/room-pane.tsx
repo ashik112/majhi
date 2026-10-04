@@ -4,6 +4,7 @@ import { type KeyboardEvent, useCallback, useMemo, useState } from "react";
 import { useToast } from "@/components/ui/toast";
 import { type ApiRequestError, cmd } from "@/lib/api";
 import { Composer } from "./composer";
+import { RoomTaskContext } from "./media";
 import { isBusy, type RoomAction, type RoomState } from "./model";
 import type { OwnerContext } from "./owner-cards";
 import { Timeline } from "./timeline";
@@ -103,47 +104,49 @@ export function RoomPane({
   }
 
   return (
-    <section
-      aria-label="Task room"
-      tabIndex={-1}
-      onKeyDown={onKeyDown}
-      className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 outline-none"
-    >
-      {state.connection === "reconnecting" && (
-        <p
-          role="status"
-          className="rounded-md border border-amber-line bg-amber-wash px-3 py-1 text-sm text-amber"
-        >
-          Lost the connection to the room. Reconnecting.
-        </p>
-      )}
-      <Timeline
-        state={state}
-        onLoadOlder={loadOlder}
-        onLoadAround={loadAround}
-        onLoadNewer={loadNewer}
-        onJumpToLatest={jumpToLatest}
-        jumpSignal={jumpSignal}
-        onPermission={onPermission}
-        answering={answer.isPending ? answer.variables?.item : undefined}
-        task={{ id: task.id, folder: task.folder }}
-        owner={owner}
-        focusItem={focusItem}
-        onFocused={onFocused}
-        foldSteps={foldSteps}
-      />
-      <Composer
-        taskId={task.id}
-        agents={state.agents}
-        onSent={(item) => {
-          dispatch({ type: "local", item });
-          if (state.newer) jumpToLatest();
-        }}
-        onDrop={(id) => dispatch({ type: "drop", id })}
-        onCancel={() => cancel.mutate()}
-        cancelling={cancel.isPending}
-        draft={draft}
-      />
-    </section>
+    <RoomTaskContext.Provider value={task.id}>
+      <section
+        aria-label="Task room"
+        tabIndex={-1}
+        onKeyDown={onKeyDown}
+        className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 outline-none"
+      >
+        {state.connection === "reconnecting" && (
+          <p
+            role="status"
+            className="rounded-md border border-amber-line bg-amber-wash px-3 py-1 text-sm text-amber"
+          >
+            Lost the connection to the room. Reconnecting.
+          </p>
+        )}
+        <Timeline
+          state={state}
+          onLoadOlder={loadOlder}
+          onLoadAround={loadAround}
+          onLoadNewer={loadNewer}
+          onJumpToLatest={jumpToLatest}
+          jumpSignal={jumpSignal}
+          onPermission={onPermission}
+          answering={answer.isPending ? answer.variables?.item : undefined}
+          task={{ id: task.id, folder: task.folder }}
+          owner={owner}
+          focusItem={focusItem}
+          onFocused={onFocused}
+          foldSteps={foldSteps}
+        />
+        <Composer
+          taskId={task.id}
+          agents={state.agents}
+          onSent={(item) => {
+            dispatch({ type: "local", item });
+            if (state.newer) jumpToLatest();
+          }}
+          onDrop={(id) => dispatch({ type: "drop", id })}
+          onCancel={() => cancel.mutate()}
+          cancelling={cancel.isPending}
+          draft={draft}
+        />
+      </section>
+    </RoomTaskContext.Provider>
   );
 }
