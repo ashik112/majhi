@@ -465,11 +465,29 @@ describe("a turn that failed on its account's sign-in", () => {
     );
   });
 
-  it("pauses the task as signed-out when the lead cannot sign in, and goes on once it can", async () => {
+  it("hands a signed-out lead's step to a teammate at once, with no pause and no second wake of the lead", async () => {
     const { prompts } = await parentWorld({
-      "acme-lead": [signedOut, say("@acme-builder please build the export.")],
+      "acme-lead": [signedOut, say("Done for now.")],
       "acme-builder": [say("Built.")],
     });
+    await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "the teammate taking over");
+    await settle();
+
+    expect(await statusOf("codex-acme")).toBe("needs-login");
+    expect(await systemTexts()).toContain(
+      "@acme-lead's account needs a new sign-in. @acme-builder continues from the checkpoint.",
+    );
+    // The run manager handled it alone: the signed-out lead is not prompted again and the task is not paused for sign-in.
+    expect(prompts["acme-lead"]).toHaveLength(1);
+    expect(await task()).not.toMatchObject({ pausedReason: "signed-out" });
+    expect((await items()).some((i) => i.type === "paused" && i.reason === "signed-out")).toBe(false);
+  });
+
+  it("pauses the task as signed-out when the lead cannot sign in and nobody can take over, and goes on once it can", async () => {
+    const { prompts } = await parentWorld(
+      { "acme-lead": [signedOut, say("Done for now.")] },
+      { alone: true },
+    );
     await until(async () => (await task()).status === "paused", "the pause");
     expect(await task()).toMatchObject({ status: "paused", pausedReason: "signed-out" });
     expect(await statusOf("codex-acme")).toBe("needs-login");
@@ -486,7 +504,7 @@ describe("a turn that failed on its account's sign-in", () => {
       updatedAt: "2026-10-03T00:00:00.000Z",
     };
     await w.h.majhi.services.resilience.checkSignIns();
-    await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "the work going on");
+    await until(() => (prompts["acme-lead"]?.length ?? 0) === 2, "the work going on");
     expect(prompts["acme-lead"]?.[1]).toBe(prompts["acme-lead"]?.[0]);
     expect(await statusOf("codex-acme")).not.toBe("needs-login");
   });
