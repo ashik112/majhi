@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Command, dockerTty, localSpawner } from "@majhi/acp";
 import {
+  BUILT_IN_CONNECT_APPS,
   type CaptainChore,
   isOwnerChat,
   NotificationsSettingsSchema,
@@ -11,7 +12,6 @@ import {
   type ServiceEntry,
   UPDATE_STATUS_FILE,
   UpdateStatusSchema,
-  BUILT_IN_CONNECT_APPS,
 } from "@majhi/shared";
 import { AccountCache } from "./accounts/cache.ts";
 import { AccountProbes } from "./accounts/health.ts";
