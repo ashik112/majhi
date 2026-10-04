@@ -2422,6 +2422,31 @@ export class TaskService {
   }
 
   /**
+   * At server start: the done tasks other work hangs on (a waiting task, a parent, an open merge
+   * request) get what `statusChanged` gives them, then one sweep of the waiting tasks and one
+   * event, however many tasks there are.
+   */
+  async reconcileDone(ids: readonly string[]): Promise<void> {
+    const { store } = this.deps;
+    for (const id of ids) {
+      try {
+        const task = store.tasks.get(id);
+        if (task === undefined) continue;
+        const held = store.tasks.linksTo(id);
+        const parent = task.links.find((l) => l.type === "parent")?.task;
+        this.pauseForUnmerged(task, held);
+        if (parent !== undefined) await this.finishParentIfDone(parent);
+        await this.plans.settle(task).catch(() => undefined);
+        await this.refreshBriefs([id, ...held.map((l) => l.task), ...(parent === undefined ? [] : [parent])]);
+      } catch {
+        // One broken task must not stop the rest of the start.
+      }
+    }
+    await this.orchestrator.advance();
+    if (ids.length > 0) this.deps.events.emit(["tasks"]);
+  }
+
+  /**
    * A task was closed with a merge request that is not merged (5.4a, 5.5). Tasks that wait for it
    * with `merged` do not start on a base without its work: they pause with reason `owner` and say
    * what to do. They stay unmet, and the merge poller keeps watching the open merge requests.

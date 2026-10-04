@@ -300,6 +300,13 @@ export class CaptainService {
 
   /** A room item was written: a new card or question wakes the chore that answers it. */
   roomWrote(task: string, item: RoomItem, captain: string | undefined = this.boss): void {
+    // Most items (tool calls, text, plans) wake nothing: decide that before any task lookup.
+    const card = item.type === "approval" && item.state === "pending" && item.autonomy === undefined;
+    const question =
+      (item.type === "ask" || item.type === "choice" || item.type === "owner-question") &&
+      item.state === "pending";
+    const prompt = item.type === "permission" && item.state === "pending" && item.connection === undefined;
+    if (!card && !question && !prompt) return;
     let org: string | undefined;
     try {
       // The captain's own lanes start nothing.
@@ -311,14 +318,10 @@ export class CaptainService {
     if (org === undefined) return;
     const agent = "agent" in item && typeof item.agent === "string" ? item.agent : undefined;
     const cause = agent !== undefined && agent === captain ? "captain" : "agent";
-    if (item.type === "approval" && item.state === "pending" && item.autonomy === undefined) {
+    if (card) {
       this.trigger(org, "cards", `A card arrived in ${task}`, cause, `${task}:${item.id}`);
       return;
     }
-    const question =
-      (item.type === "ask" || item.type === "choice" || item.type === "owner-question") &&
-      item.state === "pending";
-    const prompt = item.type === "permission" && item.state === "pending" && item.connection === undefined;
     if (question || prompt)
       this.trigger(org, "questions", `An agent asks in ${task}`, cause, `${task}:${item.id}`);
   }
