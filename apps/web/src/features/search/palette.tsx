@@ -269,7 +269,8 @@ export function Palette({ onClose }: { onClose: () => void }) {
     {
       id: "captain-rules",
       name: "Captain: permissions",
-      keywords: "autonomous delegation rules authority who decides what budget leave alone standing instructions",
+      keywords:
+        "autonomous delegation rules authority who decides what budget leave alone standing instructions",
       run: () => go(PAGE_PATH.captain, { tab: "rules" }),
     },
   ];
