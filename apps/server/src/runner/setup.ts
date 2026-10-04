@@ -32,6 +32,7 @@ export function runnerSetup(
     docker: r.docker,
     user: r.user,
     memory: r.memory,
+    cpus: r.cpus,
     cliEnv: r.cliEnv,
     majhiHome: env.majhiHome,
     protectedPaths: [env.secretsKeyFile],
