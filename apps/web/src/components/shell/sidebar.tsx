@@ -32,6 +32,7 @@ import { useHealth, useHostStatus } from "@/lib/queries";
 import { useAccounts } from "@/lib/studio-queries";
 import { useProjects, useTasks } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
+import { useWatch } from "@/lib/watch-queries";
 
 const ITEM =
   "relative flex cursor-pointer items-center rounded-md text-left transition-colors duration-150 hover:bg-raised hover:text-fg";
@@ -150,6 +151,7 @@ function MainNav() {
         <CaptainRow />
         <AutonomyRow />
         <PlaybooksRow active={isActive(PAGE_PATH.playbooks)} />
+        <WatchRow active={isActive(PAGE_PATH.watch)} />
         <NavRow page="business" active={isActive(PAGE_PATH.business)} />
       </div>
       {NAV_GROUPS.map((group) => (
@@ -324,6 +326,41 @@ function PlaybooksRow({ active }: { active: boolean }) {
       )}
     >
       <span className="truncate pl-1.5">Playbooks</span>
+    </Link>
+  );
+}
+
+/**
+ * Watch, a sub-row of Captain beside Playbooks: what is watched and the incidents. It shows a lamp only
+ * while a service is down or an incident is open, so a quiet day is a quiet row.
+ */
+function WatchRow({ active }: { active: boolean }) {
+  const watch = useWatch().data;
+  const down = watch?.services.filter((s) => s.status === "down").length ?? 0;
+  const open = watch?.incidents.filter((i) => i.status === "open").length ?? 0;
+  const lit = Math.max(down, open);
+  const hasAny = (watch?.services.length ?? 0) > 0 || open > 0;
+  if (!hasAny && !active) return null;
+  return (
+    <Link
+      to={PAGE_PATH.watch}
+      search={{}}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        ITEM,
+        "mb-1 ml-2.5 h-8 shrink-0 border-l border-line pl-2 text-body font-medium",
+        active ? ROW_SELECTED : "text-fg-muted",
+      )}
+    >
+      <span className="flex min-w-0 items-center gap-2 pl-1.5">
+        <span className="truncate">Watch</span>
+        {lit > 0 && (
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs font-normal text-lamp-needs">
+            <Lamp state="needs" size={7} />
+            {down > 0 ? `${down} down` : `${open} open`}
+          </span>
+        )}
+      </span>
     </Link>
   );
 }

@@ -16,6 +16,7 @@ export const PAGE_PATH = {
   automations: "/automations",
   captain: "/captain",
   playbooks: "/playbooks",
+  watch: "/watch",
   limits: "/limits",
   decisions: "/decisions",
   business: "/business",
