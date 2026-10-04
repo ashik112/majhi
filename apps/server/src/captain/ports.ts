@@ -1,4 +1,6 @@
 import type { Authority, CaptainUndo, CommandName, TaskPriority } from "@majhi/shared";
+import type { FollowUpPorts } from "../findings/followups.ts";
+import type { FindingsService } from "../findings/service.ts";
 
 /**
  * What the upkeep chores read and do in majhi (SPEC 5.18). The real ports are built from majhi's own
@@ -44,7 +46,7 @@ export interface QuestionCard {
   /** The question, one line. */
   text: string;
   /** The options to pick from: an option id and its words. Empty for an ask card with free text. */
-  options: { id: string; label: string }[];
+  options: { id: string; label: string; effect?: "allow" | "deny" }[];
   /** For an ask card: the question's id. */
   question?: string | undefined;
 }
@@ -61,6 +63,8 @@ export interface NewRepo {
   id: string;
   base: string;
   remotes: { name: string; url: string }[];
+  /** Names for the task box, suggested from the repo's folder and package names. */
+  aliases: string[];
   /** Why the captain is not sure where it belongs, so it asks instead. */
   unsure?: string | undefined;
 }
@@ -105,8 +109,11 @@ export interface CaptainPorts {
 
   // Agents' questions
   questions(org: string): QuestionCard[];
-  /** Laya through the decision provider: an option id when it is sure, else undefined with why. */
-  laya(org: string, card: QuestionCard): Promise<{ option?: string | undefined; why: string }>;
+  /**
+   * An agent keeps asking the same thing: the line goes into the task's room for the owner, and the
+   * agent gets one message telling it to stop asking.
+   */
+  flagLoop(org: string, card: QuestionCard, line: string, nudge: string): Promise<void>;
   answer(org: string, card: QuestionCard, option: string, reason: string): Promise<void>;
   /** Why the workspace's lane rests now (its budget, the day budget, its account), or undefined. */
   laneRest(org: string): Promise<string | undefined>;
@@ -151,6 +158,10 @@ export interface CaptainPorts {
   handBack(org: string, task: string, agent: string, account: string): void;
   wakeLead(org: string, task: string): void;
   pauseForOwner(org: string, task: string, text: string): Promise<void>;
+
+  // Follow-ups and findings
+  followUps: FollowUpPorts;
+  findings: FindingsService;
 
   // Always
   /** Whether the owner is typing in the task now: the captain waits (SPEC 5.18, Presence). */

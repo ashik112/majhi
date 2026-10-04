@@ -362,7 +362,7 @@ export const ThreadSchema = z.object({
   /** A task made to do it. The thread closes when that task is done. */
   follow_up: TaskIdSchema.optional(),
   status: ThreadStatusSchema,
-  /** `owner`, `task:<id>` (a later record says it was done) or `follow-up:<id>`. */
+  /** `owner`, `captain`, `task:<id>` (a later record says it was done) or `follow-up:<id>`. */
   closed_by: z.string().optional(),
   closed_reason: z.string().optional(),
   created_at: z.string(),

@@ -838,11 +838,81 @@ WHERE chore = 'memory'
 `,
   },
   {
+    // Tasks paused when Autonomous was turned off, before `paused_by` existed, read as paused by the
+    // owner and the captain never resumed them. A task of the captain or Autonomous (`autonomy_tasks`)
+    // paused for the owner, with nobody recorded, within two minutes of a mode event that turned
+    // Autonomous off (Stop now writes "Turned off" just after pausing; a graceful stop writes
+    // "Stopping after the current turns" just before), was paused by that switch. A task the owner
+    // paused by hand at another time keeps no `paused_by`.
+    id: 125,
+    name: "paused by autonomy off",
+    sql: `
+UPDATE tasks SET paused_by = 'autonomy-off'
+WHERE status = 'paused'
+  AND paused_reason = 'owner'
+  AND paused_by IS NULL
+  AND id IN (SELECT task FROM autonomy_tasks)
+  AND EXISTS (
+    SELECT 1 FROM autonomy_events e
+    WHERE e.kind = 'mode'
+      AND (e.text LIKE 'Turned off%' OR e.text LIKE 'Stopping after%')
+      AND ABS(julianday(e.at) - julianday(tasks.updated_at)) <= 2.0 / 1440
+  );
+`,
+  },
+  {
+    // Findings (SPEC 5.18): what the captain's playbooks and agents noticed, deduplicated by key.
+    id: 126,
+    name: "findings",
+    sql: `
+CREATE TABLE findings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT NOT NULL,
+  project TEXT,
+  source TEXT NOT NULL,
+  title TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  evidence TEXT NOT NULL DEFAULT '[]',
+  severity TEXT NOT NULL DEFAULT 'info',
+  goal TEXT,
+  playbook TEXT,
+  channel TEXT,
+  dedupe_key TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  task TEXT,
+  decision TEXT,
+  dismissed_reason TEXT,
+  by TEXT NOT NULL,
+  seen INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  last_seen TEXT NOT NULL,
+  UNIQUE (org, dedupe_key)
+);
+CREATE INDEX findings_org_status ON findings (org, status);
+`,
+  },
+  {
+    // The project knowledge card (SPEC 5.18, captain v2): one JSON card per project, rewritten when
+    // the base branch moves. facts_hash tells whether the facts changed, so the model's paragraph is
+    // only rewritten when they did.
+    id: 127,
+    name: "project cards",
+    sql: `
+CREATE TABLE project_cards (
+  project TEXT PRIMARY KEY,
+  card TEXT NOT NULL,
+  facts_hash TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+`,
+  },
+  {
     // Outcome labels for decisions (SPEC 5.12): the right answer to one question of one decision,
     // with where it came from. \`decision_links\` holds a decision until its outcome is known (a task
     // finishes, a woken agent's turn ends, the owner keeps or drops a fact), then the labeler writes
     // the label and removes the link.
-    id: 125,
+    id: 128,
     name: "decision labels and links",
     sql: `
 CREATE TABLE decision_labels (
@@ -868,14 +938,14 @@ CREATE TABLE decision_links (
   },
   {
     // A captain log line can name the decision it came from, so the owner can say it was wrong.
-    id: 126,
+    id: 129,
     name: "decision on captain log lines",
     sql: `ALTER TABLE captain_actions ADD COLUMN decision TEXT;`,
   },
   {
     // Eval runs of the decision provider (SPEC 5.12): one row per run of a slot over the labeled set
     // or the built-in fixtures, the report as JSON. Kept, so a drift between runs is visible.
-    id: 127,
+    id: 130,
     name: "decision eval runs",
     sql: `
 CREATE TABLE decision_evals (
@@ -891,7 +961,7 @@ CREATE INDEX decision_evals_slot ON decision_evals (slot, set_name, id);
   {
     // The fitted calibration of each decision slot (SPEC 5.12): the temperature, the bar for the
     // target precision, and whether the slot acts (live) or only logs (shadow). JSON, one per slot.
-    id: 128,
+    id: 131,
     name: "decision calibration per slot",
     sql: `
 CREATE TABLE decision_calibration (

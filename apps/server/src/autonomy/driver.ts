@@ -35,6 +35,8 @@ export interface DriverDeps {
    * (the idle watch's own check). Absent: only the runs are looked at.
    */
   quiet?: (task: string) => boolean;
+  /** One line per project of a workspace for the digest: its knowledge card in brief. */
+  projectLines?: (org: string) => string[];
   store: Store;
   events: EventHub;
   now?: () => Date;
@@ -232,6 +234,8 @@ export class AutonomyDriver {
       leftOut: pick.leftOut,
       rules: pick.rules,
       queue: status.queue.filter((q) => inOrg(q.org)),
+      projects: this.deps.projectLines?.(org) ?? [],
+      accountStatus: Object.fromEntries(status.accounts.map((a) => [a.id, a.status])),
     });
     await this.deps.tasks.tellAgent({
       task: chat,

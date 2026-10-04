@@ -67,6 +67,8 @@ import type { ServerEnv } from "./env.ts";
 import { errorMessage, UserError } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
+import { FindingsRepo } from "./findings/repo.ts";
+import { FindingsService } from "./findings/service.ts";
 import { GitLoginService } from "./git/logins.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
@@ -97,6 +99,9 @@ import { Notifier } from "./notify/service.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
 import { ProcessManager } from "./processes/manager.ts";
+import { suggestRepoAliases } from "./projectcard/scanner.ts";
+import type { ProjectCards } from "./projectcard/service.ts";
+import { createCards } from "./projectcard/wire.ts";
 import { ProjectService } from "./projects/service.ts";
 import { RoomService } from "./room/service.ts";
 import { RoomAccess } from "./rooms/access.ts";
@@ -263,6 +268,8 @@ export interface Services {
   inbox: InboxService;
   /** The captain per workspace (5.18): the choice, the upkeep chores, the lanes, the log and the stop switch. */
   captain: CaptainService;
+  /** What playbooks and agents noticed, deduplicated (5.18, Findings). */
+  findings: FindingsService;
   /** The captain's chat per workspace (5.18). */
   lanes: Lanes;
   /** The captain's chores run commands through the dispatcher, made after the services. */
@@ -271,6 +278,8 @@ export interface Services {
   automation: Automation;
   /** Background e2e after a merge into main (PRV-72). Without a host helper link there is none. */
   e2e: E2eService | undefined;
+  /** Project knowledge cards, refreshed when a base branch moves. */
+  cards: ProjectCards;
   /** Facts, hybrid search and recall (5.6). */
   memory: MemoryService;
   /** After a task: the Housekeeper reads its room and its facts go through curation. */
@@ -661,6 +670,31 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     majhiHome: env.majhiHome,
     usage: usageRecorder,
   });
+  // Bound below: the findings store is built after the cards.
+  let reportFinding: FindingsService["report"] | undefined;
+  const cards = createCards({
+    store,
+    projects,
+    memory,
+    housekeeper,
+    log: (message) => console.error(message),
+    reportGap: async (project, gap) => {
+      await reportFinding?.(
+        {
+          org: project.org,
+          project: project.id,
+          source: "setup",
+          title: `${project.id}: ${gap.label.toLowerCase()} missing`,
+          detail: gap.fix ?? "",
+          evidence: [],
+          severity: "low",
+          dedupeKey: `readiness:${project.id}:${gap.id}`,
+        },
+        { kind: "owner" },
+      );
+    },
+  });
+  memory.useCards((project) => cards.compact(project));
   const extraction = new Extraction({
     housekeeper,
     curator,
@@ -717,7 +751,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       captain.reviewReached(id);
       return pendingShips.reviewReached(id);
     },
-    onMerged: (merge) => e2e?.onMerged(merge),
+    onMerged: (merge) => {
+      cards.onMerged(merge.project);
+      return e2e?.onMerged(merge);
+    },
     usage: usageRepo,
     flushUsage: () => usageRecorder.flush(),
     ...(options.links === undefined ? {} : { links: options.links }),
@@ -988,6 +1025,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       runs,
       room,
       quiet: (task) => idleWatch.quiet(task),
+      projectLines: (org) => cards.digestLines(org),
       store,
       events,
       ...(options.runClock === undefined ? {} : { now: options.runClock }),
@@ -995,6 +1033,27 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   );
   admin.useAutonomy(autonomy);
   const cleanup = new CleanupService({ store, room, events, projects });
+  const findings = new FindingsService({
+    repo: new FindingsRepo(store.raw),
+    projectOrg: async (id) => (await config.sections()).projects[id]?.org ?? PRIVATE,
+    taskStatus: (id) => store.tasks.get(id)?.status,
+    createTask: async (n) => {
+      const task = await tasks.create({
+        title: n.title,
+        text: n.text,
+        ...(n.project === undefined
+          ? { org: n.org, kind: "ops" as const }
+          : { repos: [{ project: n.project }] }),
+        byOwner: n.byOwner,
+        attachments: [],
+        start: false,
+      });
+      return { id: task.id };
+    },
+    changed: () => events.emit(["findings"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  reportFinding = (input, actor) => findings.report(input, actor);
   /** Bound when the server made the dispatcher: the captain's chores run commands as the captain. */
   let captainDispatch: Dispatch | undefined;
   const captain = new CaptainService({
@@ -1022,6 +1081,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       autonomy,
       decisions,
       memory,
+      findings,
       curate: (fact) => curator.review(fact),
       scanner: new RepoScanner(),
       cleanup,
@@ -1030,6 +1090,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       lanes,
       repo: captainRepo,
       typing: (task) => events.typing.holds(task),
+      aliasesOf: (path, id) => suggestRepoAliases(path, id),
       dispatch: () => captainDispatch,
     }),
     tell: (key, text) => notifier.captain(key, text),
@@ -1241,12 +1302,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     autonomy,
     inbox,
     captain,
+    findings,
     lanes,
     bindCaptain: (dispatch) => {
       captainDispatch = dispatch;
     },
     automation,
     e2e,
+    cards,
     memory,
     extraction,
     promotion,
@@ -1272,6 +1335,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       automation.scheduler.stop();
       automation.triggerEngine.stop();
       e2e?.close();
+      cards.close();
       layaDocker?.close();
       await runs.closeAll();
       await trackers.stop();

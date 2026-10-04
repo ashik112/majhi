@@ -16,8 +16,10 @@ import type { AutonomyService } from "../autonomy/service.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { DecisionService } from "../decisions/service.ts";
+import type { FindingsService } from "../findings/service.ts";
 import { defaultBranch, git } from "../git/git.ts";
 import type { MemoryService } from "../memory/service.ts";
+import { repoFacts } from "../memory/task-git.ts";
 import type { MrService } from "../mrs/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { IdleWatch } from "../rooms/idle-watch.ts";
@@ -50,6 +52,7 @@ export interface WorldDeps {
   autonomy: AutonomyService;
   decisions: DecisionService;
   memory: MemoryService;
+  findings: FindingsService;
   curate: (fact: Fact) => Promise<{ reason?: string }>;
   scanner: RepoScanner;
   cleanup: CleanupService;
@@ -59,12 +62,16 @@ export interface WorldDeps {
   repo: CaptainRepo;
   /** Whether the owner is typing in a task now. */
   typing: (task: string) => boolean;
+  /** Alias suggestions for a repo, from its folder and package names (the project card's scan). */
+  aliasesOf: (path: string, id: string) => Promise<string[]>;
   /** The command dispatcher, bound once the server made it. */
   dispatch: () => Dispatch | undefined;
 }
 
 /** The most waiting memories one look reads. */
 const PENDING_LIMIT = 1_000;
+/** The finished tasks a follow-ups run compares with. */
+const DONE_TASKS_READ = 15;
 
 export function captainWorld(deps: WorldDeps): CaptainPorts {
   const { store } = deps;
@@ -161,7 +168,11 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
               text: item.title,
               options: item.options
                 .filter((o) => o.kind === "allow_once" || o.kind === "reject_once")
-                .map((o) => ({ id: o.id, label: o.name })),
+                .map((o) => ({
+                  id: o.id,
+                  label: o.name,
+                  effect: o.kind === "allow_once" ? ("allow" as const) : ("deny" as const),
+                })),
             }
           : undefined;
       default:
@@ -340,44 +351,6 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       return out;
     },
 
-    async laya(_org, card) {
-      const task = store.tasks.get(card.task);
-      if (card.options.length < 2) return { why: "there is nothing to pick between" };
-      const keys = card.options
-        .slice(0, 20)
-        .map((o, i) => ({ key: String.fromCharCode(65 + i), id: o.id, label: o.label }));
-      try {
-        const result = await deps.decisions.decide(
-          {
-            state: {
-              task: (task?.title ?? card.task).slice(0, 400),
-              brief: (task?.brief ?? "").slice(0, 4_000),
-              question: card.text.slice(0, 2_000),
-            },
-            questions: {
-              pick: {
-                type: "choice",
-                instructions:
-                  "An agent working on the task asks this. Pick the option the task's brief clearly settles. Pick none when it is a real choice for the owner.",
-                options: keys.map((k) => ({ key: k.key, description: k.label.slice(0, 200) })),
-              },
-            },
-          },
-          { use: "captain", task: card.task },
-        );
-        const answer = result.answers.pick;
-        if (result.provider === "rules") return { why: "no decision model answered" };
-        if (answer === undefined || answer.gate?.accepted !== true) {
-          return { why: answer?.gate?.reason ?? "it was not sure enough" };
-        }
-        const picked = keys.find((k) => k.key === answer.value && answer.value !== ABSTAIN.key);
-        if (picked === undefined) return { why: "none of the options fits" };
-        return { option: picked.id, why: answer.gate.reason };
-      } catch (err) {
-        return { why: err instanceof Error ? err.message : "the decision provider failed" };
-      }
-    },
-
     async answer(_org, card, option, reason) {
       // Recorded as the captain's answer, never the owner's (5.18).
       const captain = (await deps.lanes.boss()) ?? "captain";
@@ -408,11 +381,71 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       });
     },
 
+    async flagLoop(_org, card, line, nudge) {
+      deps.room.post(card.task as TaskId, `captain:${randomUUID()}`, {
+        type: "system",
+        level: "warn",
+        text: `${line}. The captain left its question for the owner.`,
+      });
+      deps.runs.notify(card.task, card.agent, nudge);
+    },
+
     laneRest: (org) => deps.lanes.rest(org),
 
     async askLane(org, text) {
       const told = await deps.lanes.tell(org, text, "The captain's upkeep asked about a question");
       return told.sent ? { sent: true } : { sent: false, why: told.why };
+    },
+
+    // -------------------------------------------------------------------------
+    // Follow-ups and findings
+
+    findings: deps.findings,
+    followUps: {
+      openThreads: (org) =>
+        deps.memory.project
+          .threads({ status: "open", limit: 500 })
+          .filter((t) => (t.org ?? PRIVATE) === org)
+          .reverse(),
+      task: (id) => {
+        const t = store.tasks.get(id);
+        return t === undefined ? undefined : { id: t.id, title: t.title, status: t.status };
+      },
+      async doneSince(org, project, since) {
+        const done = store.tasks
+          .list(true)
+          .filter(
+            (t) =>
+              t.status === "done" &&
+              t.chat !== true &&
+              (t.org ?? PRIVATE) === org &&
+              t.updatedAt > since &&
+              (project === undefined || t.repos.some((r) => r.project === project)),
+          )
+          .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
+          .slice(0, DONE_TASKS_READ);
+        const out = [];
+        for (const summary of done) {
+          const task = store.tasks.get(summary.id);
+          if (task === undefined) continue;
+          const record = deps.memory.project.record(task.id);
+          const commits = (await Promise.all(task.repos.map((r) => repoFacts(r, task.createdAt)))).flatMap(
+            (f) => f.commits.map((c) => c.replace(/^[0-9a-f]+ /, "")),
+          );
+          out.push({
+            id: task.id,
+            title: task.title,
+            text: [task.title, record?.done ?? "", record?.outcome ?? "", ...commits.slice(0, 20)]
+              .filter((x) => x !== "")
+              .join(". "),
+          });
+        }
+        return out;
+      },
+      embed: (texts) => deps.memory.embed(texts),
+      closeThread: (id, by, reason) => {
+        deps.memory.project.closeThread(id, by, reason);
+      },
     },
 
     // -------------------------------------------------------------------------
@@ -473,6 +506,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
             id: id ?? slug,
             base,
             remotes: repo.remotes.map((r) => ({ name: r.name, url: r.url })),
+            aliases: await deps.aliasesOf(repo.path, id ?? slug),
             ...(id === undefined ? { unsure: `The ids ${slug} and ${org}-${slug} are taken` } : {}),
           });
           if (id !== undefined) taken.add(id);
@@ -484,7 +518,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
     async register(org, repo, reason) {
       const done = await run(
         "projects.register",
-        { id: repo.id, org, path: repo.path, aliases: [], base: repo.base },
+        { id: repo.id, org, path: repo.path, aliases: repo.aliases, base: repo.base },
         reason,
       );
       return done.commit === undefined ? {} : { commit: done.commit };

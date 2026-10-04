@@ -282,6 +282,28 @@ export class CaptainRepo {
     return this.db.prepare("SELECT 1 FROM captain_actions WHERE key = ?").get(key) !== undefined;
   }
 
+  /** The answers the questions chore gave to one agent in one task since `since`, oldest first. */
+  answersSince(
+    org: string,
+    task: string,
+    agent: string,
+    since: string,
+  ): { at: string; text: string; evidence: string | undefined }[] {
+    const rows = this.db
+      .prepare(
+        `SELECT at, text, evidence FROM captain_actions
+         WHERE org = ? AND chore = 'questions' AND task = ? AND outcome = 'done' AND at >= ?
+           AND instr(text, ?) = 1
+         ORDER BY at`,
+      )
+      .all(org, task, since, `Answered @${agent} in `) as {
+      at: string;
+      text: string;
+      evidence: string | null;
+    }[];
+    return rows.map((r) => ({ at: r.at, text: r.text, evidence: r.evidence ?? undefined }));
+  }
+
   /** Adds a line. False when the key is there already: the action was taken before. */
   addAction(a: NewAction): number | undefined {
     const res = this.db

@@ -15,13 +15,14 @@ import { useNow } from "@/lib/use-now";
 import type { AppSearch } from "@/router";
 import { Conversation } from "./conversation";
 import { DelegationSheet } from "./delegation";
+import { FindingsSheet } from "./findings";
 import { CaptainHeader } from "./header";
 import { FullLog } from "./log";
 import { NowColumn } from "./now-column";
 import { wsTab } from "./panel-model";
 import { dayLabel, SummaryTime, SummaryView } from "./summary";
 
-type Open = "delegation" | "log" | "summary";
+type Open = "delegation" | "log" | "summary" | "findings";
 
 /** The sheet an old `?tab=` link asked for: Rules is the delegation grid, Log is the log. */
 function sheetOf(tab: string | undefined): Open | undefined {
@@ -112,6 +113,7 @@ export function CaptainView() {
           autonomy={autonomy}
           now={now}
           onLog={() => setOpen("log")}
+          onFindings={() => setOpen("findings")}
           onSummary={summary === undefined ? undefined : openSummary}
         />
       </div>
@@ -119,6 +121,11 @@ export function CaptainView() {
       {open === "log" && (
         <Sheet title="Log" subtitle="What the captain did, and why" onClose={close}>
           <FullLog orgs={status.orgs} now={now} />
+        </Sheet>
+      )}
+      {open === "findings" && (
+        <Sheet title="Findings" subtitle="What the captain and your agents noticed" onClose={close} wide>
+          <FindingsSheet orgs={status.orgs} now={now} />
         </Sheet>
       )}
       {open === "summary" && summary && (

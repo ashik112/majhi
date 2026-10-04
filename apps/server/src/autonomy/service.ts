@@ -48,6 +48,14 @@ import type { AgentStore } from "../agents/store.ts";
 import { forceOrg, narrow, readRefusal, type ScopeWorld } from "../captain/lane-scope.ts";
 import type { Lanes } from "../captain/lanes.ts";
 import { askedWhy, authorityOf, workspaceIds } from "../captain/levels.ts";
+import { permissionVerdict } from "../captain/permission-rules.ts";
+import {
+  loopLine,
+  NEAR_SAME_MS,
+  nudgeText,
+  type PastAnswer,
+  questionLoop,
+} from "../captain/question-loop.ts";
 import { restWhy, typingWhy } from "../captain/rules.ts";
 import type { ConfigSections } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
@@ -79,6 +87,7 @@ import { authorityProblem, leftOutWhy, type OrgNames, orgName, pickLines } from 
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
 import { AutonomyRepo, type HeldReason, STOPPED_NOW } from "./repo.ts";
 import { areasOf, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
+import { mayResume, pausedLabel, type ResumeEnv, resumeRefusal } from "./resume.ts";
 import { type SizeOf, type SizeRater, sizeProblem, TaskSizes } from "./sizes.ts";
 import {
   accountsOf,
@@ -92,6 +101,7 @@ import {
   spendOf,
 } from "./spend.ts";
 import { buildSummary, summaryLine } from "./summary.ts";
+import { evaluateWaits, waitProblem } from "./waits.ts";
 
 /** Who the pause is credited to: the labels read "Paused when Autonomous was turned off". */
 const OFF_BY = "autonomy-off";
@@ -342,6 +352,7 @@ export class AutonomyService {
     if (mode !== "off") await this.refreshHolds();
     if (mode === "stopping") await this.maybeFinishStop();
     await this.resumeWaiting();
+    await this.checkWaits();
     this.driver?.sweep();
     await this.dailySummary();
   }
@@ -497,10 +508,20 @@ export class AutonomyService {
     }
   }
 
-  /** A task the stop leaves paused for the owner: one that runs, or would resume by itself. */
+  /**
+   * A task the stop pauses for Autonomous being off: one that runs, or would resume by itself, or that
+   * the run gate paused when the stop began (it holds it for the owner). A task the owner paused by hand
+   * is theirs and stays so: marking it paused by the switch would let the captain resume it.
+   */
   private stoppable(task: Task): boolean {
     if (task.status === "running") return true;
-    return task.status === "paused" && ["offline", "limit", "owner"].includes(task.pausedReason ?? "");
+    if (task.status !== "paused") return false;
+    if (task.pausedReason === "offline" || task.pausedReason === "limit") return true;
+    return (
+      task.pausedReason === "owner" &&
+      task.pausedBy === undefined &&
+      this.repo.task(task.id)?.held === "owner"
+    );
   }
 
   private setMode(mode: AutonomyMode, by: "owner" | "majhi", text: string, line: string, why?: string): void {
@@ -811,13 +832,39 @@ export class AutonomyService {
 
   /** Why the task's agents would only wait for a slot now, or undefined when there is room. */
   private async noRoomFor(task: Pick<Task, "team">): Promise<string | undefined> {
-    const accountOf = new Map(
-      (await this.deps.agents.list()).flatMap((s) =>
-        s.ok ? [[s.id, s.agent.frontmatter.account] as const] : [],
-      ),
-    );
-    const accounts = [...new Set(task.team.flatMap((a) => accountOf.get(a) ?? []))];
+    const accounts = await this.teamAccountIds(task);
     return noRoomLine(await this.deps.runs.capacity(accounts), accounts);
+  }
+
+  /**
+   * Reads the accounts the queue waits for. An item whose account is signed in again becomes ready
+   * (`readyAt`), and the captain of its workspace is woken with one line. An item whose account fell
+   * back is waiting again. Only while the mode is on.
+   */
+  private async checkWaits(): Promise<void> {
+    const state = this.repo.state();
+    if (state.mode !== "on" || !state.queue.some((q) => q.waitFor !== undefined)) return;
+    const views = await this.deps.accounts.list().catch(() => undefined);
+    if (views === undefined) return;
+    const status = new Map(views.map((v) => [v.id, v.status]));
+    const found = evaluateWaits(
+      state.queue,
+      (id) => status.get(id),
+      this.now(),
+      (task) => this.deps.store.tasks.get(task)?.status === "paused",
+    );
+    if (!found.changed) return;
+    this.repo.setQueue(found.queue, state.queuedAt ?? this.now().toISOString());
+    this.deps.events.emit(["autonomy"]);
+    for (const l of found.lifted) {
+      this.event({
+        kind: "task",
+        text: l.line,
+        ...(l.item.task === undefined ? {} : { task: l.item.task }),
+        ...(l.item.org === undefined ? {} : { org: l.item.org }),
+      });
+      this.wake(l.line, l.item.org ?? PRIVATE);
+    }
   }
 
   /** Tasks a resume left for want of a slot go on once one is free, while the mode is on. */
@@ -1120,6 +1167,12 @@ export class AutonomyService {
     if (marked !== undefined) {
       return `Refused: the owner marked ${marked.id} Not for autonomous mode, so autonomous mode leaves it alone.`;
     }
+    // The captain resumes what it or the Autonomous switch paused, never what the owner paused.
+    if (command === "tasks.start") {
+      const paused = touched.find((t) => t.id === str(input.id) && t.status === "paused");
+      const stays = paused === undefined ? undefined : await this.resumeRefusalFor(paused);
+      if (stays !== undefined) return stays;
+    }
     if (group === "tasks" || group === "team" || starts) {
       // Starting work needs the start row. Any other change to a task needs the captain to start work or do upkeep there.
       const rows: readonly AuthorityRow[] = starts ? ["start"] : ["upkeep", "start"];
@@ -1140,6 +1193,30 @@ export class AutonomyService {
     if (!starts || pick.size === "any") return undefined;
     const big = await this.sizeRefusal(command, input);
     return big === undefined ? undefined : `Refused: ${big}. Pick work the size rule allows.`;
+  }
+
+  /** Why the captain may not resume this paused task now, or undefined: see `resumeRefusal`. */
+  async resumeRefusalFor(task: Task): Promise<string | undefined> {
+    return resumeRefusal(task, await this.resumeEnv(task));
+  }
+
+  /** The current state of the causes a pause can wait on: the team's accounts and the workspace's budget. */
+  private async resumeEnv(task: Task): Promise<ResumeEnv> {
+    const ids = await this.teamAccountIds(task);
+    const views = await this.deps.accounts.list().catch(() => [] as AccountView[]);
+    const accounts = views.filter((v) => ids.includes(v.id)).map((v) => ({ id: v.id, status: v.status }));
+    const hold = capHoldFor(this.holds, task.org ?? PRIVATE);
+    return { accounts, ...(hold === undefined ? {} : { budgetHold: this.waitLine(hold) }) };
+  }
+
+  /** The accounts of a task's team. */
+  private async teamAccountIds(task: Pick<Task, "team">): Promise<string[]> {
+    const accountOf = new Map(
+      (await this.deps.agents.list()).flatMap((s) =>
+        s.ok ? [[s.id, s.agent.frontmatter.account] as const] : [],
+      ),
+    );
+    return [...new Set(task.team.flatMap((a) => accountOf.get(a) ?? []))];
   }
 
   /** For a call that starts work: why the size rule keeps it from starting. */
@@ -1897,6 +1974,17 @@ export class AutonomyService {
       const parsed = AutonomyPlanInputSchema.safeParse(input);
       if (!parsed.success) return invalid(command, parsed.error);
       // A lane plans its own workspace only; the other lanes' plans stay.
+      // A wait for an account is checked now: one that already holds is a stale belief, not a plan.
+      const views = await this.deps.accounts.list().catch(() => [] as AccountView[]);
+      const status = new Map(views.map((v) => [v.id, v.status]));
+      for (const item of parsed.data.items) {
+        const problem = waitProblem(
+          item,
+          (id) => status.get(id),
+          (id) => status.has(id),
+        );
+        if (problem !== undefined) return fail(`The queue was not saved. ${problem}`);
+      }
       const items =
         lane === undefined ? parsed.data.items : parsed.data.items.map((i) => ({ ...i, org: lane }));
       const others =
@@ -1961,7 +2049,19 @@ export class AutonomyService {
     if (waiting !== undefined) {
       return fail(`${waiting}. The captain tries again when you send or leave.`);
     }
+    // An agent that asks the same thing again and again is stuck: no answer feeds it.
+    const stuck = await this.questionLoopLine(input.task, item);
+    if (stuck !== undefined) return fail(`${stuck}. It is left for the owner. Do not answer it.`);
     const option = input.option;
+    // The rule table binds the captain too: an empty prompt is the owner's, and a dangerous one is rejected.
+    if (item.type === "permission") {
+      const rule = permissionVerdict(item.title);
+      const kind = item.options.find((o) => o.id === option)?.kind;
+      if (rule.decision === "unreadable") return fail(`Refused: ${rule.why}. Leave it to the owner.`);
+      if (rule.decision === "deny" && kind !== "reject_once" && kind !== "reject_always") {
+        return fail(`Refused: ${rule.why}. Reject it or leave it to the owner.`);
+      }
+    }
     let answered: RoomItem;
     try {
       switch (item.type) {
@@ -2009,6 +2109,44 @@ export class AutonomyService {
       ...this.orgOfTask(input.task),
     });
     return ok({ item: answered });
+  }
+
+  /** Loops already flagged, so the agent hears of one only once and the room gets one line. */
+  private readonly flaggedLoops = new Set<string>();
+
+  /**
+   * The line "@agent keeps asking in TASK (...)" when this card is the same question again, or the
+   * third in five minutes, from the same agent in the same task as the captain answered before. The
+   * first time, the line goes into the room and the agent gets one message. Undefined: not a loop.
+   */
+  private async questionLoopLine(task: string, item: RoomItem): Promise<string | undefined> {
+    const found = this.deps.store.tasks.get(task);
+    const agent = "agent" in item && typeof item.agent === "string" ? item.agent : found?.team[0];
+    const text = plainQuestion(item);
+    if (agent === undefined || text === undefined) return undefined;
+    const since = new Date(this.now().getTime() - NEAR_SAME_MS).toISOString();
+    const past: PastAnswer[] = [];
+    for (const e of this.repo.events({ limit: 50, decisions: false, task }).slice().reverse()) {
+      if (e.kind !== "answer" || e.item === undefined || e.at < since) continue;
+      const before = this.deps.room.get(task, e.item);
+      const asked = before === undefined ? undefined : plainQuestion(before);
+      const by = before !== undefined && "agent" in before ? before.agent : found?.team[0];
+      if (asked !== undefined && by === agent) past.push({ at: e.at, question: asked });
+    }
+    const loop = questionLoop(past, text, this.now());
+    if (loop === undefined) return undefined;
+    const line = loopLine(agent, task, loop);
+    const key = `${task}:${agent}:${loop.since}`;
+    if (!this.flaggedLoops.has(key)) {
+      this.flaggedLoops.add(key);
+      this.deps.room.post(task as TaskId, `autonomy:${randomUUID()}`, {
+        type: "system",
+        level: "warn",
+        text: `${line}. The captain left its question for the owner.`,
+      });
+      this.deps.runs.notify(task, agent, nudgeText(task, loop));
+    }
+    return line;
   }
 
   // ---------------------------------------------------------------------------
@@ -2182,7 +2320,7 @@ export class AutonomyService {
             },
           }),
       lanes,
-      now: this.nowList(),
+      now: await this.withPauses(this.nowList()),
       queue: after.queue,
       backlog: await this.backlogView(),
       ...(after.queuedAt === undefined ? {} : { queuedAt: after.queuedAt }),
@@ -2241,6 +2379,29 @@ export class AutonomyService {
         }),
         ...(why.get(t.id) === undefined ? {} : { why: why.get(t.id) }),
       }));
+  }
+
+  /** Paused tasks say who paused them and whether the captain may resume them now. */
+  private async withPauses(list: AutonomyNow[]): Promise<AutonomyNow[]> {
+    const out: AutonomyNow[] = [];
+    for (const n of list) {
+      const task = n.status === "paused" ? this.deps.store.tasks.get(n.task) : undefined;
+      if (task === undefined) {
+        out.push(n);
+        continue;
+      }
+      const env = await this.resumeEnv(task);
+      const stays = resumeRefusal(task, env);
+      out.push({
+        ...n,
+        pause: {
+          label: pausedLabel(task),
+          mayResume: mayResume(task, env),
+          ...(stays === undefined ? {} : { stays: stays.replace(/^Refused: /, "") }),
+        },
+      });
+    }
+    return out;
   }
 
   /** Cards in autonomous tasks and the captain's lanes that only the owner can decide. */
@@ -2459,4 +2620,20 @@ function withChanged(spend: AutonomySpend, changed: readonly string[]): Autonomy
     total: changed.includes("day") ? { ...spend.total, changed: true } : spend.total,
     orgs: spend.orgs.map((o) => (changed.includes(o.org) ? { ...o, changed: true } : o)),
   };
+}
+
+/** The words an agent asked, without ids, so the same question compares equal. */
+function plainQuestion(item: RoomItem): string | undefined {
+  switch (item.type) {
+    case "choice":
+      return item.question;
+    case "ask":
+      return item.questions.map((q) => q.question).join(" / ");
+    case "owner-question":
+      return item.text ?? item.choices.join(" / ");
+    case "permission":
+      return item.title;
+    default:
+      return undefined;
+  }
 }

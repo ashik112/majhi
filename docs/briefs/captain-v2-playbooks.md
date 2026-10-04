@@ -2,6 +2,20 @@
 
 Status: approved direction (owner, 2026-10-04: "make captain useful... industry defining"). It builds on the chief-of-staff model (`captain-chief-of-staff.md`, SPEC 5.18) and changes it where noted. The full audit and web research behind it are kept outside the repo, because they name the owner's clients.
 
+## Vision: the captain runs the business
+
+Owner, 2026-10-04: the captain works toward the owner's goals across the whole business, not only code: it joins hackathons, runs product launches, watches competitors, finds good deals, grants, opportunities and investment, runs social media, drafts replies to messages, runs A/B tests and data analysis, does legal and compliance reviews, and watches servers, going to work when a service goes down.
+
+So no capability is a feature of its own. They all run on one engine:
+
+**Goals, agenda, playbooks, outputs through one gate, outcomes, scorecard.**
+
+- **Goals** per workspace or for the whole business ("$X monthly revenue", "launch on a product directory in November", "99.9% uptime for Acme"). Every playbook and finding ties to a goal; the scorecard reports progress per goal.
+- **Playbook packs** the owner switches on, stored as data: Engineering (follow-ups, ship, project knowledge, security, UI, CI), Ops watch (service down: an incident task, read-only investigation, a fix as a merge request, restarts only through runbooks the owner approved), Growth (hackathons, launches, competitor watch, deals, grants and funding, investor pipeline), Social and inbox (drafted posts and replies), Analysis (A/B tests, data analysis), Legal and compliance review (findings and drafts that flag risk, marked as not legal advice).
+- **Sensors and actions come through Connections** (majhi's MCP connections, per workspace): uptime and logs, mail and chat, social accounts, analytics, launch and hackathon sites, grant sources. A new capability is a connection plus a playbook, never a rewrite.
+- **One gate for every output that leaves the machine**, set per channel: Draft (the owner approves each), Batch (approved in one click), Auto within limits. A channel moves up only after a track record and the owner's approval, and drops back to Draft after a mistake. Money is never moved, nothing is signed, and nothing is sent in the owner's name without the channel's setting allowing it.
+- **Outcomes per goal** feed the scorecard: replies sent vs edited, applications made vs won, incidents caught vs missed, spend vs revenue.
+
 ## Why the captain feels useless
 
 - **It has no source of work.** It only reacts to events about tasks the owner created. With an empty backlog it records an empty plan and stops. Open follow-ups recorded in memory are never read.
@@ -39,6 +53,23 @@ Gaps no product covers: a portfolio view for one developer serving several isola
 7. **Daily agenda and morning brief.** One planning turn per workspace fits playbooks, findings and backlog into the budget and the owner's review time. The morning brief leads with what needs the owner's minutes.
 8. **Business layer, drafts only.** Per-client economics from rates the owner enters (spend against retainer, unbilled work), scope watch, client update and release note drafts, an opportunities brief, a tech radar per project. Anything sent to a client is an owner decision; majhi never invoices, pays or sends.
 
+
+## Essentials the business packs need (added 2026-10-04)
+
+1. **Company knowledge base**: the owner's bio, products, pricing, positioning, past wins, metrics, screenshots and decks, per workspace and for the business. Grant applications, launches, investor mail and replies draw on it.
+2. **Voice profile**: how the owner writes, learned from sent mail and posts (with the owner's approval), with a voice per client where needed.
+3. **Light CRM**: people and organisations (clients, leads, investors, hackathon and grant contacts) with last touch, next step and deadline.
+4. **Deadlines and calendar**: hackathon, grant and launch dates and the owner's availability feed the agenda.
+5. **Approve from the phone**: decisions and drafts pushed to a chat app or mobile push with Approve and Reject, so the business runs while the owner is away.
+6. **Incident escalation**: an unanswered incident escalates after N minutes (louder alert, then a call).
+7. **Injection defense for everything inbound** (mail, DMs, web pages, issue text): a dedicated screening pass, and inbound text is always data, never instructions. Required before the inbox and social packs go live.
+8. **Platform rules and pacing**: posting caps and pacing per social platform, no impersonation, terms respected. Required before the social pack goes live.
+9. **One cost ceiling and a P&L**: model tokens plus paid APIs under one ceiling, and what the captain cost against what it earned or saved.
+10. **Backups and restore of majhi's data**: memory, CRM, knowledge base, goals and findings, not only the secrets key.
+11. **majhi watches itself**: a stalled server or a dead host helper pages the owner like a client outage.
+
+Order: 7 and 8 before the inbox and social packs; 1, 2 and 3 before the growth packs; 5, 6 and 11 with the ops watch pack; 9 with the scorecard; 10 before any pack stores business data.
+
 ## Rules that do not change
 
 The never list, org isolation, nothing outbound without approval or an org policy that allows it, the Autonomous switch and budgets, owner approval for anything that loosens the captain's own authority. The captain may tighten its rows by itself, never loosen them.
@@ -49,13 +80,17 @@ Each step ships on its own, with an end-to-end test that drives a real captain t
 
 1. Fake agent script mode, so captain turns are testable end to end.
 2. Cut the noise wakes. The captain can message its leads (`tasks.tell`); resolving a merge conflict follows the Merge row.
-3. Findings store, and a follow-ups playbook that imports the memory follow-ups.
+3. Findings store, and a follow-ups playbook that imports the memory follow-ups. **Built (2026-10-04):** `apps/server/src/findings`, migration 125, the `findings.*` commands and tools, the `followups` chore, and the Findings section and sheet on the Captain page.
 4. Own work row with Propose, and batch approval in Decisions.
-5. Project knowledge card per repo, refreshed on merge, with a readiness score.
-6. Playbooks as data; the upkeep chores move onto them.
+5. Project knowledge card per repo, refreshed on merge, with a readiness score. (Built 2026-10-04.)
+6. Playbooks as data, with packs, goals and the per-channel outbound gate; the upkeep chores move onto them. This is the keystone.
+6a. Ops watch pack: service health sensors through connections, incidents, read-only investigation, fixes as merge requests, approved runbooks.
 7. Checked hand-off before ship decisions.
 8. Outcomes, scorecard, trust ladder and auto-mute.
 9. Sensors: CI status, lockfiles with OSV, end-of-life dates; security and dependency sweep and the tech radar as playbooks.
 10. Daily agenda and the morning brief.
 11. Client economics and client update drafts; the opportunities brief.
+11a. Growth packs: hackathons and launches, competitor watch, deals, grants and funding, investor pipeline.
+11b. Social and inbox packs, drafts first.
+11c. Analysis and A/B testing; legal and compliance review.
 12. The local model redesign (separate audit), routing the right questions to it.

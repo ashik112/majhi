@@ -28,6 +28,7 @@ import { connectionDir } from "../connections/service.ts";
 import type { E2eService } from "../e2e/service.ts";
 import { editorPath } from "../editor/allowed.ts";
 import { UserError } from "../errors.ts";
+import { findingsHandlers } from "../findings/handlers.ts";
 import { isDirectory } from "../fs.ts";
 import { gitConnectHandlers } from "../gitConnect/handlers.ts";
 import type { HealthService } from "../health/service.ts";
@@ -161,6 +162,7 @@ export function createHandlers({
     ...autonomyHandlers(services.autonomy),
     ...captainHandlers(services.captain, services.autonomy),
     ...inboxHandlers(services.inbox),
+    ...findingsHandlers({ findings: services.findings, lanes: services.lanes, store: services.store }),
     ...backupHandlers(services.backup),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
     ...skillHandlers(services.skills),
@@ -452,7 +454,13 @@ export function createHandlers({
     },
 
     "projects.list": () => services.projects.list(),
-    "projects.register": (input, ctx) => services.projects.register(input, ctx.command, ctx.meta),
+    "projects.register": async (input, ctx) => {
+      const view = await services.projects.register(input, ctx.command, ctx.meta);
+      services.cards.onRegistered(input.id);
+      return view;
+    },
+    "projects.cards": async (input) => services.cards.list(input.project),
+    "projects.cardRefresh": (input) => services.cards.refresh(input.project),
     "projects.update": async (input, ctx) => {
       // Protection is the owner's guard on their infra: an agent may turn it on, never off.
       if (input.protected === false && ctx.meta.actor.kind === "agent") {
@@ -465,6 +473,7 @@ export function createHandlers({
     },
     "projects.remove": async (input, ctx) => {
       await services.projects.remove(input.id, ctx.command, ctx.meta);
+      services.cards.forget(input.id);
       return { removed: input.id };
     },
 

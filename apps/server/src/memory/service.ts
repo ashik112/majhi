@@ -130,6 +130,13 @@ export class MemoryService {
     }
   }
 
+  private cardText: ((project: string) => string | undefined) | undefined;
+
+  /** Where a project's compact knowledge card comes from, for TASK.md. Built after the memory, so it is set here. */
+  useCards(text: (project: string) => string | undefined): void {
+    this.cardText = text;
+  }
+
   /** Hooks curation into proposals. Built after the decision provider, so it is set here. */
   useCurator(curate: Curate): void {
     this.curate = curate;
@@ -518,8 +525,13 @@ export class MemoryService {
       const b = this.project.currentBrief(p);
       return b === undefined ? [] : [{ project: p, body: b.body }];
     });
+    const cards = projects.flatMap((p) => {
+      const text = this.cardText?.(p);
+      return text === undefined ? [] : [{ project: p, text }];
+    });
     const { text, lessons } = renderMemorySection({
       briefs,
+      cards,
       records: records.map((h) => h.record),
       threads,
       lessons: [...ordered.values()],

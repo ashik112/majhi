@@ -101,6 +101,17 @@ import {
 } from "./decisions.ts";
 import { E2ePatchSchema, E2eRunSchema, E2eStatusSchema } from "./e2e.ts";
 import { EmojiSchema } from "./emoji.ts";
+import {
+  FindingDismissInputSchema,
+  FindingReportInputSchema,
+  FindingReportResultSchema,
+  FindingSchema,
+  FindingsListInputSchema,
+  FindingsListSchema,
+  FindingToTaskInputSchema,
+  FindingToTaskResultSchema,
+  FindingUpdateInputSchema,
+} from "./findings.ts";
 import { GitStatusSchema } from "./git-accounts.ts";
 import {
   GitAppsSetInputSchema,
@@ -178,6 +189,7 @@ import {
 import { PendingNoticeSchema } from "./notify.ts";
 import { OnboardingStatusSchema } from "./onboarding.ts";
 import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
+import { ProjectCardSchema } from "./project-card.ts";
 import {
   ConnectRemoteInputSchema,
   ConnectRemoteSchema,
@@ -691,6 +703,42 @@ export const commands = {
     input: DecisionRecommendInputSchema,
     output: z.object({ id: z.string(), option: z.string() }),
   },
+  // Findings (5.18) ------------------------------------------------------------
+  "findings.list": {
+    risk: "read",
+    summary:
+      "What the captain's playbooks and agents noticed, deduplicated: follow-ups, security, dependency, CI, log, UI, radar, opportunity and setup findings, newest first. Filter by workspace (org), project, source or status (live is every one not dismissed or fixed). A captain lane sees its workspace's only",
+    input: FindingsListInputSchema,
+    output: FindingsListSchema,
+  },
+  "findings.report": {
+    risk: "change",
+    summary:
+      "Report something you noticed that someone should act on: a title, the detail, the evidence (links, file:line, commands you ran) and a severity. The same dedupe key (default: source, project and title) refreshes the finding instead of adding another. It lands in your own workspace. Reporting is not a task: use findings.toTask for that",
+    input: FindingReportInputSchema,
+    output: FindingReportResultSchema,
+  },
+  "findings.update": {
+    risk: "change",
+    summary:
+      "Change a finding: its status (open, task with the task id, decision with the decision id, fixed), severity, title or detail. The owner and the captain only; an agent may change its own reports. Dismiss with findings.dismiss and make a task with findings.toTask",
+    input: FindingUpdateInputSchema,
+    output: FindingSchema,
+  },
+  "findings.toTask": {
+    risk: "change",
+    summary:
+      "Make a task from a finding in the finding's workspace and link them. From the owner the task goes to the inbox as the owner's; from the captain it is a proposal: an inbox task that is not started, for the owner to approve in Decisions",
+    input: FindingToTaskInputSchema,
+    output: FindingToTaskResultSchema,
+  },
+  "findings.dismiss": {
+    risk: "change",
+    summary:
+      "Dismiss a finding with a reason (it is not worth doing, a duplicate, or wrong). It stays dismissed when reported again. The owner and the captain only; an agent may dismiss its own reports",
+    input: FindingDismissInputSchema,
+    output: FindingSchema,
+  },
   "notify.pending": {
     risk: "read",
     summary:
@@ -955,6 +1003,20 @@ export const commands = {
     input: Empty,
     output: z.array(ProjectViewSchema),
   },
+  "projects.cards": {
+    risk: "read",
+    summary:
+      "The knowledge card of each project (or one): what it is, stack, how to run, build, test and lint, structure, conventions, CI, deploy hints, aliases, the commit it was read at, and a readiness score from 0 to 5 with a checklist of what is missing. Read it before working in a repo",
+    input: z.object({ project: IdSchema.optional() }),
+    output: z.array(ProjectCardSchema),
+  },
+  "projects.cardRefresh": {
+    risk: "change",
+    summary:
+      "Read a project's files again and rewrite its knowledge card now. The scan is cheap code; the model only rewrites the one-paragraph summary when the facts changed",
+    input: z.object({ project: IdSchema }),
+    output: ProjectCardSchema,
+  },
   "projects.register": {
     risk: "change",
     summary: "Register a repo as a project of an org, with aliases for the task box",
@@ -1118,7 +1180,8 @@ export const commands = {
   },
   "tasks.start": {
     risk: "change",
-    summary: "Create the worktrees if needed and start the task's agent",
+    summary:
+      "Create the worktrees if needed and start the task's agent. Also resumes a paused task. The captain may resume what it or Autonomous paused, and what stopped for a cause that is gone, never what the owner paused",
     input: z.object({ id: TaskIdSchema }),
     output: TaskSchema,
   },
