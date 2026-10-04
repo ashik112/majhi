@@ -16,6 +16,7 @@ import {
   type AutonomyNow,
   type AutonomyPatch,
   AutonomyPlanInputSchema,
+  type AutonomyReport,
   type AutonomySettings,
   type AutonomySpend,
   type AutonomyStatus,
@@ -94,6 +95,7 @@ import { authorityProblem, leftOutWhy, type OrgNames, orgName, pickLines } from 
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
 import { AutonomyRepo, type HeldReason, STOPPED_NOW } from "./repo.ts";
 import { pathsOf, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
+import { finishedByDay, hourlySpend } from "./report.ts";
 import { mayResume, pausedLabel, type ResumeEnv, resumeRefusal } from "./resume.ts";
 import { type SizeOf, type SizeRater, sizeProblem, TaskSizes } from "./sizes.ts";
 import {
@@ -2604,6 +2606,25 @@ export class AutonomyService {
     events: AutonomyEvent[];
   } {
     return { events: this.repo.events(q) };
+  }
+
+  /** The dashboard's charts: today's spend by hour and the tasks finished over the last `days` days. */
+  async report(days: number): Promise<AutonomyReport> {
+    const settings = (await this.deps.config.settings()).autonomy;
+    const tz = zoneOr(settings.tz);
+    const now = this.now();
+    const window = dayWindow(now, tz);
+    const first = dayStart(addDays(window.day, 1 - days), tz).toISOString();
+    return {
+      tz,
+      today: window.day,
+      hours: hourlySpend(
+        this.repo.spendTurns(window.start, window.end, this.spendChats()),
+        window.start,
+        now,
+      ),
+      days: finishedByDay(this.repo.eventsBetween(first, window.end), window.day, days, tz),
+    };
   }
 
   /** Autonomous tasks that are not done, newest first. */

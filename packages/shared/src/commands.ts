@@ -59,6 +59,8 @@ import {
   AutonomyGuideResultSchema,
   AutonomyNoteInputSchema,
   AutonomyPlanInputSchema,
+  AutonomyReportInputSchema,
+  AutonomyReportSchema,
   AutonomyStartInputSchema,
   AutonomyStatusSchema,
   AutonomyStopInputSchema,
@@ -3570,6 +3572,13 @@ export const commands = {
       "The autonomous feed, newest first: mode changes, ticks, decisions with their one-line reasons, approvals, refusals, task changes, answers, guidance and cap holds. decisions true keeps only decisions, approvals and refusals",
     input: AutonomyEventsInputSchema,
     output: z.object({ events: z.array(AutonomyEventSchema) }),
+  },
+  "autonomy.report": {
+    risk: "read",
+    summary:
+      "Charts for the Auto-pilot dashboard: today's Auto-pilot spend by hour, and the tasks it finished (reached review, an MR or done) per day and workspace over the last days (default 14)",
+    input: AutonomyReportInputSchema,
+    output: AutonomyReportSchema,
   },
   "autonomy.start": {
     risk: "change",
