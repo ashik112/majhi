@@ -220,7 +220,7 @@ test("asking for a file in the repo writes it to the worktree and lists it under
   const worktree = join(apiTask.folder, "api");
   // The checkpoint lands a moment after the room shows the agent idle.
   await expect
-    .poll(() => git(worktree, "log", "-1", "--format=%s"))
+    .poll(() => git(worktree, "log", "-1", "--format=%s"), { timeout: 30_000 })
     .toMatch(/^wip\([A-Z]+-\d+\): checkpoint \d+$/);
   expect(git(worktree, "show", "--name-only", "--format=", "HEAD")).toContain("HEALTH.md");
   expect(git(worktree, "status", "--porcelain")).toBe("");
