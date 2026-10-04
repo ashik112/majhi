@@ -37,7 +37,10 @@ export function Timeline({ incident, now }: { incident: OpsIncident; now: number
           key={`${t.at}-${i}`}
           className="flex min-w-0 items-baseline gap-3 border-t border-line py-1.5 first:border-t-0"
         >
-          <span className="tnum w-[52px] shrink-0 font-mono text-xs text-fg-faint" title={t.at}>
+          <span
+            className="tnum w-[72px] shrink-0 font-mono text-xs whitespace-nowrap text-fg-faint"
+            title={t.at}
+          >
             {new Date(t.at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
           </span>
           <span className="w-[104px] shrink-0 text-xs text-fg-muted">{TIMELINE_LABEL[t.kind]}</span>
@@ -103,11 +106,11 @@ export function IncidentDetail({
       head={
         <div className="flex min-w-0 flex-col gap-1">
           <BackButton onBack={onBack} />
-          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+          <div className="flex min-w-0 items-center gap-x-3">
             <Lamp state={incidentLamp(incident)} size={9} />
             <h2 className="m-0 min-w-0 truncate text-md font-semibold text-fg">{incident.title}</h2>
             <Badge tone={SEVERITY_TONE[incident.severity]}>{incident.severity}</Badge>
-            <span className="text-sm text-fg-muted">{incidentWord(incident)}</span>
+            <span className="shrink-0 text-sm whitespace-nowrap text-fg-muted">{incidentWord(incident)}</span>
             <div className="ml-auto flex shrink-0 items-center gap-2">
               {open && incident.fix !== undefined && (
                 <Button disabled={fix.isPending} onClick={runFix}>
@@ -201,10 +204,12 @@ export function ServiceDetail({
       head={
         <div className="flex min-w-0 flex-col gap-1">
           <BackButton onBack={onBack} />
-          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+          <div className="flex min-w-0 items-center gap-x-3">
             <Lamp state={CHECK_LAMP[service.status]} size={9} />
             <h2 className="m-0 min-w-0 truncate text-md font-semibold text-fg">{def.name}</h2>
-            <span className="text-sm text-fg-muted">{CHECK_WORD[service.status]}</span>
+            <span className="shrink-0 text-sm whitespace-nowrap text-fg-muted">
+              {CHECK_WORD[service.status]}
+            </span>
             <div className="ml-auto flex shrink-0 items-center gap-2">
               <Button
                 disabled={check.isPending}

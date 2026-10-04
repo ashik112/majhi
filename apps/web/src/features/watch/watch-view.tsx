@@ -136,7 +136,11 @@ export function WatchView() {
   const data = query.data;
   const services = (data?.services ?? []).filter((s) => filter === undefined || s.org === filter);
   const incidents = (data?.incidents ?? []).filter((i) => filter === undefined || i.org === filter);
-  const open = incidents.filter((i) => i.status === "open");
+  const rank = { high: 0, medium: 1, low: 2 } as const;
+  // What needs you first: the worst, then the newest.
+  const open = incidents
+    .filter((i) => i.status === "open")
+    .toSorted((a, b) => rank[a.severity] - rank[b.severity] || b.id - a.id);
   const recent = incidents.filter((i) => i.status === "resolved").slice(0, 8);
   const groups = useMemo(() => byWorkspace(services), [services]);
 
