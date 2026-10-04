@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   AutonomyAccount,
   AutonomyHold,
@@ -69,6 +70,45 @@ export interface DigestInput {
   projects?: readonly string[] | undefined;
   /** Every account's health right now, by id, for the waits in the queue. */
   accountStatus?: Readonly<Record<string, AutonomyAccount["status"]>> | undefined;
+  /** Open findings of the workspace, one line each, worst first. */
+  findings?: readonly string[] | undefined;
+  /**
+   * Whether the captain decides when work starts here. False (Start is You): the lane files
+   * proposals and does upkeep; it starts nothing.
+   */
+  starts?: boolean | undefined;
+}
+
+/**
+ * What the digest says apart from time, spend and what agents are doing at this moment: the facts a
+ * wake is about. Two digests with the same key tell the captain the same news, so the second wake
+ * is not sent. Sizes, spend, usage windows and `nowDoing` change without anything to decide, so they
+ * stay out.
+ */
+export function factsKey(input: DigestInput): string {
+  const facts = {
+    workspace: input.workspace,
+    starts: input.starts,
+    holds: input.holds.map((h) => [h.kind, h.id, h.text, h.until]),
+    accounts: input.accounts.map((a) => [a.id, a.org, a.status, a.blocked?.why]),
+    instructions: input.instructions.map((i) => i.text),
+    tasks: input.tasks.map((t) => [
+      t.task,
+      t.status,
+      t.pause?.label,
+      t.pause?.mayResume,
+      t.agents.map((a) => a.id),
+    ]),
+    cards: input.cards.map((c) => [c.task, c.item]),
+    waiting: input.waiting.map((w) => [w.task, w.item]),
+    backlog: input.backlog.map((b) => [b.id, b.priority, b.due]),
+    leftOut: input.leftOut,
+    rules: input.rules,
+    queue: input.queue.map((q) => [q.title, q.task, q.after, q.waitFor, q.readyAt !== undefined]),
+    projects: input.projects,
+    findings: input.findings,
+  };
+  return createHash("sha1").update(JSON.stringify(facts)).digest("hex");
 }
 
 const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, normal: 1, low: 2 };
@@ -96,6 +136,7 @@ const BASE = {
   backlog: 15,
   queue: 10,
   projects: 8,
+  findings: 6,
 };
 
 export function digest(input: DigestInput): string {
@@ -196,6 +237,14 @@ function build(input: DigestInput, scale: number): string {
       max(BASE.queue),
       "empty",
     ),
+    ...((input.findings ?? []).length === 0
+      ? []
+      : list(
+          "Open findings of this workspace (majhi_findings_list has the rest)",
+          input.findings ?? [],
+          max(BASE.findings),
+          "none",
+        )),
     ...((input.projects ?? []).length === 0
       ? []
       : list(
@@ -205,6 +254,11 @@ function build(input: DigestInput, scale: number): string {
           "none",
         )),
     "",
+    ...(input.starts === false
+      ? [
+          "The owner decides when work starts in this workspace. Do not start tasks here. Use this wake for upkeep: look at findings and follow-ups, file proposals (majhi_findings_toTask makes an inbox task for the owner to approve), and check ship and review. majhi leaves anything else for the owner.",
+        ]
+      : []),
     "Decide what to do next, record it with majhi_autonomy_plan, and start what fits. End your turn when nothing more can start.",
   ];
   return lines.join("\n");

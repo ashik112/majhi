@@ -53,6 +53,8 @@ export const ConnectionFieldSchema = z.object({
   placeholder: z.string().optional(),
   /** The page offers the Host aliases of ~/.ssh/config. */
   pick: z.literal("ssh-alias").optional(),
+  /** majhi sets it (Connect), so the form does not offer it. */
+  managed: z.boolean().optional(),
 });
 export type ConnectionField = z.infer<typeof ConnectionFieldSchema>;
 
@@ -146,6 +148,19 @@ function mcpServer(when: Record<string, string> = {}): Pick<ConnectionTypeDef, "
         choices: [
           { value: "http", label: "Streamable HTTP" },
           { value: "sse", label: "SSE" },
+        ],
+        when: remote,
+      },
+      {
+        key: "auth",
+        label: "Sign-in",
+        kind: "text",
+        required: true,
+        managed: true,
+        help: "Headers set by hand, or the service's own sign-in through Connect, which majhi renews.",
+        choices: [
+          { value: "headers", label: "Headers" },
+          { value: "oauth", label: "Sign in with the service" },
         ],
         when: remote,
       },

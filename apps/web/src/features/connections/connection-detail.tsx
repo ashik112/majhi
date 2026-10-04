@@ -15,6 +15,7 @@ import { cn } from "@/lib/cn";
 import { useConnectionCommand } from "@/lib/connection-queries";
 import { describeError, errorDetails } from "@/lib/errors";
 import { badgeLetters, formatAgo } from "@/lib/format";
+import { ConnectSection, isOauth } from "./connect-section";
 import { ConnectionFields } from "./connection-fields";
 import { type ConnectionDraft, connectionStatus, draftOf, updateInput } from "./model";
 
@@ -85,9 +86,12 @@ export function ConnectionDetail({
         </div>
       }
     >
+      {isOauth(view) && <ConnectSection view={view} now={now} />}
       <StatusSection view={view} testing={testing} now={now} />
       <DetailsSection key={`details-${view.id}`} view={view} />
-      <ValuesSection key={`values-${view.id}`} view={view} title={`${def.label} settings`} />
+      {!isOauth(view) && (
+        <ValuesSection key={`values-${view.id}`} view={view} title={`${def.label} settings`} />
+      )}
       <AllowSection key={`allow-${view.id}`} view={view} />
       {removing && (
         <ConfirmDialog
@@ -125,7 +129,7 @@ function StatusSection({ view, testing, now }: { view: ConnectionView; testing: 
   const status = connectionStatus(view, testing);
   const test = view.lastTest;
   return (
-    <DetailSection title="Status" className="border-t-0">
+    <DetailSection title="Status" className={isOauth(view) ? "" : "border-t-0"}>
       <div className="flex min-w-0 flex-col gap-2">
         <span className={cn("flex items-center gap-2 text-base font-medium", LAMP_TEXT[status.lamp])}>
           <Lamp state={status.lamp} size={8} />
