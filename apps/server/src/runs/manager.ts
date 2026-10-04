@@ -679,7 +679,11 @@ export class RunManager {
     const targets = [...this.runs.values()].filter(
       (r) => r.task === task && (agent === undefined || r.agent === agent) && r.turning,
     );
-    for (const run of targets) if (run.queue.length > 0) run.held = true;
+    for (const run of targets) {
+      if (run.queue.length > 0) run.held = true;
+      // Between the session opening and the prompt going out there is no turn to cancel yet.
+      if (!run.prompting) run.cancelBeforePrompt = true;
+    }
     await Promise.all(targets.map((run) => this.cancelRun(run)));
     return targets.map((r) => r.agent);
   }
@@ -1014,6 +1018,7 @@ export class RunManager {
     } finally {
       run.turning = false;
       run.settling = false;
+      run.cancelBeforePrompt = false;
       run.drive = undefined;
       // Idle between turns: a waiting start may stop this process now.
       if (run.session !== undefined && run.live.status === "idle") {
@@ -1137,11 +1142,7 @@ export class RunManager {
           else this.resumeFailed(run, "the agent could not start");
           return;
         }
-        if (run.cancelBeforePrompt) {
-          run.cancelBeforePrompt = false;
-          if (run.queue.length > 0) run.held = true;
-          break;
-        }
+        if (this.stoppedBeforePrompt(run)) break;
       }
       if (run.closing || run.paused !== undefined) break;
       // The wait for a slot or the session start may have been long: ask again before the turn.
@@ -1180,6 +1181,13 @@ export class RunManager {
           run.queue.unshift(entry);
           continue;
         }
+      }
+      // Esc while the prompt was being prepared: keep it queued, send nothing.
+      if (run.cancelBeforePrompt) {
+        run.queue.unshift(entry);
+        this.live.refreshQueued(run);
+        this.stoppedBeforePrompt(run);
+        break;
       }
       const stopReason = await this.turn(
         run,
@@ -2172,6 +2180,15 @@ export class RunManager {
         break;
       }
     }
+  }
+
+  /** Esc came before the first prompt went out: nothing is sent, the queue waits, the room says so. */
+  private stoppedBeforePrompt(run: AgentRun): boolean {
+    if (!run.cancelBeforePrompt) return false;
+    run.cancelBeforePrompt = false;
+    if (run.queue.length > 0) run.held = true;
+    this.live.system(run, "info", `Stopped @${run.agent}'s turn.`);
+    return true;
   }
 
   private async cancelRun(run: AgentRun): Promise<void> {

@@ -76,6 +76,7 @@ export function Composer({
   onDrop,
   onCancel,
   cancelling,
+  starting = false,
   draft,
 }: {
   taskId: string;
@@ -86,6 +87,8 @@ export function Composer({
   onDrop: (id: string) => void;
   onCancel: () => void;
   cancelling: boolean;
+  /** The task is set up but no agent has reported yet. */
+  starting?: boolean;
   /** Text a card button puts in the box, like "@lead ". A new `n` applies it again. */
   draft?: { text: string; n: number } | undefined;
 }) {
@@ -103,7 +106,7 @@ export function Composer({
   useTypingSignal(taskId, focused && text.trim() !== "");
 
   const secretInText = useMemo(() => looksLikeSecret(text), [text]);
-  const busy = isBusy(agents);
+  const busy = isBusy(agents) || starting;
   const commands = agents[0]?.commands ?? [];
   const trigger = detectTrigger(text, caret);
   const popupTrigger = trigger && trigger.start !== dismissed ? trigger : null;
@@ -377,12 +380,12 @@ export function Composer({
             {stops ? (
               <Button
                 variant="secondary"
-                className="h-8 w-16 px-0"
+                className={cancelling ? "h-8 w-[5.5rem] px-0" : "h-8 w-16 px-0"}
                 disabled={cancelling}
                 onClick={onCancel}
                 title="Stop this turn (Esc)"
               >
-                Stop
+                {cancelling ? "Stopping..." : "Stop"}
               </Button>
             ) : (
               <Button

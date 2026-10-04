@@ -189,6 +189,34 @@ describe("permissions", () => {
   });
 });
 
+describe("Esc before the agent has started", () => {
+  it("sends nothing when the owner stops a session that is still opening", async () => {
+    w = await taskWorld();
+    let open: () => void = () => {};
+    w.h.runtime.startGate = new Promise<void>((r) => {
+      open = r;
+    });
+    const res = await w.h.cmd("tasks.create", {
+      text: "fix api",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    });
+    expect(res.status).toBe(200);
+    await until(() => w.h.runtime.starts.length === 1, "session start");
+    const stopped = await w.h.cmd("room.cancel", { task: "ACM-1" });
+    expect(stopped.body.cancelled).toEqual(["acme-builder"]);
+    open();
+    await runs().idle();
+    expect(w.h.runtime.sessions[0]?.prompts).toEqual([]);
+    expect(await texts()).toContain("system: Stopped @acme-builder's turn.");
+    expect(live()).toMatchObject({ status: "idle" });
+    // Sending again after the stop still reaches the agent.
+    await send("go on");
+    await runs().idle();
+    expect(w.h.runtime.sessions[0]?.prompts.length).toBeGreaterThan(0);
+  });
+});
+
 describe("failures and restarts", () => {
   it("posts an error when a turn fails, and starts a new session, resuming the old one, on the next message", async () => {
     const session = await started(async () => {

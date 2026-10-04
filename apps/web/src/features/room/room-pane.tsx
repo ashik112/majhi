@@ -1,6 +1,6 @@
 import type { RoomItem, Task } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
-import { type KeyboardEvent, useCallback, useMemo, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/ui/toast";
 import { type ApiRequestError, cmd } from "@/lib/api";
 import { Composer } from "./composer";
@@ -68,7 +68,19 @@ export function RoomPane({
     }),
     [task, compose, onShowChanges, turningKey],
   );
-  const busy = isBusy(state.agents);
+  // A running task with no agent yet is still being set up (worktrees, session): Esc stops that too.
+  const starting = task.status === "running" && state.agents.length === 0;
+  const busy = isBusy(state.agents) || starting;
+  // "Stopping..." from Esc or Stop until the agent is no longer busy, with a cap so it never sticks.
+  const [stopping, setStopping] = useState(false);
+  useEffect(() => {
+    if (!busy) setStopping(false);
+  }, [busy]);
+  useEffect(() => {
+    if (!stopping) return;
+    const timer = setTimeout(() => setStopping(false), 8000);
+    return () => clearTimeout(timer);
+  }, [stopping]);
   // Around a search match, going to the newest messages also scrolls the view to them.
   const [jumpSignal, setJumpSignal] = useState(0);
   const jumpToLatest = useCallback(() => {
@@ -78,7 +90,11 @@ export function RoomPane({
 
   const cancel = useMutation<{ cancelled: string[] }, ApiRequestError, void>({
     mutationFn: () => cmd("room.cancel", { task: task.id }),
-    onError: (error) => toast("Could not stop", { detail: error.message, tone: "error" }),
+    onMutate: () => setStopping(true),
+    onError: (error) => {
+      setStopping(false);
+      toast("Could not stop", { detail: error.message, tone: "error" });
+    },
   });
 
   const answer = useMutation<{ item: RoomItem }, ApiRequestError, { item: string; option: string }>({
@@ -95,7 +111,7 @@ export function RoomPane({
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (event.key !== "Escape" || event.defaultPrevented || event.nativeEvent.isComposing) return;
     if (event.target instanceof Element && event.target.closest('dialog, [role="menu"]')) return;
-    if (busy && !cancel.isPending) {
+    if (busy && !cancel.isPending && !stopping) {
       // Stopping the agent is what Esc did; a drawer around the room must not also close.
       event.preventDefault();
       cancel.mutate();
@@ -141,7 +157,8 @@ export function RoomPane({
         }}
         onDrop={(id) => dispatch({ type: "drop", id })}
         onCancel={() => cancel.mutate()}
-        cancelling={cancel.isPending}
+        cancelling={cancel.isPending || stopping}
+        starting={starting}
         draft={draft}
       />
     </section>
