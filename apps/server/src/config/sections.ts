@@ -1,9 +1,5 @@
 import { readFile } from "node:fs/promises";
 import {
-  type ConnectionConfig,
-  ConnectionConfigSchema,
-  duplicateConnectionIds,
-  GLOBAL_CONNECTIONS,
   type AccountConfig,
   AccountConfigSchema,
   IdSchema,
@@ -26,7 +22,6 @@ export interface ConfigSections {
   exists: boolean;
   orgs: Record<string, OrgConfig>;
   accounts: Record<string, AccountConfig>;
-  connections?: Record<string, ConnectionConfig> | undefined;
   /** Projects that parse. An entry with errors is left out, so one bad project hides nothing else. */
   projects: Record<string, ProjectConfig>;
   boss: string | undefined;
@@ -34,14 +29,9 @@ export interface ConfigSections {
 
 const SectionsSchema = z.looseObject({
   orgs: OrgsConfigSchema.optional(),
-  connections: z.record(IdSchema, ConnectionConfigSchema).optional(),
   accounts: z.record(IdSchema, AccountConfigSchema).optional(),
   projects: z.record(z.string(), z.unknown()).optional(),
   boss: z.string().trim().min(1).optional(),
-}).superRefine((sections, ctx) => {
-  for (const { id, orgs } of duplicateConnectionIds({ ...sections.orgs, [GLOBAL_CONNECTIONS]: { connections: sections.connections } })) {
-    ctx.addIssue({ code: "custom", path: ["connections", id], message: `Connection ${id} is in both ${orgs.join(" and ")}. Connection ids must be unique.` });
-  }
 });
 
 /**
@@ -74,7 +64,6 @@ export async function readSections(file: string): Promise<ConfigSections> {
     exists: true,
     orgs: withBuiltInOrgs(parsed.data.orgs ?? {}),
     accounts: parsed.data.accounts ?? {},
-    connections: parsed.data.connections ?? {},
     projects: validProjects(parsed.data.projects ?? {}),
     boss: parsed.data.boss,
   };
@@ -99,9 +88,4 @@ function validProjects(raw: Record<string, unknown>): Record<string, ProjectConf
     if (IdSchema.safeParse(id).success && parsed.success) out[id] = parsed.data;
   }
   return out;
-}
-
-/** Connection scopes only. The Global entry never becomes an org, project scope or account owner. */
-export function connectionScopes(sections: Pick<ConfigSections, "orgs" | "connections">): Record<string, OrgConfig> {
-  return { ...sections.orgs, [GLOBAL_CONNECTIONS]: { name: "Global", connections: sections.connections ?? {} } };
 }

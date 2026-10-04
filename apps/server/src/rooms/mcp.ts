@@ -616,8 +616,7 @@ async function refuseOutsideOrg(
   }
   // An org agent never gets another org's connection, so it cannot hand one to a task either.
   if (command === "tasks.create" && Array.isArray(args.connections) && args.connections.length > 0) {
-    const sections = await deps.config.sections();
-    const own = { ...sections.connections, ...sections.orgs[fm.scope]?.connections };
+    const own = (await deps.config.sections()).orgs[fm.scope]?.connections ?? {};
     const foreign = args.connections.find((c) => typeof c !== "string" || own[c] === undefined);
     if (foreign !== undefined)
       return `@${fm.id} can only name connections of ${fm.scope}, not ${String(foreign)}.`;

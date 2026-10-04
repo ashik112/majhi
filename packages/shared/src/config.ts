@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { AccountConfigSchema, IdSchema, OrgsConfigSchema } from "./accounts.ts";
-import { ConnectionConfigSchema, duplicateConnectionIds, GLOBAL_CONNECTIONS } from "./connections.ts";
 import { DecisionPatchSchema } from "./decisions.ts";
 import { E2ePatchSchema } from "./e2e.ts";
 import { GitAppsConfigSchema } from "./git-signin.ts";
@@ -70,15 +69,9 @@ export const MajhiConfigSchema = z.strictObject({
   prices: PricesConfigSchema.optional(),
   accounts: z.record(IdSchema, AccountConfigSchema).optional(),
   orgs: OrgsConfigSchema.optional(),
-  /** Owner-approved service connections available in every workspace. */
-  connections: z.record(IdSchema, ConnectionConfigSchema).optional(),
   /** The OAuth apps majhi signs workspaces in to git hosts with. Public IDs and secret references only. */
   git_apps: GitAppsConfigSchema.optional(),
   projects: z.record(IdSchema, ProjectConfigSchema).optional(),
-}).superRefine((config, ctx) => {
-  for (const { id, orgs } of duplicateConnectionIds({ ...config.orgs, [GLOBAL_CONNECTIONS]: { connections: config.connections } })) {
-    ctx.addIssue({ code: "custom", path: ["connections", id], message: `Connection ${id} is in both ${orgs.join(" and ")}. Connection ids must be unique.` });
-  }
 });
 
 export type MajhiConfig = z.infer<typeof MajhiConfigSchema>;

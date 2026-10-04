@@ -2,7 +2,6 @@ import type { CommandInput, CommandMeta } from "@majhi/shared";
 import {
   DEFAULT_LEAD_START,
   DEFAULT_MERGE_POLICY,
-  GLOBAL_CONNECTIONS,
   LEGACY_PERSONAL,
   type OrgConfig,
   type OrgView,
@@ -40,7 +39,7 @@ export class OrgService {
     const sections = await this.config.sections();
     if (!sections.exists)
       throw new UserError("Pick workspace roots first: majhi.yaml does not exist yet.", 409);
-    if (id === PRIVATE || id === LEGACY_PERSONAL || id === "root" || id === GLOBAL_CONNECTIONS) throw new UserError(`"${id}" is reserved`);
+    if (id === PRIVATE || id === LEGACY_PERSONAL || id === "root") throw new UserError(`"${id}" is reserved`);
     if (sections.orgs[id] !== undefined) throw new UserError(`Org "${id}" already exists.`, 409);
     const config: OrgConfig = { name: org.name };
     if (org.color !== undefined) config.color = org.color;
@@ -106,7 +105,7 @@ export class OrgService {
       throw new UserError("The Private org cannot be renamed. Its name can be changed.", 409);
     if (sections.orgs[id] === undefined) throw new UserError(`Org "${id}" does not exist.`, 404);
     if (id === newId) throw new UserError("That is already its id.");
-    if (newId === PRIVATE || newId === LEGACY_PERSONAL || newId === "root" || newId === GLOBAL_CONNECTIONS)
+    if (newId === PRIVATE || newId === LEGACY_PERSONAL || newId === "root")
       throw new UserError(`"${newId}" is reserved`);
     if (sections.orgs[newId] !== undefined) throw new UserError(`Org "${newId}" already exists.`, 409);
     const swap = (v: string) => (v === id ? newId : v);
