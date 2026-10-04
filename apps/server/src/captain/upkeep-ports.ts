@@ -80,8 +80,16 @@ export interface UpkeepPorts {
 
   /** Stale inbox items, old previews, dead watches, items that wait for the owner too long. */
   tidy(org: string): Promise<Signal[]>;
-  /** Secret requests of the workspace's tasks that waited more than 3 days with no answer. */
+  /**
+   * Pending secret requests of the workspace's tasks that are no longer needed: a duplicate of an
+   * older pending request for the same secret (at once), or one that waited more than 3 days and
+   * whose task closed or whose secret was saved another way.
+   */
   staleSecrets(org: string): Promise<StaleSecret[]>;
+  /** Ids of the workspace's pending secret requests (`task/item`), oldest first. The captain's lane tries to fetch them through a connection. */
+  pendingSecrets?(org: string): Promise<string[]>;
+  /** Wakes the workspace's captain lane with a line; its digest lists the requests. */
+  wakeCaptain?(org: string, line: string): void;
   /** Ends a stale secret request: the asking agent is told it was withdrawn and why. */
   withdrawSecret(task: string, item: string, reason: string): Promise<void>;
   /** Connections whose last test failed. */

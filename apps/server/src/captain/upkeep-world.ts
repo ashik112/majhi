@@ -116,6 +116,7 @@ export function upkeepWorld(deps: {
   store: Store;
   now: () => Date;
   machineBusy?: (() => string | undefined) | undefined;
+  wake?: ((org: string, line: string) => void) | undefined;
 }): UpkeepPorts {
   const daysSince = (at: string) => (deps.now().getTime() - Date.parse(at)) / DAY_MS;
 
@@ -244,10 +245,24 @@ export function upkeepWorld(deps: {
           .map((s) => s.name),
       );
       const out: StaleSecret[] = [];
+      // The oldest pending request for a secret name stays; later ones for the same name collapse into it.
+      const first = new Map<string, { task: string; item: string }>();
       for (const item of deps.store.room.waitingDecisions()) {
-        if (item.type !== "secret-request" || daysSince(item.at) < STALE_SECRET_DAYS) continue;
+        if (item.type !== "secret-request") continue;
         const task = deps.store.tasks.get(item.task);
         if ((task?.org ?? PRIVATE) !== org) continue;
+        const older = first.get(item.name);
+        if (older === undefined) first.set(item.name, { task: item.task, item: item.id });
+        if (older !== undefined) {
+          out.push({
+            task: item.task,
+            item: item.id,
+            label: item.label,
+            obsolete: `${older.task} already asks for the same secret:${item.name}, so one request is enough`,
+          });
+          continue;
+        }
+        if (daysSince(item.at) < STALE_SECRET_DAYS) continue;
         const obsolete =
           task === undefined || task.status === "done"
             ? "Its task is closed"
@@ -257,6 +272,20 @@ export function upkeepWorld(deps: {
         out.push({ task: item.task, item: item.id, label: item.label, obsolete });
       }
       return out;
+    },
+
+    async pendingSecrets(org) {
+      return deps.store.room
+        .waitingDecisions()
+        .flatMap((item) =>
+          item.type === "secret-request" && (deps.store.tasks.get(item.task)?.org ?? PRIVATE) === org
+            ? [`${item.task}/${item.id}`]
+            : [],
+        );
+    },
+
+    wakeCaptain(org, line) {
+      deps.wake?.(org, line);
     },
 
     async withdrawSecret(task, item, reason) {

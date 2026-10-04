@@ -1895,6 +1895,51 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ? { browserCommand: (server: BrowserServer) => ({ command: server.command, args: [] }) }
       : {}),
   });
+  /** Runs a read-only script in a throwaway runner with a workspace's connections. Watches and the captain's secret fetches use it. */
+  const runScript = async ({
+    org,
+    script,
+    connections: ids,
+  }: {
+    org: string;
+    script: string;
+    connections: readonly string[];
+  }): Promise<string> => {
+    // The named connections of this workspace (or Global), as a run of an agent there would get them.
+    const sections = await config.sections();
+    const own = sections.orgs[org]?.connections ?? {};
+    const shared = sections.connections ?? {};
+    const held = ids.flatMap((id) =>
+      own[id] !== undefined
+        ? [{ id, org, connection: own[id] }]
+        : shared[id] !== undefined
+          ? [{ id, org: GLOBAL_CONNECTIONS, connection: shared[id] }]
+          : [],
+    );
+    const plan = await planConnections(held, "/tmp/majhi-script", {
+      secrets,
+      connectionDir: connectionFiles.connectionDir,
+      oauth: connectionFiles.oauth,
+      gitToken: connectionFiles.gitToken,
+    });
+    const vars: Record<string, string> = { ...plan.env };
+    // A signed-in connection's token for its own API, as <ID>_TOKEN.
+    for (const h of held) {
+      if (textValue(h.connection, "auth") !== "oauth") continue;
+      const bearer = await connectionFiles.oauth(h.id);
+      if ("token" in bearer) vars[`${h.id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_TOKEN`] = bearer.token;
+    }
+    try {
+      return await runImageCheck(
+        containerDocker,
+        { majhiHome: env.majhiHome, hostHome: env.hostHome, protectedPaths: [env.secretsKeyFile] },
+        { image: env.runner.image, command: ["sh", "-c", script], env: vars },
+        60_000,
+      );
+    } catch (err) {
+      throw err instanceof ImageCheckFailed ? new Unavailable(err.message) : err;
+    }
+  };
   const ops = createOps({
     db: store.raw,
     findings,
@@ -1933,42 +1978,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         throw err instanceof ImageCheckFailed ? new Unavailable(err.message) : err;
       }
     },
-    scriptRun: async ({ org, script, connections: ids }) => {
-      // The named connections of this workspace (or Global), as a run of an agent there would get them.
-      const sections = await config.sections();
-      const own = sections.orgs[org]?.connections ?? {};
-      const shared = sections.connections ?? {};
-      const held = ids.flatMap((id) =>
-        own[id] !== undefined
-          ? [{ id, org, connection: own[id] }]
-          : shared[id] !== undefined
-            ? [{ id, org: GLOBAL_CONNECTIONS, connection: shared[id] }]
-            : [],
-      );
-      const plan = await planConnections(held, "/tmp/majhi-script", {
-        secrets,
-        connectionDir: connectionFiles.connectionDir,
-        oauth: connectionFiles.oauth,
-        gitToken: connectionFiles.gitToken,
-      });
-      const vars: Record<string, string> = { ...plan.env };
-      // A signed-in connection's token for its own API, as <ID>_TOKEN.
-      for (const h of held) {
-        if (textValue(h.connection, "auth") !== "oauth") continue;
-        const bearer = await connectionFiles.oauth(h.id);
-        if ("token" in bearer) vars[`${h.id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_TOKEN`] = bearer.token;
-      }
-      try {
-        return await runImageCheck(
-          containerDocker,
-          { majhiHome: env.majhiHome, hostHome: env.hostHome, protectedPaths: [env.secretsKeyFile] },
-          { image: env.runner.image, command: ["sh", "-c", script], env: vars },
-          60_000,
-        );
-      } catch (err) {
-        throw err instanceof ImageCheckFailed ? new Unavailable(err.message) : err;
-      }
-    },
+    scriptRun: runScript,
     tester: connectionTests,
     orgs: async () => Object.entries((await config.sections()).orgs).map(([id, o]) => ({ id, name: o.name })),
     askModel: async (task, prompt, parse) => {
@@ -1994,6 +2004,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.opsProbes === undefined ? {} : { probes: options.opsProbes }),
     ...(options.ntfyFetch === undefined ? {} : { ntfyFetch: options.ntfyFetch }),
     ...(options.opsRetryMs === undefined ? {} : { retryMs: options.opsRetryMs }),
+  });
+  admin.useScript({
+    run: runScript,
+    holds: async (org, id) => {
+      const sections = await config.sections();
+      return sections.orgs[org]?.connections?.[id] !== undefined || sections.connections?.[id] !== undefined;
+    },
   });
   opsWatch = ops.watch;
   opsEngine = ops.engine;

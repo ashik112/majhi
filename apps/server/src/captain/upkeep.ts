@@ -200,6 +200,25 @@ export function createUpkeepChores(ports: CaptainPorts): Chores {
           if (outcome === "done") fixed += 1;
         }
       }
+      // What waits for the owner still: the workspace's captain tries to fetch each through a connection first.
+      // The wake is once per set of requests, so a day with the same requests wakes it once.
+      const open = (await u.pendingSecrets?.(org)) ?? [];
+      if (open.length > 0 && u.wakeCaptain !== undefined && !off(run, "tidy-secrets")) {
+        const wake = u.wakeCaptain.bind(u);
+        run.check();
+        await run.act({
+          key: `tidy:secrets-fetch:${run.ws.day}:${open.join(",")}`,
+          text: `Asked the captain to try ${open.length} secret ${open.length === 1 ? "request" : "requests"} through the workspace's connections first`,
+          reason: "A connection may produce the value, so the owner need not paste it",
+          do: async () => {
+            wake(
+              org,
+              `${open.length} secret ${open.length === 1 ? "request waits" : "requests wait"} for the owner: try to fetch each through a connection before they are asked`,
+            );
+            return { undoNote: "Nothing changed: the captain only looks" };
+          },
+        });
+      }
       // Worktrees of done tasks: the cleanup chore removes the clean ones. Here the dirty ones are
       // named for the owner and never touched.
       for (const t of await ports.cleanable(org)) {
