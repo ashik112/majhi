@@ -1,5 +1,6 @@
 import { detectSecrets } from "@majhi/shared";
 import { z } from "zod";
+import { injectionHints } from "../decisions/uses/injection.ts";
 import type { RulesContext, RulesResult } from "../playbooks/rules.ts";
 import { fresh } from "./cache.ts";
 import { isLockfile, type Pkg, parseLockfile } from "./lockfiles.ts";
@@ -268,6 +269,14 @@ export function techRadar(ports: SensorPorts, weekTokens: number = WEEK_TOKENS) 
             if (newest === undefined) continue;
             // One question per dependency: the newest step stands for the releases before it.
             if (ports.summarize === undefined) continue;
+            // Release notes that try to instruct an agent are never handed to a model.
+            const notes = newest.body ?? "";
+            if (injectionHints(notes) !== undefined || (await ports.injects?.(notes)) === true) {
+              ports.log(
+                `radar: the release notes of ${dep.name} ${newest.tag_name} look like instructions, so no model read them`,
+              );
+              continue;
+            }
             const prompt = radarPrompt(project.id, dep.name, dep.installed, newest);
             const estimate = estimateTokens(prompt, "x".repeat(300));
             if (ports.cache.count(budgetKey) + estimate > weekTokens) {

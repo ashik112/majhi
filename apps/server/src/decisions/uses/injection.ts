@@ -49,8 +49,12 @@ const HINTS: readonly { re: RegExp; why: string }[] = [
     why: "it imitates a system prompt",
   },
   {
-    re: /\b(reveal|print|show|send|email|mail|post|upload|leak|exfiltrate|paste|include|forward)\b[^\n]{0,80}\b(api[- ]?keys?|secrets?|tokens?|passwords?|credentials?|\.env\b|env(?:ironment)? variables?|ssh keys?|private keys?)\b/i,
+    re: /\b(send|email|mail|post|upload|forward|leak|exfiltrate)\b[^\n]{0,80}\b(api[- ]?keys?|secrets?|tokens?|passwords?|credentials?|\.env\b|env(?:ironment)? variables?|ssh keys?|private keys?)\b[^\n]{0,80}(@|https?:\/\/|\bto (?:this|the following|my|the) (?:address|server|webhook|endpoint|url|email|thread)\b|\bin (?:a|your|the) (?:reply|answer|response|comment)\b)/i,
     why: "it asks for secrets to be sent somewhere",
+  },
+  {
+    re: /\b(reveal|print|dump|expose|output|show)\b[^\n]{0,40}\b(your|its|the agent'?s|the assistant'?s|any)\b[^\n]{0,20}\b(system prompt|instructions|api[- ]?keys?|secrets?|credentials?|environment variables?|\.env\b)/i,
+    why: "it asks the reader to reveal its prompt or secrets",
   },
   {
     re: /\b(curl|wget)\b[^\n|]*\|\s*(?:sudo\s+)?(?:ba|z)?sh\b/i,
@@ -128,7 +132,9 @@ export async function classifyInjection(
     return {
       flagged: false,
       by: "none",
-      reason: opinion.shadow ? "Laya suspects it, in shadow" : `Laya suspects it, not sure enough (${opinion.why})`,
+      reason: opinion.shadow
+        ? "Laya suspects it, in shadow"
+        : `Laya suspects it, not sure enough (${opinion.why})`,
       decision: opinion.decisionId,
       shadow: opinion.shadow,
     };
@@ -154,7 +160,11 @@ export function defangFlagged(text: string): string {
  * The extra warning fence for a flagged text. It keeps the text readable as data and says what to do with
  * it. Unflagged text is returned as it was.
  */
-export function warnFence(kind: string, text: string, flag: Pick<InjectionFlag, "flagged" | "reason">): string {
+export function warnFence(
+  kind: string,
+  text: string,
+  flag: Pick<InjectionFlag, "flagged" | "reason">,
+): string {
   if (!flag.flagged) return text;
   return [
     `${OPEN} kind="${kind.replace(/[^\w-]/g, "")}">`,

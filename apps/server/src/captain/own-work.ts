@@ -496,7 +496,7 @@ function segmentCheck(segment: string, scope: OwnWorkScope): Check {
     const first = tokens.find((t) => !t.startsWith("-"));
     if (tool !== true && (first === undefined || !tool.test(first))) {
       return no(
-        `${exe} ${first ?? ""}`.trim() + " is not a test, build or lint command",
+        `${`${exe} ${first ?? ""}`.trim()} is not a test, build or lint command`,
         false,
         first !== undefined && /^[a-z][a-z0-9:_-]{0,30}$/.test(first),
       );

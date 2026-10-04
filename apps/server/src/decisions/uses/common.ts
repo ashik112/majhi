@@ -35,6 +35,8 @@ export interface Opinion<V extends string> {
   durationMs: number;
   /** The answer came from the cache of an earlier identical question. */
   cached: boolean;
+  /** Every answer of the call, for a caller that asked more than one question. */
+  answers: Record<string, Answer>;
 }
 
 export interface AskOptions {
@@ -101,8 +103,9 @@ export async function askOpinion<V extends string>(
     const value = String(answer.value);
     const known = values.find((v) => v === value);
     if (known === undefined) return undefined;
-    const confidence = probability(answer.gate?.confidence) ?? probability(answer.confidence);
-    if (confidence === undefined) return undefined;
+    const stated = probability(answer.confidence);
+    if (stated === undefined) return undefined;
+    const confidence = probability(answer.gate?.confidence) ?? stated;
     const shadow = answer.gate?.shadow === true;
     return {
       value: known,
@@ -118,6 +121,7 @@ export async function askOpinion<V extends string>(
       provider: result.provider,
       durationMs: result.durationMs,
       cached: result.cached === true,
+      answers: result.answers,
     };
   } catch {
     return undefined;
@@ -126,7 +130,8 @@ export async function askOpinion<V extends string>(
 
 /** Text from outside majhi, cut to a length and with control characters turned to spaces. */
 export function clipText(text: string, max: number): string {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters have no place in a prompt
-  const plain = text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, " ").replace(/\s+/g, " ").trim();
+  let spaced = "";
+  for (const ch of text) spaced += ch.charCodeAt(0) < 32 ? " " : ch;
+  const plain = spaced.replace(/\s+/g, " ").trim();
   return plain.length <= max ? plain : `${plain.slice(0, max - 1)}…`;
 }

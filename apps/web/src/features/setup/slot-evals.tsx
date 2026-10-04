@@ -88,7 +88,12 @@ function SlotRow({ s }: { s: SlotStatus }) {
           {pct(m.coverage)} coverage, calibration error {pct(m.ece)}, same answer in both orders{" "}
           {pct(m.orderConsistency)}, {ms(m.latencyP50Ms)} typical, {ms(m.latencyP90Ms)} slowest tenth.
           {s.calibration !== undefined && ` ${s.calibration.reason}`}
+          {s.previous !== undefined &&
+            ` Run before (${s.previous.at.slice(0, 10)}): accuracy ${pct(s.previous.accuracy)}.`}
         </p>
+      )}
+      {s.regressed !== undefined && (
+        <p className="m-0 text-xs text-red text-pretty">Got worse: {s.regressed}. A finding was filed.</p>
       )}
     </li>
   );

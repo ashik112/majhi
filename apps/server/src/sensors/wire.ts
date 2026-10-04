@@ -22,6 +22,8 @@ export interface SensorWiring {
   tokens: GitTokens;
   orgs: () => Promise<Record<string, OrgConfig>>;
   housekeeper?: Housekeeper | undefined;
+  /** Laya's injection check for third-party text; absent: the plain-pattern check only. */
+  injects?: ((text: string) => Promise<boolean>) | undefined;
   /** For tests: the network the sensors use, and the hosts they may reach. */
   net?: Net;
   now?: () => Date;
@@ -44,6 +46,7 @@ export function createSensorPorts(w: SensorWiring): SensorPorts {
     cache,
     now: w.now ?? (() => new Date()),
     log: w.log ?? ((m) => console.error(m)),
+    ...(w.injects === undefined ? {} : { injects: w.injects }),
     async projects(org) {
       const out: SensorProject[] = [];
       for (const p of await w.projects.infos()) {

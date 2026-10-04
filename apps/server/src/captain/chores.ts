@@ -50,7 +50,10 @@ export function createChores(
     if (verdict.decision === "owner" && verdict.middle === true && ports.ownSecondOpinion !== undefined) {
       second = await ports.ownSecondOpinion(card, scope).catch(() => undefined);
       if (second?.approve === true) {
-        verdict = { decision: "approve", why: `a second opinion from Laya called it routine inside the task` };
+        verdict = {
+          decision: "approve",
+          why: `a second opinion from Laya called it routine inside the task`,
+        };
       }
     }
     const key = `own:${card.task}:${card.item}`;

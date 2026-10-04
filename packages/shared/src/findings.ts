@@ -116,6 +116,9 @@ export const FindingTriageSchema = z.object({
 });
 export type FindingTriage = z.infer<typeof FindingTriageSchema>;
 
+/** The start of the reason a finding carries when Laya's triage dismissed it. Not a judgement by the owner. */
+export const TRIAGE_DISMISS = "Triage by Laya";
+
 export const FindingSchema = z.object({
   id: z.number().int().positive(),
   /** The workspace (an org id, or `private`). */

@@ -1,4 +1,6 @@
 import type { CrmContact, CrmInteraction, KbEntry, VoiceProfile } from "@majhi/shared";
+import type { LayaDecisions } from "../decisions/uses/common.ts";
+import { classifyInjection, warnFence } from "../decisions/uses/injection.ts";
 import type { KbService } from "./kb.ts";
 import type { BusinessActor } from "./scope.ts";
 import type { VoiceService } from "./voice.ts";
@@ -60,26 +62,46 @@ const KB_IN_CONTEXT = 5;
  * right voice, and the knowledge base entries closest to what it is about. Each part is its own fenced block.
  */
 export async function draftContext(
-  deps: { kb: KbService; voice: VoiceService },
+  deps: { kb: KbService; voice: VoiceService; decisions?: LayaDecisions | undefined },
   input: { org?: string | undefined; about: string },
   actor: BusinessActor,
 ): Promise<string> {
+  return (await draftContextChecked(deps, input, actor)).text;
+}
+
+/**
+ * `draftContext` with the injection check (SPEC 5.12): a voice sample or entry whose text tries to
+ * instruct the agent gets an extra warning fence, and its id is in `flagged` so the playbook and the owner
+ * see it. The text of a flagged entry is never used to pick anything.
+ */
+export async function draftContextChecked(
+  deps: { kb: KbService; voice: VoiceService; decisions?: LayaDecisions | undefined },
+  input: { org?: string | undefined; about: string },
+  actor: BusinessActor,
+): Promise<{ text: string; flagged: string[] }> {
   const blocks: string[] = [];
+  const flagged: string[] = [];
   const voice = deps.voice.get(input.org, actor);
   if (voice.effective !== undefined) {
     const lines = renderVoice(voice.effective);
-    if (lines.length > 0) blocks.push(dataBlock("voice", lines));
+    if (lines.length > 0) {
+      const flag = await classifyInjection(deps.decisions, lines.join("\n"), "memory");
+      if (flag.flagged) flagged.push("voice");
+      blocks.push(dataBlock("voice", flag.flagged ? [warnFence("voice", lines.join("\n"), flag)] : lines));
+    }
   }
   const found = await deps.kb.search(
     { query: input.about, ...(input.org === undefined ? {} : { org: input.org }), limit: KB_IN_CONTEXT },
     actor,
   );
-  if (found.hits.length > 0)
-    blocks.push(
-      dataBlock(
-        "knowledge-base",
-        found.hits.map((h) => renderEntry(h.entry)),
-      ),
-    );
-  return blocks.join("\n\n");
+  if (found.hits.length > 0) {
+    const lines: string[] = [];
+    for (const h of found.hits) {
+      const flag = await classifyInjection(deps.decisions, `${h.entry.title}\n${h.entry.body}`, "memory");
+      if (flag.flagged) flagged.push(String(h.entry.id));
+      lines.push(warnFence("knowledge-base-entry", renderEntry(h.entry), flag));
+    }
+    blocks.push(dataBlock("knowledge-base", lines));
+  }
+  return { text: blocks.join("\n\n"), flagged };
 }

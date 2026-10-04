@@ -12,7 +12,7 @@ import { useToast } from "@/components/ui/toast";
 import { TaskRef } from "@/features/autonomy/task-ref";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
-import { useFindingDismiss, useFindings, useFindingToTask } from "@/lib/findings-queries";
+import { useFindingDismiss, useFindingReopen, useFindings, useFindingToTask } from "@/lib/findings-queries";
 import { formatAgo } from "@/lib/format";
 import {
   type FindingGroup,
@@ -137,6 +137,7 @@ function FindingRow({
   onStartDismiss,
   onCancelDismiss,
   onDismiss,
+  onReopen,
   busy,
   error,
 }: {
@@ -152,6 +153,7 @@ function FindingRow({
   onStartDismiss: () => void;
   onCancelDismiss: () => void;
   onDismiss: (reason: string) => void;
+  onReopen: () => void;
   busy: boolean;
   error: string | undefined;
 }) {
@@ -217,6 +219,37 @@ function FindingRow({
       </div>
       {finding.status === "dismissed" && finding.dismissedReason && (
         <p className="pl-[15px] text-xs text-fg-muted text-pretty">Dismissed: {finding.dismissedReason}</p>
+      )}
+      {finding.triage?.injects !== undefined && (
+        <p className="pl-[15px] text-xs text-amber text-pretty">
+          Flagged: its text tries to instruct an AI agent. No model read it for a verdict.
+        </p>
+      )}
+      {live && finding.triage?.action === "dismiss" && (
+        <p className="pl-[15px] text-xs text-fg-muted text-pretty">
+          {finding.triage.by === "laya" ? "Laya suggests dismissing" : "Looks like noise"}:{" "}
+          {finding.triage.reason}
+          {finding.triage.by === "laya" ? ` (${Math.round(finding.triage.confidence * 100)}% sure)` : ""}.
+        </p>
+      )}
+      {selected && live && !dismissing && finding.triage?.action === "dismiss" && (
+        <div className="pl-[15px]">
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => onDismiss(`Laya suggested: ${finding.triage?.reason ?? "noise"}`)}
+          >
+            Dismiss as suggested
+          </Button>
+        </div>
+      )}
+      {selected && finding.status === "dismissed" && finding.triage?.applied === true && (
+        <div className="pl-[15px]">
+          <Button size="sm" variant="ghost" disabled={busy} onClick={onReopen}>
+            Bring back
+          </Button>
+        </div>
       )}
       {expanded && (
         <div className="flex flex-col gap-1.5 pl-[15px] text-sm text-fg-soft">
@@ -301,6 +334,7 @@ export function FindingsSheet({
   const query = useFindings();
   const toTask = useFindingToTask();
   const dismiss = useFindingDismiss();
+  const reopen = useFindingReopen();
   const toast = useToast();
   const all = useMemo(() => query.data?.findings ?? [], [query.data]);
   const [group, setGroup] = useState<FindingGroup>("open");
@@ -378,7 +412,7 @@ export function FindingsSheet({
     }
   };
 
-  const error = toTask.error ?? dismiss.error;
+  const error = toTask.error ?? dismiss.error ?? reopen.error;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 pb-2">
@@ -465,7 +499,7 @@ export function FindingsSheet({
                       selected={f.id === selectedId}
                       expanded={expanded.has(f.id)}
                       dismissing={dismissing && f.id === selectedId}
-                      busy={toTask.isPending || dismiss.isPending}
+                      busy={toTask.isPending || dismiss.isPending || reopen.isPending}
                       error={f.id === selectedId && error ? describeError(error) : undefined}
                       onSelect={() => {
                         setSelectedId(f.id);
@@ -483,6 +517,12 @@ export function FindingsSheet({
                       onMakeTask={() => makeTask(f)}
                       onStartDismiss={() => setDismissing(true)}
                       onCancelDismiss={() => setDismissing(false)}
+                      onReopen={() =>
+                        reopen.mutate(
+                          { id: f.id },
+                          { onSuccess: () => toast("Brought back", { detail: f.title }) },
+                        )
+                      }
                       onDismiss={(reason) =>
                         dismiss.mutate(
                           { id: f.id, reason },

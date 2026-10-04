@@ -21,6 +21,8 @@ import { AdminAccess } from "./admin/access.ts";
 import { isBossChat } from "./admin/boss.ts";
 import { AdminService } from "./admin/service.ts";
 import { AdminTokens } from "./admin/tokens.ts";
+import { AgendaRepo } from "./agenda/repo.ts";
+import { AgendaService } from "./agenda/service.ts";
 import { AgentService } from "./agents/service.ts";
 import { AgentStore } from "./agents/store.ts";
 import { createActionHost } from "./automation/host.ts";
@@ -30,22 +32,21 @@ import { createWatchHost } from "./automation/triggers/host.ts";
 import { TriggerRepo } from "./automation/triggers/repo.ts";
 import { AutonomyDriver } from "./autonomy/driver.ts";
 import { AutonomyService, zoneOr } from "./autonomy/service.ts";
+import { WakeGate } from "./autonomy/wake-gate.ts";
 import { Background } from "./background.ts";
 import { BackupService } from "./backup/service.ts";
 import { alertLine } from "./budgets/alert-line.ts";
 import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
 import { BudgetAlertRepo } from "./budgets/repo.ts";
-import { AgendaRepo } from "./agenda/repo.ts";
-import { AgendaService } from "./agenda/service.ts";
 import { CrmService } from "./business/crm.ts";
 import { DeadlinesService } from "./business/deadlines.ts";
 import { KbService } from "./business/kb.ts";
 import { VoiceService } from "./business/voice.ts";
 import { Lanes } from "./captain/lanes.ts";
 import { authorityOf, workspaceIds } from "./captain/levels.ts";
-import { CaptainRepo } from "./captain/repo.ts";
 import { labelOwnWork } from "./captain/own-work-second.ts";
+import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
 import { CaptainTell } from "./captain/tell.ts";
 import { captainWorld } from "./captain/world.ts";
@@ -74,6 +75,8 @@ import { DecisionLog } from "./decisions/log.ts";
 import { rulesProvider } from "./decisions/rules.ts";
 import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
+import { classifyInjection } from "./decisions/uses/injection.ts";
+import { layaEvalRunner } from "./decisions/uses/weekly-eval.ts";
 import type { E2eService } from "./e2e/service.ts";
 import { createE2e } from "./e2e/wire.ts";
 import type { ServerEnv } from "./env.ts";
@@ -82,6 +85,7 @@ import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
 import { FindingsRepo } from "./findings/repo.ts";
 import { FindingsService } from "./findings/service.ts";
+import { triageFinding } from "./findings/triage.ts";
 import { GitLoginService } from "./git/logins.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
@@ -95,6 +99,7 @@ import { ChatMemory } from "./memory/chats.ts";
 import { cleanupRepoDocFacts } from "./memory/cleanup.ts";
 import { Curator } from "./memory/curator.ts";
 import type { Embedder } from "./memory/embedder.ts";
+import { ESCALATIONS_PER_DAY } from "./memory/escalate.ts";
 import { curationTask, Extraction } from "./memory/extraction.ts";
 import { Housekeeper } from "./memory/housekeeper.ts";
 import { briefAbout, Placer, type Registry } from "./memory/placement.ts";
@@ -111,12 +116,12 @@ import type { Subject } from "./notify/attention.ts";
 import { Notifier } from "./notify/service.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
+import { OutcomesService } from "./outcomes/service.ts";
 import { GoalsService } from "./playbooks/goals.ts";
 import { OutboundGate } from "./playbooks/outbound.ts";
 import { PlaybookRepo } from "./playbooks/repo.ts";
 import { RULES_RUNNERS } from "./playbooks/rules.ts";
 import { PlaybookService } from "./playbooks/service.ts";
-import { OutcomesService } from "./outcomes/service.ts";
 import { ProcessManager } from "./processes/manager.ts";
 import { CardRepo } from "./projectcard/repo.ts";
 import { suggestRepoAliases } from "./projectcard/scanner.ts";
@@ -709,6 +714,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     allowed: (t) => memoryScopes.writable(t.id),
     placer: new Placer({ decisions, registry: memoryRegistry }),
+    // Laya unsure about a waiting memory: the stand-in answers once, 40 a day at most, before the owner is left with it.
+    escalate: { perDay: ESCALATIONS_PER_DAY },
     inDocs: async (t, text) => {
       if (t === undefined) return undefined;
       const paths = (await projectList()).filter((p) => t.projects.includes(p.id)).map((p) => p.path);
@@ -1128,6 +1135,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       pendingWork: (org) => autonomy.pendingWork(org, findingsStore?.openCount(org) ?? 0),
       findingLines: (org) => findingsStore?.digestLines(org) ?? [],
       projectLines: (org) => cards.digestLines(org),
+      // Laya reads what changed before a soft wake costs a captain turn; any doubt takes the turn.
+      wakeGate: new WakeGate(decisions),
       store,
       events,
       ...(options.runClock === undefined ? {} : { now: options.runClock }),
@@ -1153,6 +1162,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return { id: task.id };
     },
     changed: () => events.emit(["findings"]),
+    // Laya reads each new finding: likely real or noise, with the owner's dismiss and keep as its labels.
+    triage: (f) => triageFinding(decisions, f, options.runClock),
+    labelled: (f, label, note) => decisions.resolve("finding", String(f.id), label, note),
     // A new finding is news to its workspace's lane, where Start is You too (it files a proposal).
     appeared: (f) => {
       if (f.severity !== "info") autonomy.news(`New finding #${f.id} (${f.severity}): ${f.title}`, f.org);
@@ -1306,12 +1318,18 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     tokens: gitTokens,
     orgs: async () => (await config.sections()).orgs,
     housekeeper,
+    injects: async (text) => (await classifyInjection(decisions, text, "release-notes")).flagged,
     ...(options.sensorNet === undefined ? {} : { net: options.sensorNet }),
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
     log: (message) => console.error(message),
   });
   const playbooks = new PlaybookService({
-    rules: { ...RULES_RUNNERS, ...sensorRunners(sensors) },
+    rules: {
+      ...RULES_RUNNERS,
+      ...sensorRunners(sensors),
+      // The weekly check of Laya's decisions, and a few old findings read each run.
+      "laya-eval": layaEvalRunner({ decisions, backlog: findings }),
+    },
     repo: new PlaybookRepo(store.raw),
     captain,
     findings,
@@ -1333,7 +1351,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     db: store.raw,
     tz: async () => zoneOr((await config.settings()).autonomy.tz),
     orgs: async () => workspaceIds((await config.sections()).orgs),
-    orgName: async (org) => (org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org)),
+    orgName: async (org) =>
+      org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org),
     playbookOfChore: (chore) => playbooks.catalog.ofChore(chore)?.id,
     authority: async (org) => authorityOf((await config.settings()).autonomy, org),
     setAuthority: async (org, row, choice, reason) => {

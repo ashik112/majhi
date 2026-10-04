@@ -78,6 +78,8 @@ export interface Decisions {
   decide(request: DecideRequestInput, use: DecideUse): Promise<DecisionResult | undefined>;
   /** Records what majhi did with a decision, for the log and the owner's "Wrong pick". */
   outcome(id: string, outcome: DecisionOutcome): void;
+  /** A stronger provider's answer as a teacher's label on `decisionId`'s question, where the first provider was unsure. */
+  teach?(decisionId: string, question: string, label: string, note?: string): void;
   /** Holds a decision until the outcome of `ref` is known, so the outcome can label it (5.12). */
   link?(kind: LinkKind, ref: string, decisionId: string, question: string): void;
   /** The outcome of `ref` is known: labels the decisions linked to it with `label`, once. */
