@@ -1166,6 +1166,26 @@ CREATE TABLE sensor_cache (
 );
 `,
   },
+  {
+    // The morning brief and the agenda's review budget (SPEC 5.18, captain v2 step 10): one brief per local
+    // day (the primary key is what makes it once per day), and the owner's small agenda settings.
+    id: 135,
+    name: "morning briefs",
+    sql: `
+CREATE TABLE morning_briefs (
+  day TEXT PRIMARY KEY,
+  at TEXT NOT NULL,
+  source TEXT NOT NULL,
+  lines TEXT NOT NULL,
+  facts TEXT NOT NULL,
+  dismissed_at TEXT
+);
+CREATE TABLE agenda_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

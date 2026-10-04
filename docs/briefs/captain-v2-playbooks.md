@@ -90,7 +90,7 @@ Each step ships on its own, with an end-to-end test that drives a real captain t
 7. Checked hand-off before ship decisions.
 8. Outcomes, scorecard, trust ladder and auto-mute.
 9. Sensors: CI status, lockfiles with OSV, end-of-life dates; security and dependency sweep and the tech radar as playbooks. **Built (2026-10-04):** `apps/server/src/sensors` (a host-guarded network, the lockfile readers, OSV client, CI, secret scan, end-of-life and radar sensors), migration 134 (`sensor_cache`), five read-only rules playbooks in the Engineering pack, on by default and running while Autonomous is off. Not yet: lockfile-change and CI-finished events (they poll), PyPI and crates.io versions behind, radar for non-npm projects.
-10. Daily agenda and the morning brief.
+10. Daily agenda and the morning brief. **Built (2026-10-04):** `apps/server/src/agenda` (the ordered agenda cut at the owner's review time, the brief made once a day with a template fallback, the `agenda.*` commands), migration 135, the `brief` notification kind and the Today page (`/today`). Deadlines and CRM next steps are in the agenda. Not yet: the scorecard line in the brief (the port is there), sensors as agenda sources.
 11. Client economics and client update drafts; the opportunities brief.
 11a. Growth packs: hackathons and launches, competitor watch, deals, grants and funding, investor pipeline.
 11b. Social and inbox packs, drafts first.

@@ -27,6 +27,7 @@ type Open = "delegation" | "log" | "summary" | "findings";
 function sheetOf(tab: string | undefined): Open | undefined {
   if (tab === "rules") return "delegation";
   if (tab === "log") return "log";
+  if (tab === "findings") return "findings";
   return undefined;
 }
 
@@ -115,7 +116,7 @@ export function CaptainView() {
       )}
       {open === "findings" && status && (
         <Sheet title="Findings" subtitle="What the captain and your agents noticed" onClose={close} wide>
-          <FindingsSheet orgs={status.orgs} now={now} />
+          <FindingsSheet orgs={status.orgs} now={now} focus={Number(search.id) || undefined} />
         </Sheet>
       )}
       {open === "summary" && summary && (

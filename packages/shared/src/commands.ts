@@ -148,6 +148,13 @@ import {
 import { E2ePatchSchema, E2eRunSchema, E2eStatusSchema } from "./e2e.ts";
 import { EmojiSchema } from "./emoji.ts";
 import {
+  AgendaBriefInputSchema,
+  AgendaConfigureInputSchema,
+  AgendaDismissInputSchema,
+  AgendaTodayInputSchema,
+  AgendaTodaySchema,
+} from "./agenda.ts";
+import {
   FindingDismissInputSchema,
   FindingReportInputSchema,
   FindingReportResultSchema,
@@ -1055,6 +1062,33 @@ export const commands = {
     summary: "Delete a deadline. The owner only",
     input: DeadlineIdInputSchema,
     output: z.object({ id: z.number().int().positive() }),
+  },
+  // The agenda and the morning brief (5.18) -----------------------------------
+  "agenda.today": {
+    risk: "read",
+    summary:
+      "The owner's day in one call: today's brief, the ordered agenda (decisions, deadlines in the next 14 days, incidents and high findings, budget holds, playbook drafts, follow-ups due) cut at the owner's review budget into today and later, what is running, and the week's deadlines and goals. Computed in code. The owner only",
+    input: AgendaTodayInputSchema,
+    output: AgendaTodaySchema,
+  },
+  "agenda.configure": {
+    risk: "change",
+    summary: "Set the owner's review time per day in minutes (default 45). It decides how much of the agenda shows as today. The owner only",
+    input: AgendaConfigureInputSchema,
+    output: AgendaTodaySchema,
+  },
+  "agenda.brief": {
+    risk: "change",
+    summary:
+      "Make today's morning brief now when it is missing (it is made once per day, at the brief hour or on the first open after it). The owner only",
+    input: AgendaBriefInputSchema,
+    output: AgendaTodaySchema,
+  },
+  "agenda.dismissBrief": {
+    risk: "change",
+    summary: "Dismiss the morning brief of a day on Today. The owner only",
+    input: AgendaDismissInputSchema,
+    output: z.object({ day: z.string() }),
   },
   "notify.pending": {
     risk: "read",
