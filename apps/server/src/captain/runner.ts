@@ -53,6 +53,8 @@ export interface RunnerDeps {
   /** Tokens the workspace's lane spent since `since`. */
   laneTokens(org: string, since: string): number;
   chores: Record<CaptainChore, (run: ChoreRun) => Promise<void>>;
+  /** The chore's playbook: a chore the owner turned off never starts, by schedule, event or click. */
+  enabled?: (org: string, chore: CaptainChore) => boolean;
   /** Something in the log or the runs changed. */
   changed?: () => void;
   /** A chore reached a daily cap with work left, and the owner is asked whether to raise it today. */
@@ -387,6 +389,9 @@ export class ChoreRunner {
       if (ws === undefined) return no("There is no such workspace, or no captain yet.");
       if (!choresNow(ws.authority, ws.mode).includes(chore)) {
         return no(`${CHORE_LABEL[chore]} is not on in ${ws.name}. Turn upkeep on in Delegation.`);
+      }
+      if (deps.enabled?.(org, chore) === false) {
+        return no(`${CHORE_LABEL[chore]} is turned off in ${ws.name}. Turn it on in Playbooks.`);
       }
       if (ws.rest !== undefined) return no(`${ws.name} is resting: ${ws.rest}`);
       const off = deps.repo.chore(org, chore).offAt;

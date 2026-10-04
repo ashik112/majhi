@@ -1,10 +1,15 @@
 import {
   type BudgetAsk,
+  batchDecisionId,
   budgetDecisionId,
   type CaptainCapAsk,
   capDecisionId,
   type DecisionOption,
   type DecisionSuggestion,
+  draftDecisionId,
+  OUTBOUND_CHANNEL_LABEL,
+  type OutboundChannel,
+  type Draft as OutboundDraft,
   type OwnerDecision,
   type OwnerDecisionKind,
   plainAuthorityText,
@@ -30,6 +35,10 @@ export interface DecisionSources {
   /** Accounts the owner has to sign in again. */
   signedOut: readonly { id: string; at: string }[];
   recommendations: ReadonlyMap<string, Recommendation>;
+  /** Drafts that wait for the owner one by one (the outbound gate, Draft mode). */
+  drafts?: readonly OutboundDraft[];
+  /** Batches that are due in front of the owner: queued drafts of a channel in Batch mode. */
+  batches?: readonly { org: string; channel: OutboundChannel; drafts: readonly OutboundDraft[] }[];
   /** A workspace's name, for the sentences that name it. */
   orgName?: (org: string) => string | undefined;
 }
@@ -347,6 +356,45 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       ...decorate(id, options),
       at: ask.at,
       link: { kind: "limits" },
+    });
+  }
+
+  for (const d of src.drafts ?? []) {
+    const id = draftDecisionId(d.id);
+    const what = OUTBOUND_CHANNEL_LABEL[d.channel].toLowerCase();
+    const options: DecisionOption[] = [
+      { id: "send", label: "Approve", primary: true },
+      { id: "discard", label: "Discard" },
+    ];
+    const head = d.subject ?? d.body;
+    out.push({
+      id,
+      kind: "draft",
+      org: d.org,
+      title: oneLine(`${OUTBOUND_CHANNEL_LABEL[d.channel]} to ${d.target}: ${head}`),
+      sentence: `A ${what} to ${d.target} is drafted${d.voice === undefined ? "" : ` in the voice "${d.voice}"`}. Nothing is sent until you approve it.`,
+      ...decorate(id, options, undefined, src.orgName?.(d.org)),
+      at: d.createdAt,
+      link: { kind: "playbooks" },
+    });
+  }
+
+  for (const b of src.batches ?? []) {
+    const id = batchDecisionId(b.org, b.channel);
+    const options: DecisionOption[] = [
+      { id: "send", label: `Approve all ${b.drafts.length}`, primary: true },
+      { id: "discard", label: "Discard all" },
+    ];
+    const label = OUTBOUND_CHANNEL_LABEL[b.channel].toLowerCase();
+    out.push({
+      id,
+      kind: "batch",
+      org: b.org,
+      title: `${b.drafts.length} ${label} ${b.drafts.length === 1 ? "draft is" : "drafts are"} ready to approve`,
+      sentence: `${b.drafts.length} ${label} ${b.drafts.length === 1 ? "draft waits" : "drafts wait"} in this batch. Nothing is sent until you approve.`,
+      ...decorate(id, options, undefined, src.orgName?.(b.org)),
+      at: b.drafts[0]?.createdAt ?? new Date(0).toISOString(),
+      link: { kind: "playbooks" },
     });
   }
 

@@ -269,6 +269,47 @@ export class CaptainRepo {
     return rows.flatMap((r) => runOf(r) ?? []);
   }
 
+  /** The start of the chore's last run that did not rest: what a daily schedule counts from. */
+  lastWorkedRun(org: string, chore: CaptainChore): string | undefined {
+    const row = this.db
+      .prepare(
+        "SELECT MAX(started_at) AS at FROM captain_runs WHERE org = ? AND chore = ? AND status != 'rested'",
+      )
+      .get(org, chore) as { at: string | null };
+    return row.at ?? undefined;
+  }
+
+  /** The runs of one chore in a workspace, newest first. */
+  choreRuns(org: string, chore: CaptainChore, limit: number): CaptainRun[] {
+    return (
+      this.db
+        .prepare(
+          "SELECT * FROM captain_runs WHERE org = ? AND chore = ? AND status != 'rested' ORDER BY id DESC LIMIT ?",
+        )
+        .all(org, chore, limit) as RunRow[]
+    ).flatMap((r) => runOf(r) ?? []);
+  }
+
+  /** How many runs a chore made in a workspace, not counting the ones that rested. */
+  runCount(org: string, chore: CaptainChore): number {
+    return (
+      this.db
+        .prepare("SELECT COUNT(*) AS n FROM captain_runs WHERE org = ? AND chore = ? AND status != 'rested'")
+        .get(org, chore) as { n: number }
+    ).n;
+  }
+
+  /** How many log lines the chore made that did something or handed it to the owner. */
+  actedCount(org: string, chore: CaptainChore): number {
+    return (
+      this.db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM captain_actions WHERE org = ? AND chore = ? AND outcome IN ('done', 'asked')",
+        )
+        .get(org, chore) as { n: number }
+    ).n;
+  }
+
   allRuns(): CaptainRun[] {
     return (this.db.prepare("SELECT * FROM captain_runs ORDER BY id").all() as RunRow[]).flatMap(
       (r) => runOf(r) ?? [],

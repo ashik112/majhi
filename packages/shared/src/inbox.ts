@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DraftSchema } from "./playbooks.ts";
 import { TaskIdSchema } from "./tasks.ts";
 
 /**
@@ -16,6 +17,8 @@ export const OwnerDecisionKindSchema = z.enum([
   "paused",
   "sign-in",
   "secret",
+  "draft",
+  "batch",
 ]);
 export type OwnerDecisionKind = z.infer<typeof OwnerDecisionKindSchema>;
 
@@ -49,6 +52,7 @@ export const DecisionLinkSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("captain") }),
   z.object({ kind: z.literal("limits") }),
   z.object({ kind: z.literal("account"), id: z.string().min(1) }),
+  z.object({ kind: z.literal("playbooks") }),
 ]);
 export type DecisionLink = z.infer<typeof DecisionLinkSchema>;
 
@@ -111,6 +115,8 @@ export const DecisionDetailSchema = z.object({
   questions: z
     .array(z.object({ question: z.string(), options: z.array(z.string()), freeText: z.boolean() }))
     .optional(),
+  /** The whole text of an outbound draft, with its target and voice. */
+  draft: DraftSchema.optional(),
   /** Options that cannot be taken now, with the reason (Merge when nothing is committed). */
   blocked: z.record(z.string(), z.string()).optional(),
 });
@@ -148,6 +154,8 @@ export const DECISION_KIND_LABEL: Record<OwnerDecisionKind, string> = {
   paused: "Paused",
   "sign-in": "Access",
   secret: "Access",
+  draft: "Draft",
+  batch: "Batch",
 };
 
 export function roomDecisionId(task: string, item: string): string {
@@ -167,7 +175,9 @@ export type ParsedDecisionId =
   | { kind: "room"; task: string; item: string }
   | { kind: "cap"; org: string; chore: string; day: string }
   | { kind: "budget"; scope: string; day: string }
-  | { kind: "signin"; account: string };
+  | { kind: "signin"; account: string }
+  | { kind: "draft"; id: number }
+  | { kind: "batch"; org: string; channel: string };
 
 /** The parts of a decision id, or undefined when it is none of ours. Ids are short and hold no secrets. */
 export function parseDecisionId(id: string): ParsedDecisionId | undefined {
@@ -183,6 +193,12 @@ export function parseDecisionId(id: string): ParsedDecisionId | undefined {
   }
   if (head === "signin" && rest.length >= 1 && rest[0] !== "") {
     return { kind: "signin", account: rest.join(":") };
+  }
+  if (head === "draft" && rest.length === 1 && /^[1-9]\d*$/.test(rest[0] ?? "")) {
+    return { kind: "draft", id: Number(rest[0]) };
+  }
+  if (head === "batch" && rest.length === 2 && rest.every((p) => p !== "")) {
+    return { kind: "batch", org: rest[0] as string, channel: rest[1] as string };
   }
   return undefined;
 }

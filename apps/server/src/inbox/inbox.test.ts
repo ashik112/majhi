@@ -283,6 +283,8 @@ function fakeActions(log: string[]): DecisionActions {
     askChanges: async (t, text, lead) => void log.push(`changes ${t} ${lead ?? "-"} ${text}`),
     answerCap: async (o, c, a) => void log.push(`cap ${o} ${c} ${a}`),
     answerBudget: async (s, a) => void log.push(`budget ${s} ${a}`),
+    decideDraft: async (id, d) => void log.push(`draft ${id} ${d}`),
+    decideBatch: async (o, c, d) => void log.push(`batch ${o} ${c} ${d}`),
   };
 }
 

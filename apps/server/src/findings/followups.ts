@@ -276,6 +276,7 @@ export async function runFollowUps(run: ChoreRun, deps: FollowUpDeps): Promise<v
             detail,
             evidence,
             severity: "info",
+            playbook: "upkeep-followups",
             dedupeKey: key,
           },
           { kind: "captain", org },

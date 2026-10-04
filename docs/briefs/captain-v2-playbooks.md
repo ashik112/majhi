@@ -85,7 +85,7 @@ Each step ships on its own, with an end-to-end test that drives a real captain t
 3. Findings store, and a follow-ups playbook that imports the memory follow-ups. **Built (2026-10-04):** `apps/server/src/findings`, migration 125, the `findings.*` commands and tools, the `followups` chore, and the Findings section and sheet on the Captain page.
 4. Own work row with Propose, and batch approval in Decisions. **Built (2026-10-04):** the Own work row (You or Captain; Propose waits for the findings-as-proposals work in step 6) and `decisions.answerBatch` with the batch strip, ten-second undo and a virtualized queue. See SPEC 5.18, `captain/own-work.ts`, `inbox/service.ts`.
 5. Project knowledge card per repo, refreshed on merge, with a readiness score. (Built 2026-10-04.)
-6. Playbooks as data, with packs, goals and the per-channel outbound gate; the upkeep chores move onto them. This is the keystone.
+6. Playbooks as data, with packs, goals and the per-channel outbound gate; the upkeep chores move onto them. This is the keystone. **Built (2026-10-04):** `apps/server/src/playbooks` (catalog and built-in packs as data, the scheduler, goals, the outbound gate, the uptime check), migration 132, the `playbooks.*`, `goals.*` and `outbound.*` commands and tools, the nine chores scheduled through their Upkeep playbooks, drafts and batches as Decisions, and the Playbooks page. Engineering playbooks are off and say "needs a sensor". No sender is connected to any channel yet.
 6a. Ops watch pack: service health sensors through connections, incidents, read-only investigation, fixes as merge requests, approved runbooks.
 7. Checked hand-off before ship decisions.
 8. Outcomes, scorecard, trust ladder and auto-mute.
