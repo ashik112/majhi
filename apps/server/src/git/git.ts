@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { stat } from "node:fs/promises";
+import { access, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { KeyedQueue } from "./keyed-queue.ts";
@@ -284,6 +284,20 @@ export const LOCK_RETRY_DELAYS_MS: readonly number[] = [100, 250, 500, 1000, 200
 const sleep = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
 /**
+ * Whether the worktree's index lock exists on disk: the structured signal that a write failed on
+ * someone else's lock, read from the file system instead of git's message text.
+ */
+async function indexLockHeld(cwd: string): Promise<boolean> {
+  try {
+    const dir = (await gitOnce(cwd, ["rev-parse", "--absolute-git-dir"], {})).trim();
+    await access(join(dir, "index.lock"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Runs `git` with an argument list, never through a shell. Prompts are off, so a
  * missing credential fails at once instead of hanging the server. The repo cannot make it run
  * a command (`SERVER_CONFIG`).
@@ -296,15 +310,21 @@ export async function git(
   const command = args[commandAt(args)] ?? "";
   if (!INDEX_WRITERS.has(command)) return gitOnce(cwd, args, options);
   return writes.run(resolve(cwd), async () => {
+    let lockGoneRetried = false;
     for (let attempt = 0; ; attempt++) {
       try {
         return await gitOnce(cwd, args, options);
       } catch (err) {
-        // This worktree's write queue is held here, so the lock git hit is not majhi's own write: it
-        // is an agent's git in a container or the owner's. Wait for it; never remove it.
+        // This worktree's write queue is held here, so a lock on disk is not majhi's own write: it is
+        // an agent's git in a container or the owner's. Wait for it; never remove it.
         const wait = LOCK_RETRY_DELAYS_MS[attempt];
         if (wait === undefined || NO_RETRY.has(command) || !(err instanceof GitError)) throw err;
-        if (!err.stderr.includes("index.lock")) throw err;
+        if (!(await indexLockHeld(cwd))) {
+          // The lock may have been released between the failure and this look: try once more at once.
+          if (lockGoneRetried) throw err;
+          lockGoneRetried = true;
+          continue;
+        }
         await sleep(wait);
       }
     }
