@@ -12,6 +12,7 @@ import {
   remoteOf,
   uncommitted,
 } from "./git.ts";
+import { KeyedQueue } from "./keyed-queue.ts";
 
 export interface WorktreeRequest {
   /** The project's own checkout. */
@@ -45,22 +46,7 @@ export interface WorktreeResult {
 /** Something the owner can fix: a busy branch, a missing base, a folder in the way. */
 export class WorktreeProblem extends Error {}
 
-/** Runs one job at a time per key, so two tasks never touch one repo's worktree list together. */
-class KeyedQueue {
-  private readonly tails = new Map<string, Promise<unknown>>();
-
-  run<T>(key: string, job: () => Promise<T>): Promise<T> {
-    const tail = this.tails.get(key) ?? Promise.resolve();
-    const next = tail.then(job, job);
-    const settled = next.catch(() => undefined);
-    this.tails.set(key, settled);
-    void settled.then(() => {
-      if (this.tails.get(key) === settled) this.tails.delete(key);
-    });
-    return next;
-  }
-}
-
+/** One job at a time per key, so two tasks never touch one repo's worktree list together. */
 const queue = new KeyedQueue();
 
 /**
