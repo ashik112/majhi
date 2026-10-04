@@ -1343,18 +1343,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     log: (message) => console.error(message),
   });
   // The ops watch adds its runner below, once the connections it reads through exist.
-  const rulesTable: Record<string, RulesRunner> = { ...RULES_RUNNERS, ...sensorRunners(sensors) };
+  const rulesTable: Record<string, RulesRunner> = {
+    ...RULES_RUNNERS,
+    ...sensorRunners(sensors),
+    // The weekly check of Laya's decisions, and a few old findings read each run.
+    "laya-eval": layaEvalRunner({ decisions, backlog: findings }),
+  };
   const playbooks = new PlaybookService({
-<<<<<<< HEAD
-    rules: {
-      ...RULES_RUNNERS,
-      ...sensorRunners(sensors),
-      // The weekly check of Laya's decisions, and a few old findings read each run.
-      "laya-eval": layaEvalRunner({ decisions, backlog: findings }),
-    },
-=======
     rules: rulesTable,
->>>>>>> main
     repo: new PlaybookRepo(store.raw),
     captain,
     findings,
