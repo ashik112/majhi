@@ -139,6 +139,8 @@ export function useHealth() {
     refetchIntervalInBackground: false,
     retry: 1,
     retryDelay: 200,
+    // The browser's own online flag must not pause the check that tells whether majhi answers.
+    networkMode: "always",
   });
 
   const online = query.isSuccess;
