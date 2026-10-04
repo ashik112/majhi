@@ -237,7 +237,9 @@ export class ConnectionTester {
       }
       if (known.names.has(tool)) return product.mcpUrl;
     }
-    throw new Error(`no picked product of ${connection.name} has the tool ${tool}`);
+    throw new Error(
+      `majhi problem: no picked product of ${connection.name} has the tool ${tool}. Pick the product on the connection, or majhi routes it wrong.`,
+    );
   }
 
   /**
