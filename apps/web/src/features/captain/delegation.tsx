@@ -234,10 +234,10 @@ function Grid({
         <div className="flex items-center gap-2 border-b border-line py-1.5">
           <div
             className={cn(FIRST_COLUMN, sticky, "flex flex-col pr-2 leading-snug")}
-            title="The captain decides everything here and acts without a card. It still asks before changing anyone's permissions and before anything destructive."
+            title="The captain decides everything here and acts without a card. It still asks before changing anyone's permissions, before anything destructive, and before merging or pushing when those rows are yours."
           >
             <span className="text-base text-fg">Full access</span>
-            <span className="text-xs text-fg-faint">No cards, except permissions and deletes</span>
+            <span className="text-xs text-fg-faint">No cards, except permissions, deletes, and Merge or Push when they are yours</span>
           </div>
           {orgs.map((org) => (
             <div key={org.org} className={COLUMN}>
