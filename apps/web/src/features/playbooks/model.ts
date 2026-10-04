@@ -48,13 +48,6 @@ export function outcomeText(c: PlaybookCounters): string {
   return parts.length === 0 ? `${ran}, nothing to report` : `${ran}: ${parts.join(", ")}`;
 }
 
-/** The lamp of a row: working when it runs, needs when something holds an enabled one, idle when off. */
-export function lampOf(v: PlaybookView): LampState {
-  if (v.running) return "working";
-  if (!v.enabled) return "idle";
-  return v.held === undefined ? "done" : "paused";
-}
-
 export type CadenceKind = Cadence["kind"] | "hourly" | "quarter";
 
 /** The choices of the cadence menu. Hourly and every 15 minutes are `every` with a fixed number. */
@@ -94,6 +87,52 @@ export function cadenceFrom(choice: string, prev: Cadence): Cadence {
   if (choice === "weekly") return { kind: "weekly", day: prev.kind === "weekly" ? prev.day : 1, at };
   return choice === "events" ? { kind: "events" } : { kind: "manual" };
 }
+
+/** The kinds the page filters by: Upkeep, Code health (the engineering and ops packs) and Business (business and growth). */
+export type Kind = "upkeep" | "code" | "business";
+export const KINDS: readonly Kind[] = ["upkeep", "code", "business"];
+export const KIND_LABEL: Record<Kind, string> = {
+  upkeep: "Upkeep",
+  code: "Code health",
+  business: "Business",
+};
+
+export function kindOf(pack: PlaybookPack): Kind {
+  if (pack === "upkeep") return "upkeep";
+  return pack === "engineering" || pack === "ops" ? "code" : "business";
+}
+
+const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+
+/** How often it runs, in a few plain words: "every hour", "daily 02:30", "weekly Mon", "when it happens". */
+export function cadenceWords(c: Cadence): string {
+  switch (c.kind) {
+    case "manual":
+      return "on demand";
+    case "events":
+      return "when it happens";
+    case "every":
+      if (c.minutes === 60) return "every hour";
+      if (c.minutes % 60 === 0) return `every ${c.minutes / 60} h`;
+      return `every ${c.minutes} min`;
+    case "daily":
+      return c.at === "00:00" ? "daily" : `daily ${c.at}`;
+    case "weekly":
+      return `weekly ${DAY_SHORT[c.day]}`;
+  }
+}
+
+/** "08:00" for a time today, else the weekday and the day: when the last run happened. */
+export function shortWhen(iso: string, now: number): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const today = new Date(now).toDateString() === d.toDateString();
+  const hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  return today ? hm : `${d.toLocaleDateString([], { weekday: "short" })} ${hm}`;
+}
+
+/** The daily limits the menu offers, besides "No cap". */
+export const LIMIT_CHOICES: readonly number[] = [1, 3, 5, 10, 20, 40, 100];
 
 export const RUN_LAMP: Record<PlaybookRun["status"], LampState> = {
   running: "working",

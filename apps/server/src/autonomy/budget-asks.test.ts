@@ -136,7 +136,7 @@ describe("a workspace without a budget", () => {
 describe("what a held task says", () => {
   it("names the budget and what it used", () => {
     expect(waitText("hooli", "Hooli", 20)).toBe("Waiting for Hooli's daily budget, $20 used");
-    expect(waitText("day", "Autonomous work", 20.5)).toBe(
+    expect(waitText("day", "Auto-pilot work", 20.5)).toBe(
       "Waiting for the autonomous daily budget, $20.50 used",
     );
   });

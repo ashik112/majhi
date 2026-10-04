@@ -216,7 +216,7 @@ describe("alerts are for decisions only", () => {
 
   it("alerts for the captain's two questions, once each, and for nothing else it tells", async () => {
     await setup();
-    notifier.captain("budget:day:2026-10-04", "Autonomous work used its $20 for today. Raise it?");
+    notifier.captain("budget:day:2026-10-04", "Auto-pilot work used its $20 for today. Raise it?");
     notifier.captain("budget:day:2026-10-04", "again");
     notifier.captain("captain-cap:acme:memory:2026-10-04", "Acme: the memory chore reached its limit.");
     notifier.captain("captain-summary:2026-10-04", "Yesterday the captain did 4 things.");

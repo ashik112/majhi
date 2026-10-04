@@ -107,11 +107,11 @@ import {
 import { buildSummary, summaryLine } from "./summary.ts";
 import { evaluateWaits, waitProblem } from "./waits.ts";
 
-/** Who the pause is credited to: the labels read "Paused when Autonomous was turned off". */
+/** Who the pause is credited to: the labels read "Paused when Auto-pilot was turned off". */
 const OFF_BY = "autonomy-off";
 
 const OFF_WHY =
-  "Autonomous was turned off, so this task paused. Resume it, or turn Autonomous on and resume the tasks it paused.";
+  "Auto-pilot was turned off, so this task paused. Resume it, or turn Auto-pilot on and resume the tasks it paused.";
 
 /** How often holds, a graceful stop and the driver's clock are checked. */
 export const SWEEP_MS = 60_000;
@@ -469,7 +469,7 @@ export class AutonomyService {
     if (mode === "on") return this.status();
     if ((await this.bossId()) === undefined) {
       throw new UserError(
-        "There is no captain yet. Make a root agent the captain first, then turn Autonomous on.",
+        "There is no captain yet. Make a root agent the captain first, then turn Auto-pilot on.",
         409,
       );
     }
@@ -477,12 +477,7 @@ export class AutonomyService {
       // Holds from an earlier run are news again.
       this.repo.setHolds([]);
       this.holds = [];
-      this.setMode(
-        "on",
-        "owner",
-        "Turned on",
-        "Autonomous mode is on. The captain picks the work from here.",
-      );
+      this.setMode("on", "owner", "Turned on", "Auto-pilot is on. The captain picks the work from here.");
       // The tasks Stop now paused restart only when the owner asks; else they stay the owner's.
       for (const row of this.repo.tasks()) {
         if (row.held !== "owner" || row.heldScope !== STOPPED_NOW) continue;
@@ -556,7 +551,7 @@ export class AutonomyService {
     this.repo.releaseAll();
     // Remembered, so turning on again can resume exactly these.
     for (const id of stopped) this.repo.hold(id, "owner", STOPPED_NOW);
-    this.setMode("off", "owner", "Turned off", "Autonomous is off. The tasks it started are paused.");
+    this.setMode("off", "owner", "Turned off", "Auto-pilot is off. The tasks it started are paused.");
   }
 
   /** Stop gracefully: once no autonomous run is in a turn, majhi turns the mode off. */
@@ -583,7 +578,7 @@ export class AutonomyService {
         "off",
         "majhi",
         "Turned off after the current turns",
-        "Autonomous is off. The tasks it started finished their step and are paused.",
+        "Auto-pilot is off. The tasks it started finished their step and are paused.",
         why,
       );
     } finally {
@@ -2122,7 +2117,7 @@ export class AutonomyService {
     const authority =
       lane === undefined ? undefined : authorityOf((await this.deps.config.settings()).autonomy, lane);
     // Off: the captain acts only when the owner talks to it, so it plans, notes and answers nothing.
-    if (mode === "off") return fail("Autonomous is off, so the captain acts only when you ask.");
+    if (mode === "off") return fail("Auto-pilot is off, so the captain acts only when you ask.");
     if (command === "autonomy.answer" && mode !== "on") {
       return fail(`Autonomous is ${mode === "stopping" ? "turning off" : mode}, so nothing is answered now.`);
     }

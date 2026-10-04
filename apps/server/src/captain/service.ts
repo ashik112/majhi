@@ -3,6 +3,7 @@ import {
   type AutonomySettings,
   type CaptainCapAsk,
   type CaptainChore,
+  CaptainChoreSchema,
   type CaptainOrg,
   type CaptainRunChoreResult,
   type CaptainRunnableChore,
@@ -11,6 +12,7 @@ import {
   type CommandMeta,
   type CommandName,
   commands,
+  DAILY_CHORE_CAPS,
   type Fact,
   PRIVATE,
   type RoomItem,
@@ -34,6 +36,9 @@ import { dailyCaps, MEMORY_WAITING, restWhy } from "./rules.ts";
 import { ChoreRunner, type Workspace } from "./runner.ts";
 import { summaryOf } from "./summary.ts";
 import { type Identity, revertMerge } from "./undo.ts";
+
+const CHORES = CaptainChoreSchema.options;
+const DAILY_CAPS = DAILY_CHORE_CAPS;
 
 /** How often the daily chores, the hourly checks and the daily summary are looked at. */
 export const CAPTAIN_SWEEP_MS = 60_000;
@@ -127,6 +132,7 @@ export class CaptainService {
       },
       chores: createChores(deps.ports, () => this.now()),
       enabled: (org, chore) => this.plays.enabled(org, chore),
+      afterRun: (org, chore, did) => this.plays.afterRun(org, chore, did),
       changed: () => this.deps.events.emit(["captain"]),
       capAsked: (ask) => {
         this.deps.tell(`captain-cap:${ask.org}:${ask.chore}:${ask.day}`, ask.text);
@@ -385,12 +391,25 @@ export class CaptainService {
     const tz = zoneOr(rules?.tz ?? autonomy.tz);
     const now = this.now();
     const rest = restWhy(rules, now, tz);
+    // The daily limits the owner set on the playbooks come before the ones in Limits.
+    let limited = rules;
+    for (const chore of CHORES) {
+      const limit = this.plays.limit(org, chore);
+      if (limit === undefined) continue;
+      const key = DAILY_CAPS[chore].actions !== undefined ? "actions" : "runs";
+      limited = {
+        ...limited,
+        chores: { ...limited?.chores, [chore]: { ...limited?.chores?.[chore], [key]: limit } },
+      };
+    }
+    const off = this.plays.rulesOff(org);
     return {
       org,
       name: name ?? (org === PRIVATE ? "Private" : org),
       mode: this.deps.autonomy.mode(),
       authority: effectiveAuthority(authorityOf(autonomy, org), this.deps.autonomy.mode()),
-      rules,
+      rules: limited,
+      ...(off.length === 0 ? {} : { rulesOff: new Set(off) }),
       tz,
       day: localDay(now, tz),
       ...(rest === undefined ? {} : { rest }),

@@ -136,6 +136,7 @@ import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
 import { OutcomesRepo } from "./outcomes/repo.ts";
 import { OutcomesService } from "./outcomes/service.ts";
+import { parsePlan, planPrompt } from "./playbooks/custom.ts";
 import { GoalsService } from "./playbooks/goals.ts";
 import { OutboundGate } from "./playbooks/outbound.ts";
 import { PlaybookRepo } from "./playbooks/repo.ts";
@@ -1456,6 +1457,17 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   };
   const playbooks = new PlaybookService({
     rules: rulesTable,
+    plan: async (org, text) => {
+      try {
+        // The cheapest model, one short question, a JSON answer checked and clamped by parsePlan.
+        const { value } = await housekeeper.ask({ id: "playbook-plan", org }, planPrompt(text), parsePlan);
+        return value;
+      } catch (err) {
+        if (err instanceof NoHousekeeper)
+          throw new UserError("There is no captain to plan with yet. Set one up first.", 409);
+        throw err;
+      }
+    },
     preflight: { [OPPORTUNITIES_ID]: (org) => opportunities.preflight(org) },
     context: { [OPPORTUNITIES_ID]: (org) => opportunities.context(org) },
     repo: new PlaybookRepo(store.raw),

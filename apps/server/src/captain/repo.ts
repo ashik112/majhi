@@ -399,6 +399,33 @@ export class CaptainRepo {
     ).flatMap((r) => actionOf(r) ?? []);
   }
 
+  /** The log lines one run made, oldest first. */
+  actionsOfRun(run: number): StoredAction[] {
+    return (
+      this.db.prepare("SELECT * FROM captain_actions WHERE run = ? ORDER BY id").all(run) as ActionRow[]
+    ).flatMap((r) => actionOf(r) ?? []);
+  }
+
+  /** A chore's runs, what it did and what the owner undid since `since` (UTC ISO). Rested runs do not count. */
+  weekOf(
+    org: string,
+    chore: CaptainChore,
+    since: string,
+  ): { runs: number; results: number; undone: number; tokens: number } {
+    const runs = this.db
+      .prepare(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(tokens), 0) AS t FROM captain_runs WHERE org = ? AND chore = ? AND status != 'rested' AND started_at >= ?",
+      )
+      .get(org, chore, since) as { n: number; t: number };
+    const acts = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(outcome IN ('done', 'asked')), 0) AS results, COALESCE(SUM(undone_at IS NOT NULL), 0) AS undone
+         FROM captain_actions WHERE org = ? AND chore = ? AND at >= ?`,
+      )
+      .get(org, chore, since) as { results: number; undone: number };
+    return { runs: runs.n, results: acts.results, undone: acts.undone, tokens: runs.t };
+  }
+
   action(id: number): StoredAction | undefined {
     const row = this.db.prepare("SELECT * FROM captain_actions WHERE id = ?").get(id) as
       | ActionRow

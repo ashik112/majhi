@@ -186,7 +186,7 @@ describe("the workspace's choice and the lane", () => {
     expect((await t.h.cmd("autonomy.stop", { how: "now" })).status).toBe(200);
     const other = await t.ownerTask("Add a status page\n\nsmall");
     expect((await t.call("majhi_tasks_start", { id: other })).text).toBe(
-      "Refused: Autonomous is off, so the captain does not start or change work in Acme. It acts only when you ask.",
+      "Refused: Auto-pilot is off, so the captain does not start or change work in Acme. It acts only when you ask.",
     );
     // A workspace that does not exist is refused.
     expect((await t.h.cmd("autonomy.configure", { orgs: { nowhere: { authority: RUNS } } })).status).toBe(
@@ -317,7 +317,7 @@ describe("turning Off and On again", () => {
     expect((await t.status()).stopped).toEqual([id]);
     const items = (await t.h.cmd("room.items", { task: id, limit: 200 })).body.items as RoomItem[];
     const card = items.find((i) => i.type === "paused" && i.state === "pending");
-    expect(card?.type === "paused" && card.why).toContain("Autonomous was turned off");
+    expect(card?.type === "paused" && card.why).toContain("Auto-pilot was turned off");
     expect(task()?.pausedBy).toBe("autonomy-off");
 
     // Turned on without resuming: the task stays paused, and is no longer offered.

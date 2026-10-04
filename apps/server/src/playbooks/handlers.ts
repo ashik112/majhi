@@ -9,6 +9,10 @@ import type { PlaybookService } from "./service.ts";
 type PlaybookCommand =
   | "playbooks.list"
   | "playbooks.update"
+  | "playbooks.plan"
+  | "playbooks.create"
+  | "playbooks.remove"
+  | "playbooks.activity"
   | "playbooks.run"
   | "playbooks.runs"
   | "playbooks.report"
@@ -29,6 +33,7 @@ type PlaybookCommand =
 export const PLAYBOOK_TOOL_COMMANDS: ReadonlySet<string> = new Set([
   "playbooks.list",
   "playbooks.runs",
+  "playbooks.activity",
   "playbooks.report",
   "goals.list",
   "goals.create",
@@ -68,6 +73,20 @@ export function playbookHandlers(deps: PlaybookHandlerDeps): Pick<CommandHandler
       ownerOnly(ctx);
       return playbooks.update(input);
     },
+    "playbooks.plan": async (input, ctx) => {
+      ownerOnly(ctx);
+      return playbooks.plan(input.org ?? PRIVATE, input.text);
+    },
+    "playbooks.create": async (input, ctx) => {
+      ownerOnly(ctx);
+      return playbooks.create(input.org, input.spec);
+    },
+    "playbooks.remove": async (input, ctx) => {
+      ownerOnly(ctx);
+      playbooks.remove(input.id);
+      return { id: input.id };
+    },
+    "playbooks.activity": async (input, ctx) => playbooks.activity(await orgOf(input.org, ctx), input.id),
     "playbooks.run": async (input, ctx) => {
       ownerOnly(ctx);
       return playbooks.runNow(input.org, input.id);

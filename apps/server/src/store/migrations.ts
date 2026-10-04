@@ -1400,6 +1400,18 @@ CREATE TABLE handoff_state (
 CREATE INDEX captain_actions_org_day ON captain_actions (org, day);
 `,
   },
+  {
+    // Playbooks the owner made (by a sentence or by hand): the spec as JSON, read into the catalog at start.
+    id: 143,
+    name: "custom playbooks",
+    sql: `
+CREATE TABLE playbook_custom (
+  id TEXT PRIMARY KEY,
+  spec TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

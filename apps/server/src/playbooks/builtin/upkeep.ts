@@ -27,7 +27,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
   upkeep({
     id: "upkeep-ship",
     name: "Ship finished work",
-    purpose: "Merge and push tasks that reached review, by the workspace's ship rule, or ask you.",
+    purpose: "Merges tasks whose checks pass. Never pushes unless Push is Captain.",
     trigger: { cadence: HOURLY, events: ["A task reaches review"] },
     inputs: ["Tasks in review", "Their diffs and checks", "The workspace's allowed branches"],
     steps:
@@ -35,12 +35,17 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     outputs: ["decision", "log"],
     cost: { tier: "rules", tokens: RUN_TOKENS },
     turnOn: "Ships finished work by the Merge and Push rows in Delegation.",
+    outcomes: [
+      { id: "ship-merge", text: "Checks pass and Merge is Captain: merge it, tell me in the brief" },
+      { id: "ship-ask", text: "Checks pass and Merge is You: ask me in Needs you" },
+      { id: "ship-notready", text: "Not ready (checks fail, or it conflicts with main): tell me why" },
+    ],
     runner: { kind: "chore", chore: "ship" },
   }),
   upkeep({
     id: "upkeep-cards",
     name: "Approval cards",
-    purpose: "Answer routine approval cards by the workspace's rules. Risky ones go to you.",
+    purpose: "Approves routine cards by your rules. Risky ones wait for you.",
     trigger: { cadence: HOURLY, events: ["A card arrives"] },
     inputs: ["Pending approval cards"],
     steps:
@@ -48,12 +53,16 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     outputs: ["decision", "log"],
     cost: { tier: "laya", tokens: RUN_TOKENS },
     turnOn: "Answers routine approval cards where Approvals is Captain.",
+    outcomes: [
+      { id: "cards-approve", text: "A routine card: approve it" },
+      { id: "cards-left", text: "A risky or unclear card: leave a note for me in Needs you" },
+    ],
     runner: { kind: "chore", chore: "cards" },
   }),
   upkeep({
     id: "upkeep-questions",
     name: "Agents' questions",
-    purpose: "Answer an agent's question from the brief, memory or the code, or leave it for you.",
+    purpose: "Answers an agent's question when the brief or the code settles it.",
     trigger: { cadence: HOURLY, events: ["An agent asks"] },
     inputs: ["Pending questions and permission prompts"],
     steps:
@@ -66,7 +75,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
   upkeep({
     id: "upkeep-memory",
     name: "Memory",
-    purpose: "Keep, merge or drop memories that wait for review.",
+    purpose: "Keeps, merges or drops memories that wait.",
     trigger: { cadence: DAILY, events: ["10 memories wait for review"] },
     inputs: ["Memories waiting for review"],
     steps:
@@ -105,7 +114,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
   upkeep({
     id: "upkeep-cleanup",
     name: "Cleanup",
-    purpose: "Remove the checkouts and containers of done tasks. Never uncommitted work.",
+    purpose: "Frees disk from finished tasks. Never uncommitted work.",
     trigger: { cadence: DAILY, events: [] },
     inputs: ["Done tasks and what they left behind"],
     steps:

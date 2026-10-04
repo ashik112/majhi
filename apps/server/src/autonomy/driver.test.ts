@@ -661,7 +661,7 @@ describe("what the log says about a paused task", () => {
   it("never blames the owner for a pause Autonomous or the captain made", () => {
     expect(
       changeOf({ ...task, status: "paused", pausedReason: "owner", pausedBy: "autonomy-off" })?.text,
-    ).toBe("Paused 'Move the notes export' because Autonomous was turned off");
+    ).toBe("Paused 'Move the notes export' because Auto-pilot was turned off");
     expect(changeOf({ ...task, status: "paused", pausedReason: "owner", pausedBy: "captain" })?.text).toBe(
       "Paused 'Move the notes export' by Captain",
     );

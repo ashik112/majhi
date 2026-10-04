@@ -1,5 +1,5 @@
 import type { CommandInput, CommandOutput } from "@majhi/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
 
@@ -13,6 +13,16 @@ export function usePlaybooks(org: string) {
     // Next runs move with the clock.
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
+  });
+}
+
+/** The same list for several workspaces at once (shares the cache of `usePlaybooks`): which ones a playbook is on in. */
+export function usePlaybooksAcross(orgs: readonly string[]) {
+  return useQueries({
+    queries: orgs.map((org) => ({
+      queryKey: [...queryKeys.playbooks, "list", org],
+      queryFn: () => cmd("playbooks.list", { org }),
+    })),
   });
 }
 
@@ -79,6 +89,40 @@ export function useRemoveGoal() {
   const done = useRefetchPlaybooks();
   return useMutation<CommandOutput<"goals.remove">, ApiRequestError, CommandInput<"goals.remove">>({
     mutationFn: (input) => cmd("goals.remove", input, { reason: "Owner removed a goal" }),
+    onSuccess: done,
+  });
+}
+
+/** `playbooks.activity`: the last runs of one playbook in plain words, and this week in numbers. */
+export function usePlaybookActivity(org: string, id: string) {
+  return useQuery<CommandOutput<"playbooks.activity">, ApiRequestError>({
+    queryKey: [...queryKeys.playbooks, "activity", org, id],
+    queryFn: () => cmd("playbooks.activity", { org, id }),
+  });
+}
+
+/** `playbooks.plan`: one sentence becomes a saved, switched-off playbook and a one-line plan. */
+export function usePlanPlaybook() {
+  const done = useRefetchPlaybooks();
+  return useMutation<CommandOutput<"playbooks.plan">, ApiRequestError, CommandInput<"playbooks.plan">>({
+    mutationFn: (input) =>
+      cmd("playbooks.plan", input, { reason: "Owner asked for a playbook in a sentence" }),
+    onSuccess: done,
+  });
+}
+
+export function useCreatePlaybook() {
+  const done = useRefetchPlaybooks();
+  return useMutation<CommandOutput<"playbooks.create">, ApiRequestError, CommandInput<"playbooks.create">>({
+    mutationFn: (input) => cmd("playbooks.create", input, { reason: "Owner added a playbook" }),
+    onSuccess: done,
+  });
+}
+
+export function useRemovePlaybook() {
+  const done = useRefetchPlaybooks();
+  return useMutation<CommandOutput<"playbooks.remove">, ApiRequestError, CommandInput<"playbooks.remove">>({
+    mutationFn: (input) => cmd("playbooks.remove", input, { reason: "Owner deleted a playbook" }),
     onSuccess: done,
   });
 }

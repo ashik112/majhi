@@ -2,8 +2,12 @@ import {
   type AutonomyMode,
   type Cadence,
   type CaptainChore,
+  type CustomPlaybookSpec,
+  CustomPlaybookSpecSchema,
   cadenceLabel,
+  DAILY_CHORE_CAPS,
   type Playbook,
+  type PlaybookActivity,
   type PlaybookRun,
   type PlaybookRunNowResult,
   type PlaybookRunStatus,
@@ -16,13 +20,16 @@ import {
 } from "@majhi/shared";
 import { choresNow, OFF_CHORES } from "../captain/levels.ts";
 import type { CaptainRepo } from "../captain/repo.ts";
+import { dailyCaps } from "../captain/rules.ts";
 import type { ChoreRunner, Workspace } from "../captain/runner.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { FindingsService } from "../findings/service.ts";
 import { Catalog } from "./catalog.ts";
 import { type ChorePlaybooks, choreDue, type LastRuns } from "./chore-plays.ts";
+import { customId, customPlaybook, planLine } from "./custom.ts";
 import type { GoalsService } from "./goals.ts";
 import type { PlaybookRepo } from "./repo.ts";
+import { choreResult, needsLook, runResult } from "./results.ts";
 import { RULES_RUNNERS, type RulesRunner } from "./rules.ts";
 import { inQuiet, isDue, nextRun, whenText } from "./schedule.ts";
 
@@ -70,6 +77,8 @@ export interface PlaybookDeps {
    */
   context?: Record<string, (org: string) => Promise<string | undefined> | string | undefined>;
   rules?: Readonly<Record<string, RulesRunner>>;
+  /** Turns the owner's sentence into a playbook spec with the cheapest model. Undefined: no one to ask. */
+  plan?: (org: string, text: string) => Promise<{ spec: CustomPlaybookSpec; plan: string }>;
   fetch?: typeof fetch;
   tellOwner?: (key: string, text: string) => void;
   changed?: () => void;
@@ -96,6 +105,13 @@ export class PlaybookService implements ChorePlaybooks {
   constructor(private readonly deps: PlaybookDeps) {
     this.catalog = deps.catalog ?? new Catalog();
     this.rules = deps.rules ?? RULES_RUNNERS;
+    // The playbooks the owner made join the shipped ones. A damaged row is skipped, not fatal.
+    for (const c of deps.repo.customs()) {
+      const spec = CustomPlaybookSpecSchema.safeParse(c.spec);
+      if (spec.success && this.catalog.get(c.id) === undefined) {
+        this.catalog.register(customPlaybook(c.id, spec.data));
+      }
+    }
   }
 
   private now(): Date {
@@ -129,7 +145,40 @@ export class PlaybookService implements ChorePlaybooks {
       quiet: st.quiet === null ? undefined : st.quiet,
       goal: st.goal === null ? undefined : st.goal,
       settings: st.settings ?? {},
+      outcomes: st.outcomes ?? {},
+      orDo: st.orDo === null || st.orDo === "" ? undefined : st.orDo,
+      dailyLimit: st.dailyLimit,
     };
+  }
+
+  /** The outcome rules the owner switched off in a workspace, from the playbooks that have them (ChorePlaybooks). */
+  rulesOff(org: string): string[] {
+    return this.catalog.all().flatMap((def) => {
+      const set = this.effective(def, org).outcomes;
+      return (def.outcomes ?? []).filter((o) => set[o.id] === false).map((o) => o.id);
+    });
+  }
+
+  /** The owner's daily limit of a chore in a workspace (ChorePlaybooks). */
+  limit(org: string, chore: CaptainChore): number | null | undefined {
+    const def = this.catalog.ofChore(chore);
+    return def === undefined ? undefined : this.effective(def, org).dailyLimit;
+  }
+
+  /** A chore run did something: the playbook's "Or do this" goes to the workspace's captain (ChorePlaybooks). */
+  afterRun(org: string, chore: CaptainChore, did: number): void {
+    const def = this.catalog.ofChore(chore);
+    if (def === undefined || did === 0) return;
+    this.followUp(def, org, `${def.name} just did ${did} ${did === 1 ? "thing" : "things"}.`);
+  }
+
+  /** Hands the owner's "Or do this" to the lane, as an instruction from the owner. */
+  private followUp(def: Playbook, org: string, what: string): void {
+    const orDo = this.effective(def, org).orDo;
+    if (orDo === undefined) return;
+    void this.deps.lane
+      .tell(org, `${what} The owner asked for this after every run: ${orDo}`, "A playbook finished")
+      .catch(() => undefined);
   }
 
   /** The cadence and switch a playbook has in a workspace now. The trust ladder reads it to mute and to undo. */
@@ -223,9 +272,33 @@ export class PlaybookService implements ChorePlaybooks {
       !e.enabled || held !== undefined || (def.runner.kind === "captain" && def.needs !== undefined)
         ? undefined
         : nextRun(e.cadence, lastAt === undefined ? undefined : new Date(lastAt), this.now(), ws.tz);
+    const lastRun = chore === undefined ? repo.runs(org, def.id, 1)[0] : undefined;
+    const lastChore = chore === undefined ? undefined : captain.repo.choreRuns(org, chore, 1)[0];
+    let result: string | undefined;
+    let look = false;
+    if (lastRun !== undefined) {
+      result = runResult(lastRun);
+      look = needsLook(lastRun.status, lastRun.findings, def.pack, false);
+    } else if (lastChore !== undefined && chore !== undefined) {
+      result = choreResult(chore, captain.repo.actionsOfRun(lastChore.id), lastChore.note);
+      look = needsLook(lastChore.status === "failed" ? "failed" : "done", 0, def.pack, false);
+    }
+    const limitUnit =
+      chore !== undefined && DAILY_CHORE_CAPS[chore].actions === undefined ? "runs" : "actions";
+    const dailyLimit =
+      chore === undefined
+        ? undefined
+        : e.dailyLimit !== undefined
+          ? e.dailyLimit
+          : (dailyCaps(chore, false, { authority: ws.authority })[limitUnit] ?? null);
     return {
       playbook: def,
       org,
+      outcomes: (def.outcomes ?? []).map((o) => ({ id: o.id, text: o.text, on: e.outcomes[o.id] !== false })),
+      ...(e.orDo === undefined ? {} : { orDo: e.orDo }),
+      ...(dailyLimit === undefined ? {} : { dailyLimit }),
+      ...(result === undefined ? {} : { result }),
+      needsLook: look && e.enabled,
       enabled: e.enabled && def.needs === undefined,
       cadence: e.cadence,
       ...(e.quiet === undefined ? {} : { quiet: e.quiet }),
@@ -284,9 +357,23 @@ export class PlaybookService implements ChorePlaybooks {
         if (problem !== undefined) throw new UserError(problem, 400);
       }
     }
+    if (input.outcomes !== undefined) {
+      for (const key of Object.keys(input.outcomes)) {
+        if (!(def.outcomes ?? []).some((o) => o.id === key))
+          throw new UserError(`${def.name} has no rule "${key}".`, 400);
+      }
+    }
+    if (input.dailyLimit !== undefined && def.runner.kind !== "chore") {
+      throw new UserError(`${def.name} has a budget per run, not a daily limit.`, 400);
+    }
     const current = this.deps.repo.state(input.org, def.id).state;
     const next: PlaybookState = {
       ...current,
+      ...(input.outcomes === undefined
+        ? {}
+        : { outcomes: { ...(current.outcomes ?? {}), ...input.outcomes } }),
+      ...(input.orDo === undefined ? {} : { orDo: input.orDo === "" ? null : input.orDo }),
+      ...(input.dailyLimit === undefined ? {} : { dailyLimit: input.dailyLimit }),
       ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
       ...(input.cadence === undefined ? {} : { cadence: input.cadence }),
       ...(input.quiet === undefined ? {} : { quiet: input.quiet }),
@@ -325,6 +412,73 @@ export class PlaybookService implements ChorePlaybooks {
       findings: 0,
       tokens: r.tokens,
     }));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Playbooks the owner makes
+
+  /**
+   * Saves a made playbook, off everywhere until the owner turns it on. It is a captain playbook:
+   * it wakes the workspace's lane with its steps and a token budget, like the shipped ones.
+   */
+  async create(org: string, spec: CustomPlaybookSpec): Promise<PlaybookView> {
+    const ws = await this.workspace(org);
+    const def = customPlaybook(customId(spec.name), spec);
+    this.catalog.register(def);
+    this.deps.repo.addCustom(def.id, CustomPlaybookSpecSchema.parse(spec), this.now().toISOString());
+    this.deps.repo.setState(org, def.id, { enabled: false });
+    this.deps.changed?.();
+    return this.view(def, org, ws);
+  }
+
+  /** One sentence in, a saved and switched-off playbook out, with the plan in a line. */
+  async plan(org: string, text: string): Promise<{ view: PlaybookView; plan: string }> {
+    if (this.deps.plan === undefined) {
+      throw new UserError("There is no captain to plan with yet. Set one up first.", 409);
+    }
+    const planned = await this.deps.plan(org, text);
+    const view = await this.create(org, planned.spec);
+    return { view, plan: planLine(planned.spec, planned.plan) };
+  }
+
+  /** Deletes a playbook the owner made. */
+  remove(id: string): void {
+    if (!this.catalog.unregister(id)) {
+      throw new UserError("Only a playbook you made can be deleted.", 409);
+    }
+    this.deps.repo.removeCustom(id);
+    this.deps.changed?.();
+  }
+
+  // ---------------------------------------------------------------------------
+  // What it did lately
+
+  /** The last runs in plain words, with the log actions Undo works for, and this week in numbers. */
+  activity(org: string, id: string): PlaybookActivity {
+    const def = this.catalog.get(id);
+    if (def === undefined) throw new UserError(`There is no playbook "${id}".`, 404);
+    const since = new Date(this.now().getTime() - 7 * 86_400_000).toISOString();
+    if (def.runner.kind === "chore") {
+      const chore = def.runner.chore;
+      const { repo } = this.deps.captain;
+      const runs = repo.choreRuns(org, chore, 8).map((r) => {
+        const lines = repo.actionsOfRun(r.id);
+        return {
+          at: r.startedAt,
+          text: choreResult(chore, lines, r.note),
+          bad: r.status === "failed" || r.status === "capped",
+          undo: lines.filter((l) => l.undo === "yes").map((l) => ({ id: l.id, text: l.text })),
+        };
+      });
+      return { runs, week: repo.weekOf(org, chore, since) };
+    }
+    const runs = this.deps.repo.runs(org, id, 8).map((r) => ({
+      at: r.startedAt,
+      text: runResult(r),
+      bad: needsLook(r.status, r.findings, def.pack, false),
+      undo: [],
+    }));
+    return { runs, week: { ...this.deps.repo.weekOf(org, id, since), undone: 0 } };
   }
 
   // ---------------------------------------------------------------------------
@@ -441,6 +595,13 @@ export class PlaybookService implements ChorePlaybooks {
           ...(res.tokens === undefined ? {} : { tokens: res.tokens }),
         },
       );
+      if (res.findings > 0) {
+        this.followUp(
+          def,
+          org,
+          `${def.name} just filed ${res.findings} ${res.findings === 1 ? "finding" : "findings"}.`,
+        );
+      }
     } catch (err) {
       if (this.closed) return;
       this.fail(org, def, id, errorMessage(err));
@@ -459,7 +620,9 @@ export class PlaybookService implements ChorePlaybooks {
       id,
       e.settings,
       goal === undefined ? undefined : { id: goal.id, title: goal.title },
-      brief,
+      [brief, e.orDo === undefined ? undefined : `After you report, the owner asked for this: ${e.orDo}`]
+        .filter((x): x is string => x !== undefined && x !== "")
+        .join("\n\n"),
     );
     const sent = await this.deps.lane.tell(org, text, "A playbook is due");
     if (!sent.sent) {

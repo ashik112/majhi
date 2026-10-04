@@ -38,6 +38,8 @@ export interface Workspace {
   day: string;
   /** Why it does nothing on its own right now (hours, a freeze). */
   rest?: string | undefined;
+  /** Outcome rules the owner switched off in the chore's playbook (`ship-merge`, ...). Each stops that action. */
+  rulesOff?: ReadonlySet<string> | undefined;
 }
 
 export interface RunnerDeps {
@@ -57,6 +59,8 @@ export interface RunnerDeps {
   enabled?: (org: string, chore: CaptainChore) => boolean;
   /** Something in the log or the runs changed. */
   changed?: () => void;
+  /** A run ended: the chore did `did` things. The playbook's "Or do this" follows. */
+  afterRun?: (org: string, chore: CaptainChore, did: number) => void;
   /** A chore reached a daily cap with work left, and the owner is asked whether to raise it today. */
   capAsked?: (ask: CaptainCapAsk) => void;
 }
@@ -476,6 +480,7 @@ export class ChoreRunner {
         outcome: "skipped",
       });
     }
+    if (status === "done" && run.count > 0) deps.afterRun?.(run.org, run.chore, run.count);
     deps.changed?.();
     return status;
   }

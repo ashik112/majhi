@@ -205,6 +205,47 @@ export class PlaybookRepo {
     ).n;
   }
 
+  /** Runs, findings and tokens of a playbook since `since` (UTC ISO). Stopped runs do not count. */
+  weekOf(org: string, playbook: string, since: string): { runs: number; results: number; tokens: number } {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS runs, COALESCE(SUM(findings), 0) AS results, COALESCE(SUM(tokens), 0) AS tokens
+         FROM playbook_runs WHERE org = ? AND playbook = ? AND started_at >= ? AND status != 'stopped'`,
+      )
+      .get(org, playbook, since) as { runs: number; results: number; tokens: number };
+    return row;
+  }
+
+  /** The playbooks the owner made, as JSON specs with their ids. */
+  customs(): { id: string; spec: unknown }[] {
+    const rows = this.db.prepare("SELECT id, spec FROM playbook_custom ORDER BY created_at, id").all() as {
+      id: string;
+      spec: string;
+    }[];
+    return rows.flatMap((r) => {
+      try {
+        return [{ id: r.id, spec: JSON.parse(r.spec) as unknown }];
+      } catch {
+        return [];
+      }
+    });
+  }
+
+  addCustom(id: string, spec: unknown, at: string): void {
+    this.db
+      .prepare("INSERT INTO playbook_custom (id, spec, created_at) VALUES (?, ?, ?)")
+      .run(id, JSON.stringify(spec), at);
+  }
+
+  /** Removes a made playbook with its state and history. */
+  removeCustom(id: string): void {
+    this.db.transaction(() => {
+      this.db.prepare("DELETE FROM playbook_custom WHERE id = ?").run(id);
+      this.db.prepare("DELETE FROM playbook_state WHERE playbook = ?").run(id);
+      this.db.prepare("DELETE FROM playbook_runs WHERE playbook = ?").run(id);
+    })();
+  }
+
   addFindings(id: number, n: number): void {
     this.db.prepare("UPDATE playbook_runs SET findings = findings + ? WHERE id = ?").run(n, id);
   }

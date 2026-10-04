@@ -1,33 +1,51 @@
-import { PLAYBOOK_PACK_LABEL, PLAYBOOK_PACK_NOTE, type PlaybookView, PRIVATE } from "@majhi/shared";
+import { type PlaybookView, PRIVATE } from "@majhi/shared";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { ListChecks, SendHorizontal } from "lucide-react";
+import { ListChecks, Search, Target } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Problem } from "@/components/problem";
 import { Button } from "@/components/ui/button";
 import { ChoiceChip } from "@/components/ui/choice-chip";
-import { Lamp } from "@/components/ui/lamp";
-import { ListDetail, ListPane, ROW, ROW_SELECTED } from "@/components/ui/list-detail";
+import { Input } from "@/components/ui/input";
+import { ListDetail, ROW, ROW_SELECTED } from "@/components/ui/list-detail";
 import { PageHeader } from "@/components/ui/page-header";
+import { Select } from "@/components/ui/select";
+import { Sheet } from "@/components/ui/sheet";
 import { RowsSkeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
-import { formatAgo } from "@/lib/format";
+import { GLASS } from "@/lib/glass";
 import { useOrgFilter } from "@/lib/org-filter";
 import { usePlaybooks, useUpdatePlaybook } from "@/lib/playbook-queries";
 import { useOrgs } from "@/lib/studio-queries";
 import { useMedia } from "@/lib/use-media";
 import { useNow } from "@/lib/use-now";
 import type { AppSearch } from "@/router";
+import { AddPlaybook } from "./add-playbook";
 import { PlaybookDetail } from "./detail";
 import { GoalsSection } from "./goals";
-import { byPack, formatIn, lampOf, outcomeText } from "./model";
-import { OutboundSheet } from "./outbound-sheet";
+import { cadenceWords, KIND_LABEL, KINDS, kindOf, shortWhen } from "./model";
 
 const CHIP = "min-h-7 px-2.5 text-xs";
+const GRID = "grid grid-cols-[30px_minmax(0,1fr)_96px_minmax(0,1.1fr)] items-center gap-2.5";
 
-/** One playbook in the list: the switch, its name, and a second line of when and what came of it. */
+type Status = "all" | "on" | "off" | "look";
+
+/** The last result of a row in plain words, and whether it is worth a look. */
+function resultOf(v: PlaybookView, now: number): { text: string; look: boolean } {
+  if (!v.enabled) {
+    return { text: v.playbook.needs !== undefined ? v.playbook.needs.toLowerCase() : "off", look: false };
+  }
+  if (v.result !== undefined) {
+    const when = v.lastRun === undefined ? "" : `${shortWhen(v.lastRun, now)} `;
+    return { text: `${when}${v.result}`, look: v.needsLook };
+  }
+  if (v.held !== undefined)
+    return { text: `paused: ${v.held.charAt(0).toLowerCase()}${v.held.slice(1)}`, look: false };
+  return { text: "not run yet", look: false };
+}
+
 function Row({
   view,
   selected,
@@ -42,71 +60,59 @@ function Row({
   const toast = useToast();
   const update = useUpdatePlaybook();
   const locked = view.playbook.needs !== undefined;
-  const second = view.held !== undefined && view.enabled ? view.held : outcomeText(view.counters);
-  const when = !view.enabled
-    ? view.playbook.needs === undefined
-      ? "Off"
-      : "Needs a sensor"
-    : view.running
-      ? "Running now"
-      : view.held !== undefined
-        ? "Held"
-        : view.nextRun !== undefined
-          ? `Next ${formatIn(view.nextRun, now)}`
-          : view.lastRun !== undefined
-            ? `Last ${formatAgo(view.lastRun, now)}`
-            : "Waits for its event";
+  const result = resultOf(view, now);
   return (
-    <li className="flex min-w-0 items-stretch gap-1">
+    <li
+      className={cn(
+        GRID,
+        "h-10 rounded-lg border-b border-line px-2 hover:bg-raised",
+        selected && "bg-accent-wash",
+      )}
+    >
+      <Switch
+        hideLabel
+        label={`${view.playbook.name} on`}
+        checked={view.enabled}
+        disabled={update.isPending || locked}
+        title={locked ? view.playbook.needs : view.playbook.turnOn}
+        onChange={(enabled) =>
+          update.mutate(
+            { org: view.org, id: view.playbook.id, enabled },
+            { onError: (e) => toast("Could not change it", { detail: describeError(e), tone: "error" }) },
+          )
+        }
+      />
       <button
         type="button"
         data-playbook={view.playbook.id}
         aria-current={selected ? "true" : undefined}
         onClick={onSelect}
-        className={cn(ROW, "min-w-0 flex-1 flex-col gap-1 px-2.5 py-2", selected && ROW_SELECTED)}
+        className={cn(
+          ROW,
+          "col-span-3 grid h-10 min-w-0 grid-cols-subgrid items-center bg-transparent",
+          selected && ROW_SELECTED,
+          "shadow-none",
+        )}
       >
-        <span className="flex min-w-0 items-center gap-2">
-          <Lamp state={lampOf(view)} size={7} />
-          <span
-            className={cn("min-w-0 flex-1 truncate text-base", view.enabled ? "text-fg" : "text-fg-muted")}
-          >
-            {view.playbook.name}
-          </span>
-          <span className="shrink-0 text-xs text-fg-faint">{when}</span>
+        <span className={cn("min-w-0 truncate text-base", view.enabled ? "text-fg" : "text-fg-muted")}>
+          {view.playbook.name}
         </span>
+        <span className="truncate font-mono text-xs text-fg-faint">{cadenceWords(view.cadence)}</span>
         <span
-          className={cn(
-            "min-w-0 truncate pl-[15px] text-xs",
-            view.held !== undefined && view.enabled ? "text-amber" : "text-fg-faint",
-          )}
-          title={second}
+          className={cn("min-w-0 truncate text-xs", result.look ? "text-accent-text" : "text-fg-faint")}
+          title={result.text}
         >
-          {second}
+          {result.text}
         </span>
       </button>
-      <div className="flex shrink-0 items-center pr-1">
-        <Switch
-          hideLabel
-          label={`${view.playbook.name} on`}
-          checked={view.enabled}
-          disabled={update.isPending || locked}
-          title={locked ? view.playbook.needs : view.playbook.turnOn}
-          onChange={(enabled) =>
-            update.mutate(
-              { org: view.org, id: view.playbook.id, enabled },
-              { onError: (e) => toast("Could not change it", { detail: describeError(e), tone: "error" }) },
-            )
-          }
-        />
-      </div>
     </li>
   );
 }
 
 /**
- * The Playbooks page (`/playbooks`, SPEC 5.18): the captain's standing work, grouped by pack, with a
- * switch and the next run on each row; the selected one in full on the right, with its steps, budget
- * and history. Goals sit under the list. Below 1000px the pane is the page and the list its back view.
+ * The Playbooks page (`/playbooks`, SPEC 5.18): the captain's standing work as one compact list with
+ * a switch, when it runs and what its last run did; the selected one in full on the right. A playbook
+ * can be added from a sentence. Below 1000px the pane is the page and the list its back view.
  */
 export function PlaybooksView() {
   const orgs = useOrgs().data ?? [];
@@ -121,13 +127,12 @@ export function PlaybooksView() {
   const narrow = useMedia("(max-width: 999px)");
   const search: AppSearch = useSearch({ strict: false });
   const navigate = useNavigate();
-  const [outbound, setOutbound] = useState(false);
+  const [goals, setGoals] = useState(false);
+  const [kind, setKind] = useState<"all" | (typeof KINDS)[number]>("all");
+  const [status, setStatus] = useState<Status>("all");
+  const [text, setText] = useState("");
   const views = query.data?.playbooks;
-  const groups = useMemo(() => byPack(views ?? []), [views]);
   const wanted = search.id;
-  const first = views?.find((v) => v.enabled) ?? views?.[0];
-  const selected =
-    views?.find((v) => v.playbook.id === wanted) ?? (narrow || wanted !== undefined ? undefined : first);
 
   const select = (id: string | undefined) =>
     void navigate({
@@ -140,11 +145,25 @@ export function PlaybooksView() {
     });
 
   const on = views?.filter((v) => v.enabled).length ?? 0;
-  const held = views?.filter((v) => v.enabled && v.held !== undefined).length ?? 0;
-  const subtitle =
-    views === undefined
-      ? "The captain's standing work, switched on or off per workspace."
-      : `${on} of ${views.length} on${held > 0 ? `, ${held} held` : ""}`;
+  const look = views?.filter((v) => v.needsLook).length ?? 0;
+  const count = (k: (typeof KINDS)[number]) =>
+    views?.filter((v) => kindOf(v.playbook.pack) === k).length ?? 0;
+  const needle = text.trim().toLowerCase();
+  const shown = (views ?? []).filter(
+    (v) =>
+      (kind === "all" || kindOf(v.playbook.pack) === kind) &&
+      (status === "all" ||
+        (status === "on" && v.enabled) ||
+        (status === "off" && !v.enabled) ||
+        (status === "look" && v.needsLook)) &&
+      (needle === "" ||
+        v.playbook.name.toLowerCase().includes(needle) ||
+        v.playbook.purpose.toLowerCase().includes(needle)),
+  );
+  const first = shown.find((v) => v.enabled) ?? shown[0];
+  const selected =
+    (views ?? []).find((v) => v.playbook.id === wanted) ??
+    (narrow || wanted !== undefined ? undefined : first);
 
   let body: React.ReactNode;
   if (query.isError) {
@@ -152,31 +171,103 @@ export function PlaybooksView() {
       <Problem icon={<ListChecks />} title="Could not load the playbooks" body={describeError(query.error)} />
     );
   } else if (views === undefined) {
-    body = <RowsSkeleton rows={5} height={52} />;
+    body = <RowsSkeleton rows={8} height={40} />;
   } else {
     const list = (
-      <ListPane label="Playbooks" className="w-[340px] min-[1320px]:w-[380px] max-[999px]:w-full">
-        {groups.map((g) => (
-          <section key={g.pack} aria-label={PLAYBOOK_PACK_LABEL[g.pack]} className="mb-3">
-            <div className="px-2.5 pt-1.5 pb-1">
-              <h2 className="m-0 text-sm font-semibold text-fg">{PLAYBOOK_PACK_LABEL[g.pack]}</h2>
-              <p className="m-0 text-xs text-fg-faint text-pretty">{PLAYBOOK_PACK_NOTE[g.pack]}</p>
+      <nav
+        aria-label="Playbooks"
+        className={cn(
+          "flex min-w-0 flex-[1.35] flex-col overflow-hidden rounded-2xl max-[999px]:w-full",
+          GLASS,
+        )}
+      >
+        <AddPlaybook org={org} onSelect={select} />
+        <div className="flex shrink-0 flex-col gap-2 border-b border-line px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <ChoiceChip className={CHIP} pressed={kind === "all"} onClick={() => setKind("all")}>
+              All {views.length}
+            </ChoiceChip>
+            {KINDS.map((k) => (
+              <ChoiceChip key={k} className={CHIP} pressed={kind === k} onClick={() => setKind(k)}>
+                {KIND_LABEL[k]} {count(k)}
+              </ChoiceChip>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <ChoiceChip
+              className={CHIP}
+              pressed={status === "on"}
+              onClick={() => setStatus(status === "on" ? "all" : "on")}
+            >
+              On {on}
+            </ChoiceChip>
+            <ChoiceChip
+              className={CHIP}
+              pressed={status === "off"}
+              onClick={() => setStatus(status === "off" ? "all" : "off")}
+            >
+              Off {views.length - on}
+            </ChoiceChip>
+            <ChoiceChip
+              className={cn(CHIP, look > 0 && "text-accent-text")}
+              pressed={status === "look"}
+              onClick={() => setStatus(status === "look" ? "all" : "look")}
+            >
+              Needs a look {look}
+            </ChoiceChip>
+            {workspaces.length > 1 && (
+              <Select
+                aria-label="Workspace"
+                className="h-7 w-[150px] text-xs"
+                value={org}
+                onChange={(e) => setOrg(e.target.value === PRIVATE ? undefined : e.target.value)}
+              >
+                {workspaces.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </Select>
+            )}
+            <div className="relative ml-auto min-w-[150px] flex-1 max-w-[220px]">
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-fg-faint"
+              />
+              <Input
+                aria-label="Search playbooks"
+                placeholder="Search playbooks"
+                className="h-7 pl-7 text-xs"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+              />
             </div>
-            <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
-              {g.views.map((v) => (
-                <Row
-                  key={v.playbook.id}
-                  view={v}
-                  selected={v.playbook.id === selected?.playbook.id}
-                  now={now}
-                  onSelect={() => select(v.playbook.id)}
-                />
-              ))}
-            </ul>
-          </section>
-        ))}
-        <GoalsSection org={org} workspace={workspaces.find((w) => w.id === org)?.name ?? org} views={views} />
-      </ListPane>
+          </div>
+        </div>
+        <div
+          className={cn(GRID, "shrink-0 px-4 pt-2 pb-1 text-xs tracking-[0.06em] text-fg-faint uppercase")}
+        >
+          <span />
+          <span>Playbook</span>
+          <span>Runs</span>
+          <span>Last result</span>
+        </div>
+        <ul className="m-0 min-h-0 flex-1 list-none overflow-y-auto overscroll-contain px-2 pb-4 scroll-fade">
+          {shown.length === 0 ? (
+            <li className="px-2 py-3 text-base text-fg-muted">Nothing matches.</li>
+          ) : (
+            shown.map((v) => (
+              <Row
+                key={v.playbook.id}
+                view={v}
+                selected={v.playbook.id === selected?.playbook.id}
+                now={now}
+                onSelect={() => select(v.playbook.id)}
+              />
+            ))
+          )}
+        </ul>
+      </nav>
     );
     const pane =
       selected === undefined ? null : (
@@ -184,44 +275,47 @@ export function PlaybooksView() {
           key={`${org}:${selected.playbook.id}`}
           view={selected}
           now={now}
+          workspaces={workspaces}
           onBack={narrow ? () => select(undefined) : undefined}
+          onGone={() => select(undefined)}
         />
       );
     body = (
       <ListDetail>
         {narrow ? (pane ?? list) : list}
-        {!narrow && pane}
+        {!narrow && pane && <div className="flex min-w-0 flex-1 basis-0">{pane}</div>}
       </ListDetail>
     );
   }
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <PageHeader title="Playbooks" subtitle={subtitle}>
-        <Button onClick={() => setOutbound(true)}>
-          <SendHorizontal aria-hidden="true" />
-          Sending
-        </Button>
+      <PageHeader title="Playbooks">
+        <div className="flex items-center gap-4 text-base">
+          {views !== undefined && (
+            <>
+              <span className="text-fg-muted">
+                {on} on · {views.length - on} off
+              </span>
+              {look > 0 && <span className="text-accent-text">{look} needs a look</span>}
+            </>
+          )}
+          <Button onClick={() => setGoals(true)}>
+            <Target aria-hidden="true" />
+            Goals
+          </Button>
+        </div>
       </PageHeader>
-      {workspaces.length > 1 && (
-        <fieldset
-          aria-label="Workspace"
-          className="m-0 mb-3 flex min-w-0 flex-wrap items-center gap-1.5 border-0 p-0"
-        >
-          {workspaces.map((w) => (
-            <ChoiceChip
-              key={w.id}
-              className={`${CHIP} max-w-[170px]`}
-              pressed={org === w.id}
-              onClick={() => setOrg(w.id === PRIVATE ? undefined : w.id)}
-            >
-              <span className="min-w-0 truncate">{w.name}</span>
-            </ChoiceChip>
-          ))}
-        </fieldset>
-      )}
       {body}
-      {outbound && <OutboundSheet org={org} onClose={() => setOutbound(false)} />}
+      {goals && (
+        <Sheet title="Goals" subtitle="What the work is for" onClose={() => setGoals(false)}>
+          <GoalsSection
+            org={org}
+            workspace={workspaces.find((w) => w.id === org)?.name ?? org}
+            views={views ?? []}
+          />
+        </Sheet>
+      )}
     </div>
   );
 }
