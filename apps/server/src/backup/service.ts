@@ -1,5 +1,17 @@
-import { access, constants, copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { existsSync } from "node:fs";
+import {
+  access,
+  constants,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  statfs,
+} from "node:fs/promises";
+import { dirname, join } from "node:path";
 import {
   BACKUP_KEEP_DAILY,
   BACKUP_KEEP_SAFETY,
@@ -74,6 +86,16 @@ export interface BackupServiceOptions {
   passphraseLogN?: number;
   /** Test hook: runs before each chunk of an archive is written. */
   beforeWrite?: (written: number) => void | Promise<void>;
+  /** Test hook: free bytes on the disk that holds a folder. */
+  freeBytes?: (dir: string) => Promise<number>;
+}
+
+/** Room a backup always leaves on the disk, so it never fills the disk majhi and the agents work on. */
+const DISK_RESERVE = 2 * 1024 ** 3;
+
+async function diskFree(dir: string): Promise<number> {
+  const fs = await statfs(dir);
+  return fs.bavail * fs.bsize;
 }
 
 /** `20261004T031500Z` back to an ISO time. */
@@ -96,6 +118,21 @@ export function fileSources(home: string): DbSource[] {
       }
     },
   }));
+}
+
+/**
+ * The default folder is made by the first backup, so on a fresh install it may not exist yet: that is
+ * fine while its nearest existing parent is writable. A folder the owner picked must exist.
+ */
+async function writableOrCreatable(path: string, custom: boolean): Promise<void> {
+  try {
+    await access(path, constants.W_OK);
+  } catch (err) {
+    if (custom || (err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    let parent = dirname(path);
+    while (!existsSync(parent) && dirname(parent) !== parent) parent = dirname(parent);
+    await access(parent, constants.W_OK);
+  }
 }
 
 /**
@@ -161,7 +198,7 @@ export class BackupService {
       readState(this.home),
       this.files(),
     ]);
-    const unreachable = await access(dest.path, constants.W_OK).then(
+    const unreachable = await writableOrCreatable(dest.path, dest.custom).then(
       () => undefined,
       () => `majhi cannot write to ${dest.path} right now.`,
     );
@@ -334,6 +371,8 @@ export class BackupService {
     try {
       const lock = await this.lockFor(passphrase);
       const dest = await destinationOf(this.home);
+      await this.sweepParts(dest.path).catch(() => undefined);
+      await this.ensureRoom(existsSync(dest.path) ? dest.path : this.home);
       const made = await createBackup({
         home: this.home,
         dir: dest.path,
@@ -356,6 +395,31 @@ export class BackupService {
     } catch (err) {
       await this.setError(errorMessage(err));
       throw err;
+    }
+  }
+
+  /**
+   * Refuses a backup that would leave less than the reserve free: the databases are copied once to a
+   * work folder and once more into the archive, so it needs about twice their size.
+   */
+  private async ensureRoom(dir: string): Promise<void> {
+    let data = 0;
+    for (const rel of [
+      "majhi.db",
+      "majhi.db-wal",
+      join("memory", "memory.db"),
+      join("memory", "memory.db-wal"),
+    ]) {
+      data += (await stat(join(this.home, rel)).catch(() => undefined))?.size ?? 0;
+    }
+    const free = await (this.options.freeBytes ?? diskFree)(dir);
+    const need = data * 2 + DISK_RESERVE;
+    if (free < need) {
+      const gb = (n: number) => `${(n / 1024 ** 3).toFixed(1)} GB`;
+      throw new UserError(
+        `Not enough disk space for a backup: ${gb(free)} free, it needs ${gb(need)} to leave ${gb(DISK_RESERVE)} for your work. Free some space or pick another backup folder.`,
+        409,
+      );
     }
   }
 
@@ -494,17 +558,22 @@ export class BackupService {
     }
   }
 
+  /** Half-written archives of a run that died (a restart mid-backup), older than an hour. */
+  private async sweepParts(dir: string): Promise<void> {
+    for (const name of await readdir(dir).catch(() => [] as string[])) {
+      if (!name.endsWith(".age.part")) continue;
+      const info = await stat(join(dir, name)).catch(() => undefined);
+      // File times are real time, so this uses the real clock.
+      if (info !== undefined && Date.now() - info.mtimeMs > 60 * 60 * 1000) {
+        await rm(join(dir, name), { force: true });
+      }
+    }
+  }
+
   /** Half-written archives and abandoned staging folders from a run that died. */
   private async sweepLeftovers(): Promise<void> {
     const dest = await destinationOf(this.home);
-    for (const name of await readdir(dest.path).catch(() => [] as string[])) {
-      if (!name.endsWith(".age.part")) continue;
-      const info = await stat(join(dest.path, name)).catch(() => undefined);
-      // File times are real time, so this uses the real clock.
-      if (info !== undefined && Date.now() - info.mtimeMs > 60 * 60 * 1000) {
-        await rm(join(dest.path, name), { force: true });
-      }
-    }
+    await this.sweepParts(dest.path);
     const staging = join(this.home, STAGING_DIR);
     const waiting = readPending(this.home)?.id;
     for (const id of await readdir(staging).catch(() => [] as string[])) {

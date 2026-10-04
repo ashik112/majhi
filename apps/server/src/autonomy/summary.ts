@@ -22,7 +22,7 @@ type How = AutonomySummary["shipped"][number]["how"];
 const RANK: Record<How, number> = { review: 1, done: 2, "mr-open": 3, pushed: 4, merged: 5, "mr-merged": 6 };
 
 /** The ship calls that count, by what they did. */
-const SHIPS: Readonly<Record<string, How>> = {
+export const SHIPS: Readonly<Record<string, How>> = {
   "tasks.merge": "merged",
   "tasks.push": "pushed",
   "tasks.openMrs": "mr-open",

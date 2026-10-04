@@ -41,6 +41,13 @@ const NEVER = new Set([
   "bin",
 ]);
 
+/**
+ * What of the config folder an archive copies: the owner's settings, agents and skills. Everything
+ * else in the majhi home is rebuilt or downloaded again (the Laya model, the e2e checkout, task
+ * folders) and would make every archive hundreds of megabytes.
+ */
+const CONFIG_ROOTS = new Set(["majhi.yaml", ".gitignore", "agents", "skills"]);
+
 /** Files up to this size are scanned for an age identity before they are copied. */
 const KEY_SCAN_MAX = 4 * 1024 * 1024;
 
@@ -121,7 +128,8 @@ export async function createBackup(
     await copyIfThere(join(opts.home, "secrets.age"), join(data, "secrets.age"));
 
     for (const rel of await opts.history.visibleFiles()) {
-      if (taken.has(rel) || NEVER.has(rel.split("/")[0] ?? "") || rel.startsWith(".git/")) continue;
+      const root = rel.split("/")[0] ?? "";
+      if (taken.has(rel) || !CONFIG_ROOTS.has(root) || NEVER.has(root)) continue;
       const from = join(opts.home, rel);
       const info = await lstat(from).catch(() => undefined);
       if (info === undefined || !info.isFile()) continue;

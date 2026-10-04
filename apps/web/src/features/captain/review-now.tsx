@@ -141,7 +141,7 @@ export function useReviewNow(org: string, chore: CaptainRunnableChore, waiting: 
             ? `Looked at ${run.before}. All of them need your judgment.`
             : waiting === 0
               ? `Done. All ${run.before} are handled.`
-              : `Done. ${handled} handled, ${waiting} still wait for you.`;
+              : `Done. ${handled} handled, ${waiting} still need you.`;
     }
   }
   return {

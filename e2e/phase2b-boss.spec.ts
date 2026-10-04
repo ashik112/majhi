@@ -12,7 +12,7 @@ const shot = (page: Page, name: string) => page.screenshot({ path: `e2e/screensh
 const SECRET = "nr-e2e-not-a-real-secret-4711";
 const API_KEY = `sk-ant-api03-${"Zq8Lm2".repeat(8)}`;
 
-const drawer = (page: Page) => page.getByRole("complementary", { name: "Captain chat" });
+const drawer = (page: Page) => page.getByRole("complementary", { name: "Captain" });
 const composer = (page: Page) => drawer(page).getByRole("textbox", { name: "Message the room" });
 const log = (page: Page) => drawer(page).getByRole("log", { name: "Room messages" });
 
@@ -40,6 +40,26 @@ function recordTraffic(page: Page): string[] {
 async function say(page: Page, text: string) {
   await composer(page).fill(text);
   await composer(page).press("Enter");
+}
+
+async function showSteps(page: Page) {
+  // The decision line shows once the card has settled and folded.
+  await expect(
+    log(page)
+      .getByText(/^You (approved|rejected): /)
+      .last(),
+  ).toBeVisible();
+  await openLastSteps(page);
+}
+
+/** Opens the newest "steps it took" row, and leaves it open if it already is. */
+async function openLastSteps(page: Page) {
+  const fold = log(page)
+    .getByRole("button", { name: /steps? it took/ })
+    .last();
+  await expect(fold).toBeVisible();
+  if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
+  await expect(fold).toHaveAttribute("aria-expanded", "true");
 }
 
 async function openBoss(page: Page) {
@@ -75,6 +95,8 @@ test("Cmd J opens the captain over any page; a change waits for approval, then a
   expect((await cmd<{ id: string }[]>(page.request, "orgs.list")).map((o) => o.id)).not.toContain("globex");
 
   await card.getByRole("button", { name: "Approve" }).click();
+  // A settled approval folds into the conversation's "steps it took" row.
+  await showSteps(page);
   await expect(drawer(page).getByText("Applied: Create org Globex", { exact: true })).toBeVisible();
   // The captain is told and answers.
   await expect(
@@ -103,6 +125,7 @@ test("Cmd J opens the captain over any page; a change waits for approval, then a
 
   // Undo from the card in the drawer.
   await openBoss(page);
+  await showSteps(page);
   await drawer(page).getByRole("button", { name: "Undo" }).click();
   await expect(drawer(page).getByText("Undone: Create org Globex", { exact: true })).toBeVisible();
   await page.keyboard.press("Control+j");
@@ -121,6 +144,7 @@ test("a rejected change stays undone; Undo also works from History", async ({ pa
   );
   const card = drawer(page).getByRole("region", { name: "Approval: Create org Initech" });
   await card.getByRole("button", { name: "Reject" }).click();
+  await showSteps(page);
   await expect(drawer(page).getByText("Rejected: Create org Initech", { exact: true })).toBeVisible();
   await expect(log(page).getByText("echo: The owner rejected: Create org Initech.")).toBeVisible();
   expect((await cmd<{ id: string }[]>(request, "orgs.list")).map((o) => o.id)).not.toContain("initech");
@@ -130,6 +154,12 @@ test("a rejected change stays undone; Undo also works from History", async ({ pa
     page,
     'call: majhi_orgs_create {"id":"initech","name":"Initech","ownerAsked":true,"reason":"You asked for Initech"}',
   );
+  await expect(
+    log(page)
+      .getByText(/^majhi_orgs_create: \{/)
+      .last(),
+  ).toBeVisible();
+  await openLastSteps(page);
   await expect(drawer(page).getByText("Applied: Create org Initech", { exact: true })).toBeVisible();
   await page.keyboard.press("Meta+j");
   await page.goto("/setup?section=history");

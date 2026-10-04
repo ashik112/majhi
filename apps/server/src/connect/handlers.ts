@@ -10,7 +10,11 @@ type ConnectCommand =
   | "connect.cancel"
   | "connect.confirmAccount"
   | "connect.disconnect"
-  | "connect.needScope";
+  | "connect.needScope"
+  | "connect.appSetup"
+  | "connect.appStatus"
+  | "connect.appSave"
+  | "connect.appForget";
 
 /** Only the owner signs accounts in or out. An agent has no browser to approve with. */
 function ownerOnly(kind: string, what: string): void {
@@ -40,6 +44,16 @@ export function connectHandlers(connect: ConnectService): Pick<CommandHandlers, 
     "connect.disconnect": async (input, ctx) => {
       ownerOnly(ctx.meta.actor.kind, "disconnects a service");
       return connect.disconnect(input.connection, ctx.meta);
+    },
+    "connect.appSetup": async (input) => connect.appSetup(input.org, input.app, input.access),
+    "connect.appStatus": async (input) => connect.appStatus(input.org),
+    "connect.appSave": async (input, ctx) => {
+      ownerOnly(ctx.meta.actor.kind, "saves an app for a service");
+      return connect.appSave(input, ctx.meta);
+    },
+    "connect.appForget": async (input, ctx) => {
+      ownerOnly(ctx.meta.actor.kind, "removes an app");
+      return connect.appForget(input.org, input.app);
     },
     // An agent says its tool call got 403 insufficient_scope. The text is data: it only asks the owner.
     "connect.needScope": (input) => connect.needScope(input.connection, input.scope),

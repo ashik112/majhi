@@ -11,8 +11,9 @@ afterEach(async () => {
 });
 
 async function setupFindings(): Promise<Finding[]> {
-  const res = await w?.h.cmd("findings.list", { source: "setup" });
-  return (res?.body as FindingsList).findings;
+  if (w === undefined) throw new Error("no world");
+  const res = await w.h.cmd("findings.list", { source: "setup" });
+  return (res.body as FindingsList).findings;
 }
 
 describe("readiness gaps become findings", () => {

@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Command, dockerTty, localSpawner } from "@majhi/acp";
 import {
+  BUILT_IN_CONNECT_APPS,
   type CaptainChore,
   isOwnerChat,
   NotificationsSettingsSchema,
@@ -21,6 +22,8 @@ import { AdminAccess } from "./admin/access.ts";
 import { isBossChat } from "./admin/boss.ts";
 import { AdminService } from "./admin/service.ts";
 import { AdminTokens } from "./admin/tokens.ts";
+import { AgendaRepo } from "./agenda/repo.ts";
+import { AgendaService } from "./agenda/service.ts";
 import { AgentService } from "./agents/service.ts";
 import { AgentStore } from "./agents/store.ts";
 import { createActionHost } from "./automation/host.ts";
@@ -29,7 +32,8 @@ import { ScheduleRepo } from "./automation/schedules.ts";
 import { createWatchHost } from "./automation/triggers/host.ts";
 import { TriggerRepo } from "./automation/triggers/repo.ts";
 import { AutonomyDriver } from "./autonomy/driver.ts";
-import { AutonomyService } from "./autonomy/service.ts";
+import { AutonomyService, zoneOr } from "./autonomy/service.ts";
+import { WakeGate } from "./autonomy/wake-gate.ts";
 import { Background } from "./background.ts";
 import { BackupService } from "./backup/service.ts";
 import { alertLine } from "./budgets/alert-line.ts";
@@ -41,7 +45,8 @@ import { DeadlinesService } from "./business/deadlines.ts";
 import { KbService } from "./business/kb.ts";
 import { VoiceService } from "./business/voice.ts";
 import { Lanes } from "./captain/lanes.ts";
-import { authorityOf } from "./captain/levels.ts";
+import { authorityOf, workspaceIds } from "./captain/levels.ts";
+import { labelOwnWork } from "./captain/own-work-second.ts";
 import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
 import { CaptainTell } from "./captain/tell.ts";
@@ -49,6 +54,8 @@ import { captainWorld } from "./captain/world.ts";
 import type { Dispatch } from "./commands/dispatch.ts";
 import { resolvePath } from "./config/load.ts";
 import { ConfigService } from "./config/service.ts";
+import { AppClientStore } from "./connect/app-client.ts";
+import { hostCli } from "./connect/cli-connect.ts";
 import { GrantStore } from "./connect/grant.ts";
 import { ConnectService } from "./connect/service.ts";
 import { type BrowserServer, RUNNER_BROWSERS_PATH } from "./connections/browser.ts";
@@ -71,17 +78,29 @@ import { DecisionLog } from "./decisions/log.ts";
 import { rulesProvider } from "./decisions/rules.ts";
 import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
+import { classifyInjection } from "./decisions/uses/injection.ts";
+import { layaEvalRunner } from "./decisions/uses/weekly-eval.ts";
 import type { E2eService } from "./e2e/service.ts";
 import { createE2e } from "./e2e/wire.ts";
+import { economicsRunner } from "./economics/playbook.ts";
+import { EconomicsService } from "./economics/service.ts";
 import type { ServerEnv } from "./env.ts";
 import { errorMessage, UserError } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
 import { FindingsRepo } from "./findings/repo.ts";
 import { FindingsService } from "./findings/service.ts";
+import { triageFinding } from "./findings/triage.ts";
 import { GitLoginService } from "./git/logins.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
+import { feedsRunner } from "./growth/feeds.ts";
+import { keywordLines } from "./growth/gather.ts";
+import { OPPORTUNITIES_ID, opportunitiesHooks } from "./growth/opportunities.ts";
+import type { GrowthDeps } from "./growth/ports.ts";
+import { clientUpdate } from "./growth/update.ts";
+import type { HandoffService } from "./handoff/service.ts";
+import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
 import type { HostLink } from "./host/link.ts";
 import { RecommendationRepo } from "./inbox/recommendations.ts";
 import { InboxService } from "./inbox/service.ts";
@@ -92,8 +111,9 @@ import { ChatMemory } from "./memory/chats.ts";
 import { cleanupRepoDocFacts } from "./memory/cleanup.ts";
 import { Curator } from "./memory/curator.ts";
 import type { Embedder } from "./memory/embedder.ts";
+import { ESCALATIONS_PER_DAY } from "./memory/escalate.ts";
 import { curationTask, Extraction } from "./memory/extraction.ts";
-import { Housekeeper } from "./memory/housekeeper.ts";
+import { Housekeeper, NoHousekeeper } from "./memory/housekeeper.ts";
 import { briefAbout, Placer, type Registry } from "./memory/placement.ts";
 import { Promotion } from "./memory/promote.ts";
 import { LESSON_DOC_COSINE, RepoDocs } from "./memory/repo-docs.ts";
@@ -106,9 +126,21 @@ import { MrPoller } from "./mrs/poller.ts";
 import { MrService } from "./mrs/service.ts";
 import type { Subject } from "./notify/attention.ts";
 import { Notifier } from "./notify/service.ts";
+import type { ProbePorts } from "./ops/probes.ts";
+import { opsRunners } from "./ops/runner.ts";
+import type { OpsWatch } from "./ops/watch.ts";
+import { createOps, type Ops } from "./ops/wire.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
+import { OutcomesRepo } from "./outcomes/repo.ts";
+import { OutcomesService } from "./outcomes/service.ts";
+import { GoalsService } from "./playbooks/goals.ts";
+import { OutboundGate } from "./playbooks/outbound.ts";
+import { PlaybookRepo } from "./playbooks/repo.ts";
+import { RULES_RUNNERS, type RulesRunner } from "./playbooks/rules.ts";
+import { PlaybookService } from "./playbooks/service.ts";
 import { ProcessManager } from "./processes/manager.ts";
+import { CardRepo } from "./projectcard/repo.ts";
 import { suggestRepoAliases } from "./projectcard/scanner.ts";
 import type { ProjectCards } from "./projectcard/service.ts";
 import { createCards } from "./projectcard/wire.ts";
@@ -132,6 +164,9 @@ import { RepoScanner } from "./scan/scanner.ts";
 import { KeyExports } from "./secrets/backup.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
+import type { Net } from "./sensors/net.ts";
+import { sensorRunners } from "./sensors/runners.ts";
+import { createSensorPorts } from "./sensors/wire.ts";
 import { SkillsCli } from "./skills/cli.ts";
 import { skillGitEnv } from "./skills/git-env.ts";
 import { SkillRegistry } from "./skills/registry.ts";
@@ -158,6 +193,7 @@ import { UsageService } from "./usage/service.ts";
 const CHAT_SWEEP_MS = 60_000;
 /** How often paused budget runs are checked against the week. */
 const LIMIT_SWEEP_MS = 60_000;
+const AGENDA_SWEEP_MS = 60_000;
 /** How often majhi looks whether the weekly prune of its old images is due. */
 const PRUNE_SWEEP_MS = 86_400_000;
 
@@ -175,6 +211,8 @@ export interface ServiceOptions {
   probe?: Probe;
   /** The clock of agent runs and the network watch, so tests can let time pass. */
   runClock?: () => Date;
+  /** Replaces the hand-off's command runner and its timeouts, so tests never run a real project's commands. */
+  handoff?: Pick<HandoffWiring, "exec" | "options">;
   /** Replaces `docker network inspect` for the runner network. */
   runnerInspect?: Inspect;
   /** Replaces the `gh` and `glab` programs, the Bitbucket API and the process runner, so tests never reach a real host. */
@@ -193,6 +231,14 @@ export interface ServiceOptions {
   idleWatchMs?: number;
   /** Replaces `fetch` for git sign-in and the git hosts' APIs, so tests never reach a real host. */
   gitFetch?: Fetch;
+  /** Replaces the sensors' network (advisories, end-of-life dates, releases, CI), so tests never reach a real host. */
+  sensorNet?: Net;
+  /** Replaces the ops watch's network (addresses, certificates, names), so tests never reach a real host. */
+  opsProbes?: Partial<ProbePorts>;
+  /** Replaces `fetch` for the phone push, so tests never reach an ntfy server. */
+  ntfyFetch?: typeof fetch;
+  /** The wait between a failed look and its second look. Default 15 s. */
+  opsRetryMs?: number;
   /** Replaces `fetch` for Connect's sign-in calls, so tests reach a fake authorization server. */
   connectFetch?: Fetch;
   /** Replaces the service catalog, so tests connect to a fake server. */
@@ -293,8 +339,25 @@ export interface Services {
   captain: CaptainService;
   /** What playbooks and agents noticed, deduplicated (5.18, Findings). */
   findings: FindingsService;
+  /** Playbooks: the one scheduler for the captain's standing work (5.18). */
+  playbooks: PlaybookService;
+  /** The owner's goals (5.18). */
+  goals: GoalsService;
+  /** The ops watch: services, incidents, escalation and the phone push (5.18). */
+  ops: Ops;
+  /** The outbound gate: everything that would leave the machine passes it (5.18). */
+  outbound: OutboundGate;
+  /** Outcomes, the scorecard, the trust ladder and the monthly ceiling (5.18). */
+  outcomes: OutcomesService;
+  /** The checked hand-off: tests, build, lint and a review before "Ready to ship" (5.18). */
+  handoff: HandoffService;
+  /** Client economics and the growth playbooks' views (5.18, step 11). */
+  economics: EconomicsService;
+  growth: GrowthDeps;
   /** The knowledge base, voice, contacts and deadlines (5.19). */
   business: BusinessServices;
+  /** The owner's agenda and the morning brief (5.18). */
+  agenda: AgendaService;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
   captainTell: CaptainTell;
   /** The captain's chat per workspace (5.18). */
@@ -683,6 +746,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     allowed: (t) => memoryScopes.writable(t.id),
     placer: new Placer({ decisions, registry: memoryRegistry }),
+    // Laya unsure about a waiting memory: the stand-in answers once, 40 a day at most, before the owner is left with it.
+    escalate: { perDay: ESCALATIONS_PER_DAY },
     inDocs: async (t, text) => {
       if (t === undefined) return undefined;
       const paths = (await projectList()).filter((p) => t.projects.includes(p.id)).map((p) => p.path);
@@ -757,11 +822,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   let chatMemory: ChatMemory | undefined;
   // Bound below: background e2e is built after the task service, which it creates tasks with.
   let e2e: E2eService | undefined;
+  // Bound below, after the services it reads: the checked hand-off (5.18).
+  let handoffService: HandoffService | undefined;
   const tasks = new TaskService({
     protectedPaths: [env.secretsKeyFile],
     onOwnerResumedLimit: (task) => budgets.exempt(task),
     // Bound below: autonomous mode is built after the task service.
     onOwnerResumed: (task) => autonomy.ownerResumed(task),
+    // The owner's answer to a prompt Laya was asked about labels that decision (Allow once: it was routine).
+    onOwnerPermission: (task, item) => labelOwnWork(decisions, task, item),
     store,
     config,
     projects,
@@ -782,12 +851,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       if (!isBossChat(task)) extraction.afterClose(task);
       await promotion.release(task);
     },
-    onRemoving: (task) => promotion.release(task),
+    onRemoving: async (task) => {
+      handoffService?.forget(task.id);
+      await promotion.release(task);
+    },
     // Bound below: autonomous mode keeps its chat while the mode is not off.
     guardRemoval: (task, action) => autonomy.guardChat(task, action),
     // Bound below: the merge requests service is built after the task service.
     onReview: (id) => {
       void labelFinishedTask(id);
+      handoffService?.reviewReached(id);
       captain.reviewReached(id);
       return pendingShips.reviewReached(id);
     },
@@ -969,7 +1042,31 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const triggerRows = new TriggerRepo(store.raw);
   const captainRepo = new CaptainRepo(store.raw);
   const cardActions = new CardActions({ tasks, mrs, room });
+  const knownOrg = async (org: string) =>
+    org === PRIVATE || (await config.sections()).orgs[org] !== undefined;
+  const goals = new GoalsService({
+    db: store.raw,
+    knownOrg,
+    changed: () => events.emit(["playbooks"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  // Bound below, after the playbooks: the trust ladder decides which channels may be Auto.
+  let outcomesService: OutcomesService | undefined;
+  const outbound = new OutboundGate({
+    db: store.raw,
+    knownOrg,
+    autoAllowed: (org, channel) => outcomesService?.autoAccepted(org, channel) ?? false,
+    tz: async (org) => {
+      const a = (await config.settings()).autonomy;
+      return zoneOr(a.orgs[org]?.tz ?? a.tz);
+    },
+    changed: () => events.emit(["playbooks"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  let opsWatch: OpsWatch | undefined;
   const inbox = new InboxService({
+    outbound,
+    incidents: () => opsWatch?.unacked() ?? [],
     items: () => store.room.waitingDecisions(),
     subject: (id) => {
       const task = store.tasks.subjectInfo(id);
@@ -1012,7 +1109,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         }),
       answerCap: (org, chore, answer) => captain.answerCap(org, chore as CaptainChore, answer),
       answerBudget: (scope, answer) => autonomy.answerBudget(scope, answer),
+      decideDraft: (id, decision) => outbound.decide(id, decision),
+      decideBatch: (org, channel, decision) => outbound.decideBatch(org, channel, decision),
+      ackIncident: async (id) => {
+        await opsWatch?.ack(id);
+      },
+      answerTrust: (id, option) => outcomesService?.answerNotice(id, option) ?? Promise.resolve(),
+      answerCeiling: (month, option) => outcomesService?.answerCeiling(month, option) ?? Promise.resolve(),
     },
+    extras: () => outcomesService?.decisions() ?? [],
+    answered: (decision, option) => outcomesService?.answered(decision, option),
   });
   const lanes = new Lanes({
     repo: captainRepo,
@@ -1027,6 +1133,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const autonomy = new AutonomyService({
     lanes,
     typing: (task) => events.typing.holds(task),
+    protectedProjects: async () =>
+      new Set((await projects.infos()).filter((p) => p.protected).map((p) => p.id)),
     upkeepBetween: (from, to) => captainRepo.actionsBetween(from, to),
     decisions: () => inbox.list(),
     store,
@@ -1043,6 +1151,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       await inbox.recommend(input, lane);
       events.emit(["tasks"]);
     },
+    ceilingHeld: () => outcomesService?.ceilingHeld(),
     automationAction: (kind, id) =>
       (kind === "schedule" ? scheduleRows.get(id) : triggerRows.get(id))?.action.kind,
     // Sizes a task for the pick rules, as Laya rates it for an `auto` model pick.
@@ -1069,6 +1178,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       pendingWork: (org) => autonomy.pendingWork(org, findingsStore?.openCount(org) ?? 0),
       findingLines: (org) => findingsStore?.digestLines(org) ?? [],
       projectLines: (org) => cards.digestLines(org),
+      // Laya reads what changed before a soft wake costs a captain turn; any doubt takes the turn.
+      wakeGate: new WakeGate(decisions),
       store,
       events,
       ...(options.runClock === undefined ? {} : { now: options.runClock }),
@@ -1086,7 +1197,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         text: n.text,
         ...(n.project === undefined
           ? { org: n.org, kind: "ops" as const }
-          : { repos: [{ project: n.project }] }),
+          : { repos: [{ project: n.project }], ...(n.code === true ? { kind: "code" as const } : {}) }),
         byOwner: n.byOwner,
         attachments: [],
         start: false,
@@ -1094,8 +1205,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return { id: task.id };
     },
     changed: () => events.emit(["findings"]),
+    // Laya reads each new finding: likely real or noise, with the owner's dismiss and keep as its labels.
+    triage: (f) => triageFinding(decisions, f, options.runClock),
+    labelled: (f, label, note) => decisions.resolve("finding", String(f.id), label, note),
     // A new finding is news to its workspace's lane, where Start is You too (it files a proposal).
     appeared: (f) => {
+      // An incident wakes the lane itself, with its evidence and what the captain may do (ops watch).
+      if (f.source === "incident") return;
       if (f.severity !== "info") autonomy.news(`New finding #${f.id} (${f.severity}): ${f.title}`, f.org);
     },
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
@@ -1127,6 +1243,84 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ...businessNow,
     }),
   };
+  const agendaOwner = { kind: "owner" } as const;
+  const agenda = new AgendaService({
+    repo: new AgendaRepo(store.raw),
+    clock: async () => {
+      const a = (await config.settings()).autonomy;
+      return { at: a.summary_at, tz: a.tz };
+    },
+    decisions: (org) => inbox.list(org),
+    deadlines: (within) => business.deadlines.list({ withinDays: within, limit: 500 }, agendaOwner).deadlines,
+    findings: () => findings.list({ limit: 500 }, agendaOwner).findings,
+    steps: () =>
+      crm
+        .nextSteps(
+          { until: new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10), limit: 50 },
+          agendaOwner,
+        )
+        .steps.map((s) => ({
+          id: s.contact.id,
+          name: s.contact.name,
+          ...(s.contact.org === undefined ? {} : { org: s.contact.org }),
+          nextStep: s.contact.nextStep,
+          due: s.due,
+          overdue: s.overdue,
+        })),
+    goals: () => goals.list({}, agendaOwner),
+    running: () =>
+      store.tasks
+        .list(false)
+        .filter((t) => t.status === "running" && t.chat !== true && t.lane !== true)
+        .map((t) => ({
+          id: t.id,
+          title: t.title,
+          ...(t.org === undefined ? {} : { org: t.org }),
+          since: t.updatedAt,
+        })),
+    names: async () => {
+      const orgs = (await config.sections()).orgs;
+      return new Map<string, string>([
+        [PRIVATE, "Private"],
+        ...Object.entries(orgs).map(([id, o]) => [id, o.name] as [string, string]),
+      ]);
+    },
+    overnight: (from, to) => autonomy.overnight(from, to),
+    voice: () => business.voice.get(undefined, agendaOwner).effective,
+    write: async (prompt) =>
+      (
+        await housekeeper.ask({ id: "morning-brief" }, prompt, (reply) =>
+          reply.trim() === "" ? { ok: false, problem: "The reply was empty." } : { ok: true, value: reply },
+        )
+      ).value,
+    next: (max) => autonomy.queueTitles(max),
+    notify: (day, text) => notifier.brief(day, text),
+    changed: () => events.emit(["agenda"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  const agendaSweep = setInterval(() => background.run(() => agenda.sweep()), AGENDA_SWEEP_MS);
+  agendaSweep.unref();
+  background.run(() => agenda.sweep());
+  const handoff = createHandoff({
+    db: store.raw,
+    store,
+    tasks,
+    mrs,
+    room,
+    runs,
+    projectCards: cards,
+    housekeeper,
+    spawner: sessionOptions.spawner ?? localSpawner,
+    base: sessionOptions.base,
+    repoMounts: (task) => repoMounts(task),
+    mergeDecides: async (org) => authorityOf((await config.settings()).autonomy, org).merge === "decide",
+    autonomous: () => autonomy.mode() === "on",
+    ceilingHeld: () => outcomesService?.ceilingHeld(),
+    changed: () => events.emit(["tasks"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+    ...(options.handoff === undefined ? {} : options.handoff),
+  });
+  handoffService = handoff;
   /** Bound when the server made the dispatcher: the captain's chores run commands as the captain. */
   let captainDispatch: Dispatch | undefined;
   const captain = new CaptainService({
@@ -1169,7 +1363,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       repo: captainRepo,
       typing: (task) => events.typing.holds(task),
       aliasesOf: (path, id) => suggestRepoAliases(path, id),
+      protectedProjects: async () =>
+        new Set((await projects.infos()).filter((p) => p.protected).map((p) => p.id)),
       dispatch: () => captainDispatch,
+      handoff: () => handoffService,
     }),
     tell: (key, text) => notifier.captain(key, text),
     cancelTurn: async (chat) => {
@@ -1184,6 +1381,118 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
+  // The sensors behind the Engineering playbooks: cheap code that reads checkouts and public advisories.
+  const sensors = createSensorPorts({
+    store,
+    projects,
+    cards: new CardRepo(store.raw),
+    tokens: gitTokens,
+    orgs: async () => (await config.sections()).orgs,
+    housekeeper,
+    injects: async (text) => (await classifyInjection(decisions, text, "release-notes")).flagged,
+    ...(options.sensorNet === undefined ? {} : { net: options.sensorNet }),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+    log: (message) => console.error(message),
+  });
+  // Client economics and the growth playbooks (captain v2 step 11): code, plus one small model call where noted.
+  const rateRepo = new OutcomesRepo(store.raw);
+  const orgLabel = async (org: string) =>
+    org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org);
+  const economics = new EconomicsService({
+    db: store.raw,
+    tz: async () => zoneOr((await config.settings()).autonomy.tz),
+    orgs: async () => workspaceIds((await config.sections()).orgs),
+    rates: () => rateRepo.rates(),
+    minutes: () => rateRepo.minutes(),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  const growth: GrowthDeps = {
+    db: store.raw,
+    now: options.runClock ?? (() => new Date()),
+    findings,
+    ...business,
+    goals,
+    cards: new CardRepo(store.raw),
+    outbound,
+    cache: sensors.cache,
+    orgName: orgLabel,
+    write: async (task, prompt, parse) => {
+      try {
+        return (await housekeeper.ask(task, prompt, parse)).value;
+      } catch (err) {
+        if (err instanceof NoHousekeeper) return undefined;
+        throw err;
+      }
+    },
+  };
+  const opportunities = opportunitiesHooks(growth);
+  // The ops watch adds its runner below, once the connections it reads through exist.
+  const rulesTable: Record<string, RulesRunner> = {
+    ...RULES_RUNNERS,
+    ...sensorRunners(sensors),
+    // The weekly check of Laya's decisions, and a few old findings read each run.
+    "laya-eval": layaEvalRunner({ decisions, backlog: findings }),
+    economics: economicsRunner(economics, orgLabel),
+    "client-update": clientUpdate(growth),
+    feeds: feedsRunner({
+      net: sensors.net,
+      cache: sensors.cache,
+      keywords: async (org) => keywordLines(growth, org),
+    }),
+  };
+  const playbooks = new PlaybookService({
+    rules: rulesTable,
+    preflight: { [OPPORTUNITIES_ID]: (org) => opportunities.preflight(org) },
+    context: { [OPPORTUNITIES_ID]: (org) => opportunities.context(org) },
+    repo: new PlaybookRepo(store.raw),
+    captain,
+    findings,
+    goals,
+    orgs: async () => workspaceIds((await config.sections()).orgs),
+    lane: { chat: (org) => lanes.chat(org), tell: (org, text, settled) => lanes.tell(org, text, settled) },
+    laneTokens: (chat, since) => captainRepo.laneSpend(chat, since).tokens,
+    cancelTurn: async (chat) => {
+      await tasks.cancel(chat, undefined);
+    },
+    mode: () => autonomy.mode(),
+    tellOwner: (key, text) => notifier.captain(key, text),
+    changed: () => events.emit(["playbooks", "captain"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  captain.usePlaybooks(playbooks, () => playbooks.sweep());
+  playbooks.boot();
+  const outcomes = new OutcomesService({
+    db: store.raw,
+    tz: async () => zoneOr((await config.settings()).autonomy.tz),
+    orgs: async () => workspaceIds((await config.sections()).orgs),
+    orgName: async (org) =>
+      org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org),
+    playbookOfChore: (chore) => playbooks.catalog.ofChore(chore)?.id,
+    authority: async (org) => authorityOf((await config.settings()).autonomy, org),
+    setAuthority: async (org, row, choice, reason) => {
+      await autonomy.configure(
+        { orgs: { [org]: { authority: { [row]: choice } } } },
+        { command: "trust.ladder", meta: { actor: { kind: "owner" }, reason } },
+      );
+    },
+    outbound: {
+      mode: (org, channel) => outbound.mode(org, channel),
+      applyLadder: (org, channel, mode) => outbound.applyLadder(org, channel, mode),
+    },
+    playbooks: {
+      name: (id) => playbooks.catalog.get(id)?.name ?? id,
+      state: (org, id) => playbooks.stateOf(org, id),
+      setCadence: async (org, id, cadence) => {
+        await playbooks.update({ org, id, cadence });
+      },
+    },
+    changed: () => events.emit(["captain", "playbooks"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  outcomesService = outcomes;
+  void outcomes.sweep().catch(() => undefined);
+  const outcomeSweep = setInterval(() => void outcomes.sweep().catch(() => undefined), 5 * 60_000);
+  outcomeSweep.unref();
   // A backlog of waiting memories runs the memory chore of the workspace that reviews them.
   autonomy.useLaneGate(captain.laneGate);
   events.typing.onIdle((task) => captain.ownerIdle(task));
@@ -1244,7 +1553,25 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const connect = new ConnectService({
     grants: new GrantStore(secrets),
-    connections: connections,
+    apps: new AppClientStore(secrets),
+    builtInApps: BUILT_IN_CONNECT_APPS,
+    githubClientId: async () => (await gitConnect.apps()).github?.clientId,
+    ...(options.hostLink === undefined ? {} : { cli: hostCli(options.hostLink) }),
+    orgName: async (org) => (await config.sections()).orgs[org]?.name,
+    secretOf: async (connection, name) => {
+      const orgs = (await config.sections()).orgs;
+      for (const entry of Object.values(orgs)) {
+        const ref = entry.connections?.[connection]?.vars?.[name]?.value;
+        if (ref !== undefined && ref.startsWith("secret:")) return secrets.get(ref.slice("secret:".length));
+      }
+      return undefined;
+    },
+    connections: {
+      create: (input, command, meta) => connections.create(input, command, meta),
+      remove: (id, command, meta) => connections.remove(id, command, meta),
+      find: (id) => connections.find(id),
+      setSecret: (input, command, meta) => connections.setSecret(input, command, meta),
+    },
     connectionIds: async () =>
       Object.entries((await config.sections()).orgs).flatMap(([org, entry]) =>
         Object.entries(entry.connections ?? {}).map(([id, connection]) => ({ org, id, connection })),
@@ -1334,6 +1661,40 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ? { browserCommand: (server: BrowserServer) => ({ command: server.command, args: [] }) }
       : {}),
   });
+  const ops = createOps({
+    db: store.raw,
+    findings,
+    secrets,
+    notifier,
+    wake: (org, text) => autonomy.news(text, org),
+    orgName: async (org) =>
+      org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org),
+    projectOrg: async (id) => (await config.sections()).projects[id]?.org,
+    connections: {
+      list: async (org) =>
+        (await connections.list(org)).map((c) => ({ id: c.id, name: c.name, type: c.type })),
+      orgOf: async (id) => (await connections.find(id))?.org,
+    },
+    tester: connectionTests,
+    inbox: { list: () => inbox.list(), answer: (input) => inbox.answer(input) },
+    drafts: (org) => outbound.list(org, 200),
+    notifications: async () => {
+      try {
+        return (await config.settings()).notifications;
+      } catch {
+        return NotificationsSettingsSchema.parse({});
+      }
+    },
+    online: options.probe ?? probeFromSetting(env.netProbe),
+    changed: () => events.emit(["ops", "playbooks", "findings"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+    ...(options.opsProbes === undefined ? {} : { probes: options.opsProbes }),
+    ...(options.ntfyFetch === undefined ? {} : { ntfyFetch: options.ntfyFetch }),
+    ...(options.opsRetryMs === undefined ? {} : { retryMs: options.opsRetryMs }),
+  });
+  opsWatch = ops.watch;
+  Object.assign(rulesTable, opsRunners(ops.watch));
+  ops.start();
   const mcpServers = new McpService({
     connections,
     tester: connectionTests,
@@ -1425,7 +1786,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     inbox,
     captain,
     findings,
+    playbooks,
+    goals,
+    ops,
+    outbound,
+    outcomes,
+    handoff,
+    economics,
+    growth,
     business,
+    agenda,
     captainTell: new CaptainTell({
       tasks,
       lanes,
@@ -1455,9 +1825,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       connect.stop();
       autonomy.close();
       captain.close();
+      playbooks.close();
+      ops.close();
       idleWatch.stop();
+      clearInterval(outcomeSweep);
       clearInterval(chatSweep);
       clearInterval(limitSweep);
+      clearInterval(agendaSweep);
       clearInterval(pruneSweep);
       clearInterval(updateWatch);
       backup.stop();

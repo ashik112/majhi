@@ -17,6 +17,13 @@ import {
   ToolIdSchema,
   ToolInfoSchema,
 } from "./accounts.ts";
+import {
+  AgendaBriefInputSchema,
+  AgendaConfigureInputSchema,
+  AgendaDismissInputSchema,
+  AgendaTodayInputSchema,
+  AgendaTodaySchema,
+} from "./agenda.ts";
 import { AgentToolRefSchema, AttachedToolsSchema } from "./agent-tools.ts";
 import {
   ConfigStateSchema,
@@ -25,6 +32,14 @@ import {
   WorkspacesUpdateResultSchema,
   WorkspacesUpdateSchema,
 } from "./api.ts";
+import {
+  AppSetupForgetInputSchema,
+  AppSetupInputSchema,
+  AppSetupSaveInputSchema,
+  AppSetupSaveResultSchema,
+  AppSetupStatusSchema,
+  AppSetupViewSchema,
+} from "./app-setup.ts";
 import { ApprovalStatsSchema } from "./approval-stats.ts";
 import { AuditListInputSchema, AuditListSchema } from "./audit.ts";
 import {
@@ -146,6 +161,14 @@ import {
   ProviderIdSchema,
 } from "./decisions.ts";
 import { E2ePatchSchema, E2eRunSchema, E2eStatusSchema } from "./e2e.ts";
+import {
+  EconomicsGetInputSchema,
+  EconomicsSchema,
+  FindingDeadlineInputSchema,
+  FindingDeadlineResultSchema,
+  FindingProposalInputSchema,
+  FindingProposalResultSchema,
+} from "./economics.ts";
 import { EmojiSchema } from "./emoji.ts";
 import {
   FindingDismissInputSchema,
@@ -170,6 +193,7 @@ import {
   SignOutInputSchema,
   SignOutSchema,
 } from "./git-signin.ts";
+import { HandoffCheckInputSchema, HandoffGetInputSchema, HandoffStateSchema } from "./handoff.ts";
 import {
   DirListingSchema,
   EDITOR_PATH_MAX,
@@ -184,6 +208,8 @@ import {
 } from "./host.ts";
 import {
   DecisionAnswerInputSchema,
+  DecisionBatchInputSchema,
+  DecisionBatchResultSchema,
   DecisionDetailSchema,
   DecisionListSchema,
   DecisionRecommendInputSchema,
@@ -234,6 +260,48 @@ import {
 } from "./mrs.ts";
 import { PendingNoticeSchema } from "./notify.ts";
 import { OnboardingStatusSchema } from "./onboarding.ts";
+import {
+  OpsAckInputSchema,
+  OpsIncidentSchema,
+  OpsOverviewInputSchema,
+  OpsOverviewSchema,
+  OpsPhoneSetInputSchema,
+  OpsPhoneSetupInputSchema,
+  OpsPhoneSetupResultSchema,
+  OpsPhoneStatusSchema,
+  OpsPhoneTestResultSchema,
+  OpsServiceIdInputSchema,
+  OpsServiceSaveInputSchema,
+  OpsServiceViewSchema,
+  OpsSettingsInputSchema,
+  OpsSettingsSchema,
+} from "./ops.ts";
+import {
+  GoalCreateInputSchema,
+  GoalRemoveInputSchema,
+  GoalSchema,
+  GoalsListInputSchema,
+  GoalsListSchema,
+  GoalUpdateInputSchema,
+  OutboundBatchInputSchema,
+  OutboundDecideInputSchema,
+  OutboundDecideResultSchema,
+  OutboundListInputSchema,
+  OutboundListSchema,
+  OutboundSetModeInputSchema,
+  OutboundSubmitInputSchema,
+  OutboundSubmitResultSchema,
+  PlaybookReportInputSchema,
+  PlaybookReportResultSchema,
+  PlaybookRunNowInputSchema,
+  PlaybookRunNowResultSchema,
+  PlaybookRunsInputSchema,
+  PlaybookRunsSchema,
+  PlaybooksListInputSchema,
+  PlaybooksListSchema,
+  PlaybookUpdateInputSchema,
+  PlaybookViewSchema,
+} from "./playbooks.ts";
 import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
 import { ProjectCardSchema } from "./project-card.ts";
 import {
@@ -254,6 +322,15 @@ import {
   RemoteReposSchema,
 } from "./remote-repos.ts";
 import { CoordinationModeSchema } from "./rooms.ts";
+import {
+  MoneySetInputSchema,
+  MoneyStatusSchema,
+  ScorecardGetInputSchema,
+  ScorecardSchema,
+  ScorecardSetMinutesInputSchema,
+  TrustListSchema,
+  TrustUnmuteInputSchema,
+} from "./scorecard.ts";
 import {
   AllowRuleSchema,
   AutonomyPatchSchema,
@@ -735,6 +812,13 @@ export const commands = {
     input: DecisionAnswerInputSchema,
     output: DecisionListSchema,
   },
+  "decisions.answerBatch": {
+    risk: "change",
+    summary:
+      "Answer many decisions at once with Approve (allow once, merge what the captain checked, resume, raise) or Leave (reject, keep the budget). Each decision is taken on its own: one that fails or has no such button is listed and the rest go on. Sent twice with the same batch key it does nothing the second time. Owner only",
+    input: DecisionBatchInputSchema,
+    output: DecisionBatchResultSchema,
+  },
   "decisions.detail": {
     risk: "read",
     summary:
@@ -784,6 +868,253 @@ export const commands = {
       "Dismiss a finding with a reason (it is not worth doing, a duplicate, or wrong). It stays dismissed when reported again. The owner and the captain only; an agent may dismiss its own reports",
     input: FindingDismissInputSchema,
     output: FindingSchema,
+  },
+  // Playbooks, goals and the outbound gate (5.18) -------------------------------
+  "playbooks.list": {
+    risk: "read",
+    summary:
+      "The captain's playbooks in a workspace, grouped by pack: on or off, cadence, goal, last and next run, and how many findings each filed, how many were accepted and dismissed. A playbook is data: a trigger, steps, outputs, a cost tier and a token budget",
+    input: PlaybooksListInputSchema,
+    output: PlaybooksListSchema,
+  },
+  "playbooks.update": {
+    risk: "change",
+    summary:
+      "Turn a playbook on or off in a workspace, change its cadence or quiet hours, link it to a goal, or fill its settings (the URLs of an uptime check). The owner's: the captain never changes its own playbooks",
+    input: PlaybookUpdateInputSchema,
+    output: PlaybookViewSchema,
+  },
+  "playbooks.run": {
+    risk: "change",
+    summary:
+      "Run a playbook now in a workspace, whatever its schedule. It still stops for Autonomous being off, a rest and its budget",
+    input: PlaybookRunNowInputSchema,
+    output: PlaybookRunNowResultSchema,
+  },
+  "playbooks.runs": {
+    risk: "read",
+    summary: "The recent runs of a playbook in a workspace, newest first, with what each found and spent",
+    input: PlaybookRunsInputSchema,
+    output: PlaybookRunsSchema,
+  },
+  "playbooks.report": {
+    risk: "change",
+    summary:
+      "Close the playbook run you were woken for: done (you reported what you found as findings), nothing (nothing new, archived quietly) or blocked (say why). Call it once, as the last step of the run",
+    input: PlaybookReportInputSchema,
+    output: PlaybookReportResultSchema,
+  },
+  "goals.list": {
+    risk: "read",
+    summary:
+      "The owner's goals: per workspace or for the whole business, each with a metric, target, due date and status. A captain lane sees its workspace's and the business's",
+    input: GoalsListInputSchema,
+    output: GoalsListSchema,
+  },
+  "goals.create": {
+    risk: "change",
+    summary:
+      "Add a goal for a workspace or the business. From the owner it is active; from the captain it is a proposal the owner confirms",
+    input: GoalCreateInputSchema,
+    output: GoalSchema,
+  },
+  "goals.update": {
+    risk: "change",
+    summary:
+      "Change a goal's title, metric, target or due date, or confirm, finish or drop it. Changing the status is the owner's",
+    input: GoalUpdateInputSchema,
+    output: GoalSchema,
+  },
+  "goals.remove": {
+    risk: "change",
+    summary: "Delete a goal. The owner's. Playbooks and findings that pointed at it lose the link",
+    input: GoalRemoveInputSchema,
+    output: z.object({ id: z.string() }),
+  },
+  "outbound.list": {
+    risk: "read",
+    summary:
+      "The outbound gate: each channel's mode (Draft, Batch, Auto) in a workspace and the drafts waiting or recently decided",
+    input: OutboundListInputSchema,
+    output: OutboundListSchema,
+  },
+  "outbound.setMode": {
+    risk: "change",
+    summary:
+      "Set a channel's mode in a workspace: Draft (approve each), Batch (approve a batch at a set hour) or Auto (allowed within a daily limit, only when explicit). The owner's",
+    input: OutboundSetModeInputSchema,
+    output: z.object({ channels: OutboundListSchema.shape.channels }),
+  },
+  "outbound.submit": {
+    risk: "change",
+    summary:
+      "Offer a message, post, comment or form for sending. It never leaves directly: the channel's mode decides whether it waits for the owner's approval as a draft, joins a batch, or (Auto, with a limit) goes. Include the target and the voice you used",
+    input: OutboundSubmitInputSchema,
+    output: OutboundSubmitResultSchema,
+  },
+  "outbound.decide": {
+    risk: "change",
+    summary: "Send or discard one draft. The owner's",
+    input: OutboundDecideInputSchema,
+    output: OutboundDecideResultSchema,
+  },
+  "outbound.decideBatch": {
+    risk: "change",
+    summary: "Send or discard every queued draft of a channel in a workspace. The owner's",
+    input: OutboundBatchInputSchema,
+    output: OutboundDecideResultSchema,
+  },
+  // Ops watch (5.18) ------------------------------------------------------------
+  "ops.overview": {
+    risk: "read",
+    summary:
+      "The watched services of every workspace with their check state and 24 hour latency, the open and recent incidents with their timelines, the phone push status and the escalation settings. The owner's",
+    input: OpsOverviewInputSchema,
+    output: OpsOverviewSchema,
+  },
+  "ops.serviceSave": {
+    risk: "change",
+    summary:
+      "Add or change a watched service in a workspace: an address with the status, keyword or latency that counts as up, optional certificate and DNS checks, how bad an outage is, the project a fix opens in, and an optional monitoring read through an MCP connection. The owner's",
+    input: OpsServiceSaveInputSchema,
+    output: OpsServiceViewSchema,
+  },
+  "ops.serviceRemove": {
+    risk: "change",
+    summary: "Stop watching a service. Its open incident is resolved. The owner's",
+    input: OpsServiceIdInputSchema,
+    output: z.object({ id: z.string() }),
+  },
+  "ops.checkNow": {
+    risk: "change",
+    summary: "Run every check of one watched service now. The owner's",
+    input: OpsServiceIdInputSchema,
+    output: OpsServiceViewSchema,
+  },
+  "ops.ack": {
+    risk: "change",
+    summary:
+      "Acknowledge an incident: the owner has seen it, so it stops alerting and leaves Decisions. It stays open until its checks are green. The owner's",
+    input: OpsAckInputSchema,
+    output: OpsIncidentSchema,
+  },
+  "ops.settings": {
+    risk: "change",
+    summary:
+      "Set how long an unanswered high incident waits before it alerts again (default 10 minutes) and how long checks stay green before an incident closes (default 10 minutes). The owner's",
+    input: OpsSettingsInputSchema,
+    output: OpsSettingsSchema,
+  },
+  "ops.phoneSetup": {
+    risk: "change",
+    summary:
+      "Set up the phone push through ntfy: makes a long random topic, stores it in secrets.age and returns it once, with the link for the QR code. Calling it again replaces the topic. Off until switched on. The owner's",
+    input: OpsPhoneSetupInputSchema,
+    output: OpsPhoneSetupResultSchema,
+  },
+  "ops.phoneSet": {
+    risk: "change",
+    summary:
+      "Switch the phone push on or off, set the address the phone reaches majhi on, and choose which decisions get Approve and Leave buttons (permissions, merges, drafts). The owner's",
+    input: OpsPhoneSetInputSchema,
+    output: OpsPhoneStatusSchema,
+  },
+  "ops.phoneTest": {
+    risk: "change",
+    summary: "Send one test push to the phone. The owner's",
+    input: z.object({}),
+    output: OpsPhoneTestResultSchema,
+  },
+  "ops.phoneForget": {
+    risk: "change",
+    summary: "Turn the phone push off and delete its topic and tokens. The owner's",
+    input: z.object({}),
+    output: OpsPhoneStatusSchema,
+  },
+  // Scorecard, trust ladder and money (5.18) -------------------------------------
+  "scorecard.get": {
+    risk: "read",
+    summary:
+      "What the captain did and how it turned out, today or this week: per workspace, per authority row and outbound channel, and per playbook. Actions, kept and overruled percent, tokens and dollars, owner minutes saved, and findings that became fixes. A captain lane sees its own workspace only",
+    input: ScorecardGetInputSchema,
+    output: ScorecardSchema,
+  },
+  "scorecard.setMinutes": {
+    risk: "change",
+    summary:
+      "Set the owner minutes one kept action of a kind saves (start, questions, approvals, upkeep, merge, push, own, draft, finding); leave minutes out for the default. The owner's",
+    input: ScorecardSetMinutesInputSchema,
+    output: z.object({ minutes: z.record(z.string(), z.number()) }),
+  },
+  "trust.list": {
+    risk: "read",
+    summary:
+      "The trust ladder: each authority row and outbound channel of a workspace with its setting, the last judged actions it is read on, and the playbooks the captain muted. Below 80 percent kept it drops to You or Draft by itself; above 95 percent it only proposes a promotion",
+    input: z.object({ org: z.string().optional() }),
+    output: TrustListSchema,
+  },
+  "trust.unmute": {
+    risk: "change",
+    summary: "Put a playbook the captain muted back on its old schedule. The owner's",
+    input: TrustUnmuteInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "trust.setWindow": {
+    risk: "change",
+    summary:
+      "Set how many of the last judged actions the trust ladder reads for each authority row, channel and playbook (3 to 200; leave window out for the default of 20). The owner's",
+    input: z.object({ window: z.number().int().min(3).max(200).optional() }),
+    output: z.object({ window: z.number().int() }),
+  },
+  "money.get": {
+    risk: "read",
+    summary:
+      "This month's spend against the one monthly ceiling, with the pace and where the month ends, and the profit and loss per workspace: spend against the retainer and the value of the time saved, from rates the owner entered (none are guessed)",
+    input: z.object({}),
+    output: MoneyStatusSchema,
+  },
+  "money.set": {
+    risk: "change",
+    summary:
+      "Set the monthly ceiling (a hard stop on new starts when reached) and a workspace's retainer and hourly rate. The owner's: the captain never changes its own ceiling",
+    input: MoneySetInputSchema,
+    output: MoneyStatusSchema,
+  },
+  // Checked hand-off (5.18) -------------------------------------------------------
+  "handoff.get": {
+    risk: "read",
+    summary:
+      "What the checked hand-off found for a task in review: the tests, build and lint of its project card, committed, merges cleanly, no secret, the brief's acceptance lines and the review notes, for its head commit now, with the last checks, the failed hand-offs in a row and whether the owner now decides",
+    input: HandoffGetInputSchema,
+    output: HandoffStateSchema,
+  },
+  "handoff.check": {
+    risk: "change",
+    summary:
+      "Check a task in review again: run its project card's tests, build and lint in its worktree and read the diff against the brief. The same head is not run twice unless force is set. Failures go back to the lead once per head; after three failed hand-offs in a row the owner decides",
+    input: HandoffCheckInputSchema,
+    output: HandoffStateSchema,
+  },
+  "economics.get": {
+    risk: "read",
+    summary:
+      "Per workspace, this week or this month against the one before: tasks shipped, agent hours, spend, the owner's minutes in reviews and decisions (estimated), and, from rates the owner entered, what the client pays and what is left. With no rate there is no margin. Flags: spend growing faster than shipped work, no shipped work in 14 days, spend near the retainer. A captain lane sees its own workspace only",
+    input: EconomicsGetInputSchema,
+    output: EconomicsSchema,
+  },
+  "findings.proposal": {
+    risk: "change",
+    summary:
+      "Draft a short proposal for an opportunity finding, in the workspace's voice with the business facts, as an email draft to the client's main contact. It goes through the outbound gate and waits for the owner. The owner's",
+    input: FindingProposalInputSchema,
+    output: FindingProposalResultSchema,
+  },
+  "findings.deadline": {
+    risk: "change",
+    summary:
+      "Add the deadline a grant or launch finding carries to the business deadlines, linked to the finding. The owner's confirmation of what a feed proposed",
+    input: FindingDeadlineInputSchema,
+    output: FindingDeadlineResultSchema,
   },
   // Business memory (5.19) -----------------------------------------------------
   "kb.list": {
@@ -925,6 +1256,34 @@ export const commands = {
     summary: "Delete a deadline. The owner only",
     input: DeadlineIdInputSchema,
     output: z.object({ id: z.number().int().positive() }),
+  },
+  // The agenda and the morning brief (5.18) -----------------------------------
+  "agenda.today": {
+    risk: "read",
+    summary:
+      "The owner's day in one call: today's brief, the ordered agenda (decisions, deadlines in the next 14 days, incidents and high findings, budget holds, playbook drafts, follow-ups due) cut at the owner's review budget into today and later, what is running, and the week's deadlines and goals. Computed in code. The owner only",
+    input: AgendaTodayInputSchema,
+    output: AgendaTodaySchema,
+  },
+  "agenda.configure": {
+    risk: "change",
+    summary:
+      "Set the owner's review time per day in minutes (default 45). It decides how much of the agenda shows as today. The owner only",
+    input: AgendaConfigureInputSchema,
+    output: AgendaTodaySchema,
+  },
+  "agenda.brief": {
+    risk: "change",
+    summary:
+      "Make today's morning brief now when it is missing (it is made once per day, at the brief hour or on the first open after it). The owner only",
+    input: AgendaBriefInputSchema,
+    output: AgendaTodaySchema,
+  },
+  "agenda.dismissBrief": {
+    risk: "change",
+    summary: "Dismiss the morning brief of a day on Today. The owner only",
+    input: AgendaDismissInputSchema,
+    output: z.object({ day: z.string() }),
   },
   "notify.pending": {
     risk: "read",
@@ -2210,7 +2569,8 @@ export const commands = {
   },
   "connect.cancel": {
     risk: "change",
-    summary: "Stop waiting for the owner in the browser. Nothing is saved and an old connection stays as it was",
+    summary:
+      "Stop waiting for the owner in the browser. Nothing is saved and an old connection stays as it was",
     input: ConnectFlowInputSchema,
     output: ConnectFlowViewSchema,
   },
@@ -2227,6 +2587,34 @@ export const commands = {
       "Disconnect a service: revokes the grant at the service when it supports that, deletes the tokens and removes the connection. Says what stays at the service when it cannot revoke",
     input: z.object({ connection: IdSchema }),
     output: ConnectDisconnectResultSchema,
+  },
+  "connect.appSetup": {
+    risk: "read",
+    summary:
+      "The guided setup of the app a service needs, for one workspace: the exact pages to open, the values to paste (redirect address, app name), what the app may do in plain words at read, readwrite or send access, and for Slack the manifest. Holds no secret",
+    input: AppSetupInputSchema,
+    output: AppSetupViewSchema,
+  },
+  "connect.appStatus": {
+    risk: "read",
+    summary:
+      "Which guided apps are set up for a workspace, and which majhi ships. Never returns a client ID or secret",
+    input: z.object({ org: IdSchema }),
+    output: AppSetupStatusSchema,
+  },
+  "connect.appSave": {
+    risk: "change",
+    summary:
+      "Save the owner's app for a workspace: a Google client file (parsed, a Desktop client only), a client ID and secret, or Slack and Discord tokens, which also connect the service. Secrets go straight to secrets.age and are never returned. Only the owner does this, on the Connections page",
+    input: AppSetupSaveInputSchema,
+    output: AppSetupSaveResultSchema,
+  },
+  "connect.appForget": {
+    risk: "destructive",
+    summary:
+      "Remove a workspace's saved app (its client ID and secret). Connections already made keep working until their tokens end",
+    input: AppSetupForgetInputSchema,
+    output: z.object({ removed: z.boolean() }),
   },
   "connect.needScope": {
     risk: "change",

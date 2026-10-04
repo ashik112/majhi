@@ -19,14 +19,16 @@ import { CaptainHeader } from "./header";
 import { FullLog } from "./log";
 import { NowColumn } from "./now-column";
 import { wsTab } from "./panel-model";
+import { ScorecardSheet } from "./scorecard";
 import { dayLabel, SummaryTime, SummaryView } from "./summary";
 
-type Open = "delegation" | "log" | "summary" | "findings";
+type Open = "delegation" | "log" | "summary" | "findings" | "scorecard";
 
 /** The sheet an old `?tab=` link asked for: Rules is the delegation grid, Log is the log. */
 function sheetOf(tab: string | undefined): Open | undefined {
   if (tab === "rules") return "delegation";
   if (tab === "log") return "log";
+  if (tab === "findings") return "findings";
   return undefined;
 }
 
@@ -90,6 +92,7 @@ export function CaptainView() {
         now={now}
         onDelegation={() => setOpen("delegation")}
         onSummary={openSummary}
+        onScorecard={() => setOpen("scorecard")}
       />
       <div className="grid min-h-0 min-w-0 flex-1 gap-3 max-[999px]:overflow-y-auto min-[1000px]:grid-cols-[minmax(0,1fr)_minmax(340px,420px)] min-[1000px]:grid-rows-[minmax(0,1fr)]">
         <section
@@ -113,9 +116,14 @@ export function CaptainView() {
           <FullLog orgs={status.orgs} now={now} />
         </Sheet>
       )}
+      {open === "scorecard" && (
+        <Sheet title="Scorecard" subtitle="What the captain did and how it turned out" onClose={close} wide>
+          <ScorecardSheet />
+        </Sheet>
+      )}
       {open === "findings" && status && (
         <Sheet title="Findings" subtitle="What the captain and your agents noticed" onClose={close} wide>
-          <FindingsSheet orgs={status.orgs} now={now} />
+          <FindingsSheet orgs={status.orgs} now={now} focus={Number(search.id) || undefined} />
         </Sheet>
       )}
       {open === "summary" && summary && (

@@ -5,6 +5,13 @@ import { expect, type Page, test } from "@playwright/test";
 test.describe.configure({ mode: "serial" });
 
 const nav = (page: Page) => page.getByRole("navigation", { name: "Main" });
+/** A page behind the Setup row: open the menu and pick the page. */
+const setupItem = async (page: Page, name: RegExp) => {
+  await nav(page)
+    .getByRole("button", { name: /^Setup/ })
+    .click();
+  return page.getByRole("menu", { name: "Setup" }).getByRole("menuitem", { name });
+};
 const board = (page: Page) => page.getByRole("heading", { name: "Board", exact: true });
 
 test.beforeEach(async ({ context }) => {
@@ -15,7 +22,8 @@ test("the sidebar links to every page, and the old addresses land on the new one
   await page.goto("/");
   await expect(board(page)).toBeVisible();
   await expect(nav(page).getByRole("link", { name: "Board" })).toHaveAttribute("aria-current", "page");
-  await expect(nav(page).getByRole("link", { name: /^Agents/ })).toContainText("11");
+  await expect(await setupItem(page, /^Agents/)).toContainText("11");
+  await page.keyboard.press("Escape");
 
   for (const [name, path] of [
     ["Agents", "/agents"],
@@ -25,14 +33,10 @@ test("the sidebar links to every page, and the old addresses land on the new one
     ["Hub setup", "/setup"],
     ["Projects and links", "/projects"],
   ] as const) {
-    await nav(page)
-      .getByRole("link", { name: new RegExp(`^${name}`) })
-      .click();
+    await (await setupItem(page, new RegExp(`^${name}`))).click();
     await expect(page).toHaveURL(new RegExp(`${path}$`));
-    await expect(nav(page).getByRole("link", { name: new RegExp(`^${name}`) })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    // The Setup row is selected and names the page.
+    await expect(nav(page).getByRole("button", { name: /^Setup/ })).toContainText(name);
   }
 
   // Workspaces open from the switcher at the top.
@@ -58,7 +62,8 @@ test("the banner shows what needs the owner, and the sidebar counts it", async (
   await banner.getByRole("button", { name: "Accounts" }).click();
   await expect(page).toHaveURL(/\/accounts\?account=claude-legacy$/);
   await expect(page.getByRole("region", { name: "Account details" })).toContainText("claude-legacy");
-  await expect(nav(page).getByRole("link", { name: /^Accounts/ })).toContainText("An account needs you");
+  await expect(await setupItem(page, /^Accounts/)).toContainText("An account needs you");
+  await page.keyboard.press("Escape");
 
   const pulse = page.getByRole("region", { name: "Agents right now" });
   await expect(pulse).toContainText("Working");
@@ -193,9 +198,7 @@ test("the workspace filter is remembered, keeps URLs clean, and narrows the boar
   await expect(page.getByText("1 open")).toBeVisible();
 
   // The filter goes with the owner to a page and back, and the dialog opens on that workspace's projects.
-  await nav(page)
-    .getByRole("link", { name: /^Agents/ })
-    .click();
+  await (await setupItem(page, /^Agents/)).click();
   await expect(page).toHaveURL(/\/agents$/);
   await page.keyboard.press("n");
   const dialog = page.getByRole("dialog", { name: "New task" });

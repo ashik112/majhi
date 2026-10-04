@@ -88,6 +88,7 @@ const ROWS = (
   approvals: answers ? "decide" : "ask",
   upkeep: upkeep ? "decide" : "ask",
   merge: merge ? "decide" : "ask",
+  own: "ask",
   push: push ? "decide" : "ask",
 });
 const RUNS_ROWS = ROWS(true, true, true, false, false);
@@ -495,7 +496,13 @@ function autonomy(s: Scenario): AutonomyStatus {
             percent: 127,
             reached: true,
           },
-          { org: "initech", name: "Initech", used: { tokens: 3_000_000, cost: 8.4 }, percent: 0, reached: false },
+          {
+            org: "initech",
+            name: "Initech",
+            used: { tokens: 3_000_000, cost: 8.4 },
+            percent: 0,
+            reached: false,
+          },
           {
             org: "umbrella",
             name: LONG,
@@ -775,7 +782,7 @@ for (const [w, h] of [
     test(`on ${w} ${theme}`, async ({ page }) => {
       await open(page, "/captain", w, h, theme, REAL_ON);
       await expect(page.getByRole("region", { name: "Needs you" })).toBeVisible();
-      await expect(page.getByText("On: 2 running, 3 next. 5 decisions wait for you.")).toBeVisible();
+      await expect(page.getByText("On: 2 running, 3 next. 5 decisions need you.")).toBeVisible();
       await expect(page.getByRole("tab")).toHaveCount(0);
       await page.screenshot({ path: `${SHOTS}/on-${w}-${theme}.png` });
       await noPageScroll(page);
@@ -892,7 +899,7 @@ test("Needs you shows two whole rows and links to the rest, answered inline", as
   await expect(box.getByRole("link", { name: "All 5 in Decisions" })).toBeVisible();
   await box.locator("[data-decision]").first().getByRole("button", { name: "Merge", exact: true }).click();
   await expect(box.locator("[data-decision]")).toHaveCount(2);
-  await expect(page.getByText("4 decisions wait for you.")).toBeVisible();
+  await expect(page.getByText("4 decisions need you.")).toBeVisible();
 });
 
 test("the turn with 40 tool calls folds into one line", async ({ page }) => {
@@ -1070,10 +1077,10 @@ test("cohesion rules: every screen counts the same decisions", async ({ page }) 
   await expect(page.getByRole("button", { name: "Decisions, 5 need you" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Waiting" })).toBeVisible();
   await page.goto("/captain");
-  await expect(page.getByText("5 decisions wait for you.")).toBeVisible();
+  await expect(page.getByText("5 decisions need you.")).toBeVisible();
   await expect(page.getByRole("region", { name: "Needs you" })).toContainText("5");
   await page.goto("/decisions");
-  await expect(page.getByText("5 waiting for you")).toBeVisible();
+  await expect(page.getByText("5 need you")).toBeVisible();
 });
 
 test("cohesion rules: a kind has one name in the chips and the rows", async ({ page }) => {
@@ -1111,20 +1118,22 @@ test("cohesion rules: the update row never hides a navigation row", async ({ pag
   const region = page.getByRole("region", { name: "Update ready" });
   await expect(region).toBeVisible();
   const nav = page.getByRole("navigation", { name: "Main" });
-  for (const name of [/Hub setup/, /Health and usage/, /Audit log/]) {
+  // The pages set up once sit behind one Setup row, so the sidebar is the same height on any window.
+  const rows = [/^Today/, /^Decisions/, /^Board/, /^Chats/, /^Business/, /^Playbooks/];
+  for (const name of rows) {
     await expect(nav.getByRole("link", { name })).toBeInViewport();
   }
+  await expect(nav.getByRole("button", { name: /^Setup/ })).toBeInViewport();
   for (const [w, h] of [
     [1100, 760],
     [900, 700],
   ] as const) {
     await openCohesion(page, "/", w, h, "dark");
     await expect(region).toBeInViewport();
-    for (const name of [/Hub setup/, /Health and usage/, /Audit log/]) {
-      const link = nav.getByRole("link", { name });
-      await link.scrollIntoViewIfNeeded();
-      await expect(link).toBeInViewport();
+    for (const name of rows) {
+      await expect(nav.getByRole("link", { name })).toBeInViewport();
     }
+    await expect(nav.getByRole("button", { name: /^Setup/ })).toBeInViewport();
   }
   await region.getByRole("button", { name: /Update ready/ }).click();
   await expect(region.getByRole("list", { name: "Changes" })).toContainText("feat(health)");

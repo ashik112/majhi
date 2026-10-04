@@ -89,6 +89,8 @@ export const ConnectFlowViewSchema = z.object({
   url: z.string().optional(),
   /** The helper opened the page. */
   opened: z.boolean(),
+  /** The device code the owner types on the page, for a sign-in with a code. Not a secret. */
+  code: z.string().optional(),
   /** Who signed in, once known. */
   account: z.string().optional(),
   /** For `confirm-account`: the account the connection had. */
@@ -110,8 +112,11 @@ export const ConnectCatalogSchema = z.object({
 });
 export type ConnectCatalog = z.infer<typeof ConnectCatalogSchema>;
 
-/** How much access to ask for: read first, write only when the owner turns it on. */
-export const ConnectAccessSchema = z.enum(["read", "readwrite"]);
+/**
+ * How much access to ask for: read first; `readwrite` adds drafts and edits when the owner turns on a
+ * pack that writes; `send` adds sending, only for a pack the owner lets send.
+ */
+export const ConnectAccessSchema = z.enum(["read", "readwrite", "send"]);
 export type ConnectAccess = z.infer<typeof ConnectAccessSchema>;
 
 export const ConnectStartInputSchema = z.object({

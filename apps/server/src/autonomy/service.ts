@@ -44,11 +44,14 @@ import { redact, redactText } from "../admin/policy.ts";
 import type { LaneReads } from "../admin/service.ts";
 import { summarize } from "../admin/summary.ts";
 import type { AdminCaller } from "../admin/tokens.ts";
+import { type Overnight, overnightOf } from "../agenda/overnight.ts";
+import { briefDue } from "../agenda/time.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { LaneGate } from "../captain/lane-gate.ts";
 import { forceOrg, narrow, readRefusal, type ScopeWorld } from "../captain/lane-scope.ts";
 import type { Lanes } from "../captain/lanes.ts";
 import { askedWhy, authorityOf, workspaceIds } from "../captain/levels.ts";
+import { classifyOwnWork, scopeOfTask } from "../captain/own-work.ts";
 import { permissionVerdict } from "../captain/permission-rules.ts";
 import {
   loopLine,
@@ -145,6 +148,13 @@ export interface AutonomyDeps {
   decisions?: () => Promise<{ id: string; title: string; org?: string | undefined }[]>;
   /** Whether the owner is typing in a task now: the captain waits (SPEC 5.18, Presence). */
   typing?: (task: string) => boolean;
+  /** Projects the owner protects: Own work never approves a change in one of them. */
+  protectedProjects?: () => Promise<ReadonlySet<string>>;
+  /**
+   * Why the one monthly ceiling holds new starts now, or undefined. Read where something would start;
+   * a turn that is running is never stopped by it (SPEC 5.18, one cost ceiling).
+   */
+  ceilingHeld?: () => string | undefined;
   now?: () => Date;
 }
 
@@ -214,6 +224,18 @@ export class AutonomyService {
 
   private now(): Date {
     return this.deps.now?.() ?? new Date();
+  }
+
+  /**
+   * Minutes the queue has held ready work while no step was taken, for majhi's self-watch. Undefined when
+   * the switch is off, nothing is ready, or it is moving.
+   */
+  queueStall(): number | undefined {
+    const state = this.repo.state();
+    if (state.mode !== "on" || !state.queue.some((q) => q.waitFor === undefined)) return undefined;
+    const since = state.lastTick ?? state.queuedAt;
+    if (since === undefined) return undefined;
+    return Math.max(0, (this.now().getTime() - Date.parse(since)) / 60_000);
   }
 
   mode(): AutonomyMode {
@@ -1408,6 +1430,9 @@ export class AutonomyService {
     raw: Record<string, unknown>,
   ): Promise<string | undefined> {
     if (this.repo.state().mode !== "on" || !startsWork(command, input)) return undefined;
+    const ceiling = this.deps.ceilingHeld?.();
+    if (ceiling !== undefined)
+      return `Not started: ${ceiling}. It can start when the owner raises the ceiling or the month ends.`;
     const { world, sections } = await this.context(caller, command, raw);
     const hold = holdCovering(
       await this.refreshHolds(),
@@ -2174,7 +2199,15 @@ export class AutonomyService {
     if (item === undefined) return fail(`There is no card ${input.item} in ${input.task}.`);
     const row: AuthorityRow = item.type === "permission" ? "approvals" : "questions";
     const answerable = ["permission", "choice", "ask", "owner-question"].includes(item.type);
-    if (authority !== undefined && answerable && authority[row] !== "decide") {
+    // Own work lets the captain allow a routine request of a task it started, whatever the Approvals row says.
+    const viaOwn =
+      authority !== undefined &&
+      item.type === "permission" &&
+      authority[row] !== "decide" &&
+      authority.own === "decide" &&
+      inLane &&
+      this.repo.isAutonomous(input.task);
+    if (authority !== undefined && answerable && authority[row] !== "decide" && !viaOwn) {
       const names = orgNames(await this.deps.config.sections());
       return fail(`Refused: ${askedWhy(row, orgName(lane ?? PRIVATE, names))}. Leave it to the owner.`);
     }
@@ -2191,6 +2224,21 @@ export class AutonomyService {
       const rule = permissionVerdict(item.title);
       const kind = item.options.find((o) => o.id === option)?.kind;
       if (rule.decision === "unreadable") return fail(`Refused: ${rule.why}. Leave it to the owner.`);
+      if (viaOwn) {
+        const task = this.deps.store.tasks.get(input.task);
+        const scope =
+          task === undefined || task.noAutonomy === true
+            ? undefined
+            : scopeOfTask(task, (await this.deps.protectedProjects?.()) ?? new Set<string>());
+        const verdict = scope === undefined ? undefined : classifyOwnWork(item.title, scope);
+        if (kind !== "allow_once" || verdict?.decision !== "approve") {
+          const why =
+            verdict?.decision === "owner"
+              ? verdict.why
+              : "only an Allow once of a routine request is its to give";
+          return fail(`Refused: Own work does not cover it: ${why}. Leave it to the owner.`);
+        }
+      }
       if (rule.decision === "deny" && kind !== "reject_once" && kind !== "reject_always") {
         return fail(`Refused: ${rule.why}. Reject it or leave it to the owner.`);
       }
@@ -2359,6 +2407,31 @@ export class AutonomyService {
     this.event({ kind: "summary", text: line });
     this.deps.notify?.(summary, line);
     return summary;
+  }
+
+  /**
+   * What autonomous mode did in a span (UTC ISO, `to` excluded) and what it cost, as counts for the morning
+   * brief (SPEC 5.18). Read-only: it writes nothing and asks no model.
+   */
+  async overnight(from: string, to: string): Promise<Overnight & { spent: number; budget?: number }> {
+    const events = this.repo.eventsBetween(from, to);
+    const upkeep = (this.deps.upkeepBetween?.(from, to) ?? []).filter((a) => a.outcome === "done");
+    const found = overnightOf({
+      events,
+      title: (task) => this.deps.store.tasks.get(task)?.title,
+      upkeep,
+    });
+    const spent = this.repo.spendRows(from, to, this.spendChats()).reduce((n, r) => n + r.cost, 0);
+    const cap = (await this.deps.config.settings()).autonomy.day.cost;
+    return { ...found, spent: Math.round(spent * 100) / 100, ...(cap === undefined ? {} : { budget: cap }) };
+  }
+
+  /** The titles of what the captain plans next, in its queue's order, for the brief and Today. */
+  queueTitles(max: number): string[] {
+    return this.repo
+      .state()
+      .queue.slice(0, max)
+      .map((q) => q.title);
   }
 
   /** Notes today's caps, so the summary of today compares against what applied. Never throws. */
@@ -2638,6 +2711,8 @@ export class AutonomyService {
    * the lane's account is under its floor. Undefined: it may run. Rules and Laya go on either way.
    */
   async laneRest(org: string, account: string): Promise<string | undefined> {
+    const ceiling = this.deps.ceilingHeld?.();
+    if (ceiling !== undefined) return ceiling;
     const m = await this.measure();
     if (m.spend.total.reached) return "the day budget is used up";
     const own = m.spend.orgs.find((o) => o.org === org);
@@ -2738,8 +2813,7 @@ export function zoneOr(tz: string | undefined): string {
 
 /** When the day's summary is due: `HH:MM` on that local day. */
 export function summaryDue(day: string, clock: string, tz: string): Date {
-  const [h = 0, m = 0] = clock.split(":").map(Number);
-  return new Date(dayStart(day, tz).getTime() + (h * 60 + m) * 60_000);
+  return briefDue(day, clock, tz);
 }
 
 function ok(output: unknown): ToolResult {

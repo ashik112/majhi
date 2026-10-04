@@ -20,6 +20,7 @@ import { zoneOr } from "../autonomy/service.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
+import { type ChorePlaybooks, DefaultChorePlays } from "../playbooks/chore-plays.ts";
 import type { Store } from "../store/index.ts";
 import { addDays, localDay } from "../usage/ranges.ts";
 import { createChores, memoryKey } from "./chores.ts";
@@ -29,7 +30,7 @@ import { authorityOf, choresNow, effectiveAuthority, migratePickOrgs, workspaceI
 import { laneOfScope } from "./memory-scopes.ts";
 import type { CaptainPorts } from "./ports.ts";
 import { CaptainRepo, type StoredAction } from "./repo.ts";
-import { DAILY_CHORES, dailyCaps, MEMORY_WAITING, restWhy } from "./rules.ts";
+import { dailyCaps, MEMORY_WAITING, restWhy } from "./rules.ts";
 import { ChoreRunner, type Workspace } from "./runner.ts";
 import { summaryOf } from "./summary.ts";
 import { type Identity, revertMerge } from "./undo.ts";
@@ -94,9 +95,14 @@ export class CaptainService {
   /** The captain as last read, so a room write can tell the captain's own cards at once. */
   private boss: string | undefined;
   private closed = false;
+  /** When each chore is due and whether it is on: the playbooks. Replaced by the scheduler with the owner's changes. */
+  private plays: ChorePlaybooks;
+  /** The rest of the playbook scheduler, run in the same minute sweep. */
+  private playbookSweep: (() => Promise<void>) | undefined;
   private readonly pending = new Map<string, { timer: NodeJS.Timeout; why: string; subject?: string }>();
 
   constructor(private readonly deps: CaptainDeps) {
+    this.plays = new DefaultChorePlays(undefined, () => this.now());
     this.repo = new CaptainRepo(deps.store.raw);
     this.laneGate = new LaneGate({
       repo: this.repo,
@@ -120,6 +126,7 @@ export class CaptainService {
         return chat === undefined ? 0 : this.repo.laneSpend(chat, since).tokens;
       },
       chores: createChores(deps.ports, () => this.now()),
+      enabled: (org, chore) => this.plays.enabled(org, chore),
       changed: () => this.deps.events.emit(["captain"]),
       capAsked: (ask) => {
         this.deps.tell(`captain-cap:${ask.org}:${ask.chore}:${ask.day}`, ask.text);
@@ -130,6 +137,12 @@ export class CaptainService {
 
   private now(): Date {
     return this.deps.now?.() ?? new Date();
+  }
+
+  /** The playbook scheduler takes over when the chores are due and whether they are on, and sweeps the rest. */
+  usePlaybooks(plays: ChorePlaybooks, sweep: () => Promise<void>): void {
+    this.plays = plays;
+    this.playbookSweep = sweep;
   }
 
   /**
@@ -199,16 +212,14 @@ export class CaptainService {
       if (ws === undefined || ws.rest !== undefined) continue;
       for (const chore of choresNow(ws.authority, ws.mode)) {
         if (this.runner.running(org, chore) || this.repo.chore(org, chore).offAt !== undefined) continue;
-        if (DAILY_CHORES.includes(chore)) {
-          if (this.repo.runsToday(org, chore, ws.day) > 0) continue;
-          await this.runner.start(org, chore, "Daily run");
-          continue;
-        }
-        const last = this.repo.lastRun(org, chore);
-        if (last !== undefined && this.now().getTime() - Date.parse(last) < HOURLY_MS) continue;
-        await this.runner.start(org, chore, "Hourly check");
+        const why = this.plays.due(org, chore, ws, {
+          any: this.repo.lastRun(org, chore),
+          worked: this.repo.lastWorkedRun(org, chore),
+        });
+        if (why !== undefined) await this.runner.start(org, chore, why);
       }
     }
+    await this.playbookSweep?.().catch(() => undefined);
     await this.dailySummary();
   }
 

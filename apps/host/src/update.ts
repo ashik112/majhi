@@ -137,6 +137,7 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
       throw new Error(`${errorMessage(err)}${reason === undefined ? "" : `\n${reason}`}`);
     }
 
+    await cleanAfterUpdate(step, say);
     await say("Installing the new host helper");
     const replaced = await installBundle(options, env);
     status.state = "done";
@@ -272,6 +273,34 @@ async function keepPrevious(step: Step, image: string, keep: string): Promise<st
   if (id === "") return undefined;
   await step("keep the running image", ["tag", id, keep], KEY_TIMEOUT_MS);
   return id;
+}
+
+/** Build cache an update keeps, so the next build stays fast without the cache growing for ever. */
+export const KEEP_BUILD_CACHE = "3gb";
+
+/**
+ * Every update builds new images; the ones they replace and the build cache would otherwise stay on
+ * the Docker disk for good (tens of GB after a few days of updates). The running images and the
+ * `previous` tags are in use, so pruning never touches them. Best effort: a failed clean-up never
+ * fails an update that already runs.
+ */
+export async function cleanAfterUpdate(step: Step, say: (text: string) => Promise<void>): Promise<void> {
+  await say("Removing the images and build cache the update replaced");
+  await step("remove replaced images", ["image", "prune", "-f"], KEY_TIMEOUT_MS).catch(() => undefined);
+  // `--max-used-space` is Docker 28+; older Docker calls it `--keep-storage`.
+  await step(
+    "trim the build cache",
+    ["builder", "prune", "-f", "--max-used-space", KEEP_BUILD_CACHE],
+    BUILD_TIMEOUT_MS,
+  )
+    .catch(() =>
+      step(
+        "trim the build cache",
+        ["builder", "prune", "-f", "--keep-storage", KEEP_BUILD_CACHE],
+        BUILD_TIMEOUT_MS,
+      ),
+    )
+    .catch(() => undefined);
 }
 
 /** Puts the previous images and mounts back and starts majhi on them. */

@@ -18,7 +18,7 @@ export const LabelSourceSchema = z.enum(["outcome", "owner", "teacher"]);
 export type LabelSource = z.infer<typeof LabelSourceSchema>;
 
 /** What a decision is linked to until its outcome is known. */
-export const LinkKindSchema = z.enum(["task", "wake", "memory", "tracker"]);
+export const LinkKindSchema = z.enum(["task", "wake", "memory", "tracker", "finding", "own-work", "turn"]);
 export type LinkKind = z.infer<typeof LinkKindSchema>;
 
 /** The right answer to one question of one decision, and how we know. */
@@ -161,5 +161,15 @@ export const SlotStatusSchema = z.object({
   fixtures: EvalReportSchema.optional(),
   /** True when this slot has a built-in fixture set. */
   hasFixtures: z.boolean(),
+  /** The run before the last one on the same set, so the Hub can show a drift. */
+  previous: z
+    .object({
+      at: z.string(),
+      accuracy: z.number().min(0).max(1).nullable(),
+      precision: z.number().min(0).max(1).nullable(),
+    })
+    .optional(),
+  /** Why the slot got worse since the run before, or is live under its target: the weekly eval files a finding for it. */
+  regressed: z.string().optional(),
 });
 export type SlotStatus = z.infer<typeof SlotStatusSchema>;

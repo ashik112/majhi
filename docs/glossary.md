@@ -6,8 +6,37 @@ One word for one thing in the app's text. `apps/web/src/lib/naming.test.ts` fail
 |---|---|---|
 | Something that waits for the owner | Decision (place: Decisions; lamp word: Needs you) | inbox item, card, notification |
 | Count of those | The length of `decisions.list` (`useNeedsYou`) | a count of tasks or cards |
-| Decision kinds | Ship, Question, Access, Money, Paused | Review, Ready for review, Approvals, Budget or Daily limit as a kind |
+| Decision kinds | Ship, Question, Access, Money, Paused, Trust, Incident | Review, Ready for review, Approvals, Budget or Daily limit as a kind |
 | Work that stopped on the Board | Waiting (the column) | Needs you (the column) |
 | Failed health checks | N to fix | N need you |
 | What the captain may do in a workspace | The plain sentence from `authorityLine`: "In Acme you decide when work is merged." | Keeps things tidy, Runs it, Only when I ask |
 | Money limits | Budget | cap, daily limit |
+| The row that lets the captain approve routine requests of work it started | Own work | self-approve, auto-approve |
+| Approving or rejecting many decisions at once | Batch: "Approve N", "Leave N", "Approve all like this" | bulk, mass approve |
+| A confirmed outage of something watched, or a failing check of majhi itself | Incident (place: Watch) | alert, ticket, outage card |
+| The page of watched services and incidents | Watch | Uptime, Monitoring, Ops |
+| Telling majhi you saw an incident | Acknowledge | ack, dismiss, snooze |
+| The push to your phone | Phone push, through ntfy | SMS, pager, notification (for the push) |
+| What the captain did and how it turned out | Scorecard ("Kept 47/50, $3.10, ~2.5 h saved") | report card, KPIs, accuracy score |
+| A row dropping back to You by itself, or a channel to Draft | "went back to You" (Trust decision) | demoted, downgraded |
+| A proposal to let the captain decide more | "Let it decide", "Move to Batch" (Trust decision) | upgrade, promote automatically |
+| A playbook set to weekly because its findings were dismissed | "now runs weekly" (Undo) | muted, disabled |
+| The one monthly spend limit | Monthly ceiling | monthly budget, hard cap |
+| Spend against what a client pays | Profit and loss; "Retainer less spend"; per workspace, "Left" | margin, ROI |
+| What each workspace did and cost against the period before | Per workspace (week or month), Your time (est.) | client P&L, utilisation |
+| A grant, hackathon or launch found in a feed | Finding of source Grant or Launch; its deadline waits for "Add to deadlines" | lead, alert |
+| A list of ideas the captain makes from the owner's own work | Opportunities; "Draft a proposal" | leads, upsell queue |
+| The day's ordered list of what the owner should look at (decisions, incidents, drafts, findings, dates, follow-ups) | Agenda (place: Today); the header says "N on today's agenda", never "N need you" | to-do list, "N things need you" |
+| The text made each morning | Brief (the full sheet is still the Daily summary) | digest, briefing |
+| The owner's review time per day | Review time | review budget, minutes cap |
+| Laya reading a new finding | Laya suggests dismissing ("Dismiss as suggested", "Bring back") | auto-triage, AI filter |
+| Text from outside that tries to instruct an agent | Flagged ("its text tries to instruct an AI agent") | injection alert, malicious |
+| Laya's check of its own decisions each week | Laya check (a playbook); "Got worse" on a decision | model drift, regression alert |
+| Majhi's check of finished work before "Ready to ship" | Hand-off check; "Checked: tests 42 passed (31 s), build ok" | QA, validation, CI, gate |
+| A test that failed and then passed on a retry | flaky, so not green | unstable, intermittent |
+| A failed check sent back to the lead | "sent it to @lead" (once per commit) | rejected, bounced |
+| Three failed hand-offs in a row | "Checks failed 3 times in a row: you decide" | escalated |
+| The sidebar group of pages set up once | Setup (a menu); the page of machine settings is Hub setup | System, Settings |
+| Today's second column of spend, incidents and running work | Right now | Watch (that is the page of watched services) |
+| Counts that are chores, not decisions (lessons, checks, sign-ins) | "44 to review", "1 to fix", "2 to sign in", amber | red counts, "need you" |
+| A decision count in a sentence | "9 need you", "9 decisions need you" | "9 waiting for you", "9 decisions wait for you" |

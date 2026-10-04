@@ -2,9 +2,12 @@ import type { PageName } from "../../lib/pages";
 
 /** What each page is called in the sidebar, the palette and the shortcuts list. */
 export const PAGE_LABEL: Record<PageName, string> = {
+  today: "Today",
   board: "Board",
   chats: "Chats",
   captain: "Captain",
+  playbooks: "Playbooks",
+  watch: "Watch",
   limits: "Limits",
   decisions: "Decisions",
   business: "Business",
@@ -12,7 +15,7 @@ export const PAGE_LABEL: Record<PageName, string> = {
   accounts: "Accounts",
   connections: "Connections",
   projects: "Projects and links",
-  skills: "Skills",
+  skills: "Skills & MCP",
   memory: "Memory",
   automations: "Automations",
   orgs: "Workspaces",
@@ -23,9 +26,13 @@ export const PAGE_LABEL: Record<PageName, string> = {
 
 /** More words that find a page in the palette. */
 export const PAGE_KEYWORDS: Record<PageName, string> = {
+  today: "brief morning agenda day plan deadlines review time watch what needs me",
   board: "tasks home columns",
   chats: "conversations talk",
   captain: "boss chief of staff autonomous autopilot away rules log summary upkeep workspaces authority",
+  playbooks: "standing work packs upkeep goals outbound drafts gate cadence schedule uptime incidents",
+  watch:
+    "services uptime incidents down outage status ntfy phone push alerts escalation health certificate dns monitor",
   limits: "budget budgets spend cost daily weekly floors safety money raise",
   business:
     "knowledge base facts voice style people crm contacts leads investors clients deadlines hackathon grant launch renewal",
@@ -44,13 +51,20 @@ export const PAGE_KEYWORDS: Record<PageName, string> = {
 };
 
 /**
- * The sidebar under the daily rows (Board, Chats, Captain): the pages the owner sets up
- * once and tunes, then the ones opened rarely. Workspaces open from the switcher at the top.
+ * The pages behind the sidebar's one Setup row: what is set up once and tuned now and then. The
+ * daily rows (Today, Decisions, Watch, Board, Chats, Business, Captain, Playbooks) stay above it.
+ * Workspaces open from the switcher at the top.
  */
-export const NAV_GROUPS: readonly { label: string; pages: readonly PageName[] }[] = [
-  {
-    label: "Setup",
-    pages: ["agents", "accounts", "connections", "projects", "skills", "memory", "automations"],
-  },
-  { label: "System", pages: ["setup", "usage", "audit"] },
+export const SETUP_PAGES: readonly PageName[] = [
+  "agents",
+  "accounts",
+  "connections",
+  "projects",
+  "skills",
+  "memory",
+  "automations",
+  "limits",
+  "setup",
+  "usage",
+  "audit",
 ];

@@ -6,6 +6,7 @@ import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { GLASS_STRONG } from "@/lib/glass";
 import { useStartUpdate, useSystemVersion } from "@/lib/ops-queries";
+import { useAfterFirstPaint } from "@/lib/use-after-paint";
 import { changeSummary, updateNotice, workingText } from "./model";
 import { beginUpdateSession, useUpdateSession } from "./session";
 
@@ -16,7 +17,7 @@ import { beginUpdateSession, useUpdateSession } from "./session";
 export function UpdateNotice() {
   // While an update waits for the agents, look often so the "Updating majhi" screen opens in time.
   const [scheduledAt, setScheduledAt] = useState<string>();
-  const version = useSystemVersion(scheduledAt === undefined ? 60_000 : 3_000);
+  const version = useSystemVersion(scheduledAt === undefined ? 60_000 : 3_000, useAfterFirstPaint(6_000));
   const start = useStartUpdate();
   const session = useUpdateSession();
   const [open, setOpen] = useState(false);

@@ -19,8 +19,13 @@ const LAMP: Record<ConnectState, { lamp: LampState; word: string }> = {
 };
 
 /** True for a connection that signed in through Connect. */
-export function isOauth(view: Pick<ConnectionView, "fields">): boolean {
-  return view.fields.auth?.value === "oauth";
+export function isOauth(view: Pick<ConnectionView, "fields" | "type">): boolean {
+  return (
+    view.fields.auth?.value === "oauth" ||
+    view.type === "api" ||
+    view.type === "cli" ||
+    (view.type === "env" && view.fields.service?.value !== undefined)
+  );
 }
 
 /**
@@ -71,7 +76,13 @@ export function ConnectSection({ view, now }: { view: ConnectionView; now: numbe
           </p>
           <p className="text-base text-fg-muted text-pretty">
             {mine.account ? `Signed in as ${mine.account}. ` : "The service does not say which account. "}
-            {mine.renews ? "majhi renews the sign-in by itself." : "This sign-in cannot renew itself."}
+            {view.type === "cli"
+              ? "The tool keeps its sign-in in a folder of this workspace. Only runs of this workspace see it."
+              : view.type === "env"
+                ? "majhi holds the bot's tokens. They do not expire."
+                : mine.renews
+                  ? "majhi renews the sign-in by itself."
+                  : "This sign-in cannot renew itself."}
           </p>
           {needsYou && <p className="text-base text-amber text-pretty">{mine.reason}</p>}
           <ScopeList scopes={mine.scopes} />
@@ -81,7 +92,7 @@ export function ConnectSection({ view, now }: { view: ConnectionView; now: numbe
             </p>
           )}
           <div className="flex flex-wrap gap-2">
-            {mine.service !== undefined && (
+            {mine.service !== undefined && view.type !== "env" && (
               <Button
                 variant={needsYou ? "primary" : "secondary"}
                 disabled={start.isPending}

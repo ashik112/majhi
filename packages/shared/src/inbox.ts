@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DraftSchema } from "./playbooks.ts";
 import { TaskIdSchema } from "./tasks.ts";
 
 /**
@@ -16,6 +17,10 @@ export const OwnerDecisionKindSchema = z.enum([
   "paused",
   "sign-in",
   "secret",
+  "draft",
+  "batch",
+  "incident",
+  "trust",
 ]);
 export type OwnerDecisionKind = z.infer<typeof OwnerDecisionKindSchema>;
 
@@ -26,6 +31,11 @@ export const DecisionOptionSchema = z.object({
   primary: z.literal(true).optional(),
   /** The answer needs typed text (Ask for changes, a free-text answer): the screen opens a reply box and sends it as `text`. */
   text: z.literal(true).optional(),
+  /**
+   * What a batch does with this option: `approve` is what "Approve" takes (allow once, merge, resume,
+   * raise), `leave` is what "Leave" takes (reject, keep the budget). Absent: a batch never picks it.
+   */
+  effect: z.enum(["approve", "leave"]).optional(),
 });
 export type DecisionOption = z.infer<typeof DecisionOptionSchema>;
 
@@ -44,6 +54,8 @@ export const DecisionLinkSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("captain") }),
   z.object({ kind: z.literal("limits") }),
   z.object({ kind: z.literal("account"), id: z.string().min(1) }),
+  z.object({ kind: z.literal("playbooks") }),
+  z.object({ kind: z.literal("watch") }),
 ]);
 export type DecisionLink = z.infer<typeof DecisionLinkSchema>;
 
@@ -106,6 +118,8 @@ export const DecisionDetailSchema = z.object({
   questions: z
     .array(z.object({ question: z.string(), options: z.array(z.string()), freeText: z.boolean() }))
     .optional(),
+  /** The whole text of an outbound draft, with its target and voice. */
+  draft: DraftSchema.optional(),
   /** Options that cannot be taken now, with the reason (Merge when nothing is committed). */
   blocked: z.record(z.string(), z.string()).optional(),
 });
@@ -143,6 +157,10 @@ export const DECISION_KIND_LABEL: Record<OwnerDecisionKind, string> = {
   paused: "Paused",
   "sign-in": "Access",
   secret: "Access",
+  draft: "Draft",
+  batch: "Batch",
+  incident: "Incident",
+  trust: "Trust",
 };
 
 export function roomDecisionId(task: string, item: string): string {
@@ -162,7 +180,12 @@ export type ParsedDecisionId =
   | { kind: "room"; task: string; item: string }
   | { kind: "cap"; org: string; chore: string; day: string }
   | { kind: "budget"; scope: string; day: string }
-  | { kind: "signin"; account: string };
+  | { kind: "signin"; account: string }
+  | { kind: "draft"; id: number }
+  | { kind: "batch"; org: string; channel: string }
+  | { kind: "incident"; id: number }
+  | { kind: "trust"; id: number }
+  | { kind: "ceiling"; month: string };
 
 /** The parts of a decision id, or undefined when it is none of ours. Ids are short and hold no secrets. */
 export function parseDecisionId(id: string): ParsedDecisionId | undefined {
@@ -179,10 +202,132 @@ export function parseDecisionId(id: string): ParsedDecisionId | undefined {
   if (head === "signin" && rest.length >= 1 && rest[0] !== "") {
     return { kind: "signin", account: rest.join(":") };
   }
+  if (head === "draft" && rest.length === 1 && /^[1-9]\d*$/.test(rest[0] ?? "")) {
+    return { kind: "draft", id: Number(rest[0]) };
+  }
+  if (head === "batch" && rest.length === 2 && rest.every((p) => p !== "")) {
+    return { kind: "batch", org: rest[0] as string, channel: rest[1] as string };
+  }
+  if (head === "incident" && rest.length === 1 && /^[1-9]\d*$/.test(rest[0] ?? "")) {
+    return { kind: "incident", id: Number(rest[0]) };
+  }
+  if (head === "trust" && rest.length === 1 && /^[1-9]\d*$/.test(rest[0] ?? "")) {
+    return { kind: "trust", id: Number(rest[0]) };
+  }
+  if (head === "ceiling" && rest.length === 1 && /^\d{4}-\d{2}$/.test(rest[0] ?? "")) {
+    return { kind: "ceiling", month: rest[0] as string };
+  }
   return undefined;
 }
 
 /** "4 decisions need you", the one line a burst of alerts becomes. */
 export function decisionsNeedText(count: number): string {
   return count === 1 ? "1 decision needs you" : `${count} decisions need you`;
+}
+
+// ---------------------------------------------------------------------------
+// Batches (SPEC 5.18, Batch approve)
+
+export const BatchIntentSchema = z.enum(["approve", "leave"]);
+export type BatchIntent = z.infer<typeof BatchIntentSchema>;
+
+/** The most decisions one batch takes. */
+export const BATCH_MAX = 1000;
+
+/** `decisions.answerBatch`: `batch` is the client's key for this click, so a second send of it changes nothing. */
+export const DecisionBatchInputSchema = z.object({
+  batch: z.string().trim().min(8).max(80),
+  intent: BatchIntentSchema,
+  ids: z.array(z.string().min(1).max(300)).min(1).max(BATCH_MAX),
+});
+export type DecisionBatchInput = z.infer<typeof DecisionBatchInputSchema>;
+
+export const DecisionBatchResultSchema = z.object({
+  batch: z.string(),
+  intent: BatchIntentSchema,
+  /** Answered. */
+  done: z.array(z.string()),
+  /** Not taken, with the reason: no button of that kind, gone already, the captain recommends otherwise. */
+  skipped: z.array(z.object({ id: z.string(), reason: z.string() })),
+  /** Tried and refused or broken, with the error. The rest of the batch went on. */
+  failed: z.array(z.object({ id: z.string(), error: z.string() })),
+  /** What still waits. */
+  decisions: z.array(OwnerDecisionSchema),
+});
+export type DecisionBatchResult = z.infer<typeof DecisionBatchResultSchema>;
+
+type Batchable = Pick<OwnerDecision, "id" | "kind" | "options" | "suggestion">;
+
+/**
+ * The option a batch takes for a decision, or why it takes none. "Approve" never overrides a
+ * recommendation to do something else: a request the captain recommends rejecting is not approved in bulk.
+ */
+export function batchPick(
+  decision: Pick<OwnerDecision, "options" | "suggestion">,
+  intent: BatchIntent,
+): { option: DecisionOption } | { reason: string } {
+  const option = decision.options.find((o) => o.effect === intent && o.text !== true);
+  if (option === undefined) {
+    return {
+      reason:
+        intent === "approve" ? "It has no button to approve in bulk" : "It has no button to leave in bulk",
+    };
+  }
+  const suggested = decision.suggestion;
+  if (intent === "approve" && suggested !== undefined && suggested.option !== option.id) {
+    const other = decision.options.find((o) => o.id === suggested.option);
+    return {
+      reason: `${suggested.by === "captain" ? "The captain" : "The agent"} suggests ${other?.label ?? "something else"}`,
+    };
+  }
+  return { option };
+}
+
+/** The action in two or three words: "allow once", "merge", "keep the budget". */
+function batchLabel(kind: OwnerDecisionKind, option: DecisionOption): string {
+  if (kind === "approval" && option.effect === "leave") return "reject";
+  if ((kind === "budget" || kind === "cap") && option.effect === "leave") return "keep the budget";
+  if ((kind === "budget" || kind === "cap") && option.effect === "approve") return "raise";
+  return option.label.toLowerCase();
+}
+
+/** What a batch click will do, counted by action: ids it takes, how many wait, "allow once 9, merge 2". */
+export function batchPlan(
+  decisions: readonly Batchable[],
+  intent: BatchIntent,
+): { ids: string[]; skipped: number; counts: { label: string; count: number }[] } {
+  const counts = new Map<string, number>();
+  const ids: string[] = [];
+  let skipped = 0;
+  for (const d of decisions) {
+    const pick = batchPick(d, intent);
+    if ("reason" in pick) {
+      skipped++;
+      continue;
+    }
+    ids.push(d.id);
+    const label = batchLabel(d.kind, pick.option);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return { ids, skipped, counts: [...counts].map(([label, count]) => ({ label, count })) };
+}
+
+/** One line of what Approve N or Leave N will do: "Allow once 9, merge 2. 1 will wait for you." */
+export function batchSummary(decisions: readonly Batchable[], intent: BatchIntent): string {
+  const plan = batchPlan(decisions, intent);
+  if (plan.ids.length === 0) return "None of these can be done in bulk.";
+  const parts = plan.counts.map((c) => `${c.label} ${c.count}`);
+  const first = parts[0] ?? "";
+  const line = [`${first.charAt(0).toUpperCase()}${first.slice(1)}`, ...parts.slice(1)].join(", ");
+  return plan.skipped === 0 ? `${line}.` : `${line}. ${plan.skipped} will wait for you.`;
+}
+
+/** The decisions that are like this one: the same kind in the same task (or workspace, when it has no task). */
+export function likeThis<T extends Pick<OwnerDecision, "kind" | "task" | "org">>(
+  all: readonly T[],
+  one: T,
+): T[] {
+  return all.filter(
+    (d) => d.kind === one.kind && d.task === one.task && (d.task !== undefined || d.org === one.org),
+  );
 }

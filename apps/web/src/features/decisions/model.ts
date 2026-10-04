@@ -18,6 +18,8 @@ export const KIND_FILTERS = [
   { id: "access", label: DECISION_KIND_LABEL.approval },
   { id: "money", label: DECISION_KIND_LABEL.budget },
   { id: "paused", label: DECISION_KIND_LABEL.paused },
+  { id: "incident", label: DECISION_KIND_LABEL.incident },
+  { id: "trust", label: DECISION_KIND_LABEL.trust },
 ] as const;
 export type KindFilter = (typeof KIND_FILTERS)[number]["id"];
 
@@ -30,6 +32,10 @@ const GROUP: Record<OwnerDecisionKind, KindFilter> = {
   budget: "money",
   cap: "money",
   paused: "paused",
+  draft: "access",
+  batch: "access",
+  incident: "incident",
+  trust: "trust",
 };
 
 export function kindFilterOf(decision: Pick<OwnerDecision, "kind">): KindFilter {
@@ -125,6 +131,10 @@ export function actionOf(link: DecisionLink): BannerAction {
       return { kind: "page", to: "/limits" };
     case "account":
       return { kind: "page", to: "/accounts", search: { account: link.id } };
+    case "playbooks":
+      return { kind: "page", to: "/playbooks" };
+    case "watch":
+      return { kind: "page", to: "/watch" };
   }
 }
 
@@ -140,6 +150,10 @@ export function openLabel(link: DecisionLink): string {
       return "Open Limits";
     case "account":
       return "Sign in";
+    case "playbooks":
+      return "Open Playbooks";
+    case "watch":
+      return "Open Watch";
   }
 }
 
@@ -178,4 +192,13 @@ export function needsYouCount(
   if (decisions === undefined) return undefined;
   if (org === undefined) return decisions.length;
   return decisions.filter((d) => workspaceOf(d) === org).length;
+}
+
+/** The ids from one row to another in the queue, both included, whichever comes first. */
+export function rangeIds(queue: readonly string[], from: string | undefined, to: string): string[] {
+  const end = queue.indexOf(to);
+  if (end < 0) return [];
+  const start = from === undefined ? end : queue.indexOf(from);
+  if (start < 0) return [to];
+  return queue.slice(Math.min(start, end), Math.max(start, end) + 1);
 }

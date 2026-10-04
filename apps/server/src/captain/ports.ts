@@ -1,6 +1,8 @@
 import type { Authority, CaptainUndo, CommandName, TaskPriority } from "@majhi/shared";
 import type { FollowUpPorts } from "../findings/followups.ts";
 import type { FindingsService } from "../findings/service.ts";
+import type { OwnWorkScope } from "./own-work.ts";
+import type { SecondOpinion } from "./own-work-second.ts";
 
 /**
  * What the upkeep chores read and do in majhi (SPEC 5.18). The real ports are built from majhi's own
@@ -18,11 +20,20 @@ export interface ReviewTask {
 
 /** Why a task in review is not ready to ship, or what it would ship and the checks that passed. */
 export type ShipCheck =
-  | { ready: false; why: string }
+  | {
+      ready: false;
+      why: string;
+      /** Only the owner can clear it (a card waits, a protected repo): a lead is not told. */
+      owner?: boolean;
+      /** It conflicts with its base. Who resolves that follows the workspace's Merge row. */
+      conflict?: boolean;
+    }
   | {
       ready: true;
       /** The checks that passed, one line. */
       evidence: string;
+      /** What the checked hand-off ran, one line, for the log. The card shows it in its own block. */
+      checked?: string;
       /** Each changed repo and the branch it ships to. */
       targets: { project: string; into: string; base: string }[];
     };
@@ -109,6 +120,16 @@ export interface CaptainPorts {
 
   // Agents' questions
   questions(org: string): QuestionCard[];
+  /**
+   * Where Own work may approve in this task (SPEC 5.18), or undefined when the captain did not start
+   * it, it is the owner's to keep, or it has no worktree.
+   */
+  ownScope(org: string, task: string): Promise<OwnWorkScope | undefined>;
+  /**
+   * Laya's second opinion on a request the rule table could not place (SPEC 5.12). Absent or
+   * `approve: false`: the request stays the owner's, as it always was.
+   */
+  ownSecondOpinion?(card: QuestionCard, scope: OwnWorkScope): Promise<SecondOpinion>;
   /**
    * An agent keeps asking the same thing: the line goes into the task's room for the owner, and the
    * agent gets one message telling it to stop asking.

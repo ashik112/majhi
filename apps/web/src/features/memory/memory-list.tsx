@@ -1,7 +1,6 @@
 import type { OrgView, ProjectView } from "@majhi/shared";
 import { Globe } from "lucide-react";
 import type { ReactNode } from "react";
-import { Lamp } from "@/components/ui/lamp";
 import { ROW, ROW_SELECTED } from "@/components/ui/list-detail";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { RowsSkeleton } from "@/components/ui/skeleton";
@@ -144,8 +143,8 @@ function Row({
     parts.push({
       key: "w",
       node: (
-        <span className="flex items-center gap-1.5 whitespace-nowrap text-lamp-needs">
-          <Lamp state="needs" size={6} />
+        <span className="flex items-center gap-1.5 whitespace-nowrap text-caution">
+          <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
           <span className="tnum font-mono">{counts.waiting}</span> to review
         </span>
       ),

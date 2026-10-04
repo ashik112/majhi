@@ -178,6 +178,8 @@ describe("connections commands", () => {
       "env",
       "mail",
       "browser",
+      "api",
+      "cli",
     ]);
   });
 

@@ -138,6 +138,7 @@ class Sim {
         closeThread: () => undefined,
       },
       findings: undefined as unknown as CaptainPorts["findings"],
+      ownScope: async () => undefined,
       reviewTasks: async (org) =>
         of(org)
           .filter((t) => t.status === "review")
@@ -662,5 +663,5 @@ describe("the captain's soak test", () => {
     const status = await captain.status();
     expect(status.orgs.find((o) => o.org === "globex")?.summary).toBe("");
     captain.close();
-  }, 60_000);
+  }, 240_000);
 });

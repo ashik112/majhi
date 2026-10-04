@@ -6,6 +6,7 @@ import {
   type DeadlineKind,
   type DeadlineState,
 } from "@majhi/shared";
+import { useSearch } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChipsInput } from "@/components/ui/chips-input";
@@ -21,6 +22,7 @@ import { RowsSkeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { useBusinessCommand, useCrmList, useDeadlines } from "@/lib/business-queries";
 import { describeError } from "@/lib/errors";
+import type { AppSearch } from "@/router";
 import {
   EmptyState,
   ErrorLine,
@@ -77,7 +79,8 @@ export function DeadlinesPane({ scopes }: { scopes: readonly Scope[] }) {
   const [kind, setKind] = useState<"" | DeadlineKind>("");
   const [view, setView] = useState<"open" | "closed">("open");
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<number>();
+  const search: AppSearch = useSearch({ strict: false });
+  const [selected, setSelected] = useState<number | undefined>(() => Number(search.id) || undefined);
   const [mode, setMode] = useState<"view" | "edit" | "new">("view");
 
   const all = list.data?.deadlines ?? [];

@@ -16,7 +16,7 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
     case "projects":
       return [queryKeys.projects, queryKeys.onboarding];
     case "tasks":
-      return [queryKeys.tasks, queryKeys.decisions];
+      return [queryKeys.tasks, queryKeys.decisions, queryKeys.agenda];
     case "secrets":
       return [queryKeys.secrets];
     case "usage":
@@ -34,13 +34,25 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
     case "connections":
       return [queryKeys.connections];
     case "autonomy":
-      return [queryKeys.autonomy, queryKeys.decisions];
+      return [queryKeys.autonomy, queryKeys.decisions, queryKeys.agenda];
     case "captain":
-      return [queryKeys.captain, queryKeys.decisions];
+      return [queryKeys.captain, queryKeys.decisions, queryKeys.agenda];
     case "business":
-      return [queryKeys.business];
+      return [queryKeys.business, queryKeys.agenda];
+    case "agenda":
+      return [queryKeys.agenda];
     case "findings":
-      return [queryKeys.findings, queryKeys.decisions];
+      return [queryKeys.findings, queryKeys.decisions, queryKeys.agenda];
+    case "playbooks":
+      return [
+        queryKeys.playbooks,
+        queryKeys.findings,
+        queryKeys.decisions,
+        queryKeys.captain,
+        queryKeys.agenda,
+      ];
+    case "ops":
+      return [queryKeys.ops, queryKeys.decisions, queryKeys.findings];
     case "signins":
       return [queryKeys.signins, queryKeys.onboarding];
     case "clones":
@@ -67,7 +79,10 @@ export const ALL_TOPICS: readonly EventTopic[] = [
   "autonomy",
   "captain",
   "findings",
+  "playbooks",
+  "ops",
   "business",
+  "agenda",
   "signins",
   "clones",
 ];

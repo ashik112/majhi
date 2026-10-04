@@ -78,7 +78,10 @@ const layaAnswers = (job: Extract<HostJob, { method: "decide" }>) => ({
             confidence: 0.1,
             probabilities: { haiku: 0.8, sonnet: 0.1, opus: 0.05, none: 0.05 },
           }
-        : { type: "choice", choice: "B", confidence: 0.4, probabilities: { A: 0.1, B: 0.9 } },
+        : id.startsWith("triage")
+          ? // A new finding's triage runs in the background of the world: it gets an option it has.
+            { type: "choice", choice: id.startsWith("triage_kind") ? "other" : "keep", confidence: 0.5 }
+          : { type: "choice", choice: "B", confidence: 0.4, probabilities: { A: 0.1, B: 0.9 } },
     ]),
   ),
   loadMs: 0,
@@ -137,14 +140,23 @@ describe("rateTask", () => {
       answers: Object.fromEntries(
         keys.map((k) => [
           k,
-          {
-            type: "choice",
-            choice: level,
-            confidence: 0,
-            probabilities: Object.fromEntries(
-              ["trivial", "small", "medium", "large"].map((l) => [l, l === level ? p : rest]),
-            ),
-          },
+          // Questions other than the task's size (a new finding's triage and injection check run in the
+          // background of the world) are answered with an option each of them has.
+          k.startsWith("triage") || k.startsWith("injects")
+            ? {
+                type: "choice",
+                choice: k.startsWith("triage_kind") ? "other" : k.startsWith("triage") ? "keep" : "B",
+                confidence: 0.5,
+                probabilities: { keep: 0.5, other: 0.5, B: 0.5 },
+              }
+            : {
+                type: "choice",
+                choice: level,
+                confidence: 0,
+                probabilities: Object.fromEntries(
+                  ["trivial", "small", "medium", "large"].map((l) => [l, l === level ? p : rest]),
+                ),
+              },
         ]),
       ),
       loadMs: 0,
@@ -163,7 +175,7 @@ describe("rateTask", () => {
       provider: "laya",
       by: "Laya",
     });
-    const job = jobs.find((j) => j.method === "decide");
+    const job = jobs.find((j) => j.method === "decide" && String(j.params.state).includes("recieve"));
     const state = job?.method === "decide" ? job.params.state : "";
     expect(JSON.parse(state)).toEqual({
       task: "Fix a typo",

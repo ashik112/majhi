@@ -4,6 +4,8 @@ import {
   type FindingSeverity,
   type FindingSource,
   type FindingStatus,
+  type FindingTriage,
+  FindingTriageSchema,
 } from "@majhi/shared";
 import type Database from "better-sqlite3";
 
@@ -26,6 +28,7 @@ interface Row {
   task: string | null;
   decision: string | null;
   dismissed_reason: string | null;
+  triage: string | null;
   by: string;
   seen: number;
   created_at: string;
@@ -42,8 +45,21 @@ function evidenceOf(raw: string): string[] {
   }
 }
 
+/** The stored triage, or undefined when it is missing or no longer fits the schema. */
+function triageOf(raw: string | null): FindingTriage | undefined {
+  if (raw === null) return undefined;
+  try {
+    const parsed = FindingTriageSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function toFinding(r: Row): Finding {
+  const triage = triageOf(r.triage);
   return FindingSchema.parse({
+    ...(triage === undefined ? {} : { triage }),
     id: r.id,
     org: r.org,
     ...(r.project === null ? {} : { project: r.project }),
@@ -94,6 +110,7 @@ export interface FindingPatch {
   task?: string | null;
   decision?: string | null;
   dismissedReason?: string | null;
+  triage?: FindingTriage | null;
   lastSeen?: string;
   seen?: number;
   at: string;
@@ -158,6 +175,7 @@ export class FindingsRepo {
     if (p.task !== undefined) set("task", p.task);
     if (p.decision !== undefined) set("decision", p.decision);
     if (p.dismissedReason !== undefined) set("dismissed_reason", p.dismissedReason);
+    if (p.triage !== undefined) set("triage", p.triage === null ? null : JSON.stringify(p.triage));
     if (p.lastSeen !== undefined) set("last_seen", p.lastSeen);
     if (p.seen !== undefined) set("seen", p.seen);
     this.db.prepare(`UPDATE findings SET ${sets.join(", ")} WHERE id = ?`).run(...args, id);
@@ -198,6 +216,27 @@ export class FindingsRepo {
         .prepare(`SELECT * FROM findings ${where} ORDER BY last_seen DESC, id DESC LIMIT ?`)
         .all(...args, filter.limit) as Row[]
     ).map(toFinding);
+  }
+
+  /** How many findings a playbook filed in a workspace, and how many were taken up or dismissed. */
+  statsByPlaybook(org: string, playbook: string): { total: number; accepted: number; dismissed: number } {
+    return this.db
+      .prepare(
+        `SELECT COUNT(*) AS total,
+           COALESCE(SUM(status IN ('task', 'fixed', 'decision')), 0) AS accepted,
+           COALESCE(SUM(status = 'dismissed'), 0) AS dismissed
+         FROM findings WHERE org = ? AND playbook = ?`,
+      )
+      .get(org, playbook) as { total: number; accepted: number; dismissed: number };
+  }
+
+  /** Findings first seen or refreshed at or after `since` that a playbook filed. */
+  countSince(org: string, playbook: string, since: string): number {
+    return (
+      this.db
+        .prepare("SELECT COUNT(*) AS n FROM findings WHERE org = ? AND playbook = ? AND last_seen >= ?")
+        .get(org, playbook, since) as { n: number }
+    ).n;
   }
 
   /** Findings linked to a task, to follow the task. */

@@ -1,5 +1,6 @@
 /** The path of every page, in one place: the router, the sidebar, the keys and the links between pages read it. */
 export const PAGE_PATH = {
+  today: "/today",
   board: "/",
   chats: "/chats",
   agents: "/agents",
@@ -15,6 +16,8 @@ export const PAGE_PATH = {
   orgs: "/orgs",
   automations: "/automations",
   captain: "/captain",
+  playbooks: "/playbooks",
+  watch: "/watch",
   limits: "/limits",
   decisions: "/decisions",
   business: "/business",

@@ -10,6 +10,7 @@ import {
   type CrmRelation,
   type CrmStage,
 } from "@majhi/shared";
+import { useSearch } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChipsInput } from "@/components/ui/chips-input";
@@ -27,6 +28,7 @@ import { useBusinessCommand, useCrmContact, useCrmList } from "@/lib/business-qu
 import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 import { useNow } from "@/lib/use-now";
+import type { AppSearch } from "@/router";
 import {
   EmptyState,
   ErrorLine,
@@ -68,7 +70,8 @@ export function PeoplePane({ scopes }: { scopes: readonly Scope[] }) {
   const [relation, setRelation] = useState<"" | CrmRelation>("");
   const [view, setView] = useState<"all" | "due">("all");
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<number>();
+  const search: AppSearch = useSearch({ strict: false });
+  const [selected, setSelected] = useState<number | undefined>(() => Number(search.id) || undefined);
   const [mode, setMode] = useState<Mode>("view");
   const now = useNow(60_000);
 

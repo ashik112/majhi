@@ -1,10 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { MessageSquare } from "lucide-react";
-import { useMemo } from "react";
+import { ChevronsUpDown, MessageSquare } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AppearanceButton } from "@/components/shell/appearance";
 import { Bell } from "@/components/shell/bell";
 import { WorkspaceSwitcher } from "@/components/shell/workspace-switcher";
+import { useAnchoredPanel } from "@/components/ui/anchored";
 import { Kbd } from "@/components/ui/kbd";
 import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
 import { ROW_SELECTED } from "@/components/ui/list-detail";
@@ -18,28 +20,30 @@ import { useNeedsYou } from "@/features/decisions/needs-you";
 import { checksNeedingYou } from "@/features/health/model";
 import { reviewTarget } from "@/features/memory/model";
 import { accountsNeedingYou, agentsRightNow, healthCheckedText } from "@/features/shell/model";
-import { NAV_GROUPS, PAGE_LABEL } from "@/features/shell/nav";
+import { PAGE_LABEL, SETUP_PAGES } from "@/features/shell/nav";
+import { chordOf } from "@/features/shell/shortcuts";
 import { UpdateNotice } from "@/features/update/update-notice";
 import { useAgentIndex } from "@/lib/agent-index";
 import { prefetchCaptain } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
-import { GLASS } from "@/lib/glass";
+import { GLASS, GLASS_STRONG } from "@/lib/glass";
 import { useFacts } from "@/lib/memory-queries";
 import { useHealthChecks } from "@/lib/ops-queries";
 import { PAGE_PATH, type PageName } from "@/lib/pages";
 import { useHealth, useHostStatus } from "@/lib/queries";
 import { useAccounts } from "@/lib/studio-queries";
 import { useProjects, useTasks } from "@/lib/task-queries";
+import { useAfterFirstPaint } from "@/lib/use-after-paint";
 import { useNow } from "@/lib/use-now";
+import { useWatch } from "@/lib/watch-queries";
 
 const ITEM =
   "relative flex cursor-pointer items-center rounded-md text-left transition-colors duration-150 hover:bg-raised hover:text-fg";
 
 /**
- * The sidebar, top to bottom: the brand with the bell, the workspace switcher, the daily rows (Board,
- * Chats, Captain, Autonomous), the pages set up once (Setup), the ones opened rarely (System), and the
- * agents' lamps at the foot.
+ * The sidebar, top to bottom: the brand with the bell, the workspace switcher, the daily rows in the
+ * order of the loop (see MainNav), one Setup row, and the agents' lamps at the foot.
  */
 export function Sidebar() {
   return (
@@ -115,66 +119,204 @@ function Brand() {
   );
 }
 
-type NavBadge = { text: string; alert?: boolean; dot?: boolean };
+/** How a row's count reads: red is for what waits for the owner (Decisions only); amber is a thing to look at. */
+type NavBadge = { text: string; tone?: "needs" | "check"; dot?: boolean; title?: string };
 
+/**
+ * The sidebar's rows, in the order of the daily loop. Brief and decide first (Today, Decisions), then
+ * Watch when something is watched; the work the captain is given (Board, Chats, Business); the captain
+ * and what it runs on its own (Autonomous, Playbooks); and one Setup row that opens the rest.
+ */
 function MainNav() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const waiting = useNeedsYou() ?? 0;
+  const isActive = (to: string) =>
+    to === "/" ? pathname === "/" || pathname.startsWith("/t/") : pathname.startsWith(to);
+  const gap = "gap-4 [@media(max-height:799px)]:gap-2.5";
+  return (
+    <nav aria-label="Main" className={cn("flex flex-col", gap)}>
+      <div className="flex flex-col gap-px">
+        <NavRow page="today" active={isActive(PAGE_PATH.today)} />
+        <NavRow
+          page="decisions"
+          active={isActive(PAGE_PATH.decisions)}
+          badge={waiting > 0 ? { text: String(waiting), tone: "needs" } : undefined}
+        />
+        <WatchRow active={isActive(PAGE_PATH.watch)} />
+      </div>
+      <div className="flex flex-col gap-px">
+        <NavRow page="board" active={isActive(PAGE_PATH.board)} />
+        <NavRow page="chats" active={isActive(PAGE_PATH.chats)} />
+        <NavRow page="business" active={isActive(PAGE_PATH.business)} />
+      </div>
+      <div className="flex flex-col gap-px">
+        <CaptainRow />
+        <AutonomyRow />
+        <NavRow page="playbooks" active={isActive(PAGE_PATH.playbooks)} sub />
+      </div>
+      <SetupGroup isActive={isActive} />
+    </nav>
+  );
+}
+
+/**
+ * Setup: one row that opens a menu of the pages set up once (Agents, Accounts, Connections, and the
+ * rest), so the sidebar keeps its size on any window. When one of them is on screen the row is selected
+ * and names it. A dot says that something inside needs a look, and the menu says what. None of it is a
+ * decision, so none of it is red.
+ */
+function SetupGroup({ isActive }: { isActive: (to: string) => boolean }) {
   const agents = useAgentIndex();
   const accounts = useAccounts().data;
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const checks = useHealthChecks().data?.checks;
-  const signIn = accountsNeedingYou(accounts ?? []).length;
-  const needYou = checksNeedingYou(checks);
-  const waiting = useNeedsYou() ?? 0;
-  const pendingFacts = useFacts({ status: "pending" }).data ?? [];
+  const settled = useAfterFirstPaint(6_000);
+  const checks = useHealthChecks(settled).data?.checks;
+  const pendingFacts = useFacts({ status: "pending" }, settled).data ?? [];
   const projects = useProjects().data;
+  const signIn = accountsNeedingYou(accounts ?? []).length;
+  const toFix = checksNeedingYou(checks);
   const toReview = pendingFacts.length;
   const reviewAt = reviewTarget(pendingFacts, new Map((projects ?? []).map((p) => [p.id, p.org])));
+  const current = SETUP_PAGES.find((page) => isActive(PAGE_PATH[page]));
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const id = useId();
+  const close = useCallback(() => setOpen(false), []);
+  const { panel, style, container } = useAnchoredPanel({
+    open,
+    close,
+    trigger,
+    matchWidth: true,
+    maxHeight: 520,
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    const items = panel.current?.querySelectorAll<HTMLElement>('[role="menuitem"]');
+    const here = panel.current?.querySelector<HTMLElement>('[aria-current="page"]');
+    (here ?? items?.[0])?.focus();
+  }, [open, panel]);
+
+  // Esc closes the menu wherever the focus is.
+  useEffect(() => {
+    if (!open) return;
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      trigger.current?.focus();
+    };
+    document.addEventListener("keydown", onEscape);
+    return () => document.removeEventListener("keydown", onEscape);
+  }, [open]);
+
+  function onKeyDown(event: React.KeyboardEvent) {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    const nodes = Array.from(panel.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+    const at = nodes.indexOf(document.activeElement as HTMLElement);
+    const next = event.key === "ArrowDown" ? at + 1 : at - 1;
+    nodes[(next + nodes.length) % nodes.length]?.focus();
+  }
+
+  const notes = [
+    toFix > 0 ? `${toFix} to fix` : undefined,
+    signIn > 0 ? `${signIn} to sign in` : undefined,
+    toReview > 0 ? `${toReview} to review` : undefined,
+  ].filter((note): note is string => note !== undefined);
   const badge: Partial<Record<PageName, NavBadge>> = {};
   if (agents.size > 0) badge.agents = { text: String(agents.size) };
   if ((accounts?.length ?? 0) > 0 || signIn > 0)
     badge.accounts = { text: String(accounts?.length ?? 0), dot: signIn > 0 };
-  if (needYou > 0) badge.usage = { text: `${needYou} to fix`, alert: true };
-  const isActive = (to: string) =>
-    to === "/" ? pathname === "/" || pathname.startsWith("/t/") : pathname.startsWith(to);
+  if (toFix > 0) badge.usage = { text: `${toFix} to fix`, tone: "check" };
+  if (toReview > 0) badge.memory = { text: `${toReview} to review`, tone: "check" };
 
   return (
-    <nav aria-label="Main" className="flex flex-col gap-4 [@media(max-height:799px)]:gap-2.5">
-      <div className="flex flex-col gap-px">
-        <NavRow page="board" active={isActive(PAGE_PATH.board)} />
-        <NavRow page="chats" active={isActive(PAGE_PATH.chats)} />
-        <NavRow
-          page="decisions"
-          active={isActive(PAGE_PATH.decisions)}
-          badge={waiting > 0 ? { text: String(waiting), alert: true } : undefined}
-        />
-        <CaptainRow />
-        <AutonomyRow />
-        <NavRow page="business" active={isActive(PAGE_PATH.business)} />
-      </div>
-      {NAV_GROUPS.map((group) => (
-        <div key={group.label} className="flex flex-col gap-px">
-          <SectionLabel className="mb-1 px-2.5">{group.label}</SectionLabel>
-          {group.pages.map((page) =>
-            page === "memory" && toReview > 0 && reviewAt !== undefined ? (
-              <div key={page} className="relative flex">
-                <NavRow page={page} active={isActive(PAGE_PATH[page])} className="flex-1" />
-                {/* Its own link: the lessons that wait, on the Lessons tab of their project. */}
-                <Link
-                  to={PAGE_PATH.memory}
-                  search={{ project: reviewAt, tab: "lessons" }}
-                  title="Open the lessons that wait for you"
-                  className="tnum absolute top-1 right-1 flex h-6 items-center rounded-[5px] px-1.5 text-xs text-lamp-needs transition-colors duration-150 hover:bg-raised hover:underline"
-                >
-                  {toReview} to review
-                </Link>
-              </div>
-            ) : (
-              <NavRow key={page} page={page} active={isActive(PAGE_PATH[page])} badge={badge[page]} />
-            ),
+    <div className="flex flex-col gap-px">
+      <button
+        ref={trigger}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? id : undefined}
+        title={notes.length > 0 ? `Setup: ${notes.join(", ")}` : "Setup"}
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          ITEM,
+          "h-8 shrink-0 gap-2 px-2.5 text-body font-medium",
+          current !== undefined || open ? ROW_SELECTED : "text-fg-muted",
+        )}
+      >
+        <span className="shrink-0">Setup</span>
+        <span className="ml-auto flex min-w-0 items-center gap-2">
+          {current !== undefined && (
+            <span className="min-w-0 truncate text-sm font-normal text-fg-muted">{PAGE_LABEL[current]}</span>
           )}
-        </div>
-      ))}
-    </nav>
+          {notes.length > 0 && (
+            <span className="flex shrink-0 items-center gap-1.5 text-xs font-normal text-caution">
+              <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
+              <span className="sr-only">{notes.join(", ")}</span>
+              {current === undefined && (notes.length > 1 ? notes.length : notes[0])}
+            </span>
+          )}
+          <ChevronsUpDown aria-hidden="true" className="size-3.5 shrink-0 text-fg-faint" />
+        </span>
+      </button>
+      {open &&
+        createPortal(
+          <div
+            ref={panel}
+            popover="manual"
+            id={id}
+            role="menu"
+            aria-label="Setup"
+            style={style}
+            onKeyDown={onKeyDown}
+            className={cn(
+              "z-50 flex min-w-[220px] max-w-[300px] flex-col overflow-y-auto rounded-lg p-1",
+              GLASS_STRONG,
+            )}
+          >
+            {SETUP_PAGES.map((page) => {
+              const b = badge[page];
+              const chord = chordOf(PAGE_PATH[page]);
+              const link = page === "memory" && b !== undefined && reviewAt !== undefined;
+              return (
+                <Link
+                  key={page}
+                  to={PAGE_PATH[page]}
+                  search={link ? { project: reviewAt, tab: "lessons" } : {}}
+                  role="menuitem"
+                  aria-current={isActive(PAGE_PATH[page]) ? "page" : undefined}
+                  onClick={close}
+                  className={cn(
+                    "flex h-8 min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-sm px-2 text-left text-base hover:bg-raised focus-visible:bg-raised focus-visible:outline-none",
+                    isActive(PAGE_PATH[page]) ? "font-medium text-fg" : "text-fg-soft",
+                  )}
+                >
+                  <span className="min-w-0 truncate">{PAGE_LABEL[page]}</span>
+                  {b !== undefined && (
+                    <span
+                      className={cn(
+                        "tnum ml-auto flex shrink-0 items-center gap-1.5 text-xs",
+                        b.tone === "check" ? "text-caution" : "text-fg-faint",
+                      )}
+                    >
+                      {b.dot && (
+                        <>
+                          <Lamp state="needs" size={6} />
+                          <span className="sr-only">An account needs you. </span>
+                        </>
+                      )}
+                      {b.text}
+                    </span>
+                  )}
+                  {b === undefined && chord !== undefined && <Kbd className="ml-auto">{chord}</Kbd>}
+                </Link>
+              );
+            })}
+          </div>,
+          container,
+        )}
+    </div>
   );
 }
 
@@ -183,30 +325,39 @@ function NavRow({
   active,
   badge,
   className,
+  sub,
 }: {
   page: PageName;
   active: boolean;
   badge?: NavBadge | undefined;
   className?: string;
+  /** A row under Captain: indented behind a rule. */
+  sub?: boolean;
 }) {
+  const chord = chordOf(PAGE_PATH[page]);
   return (
     <Link
       to={PAGE_PATH[page]}
       search={{}}
       aria-current={active ? "page" : undefined}
+      title={chord === undefined ? PAGE_LABEL[page] : `${PAGE_LABEL[page]} (${chord})`}
       className={cn(
         ITEM,
         "h-8 shrink-0 px-2.5 text-body font-medium",
+        sub && "ml-2.5 border-l border-line pl-2",
         active ? ROW_SELECTED : "text-fg-muted",
         className,
       )}
     >
-      <span className="min-w-0 truncate">{PAGE_LABEL[page]}</span>
+      <span className={cn("min-w-0 truncate", sub && "pl-1.5")}>{PAGE_LABEL[page]}</span>
       {badge && (
         <span
+          title={badge.title}
           className={cn(
             "tnum ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-xs font-normal",
-            badge.alert ? "text-lamp-needs" : "text-fg-faint",
+            badge.tone === "needs" && "text-lamp-needs",
+            badge.tone === "check" && "text-caution",
+            badge.tone === undefined && "text-fg-faint",
           )}
         >
           {badge.dot && (
@@ -219,6 +370,28 @@ function NavRow({
         </span>
       )}
     </Link>
+  );
+}
+
+/**
+ * Watch: what is watched and the incidents. It shows only when something is watched or an incident is
+ * open, and carries a lamp only while a service is down or an incident is open, so a quiet day is a quiet row.
+ */
+function WatchRow({ active }: { active: boolean }) {
+  const watch = useWatch().data;
+  const down = watch?.services.filter((s) => s.status === "down").length ?? 0;
+  const open = watch?.incidents.filter((i) => i.status === "open").length ?? 0;
+  const lit = Math.max(down, open);
+  const hasAny = (watch?.services.length ?? 0) > 0 || open > 0;
+  if (!hasAny && !active) return null;
+  return (
+    <NavRow
+      page="watch"
+      active={active}
+      badge={
+        lit > 0 ? { text: down > 0 ? `${down} down` : `${open} open`, tone: "needs", dot: false } : undefined
+      }
+    />
   );
 }
 
@@ -291,7 +464,7 @@ function AutonomyRow() {
   return (
     <div
       title={hold ?? unavailable}
-      className="mb-1 ml-2.5 flex shrink-0 items-center gap-1 border-l border-line pl-2"
+      className="ml-2.5 flex shrink-0 items-center gap-1 border-l border-line pl-2"
     >
       <div className="flex min-h-8 min-w-0 flex-1 flex-col justify-center px-1.5 py-1 text-body font-medium text-fg-muted">
         <span className="flex min-w-0 items-center gap-2">
@@ -314,7 +487,7 @@ function AgentsNow() {
   const index = useAgentIndex();
   const tasks = useTasks().data;
   const accounts = useAccounts().data;
-  const checksAt = useHealthChecks().data?.checkedAt;
+  const checksAt = useHealthChecks(useAfterFirstPaint(6_000)).data?.checkedAt;
   const now = useNow(30_000);
   const pulse = useMemo(
     () => agentsRightNow([...index.values()], tasks ?? [], accounts ?? []),
@@ -353,9 +526,14 @@ function AgentsNow() {
           </li>
         ))}
       </ul>
-      <p className="truncate px-1 text-xs text-fg-faint [@media(max-height:799px)]:hidden">
+      <Link
+        to={PAGE_PATH.usage}
+        search={{}}
+        title="Open Health and usage"
+        className="truncate rounded-sm px-1 text-xs text-fg-faint transition-colors duration-150 hover:text-fg [@media(max-height:799px)]:hidden"
+      >
         {healthCheckedText(accounts ?? [], now, checksAt)}
-      </p>
+      </Link>
       <div className="hidden items-center gap-3 pl-1 [@media(max-height:799px)]:flex">
         <ul aria-label="Agents right now" className="flex min-w-0 flex-1 items-center gap-3">
           {rows.map((row) => (

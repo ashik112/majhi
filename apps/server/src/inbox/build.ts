@@ -1,10 +1,16 @@
 import {
   type BudgetAsk,
+  batchDecisionId,
   budgetDecisionId,
   type CaptainCapAsk,
   capDecisionId,
   type DecisionOption,
   type DecisionSuggestion,
+  draftDecisionId,
+  incidentDecisionId,
+  OUTBOUND_CHANNEL_LABEL,
+  type OutboundChannel,
+  type Draft as OutboundDraft,
   type OwnerDecision,
   type OwnerDecisionKind,
   plainAuthorityText,
@@ -30,8 +36,16 @@ export interface DecisionSources {
   /** Accounts the owner has to sign in again. */
   signedOut: readonly { id: string; at: string }[];
   recommendations: ReadonlyMap<string, Recommendation>;
+  /** Drafts that wait for the owner one by one (the outbound gate, Draft mode). */
+  drafts?: readonly OutboundDraft[];
+  /** Batches that are due in front of the owner: queued drafts of a channel in Batch mode. */
+  batches?: readonly { org: string; channel: OutboundChannel; drafts: readonly OutboundDraft[] }[];
+  /** High incidents nobody has acknowledged (the ops watch). */
+  incidents?: readonly { id: number; org: string; title: string; at: string; escalated: boolean }[];
   /** A workspace's name, for the sentences that name it. */
   orgName?: (org: string) => string | undefined;
+  /** Decisions another part of majhi builds itself: the trust ladder's notices, the monthly ceiling. */
+  extras?: readonly OwnerDecision[];
 }
 
 /** "$40", "$7.50", "2M tokens", or both. */
@@ -142,7 +156,15 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
         title: `@${item.agent} needs approval: ${oneLine(item.title)}`,
         sentence: `@${item.agent} needs your approval: ${item.title}`,
         options: withPrimary(
-          item.options.map((o) => ({ id: o.id, label: o.name })),
+          item.options.map((o) => ({
+            id: o.id,
+            label: o.name,
+            ...(o.kind === "allow_once"
+              ? { effect: "approve" as const }
+              : o.kind === "reject_once"
+                ? { effect: "leave" as const }
+                : {}),
+          })),
           allow?.id,
         ),
       };
@@ -157,8 +179,8 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
                 ? `@${item.agent} wants to: ${item.summary}`
                 : `@${item.agent} wants to: ${item.summary}. Its reason: ${item.reason}`,
             options: [
-              { id: "approve", label: "Approve", primary: true },
-              { id: "reject", label: "Reject" },
+              { id: "approve", label: "Approve", primary: true, effect: "approve" },
+              { id: "reject", label: "Reject", effect: "leave" },
             ],
           }
         : undefined;
@@ -179,7 +201,13 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
       const merge = { id: "merge", label: "Merge" };
       const done = { id: "done", label: "Mark done" };
       const changes: DecisionOption = { id: "changes", label: "Ask for changes", text: true };
-      const own = repos === 0 ? [done, changes] : [merge, done, changes];
+      // A batch merges only what the captain checked, and only the one option it suggests.
+      const checked = item.ready !== undefined;
+      const ship = (o: DecisionOption, id: string): DecisionOption =>
+        checked && o.id === id ? { ...o, effect: "approve" } : o;
+      const own = (repos === 0 ? [done, changes] : [merge, done, changes]).map((o) =>
+        ship(o, repos === 0 ? "done" : "merge"),
+      );
       if (item.ready === undefined) {
         return {
           kind: "ship",
@@ -187,7 +215,10 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
           sentence:
             repos === 0
               ? `${who} finished ${name}. It has no repo, so there is nothing to merge: read it, then mark it done or ask for changes.`
-              : `${who} finished ${name} and waits for your review.`,
+              : `${who} finished ${name} and waits for your review.${item.why?.startsWith("Checks failed") === true ? ` ${item.why}` : ""}`.slice(
+                  0,
+                  500,
+                ),
           options: withPrimary(own, undefined),
         };
       }
@@ -211,7 +242,7 @@ function draftOf(item: RoomItem, subject: Subject): Draft | undefined {
         kind: "paused",
         title: item.why === undefined ? title : oneLine(`${title.split(":")[0]}: ${item.why}`),
         sentence: `"${subject.title}" ${item.why === undefined ? `${title.charAt(0).toLowerCase()}${title.slice(1)}` : `is paused: ${item.why}`}`,
-        options: [{ id: "resume", label: "Resume", primary: true }],
+        options: [{ id: "resume", label: "Resume", primary: true, effect: "approve" }],
       };
     }
     default:
@@ -230,7 +261,7 @@ export function decisionIdOf(item: RoomItem): string {
 }
 
 function priority(d: OwnerDecision): number {
-  return d.kind === "ship" || d.kind === "budget" ? 0 : 1;
+  return d.kind === "incident" ? -1 : d.kind === "ship" || d.kind === "budget" ? 0 : 1;
 }
 
 /**
@@ -243,7 +274,13 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
    * The options and the suggestion. The captain's recommendation wins when it names an option the
    * decision has, else the card's own suggestion; the suggested option goes first, as the primary one.
    */
-  const decorate = (id: string, options: DecisionOption[], own?: DecisionSuggestion, workspace?: string) => {
+  const decorate = (
+    id: string,
+    options: DecisionOption[],
+    own?: DecisionSuggestion,
+    workspace?: string,
+    question = false,
+  ) => {
     const stored = src.recommendations.get(id);
     const picked: DecisionSuggestion | undefined =
       stored !== undefined && options.some((o) => o.id === stored.option)
@@ -254,9 +291,17 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       picked === undefined
         ? undefined
         : { ...picked, reason: plainAuthorityText(picked.reason, workspace).slice(0, 600) };
-    return chosen === undefined
-      ? { options }
-      : { options: withPrimary(options, chosen.option), suggestion: chosen };
+    if (chosen === undefined) return { options };
+    const ordered = withPrimary(options, chosen.option);
+    // On a question, the suggested option is what a batch approves; other kinds mark theirs already.
+    return {
+      options: question
+        ? ordered.map((o) =>
+            o.id === chosen.option && o.text !== true ? { ...o, effect: "approve" as const } : o,
+          )
+        : ordered,
+      suggestion: chosen,
+    };
   };
 
   for (const item of src.items) {
@@ -275,7 +320,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       ...(subject.chat ? { chat: true as const } : {}),
       title: draft.title,
       sentence: draft.sentence ?? draft.title,
-      ...decorate(id, draft.options, draft.suggestion, workspace),
+      ...decorate(id, draft.options, draft.suggestion, workspace, draft.kind === "question"),
       at: item.at,
       link: subject.chat ? { kind: "chat", id: item.task } : { kind: "task", id: item.task, item: item.id },
     });
@@ -284,8 +329,8 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
   for (const ask of src.caps) {
     const id = capDecisionId(ask.org, ask.chore, ask.day);
     const options: DecisionOption[] = [
-      { id: "raise", label: `Raise to ${ask.raiseTo} for today`, primary: true },
-      { id: "leave", label: "Leave it" },
+      { id: "raise", label: `Raise to ${ask.raiseTo} for today`, primary: true, effect: "approve" },
+      { id: "leave", label: "Leave it", effect: "leave" },
     ];
     out.push({
       id,
@@ -302,8 +347,13 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
   for (const ask of src.budgets) {
     const id = budgetDecisionId(ask.scope, ask.day);
     const options: DecisionOption[] = [
-      { id: "raise", label: `Raise to ${budgetText(ask.raiseTo)} for today`, primary: true },
-      { id: "leave", label: "Leave it" },
+      {
+        id: "raise",
+        label: `Raise to ${budgetText(ask.raiseTo)} for today`,
+        primary: true,
+        effect: "approve",
+      },
+      { id: "leave", label: "Leave it", effect: "leave" },
     ];
     out.push({
       id,
@@ -314,6 +364,62 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       ...decorate(id, options),
       at: ask.at,
       link: { kind: "limits" },
+    });
+  }
+
+  for (const d of src.drafts ?? []) {
+    const id = draftDecisionId(d.id);
+    const what = OUTBOUND_CHANNEL_LABEL[d.channel].toLowerCase();
+    const options: DecisionOption[] = [
+      { id: "send", label: "Approve", primary: true },
+      { id: "discard", label: "Discard" },
+    ];
+    const head = d.subject ?? d.body;
+    out.push({
+      id,
+      kind: "draft",
+      org: d.org,
+      title: oneLine(`${OUTBOUND_CHANNEL_LABEL[d.channel]} to ${d.target}: ${head}`),
+      sentence: `A ${what} to ${d.target} is drafted${d.voice === undefined ? "" : ` in the voice "${d.voice}"`}. Nothing is sent until you approve it.`,
+      ...decorate(id, options, undefined, src.orgName?.(d.org)),
+      at: d.createdAt,
+      link: { kind: "playbooks" },
+    });
+  }
+
+  for (const b of src.batches ?? []) {
+    const id = batchDecisionId(b.org, b.channel);
+    const options: DecisionOption[] = [
+      { id: "send", label: `Approve all ${b.drafts.length}`, primary: true },
+      { id: "discard", label: "Discard all" },
+    ];
+    const label = OUTBOUND_CHANNEL_LABEL[b.channel].toLowerCase();
+    out.push({
+      id,
+      kind: "batch",
+      org: b.org,
+      title: `${b.drafts.length} ${label} ${b.drafts.length === 1 ? "draft is" : "drafts are"} ready to approve`,
+      sentence: `${b.drafts.length} ${label} ${b.drafts.length === 1 ? "draft waits" : "drafts wait"} in this batch. Nothing is sent until you approve.`,
+      ...decorate(id, options, undefined, src.orgName?.(b.org)),
+      at: b.drafts[0]?.createdAt ?? new Date(0).toISOString(),
+      link: { kind: "playbooks" },
+    });
+  }
+
+  for (const inc of src.incidents ?? []) {
+    const id = incidentDecisionId(inc.id);
+    const options: DecisionOption[] = [{ id: "ack", label: "Acknowledge", primary: true }];
+    out.push({
+      id,
+      kind: "incident",
+      org: inc.org,
+      title: oneLine(inc.escalated ? `${inc.title} (not acknowledged yet)` : inc.title),
+      sentence: inc.escalated
+        ? `${inc.title}. majhi alerted you twice and nobody has acknowledged it. Acknowledging stops the alerts; it closes when its checks are green.`
+        : `${inc.title}. Acknowledging stops the alerts; it closes when its checks are green.`,
+      options,
+      at: inc.at,
+      link: { kind: "watch" },
     });
   }
 
@@ -329,5 +435,6 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
     });
   }
 
+  out.push(...(src.extras ?? []));
   return out.sort((a, b) => priority(a) - priority(b) || a.at.localeCompare(b.at));
 }

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Lamp } from "@/components/ui/lamp";
 import { Textarea } from "@/components/ui/select";
+import { HandoffBlock } from "@/features/handoff/handoff-block";
 import { Markdown } from "@/features/room/markdown";
 import { cn } from "@/lib/cn";
 import { formatAgo, MOD_KEY, plural } from "@/lib/format";
@@ -226,9 +227,28 @@ export function DecisionDetailPane({
             <Handback detail={hand} />
           </Block>
         )}
+        {detail?.draft !== undefined && (
+          <Block title={`To ${detail.draft.target}`}>
+            <div className="flex flex-col gap-2 text-base text-fg-soft">
+              {detail.draft.subject !== undefined && (
+                <p className="m-0 font-medium text-fg">{detail.draft.subject}</p>
+              )}
+              <p className="m-0 whitespace-pre-wrap text-pretty break-words">{detail.draft.body}</p>
+              <p className="m-0 text-xs text-fg-faint">
+                {detail.draft.voice === undefined ? "No voice profile used" : `Voice: ${detail.draft.voice}`}
+                {" · "}Nothing is sent until you approve it.
+              </p>
+            </div>
+          </Block>
+        )}
         {detail?.diff !== undefined && (
           <Block title="What changed">
             <Changes diff={detail.diff} repos={detail.repos} checks={detail.checks} />
+          </Block>
+        )}
+        {decision.kind === "ship" && decision.task !== undefined && detail?.diff !== undefined && (
+          <Block title="Checks">
+            <HandoffBlock task={decision.task} />
           </Block>
         )}
         {detail?.questions !== undefined && detail.questions.length > 1 && (

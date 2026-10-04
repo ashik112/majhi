@@ -11,7 +11,9 @@ import { useNeedsYou } from "@/features/decisions/needs-you";
 import { cn } from "@/lib/cn";
 import { formatMoney } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
+import { useMoney } from "@/lib/scorecard-queries";
 import { statusSentence } from "./model";
+import { ScorecardStrip } from "./scorecard";
 import { summaryLine } from "./summary";
 
 const SHOWN_SPEND = 3;
@@ -39,9 +41,19 @@ function SpendLine({
   const total = autonomy?.spend.total;
   const cap = total?.cap?.cost;
   const hidden = Math.max(0, spending.length - SHOWN_SPEND);
-  if (spending.length === 0 && cap === undefined) return null;
+  const month = useMoney().data;
+  if (spending.length === 0 && cap === undefined && month === undefined) return null;
   return (
     <p className="tnum flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm text-fg-muted">
+      {month && (month.spentUsd > 0 || month.ceilingUsd !== undefined) && (
+        <span
+          title="Everything majhi spent this month (agents, the captain, playbooks) against your monthly ceiling"
+          className={cn("font-medium text-fg-soft", month.held && "text-red")}
+        >
+          {month.line}
+          {cap !== undefined && <span aria-hidden="true"> ·</span>}
+        </span>
+      )}
       {cap !== undefined && total && (
         <span
           title="Autonomous spend today against its daily budget"
@@ -89,6 +101,7 @@ export function CaptainHeader({
   now,
   onDelegation,
   onSummary,
+  onScorecard,
 }: {
   /** Undefined while `captain.status` loads: the header draws at once and fills in. */
   captain: CaptainStatus | undefined;
@@ -96,6 +109,7 @@ export function CaptainHeader({
   now: number;
   onDelegation: () => void;
   onSummary: () => void;
+  onScorecard: () => void;
 }) {
   const { mode, toggle, dialogs, unavailable } = useAutonomousSwitch();
   const decisions = useNeedsYou();
@@ -135,6 +149,12 @@ export function CaptainHeader({
             Delegation
           </Button>
           <PageLink
+            page="playbooks"
+            className="px-1 text-sm text-fg-muted underline underline-offset-[3px] hover:text-fg"
+          >
+            Playbooks
+          </PageLink>
+          <PageLink
             page="limits"
             className="px-1 text-sm text-fg-muted underline underline-offset-[3px] hover:text-fg"
           >
@@ -142,7 +162,7 @@ export function CaptainHeader({
           </PageLink>
         </div>
       </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-1.5 min-[1000px]:flex-nowrap">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-1.5 min-[1280px]:flex-nowrap">
         {chip && (
           <button
             type="button"
@@ -159,6 +179,7 @@ export function CaptainHeader({
           <SpendLine orgs={captain?.orgs ?? []} autonomy={autonomy} />
         </div>
       </div>
+      <ScorecardStrip onOpen={onScorecard} />
       {dialogs}
     </header>
   );

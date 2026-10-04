@@ -9,7 +9,7 @@ export interface Press {
   shift?: boolean;
 }
 
-export type ShortcutGroup = "Anywhere" | "Go to" | "Task" | "Board" | "Decisions" | "Message box";
+export type ShortcutGroup = "Anywhere" | "Go to" | "Task" | "Board" | "Decisions" | "Today" | "Message box";
 
 /**
  * One row of the shortcut table. The table is the single source: the handlers match key presses
@@ -68,6 +68,7 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
     group: "Go to",
     press: { key: "g" },
   },
+  go("y", PAGE_PATH.today, "Go to Today (brief, agenda, plan)"),
   go("b", PAGE_PATH.board, "Go to the board"),
   go("a", PAGE_PATH.agents, "Go to agents"),
   go("c", PAGE_PATH.chats, "Go to chats"),
@@ -82,6 +83,10 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   go("p", PAGE_PATH.projects, "Go to projects and links"),
   go("o", PAGE_PATH.orgs, "Go to workspaces"),
   go("l", PAGE_PATH.audit, "Go to the audit log"),
+  go("d", PAGE_PATH.decisions, "Go to decisions"),
+  go("j", PAGE_PATH.captain, "Go to the captain page"),
+  go("w", PAGE_PATH.watch, "Go to watch (services and incidents)"),
+  go("r", PAGE_PATH.playbooks, "Go to playbooks"),
   { id: "next-task", keys: ["]"], what: "Next task", group: "Task", press: { key: "]" }, scope: "task" },
   { id: "prev-task", keys: ["["], what: "Previous task", group: "Task", press: { key: "[" }, scope: "task" },
   {
@@ -119,6 +124,15 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   },
   { id: "decisions-reply", keys: ["r"], what: "Write a reply", group: "Decisions" },
   { id: "decisions-open", keys: ["o"], what: "Open the task", group: "Decisions" },
+  {
+    id: "decisions-select",
+    keys: ["x"],
+    what: "Select for a batch (Shift x: everything up to here)",
+    group: "Decisions",
+  },
+  { id: "today-move", keys: ["j", "k"], what: "Next or previous item (arrows too)", group: "Today" },
+  { id: "today-open", keys: ["Enter"], what: "Take the item's action", group: "Today" },
+  { id: "today-done", keys: ["e"], what: "Dismiss a finding or close a date", group: "Today" },
   { id: "board-open", keys: ["Enter"], what: "Open the card you are on", group: "Board" },
 ];
 
@@ -133,6 +147,12 @@ export function shortcut(id: string): ShortcutDef {
 export const GO_KEYS: Record<string, GoTarget> = Object.fromEntries(
   SHORTCUT_TABLE.flatMap((s) => (s.go && s.press ? [[s.press.key, s.go] as const] : [])),
 );
+
+/** The keys that go to this page, as printed ("g y"), or undefined when none does. */
+export function chordOf(path: GoTarget): string | undefined {
+  const def = SHORTCUT_TABLE.find((s) => s.go === path);
+  return def === undefined ? undefined : def.keys.join(" ");
+}
 
 /** How long after `g` the second key still counts. */
 export const CHORD_MS = 1200;

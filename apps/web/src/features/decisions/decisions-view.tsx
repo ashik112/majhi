@@ -1,3 +1,4 @@
+import { likeThis } from "@majhi/shared";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { CircleCheck, Inbox } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -18,6 +19,7 @@ import { useOrgs } from "@/lib/studio-queries";
 import { useMedia } from "@/lib/use-media";
 import { useNow } from "@/lib/use-now";
 import type { AppSearch } from "@/router";
+import { BatchBar } from "./batch-bar";
 import { DecisionDetailPane } from "./decision-detail";
 import { DecisionList } from "./decision-list";
 import {
@@ -33,6 +35,7 @@ import {
   workspaceCounts,
 } from "./model";
 import { useNeedsYou } from "./needs-you";
+import { useBatch } from "./use-batch";
 
 function typing(target: EventTarget | null): boolean {
   return (
@@ -86,6 +89,11 @@ export function DecisionsView() {
       replace: true,
     });
 
+  const batch = useBatch(shown);
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const pickedList = useMemo(() => shown.filter((d) => batch.picked.has(d.id)), [shown, batch.picked]);
+  const like = useMemo(() => (selected === undefined ? [] : likeThis(shown, selected)), [shown, selected]);
+
   const detail = useDecisionDetail(selectedId);
   const [replyOpen, setReplyOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
@@ -125,8 +133,8 @@ export function DecisionsView() {
   const blocked = detail.data?.blocked;
   const live = useRef({ shown, selected, selectedId, replyOpen, narrow, blocked });
   live.current = { shown, selected, selectedId, replyOpen, narrow, blocked };
-  const act = useRef({ send, openSelected, select });
-  act.current = { send, openSelected, select };
+  const act = useRef({ send, openSelected, select, toggle: batch.toggle });
+  act.current = { send, openSelected, select, toggle: batch.toggle };
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented || event.isComposing || event.metaKey || event.ctrlKey || event.altKey)
@@ -169,6 +177,9 @@ export function DecisionsView() {
         } else if (key === "r" && text !== undefined) {
           event.preventDefault();
           setReplyOpen(true);
+        } else if (key === "x" || key === "X") {
+          event.preventDefault();
+          act.current.toggle(current.id, event.shiftKey);
         } else if (key === "o") {
           event.preventDefault();
           act.current.openSelected();
@@ -187,7 +198,7 @@ export function DecisionsView() {
       ? "What waits for you, with a recommendation where the captain has one."
       : all.length === 0
         ? "All answered."
-        : `${total} waiting for you`;
+        : `${total} ${total === 1 ? "needs" : "need"} you`;
   const answered = lastAnswerText(lastAnsweredAt(), (iso) => formatAgo(iso, now));
 
   let body: React.ReactNode;
@@ -209,7 +220,31 @@ export function DecisionsView() {
     );
   } else {
     const list = (
-      <ListPane label="Decisions" className="w-[340px] min-[1320px]:w-[380px] max-[999px]:w-full">
+      <ListPane
+        label="Decisions"
+        scrollRef={setScroller}
+        className="w-[340px] min-[1320px]:w-[380px] max-[999px]:w-full"
+        footer={
+          shown.length === 0 ? undefined : (
+            <BatchBar
+              picked={pickedList}
+              selected={selected}
+              like={like}
+              hold={batch.hold}
+              sending={batch.sending}
+              result={batch.result}
+              failure={batch.failure}
+              total={shown.length}
+              onStart={batch.start}
+              onUndo={batch.undo}
+              onNow={batch.now}
+              onClear={batch.clear}
+              onSelectAll={batch.selectAll}
+              onDismiss={batch.dismiss}
+            />
+          )
+        }
+      >
         {shown.length === 0 ? (
           <div className="flex flex-col items-start gap-2 p-3 text-sm text-fg-muted">
             Nothing matches these filters.
@@ -224,7 +259,16 @@ export function DecisionsView() {
             </Button>
           </div>
         ) : (
-          <DecisionList decisions={shown} selected={selectedId} now={now} onSelect={(id) => select(id)} />
+          <DecisionList
+            decisions={shown}
+            selected={selectedId}
+            now={now}
+            scroller={scroller}
+            picked={batch.picked}
+            held={batch.held}
+            onSelect={(id) => select(id)}
+            onPick={batch.toggle}
+          />
         )}
       </ListPane>
     );
