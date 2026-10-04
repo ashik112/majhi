@@ -58,7 +58,7 @@ function stateOf(
     const until = first.until === undefined ? "" : `, back ${atTime(first.until, nowMs, tz)}`;
     return {
       lamp: "needs",
-      word: first.kind === "day-cap" ? "Held by day cap" : `Held by ${plural(caps.length, "cap")}`,
+      word: first.kind === "day-cap" ? "Held by today's budget" : `Held by ${plural(caps.length, "cap")}`,
       why: `${first.text}${until}`,
     };
   }
@@ -157,7 +157,7 @@ export function StatusStrip({
 
       <Segment
         label="Spend today"
-        aside={<span className="tnum">{cap === undefined ? "no day cap" : `cap ${dollars(cap)}`}</span>}
+        aside={<span className="tnum">{cap === undefined ? "no budget" : `cap ${dollars(cap)}`}</span>}
       >
         <PageLink page="usage" title="Open Usage" className="flex min-w-0 items-baseline gap-2">
           <span

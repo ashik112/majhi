@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChangesView } from "@/features/changes/changes-view";
 import { hasMemoryTab, TaskMemory } from "@/features/memory/task-memory";
+import { dockItems } from "@/features/room/dock";
 import { permissionDomId } from "@/features/room/items";
 import { isWorking } from "@/features/room/model";
 import { RoomPane } from "@/features/room/room-pane";
@@ -127,6 +128,11 @@ function TaskView({ taskId }: { taskId: string }) {
   const yourTurn =
     data.status === "running" && room.state.loaded && !room.state.agents.some((a) => isWorking(a));
 
+  // A review or pause card in the dock holds the primary button; the header keeps a quiet one.
+  const cardAsks = dockItems(room.state.items, data.status).some(
+    (i) => i.type === "review" || i.type === "paused",
+  );
+
   const tabs: TaskTab[] = [
     "room",
     ...(data.repos.length > 0 ? (["changes"] as const) : []),
@@ -141,6 +147,7 @@ function TaskView({ taskId }: { taskId: string }) {
       <TaskHeader
         task={data}
         yourTurn={yourTurn}
+        cardAsks={cardAsks}
         brief={brief}
         tabs={<TaskTabs tabs={tabs} value={shown} onChange={setTab} />}
       />

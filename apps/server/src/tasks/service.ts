@@ -247,6 +247,9 @@ export class TaskService {
   private readonly now: () => Date;
   /** `wait` processes the room was told the task waits for, so it is said once. */
   private readonly waitNoted = new Set<string>();
+  /** Tasks inside `start` (worktrees, memory) that have no run yet, and the ones the owner stopped there. */
+  private readonly starting = new Set<string>();
+  private readonly startStopped = new Set<string>();
   /** Lead orchestration: the check before a waiting task starts, and the lead's side of a parent. */
   private readonly orchestrator: Orchestrator;
   private readonly planner: TaskPlanner;
@@ -821,10 +824,19 @@ export class TaskService {
 
   /** Creates the missing worktrees, marks the task running and starts its agent. Safe to repeat. */
   async start(id: string, by = "owner"): Promise<Task> {
-    const { store } = this.deps;
     const task = this.get(id);
     this.checkStartable(task);
+    this.starting.add(id);
+    try {
+      return await this.startNow(id, task, by);
+    } finally {
+      this.starting.delete(id);
+      this.startStopped.delete(id);
+    }
+  }
 
+  private async startNow(id: string, task: Task, by: string): Promise<Task> {
+    const { store } = this.deps;
     await this.ensureWorktrees(task);
     store.tasks.setStatus(id, "running", undefined, this.now().toISOString());
     store.tasks.setStartWhenReady(id, true);
@@ -839,6 +851,15 @@ export class TaskService {
     const started = this.get(id);
     this.deps.room.publishTask(started);
     const first = await this.firstAgents(started);
+    // Esc while the worktrees and memory were being prepared: no agent starts, the brief stays queued for the next message.
+    if (this.startStopped.has(id)) {
+      this.deps.room.post(id as TaskId, `stopped:${randomUUID()}`, {
+        type: "system",
+        level: "info",
+        text: "Stopped before the agent started.",
+      });
+      return started;
+    }
     first.forEach((agent, i) => {
       // The first agent gets the task's brief; others that start with it get their own, once.
       this.deps.runs.startTask(started, agent, { ownBrief: i > 0 });
@@ -3218,7 +3239,10 @@ export class TaskService {
 
   async cancel(id: string, agent: string | undefined): Promise<string[]> {
     this.get(id);
-    return this.deps.runs.cancel(id, agent);
+    const stopped = await this.deps.runs.cancel(id, agent);
+    // Before any run exists the start itself is what gets cancelled.
+    if (stopped.length === 0 && this.starting.has(id)) this.startStopped.add(id);
+    return stopped;
   }
 
   /** The owner's answer to a permission prompt, or the captain's (`captain`: its agent id). */

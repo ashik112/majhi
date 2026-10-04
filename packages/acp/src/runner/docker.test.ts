@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -317,7 +317,12 @@ const fs = require("node:fs");
 const file = ${JSON.stringify(state)};
 const args = process.argv.slice(2);
 const read = () => JSON.parse(fs.readFileSync(file, "utf8"));
-const write = (s) => fs.writeFileSync(file, JSON.stringify(s));
+// Atomic, so a test reading the file while a docker CLI writes never sees half of it.
+const write = (s) => {
+  const tmp = file + "." + process.pid;
+  fs.writeFileSync(tmp, JSON.stringify(s));
+  fs.renameSync(tmp, file);
+};
 const values = (flag) => args.flatMap((a, i) => (args[i - 1] === flag ? [a] : []));
 if (args[0] === "run") {
   const s = read();
@@ -342,7 +347,9 @@ if (args[0] === "run") {
     cli,
     containers,
     async add(name, labels) {
-      await writeFile(state, JSON.stringify({ ...(await containers()), [name]: labels }));
+      const tmp = `${state}.add`;
+      await writeFile(tmp, JSON.stringify({ ...(await containers()), [name]: labels }));
+      await rename(tmp, state);
     },
   };
 }

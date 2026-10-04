@@ -324,9 +324,18 @@ export class RunManager {
   recover(): void {
     const { store, room } = this.deps;
     store.runs.endAllLive("server-restart", this.now().toISOString());
+    const told = new Set<string>();
     for (const item of store.room.pendingPermissions()) {
-      if (item.type === "permission")
-        room.post(item.task, item.id, permissionPayload(item, { state: "cancelled" }));
+      if (item.type !== "permission") continue;
+      room.post(item.task, item.id, permissionPayload(item, { state: "cancelled" }));
+      // One line per task: why the request vanished.
+      if (told.has(item.task)) continue;
+      told.add(item.task);
+      room.post(item.task, `restart:${randomUUID()}`, {
+        type: "system",
+        level: "info",
+        text: "majhi restarted, so the open permission request ended. The agent asks again if it still needs it.",
+      });
     }
   }
 
@@ -368,6 +377,22 @@ export class RunManager {
         (r) => r.task === task && (WORKING.has(r.live.status) || (r.turning && !r.closing && !r.settling)),
       )
       .map((r) => r.agent);
+  }
+
+  /**
+   * The tasks an agent is working on right now: starting or in a turn. An agent that is queued for a
+   * slot or waits on an answer is not working, so its task is not counted here.
+   */
+  workingTasks(): string[] {
+    const out = new Set<string>();
+    for (const r of this.runs.values()) {
+      const status = r.live.status;
+      const idleish = status === "queued" || status === "waiting";
+      if (status === "starting" || status === "working" || (r.turning && !r.closing && !r.settling && !idleish)) {
+        out.add(r.task);
+      }
+    }
+    return [...out];
   }
 
   /** Agents in the middle of a turn, across majhi. An update waits for these with "when they finish". */
@@ -679,7 +704,11 @@ export class RunManager {
     const targets = [...this.runs.values()].filter(
       (r) => r.task === task && (agent === undefined || r.agent === agent) && r.turning,
     );
-    for (const run of targets) if (run.queue.length > 0) run.held = true;
+    for (const run of targets) {
+      if (run.queue.length > 0) run.held = true;
+      // Between the session opening and the prompt going out there is no turn to cancel yet.
+      if (!run.prompting) run.cancelBeforePrompt = true;
+    }
     await Promise.all(targets.map((run) => this.cancelRun(run)));
     return targets.map((r) => r.agent);
   }
@@ -1014,6 +1043,7 @@ export class RunManager {
     } finally {
       run.turning = false;
       run.settling = false;
+      run.cancelBeforePrompt = false;
       run.drive = undefined;
       // Idle between turns: a waiting start may stop this process now.
       if (run.session !== undefined && run.live.status === "idle") {
@@ -1137,11 +1167,7 @@ export class RunManager {
           else this.resumeFailed(run, "the agent could not start");
           return;
         }
-        if (run.cancelBeforePrompt) {
-          run.cancelBeforePrompt = false;
-          if (run.queue.length > 0) run.held = true;
-          break;
-        }
+        if (this.stoppedBeforePrompt(run)) break;
       }
       if (run.closing || run.paused !== undefined) break;
       // The wait for a slot or the session start may have been long: ask again before the turn.
@@ -1180,6 +1206,13 @@ export class RunManager {
           run.queue.unshift(entry);
           continue;
         }
+      }
+      // Esc while the prompt was being prepared: keep it queued, send nothing.
+      if (run.cancelBeforePrompt) {
+        run.queue.unshift(entry);
+        this.live.refreshQueued(run);
+        this.stoppedBeforePrompt(run);
+        break;
       }
       const stopReason = await this.turn(
         run,
@@ -2174,6 +2207,15 @@ export class RunManager {
     }
   }
 
+  /** Esc came before the first prompt went out: nothing is sent, the queue waits, the room says so. */
+  private stoppedBeforePrompt(run: AgentRun): boolean {
+    if (!run.cancelBeforePrompt) return false;
+    run.cancelBeforePrompt = false;
+    if (run.queue.length > 0) run.held = true;
+    this.live.system(run, "info", `Stopped @${run.agent}'s turn.`);
+    return true;
+  }
+
   private async cancelRun(run: AgentRun): Promise<void> {
     this.permissions.cancelAll(run);
     const session = run.session;
@@ -2263,6 +2305,31 @@ export class RunManager {
     return run.agent === (await this.deps.config.sections()).boss;
   }
 
+  /**
+   * The line a queued run says: its place, which limit is full and which tasks hold the slots, with
+   * the ones that wait on the owner marked, since an agent waiting on an answer still holds its slot.
+   */
+  private queuedLine(run: AgentRun, key: string, slot: number): string {
+    const why = this.slots.blockedBy(key);
+    const start = `@${run.agent} starts when one frees.`;
+    if (why === undefined) return `Queued, #${slot} in line, behind earlier starts. ${start}`;
+    const asking = this.deps.store.room.tasksWaitingOnOwner();
+    const holders = why.holders.map((h) => {
+      const holder = this.runs.get(h.key);
+      const mark = asking.has(h.task) ? ", waiting for you" : "";
+      return `${h.task} (${holder === undefined ? h.account : `@${holder.agent}`}${mark})`;
+    });
+    const shown = holders.slice(0, 4).join(", ");
+    const more = holders.length > 4 ? ` and ${holders.length - 4} more` : "";
+    const full =
+      why.limit === "account"
+        ? `the limit of ${why.max} at once on ${why.account}`
+        : why.limit === "task"
+          ? `the limit of ${why.max} agents on one task`
+          : `the limit of ${why.max} agents at once`;
+    return `Queued, #${slot} in line: ${full} is reached. Holding the slots: ${shown}${more}. ${start}`;
+  }
+
   /** Shows each waiting run's place in line. */
   private showLine(positions: Map<string, number>): void {
     for (const [key, slot] of positions) {
@@ -2278,11 +2345,7 @@ export class RunManager {
       });
       if (!run.queuedNoted) {
         run.queuedNoted = true;
-        this.live.system(
-          run,
-          "info",
-          `Queued, #${slot} in line: majhi is running as many agents as the limits allow. @${run.agent} starts when a slot is free.`,
-        );
+        this.live.system(run, "info", this.queuedLine(run, key, slot));
       }
     }
   }

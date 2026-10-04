@@ -2,14 +2,12 @@ import { DECISION_KIND_LABEL, type OwnerDecision } from "@majhi/shared";
 import { useRunAttention } from "@/components/shell/banner";
 import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
-import { useToast } from "@/components/ui/toast";
 import { SecretAnswer } from "@/features/room/secret-answer";
-import { useAnswerDecision } from "@/lib/decision-queries";
-import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 import { useNow } from "@/lib/use-now";
 import { WorkspaceName } from "./decision-list";
 import { actionOf, openLabel, secretCardOf, workspaceOf } from "./model";
+import { useHeldOption, useSendDecision } from "./use-send-decision";
 
 export { workspaceOf };
 
@@ -47,21 +45,16 @@ export function DecisionRow({
   onOpen?: () => void;
 }) {
   const run = useRunAttention();
-  const toast = useToast();
-  const answer = useAnswerDecision();
+  const { send: sendDecision, busy } = useSendDecision();
+  const held = useHeldOption(decision.id);
   const now = useNow(60_000);
   const workspace = workspaceOf(decision);
-  const busy = answer.isPending;
   const secret = secretCardOf(decision);
   // Work to ship has several answers on its page; here the main one is enough.
   const options = decision.options.filter(
     (o) => o.text !== true && (decision.kind !== "ship" || o.primary === true),
   );
-  const send = (option: string) =>
-    answer.mutate(
-      { id: decision.id, option },
-      { onError: (error) => toast("Could not answer it", { detail: describeError(error), tone: "error" }) },
-    );
+  const send = (option: string) => sendDecision(decision, option);
   const decide = () => {
     onOpen?.();
     run({ kind: "page", to: "/decisions", search: { id: decision.id } });
@@ -98,11 +91,11 @@ export function DecisionRow({
             key={option.id}
             size="sm"
             variant={option.primary === true ? "primary" : "secondary"}
-            disabled={busy}
+            disabled={busy || held !== undefined}
             className="h-auto min-h-7 max-w-full py-1 text-left whitespace-normal"
             onClick={() => send(option.id)}
           >
-            {option.label}
+            {held === option.id ? "Sending..." : option.label}
           </Button>
         ))}
         <Button

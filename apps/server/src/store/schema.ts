@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 /**
@@ -117,6 +118,11 @@ export const roomItems = sqliteTable(
     /** JSON of the item without `id`, `task`, `seq`, `at`. */
     payload: text("payload").notNull(),
     at: text("at").notNull(),
+    /** 1 while the item's `state` is pending, read from the payload (virtual column, migration 153). */
+    pending: integer("pending").generatedAlwaysAs(
+      sql`CASE WHEN json_valid(payload) THEN coalesce(json_extract(payload, '$.state') = 'pending', 0) ELSE 0 END`,
+      { mode: "virtual" },
+    ),
   },
   (t) => [primaryKey({ columns: [t.task, t.id] }), uniqueIndex("room_items_seq").on(t.task, t.seq)],
 );

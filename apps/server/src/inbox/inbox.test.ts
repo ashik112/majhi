@@ -155,7 +155,7 @@ describe("building decisions", () => {
       kind: "approval",
       options: [
         { id: "yes", label: "Allow once", primary: true },
-        { id: "no", label: "Reject" },
+        { id: "no", label: "Deny" },
       ],
     });
     expect(by("room:ACM-1:ap1")?.options.map((o) => o.id)).toEqual(["approve", "reject"]);

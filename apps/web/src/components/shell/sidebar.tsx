@@ -44,6 +44,7 @@ import { UpdateNotice } from "@/features/update/update-notice";
 import { type AgentInfo, useAgentIndex } from "@/lib/agent-index";
 import { prefetchCaptain } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
+import { useDecisions } from "@/lib/decision-queries";
 import { MOD_KEY } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useFacts } from "@/lib/memory-queries";
@@ -380,6 +381,7 @@ function agentRows(
   tasks: readonly TaskSummary[],
   accounts: readonly AccountView[],
   now: number,
+  live: ReadonlySet<string>,
 ): { rows: AgentRow[]; working: number; idle: number } {
   const open = tasks.filter(isOpen);
   const rows: AgentRow[] = [];
@@ -389,7 +391,8 @@ function agentRows(
       accounts.find((a) => a.id === agent.account),
       now,
     );
-    const running = open.find((t) => t.status === "running" && t.working.includes(agent.id));
+    // Working means the server counts the task as working: an agent that waits on the owner is waiting.
+    const running = open.find((t) => live.has(t.id) && t.working.includes(agent.id));
     const paused = open.find((t) => t.status === "paused" && t.team.includes(agent.id));
     const base = { id: agent.id, emoji: agent.emoji, limit: note?.text };
     if (running) {
@@ -415,9 +418,10 @@ function AgentsNow() {
   const tasks = useTasks().data;
   const accounts = useAccounts().data;
   const now = useNow(30_000);
+  const liveTasks = useDecisions().data?.counts.workingTasks;
   const { rows, working, idle } = useMemo(
-    () => agentRows([...index.values()], tasks ?? [], accounts ?? [], now),
-    [index, tasks, accounts, now],
+    () => agentRows([...index.values()], tasks ?? [], accounts ?? [], now, new Set(liveTasks)),
+    [index, tasks, accounts, now, liveTasks],
   );
   return (
     <section aria-label="Agents now" className="flex min-h-0 flex-1 flex-col gap-1">

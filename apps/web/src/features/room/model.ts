@@ -273,13 +273,6 @@ export function trimOutput(text: string, max = 40): { text: string; hidden: numb
   return { text: lines.slice(0, max).join("\n"), hidden: lines.length - max };
 }
 
-/** What majhi does with each option kind, in the owner's words. Adapters name them "Always allow" and "Reject". */
-export function permissionOptionLabel(option: PermissionItem["options"][number]): string {
-  if (option.kind === "allow_always") return "Allow for this task";
-  if (option.kind === "reject_once") return "Deny";
-  return option.name;
-}
-
 export type PermissionSummary =
   | { pending: true }
   | {

@@ -649,8 +649,42 @@ How to encode it, so it is not a sentence that drifts:
 ## 11. Owner decisions (2026-10-05)
 
 1. SPEC edits in section 8: approved. `paused` is no longer a status; one typed `hold` explains every pause. Auto-pilot day and org caps and floors fold into one budget model (scope, period, reserve).
-2. Today: keep. Business (KB, voice, CRM): delete; deadlines move into Needs you.
+2. Today: keep. Business (KB, voice, CRM): delete. Deadlines: deleted too (owner, later the same day).
 3. Trackers (Jira, ClickUp, GitHub Issues): delete. Sensors, growth and economics: delete.
 4. Dependency-closed holds: today's behaviour stays (waits for the owner). Not asked; revisit only if it bites.
 5. No structured CLI signal for a limit or a failed sign-in: plain fallback. An unknown failure becomes an `error` hold and the account usage poll decides when to resume. No text parsing of CLI errors (section 3 rows 1 and 2).
 6. Text matching exceptions allowed: the secret scan (row 16) and input grammars the owner types on purpose (row 17). Nothing else.
+
+## 12. Architecture notes from research and measurements (2026-10-05)
+
+Sources: an outside survey of agent orchestrators, workflow engines, schedulers, SQLite practice and UI sync, and a measured audit on a seeded rig (2,000 tasks, 200k room items, 50k events). Both are summarised here; the measured numbers drive the order of work.
+
+### What the research confirms
+- Status plus one typed hold, and a startup rule for "running but no live run". Other tools have this exact bug open (conversations stuck running after the sandbox stops; finished agents counted against a concurrency limit). Counts come from live state. Landed: live-state counts and one restart reconcile.
+- `blockerOf` always returns a reason. Queued work with no explanation is the most common complaint about other agent tools.
+- The scheduler is level-triggered: events only set a dirty flag, one tick re-reads state and reconciles (the Kubernetes controller model). No event queue to replay.
+- A hand-written pure `transition()` with exhaustive tables, not XState. No Temporal, DBOS or Inngest: they need deterministic replay, which an LLM turn is not. Landed as lifecycle step B.
+- Action keys persisted with INSERT OR IGNORE. Landed in D9 (`captain_keys`).
+
+### What it adds to the plan
+- **Leases and fencing for runs and ships** (step C/F). A run or ship holds a lease with a token; completion is accepted only with the current token and an unexpired lease. Promise at-least-once with idempotent effects.
+- **Audit trail, not event sourcing** (step C). `apply()` writes the new state and one `task_events` row, refusals included, in the same transaction. Effects that cannot be re-derived go through an outbox written in that transaction.
+- **Fairness and pacing in the tick** (step F): round-robin across workspaces when capacity is short, a starts-per-tick cap, jitter on limit-reset resumes, and a reserve so owner-started tasks are never starved by the captain.
+- **SQLite baseline asserted at startup**: WAL, synchronous=NORMAL, busy_timeout >= 5000, foreign_keys on, and a SQLite version without the WAL-reset race (3.51.3 or later). A real indexed `hold_cause` column next to the JSON `hold` (step E). The pre-E2 backup uses `VACUUM INTO` or the backup API.
+- **UI sync as typed invalidation** (step D): the socket sends `{scope, id, seq}`, the web invalidates the matching query keys only, refetches everything on a seq gap or reconnect, and the server computes the hold sentence and blocker on the task summary. No client database (Replicache, Zero, Electric need Postgres or are overkill for one user).
+
+### What the measurements say (before fixes)
+| Area | Measured | Fix |
+|---|---|---|
+| Boot | 65 to 82 CPU-s, stalls up to 6.8 s, one full sweep per done task | one batched startup pass (perf/hot-paths) |
+| Event feed | each `tasks` event refetches three lists, 47 MB/min with one tab and 10 runs | typed invalidation (step D, after the Needs you fixes land) |
+| Queries | Drizzle rebuilds and re-prepares each query, about a third of boot CPU; per-id loops | prepared statements, batched queries (perf/db-layer) |
+| Room writes | a full 4-query task load per room item written | cheap org lookup (perf/hot-paths) |
+| Status on every page | `autonomy.status` 259 KB, 600 lookups per call | small shell status, detail on the Captain page (perf/hot-paths) |
+| Streaming | the whole message re-sent and re-stored every 50 ms flush, quadratic | deltas on the socket, bounded stores (perf/hot-paths) |
+| Idle loops | 5,015 unchanged upserts every 5 minutes; full task loads every minute | skip unchanged, query what is needed (perf/db-layer) |
+| Board | 1,500 card renders per commit, objects re-parsed each fetch | stable identities, memoised cards (after the Needs you fixes land) |
+| Tables | nothing pruned, aggregates unindexed | indexes and batched daily retention (perf/db-layer) |
+| Web assets | no compression or cache headers, 916 kB index chunk | gzip, immutable hashed assets, route-level lazy loading (perf/hot-paths) |
+
+Memory is flat over a 10-minute 10-run loop (no leak); migrations take milliseconds.

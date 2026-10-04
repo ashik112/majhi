@@ -1,5 +1,7 @@
 import {
+  type BoardCounts,
   batchPick,
+  boardCounts,
   type CardAction,
   type DecisionAnswerInput,
   type DecisionBatchInput,
@@ -80,6 +82,15 @@ export interface InboxDeps {
   orgNames?: () => Promise<Readonly<Record<string, string>>>;
   /** The agent's last message in the task. */
   lastAgentMessage?: (task: string) => { agent: string; text: string; at: string } | undefined;
+  /**
+   * Whether a task in review cannot merge now (nothing to merge, a conflict, uncommitted work). Read live;
+   * the inbox keeps the answer a few seconds. Absent or undefined: the card stands as it is.
+   */
+  shipBlock?: (task: string) => Promise<{ why: string; empty: boolean } | undefined>;
+  /** The tasks an agent is working on right now (not queued, not waiting on an answer). */
+  working?: () => readonly string[];
+  /** A look at a review task's merge found something new: screens read the list again. */
+  changed?: () => void;
   diff?: (task: string) => Promise<RepoDiff[]>;
   shipOptions?: (task: string) => Promise<ShipOptions>;
   now?: () => Date;
@@ -88,6 +99,9 @@ export interface InboxDeps {
 /** A batch's result is kept this long, so a second send of the same click gets the same answer. */
 const BATCH_KEEP_MS = 10 * 60_000;
 const BATCH_KEEP_MAX = 200;
+
+/** What the server found about a review task's merge is kept this long. */
+const SHIP_BLOCK_KEEP_MS = 15_000;
 
 /** Recommendations of decisions that are gone are kept this long, then forgotten. */
 const NO_NAMES: Readonly<Record<string, string>> = {};
@@ -101,17 +115,91 @@ export class InboxService {
   /** Batches by the client's key: the work in flight or done, so a double send changes nothing. */
   private readonly batches = new Map<string, { at: number; run: Promise<DecisionBatchResult> }>();
 
+  /** Per task: what the last look at its merge found, and when. */
+  private readonly shipLooks = new Map<
+    string,
+    { at: number; block: { why: string; empty: boolean } | undefined }
+  >();
+  /** Tasks whose look is being renewed now. */
+  private readonly renewing = new Set<string>();
+
   constructor(private readonly deps: InboxDeps) {}
 
   async list(org?: string): Promise<OwnerDecision[]> {
+    const all = await this.build();
+    return org === undefined ? all : all.filter((d) => d.org === org);
+  }
+
+  /** The decisions and the one set of counts every screen shows, from the same look. */
+  async view(org?: string): Promise<{ decisions: OwnerDecision[]; counts: BoardCounts }> {
+    const all = await this.build();
+    return { decisions: org === undefined ? all : all.filter((d) => d.org === org), counts: this.counts(all) };
+  }
+
+  private counts(all: readonly OwnerDecision[]): BoardCounts {
+    const { deps } = this;
+    const working = (deps.working?.() ?? []).flatMap((task) => {
+      const subject = deps.subject(task);
+      // Chats are not on the board: only tasks count as working.
+      return subject === undefined || subject.chat || (subject.status !== undefined && subject.status !== "running")
+        ? []
+        : [{ task, org: subject.org }];
+    });
+    return boardCounts(all, working);
+  }
+
+  /** Review tasks that cannot merge, from a live look kept a few seconds. */
+  private async shipBlocks(items: readonly RoomItem[]): Promise<Map<string, { why: string; empty: boolean }>> {
+    const { deps } = this;
+    const out = new Map<string, { why: string; empty: boolean }>();
+    if (deps.shipBlock === undefined) return out;
+    const now = (deps.now?.() ?? new Date()).getTime();
+    const tasks = new Set(
+      items.flatMap((i) =>
+        i.type === "review" && i.state === "pending" && deps.subject(i.task)?.status === "review"
+          ? [i.task]
+          : [],
+      ),
+    );
+    for (const task of this.shipLooks.keys()) if (!tasks.has(task)) this.shipLooks.delete(task);
+    await Promise.all(
+      [...tasks].map(async (task) => {
+        let look = this.shipLooks.get(task);
+        if (look === undefined) {
+          // The first look is waited for: a card must not offer Merge for a moment and then take it back.
+          look = { at: now, block: await this.look(task) };
+          this.shipLooks.set(task, look);
+        } else if (now - look.at > SHIP_BLOCK_KEEP_MS && !this.renewing.has(task)) {
+          // An old look still answers; a new one is read behind it, and screens hear when it differs.
+          this.renewing.add(task);
+          const was = look.block;
+          void this.look(task).then((block) => {
+            this.renewing.delete(task);
+            this.shipLooks.set(task, { at: (deps.now?.() ?? new Date()).getTime(), block });
+            if (was?.why !== block?.why || was?.empty !== block?.empty) deps.changed?.();
+          });
+        }
+        if (look.block !== undefined) out.set(task, look.block);
+      }),
+    );
+    return out;
+  }
+
+  private look(task: string): Promise<{ why: string; empty: boolean } | undefined> {
+    return (this.deps.shipBlock?.(task) ?? Promise.resolve(undefined)).catch(() => undefined);
+  }
+
+  private async build(): Promise<OwnerDecision[]> {
     const { deps } = this;
     const [budgets, signedOut, names] = await Promise.all([
       deps.budgets(),
       deps.signedOut(),
       deps.orgNames?.() ?? NO_NAMES,
     ]);
+    const items = deps.items();
     const all = buildDecisions({
-      items: deps.items(),
+      items,
+      shipBlocked: await this.shipBlocks(items),
       subject: deps.subject,
       budgets,
       signedOut,
@@ -124,7 +212,7 @@ export class InboxService {
     });
     const now = (deps.now?.() ?? new Date()).getTime();
     deps.recommendations.prune(new Set(all.map((d) => d.id)), new Date(now - KEEP_MS).toISOString());
-    return org === undefined ? all : all.filter((d) => d.org === org);
+    return all;
   }
 
   /** The decisions left after the answer, so a screen can show them without asking again. */
@@ -134,6 +222,12 @@ export class InboxService {
     await this.apply(decision, input, () => this.deps.items());
     this.noteAnswer(decision, input.option);
     return this.list();
+  }
+
+  /** `answer`, with the counts of what waits after it. */
+  async answerView(input: DecisionAnswerInput): Promise<{ decisions: OwnerDecision[]; counts: BoardCounts }> {
+    await this.answer(input);
+    return this.view();
   }
 
   /**
@@ -163,6 +257,7 @@ export class InboxService {
       skipped: [],
       failed: [],
       decisions: [],
+      counts: boardCounts([], []),
     };
     const waiting = new Map((await this.list()).map((d) => [d.id, d]));
     // One look at the room cards for the whole batch: each answer re-checks its own card.
@@ -186,7 +281,9 @@ export class InboxService {
         result.failed.push({ id, error: err instanceof Error ? err.message : "It failed" });
       }
     }
-    result.decisions = await this.list();
+    const left = await this.view();
+    result.decisions = left.decisions;
+    result.counts = left.counts;
     return result;
   }
 
@@ -305,6 +402,14 @@ export class InboxService {
     const item = deps.items().find((i) => i.task === parsed.task && i.id === parsed.item);
     const handback = deps.lastAgentMessage?.(parsed.task);
     if (handback !== undefined) out.handback = handback;
+    if (item?.type === "permission") {
+      out.command = item.connection?.action ?? item.title;
+      out.agent = item.agent;
+    }
+    if (item?.type === "approval") {
+      out.command = item.reason === undefined || item.reason === "" ? item.summary : `${item.summary}\n${item.reason}`;
+      out.agent = item.agent;
+    }
     if (item?.type === "ask") {
       out.questions = item.questions.map((q) => ({
         question: q.question,

@@ -109,3 +109,14 @@ export function reconnectDelay(attempt: number): number {
 export function wsUrl(path: string, loc: { protocol: string; host: string }): string {
   return `${loc.protocol === "https:" ? "wss" : "ws"}://${loc.host}${path}`;
 }
+
+/**
+ * Closes a socket without the browser's "closed before the connection is established" warning:
+ * one still connecting closes as soon as it opens, and nothing it says then is handled.
+ */
+export function closeSocket(ws: WebSocket): void {
+  ws.onmessage = null;
+  ws.onerror = null;
+  if (ws.readyState === WebSocket.CONNECTING) ws.onopen = () => ws.close();
+  else ws.close();
+}

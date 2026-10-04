@@ -137,7 +137,6 @@ CREATE TABLE task_allowances (
     name: "tasks start when their dependencies are met",
     sql: `
 ALTER TABLE tasks ADD COLUMN start_when_ready INTEGER NOT NULL DEFAULT 0;
-CREATE INDEX task_links_other ON task_links (other);
 `,
   },
   {
@@ -1505,6 +1504,31 @@ CREATE TABLE captain_loop_guard (
   answers INTEGER NOT NULL,
   paused INTEGER NOT NULL DEFAULT 0
 );
+`,
+  },
+  {
+    // Perf pass on the data layer (153). Every list the UI opens and every loop tick scanned a table
+    // that grows for ever. `pending` is a virtual column over the room item's JSON `state`, so what waits
+    // for the owner is one indexed lookup instead of a JSON parse per card ever made. It is guarded with
+    // `json_valid`, so a payload that is not JSON (a damaged row) reads as not pending and cannot make
+    // the index fail. Nothing to backfill: SQLite computes it from the payload.
+    id: 153,
+    name: "indexes for hot lookups",
+    sql: `
+ALTER TABLE room_items ADD COLUMN pending INTEGER GENERATED ALWAYS AS (
+  CASE WHEN json_valid(payload) THEN coalesce(json_extract(payload, '$.state') = 'pending', 0) ELSE 0 END
+) VIRTUAL;
+CREATE INDEX room_items_pending ON room_items (type, task) WHERE pending = 1;
+CREATE INDEX tasks_status ON tasks (status, updated_at);
+CREATE INDEX tasks_chat ON tasks (brief) WHERE kind = 'chat';
+CREATE INDEX task_repos_open_mr ON task_repos (task) WHERE mr_state IS NOT NULL AND mr_state != 'merged';
+CREATE INDEX findings_created ON findings (created_at);
+CREATE INDEX findings_status_seen ON findings (status, last_seen);
+CREATE INDEX autonomy_events_kind_at ON autonomy_events (kind, at);
+CREATE INDEX outcomes_at ON outcomes (at);
+CREATE INDEX captain_actions_at ON captain_actions (at);
+CREATE INDEX audit_kind ON audit (kind);
+CREATE INDEX audit_agent ON audit (agent);
 `,
   },
 ];
