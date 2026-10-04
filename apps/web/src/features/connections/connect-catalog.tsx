@@ -1,6 +1,6 @@
 import type { ConnectAccess, ConnectStatus, OrgView, ServiceEntry } from "@majhi/shared";
 import { type ConnectionType, GLOBAL_CONNECTIONS, PRIVATE, scopesAt } from "@majhi/shared";
-import { ArrowLeft, ChevronRight, Globe, KeyRound, Network, Plug, Search, Server } from "lucide-react";
+import { ArrowLeft, ChevronRight, GitBranch, Globe, KeyRound, Network, Plug, Search, Server } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -480,6 +480,12 @@ export function ConnectCatalog({
 }
 
 const CUSTOM = [
+  {
+    type: "git" as const,
+    label: "GitLab or GitHub CLI",
+    hint: "glab or gh with this workspace's git sign-in",
+    icon: GitBranch,
+  },
   { type: "mcp" as const, label: "MCP server", hint: "Connect by URL or local command", icon: Plug },
   {
     type: "env" as const,

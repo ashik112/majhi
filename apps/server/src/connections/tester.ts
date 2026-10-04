@@ -20,6 +20,7 @@ import { type BrowserServer, browserServer } from "./browser.ts";
 import { cutKubeconfig, KubeconfigError } from "./kubeconfig.ts";
 import { imapLogin, smtpGreeting } from "./mail.ts";
 import { callTool, listTools, remoteTransport, SpawnedTransport } from "./mcp-client.ts";
+import { gitTarget } from "./plan.ts";
 import { type ConnectionService, ownerOnlyDir } from "./service.ts";
 
 const KUBECTL_TIMEOUT_MS = 45_000;
@@ -51,6 +52,12 @@ export interface TesterDeps {
    */
   browserCommand?: (server: BrowserServer) => Command;
   now?: () => Date;
+  /** Who the workspace's git sign-in for a host is, for a `git` connection's Test. */
+  gitWhoAmI?: (
+    org: string,
+    provider: "gitlab" | "github",
+    host: string,
+  ) => Promise<{ account: string } | { problem: string }>;
   /** The Test of a connection signed in through Connect (5.14). */
   oauth?:
     | {
@@ -127,6 +134,21 @@ export class ConnectionTester {
     }
     let outcome: Outcome;
     let secrets: Values["secrets"] = [];
+    if (found.connection.type === "git") {
+      const { provider, host, cli } = gitTarget(found.connection);
+      const who = (await this.deps.gitWhoAmI?.(found.org, provider, host)) ?? {
+        problem: "majhi cannot check it here.",
+      };
+      const result = {
+        ok: "account" in who,
+        detail: "account" in who ? `${cli} works on ${host} as ${who.account}.` : who.problem,
+        warnings: [],
+        at: (this.deps.now?.() ?? new Date()).toISOString(),
+        durationMs: Date.now() - started,
+      };
+      this.deps.connections.recordTest(id, result);
+      return result;
+    }
     if (view.problems.length > 0) {
       outcome = { ok: false, detail: `${view.problems.join(". ")}.`, warnings: [] };
     } else {
@@ -226,6 +248,8 @@ export class ConnectionTester {
       case "api":
       case "cli":
         return Promise.resolve(fail("This connection is checked through Connect."));
+      case "git":
+        return Promise.resolve(fail("This connection is checked with the workspace's sign-in."));
     }
   }
 

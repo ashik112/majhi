@@ -211,6 +211,35 @@ describe("planConnections", () => {
     ]);
   });
 
+  it("gives a git connection the workspace's fresh sign-in as the CLI's variable, or says why not", async () => {
+    const asked: string[] = [];
+    const plan = await planConnections(
+      [
+        held("acme-gitlab", { type: "git", name: "GitLab", fields: { provider: "gitlab" } }),
+        held("globex-gh", { type: "git", name: "GitHub", fields: { provider: "github" } }, "globex"),
+      ],
+      join(dir, "run"),
+      {
+        secrets: { get: async () => undefined },
+        connectionDir,
+        gitToken: async (org, provider, host) => {
+          asked.push(`${org} ${provider} ${host}`);
+          return org === "acme"
+            ? { token: "glpat-0123456789" }
+            : { problem: "globex is not signed in to github.com." };
+        },
+      },
+    );
+    expect(asked).toEqual(["acme gitlab gitlab.com", "globex github github.com"]);
+    expect(plan.env).toEqual({ GITLAB_TOKEN: "glpat-0123456789", GITLAB_HOST: "gitlab.com" });
+    expect(plan.gate).toEqual([{ id: "acme-gitlab", type: "git", allow: [], clis: ["glab"] }]);
+    expect(plan.secrets).toEqual([{ name: "acme-gitlab.token", value: "glpat-0123456789" }]);
+    expect(plan.problems).toEqual([
+      "globex-gh: globex is not signed in to github.com. The run does not get it.",
+    ]);
+    expect(JSON.stringify(plan.uses)).not.toContain("0123456789");
+  });
+
   it("leaves out what is not set up, and keeps the first of two connections that set a variable", async () => {
     await mkdir(connectionDir("acme-broken"), { recursive: true });
     await writeFile(join(connectionDir("acme-broken"), "kubeconfig"), "not: [yaml");
