@@ -14,7 +14,6 @@ import type { Majhi } from "../server.ts";
 import { createMajhi } from "../server.ts";
 import type { ServiceOptions } from "../services.ts";
 import type { LinkOptions } from "../tasks/links.ts";
-import type { TrackerAdapter, TrackerAdapterInit } from "../trackers/types.ts";
 import { type FakeRuntime, fakeRuntime } from "./fakeRuntime.ts";
 import { git, tempDir, testEnv, writeKeyFile } from "./fixtures.ts";
 
@@ -58,10 +57,6 @@ export interface HarnessOptions {
   idleWatchMs?: number;
   /** Replaces `fetch` for git sign-in and the git hosts' APIs. */
   gitFetch?: typeof fetch;
-  /** Replaces `fetch` for the trackers' APIs. */
-  trackerFetch?: typeof fetch;
-  /** Replaces the tracker adapters. */
-  trackerAdapter?: (init: TrackerAdapterInit) => TrackerAdapter;
   /** Replaces the `skills` CLI, so tests never run the real one. */
   skillsCommand?: Command;
   /** Replaces `fetch` for the skills.sh directory. */
@@ -116,8 +111,6 @@ function build(
       }) as typeof fetch,
       sleep: async () => undefined,
     }),
-    ...(options.trackerFetch === undefined ? {} : { trackerFetch: options.trackerFetch }),
-    ...(options.trackerAdapter === undefined ? {} : { trackerAdapter: options.trackerAdapter }),
     ...(options.skillsCommand === undefined ? {} : { skillsCommand: options.skillsCommand }),
     ...(options.skillsFetch === undefined ? {} : { skillsFetch: options.skillsFetch }),
     ...(options.mcpFetch === undefined ? {} : { mcpFetch: options.mcpFetch }),

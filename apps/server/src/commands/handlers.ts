@@ -70,7 +70,6 @@ import type { SystemService } from "../system/service.ts";
 import { actorName } from "../tasks/cards.ts";
 import { changeTaskBranch } from "../tasks/change-branch.ts";
 import { readReport } from "../tasks/report.ts";
-import { trackerHandlers } from "../trackers/handlers.ts";
 
 /** Loading keys and asking the Keychain or keyring can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
@@ -219,7 +218,6 @@ export function createHandlers({
     ...skillHandlers(services.skills),
     ...mcpHandlers(services.mcpServers),
     ...gitConnectHandlers({ config, scanner, hostLink, services }),
-    ...trackerHandlers(services.trackers),
 
     "config.get": async () => (await config.load()).state,
 

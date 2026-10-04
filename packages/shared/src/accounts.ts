@@ -12,7 +12,6 @@ import {
   TurnsPatchSchema,
 } from "./settings.ts";
 import { RoleSchema, TierPatchSchema, TiersPatchSchema } from "./tiers.ts";
-import { TrackerConfigSchema } from "./trackers.ts";
 
 /**
  * Accounts, orgs, tools and agents (SPEC 2, 3.3, 4.4, 5.1, 5.2, 5.8).
@@ -233,8 +232,8 @@ export const OrgConfigSchema = z.looseObject({
   dismissed_logins: z.array(DismissedLoginSchema).optional(),
   /** The clusters, MCP servers, hosts and accounts this org's agents may reach (5.14), by id. */
   connections: z.record(IdSchema, ConnectionConfigSchema).optional(),
-  /** The org's tracker (5.11), when it has one. */
-  tracker: TrackerConfigSchema.optional(),
+  /** Removed in D2, kept so old config loads. */
+  tracker: z.unknown().optional(),
 });
 export type OrgConfig = z.infer<typeof OrgConfigSchema>;
 
@@ -523,8 +522,6 @@ export const OrgViewSchema = z.object({
   /** Secret references (never values) for the MR hosts, when set. */
   mrTokens: OrgConfigSchema.shape.mr_tokens,
   gitAccounts: OrgConfigSchema.shape.git_accounts,
-  /** The org's tracker, with secret references only. */
-  tracker: OrgConfigSchema.shape.tracker,
   accountCount: z.number().int().nonnegative(),
   agentCount: z.number().int().nonnegative(),
 });

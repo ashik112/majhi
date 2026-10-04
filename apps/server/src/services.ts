@@ -197,9 +197,6 @@ import { PendingShips } from "./tasks/pending-ship.ts";
 import { TaskService } from "./tasks/service.ts";
 import { TerminalManager, type TerminalTimers } from "./terminal/manager.ts";
 import { openTaskTerminal } from "./terminal/task-terminal.ts";
-import { createAdapter } from "./trackers/index.ts";
-import { TrackerService } from "./trackers/service.ts";
-import type { TrackerAdapter, TrackerAdapterInit } from "./trackers/types.ts";
 import { UploadStore } from "./uploads/store.ts";
 import { readPrices } from "./usage/prices.ts";
 import { UsageRecorder } from "./usage/recorder.ts";
@@ -260,10 +257,6 @@ export interface ServiceOptions {
   connectFetch?: Fetch;
   /** Replaces the service catalog, so tests connect to a fake server. */
   connectCatalog?: readonly ServiceEntry[];
-  /** Replaces `fetch` for Jira, ClickUp and GitHub Issues, so tests never reach a tracker. */
-  trackerFetch?: typeof fetch;
-  /** Replaces the tracker adapters, so tests can play a tracker without its API. */
-  trackerAdapter?: (init: TrackerAdapterInit) => TrackerAdapter;
   /** Replaces the `skills` program, so tests never run the real CLI or reach a git host. */
   skillsCommand?: Command;
   /** Replaces `fetch` for the skills.sh directory, so tests never reach it. */
@@ -345,7 +338,6 @@ export interface Services {
   machine: MachineSensor;
   mrPoller: MrPoller;
   /** Jira, ClickUp and GitHub Issues per org: pull into Up next, push, write MR links and status back (5.11). */
-  trackers: TrackerService;
   /** One notification for each thing that needs the owner: a desktop banner and a browser notice. */
   notifier: Notifier;
   /** Background processes agents start through majhi-processes (5.15). */
@@ -2069,18 +2061,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return found?.status === "ok" ? found.agent.frontmatter.scope : undefined;
     },
   });
-  const trackers = new TrackerService({
-    store,
-    config,
-    secrets,
-    room,
-    events,
-    projects,
-    tasks,
-    decisions,
-    adapter: options.trackerAdapter ?? createAdapter,
-    ...(options.trackerFetch === undefined ? {} : { fetch: options.trackerFetch }),
-  });
   // A new majhi version brings new instructions and tools for the captain; a resumed session keeps the
   // old ones. So after an update each captain thread starts fresh (with its handoff note) once.
   background.run(async () => {
@@ -2145,7 +2125,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     machine,
     notifier,
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
-    trackers,
     processes,
     containers,
     autonomy,
@@ -2206,7 +2185,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       cards.close();
       layaDocker?.close();
       await runs.closeAll();
-      await trackers.stop();
       // Hooks already running (rewriting TASK.md at review, a restack) end before the stores close.
       // After the runs: a hook can wait on a lock a turn holds.
       await settled;
