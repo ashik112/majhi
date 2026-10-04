@@ -372,7 +372,7 @@ async function mcpServer(
 }
 
 /** The products a remote MCP connection turned on, as its service lists them. */
-function productsOf(c: ConnectionConfig): ServiceProduct[] {
+export function productsOf(c: ConnectionConfig): ServiceProduct[] {
   const picked = words(textValue(c, "products"));
   if (picked.length === 0) return [];
   const service = serviceByUrl(textValue(c, "url") ?? "");
