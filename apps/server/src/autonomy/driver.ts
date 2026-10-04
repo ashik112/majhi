@@ -56,6 +56,8 @@ export interface DriverDeps {
   pendingWork?: (org: string) => Promise<boolean>;
   /** One line per open finding of a workspace for the digest. */
   findingLines?: (org: string) => string[];
+  /** One line per open incident or failing watch of a workspace, unacknowledged first. */
+  incidentLines?: (org: string) => string[];
   /** One line per project of a workspace for the digest: its knowledge card in brief. */
   projectLines?: (org: string) => string[];
   /** Laya's say on whether a soft wake over changed facts is worth a captain turn. Absent: every one is. */
@@ -313,10 +315,32 @@ export class AutonomyDriver {
       projects: this.deps.projectLines?.(org) ?? [],
       accountStatus: Object.fromEntries(status.accounts.map((a) => [a.id, a.status])),
       findings: this.deps.findingLines?.(org) ?? [],
+      incidents: this.deps.incidentLines?.(org) ?? [],
+      ...this.deskTasks(org, new Set(status.now.map((t) => t.task))),
       starts: authorityOf(status.settings, org).start === "decide",
       machine: machineOf(autonomy),
     };
     return { input, boss };
+  }
+
+  /** The workspace's tasks in review and paused that the digest's own task list does not show. */
+  private deskTasks(org: string, listed: ReadonlySet<string>): { review: string[]; paused: string[] } {
+    let all: ReturnType<Store["tasks"]["list"]>;
+    try {
+      all = this.deps.store.tasks.list(true);
+    } catch {
+      return { review: [], paused: [] };
+    }
+    const mine = all.filter((t) => t.kind !== "chat" && (t.org ?? PRIVATE) === org);
+    return {
+      review: mine.filter((t) => t.status === "review").map((t) => `${t.id} ${t.title}`),
+      paused: mine
+        .filter((t) => t.status === "paused" && !listed.has(t.id))
+        .map((t) => {
+          const owner = t.pausedBy === undefined && (t.pausedReason ?? "owner") === "owner";
+          return `${t.id} ${t.title} (${pauseWhy(t)}${owner ? ": the owner's, leave it paused" : ""})`;
+        }),
+    };
   }
 
   /** After the captain's turn in a lane: the facts as they stand now are what it has seen. */
@@ -473,7 +497,7 @@ export class AutonomyDriver {
    * the lane of its workspace. It is how a lane where Start is You hears of ship and review, and how
    * a lane that starts work hears of new backlog without an hourly check. The first look only learns.
    */
-  private watchOther(t: Pick<Task, "id" | "title" | "status" | "org">): void {
+  private watchOther(t: Pick<Task, "id" | "title" | "status" | "org" | "pausedReason" | "pausedBy">): void {
     const before = this.others.get(t.id);
     this.others.set(t.id, t.status);
     if (before === undefined || before === t.status) {
@@ -482,17 +506,13 @@ export class AutonomyDriver {
       }
       return;
     }
-    if (t.status !== "review") return;
-    // Where the captain starts work its ship chore has review; a lane where Start is You hears of it here.
+    // Review and a stuck pause of any task of the workspace are the captain's to look at, whoever started it.
     const org = t.org ?? PRIVATE;
-    const generation = this.generation;
-    void this.deps.autonomy
-      .runsOrgs()
-      .then((orgs) => {
-        if (generation === this.generation && !orgs.includes(org))
-          this.wake(`${t.id} is ready for review: ${t.title}`, org, "news");
-      })
-      .catch(() => undefined);
+    if (t.status === "review") this.wake(`${t.id} is ready for review: ${t.title}`, org, "news");
+    else if (t.status === "paused") {
+      const change = changeOf(t);
+      if (change?.wake === true) this.wake(change.wakeText, org, "news");
+    }
   }
 
   /**
@@ -578,7 +598,8 @@ export function changeOf(
       return { text: `Started ${title}`, wakeText: `${t.id} is running: ${t.title}`, wake: false };
     case "paused": {
       const reason = t.pausedReason ?? "owner";
-      const stuck = reason === "error" || reason === "loop" || reason === "blocked";
+      // A pause the owner made is not news; a stuck, failing or limited run is, for the captain to resume or explain.
+      const stuck = reason !== "owner" && t.pausedBy !== "captain" && t.pausedBy !== "autonomy-off";
       return {
         text: `Paused ${title} ${pauseWhy(t)}`,
         wakeText: `${t.id} paused (${t.pausedBy === undefined ? reason : "by the system"}): ${t.title}`,
