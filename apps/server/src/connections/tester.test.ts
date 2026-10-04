@@ -297,7 +297,7 @@ esac`,
     await service.update({ id: "acme-box", fields: { alias: "acme-staging" } }, "connections.update", OWNER);
     expect(await tester().test("acme-box")).toMatchObject({
       ok: false,
-      detail: "~/.ssh/config has no Host acme-staging.",
+      detail: "~/.ssh/config has no Host acme-staging. Use user@address, like root@203.0.113.10.",
     });
     expect(sshCalls).toHaveLength(1);
   });

@@ -144,7 +144,7 @@ describe("connections commands", () => {
       fields: { alias: "lab" },
     });
     expect((await h.cmd("connections.test", { id: "acme-box" })).body.detail).toBe(
-      "~/.ssh/config has no Host nowhere.",
+      "~/.ssh/config has no Host nowhere. Use user@address, like root@203.0.113.10.",
     );
     const rows = (await h.cmd("health.run", {})).body.checks;
     const row = (id: string) => rows.find((c: { id: string }) => c.id === `connection:${id}`);

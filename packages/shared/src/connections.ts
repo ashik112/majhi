@@ -62,10 +62,10 @@ export const ConnectionFieldSchema = z.object({
   /** The field counts only while these other fields hold these values. */
   when: WhenSchema.optional(),
   /** How a text value must look: a URL, a port, a host name or alias, or words separated by spaces. */
-  format: z.enum(["url", "port", "host", "words"]).optional(),
+  format: z.enum(["url", "port", "host", "ssh", "words"]).optional(),
   placeholder: z.string().optional(),
   /** The page offers the Host aliases of ~/.ssh/config. */
-  pick: z.literal("ssh-alias").optional(),
+  pick: z.enum(["ssh-alias", "ssh-key"]).optional(),
   /** majhi sets it (Connect), so the form does not offer it. */
   managed: z.boolean().optional(),
 });
@@ -271,10 +271,19 @@ export const CONNECTION_TYPES: readonly ConnectionTypeDef[] = [
         label: "Host",
         kind: "text",
         required: true,
-        format: "host",
+        format: "ssh",
         pick: "ssh-alias",
-        placeholder: "acme-prod",
-        help: "A Host alias of ~/.ssh/config.",
+        placeholder: "root@203.0.113.10",
+        help: "A Host of ~/.ssh/config, or user@address with an optional :port. majhi signs in with the keys in your ssh-agent.",
+      },
+      {
+        key: "key",
+        label: "Key",
+        kind: "text",
+        required: false,
+        pick: "ssh-key",
+        placeholder: "~/.ssh/id_ed25519.pub",
+        help: "Which of your keys to use, when the host needs a different one. Only its public half is used: the agent signs.",
       },
     ],
     lists: [],
@@ -803,10 +812,27 @@ const WORD = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
 const WEB_URL = z.url({ protocol: /^https?$/ });
 /** A host name or an ssh alias. Never starts with a dash, so it cannot pass for an option. */
 const HOST = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,252}$/;
+/** An ssh target: an alias or a host, with an optional user and port. Never starts with `-`. */
+export const SSH_TARGET =
+  /^(?:[A-Za-z0-9_][A-Za-z0-9._-]{0,63}@)?[A-Za-z0-9_][A-Za-z0-9._-]{0,252}(?::\d{1,5})?$/;
+
+/** A key under ~/.ssh, by its public file: `~/.ssh/<name>.pub`. No path leaves ~/.ssh. */
+export const SSH_PUBKEY = /^~\/\.ssh\/[A-Za-z0-9._-]{1,128}\.pub$/;
+
+/**
+ * `ssh` arguments for a target: the chosen key (its public file, so the agent signs with exactly that
+ * key), `-p <port>` when the target names one, then `--` and `user@host`.
+ */
+export function sshTargetArgs(target: string, key?: { pub: string } | undefined): string[] {
+  const m = /^(.*?)(?::(\d{1,5}))?$/.exec(target);
+  const host = m?.[1] ?? target;
+  const keyArgs = key === undefined ? [] : ["-o", "IdentitiesOnly=yes", "-o", `IdentityFile=${key.pub}`];
+  return [...keyArgs, ...(m?.[2] === undefined ? [] : ["-p", m[2]]), "--", host];
+}
 
 /** Why a text value does not fit its field's format, or undefined. */
 export function formatIssue(
-  field: Pick<ConnectionField, "format" | "label">,
+  field: Pick<ConnectionField, "format" | "label" | "pick">,
   value: string,
 ): string | undefined {
   if (field.format === "port") {
@@ -819,6 +845,16 @@ export function formatIssue(
     return WEB_URL.safeParse(value).success
       ? undefined
       : `${field.label} is a web address, like https://mcp.acme.com/mcp`;
+  }
+  if (field.pick === "ssh-key") {
+    return SSH_PUBKEY.test(value)
+      ? undefined
+      : `${field.label} is a public key in ~/.ssh, like ~/.ssh/id_ed25519.pub`;
+  }
+  if (field.format === "ssh") {
+    return SSH_TARGET.test(value)
+      ? undefined
+      : `${field.label} is a Host of ~/.ssh/config or user@address, like root@203.0.113.10`;
   }
   if (field.format === "host") {
     return HOST.test(value) ? undefined : `${field.label} is a host name, like imap.acme.com`;

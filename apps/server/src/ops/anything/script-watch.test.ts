@@ -21,17 +21,10 @@ const spec = (fields: Record<string, unknown>) => ({
 describe("script watches", () => {
   it("reads a number, a word, or JSON at a path, with formulas' folding", async () => {
     const seen: { connections?: readonly string[] } = {};
-    const cpu = await readWatch(
-      spec({ script: "echo 31.4" }) as never,
-      "acme",
-      ports("31.4\n", seen),
-    );
+    const cpu = await readWatch(spec({ script: "echo 31.4" }) as never, "acme", ports("31.4\n", seen));
     expect(cpu).toMatchObject({ number: 31.4 });
     expect(seen.connections).toEqual(["do"]);
-    const word = await readWatch(spec({ script: "echo active" }) as never,
-      "acme",
-      ports("active"),
-    );
+    const word = await readWatch(spec({ script: "echo active" }) as never, "acme", ports("active"));
     expect(word).toMatchObject({ signature: "active" });
     const json = await readWatch(
       spec({ script: "curl -s x", path: "data.result.*.values", agg: "max" }) as never,
@@ -55,9 +48,9 @@ describe("script watches", () => {
   });
 
   it("refuses a connection of another workspace", async () => {
-    await expect(
-      readWatch( spec({ script: "echo 1" }) as never, "globex", ports("1")),
-    ).rejects.toThrow("belongs to another workspace");
+    await expect(readWatch(spec({ script: "echo 1" }) as never, "globex", ports("1"))).rejects.toThrow(
+      "belongs to another workspace",
+    );
   });
 
   it("lets reads through and refuses scripts that change something", () => {

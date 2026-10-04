@@ -148,3 +148,41 @@ it("suggests a free id from the name", () => {
   expect(suggestConnectionId("Über logs!", new Set(["uber-logs"]))).toBe("uber-logs-2");
   expect(suggestConnectionId("***", new Set())).toBe("connection");
 });
+
+describe("ssh targets", () => {
+  it("takes an alias, user@address and a port, and never an option", async () => {
+    const { SSH_TARGET, sshTargetArgs } = await import("./connections.ts");
+    for (const ok of ["acme-prod", "root@203.0.113.10", "deploy@db.acme.example:2222", "203.0.113.10"]) {
+      expect(SSH_TARGET.test(ok), ok).toBe(true);
+    }
+    for (const bad of ["-oProxyCommand=evil", "root@-oX", "a b", "root@host;rm", "x:99999999"]) {
+      expect(SSH_TARGET.test(bad), bad).toBe(false);
+    }
+    expect(sshTargetArgs("deploy@db.acme.example:2222")).toEqual([
+      "-p",
+      "2222",
+      "--",
+      "deploy@db.acme.example",
+    ]);
+    expect(sshTargetArgs("acme-prod")).toEqual(["--", "acme-prod"]);
+  });
+});
+
+describe("ssh keys", () => {
+  it("uses exactly the chosen key, and only a public key in ~/.ssh", async () => {
+    const { SSH_PUBKEY, sshTargetArgs } = await import("./connections.ts");
+    expect(sshTargetArgs("root@203.0.113.10", { pub: "~/.ssh/client.pub" })).toEqual([
+      "-o",
+      "IdentitiesOnly=yes",
+      "-o",
+      "IdentityFile=~/.ssh/client.pub",
+      "--",
+      "root@203.0.113.10",
+    ]);
+    for (const ok of ["~/.ssh/id_ed25519.pub", "~/.ssh/client-a.pub"])
+      expect(SSH_PUBKEY.test(ok), ok).toBe(true);
+    for (const bad of ["~/.ssh/id_ed25519", "~/.ssh/../.aws/x.pub", "/etc/x.pub", "~/.ssh/a b.pub"]) {
+      expect(SSH_PUBKEY.test(bad), bad).toBe(false);
+    }
+  });
+});
