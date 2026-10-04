@@ -12,6 +12,7 @@ import {
   type HostPaths,
   type Safety,
 } from "./args.ts";
+import { assertTaskArgv } from "./task-docker.ts";
 
 /** A short call, like `docker ps`, waits this long at most. */
 const EXEC_TIMEOUT_MS = 30_000;
@@ -25,6 +26,19 @@ export interface DockerCliOptions extends HostPaths {
   /** PATH and DOCKER_HOST, from `env.runner.cliEnv`. Never the agent's environment. */
   cliEnv: Record<string, string>;
 }
+
+/** What a task's own `docker` call printed, and how it ended. `code` is null when it was killed at the timeout. */
+export interface TaskCallResult {
+  code: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+/** The most of a task call's output kept, from the end: a failed build says why last. */
+const TASK_OUTPUT_KEEP = 256 * 1024;
+
+/** A task's own call (a build, a test run in a container) waits this long at most. */
+const TASK_CALL_TIMEOUT_MS = 20 * 60_000;
 
 /** The result of a short call. */
 export interface DockerResult {
@@ -128,6 +142,22 @@ export class DockerCli {
     return this.raw(args, options.timeoutMs);
   }
 
+  /**
+   * A call from a task's own script (`docker run`, `exec`, `logs`, `rm` and a few more, see
+   * `task-docker.ts`), after `assertTaskArgv`. A call that fails still returns: the script wants its
+   * exit code and output.
+   */
+  task(
+    args: readonly string[],
+    safety: Safety,
+    allowedImages: readonly string[],
+    options: { timeoutMs?: number } = {},
+  ): Promise<TaskCallResult> {
+    assertTaskArgv(args, safety, allowedImages);
+    assertNoHostPaths(args, this.options);
+    return this.tail(args, options.timeoutMs ?? TASK_CALL_TIMEOUT_MS);
+  }
+
   /** Puts a container on the network of its task. Nothing else can be connected. */
   connect(network: string, container: string): Promise<DockerResult> {
     if (!TASK_NETWORK.test(network)) throw new ContainerRefused(`${network} is not the network of a task.`);
@@ -176,6 +206,42 @@ export class DockerCli {
         if (name !== undefined) this.remove(name);
       },
     };
+  }
+
+  private async tail(args: readonly string[], timeoutMs: number): Promise<TaskCallResult> {
+    await mkdir(this.configDir, { recursive: true });
+    return await new Promise<TaskCallResult>((resolve) => {
+      let stdout = "";
+      let stderr = "";
+      let timedOut = false;
+      const keep = (text: string) =>
+        text.length > TASK_OUTPUT_KEEP * 2 ? text.slice(-TASK_OUTPUT_KEEP) : text;
+      const child = spawn(this.docker, [...args], {
+        env: this.env,
+        detached: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const timer = setTimeout(() => {
+        timedOut = true;
+        killTree(child);
+      }, timeoutMs);
+      child.stdout.on("data", (d: Buffer) => {
+        stdout = keep(stdout + d.toString());
+      });
+      child.stderr.on("data", (d: Buffer) => {
+        stderr = keep(stderr + d.toString());
+      });
+      const done = (code: number | null, extra = "") => {
+        clearTimeout(timer);
+        resolve({
+          code: timedOut ? null : code,
+          stdout: stdout.slice(-TASK_OUTPUT_KEEP),
+          stderr: (stderr + extra).slice(-TASK_OUTPUT_KEEP),
+        });
+      };
+      child.on("error", (err) => done(null, err.message));
+      child.on("close", (code) => done(code));
+    });
   }
 
   private async raw(args: readonly string[], timeoutMs: number = EXEC_TIMEOUT_MS): Promise<DockerResult> {

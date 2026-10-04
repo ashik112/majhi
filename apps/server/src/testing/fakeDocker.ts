@@ -2,9 +2,12 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { killTree, type Spawned } from "@majhi/acp";
 import { assertSafe, type DockerParts, dockerArgv, type Safety } from "../containers/args.ts";
 import type { ContainerDocker } from "../containers/service.ts";
+import { assertTaskArgv } from "../containers/task-docker.ts";
 
 export interface FakeContainer {
   name: string;
+  /** What `docker run -d` printed, and `inspect` takes. */
+  id?: string;
   labels: Record<string, string>;
   child: ChildProcess | undefined;
 }
@@ -21,6 +24,8 @@ export class FakeDocker implements ContainerDocker {
   connected: string[] = [];
   stoppedBuilders: string[] = [];
   prunedBuilders: string[] = [];
+  /** Every call a task's script made, as docker got it. */
+  taskCalls: string[][] = [];
   /** Makes `ps` answer late, to play a slow daemon. */
   psDelayMs = 0;
 
@@ -67,6 +72,51 @@ export class FakeDocker implements ContainerDocker {
     };
   }
 
+  /** A task's own call: checked like the real wrapper, then played in memory. */
+  async task(
+    args: readonly string[],
+    safety: Safety,
+    allowedImages: readonly string[],
+  ): Promise<{ code: number | null; stdout: string; stderr: string }> {
+    assertTaskArgv(args, safety, allowedImages);
+    this.taskCalls.push([...args]);
+    const ok = (stdout: string) => ({ code: 0, stdout, stderr: "" });
+    const at = (flag: string) => args[args.indexOf(flag) + 1] ?? "";
+    switch (args[0]) {
+      case "run": {
+        const name = at("--name");
+        const labels: Record<string, string> = {};
+        args.forEach((a, i) => {
+          if (args[i - 1] !== "--label") return;
+          const eq = a.indexOf("=");
+          labels[a.slice(0, eq)] = a.slice(eq + 1);
+        });
+        const id = Buffer.from(name).toString("hex").padEnd(64, "0").slice(0, 64);
+        if (args.includes("--detach")) {
+          this.containers.set(name, { name, id, labels, child: undefined });
+          return ok(`${id}\n`);
+        }
+        if (!args.includes("--rm")) this.containers.set(name, { name, id, labels, child: undefined });
+        return ok(`ran ${args.find((a, i) => i > 0 && !a.startsWith("-") && !args[i - 1]?.startsWith("--")) ?? ""}\n`);
+      }
+      case "buildx":
+        this.images.add(at("--tag"));
+        return ok("built\n");
+      case "rm":
+        for (const name of args.slice(1).filter((a) => !a.startsWith("-"))) this.containers.delete(name);
+        return ok("");
+      case "ps":
+        return ok(
+          `${[...this.containers.values()]
+            .filter((c) => c.labels["majhi.task"] === safety.task)
+            .map((c) => c.name)
+            .join("\n")}\n`,
+        );
+      default:
+        return ok("");
+    }
+  }
+
   async connect(network: string, container: string): Promise<{ stdout: string; stderr: string }> {
     this.calls.push(`network connect ${network} ${container}`);
     if (container === "majhi-preview-acm-1" && !this.containers.has(container))
@@ -83,7 +133,9 @@ export class FakeDocker implements ContainerDocker {
     const filter = (key: string) =>
       args.flatMap((a, i) => (args[i - 1] === "--filter" && a.startsWith(`${key}=`) ? [a] : []));
     const verb =
-      args[0] === "ps" || args[0] === "port" || args[0] === "rm" ? args[0] : `${args[0]} ${args[1]}`;
+      args[0] === "ps" || args[0] === "port" || args[0] === "rm" || args[0] === "inspect"
+        ? args[0]
+        : `${args[0]} ${args[1]}`;
     switch (verb) {
       case "image inspect":
         if (!this.images.has(last)) throw new Error("No such image");
@@ -158,6 +210,11 @@ export class FakeDocker implements ContainerDocker {
             .map((c) => c.name)
             .join("\n"),
         );
+      }
+      case "inspect": {
+        const c = [...this.containers.values()].find((x) => x.id === last || x.name === last);
+        if (c === undefined) throw new Error("No such object");
+        return out(`/${c.name} ${c.labels["majhi.task"]} ${c.labels["majhi.container"]}`);
       }
       case "rm":
         for (const name of args.slice(3)) {

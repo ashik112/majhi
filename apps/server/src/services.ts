@@ -1469,6 +1469,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     spawner: sessionOptions.spawner ?? localSpawner,
     base: sessionOptions.base,
     repoMounts: (task) => repoMounts(task),
+    // A hand-off check that starts containers (a repo's own test of its deploy files) reaches the task's through majhi.
+    dockerShim: (task) => {
+      const shim = roomAccess.attachDocker({ task, agent: store.tasks.get(task)?.team[0] ?? "handoff" });
+      return shim === undefined
+        ? undefined
+        : { env: shim.env, release: () => roomAccess.revoke([shim.entry]) };
+    },
     mergeDecides: async (org) => authorityOf((await config.settings()).autonomy, org).merge === "decide",
     autonomous: () => autonomy.mode() === "on",
     ruleOff: (org, rule) => ruleSwitches.off(org, rule),

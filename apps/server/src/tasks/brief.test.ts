@@ -85,6 +85,7 @@ describe("renderTaskMd", () => {
         "- Problems you find outside your task become tasks (majhi-tasks create), not just a mention in the room.",
         "- To attach a file you have to a new task, pass its path in your task folder, e.g. attachments/image.png, in attachments. An upload id from uploads_create works too.",
         "- Do not ask the owner to merge, ship or review: when your work is done, majhi shows the owner a review card with Ship, Mark done and Ask for changes. Use the ask tool, with options, for any other decision you need from the owner (which approach, which option, whether to do something). A question in plain text is only a fallback.",
+        "- `docker` works for this task's own containers, through majhi (run, build, exec, logs, ps, rm, stop). No compose, no published ports.",
         "- Tools you install into $MAJHI_TOOLS/bin stay for this workspace's later runs: download release binaries there (no sudo, no apt).",
         "- Run the tests of what you changed, not a whole suite, unless the task asks for it: runs share the owner's machine. Follow the repo's own test rules (CLAUDE.md, AGENTS.md).",
         "- Org rules: none set yet.",
