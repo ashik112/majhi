@@ -7,13 +7,43 @@ const cpu = {
   data: {
     resultType: "matrix",
     result: [
-      { metric: { mode: "idle" }, values: [[1000, "900"], [1060, "945"]] },
-      { metric: { mode: "user" }, values: [[1000, "50"], [1060, "95"]] },
-      { metric: { mode: "system" }, values: [[1000, "10"], [1060, "20"]] },
+      {
+        metric: { mode: "idle" },
+        values: [
+          [1000, "900"],
+          [1060, "945"],
+        ],
+      },
+      {
+        metric: { mode: "user" },
+        values: [
+          [1000, "50"],
+          [1060, "95"],
+        ],
+      },
+      {
+        metric: { mode: "system" },
+        values: [
+          [1000, "10"],
+          [1060, "20"],
+        ],
+      },
     ],
   },
 };
-const memory = (v: string) => ({ data: { result: [{ metric: {}, values: [[1000, "1"], [1060, v]] }] } });
+const memory = (v: string) => ({
+  data: {
+    result: [
+      {
+        metric: {},
+        values: [
+          [1000, "1"],
+          [1060, v],
+        ],
+      },
+    ],
+  },
+});
 
 describe("watch formulas", () => {
   it("turns DigitalOcean's CPU counters into a percent", () => {
@@ -41,7 +71,17 @@ describe("watch formulas", () => {
   it("reads plain values, the last item and max over a window", () => {
     expect(readNumber({ account: { droplet_limit: 25 } }, { path: "account.droplet_limit" })).toBe(25);
     expect(readNumber({ v: [1, 9, 3] }, { path: "v", agg: "max" })).toBe(9);
-    expect(readNumber({ v: [[1, "4"], [2, "7"]] }, { path: "v.-1.1" })).toBe(7);
+    expect(
+      readNumber(
+        {
+          v: [
+            [1, "4"],
+            [2, "7"],
+          ],
+        },
+        { path: "v.-1.1" },
+      ),
+    ).toBe(7);
     expect(readNumber({ v: [] }, { path: "v" })).toBeUndefined();
   });
 });

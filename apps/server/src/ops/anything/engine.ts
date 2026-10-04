@@ -219,7 +219,7 @@ export class WatchEngine {
     }
     if (
       (c.type === "contains" || c.type === "notContains") &&
-      !(spec.kind === "price" || spec.kind === "custom" || spec.kind === "command")
+      !(spec.kind === "price" || spec.kind === "custom" || spec.kind === "command" || spec.kind === "script")
     ) {
       return "Only a page, a command or a described check can look for text.";
     }
@@ -1218,6 +1218,9 @@ export class WatchEngine {
       case "command":
         what = `a command in ${spec.task}'s sandbox`;
         break;
+      case "script":
+        what = `a script${spec.connections.length === 0 ? "" : ` with ${spec.connections.join(", ")}`}`;
+        break;
       case "custom":
         what = "the captain, on a strict budget";
         break;
@@ -1348,6 +1351,8 @@ function kindWord(def: WatchDef): string {
       return "usage";
     case "command":
       return "command";
+    case "script":
+      return "script";
     case "custom":
       return "in words";
   }
