@@ -157,7 +157,7 @@ for (const [w, h] of [
       await open(page, w, h, theme);
       await page.getByRole("button", { name: "Connect a service" }).click();
       await page.getByRole("button", { name: /Linear \(API\)/ }).click();
-      await expect(page.getByRole("button", { name: "Connect Linear (API)" })).toBeVisible();
+      await expect(page.getByRole("button", { name: /^Connect Linear \(API\) to /i })).toBeVisible();
       await shot(page, "consent", w, theme);
     });
 
@@ -170,7 +170,7 @@ for (const [w, h] of [
       await open(page, w, h, theme);
       await page.getByRole("button", { name: "Connect a service" }).click();
       await page.getByRole("button", { name: /^GitHub/ }).click();
-      await page.getByRole("button", { name: "Connect GitHub" }).click();
+      await page.getByRole("button", { name: /^Connect GitHub to /i }).click();
       await expect(page.getByText("WDJB-MJHT", { exact: true })).toBeVisible();
       await shot(page, "device-code", w, theme);
     });

@@ -353,7 +353,7 @@ export function ConnectCatalog({
                     ? "Opening"
                     : picked.kind === "cli-login"
                       ? `Sign in with ${picked.name}`
-                      : `Connect to ${scopeName(org, orgs)}`}
+                      : `Connect ${picked.name} to ${scopeName(org, orgs)}`}
                 </Button>
                 {picked.app !== undefined && (
                   <Button variant="ghost" onClick={() => setSheet(true)}>
