@@ -44,7 +44,11 @@ async function say(page: Page, text: string) {
 
 async function showSteps(page: Page) {
   // The decision line shows once the card has settled and folded.
-  await expect(log(page).getByText(/^You (approved|rejected): /).last()).toBeVisible();
+  await expect(
+    log(page)
+      .getByText(/^You (approved|rejected): /)
+      .last(),
+  ).toBeVisible();
   await openLastSteps(page);
 }
 
@@ -150,7 +154,11 @@ test("a rejected change stays undone; Undo also works from History", async ({ pa
     page,
     'call: majhi_orgs_create {"id":"initech","name":"Initech","ownerAsked":true,"reason":"You asked for Initech"}',
   );
-  await expect(log(page).getByText(/^majhi_orgs_create: \{/).last()).toBeVisible();
+  await expect(
+    log(page)
+      .getByText(/^majhi_orgs_create: \{/)
+      .last(),
+  ).toBeVisible();
   await openLastSteps(page);
   await expect(drawer(page).getByText("Applied: Create org Initech", { exact: true })).toBeVisible();
   await page.keyboard.press("Meta+j");
