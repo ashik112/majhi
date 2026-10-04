@@ -69,7 +69,8 @@ export function turnedOff(tools: readonly string[]): Set<string> {
  *
  * Defaults, kept as they were before gating:
  * - `majhi-admin`: the captain, and a root agent that lists it.
- * - `majhi-decide`, `majhi-processes`, `majhi-memory`: every session.
+ * - `majhi-decide`: only when the agent lists it (0 calls in five days of use, and its schema sits in every session's context).
+ * - `majhi-processes`, `majhi-memory`: every session.
  * - `majhi-room`: a team of two or more, a lone lead of a lead-mode task, or listed.
  * - `majhi-tasks`: leads and root agents, and every agent of an ops task (not the captain), or listed.
  * - `majhi-containers`: every session, when majhi can run containers.
@@ -82,7 +83,7 @@ export function gateTools(agent: GateAgent, ctx: GateContext): GatedTool[] {
   const lead = agent.role === "Lead" || agent.scope === "root";
   const defaults: Record<GatedTool, boolean> = {
     [ADMIN_TOOL_ID]: getsAdminTools(agent, ctx.boss),
-    [DECIDE_SERVER_NAME]: true,
+    [DECIDE_SERVER_NAME]: listed(DECIDE_SERVER_NAME),
     [ROOM_SERVER_NAME]: ctx.teamSize > 1 || ctx.soloLead || listed(ROOM_SERVER_NAME),
     [TASKS_SERVER_NAME]: agent.id !== ctx.boss && (lead || ctx.opsTask === true || listed(TASKS_SERVER_NAME)),
     [PROCESSES_SERVER_NAME]: true,

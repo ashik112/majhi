@@ -55,6 +55,10 @@ import { ConnectionTester } from "./connections/tester.ts";
 import { DockerCli } from "./containers/docker.ts";
 import { type ContainerDocker, ContainerService } from "./containers/service.ts";
 import { AcpProvider } from "./decisions/acp.ts";
+import { builtinRegistry } from "./decisions/builtinSlots.ts";
+import { CalibrationStore } from "./decisions/calibrationStore.ts";
+import { EvalStore } from "./decisions/evalStore.ts";
+import { LabelStore } from "./decisions/labels.ts";
 import { dockerCli, LayaDocker } from "./decisions/layaDocker.ts";
 import { LayaProvider } from "./decisions/layaProvider.ts";
 import { DecisionLog } from "./decisions/log.ts";
@@ -453,6 +457,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const decisions = new DecisionService({
     config,
     log: new DecisionLog(store.raw),
+    labels: new LabelStore(store.raw),
+    slots: builtinRegistry(),
+    evals: new EvalStore(store.raw),
+    calibrations: new CalibrationStore(store.raw),
     tokens: decideTokens,
     laya: new LayaProvider(options.hostLink, layaDocker),
     acp: new AcpProvider({
@@ -657,6 +665,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
   });
   memory.useCurator((fact) => curator.curate(fact));
+  // The owner keeping or dropping a fact is the right answer to "is it worth keeping".
+  memory.onOwnerChoice((id, action) =>
+    decisions.resolve(
+      "memory",
+      String(id),
+      action === "approved" ? "keep" : "not-keep",
+      action === "approved" ? "the owner kept it" : "the owner dropped it",
+    ),
+  );
   const housekeeper = new Housekeeper({
     config,
     agents: agentStore,
@@ -743,6 +760,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     guardRemoval: (task, action) => autonomy.guardChat(task, action),
     // Bound below: the merge requests service is built after the task service.
     onReview: (id) => {
+      void labelFinishedTask(id);
       captain.reviewReached(id);
       return pendingShips.reviewReached(id);
     },
@@ -764,6 +782,25 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     working: (id) => runs.working(id).length > 0,
     setTitle: (id, title) => tasks.autoTitleChat(id, title),
   });
+  /**
+   * A task reached review: its size decisions get a label from what the task turned out to be (the
+   * diff, the turns and the output tokens). A failure here never touches the task.
+   */
+  const labelFinishedTask = async (id: string): Promise<void> => {
+    try {
+      const diffs = await tasks.diff(id);
+      const spent = store.raw
+        .prepare(
+          "SELECT COUNT(*) AS turns, COALESCE(SUM(output_tokens + reasoning_tokens), 0) AS tokens FROM turns WHERE task = ?",
+        )
+        .get(id) as { turns: number; tokens: number };
+      const files = diffs.reduce((n, d) => n + d.files.length + d.omitted, 0);
+      const lines = diffs.reduce((n, d) => n + d.files.reduce((m, f) => m + f.additions + f.deletions, 0), 0);
+      decisions.taskReviewed(id, { files, lines, turns: spent.turns, outputTokens: spent.tokens });
+    } catch {
+      // No label this time; the next review tries again.
+    }
+  };
   /** The task an item belongs to, as notifications and the Decisions inbox name it. */
   const subjectOf = (id: string): Subject | undefined => {
     const task = store.tasks.get(id);
