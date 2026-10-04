@@ -56,7 +56,7 @@ function SpendLine({
       )}
       {cap !== undefined && total && (
         <span
-          title="Autonomous spend today against its daily budget"
+          title="Auto-pilot spend today against its daily budget"
           className={cn("font-medium text-fg-soft", capTone(total) === "red" && "text-red")}
         >
           {formatMoney(total.used.cost)} of {dollars(cap)} today
@@ -92,7 +92,7 @@ function SpendLine({
 }
 
 /**
- * The top of the Captain page: the Autonomous switch with its state, one sentence that is true now,
+ * The top of the Captain page: the Auto-pilot switch with its state, one sentence that is true now,
  * today's spend per workspace, and the ways to the delegation grid, the limits and yesterday's summary.
  */
 export function CaptainHeader({
@@ -134,7 +134,7 @@ export function CaptainHeader({
           {toggle}
           <span className="flex items-center gap-1.5 text-base">
             <Lamp state={lamp} size={7} />
-            <span className="text-fg">Autonomous</span>
+            <span className="text-fg">Auto-pilot</span>
             <span className={cn("font-medium", LAMP_TEXT[lamp])}>{MODE_WORD[mode]}</span>
           </span>
         </div>

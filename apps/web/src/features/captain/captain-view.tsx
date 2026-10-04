@@ -33,7 +33,7 @@ function sheetOf(tab: string | undefined): Open | undefined {
 }
 
 /**
- * The Captain page, one screen and no tabs: the header with the Autonomous switch and one status
+ * The Captain page, one screen and no tabs: the header with the Auto-pilot switch and one status
  * sentence, the conversation on the left, and what needs you, what runs, what is next and what the
  * captain did on the right. Delegation, the full log and yesterday's summary open in sheets. Old
  * links with `?tab=` land here and open the sheet they meant.

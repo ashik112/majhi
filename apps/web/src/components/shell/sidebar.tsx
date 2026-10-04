@@ -1,27 +1,40 @@
+import type { AccountView, TaskSummary } from "@majhi/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { MessageSquare } from "lucide-react";
+import {
+  Activity,
+  Anchor,
+  BookOpen,
+  CircleAlert,
+  House,
+  KeyRound,
+  Library,
+  type LucideIcon,
+  MessagesSquare,
+  Radar,
+  Settings,
+  Users,
+} from "lucide-react";
 import { useMemo } from "react";
 import { AppearanceButton } from "@/components/shell/appearance";
 import { Bell } from "@/components/shell/bell";
 import { WorkspaceSwitcher } from "@/components/shell/workspace-switcher";
-import { Kbd } from "@/components/ui/kbd";
-import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
+import { Lamp, type LampState } from "@/components/ui/lamp";
 import { ROW_SELECTED } from "@/components/ui/list-detail";
 import { MajhiMark } from "@/components/ui/majhi-mark";
 import { SectionLabel } from "@/components/ui/section-label";
-import { MODE_LAMP, MODE_WORD } from "@/features/autonomy/model";
 import { useUnseenSummary } from "@/features/autonomy/summary-seen";
-import { SpendToday, useAutonomousSwitch } from "@/features/autonomy/switch";
+import { cardLine, plainTitle } from "@/features/board/model";
 import { useBoss } from "@/features/boss/boss-context";
 import { useNeedsYou } from "@/features/decisions/needs-you";
 import { checksNeedingYou } from "@/features/health/model";
 import { isSettingsPath } from "@/features/settings/settings-frame";
-import { accountsNeedingYou, agentsRightNow, healthCheckedText } from "@/features/shell/model";
+import { limitNote } from "@/features/shell/limit-note";
+import { accountsNeedingYou, isOpen } from "@/features/shell/model";
 import { PAGE_LABEL } from "@/features/shell/nav";
 import { chordOf } from "@/features/shell/shortcuts";
 import { UpdateNotice } from "@/features/update/update-notice";
-import { useAgentIndex } from "@/lib/agent-index";
+import { type AgentInfo, useAgentIndex } from "@/lib/agent-index";
 import { prefetchCaptain } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
@@ -41,7 +54,7 @@ const ITEM =
 
 /**
  * The sidebar, top to bottom: the brand with the bell, the workspace switcher, the daily work, the team
- * (see MainNav), one Settings row, and the agents' lamps at the foot.
+ * (see MainNav), the agents that work now, and the foot rows.
  */
 export function Sidebar() {
   return (
@@ -57,9 +70,10 @@ export function Sidebar() {
       {/* The middle scrolls only when a short window needs the room. The update row sits below it, never over it. */}
       <div className="-mx-3 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-3 pt-0.5 pb-2 scroll-fade">
         <MainNav />
+        <AgentsNow />
       </div>
       <UpdateNotice />
-      <AgentsNow />
+      <FootNav />
     </aside>
   );
 }
@@ -117,160 +131,143 @@ function Brand() {
   );
 }
 
-/** How a row's count reads: red is for what waits for the owner (Decisions only); amber is a thing to look at. */
+/** How a row's count reads: red is for what waits for the owner; amber is a thing to look at. */
 type NavBadge = { text: string; tone?: "needs" | "check"; dot?: boolean; title?: string };
 
+const ICON = "size-4 shrink-0";
+
 /**
- * The sidebar's rows: daily work (Today, Decisions, Board, Chats), the captain and what it runs on its
- * own (Autonomous, Playbooks), Watch and Knowledge; then the team (Agents, Accounts, Health & usage);
- * then one Settings row for configuration.
+ * The sidebar's rows: Home, Needs you, Chats, the captain, Playbooks, Watch and Knowledge; then the
+ * agents that work now (see AgentsNow); at the foot Agents, Accounts, Health & usage and Settings.
  */
 function MainNav() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const waiting = useNeedsYou() ?? 0;
   const isActive = (to: string) =>
     to === "/" ? pathname === "/" || pathname.startsWith("/t/") : pathname.startsWith(to);
-  const gap = "gap-4 [@media(max-height:799px)]:gap-2.5";
   return (
-    <nav aria-label="Main" className={cn("flex flex-col", gap)}>
-      <div className="flex flex-col gap-px">
-        <NavRow page="today" active={isActive(PAGE_PATH.today)} />
-        <NavRow
-          page="decisions"
-          active={isActive(PAGE_PATH.decisions)}
-          badge={waiting > 0 ? { text: String(waiting), tone: "needs" } : undefined}
-        />
-        <NavRow page="board" active={isActive(PAGE_PATH.board)} />
-        <NavRow page="chats" active={isActive(PAGE_PATH.chats)} />
-      </div>
-      <div className="flex flex-col gap-px">
-        <CaptainRow />
-        <AutonomyRow />
-        <NavRow page="playbooks" active={isActive(PAGE_PATH.playbooks)} sub />
-        <WatchRow active={isActive(PAGE_PATH.watch)} />
-        <NavRow page="business" active={isActive(PAGE_PATH.business)} />
-      </div>
-      <TeamGroup isActive={isActive} />
-      <SettingsGroup isActive={isActive} />
+    <nav aria-label="Main" className="flex flex-col gap-px">
+      <NavRow page="board" label="Home" icon={House} active={isActive(PAGE_PATH.board)} />
+      <NavRow
+        page="decisions"
+        label="Needs you"
+        icon={CircleAlert}
+        active={isActive(PAGE_PATH.decisions)}
+        badge={waiting > 0 ? { text: String(waiting), tone: "needs" } : undefined}
+      />
+      <NavRow page="chats" icon={MessagesSquare} active={isActive(PAGE_PATH.chats)} />
+      <CaptainRow />
+      <NavRow page="playbooks" icon={BookOpen} active={isActive(PAGE_PATH.playbooks)} />
+      <WatchRow active={isActive(PAGE_PATH.watch)} />
+      <NavRow page="business" icon={Library} active={isActive(PAGE_PATH.business)} />
     </nav>
   );
 }
 
-/** The team: who works (Agents), what they sign in with (Accounts), and how it all runs (Health & usage). */
-function TeamGroup({ isActive }: { isActive: (to: string) => boolean }) {
+/** The foot: who works (Agents), what they sign in with (Accounts), how it runs (Health & usage), Settings. */
+function FootNav() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const isActive = (to: string) => pathname.startsWith(to);
   const agents = useAgentIndex();
   const accounts = useAccounts().data;
   const settled = useAfterFirstPaint(6_000);
   const checks = useHealthChecks(settled).data?.checks;
+  const toReview = (useFacts({ status: "pending" }, settled).data ?? []).length;
   const signIn = accountsNeedingYou(accounts ?? []).length;
   const toFix = checksNeedingYou(checks);
+  const settings = isSettingsPath(pathname) || isActive(PAGE_PATH.setup);
   return (
-    <div className="flex flex-col gap-px">
-      <SectionLabel className="px-2.5 pb-1">Team</SectionLabel>
+    <div className="flex shrink-0 flex-col gap-px border-t border-line pt-2">
       <NavRow
         page="agents"
+        icon={Users}
         active={isActive(PAGE_PATH.agents)}
         badge={agents.size > 0 ? { text: String(agents.size) } : undefined}
       />
       <NavRow
         page="accounts"
+        icon={KeyRound}
         active={isActive(PAGE_PATH.accounts)}
         badge={
-          (accounts?.length ?? 0) > 0 || signIn > 0
-            ? { text: String(accounts?.length ?? 0), dot: signIn > 0 }
-            : undefined
+          signIn > 0
+            ? { text: `${signIn} sign in`, tone: "needs" }
+            : (accounts?.length ?? 0) > 0
+              ? { text: String(accounts?.length ?? 0) }
+              : undefined
         }
       />
       <NavRow
         page="usage"
+        icon={Activity}
         active={isActive(PAGE_PATH.usage)}
         badge={toFix > 0 ? { text: `${toFix} to fix`, tone: "check" } : undefined}
       />
-    </div>
-  );
-}
-
-/**
- * Settings: one row that opens the Settings page, which lists every configuration page on its own left.
- * It is selected on any of those pages. A note says what inside needs a look; none of it is a decision,
- * so none of it is red.
- */
-function SettingsGroup({ isActive }: { isActive: (to: string) => boolean }) {
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const settled = useAfterFirstPaint(6_000);
-  const toReview = (useFacts({ status: "pending" }, settled).data ?? []).length;
-  const active = isSettingsPath(pathname) || isActive(PAGE_PATH.setup);
-  return (
-    <div className="flex flex-col gap-px">
-      <Link
-        to={PAGE_PATH.setup}
-        search={{}}
-        aria-current={active ? "page" : undefined}
-        title={toReview > 0 ? `Settings: ${toReview} lessons to review in Memory` : "Settings"}
-        className={cn(
-          ITEM,
-          "h-8 shrink-0 gap-2 px-2.5 text-body font-medium",
-          active ? ROW_SELECTED : "text-fg-muted",
-        )}
-      >
-        <span className="shrink-0">Settings</span>
-        {toReview > 0 && (
-          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs font-normal text-caution">
-            <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
-            {toReview} to review
-          </span>
-        )}
-      </Link>
+      <div className="flex items-center gap-1">
+        <Link
+          to={PAGE_PATH.setup}
+          search={{}}
+          aria-current={settings ? "page" : undefined}
+          title={toReview > 0 ? `Settings: ${toReview} lessons to review in Memory` : "Settings"}
+          className={cn(
+            ITEM,
+            "h-8 min-w-0 flex-1 gap-2 px-2.5 text-body font-medium",
+            settings ? ROW_SELECTED : "text-fg-muted",
+          )}
+        >
+          <Settings aria-hidden="true" className={ICON} />
+          <span className="shrink-0">Settings</span>
+          {toReview > 0 && (
+            <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs font-normal text-caution">
+              <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
+              {toReview} to review
+            </span>
+          )}
+        </Link>
+        <AppearanceButton />
+      </div>
     </div>
   );
 }
 
 function NavRow({
   page,
+  label,
+  icon: Icon,
   active,
   badge,
-  className,
-  sub,
 }: {
   page: PageName;
+  label?: string;
+  icon: LucideIcon;
   active: boolean;
   badge?: NavBadge | undefined;
-  className?: string;
-  /** A row under Captain: indented behind a rule. */
-  sub?: boolean;
 }) {
   const chord = chordOf(PAGE_PATH[page]);
+  const name = label ?? PAGE_LABEL[page];
   return (
     <Link
       to={PAGE_PATH[page]}
       search={{}}
       aria-current={active ? "page" : undefined}
-      title={chord === undefined ? PAGE_LABEL[page] : `${PAGE_LABEL[page]} (${chord})`}
+      title={chord === undefined ? name : `${name} (${chord})`}
       className={cn(
         ITEM,
-        "h-8 shrink-0 px-2.5 text-body font-medium",
-        sub && "ml-2.5 border-l border-line pl-2",
+        "h-8 shrink-0 gap-2 px-2.5 text-body font-medium",
         active ? ROW_SELECTED : "text-fg-muted",
-        className,
       )}
     >
-      <span className={cn("min-w-0 truncate", sub && "pl-1.5")}>{PAGE_LABEL[page]}</span>
+      <Icon aria-hidden="true" className={ICON} />
+      <span className="min-w-0 truncate">{name}</span>
       {badge && (
         <span
           title={badge.title}
           className={cn(
-            "tnum ml-auto flex shrink-0 items-center gap-1.5 pl-2 text-xs font-normal",
+            "tnum ml-auto flex shrink-0 items-center gap-1.5 pl-2 font-mono text-xs font-normal",
             badge.tone === "needs" && "text-lamp-needs",
             badge.tone === "check" && "text-caution",
             badge.tone === undefined && "text-fg-faint",
           )}
         >
-          {badge.dot && (
-            <>
-              <Lamp state="needs" size={6} />
-              <span className="sr-only">An account needs you. </span>
-            </>
-          )}
           {badge.text}
         </span>
       )}
@@ -279,7 +276,7 @@ function NavRow({
 }
 
 /**
- * Watch: what is watched and the incidents. It carries a lamp only while a service is down or an
+ * Watch: what is watched and the incidents. It carries a count only while a service is down or an
  * incident is open, so a quiet day is a quiet row.
  */
 function WatchRow({ active }: { active: boolean }) {
@@ -290,17 +287,16 @@ function WatchRow({ active }: { active: boolean }) {
   return (
     <NavRow
       page="watch"
+      icon={Radar}
       active={active}
-      badge={
-        lit > 0 ? { text: down > 0 ? `${down} down` : `${open} open`, tone: "needs", dot: false } : undefined
-      }
+      badge={lit > 0 ? { text: down > 0 ? `${down} down` : `${open} open`, tone: "needs" } : undefined}
     />
   );
 }
 
 /**
- * The captain: the row opens the Captain page (today, chat, log and rules). The chat button beside it opens the captain chat drawer,
- * like Cmd+J.
+ * The captain: the row opens the Captain page. The chip beside the name opens the captain chat
+ * drawer, like Cmd+J.
  */
 function CaptainRow() {
   const { open, toggle } = useBoss();
@@ -325,6 +321,7 @@ function CaptainRow() {
           active ? ROW_SELECTED : "text-fg-muted",
         )}
       >
+        <Anchor aria-hidden="true" className={ICON} />
         <span className="truncate">Captain</span>
         {summary !== undefined && (
           <span
@@ -343,118 +340,104 @@ function CaptainRow() {
         onClick={toggle}
         className={cn(
           ITEM,
-          "h-8 shrink-0 justify-center gap-1 px-1.5",
+          "h-8 shrink-0 justify-center px-1.5 font-mono text-xs",
           open ? ROW_SELECTED : "text-fg-faint",
         )}
       >
-        <MessageSquare aria-hidden="true" className="size-3.5" />
-        <Kbd>{MOD_KEY} J</Kbd>
+        {MOD_KEY} J
       </button>
     </div>
   );
 }
 
-/**
- * Autonomous, a sub-row of Captain: its lamp, state and the switch, with today's spend under the
- * name. It is not a page: the switch turns it on (after a short dialog) or off (pause its tasks, or
- * let them finish their step).
- */
-function AutonomyRow() {
-  const { status, unavailable, mode, toggle, dialogs } = useAutonomousSwitch();
-  const lamp = MODE_LAMP[mode];
-  // What holds Autonomous (a budget, an account under its floor) was a banner on every page; it is the tooltip now.
-  const hold = status?.holds[0]?.text;
-  return (
-    <div
-      title={hold ?? unavailable}
-      className="ml-2.5 flex shrink-0 items-center gap-1 border-l border-line pl-2"
-    >
-      <div className="flex min-h-8 min-w-0 flex-1 flex-col justify-center px-1.5 py-1 text-body font-medium text-fg-muted">
-        <span className="flex min-w-0 items-center gap-2">
-          <Lamp state={lamp} size={7} />
-          <span className="truncate">Autonomous</span>
-          <span className={cn("ml-auto shrink-0 text-xs font-normal", LAMP_TEXT[lamp])}>
-            {MODE_WORD[mode]}
-          </span>
-        </span>
-        {status && <SpendToday status={status} className="pl-[15px] text-xs font-normal" />}
-      </div>
-      {toggle}
-      {dialogs}
-    </div>
-  );
+interface AgentRow {
+  id: string;
+  emoji: string | undefined;
+  lamp: LampState;
+  line: string;
+  limit: string | undefined;
 }
 
-/** Four lamps with counts, every agent counted once, and the Appearance button. */
+/** The agents that are busy, paused or near their account's limit, and a count of the idle rest. */
+function agentRows(
+  agents: readonly AgentInfo[],
+  tasks: readonly TaskSummary[],
+  accounts: readonly AccountView[],
+  now: number,
+): { rows: AgentRow[]; working: number; idle: number } {
+  const open = tasks.filter(isOpen);
+  const rows: AgentRow[] = [];
+  let idle = 0;
+  for (const agent of agents) {
+    const note = limitNote(
+      accounts.find((a) => a.id === agent.account),
+      now,
+    );
+    const running = open.find((t) => t.status === "running" && t.working.includes(agent.id));
+    const paused = open.find((t) => t.status === "paused" && t.team.includes(agent.id));
+    const base = { id: agent.id, emoji: agent.emoji, limit: note?.text };
+    if (running) {
+      rows.push({ ...base, lamp: "working", line: plainTitle(running.title) });
+    } else if (paused) {
+      rows.push({ ...base, lamp: "paused", line: cardLine(paused)?.text ?? "Paused" });
+    } else if (note) {
+      rows.push({ ...base, lamp: note.full ? "paused" : "idle", line: "Idle" });
+    } else idle += 1;
+  }
+  const rank = { working: 0, paused: 1, needs: 2, done: 3, idle: 4 } as const;
+  rows.sort((a, b) => rank[a.lamp] - rank[b.lamp]);
+  return { rows, working: rows.filter((r) => r.lamp === "working").length, idle };
+}
+
+/** Who works right now and what each agent does; an account near its limit says so with its reset time. */
 function AgentsNow() {
   const index = useAgentIndex();
   const tasks = useTasks().data;
   const accounts = useAccounts().data;
-  const checksAt = useHealthChecks(useAfterFirstPaint(6_000)).data?.checkedAt;
   const now = useNow(30_000);
-  const pulse = useMemo(
-    () => agentsRightNow([...index.values()], tasks ?? [], accounts ?? []),
-    [index, tasks, accounts],
+  const { rows, working, idle } = useMemo(
+    () => agentRows([...index.values()], tasks ?? [], accounts ?? [], now),
+    [index, tasks, accounts, now],
   );
-  const rows: { label: string; title: string; count: number; lamp: LampState }[] = [
-    { label: "Working", title: "Working", count: pulse.working, lamp: "working" },
-    { label: "Paused", title: "Paused", count: pulse.paused, lamp: "paused" },
-    { label: "Limit", title: "Limit reached", count: pulse.limit, lamp: "paused" },
-    { label: "Idle", title: "Idle", count: pulse.idle, lamp: "idle" },
-  ];
   return (
-    <section aria-label="Agents right now" className="flex shrink-0 flex-col gap-1 border-t border-line pt-2">
-      {/* Below 800px of window height the lamps fold into one line with their counts, so the
-          navigation keeps its room. */}
-      <div className="flex items-center gap-2 pl-1 [@media(max-height:799px)]:hidden">
-        <SectionLabel className="min-w-0 flex-1 truncate">Agents right now</SectionLabel>
-        <AppearanceButton />
+    <section aria-label="Agents now" className="flex shrink-0 flex-col gap-1">
+      <div className="flex items-center gap-2 px-2.5">
+        <SectionLabel className="min-w-0 flex-1 truncate">Agents now</SectionLabel>
+        <span className="font-mono text-xs text-fg-faint">{working} working</span>
       </div>
-      <ul className="grid grid-cols-2 gap-x-3 px-1 [@media(max-height:799px)]:hidden">
+      <ul className="flex flex-col">
         {rows.map((row) => (
           <li
-            key={row.label}
-            title={`${row.title}: ${row.count}`}
-            className="flex h-6 min-w-0 items-center gap-2 text-xs"
+            key={row.id}
+            title={`@${row.id}: ${row.line}${row.limit ? `. ${row.limit}` : ""}`}
+            className="flex items-start gap-2 rounded-md px-2.5 py-1 hover:bg-raised"
           >
-            <Lamp state={row.lamp} dim={row.count === 0} size={7} />
-            <span className={cn("min-w-0 truncate", row.count > 0 ? "text-fg-soft" : "text-fg-faint")}>
-              {row.label}
-            </span>
-            <span
-              className={cn("tnum ml-auto font-mono text-sm", row.count > 0 ? "text-fg" : "text-fg-faint")}
-            >
-              {row.count}
+            <Lamp state={row.lamp} size={7} className="mt-[7px]" />
+            <span className="flex min-w-0 flex-col">
+              <span className="flex min-w-0 items-center gap-1.5 font-mono text-sm font-medium text-fg-soft">
+                {row.emoji && (
+                  <span aria-hidden="true" className="font-sans text-sm">
+                    {row.emoji}
+                  </span>
+                )}
+                <span className="truncate">@{row.id}</span>
+              </span>
+              <span className="truncate text-xs text-fg-faint">{row.line}</span>
+              {row.limit && (
+                <span
+                  className={cn(
+                    "truncate text-xs",
+                    row.lamp === "paused" ? "text-lamp-paused" : "text-caution",
+                  )}
+                >
+                  {row.limit}
+                </span>
+              )}
             </span>
           </li>
         ))}
+        {idle > 0 && <li className="px-2.5 py-1 pl-[27px] text-xs text-fg-faint">{idle} idle</li>}
       </ul>
-      <Link
-        to={PAGE_PATH.usage}
-        search={{}}
-        title="Open Health & usage"
-        className="truncate rounded-sm px-1 text-xs text-fg-faint transition-colors duration-150 hover:text-fg [@media(max-height:799px)]:hidden"
-      >
-        {healthCheckedText(accounts ?? [], now, checksAt)}
-      </Link>
-      <div className="hidden items-center gap-3 pl-1 [@media(max-height:799px)]:flex">
-        <ul aria-label="Agents right now" className="flex min-w-0 flex-1 items-center gap-3">
-          {rows.map((row) => (
-            <li
-              key={row.label}
-              title={`${row.title}: ${row.count}`}
-              className="flex h-7 items-center gap-1.5"
-            >
-              <Lamp state={row.lamp} dim={row.count === 0} size={7} />
-              <span className="sr-only">{row.label}</span>
-              <span className={cn("tnum font-mono text-sm", row.count > 0 ? "text-fg" : "text-fg-faint")}>
-                {row.count}
-              </span>
-            </li>
-          ))}
-        </ul>
-        <AppearanceButton />
-      </div>
     </section>
   );
 }

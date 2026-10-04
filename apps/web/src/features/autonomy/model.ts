@@ -97,7 +97,7 @@ export function capTone(use: Pick<CapUse, "percent" | "reached">): "calm" | "amb
 // The feed ------------------------------------------------------------------
 
 export const EVENT_WORD: Record<AutonomyEventKind, string> = {
-  mode: "Autonomous",
+  mode: "Auto-pilot",
   tick: "Woke",
   decision: "Decision",
   approval: "Approval",
@@ -157,7 +157,7 @@ export const HOW_WORD: Record<AutonomySummary["shipped"][number]["how"], string>
 
 const SEEN_KEY = "majhi.autonomy.summary-seen";
 
-/** The day of the newest summary the owner has opened on the Autonomous page. */
+/** The day of the newest summary the owner has opened on the Auto-pilot page. */
 export function seenSummary(): string | undefined {
   return readStored(SEEN_KEY);
 }
@@ -270,10 +270,10 @@ export function limitsPatch(
   settings: AutonomySettings,
   tz: string,
 ): { patch: AutonomyPatch } | { problem: string } {
-  const day = parseCap(draft.day, "Autonomous budget");
+  const day = parseCap(draft.day, "Auto-pilot budget");
   if (day.problem) return { problem: day.problem };
   if (!day.budget)
-    return { problem: "Autonomous budget: set dollars, tokens or both. Autonomous needs one." };
+    return { problem: "Auto-pilot budget: set dollars, tokens or both. Auto-pilot needs one." };
   const window = parsePercent(draft.window, "5-hour floor");
   if (window.problem !== undefined || window.value === undefined) return { problem: window.problem ?? "" };
   const weekly = parsePercent(draft.weekly, "Weekly floor");

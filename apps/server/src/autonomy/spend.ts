@@ -149,7 +149,7 @@ export function holdsOf(
   if (spend.total.reached && spend.total.cap !== undefined) {
     holds.push({
       kind: "day-cap",
-      text: `Autonomous reached its ${capText(spend.total.cap)} cap for today`,
+      text: `Auto-pilot reached its ${capText(spend.total.cap)} cap for today`,
       until: spend.resetsAt,
     });
   }
@@ -218,7 +218,7 @@ export function capPassed(
   names: Readonly<Record<string, string>> = {},
 ): { text: string; scope: string } | undefined {
   if (spend.total.cap !== undefined && pastMargin(spend.total, turnCost)) {
-    return { text: `Autonomous passed its ${capText(spend.total.cap)} cap for today`, scope: "day" };
+    return { text: `Auto-pilot passed its ${capText(spend.total.cap)} cap for today`, scope: "day" };
   }
   const own = spend.orgs.find((o) => o.org === org);
   if (own?.cap !== undefined && pastMargin(own, turnCost)) {

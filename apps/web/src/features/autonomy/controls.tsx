@@ -12,7 +12,7 @@ import { formatMoney } from "@/lib/format";
 import { PAGE_PATH } from "@/lib/pages";
 import { budgetText } from "./model";
 
-/** Autonomous has one switch: turning it on, and turning it off in one of two ways. */
+/** Auto-pilot has one switch: turning it on, and turning it off in one of two ways. */
 export function useAutonomyActions() {
   const toast = useToast();
   const start = useAutonomyCommand("autonomy.start");
@@ -32,10 +32,10 @@ export function useAutonomyActions() {
           input: { how },
           reason:
             how === "now"
-              ? "Owner turned Autonomous off and paused its tasks"
-              : "Owner turned Autonomous off and let its tasks finish their step",
+              ? "Owner turned Auto-pilot off and paused its tasks"
+              : "Owner turned Auto-pilot off and let its tasks finish their step",
         },
-        settle("Could not turn Autonomous off", onDone),
+        settle("Could not turn Auto-pilot off", onDone),
       ),
   };
 }
@@ -81,9 +81,9 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
   const noWorkspace = captain !== undefined && acts.length === 0;
 
   return (
-    <Modal label="Turn Autonomous on" onClose={onClose} className="w-[480px]">
+    <Modal label="Turn Auto-pilot on" onClose={onClose} className="w-[480px]">
       <div className="flex flex-col gap-4 p-5">
-        <h2 className="text-md font-semibold">Turn Autonomous on</h2>
+        <h2 className="text-md font-semibold">Turn Auto-pilot on</h2>
         <p className="text-base text-fg-muted text-pretty">
           The captain picks up work, answers questions and cards, and tidies up on its own, inside each
           workspace's rules. Every step lands in its log.
@@ -151,7 +151,7 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
               start.mutate(
                 {
                   input: { resumeStopped: paused.length > 0 && resume },
-                  reason: "Owner turned Autonomous on",
+                  reason: "Owner turned Auto-pilot on",
                 },
                 { onSuccess: onClose },
               )
@@ -175,10 +175,10 @@ export function OffDialog({ status, onClose }: { status: AutonomyStatus; onClose
   const stopping = status.mode === "stopping";
 
   return (
-    <Modal label="Turn Autonomous off" onClose={onClose} className="w-[460px]">
+    <Modal label="Turn Auto-pilot off" onClose={onClose} className="w-[460px]">
       <div className="flex flex-col gap-4 p-5">
         <h2 className="text-md font-semibold">
-          {stopping ? "Autonomous is turning off" : "Turn Autonomous off?"}
+          {stopping ? "Auto-pilot is turning off" : "Turn Auto-pilot off?"}
         </h2>
         <p className="text-base text-fg-muted text-pretty">
           {stopping

@@ -169,7 +169,7 @@ export class PlaybookService implements ChorePlaybooks {
     const e = this.effective(def, org);
     if (def.runner.kind === "chore") {
       const chore = def.runner.chore;
-      if (this.deps.mode() !== "on" && !OFF_CHORES.includes(chore)) return "Autonomous is off.";
+      if (this.deps.mode() !== "on" && !OFF_CHORES.includes(chore)) return "Auto-pilot is off.";
       if (!choresNow(ws.authority, ws.mode).includes(chore)) {
         return `The Delegation row that governs it is on You in ${ws.name}.`;
       }
@@ -179,7 +179,7 @@ export class PlaybookService implements ChorePlaybooks {
     } else {
       // A read-only playbook (the sensors) only files findings that wait, so Autonomous off and
       // Upkeep on You do not hold it.
-      if (!def.readOnly && this.deps.mode() !== "on") return "Autonomous is off.";
+      if (!def.readOnly && this.deps.mode() !== "on") return "Auto-pilot is off.";
       if (!def.readOnly && ws.authority.upkeep !== "decide") return `Upkeep is on You in ${ws.name}.`;
       if (def.runner.kind === "rules") {
         const runner = this.rules[def.runner.id];

@@ -85,11 +85,11 @@ const PAUSE_TEXT: Record<string, string> = {
   owner: "You stopped the task. Resume when you are ready.",
 };
 
-/** The same for a task the captain, or Autonomous being turned off, paused. */
+/** The same for a task the captain, or Auto-pilot being turned off, paused. */
 const PAUSED_BY_TEXT: Record<PausedBy, string> = {
   captain: "Paused by Captain. Resume when you are ready.",
   "autonomy-off":
-    "Paused when Autonomous was turned off. Resume it, or turn Autonomous on to resume it with the others.",
+    "Paused when Auto-pilot was turned off. Resume it, or turn Auto-pilot on to resume it with the others.",
 };
 
 /** The card under "In this room": one sentence and the one main action for the task's status. */

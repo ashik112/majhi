@@ -73,7 +73,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
       "Keep a durable, non-obvious fact. Drop a one-off symptom, generic advice or what the docs already say. Merge a copy into the fact it repeats. Leave a contradiction for the owner.",
     outputs: ["log"],
     cost: { tier: "laya", tokens: RUN_TOKENS },
-    turnOn: "Reviews waiting memories once a day. It also runs while Autonomous is off.",
+    turnOn: "Reviews waiting memories once a day. It also runs while Auto-pilot is off.",
     runner: { kind: "chore", chore: "memory" },
   }),
   upkeep({
@@ -112,7 +112,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
       "Remove what a done task left behind once it is merged or kept elsewhere. Never remove uncommitted work.",
     outputs: ["log"],
     cost: { tier: "rules", tokens: RUN_TOKENS },
-    turnOn: "Cleans up done tasks once a day. It also runs while Autonomous is off.",
+    turnOn: "Cleans up done tasks once a day. It also runs while Auto-pilot is off.",
     runner: { kind: "chore", chore: "cleanup" },
   }),
   upkeep({
