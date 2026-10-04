@@ -45,6 +45,7 @@ import { CrmService } from "./business/crm.ts";
 import { DeadlinesService } from "./business/deadlines.ts";
 import { KbService } from "./business/kb.ts";
 import { VoiceService } from "./business/voice.ts";
+import { freshCaptainAfterUpdate } from "./captain/fresh-after-update.ts";
 import { Lanes } from "./captain/lanes.ts";
 import { authorityOf, workspaceIds } from "./captain/levels.ts";
 import { labelOwnWork } from "./captain/own-work-second.ts";
@@ -2000,6 +2001,19 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     adapter: options.trackerAdapter ?? createAdapter,
     ...(options.trackerFetch === undefined ? {} : { fetch: options.trackerFetch }),
   });
+  // A new majhi version brings new instructions and tools for the captain; a resumed session keeps the
+  // old ones. So after an update each captain thread starts fresh (with its handoff note) once.
+  background.run(() =>
+    freshCaptainAfterUpdate({
+      commit: env.commit,
+      file: join(env.majhiHome, "captain-version"),
+      chats: () => autonomy.laneChats(),
+      fresh: async (chat) => {
+        const agent = store.tasks.get(chat)?.team[0];
+        if (agent !== undefined) await tasks.fresh(chat, agent);
+      },
+    }),
+  );
   return {
     config,
     runtime,
