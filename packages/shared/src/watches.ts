@@ -4,6 +4,7 @@ import { ImageRefSchema } from "./containers.ts";
 import { IdSchema } from "./ids.ts";
 import { OpsIncidentSchema } from "./ops.ts";
 import { TaskIdSchema } from "./tasks.ts";
+import { formulaProblem, MetricAggSchema, MetricReadSchema, MetricReadsSchema } from "./watch-formula.ts";
 
 /**
  * Watch anything (SPEC 5.18, Ops watch): one watch is one thing the owner wants to know about, with a
@@ -147,9 +148,23 @@ export const WatchCheckSchema = z.discriminatedUnion("kind", [
     kind: z.literal("metric"),
     /** A remote MCP connection of a monitoring service, one read tool and where the number sits in its answer. */
     connection: Conn,
-    tool: z.string().trim().min(1).max(120),
+    tool: z.string().trim().min(1).max(300),
     args: z.string().max(2000).default("{}"),
     path: z.string().trim().min(1).max(200),
+    /** How a series at `path` becomes one number, and which items under `*` count. */
+    agg: MetricAggSchema.optional(),
+    where: MetricReadSchema.shape.where,
+    /** More reads, `b` to `e`, for a formula. */
+    reads: MetricReadsSchema.optional(),
+    /** Combines the reads, like `100*(1-a/b)`. Absent: the value is `a`. */
+    formula: z
+      .string()
+      .trim()
+      .max(200)
+      .refine((f) => formulaProblem(f) === undefined, {
+        message: "Use numbers, a to e, + - * / and parentheses",
+      })
+      .optional(),
     label: z.string().trim().max(60).optional(),
     unit: z.string().trim().max(12).optional(),
   }),
