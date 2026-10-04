@@ -226,6 +226,20 @@ export function DecisionDetailPane({
             <Handback detail={hand} />
           </Block>
         )}
+        {detail?.draft !== undefined && (
+          <Block title={`To ${detail.draft.target}`}>
+            <div className="flex flex-col gap-2 text-base text-fg-soft">
+              {detail.draft.subject !== undefined && (
+                <p className="m-0 font-medium text-fg">{detail.draft.subject}</p>
+              )}
+              <p className="m-0 whitespace-pre-wrap text-pretty break-words">{detail.draft.body}</p>
+              <p className="m-0 text-xs text-fg-faint">
+                {detail.draft.voice === undefined ? "No voice profile used" : `Voice: ${detail.draft.voice}`}
+                {" · "}Nothing is sent until you approve it.
+              </p>
+            </div>
+          </Block>
+        )}
         {detail?.diff !== undefined && (
           <Block title="What changed">
             <Changes diff={detail.diff} repos={detail.repos} checks={detail.checks} />

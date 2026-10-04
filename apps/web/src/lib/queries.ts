@@ -62,6 +62,8 @@ export const queryKeys = {
   captain: ["captain"],
   /** Every `findings.*` read. */
   findings: ["findings"],
+  /** Every `playbooks.*`, `goals.*` and `outbound.*` read. */
+  playbooks: ["playbooks"],
   /** `decisions.list`: the owner's inbox. Every topic that changes what waits for them refetches it. */
   decisions: ["decisions"],
   /** `git.signIn.poll` for each flow. */

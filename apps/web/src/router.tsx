@@ -145,6 +145,11 @@ const captainRoute = createRoute({
   path: PAGE_PATH.captain,
   component: lazyRouteComponent(() => import("@/pages/captain-page"), "CaptainPage"),
 });
+const playbooksRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.playbooks,
+  component: lazyRouteComponent(() => import("@/pages/playbooks-page"), "PlaybooksPage"),
+});
 const agentsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.agents,
@@ -270,6 +275,7 @@ export const router = createRouter({
     automationsRoute,
     autonomousRoute,
     captainRoute,
+    playbooksRoute,
     limitsRoute,
     decisionsRoute,
     setupRoute,

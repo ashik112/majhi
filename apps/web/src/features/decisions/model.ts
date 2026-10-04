@@ -24,6 +24,8 @@ const GROUP: Record<OwnerDecisionKind, KindFilter> = {
   cap: "budget",
   paused: "paused",
   "sign-in": "sign-in",
+  draft: "approval",
+  batch: "approval",
 };
 
 export function kindFilterOf(decision: Pick<OwnerDecision, "kind">): KindFilter {
@@ -119,6 +121,8 @@ export function actionOf(link: DecisionLink): BannerAction {
       return { kind: "page", to: "/limits" };
     case "account":
       return { kind: "page", to: "/accounts", search: { account: link.id } };
+    case "playbooks":
+      return { kind: "page", to: "/playbooks" };
   }
 }
 
@@ -134,6 +138,8 @@ export function openLabel(link: DecisionLink): string {
       return "Open Limits";
     case "account":
       return "Sign in";
+    case "playbooks":
+      return "Open Playbooks";
   }
 }
 

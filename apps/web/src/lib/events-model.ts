@@ -39,6 +39,8 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
       return [queryKeys.captain, queryKeys.decisions];
     case "findings":
       return [queryKeys.findings, queryKeys.decisions];
+    case "playbooks":
+      return [queryKeys.playbooks, queryKeys.findings, queryKeys.decisions, queryKeys.captain];
     case "signins":
       return [queryKeys.signins, queryKeys.onboarding];
     case "clones":
@@ -65,6 +67,7 @@ export const ALL_TOPICS: readonly EventTopic[] = [
   "autonomy",
   "captain",
   "findings",
+  "playbooks",
   "signins",
   "clones",
 ];

@@ -5,6 +5,8 @@ import {
   GitMerge,
   KeyRound,
   LogIn,
+  Mail,
+  Mails,
   MessageCircleQuestion,
   ShieldCheck,
 } from "lucide-react";
@@ -25,6 +27,8 @@ const ICON: Record<OwnerDecisionKind, ReactNode> = {
   cap: <CircleDollarSign aria-hidden="true" />,
   paused: <CirclePause aria-hidden="true" />,
   "sign-in": <LogIn aria-hidden="true" />,
+  draft: <Mail aria-hidden="true" />,
+  batch: <Mails aria-hidden="true" />,
 };
 
 export function KindIcon({ kind, className }: { kind: OwnerDecisionKind; className?: string }) {
