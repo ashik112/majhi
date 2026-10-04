@@ -1606,7 +1606,7 @@ type ShipResult = {
   notPushed?: boolean | undefined;
 };
 
-const HOST_LABEL: Record<MrHost, string> = {
+export const HOST_LABEL: Record<MrHost, string> = {
   github: "GitHub",
   gitlab: "GitLab",
   bitbucket: "Bitbucket",

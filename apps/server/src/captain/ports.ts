@@ -19,6 +19,15 @@ export interface ReviewTask {
   heads: string;
 }
 
+/** A task in review with no code change: its lead's last message is the answer. */
+export interface AnswerTask {
+  id: string;
+  title: string;
+  lead?: string | undefined;
+  /** The lead's last message, its final report. Absent when it never wrote one. */
+  report?: { text: string; at: string } | undefined;
+}
+
 /** Why a task in review is not ready to ship, or what it would ship and the checks that passed. */
 export type ShipCheck =
   | {
@@ -107,6 +116,23 @@ export interface CaptainPorts {
   resolveShip(org: string, task: string, reason: string): Promise<void>;
   /** Puts the captain's line on the task's review card: ready to ship, the owner decides. */
   shipReady(org: string, task: string, line: string): Promise<void>;
+  /**
+   * Whether a task that passed the ship checks can go to its host as a merge request, and where.
+   * Not ok: no remote or no MR token, with the one line why.
+   */
+  mrReady(org: string, task: string): Promise<{ ok: true; host: string } | { ok: false; why: string }>;
+  /** Pushes the task's branches and opens one merge request per repo (tasks.openMrs), as the captain. Never merges. */
+  openMrs(
+    org: string,
+    task: string,
+    reason: string,
+  ): Promise<{ urls: string[]; host: string; failed?: string | undefined }>;
+  /** Tasks in review that changed no repo (an answer or a report), with no card waiting and no agent working. */
+  answerTasks(org: string): Promise<AnswerTask[]>;
+  /** Marks an answer task done (tasks.close), as the captain. */
+  closeAnswer(org: string, task: string, reason: string): Promise<void>;
+  /** Sends the lead a line and puts the task back to work, as the owner's Ask for changes does. */
+  askChanges(org: string, task: string, text: string): Promise<void>;
 
   // Approval cards
   approvals(org: string): ApprovalCard[];

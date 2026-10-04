@@ -22,7 +22,13 @@ function fakeFindings(dismissed: string[] = []) {
   };
 }
 
-const mcp = (id: string): Candidate => ({ kind: "mcp", id, title: id, description: "A server", installed: false });
+const mcp = (id: string): Candidate => ({
+  kind: "mcp",
+  id,
+  title: id,
+  description: "A server",
+  installed: false,
+});
 const skill = (id: string, installs: number): Candidate => ({
   kind: "skill",
   id,
@@ -31,6 +37,7 @@ const skill = (id: string, installs: number): Candidate => ({
   source: `acme/${id}`,
   installs,
   installed: false,
+  install: { source: `acme/${id}`, skill: id.split("/").pop() as string },
 });
 
 function setup(opts: {
@@ -107,6 +114,25 @@ describe("discover", () => {
     expect(full.repo.allActions().map((a) => a.text)).toContain("Installed the skill acme/lint");
     expect(full.findings.filed.has("discover:mcp:io.acme/postgres")).toBe(true);
   });
+
+  it("proposes a skill whose registry id is not a valid local name, and never installs it", async () => {
+    const installSkill = vi.fn(async () => {});
+    const odd = {
+      ...skill("acme/react:components", 900),
+      install: { source: "acme/ui", skill: "react:components" },
+    };
+    const full = setup({
+      upkeep: {
+        profile: async () => ["x"],
+        search: async (kind) => (kind === "skill" ? [odd] : []),
+        installSkill,
+      },
+      rules: { fullAccess: true } as AutonomyOrg,
+    });
+    await full.runner.start("acme", "discover", "daily");
+    expect(installSkill).not.toHaveBeenCalled();
+    expect(full.findings.filed.size).toBe(1);
+  });
 });
 
 describe("tidy", () => {
@@ -174,7 +200,11 @@ describe("agent slots", () => {
   it("never raises while the machine is busy", async () => {
     const setAccountSlots = vi.fn(async () => {});
     const t = setup({
-      upkeep: { ...slots(2), setAccountSlots, machineBusy: () => "the machine is busy: load 30.0 on 10 cores" },
+      upkeep: {
+        ...slots(2),
+        setAccountSlots,
+        machineBusy: () => "the machine is busy: load 30.0 on 10 cores",
+      },
       rules: { fullAccess: true } as AutonomyOrg,
     });
     await t.runner.start("acme", "checklist", "daily");

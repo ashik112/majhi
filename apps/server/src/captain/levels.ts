@@ -98,7 +98,7 @@ export function withAuthority(current: Authority, change: Partial<Authority>): A
 
 /**
  * The chores the captain runs. Each follows the row that governs it: cards `approvals`, questions
- * `questions`, the rest `upkeep`. Shipping runs when the captain merges or does upkeep: with merge on
+ * `questions`, the rest `upkeep`. Shipping runs when the captain merges, pushes, answers or does upkeep: with merge on
  * "Ask me" it only hands the owner a ready-to-ship card.
  */
 export function choresOf(authority: Authority): readonly CaptainChore[] {
@@ -110,7 +110,12 @@ export function choresOf(authority: Authority): readonly CaptainChore[] {
         // Own work also settles permission prompts of tasks the captain started.
         return authority.questions === "decide" || authority.own === "decide";
       case "ship":
-        return authority.merge === "decide" || authority.upkeep === "decide";
+        return (
+          authority.merge === "decide" ||
+          authority.push === "decide" ||
+          authority.upkeep === "decide" ||
+          authority.questions === "decide"
+        );
       default:
         return authority.upkeep === "decide";
     }

@@ -1,8 +1,8 @@
 import type { CaptainChore } from "@majhi/shared";
+import { upperFirst } from "../machine/busy.ts";
 import type { CaptainPorts } from "./ports.ts";
 import type { ChoreRun } from "./runner.ts";
-import { type Candidate, MAX_ACCOUNT_SLOTS, type Signal } from "./upkeep-ports.ts";
-import { upperFirst } from "../machine/busy.ts";
+import { type Candidate, MAX_ACCOUNT_SLOTS, type Signal, skillInstallInput } from "./upkeep-ports.ts";
 
 /**
  * The self-upkeep chores: the captain keeps majhi itself in shape. Each run is cheap, one pass over
@@ -105,7 +105,12 @@ export function createUpkeepChores(ports: CaptainPorts): Chores {
         const key = discoverKey(c);
         const what = c.kind === "mcp" ? "MCP server" : "skill";
         const why = `${c.title}: ${clip(c.description, 160)}${c.source === undefined ? "" : ` Source: ${c.source}`}`;
-        if (ws.rules?.fullAccess === true && c.kind === "skill" && !off(run, "disc-install")) {
+        if (
+          ws.rules?.fullAccess === true &&
+          c.kind === "skill" &&
+          skillInstallInput(c) !== undefined &&
+          !off(run, "disc-install")
+        ) {
           const outcome = await run.act({
             key,
             text: `Installed the skill ${c.title}`,

@@ -4,6 +4,7 @@ import {
   type CommandName,
   commands,
   type Fact,
+  OpenMrsResultSchema,
   PRIVATE,
   type RoomItem,
   type TaskId,
@@ -21,7 +22,7 @@ import { shipReadiness } from "../handoff/ready.ts";
 import type { HandoffService } from "../handoff/service.ts";
 import type { MemoryService } from "../memory/service.ts";
 import { repoFacts } from "../memory/task-git.ts";
-import type { MrService } from "../mrs/service.ts";
+import { HOST_LABEL, type MrService } from "../mrs/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { IdleWatch } from "../rooms/idle-watch.ts";
 import type { RepoScanner } from "../scan/scanner.ts";
@@ -270,6 +271,71 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
 
     async shipReady(_org, id, line) {
       deps.tasks.cards.shipReady(id, line);
+    },
+
+    async mrReady(_org, id) {
+      const options = await deps.mrs.shipOptions(id);
+      if (!options.mr.ok) return { ok: false, why: options.mr.why ?? "it cannot open a merge request now" };
+      return { ok: true, host: options.host === undefined ? "its host" : HOST_LABEL[options.host] };
+    },
+
+    async openMrs(_org, id, reason) {
+      const out = OpenMrsResultSchema.parse((await run("tasks.openMrs", { id }, reason, id)).output);
+      const options = await deps.mrs.shipOptions(id);
+      const failed = out.repos.find((r) => r.outcome === "failed");
+      return {
+        urls: out.repos.flatMap((r) => (r.url === undefined ? [] : [r.url])),
+        host: options.host === undefined ? "its host" : HOST_LABEL[options.host],
+        ...(failed === undefined ? {} : { failed: `${failed.project}: ${failed.detail}` }),
+      };
+    },
+
+    async answerTasks(org) {
+      const out = [];
+      for (const summary of tasksOf(org)) {
+        if (summary.status !== "review" || deps.runs.working(summary.id).length > 0) continue;
+        if (pendingOwnerCards(summary.id)) continue;
+        const task = store.tasks.get(summary.id);
+        if (task === undefined) continue;
+        try {
+          const options = await deps.mrs.shipOptions(task.id);
+          if ((options.changed ?? []).length > 0 || (options.protected ?? []).length > 0) continue;
+          // Commits are not the only change: uncommitted files in a worktree are work too.
+          const diffs = await deps.tasks.diff(task.id);
+          if (diffs.some((d) => d.error !== undefined || d.uncommitted || d.files.length > 0)) continue;
+        } catch {
+          continue;
+        }
+        const lead = task.team[0];
+        deps.room.flush(task.id);
+        const message = store.room
+          .page(task.id, 60)
+          .items.find(
+            (i) => i.type === "agent" && i.text.trim() !== "" && (lead === undefined || i.agent === lead),
+          );
+        out.push({
+          id: task.id,
+          title: task.title,
+          lead,
+          report: message?.type === "agent" ? { text: message.text.trim(), at: message.at } : undefined,
+        });
+      }
+      return out;
+    },
+
+    async closeAnswer(_org, id, reason) {
+      await run("tasks.close", { id }, reason, id);
+    },
+
+    async askChanges(_org, id, text) {
+      const lead = store.tasks.get(id)?.team[0];
+      await deps.tasks.send({
+        task: id,
+        text,
+        attachments: [],
+        mode: "queue",
+        ...(lead === undefined ? {} : { agent: lead }),
+      });
     },
 
     // -------------------------------------------------------------------------

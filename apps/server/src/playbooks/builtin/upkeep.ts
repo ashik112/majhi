@@ -37,6 +37,14 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     turnOn: "Ships finished work by the Merge and Push rows in Delegation.",
     outcomes: [
       { id: "ship-merge", text: "Checks pass and Merge is Captain: merge it, tell me in the brief" },
+      {
+        id: "ship-mr",
+        text: "Checks pass, Merge is You and Push is Captain: open the merge request, I merge it",
+      },
+      {
+        id: "ship-answer",
+        text: "No code change: mark it done when the report answers the brief, else ask the lead",
+      },
       { id: "ship-ask", text: "Checks pass and Merge is You: ask me in Needs you" },
       { id: "ship-checks", text: "Checks fail: send the exact failures to the lead, ask me after 3 tries" },
       { id: "ship-conflict", text: "Conflicts with main: ask the lead to resolve it, then try again" },
@@ -210,9 +218,17 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
   upkeep({
     id: "upkeep-tidy",
     name: "Tidy up",
-    purpose: "Finds stale inbox items, old previews, dead watches and failing connections. Proposes, never deletes.",
+    purpose:
+      "Finds stale inbox items, old previews, dead watches and failing connections. Proposes, never deletes.",
     trigger: { cadence: DAILY, events: [] },
-    inputs: ["Tasks", "Previews", "Watches", "Connections", "Worktrees of done tasks", "Items waiting for you"],
+    inputs: [
+      "Tasks",
+      "Previews",
+      "Watches",
+      "Connections",
+      "Worktrees of done tasks",
+      "Items waiting for you",
+    ],
     steps:
       "Re-test a failing connection. File what is stale as a finding with a proposal to close it. Leave a worktree with uncommitted changes for the owner. Send one summary line.",
     outputs: ["finding", "log"],
@@ -256,7 +272,10 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     turnOn: "Checks what you may not think about once a day where Upkeep is Captain.",
     outcomes: [
       { id: "check-finding", text: "Something is off: file a finding" },
-      { id: "check-slots", text: "Agents wait for a slot and the account has room: raise it by one, up to 4" },
+      {
+        id: "check-slots",
+        text: "Agents wait for a slot and the account has room: raise it by one, up to 4",
+      },
     ],
     runner: { kind: "chore", chore: "checklist" },
   }),

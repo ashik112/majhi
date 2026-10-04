@@ -1,10 +1,11 @@
 import type { CaptainChore } from "@majhi/shared";
 import { runFollowUps } from "../findings/followups.ts";
 import { sizeText } from "../tasks/folder-sweep.ts";
+import { judgeReport, summaryLine } from "./answer-check.ts";
 import { classifyOwnWork } from "./own-work.ts";
 import type { SecondOpinion } from "./own-work-second.ts";
 import { permissionVerdict } from "./permission-rules.ts";
-import type { CaptainPorts, PendingFact, QuestionCard } from "./ports.ts";
+import type { CaptainPorts, PendingFact, QuestionCard, ReviewTask, ShipCheck } from "./ports.ts";
 import { loopLine, nudgeText, questionLoop } from "./question-loop.ts";
 import { branchAllowed, typingWhy } from "./rules.ts";
 import type { ChoreRun } from "./runner.ts";
@@ -125,12 +126,131 @@ export function createChores(
     });
   };
 
+  /**
+   * Checks passed, Merge is the owner's, Push is the captain's: pushes the branch and opens the merge
+   * request. The owner merges it on the host. Without a remote or a token the card stays with one line why.
+   */
+  const openMr = async (
+    run: ChoreRun,
+    t: ReviewTask,
+    check: Extract<ShipCheck, { ready: true }>,
+    recheck: () => Promise<string | undefined>,
+  ): Promise<void> => {
+    const { org, ws } = run;
+    const evidence = check.checked === undefined ? check.evidence : `${check.evidence}; ${check.checked}`;
+    const ready = await ports.mrReady(org, t.id);
+    if (!ready.ok) {
+      if (ruleOff(run, "ship-ask")) return;
+      await run.act({
+        key: `ship:ready:${t.id}:${t.heads}`,
+        text: `Asked you to ship ${t.id}: ${t.title}`,
+        reason: `No merge request opened: ${ready.why}`,
+        evidence,
+        task: t.id,
+        irreversible: true,
+        recheck,
+        do: async () => {
+          await ports.shipReady(
+            org,
+            t.id,
+            `Ready to ship: ${check.evidence}. No merge request opened: ${ready.why}`,
+          );
+          return { outcome: "asked", undoNote: "A card for you: nothing to undo" };
+        },
+      });
+      return;
+    }
+    const reason = `In ${ws.name} the captain decides when work is pushed and you merge, so it opens the merge request on ${ready.host}`;
+    await run.act({
+      key: `ship:mr:${t.id}:${t.heads}`,
+      text: `Opened a merge request for ${t.id} on ${ready.host}: ${t.title}`,
+      reason,
+      evidence,
+      task: t.id,
+      irreversible: true,
+      recheck,
+      do: async () => {
+        const out = await ports.openMrs(org, t.id, reason);
+        if (out.failed !== undefined) throw new Error(out.failed);
+        const links = out.urls.length === 0 ? "" : ` ${out.urls.join(", ")}.`;
+        return {
+          text: `Opened a merge request for ${t.id} on ${out.host}: ${t.title}.${links} Merge it on ${out.host}`,
+          undoNote:
+            "The branch is pushed and the merge request is open: close it on the host to take it back",
+        };
+      },
+    });
+  };
+
+  /**
+   * Tasks in review that changed no code: an answer or a report. Where the lead's final report answers
+   * the brief the task is marked done, else the lead is asked for changes with the concrete line.
+   * Returns the ids it looked at, so the code path leaves them alone.
+   */
+  const answerChecks = async (run: ChoreRun): Promise<Set<string>> => {
+    const { org, ws } = run;
+    const seen = new Set<string>();
+    if (ws.authority.upkeep !== "decide" && ws.authority.questions !== "decide") return seen;
+    for (const t of await ports.answerTasks(org)) {
+      run.check();
+      seen.add(t.id);
+      const present = away(t.id);
+      if (present !== undefined) {
+        run.note(`ship:${t.id}:presence`, `Waiting on ${t.id}`, present, t.id);
+        continue;
+      }
+      if (ruleOff(run, "ship-answer")) continue;
+      const verdict = judgeReport(t.report?.text);
+      const at = t.report?.at ?? "none";
+      if (verdict.complete && t.report !== undefined) {
+        const line = summaryLine(t.report.text);
+        await run.act({
+          key: `ship:answer:${t.id}:${at}`,
+          text: `Marked ${t.id} done: ${line}`,
+          reason: `It changed no code and the lead's report answers the brief. In ${ws.name} the captain decides upkeep`,
+          evidence: clip(t.report.text, 300),
+          task: t.id,
+          recheck: async () => away(t.id),
+          do: async () => {
+            await ports.closeAnswer(org, t.id, `The report answers the brief: ${line}`);
+            return { undoNote: "Reopen it from the task" };
+          },
+        });
+        continue;
+      }
+      const why = verdict.complete ? "Your final report is missing." : verdict.why;
+      if (t.lead === undefined) {
+        run.note(
+          `ship:answer:${t.id}:${at}`,
+          `${t.id} has no report to read`,
+          "Nobody on the task wrote a report",
+          t.id,
+        );
+        continue;
+      }
+      await run.act({
+        key: `ship:answer-changes:${t.id}:${at}`,
+        text: `Asked the lead of ${t.id} for changes: ${t.title}`,
+        reason: why,
+        task: t.id,
+        recheck: async () => away(t.id),
+        do: async () => {
+          await ports.askChanges(org, t.id, `Captain: ${why}`);
+          return { undoNote: "A message to the lead: nothing to undo" };
+        },
+      });
+    }
+    return seen;
+  };
+
   return {
     ...createUpkeepChores(ports),
     async ship(run) {
       const { org, ws } = run;
+      const answered = await answerChecks(run);
       for (const t of await ports.reviewTasks(org)) {
         run.check();
+        if (answered.has(t.id)) continue;
         const present = away(t.id);
         if (present !== undefined) {
           run.note(`ship:${t.id}:presence`, `Waiting on ${t.id}`, present, t.id);
@@ -176,6 +296,11 @@ export function createChores(
           const fresh = await ports.shipCheck(org, t.id);
           return fresh.ready ? undefined : fresh.why;
         };
+        // Merge is the owner's and Push is the captain's: the branch goes to its host as a merge request.
+        if (ws.authority.merge !== "decide" && ws.authority.push === "decide") {
+          if (!ruleOff(run, "ship-mr")) await openMr(run, t, check, recheck);
+          continue;
+        }
         // The owner's switches: a rule that is off stops its action, and the task waits.
         if (ruleOff(run, blocker === undefined ? "ship-merge" : "ship-ask")) continue;
         if (blocker !== undefined) {

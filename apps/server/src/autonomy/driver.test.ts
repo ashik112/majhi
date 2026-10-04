@@ -419,10 +419,7 @@ describe("the lane runs the whole workspace", () => {
     ];
     f.driver.checkTasks();
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
-    expect(f.ticks[0]).toEqual([
-      "ACM-8 is ready for review: Task ACM-8",
-      "ACM-9 paused (error): Task ACM-9",
-    ]);
+    expect(f.ticks[0]).toEqual(["ACM-8 is ready for review: Task ACM-8", "ACM-9 paused (error): Task ACM-9"]);
     expect(changeOf({ id: "ACM-1", title: "T", status: "paused", pausedReason: "owner" })?.wake).toBe(false);
     expect(changeOf({ id: "ACM-1", title: "T", status: "paused", pausedReason: "limit" })?.wake).toBe(true);
   });
