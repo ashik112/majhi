@@ -1,6 +1,16 @@
 import type { ConnectAccess, ConnectStatus, OrgView, ServiceEntry } from "@majhi/shared";
 import { type ConnectionType, GLOBAL_CONNECTIONS, PRIVATE, scopesAt } from "@majhi/shared";
-import { ArrowLeft, ChevronRight, GitBranch, Globe, KeyRound, Network, Plug, Search, Server } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronRight,
+  GitBranch,
+  Globe,
+  KeyRound,
+  Network,
+  Plug,
+  Search,
+  Server,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

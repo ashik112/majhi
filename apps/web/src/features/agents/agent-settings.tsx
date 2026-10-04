@@ -538,7 +538,7 @@ function SkillsSection({ draft, onChange, ...section }: SectionProps) {
   return (
     <SettingsSection
       title="Skills"
-      note="Skills it may use in its next run, as read-only copies. Install them on the Skills & MCP page."
+      note="Skills it may use in its next run, as read-only copies. Install them on the Skills page."
       {...section}
     >
       {skills.isError ? (
