@@ -30,6 +30,11 @@ export class Catalog {
     return pb;
   }
 
+  /** Removes a playbook the owner made. Shipped ones stay. */
+  unregister(id: string): boolean {
+    return this.byId.get(id)?.custom === true && this.byId.delete(id);
+  }
+
   all(): Playbook[] {
     return [...this.byId.values()];
   }

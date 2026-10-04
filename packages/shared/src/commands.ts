@@ -291,6 +291,12 @@ import {
   OutboundSetModeInputSchema,
   OutboundSubmitInputSchema,
   OutboundSubmitResultSchema,
+  PlaybookActivityInputSchema,
+  PlaybookActivitySchema,
+  PlaybookCreateInputSchema,
+  PlaybookPlanInputSchema,
+  PlaybookPlanResultSchema,
+  PlaybookRemoveInputSchema,
   PlaybookReportInputSchema,
   PlaybookReportResultSchema,
   PlaybookRunNowInputSchema,
@@ -883,6 +889,32 @@ export const commands = {
       "Turn a playbook on or off in a workspace, change its cadence or quiet hours, link it to a goal, or fill its settings (the URLs of an uptime check). The owner's: the captain never changes its own playbooks",
     input: PlaybookUpdateInputSchema,
     output: PlaybookViewSchema,
+  },
+  "playbooks.plan": {
+    risk: "change",
+    summary:
+      "Turn one sentence into a playbook of the owner's: the cheapest model drafts its name, schedule, steps, outputs and token budget, and it is saved off. The owner turns it on. The owner's: the captain never writes its own playbooks",
+    input: PlaybookPlanInputSchema,
+    output: PlaybookPlanResultSchema,
+  },
+  "playbooks.create": {
+    risk: "change",
+    summary: "Add a playbook of the owner's from its fields. It is saved off. The owner's",
+    input: PlaybookCreateInputSchema,
+    output: PlaybookViewSchema,
+  },
+  "playbooks.remove": {
+    risk: "change",
+    summary: "Delete a playbook the owner made. Shipped playbooks cannot be deleted. The owner's",
+    input: PlaybookRemoveInputSchema,
+    output: z.object({ id: z.string() }),
+  },
+  "playbooks.activity": {
+    risk: "read",
+    summary:
+      "The last runs of a playbook in a workspace in plain words, with the log actions Undo works for, and this week's runs, results, undone actions and tokens",
+    input: PlaybookActivityInputSchema,
+    output: PlaybookActivitySchema,
   },
   "playbooks.run": {
     risk: "change",

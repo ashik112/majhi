@@ -150,6 +150,13 @@ export const PlaybookSchema = z.object({
   /** What turning it on does, in a sentence, shown beside the switch. */
   turnOn: z.string().max(240),
   runner: PlaybookRunnerSchema,
+  /** What it does when it finds something: each rule has a switch, and an off rule stops that action. */
+  outcomes: z
+    .array(z.object({ id: IdSchema, text: z.string().max(160) }))
+    .max(8)
+    .optional(),
+  /** Made by the owner (by a sentence or by hand), not shipped with majhi. */
+  custom: z.boolean().optional(),
   /** Names of settings the owner fills in, like the URLs of an uptime check. */
   settings: z
     .array(
@@ -178,6 +185,12 @@ export const PlaybookStateSchema = z.object({
   goal: IdSchema.nullable().optional(),
   /** Values for the playbook's `settings`, one list of lines each. */
   settings: z.record(IdSchema, z.array(z.string().max(500)).max(50)).optional(),
+  /** Outcome rules the owner switched, by id. A rule not named is on. */
+  outcomes: z.record(IdSchema, z.boolean()).optional(),
+  /** "Or do this": what the captain does after a run. */
+  orDo: z.string().max(500).nullable().optional(),
+  /** Actions per day for a chore. `null`: no cap. Absent: majhi's default. */
+  dailyLimit: z.number().int().min(1).max(1000).nullable().optional(),
 });
 export type PlaybookState = z.infer<typeof PlaybookStateSchema>;
 
@@ -217,6 +230,26 @@ export const PlaybookCountersSchema = z.object({
 });
 export type PlaybookCounters = z.infer<typeof PlaybookCountersSchema>;
 
+/** One run of a playbook as the detail lists it: a plain line, and the log actions that can be undone. */
+export const PlaybookActivityRunSchema = z.object({
+  at: z.string(),
+  /** What it did or found, in plain words. */
+  text: z.string(),
+  bad: z.boolean(),
+  /** Log actions of this run that Undo works for. */
+  undo: z.array(z.object({ id: z.number().int().positive(), text: z.string() })).default([]),
+});
+export type PlaybookActivityRun = z.infer<typeof PlaybookActivityRunSchema>;
+
+export const PlaybookWeekSchema = z.object({
+  runs: z.number().int().nonnegative(),
+  /** Actions or findings. */
+  results: z.number().int().nonnegative(),
+  undone: z.number().int().nonnegative(),
+  tokens: z.number().int().nonnegative(),
+});
+export type PlaybookWeek = z.infer<typeof PlaybookWeekSchema>;
+
 export const PlaybookViewSchema = z.object({
   playbook: PlaybookSchema,
   org: IdSchema,
@@ -232,6 +265,14 @@ export const PlaybookViewSchema = z.object({
   lastNote: z.string().optional(),
   nextRun: z.string().optional(),
   counters: PlaybookCountersSchema,
+  /** Each outcome rule with its switch. */
+  outcomes: z.array(z.object({ id: IdSchema, text: z.string(), on: z.boolean() })).default([]),
+  orDo: z.string().optional(),
+  /** Actions per day for a chore; null is no cap. Absent for a playbook that is not a chore. */
+  dailyLimit: z.number().int().nullable().optional(),
+  /** The last run in plain words ("freed 31 GB", "2 failing: x, y"). */
+  result: z.string().optional(),
+  needsLook: z.boolean().default(false),
 });
 export type PlaybookView = z.infer<typeof PlaybookViewSchema>;
 
@@ -250,6 +291,9 @@ export const PlaybookUpdateInputSchema = z.object({
   quiet: QuietHoursSchema.nullable().optional(),
   goal: IdSchema.nullable().optional(),
   settings: z.record(IdSchema, z.array(z.string().trim().min(1).max(500)).max(50)).optional(),
+  outcomes: z.record(IdSchema, z.boolean()).optional(),
+  orDo: z.string().trim().max(500).nullable().optional(),
+  dailyLimit: z.number().int().min(1).max(1000).nullable().optional(),
 });
 export type PlaybookUpdateInput = z.infer<typeof PlaybookUpdateInputSchema>;
 
@@ -474,3 +518,50 @@ export function draftDecisionId(id: number): string {
 export function batchDecisionId(org: string, channel: string): string {
   return `batch:${org}:${channel}`;
 }
+
+// ---------------------------------------------------------------------------
+// Playbooks the owner makes
+
+/** What a playbook made by the owner may produce. Never a task or a decision: those are for built-in ones. */
+export const CUSTOM_OUTPUTS = ["finding", "draft", "log"] as const;
+/** The most tokens one run of a made playbook may spend. */
+export const CUSTOM_MAX_TOKENS = 20_000;
+
+/** The fields a made playbook has, whether a sentence planned them or the owner typed them. */
+export const CustomPlaybookSpecSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+  /** Where the page lists it: Upkeep, Code health or Business. */
+  pack: z.enum(["upkeep", "engineering", "business"]).default("upkeep"),
+  purpose: z.string().trim().min(1).max(160),
+  cadence: CadenceSchema,
+  steps: z.string().trim().min(1).max(2000),
+  outputs: z.array(z.enum(CUSTOM_OUTPUTS)).min(1).max(3),
+  tokens: z.number().int().min(1000).max(CUSTOM_MAX_TOKENS),
+});
+export type CustomPlaybookSpec = z.infer<typeof CustomPlaybookSpecSchema>;
+
+export const PlaybookPlanInputSchema = z.object({
+  text: z.string().trim().min(8).max(500),
+  org: IdSchema.optional(),
+});
+export const PlaybookPlanResultSchema = z.object({
+  /** The new playbook, off until the owner turns it on. */
+  view: PlaybookViewSchema,
+  /** One line: when, what and what it costs. */
+  plan: z.string(),
+});
+
+export const PlaybookCreateInputSchema = z.object({
+  org: IdSchema,
+  spec: CustomPlaybookSpecSchema,
+});
+
+export const PlaybookRemoveInputSchema = z.object({ org: IdSchema, id: IdSchema });
+
+export const PlaybookActivityInputSchema = z.object({ org: IdSchema, id: IdSchema });
+export const PlaybookActivitySchema = z.object({
+  runs: z.array(PlaybookActivityRunSchema),
+  week: PlaybookWeekSchema,
+});
+
+export type PlaybookActivity = z.infer<typeof PlaybookActivitySchema>;

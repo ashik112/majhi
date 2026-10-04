@@ -117,6 +117,9 @@ export function createChores(
     });
   };
 
+  /** Whether the owner switched an outcome rule of the chore's playbook off. */
+  const ruleOff = (run: ChoreRun, id: string): boolean => run.ws.rulesOff?.has(id) === true;
+
   return {
     async ship(run) {
       const { org, ws } = run;
@@ -129,7 +132,9 @@ export function createChores(
         }
         const check = await ports.shipCheck(org, t.id);
         if (!check.ready) {
-          run.note(`ship:${t.id}:${t.heads}:check`, `${t.id} is not ready to ship`, check.why, t.id);
+          if (!ruleOff(run, "ship-notready")) {
+            run.note(`ship:${t.id}:${t.heads}:check`, `${t.id} is not ready to ship`, check.why, t.id);
+          }
           continue;
         }
         const into = [...new Set(check.targets.map((x) => x.into))].join(", ");
@@ -146,6 +151,8 @@ export function createChores(
           const fresh = await ports.shipCheck(org, t.id);
           return fresh.ready ? undefined : fresh.why;
         };
+        // The owner's switches: a rule that is off stops its action, and the task waits.
+        if (ruleOff(run, blocker === undefined ? "ship-merge" : "ship-ask")) continue;
         if (blocker !== undefined) {
           await run.act({
             key: `ship:ready:${t.id}:${t.heads}`,
@@ -194,6 +201,7 @@ export function createChores(
         }
         const verdict = await ports.cardVerdict(org, card, ws.authority);
         const key = `card:${card.task}:${card.item}`;
+        if (ruleOff(run, verdict.decision === "left" ? "cards-left" : "cards-approve")) continue;
         if (verdict.decision === "left") {
           await run.act({
             key,
