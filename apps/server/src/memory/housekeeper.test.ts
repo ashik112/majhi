@@ -125,6 +125,10 @@ async function world(options: { housekeeper?: boolean } = {}) {
     if (res.status !== 200) throw new Error(JSON.stringify(res.body));
     return res.body;
   };
+  // Registering the project writes its card, and a by-itself pass then asks the Housekeeper for the
+  // paragraph. Let that end before one is set, or its session lands among the ones a test counts.
+  await until(() => h.majhi.services.cards.get("acme-api") !== undefined);
+  await h.majhi.services.cards.idle();
   if (options.housekeeper !== false) await must("settings.set", { memory: { housekeeper: "acme-builder" } });
   const replies: string[] = [];
   const sessions: FakeSession[] = [];
