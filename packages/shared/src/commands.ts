@@ -1081,52 +1081,52 @@ export const commands = {
   "watch.overview": {
     risk: "read",
     summary:
-      "Every watch (a website, database, Redis, server, queue, price or page, monitoring metric, or something described in words) with its current value, status, 24 hour and 90 day history, the fixes it may run and the question it waits on. The owner's",
+      "Every watch (a website, database, Redis, server, queue, price or page, monitoring metric, or something described in words) with its current value, status, 24 hour and 90 day history, the fixes it may run and the question it waits on",
     input: WatchOverviewInputSchema,
     output: WatchOverviewSchema,
   },
   "watch.plan": {
     risk: "read",
     summary:
-      "Turn one sentence into a watch: the kind, the connection, the alert condition and how often, with a one line plan and a first test value. Runs the check once and changes nothing. The owner's",
+      "Turn one sentence into a watch: the kind, the connection, the alert condition and how often, with a one line plan and a first test value. Runs the check once and changes nothing",
     input: WatchPlanInputSchema,
     output: WatchPlanSchema,
   },
   "watch.test": {
     risk: "read",
-    summary: "Run a watch's check once, without saving it. The owner's",
+    summary: "Run a watch's check once, without saving it",
     input: WatchTestInputSchema,
     output: WatchTestResultSchema,
   },
   "watch.save": {
     risk: "change",
     summary:
-      "Add or change a watch: what to check, the alert condition, how often, and what happens when it fires (alert, look into it, a fix that asks first or acts, a status note). The owner's",
+      "Add or change a watch: what to check, the alert condition, how often, and what happens when it fires (alert, look into it, a fix that asks first or acts, a status note). Agents may save watches that only alert, look into it or draft a status note; a fix, an action, steps to follow or a phone page are the owner's",
     input: WatchSaveInputSchema,
     output: WatchViewSchema,
   },
   "watch.remove": {
     risk: "change",
-    summary: "Stop watching something. Its open incident is resolved. The owner's",
+    summary: "Stop watching something. Its open incident is resolved. A watch with a fix, an action, steps or a phone page is the owner's",
     input: WatchIdInputSchema,
     output: z.object({ id: z.string() }),
   },
   "watch.checkNow": {
     risk: "change",
-    summary: "Look at one watch now. The owner's",
+    summary: "Look at one watch now",
     input: WatchIdInputSchema,
     output: WatchViewSchema,
   },
   "watch.pause": {
     risk: "change",
-    summary: "Pause or resume a watch. The owner's",
+    summary: "Pause or resume a watch. A watch with a fix, an action, steps or a phone page is the owner's",
     input: WatchPauseInputSchema,
     output: WatchViewSchema,
   },
   "watch.snooze": {
     risk: "change",
     summary:
-      "Snooze a watch or set a maintenance window: it keeps looking but raises nothing until then. 0 minutes clears it. The owner's",
+      "Snooze a watch or set a maintenance window: it keeps looking but raises nothing until then. 0 minutes clears it. A watch with a fix, an action, steps or a phone page is the owner's",
     input: WatchSnoozeInputSchema,
     output: WatchViewSchema,
   },
