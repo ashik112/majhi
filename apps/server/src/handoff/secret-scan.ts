@@ -1,4 +1,4 @@
-import { detectSecrets } from "@majhi/shared";
+import { detectSecrets, type SecretKind, type SecretMatch } from "@majhi/shared";
 import { git } from "../git/git.ts";
 
 /**
@@ -29,8 +29,21 @@ export function skippedByPattern(path: string): boolean {
 
 export type SecretScan =
   | { kind: "clean"; files: number; skipped: number }
-  | { kind: "secret"; path: string }
+  | { kind: "secret"; hit: SecretHit }
   | { kind: "too-large"; why: string };
+
+/** Where the scan found a secret, and which rule. The value itself never leaves `maskSecret`. */
+export interface SecretHit {
+  path: string;
+  /** The line in the new version of the file, from 1. */
+  line: number;
+  /** The rule that matched: `github`, `private-key`, `assigned` (a password-like assignment), `token`... */
+  rule: SecretKind;
+  /** The value, masked: what is safe to show. */
+  masked: string;
+  /** More secrets in the same file after this one. */
+  more: number;
+}
 
 interface Stat {
   path: string;
@@ -50,12 +63,63 @@ export function parseNumstat(raw: string): Stat[] {
   return out;
 }
 
-const addedText = (patch: string): string =>
-  patch
-    .split("\n")
-    .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
-    .map((l) => l.slice(1))
-    .join("\n");
+/** Rules whose value starts with a public prefix (`ghp_`, `sk-ant-`), which says what it is and gives nothing away. */
+const PREFIXED: Partial<Record<SecretKind, number>> = {
+  anthropic: 7,
+  github: 4,
+  gitlab: 6,
+  slack: 5,
+  aws: 4,
+};
+
+/** A value for the room: its public prefix when the rule has one, and its length. Never the rest. */
+export function maskSecret(match: Pick<SecretMatch, "kind" | "value">): string {
+  const keep = PREFIXED[match.kind] ?? 0;
+  return `${match.value.slice(0, keep)}[hidden, ${match.value.length} chars]`;
+}
+
+/** The lines a patch adds, with their numbers in the new file. `-U0` hunks: `@@ -a,b +c,d @@`. */
+export function addedLines(patch: string): { line: number; text: string }[] {
+  const out: { line: number; text: string }[] = [];
+  let next = 0;
+  for (const l of patch.split("\n")) {
+    if (l.startsWith("@@")) {
+      const plus = l.split(" ").find((w) => w.startsWith("+"));
+      next = Number((plus ?? "+1").slice(1).split(",")[0]);
+      continue;
+    }
+    if (l.startsWith("+++")) continue;
+    if (l.startsWith("+")) {
+      out.push({ line: next, text: l.slice(1) });
+      next++;
+    }
+  }
+  return out;
+}
+
+/** The first secret in a file's added lines, with where it is. Undefined when there is none. */
+export function findSecret(path: string, patch: string): SecretHit | undefined {
+  const added = addedLines(patch);
+  const found = detectSecrets(added.map((a) => a.text).join("\n"));
+  const first = found[0];
+  if (first === undefined) return undefined;
+  let offset = 0;
+  let line = added[0]?.line ?? 1;
+  for (const a of added) {
+    if (first.start < offset + a.text.length + 1) {
+      line = a.line;
+      break;
+    }
+    offset += a.text.length + 1;
+  }
+  return { path, line, rule: first.kind, masked: maskSecret(first), more: found.length - 1 };
+}
+
+/** One line for the room: the file, the line, the rule and the masked value. */
+export function describeHit(hit: SecretHit): string {
+  const more = hit.more > 0 ? ` and ${hit.more} more in the file` : "";
+  return `${hit.path} line ${hit.line}, rule ${hit.rule}, value ${hit.masked}${more}`;
+}
 
 /** Scans what `tip` adds over `from` in the repo at `cwd`. */
 export async function scanForSecrets(
@@ -87,7 +151,8 @@ export async function scanForSecrets(
           const patch = await git(cwd, [...args, from, tip, "--", `:(literal)${s.path}`], {
             timeoutMs: FILE_TIMEOUT_MS,
           });
-          return detectSecrets(addedText(patch)).length > 0 ? { kind: "secret", path: s.path } : undefined;
+          const hit = findSecret(s.path, patch);
+          return hit === undefined ? undefined : { kind: "secret", hit };
         } catch {
           return { kind: "too-large", why: `git could not hand over ${s.path} (${s.added} lines) to read` };
         }

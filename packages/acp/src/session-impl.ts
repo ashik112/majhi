@@ -11,6 +11,7 @@ import {
 import { AcpAuthRequired, extractOptions, isAuthRequired, type SessionOptions } from "./acp-session.ts";
 import { buildEnv, withToolsPath } from "./env.ts";
 import { prepareHome } from "./home.ts";
+import { mcpValuesToEnv } from "./mcp-env.ts";
 import { type DebugLog, MessageRuns, normalizeUpdate } from "./normalize.ts";
 import { buildAsk } from "./permission.ts";
 import type {
@@ -88,7 +89,14 @@ export async function openSession(start: SessionStart, log: DebugLog = () => {})
   // A connection's variables first: majhi's own (PATH, HOME, the account's) always win.
   const tool = getTool(account.tool);
   const capEnv = start.contextCap === undefined ? undefined : tool.capEnv?.(start.contextCap);
-  const env = withToolsPath({ ...start.env, ...capEnv, ...buildEnv(account, options.base, start.git) });
+  // A tool that takes its MCP servers on its command line gets their secret values by environment.
+  const mcp = tool.mcpOnArgv === true ? mcpValuesToEnv(start.mcpServers ?? []) : undefined;
+  const env = withToolsPath({
+    ...start.env,
+    ...capEnv,
+    ...buildEnv(account, options.base, start.git),
+    ...mcp?.env,
+  });
   const adapter = options.adapters?.[account.tool] ?? tool.adapter;
 
   const spawned = await (options.spawner ?? localSpawner)({
@@ -221,7 +229,7 @@ export async function openSession(start: SessionStart, log: DebugLog = () => {})
       Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
     );
     conn = new ClientSideConnection(() => client, stream);
-    const mcpServers = (start.mcpServers ?? []).map(toMcp);
+    const mcpServers = (mcp?.servers ?? start.mcpServers ?? []).map(toMcp);
 
     const handshake = (async () => {
       const init = await conn.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} });

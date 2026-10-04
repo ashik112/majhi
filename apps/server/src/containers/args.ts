@@ -50,6 +50,38 @@ export const dockerArgv = (parts: DockerParts): string[] => [
   ...parts.command,
 ];
 
+/** Variables the docker CLI reads for itself: a container's own value for one of these stays on the line. */
+const CLI_OWNED = new Set([
+  "PATH",
+  "HOME",
+  "DOCKER_HOST",
+  "DOCKER_CONFIG",
+  "DOCKER_CONTEXT",
+  "DOCKER_CERT_PATH",
+  "DOCKER_TLS_VERIFY",
+]);
+
+/**
+ * Moves each `--env NAME=value` of a run off the command line: the flag becomes `--env NAME`, which
+ * the docker CLI fills from its own environment, and the value goes in `env` for that one CLI
+ * process. A password a service or a database check holds then shows in no process list.
+ */
+export function envByName(parts: DockerParts): { parts: DockerParts; env: Record<string, string> } {
+  const env: Record<string, string> = {};
+  const flags = [...parts.flags];
+  for (let i = 0; i < flags.length - 1; i++) {
+    if (flags[i] !== "--env") continue;
+    const pair = flags[i + 1] ?? "";
+    const at = pair.indexOf("=");
+    if (at <= 0) continue;
+    const name = pair.slice(0, at);
+    if (CLI_OWNED.has(name)) continue;
+    env[name] = pair.slice(at + 1);
+    flags[i + 1] = name;
+  }
+  return { parts: { ...parts, flags }, env };
+}
+
 /** Host places that no docker argument may name. */
 export interface HostPaths {
   /** majhi's config folder. */

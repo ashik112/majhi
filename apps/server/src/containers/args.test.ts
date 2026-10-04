@@ -10,6 +10,7 @@ import {
   ContainerRefused,
   type DockerParts,
   dockerArgv,
+  envByName,
   type Limits,
   networkCreateArgs,
   previewRunArgs,
@@ -420,5 +421,23 @@ describe("builds", () => {
     expect(() => buildArgs(holding, { context: safety.hostHome, dockerfile: "Dockerfile" })).toThrow(
       ContainerRefused,
     );
+  });
+});
+
+describe("environment values stay off the command line", () => {
+  it("moves a service's variables to the CLI's environment and leaves only names", () => {
+    const parts = serviceRunArgs(safety, limits, {
+      name: "db",
+      image: "postgres:16",
+      env: { POSTGRES_PASSWORD: "pg-secret-1234", PATH: "/custom" },
+    });
+    const moved = envByName(parts);
+    expect(dockerArgv(moved.parts).join(" ")).not.toContain("pg-secret-1234");
+    expect(moved.parts.flags).toContain("POSTGRES_PASSWORD");
+    expect(moved.env).toEqual({ POSTGRES_PASSWORD: "pg-secret-1234" });
+    // The CLI's own variable keeps its value on the line: passing it by name would give it the CLI's.
+    expect(moved.parts.flags).toContain("PATH=/custom");
+    // The check runs on the call as built, before the values move.
+    expect(() => assertSafe(parts, safety)).not.toThrow();
   });
 });
