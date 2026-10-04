@@ -2775,6 +2775,11 @@ export class AutonomyService {
     };
   }
 
+  /** Today's spend against the day cap and each workspace's cap, for the captain's roll-up. */
+  async daySpend(): Promise<AutonomySpend> {
+    return (await this.measure(false)).spend;
+  }
+
   /**
    * Why a workspace's lane rests now: the day budget is used, the workspace's own budget is used, or
    * the lane's account is under its floor. Undefined: it may run. Rules and Laya go on either way.

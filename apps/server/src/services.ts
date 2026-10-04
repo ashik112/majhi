@@ -11,6 +11,7 @@ import {
   NotificationsSettingsSchema,
   PRIVATE,
   type ServiceEntry,
+  type TaskId,
   textValue,
   UPDATE_STATUS_FILE,
   UpdateStatusSchema,
@@ -21,7 +22,7 @@ import { startLogin } from "./accounts/login.ts";
 import { AccountService } from "./accounts/service.ts";
 import { AccountUsageReader, UsageSweeper } from "./accounts/usage.ts";
 import { AdminAccess } from "./admin/access.ts";
-import { isBossChat } from "./admin/boss.ts";
+import { findBossChat, isBossChat } from "./admin/boss.ts";
 import { AdminService } from "./admin/service.ts";
 import { AdminTokens } from "./admin/tokens.ts";
 import { AgendaRepo } from "./agenda/repo.ts";
@@ -108,11 +109,11 @@ import { clientUpdate } from "./growth/update.ts";
 import type { HandoffService } from "./handoff/service.ts";
 import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
 import type { HostLink } from "./host/link.ts";
-import { busyReason } from "./machine/busy.ts";
-import { MachineSensor } from "./machine/sensor.ts";
 import { RecommendationRepo } from "./inbox/recommendations.ts";
 import { InboxService } from "./inbox/service.ts";
 import { InstallRequests } from "./installs/service.ts";
+import { busyReason } from "./machine/busy.ts";
+import { MachineSensor } from "./machine/sensor.ts";
 import { McpRegistry } from "./mcp-servers/registry.ts";
 import { McpService } from "./mcp-servers/service.ts";
 import { ChatMemory } from "./memory/chats.ts";
@@ -137,9 +138,9 @@ import { Notifier } from "./notify/service.ts";
 import { Unavailable } from "./ops/anything/checks.ts";
 import type { WatchEngine } from "./ops/anything/engine.ts";
 import { createWatchHost } from "./ops/anything/host.ts";
+import { incidentLines } from "./ops/digest-lines.ts";
 import type { ProbePorts } from "./ops/probes.ts";
 import { opsRunners } from "./ops/runner.ts";
-import { incidentLines } from "./ops/digest-lines.ts";
 import type { OpsWatch } from "./ops/watch.ts";
 import { createOps, type Ops } from "./ops/wire.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
@@ -1521,6 +1522,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
             : "idle";
     },
     fresh: (chat, agent) => tasks.fresh(chat, agent),
+    rollup: {
+      spend: () => autonomy.daySpend(),
+      incidents: () => (opsWatch?.unacked() ?? []).map((i) => ({ id: i.id, title: i.title })),
+      bossChat: async () => {
+        const boss = await lanes.boss();
+        const chat = boss === undefined ? undefined : findBossChat({ store, tasks }, boss);
+        return boss === undefined || chat === undefined ? undefined : { chat: chat.id, agent: boss };
+      },
+      post: (task, id, payload) => room.post(task as TaskId, id, payload),
+    },
     ports: captainWorld({
       machineBusy: () => busyReason(machine.get()?.host),
       store,
