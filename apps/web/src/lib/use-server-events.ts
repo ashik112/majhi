@@ -3,7 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { currentPermission, showAttention } from "./browser-notify";
-import { ALL_TOPICS, parseServerEvent, reconnectDelay, topicQueryKeys, wsUrl } from "./events-model";
+import { ALL_TOPICS, closeSocket, parseServerEvent, reconnectDelay, topicQueryKeys, wsUrl } from "./events-model";
+import { queryKeys } from "./queries";
 import { throttledInvalidator } from "./throttled-invalidate";
 import { bindTypingSender } from "./typing-signal";
 
@@ -50,8 +51,11 @@ export function useServerEvents(): void {
       if (stopped) return;
       const ws = new WebSocket(wsUrl("/api/events", window.location));
       socket = ws;
+      // The feed is the first to know the server went away or came back: check the pill now.
+      const checkHealth = () => void client.refetchQueries({ queryKey: queryKeys.health });
       ws.onopen = () => {
         attempt = 0;
+        checkHealth();
         if (everConnected) invalidate(ALL_TOPICS);
         everConnected = true;
         report();
@@ -67,6 +71,7 @@ export function useServerEvents(): void {
       };
       ws.onclose = () => {
         if (stopped) return;
+        checkHealth();
         timer = window.setTimeout(connect, reconnectDelay(attempt));
         attempt += 1;
       };
@@ -79,7 +84,7 @@ export function useServerEvents(): void {
       window.clearInterval(heartbeat);
       throttled.stop();
       bindTypingSender(null);
-      socket?.close();
+      if (socket) closeSocket(socket);
     };
   }, [client, router]);
 }

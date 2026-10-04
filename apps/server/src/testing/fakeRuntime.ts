@@ -65,6 +65,8 @@ export interface FakeRuntime extends AcpRuntime {
   sessions: FakeSession[];
   /** False: a resume request opens a new session instead, like an agent without session/load. */
   resumes: boolean;
+  /** While set, `startSession` waits for it: a session that is slow to open. */
+  startGate: Promise<void> | undefined;
   /** Makes `startSession` reject. */
   startError: Error | undefined;
   /** Accounts, by the end of their home folder, that are signed out: their starts fail and their probes say so. */
@@ -105,12 +107,14 @@ export function fakeRuntime(): FakeRuntime {
     cliVersions: { claude: "2.1.0", codex: "0.158.0" },
     starts: [],
     sessions: [],
+    startGate: undefined,
     startError: undefined,
     signedOutHomes: [],
     resumes: true,
     onSession: undefined,
     async startSession(start): Promise<AgentSession> {
       runtime.starts.push(start);
+      await runtime.startGate;
       if (runtime.startError !== undefined) throw runtime.startError;
       if (runtime.signedOutHomes.some((h) => start.account.home.endsWith(h)))
         throw new Error("Not logged in. Run /login");

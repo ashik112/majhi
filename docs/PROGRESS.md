@@ -8,6 +8,18 @@ Branch `fix/captain-checks-new-task`.
 - **Cause.** `answerTasks` took every review task with no diff, code tasks included, and judged the report length. Now it marks `investigation` from the task's kind, repos and read mounts, and the chore skips the rest. The authority gate is one function (`answerGate`) used before the pass and again in the recheck before a turn.
 - **Left as is.** The sentence still attaches no repos or branches (SPEC, decision 2026-10-02); aliases are suggested with one click. See DECISIONS.
 - **Verified.** `captain/ship-mr.test.ts` (code task not bounced, investigation bounced, no turn when the workspace asks), typecheck clean. Browser on an isolated server at 1440x900, 1100x800 and 1100x600: footer visible, cross-workspace block, Enter and Cmd+Enter submit, base `develop` saved, no console errors. Isolated Auto-pilot run with three no-change review tasks: none bounced.
+## Room, captain drawer and shell fixes (built, not merged)
+
+Branch `fix/room-captain-shell`.
+
+- **What the owner will notice.** Esc (and Stop) now stops a turn while the agent is still starting, shows "Stopping..." and posts one line ("Stopped @lead's turn." or "Stopped before the agent started."); the held prompt goes out with the next message. Cmd J focuses the box at once and keeps early keystrokes in it (a box shows while the chat opens); single-key shortcuts no longer fire inside the drawer. The online pill shows a dead server within about 3 s and a returning one within 2 s; sending while offline says so and keeps the text. A two-question card keeps Send in view and says how many questions are left. The task header no longer wraps the key or overlaps chips, keeps one primary button when a card in the room asks for the same decision, and shows Changes once (the tab, for tasks with a repo). A stopped agent reads "Idle". A restart that ends an open permission request leaves one room line.
+- **Cause and fix of Esc.** Three gaps: the web ignored Esc while the task was set up but no agent had reported (now counts as busy: a start request in flight, or a running task whose agents are all stopped); the service had no run to cancel during `start` (worktrees, memory), so it now remembers the cancel and skips starting the agent; the manager cancelled nothing between the session opening and the prompt going out (`cancel` now sets `cancelBeforePrompt` whenever no prompt is in flight, and the loop checks it before sending and keeps the prompt queued).
+- **Shortcuts.** `use-shortcuts.ts` treats the drawer, and the page body while the drawer is open, as typing. The drawer focuses in a layout effect, and the loading state is a real box whose text moves into the composer.
+- **Pill.** `/health` every 1.5 s with a 1.5 s timeout, one immediate retry, `networkMode: always` (the browser's offline flag paused the check before), and a refetch on every events socket open or close.
+- **Sockets.** `closeSocket` closes a connecting socket once it opens, so leaving a page logs no "closed before the connection is established".
+- **Not done.** Expected 4xx results: the browser prints "Failed to load resource" for every 4xx response itself, and the app logs nothing of its own. Hiding them would mean answering 200 for handled errors, a protocol change; left alone.
+- **Tests.** `runs/manager.test.ts` "Esc before the agent has started" (session still opening: nothing is sent, the queue waits, later messages still go). The fake runtime got `startGate`.
+- **Verified in a browser** on an isolated e2e server at 1440x900 and 1100x800: Esc 60 ms to 1.8 s after Start, offline and hung-server timings, Cmd J typing, the two-question card, review header and long-chip header.
 
 ## Live-state counts and restart reconcile (built, not merged)
 

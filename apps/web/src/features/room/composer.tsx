@@ -22,6 +22,7 @@ import { cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { MOD_KEY } from "@/lib/format";
+import { useServerOffline } from "@/lib/queries";
 import { useTask } from "@/lib/task-queries";
 import { useTypingSignal } from "@/lib/typing-signal";
 import { attachmentIds, filesFromClipboard, useAttachments, useFileDrop } from "@/lib/use-attachments";
@@ -76,6 +77,7 @@ export function Composer({
   onDrop,
   onCancel,
   cancelling,
+  starting = false,
   draft,
 }: {
   taskId: string;
@@ -86,6 +88,8 @@ export function Composer({
   onDrop: (id: string) => void;
   onCancel: () => void;
   cancelling: boolean;
+  /** The task is set up but no agent has reported yet. */
+  starting?: boolean;
   /** Text a card button puts in the box, like "@lead ". A new `n` applies it again. */
   draft?: { text: string; n: number } | undefined;
 }) {
@@ -103,7 +107,8 @@ export function Composer({
   useTypingSignal(taskId, focused && text.trim() !== "");
 
   const secretInText = useMemo(() => looksLikeSecret(text), [text]);
-  const busy = isBusy(agents);
+  const busy = isBusy(agents) || starting;
+  const offline = useServerOffline();
   const commands = agents[0]?.commands ?? [];
   const trigger = detectTrigger(text, caret);
   const popupTrigger = trigger && trigger.start !== dismissed ? trigger : null;
@@ -157,6 +162,11 @@ export function Composer({
   /** Shows the message and clears the box at once; the server stores it and starts the agent after. */
   function send(mode: "queue" | "interrupt") {
     if (!canSend) return;
+    // Nothing would arrive: say so and keep the message in the box instead of showing it as sent.
+    if (offline) {
+      toast("majhi is offline", { detail: "Your message was not sent. It stays here.", tone: "error" });
+      return;
+    }
     const sentText = text;
     const sentFiles = attachments.items;
     pendingCount += 1;
@@ -202,6 +212,8 @@ export function Composer({
     setText(next);
     setCaret(next.length);
     setDismissed(0);
+    // At once, so a key pressed before the next frame is not lost to the page behind.
+    field.current?.focus();
     requestAnimationFrame(() => {
       field.current?.focus();
       field.current?.setSelectionRange(next.length, next.length);
@@ -377,12 +389,12 @@ export function Composer({
             {stops ? (
               <Button
                 variant="secondary"
-                className="h-8 w-16 px-0"
+                className={cancelling ? "h-8 w-[5.5rem] px-0" : "h-8 w-16 px-0"}
                 disabled={cancelling}
                 onClick={onCancel}
                 title="Stop this turn (Esc)"
               >
-                Stop
+                {cancelling ? "Stopping..." : "Stop"}
               </Button>
             ) : (
               <Button
