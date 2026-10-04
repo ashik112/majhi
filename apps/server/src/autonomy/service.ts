@@ -50,12 +50,13 @@ import type { AdminCaller } from "../admin/tokens.ts";
 import { type Overnight, overnightOf } from "../agenda/overnight.ts";
 import { briefDue } from "../agenda/time.ts";
 import type { AgentStore } from "../agents/store.ts";
+import { callOutcome, toolItemIdOf } from "../captain/call-outcome.ts";
 import type { LaneGate } from "../captain/lane-gate.ts";
 import { forceOrg, narrow, readRefusal, type ScopeWorld } from "../captain/lane-scope.ts";
 import type { Lanes } from "../captain/lanes.ts";
 import { askedWhy, authorityOf, workspaceIds } from "../captain/levels.ts";
 import { classifyOwnWork, scopeOfTask } from "../captain/own-work.ts";
-import { permissionVerdict } from "../captain/permission-rules.ts";
+import { answerFor, coveredForTask, permissionVerdict } from "../captain/permission-rules.ts";
 import {
   loopLine,
   NEAR_SAME_MS,
@@ -2270,7 +2271,7 @@ export class AutonomyService {
     // An agent that asks the same thing again and again is stuck: no answer feeds it.
     const stuck = await this.questionLoopLine(input.task, item);
     if (stuck !== undefined) return fail(`${stuck}. It is left for the owner. Do not answer it.`);
-    const option = input.option;
+    let option = input.option;
     // The rule table binds the captain too: an empty prompt is the owner's, and a dangerous one is rejected.
     if (item.type === "permission") {
       const rule = permissionVerdict(item.title);
@@ -2294,6 +2295,12 @@ export class AutonomyService {
       if (rule.decision === "deny" && kind !== "reject_once" && kind !== "reject_always") {
         return fail(`Refused: ${rule.why}. Reject it or leave it to the owner.`);
       }
+      // Allow for this task is for a tool a rule covers; any other tool is a judgment call, once.
+      if (kind === "allow_always" && !coveredForTask(item.title)) {
+        return fail("Refused: Allow for this task is only for a tool a rule covers. Use Allow once.");
+      }
+      // A rule covers the tool for the whole task: the next call must not ask again.
+      if (option !== undefined) option = answerFor(item.title, item.options, option);
     }
     let answered: RoomItem;
     try {
@@ -2364,7 +2371,14 @@ export class AutonomyService {
       const before = this.deps.room.get(task, e.item);
       const asked = before === undefined ? undefined : plainQuestion(before);
       const by = before !== undefined && "agent" in before ? before.agent : found?.team[0];
-      if (asked !== undefined && by === agent) past.push({ at: e.at, question: asked });
+      if (before === undefined || asked === undefined || by !== agent) continue;
+      // A call that went through is normal use, however often the same tool is asked for.
+      const toolId = toolItemIdOf(before);
+      const outcome = callOutcome(
+        before,
+        toolId === undefined ? undefined : this.deps.room.get(task, toolId),
+      );
+      past.push({ at: e.at, question: asked, item: e.item, outcome });
     }
     const loop = questionLoop(past, text, this.now());
     if (loop === undefined) return undefined;

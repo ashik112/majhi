@@ -7,7 +7,7 @@ import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
 import { permissionPayload } from "./items.ts";
 import type { RunLive } from "./live.ts";
-import { connectionVerdict, decidePermission, withoutUnaskedModes } from "./permissions.ts";
+import { connectionVerdict, decidePermission, toolAllowKey, withoutUnaskedModes } from "./permissions.ts";
 import type { AgentRun } from "./run.ts";
 
 /**
@@ -127,7 +127,13 @@ export class PermissionFlow {
       this.logWrites(run, pending.writes, allowed ? "allow" : "deny", by);
     } else {
       this.log(run, pending.ask, allowed ? "allow" : "deny", by);
-      if (chosen.kind === "allow_always") store.permissions.allow(task, pending.ask.kind ?? "other");
+      // The captain's Allow for this task covers the one tool it was asked about; the owner's covers its kind.
+      if (chosen.kind === "allow_always") {
+        store.permissions.allow(
+          task,
+          captain ? toolAllowKey(pending.ask.title) : (pending.ask.kind ?? "other"),
+        );
+      }
     }
     room.post(item.task, itemId, {
       ...permissionPayload(item, { state: "answered", chosen: option }),

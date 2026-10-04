@@ -439,7 +439,14 @@ export function createChores(
           continue;
         }
         // An agent that asks the same thing again and again is stuck: no answer feeds it.
-        const loop = questionLoop(run.answeredRecently(card.task, card.agent), card.text, now());
+        // A permission whose call then went through is normal use, so its outcome is read first.
+        const past = run
+          .answeredRecently(card.task, card.agent)
+          .map((p) => ({
+            ...p,
+            outcome: p.item === undefined ? undefined : ports.callOutcome?.(card.task, p.item),
+          }));
+        const loop = questionLoop(past, card.text, now());
         if (loop !== undefined) {
           if (ruleOff(run, "q-loop")) continue;
           // The same loop has one key, so the cards that follow it add no second line and no second message.

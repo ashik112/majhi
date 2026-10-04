@@ -1,6 +1,7 @@
 import type { Authority, CaptainUndo, CommandName, TaskPriority } from "@majhi/shared";
 import type { FollowUpPorts } from "../findings/followups.ts";
 import type { FindingsService } from "../findings/service.ts";
+import type { CallOutcome } from "./call-outcome.ts";
 import type { OwnWorkScope } from "./own-work.ts";
 import type { SecondOpinion } from "./own-work-second.ts";
 import type { UpkeepPorts } from "./upkeep-ports.ts";
@@ -165,6 +166,8 @@ export interface CaptainPorts {
    * An agent keeps asking the same thing: the line goes into the task's room for the owner, and the
    * agent gets one message telling it to stop asking.
    */
+  /** How the call behind a permission card the captain answered ended; unknown for anything else. */
+  callOutcome?(task: string, item: string): CallOutcome | undefined;
   flagLoop(org: string, card: QuestionCard, line: string, nudge: string): Promise<void>;
   answer(org: string, card: QuestionCard, option: string, reason: string): Promise<void>;
   /** Why the workspace's lane rests now (its budget, the day budget, its account), or undefined. */

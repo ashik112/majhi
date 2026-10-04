@@ -1,9 +1,10 @@
 import { ALL_ASK, type Authority } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
+import type { CallOutcome } from "./call-outcome.ts";
 import { createChores } from "./chores.ts";
 import type { CaptainPorts, QuestionCard } from "./ports.ts";
-import { loopLine, nearSame, type PastAnswer, questionLoop } from "./question-loop.ts";
+import { loopLine, nearSame, nudgeText, type PastAnswer, questionLoop } from "./question-loop.ts";
 import { CaptainRepo } from "./repo.ts";
 import { ChoreRunner } from "./runner.ts";
 
@@ -12,6 +13,37 @@ const answered = (minutes: number, question = "Should I continue?"): PastAnswer 
   at: at(minutes).toISOString(),
   question,
   answer: "Yes",
+});
+
+describe("an approved call that went through is not a loop", () => {
+  const call = "mcp__majhi-containers__service_start";
+  const withOutcome = (minutes: number, outcome: PastAnswer["outcome"]): PastAnswer => ({
+    ...answered(minutes, call),
+    outcome,
+  });
+
+  it("does not flag two or three successful calls of the same tool in ten minutes", () => {
+    const ok = { state: "ok" } as const;
+    expect(questionLoop([withOutcome(0, ok)], call, at(2))).toBeUndefined();
+    expect(questionLoop([withOutcome(0, ok), withOutcome(1, ok)], call, at(2))).toBeUndefined();
+  });
+
+  it("flags the same call after it failed, and the nudge carries the error", () => {
+    const failed = { state: "failed", error: "Image redis:7 is not allowed" } as const;
+    const loop = questionLoop([withOutcome(0, failed)], call, at(2));
+    expect(loop).toMatchObject({ times: 2 });
+    expect(loop && nudgeText("PYZ-8", loop)).toBe(
+      'Your call in PYZ-8 keeps failing. The captain answered: "Yes". The tool failed with: "Image redis:7 is not allowed". Fix that, or change the input, before asking again. If it needs the owner, say what in the room, once.',
+    );
+  });
+
+  it("flags the same call after a refusal or a cancel", () => {
+    expect(questionLoop([withOutcome(0, { state: "refused" })], call, at(2))).toBeDefined();
+  });
+
+  it("flags a call whose outcome is unknown, as before", () => {
+    expect(questionLoop([withOutcome(0, undefined)], call, at(2))).toBeDefined();
+  });
 });
 
 describe("recognising an agent that keeps asking", () => {
@@ -51,6 +83,7 @@ function desk() {
   const answers: { item: string; option: string }[] = [];
   const flags: { line: string; nudge: string }[] = [];
   const lane: string[] = [];
+  const outcomes = new Map<string, CallOutcome>();
   // No decision provider here: the chore has no port for one, so a call to it would throw.
   const ports = {
     questions: () => cards.filter((c) => !answers.some((a) => a.item === c.item)),
@@ -61,6 +94,7 @@ function desk() {
     flagLoop: async (_org: string, _card: QuestionCard, line: string, nudge: string) => {
       flags.push({ line, nudge });
     },
+    callOutcome: (_task: string, item: string) => outcomes.get(item),
     laneRest: async () => undefined,
     askLane: async (_org: string, text: string) => {
       lane.push(text);
@@ -118,6 +152,7 @@ function desk() {
     permission,
     question,
     answers,
+    outcomes,
     flags,
     lane,
     actions,
@@ -153,6 +188,29 @@ describe("the questions chore and permission prompts", () => {
     expect(d.answers).toEqual([]);
     expect(d.lane).toHaveLength(1);
     expect(d.lane[0]).toContain("mcp__majhi-containers__service_start");
+  });
+
+  it("lets an agent use a tool again and again while its calls go through", async () => {
+    const d = desk();
+    for (let i = 0; i < 4; i++) {
+      d.outcomes.set(`p${i}`, { state: "ok" });
+      await d.permission(`p${i}`, "mcp__majhi-containers__logs");
+      d.advance(16);
+    }
+    expect(d.answers).toHaveLength(4);
+    expect(d.flags).toEqual([]);
+  });
+
+  it("flags the same call that keeps failing and tells the agent the tool's error", async () => {
+    const d = desk();
+    for (let i = 0; i < 3; i++) {
+      d.outcomes.set(`p${i}`, { state: "failed", error: "port 5432 is taken" });
+      await d.permission(`p${i}`, "mcp__majhi-containers__logs");
+      d.advance(16);
+    }
+    expect(d.answers).toHaveLength(1);
+    expect(d.flags).toHaveLength(1);
+    expect(d.flags[0]?.nudge).toContain('The tool failed with: "port 5432 is taken"');
   });
 
   it("flags an agent whose read prompts repeat, and answers no more of the loop", async () => {
