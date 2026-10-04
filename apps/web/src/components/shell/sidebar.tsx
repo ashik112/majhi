@@ -293,8 +293,14 @@ function NavRow({
  */
 function WatchRow({ active }: { active: boolean }) {
   const watch = useWatch().data;
-  const down = watch?.services.filter((s) => s.status === "down").length ?? 0;
-  const open = watch?.incidents.filter((i) => i.status === "open").length ?? 0;
+  // An acknowledged incident is known to the owner: the row stays quiet until something changes.
+  const acked = new Set(
+    (watch?.incidents ?? []).filter((i) => i.status === "open" && i.ackedAt !== undefined).map((i) => i.id),
+  );
+  const down =
+    watch?.services.filter((s) => s.status === "down" && !(s.incident !== undefined && acked.has(s.incident)))
+      .length ?? 0;
+  const open = watch?.incidents.filter((i) => i.status === "open" && i.ackedAt === undefined).length ?? 0;
   const lit = Math.max(down, open);
   return (
     <NavRow

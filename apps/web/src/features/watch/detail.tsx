@@ -116,7 +116,7 @@ export function IncidentDetail({
   const looked = incident.timeline.filter((t) => t.kind === "action");
   const isConnection = incident.fix?.check.startsWith("connection:") === true;
   const thing = incident.title.replace(/^majhi: /, "").replace(/ is failing$/, "");
-  const asked = `Incident: ${incident.title}. ${incident.timeline[0]?.text ?? ""} What is wrong, and what should I do?`;
+  const asked = `Incident: ${incident.title}. ${incident.timeline[0]?.text ?? ""} Look into it, fix what you can, and acknowledge it with majhi_ops_ack once it is handled. Tell me what was wrong in one or two lines.`;
   const noLook =
     mode !== "on"
       ? "Auto-pilot is off"
