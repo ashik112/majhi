@@ -349,7 +349,7 @@ function AgendaPanel({
       <Panel title="Agenda" className="min-h-[220px] flex-1">
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
           <CircleCheck aria-hidden="true" className="size-7 text-lamp-done" />
-          <p className="m-0 text-lg font-semibold">Nothing on today's agenda.</p>
+          <p className="m-0 text-lg font-semibold">Nothing needs you.</p>
           <p className="m-0 max-w-[460px] text-base text-fg-muted text-pretty">
             {today.plan.captainNext.length === 0
               ? "The captain has nothing queued."

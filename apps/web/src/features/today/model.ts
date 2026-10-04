@@ -70,14 +70,14 @@ export function dayText(day: string): string {
 }
 
 /**
- * The header's one sentence. The agenda holds decisions and also dates, follow-ups and findings, so
- * it never says "need you": that word counts decisions only (Decisions, the bell, the Board).
+ * The header's one sentence. Its wording waits for the owner: "need you" counts decisions only
+ * elsewhere, and "N on today's agenda" is the proposed replacement (docs/PROGRESS.md).
  */
 export function subtitleOf(input: { day: string; count: number; minutes: number; later: number }): string {
   const date = dayText(input.day);
   const later = input.later > 0 ? `, ${input.later} more later` : "";
-  if (input.count === 0) return `${date}. Nothing on today's agenda${later}.`;
-  return `${date}. ${input.count} on today's agenda, about ${minutesText(input.minutes)}${later}.`;
+  if (input.count === 0) return `${date}. Nothing needs you${later}.`;
+  return `${date}. ${input.count} ${input.count === 1 ? "thing needs" : "things need"} you, about ${minutesText(input.minutes)}${later}.`;
 }
 
 /** What an agenda row calls itself: a decision uses its Decisions kind and title, so both screens agree. */
