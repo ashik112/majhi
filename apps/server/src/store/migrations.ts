@@ -1186,6 +1186,21 @@ CREATE TABLE agenda_settings (
 );
 `,
   },
+  {
+    // The secret scan files one finding per project and strength now, not one per file and kind. The
+    // per-file ones fold away at once instead of at the next scan, so the list is not buried meanwhile.
+    id: 136,
+    name: "fold per-file secret findings",
+    sql: `
+UPDATE findings
+SET status = 'dismissed',
+    dismissed_reason = 'Folded into one finding per project',
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE source = 'security'
+  AND dedupe_key LIKE 'secret:%'
+  AND status IN ('open', 'proposed', 'task', 'decision');
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */
