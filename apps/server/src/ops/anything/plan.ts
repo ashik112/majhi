@@ -355,7 +355,7 @@ export function planLine(
     def.spec.kind === "custom"
       ? "**the captain**"
       : `**${where.conn ?? def.name}** (${where.kindWord}, ${where.org})`;
-  const verb = def.spec.kind === "custom" ? "will check" : "check";
+  const verb = "check";
   const then: string[] = [];
   if (def.fire.fix.mode !== "off" && def.fire.fix.allowed.length > 0) then.push("propose a fix");
   if (def.fire.investigate) then.unshift("look into it");

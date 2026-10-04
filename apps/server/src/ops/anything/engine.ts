@@ -943,7 +943,8 @@ export class WatchEngine {
         changedPrice && w.state.previous !== undefined
           ? `${w.state.previous} → ${w.state.display}`
           : w.state.display === ""
-            ? (w.state.unavailable ?? "not checked yet")
+            ? (w.state.unavailable ??
+              (w.def.spec.kind === "custom" ? "waiting for the captain" : "not checked yet"))
             : w.state.display,
       ...(w.state.number === undefined ? {} : { number: w.state.number }),
       ...(w.state.lastAt === undefined ? {} : { lastAt: w.state.lastAt }),

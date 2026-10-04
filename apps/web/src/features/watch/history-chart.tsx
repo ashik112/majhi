@@ -21,6 +21,7 @@ export function HistoryChart({
   threshold,
   caption,
   now,
+  longRange = false,
 }: {
   day: readonly WatchSample[];
   quarter: readonly WatchSample[];
@@ -28,16 +29,19 @@ export function HistoryChart({
   /** What the line is: "p95 query time". */
   caption: string;
   now: number;
+  /** Open on 90 days: for a price, which moves in days. */
+  longRange?: boolean;
 }) {
-  const [range, setRange] = useState<"24h" | "90d">("24h");
+  const [range, setRange] = useState<"24h" | "90d">(longRange ? "90d" : "24h");
   const span = range === "24h" ? 24 * 3_600_000 : 90 * 86_400_000;
   const samples = (range === "24h" ? day : quarter).filter((s) => s.v !== null);
   const values = samples.map((s) => s.v ?? 0);
   if (samples.length === 0 && threshold === undefined) return null;
   const all = threshold === undefined ? values : [...values, threshold];
-  const lo = Math.min(...all, 0);
-  const hi = Math.max(...all, lo + 1);
-  const pad = (hi - lo) * 0.1;
+  const spread = Math.max(...all) - Math.min(...all);
+  const lo = Math.min(...all) - (spread === 0 ? 1 : spread * 0.1);
+  const hi = Math.max(...all) + (spread === 0 ? 1 : spread * 0.1);
+  const pad = 0;
   const x = (at: string) =>
     PAD + Math.max(0, Math.min(1, (Date.parse(at) - (now - span)) / span)) * (W - 2 * PAD);
   const y = (v: number) => H - PAD - ((v - lo) / (hi + pad - lo)) * (H - 2 * PAD);

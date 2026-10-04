@@ -159,6 +159,7 @@ export function WatchDetail({
               isPrice ? "Price" : def.spec.kind === "database" && def.spec.label ? def.spec.label : "Value"
             }
             now={now}
+            longRange={isPrice}
           />
         )}
         {(watch.found !== undefined || question !== undefined || needsAck) && (
