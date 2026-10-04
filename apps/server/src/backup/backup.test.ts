@@ -61,7 +61,12 @@ function sources(): DbSource[] {
 }
 
 function makeService(
-  over: { key?: () => Promise<string | undefined>; databases?: () => DbSource[]; dir?: string } = {},
+  over: {
+    key?: () => Promise<string | undefined>;
+    databases?: () => DbSource[];
+    dir?: string;
+    freeBytes?: (dir: string) => Promise<number>;
+  } = {},
 ): BackupService {
   return new BackupService({
     majhiHome: home,
@@ -76,6 +81,7 @@ function makeService(
     destinationEnv: { container: false },
     passphraseLogN: 10,
     beforeWrite: (written) => failWrite?.(written),
+    freeBytes: over.freeBytes ?? (async () => 100 * 1024 ** 3),
   });
 }
 
@@ -126,6 +132,12 @@ afterEach(async () => {
 
 describe("a backup", () => {
   it("holds the databases, config files, history and the sealed secrets, and passes its own check", async () => {
+    // Big folders the config repo does not ignore: rebuilt or downloaded again, never archived.
+    await mkdir(join(home, "laya"), { recursive: true });
+    await writeFile(join(home, "laya", "model.gguf"), "weights");
+    await mkdir(join(home, "e2e", "worktree"), { recursive: true });
+    await writeFile(join(home, "e2e", "worktree", "package.json"), "{}");
+    await writeFile(join(home, "update.json"), "{}");
     const name = await backup.now();
     expect(name).toMatch(/^majhi-manual-20261001T030000Z\.age$/);
     const list = await backup.list();
@@ -159,7 +171,10 @@ describe("a backup", () => {
           f.includes("accounts") ||
           f.includes("connections") ||
           f.includes("secrets.key") ||
-          f.includes("backups"),
+          f.includes("backups") ||
+          f.includes("laya") ||
+          f.includes("e2e") ||
+          f.includes("update.json"),
       ),
     ).toBe(false);
   });
@@ -240,6 +255,15 @@ describe("a backup", () => {
     failWrite = undefined;
     await backup.now();
     expect((await backup.list()).lastError).toBeUndefined();
+  });
+
+  it("refuses to start when it would leave less than the reserve free, and keeps the earlier backups", async () => {
+    const first = await backup.now();
+    const tight = makeService({ freeBytes: async () => 1024 ** 3 });
+    await expect(tight.now()).rejects.toThrow(/Not enough disk space/);
+    const names = (await tight.list()).backups.map((b) => b.name);
+    expect(names).toEqual([first]);
+    expect((await readdir(join(home, "backups"))).some((n) => n.endsWith(".part"))).toBe(false);
   });
 
   it("ignores a stray .part file and sweeps an old one", async () => {
