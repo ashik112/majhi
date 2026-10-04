@@ -3578,7 +3578,7 @@ export const commands = {
   "autonomy.report": {
     risk: "read",
     summary:
-      "Charts for the Auto-pilot dashboard: today's Auto-pilot spend by hour, and the tasks it finished (reached review, an MR or done) per day and workspace over the last days (default 14)",
+      "Charts for the Auto-pilot dashboard: today's Auto-pilot spend by hour, and the tasks it finished (reached review, an MR or done) per day and workspace over the last days (default 14); the Stuck list (tasks with no progress for hours, repeated failures or loops, cards waiting longest); and the machine's load",
     input: AutonomyReportInputSchema,
     output: AutonomyReportSchema,
   },

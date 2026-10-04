@@ -95,7 +95,7 @@ import { authorityProblem, leftOutWhy, type OrgNames, orgName, pickLines } from 
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
 import { AutonomyRepo, type HeldReason, STOPPED_NOW } from "./repo.ts";
 import { pathsOf, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
-import { finishedByDay, hourlySpend } from "./report.ts";
+import { finishedByDay, hourlySpend, machineOf } from "./report.ts";
 import { mayResume, pausedLabel, type ResumeEnv, resumeRefusal } from "./resume.ts";
 import { type SizeOf, type SizeRater, sizeProblem, TaskSizes } from "./sizes.ts";
 import {
@@ -109,6 +109,7 @@ import {
   holdsOf,
   spendOf,
 } from "./spend.ts";
+import { stuckTasks } from "./stuck.ts";
 import { buildSummary, summaryLine } from "./summary.ts";
 import { evaluateWaits, waitProblem } from "./waits.ts";
 
@@ -2624,6 +2625,22 @@ export class AutonomyService {
         now,
       ),
       days: finishedByDay(this.repo.eventsBetween(first, window.end), window.day, days, tz),
+      stuck: stuckTasks({
+        now,
+        tasks: this.openTasks().map((t) => ({
+          id: t.id,
+          title: t.title,
+          ...(t.org === undefined ? {} : { org: t.org }),
+          status: t.status,
+          updatedAt: t.updatedAt,
+        })),
+        events: this.repo.eventsBetween(
+          new Date(now.getTime() - 24 * 3_600_000).toISOString(),
+          now.toISOString(),
+        ),
+        waiting: this.waiting(),
+      }),
+      ...machineOf(this.deps.machine?.()),
     };
   }
 
@@ -2637,7 +2654,9 @@ export class AutonomyService {
 
   /** The autonomous tasks that are not done and what their agents do, running ones first. */
   nowList(): AutonomyNow[] {
-    const why = new Map(this.repo.tasks().map((r) => [r.task, r.why]));
+    const rows = this.repo.tasks();
+    const why = new Map(rows.map((r) => [r.task, r.why]));
+    const since = new Map(rows.map((r) => [r.task, r.since]));
     const ids = new Set(why.keys());
     return this.deps.tasks
       .list(false)
@@ -2653,6 +2672,7 @@ export class AutonomyService {
           return { id: a, ...(doing === undefined ? {} : { nowDoing: doing }) };
         }),
         ...(why.get(t.id) === undefined ? {} : { why: why.get(t.id) }),
+        ...(since.get(t.id) === undefined ? {} : { since: since.get(t.id) }),
       }));
   }
 
@@ -2702,6 +2722,7 @@ export class AutonomyService {
           kind: "approval",
           text: item.summary,
           why: item.autonomy?.why ?? "It waits for the owner's approval",
+          at: item.at,
         });
       }
       for (const item of pendingOfType(task, "secret-request")) {
@@ -2712,6 +2733,7 @@ export class AutonomyService {
           kind: "secret-request",
           text: item.label,
           why: "Only the owner gives secrets",
+          at: item.at,
         });
       }
       for (const item of pendingOfType(task, "permission")) {
@@ -2722,6 +2744,7 @@ export class AutonomyService {
           kind: "permission",
           text: item.title,
           why: `A write through ${item.connection.name} needs the owner`,
+          at: item.at,
         });
       }
     }
