@@ -16,6 +16,9 @@ const BANNED: readonly { pattern: RegExp; use: string }[] = [
   { pattern: /only when i ask/i, use: "the plain authority sentence" },
   { pattern: /ask me with upkeep/i, use: "the plain authority sentence" },
   { pattern: /\bapprove and open\b/i, use: "Ship" },
+  // "Need you" counts decisions and nothing else. Today's agenda also holds dates, follow-ups and findings.
+  { pattern: /\bthings? needs? you\b/i, use: "N on today's agenda" },
+  { pattern: /\bdecisions? waits? for you\b/i, use: "N decisions need you" },
 ];
 
 /** Files that must match the old wording because it is stored in data: the captain's log lines. */

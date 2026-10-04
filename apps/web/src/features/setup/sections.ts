@@ -1,6 +1,6 @@
 /** The sections of Hub setup, in list order, under their group. The URL keeps one as `?section=`. */
 export const SETUP_GROUPS = [
-  { label: "Setup", sections: ["overview", "roots", "ssh"] },
+  { label: "Basics", sections: ["overview", "roots", "ssh"] },
   {
     label: "How majhi works",
     sections: [

@@ -56,7 +56,14 @@ test("agents: errors, new agent", async ({ page }) => {
 
 test("accounts: account details and add account", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("link", { name: /^Accounts/ }).click();
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("button", { name: /^Setup/ })
+    .click();
+  await page
+    .getByRole("menu", { name: "Setup" })
+    .getByRole("menuitem", { name: /^Accounts/ })
+    .click();
   await page.getByRole("button", { name: "claude-northwind" }).click();
   await expect(page.getByRole("region", { name: "Account details" })).toBeVisible();
   await page.waitForTimeout(500);

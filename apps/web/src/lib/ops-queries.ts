@@ -9,10 +9,11 @@ export const opsKeys = {
 } as const;
 
 /** Every doctor check. The sidebar reads it too, so it refreshes on its own every few minutes. */
-export function useHealthChecks() {
+export function useHealthChecks(enabled = true) {
   return useQuery<CommandOutput<"health.run">, ApiRequestError>({
     queryKey: opsKeys.checks,
     queryFn: () => cmd("health.run", {}),
+    enabled,
     staleTime: 60_000,
     refetchInterval: 5 * 60_000,
     refetchIntervalInBackground: false,
@@ -54,10 +55,11 @@ export function useRunCleanup() {
 }
 
 /** The running commit against the checkout on disk. Polled once a minute. */
-export function useSystemVersion(refetchMs: number | false = 60_000) {
+export function useSystemVersion(refetchMs: number | false = 60_000, enabled = true) {
   return useQuery<CommandOutput<"system.version">, ApiRequestError>({
     queryKey: opsKeys.version,
     queryFn: () => cmd("system.version", {}),
+    enabled,
     staleTime: 30_000,
     refetchInterval: refetchMs,
     retry: false,

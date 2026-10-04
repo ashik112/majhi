@@ -26,7 +26,7 @@ One word for one thing in the app's text. `apps/web/src/lib/naming.test.ts` fail
 | What each workspace did and cost against the period before | Per workspace (week or month), Your time (est.) | client P&L, utilisation |
 | A grant, hackathon or launch found in a feed | Finding of source Grant or Launch; its deadline waits for "Add to deadlines" | lead, alert |
 | A list of ideas the captain makes from the owner's own work | Opportunities; "Draft a proposal" | leads, upsell queue |
-| The day's ordered list of what needs the owner | Agenda (place: Today) | to-do list |
+| The day's ordered list of what the owner should look at (decisions, incidents, drafts, findings, dates, follow-ups) | Agenda (place: Today); the header says "N on today's agenda", never "N need you" | to-do list, "N things need you" |
 | The text made each morning | Brief (the full sheet is still the Daily summary) | digest, briefing |
 | The owner's review time per day | Review time | review budget, minutes cap |
 | Laya reading a new finding | Laya suggests dismissing ("Dismiss as suggested", "Bring back") | auto-triage, AI filter |
@@ -36,3 +36,7 @@ One word for one thing in the app's text. `apps/web/src/lib/naming.test.ts` fail
 | A test that failed and then passed on a retry | flaky, so not green | unstable, intermittent |
 | A failed check sent back to the lead | "sent it to @lead" (once per commit) | rejected, bounced |
 | Three failed hand-offs in a row | "Checks failed 3 times in a row: you decide" | escalated |
+| The sidebar group of pages set up once | Setup (a menu); the page of machine settings is Hub setup | System, Settings |
+| Today's second column of spend, incidents and running work | Right now | Watch (that is the page of watched services) |
+| Counts that are chores, not decisions (lessons, checks, sign-ins) | "44 to review", "1 to fix", "2 to sign in", amber | red counts, "need you" |
+| A decision count in a sentence | "9 need you", "9 decisions need you" | "9 waiting for you", "9 decisions wait for you" |

@@ -160,6 +160,6 @@ test("Today, empty day", async ({ page }) => {
     await route.fulfill({ response: res, json: body.data === undefined ? out : { ...body, data: out } });
   });
   await page.goto("/today");
-  await expect(page.getByText("Nothing needs you.").first()).toBeVisible();
+  await expect(page.getByText("Nothing on today's agenda.").first()).toBeVisible();
   await shots(page, "empty");
 });

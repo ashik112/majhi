@@ -26,6 +26,6 @@ export function validTab(tab: PanelTab, threads: readonly CaptainOrg[]): PanelTa
 /** What waits in a thread, for the chip's tooltip. */
 export function waitingWord(org: Pick<CaptainOrg, "name" | "forYou">): string {
   return org.forYou > 0
-    ? `${org.name}: ${org.forYou} ${org.forYou === 1 ? "thing" : "things"} waiting on you`
+    ? `${org.name}: ${org.forYou} ${org.forYou === 1 ? "needs" : "need"} you`
     : `${org.name}: waiting on you`;
 }
