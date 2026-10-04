@@ -86,8 +86,6 @@ import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
 import { classifyInjection } from "./decisions/uses/injection.ts";
 import { layaEvalRunner } from "./decisions/uses/weekly-eval.ts";
-import { economicsRunner } from "./economics/playbook.ts";
-import { EconomicsService } from "./economics/service.ts";
 import type { ServerEnv } from "./env.ts";
 import { errorMessage, UserError } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
@@ -359,8 +357,6 @@ export interface Services {
   outcomes: OutcomesService;
   /** The checked hand-off: tests, build, lint and a review before "Ready to ship" (5.18). */
   handoff: HandoffService;
-  /** Client economics and the growth playbooks' views (5.18, step 11). */
-  economics: EconomicsService;
   /** The knowledge base, voice, contacts and deadlines (5.19). */
   business: BusinessServices;
   /** The owner's agenda and the morning brief (5.18). */
@@ -1595,25 +1591,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
     log: (message) => console.error(message),
   });
-  // Client economics and the growth playbooks (captain v2 step 11): code, plus one small model call where noted.
-  const rateRepo = new OutcomesRepo(store.raw);
-  const orgLabel = async (org: string) =>
-    org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org);
-  const economics = new EconomicsService({
-    db: store.raw,
-    tz: async () => zoneOr((await config.settings()).autonomy.tz),
-    orgs: async () => workspaceIds((await config.sections()).orgs),
-    rates: () => rateRepo.rates(),
-    minutes: () => rateRepo.minutes(),
-    ...(options.runClock === undefined ? {} : { now: options.runClock }),
-  });
   // The ops watch adds its runner below, once the connections it reads through exist.
   const rulesTable: Record<string, RulesRunner> = {
     ...RULES_RUNNERS,
     ...sensorRunners(sensors),
     // The weekly check of Laya's decisions, and a few old findings read each run.
     "laya-eval": layaEvalRunner({ decisions, backlog: findings }),
-    economics: economicsRunner(economics, orgLabel),
   };
   const playbooks = new PlaybookService({
     catalog: playbookCatalog,
@@ -2103,7 +2086,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outbound,
     outcomes,
     handoff,
-    economics,
     business,
     agenda,
     captainTell: new CaptainTell({

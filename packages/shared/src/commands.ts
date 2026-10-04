@@ -164,10 +164,6 @@ import {
   LayaStatusSchema,
   ProviderIdSchema,
 } from "./decisions.ts";
-import {
-  EconomicsGetInputSchema,
-  EconomicsSchema,
-} from "./economics.ts";
 import { EmojiSchema } from "./emoji.ts";
 import {
   FindingDismissInputSchema,
