@@ -15,11 +15,11 @@ import type { z } from "zod";
 import { openBossChat, openChat } from "../admin/boss.ts";
 import { cardStats } from "../admin/card-stats.ts";
 import { sameRule } from "../admin/policy.ts";
+import { agendaHandlers } from "../agenda/handlers.ts";
 import { scheduleHandlers } from "../automation/handlers.ts";
 import { triggerHandlers } from "../automation/triggers/handlers.ts";
 import { autonomyHandlers } from "../autonomy/handlers.ts";
 import { backupHandlers } from "../backup/handlers.ts";
-import { agendaHandlers } from "../agenda/handlers.ts";
 import { businessHandlers } from "../business/handlers.ts";
 import { captainHandlers } from "../captain/handlers.ts";
 import type { ConfigService } from "../config/service.ts";
@@ -39,6 +39,7 @@ import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import { inboxHandlers } from "../inbox/handlers.ts";
 import { mcpHandlers } from "../mcp-servers/handlers.ts";
 import { hostNameOf } from "../mrs/remote.ts";
+import { opsHandlers } from "../ops/handlers.ts";
 import {
   checkSavedLogin,
   checkToken,
@@ -178,6 +179,7 @@ export function createHandlers({
       goals: services.goals,
       outbound: services.outbound,
     }),
+    ...opsHandlers({ watch: services.ops.watch, phone: services.ops.phone, playbooks: services.playbooks }),
     ...outcomesHandlers({
       findings: services.findings,
       lanes: services.lanes,

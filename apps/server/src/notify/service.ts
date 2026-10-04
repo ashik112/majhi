@@ -137,6 +137,41 @@ export class Notifier {
   }
 
   /**
+   * An incident (SPEC 5.18, Ops watch). A high one tells the owner now: it is never held for quiet hours,
+   * never muted and never folded into a burst, and the desktop banner goes out even while a tab is open,
+   * because it must be seen. A medium one waits out quiet hours like a decision. Low ones never come here.
+   */
+  async incident(n: {
+    id: number;
+    text: string;
+    severity: "high" | "medium";
+    repeat: boolean;
+  }): Promise<void> {
+    const settings = await this.deps.settings();
+    const now = this.now();
+    if (
+      n.severity !== "high" &&
+      inQuietHours(now, { from: settings.quiet_from, to: settings.quiet_to, tz: settings.quiet_tz })
+    ) {
+      return;
+    }
+    const event = {
+      id: `incident:${n.id}${n.repeat ? ":repeat" : ""}`,
+      kind: "incident" as const,
+      title: "majhi",
+      text: n.text,
+      path: "/watch",
+      count: 1,
+    };
+    this.emit(event, settings);
+    if (settings.mac && this.deps.desktop !== undefined) {
+      await this.deps
+        .desktop({ title: "majhi", message: n.text, path: "/watch", sound: settings.sound })
+        .catch(() => undefined);
+    }
+  }
+
+  /**
    * The morning brief is ready (SPEC 5.18): one desktop notification and one `attention` event per day, whose
    * click opens Today. It is not a decision, so it never joins a burst; the owner's mute and quiet hours still
    * apply. Told once per day, whatever calls it.

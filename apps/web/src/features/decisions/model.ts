@@ -18,6 +18,7 @@ export const KIND_FILTERS = [
   { id: "access", label: DECISION_KIND_LABEL.approval },
   { id: "money", label: DECISION_KIND_LABEL.budget },
   { id: "paused", label: DECISION_KIND_LABEL.paused },
+  { id: "incident", label: DECISION_KIND_LABEL.incident },
   { id: "trust", label: DECISION_KIND_LABEL.trust },
 ] as const;
 export type KindFilter = (typeof KIND_FILTERS)[number]["id"];
@@ -33,6 +34,7 @@ const GROUP: Record<OwnerDecisionKind, KindFilter> = {
   paused: "paused",
   draft: "access",
   batch: "access",
+  incident: "incident",
   trust: "trust",
 };
 
@@ -131,6 +133,8 @@ export function actionOf(link: DecisionLink): BannerAction {
       return { kind: "page", to: "/accounts", search: { account: link.id } };
     case "playbooks":
       return { kind: "page", to: "/playbooks" };
+    case "watch":
+      return { kind: "page", to: "/watch" };
   }
 }
 
@@ -148,6 +152,8 @@ export function openLabel(link: DecisionLink): string {
       return "Sign in";
     case "playbooks":
       return "Open Playbooks";
+    case "watch":
+      return "Open Watch";
   }
 }
 

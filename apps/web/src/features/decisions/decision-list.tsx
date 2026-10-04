@@ -1,6 +1,7 @@
 import { DECISION_KIND_LABEL, type OwnerDecision, type OwnerDecisionKind } from "@majhi/shared";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  BellRing,
   CircleDollarSign,
   CirclePause,
   GitMerge,
@@ -31,6 +32,7 @@ const ICON: Record<OwnerDecisionKind, ReactNode> = {
   "sign-in": <LogIn aria-hidden="true" />,
   draft: <Mail aria-hidden="true" />,
   batch: <Mails aria-hidden="true" />,
+  incident: <BellRing aria-hidden="true" />,
   trust: <Scale aria-hidden="true" />,
 };
 

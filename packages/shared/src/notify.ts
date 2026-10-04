@@ -32,7 +32,7 @@ export const NOTIFY_KIND_LABEL: Record<NotifyKind, string> = {
 export const AttentionEventSchema = z.object({
   type: z.literal("attention"),
   id: z.string(),
-  kind: z.union([NotifyKindSchema, z.enum(["test", "group"])]),
+  kind: z.union([NotifyKindSchema, z.enum(["test", "group", "incident"])]),
   /** Task id, like ACM-12. Absent for a group, a test or an update. */
   task: z.string().optional(),
   title: z.string(),
