@@ -43,7 +43,9 @@ export const LIMITS = {
   lagFailMs: 5_000,
   /** Resident memory as a share of the machine's. */
   memoryFail: 0.6,
-  diskFailBytes: 1 * GB,
+  /** Docker stops well before the disk is empty (it died at about 6 GB free once), so warn early. */
+  diskWarnBytes: 20 * GB,
+  diskFailBytes: 8 * GB,
   dbFailBytes: 8 * GB,
   /** Growth of the database in 24 hours. */
   dbGrowthFailBytes: 1 * GB,
@@ -147,11 +149,12 @@ export class SelfChecks {
       try {
         const free = await (deps.freeBytes ?? realFree)(d.path);
         const bad = free < LIMITS.diskFailBytes;
+        const low = free < LIMITS.diskWarnBytes;
         out.push({
           id: `self-disk-${d.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
           name: `Free space for ${d.label}`,
-          status: bad ? "fail" : "pass",
-          detail: `${(free / GB).toFixed(1)} GB free${bad ? ". Free space on that disk." : ""}`,
+          status: bad ? "fail" : low ? "warn" : "pass",
+          detail: `${(free / GB).toFixed(1)} GB free${bad ? ". Docker and majhi stop when the disk fills. Free space on that disk now." : low ? ". Getting low: Docker stops when the disk fills." : ""}`,
           severity: "high",
         });
       } catch {
