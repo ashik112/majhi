@@ -11,7 +11,7 @@ import { MapPinOff } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Problem } from "@/components/problem";
 import { Button } from "@/components/ui/button";
-import { BoardScreen } from "@/features/board/board-screen";
+import { BoardScreen } from "@/features/board/home-screen";
 import { ChatsScreen } from "@/features/chats/chats-screen";
 import { EditRootsRoute } from "@/features/roots/edit-roots-route";
 import { TaskScreen } from "@/features/task/task-screen";
@@ -195,7 +195,7 @@ const automationsRoute = createRoute({
   path: PAGE_PATH.automations,
   component: lazyRouteComponent(() => import("@/pages/automations-page"), "AutomationsPage"),
 });
-// The Autonomous page is part of the Captain page now: /autonomous lands there, and an old view opens its sheet.
+// The Auto-pilot page is part of the Captain page now: /autonomous lands there, and an old view opens its sheet.
 const autonomousRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/autonomous",

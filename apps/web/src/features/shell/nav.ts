@@ -3,7 +3,7 @@ import type { PageName } from "../../lib/pages";
 /** What each page is called in the sidebar, the palette and the shortcuts list. */
 export const PAGE_LABEL: Record<PageName, string> = {
   today: "Today",
-  board: "Board",
+  board: "Home",
   chats: "Chats",
   captain: "Captain",
   playbooks: "Playbooks",

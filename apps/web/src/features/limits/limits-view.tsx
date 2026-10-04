@@ -182,7 +182,7 @@ function LimitsForm({
     const out = limitsPatch(form, settings, BROWSER_ZONE);
     if ("problem" in out) return setProblem(out.problem);
     save.mutate(
-      { input: out.patch, reason: "Owner changed the limits of Autonomous" },
+      { input: out.patch, reason: "Owner changed the limits of Auto-pilot" },
       { onSuccess: () => setDraft(undefined) },
     );
   };
@@ -191,7 +191,7 @@ function LimitsForm({
 
   return (
     <>
-      <PageHeader title="Limits" subtitle="What autonomous work may spend each day, and what it keeps back.">
+      <PageHeader title="Limits" subtitle="What auto-pilot work may spend each day, and what it keeps back.">
         {(dirty || save.isPending) && (
           <>
             <Button size="sm" variant="ghost" disabled={save.isPending} onClick={() => setDraft(undefined)}>
@@ -214,19 +214,19 @@ function LimitsForm({
             </p>
           )}
           <div className="flex min-w-0 flex-col gap-3">
-            <Card aria-label="Autonomous budget per day" id="autonomous-budget">
+            <Card aria-label="Auto-pilot budget per day" id="autonomous-budget">
               <div className="flex min-w-0 items-center gap-3">
-                <h2 className="min-w-0 flex-1 text-base font-semibold text-fg">Autonomous budget per day</h2>
+                <h2 className="min-w-0 flex-1 text-base font-semibold text-fg">Auto-pilot budget per day</h2>
                 <CapFields
-                  label="Autonomous budget"
+                  label="Auto-pilot budget"
                   empty="needed"
                   value={form.day}
                   onChange={(day) => edit({ day })}
                 />
               </div>
               <p className="text-sm text-fg-muted text-pretty">
-                One number for all autonomous work: the captain's own turns and every task it starts or
-                resumes. Autonomous needs it while it is on.
+                One number for all auto-pilot work: the captain's own turns and every task it starts or
+                resumes. Auto-pilot needs it while it is on.
               </p>
               <UseLine use={status.spend.total} raised={status.raised.day !== undefined} none="" />
               {askFor("day").map((ask) => (
@@ -249,8 +249,8 @@ function LimitsForm({
             <Card aria-label="Budget per workspace">
               <h2 className="text-base font-semibold text-fg">Per workspace</h2>
               <p className="text-sm text-fg-muted text-pretty">
-                A daily budget inside the autonomous one, so one client cannot spend another's money. Empty
-                shares the whole autonomous budget.
+                A daily budget inside the auto-pilot one, so one client cannot spend another's money. Empty
+                shares the whole auto-pilot budget.
               </p>
               <ul className="flex flex-col">
                 {Object.keys(form.orgs).map((id) => {
@@ -272,7 +272,7 @@ function LimitsForm({
                       <UseLine
                         use={use}
                         raised={status.raised[id] !== undefined}
-                        none="Shares the autonomous budget."
+                        none="Shares the auto-pilot budget."
                       />
                       {askFor(id).map((ask) => (
                         <BudgetAskCard key={ask.scope} ask={ask} />
@@ -308,7 +308,7 @@ function LimitsForm({
                 <div className="flex flex-col gap-4 pt-1">
                   <div className="flex flex-col gap-2">
                     <p className="text-sm text-fg-muted text-pretty">
-                      Account floors: autonomous work starts nothing on an account with less than this left.
+                      Account floors: auto-pilot work starts nothing on an account with less than this left.
                     </p>
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 text-sm">
                       <label htmlFor={`${ids}-window`} className="text-fg-soft">

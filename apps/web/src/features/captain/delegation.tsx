@@ -80,7 +80,7 @@ function Cell({
   );
 }
 
-/** The daily budget of one workspace: an amount, or empty to share the Autonomous budget. */
+/** The daily budget of one workspace: an amount, or empty to share the Auto-pilot budget. */
 function BudgetCell({ org }: { org: CaptainOrg }) {
   const toast = useToast();
   const save = useCaptainRules();
@@ -106,7 +106,7 @@ function BudgetCell({ org }: { org: CaptainOrg }) {
         onSuccess: () =>
           toast(
             amount === undefined
-              ? `${org.name}: shares the Autonomous budget`
+              ? `${org.name}: shares the Auto-pilot budget`
               : `${org.name}: $${amount} a day`,
           ),
         onError: (error) => {
@@ -121,7 +121,7 @@ function BudgetCell({ org }: { org: CaptainOrg }) {
       aria-label={`Daily budget of ${org.name} in dollars`}
       inputMode="decimal"
       placeholder="shared"
-      title="Dollars a day. Empty shares the Autonomous budget."
+      title="Dollars a day. Empty shares the Auto-pilot budget."
       value={text}
       aria-invalid={invalid}
       disabled={save.isPending}
@@ -252,7 +252,7 @@ function Grid({
       )}
       {mode !== "on" && (
         <p className="mt-2 text-xs text-fg-faint text-pretty">
-          Autonomous is off, so only Upkeep acts, and only on memory and cleanup. The rest waits for you until
+          Auto-pilot is off, so only Upkeep acts, and only on memory and cleanup. The rest waits for you until
           it is on.
         </p>
       )}

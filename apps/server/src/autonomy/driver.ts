@@ -374,7 +374,7 @@ export class AutonomyDriver {
       task: chat,
       agent: boss,
       text,
-      settled: "Autonomous mode woke the captain",
+      settled: "Auto-pilot mode woke the captain",
       by: "majhi",
     });
     lane.lastTickAt = this.now().getTime();

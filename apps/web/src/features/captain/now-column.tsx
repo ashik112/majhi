@@ -207,7 +207,7 @@ function Next({
     <Box title="Next" count={all.length}>
       {all.length === 0 ? (
         <p className="text-sm text-fg-muted">
-          {autonomy.mode === "off" ? "Nothing is planned while Autonomous is off." : "Nothing planned yet."}
+          {autonomy.mode === "off" ? "Nothing is planned while Auto-pilot is off." : "Nothing planned yet."}
         </p>
       ) : (
         <ol className="flex flex-col">
