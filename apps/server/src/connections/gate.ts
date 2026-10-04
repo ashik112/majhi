@@ -219,7 +219,10 @@ const REMOTE_READ_PROGRAMS = new Set([
 /** journalctl reads, except with these, which delete or rotate the journal. */
 const JOURNAL_WRITES = /^--(?:vacuum|rotate|flush|relinquish|sync)/;
 
-/** MCP tool names (SPEC 5.14): one that starts with a read verb is a read, unless a write verb is in it too. */
+/**
+ * MCP tool names (SPEC 5.14): one with a read verb in it is a read, unless a write verb is in it too.
+ * The verb can come after the object (`droplet-list`, `db-cluster-get`), so every word counts.
+ */
 const TOOL_READ_VERBS = new Set([
   "get",
   "list",
@@ -246,6 +249,62 @@ const TOOL_WRITE_VERBS = new Set([
   "mute",
   "ack",
   "close",
+  "add",
+  "remove",
+  "edit",
+  "modify",
+  "patch",
+  "put",
+  "apply",
+  "replace",
+  "rename",
+  "move",
+  "copy",
+  "upload",
+  "import",
+  "attach",
+  "detach",
+  "assign",
+  "unassign",
+  "enable",
+  "disable",
+  "start",
+  "stop",
+  "reboot",
+  "shutdown",
+  "power",
+  "resize",
+  "scale",
+  "rebuild",
+  "restore",
+  "deploy",
+  "rollback",
+  "cancel",
+  "approve",
+  "merge",
+  "upgrade",
+  "install",
+  "uninstall",
+  "kill",
+  "terminate",
+  "destroy",
+  "purge",
+  "reset",
+  "rotate",
+  "revoke",
+  "grant",
+  "tag",
+  "untag",
+  "promote",
+  "migrate",
+  "trigger",
+  "invoke",
+  "snooze",
+  "resolve",
+  "reply",
+  "comment",
+  "publish",
+  "transfer",
 ]);
 
 /** Mail senders, for a run that holds a mail connection: sending mail is a write. */
@@ -270,7 +329,7 @@ export function classifyTool(server: string, tool: string, held: readonly GateCo
       ? true
       : (() => {
           const words = toolWords(tool);
-          return TOOL_READ_VERBS.has(words[0] ?? "") && !words.some((w) => TOOL_WRITE_VERBS.has(w));
+          return words.some((w) => TOOL_READ_VERBS.has(w)) && !words.some((w) => TOOL_WRITE_VERBS.has(w));
         })();
   if (read) return { kind: "read", connections: [connection.id] };
   return {
