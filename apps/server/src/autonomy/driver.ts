@@ -300,7 +300,7 @@ export class AutonomyDriver {
       spend: { ...status.spend, orgs: status.spend.orgs.filter((o) => o.org === org) },
       holds: status.holds.filter((h) => h.kind === "day-cap" || (h.kind === "org-cap" && h.id === org)),
       accounts: status.accounts.filter((a) => a.org === org || a.org === PRIVATE),
-      instructions: status.settings.instructions,
+      instructions: status.settings.instructions.filter((i) => i.org === undefined || i.org === org),
       tasks: status.now.filter((t) => inOrg(t.org)),
       cards: autonomy.answerable(org),
       waiting: status.waiting.filter((w) =>

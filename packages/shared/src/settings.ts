@@ -448,6 +448,11 @@ export const AutonomyInstructionSchema = z.strictObject({
   text: z.string().trim().min(1).max(500),
   /** When the owner gave it, as a UTC ISO time. */
   at: z.string(),
+  /** The workspace it was given in: only that workspace's captain follows it. Absent: every workspace. */
+  org: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]{0,62}$/)
+    .optional(),
 });
 export type AutonomyInstruction = z.infer<typeof AutonomyInstructionSchema>;
 
