@@ -109,7 +109,9 @@ describe("one question per budget and day", () => {
     const input = { scope: "hooli", name: "Hooli", spend, day: TODAY, at: `${TODAY}T10:00:00.000Z` };
     expect(buildAsk({ ...input, waiting: 0 })).toBeUndefined();
     const made = buildAsk({ ...input, waiting: 3 });
-    expect(made?.text).toBe("Hooli used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?");
+    expect(made?.text).toBe(
+      "Hooli used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?",
+    );
     expect(made?.raiseTo).toEqual({ cost: 40 });
     expect(askText("Acme", { cost: 7.5 }, doubled({ cost: 7.5 }), 1)).toBe(
       "Acme used its $7.50 for today. 1 task is waiting. Raise it to $15 for today?",
