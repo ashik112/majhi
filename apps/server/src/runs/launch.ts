@@ -1,4 +1,4 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import {
   type AgentSession,
@@ -44,9 +44,9 @@ import { blockedPaths, checkReadMount, projectsFor, type ReadPolicy } from "../t
 import { gitAttribution } from "./attribution.ts";
 import type { ContextBudget } from "./context.ts";
 import { packageCache } from "./package-cache.ts";
-import { toolsFolder } from "./tools-folder.ts";
 import { keepSerenaOutOfGit, type SerenaLaunch, serenaServer } from "./serena.ts";
 import { prepareRunSkills } from "./skills.ts";
+import { toolsFolder } from "./tools-folder.ts";
 
 /** An agent file and the account it runs on, checked. */
 export interface ResolvedAgent {
@@ -543,6 +543,10 @@ async function guardMounts(gitDir: string, branch: string): Promise<RunMount[]> 
   for (const dir of [join(refs, "heads", "task"), join(refs, "remotes"), join(refs, "tags")]) {
     await mkdir(dir, { recursive: true });
   }
+  // `git pack-refs --prune` (run by `git gc --auto` on the host) removes empty ref folders, and the
+  // run's writable mount would go with `refs/heads/task`. Git skips dot-files when it reads loose
+  // refs and prunes only empty folders, so this file keeps the folder alive.
+  await writeFile(join(refs, "heads", "task", ".keep"), "");
   return [
     { path: join(refs, "heads"), readOnly: true },
     { path: join(refs, "heads", "task") },
