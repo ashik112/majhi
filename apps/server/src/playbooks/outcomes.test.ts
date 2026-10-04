@@ -53,7 +53,6 @@ function ship(merge: "decide" | "ask", off: string[]) {
     workspace: async () => ws(),
     stopped: () => false,
     tellOwner: () => undefined,
-    caused: () => undefined,
     laneTokens: () => 0,
     chores: createChores(ports, now),
   });
@@ -118,7 +117,6 @@ async function choreRun(
     }),
     stopped: () => false,
     tellOwner: () => undefined,
-    caused: () => undefined,
     laneTokens: () => 0,
     chores: createChores(all, now),
   });

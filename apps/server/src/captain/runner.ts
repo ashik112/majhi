@@ -48,8 +48,6 @@ export interface RunnerDeps {
   stopped(): boolean;
   /** Tells the owner through the bell. */
   tellOwner(org: string, text: string): void;
-  /** Marks a subject (a task) as touched by the captain, so the events it causes start nothing. */
-  caused(subject: string): void;
   /** Tokens the workspace's lane spent since `since`. */
   laneTokens(org: string, since: string): number;
   chores: Record<CaptainChore, (run: ChoreRun) => Promise<void>>;
@@ -165,7 +163,6 @@ export class ChoreRun {
         return "blocked";
       }
     }
-    if (a.task !== undefined) this.deps.caused(a.task);
     const at = this.deps.now().toISOString();
     // The key is taken before the step, in one insert: the lane may be shipping the same state now.
     if (this.deps.repo.claimKey("chore", a.key, a.task, at) !== "taken") return "repeat";

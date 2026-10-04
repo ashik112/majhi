@@ -54,7 +54,6 @@ function desk(authority: Authority = OWN, started: readonly string[] = ["ACM-1"]
     }),
     stopped: () => false,
     tellOwner: () => {},
-    caused: () => {},
     laneTokens: () => 0,
     chores: createChores(ports, () => new Date(Date.UTC(2026, 9, 4, 12, 0, 0))),
   });

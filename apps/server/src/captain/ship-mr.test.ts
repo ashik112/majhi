@@ -65,7 +65,6 @@ function setup(
     workspace: async () => ws(),
     stopped: () => false,
     tellOwner: () => undefined,
-    caused: () => undefined,
     laneTokens: () => 0,
     chores: createChores(ports, NOW),
   });

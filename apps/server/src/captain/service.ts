@@ -29,8 +29,8 @@ import type { Lanes } from "./lanes.ts";
 import { authorityOf, choresNow, effectiveAuthority, migratePickOrgs, workspaceIds } from "./levels.ts";
 import { laneOfScope } from "./memory-scopes.ts";
 import type { CaptainPorts } from "./ports.ts";
-import { CaptainRepo, type StoredAction } from "./repo.ts";
 import { type RelayDeps, RootRelay } from "./relay.ts";
+import { CaptainRepo, type StoredAction } from "./repo.ts";
 import { MEMORY_WAITING, restWhy } from "./rules.ts";
 import { ChoreRunner, type Workspace } from "./runner.ts";
 import { summaryOf } from "./summary.ts";
@@ -40,8 +40,6 @@ import { type Identity, revertMerge } from "./undo.ts";
 export const CAPTAIN_SWEEP_MS = 60_000;
 /** Chores that run when something happens also look once an hour, for what a restart missed. */
 const HOURLY_MS = 60 * 60_000;
-/** Events about a task the captain just acted in count as the captain's for this long. */
-const CAUSED_MS = 2 * 60_000;
 /** A burst of triggers is looked at once. */
 const TRIGGER_MS = 1_500;
 
@@ -94,7 +92,6 @@ export class CaptainService {
   /** What the lane's ships and repo registrations are held to: the chores' own rules (SPEC 5.18, One rule set). */
   readonly laneGate: LaneGate;
   private sweep: NodeJS.Timeout | undefined;
-  private readonly caused = new Map<string, number>();
   /** The captain as last read, so a room write can tell the captain's own cards at once. */
   private boss: string | undefined;
   private closed = false;
@@ -129,7 +126,6 @@ export class CaptainService {
       workspace: (org) => this.workspace(org),
       stopped: () => this.stopped(),
       tellOwner: (org, text) => this.deps.tell(`captain:${org}:${this.now().toISOString()}`, text),
-      caused: (subject) => this.markCaused(subject),
       laneTokens: (org, since) => {
         const chat = this.repo.lane(org);
         return chat === undefined ? 0 : this.repo.laneSpend(chat, since).tokens;
@@ -232,21 +228,6 @@ export class CaptainService {
   // ---------------------------------------------------------------------------
   // What happens in majhi
 
-  /** The captain acted in this task: events about it count as its own for a while. */
-  markCaused(subject: string): void {
-    this.caused.set(subject, this.now().getTime() + CAUSED_MS);
-    if (this.caused.size > 2_000) {
-      const now = this.now().getTime();
-      for (const [k, until] of this.caused) if (until < now) this.caused.delete(k);
-    }
-  }
-
-  /** Whether the captain caused events about this subject now. */
-  causedByCaptain(subject: string): boolean {
-    const until = this.caused.get(subject);
-    return until !== undefined && until >= this.now().getTime();
-  }
-
   /**
    * A trigger from an event: tagged with its cause, batched for a moment, then handed to the runner,
    * which drops the captain's own and joins a run that is going.
@@ -306,8 +287,7 @@ export class CaptainService {
   reviewReached(task: string): void {
     const org = this.orgOfTask(task);
     if (org === undefined) return;
-    const cause = this.causedByCaptain(task) ? "captain" : "agent";
-    this.trigger(org, "ship", `${task} reached review`, cause, task);
+    this.trigger(org, "ship", `${task} reached review`, "agent", task);
   }
 
   /** A turn ended: a workspace captain's message to the owner is relayed to the root chat. */
@@ -371,8 +351,7 @@ export class CaptainService {
   async memoryWaiting(fact: Pick<Fact, "scope" | "task">): Promise<void> {
     // Not by agent: the Housekeeper is the captain's agent unless the owner picked another.
     const task = fact.task;
-    const own =
-      task !== undefined && (this.causedByCaptain(task) || this.deps.lanes.orgOf(task) !== undefined);
+    const own = task !== undefined && this.deps.lanes.orgOf(task) !== undefined;
     const org = laneOfScope(fact.scope, (await this.deps.config.sections()).projects);
     if (org === undefined) return;
     this.trigger(org, "memory", "Memories wait", own ? "captain" : "agent", undefined, async () => {

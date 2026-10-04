@@ -69,7 +69,6 @@ function setup(opts: {
     }),
     stopped: () => false,
     tellOwner: () => {},
-    caused: () => {},
     laneTokens: () => 0,
     chores: createChores(ports, () => NOW) as RunnerDeps["chores"],
   });

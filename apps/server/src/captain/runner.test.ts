@@ -28,7 +28,6 @@ function setup(chore: (run: ChoreRun) => Promise<void>) {
     minutes: 0,
   };
   const told: string[] = [];
-  const caused: string[] = [];
   const ws = (): Workspace => ({
     org: "acme",
     name: "Acme",
@@ -51,11 +50,10 @@ function setup(chore: (run: ChoreRun) => Promise<void>) {
     workspace: async () => ws(),
     stopped: () => state.stopped,
     tellOwner: (_org, text) => told.push(text),
-    caused: (s) => caused.push(s),
     laneTokens: () => state.tokens,
     chores,
   });
-  return { repo, state, told, caused, runner };
+  return { repo, state, told, runner };
 }
 
 describe("the chore runner", () => {

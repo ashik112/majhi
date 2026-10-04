@@ -23,7 +23,7 @@ import { CaptainService } from "./service.ts";
  * restarts in the middle of runs, failures, a "Stop the captain", and the captain's own
  * ships and cards echoing back as events. The lanes run the fake ACP agent, so no token is spent.
  *
- * It fails when a run passes the pass bound, the captain's own event starts a run, an
+ * It fails when a run passes the pass bound, the captain's own card (from its own agent) starts a run, an
  * action repeats, the captain acts while stopped or in a task the owner is in, or anything happens in
  * the workspace set to "Only when I ask". It runs on every merge, in well under a minute.
  */
@@ -153,8 +153,7 @@ class Sim {
         const t = this.tasks.get(id);
         this.act("ship", org, `${id}@${t?.heads}`, id);
         if (t !== undefined) t.status = "done";
-        // The captain's own ship comes back as an event: it must start nothing.
-        this.selfInjected += 1;
+        // The captain's own ship comes back as an event: the run it starts finds every key taken.
         this.echo.review(id);
         return { text: `Shipped ${id}`, undoNote: "simulated" };
       },
@@ -170,7 +169,6 @@ class Sim {
       shipReady: async (org, id) => {
         const t = this.tasks.get(id);
         this.act("shipReady", org, `${id}@${t?.heads}`, id);
-        this.selfInjected += 1;
         this.echo.review(id);
       },
       approvals: (org) => this.cards.filter((c) => c.org === org && c.done !== true),
@@ -497,7 +495,8 @@ describe("the captain's soak test", () => {
     expect(stoppedFrom).toBeDefined();
     expect(restarts.length).toBeGreaterThanOrEqual(3);
 
-    // The captain's own events never started a run or joined one: every one was dropped.
+    // The captain's own cards never started a run or joined one: every one was dropped. Its own ships echo
+    // back as review events; the runs they start find every key taken, which the no-repeat check above covers.
     expect(sim.selfInjected).toBeGreaterThan(10);
     expect(dropped + captain.runner.selfDropped).toBe(sim.selfInjected);
     const runs: CaptainRun[] = repo.allRuns();
