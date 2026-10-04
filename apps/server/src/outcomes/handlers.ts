@@ -23,7 +23,10 @@ export interface OutcomesHandlerDeps extends FindingsHandlerDeps {
 /** The ceiling, the rates, the minutes and the ladder's undo are the owner's: the captain never changes its own. */
 function ownerOnly(ctx: CommandContext): void {
   if (ctx.meta.actor.kind === "agent") {
-    throw new UserError(`${ctx.command} is the owner's. The captain never changes its own trust or ceiling.`, 409);
+    throw new UserError(
+      `${ctx.command} is the owner's. The captain never changes its own trust or ceiling.`,
+      409,
+    );
   }
 }
 

@@ -119,7 +119,7 @@ export type BannerAction =
   /** `item`: the room item to scroll to. */
   | { kind: "task"; id: string; item?: string }
   | { kind: "chat"; id: string }
-  | { kind: "page"; to: PagePath; search?: { account?: string; id?: string } }
+  | { kind: "page"; to: PagePath; search?: { account?: string; id?: string; tab?: string } }
   | { kind: "element"; id: string };
 
 /** One thing that needs the owner, as the banner above the page shows it. */

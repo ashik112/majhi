@@ -19,3 +19,6 @@ One word for one thing in the app's text. `apps/web/src/lib/naming.test.ts` fail
 | A playbook set to weekly because its findings were dismissed | "now runs weekly" (Undo) | muted, disabled |
 | The one monthly spend limit | Monthly ceiling | monthly budget, hard cap |
 | Spend against what a client pays | Profit and loss; "Retainer less spend" | margin, ROI |
+| The day's ordered list of what needs the owner | Agenda (place: Today) | to-do list |
+| The text made each morning | Brief (the full sheet is still the Daily summary) | digest, briefing |
+| The owner's review time per day | Review time | review budget, minutes cap |

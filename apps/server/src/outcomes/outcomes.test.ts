@@ -1,10 +1,4 @@
-import {
-  ALL_ASK,
-  type Authority,
-  type AuthorityRow,
-  type Cadence,
-  type OwnerDecision,
-} from "@majhi/shared";
+import { ALL_ASK, type Authority, type AuthorityRow, type Cadence, type OwnerDecision } from "@majhi/shared";
 import type Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { CaptainRepo } from "../captain/repo.ts";
@@ -33,7 +27,11 @@ interface Desk {
   cadenceCalls: Cadence[];
   gate: OutboundGate;
   tz: { value: string };
-  action(i: number, at: number, over?: { chore?: "ship" | "triage" | "cards" | "questions"; key?: string; task?: string }): number;
+  action(
+    i: number,
+    at: number,
+    over?: { chore?: "ship" | "triage" | "cards" | "questions"; key?: string; task?: string },
+  ): number;
   undo(id: number, at: number): void;
   finding(i: number, playbook: string, status: string, at: number): void;
   draft(i: number, channel: string, status: string, at: number, mode?: string): void;
@@ -119,13 +117,28 @@ function desk(over: { window?: number; authority?: Partial<Authority> } = {}): D
       db.prepare(
         `INSERT INTO findings (org, source, title, severity, playbook, dedupe_key, status, by, created_at, updated_at, last_seen)
          VALUES ('acme', 'dependency', ?, 'low', ?, ?, ?, 'captain', ?, ?, ?)`,
-      ).run(`Finding ${i}`, playbook, `k${i}`, status, new Date(at).toISOString(), new Date(at).toISOString(), new Date(at).toISOString());
+      ).run(
+        `Finding ${i}`,
+        playbook,
+        `k${i}`,
+        status,
+        new Date(at).toISOString(),
+        new Date(at).toISOString(),
+        new Date(at).toISOString(),
+      );
     },
     draft(i, channel, status, at, mode = "draft") {
       db.prepare(
         `INSERT INTO outbound_drafts (org, channel, target, body, status, mode, by, created_at, decided_at)
          VALUES ('acme', ?, ?, 'Hello', ?, ?, 'captain', ?, ?)`,
-      ).run(channel, `ana${i}@globex.example`, status, mode, new Date(at).toISOString(), new Date(at).toISOString());
+      ).run(
+        channel,
+        `ana${i}@globex.example`,
+        status,
+        mode,
+        new Date(at).toISOString(),
+        new Date(at).toISOString(),
+      );
     },
     turn(at, cost, org = "acme", task = "ACM-1") {
       db.prepare(
@@ -198,10 +211,14 @@ describe("outcomes of the captain's actions", () => {
     const d = desk();
     const ins = (text: string, task: string, status: string | null, at: number) =>
       d.db
-        .prepare("INSERT INTO autonomy_events (at, kind, text, task, org, status) VALUES (?, 'task', ?, ?, 'acme', ?)")
+        .prepare(
+          "INSERT INTO autonomy_events (at, kind, text, task, org, status) VALUES (?, 'task', ?, ?, 'acme', ?)",
+        )
         .run(new Date(at).toISOString(), text, task, status);
     d.db
-      .prepare("INSERT INTO tasks (id, title, brief, kind, org, status, folder, team, created_at, updated_at) VALUES ('ACM-1', 'One', '', 'task', 'acme', 'paused', 'f', '[]', ?, ?), ('ACM-2', 'Two', '', 'task', 'acme', 'done', 'f', '[]', ?, ?)")
+      .prepare(
+        "INSERT INTO tasks (id, title, brief, kind, org, status, folder, team, created_at, updated_at) VALUES ('ACM-1', 'One', '', 'task', 'acme', 'paused', 'f', '[]', ?, ?), ('ACM-2', 'Two', '', 'task', 'acme', 'done', 'f', '[]', ?, ?)",
+      )
       .run("x", "x", "x", "x");
     ins("Started ACM-1: One", "ACM-1", null, T0);
     ins("Paused 'One' because the agent hit an error", "ACM-1", "paused", T0 + HOUR);
@@ -227,10 +244,14 @@ describe("outcomes of the captain's actions", () => {
       outcome: "done",
     });
     d.db
-      .prepare("INSERT INTO decisions (id, at, use, summary, provider, answers, estimated, duration_ms) VALUES ('dec_abc', ?, 'task-size', 's', 'laya', '{}', 0, 1)")
+      .prepare(
+        "INSERT INTO decisions (id, at, use, summary, provider, answers, estimated, duration_ms) VALUES ('dec_abc', ?, 'task-size', 's', 'laya', '{}', 0, 1)",
+      )
       .run(new Date(T0).toISOString());
     d.db
-      .prepare("INSERT INTO decision_labels (decision_id, use, question, label, source, at) VALUES ('dec_abc', 'task-size', 'size', 'small', 'owner', ?)")
+      .prepare(
+        "INSERT INTO decision_labels (decision_id, use, question, label, source, at) VALUES ('dec_abc', 'task-size', 'size', 'small', 'owner', ?)",
+      )
       .run(new Date(T0).toISOString());
     d.clock.at = T0 + HOUR;
     await d.svc.sweep();
@@ -239,7 +260,10 @@ describe("outcomes of the captain's actions", () => {
 
   it("records an answer against the captain's recommendation as overruled, and one that follows it as accepted", () => {
     const d = desk();
-    const decision = (id: string, option: string): Pick<OwnerDecision, "id" | "kind" | "org" | "task" | "suggestion"> => ({
+    const decision = (
+      id: string,
+      option: string,
+    ): Pick<OwnerDecision, "id" | "kind" | "org" | "task" | "suggestion"> => ({
       id,
       kind: "ship",
       org: "acme",
@@ -249,7 +273,10 @@ describe("outcomes of the captain's actions", () => {
     d.svc.answered(decision("room:ACM-5:a", "merge"), "merge");
     d.svc.answered(decision("room:ACM-6:a", "merge"), "changes");
     // An agent's suggestion is not the captain's opinion: nothing is recorded.
-    d.svc.answered({ ...decision("room:ACM-7:a", "merge"), suggestion: { option: "merge", reason: "r", by: "agent" } }, "done");
+    d.svc.answered(
+      { ...decision("room:ACM-7:a", "merge"), suggestion: { option: "merge", reason: "r", by: "agent" } },
+      "done",
+    );
     expect(d.svc.repo.get("rec:room:ACM-5:a")?.result).toBe("accepted");
     expect(d.svc.repo.get("rec:room:ACM-6:a")?.result).toBe("overruled");
     expect(d.svc.repo.get("rec:room:ACM-7:a")).toBeUndefined();
@@ -260,7 +287,15 @@ describe("the scorecard", () => {
   it("has no percent and no NaN with zero actions", async () => {
     const d = desk();
     const card = await d.svc.scorecard("today");
-    expect(card.total).toMatchObject({ actions: 0, judged: 0, kept: 0, pending: 0, tokens: 0, costUsd: 0, minutesSaved: 0 });
+    expect(card.total).toMatchObject({
+      actions: 0,
+      judged: 0,
+      kept: 0,
+      pending: 0,
+      tokens: 0,
+      costUsd: 0,
+      minutesSaved: 0,
+    });
     expect(card.total.keptPct).toBeUndefined();
     expect(card.total.overruledPct).toBeUndefined();
     expect(card.orgs).toEqual([]);
@@ -283,13 +318,28 @@ describe("the scorecard", () => {
     await d.svc.sweep();
     const card = await d.svc.scorecard("week", "acme");
     const acme = card.orgs.find((o) => o.org === "acme");
-    expect(acme?.tally).toMatchObject({ actions: 6, judged: 6, kept: 5, overruled: 1, keptPct: 83.3, overruledPct: 16.7, costUsd: 0.6 });
+    expect(acme?.tally).toMatchObject({
+      actions: 6,
+      judged: 6,
+      kept: 5,
+      overruled: 1,
+      keptPct: 83.3,
+      overruledPct: 16.7,
+      costUsd: 0.6,
+    });
     // 4 merges at 5 min and one own-work approval at 1 min, plus one finding taken at 15 min.
     expect(acme?.tally.minutesSaved).toBe(36);
     expect(acme?.findings).toEqual({ filed: 3, accepted: 1, dismissed: 1, conversionPct: 50 });
     expect(acme?.line).toBe("Kept 5/6, $0.60, ~36 min saved");
-    expect(card.rows.map((r) => [r.key, r.tally.actions]).sort()).toEqual([["merge", 5], ["own", 1]]);
-    expect(card.playbooks.find((p) => p.playbook === "deps")?.findings).toMatchObject({ filed: 3, accepted: 1, dismissed: 1 });
+    expect(card.rows.map((r) => [r.key, r.tally.actions]).sort()).toEqual([
+      ["merge", 5],
+      ["own", 1],
+    ]);
+    expect(card.playbooks.find((p) => p.playbook === "deps")?.findings).toMatchObject({
+      filed: 3,
+      accepted: 1,
+      dismissed: 1,
+    });
   });
 
   it("uses the minutes the owner set, and the default again when cleared", async () => {
@@ -394,7 +444,13 @@ describe("the trust ladder: promotion", () => {
     for (let i = 0; i < n; i++) {
       d.clock.at = T0 - 40 * 24 * HOUR + i * HOUR;
       d.svc.answered(
-        { id: `room:ACM-${i}:a`, kind: "ship", org: "acme", task: `ACM-${i}`, suggestion: { option: "merge", reason: "ok", by: "captain" } },
+        {
+          id: `room:ACM-${i}:a`,
+          kind: "ship",
+          org: "acme",
+          task: `ACM-${i}`,
+          suggestion: { option: "merge", reason: "ok", by: "captain" },
+        },
         againstAt.includes(i) ? "changes" : "merge",
       );
     }
@@ -428,7 +484,13 @@ describe("the trust ladder: promotion", () => {
     recommended(recent, 19);
     // The 20th is today and against the captain: not clean, and recent.
     recent.svc.answered(
-      { id: "room:ACM-99:a", kind: "ship", org: "acme", task: "ACM-99", suggestion: { option: "merge", reason: "ok", by: "captain" } },
+      {
+        id: "room:ACM-99:a",
+        kind: "ship",
+        org: "acme",
+        task: "ACM-99",
+        suggestion: { option: "merge", reason: "ok", by: "captain" },
+      },
       "changes",
     );
     await recent.svc.sweep();
@@ -440,13 +502,37 @@ describe("the trust ladder: promotion", () => {
     // Five accepted recommendations a month ago, then a plain miss two days ago, then five more clean ones.
     for (let i = 0; i < 5; i++) {
       d.clock.at = T0 - 30 * 24 * HOUR + i * HOUR;
-      d.svc.answered({ id: `room:A-${i}:a`, kind: "ship", org: "acme", suggestion: { option: "merge", reason: "ok", by: "captain" } }, "merge");
+      d.svc.answered(
+        {
+          id: `room:A-${i}:a`,
+          kind: "ship",
+          org: "acme",
+          suggestion: { option: "merge", reason: "ok", by: "captain" },
+        },
+        "merge",
+      );
     }
     d.clock.at = T0 - 2 * 24 * HOUR;
-    d.svc.answered({ id: "room:B-1:a", kind: "ship", org: "acme", suggestion: { option: "merge", reason: "ok", by: "captain" } }, "changes");
+    d.svc.answered(
+      {
+        id: "room:B-1:a",
+        kind: "ship",
+        org: "acme",
+        suggestion: { option: "merge", reason: "ok", by: "captain" },
+      },
+      "changes",
+    );
     for (let i = 0; i < 5; i++) {
       d.clock.at = T0 - 2 * 24 * HOUR + (i + 1) * HOUR;
-      d.svc.answered({ id: `room:C-${i}:a`, kind: "ship", org: "acme", suggestion: { option: "merge", reason: "ok", by: "captain" } }, "merge");
+      d.svc.answered(
+        {
+          id: `room:C-${i}:a`,
+          kind: "ship",
+          org: "acme",
+          suggestion: { option: "merge", reason: "ok", by: "captain" },
+        },
+        "merge",
+      );
     }
     d.clock.at = T0;
     await d.svc.sweep();
@@ -478,12 +564,28 @@ describe("the trust ladder: promotion", () => {
     const d = desk({ window: 5 });
     for (let i = 0; i < 5; i++) {
       d.clock.at = T0 - 20 * 24 * HOUR + i * HOUR;
-      d.svc.answered({ id: `room:A-${i}:a`, kind: "ship", org: "acme", suggestion: { option: "merge", reason: "ok", by: "captain" } }, "merge");
+      d.svc.answered(
+        {
+          id: `room:A-${i}:a`,
+          kind: "ship",
+          org: "acme",
+          suggestion: { option: "merge", reason: "ok", by: "captain" },
+        },
+        "merge",
+      );
     }
     d.clock.at = T0;
     await d.svc.sweep();
     expect(d.svc.decisions()).toHaveLength(1);
-    d.svc.answered({ id: "room:Z:a", kind: "ship", org: "acme", suggestion: { option: "merge", reason: "ok", by: "captain" } }, "changes");
+    d.svc.answered(
+      {
+        id: "room:Z:a",
+        kind: "ship",
+        org: "acme",
+        suggestion: { option: "merge", reason: "ok", by: "captain" },
+      },
+      "changes",
+    );
     await d.svc.sweep();
     expect(d.svc.decisions()).toEqual([]);
   });
@@ -495,7 +597,9 @@ describe("the trust ladder: promotion", () => {
     await d.svc.sweep();
     const [item] = d.svc.decisions();
     expect(item?.title).toContain("Email drafts went out as written, 5 of 5. Move Email to Auto?");
-    expect(() => d.gate.setMode({ org: "acme", channel: "email", mode: "auto", explicit: true })).toThrow(/Accept that proposal/);
+    expect(() => d.gate.setMode({ org: "acme", channel: "email", mode: "auto", explicit: true })).toThrow(
+      /Accept that proposal/,
+    );
     await d.svc.answerNotice(d.svc.repo.openNotices()[0]?.id ?? 0, "promote");
     expect(d.gate.mode("acme", "email")).toBe("auto");
     expect(d.svc.autoAccepted("acme", "email")).toBe(true);
@@ -508,11 +612,14 @@ describe("the trust ladder: promotion", () => {
 describe("auto-mute", () => {
   it("mutes a playbook whose findings are mostly dismissed to weekly, and one click undoes it", async () => {
     const d = desk({ window: 10 });
-    for (let i = 0; i < 10; i++) d.finding(i, "deps", i < 2 ? "task" : "dismissed", T0 - 10 * HOUR + i * 60_000);
+    for (let i = 0; i < 10; i++)
+      d.finding(i, "deps", i < 2 ? "task" : "dismissed", T0 - 10 * HOUR + i * 60_000);
     await d.svc.sweep();
     expect(d.cadence.value).toEqual({ kind: "weekly", day: 1, at: "08:00" });
     const [item] = d.svc.decisions();
-    expect(item?.title).toBe("Acme: Dependency check now runs weekly. 8 of its last 10 findings were dismissed.");
+    expect(item?.title).toBe(
+      "Acme: Dependency check now runs weekly. 8 of its last 10 findings were dismissed.",
+    );
     expect(item?.options.map((o) => o.id)).toEqual(["undo", "ok"]);
     await d.svc.answerNotice(d.svc.repo.openNotices()[0]?.id ?? 0, "undo");
     expect(d.cadence.value).toEqual({ kind: "daily", at: "00:00" });
@@ -647,7 +754,12 @@ describe("one monthly ceiling", () => {
 
   it("months have the right edges", () => {
     const w = monthWindow(new Date("2026-02-15T10:00:00.000Z"), "UTC");
-    expect(w).toMatchObject({ month: "2026-02", daysInMonth: 28, from: "2026-02-01T00:00:00.000Z", to: "2026-03-01T00:00:00.000Z" });
+    expect(w).toMatchObject({
+      month: "2026-02",
+      daysInMonth: 28,
+      from: "2026-02-01T00:00:00.000Z",
+      to: "2026-03-01T00:00:00.000Z",
+    });
     expect(monthWindow(new Date("2026-12-31T23:59:00.000Z"), "UTC").to).toBe("2027-01-01T00:00:00.000Z");
   });
 });

@@ -81,7 +81,13 @@ export function playbookTokens(
 }
 
 /** Runs of a playbook in a workspace in a span. */
-export function playbookRuns(db: Database.Database, org: string, playbook: string, from: string, to: string): number {
+export function playbookRuns(
+  db: Database.Database,
+  org: string,
+  playbook: string,
+  from: string,
+  to: string,
+): number {
   const row = db
     .prepare(
       "SELECT COUNT(*) AS n FROM playbook_runs WHERE org = ? AND playbook = ? AND started_at >= ? AND started_at < ?",

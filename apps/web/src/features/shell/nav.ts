@@ -2,6 +2,7 @@ import type { PageName } from "../../lib/pages";
 
 /** What each page is called in the sidebar, the palette and the shortcuts list. */
 export const PAGE_LABEL: Record<PageName, string> = {
+  today: "Today",
   board: "Board",
   chats: "Chats",
   captain: "Captain",
@@ -24,6 +25,7 @@ export const PAGE_LABEL: Record<PageName, string> = {
 
 /** More words that find a page in the palette. */
 export const PAGE_KEYWORDS: Record<PageName, string> = {
+  today: "brief morning agenda day plan deadlines review time watch what needs me",
   board: "tasks home columns",
   chats: "conversations talk",
   captain: "boss chief of staff autonomous autopilot away rules log summary upkeep workspaces authority",

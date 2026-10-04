@@ -129,6 +129,11 @@ export const PlaybookSchema = z.object({
   }),
   /** On in a workspace the first time its list is read? */
   enabledByDefault: z.boolean().default(false),
+  /**
+   * Reads only and files findings, which wait for the owner. A read-only rules playbook runs when
+   * Autonomous is off and when Upkeep is on You, because nothing it does acts on anything.
+   */
+  readOnly: z.boolean().optional(),
   /** Why it cannot run yet ("needs a CI sensor"), when something it depends on is not built. */
   needs: z.string().max(200).optional(),
   /** What turning it on does, in a sentence, shown beside the switch. */

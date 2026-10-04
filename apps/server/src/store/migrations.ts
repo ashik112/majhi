@@ -1156,7 +1156,7 @@ CREATE INDEX outbound_drafts_org ON outbound_drafts (org, status);
     // `trust_state` is what the ladder last did per workspace and row; `trust_notices` are the Decisions
     // items it raises, with what an undo needs in `data`. `money_state` holds the monthly ceiling and
     // the owner's raise for a month; `org_rates` the optional retainer and hourly rate per workspace.
-    id: 134,
+    id: 138,
     name: "outcomes scorecard trust money",
     sql: `
 CREATE TABLE outcomes (
@@ -1209,6 +1209,73 @@ CREATE TABLE org_rates (
   retainer_usd REAL,
   hourly_usd REAL
 );
+`,
+  },
+    // Sensors (SPEC 5.18, captain v2 step 9): what a sensor remembers between runs, so it asks upstream
+    // only when something may have changed: ETags, lockfile hashes, advisory and release answers, and
+    // the radar's weekly token count. Public answers and counters only, never a secret or a source line.
+    id: 134,
+    name: "sensor cache",
+    sql: `
+CREATE TABLE sensor_cache (
+  key TEXT PRIMARY KEY,
+  etag TEXT,
+  hash TEXT,
+  body TEXT NOT NULL DEFAULT '',
+  at TEXT NOT NULL,
+  fails INTEGER NOT NULL DEFAULT 0,
+  next_at TEXT
+);
+`,
+  },
+  {
+    // The morning brief and the agenda's review budget (SPEC 5.18, captain v2 step 10): one brief per local
+    // day (the primary key is what makes it once per day), and the owner's small agenda settings.
+    id: 135,
+    name: "morning briefs",
+    sql: `
+CREATE TABLE morning_briefs (
+  day TEXT PRIMARY KEY,
+  at TEXT NOT NULL,
+  source TEXT NOT NULL,
+  lines TEXT NOT NULL,
+  facts TEXT NOT NULL,
+  dismissed_at TEXT
+);
+CREATE TABLE agenda_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+`,
+  },
+  {
+    // The secret scan files one finding per project and strength now, not one per file and kind. The
+    // per-file ones fold away at once instead of at the next scan, so the list is not buried meanwhile.
+    id: 136,
+    name: "fold per-file secret findings",
+    sql: `
+UPDATE findings
+SET status = 'dismissed',
+    dismissed_reason = 'Folded into one finding per project',
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE source = 'security'
+  AND dedupe_key LIKE 'secret:%'
+  AND status IN ('open', 'proposed', 'task', 'decision');
+`,
+  },
+  {
+    // The dependency sweep files one finding per project listing its vulnerable packages, not one per
+    // advisory and package. The old ones fold away at once.
+    id: 137,
+    name: "fold per-advisory dependency findings",
+    sql: `
+UPDATE findings
+SET status = 'dismissed',
+    dismissed_reason = 'Folded into one finding per project',
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE source = 'security'
+  AND dedupe_key LIKE 'osv:%'
+  AND status IN ('open', 'proposed', 'task', 'decision');
 `,
   },
 ];

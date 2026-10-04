@@ -205,7 +205,9 @@ export const ScorecardSetMinutesInputSchema = z.object({
 });
 
 /** "Kept 47/50, $3.10, ~2.5 h saved". */
-export function scorecardLine(t: Pick<Tally, "judged" | "kept" | "costUsd" | "minutesSaved">): string | undefined {
+export function scorecardLine(
+  t: Pick<Tally, "judged" | "kept" | "costUsd" | "minutesSaved">,
+): string | undefined {
   if (t.judged === 0 && t.costUsd === 0 && t.minutesSaved === 0) return undefined;
   const parts = [`Kept ${t.kept}/${t.judged}`, moneyWord(t.costUsd)];
   if (t.minutesSaved > 0) parts.push(`~${hoursWord(t.minutesSaved)} saved`);

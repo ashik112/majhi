@@ -33,6 +33,7 @@ import { useArrivalNewTask } from "@/onboarding/arrive";
 
 /** Pages that lay out their own panes to fit the viewport. */
 const PINNED: ReadonlySet<string> = new Set([
+  PAGE_PATH.today,
   PAGE_PATH.captain,
   PAGE_PATH.limits,
   PAGE_PATH.decisions,

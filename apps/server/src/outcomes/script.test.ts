@@ -41,7 +41,12 @@ describe("outcomes and the trust ladder in a real captain turn", { timeout: 120_
           when: /Wake: tasks/,
           steps: [1, 2, 3, 4, 5].map((n) => ({
             tool: "majhi_tasks_create",
-            args: { text: `Tidy item ${n}`, repos: [{ project: "acme-api" }], start: false, reason: "backlog" },
+            args: {
+              text: `Tidy item ${n}`,
+              repos: [{ project: "acme-api" }],
+              start: false,
+              reason: "backlog",
+            },
           })),
         },
       ],
@@ -104,7 +109,10 @@ describe("outcomes and the trust ladder in a real captain turn", { timeout: 120_
           steps: [
             { tool: "majhi_money_set", args: { ceilingUsd: 100000, reason: "more room" } },
             { tool: "majhi_trust_setWindow", args: { window: 3, reason: "faster demotions" } },
-            { tool: "majhi_scorecard_setMinutes", args: { kind: "merge", minutes: 600, reason: "look good" } },
+            {
+              tool: "majhi_scorecard_setMinutes",
+              args: { kind: "merge", minutes: 600, reason: "look good" },
+            },
             { tool: "majhi_scorecard_get", args: { range: "week", org: "globex", reason: "peek" } },
           ],
         },

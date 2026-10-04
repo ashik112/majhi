@@ -36,6 +36,8 @@ import { alertLine } from "./budgets/alert-line.ts";
 import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
 import { BudgetAlertRepo } from "./budgets/repo.ts";
+import { AgendaRepo } from "./agenda/repo.ts";
+import { AgendaService } from "./agenda/service.ts";
 import { CrmService } from "./business/crm.ts";
 import { DeadlinesService } from "./business/deadlines.ts";
 import { KbService } from "./business/kb.ts";
@@ -111,9 +113,11 @@ import { OrgService } from "./orgs/service.ts";
 import { GoalsService } from "./playbooks/goals.ts";
 import { OutboundGate } from "./playbooks/outbound.ts";
 import { PlaybookRepo } from "./playbooks/repo.ts";
+import { RULES_RUNNERS } from "./playbooks/rules.ts";
 import { PlaybookService } from "./playbooks/service.ts";
 import { OutcomesService } from "./outcomes/service.ts";
 import { ProcessManager } from "./processes/manager.ts";
+import { CardRepo } from "./projectcard/repo.ts";
 import { suggestRepoAliases } from "./projectcard/scanner.ts";
 import type { ProjectCards } from "./projectcard/service.ts";
 import { createCards } from "./projectcard/wire.ts";
@@ -137,6 +141,9 @@ import { RepoScanner } from "./scan/scanner.ts";
 import { KeyExports } from "./secrets/backup.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
+import type { Net } from "./sensors/net.ts";
+import { sensorRunners } from "./sensors/runners.ts";
+import { createSensorPorts } from "./sensors/wire.ts";
 import { SkillsCli } from "./skills/cli.ts";
 import { skillGitEnv } from "./skills/git-env.ts";
 import { SkillRegistry } from "./skills/registry.ts";
@@ -163,6 +170,7 @@ import { UsageService } from "./usage/service.ts";
 const CHAT_SWEEP_MS = 60_000;
 /** How often paused budget runs are checked against the week. */
 const LIMIT_SWEEP_MS = 60_000;
+const AGENDA_SWEEP_MS = 60_000;
 /** How often majhi looks whether the weekly prune of its old images is due. */
 const PRUNE_SWEEP_MS = 86_400_000;
 
@@ -198,6 +206,8 @@ export interface ServiceOptions {
   idleWatchMs?: number;
   /** Replaces `fetch` for git sign-in and the git hosts' APIs, so tests never reach a real host. */
   gitFetch?: Fetch;
+  /** Replaces the sensors' network (advisories, end-of-life dates, releases, CI), so tests never reach a real host. */
+  sensorNet?: Net;
   /** Replaces `fetch` for Connect's sign-in calls, so tests reach a fake authorization server. */
   connectFetch?: Fetch;
   /** Replaces the service catalog, so tests connect to a fake server. */
@@ -308,6 +318,8 @@ export interface Services {
   outcomes: OutcomesService;
   /** The knowledge base, voice, contacts and deadlines (5.19). */
   business: BusinessServices;
+  /** The owner's agenda and the morning brief (5.18). */
+  agenda: AgendaService;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
   captainTell: CaptainTell;
   /** The captain's chat per workspace (5.18). */
@@ -1171,6 +1183,64 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ...businessNow,
     }),
   };
+  const agendaOwner = { kind: "owner" } as const;
+  const agenda = new AgendaService({
+    repo: new AgendaRepo(store.raw),
+    clock: async () => {
+      const a = (await config.settings()).autonomy;
+      return { at: a.summary_at, tz: a.tz };
+    },
+    decisions: (org) => inbox.list(org),
+    deadlines: (within) => business.deadlines.list({ withinDays: within, limit: 500 }, agendaOwner).deadlines,
+    findings: () => findings.list({ limit: 500 }, agendaOwner).findings,
+    steps: () =>
+      crm
+        .nextSteps(
+          { until: new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10), limit: 50 },
+          agendaOwner,
+        )
+        .steps.map((s) => ({
+          id: s.contact.id,
+          name: s.contact.name,
+          ...(s.contact.org === undefined ? {} : { org: s.contact.org }),
+          nextStep: s.contact.nextStep,
+          due: s.due,
+          overdue: s.overdue,
+        })),
+    goals: () => goals.list({}, agendaOwner),
+    running: () =>
+      store.tasks
+        .list(false)
+        .filter((t) => t.status === "running" && t.chat !== true && t.lane !== true)
+        .map((t) => ({
+          id: t.id,
+          title: t.title,
+          ...(t.org === undefined ? {} : { org: t.org }),
+          since: t.updatedAt,
+        })),
+    names: async () => {
+      const orgs = (await config.sections()).orgs;
+      return new Map<string, string>([
+        [PRIVATE, "Private"],
+        ...Object.entries(orgs).map(([id, o]) => [id, o.name] as [string, string]),
+      ]);
+    },
+    overnight: (from, to) => autonomy.overnight(from, to),
+    voice: () => business.voice.get(undefined, agendaOwner).effective,
+    write: async (prompt) =>
+      (
+        await housekeeper.ask({ id: "morning-brief" }, prompt, (reply) =>
+          reply.trim() === "" ? { ok: false, problem: "The reply was empty." } : { ok: true, value: reply },
+        )
+      ).value,
+    next: (max) => autonomy.queueTitles(max),
+    notify: (day, text) => notifier.brief(day, text),
+    changed: () => events.emit(["agenda"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
+  const agendaSweep = setInterval(() => background.run(() => agenda.sweep()), AGENDA_SWEEP_MS);
+  agendaSweep.unref();
+  background.run(() => agenda.sweep());
   /** Bound when the server made the dispatcher: the captain's chores run commands as the captain. */
   let captainDispatch: Dispatch | undefined;
   const captain = new CaptainService({
@@ -1225,7 +1295,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
+  // The sensors behind the Engineering playbooks: cheap code that reads checkouts and public advisories.
+  const sensors = createSensorPorts({
+    store,
+    projects,
+    cards: new CardRepo(store.raw),
+    tokens: gitTokens,
+    orgs: async () => (await config.sections()).orgs,
+    housekeeper,
+    ...(options.sensorNet === undefined ? {} : { net: options.sensorNet }),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+    log: (message) => console.error(message),
+  });
   const playbooks = new PlaybookService({
+    rules: { ...RULES_RUNNERS, ...sensorRunners(sensors) },
     repo: new PlaybookRepo(store.raw),
     captain,
     findings,
@@ -1520,6 +1603,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outbound,
     outcomes,
     business,
+    agenda,
     captainTell: new CaptainTell({
       tasks,
       lanes,
@@ -1554,6 +1638,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       clearInterval(outcomeSweep);
       clearInterval(chatSweep);
       clearInterval(limitSweep);
+      clearInterval(agendaSweep);
       clearInterval(pruneSweep);
       clearInterval(updateWatch);
       backup.stop();

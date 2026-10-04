@@ -79,6 +79,7 @@ describe("store", () => {
       .all()
       .map((r) => (r as { name: string }).name);
     expect(names).toEqual([
+      "agenda_settings",
       "attachments",
       "audit",
       "automation_runs",
@@ -118,6 +119,7 @@ describe("store", () => {
       "kb_versions",
       "migrations",
       "money_state",
+      "morning_briefs",
       "org_rates",
       "outbound_channels",
       "outbound_drafts",
@@ -130,6 +132,7 @@ describe("store", () => {
       "runs",
       "schedules",
       "scorecard_minutes",
+      "sensor_cache",
       "task_allowances",
       "task_counters",
       "task_links",

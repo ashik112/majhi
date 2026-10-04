@@ -6,9 +6,9 @@ import {
   type CaptainChore,
   ceilingDecisionId,
   isOutboundKey,
-  moneyWord,
   type MoneySetInput,
   type MoneyStatus,
+  moneyWord,
   OUTBOUND_CHANNEL_LABEL,
   OUTBOUND_CHANNELS,
   type OutboundChannel,
@@ -154,7 +154,10 @@ export class OutcomesService {
   }
 
   /** The owner answered a decision the captain had an opinion on: it agreed or it did not. */
-  answered(decision: Pick<OwnerDecision, "id" | "kind" | "org" | "task" | "suggestion">, option: string): void {
+  answered(
+    decision: Pick<OwnerDecision, "id" | "kind" | "org" | "task" | "suggestion">,
+    option: string,
+  ): void {
     const s = decision.suggestion;
     if (s === undefined || s.by !== "captain") return;
     const key =
@@ -254,7 +257,13 @@ export class OutcomesService {
     return `${name}: ${ROW_NAME[key as AuthorityRow]} has run clean, ${kept} of ${judged} kept. Let the captain decide it?`;
   }
 
-  private async demote(org: string, key: string, setting: string, rows: OutcomeRow[], now: Date): Promise<void> {
+  private async demote(
+    org: string,
+    key: string,
+    setting: string,
+    rows: OutcomeRow[],
+    now: Date,
+  ): Promise<void> {
     const n = this.window;
     const w = windowOf(rows.slice(0, n));
     const at = now.toISOString();
@@ -298,7 +307,9 @@ export class OutcomesService {
 
   /** The bad outcomes of a window, as lines the owner can check: what it was and what became of it. */
   private evidenceOf(rows: readonly OutcomeRow[]): string {
-    const bad = rows.filter((r) => r.result !== undefined && !["kept", "accepted", "approved"].includes(r.result));
+    const bad = rows.filter(
+      (r) => r.result !== undefined && !["kept", "accepted", "approved"].includes(r.result),
+    );
     const lines = bad.slice(0, 5).map((r) => `${this.describe(r)} (${r.result?.replace("-", " ")})`);
     const more = bad.length - lines.length;
     return more > 0 ? `${lines.join("; ")}; and ${more} more.` : `${lines.join("; ")}.`;
@@ -317,10 +328,13 @@ export class OutcomesService {
       const d = db.prepare("SELECT channel, target FROM outbound_drafts WHERE id = ?").get(id) as
         | { channel: string; target: string }
         | undefined;
-      if (d !== undefined) return `${OUTBOUND_CHANNEL_LABEL[d.channel as OutboundChannel] ?? d.channel} to ${d.target}`;
+      if (d !== undefined)
+        return `${OUTBOUND_CHANNEL_LABEL[d.channel as OutboundChannel] ?? d.channel} to ${d.target}`;
     }
     if (r.task !== undefined) {
-      const t = db.prepare("SELECT title FROM tasks WHERE id = ?").get(r.task) as { title: string } | undefined;
+      const t = db.prepare("SELECT title FROM tasks WHERE id = ?").get(r.task) as
+        | { title: string }
+        | undefined;
       return t === undefined ? `Task ${r.task}` : `${r.task}: ${t.title}`.slice(0, 90);
     }
     return r.subject;
@@ -363,21 +377,31 @@ export class OutcomesService {
     for (const n of this.repo.openNotices()) {
       if (n.kind === "muted") {
         // Muting tells the owner and needs no answer; it stays until read or undone.
-        out.push(this.noticeDecision(n, [
-          { id: "undo", label: "Undo", primary: true },
-          { id: "ok", label: "Got it" },
-        ]));
+        out.push(
+          this.noticeDecision(n, [
+            { id: "undo", label: "Undo", primary: true },
+            { id: "ok", label: "Got it" },
+          ]),
+        );
       } else if (n.kind === "demoted") {
-        out.push(this.noticeDecision(n, [
-          { id: "ok", label: "Got it", primary: true },
-          { id: "restore", label: "Give it back" },
-        ]));
+        out.push(
+          this.noticeDecision(n, [
+            { id: "ok", label: "Got it", primary: true },
+            { id: "restore", label: "Give it back" },
+          ]),
+        );
       } else {
         const to = typeof n.data.to === "string" ? n.data.to : "";
-        out.push(this.noticeDecision(n, [
-          { id: "promote", label: to === "decide" ? "Let it decide" : `Move to ${MODE_NAME[to as OutboundMode] ?? to}`, primary: true },
-          { id: "later", label: "Not now" },
-        ]));
+        out.push(
+          this.noticeDecision(n, [
+            {
+              id: "promote",
+              label: to === "decide" ? "Let it decide" : `Move to ${MODE_NAME[to as OutboundMode] ?? to}`,
+              primary: true,
+            },
+            { id: "later", label: "Not now" },
+          ]),
+        );
       }
     }
     const ceiling = this.ceilingDecision();
@@ -435,7 +459,11 @@ export class OutcomesService {
   /** Puts a row or channel at a setting, by the owner's word. */
   private async apply(org: string, key: string, to: string, reason: string): Promise<void> {
     if (isOutboundKey(key)) {
-      this.deps.outbound.applyLadder(org, key.slice("outbound:".length) as OutboundChannel, to as OutboundMode);
+      this.deps.outbound.applyLadder(
+        org,
+        key.slice("outbound:".length) as OutboundChannel,
+        to as OutboundMode,
+      );
     } else {
       await this.deps.setAuthority(org, key as AuthorityRow, to === "decide" ? "decide" : "ask", reason);
     }
@@ -486,7 +514,9 @@ export class OutcomesService {
     return {
       window: this.window,
       states,
-      muted: this.repo.mutedNotices(org).map((n) => ({ org: n.org, playbook: String(n.data.playbook ?? ""), at: n.at })),
+      muted: this.repo
+        .mutedNotices(org)
+        .map((n) => ({ org: n.org, playbook: String(n.data.playbook ?? ""), at: n.at })),
     };
   }
 
@@ -538,7 +568,14 @@ export class OutcomesService {
       const ratio = lane.tokens > 0 ? lane.costUsd / lane.tokens : 0;
       const rowTokens = new Map<string, number>();
       for (const [chore, tokens] of choreTokens(db, org, from, to)) {
-        const row = chore === "ship" ? "merge" : chore === "cards" ? "approvals" : chore === "questions" ? "questions" : "upkeep";
+        const row =
+          chore === "ship"
+            ? "merge"
+            : chore === "cards"
+              ? "approvals"
+              : chore === "questions"
+                ? "questions"
+                : "upkeep";
         rowTokens.set(row, (rowTokens.get(row) ?? 0) + tokens);
       }
       const keys = new Set(list.flatMap((r) => (r.key === undefined ? [] : [r.key])));
@@ -583,7 +620,10 @@ export class OutcomesService {
       range,
       from,
       to,
-      total: all.length === 0 && totalCost === 0 ? { ...ZERO_TALLY } : { ...total, minutesSaved: Math.round((total.minutesSaved + findingMinutes) * 10) / 10 },
+      total:
+        all.length === 0 && totalCost === 0
+          ? { ...ZERO_TALLY }
+          : { ...total, minutesSaved: Math.round((total.minutesSaved + findingMinutes) * 10) / 10 },
       orgs: orgs.toSorted((a, b) => b.tally.actions - a.tally.actions || a.org.localeCompare(b.org)),
       rows,
       playbooks,
@@ -601,7 +641,14 @@ export class OutcomesService {
   // ---------------------------------------------------------------------------
   // Money: one ceiling across all spend
 
-  private spent(now: Date): { spent: number; month: string; from: string; to: string; tokens: number; byOrg: Map<string, { tokens: number; costUsd: number }> } {
+  private spent(now: Date): {
+    spent: number;
+    month: string;
+    from: string;
+    to: string;
+    tokens: number;
+    byOrg: Map<string, { tokens: number; costUsd: number }>;
+  } {
     const w = monthWindow(now, this.tzCache);
     const byOrg = monthSpend(this.deps.db, w.from, w.to);
     let spent = 0;
@@ -677,7 +724,9 @@ export class OutcomesService {
         minutesSaved: Math.round(mins * 10) / 10,
         rates: r,
         ...(r.hourlyUsd === undefined ? {} : { savedUsd: Math.round((mins / 60) * r.hourlyUsd * 100) / 100 }),
-        ...(r.retainerUsd === undefined ? {} : { marginUsd: Math.round((r.retainerUsd - spend.costUsd) * 100) / 100 }),
+        ...(r.retainerUsd === undefined
+          ? {}
+          : { marginUsd: Math.round((r.retainerUsd - spend.costUsd) * 100) / 100 }),
       });
     }
     const saved = this.savedCeiling();
@@ -703,7 +752,10 @@ export class OutcomesService {
 
   async setMoney(input: MoneySetInput): Promise<MoneyStatus> {
     if (input.ceilingUsd !== undefined) {
-      this.repo.setMoneyValue("ceiling_usd", input.ceilingUsd === null ? undefined : String(input.ceilingUsd));
+      this.repo.setMoneyValue(
+        "ceiling_usd",
+        input.ceilingUsd === null ? undefined : String(input.ceilingUsd),
+      );
       this.moneyCache = undefined;
     }
     if (input.rates !== undefined) {
@@ -755,4 +807,3 @@ export class OutcomesService {
     this.deps.changed?.();
   }
 }
-

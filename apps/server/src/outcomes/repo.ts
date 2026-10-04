@@ -209,9 +209,10 @@ export class OutcomesRepo {
 
   /** Authority rows and channels that have outputs, per workspace. */
   keys(): { org: string; key: string }[] {
-    return this.db
-      .prepare("SELECT DISTINCT org, key FROM outcomes WHERE key IS NOT NULL")
-      .all() as { org: string; key: string }[];
+    return this.db.prepare("SELECT DISTINCT org, key FROM outcomes WHERE key IS NOT NULL").all() as {
+      org: string;
+      key: string;
+    }[];
   }
 
   playbooks(): { org: string; playbook: string }[] {
@@ -250,7 +251,11 @@ export class OutcomesRepo {
   setTrust(
     org: string,
     key: string,
-    change: { since?: string | undefined; snoozedUntil?: string | null | undefined; autoOk?: boolean | undefined },
+    change: {
+      since?: string | undefined;
+      snoozedUntil?: string | null | undefined;
+      autoOk?: boolean | undefined;
+    },
   ): void {
     const had = this.trust(org, key);
     const since = change.since ?? had.since ?? null;
@@ -310,9 +315,7 @@ export class OutcomesRepo {
 
   closeNotice(id: number, state: TrustNotice["state"], now: string, data?: Record<string, unknown>): void {
     this.db
-      .prepare(
-        "UPDATE trust_notices SET state = ?, answered_at = ?, data = COALESCE(?, data) WHERE id = ?",
-      )
+      .prepare("UPDATE trust_notices SET state = ?, answered_at = ?, data = COALESCE(?, data) WHERE id = ?")
       .run(state, now, data === undefined ? null : JSON.stringify(data), id);
   }
 

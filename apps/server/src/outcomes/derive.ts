@@ -104,7 +104,14 @@ function fromStarts(db: Database.Database, since: string, o: DeriveOptions): Der
       `SELECT seq, at, text, task, org, status FROM autonomy_events
         WHERE kind = 'task' AND task IS NOT NULL AND at >= ? ORDER BY seq`,
     )
-    .all(since) as { seq: number; at: string; text: string; task: string; org: string | null; status: string | null }[];
+    .all(since) as {
+    seq: number;
+    at: string;
+    text: string;
+    task: string;
+    org: string | null;
+    status: string | null;
+  }[];
   const firsts = new Map<string, { at: string; org: string | null }>();
   const failed = new Map<string, string>();
   const done = new Map<string, string>();
@@ -115,7 +122,9 @@ function fromStarts(db: Database.Database, since: string, o: DeriveOptions): Der
   }
   const out: Derived[] = [];
   for (const [task, first] of firsts) {
-    const row = db.prepare("SELECT org FROM tasks WHERE id = ?").get(task) as { org: string | null } | undefined;
+    const row = db.prepare("SELECT org FROM tasks WHERE id = ?").get(task) as
+      | { org: string | null }
+      | undefined;
     const org = first.org ?? row?.org ?? PRIVATE;
     let result: OutcomeResult | undefined;
     let settledAt: string | undefined;
