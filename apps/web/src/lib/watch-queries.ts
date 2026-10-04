@@ -98,3 +98,68 @@ export function usePhoneForget() {
     onSuccess: done,
   });
 }
+
+// Watch anything (5.18) -------------------------------------------------------------
+
+/** `watch.overview`: every watch with its value, history, fixes and question. Under the `ops` key, so the ops topic refetches it. */
+export function useWatches() {
+  return useQuery<CommandOutput<"watch.overview">, ApiRequestError>({
+    queryKey: [...queryKeys.ops, "watches"],
+    queryFn: () => cmd("watch.overview", {}),
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
+/** A sentence into a watch plan. Changes nothing. */
+export function usePlanWatch() {
+  return useMutation<CommandOutput<"watch.plan">, ApiRequestError, CommandInput<"watch.plan">>({
+    mutationFn: (input) => cmd("watch.plan", input, { reason: "Owner described a watch" }),
+  });
+}
+
+export function useTestWatch() {
+  return useMutation<CommandOutput<"watch.test">, ApiRequestError, CommandInput<"watch.test">>({
+    mutationFn: (input) => cmd("watch.test", input, { reason: "Owner tried a watch" }),
+  });
+}
+
+export function useSaveWatch() {
+  const done = useRefetchWatch();
+  return useMutation<CommandOutput<"watch.save">, ApiRequestError, CommandInput<"watch.save">>({
+    mutationFn: (input) => cmd("watch.save", input, { reason: "Owner changed a watch" }),
+    onSuccess: done,
+  });
+}
+
+export function useRemoveWatch() {
+  const done = useRefetchWatch();
+  return useMutation<CommandOutput<"watch.remove">, ApiRequestError, string>({
+    mutationFn: (id) => cmd("watch.remove", { id }, { reason: "Owner stopped a watch" }),
+    onSuccess: done,
+  });
+}
+
+export function useCheckWatch() {
+  const done = useRefetchWatch();
+  return useMutation<CommandOutput<"watch.checkNow">, ApiRequestError, string>({
+    mutationFn: (id) => cmd("watch.checkNow", { id }, { reason: "Owner checked a watch now" }),
+    onSuccess: done,
+  });
+}
+
+export function usePauseWatch() {
+  const done = useRefetchWatch();
+  return useMutation<CommandOutput<"watch.pause">, ApiRequestError, CommandInput<"watch.pause">>({
+    mutationFn: (input) => cmd("watch.pause", input, { reason: "Owner paused or resumed a watch" }),
+    onSuccess: done,
+  });
+}
+
+export function useSnoozeWatch() {
+  const done = useRefetchWatch();
+  return useMutation<CommandOutput<"watch.snooze">, ApiRequestError, CommandInput<"watch.snooze">>({
+    mutationFn: (input) => cmd("watch.snooze", input, { reason: "Owner snoozed a watch" }),
+    onSuccess: done,
+  });
+}

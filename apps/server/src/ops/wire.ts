@@ -4,6 +4,11 @@ import type { ConnectionTester } from "../connections/tester.ts";
 import type { FindingsService } from "../findings/service.ts";
 import { inQuietHours } from "../notify/attention.ts";
 import type { Notifier } from "../notify/service.ts";
+import type { ConnInfo, WatchPorts } from "./anything/checks.ts";
+import { WatchEngine } from "./anything/engine.ts";
+import type { Core } from "./anything/plan.ts";
+import { realWatchPorts } from "./anything/real-ports.ts";
+import { WatchRepo } from "./anything/repo.ts";
 import { PhoneChannel, SECRET_KEY, type SecretsPort } from "./phone.ts";
 import { numberAt, type ProbePorts, systemPorts } from "./probes.ts";
 import { OpsRepo } from "./repo.ts";
@@ -26,7 +31,17 @@ export interface OpsWiring {
     /** The workspace a connection belongs to. */
     orgOf: (id: string) => Promise<string | undefined>;
   };
-  tester: Pick<ConnectionTester, "callRemoteTool">;
+  tester: Pick<ConnectionTester, "callRemoteTool"> & Partial<Pick<ConnectionTester, "valuesForWatch">>;
+  /** The smallest model for turning a sentence into a watch. Absent: the rules read it. */
+  askModel?: (
+    task: { id: string; org: string },
+    prompt: string,
+    parse: (reply: string) => { ok: true; value: Core } | { ok: false; problem: string },
+  ) => Promise<Core | undefined>;
+  /** For tests: the databases, Redis and servers behind the watches. */
+  watchPorts?: Partial<WatchPorts>;
+  orgs?: () => Promise<{ id: string; name: string }[]>;
+  scheduleRecheck?: (run: () => Promise<void>, ms: number) => void;
   inbox: {
     list(): Promise<OwnerDecision[]>;
     answer(input: { id: string; option: string }): Promise<unknown>;
@@ -46,6 +61,7 @@ export interface OpsWiring {
 
 export interface Ops {
   watch: OpsWatch;
+  engine: WatchEngine;
   phone: PhoneChannel;
   repo: OpsRepo;
   tokens: PhoneTokens;
@@ -110,6 +126,7 @@ export function createOps(w: OpsWiring): Ops {
     }),
     ...w.probes,
   };
+  let engine: WatchEngine | undefined;
   const watch: OpsWatch = new OpsWatch({
     repo,
     findings: w.findings,
@@ -140,20 +157,59 @@ export function createOps(w: OpsWiring): Ops {
     ...(w.retryMs === undefined ? {} : { retryMs: w.retryMs }),
     now,
     changed: w.changed,
+    onAcked: (inc) => engine?.onAcked(inc),
+    onResolved: (inc) => engine?.onResolved(inc),
+    question: (inc) => engine?.question(inc),
   });
+  const watchPorts: WatchPorts = {
+    ...realWatchPorts({
+      fetch: ports.fetch,
+      lookup: ports.lookup,
+      now,
+      connection: async (id): Promise<ConnInfo | undefined> => w.tester.valuesForWatch?.(id),
+      monitor: (id, tool, args) => w.tester.callRemoteTool(id, tool, args),
+    }),
+    ...w.watchPorts,
+  };
+  const watchRepo = new WatchRepo(w.db);
+  engine = new WatchEngine({
+    repo: watchRepo,
+    ops: watch,
+    ports: watchPorts,
+    connections: async (org) =>
+      (await w.connections.list(org)).map((c) => ({ id: c.id, name: c.name, type: c.type })),
+    projectOrg: w.projectOrg,
+    orgName: w.orgName,
+    orgs: w.orgs ?? (async () => []),
+    wake: w.wake,
+    ...(w.askModel === undefined ? {} : { ask: w.askModel }),
+    tell: async (_org, incident, text) => {
+      await w.notifier.incident({ id: -incident, text, severity: "medium", repeat: true });
+    },
+    changed: w.changed,
+    now,
+    ...(w.scheduleRecheck === undefined ? {} : { schedule: w.scheduleRecheck }),
+  });
+  const looks = engine;
   let timer: NodeJS.Timeout | undefined;
+  let watchTimer: NodeJS.Timeout | undefined;
   return {
     watch,
+    engine: looks,
     phone,
     repo,
     tokens,
     start() {
       timer ??= setInterval(() => void watch.tick().catch(() => undefined), TICK_MS);
       timer.unref();
+      watchTimer ??= setInterval(() => void looks.tick().catch(() => undefined), 60_000);
+      watchTimer.unref();
     },
     close() {
       clearInterval(timer);
+      clearInterval(watchTimer);
       timer = undefined;
+      watchTimer = undefined;
     },
   };
 }

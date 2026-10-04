@@ -58,7 +58,7 @@ export const OpsServiceDefSchema = z.object({
 });
 export type OpsServiceDef = z.infer<typeof OpsServiceDefSchema>;
 
-export const OpsCheckKindSchema = z.enum(["url", "tls", "dns", "monitor"]);
+export const OpsCheckKindSchema = z.enum(["url", "tls", "dns", "monitor", "watch"]);
 export type OpsCheckKind = z.infer<typeof OpsCheckKindSchema>;
 
 export const OpsCheckStatusSchema = z.enum([
@@ -118,6 +118,11 @@ export const OpsIncidentSchema = z.object({
   org: IdSchema,
   /** Absent for majhi's own checks. */
   service: OpsServiceIdSchema.optional(),
+  /** The watch (Watch anything) this incident belongs to. */
+  watch: z
+    .string()
+    .regex(/^wch-[a-z0-9]{4,12}$/)
+    .optional(),
   title: z.string(),
   severity: z.enum(["high", "medium", "low"]),
   status: z.enum(["open", "resolved"]),

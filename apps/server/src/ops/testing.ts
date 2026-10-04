@@ -5,6 +5,7 @@ import { FindingsRepo } from "../findings/repo.ts";
 import { FindingsService } from "../findings/service.ts";
 import type { Notifier } from "../notify/service.ts";
 import { Store } from "../store/index.ts";
+import type { ConnInfo } from "./anything/checks.ts";
 import type { SecretsPort } from "./phone.ts";
 import type { ProbePorts } from "./probes.ts";
 import { createOps, type Ops, type OpsWiring } from "./wire.ts";
@@ -68,6 +69,19 @@ export interface OpsWorld {
   answered: { id: string; option: string }[];
   quiet: boolean;
   drafts: { finding?: number; channel: string }[];
+  /** Connections the watches read through, by id. */
+  conns: Map<string, ConnInfo>;
+  /** What the databases, Redis and servers behind the watches say, and what they were asked. */
+  backend: {
+    sql: { engine: string; query: string }[];
+    redis: string[][];
+    ssh: string[];
+    sqlAnswer: (query: string) => string | Error;
+    redisAnswer: (command: string[]) => string;
+    sshAnswer: (command: string) => { code: number; output: string };
+  };
+  /** Rechecks a fix scheduled, to run by hand. */
+  rechecks: (() => Promise<void>)[];
   /** Same database, a fresh service: a restart. */
   restart(): OpsWorld;
 }
@@ -98,6 +112,16 @@ export function opsWorld(
     decisions: over.keep?.decisions ?? [],
     answered: over.keep?.answered ?? [],
     quiet: false,
+    conns: over.keep?.conns ?? new Map(),
+    backend: over.keep?.backend ?? {
+      sql: [],
+      redis: [],
+      ssh: [],
+      sqlAnswer: () => "0",
+      redisAnswer: () => "0",
+      sshAnswer: () => ({ code: 0, output: "" }),
+    },
+    rechecks: over.keep?.rechecks ?? [],
     drafts: over.keep?.drafts ?? [],
     advance: (ms) => {
       clock.at = new Date(clock.at.getTime() + ms);
@@ -139,10 +163,32 @@ export function opsWorld(
     orgName: async (org) => (org === PRIVATE ? "Private" : org === "acme" ? "Acme" : org),
     projectOrg: async (id) => (id === "acme-api" ? "acme" : undefined),
     connections: {
-      list: async () => [{ id: "bf-acme", name: "Better Stack", type: "mcp" }],
-      orgOf: async (id) => (id === "bf-acme" ? "acme" : undefined),
+      list: async (org) => [
+        ...(org === "acme" ? [{ id: "bf-acme", name: "Better Stack", type: "mcp" }] : []),
+        ...[...world.conns]
+          .filter(([, c]) => c.org === org)
+          .map(([id, c]) => ({ id, name: c.name, type: c.type })),
+      ],
+      orgOf: async (id) => (id === "bf-acme" ? "acme" : world.conns.get(id)?.org),
     },
-    tester: { callRemoteTool: async () => ({}) },
+    tester: { callRemoteTool: async () => ({}), valuesForWatch: async (id) => world.conns.get(id) },
+    watchPorts: {
+      sql: async (engine, _url, query) => {
+        world.backend.sql.push({ engine, query });
+        const a = world.backend.sqlAnswer(query);
+        if (a instanceof Error) throw a;
+        return a;
+      },
+      redis: async (_url, commands) => {
+        for (const c of commands) world.backend.redis.push([...c]);
+        return commands.map((c) => world.backend.redisAnswer([...c]));
+      },
+      ssh: async (_alias, command) => {
+        world.backend.ssh.push(command);
+        return world.backend.sshAnswer(command);
+      },
+    },
+    scheduleRecheck: (run) => world.rechecks.push(run),
     inbox: {
       list: async () => world.decisions,
       answer: async (input) => {

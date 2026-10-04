@@ -1,6 +1,7 @@
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
 import type { PlaybookService } from "../playbooks/service.ts";
+import type { WatchEngine } from "./anything/engine.ts";
 import type { PhoneChannel } from "./phone.ts";
 import type { OpsWatch } from "./watch.ts";
 
@@ -14,10 +15,20 @@ type OpsCommand =
   | "ops.phoneSetup"
   | "ops.phoneSet"
   | "ops.phoneTest"
-  | "ops.phoneForget";
+  | "ops.phoneForget"
+  | "watch.overview"
+  | "watch.plan"
+  | "watch.test"
+  | "watch.save"
+  | "watch.remove"
+  | "watch.checkNow"
+  | "watch.pause"
+  | "watch.snooze"
+  | "watch.report";
 
 export interface OpsHandlerDeps {
   watch: OpsWatch;
+  engine: WatchEngine;
   phone: PhoneChannel;
   playbooks: PlaybookService;
 }
@@ -30,7 +41,7 @@ export const WATCH_PLAYBOOK = "ops-uptime";
  * who may answer from a phone. The captain reads incidents as findings.
  */
 export function opsHandlers(deps: OpsHandlerDeps): Pick<CommandHandlers, OpsCommand> {
-  const { watch, phone, playbooks } = deps;
+  const { watch, phone, playbooks, engine } = deps;
   const owner = (ctx: CommandContext): void => {
     if (ctx.meta.actor.kind === "agent") {
       throw new UserError(`${ctx.command} is the owner's. The captain reads incidents as findings.`, 409);
@@ -85,5 +96,42 @@ export function opsHandlers(deps: OpsHandlerDeps): Pick<CommandHandlers, OpsComm
       owner(ctx);
       return phone.forget();
     },
+    "watch.overview": async (input, ctx) => {
+      owner(ctx);
+      return engine.overview(input.org);
+    },
+    "watch.plan": async (input, ctx) => {
+      owner(ctx);
+      return engine.plan(input);
+    },
+    "watch.test": async (input, ctx) => {
+      owner(ctx);
+      return engine.test(input.org, input.def);
+    },
+    "watch.save": async (input, ctx) => {
+      owner(ctx);
+      const view = await engine.save(input);
+      // Watching something means the engine runs: it has its own clock, and the incidents use the uptime playbook's lane.
+      return view;
+    },
+    "watch.remove": async (input, ctx) => {
+      owner(ctx);
+      await engine.remove(input.id);
+      return { id: input.id };
+    },
+    "watch.checkNow": async (input, ctx) => {
+      owner(ctx);
+      return engine.checkNow(input.id);
+    },
+    "watch.pause": async (input, ctx) => {
+      owner(ctx);
+      return engine.pause(input.id, input.paused);
+    },
+    "watch.snooze": async (input, ctx) => {
+      owner(ctx);
+      return engine.snooze(input.id, input.minutes, input.kind);
+    },
+    // The captain's own: the one watch command an agent may call.
+    "watch.report": async (input) => engine.report(input),
   };
 }

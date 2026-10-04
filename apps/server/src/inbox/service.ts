@@ -42,6 +42,8 @@ export interface DecisionActions {
   decideBatch(org: string, channel: OutboundChannel, decision: "send" | "discard"): Promise<unknown>;
   /** The ops watch: the owner has seen the incident. */
   ackIncident?(id: number): Promise<unknown>;
+  /** A watch's fix question: the option is one of its buttons, never "ack". */
+  answerIncident?(id: number, option: string): Promise<unknown>;
   /** A trust ladder notice: demotion read or given back, a promotion taken or put off, a mute undone. */
   answerTrust?(id: number, option: string): Promise<unknown>;
   /** The monthly ceiling: raise it for the month or keep it. */
@@ -220,8 +222,13 @@ export class InboxService {
     if (parsed.kind === "cap") await actions.answerCap(parsed.org, parsed.chore, raiseOrLeave(input.option));
     else if (parsed.kind === "budget") await actions.answerBudget(parsed.scope, raiseOrLeave(input.option));
     else if (parsed.kind === "signin") throw new UserError("Sign in from Accounts.", 400);
-    else if (parsed.kind === "incident") await actions.ackIncident?.(parsed.id);
-    else if (parsed.kind === "trust") await actions.answerTrust?.(parsed.id, input.option);
+    else if (parsed.kind === "incident") {
+      if (input.option === "ack") await actions.ackIncident?.(parsed.id);
+      else {
+        await actions.answerIncident?.(parsed.id, input.option);
+        await actions.ackIncident?.(parsed.id);
+      }
+    } else if (parsed.kind === "trust") await actions.answerTrust?.(parsed.id, input.option);
     else if (parsed.kind === "ceiling") await actions.answerCeiling?.(parsed.month, input.option);
     else if (parsed.kind === "draft") {
       await actions.decideDraft(parsed.id, input.option === "send" ? "send" : "discard");

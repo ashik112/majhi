@@ -128,6 +128,7 @@ import { MrPoller } from "./mrs/poller.ts";
 import { MrService } from "./mrs/service.ts";
 import type { Subject } from "./notify/attention.ts";
 import { Notifier } from "./notify/service.ts";
+import type { WatchEngine } from "./ops/anything/engine.ts";
 import type { ProbePorts } from "./ops/probes.ts";
 import { opsRunners } from "./ops/runner.ts";
 import type { OpsWatch } from "./ops/watch.ts";
@@ -1070,6 +1071,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
   let opsWatch: OpsWatch | undefined;
+  let opsEngine: WatchEngine | undefined;
   const inbox = new InboxService({
     outbound,
     incidents: () => opsWatch?.unacked() ?? [],
@@ -1119,6 +1121,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       decideBatch: (org, channel, decision) => outbound.decideBatch(org, channel, decision),
       ackIncident: async (id) => {
         await opsWatch?.ack(id);
+      },
+      answerIncident: async (id, option) => {
+        await opsEngine?.answerFix(id, option);
       },
       answerTrust: (id, option) => outcomesService?.answerNotice(id, option) ?? Promise.resolve(),
       answerCeiling: (month, option) => outcomesService?.answerCeiling(month, option) ?? Promise.resolve(),
@@ -1702,6 +1707,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       orgOf: async (id) => (await connections.find(id))?.org,
     },
     tester: connectionTests,
+    orgs: async () => Object.entries((await config.sections()).orgs).map(([id, o]) => ({ id, name: o.name })),
+    askModel: async (task, prompt, parse) => {
+      try {
+        return (await housekeeper.ask(task, prompt, parse)).value;
+      } catch (err) {
+        if (err instanceof NoHousekeeper) return undefined;
+        throw err;
+      }
+    },
     inbox: { list: () => inbox.list(), answer: (input) => inbox.answer(input) },
     drafts: (org) => outbound.list(org, 200),
     notifications: async () => {
@@ -1719,6 +1733,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.opsRetryMs === undefined ? {} : { retryMs: options.opsRetryMs }),
   });
   opsWatch = ops.watch;
+  opsEngine = ops.engine;
   Object.assign(rulesTable, opsRunners(ops.watch));
   ops.start();
   const mcpServers = new McpService({
