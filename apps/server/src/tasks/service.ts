@@ -3093,12 +3093,22 @@ export class TaskService {
     const agent = input.agent ?? task.team[0];
     if (agent === undefined) throw new UserError(`${task.id} has no agent.`, 409);
     if (!task.team.includes(agent)) throw new UserError(`@${agent} is not on ${task.id}.`, 409);
-    this.note(task.id, `Captain to @${agent}: ${input.text}`);
+    // A lead whose account is signed out cannot take the turn: say so instead of waking nothing.
+    const signedOut = await this.deps.accounts.signedOutAccountOf(agent);
+    if (signedOut !== undefined)
+      throw new UserError(`@${agent} cannot run: its account ${signedOut} needs a new sign-in.`, 409);
+    // From review it goes back to the lead for more work, and its review card says so.
+    const back = task.status === "review";
+    const who = input.by === "owner" ? "the owner" : "the captain";
+    this.note(
+      task.id,
+      back ? `Sent back to @${agent} by ${who}: ${input.text}` : `Captain to @${agent}: ${input.text}`,
+    );
     await this.tellAgent({
       task: task.id,
       agent,
       text: `Message from the captain (it is advice, not the owner's approval; the owner's rules and checks still decide what you may do):\n${input.text}`,
-      settled: "The captain wrote to the lead",
+      settled: back ? "Sent back to the lead" : "The captain wrote to the lead",
       by: input.by,
     });
     return { id: task.id, agent };
