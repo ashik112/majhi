@@ -38,6 +38,8 @@ export type ShipCheck =
       owner?: boolean;
       /** It conflicts with its base. Who resolves that follows the workspace's Merge row. */
       conflict?: boolean;
+      /** Work left uncommitted in a repo: the lead is asked to commit or discard it. */
+      uncommitted?: { project: string; files: string[] };
     }
   | {
       ready: true;

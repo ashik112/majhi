@@ -106,6 +106,7 @@ import { keywordLines } from "./growth/gather.ts";
 import { OPPORTUNITIES_ID, opportunitiesHooks } from "./growth/opportunities.ts";
 import type { GrowthDeps } from "./growth/ports.ts";
 import { clientUpdate } from "./growth/update.ts";
+import { DEFAULT_HANDOFF_MEMORY, defaultHandoffCpus } from "./handoff/limits.ts";
 import type { HandoffService } from "./handoff/service.ts";
 import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
 import type { HostLink } from "./host/link.ts";
@@ -1520,6 +1521,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return shim === undefined
         ? undefined
         : { env: shim.env, release: () => roomAccess.revoke([shim.entry]) };
+    },
+    environment: () => `${env.commit}|${env.runner.image}`,
+    limits: async (project) => {
+      const c = (await config.settings()).containers;
+      return {
+        cpus: c.handoff_cpus ?? defaultHandoffCpus(),
+        memory: c.handoff_memory ?? DEFAULT_HANDOFF_MEMORY,
+        minutes: c.handoff_minutes?.[project],
+      };
     },
     mergeDecides: async (org) => authorityOf((await config.settings()).autonomy, org).merge === "decide",
     autonomous: () => autonomy.mode() === "on",

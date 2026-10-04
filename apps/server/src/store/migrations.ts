@@ -1463,6 +1463,16 @@ ALTER TABLE task_repos ADD COLUMN mr_review TEXT;
 CREATE INDEX room_items_type ON room_items(type);
 `,
   },
+  {
+    // A failed hand-off check is run again when majhi or the runner changed, or after hours: the
+    // environment it ran in, and how many times this head was tried.
+    id: 150,
+    name: "handoff retries",
+    sql: `
+ALTER TABLE handoff_deep ADD COLUMN env TEXT NOT NULL DEFAULT '';
+ALTER TABLE handoff_deep ADD COLUMN attempts INTEGER NOT NULL DEFAULT 1;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

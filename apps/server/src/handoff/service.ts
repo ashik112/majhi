@@ -24,7 +24,7 @@ import {
   reviewPrompt,
   TRIVIAL_LINES,
 } from "./analysis.ts";
-import type { HandoffRepo } from "./repo.ts";
+import type { DeepRow, HandoffRepo } from "./repo.ts";
 
 /**
  * The checked hand-off (SPEC 5.18, captain v2 step 7). A task that says it is done is verified
@@ -59,6 +59,17 @@ export interface ExecResult {
   error?: string | undefined;
 }
 
+/** What a hand-off check may use: its own caps, not an agent run's. */
+export interface ExecLimits {
+  cpus: number;
+  memory: string;
+}
+
+/** The hand-off settings of a project: caps, and the minutes its tests and build may take (undefined: the default). */
+export interface HandoffLimits extends ExecLimits {
+  minutes: number | undefined;
+}
+
 export interface CardCommands {
   test?: string | undefined;
   build?: string | undefined;
@@ -75,7 +86,17 @@ export interface HandoffPorts {
   commands(project: string): CardCommands;
   diff(id: string): Promise<DiffFacts>;
   /** Runs one shell line in a task's worktree, in its runner, with a timeout. */
-  exec(task: string, cwd: string, command: string, timeoutMs: number): Promise<ExecResult>;
+  exec(
+    task: string,
+    cwd: string,
+    command: string,
+    timeoutMs: number,
+    limits?: ExecLimits,
+  ): Promise<ExecResult>;
+  /** The caps and timeout settings of a project's checks. Absent: majhi's defaults. */
+  limits?(project: string): Promise<HandoffLimits>;
+  /** What the check ran in: majhi's commit and the runner image. A failure is tried again when it changes. */
+  environment?(): string;
   /** The smallest capable model reads the prompt. Rejects when none can. */
   review(task: { id: string; org: string }, prompt: string): Promise<{ gaps: string[]; tokens: number }>;
   /** Autonomous is on: the captain may send a lead back to work and spend on a review. */
@@ -102,6 +123,10 @@ export interface HandoffOptions {
 }
 
 const MINUTE = 60_000;
+/** A failed check of one head runs at most this many times in all. */
+export const MAX_ATTEMPTS = 3;
+/** A failed check this old runs again even when nothing changed. */
+const RETRY_AFTER_MS = 6 * 60 * MINUTE;
 export const TEST_TIMEOUT_MS = 10 * MINUTE;
 export const BUILD_TIMEOUT_MS = 10 * MINUTE;
 export const LINT_TIMEOUT_MS = 5 * MINUTE;
@@ -252,7 +277,13 @@ export class HandoffService {
         });
 
     let deep: { steps: HandoffStep[]; review: HandoffReview; ms: number; cached: boolean };
-    const kept = force ? undefined : this.repo.deep(task.id, head);
+    let kept = force ? undefined : this.repo.deep(task.id, head);
+    const environment = this.ports.environment?.() ?? "";
+    // A failure that majhi's update or a changed runner may have fixed, or that is hours old, runs again.
+    const previous = kept;
+    const retried = previous !== undefined && this.worthRetrying(previous, environment);
+    if (retried) kept = undefined;
+    const attempts = retried && previous !== undefined ? previous.attempts + 1 : 1;
     if (!ready.ok && kept === undefined) {
       const skip = (id: HandoffStepId): HandoffStep =>
         step(id, { status: "skipped", detail: "not run until the first problem is fixed" });
@@ -284,6 +315,8 @@ export class HandoffService {
               ms: costly.ms,
               steps: costly.steps,
               review: costly.review,
+              env: environment,
+              attempts,
             });
           }
         } finally {
@@ -315,9 +348,24 @@ export class HandoffService {
       summary: handoffSummary(steps, deep.review),
     };
     this.latest.set(task.id, result);
-    await this.judge(task, result, force);
+    await this.judge(task, result, force || retried);
     this.ports.changed(task.id);
     return result;
+  }
+
+  /**
+   * A kept failure is tried again when what it ran in changed (majhi's commit or the runner image; a
+   * failure kept before this was recorded counts as changed) or it is old, at most `MAX_ATTEMPTS`
+   * times for one head. A step majhi could not run, or a pass, is never retried here.
+   */
+  private worthRetrying(kept: DeepRow, environment: string): boolean {
+    const failed = kept.steps.some(
+      (s) => s.status === "fail" || s.status === "timeout" || s.status === "flaky",
+    );
+    if (!failed || kept.attempts >= MAX_ATTEMPTS) return false;
+    const changed = environment !== "" && kept.env !== environment;
+    const old = this.now().getTime() - new Date(kept.at).getTime() >= RETRY_AFTER_MS;
+    return changed || old;
   }
 
   // -------------------------------------------------------------------------
@@ -405,7 +453,16 @@ export class HandoffService {
     let countedAny = false;
     for (const r of runs) {
       const where = many ? ` in ${r.project}` : "";
-      let res = await this.ports.exec(task.id, r.cwd, r.command, this.timeouts[kind]);
+      const caps = await this.ports.limits?.(r.project);
+      const timeoutMs =
+        kind !== "lint" && caps?.minutes !== undefined ? caps.minutes * MINUTE : this.timeouts[kind];
+      const more =
+        kind === "lint"
+          ? ""
+          : `. To allow more, set containers.handoff_minutes.${r.project} (now ${Math.round(timeoutMs / MINUTE)}) or containers.handoff_cpus${caps === undefined ? "" : ` (now ${caps.cpus})`}`;
+      const limits = caps === undefined ? undefined : { cpus: caps.cpus, memory: caps.memory };
+      const run = () => this.ports.exec(task.id, r.cwd, r.command, timeoutMs, limits);
+      let res = await run();
       total += res.ms;
       if (res.error !== undefined) {
         return step(kind, {
@@ -418,7 +475,7 @@ export class HandoffService {
       if (res.timedOut) {
         return step(kind, {
           status: "timeout",
-          detail: `\`${r.command}\` did not finish in ${handoffSeconds(this.timeouts[kind])}${where}, so it was stopped`,
+          detail: `\`${r.command}\` did not finish in ${handoffSeconds(timeoutMs)}${where}, so it was stopped${more}`,
           ms: total,
           output: outputTail(res.output),
         });
@@ -426,7 +483,7 @@ export class HandoffService {
       if (res.code !== 0) {
         const first = res;
         if (kind === "tests") {
-          res = await this.ports.exec(task.id, r.cwd, r.command, this.timeouts[kind]);
+          res = await run();
           total += res.ms;
           if (res.error === undefined && !res.timedOut && res.code === 0) {
             return step(kind, {
@@ -440,7 +497,7 @@ export class HandoffService {
         return step(kind, {
           status: res.timedOut ? "timeout" : "fail",
           detail: res.timedOut
-            ? `\`${r.command}\` did not finish in ${handoffSeconds(this.timeouts[kind])} on its retry${where}`
+            ? `\`${r.command}\` did not finish in ${handoffSeconds(timeoutMs)} on its retry${where}${more}`
             : `\`${r.command}\` failed${where} (exit ${res.code ?? "none"}, ${handoffSeconds(res.ms)}${kind === "tests" ? ", also on a retry" : ""})`,
           ms: total,
           output: outputTail(res.output),

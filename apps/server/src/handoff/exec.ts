@@ -2,7 +2,7 @@ import type { BaseEnv, RunMount, Spawner } from "@majhi/acp";
 import { detectSecrets, type Task } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
 import { taskTerminalEnv } from "../terminal/task-terminal.ts";
-import type { ExecResult } from "./service.ts";
+import type { ExecLimits, ExecResult } from "./service.ts";
 
 /** The most output kept while a command runs. The end of it is what a failure is read from. */
 const KEEP_CHARS = 64 * 1024;
@@ -20,7 +20,9 @@ export interface ExecDeps {
    * What the check's `docker` needs to reach this task's containers through majhi: the shim's two
    * variables, and the end of the token. Absent when majhi cannot run containers.
    */
-  dockerShim?: ((task: string) => { env: Record<string, string>; release: () => void } | undefined) | undefined;
+  dockerShim?:
+    | ((task: string) => { env: Record<string, string>; release: () => void } | undefined)
+    | undefined;
 }
 
 /** Hides what looks like a secret in text that came out of a command. */
@@ -41,7 +43,13 @@ export function maskSecrets(text: string): string {
  * majhi's own. It is stopped at `timeoutMs`. What it printed is masked for secrets.
  */
 export function execInTask(deps: ExecDeps) {
-  return async (taskId: string, cwd: string, command: string, timeoutMs: number): Promise<ExecResult> => {
+  return async (
+    taskId: string,
+    cwd: string,
+    command: string,
+    timeoutMs: number,
+    limits?: ExecLimits,
+  ): Promise<ExecResult> => {
     const started = Date.now();
     const task = deps.task(taskId);
     if (task === undefined)
@@ -54,6 +62,7 @@ export function execInTask(deps: ExecDeps) {
         env: { ...taskTerminalEnv(deps.base), ...shim?.env },
         cwd,
         task: taskId,
+        ...(limits === undefined ? {} : { limits: { cpus: String(limits.cpus), memory: limits.memory } }),
         mounts: [{ path: task.folder }, ...(await deps.repoMounts(task))],
       });
     } catch (err) {
