@@ -2,8 +2,6 @@ import {
   type BudgetAsk,
   batchDecisionId,
   budgetDecisionId,
-  type CaptainCapAsk,
-  capDecisionId,
   type DecisionOption,
   type DecisionSuggestion,
   draftDecisionId,
@@ -31,7 +29,6 @@ export interface DecisionSources {
   /** Pending room items of open tasks: cards that wait for the owner. */
   items: readonly RoomItem[];
   subject: (task: string) => Subject | undefined;
-  caps: readonly CaptainCapAsk[];
   budgets: readonly BudgetAsk[];
   /** Accounts the owner has to sign in again. */
   signedOut: readonly { id: string; at: string }[];
@@ -331,24 +328,6 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       ...decorate(id, draft.options, draft.suggestion, workspace, draft.kind === "question"),
       at: item.at,
       link: subject.chat ? { kind: "chat", id: item.task } : { kind: "task", id: item.task, item: item.id },
-    });
-  }
-
-  for (const ask of src.caps) {
-    const id = capDecisionId(ask.org, ask.chore, ask.day);
-    const options: DecisionOption[] = [
-      { id: "raise", label: `Raise to ${ask.raiseTo} for today`, primary: true, effect: "approve" },
-      { id: "leave", label: "Leave it", effect: "leave" },
-    ];
-    out.push({
-      id,
-      kind: "cap",
-      org: ask.org,
-      title: oneLine(ask.text),
-      sentence: ask.text,
-      ...decorate(id, options, undefined, src.orgName?.(ask.org)),
-      at: ask.at,
-      link: { kind: "captain" },
     });
   }
 

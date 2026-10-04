@@ -6,7 +6,6 @@ import {
   type CustomPlaybookSpec,
   CustomPlaybookSpecSchema,
   cadenceLabel,
-  DAILY_CHORE_CAPS,
   type Playbook,
   type PlaybookActivity,
   type PlaybookRun,
@@ -22,7 +21,6 @@ import {
 import type { ScheduleService } from "../automation/service.ts";
 import { choresNow, OFF_CHORES } from "../captain/levels.ts";
 import type { CaptainRepo } from "../captain/repo.ts";
-import { dailyCaps } from "../captain/rules.ts";
 import type { ChoreRunner, Workspace } from "../captain/runner.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { FindingsService } from "../findings/service.ts";
@@ -157,7 +155,6 @@ export class PlaybookService implements ChorePlaybooks {
       settings: st.settings ?? {},
       outcomes: st.outcomes ?? {},
       orDo: st.orDo === null || st.orDo === "" ? undefined : st.orDo,
-      dailyLimit: st.dailyLimit,
     };
   }
 
@@ -179,12 +176,6 @@ export class PlaybookService implements ChorePlaybooks {
     const def = playbook === undefined ? undefined : this.catalog.get(playbook);
     const rule = (def?.outcomes ?? []).find((o) => o.id.endsWith("-brief"));
     return rule !== undefined && this.ruleOff(org, rule.id);
-  }
-
-  /** The owner's daily limit of a chore in a workspace (ChorePlaybooks). */
-  limit(org: string, chore: CaptainChore): number | null | undefined {
-    const def = this.catalog.ofChore(chore);
-    return def === undefined ? undefined : this.effective(def, org).dailyLimit;
   }
 
   /** A chore run did something: the playbook's "Or do this" goes to the workspace's captain (ChorePlaybooks). */
@@ -345,20 +336,11 @@ export class PlaybookService implements ChorePlaybooks {
       result = choreResult(chore, captain.repo.actionsOfRun(lastChore.id), lastChore.note);
       look = needsLook(lastChore.status === "failed" ? "failed" : "done", 0, def.pack, false);
     }
-    const limitUnit =
-      chore !== undefined && DAILY_CHORE_CAPS[chore].actions === undefined ? "runs" : "actions";
-    const dailyLimit =
-      chore === undefined
-        ? undefined
-        : e.dailyLimit !== undefined
-          ? e.dailyLimit
-          : (dailyCaps(chore, false, { authority: ws.authority })[limitUnit] ?? null);
     return {
       playbook: def,
       org,
       outcomes: (def.outcomes ?? []).map((o) => ({ id: o.id, text: o.text, on: isRuleOn(o, e.outcomes) })),
       ...(e.orDo === undefined ? {} : { orDo: e.orDo }),
-      ...(dailyLimit === undefined ? {} : { dailyLimit }),
       ...(result === undefined ? {} : { result }),
       needsLook: look && e.enabled,
       enabled: e.enabled && def.needs === undefined,
@@ -428,9 +410,6 @@ export class PlaybookService implements ChorePlaybooks {
           throw new UserError(`${def.name} has no rule "${key}".`, 400);
       }
     }
-    if (input.dailyLimit !== undefined && def.runner.kind !== "chore") {
-      throw new UserError(`${def.name} has a budget per run, not a daily limit.`, 400);
-    }
     const current = this.deps.repo.state(input.org, def.id).state;
     const next: PlaybookState = {
       ...current,
@@ -438,7 +417,6 @@ export class PlaybookService implements ChorePlaybooks {
         ? {}
         : { outcomes: { ...(current.outcomes ?? {}), ...input.outcomes } }),
       ...(input.orDo === undefined ? {} : { orDo: input.orDo === "" ? null : input.orDo }),
-      ...(input.dailyLimit === undefined ? {} : { dailyLimit: input.dailyLimit }),
       ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
       ...(input.cadence === undefined ? {} : { cadence: input.cadence }),
       ...(input.quiet === undefined ? {} : { quiet: input.quiet }),

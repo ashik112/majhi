@@ -20,7 +20,6 @@ interface Run {
   before: number;
   phase: Phase;
   startedAt: number;
-  overCap: boolean;
 }
 
 const runs = new Map<string, Run>();
@@ -58,7 +57,7 @@ export function useStartReview() {
   const toast = useToast();
   const client = useQueryClient();
   const command = useMutation<
-    { started: boolean; text: string; overCap: boolean },
+    { started: boolean; text: string },
     ApiRequestError,
     { org: string; chore: CaptainRunnableChore; before: number }
   >({
@@ -73,8 +72,7 @@ export function useStartReview() {
         toast(result.text, { tone: "error" });
         return;
       }
-      if (result.overCap) toast(result.text);
-      put(keyOf(org, chore), { before, phase: "starting", startedAt: Date.now(), overCap: result.overCap });
+      put(keyOf(org, chore), { before, phase: "starting", startedAt: Date.now() });
       void client.invalidateQueries({ queryKey: queryKeys.captain });
     },
     onError: (error) => toast("Could not start it", { detail: describeError(error), tone: "error" }),

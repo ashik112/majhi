@@ -229,8 +229,7 @@ describe("the lane ships by the chore's rules", { timeout: 90_000 }, () => {
     expect(
       (
         await h.cmd("autonomy.configure", {
-          // The owner's ship cap: with Merge on Captain there is no default one.
-          orgs: { acme: { authority: { ...RUNS, merge: "decide" }, chores: { ship: { actions: 5 } } } },
+          orgs: { acme: { authority: { ...RUNS, merge: "decide" } } },
         })
       ).status,
     ).toBe(200);
@@ -256,7 +255,7 @@ describe("the lane ships by the chore's rules", { timeout: 90_000 }, () => {
     return { w, h, chat, ids };
   }
 
-  it("counts the lane's merge in the chore's log, and refuses one past the daily cap", async () => {
+  it("counts the lane's merge in the chore's log, and ships the next task too: no daily cap", async () => {
     const { w: world, h, chat, ids } = await readyLane();
     const [first, second] = ids as [string, string];
     const captain = h.majhi.services.captain;
@@ -289,8 +288,8 @@ describe("the lane ships by the chore's rules", { timeout: 90_000 }, () => {
     );
     expect(((await h.cmd("tasks.get", { id: first })).body as Task).status).toBe("done");
 
-    // The chore did four more today: the daily cap of five is reached, and the lane is held to it.
-    for (let i = 0; i < 4; i++) {
+    // The chore did many more today: nothing counts them against the lane, each state ships once.
+    for (let i = 0; i < 50; i++) {
       captain.repo.addAction({
         key: `ship:chore-${i}`,
         org: "acme",
@@ -303,9 +302,8 @@ describe("the lane ships by the chore's rules", { timeout: 90_000 }, () => {
       });
     }
     await h.majhi.services.lanes.tell("acme", "Wake: ship two", "wake");
-    const [, capped] = await script.calls(2);
-    expect(capped?.isError).toBe(true);
-    expect(seen[1]).toContain("today's cap of 5");
-    expect(((await h.cmd("tasks.get", { id: second })).body as Task).status).toBe("review");
+    const [, next] = await script.calls(2);
+    expect(next?.isError).toBe(false);
+    expect(((await h.cmd("tasks.get", { id: second })).body as Task).status).toBe("done");
   });
 });

@@ -13,7 +13,6 @@ export const OwnerDecisionKindSchema = z.enum([
   "approval",
   "ship",
   "budget",
-  "cap",
   "paused",
   "sign-in",
   "secret",
@@ -153,7 +152,6 @@ export const DECISION_KIND_LABEL: Record<OwnerDecisionKind, string> = {
   approval: "Access",
   ship: "Ship",
   budget: "Money",
-  cap: "Money",
   paused: "Paused",
   "sign-in": "Access",
   secret: "Access",
@@ -166,9 +164,6 @@ export const DECISION_KIND_LABEL: Record<OwnerDecisionKind, string> = {
 export function roomDecisionId(task: string, item: string): string {
   return `room:${task}:${item}`;
 }
-export function capDecisionId(org: string, chore: string, day: string): string {
-  return `cap:${org}:${chore}:${day}`;
-}
 export function budgetDecisionId(scope: string, day: string): string {
   return `budget:${scope}:${day}`;
 }
@@ -178,7 +173,6 @@ export function signInDecisionId(account: string): string {
 
 export type ParsedDecisionId =
   | { kind: "room"; task: string; item: string }
-  | { kind: "cap"; org: string; chore: string; day: string }
   | { kind: "budget"; scope: string; day: string }
   | { kind: "signin"; account: string }
   | { kind: "draft"; id: number }
@@ -192,9 +186,6 @@ export function parseDecisionId(id: string): ParsedDecisionId | undefined {
   const [head, ...rest] = id.split(":");
   if (head === "room" && rest.length >= 2 && rest[0] !== "" && rest[1] !== "") {
     return { kind: "room", task: rest[0] as string, item: rest.slice(1).join(":") };
-  }
-  if (head === "cap" && rest.length === 3 && rest.every((p) => p !== "")) {
-    return { kind: "cap", org: rest[0] as string, chore: rest[1] as string, day: rest[2] as string };
   }
   if (head === "budget" && rest.length === 2 && rest.every((p) => p !== "")) {
     return { kind: "budget", scope: rest[0] as string, day: rest[1] as string };
@@ -286,8 +277,8 @@ export function batchPick(
 /** The action in two or three words: "allow once", "merge", "keep the budget". */
 function batchLabel(kind: OwnerDecisionKind, option: DecisionOption): string {
   if (kind === "approval" && option.effect === "leave") return "reject";
-  if ((kind === "budget" || kind === "cap") && option.effect === "leave") return "keep the budget";
-  if ((kind === "budget" || kind === "cap") && option.effect === "approve") return "raise";
+  if (kind === "budget" && option.effect === "leave") return "keep the budget";
+  if (kind === "budget" && option.effect === "approve") return "raise";
   return option.label.toLowerCase();
 }
 

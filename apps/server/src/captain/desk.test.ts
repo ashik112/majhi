@@ -1,5 +1,4 @@
 import type { AccountStatus, AutonomyEvent, AutonomyStatus, Task } from "@majhi/shared";
-import { DAILY_CHORE_CAPS } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { RUNS } from "./authority-fixtures.ts";
@@ -233,36 +232,6 @@ describe("a day at the captain's desk", () => {
     expect(outcomes).toEqual([false, true, true, true, true]);
     expect(told).toHaveLength(1);
     expect(told[0]).toContain("do not ask it again");
-
-    // The ship chore reaches its daily cap: the owner is asked, and "Raise for today" runs it again.
-    const repo = d.captain.repo;
-    const ws = await d.captain.status();
-    const day = ws.day;
-    for (let i = 0; i < (DAILY_CHORE_CAPS.ship.actions ?? 0); i++) {
-      repo.addAction({
-        key: `ship:seed:${i}`,
-        org: "globex",
-        chore: "ship",
-        day,
-        at: new Date().toISOString(),
-        text: `Shipped GLX-${i + 40}`,
-        reason: "seed",
-        outcome: "done",
-      });
-    }
-    d.store.tasks.setStatus(g1, "review", undefined, new Date().toISOString());
-    expect(await d.captain.runner.start("globex", "ship", "ready for review")).toBe("capped");
-    const asks = (await d.captain.asks()).asks;
-    expect(asks).toEqual([
-      expect.objectContaining({
-        org: "globex",
-        chore: "ship",
-        text: `Globex: the captain shipped its ${DAILY_CHORE_CAPS.ship.actions} tasks for today. Raise the limit for today?`,
-      }),
-    ]);
-    await d.captain.answerCap("globex", "ship", "raise");
-    expect(repo.capRaised("globex", "ship", day)).toBe(true);
-    expect((await d.captain.asks()).asks).toEqual([]);
   });
 
   it("holds up when things go wrong: a resume racing a pause, a restart, a flapping account, a new question inside a loop, injected text", async () => {

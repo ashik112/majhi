@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { AuthoritySchema } from "./authority.ts";
-import { ChoreCapsSchema } from "./chores.ts";
 import { ContainerCpusSchema, ContainerMemorySchema, ImageRefSchema } from "./containers.ts";
 import { NotifyKindSchema } from "./notify.ts";
 
@@ -450,8 +449,8 @@ export const AutonomyOrgSchema = z.strictObject({
   providers: z.array(ProviderIdSchema).min(1).max(10).optional(),
   /** "More rules": the account that pays for the captain's decisions here. Absent: the captain's own. */
   account: z.string().regex(ACCOUNT_ID).optional(),
-  /** Limits: the owner's daily caps per chore here (`null`: no cap). Absent: majhi's defaults. */
-  chores: ChoreCapsSchema.optional(),
+  /** Removed in D9, kept so old config loads. */
+  chores: z.unknown().optional(),
   /**
    * Full access: the captain decides every row here and its calls run without a card, except a change
    * to anyone's permissions and anything destructive. Only the owner sets it.
@@ -541,8 +540,6 @@ export const AutonomyOrgPatchSchema = z
     branches: z.array(ShipBranchSchema).min(1).max(20).nullable(),
     providers: z.array(ProviderIdSchema).min(1).max(10).nullable(),
     account: z.string().regex(ACCOUNT_ID).nullable(),
-    /** Limits: the daily caps per chore, replacing the ones set before. `null`: back to majhi's defaults. */
-    chores: ChoreCapsSchema.nullable(),
     fullAccess: z.boolean().nullable(),
     tasksAtOnce: z.number().int().min(1).max(10).nullable(),
   })

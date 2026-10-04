@@ -72,7 +72,6 @@ function setup(opts: {
     caused: () => {},
     laneTokens: () => 0,
     chores: createChores(ports, () => NOW) as RunnerDeps["chores"],
-    capAsked: () => {},
   });
   return { repo, runner, findings };
 }
@@ -183,13 +182,13 @@ describe("tidy", () => {
   });
 });
 
-describe("the caps and the upkeep row", () => {
+describe("the upkeep row", () => {
   const quiet: Partial<UpkeepPorts> = { profile: async () => [], search: async () => [] };
 
-  it("runs once a day", async () => {
+  it("finds the same state on a second run and adds no second line", async () => {
     const t = setup({ upkeep: quiet });
     expect(await t.runner.start("acme", "discover", "daily")).toBe("done");
-    expect(await t.runner.start("acme", "discover", "daily")).toBeUndefined();
+    expect(await t.runner.start("acme", "discover", "daily")).toBe("done");
     expect(t.repo.allActions().map((a) => a.text)).toEqual(["Discover tools: nothing new fits"]);
   });
 

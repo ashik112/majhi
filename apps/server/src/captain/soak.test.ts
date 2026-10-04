@@ -14,7 +14,7 @@ import { ASK, RUNS, TIDY } from "./authority-fixtures.ts";
 import { Lanes } from "./lanes.ts";
 import type { ApprovalCard, CaptainPorts, NewRepo, PendingFact, QuestionCard, TriageTask } from "./ports.ts";
 import { CaptainRepo } from "./repo.ts";
-import { DAILY_CAPS, RUN_CAPS, runActions } from "./rules.ts";
+import { PASS_BOUND } from "./rules.ts";
 import { CaptainService } from "./service.ts";
 
 /**
@@ -24,7 +24,7 @@ import { CaptainService } from "./service.ts";
  * quiet tasks, restarts in the middle of runs, failures, a "Stop the captain", and the captain's own
  * ships and cards echoing back as events. The lanes run the fake ACP agent, so no token is spent.
  *
- * It fails when a run passes a cap, a daily cap is passed, the captain's own event starts a run, an
+ * It fails when a run passes the pass bound, the captain's own event starts a run, an
  * action repeats, the captain acts while stopped or in a task the owner is in, or anything happens in
  * the workspace set to "Only when I ask". It runs on every merge, in well under a minute.
  */
@@ -307,7 +307,7 @@ class Sim {
 }
 
 describe("the captain's soak test", () => {
-  it("replays 30 hours of events without passing a cap, retriggering itself, repeating an action or touching Only when I ask", async () => {
+  it("replays 30 hours of events without passing the pass bound, retriggering itself, repeating an action or touching Only when I ask", async () => {
     const sim = new Sim();
     w = await bossWorld({ real: true, runClock: () => sim.now });
     const { h } = w;
@@ -327,8 +327,6 @@ describe("the captain's soak test", () => {
             authority: { ...RUNS, merge: "decide" },
             cap: { cost: 0.04 },
             account: "claude-own",
-            // The owner's ship cap: with Merge on Captain there is no default one.
-            chores: { ship: { actions: 5 } },
           },
           acme: { authority: TIDY },
           globex: { authority: ASK },
@@ -562,46 +560,17 @@ describe("the captain's soak test", () => {
     const runs: CaptainRun[] = repo.allRuns();
     const actions: CaptainAction[] = repo.allActions();
 
-    // No run passed a cap, and none is left open.
+    // No run passed the pass bound, and none is left open.
     expect(runs.filter((r) => r.status === "running")).toEqual([]);
     for (const r of runs) {
-      expect(r.actions).toBeLessThanOrEqual(runActions(r.chore));
-      expect(r.tokens).toBeLessThanOrEqual(RUN_CAPS.tokens);
+      expect(r.tokens).toBeLessThanOrEqual(PASS_BOUND.tokens);
       const minutes = (Date.parse(r.endedAt ?? r.startedAt) - Date.parse(r.startedAt)) / 60_000;
-      expect(minutes).toBeLessThanOrEqual(RUN_CAPS.minutes);
+      expect(minutes).toBeLessThanOrEqual(PASS_BOUND.minutes);
     }
-    // Bursts of cards hit the run cap, and the run stopped there with a line.
-    expect(runs.some((r) => r.status === "capped")).toBe(true);
-    expect(
-      actions.some((a) => a.text.includes("stopped: reached its cap") || a.text.includes("today's cap")),
-    ).toBe(true);
     // The restart cut a run short; it ended as stopped.
     expect(runs.some((r) => r.status === "stopped" && r.note === "majhi restarted during the run")).toBe(
       true,
     );
-
-    // No daily cap passed, per workspace, chore and day.
-    const perDay = new Map<string, number>();
-    for (const a of actions) {
-      if (a.outcome !== "done" && a.outcome !== "asked") continue;
-      const key = `${a.org}:${a.chore}:${a.at.slice(0, 10)}`;
-      perDay.set(key, (perDay.get(key) ?? 0) + 1);
-    }
-    for (const [key, n] of perDay) {
-      const chore = key.split(":")[1] as CaptainChore;
-      const cap = DAILY_CAPS[chore].actions;
-      if (cap !== undefined) expect(n, key).toBeLessThanOrEqual(cap);
-    }
-    const runsPerDay = new Map<string, number>();
-    for (const r of runs) {
-      if (r.status === "rested") continue;
-      const key = `${r.org}:${r.chore}:${r.startedAt.slice(0, 10)}`;
-      runsPerDay.set(key, (runsPerDay.get(key) ?? 0) + 1);
-    }
-    for (const [key, n] of runsPerDay) {
-      const cap = DAILY_CAPS[key.split(":")[1] as CaptainChore].runs;
-      if (cap !== undefined) expect(n, key).toBeLessThanOrEqual(cap);
-    }
 
     // No action repeated: every change happened once per thing it acted on.
     const seen = new Set<string>();

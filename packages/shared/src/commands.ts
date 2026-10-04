@@ -71,7 +71,6 @@ import { BudgetStatusSchema } from "./budgets.ts";
 import {
   BudgetAnswerInputSchema,
   CaptainAsksSchema,
-  CaptainCapAnswerInputSchema,
   CaptainChoreInputSchema,
   CaptainLogInputSchema,
   CaptainLogResultSchema,
@@ -3428,22 +3427,15 @@ export const commands = {
   "captain.runChore": {
     risk: "change",
     summary:
-      "Run the memory or cleanup chore of a workspace now (Review now), also while Autonomous is Off. One run at a time per chore and workspace; a run that goes past today's cap is allowed once because the owner asked, and the answer says so. The run goes on in the background: captain.status shows chores[].running. Owner only",
+      "Run the memory or cleanup chore of a workspace now (Review now), also while Autonomous is Off. One run at a time per chore and workspace; The run goes on in the background: captain.status shows chores[].running. Owner only",
     input: CaptainRunChoreInputSchema,
     output: CaptainRunChoreResultSchema,
   },
   "captain.asks": {
     risk: "read",
     summary:
-      "What the captain asks the owner about its daily caps today: each chore that reached its cap in a workspace, with the cap a raise would give",
+      "What the captain asks the owner about its budgets today: each budget that ran out while work waits, with the budget a raise would give",
     input: Empty,
-    output: CaptainAsksSchema,
-  },
-  "captain.answerCap": {
-    risk: "change",
-    summary:
-      "Answer the captain's question about a chore that reached its daily cap in a workspace: raise doubles that chore's caps for today only, leave keeps them. Owner only",
-    input: CaptainCapAnswerInputSchema,
     output: CaptainAsksSchema,
   },
   "captain.answerBudget": {

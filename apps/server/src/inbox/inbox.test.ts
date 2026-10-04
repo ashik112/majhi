@@ -1,4 +1,4 @@
-import type { BudgetAsk, CaptainCapAsk, CommandName, RoomItem } from "@majhi/shared";
+import type { BudgetAsk, CommandName, RoomItem } from "@majhi/shared";
 import Database from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { CommandContext } from "../commands/handlers.ts";
@@ -93,16 +93,6 @@ const paused: Of<"paused"> = {
   state: "pending",
 };
 
-const cap: CaptainCapAsk = {
-  org: "acme",
-  chore: "memory",
-  day: "2026-10-04",
-  kind: "actions",
-  cap: 20,
-  raiseTo: 40,
-  text: "Acme: the memory chore reached its 20 actions for today. Raise it to 40?",
-  at: "2026-10-04T07:00:00.000Z",
-};
 const budget: BudgetAsk = {
   scope: "acme",
   name: "Acme",
@@ -123,7 +113,6 @@ function sources(over: Partial<DecisionSources> = {}): DecisionSources {
   return {
     items: [],
     subject: (task) => subjects[task],
-    caps: [],
     budgets: [],
     signedOut: [],
     recommendations: new Map(),
@@ -136,7 +125,6 @@ describe("building decisions", () => {
     const out = buildDecisions(
       sources({
         items: [ask, choice, ownerQuestion, permission, approval, secret, review, paused],
-        caps: [cap],
         budgets: [budget],
         signedOut: [{ id: "claude-acme", at: "2026-10-04T06:00:00.000Z" }],
       }),
@@ -185,14 +173,6 @@ describe("building decisions", () => {
       kind: "paused",
       options: [{ id: "resume", label: "Resume", primary: true }],
     });
-    expect(by("cap:acme:memory:2026-10-04")).toMatchObject({
-      kind: "cap",
-      org: "acme",
-      options: [
-        { id: "raise", label: "Raise to 40 for today", primary: true },
-        { id: "leave", label: "Leave it" },
-      ],
-    });
     expect(by("budget:acme:2026-10-04")).toMatchObject({
       kind: "budget",
       org: "acme",
@@ -207,13 +187,10 @@ describe("building decisions", () => {
   });
 
   it("puts ship and budget first, then the oldest", () => {
-    const out = buildDecisions(
-      sources({ items: [ask, choice, review, paused], budgets: [budget], caps: [cap] }),
-    );
+    const out = buildDecisions(sources({ items: [ask, choice, review, paused], budgets: [budget] }));
     expect(out.map((d) => d.id)).toEqual([
       "room:ACM-2:rv1",
       "budget:acme:2026-10-04",
-      "cap:acme:memory:2026-10-04",
       "room:ACM-2:pa1",
       "room:ACM-1:ask1",
       "room:ACM-1:ch1",
@@ -281,7 +258,6 @@ function fakeActions(log: string[]): DecisionActions {
       return mergeResults === undefined ? {} : { results: mergeResults };
     },
     askChanges: async (t, text, lead) => void log.push(`changes ${t} ${lead ?? "-"} ${text}`),
-    answerCap: async (o, c, a) => void log.push(`cap ${o} ${c} ${a}`),
     answerBudget: async (s, a) => void log.push(`budget ${s} ${a}`),
     decideDraft: async (id, d) => void log.push(`draft ${id} ${d}`),
     decideBatch: async (o, c, d) => void log.push(`batch ${o} ${c} ${d}`),
@@ -297,7 +273,6 @@ function service(): InboxService {
   return new InboxService({
     items: () => items,
     subject: (task) => subjects[task],
-    caps: async () => [cap],
     budgets: async () => [budget],
     signedOut: async () => [{ id: "claude-acme", at: "2026-10-04T06:00:00.000Z" }],
     recommendations: repo,
@@ -333,7 +308,6 @@ describe("answering a decision", () => {
       "changes ACM-2 acme-builder Use the shared helper.",
     ],
     ["room:ACM-2:pa1", "resume", undefined, "card ACM-2 pa1 resume"],
-    ["cap:acme:memory:2026-10-04", "raise", undefined, "cap acme memory raise"],
     ["budget:acme:2026-10-04", "leave", undefined, "budget acme leave"],
   ])("routes %s / %s to its own path", async (id, option, text, expected) => {
     await service().answer({ id, option, ...(text === undefined ? {} : { text }) });
@@ -407,7 +381,6 @@ describe("the detail of a decision", () => {
     new InboxService({
       items: () => items,
       subject: (task) => subjects[task],
-      caps: async () => [],
       budgets: async () => [],
       signedOut: async () => [],
       recommendations: repo,

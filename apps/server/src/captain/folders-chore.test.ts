@@ -31,13 +31,12 @@ function setup(ports: Partial<CaptainPorts>) {
     caused: () => {},
     laneTokens: () => 0,
     chores: chores as RunnerDeps["chores"],
-    capAsked: () => {},
   });
   return { repo, runner };
 }
 
 describe("the cleanup chore frees disk in done tasks", () => {
-  it("logs the bytes it freed, once a day, even while Autonomous is off", async () => {
+  it("logs the bytes it freed, once per state, even while Autonomous is off", async () => {
     let left = 3_400_000_000;
     const t = setup({
       foldersFreeable: async () => ({ bytes: left, tasks: 2 }),
@@ -55,8 +54,8 @@ describe("the cleanup chore frees disk in done tasks", () => {
         text: "Freed 3.4 GB in 1 done task: ACM-1 3.4 GB",
       }),
     ]);
-    // Once a day: the daily cap keeps a second run out until tomorrow.
-    expect(await t.runner.start("acme", "cleanup", "daily")).toBeUndefined();
+    // A second run finds nothing left to free and adds no line.
+    expect(await t.runner.start("acme", "cleanup", "daily")).toBe("done");
     expect(t.repo.allActions()).toHaveLength(1);
   });
 

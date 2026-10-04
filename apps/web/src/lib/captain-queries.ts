@@ -59,29 +59,11 @@ export function useCaptainCommand<N extends StatusCommand>(name: N) {
 
 const asksKey = [...queryKeys.captain, "asks"] as const;
 
-/** `captain.asks`: the captain's questions about its daily caps today, for the bell and the Captain page. */
+/** `captain.asks`: the captain's questions about its budgets today, for the bell and the Limits page. */
 export function useCaptainAsks() {
   return useQuery<CommandOutput<"captain.asks">, ApiRequestError>({
     queryKey: asksKey,
     queryFn: () => cmd("captain.asks", {}),
-  });
-}
-
-/** Raise a chore's daily cap for today, or leave it: the answer is what still waits. */
-export function useAnswerCap() {
-  const client = useQueryClient();
-  return useMutation<CommandOutput<"captain.answerCap">, ApiRequestError, CommandInput<"captain.answerCap">>({
-    mutationFn: (input) =>
-      cmd("captain.answerCap", input, {
-        reason:
-          input.answer === "raise"
-            ? "Owner raised the captain's limit for today"
-            : "Owner left the captain's limit as it is",
-      }),
-    onSuccess: (asks) => {
-      client.setQueryData(asksKey, asks);
-      return client.invalidateQueries({ queryKey: queryKeys.captain });
-    },
   });
 }
 

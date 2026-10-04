@@ -1,18 +1,18 @@
-import type { CaptainCapAsk, CommandName } from "@majhi/shared";
-import { CHORE_LABEL, pageRef } from "@majhi/shared";
+import type { CommandName } from "@majhi/shared";
+import { pageRef } from "@majhi/shared";
 import { shipState } from "./keys.ts";
 import type { CaptainPorts } from "./ports.ts";
 import type { CaptainRepo, KeyClaim } from "./repo.ts";
-import { branchAllowed, dailyCaps } from "./rules.ts";
-import { askToRaise, type Workspace } from "./runner.ts";
+import { branchAllowed } from "./rules.ts";
+import type { Workspace } from "./runner.ts";
 
 /**
  * One way to ship (SPEC 5.18, "One rule set"). The ship chore and the captain's lane both merge,
  * and both go through here: the same readiness checks (committed, merges cleanly, no card waits, no
  * secret in the diff, not a protected repo), the same branches the workspace ships to, the same
- * daily cap of ships, and the same key per task and head, so a state that was shipped or asked for
- * is not shipped again. The chore calls the ports directly with the same rules; the lane's calls
- * are checked here before they run and counted here after, in the same log, so the cap holds for both.
+ * key per task, heads and bases, so a state that was shipped or asked for is not shipped again (G1).
+ * The chore calls the ports directly with the same rules; the lane's calls are checked here before
+ * they run and logged here after, in the same log, so the key holds for both.
  * Registering a repo is the same: the lane may register only what the projects chore would.
  */
 
@@ -28,7 +28,6 @@ export interface LaneGateDeps {
   ports: Pick<CaptainPorts, "reviewTasks" | "shipCheck" | "newRepos">;
   workspace(org: string): Promise<Workspace | undefined>;
   now(): Date;
-  capAsked?: (ask: CaptainCapAsk) => void;
 }
 
 export class LaneGate {
@@ -54,21 +53,6 @@ export class LaneGate {
     this.keys.set(`${command}:${id}`, key);
     const early = this.deps.repo.keyState(key, this.deps.now().toISOString());
     if (early !== "free") return this.repeatText(command, id, early);
-    const cap = dailyCaps("ship", this.deps.repo.capRaised(org, "ship", ws.day), ws).actions;
-    if (cap !== undefined && this.deps.repo.actionsToday(org, "ship", ws.day) >= cap) {
-      askToRaise(
-        {
-          repo: this.deps.repo,
-          now: () => this.deps.now(),
-          ...(this.deps.capAsked === undefined ? {} : { capAsked: this.deps.capAsked }),
-        },
-        ws,
-        "ship",
-        "actions",
-        cap,
-      );
-      return `Refused: ${ws.name} reached today's cap of ${cap} ${CHORE_LABEL.ship.toLowerCase()} actions, counting the ship chore's. The owner can raise it on the Captain page.`;
-    }
     if (command === "tasks.merge") {
       // The chore's own checks, so the lane cannot ship what the chore would leave.
       const check = await this.deps.ports.shipCheck(org, id);

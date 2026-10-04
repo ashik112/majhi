@@ -35,7 +35,6 @@ export interface DecisionActions {
   ): Promise<{ results?: readonly { project: string; ok: boolean; detail: string }[] | undefined }>;
   /** The owner's words to the task's lead: the task goes back to running. */
   askChanges(task: string, text: string, lead: string | undefined): Promise<unknown>;
-  answerCap(org: string, chore: string, answer: "raise" | "leave"): Promise<unknown>;
   answerBudget(scope: string, answer: "raise" | "leave"): Promise<unknown>;
   /** The outbound gate: approve (send) or discard one draft, or a whole batch. */
   decideDraft(id: number, decision: "send" | "discard"): Promise<unknown>;
@@ -61,7 +60,6 @@ export interface InboxDeps {
   /** Pending room items that may be decisions, of every open task. */
   items: () => RoomItem[];
   subject: (task: string) => Subject | undefined;
-  caps: () => Promise<DecisionSources["caps"]>;
   budgets: () => Promise<DecisionSources["budgets"]>;
   signedOut: () => Promise<DecisionSources["signedOut"]>;
   recommendations: RecommendationStore;
@@ -107,8 +105,7 @@ export class InboxService {
 
   async list(org?: string): Promise<OwnerDecision[]> {
     const { deps } = this;
-    const [caps, budgets, signedOut, names] = await Promise.all([
-      deps.caps(),
+    const [budgets, signedOut, names] = await Promise.all([
       deps.budgets(),
       deps.signedOut(),
       deps.orgNames?.() ?? NO_NAMES,
@@ -116,7 +113,6 @@ export class InboxService {
     const all = buildDecisions({
       items: deps.items(),
       subject: deps.subject,
-      caps,
       budgets,
       signedOut,
       recommendations: deps.recommendations.all(),
@@ -219,8 +215,7 @@ export class InboxService {
     const parsed = parseDecisionId(input.id);
     if (parsed === undefined) throw new UserError("That is not a decision id.", 400);
     const { actions } = this.deps;
-    if (parsed.kind === "cap") await actions.answerCap(parsed.org, parsed.chore, raiseOrLeave(input.option));
-    else if (parsed.kind === "budget") await actions.answerBudget(parsed.scope, raiseOrLeave(input.option));
+    if (parsed.kind === "budget") await actions.answerBudget(parsed.scope, raiseOrLeave(input.option));
     else if (parsed.kind === "signin") throw new UserError("Sign in from Accounts.", 400);
     else if (parsed.kind === "incident") {
       if (input.option === "ack") await actions.ackIncident?.(parsed.id);
