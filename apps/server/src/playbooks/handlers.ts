@@ -48,14 +48,39 @@ export interface PlaybookHandlerDeps extends FindingsHandlerDeps {
   outbound: OutboundGate;
 }
 
-/** These are the owner's. The captain proposes and reports; it never changes its own playbooks, the gate or a decision. */
+/**
+ * A channel's mode and sending or discarding drafts are the owner's: an agent never lets its own
+ * drafts out. Playbooks and goals an agent changes through the owner's approval policy like any change.
+ */
 function ownerOnly(ctx: CommandContext): void {
   if (ctx.meta.actor.kind === "agent") {
     throw new UserError(
-      `${ctx.command} is the owner's. The captain proposes; the owner decides on ${pageRef("playbooks")}.`,
+      `${ctx.command} is the owner's. The owner sets a channel's mode and sends or discards drafts on ${pageRef("playbooks")}.`,
       409,
     );
   }
+}
+
+const RESUMES = "A playbook that resumes tasks a limit paused";
+const ownersLine = (what: string) => `${what} is the owner's, on the Playbooks page.`;
+
+/**
+ * What in a playbook call from an agent would raise its own limits or power, from the input alone,
+ * or undefined. The admin service asks before a card is posted; the handler asks again.
+ */
+export function playbookLimitRefusal(command: string, input: Record<string, unknown>): string | undefined {
+  if (command === "playbooks.update") {
+    if (input.dailyLimit !== undefined) return ownersLine("A chore's daily limit");
+    const outcomes = (input.outcomes ?? {}) as Record<string, unknown>;
+    if (Object.values(outcomes).some((on) => on === true)) return ownersLine("Turning an outcome rule on");
+    const clock = input.clock as { action?: { kind?: unknown } } | undefined;
+    if (clock?.action?.kind === "tasks.resume") return ownersLine(RESUMES);
+  }
+  if (command === "playbooks.create") {
+    const spec = input.spec as { clock?: { action?: { kind?: unknown } } } | undefined;
+    if (spec?.clock?.action?.kind === "tasks.resume") return ownersLine(RESUMES);
+  }
+  return undefined;
 }
 
 /** The `playbooks.*`, `goals.*` and `outbound.*` commands. The command table spreads these in. */
@@ -70,29 +95,57 @@ export function playbookHandlers(deps: PlaybookHandlerDeps): Pick<CommandHandler
     }
     return actor.org ?? asked ?? PRIVATE;
   };
+  /** An agent's playbook in its own workspace, or a refusal. */
+  const ownPlaybook = async (org: string, id: string) => {
+    const view = (await playbooks.list(org)).playbooks.find((p) => p.playbook.id === id);
+    if (view === undefined || (view.clock !== undefined && view.clock.org !== org)) {
+      throw new UserError(`There is no playbook "${id}" in ${org}.`, 404);
+    }
+    return view;
+  };
+  /** Refuses what would raise an agent's own limits or power, however the owner's policy answered. */
+  const limitsStay = async (
+    ctx: CommandContext,
+    input: Record<string, unknown>,
+    org: string,
+    id?: string,
+  ) => {
+    if (ctx.meta.actor.kind !== "agent") return;
+    const refused = playbookLimitRefusal(ctx.command, input);
+    if (refused !== undefined) throw new UserError(refused, 409);
+    // Switching on or running one that already resumes paused tasks raises the limit just the same.
+    const switchesOn = ctx.command === "playbooks.run" || input.enabled === true;
+    if (
+      id !== undefined &&
+      switchesOn &&
+      (await ownPlaybook(org, id)).clock?.action.kind === "tasks.resume"
+    ) {
+      throw new UserError(ownersLine(RESUMES), 409);
+    }
+  };
   return {
     "playbooks.list": async (input, ctx) => playbooks.list(await orgOf(input.org, ctx)),
     "playbooks.update": async (input, ctx) => {
-      ownerOnly(ctx);
-      return playbooks.update(input);
+      const org = await orgOf(input.org, ctx);
+      await limitsStay(ctx, input, org, input.id);
+      return playbooks.update({ ...input, org });
     },
-    "playbooks.plan": async (input, ctx) => {
-      ownerOnly(ctx);
-      return playbooks.plan(input.org ?? PRIVATE, input.text);
-    },
+    "playbooks.plan": async (input, ctx) => playbooks.plan(await orgOf(input.org, ctx), input.text),
     "playbooks.create": async (input, ctx) => {
-      ownerOnly(ctx);
-      return playbooks.create(input.org, input.spec);
+      const org = await orgOf(input.org, ctx);
+      await limitsStay(ctx, input, org);
+      return playbooks.create(org, input.spec);
     },
     "playbooks.remove": async (input, ctx) => {
-      ownerOnly(ctx);
+      if (ctx.meta.actor.kind === "agent") await ownPlaybook(await orgOf(input.org, ctx), input.id);
       playbooks.remove(input.id);
       return { id: input.id };
     },
     "playbooks.activity": async (input, ctx) => playbooks.activity(await orgOf(input.org, ctx), input.id),
     "playbooks.run": async (input, ctx) => {
-      ownerOnly(ctx);
-      return playbooks.runNow(input.org, input.id);
+      const org = await orgOf(input.org, ctx);
+      await limitsStay(ctx, input, org, input.id);
+      return playbooks.runNow(org, input.id);
     },
     "playbooks.runs": async (input, ctx) => {
       const org = await orgOf(input.org, ctx);
@@ -122,7 +175,8 @@ export function playbookHandlers(deps: PlaybookHandlerDeps): Pick<CommandHandler
       return goals.update(input, actor);
     },
     "goals.remove": async (input, ctx) => {
-      ownerOnly(ctx);
+      const actor = await findingActor(deps, ctx);
+      if (actor.kind === "agent") throw new UserError("Only the owner and the captain remove a goal.", 409);
       goals.remove(input.id);
       return { id: input.id };
     },

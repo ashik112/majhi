@@ -16,18 +16,20 @@ export interface GrowthHandlerDeps extends FindingsHandlerDeps {
   growth: GrowthDeps;
 }
 
-/** A proposal draft and a confirmed deadline are the owner's: the captain only offers them. */
-function ownerOnly(ctx: CommandContext): void {
-  if (ctx.meta.actor.kind === "agent") {
-    throw new UserError(
-      `${ctx.command} is the owner's. Report the opportunity or the deadline as a finding; the owner acts on it on ${pageRef("captain")}.`,
-      409,
-    );
-  }
-}
-
-/** The `economics.get`, `findings.proposal` and `findings.deadline` commands. */
+/**
+ * The `economics.get`, `findings.proposal` and `findings.deadline` commands. An agent drafts a
+ * proposal or adds a deadline through the owner's approval policy, for a finding of its own
+ * workspace; the proposal still waits in the outbound gate.
+ */
 export function growthHandlers(deps: GrowthHandlerDeps): Pick<CommandHandlers, GrowthCommand> {
+  const ownFinding = async (ctx: CommandContext, id: number): Promise<void> => {
+    const actor = await findingActor(deps, ctx);
+    // The captain outside a lane works for every workspace, as in the playbooks.
+    if (actor.kind === "owner" || actor.org === undefined) return;
+    if (deps.growth.findings.get(id).org !== actor.org) {
+      throw new UserError("You work on your own workspace's findings only.", 409);
+    }
+  };
   return {
     "economics.get": async (input, ctx) => {
       const actor = await findingActor(deps, ctx);
@@ -38,11 +40,11 @@ export function growthHandlers(deps: GrowthHandlerDeps): Pick<CommandHandlers, G
       return deps.economics.get(input.range, own);
     },
     "findings.proposal": async (input, ctx) => {
-      ownerOnly(ctx);
+      await ownFinding(ctx, input.id);
       return draftProposal(deps.growth, input.id);
     },
     "findings.deadline": async (input, ctx) => {
-      ownerOnly(ctx);
+      await ownFinding(ctx, input.id);
       return { deadline: await confirmDeadline(deps.growth, input.id) };
     },
   };

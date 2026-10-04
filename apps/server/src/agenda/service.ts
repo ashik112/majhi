@@ -209,14 +209,17 @@ export class AgendaService {
     return plan(items, this.budgetMinutes());
   }
 
-  /** Everything the Today page shows, in one read. A brief that is due and missing starts being made. */
-  async today(input: AgendaTodayInput = {}): Promise<AgendaToday> {
+  /**
+   * Everything the Today page shows, in one read. A brief that is due and missing starts being made.
+   * `withBrief: false` leaves the brief out and makes none: it spans every workspace.
+   */
+  async today(input: AgendaTodayInput = {}, withBrief = true): Promise<AgendaToday> {
     const when = await this.day();
     const now = this.now();
     // The brief, if it is due and missing, starts now. A short wait lets a template or a quick model land in this read.
     let pending = false;
-    let brief = this.deps.repo.brief(when.day);
-    if (brief === undefined && when.passed && !this.deps.repo.hasBrief(when.day)) {
+    let brief = withBrief ? this.deps.repo.brief(when.day) : undefined;
+    if (withBrief && brief === undefined && when.passed && !this.deps.repo.hasBrief(when.day)) {
       const making = this.briefFor(false);
       let timer: NodeJS.Timeout | undefined;
       const slow = new Promise<"slow">((resolve) => {

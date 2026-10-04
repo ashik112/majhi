@@ -189,10 +189,10 @@ describe("an incident through a captain turn", () => {
     const calls = await script.calls(2);
     expect(calls[0]?.isError).toBe(true);
     expect(calls[1]?.isError).toBe(true);
-    // Nothing for Globex exists, and the captain cannot change the watch: the commands are the owner's.
+    // Nothing for Globex exists, and the captain cannot change who is paged: that is the owner's.
     const drafts = ((await h.cmd("outbound.list", { org: "globex" })).body as { drafts: Draft[] }).drafts;
     expect(drafts).toEqual([]);
-    const agentCall = await h.cmd("ops.serviceRemove", { id: svc.id }, {
+    const agentCall = await h.cmd("ops.settings", { escalateMin: 1 }, {
       actor: { kind: "agent", id: "boss" },
       reason: "tidy",
     } as never);
@@ -206,25 +206,29 @@ describe("an incident through a captain turn", () => {
 });
 
 describe("the owner's commands", () => {
-  it("are the owner's: an agent cannot change what is watched, who is told or the phone", async () => {
+  it("let an approved agent call change what is watched, never who is paged or the phone", async () => {
     const world = await bossWorld();
     w = world;
     const agent = { actor: { kind: "agent", id: "boss" }, reason: "x" } as never;
+    expect((await world.h.cmd("ops.overview", {}, agent)).status).toBe(200);
+    const saved = await world.h.cmd(
+      "ops.serviceSave",
+      { org: "acme", name: "A", url: "https://a.example/", impact: "low", tls: false, dns: false },
+      agent,
+    );
+    expect(saved.status).toBe(200);
+    expect(world.h.majhi.services.ops.repo.services().map((s) => s.def.name)).toEqual(["A"]);
     for (const [name, body] of [
-      ["ops.overview", {}],
-      [
-        "ops.serviceSave",
-        { org: "acme", name: "A", url: "https://a.example/", impact: "low", tls: false, dns: false },
-      ],
       ["ops.settings", { escalateMin: 1 }],
       ["ops.phoneSetup", {}],
       ["ops.phoneSet", { enabled: true }],
       ["ops.phoneForget", {}],
     ] as const) {
       const res = await world.h.cmd(name, body, agent);
-      expect(res.status, name).toBeGreaterThanOrEqual(400);
+      expect(res.status, name).toBe(409);
+      expect(res.body.error, name).toContain("Alerts and phone on Watch (/watch)");
     }
-    expect(world.h.majhi.services.ops.repo.services()).toEqual([]);
+    expect(world.h.majhi.services.ops.watch.settings().escalateMin).not.toBe(1);
     expect(await world.h.majhi.services.ops.phone.status()).toMatchObject({ state: "off" });
   });
 

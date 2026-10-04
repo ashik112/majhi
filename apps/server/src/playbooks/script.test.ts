@@ -183,7 +183,7 @@ describe("a playbook through a captain turn", () => {
             { tool: "majhi_playbooks_report", args: { run: 99, outcome: "done", reason: "wrong id" } },
             {
               tool: "majhi_playbooks_update",
-              args: { org: "acme", id: "e2e-sweep", enabled: false, reason: "mute it" },
+              args: { org: "acme", id: "e2e-sweep", dailyLimit: 1000, reason: "more room" },
             },
             {
               tool: "majhi_outbound_setMode",
@@ -215,6 +215,10 @@ describe("a playbook through a captain turn", () => {
     await h.cmd("playbooks.run", { org: "acme", id: "e2e-sweep" });
     const calls = await script.calls(6);
     expect(calls.map((c) => c.isError)).toEqual([true, true, true, true, false, false]);
+    expect(seen.slice(1, 3)).toEqual([
+      "A chore's daily limit is the owner's, on the Playbooks page.",
+      "outbound.setMode is the owner's. The owner sets a channel's mode and sends or discards drafts on Playbooks (/playbooks).",
+    ]);
 
     // The owner's switches did not move.
     const list = (await h.cmd("playbooks.list", { org: "acme" })).body as PlaybooksList;
