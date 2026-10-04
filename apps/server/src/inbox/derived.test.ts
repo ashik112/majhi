@@ -108,6 +108,7 @@ describe("cards derive from the task's state now, so none goes stale", () => {
     const blocked = new Map([["ACM-1", { why: "Nothing to merge: no commits ahead of main.", empty: true }]]);
     const [card] = build([review("ACM-1")], [subject("ACM-1", "review")], { shipBlocked: blocked });
     expect(card?.blocked).toBe("Nothing to merge: no commits ahead of main.");
+    expect(card?.sentence).toContain("cannot be merged yet");
     expect(card?.title).not.toMatch(/Ready to ship/);
     expect(card?.options.map((o) => o.id)).toEqual(["done", "changes"]);
     expect(card?.options.some((o) => o.effect === "approve")).toBe(false);
@@ -115,6 +116,7 @@ describe("cards derive from the task's state now, so none goes stale", () => {
     const failing = new Map([["ACM-1", { why: "it conflicts with main in a.ts", empty: false }]]);
     const [second] = build([review("ACM-1")], [subject("ACM-1", "review")], { shipBlocked: failing });
     expect(second?.options.map((o) => o.id)).toEqual(["changes"]);
+    expect(second?.blocked).toBe("It conflicts with main in a.ts.");
   });
 
   it("permission buttons use the one shared set of words", () => {
@@ -131,6 +133,7 @@ function inbox(opts: {
   working: string[];
   block?: (task: string) => Promise<{ why: string; empty: boolean } | undefined>;
   now?: () => Date;
+  changed?: () => void;
 }) {
   const by = new Map(opts.subjects.map((s) => [s.id, s]));
   const db = new Database(":memory:");
@@ -145,6 +148,7 @@ function inbox(opts: {
     working: () => opts.working,
     ...(opts.block === undefined ? {} : { shipBlock: opts.block }),
     ...(opts.now === undefined ? {} : { now: opts.now }),
+    ...(opts.changed === undefined ? {} : { changed: opts.changed }),
   });
 }
 
@@ -188,8 +192,10 @@ describe("one count for every screen", () => {
     expect(acme.decisions.length).toBe(acme.counts.orgs.acme?.needsYou);
   });
 
-  it("looks at a review task's merge once in a few seconds, not on every list", async () => {
+  it("looks at a review task's merge once in a few seconds, and renews an old look behind the answer", async () => {
     let looks = 0;
+    let found: { why: string; empty: boolean } | undefined;
+    let heard = 0;
     let at = Date.parse("2026-10-04T12:00:00.000Z");
     const service = inbox({
       items: [review("ACM-4")],
@@ -197,16 +203,24 @@ describe("one count for every screen", () => {
       working: [],
       block: async () => {
         looks += 1;
-        return undefined;
+        return found;
       },
       now: () => new Date(at),
+      changed: () => {
+        heard += 1;
+      },
     });
-    await service.list();
+    expect((await service.list())[0]?.blocked).toBeUndefined();
     await service.list();
     expect(looks).toBe(1);
+    // Twenty seconds on, the old answer still serves while a new look is read; when it differs, screens are told.
     at += 20_000;
-    await service.list();
+    found = { why: "it conflicts with main in a.ts", empty: false };
+    expect((await service.list())[0]?.blocked).toBeUndefined();
+    await new Promise((r) => setTimeout(r, 10));
     expect(looks).toBe(2);
+    expect(heard).toBe(1);
+    expect((await service.list())[0]?.blocked).toBe("It conflicts with main in a.ts.");
   });
 
   it("keeps the card when the look at the merge breaks", async () => {

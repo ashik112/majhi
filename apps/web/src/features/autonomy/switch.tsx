@@ -18,7 +18,7 @@ export function SpendToday({ status, className }: { status: AutonomyStatus; clas
       title="What Auto-pilot spent today against its day budget. Tasks you start yourself are not counted here; a task's own cost counts all its turns."
       className={cn("tnum truncate", SPEND_TONE[tone], className)}
     >
-      {tone === "red" ? "Budget used up: " : "Auto-pilot "}
+      {tone === "red" ? "Budget used up: " : "Auto-pilot spent "}
       {todayLine(total)}
     </span>
   );

@@ -89,6 +89,8 @@ export interface InboxDeps {
   shipBlock?: (task: string) => Promise<{ why: string; empty: boolean } | undefined>;
   /** The tasks an agent is working on right now (not queued, not waiting on an answer). */
   working?: () => readonly string[];
+  /** A look at a review task's merge found something new: screens read the list again. */
+  changed?: () => void;
   diff?: (task: string) => Promise<RepoDiff[]>;
   shipOptions?: (task: string) => Promise<ShipOptions>;
   now?: () => Date;
@@ -118,6 +120,8 @@ export class InboxService {
     string,
     { at: number; block: { why: string; empty: boolean } | undefined }
   >();
+  /** Tasks whose look is being renewed now. */
+  private readonly renewing = new Set<string>();
 
   constructor(private readonly deps: InboxDeps) {}
 
@@ -157,21 +161,32 @@ export class InboxService {
           : [],
       ),
     );
-    for (const [task, look] of this.shipLooks) {
-      if (!tasks.has(task) || now - look.at > SHIP_BLOCK_KEEP_MS) this.shipLooks.delete(task);
-    }
+    for (const task of this.shipLooks.keys()) if (!tasks.has(task)) this.shipLooks.delete(task);
     await Promise.all(
       [...tasks].map(async (task) => {
         let look = this.shipLooks.get(task);
         if (look === undefined) {
-          const block = await deps.shipBlock?.(task).catch(() => undefined);
-          look = { at: now, block };
+          // The first look is waited for: a card must not offer Merge for a moment and then take it back.
+          look = { at: now, block: await this.look(task) };
           this.shipLooks.set(task, look);
+        } else if (now - look.at > SHIP_BLOCK_KEEP_MS && !this.renewing.has(task)) {
+          // An old look still answers; a new one is read behind it, and screens hear when it differs.
+          this.renewing.add(task);
+          const was = look.block;
+          void this.look(task).then((block) => {
+            this.renewing.delete(task);
+            this.shipLooks.set(task, { at: (deps.now?.() ?? new Date()).getTime(), block });
+            if (was?.why !== block?.why || was?.empty !== block?.empty) deps.changed?.();
+          });
         }
         if (look.block !== undefined) out.set(task, look.block);
       }),
     );
     return out;
+  }
+
+  private look(task: string): Promise<{ why: string; empty: boolean } | undefined> {
+    return (this.deps.shipBlock?.(task) ?? Promise.resolve(undefined)).catch(() => undefined);
   }
 
   private async build(): Promise<OwnerDecision[]> {

@@ -235,11 +235,12 @@ function draftOf(
       if (shipBlock !== undefined && repos > 0) {
         // The server knows Merge fails: say what is wrong, and offer only what can work.
         const rest = shipBlock.empty ? [done, changes] : [changes];
+        const why = sentenceOf(shipBlock.why);
         return {
           kind: "ship",
           title: `Finished: ${oneLine(subject.title, 120)}`,
-          sentence: `${who} finished ${name}. It cannot be merged: ${shipBlock.why}`.slice(0, 500),
-          blocked: shipBlock.why.slice(0, 300),
+          sentence: `${who} finished ${name}. It cannot be merged yet.`,
+          blocked: why.slice(0, 300),
           options: withPrimary(rest, undefined),
         };
       }
@@ -285,6 +286,13 @@ function draftOf(
     default:
       return undefined;
   }
+}
+
+/** A reason as a sentence: capital first, full stop last. */
+function sentenceOf(text: string): string {
+  const flat = text.trim();
+  const capped = `${flat.charAt(0).toUpperCase()}${flat.slice(1)}`;
+  return /[.!?]$/.test(capped) ? capped : `${capped}.`;
 }
 
 /** Whether a room item is a decision. Alerts ask this, so what the inbox lists and what alerts say cannot differ. */

@@ -34,10 +34,15 @@ export function useHeldOption(id: string): string | undefined {
   return holds.get(id)?.option;
 }
 
+/** The kinds whose buttons are short fixed verbs, so a failure can name the action ("Could not merge"). */
+const VERB_KINDS: ReadonlySet<OwnerDecision["kind"]> = new Set(["ship", "paused", "approval", "budget"]);
+
 /** "Could not merge", "Could not allow once": what failed, from the button's own words. */
-export function failureTitle(label: string, typed: boolean): string {
+export function failureTitle(decision: Pick<OwnerDecision, "kind">, label: string, typed: boolean): string {
   const words = label.trim().toLowerCase();
-  return typed || words === "" || words.length > 40 ? "Could not answer it" : `Could not ${words}`;
+  return typed || words === "" || words.length > 40 || !VERB_KINDS.has(decision.kind)
+    ? "Could not answer it"
+    : `Could not ${words}`;
 }
 
 interface SendOptions {
@@ -71,7 +76,7 @@ export function useSendDecision() {
             options.onDone?.(left);
           },
           (error: unknown) =>
-            toast(failureTitle(label, chosen?.text === true), {
+            toast(failureTitle(decision, label, chosen?.text === true), {
               detail: describeError(error),
               tone: "error",
             }),

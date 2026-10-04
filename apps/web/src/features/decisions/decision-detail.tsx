@@ -206,7 +206,7 @@ export function DecisionDetailPane({
         <p className="m-0 text-md text-fg text-pretty break-words">{decision.sentence ?? decision.title}</p>
 
         {decision.blocked !== undefined && (
-          <p className="mt-3 mb-0 flex items-start gap-1.5 text-sm text-caution text-pretty break-words">
+          <p className="mt-2 mb-0 flex items-start gap-1.5 text-sm text-caution text-pretty break-words">
             <TriangleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
             {decision.blocked}
           </p>
