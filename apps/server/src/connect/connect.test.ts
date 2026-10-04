@@ -45,6 +45,7 @@ async function rig(
   options: {
     auth?: ConstructorParameters<typeof FakeAuthServer>[0];
     requiredScope?: string;
+    originResource?: boolean;
     helper?: boolean;
     cimdUrl?: string;
   } = {},
@@ -57,10 +58,10 @@ async function rig(
   const grants = new GrantStore(secrets);
   const auth = new FakeAuthServer(options.auth);
   await auth.start();
-  const mcp = new FakeMcpServer(
-    auth,
-    options.requiredScope === undefined ? {} : { requiredScope: options.requiredScope },
-  );
+  const mcp = new FakeMcpServer(auth, {
+    ...(options.requiredScope === undefined ? {} : { requiredScope: options.requiredScope }),
+    ...(options.originResource === undefined ? {} : { originResource: options.originResource }),
+  });
   await mcp.start();
   const connections = new Map<string, { org: string; connection: ConnectionConfig }>();
   const logs: string[] = [];
@@ -164,6 +165,24 @@ async function rig(
   };
   return r;
 }
+
+describe("a server whose resource is a bare origin", () => {
+  it("sends the same resource on the page, the code exchange and the renewal", async () => {
+    const r = await rig({ originResource: true, auth: { accessTtl: 60 } });
+    try {
+      const done = await r.connectAs("maria@acme.example");
+      expect(done.state).toBe("connected");
+      expect(done.test?.ok).toBe(true);
+      r.skip(10 * 60_000);
+      const fresh = await r.connect.bearer("fakesvc");
+      expect("token" in fresh).toBe(true);
+      expect(r.auth.refreshCalls).toBeGreaterThan(0);
+      expect(new Set(r.auth.refreshResources)).toEqual(new Set([`http://127.0.0.1:${r.mcp.port}`]));
+    } finally {
+      await r.cleanup();
+    }
+  });
+});
 
 describe("connecting a remote MCP server with OAuth", () => {
   let r: Rig;

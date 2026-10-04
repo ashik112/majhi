@@ -89,6 +89,8 @@ export class FakeAuthServer {
   private readonly issued: string[] = [];
   registrations = 0;
   refreshCalls = 0;
+  /** The `resource` of every refresh request, as sent. */
+  refreshResources: string[] = [];
   revoked: string[] = [];
   /** Answer refresh with this instead of success. */
   failRefresh: "invalid_grant" | "server_error" | undefined;
@@ -296,6 +298,7 @@ export class FakeAuthServer {
     }
     if (grant === "refresh_token") {
       this.refreshCalls++;
+      this.refreshResources.push(form.get("resource") ?? "");
       if (this.gate !== undefined) await this.gate;
       if (this.failRefresh === "server_error") return json(res, 500, { error: "server_error" });
       const old = form.get("refresh_token") ?? "";
@@ -314,6 +317,7 @@ export class FakeAuthServer {
 export interface FakeMcpOptions {
   /** A scope the server needs for `tools/list`; a token without it gets 403 insufficient_scope. */
   requiredScope?: string;
+  originResource?: boolean;
 }
 
 /** The MCP resource server: protected resource metadata, and a JSON-RPC endpoint that wants a bearer token. */
@@ -323,6 +327,8 @@ export class FakeMcpServer {
   /** The Authorization header of every request that reached /mcp. */
   seen: string[] = [];
   requiredScope: string | undefined;
+  /** Advertise the bare origin as the resource, as DigitalOcean does (no path, no trailing slash). */
+  readonly originResource: boolean;
   /** Refuse every token, as a service that revoked majhi behind the authorization server's back. */
   rejectAll = false;
 
@@ -331,6 +337,7 @@ export class FakeMcpServer {
     options: FakeMcpOptions = {},
   ) {
     this.requiredScope = options.requiredScope;
+    this.originResource = options.originResource ?? false;
   }
 
   get url(): string {
@@ -352,7 +359,7 @@ export class FakeMcpServer {
     const meta = `http://127.0.0.1:${this.port}/.well-known/oauth-protected-resource/mcp`;
     if (url.pathname === "/.well-known/oauth-protected-resource/mcp") {
       return json(res, 200, {
-        resource: this.url,
+        resource: this.originResource ? `http://127.0.0.1:${this.port}` : this.url,
         authorization_servers: [this.auth.url],
         bearer_methods_supported: ["header"],
       });

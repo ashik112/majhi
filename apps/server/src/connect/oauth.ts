@@ -255,7 +255,8 @@ export async function exchange(
       authorizationCode: options.code,
       codeVerifier: options.verifier,
       redirectUri: options.redirect,
-      resource: new URL(found.resource),
+      // Verbatim: URL.href adds "/" to a bare origin, which exact-match servers (DigitalOcean) refuse.
+      resource: found.resource,
       fetchFn,
     });
     return tokenSet(tokens, now);
@@ -277,7 +278,8 @@ export async function refresh(
       metadata: found.metadata,
       clientInformation: info(client, options.redirect),
       refreshToken: options.refreshToken,
-      resource: new URL(found.resource),
+      // Verbatim: URL.href adds "/" to a bare origin, which exact-match servers (DigitalOcean) refuse.
+      resource: found.resource,
       fetchFn,
     });
     return tokenSet(tokens, now);
