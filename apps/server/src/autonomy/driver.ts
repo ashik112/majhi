@@ -17,15 +17,13 @@ import type { AutonomyService } from "./service.ts";
  *
  * A tick carries news only (SPEC 5.18, "Wakes carry news"). Each wake is `news` (a task finished, a
  * finding or backlog task appeared, a cap lifted, an account changed) or `soft` (a stall alarm, a
- * restart, the hourly check). Just before a tick goes, the facts it would show are keyed
+ * restart). Just before a tick goes, the facts it would show are keyed
  * (`factsKey`) and compared with the facts of the captain's last turn in the lane: a batch of soft
  * wakes goes only when the facts changed, and a batch of news only when a line is new or the facts
  * changed. Wakes that arrive together are one tick with all their reasons, repeats counted.
  */
 
 export const DEBOUNCE_MS = 20_000;
-/** A check while nothing autonomous runs in a workspace, so the captain picks the next work. */
-export const HEARTBEAT_MS = 60 * 60_000;
 /** A burst of task changes is looked at once. */
 const WATCH_MS = 1_000;
 const REASONS_MAX = 50;
@@ -51,8 +49,6 @@ export interface DriverDeps {
    * slot, a cap, or the owner. Absent: nothing is explained.
    */
   explained?: (task: string) => string | undefined;
-  /** Whether a workspace has work, a finding or a decision waiting. Absent: it always does. */
-  pendingWork?: (org: string) => Promise<boolean>;
   /** One line per open finding of a workspace for the digest. */
   findingLines?: (org: string) => string[];
   /** One line per open incident or failing watch of a workspace, unacknowledged first. */
@@ -80,12 +76,10 @@ interface Lane {
   /** A tick waits for the captain's turn in this lane to end. */
   afterTurn: boolean;
   sending: Promise<void> | undefined;
-  lastTickAt: number;
 }
 
 export class AutonomyDriver {
   private readonly lanes = new Map<string, Lane>();
-  private readonly firstTick: number;
   /** Each autonomous task's status as last seen, to tell what changed. */
   private readonly statuses = new Map<string, string>();
   private readonly seenCards = new Set<string>();
@@ -98,8 +92,6 @@ export class AutonomyDriver {
   private generation = 0;
 
   constructor(private readonly deps: DriverDeps) {
-    const last = deps.autonomy.repo.state().lastTick;
-    this.firstTick = last === undefined ? 0 : Date.parse(last);
     deps.room.onWrite((task, item) => this.cardWritten(task, item));
   }
 
@@ -119,7 +111,6 @@ export class AutonomyDriver {
         timer: undefined,
         afterTurn: false,
         sending: undefined,
-        lastTickAt: this.firstTick,
       };
       this.lanes.set(org, lane);
     }
@@ -388,40 +379,14 @@ export class AutonomyDriver {
       settled: "Auto-pilot mode woke the captain",
       by: "majhi",
     });
-    lane.lastTickAt = this.now().getTime();
     lane.lastFacts = facts;
     lane.lastNews = new Set(news);
     autonomy.ticked(reasons, org, chat);
   }
 
-  /** The minute sweep: the hourly heartbeat per lane while nothing autonomous runs there, and missed task changes. */
+  /** The minute sweep: task changes the watch missed. */
   sweep(): void {
     this.checkTasks();
-    if (this.deps.autonomy.mode() !== "on") return;
-    const now = this.now().getTime();
-    void this.deps.autonomy
-      .runsOrgs()
-      .then((orgs) => {
-        for (const org of orgs) {
-          if (now - this.lane(org).lastTickAt < HEARTBEAT_MS) continue;
-          const chat = this.deps.autonomy.laneChats().find((c) => this.deps.autonomy.laneOrg(c) === org);
-          const busy = [
-            ...this.deps.autonomy
-              .openTasks()
-              .filter((t) => (t.org ?? PRIVATE) === org)
-              .map((t) => t.id),
-            ...(chat === undefined ? [] : [chat]),
-          ].some((id) => this.deps.runs.working(id).length > 0);
-          if (busy) continue;
-          // No work, no finding and no decision waiting: a bare check would only say nothing changed.
-          void (this.deps.pendingWork?.(org) ?? Promise.resolve(true))
-            .then((work) => {
-              if (work) this.wakeLane(org, "Hourly check: nothing autonomous is running here", "soft");
-            })
-            .catch(() => undefined);
-        }
-      })
-      .catch(() => undefined);
   }
 
   private scheduleWatch(): void {

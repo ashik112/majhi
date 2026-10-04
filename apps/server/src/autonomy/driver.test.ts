@@ -65,8 +65,6 @@ function fakes() {
     now: [] as AutonomyNow[],
     /** Running tasks whose silence something explains (a cap, a card for the owner, a slot). */
     explained: new Set<string>(),
-    /** Whether a workspace has backlog, a finding or a decision waiting. */
-    work: true,
     /** Every task of the store, any workspace. */
     all: [] as Record<string, unknown>[],
     incidents: {} as Record<string, string[]>,
@@ -125,7 +123,6 @@ function fakes() {
     } as unknown as Store,
     events: new EventHub(),
     explained: (task: string) => (state.explained.has(task) ? "held" : undefined),
-    pendingWork: async () => state.work,
     incidentLines: (org: string) => state.incidents[org] ?? [],
   });
   return { driver, state, ticks, tickOrgs, told, toldIn, skipped };
@@ -330,28 +327,21 @@ describe("wakes carry news only", () => {
     expect(f.ticks).toHaveLength(1);
   });
 
-  it("drops the bare hourly check when no work, finding or decision waits, and keeps it when one does", async () => {
+  it("makes no wake of its own on the hour: unchanged facts and a quiet hour tell the captain nothing", async () => {
     const f = fakes();
     f.state.now = [task("ACM-1")];
     f.driver.wake("ACM-1 is ready for review", "acme");
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
     expect(f.ticks).toHaveLength(1);
-    f.state.work = false;
-    await vi.advanceTimersByTimeAsync(61 * 60_000);
+    await vi.advanceTimersByTimeAsync(3 * 60 * 60_000);
     f.driver.sweep();
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
     expect(f.ticks).toHaveLength(1);
-    // Work waits, but nothing changed since the captain's turn: still nothing to say.
-    f.state.work = true;
-    f.driver.sweep();
-    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
-    expect(f.ticks).toHaveLength(1);
-    // Work waits and a task finished meanwhile: the check goes.
+    // A task that finished meanwhile is news: it wakes the captain on the next look.
     f.state.now = [task("ACM-1", "done")];
-    f.driver.sweep();
+    f.driver.wake("ACM-1 is done: Work on ACM-1", "acme");
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
     expect(f.ticks).toHaveLength(2);
-    expect(f.told[1]).toContain("Hourly check");
   });
 
   it("tells a lane where Start is You about a finding, and that it only proposes there", async () => {
@@ -465,7 +455,6 @@ describe("a busy hour", () => {
       });
     }
     // 59 minute sweeps over a workspace with nothing waiting.
-    f.state.work = false;
     for (let m = 1; m < 60; m++) events.push({ at: m * 60_000, real: false, run: () => f.driver.sweep() });
     events.sort((a, b) => a.at - b.at);
 

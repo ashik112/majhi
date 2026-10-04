@@ -1325,7 +1325,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       room,
       quiet: (task) => idleWatch.quiet(task),
       explained: (task) => autonomy.stallExplained(task),
-      pendingWork: (org) => autonomy.pendingWork(org, findingsStore?.openCount(org) ?? 0),
       findingLines: (org) => findingsStore?.digestLines(org) ?? [],
       incidentLines: (org) => incidentLines(opsWatch?.openIncidents() ?? [], org),
       projectLines: (org) => cards.digestLines(org),

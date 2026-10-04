@@ -396,13 +396,6 @@ export class AutonomyService {
     return waits ? "waits for an account" : undefined;
   }
 
-  /** Whether a workspace has backlog, an open finding or a decision waiting: a reason for the hourly check. */
-  async pendingWork(org: string, findings: number): Promise<boolean> {
-    if (this.backlog(org).length > 0 || findings > 0) return true;
-    const decisions = (await this.deps.decisions?.().catch(() => [])) ?? [];
-    return decisions.some((d) => (d.org ?? PRIVATE) === org);
-  }
-
   // ---------------------------------------------------------------------------
   // Lifecycle
 
