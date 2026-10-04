@@ -8,7 +8,7 @@ import type { ConfigService } from "../config/service.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import { runConnections } from "./access.ts";
 import type { GateConnection } from "./gate.ts";
-import { type ConnectionUse, planConnections, type RunPlan } from "./plan.ts";
+import { type ConnectionUse, type PlanDeps, planConnections, type RunPlan } from "./plan.ts";
 import type { HeldSecret } from "./redact.ts";
 import { ownerOnlyDir } from "./service.ts";
 
@@ -45,6 +45,8 @@ export interface RunFilesDeps {
   /** The folder of a connection's own files. */
   connectionDir: (id: string) => string;
   browsersPath?: string | undefined;
+  /** Bearer tokens of connections signed in with OAuth (5.14). */
+  oauth?: PlanDeps["oauth"];
 }
 
 /**

@@ -22,6 +22,7 @@ import { backupHandlers } from "../backup/handlers.ts";
 import { businessHandlers } from "../business/handlers.ts";
 import { captainHandlers } from "../captain/handlers.ts";
 import type { ConfigService } from "../config/service.ts";
+import { connectHandlers } from "../connect/handlers.ts";
 import { connectionHandlers } from "../connections/handlers.ts";
 import { redactSecrets } from "../connections/redact.ts";
 import { taskSecrets } from "../connections/run-files.ts";
@@ -166,6 +167,7 @@ export function createHandlers({
     ...businessHandlers({ ...services.business, lanes: services.lanes, store: services.store }),
     ...findingsHandlers({ findings: services.findings, lanes: services.lanes, store: services.store }),
     ...backupHandlers(services.backup),
+    ...connectHandlers(services.connect),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
     ...skillHandlers(services.skills),
     ...mcpHandlers(services.mcpServers),
@@ -507,6 +509,7 @@ export function createHandlers({
           secrets: services.secrets,
           majhiHome,
           connectionDir: (id) => connectionDir(majhiHome, id),
+          oauth: (id) => services.connect.bearer(id),
         },
         task,
       );
@@ -567,6 +570,12 @@ export function createHandlers({
         agent: ctx.meta.actor.kind === "agent",
       }),
     }),
+    "tasks.tell": (input, ctx) =>
+      services.captainTell.tell(input, {
+        kind: ctx.meta.actor.kind === "agent" ? "agent" : "owner",
+        ...(ctx.meta.actor.kind === "agent" ? { id: ctx.meta.actor.id } : {}),
+        task: ctx.meta.task,
+      }),
     "tasks.cancelShip": async (input) => ({ task: services.pendingShips.cancel(input.id) }),
     "tasks.branches": (input) => services.tasks.branches(input.id),
     "tasks.diff": (input) => services.tasks.diff(input.id),

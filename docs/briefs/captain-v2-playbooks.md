@@ -81,7 +81,7 @@ The never list, org isolation, nothing outbound without approval or an org polic
 Each step ships on its own, with an end-to-end test that drives a real captain turn through the fake agent's script mode, and a browser check of any screen it changes.
 
 1. Fake agent script mode, so captain turns are testable end to end.
-2. Cut the noise wakes. The captain can message its leads (`tasks.tell`); resolving a merge conflict follows the Merge row.
+2. Cut the noise wakes. The captain can message its leads (`tasks.tell`); resolving a merge conflict follows the Merge row. **Built (2026-10-04):** the driver keys the facts of each wake and sends only news (`autonomy/driver.ts`, `digest.ts` `factsKey`), explained stalls and the bare hourly check are dropped, a simulated busy hour went from 49 wakes to 12; `tasks.tell` and the Merge row for `tasks.resolveShip`; the lane's merges and repo registrations go through the chore's rules (`captain/lane-gate.ts`); lanes in Start = You workspaces are woken for findings, review and project cards and can only propose.
 3. Findings store, and a follow-ups playbook that imports the memory follow-ups. **Built (2026-10-04):** `apps/server/src/findings`, migration 125, the `findings.*` commands and tools, the `followups` chore, and the Findings section and sheet on the Captain page.
 4. Own work row with Propose, and batch approval in Decisions.
 5. Project knowledge card per repo, refreshed on merge, with a readiness score. (Built 2026-10-04.)

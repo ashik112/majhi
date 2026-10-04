@@ -51,6 +51,11 @@ export interface PlanDeps {
   connectionDir: (id: string) => string;
   /** PLAYWRIGHT_BROWSERS_PATH of runs, for browser servers. */
   browsersPath?: string | undefined;
+  /**
+   * The bearer token of a connection signed in with OAuth (Connect, 5.14), renewed when it ends soon.
+   * The run gets it as a header at session start; the refresh token never leaves majhi.
+   */
+  oauth?: ((connection: string) => Promise<{ token: string } | { problem: string }>) | undefined;
 }
 
 const SECRET = "secret:";
@@ -177,7 +182,7 @@ export async function planConnections(
       }
       case "mail": {
         if (textValue(c, "mode") === "mcp") {
-          await mcpServer(h, plan, entries, gate, use);
+          await mcpServer(h, plan, entries, gate, use, deps.oauth);
           break;
         }
         const values: [string, string | undefined][] = [
@@ -197,7 +202,7 @@ export async function planConnections(
         break;
       }
       case "mcp":
-        await mcpServer(h, plan, entries, gate, use);
+        await mcpServer(h, plan, entries, gate, use, deps.oauth);
         break;
       case "browser": {
         const server = browserServer(textValue(c, "server"));
@@ -234,6 +239,7 @@ async function mcpServer(
   entries: (h: HeldConnection, key: ConnectionListKey) => Promise<Record<string, string>>,
   gate: (h: HeldConnection, extra?: Partial<GateConnection>) => void,
   use: (h: HeldConnection, line: string) => void,
+  oauth: PlanDeps["oauth"],
 ): Promise<void> {
   const c: ConnectionConfig = h.connection;
   const lists = activeLists(c.type, c.fields ?? {}).map((l) => l.key);
@@ -252,6 +258,17 @@ async function mcpServer(
       return;
     }
     const headers = lists.includes("headers") ? await entries(h, "headers") : {};
+    if (textValue(c, "auth") === "oauth") {
+      // The owner's sign-in for this workspace's connection, as a header. majhi always supplies it,
+      // so the agent CLI never starts a sign-in of its own.
+      const answer = oauth === undefined ? { problem: "It has no sign-in." } : await oauth(h.id);
+      if ("problem" in answer) {
+        plan.problems.push(`${h.id}: ${answer.problem} The run does not get it.`);
+        return;
+      }
+      headers.Authorization = `Bearer ${answer.token}`;
+      plan.secrets.push({ name: `${h.id}.oauth`, value: answer.token });
+    }
     const type = textValue(c, "protocol") === "sse" ? "sse" : "http";
     plan.servers.push({ type, name: h.id, url, headers });
   }

@@ -23,6 +23,7 @@ import type { EventHub } from "../events/hub.ts";
 import type { Store } from "../store/index.ts";
 import { addDays, localDay } from "../usage/ranges.ts";
 import { createChores, memoryKey } from "./chores.ts";
+import { LaneGate } from "./lane-gate.ts";
 import type { Lanes } from "./lanes.ts";
 import { authorityOf, choresNow, effectiveAuthority, migratePickOrgs, workspaceIds } from "./levels.ts";
 import { laneOfScope } from "./memory-scopes.ts";
@@ -85,6 +86,8 @@ export interface CaptainDeps {
 export class CaptainService {
   readonly repo: CaptainRepo;
   readonly runner: ChoreRunner;
+  /** What the lane's ships and repo registrations are held to: the chores' own rules (SPEC 5.18, One rule set). */
+  readonly laneGate: LaneGate;
   private sweep: NodeJS.Timeout | undefined;
   private readonly caused = new Map<string, number>();
   /** The captain as last read, so a room write can tell the captain's own cards at once. */
@@ -94,6 +97,16 @@ export class CaptainService {
 
   constructor(private readonly deps: CaptainDeps) {
     this.repo = new CaptainRepo(deps.store.raw);
+    this.laneGate = new LaneGate({
+      repo: this.repo,
+      ports: deps.ports,
+      workspace: (org) => this.workspace(org),
+      now: () => this.now(),
+      capAsked: (ask) => {
+        this.deps.tell(`captain-cap:${ask.org}:${ask.chore}:${ask.day}`, ask.text);
+        this.deps.events.emit(["captain"]);
+      },
+    });
     this.runner = new ChoreRunner({
       repo: this.repo,
       now: () => this.now(),

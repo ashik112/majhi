@@ -202,6 +202,9 @@ export class AdminService {
         const done = await this.execute(spec.command, input, metaFor(caller.agent, why, caller.task));
         return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
       }
+      // The captain's note to a lead: no card waits for it. The handler checks who and where, and the
+      // limit per task; the autonomy limits (workspace, secrets) hold for the captain first.
+      if (spec.command === "tasks.tell") return await this.tell(caller, input, why);
       const refused = refuseForAgents(spec.command, input);
       if (refused !== undefined) return error(refused);
       return await this.callCommand(caller, spec.command, input, {
@@ -212,6 +215,26 @@ export class AdminService {
     } catch (err) {
       return error(errorMessage(err));
     }
+  }
+
+  /** `tasks.tell` from an agent's tool call. Only the captain in its lane gets as far as the handler. */
+  private async tell(caller: AdminCaller, input: Record<string, unknown>, why: string): Promise<ToolResult> {
+    const checked = commands["tasks.tell"].input.safeParse(input);
+    if (!checked.success) {
+      const details = checked.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`);
+      return error(`Invalid input for tasks.tell.\n${details.join("\n")}`);
+    }
+    const auto = this.autonomy === undefined ? undefined : await this.autonomy.callerKind(caller);
+    if (auto !== "boss" || this.autonomy === undefined) {
+      return error(
+        "tasks.tell is the captain's tool, in its workspace lane. Tell the lead through your own room instead.",
+      );
+    }
+    const refused = await this.autonomy.refusal(caller, "tasks.tell", input, why);
+    if (refused !== undefined) return error(refused);
+    const done = await this.execute("tasks.tell", input, metaFor(caller.agent, why, caller.task));
+    this.autonomy.ran(caller, "tasks.tell", input, why, done);
+    return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
   }
 
   /**

@@ -51,6 +51,8 @@ export interface TesterDeps {
    */
   browserCommand?: (server: BrowserServer) => Command;
   now?: () => Date;
+  /** The Test of a connection signed in through Connect (5.14). */
+  oauth?: { test(id: string): Promise<ConnectionTestResult> } | undefined;
 }
 
 interface Outcome {
@@ -106,6 +108,16 @@ export class ConnectionTester {
     const view = await this.deps.connections.get(id);
     const found = await this.deps.connections.find(id);
     if (found === undefined) throw new UserError(`There is no connection ${id}.`, 404);
+    if (
+      this.deps.oauth !== undefined &&
+      found.connection.type === "mcp" &&
+      textValue(found.connection, "auth") === "oauth"
+    ) {
+      // Signed in through Connect: the token is majhi's to renew and send, not a header of the form.
+      const result = await this.deps.oauth.test(id);
+      this.deps.connections.recordTest(id, result);
+      return result;
+    }
     let outcome: Outcome;
     let secrets: Values["secrets"] = [];
     if (view.problems.length > 0) {
