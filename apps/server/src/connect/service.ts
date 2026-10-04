@@ -40,6 +40,7 @@ import {
   identify,
   probeToken,
   refresh,
+  refusalReason,
   register,
   revocationEndpointOf,
   revoke,
@@ -1443,14 +1444,15 @@ export class ConnectService {
         const listed = await this.deps.listTools(product.mcpUrl, grant.tokens.accessToken);
         tools.push(...listed);
         lines.push(`${product.name}: ${listed.length} tool${listed.length === 1 ? "" : "s"}`);
-      } catch {
-        failed.push(product.name);
+      } catch (err) {
+        const why = refusalReason(null, JSON.stringify({ message: errorText(err) }));
+        failed.push(`${product.name} failed${why === "" ? "" : ` (${why})`}`);
       }
     }
     if (failed.length > 0) {
       return this.result(
         false,
-        `${failed.join(", ")} would not list ${failed.length === 1 ? "its" : "their"} tools with this sign-in.${lines.length > 0 ? ` ${lines.join(". ")}.` : ""}`,
+        `${failed.join(". ")}.${lines.length > 0 ? ` ${lines.join(". ")}.` : ""}`,
         started,
         tools,
       );
@@ -1894,4 +1896,9 @@ function asTokenProbe(probe: ApiProbe): TokenProbe {
 
 function revokeAt(found: Discovered | undefined, provider: ServiceProvider | undefined): string | undefined {
   return found === undefined ? provider?.revokeUrl : revocationEndpointOf(found.metadata);
+}
+
+/** An error's message, with the token never in it: `refusalReason` masks bearer values. */
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
