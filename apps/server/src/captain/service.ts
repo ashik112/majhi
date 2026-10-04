@@ -72,6 +72,8 @@ export interface CaptainDeps {
   identity: (org: string) => Promise<Identity>;
   /** Runs a command as the owner, for Undo through majhi's own paths. */
   ownerCommand: (command: string, input: unknown, meta: CommandMeta) => Promise<void>;
+  /** How many open owner cards the workspace has: the Needs you count, so the lane and the list agree. */
+  ownerCards?: (org: string) => Promise<number>;
   /** The workspace of a task, `undefined` when it is unknown or a chat. Default: majhi's tasks. */
   taskOrg?: (task: string) => string | undefined;
   /** What the relay of a lane captain's message into the root chat reads and writes. Without it, no relay. */
@@ -427,7 +429,8 @@ export class CaptainService {
       const ws = this.workspaceOf(org, settings.autonomy, sections.orgs[org]?.name);
       if (org === PRIVATE) day = ws.day;
       const authority = authorityOf(settings.autonomy, org);
-      const { line, forYou } = summaryOf(this.repo.dayActions(org, ws.day));
+      const forYou = await this.deps.ownerCards?.(org) ?? 0;
+      const line = summaryOf(this.repo.dayActions(org, ws.day), forYou);
       const spend = { used: spends.of(org) };
       const lane = this.deps.lanes.chat(org);
       const cap = settings.autonomy.orgs[org]?.cap;
@@ -606,7 +609,7 @@ export class CaptainService {
     const yesterday = addDays(today, -1);
     const lines: string[] = [];
     for (const org of workspaceIds(sections.orgs)) {
-      const { line } = summaryOf(this.repo.dayActions(org, yesterday));
+      const line = summaryOf(this.repo.dayActions(org, yesterday));
       if (line !== "")
         lines.push(`${org === PRIVATE ? "Private" : (sections.orgs[org]?.name ?? org)}: ${line}`);
     }

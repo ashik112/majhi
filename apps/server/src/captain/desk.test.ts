@@ -54,7 +54,9 @@ async function desk() {
   await w.addRepo("web");
   must(await h.cmd("projects.register", { id: "globex-web", org: "globex", path: "~/Work/web" }));
   must(
-    await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS }, globex: { authority: RUNS } } }),
+    await h.cmd("autonomy.configure", {
+      orgs: { acme: { authority: RUNS, tasksAtOnce: 2 }, globex: { authority: RUNS, tasksAtOnce: 2 } },
+    }),
   );
 
   // The globex account's health, as the test sets it (a real sign-in needs a browser).

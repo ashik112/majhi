@@ -1,5 +1,16 @@
 # Progress
 
+## Live-state counts and restart reconcile (built, not merged)
+
+Branch `fix/live-state-counts`.
+
+- **What the owner will notice.** After a restart, a task that was running but could not be brought back no longer blocks its workspace: the captain can start and resume other tasks again. Such a task shows as paused with "majhi restarted and could not resume this; Resume to continue" (when automatic resume is off or the agent cannot be woken). Idle chats that sat "running" for days show as review. A lane's "N things for you" is now the number of open owner cards, the same as Needs you.
+- **Gates.** Tasks at once (`workspaceFull`, `noRoomFor`) and the repo-rule writers count tasks with a live run (`RunManager.busy`, or a wait on a background process), not status `running`. A task queued for an agent slot still counts.
+- **Reconcile.** One place, `Resilience.wakeStranded`, after the resume attempts: chats go to review, others are woken or paused with reason `error`; a failed resume in the drip or the interrupted pass also pauses instead of leaving the task running.
+- **Lane count.** `forYou` comes from `inbox.list(org)`; the summary line uses it. The day's log no longer feeds it.
+- **desk.test.** It was failing because the default is one task at once and the test starts two per workspace; it now sets `tasksAtOnce: 2` as its comments assume.
+- **Tests.** `autonomy/live-state.test.ts`. done-when.test updated for the new count.
+- **Known.** approvals.test "counts an agent of an autonomous task" fails on main too (ENOTEMPTY on cleanup).
 ## Secrets off process argv (built, not merged)
 
 Branch `fix/no-secrets-in-argv`. Closes the leak behind PRV-127.

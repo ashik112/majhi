@@ -1289,6 +1289,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const autonomy = new AutonomyService({
     machine: () => machine.get(),
     lanes,
+    processWaiting: (task) => processes.waiting(task).length > 0,
     typing: (task) => events.typing.holds(task),
     protectedProjects: async () =>
       new Set((await projects.infos()).filter((p) => p.protected).map((p) => p.id)),
@@ -1471,6 +1472,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     events,
     autonomy,
     lanes,
+    ownerCards: async (org) => (await inbox.list(org)).length,
     threadState: () => {
       const waiting = store.room.tasksWaitingOnOwner();
       const pausedOrgs = new Set(

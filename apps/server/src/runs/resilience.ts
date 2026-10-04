@@ -13,8 +13,17 @@ import { ResumeDrip, RESUME_GAP_MS } from "./resume-drip.ts";
 /** What the coordinator needs of the task service: the status changes that follow pauses and resumes. */
 export interface TaskHooks {
   statusChanged(id: string): Promise<void>;
-  pausedByRuns(id: string, reason: "offline" | "error" | "limit" | "owner" | "signed-out"): Promise<void>;
+  pausedByRuns(
+    id: string,
+    reason: "offline" | "error" | "limit" | "owner" | "signed-out",
+    why?: string,
+  ): Promise<void>;
+  /** A turn ended with nothing queued: the task moves to review when no agent is still working. */
+  agentsIdle(id: string): Promise<void>;
 }
+
+/** What the room says when a restart left a task running that nothing could bring back. */
+const LOST_LINE = "majhi restarted and could not resume this; Resume to continue.";
 
 /** How often paused-for-sign-in tasks look at their accounts. */
 const SIGN_IN_CHECK_MS = 30_000;
@@ -163,7 +172,7 @@ export class Resilience {
           );
         }
       } catch (err) {
-        this.note(task.id, `Could not resume @${agent} after the restart: ${errorMessage(err)}`);
+        await this.lost(task.id, `Could not resume @${agent} after the restart: ${errorMessage(err)}`);
       }
     }
     // One by one, in the background: a restart must not start every run in the same minute.
@@ -172,7 +181,7 @@ export class Resilience {
         try {
           runs.resumeAfterRestart(r.task, r.agent);
         } catch (err) {
-          this.note(r.task, `Could not resume @${r.agent} after the restart: ${errorMessage(err)}`);
+          void this.lost(r.task, `Could not resume @${r.agent} after the restart: ${errorMessage(err)}`);
         }
       })
       .catch(() => undefined);
@@ -180,8 +189,11 @@ export class Resilience {
   }
 
   /**
-   * Background processes live in memory, so a restart ends them without a word. A task left
-   * running with nobody working was waiting on one: its last agent is told and starts it again.
+   * The one reconcile of a restart: a task left running with no live run and no resume on its way
+   * ends in an honest state. Code and ops tasks: the lead is told to go on when auto resume is on
+   * (background processes live in memory, so the task may have been waiting on one), else the task
+   * pauses with reason `error`. An idle chat is not work in progress: it goes to review, as when its
+   * turn ends. Anything that cannot be woken pauses the same way, never stays "running".
    */
   private async wakeStranded(handled: Set<string>): Promise<void> {
     const { store, runs, tasks } = this.deps;
@@ -190,10 +202,15 @@ export class Resilience {
       if (task === undefined || handled.has(id)) continue;
       if (task.status !== "running" || isBossChat(task)) continue;
       if (runs.working(task.id).length > 0) continue;
-      const agent = this.lastAgent(task);
-      if (agent === undefined) continue;
       try {
-        if (await this.autoResume(task)) {
+        if (task.kind === "chat") {
+          await tasks.agentsIdle(task.id);
+          continue;
+        }
+        const agent = this.lastAgent(task);
+        if (agent === undefined) {
+          await this.lost(task.id, `majhi restarted and no agent is left to wake. ${LOST_LINE}`);
+        } else if (await this.autoResume(task)) {
           runs.notify(
             task.id,
             agent,
@@ -204,16 +221,21 @@ export class Resilience {
             `majhi restarted while @${agent} waited on a background process. Waking @${agent}.`,
           );
         } else {
-          await tasks.pausedByRuns(task.id, "error");
-          this.note(
+          await this.lost(
             task.id,
             `majhi restarted while @${agent} waited on a background process. Automatic resume is off for this org, so resume the task when you are ready.`,
           );
         }
       } catch (err) {
-        this.note(task.id, `Could not wake @${agent} after the restart: ${errorMessage(err)}`);
+        await this.lost(task.id, `${LOST_LINE} (${errorMessage(err)})`);
       }
     }
+  }
+
+  /** A task nothing could bring back after a restart: paused with reason `error`, one line in its room. */
+  private async lost(task: TaskId, text: string): Promise<void> {
+    this.note(task, text);
+    await this.deps.tasks.pausedByRuns(task, "error", LOST_LINE).catch(() => undefined);
   }
 
   /** The team agent that acted last in the task's room. */
