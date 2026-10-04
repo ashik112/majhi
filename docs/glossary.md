@@ -11,3 +11,5 @@ One word for one thing in the app's text. `apps/web/src/lib/naming.test.ts` fail
 | Failed health checks | N to fix | N need you |
 | What the captain may do in a workspace | The plain sentence from `authorityLine`: "In Acme you decide when work is merged." | Keeps things tidy, Runs it, Only when I ask |
 | Money limits | Budget | cap, daily limit |
+| The row that lets the captain approve routine requests of work it started | Own work | self-approve, auto-approve |
+| Approving or rejecting many decisions at once | Batch: "Approve N", "Leave N", "Approve all like this" | bulk, mass approve |

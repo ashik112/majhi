@@ -262,7 +262,7 @@ describe("building decisions", () => {
       by: "captain",
     });
     expect(out[0]?.options).toEqual([
-      { id: "keep", label: "Keep", primary: true },
+      { id: "keep", label: "Keep", primary: true, effect: "approve" },
       { id: "rebuild", label: "Rebuild" },
     ]);
     expect(out[1]?.suggestion).toBeUndefined();

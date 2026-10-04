@@ -13,6 +13,7 @@ describe("the authority table per workspace", () => {
     upkeep: string,
     merge: string,
     push: string,
+    own = "ask",
   ) => ({
     start,
     questions,
@@ -20,6 +21,7 @@ describe("the authority table per workspace", () => {
     upkeep,
     merge,
     push,
+    own,
   });
 
   it("defaults to Keeps things tidy for Private and Ask me with upkeep for every other workspace", () => {

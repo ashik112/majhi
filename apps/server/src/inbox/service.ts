@@ -1,6 +1,9 @@
 import {
+  batchPick,
   type CardAction,
   type DecisionAnswerInput,
+  type DecisionBatchInput,
+  type DecisionBatchResult,
   type DecisionDetail,
   type DecisionRecommendInput,
   type Draft,
@@ -70,6 +73,10 @@ export interface InboxDeps {
   now?: () => Date;
 }
 
+/** A batch's result is kept this long, so a second send of the same click gets the same answer. */
+const BATCH_KEEP_MS = 10 * 60_000;
+const BATCH_KEEP_MAX = 200;
+
 /** Recommendations of decisions that are gone are kept this long, then forgotten. */
 const NO_NAMES: Readonly<Record<string, string>> = {};
 const KEEP_MS = 14 * 24 * 3_600_000;
@@ -79,6 +86,9 @@ const KEEP_MS = 14 * 24 * 3_600_000;
  * card already has. Nothing here stores a decision, only the captain's recommendation.
  */
 export class InboxService {
+  /** Batches by the client's key: the work in flight or done, so a double send changes nothing. */
+  private readonly batches = new Map<string, { at: number; run: Promise<DecisionBatchResult> }>();
+
   constructor(private readonly deps: InboxDeps) {}
 
   async list(org?: string): Promise<OwnerDecision[]> {
@@ -109,6 +119,69 @@ export class InboxService {
   async answer(input: DecisionAnswerInput): Promise<OwnerDecision[]> {
     const decision = (await this.list()).find((d) => d.id === input.id);
     if (decision === undefined) throw new UserError("That decision is gone: it was answered already.", 409);
+    await this.apply(decision, input, () => this.deps.items());
+    return this.list();
+  }
+
+  /**
+   * Many decisions at once, with Approve or Leave (SPEC 5.18). Each is taken on its own: one that fails,
+   * or is gone, or has no button for the intent, is listed and the rest go on. Sent twice with the same
+   * `batch` key, the second send returns the first's result and does nothing. Decisions are answered
+   * one after another, so merges into one repo never overlap.
+   */
+  answerBatch(input: DecisionBatchInput): Promise<DecisionBatchResult> {
+    const now = Date.now();
+    for (const [key, held] of this.batches) {
+      if (now - held.at > BATCH_KEEP_MS || this.batches.size > BATCH_KEEP_MAX) this.batches.delete(key);
+    }
+    const known = this.batches.get(input.batch);
+    if (known !== undefined) return known.run;
+    const run = this.runBatch(input);
+    run.catch(() => this.batches.delete(input.batch));
+    this.batches.set(input.batch, { at: now, run });
+    return run;
+  }
+
+  private async runBatch(input: DecisionBatchInput): Promise<DecisionBatchResult> {
+    const result: DecisionBatchResult = {
+      batch: input.batch,
+      intent: input.intent,
+      done: [],
+      skipped: [],
+      failed: [],
+      decisions: [],
+    };
+    const waiting = new Map((await this.list()).map((d) => [d.id, d]));
+    // One look at the room cards for the whole batch: each answer re-checks its own card.
+    const cards = this.deps.items();
+    for (const id of new Set(input.ids)) {
+      const decision = waiting.get(id);
+      if (decision === undefined) {
+        result.skipped.push({ id, reason: "It was answered already" });
+        continue;
+      }
+      const pick = batchPick(decision, input.intent);
+      if ("reason" in pick) {
+        result.skipped.push({ id, reason: pick.reason });
+        continue;
+      }
+      try {
+        await this.apply(decision, { id, option: pick.option.id }, () => cards);
+        result.done.push(id);
+      } catch (err) {
+        result.failed.push({ id, error: err instanceof Error ? err.message : "It failed" });
+      }
+    }
+    result.decisions = await this.list();
+    return result;
+  }
+
+  /** Takes one option of a decision through the path its card has. */
+  private async apply(
+    decision: OwnerDecision,
+    input: DecisionAnswerInput,
+    items: () => readonly RoomItem[],
+  ): Promise<void> {
     const option = decision.options.find((o) => o.id === input.option);
     if (option === undefined) {
       throw new UserError(`"${input.option}" is not one of the options. Open the task to answer it.`, 400);
@@ -131,11 +204,10 @@ export class InboxService {
         input.option === "send" ? "send" : "discard",
       );
     } else {
-      const item = this.deps.items().find((i) => i.task === parsed.task && i.id === parsed.item);
+      const item = items().find((i) => i.task === parsed.task && i.id === parsed.item);
       if (item === undefined) throw new UserError("That decision is gone: it was answered already.", 409);
       await this.answerCard(item, input);
     }
-    return this.list();
   }
 
   private async answerCard(item: RoomItem, input: DecisionAnswerInput): Promise<void> {

@@ -1,5 +1,6 @@
 import type { CaptainChore } from "@majhi/shared";
 import { runFollowUps } from "../findings/followups.ts";
+import { classifyOwnWork } from "./own-work.ts";
 import { permissionVerdict } from "./permission-rules.ts";
 import type { CaptainPorts, PendingFact, QuestionCard } from "./ports.ts";
 import { loopLine, nudgeText, questionLoop } from "./question-loop.ts";
@@ -31,6 +32,50 @@ export function createChores(
 ): Record<CaptainChore, (run: ChoreRun) => Promise<void>> {
   /** Why the owner typing keeps the captain out of this task now (SPEC 5.18, Presence). */
   const away = (task: string) => typingWhy(task, ports.typing(task));
+
+  /**
+   * Own work (SPEC 5.18): allows a permission request of a task the captain started when it is routine
+   * and inside the task's folder, else leaves it for the owner with the reason. True when it acted.
+   * A request that is not routine falls through to the Questions row when that row is Captain: its
+   * rules reject the dangerous ones and never allow what this does not.
+   */
+  const ownWork = async (run: ChoreRun, card: QuestionCard): Promise<boolean> => {
+    const { org, ws } = run;
+    const scope = await ports.ownScope(org, card.task);
+    if (scope === undefined) return false;
+    const verdict = classifyOwnWork(card.text, scope);
+    const key = `own:${card.task}:${card.item}`;
+    const allow = card.options.find((o) => o.effect === "allow");
+    if (verdict.decision === "approve" && allow !== undefined) {
+      await run.act({
+        key,
+        text: `Approved in ${card.task}: ${clip(card.text, 80)}`,
+        reason: `Own work: in ${ws.name} the captain approves what it started, and ${verdict.why}`,
+        evidence: `@${card.agent} asked: ${card.text}`,
+        task: card.task,
+        irreversible: true,
+        recheck: async () => away(card.task),
+        do: async () => {
+          await ports.answer(org, card, allow.id, `Own work: ${verdict.why}`);
+          return { undoNote: "An answer an agent already read cannot be taken back" };
+        },
+      });
+      return true;
+    }
+    if (ws.authority.questions === "decide" && verdict.decision === "owner") {
+      return false;
+    }
+    const why = verdict.decision === "approve" ? "the prompt has no Allow once option" : verdict.why;
+    await run.act({
+      key,
+      text: `Left a request in ${card.task} for you: ${clip(card.text, 80)}`,
+      reason: `Own work does not cover it: ${why}`,
+      evidence: `@${card.agent} asked: ${card.text}`,
+      task: card.task,
+      do: async () => ({ outcome: "asked", undoNote: "Nothing was answered" }),
+    });
+    return true;
+  };
 
   /** Keeps, merges or drops one waiting memory, or leaves it for the owner. */
   const curateOne = async (run: ChoreRun, fact: PendingFact) => {
@@ -184,6 +229,12 @@ export function createChores(
         }
         const key = `question:${card.task}:${card.item}`;
         if (run.done(key) || run.done(`${key}:lane`)) continue;
+        // Own work: a routine request of a task the captain started, read by what it asks for.
+        if (card.kind === "permission" && ws.authority.own === "decide") {
+          if (await ownWork(run, card)) continue;
+        }
+        // Everything below is the Questions row: without it the card waits for the owner.
+        if (ws.authority.questions !== "decide") continue;
         // Rules first: nothing to pick from is the owner's to answer.
         if (card.options.length === 0) {
           await run.act({

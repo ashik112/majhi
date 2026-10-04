@@ -1,6 +1,7 @@
 import type { Authority, CaptainUndo, CommandName, TaskPriority } from "@majhi/shared";
 import type { FollowUpPorts } from "../findings/followups.ts";
 import type { FindingsService } from "../findings/service.ts";
+import type { OwnWorkScope } from "./own-work.ts";
 
 /**
  * What the upkeep chores read and do in majhi (SPEC 5.18). The real ports are built from majhi's own
@@ -109,6 +110,11 @@ export interface CaptainPorts {
 
   // Agents' questions
   questions(org: string): QuestionCard[];
+  /**
+   * Where Own work may approve in this task (SPEC 5.18), or undefined when the captain did not start
+   * it, it is the owner's to keep, or it has no worktree.
+   */
+  ownScope(org: string, task: string): Promise<OwnWorkScope | undefined>;
   /**
    * An agent keeps asking the same thing: the line goes into the task's room for the owner, and the
    * agent gets one message telling it to stop asking.

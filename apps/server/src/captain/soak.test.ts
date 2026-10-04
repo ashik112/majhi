@@ -138,6 +138,7 @@ class Sim {
         closeThread: () => undefined,
       },
       findings: undefined as unknown as CaptainPorts["findings"],
+      ownScope: async () => undefined,
       reviewTasks: async (org) =>
         of(org)
           .filter((t) => t.status === "review")
