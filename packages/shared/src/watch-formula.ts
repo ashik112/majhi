@@ -174,3 +174,73 @@ export function evaluate(formula: string, vars: Readonly<Record<string, number>>
   if (i !== tokens.length) throw new FormulaError("the formula has something left over");
   return v;
 }
+
+/**
+ * Why a script watch's script may change something, or undefined. A watch only reads: HTTP methods
+ * other than GET, sent data, and the change verbs of kubectl, glab, gh, git and docker are refused,
+ * as are deletes and writes to files outside /tmp. A guard on the text, not a sandbox: the script also
+ * runs in a read-only throwaway container.
+ */
+export function scriptProblem(script: string): string | undefined {
+  const checks: [RegExp, string][] = [
+    [
+      /(?:-X|--request)\s*['"]?(?:POST|PUT|PATCH|DELETE)\b/i,
+      "it sends a request that changes something (only GET reads)",
+    ],
+    [/\s(?:-d|--data(?:-\w+)?|--json|-F|--form|-T|--upload-file)\b/, "it sends data"],
+    [
+      /\b(?:requests|httpx|axios|session)\.(?:post|put|patch|delete)\b/i,
+      "it sends a request that changes something",
+    ],
+    [/\bmethod\s*[:=]\s*['"](?:POST|PUT|PATCH|DELETE)['"]/i, "it sends a request that changes something"],
+    [
+      /\bfetch\([^)]*method\s*:\s*['"](?:POST|PUT|PATCH|DELETE)/i,
+      "it sends a request that changes something",
+    ],
+    [
+      /\bkubectl\s+(?:[^|;&\n]*\s)?(?:delete|apply|patch|edit|create|replace|scale|rollout|drain|cordon|label|annotate|set|exec)\b/,
+      "it changes the cluster",
+    ],
+    [
+      /\b(?:glab|gh)\s+\S+\s+(?:create|merge|delete|close|approve|edit|reopen|comment|note|run|cancel|retry)\b/,
+      "it changes the repository",
+    ],
+    [/\bgit\s+(?:push|commit|reset|rebase|merge|tag|branch\s+-[dD])\b/, "it changes a repository"],
+    [/\bdocker\s+(?:rm|rmi|run|stop|kill|exec|system|volume|network)\b/, "it changes containers"],
+    [/\b(?:rm|rmdir|shred|truncate|dd|mkfs)\s/, "it deletes or overwrites files"],
+    [
+      /\b(?:DROP|TRUNCATE|DELETE\s+FROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET|ALTER\s+TABLE|CREATE\s+(?:TABLE|INDEX|DATABASE))\b/i,
+      "it changes a database",
+    ],
+    [/>{1,2}\s*(?!\/tmp\/|\/dev\/null|&)[^\s|;&]+/, "it writes a file outside /tmp"],
+  ];
+  for (const [re, why] of checks) if (re.test(script)) return `A watch only reads: ${why}.`;
+  return undefined;
+}
+
+/** A script's output as a value: JSON read at `path`, else a number, else its first line as a word. */
+export function scriptValue(
+  out: string,
+  read: { path?: string | undefined; agg?: MetricAgg | undefined; where?: string | undefined },
+): { number: number } | { text: string } | undefined {
+  const trimmed = out.trim();
+  if (trimmed === "") return undefined;
+  let json: unknown;
+  try {
+    json = JSON.parse(trimmed);
+  } catch {
+    json = undefined;
+  }
+  if (json !== undefined && read.path !== undefined && read.path !== "") {
+    const n = readNumber(json, { path: read.path, agg: read.agg, where: read.where });
+    if (n !== undefined) return { number: n };
+    const v = pick(json, read.path)[0];
+    if (typeof v === "string" && v.trim() !== "") return { text: v.trim().slice(0, 80) };
+    if (typeof v === "boolean") return { text: String(v) };
+    return undefined;
+  }
+  const n = fold(json ?? trimmed, read.agg);
+  if (n !== undefined) return { number: n };
+  const first = trimmed.split("\n")[0]?.trim() ?? "";
+  return first === "" ? undefined : { text: first.slice(0, 80) };
+}

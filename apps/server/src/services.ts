@@ -11,6 +11,7 @@ import {
   NotificationsSettingsSchema,
   PRIVATE,
   type ServiceEntry,
+  textValue,
   UPDATE_STATUS_FILE,
   UpdateStatusSchema,
 } from "@majhi/shared";
@@ -61,7 +62,7 @@ import { GrantStore } from "./connect/grant.ts";
 import { ConnectService } from "./connect/service.ts";
 import { type BrowserServer, RUNNER_BROWSERS_PATH } from "./connections/browser.ts";
 import { listTools, remoteTransport } from "./connections/mcp-client.ts";
-import type { GitProvider, PlanDeps } from "./connections/plan.ts";
+import { type GitProvider, type PlanDeps, planConnections } from "./connections/plan.ts";
 import { redactSecrets } from "./connections/redact.ts";
 import type { RemoteRunFn } from "./connections/remote.ts";
 import { sweepRunFiles } from "./connections/run-files.ts";
@@ -1891,6 +1892,42 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           { majhiHome: env.majhiHome, hostHome: env.hostHome, protectedPaths: [env.secretsKeyFile] },
           input,
           timeoutMs,
+        );
+      } catch (err) {
+        throw err instanceof ImageCheckFailed ? new Unavailable(err.message) : err;
+      }
+    },
+    scriptRun: async ({ org, script, connections: ids }) => {
+      // The named connections of this workspace (or Global), as a run of an agent there would get them.
+      const sections = await config.sections();
+      const own = sections.orgs[org]?.connections ?? {};
+      const shared = sections.connections ?? {};
+      const held = ids.flatMap((id) =>
+        own[id] !== undefined
+          ? [{ id, org, connection: own[id] }]
+          : shared[id] !== undefined
+            ? [{ id, org: GLOBAL_CONNECTIONS, connection: shared[id] }]
+            : [],
+      );
+      const plan = await planConnections(held, "/tmp/majhi-script", {
+        secrets,
+        connectionDir: connectionFiles.connectionDir,
+        oauth: connectionFiles.oauth,
+        gitToken: connectionFiles.gitToken,
+      });
+      const vars: Record<string, string> = { ...plan.env };
+      // A signed-in connection's token for its own API, as <ID>_TOKEN.
+      for (const h of held) {
+        if (textValue(h.connection, "auth") !== "oauth") continue;
+        const bearer = await connectionFiles.oauth(h.id);
+        if ("token" in bearer) vars[`${h.id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_TOKEN`] = bearer.token;
+      }
+      try {
+        return await runImageCheck(
+          containerDocker,
+          { majhiHome: env.majhiHome, hostHome: env.hostHome, protectedPaths: [env.secretsKeyFile] },
+          { image: env.runner.image, command: ["sh", "-c", script], env: vars },
+          60_000,
         );
       } catch (err) {
         throw err instanceof ImageCheckFailed ? new Unavailable(err.message) : err;

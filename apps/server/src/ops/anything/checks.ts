@@ -9,6 +9,8 @@ import {
   readNumber,
   readOnlySqlProblem,
   reviewLine,
+  scriptProblem,
+  scriptValue,
   taskGroup,
   type WatchCheck,
 } from "@majhi/shared";
@@ -89,6 +91,11 @@ export interface WatchPorts {
   redis(url: string, commands: readonly string[][], timeoutMs: number): Promise<string[]>;
   ssh(alias: string, command: string): Promise<RemoteResult>;
   monitor(connection: string, tool: string, args: Record<string, unknown>): Promise<unknown>;
+  /**
+   * Runs a script watch's script once in a throwaway runner container, with the named connections of
+   * the workspace as environment, and returns what it printed. Absent without Docker.
+   */
+  script?(input: { org: string; script: string; connections: readonly string[] }): Promise<string>;
   /**
    * The fingerprint of a file or folder inside a project's checkout in this workspace: size and
    * modification time, never contents. `missing` when it is not there. Throws Unavailable for a
@@ -985,9 +992,48 @@ export async function readWatch(
       return usage(spec, org, ports);
     case "command":
       return command(id, spec, org, ports);
+    case "script":
+      return script(spec, org, ports);
     case "custom":
       throw new Unavailable("the captain checks this one");
   }
+}
+
+/** A script watch: its output read as a number, a word, or JSON at a path. */
+async function script(
+  spec: Extract<WatchCheck, { kind: "script" }>,
+  org: string,
+  ports: WatchPorts,
+): Promise<Reading> {
+  const problem = scriptProblem(spec.script);
+  if (problem !== undefined) throw new Unavailable(problem);
+  if (ports.script === undefined) {
+    throw new Unavailable("majhi problem: Docker is not available to the server, so a script cannot run.");
+  }
+  for (const c of spec.connections) {
+    const found = await ports.connection(c);
+    if (found === undefined) throw new Unavailable(`the connection ${c} is gone`);
+    if (found.org !== org) throw new Unavailable(`the connection ${c} belongs to another workspace`);
+  }
+  const run = ports.script;
+  const out = await guarded(() => run({ org, script: spec.script, connections: spec.connections }));
+  const value = scriptValue(out, spec);
+  const label = spec.label === undefined || spec.label === "" ? "" : `${spec.label} `;
+  if (value === undefined) {
+    throw new Unavailable(
+      out.trim() === ""
+        ? "the script printed nothing"
+        : `no value in what the script printed: ${out.trim().slice(0, 120)}`,
+    );
+  }
+  if ("text" in value) return { display: `${label}${value.text}`, healthy: true, signature: value.text };
+  const unit = spec.unit === undefined || spec.unit === "" ? "" : ` ${spec.unit}`;
+  return {
+    number: value.number,
+    display: `${label}${fmt(value.number)}${unit}`,
+    healthy: true,
+    signature: String(value.number),
+  };
 }
 
 /** A short text value at a dotted path of a tool's answer, or undefined. */

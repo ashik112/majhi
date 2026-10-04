@@ -1,5 +1,12 @@
 # Progress
 
+## Captain can check anything itself: script watches (built, merging)
+
+- **Script watch.** A watch kind that runs a short read-only script the captain writes (curl, jq, python3, node, kubectl, glab, gh) on majhi's clock in a throwaway runner container, with the workspace connections it names: their variables, and ID_TOKEN for a signed-in connection. Output is a number, a word, or JSON read at a path (series folds and formulas apply). Scripts that change something are refused when saved. The captain's fixed text says: no plain kind fits, write a script watch; custom (model) watches only when no script can check it.
+- **Fixed on the way:** the database client-image runner was wired to the wrong ports, so image database checks could never run.
+- **Today's other fixes (all merged):** DigitalOcean one sign-in for every product, product tool routing, tool names with the verb last read as reads, watches for agents through approvals, full access per workspace, destructive commands narrowed to those marked destructive, database watches through bundled drivers with causes named, API reads with moving time windows, formulas over several reads, standing instructions per workspace, the captain screen map, majhi problems become fix tasks on majhi.
+- **Owner check:** a script watch that reads DigitalOcean database CPU through its metrics address (port 9273), set up by the captain after Start fresh on the Pyzasoft thread.
+
 ## Connections: workspaces, agents, several per service (built, merging)
 
 - **Fixed:** DigitalOcean failed after approval: the token exchange sent its resource with an added trailing slash. GitLab reached no agent: org agents got only connections their own list named, and every list was empty. A refused or redirected check said "could not reach"; it now names the refusal, and GitLab's names the group setting (Settings > General > Permissions and group features > MCP client access).

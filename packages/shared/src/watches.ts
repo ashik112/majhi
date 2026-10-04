@@ -4,7 +4,13 @@ import { ImageRefSchema } from "./containers.ts";
 import { IdSchema } from "./ids.ts";
 import { OpsIncidentSchema } from "./ops.ts";
 import { TaskIdSchema } from "./tasks.ts";
-import { formulaProblem, MetricAggSchema, MetricReadSchema, MetricReadsSchema } from "./watch-formula.ts";
+import {
+  formulaProblem,
+  MetricAggSchema,
+  MetricReadSchema,
+  MetricReadsSchema,
+  scriptProblem,
+} from "./watch-formula.ts";
 
 /**
  * Watch anything (SPEC 5.18, Ops watch): one watch is one thing the owner wants to know about, with a
@@ -31,6 +37,7 @@ export const WATCH_KINDS = [
   "process",
   "usage",
   "command",
+  "script",
   "custom",
 ] as const;
 export const WatchSortSchema = z.enum(WATCH_KINDS);
@@ -51,6 +58,7 @@ export const WATCH_KIND_LABEL: Record<WatchSort, string> = {
   process: "Processes",
   usage: "Usage",
   command: "Commands",
+  script: "Scripts",
   custom: "Custom",
 };
 
@@ -69,6 +77,7 @@ export const WATCH_KIND_ONE: Record<WatchSort, string> = {
   process: "Background process",
   usage: "Usage or cost",
   command: "Command output",
+  script: "Script",
   custom: "In words",
 };
 
@@ -223,6 +232,29 @@ export const WatchCheckSchema = z.discriminatedUnion("kind", [
     task: TaskIdSchema,
     command: z.string().trim().min(1).max(4_000),
     cwd: z.string().trim().min(1).max(1_000).optional(),
+  }),
+  z.object({
+    kind: z.literal("script"),
+    /**
+     * A read-only shell script that prints the value: a number, a word, or JSON read at `path`. It runs
+     * on majhi's clock in a throwaway runner container, with the named connections of the workspace.
+     */
+    script: z
+      .string()
+      .trim()
+      .min(1)
+      .max(4_000)
+      .superRefine((v, ctx) => {
+        const problem = scriptProblem(v);
+        if (problem !== undefined) ctx.addIssue({ code: "custom", message: problem });
+      }),
+    /** The workspace's connections it may use, by id: their variables, and `<ID>_TOKEN` for a sign-in. */
+    connections: z.array(Conn).max(8).default([]),
+    path: z.string().trim().max(200).optional(),
+    agg: MetricAggSchema.optional(),
+    where: MetricReadSchema.shape.where,
+    label: z.string().trim().max(60).optional(),
+    unit: z.string().trim().max(12).optional(),
   }),
   z.object({
     kind: z.literal("custom"),

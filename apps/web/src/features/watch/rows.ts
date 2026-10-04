@@ -4,6 +4,7 @@ import {
   Anchor,
   BadgeDollarSign,
   Database,
+  FileCode,
   FolderGit2,
   Gauge,
   GitBranch,
@@ -53,6 +54,7 @@ export const SORT_ICON: Record<RowSort, LucideIcon> = {
   process: Workflow,
   usage: Gauge,
   command: SquareTerminal,
+  script: FileCode,
   custom: Sparkles,
   majhi: Anchor,
 };
