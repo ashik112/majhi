@@ -1,4 +1,4 @@
-import type { WatchDef } from "@majhi/shared";
+import { pageRef, type WatchDef } from "@majhi/shared";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
 import type { PlaybookService } from "../playbooks/service.ts";
@@ -47,7 +47,10 @@ export function opsHandlers(deps: OpsHandlerDeps): Pick<CommandHandlers, OpsComm
   const { watch, phone, playbooks, engine } = deps;
   const owner = (ctx: CommandContext): void => {
     if (ctx.meta.actor.kind === "agent") {
-      throw new UserError(`${ctx.command} is the owner's. The captain reads incidents as findings.`, 409);
+      throw new UserError(
+        `${ctx.command} is the owner's. The captain reads incidents as findings; the owner does it on ${pageRef("watch")}.`,
+        409,
+      );
     }
   };
   /** Why an agent may not save this watch, or undefined when it only tells. */
@@ -67,7 +70,7 @@ export function opsHandlers(deps: OpsHandlerDeps): Pick<CommandHandlers, OpsComm
       (id === undefined ? undefined : actsOnItsOwn((await engine.show(id)).def));
     if (what !== undefined) {
       throw new UserError(
-        `A watch with ${what} is the owner's to set up. Save it to only alert, look into it or draft a status note, and tell the owner what it would do on top.`,
+        `A watch with ${what} is the owner's to set up, on ${pageRef("watch")}. Save it to only alert, look into it or draft a status note, and tell the owner what it would do on top.`,
         409,
       );
     }

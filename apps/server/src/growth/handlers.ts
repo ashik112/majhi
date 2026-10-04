@@ -1,4 +1,4 @@
-import { PRIVATE } from "@majhi/shared";
+import { PRIVATE, pageRef } from "@majhi/shared";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import type { EconomicsService } from "../economics/service.ts";
 import { UserError } from "../errors.ts";
@@ -20,7 +20,7 @@ export interface GrowthHandlerDeps extends FindingsHandlerDeps {
 function ownerOnly(ctx: CommandContext): void {
   if (ctx.meta.actor.kind === "agent") {
     throw new UserError(
-      `${ctx.command} is the owner's. Report the opportunity or the deadline as a finding.`,
+      `${ctx.command} is the owner's. Report the opportunity or the deadline as a finding; the owner acts on it on ${pageRef("captain")}.`,
       409,
     );
   }

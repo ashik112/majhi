@@ -1,4 +1,5 @@
 import type { OpsIncident, WatchDef, WatchFire, WatchFixId, WatchView } from "@majhi/shared";
+import { PAGE_PATH } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, ExternalLink, Pause, Pencil, Play, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -13,7 +14,6 @@ import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
 import { useAnswerDecision } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
-import { PAGE_PATH } from "@/lib/pages";
 import {
   useAckIncident,
   useCheckWatch,

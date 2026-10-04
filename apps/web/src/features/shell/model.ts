@@ -1,7 +1,6 @@
-import type { AccountView, OrgView, TaskSummary } from "@majhi/shared";
+import { type AccountView, type OrgView, PAGE_PATH, type PagePath, type TaskSummary } from "@majhi/shared";
 import type { AgentInfo } from "../../lib/agent-index";
 import { badgeLetters, formatAgo } from "../../lib/format";
-import { PAGE_PATH, type PagePath } from "../../lib/pages";
 import { limitResetAt, resetLabel } from "../accounts/model";
 
 // Organisations -------------------------------------------------------------

@@ -1,4 +1,5 @@
 import type { AgendaItem, AgendaToday } from "@majhi/shared";
+import { PAGE_PATH } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight, CircleCheck, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -28,7 +29,6 @@ import { describeError } from "@/lib/errors";
 import { formatMoney } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useOrgFilter } from "@/lib/org-filter";
-import { PAGE_PATH } from "@/lib/pages";
 import { useWatch } from "@/lib/watch-queries";
 import {
   actionOf,

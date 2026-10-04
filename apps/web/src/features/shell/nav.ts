@@ -1,27 +1,4 @@
-import type { PageName } from "../../lib/pages";
-
-/** What each page is called in the sidebar, the palette and the shortcuts list. */
-export const PAGE_LABEL: Record<PageName, string> = {
-  today: "Today",
-  board: "Home",
-  chats: "Chats",
-  captain: "Captain",
-  playbooks: "Playbooks",
-  watch: "Watch",
-  limits: "Limits",
-  decisions: "Decisions",
-  business: "Knowledge",
-  agents: "Agents",
-  accounts: "Accounts",
-  connections: "Connections",
-  projects: "Projects and links",
-  skills: "Skills",
-  memory: "Memory",
-  orgs: "Workspaces",
-  setup: "Hub setup",
-  usage: "Health & usage",
-  audit: "Audit log",
-};
+import type { PageName } from "@majhi/shared";
 
 /** More words that find a page in the palette. */
 export const PAGE_KEYWORDS: Record<PageName, string> = {

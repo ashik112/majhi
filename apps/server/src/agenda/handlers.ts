@@ -1,3 +1,4 @@
+import { pageRef } from "@majhi/shared";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
 import type { AgendaService } from "./service.ts";
@@ -7,7 +8,10 @@ type AgendaCommand = "agenda.today" | "agenda.configure" | "agenda.brief" | "age
 /** The agenda is the owner's: an agent, the captain included, has no use for the owner's review time. */
 function ownerOnly(ctx: CommandContext): void {
   if (ctx.meta.actor.kind === "agent") {
-    throw new UserError(`${ctx.command} is the owner's. Agents do not read the owner's agenda.`, 409);
+    throw new UserError(
+      `${ctx.command} is the owner's. Agents do not read the owner's agenda; the owner sees it on ${pageRef("today")}.`,
+      409,
+    );
   }
 }
 

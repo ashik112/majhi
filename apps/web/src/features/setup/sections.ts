@@ -1,44 +1,4 @@
-/** The sections of Hub setup, in list order, under their group. The URL keeps one as `?section=`. */
-export const SETUP_GROUPS = [
-  { label: "Basics", sections: ["overview", "roots", "ssh"] },
-  {
-    label: "How majhi works",
-    sections: [
-      "decisions",
-      "memory",
-      "context",
-      "turns",
-      "teams",
-      "approvals",
-      "notifications",
-      "containers",
-    ],
-  },
-  { label: "More", sections: ["editor", "e2e", "appearance", "backups", "history"] },
-] as const;
-
-export type SetupSection = (typeof SETUP_GROUPS)[number]["sections"][number];
-
-export const SETUP_SECTIONS: readonly SetupSection[] = SETUP_GROUPS.flatMap((g) => g.sections);
-
-export const SECTION_TITLE: Record<SetupSection, string> = {
-  overview: "Overview",
-  roots: "Project folders",
-  ssh: "SSH keys",
-  decisions: "Laya",
-  memory: "Memory",
-  context: "Context and limits",
-  turns: "Turns",
-  teams: "Teams",
-  approvals: "Approvals",
-  notifications: "Notifications",
-  editor: "Editor",
-  e2e: "Background e2e",
-  containers: "Containers",
-  appearance: "Appearance",
-  backups: "Backups",
-  history: "History",
-};
+import type { SetupSection } from "@majhi/shared";
 
 /** One line under the title in the detail head. */
 export const SECTION_ABOUT: Record<SetupSection, string> = {
@@ -60,7 +20,3 @@ export const SECTION_ABOUT: Record<SetupSection, string> = {
   backups: "Encrypted backups of your data: daily, before updates, tested weekly, with restore.",
   history: "Every change to majhi.yaml, by you, the captain or a hand edit.",
 };
-
-export function isSetupSection(value: string | undefined): value is SetupSection {
-  return SETUP_SECTIONS.some((s) => s === value);
-}

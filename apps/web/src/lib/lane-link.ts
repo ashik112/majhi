@@ -1,7 +1,6 @@
-import { isCaptainLane, PRIVATE, type Task } from "@majhi/shared";
+import { isCaptainLane, PAGE_PATH, PRIVATE, type Task } from "@majhi/shared";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { PAGE_PATH } from "./pages";
 
 /**
  * A captain thread is not a task, so its old addresses (/t/HOO-2, /chats/HOO-2, a task link in a

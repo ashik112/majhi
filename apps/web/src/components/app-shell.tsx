@@ -1,3 +1,4 @@
+import { PAGE_PATH } from "@majhi/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { Outlet, useRouterState, useSearch } from "@tanstack/react-router";
 import * as m from "motion/react-m";
@@ -25,7 +26,6 @@ import { useAttentionBadge } from "@/lib/browser-notify";
 import { prefetchCaptain } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { useAdoptOrgParam } from "@/lib/org-filter";
-import { PAGE_PATH } from "@/lib/pages";
 import { useAccounts } from "@/lib/studio-queries";
 import { useTasks } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
