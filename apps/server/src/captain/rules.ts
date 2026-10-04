@@ -1,4 +1,4 @@
-import type { AutonomyOrg, CaptainChore } from "@majhi/shared";
+import { type Authority, type AutonomyOrg, type CaptainChore, DAILY_CHORE_CAPS } from "@majhi/shared";
 import { localDay } from "../usage/ranges.ts";
 
 /**
@@ -27,29 +27,35 @@ export const MEMORY_WAITING = 10;
  * The daily caps per chore and workspace: `actions` counts what it did or handed to the owner,
  * `runs` counts runs. "Five ships, four memory runs": the daily one and up to three when memories pile up.
  */
-export const DAILY_CAPS: Record<CaptainChore, { actions?: number; runs?: number }> = {
-  ship: { actions: 5 },
-  cards: { actions: 40 },
-  questions: { actions: 20 },
-  memory: { runs: 4 },
-  projects: { runs: 3, actions: 10 },
-  triage: { runs: 1, actions: 20 },
-  cleanup: { runs: 1, actions: 20 },
-  stuck: { actions: 10 },
-  followups: { runs: 1, actions: 25 },
-};
+export const DAILY_CAPS = DAILY_CHORE_CAPS;
 
 /** A raise the owner gave for one day multiplies that day's caps of the chore. */
 export const RAISE_FACTOR = 2;
 
-/** A chore's daily caps on one day: `raised` when the owner raised them for that day. */
-export function dailyCaps(chore: CaptainChore, raised: boolean): { actions?: number; runs?: number } {
-  const base = DAILY_CAPS[chore];
-  if (!raised) return base;
-  return {
-    ...(base.actions === undefined ? {} : { actions: base.actions * RAISE_FACTOR }),
-    ...(base.runs === undefined ? {} : { runs: base.runs * RAISE_FACTOR }),
+/**
+ * A chore's daily caps in a workspace on one day. The owner's own caps in Limits come first (`null`
+ * there means no cap); without them, majhi's defaults. Ship has no default cap where the owner let the
+ * captain decide merges: that row already says so, and the money budgets still hold it. `raised`: the
+ * owner raised them for that day, which doubles what is capped.
+ */
+export function dailyCaps(
+  chore: CaptainChore,
+  raised: boolean,
+  ws?: { rules?: Pick<AutonomyOrg, "chores"> | undefined; authority?: Pick<Authority, "merge"> | undefined },
+): { actions?: number; runs?: number } {
+  const own = ws?.rules?.chores?.[chore];
+  const fallback: { actions?: number; runs?: number } =
+    chore === "ship" && ws?.authority?.merge === "decide" ? {} : DAILY_CAPS[chore];
+  const pick = (key: "actions" | "runs"): number | undefined => {
+    const set = own?.[key];
+    if (set === null) return undefined;
+    return set ?? fallback[key];
   };
+  const base = { actions: pick("actions"), runs: pick("runs") };
+  const out: { actions?: number; runs?: number } = {};
+  if (base.actions !== undefined) out.actions = raised ? base.actions * RAISE_FACTOR : base.actions;
+  if (base.runs !== undefined) out.runs = raised ? base.runs * RAISE_FACTOR : base.runs;
+  return out;
 }
 
 /** What reaching a cap means, per chore and cap: "answered its 20 questions". */

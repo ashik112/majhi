@@ -1,5 +1,6 @@
 import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { GLOBAL_CONNECTIONS } from "@majhi/shared";
 import type {
   AccountConfig,
   ConnectionConfig,
@@ -76,6 +77,10 @@ export function writeConnection(
   connection: ConnectionConfig,
 ): Promise<void> {
   return editConfig(file, (doc) => {
+    if (org === GLOBAL_CONNECTIONS) {
+      doc.setIn(["connections", id], doc.createNode(connection));
+      return;
+    }
     if (!isMap(doc.getIn(["orgs", org], true))) {
       const { connections: _connections, ...rest } = entry;
       doc.setIn(["orgs", org], doc.createNode(rest));
@@ -87,9 +92,10 @@ export function writeConnection(
 /** Removes `orgs.<org>.connections.<id>`, and the `connections` key when it is left empty. */
 export function removeConnectionEntry(file: string, org: string, id: string): Promise<void> {
   return editConfig(file, (doc) => {
-    doc.deleteIn(["orgs", org, "connections", id]);
-    const left: unknown = doc.getIn(["orgs", org, "connections"], true);
-    if (isMap(left) && left.items.length === 0) doc.deleteIn(["orgs", org, "connections"]);
+    const path = org === GLOBAL_CONNECTIONS ? ["connections"] : ["orgs", org, "connections"];
+    doc.deleteIn([...path, id]);
+    const left: unknown = doc.getIn(path, true);
+    if (isMap(left) && left.items.length === 0) doc.deleteIn(path);
   });
 }
 

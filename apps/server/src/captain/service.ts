@@ -436,7 +436,7 @@ export class CaptainService {
         thread: lane === undefined ? "idle" : (threadOf?.(lane, org) ?? "idle"),
         chores: choresNow(authority, mode).map((chore) => {
           const c = this.repo.chore(org, chore);
-          const caps = dailyCaps(chore, this.repo.capRaised(org, chore, ws.day));
+          const caps = dailyCaps(chore, this.repo.capRaised(org, chore, ws.day), ws);
           const last = this.repo.lastRun(org, chore);
           return {
             chore,

@@ -171,7 +171,11 @@ export class ChoreRun {
         `reached its cap of ${RUN_CAPS.tokens.toLocaleString("en-US")} tokens in one run`,
       );
     }
-    const daily = dailyCaps(this.chore, this.deps.repo.capRaised(this.org, this.chore, this.ws.day)).actions;
+    const daily = dailyCaps(
+      this.chore,
+      this.deps.repo.capRaised(this.org, this.chore, this.ws.day),
+      this.ws,
+    ).actions;
     if (
       !this.manual &&
       daily !== undefined &&
@@ -397,7 +401,7 @@ export class ChoreRunner {
       const off = deps.repo.chore(org, chore).offAt;
       if (off !== undefined)
         return no(`${CHORE_LABEL[chore]} was turned off after failures. Turn it on first.`);
-      const runs = dailyCaps(chore, deps.repo.capRaised(org, chore, ws.day)).runs;
+      const runs = dailyCaps(chore, deps.repo.capRaised(org, chore, ws.day), ws).runs;
       if (runs !== undefined && deps.repo.runsToday(org, chore, ws.day) >= runs) {
         if (!manual) {
           askToRaise(deps, ws, chore, "runs", runs);

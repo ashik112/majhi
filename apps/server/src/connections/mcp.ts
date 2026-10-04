@@ -1,3 +1,4 @@
+import { connectionScopes } from "../config/sections.ts";
 import type { PermissionAsk } from "@majhi/acp";
 import { connectionType, IdSchema, textValue } from "@majhi/shared";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -115,7 +116,7 @@ async function list(caller: ToolCaller, deps: ConnectionsMcpDeps): Promise<Resul
     lines.length === 0 ? "This run holds no connections." : `This run holds:\n${lines.join("\n")}`,
   ];
   if (await isRoot(deps, caller.agent)) {
-    const { orgs } = await deps.config.sections();
+    const orgs = connectionScopes(await deps.config.sections());
     const others = Object.entries(orgs).flatMap(([org, entry]) =>
       Object.entries(entry.connections ?? {})
         .filter(([id]) => !uses.some((u) => u.id === id))
@@ -136,7 +137,7 @@ async function attach(
   args: z.infer<typeof AttachInput>,
 ): Promise<Result> {
   if (!(await isRoot(deps, caller.agent))) return fail("Only root agents attach connections.");
-  const { orgs } = await deps.config.sections();
+  const orgs = connectionScopes(await deps.config.sections());
   const found = Object.entries(orgs).find(([, entry]) => entry.connections?.[args.id] !== undefined);
   const connection = found?.[1].connections?.[args.id];
   if (found === undefined || connection === undefined) return fail(`There is no connection ${args.id}.`);
@@ -185,7 +186,7 @@ async function ssh(
   const gate = held?.gate.find((c) => c.id === args.connection && c.type === "ssh");
   if (held === undefined || gate === undefined)
     return fail(`This run holds no ssh connection ${args.connection}.`);
-  const { orgs } = await deps.config.sections();
+  const orgs = connectionScopes(await deps.config.sections());
   const connection = Object.values(orgs).find((o) => o.connections?.[args.connection] !== undefined)
     ?.connections?.[args.connection];
   const alias = connection === undefined ? undefined : textValue(connection, "alias");

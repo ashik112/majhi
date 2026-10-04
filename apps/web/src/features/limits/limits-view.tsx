@@ -25,6 +25,7 @@ import { describeError } from "@/lib/errors";
 import { formatMoney, formatTokens } from "@/lib/format";
 import { useMedia } from "@/lib/use-media";
 import { BudgetAskCard, budgetShort } from "./budget-ask";
+import { ChoreCapsCard } from "./chore-caps";
 
 const PCT_TEXT = { calm: "text-fg-muted", amber: "text-amber", red: "text-red" } as const;
 
@@ -342,6 +343,7 @@ function LimitsForm({
                 </div>
               )}
             </Card>
+            <ChoreCapsCard status={status} workspaces={workspaces} />
             <p className="text-xs text-fg-faint text-pretty">
               Days and the summary time follow {BROWSER_ZONE}, this browser's zone. Who decides merging and
               pushing is set per workspace under Rules on the Captain page.

@@ -371,6 +371,25 @@ export const SERVICE_CATALOG: readonly ServiceEntry[] = z.array(ServiceEntrySche
     docs: "https://docs.gitlab.com/user/gitlab_duo/model_context_protocol/mcp_server",
     note: "Beta, and needs a Premium or Ultimate plan. GitLab has one permission for all of it.",
   },
+  ...[
+    ["digitalocean", "DigitalOcean", "droplets", "Droplets"],
+    ["digitalocean-apps", "DigitalOcean App Platform", "apps", "App Platform"],
+    ["digitalocean-kubernetes", "DigitalOcean Kubernetes", "doks", "Kubernetes"],
+    ["digitalocean-databases", "DigitalOcean Databases", "databases", "Databases"],
+    ["digitalocean-networking", "DigitalOcean Networking", "networking", "Networking"],
+    ["digitalocean-spaces", "DigitalOcean Spaces", "spaces", "Spaces"],
+    ["digitalocean-account", "DigitalOcean Account", "accounts", "Account"],
+  ].map(([id, name, host, product]) => ({
+    id, name, kind: "mcp-oauth", summary: `${product} on DigitalOcean`,
+    mcpUrl: `https://${host}.mcp.digitalocean.com/mcp`, ready: true, verified: false,
+    verifiedNote: "Official endpoints and OAuth documented by DigitalOcean. Real-account consent is checked on first connection.",
+    scopes: [
+      { id: "read", access: "read", sentence: `Read ${product} resources and settings.`, oauth: ["api:read"] },
+      { id: "write", access: "write", sentence: `Create, change and delete ${product} resources.`, oauth: ["api:write"] },
+    ],
+    test: TOOLS_TEST(`Lists DigitalOcean ${product} tools.`),
+    docs: "https://docs.digitalocean.com/reference/mcp/configure-mcp/",
+  })),
   ...EXTRA_SERVICES,
 ]);
 

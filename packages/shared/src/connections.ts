@@ -15,6 +15,9 @@ import { IdSchema, SecretRefSchema } from "./ids.ts";
  * description, never a value.
  */
 
+/** Wire scope for owner-approved connections shared by every workspace. Never an org. */
+export const GLOBAL_CONNECTIONS = "global";
+
 export const ConnectionTypeSchema = z.enum(["kubectl", "mcp", "ssh", "env", "mail", "browser", "api", "cli"]);
 export type ConnectionType = z.infer<typeof ConnectionTypeSchema>;
 

@@ -238,8 +238,12 @@ describe("the lane ships by the chore's rules", { timeout: 90_000 }, () => {
     w = await bossWorld();
     const { h } = w;
     expect(
-      (await h.cmd("autonomy.configure", { orgs: { acme: { authority: { ...RUNS, merge: "decide" } } } }))
-        .status,
+      (
+        await h.cmd("autonomy.configure", {
+          // The owner's ship cap: with Merge on Captain there is no default one.
+          orgs: { acme: { authority: { ...RUNS, merge: "decide" }, chores: { ship: { actions: 5 } } } },
+        })
+      ).status,
     ).toBe(200);
     expect((await h.cmd("autonomy.start")).status).toBe(200);
     const chat = await h.majhi.services.autonomy.laneChat("acme");

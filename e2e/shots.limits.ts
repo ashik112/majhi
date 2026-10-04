@@ -243,6 +243,18 @@ for (const [w, h] of [
       await page.screenshot({ path: `${SHOTS}/limits-safety-${w}-${theme}.png` });
       await noPageScroll(page);
     });
+    test(`captain's daily caps ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/limits", w, h, theme, scene());
+      const card = page
+        .getByRole("region", { name: "Captain's daily caps" })
+        .or(page.getByLabel("Captain's daily caps"));
+      await card.getByRole("button", { name: /^Acme/ }).click();
+      await expect(card.getByLabel("Ship finished work, a day")).toBeVisible();
+      await card.getByLabel("Ship finished work, a day").scrollIntoViewIfNeeded();
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${SHOTS}/limits-caps-${w}-${theme}.png` });
+      await noPageScroll(page);
+    });
     test(`autonomous budget used up ${w} ${theme}`, async ({ page }) => {
       await open(page, "/limits", w, h, theme, scene({ dayUp: true, asks: [ASK_DAY] }));
       await expect(page.getByText(ASK_DAY.text)).toBeVisible();

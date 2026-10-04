@@ -54,7 +54,7 @@ export class LaneGate {
     if (this.deps.repo.hasAction(key)) {
       return `Refused: ${id} was already ${command === "tasks.resolveShip" ? "sent to its lead to resolve" : "shipped or handed over"} in this state. Change something first, or leave it for the owner.`;
     }
-    const cap = dailyCaps("ship", this.deps.repo.capRaised(org, "ship", ws.day)).actions;
+    const cap = dailyCaps("ship", this.deps.repo.capRaised(org, "ship", ws.day), ws).actions;
     if (cap !== undefined && this.deps.repo.actionsToday(org, "ship", ws.day) >= cap) {
       askToRaise(
         {

@@ -14,6 +14,13 @@ export * from "./backup.ts";
 export * from "./budgets.ts";
 export * from "./business.ts";
 export * from "./captain.ts";
+export {
+  type ChoreCap,
+  ChoreCapSchema,
+  type ChoreCaps,
+  ChoreCapsSchema,
+  DAILY_CHORE_CAPS,
+} from "./chores.ts";
 export * from "./cleanup.ts";
 export * from "./cli-tools.ts";
 export * from "./commands.ts";

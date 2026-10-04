@@ -39,7 +39,8 @@ function setup(chore: (run: ChoreRun) => Promise<void>) {
     name: "Acme",
     mode: state.mode,
     authority: state.authority,
-    rules: undefined,
+    // The owner's ship cap, so it holds whatever the Merge row says.
+    rules: { chores: { ship: { actions: 5 } } },
     tz: "UTC",
     day: state.day,
     ...(state.rest === undefined ? {} : { rest: state.rest }),

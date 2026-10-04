@@ -37,7 +37,8 @@ function setup(rules?: Workspace["rules"]) {
       name: "Acme",
       mode: "on",
       authority: { ...ALL_ASK, merge: "decide" },
-      rules,
+      // The owner's ship cap: where the captain decides merges, ships have no default cap.
+      rules: { ...rules, chores: { ship: { actions: DAILY_CAPS.ship.actions ?? 5 }, ...rules?.chores } },
       tz: "UTC",
       day: DAY,
     }),

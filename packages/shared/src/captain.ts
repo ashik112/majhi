@@ -11,19 +11,9 @@ import { TaskIdSchema, TaskPrioritySchema } from "./tasks.ts";
  * from running away. The rules are in docs/PROGRESS.md under Phase 13.
  */
 
-/** The upkeep chores (the table in 5.18). */
-export const CaptainChoreSchema = z.enum([
-  "ship",
-  "cards",
-  "questions",
-  "memory",
-  "projects",
-  "triage",
-  "cleanup",
-  "stuck",
-  "followups",
-]);
-export type CaptainChore = z.infer<typeof CaptainChoreSchema>;
+import { type CaptainChore, CaptainChoreSchema } from "./chores.ts";
+
+export { type CaptainChore, CaptainChoreSchema };
 
 export const CHORE_LABEL: Record<CaptainChore, string> = {
   ship: "Ship finished work",

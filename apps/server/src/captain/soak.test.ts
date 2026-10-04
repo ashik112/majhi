@@ -313,7 +313,13 @@ describe("the captain's soak test", () => {
         tz: "UTC",
         orgs: {
           // Private runs on its own account, with a small budget so its lane rests.
-          private: { authority: { ...RUNS, merge: "decide" }, cap: { cost: 0.04 }, account: "claude-own" },
+          private: {
+            authority: { ...RUNS, merge: "decide" },
+            cap: { cost: 0.04 },
+            account: "claude-own",
+            // The owner's ship cap: with Merge on Captain there is no default one.
+            chores: { ship: { actions: 5 } },
+          },
           acme: { authority: TIDY },
           globex: { authority: ASK },
         },
