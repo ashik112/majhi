@@ -31,6 +31,7 @@ const cliView = (id: string, name: string, tool: string, account: string): Conne
   env: {},
   allow: [],
   agents: [],
+  agentsOff: [],
   problems: [],
   lastTest: {
     ok: true,
