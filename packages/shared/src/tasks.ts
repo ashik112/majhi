@@ -698,10 +698,17 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     by: CaptainBySchema.optional(),
     /**
      * A write to one of the run's connections (5.14): which one, the action and why it counts as a
-     * write. No remembered choice covers it, and Allow counts once.
+     * write. No remembered choice covers it, and Allow counts once. `destructive`: it deletes or
+     * destroys something, so only the owner's own click approves it.
      */
     connection: z
-      .object({ id: z.string().optional(), name: z.string(), action: z.string(), why: z.string() })
+      .object({
+        id: z.string().optional(),
+        name: z.string(),
+        action: z.string(),
+        why: z.string(),
+        destructive: z.boolean().optional(),
+      })
       .optional(),
   }),
   /**

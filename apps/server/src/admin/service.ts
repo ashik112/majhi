@@ -7,6 +7,7 @@ import {
   type CommandName,
   type ConnectionTestResult,
   commands,
+  effectiveMode,
   IdSchema,
   isDestructiveCommand,
   McpInstallResultSchema,
@@ -30,7 +31,7 @@ import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
 import { startingBranches } from "../tasks/brief.ts";
 import type { TaskService } from "../tasks/service.ts";
-import { decide as decideMode, matchRule, modeFor, redact, redactText, sameRule } from "./policy.ts";
+import { decide as decideMode, matchRule, redact, redactText, sameRule } from "./policy.ts";
 import { summarize } from "./summary.ts";
 import type { AdminCaller } from "./tokens.ts";
 import { adminTools, REQUEST_SECRET_TOOL } from "./tools.ts";
@@ -342,7 +343,7 @@ export class AdminService {
       if (staffed !== undefined && staffed !== input) return this.callCommand(caller, command, staffed, ask);
     }
     const { policy } = await this.deps.config.settings();
-    const mode = ask.confirm === true ? "confirm" : modeFor(policy, command, def.risk);
+    const mode = ask.confirm === true ? "confirm" : effectiveMode(policy, command, def.risk);
     const meta = metaFor(caller.agent, ask.reason, caller.task);
     // An agent's word that the owner asked counts only for low-risk changes, and for nothing in
     // autonomous mode: the owner is away.
@@ -701,16 +702,13 @@ export class AdminService {
 
   /**
    * Saves "always allow" for the agent and command of this card, as a config commit. Refused for a
-   * destructive command while `allow_destructive_rules` is off, and for an org rule on a task with
+   * destructive command, which only the owner's click approves, and for an org rule on a task with
    * no org. Runs before the command, so a refusal leaves the card pending.
    */
   private async saveRule(item: ApprovalItem, scope: "task" | "org", change: ChangeRecord): Promise<void> {
     const { policy } = await this.deps.config.settings();
-    if (isDestructiveCommand(item.command) && !policy.allow_destructive_rules) {
-      throw new UserError(
-        "Destructive commands cannot be auto-allowed. Turn on auto-approve for destructive actions in Hub setup first.",
-        409,
-      );
+    if (isDestructiveCommand(item.command)) {
+      throw new UserError("This deletes or removes something. Only you can approve it, each time.", 409);
     }
     let rule: AllowRule = { agent: item.agent, command: item.command, task: item.task };
     if (scope === "org") {

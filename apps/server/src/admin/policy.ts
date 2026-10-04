@@ -4,16 +4,10 @@ import {
   detectSecrets,
   isDestructiveCommand,
   type PolicySettings,
-  type RiskClass,
   replaceSecrets,
 } from "@majhi/shared";
 
 export type Decision = "run" | "pending";
-
-/** The mode that applies to a command: its own override, else its risk class. */
-export function modeFor(policy: PolicySettings, command: string, risk: RiskClass): ApprovalMode {
-  return policy.commands[command] ?? policy[risk];
-}
 
 /**
  * `auto` runs. `when-asked` runs when the agent says the owner asked for it in the conversation.
@@ -28,14 +22,14 @@ export function decide(mode: ApprovalMode, ownerAsked: boolean): Decision {
 /**
  * The saved rule that lets `agent` run `command` without asking, if there is one. A task rule covers
  * only its own task, an org rule only tasks in that org (`org` is undefined for a LOCAL task, so none
- * matches). A destructive command matches nothing unless `allow_destructive_rules` is on. The caller
+ * matches). A destructive command matches nothing: only the owner's click approves it. The caller
  * asks only when the mode says pending: a rule turns that into "run" and never blocks anything.
  */
 export function matchRule(
   policy: PolicySettings,
   call: { agent: string; command: string; task: string; org: string | undefined },
 ): AllowRule | undefined {
-  if (isDestructiveCommand(call.command) && !policy.allow_destructive_rules) return undefined;
+  if (isDestructiveCommand(call.command)) return undefined;
   return policy.rules.find(
     (rule) =>
       rule.agent === call.agent &&

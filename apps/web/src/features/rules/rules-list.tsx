@@ -10,11 +10,6 @@ export function scopeLabel(rule: AllowRule): string {
   return rule.task === undefined ? `every task in ${rule.org}` : `task ${rule.task}`;
 }
 
-/** A rule saved while the toggle was on stays saved, but does not apply once it is off. */
-export function ruleIsOff(rule: AllowRule, policy: Settings["policy"]): boolean {
-  return isDestructiveCommand(rule.command) && !policy.allow_destructive_rules;
-}
-
 /**
  * Saved always-allow rules, each with Remove. On an agent's page `agent` narrows the list to its
  * rules and leaves out the handle; in Hub setup it shows them all.
@@ -37,11 +32,8 @@ export function RulesList({ settings, agent, label }: { settings: Settings; agen
             <span className="font-mono text-xs text-fg-faint">{rule.command}</span>
             <span className="text-fg-muted">{scopeLabel(rule)}</span>
           </span>
-          {ruleIsOff(rule, settings.policy) && (
-            <Badge
-              tone="amber"
-              title="Destructive commands are off in Hub setup, so this rule does not apply"
-            >
+          {isDestructiveCommand(rule.command) && (
+            <Badge tone="amber" title="Deletes and removals always ask you, so this rule does not apply">
               Off
             </Badge>
           )}

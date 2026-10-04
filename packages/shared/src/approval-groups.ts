@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type CommandName, commands, type RiskClass } from "./commands.ts";
+import { type CommandName, commands, isDestructiveCommand, type RiskClass } from "./commands.ts";
 import type { ApprovalMode, PolicySettings } from "./settings.ts";
 
 /**
@@ -429,8 +429,12 @@ export function approvalGroups(): ApprovalGroup[] {
 /** The part of the policy the approval page edits. Rules and the destructive toggle are elsewhere. */
 export type PolicyModes = Pick<PolicySettings, "read" | "change" | "destructive" | "outbound" | "commands">;
 
-/** What a command does under these modes: its own setting, else its risk class. */
+/**
+ * What a command does under these modes: its own setting, else its risk class. A destructive command
+ * always waits for the owner's click, whatever the modes say.
+ */
 export function effectiveMode(policy: PolicyModes, command: string, risk: RiskClass): ApprovalMode {
+  if (isDestructiveCommand(command)) return "confirm";
   return policy.commands[command] ?? policy[risk];
 }
 
@@ -445,7 +449,8 @@ export function withCommandMode(
   mode: ApprovalMode,
 ): PolicyModes {
   const { [command]: _old, ...rest } = policy.commands;
-  return { ...policy, commands: mode === policy[risk] ? rest : { ...rest, [command]: mode } };
+  const own = mode !== policy[risk] && !isDestructiveCommand(command);
+  return { ...policy, commands: own ? { ...rest, [command]: mode } : rest };
 }
 
 export const ApprovalPresetIdSchema = z.enum(["hands-off", "careful"]);
