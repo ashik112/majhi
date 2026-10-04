@@ -146,8 +146,9 @@ export function createChores(
     const ready = await ports.mrReady(org, t.id);
     if (!ready.ok) {
       if (ruleOff(run, "ship-ask")) return;
+      // Its own key per reason: an older "asked you to ship" for the same head must not hide why.
       await run.act({
-        key: `ship:ready:${t.id}:${t.heads}`,
+        key: `ship:mr-blocked:${t.id}:${t.heads}:${ready.why}`,
         text: `Asked you to ship ${t.id}: ${t.title}`,
         reason: `No merge request opened: ${ready.why}`,
         evidence,

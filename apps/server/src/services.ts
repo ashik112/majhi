@@ -2112,7 +2112,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     // The same update may unblock waiting work: look at it now, not at the next hourly check.
     if (refreshed.length > 0) {
       const sections = await config.sections();
-      captain.afterUpdate([PRIVATE, ...Object.keys(sections.orgs)]);
+      const orgs = [PRIVATE, ...Object.keys(sections.orgs)];
+      captain.afterUpdate(orgs);
+      // Each lane retries what a majhi problem stopped: a fixed tool only helps if someone tries again.
+      for (const org of orgs) {
+        autonomy.news(
+          `majhi was updated (${env.commit.slice(0, 8)}). Retry anything that failed because of a majhi problem, and go through what waits for the owner in this workspace: settle what a connection or a tool can settle, and say in one line why each of the rest needs the owner.`,
+          org,
+        );
+      }
     }
   });
   return {
