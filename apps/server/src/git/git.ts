@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { KeyedQueue } from "./keyed-queue.ts";
 
 const run = promisify(execFile);
 
@@ -29,6 +30,11 @@ export const FETCH_TIMEOUT_MS = 60_000;
  * (its tests, a dev server) still makes and moves every task's branches. Never the caller's
  * `GIT_AUTHOR_*` or `GIT_COMMITTER_*` either: they win over `-c user.name`, so a merge, revert or
  * rebase would be made as whoever started majhi instead of the identity it names.
+ *
+ * `GIT_OPTIONAL_LOCKS=0` is set for every command (git's documentation: the same as
+ * `--no-optional-locks`; git skips only sub-operations that take an optional lock). A read such as
+ * `git status` otherwise refreshes the index and takes `index.lock`, which made a merge or rebase
+ * running in the same worktree fail with "Unable to create index.lock". It changes nothing for a write.
  */
 export function gitEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const {
@@ -43,6 +49,7 @@ export function gitEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     ...rest,
     GIT_TERMINAL_PROMPT: "0",
     GIT_SSH_COMMAND: source.GIT_SSH_COMMAND ?? "ssh -o BatchMode=yes",
+    GIT_OPTIONAL_LOCKS: "0",
   };
 }
 
@@ -240,6 +247,42 @@ function commandAt(args: readonly string[]): number {
   return i;
 }
 
+/** Commands that write the index (and so take `index.lock`) or the work tree. */
+const INDEX_WRITERS = new Set([
+  "add",
+  "am",
+  "apply",
+  "checkout",
+  "cherry-pick",
+  "clean",
+  "commit",
+  "merge",
+  "mv",
+  "pull",
+  "read-tree",
+  "rebase",
+  "reset",
+  "restore",
+  "revert",
+  "rm",
+  "stash",
+  "switch",
+]);
+
+/**
+ * Multi-step writes: when one stops on a lock halfway it leaves its own state behind (a rebase in
+ * progress), so running it again would not be a retry. They are queued but never retried.
+ */
+const NO_RETRY = new Set(["am", "cherry-pick", "merge", "pull", "rebase", "revert", "stash"]);
+
+/** One write at a time per worktree: majhi's merge, rebase, checkpoint commit and revert never overlap. */
+const writes = new KeyedQueue();
+
+/** How long a write waits for a lock someone else holds, before it gives up. */
+export const LOCK_RETRY_DELAYS_MS: readonly number[] = [100, 250, 500, 1000, 2000];
+
+const sleep = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
+
 /**
  * Runs `git` with an argument list, never through a shell. Prompts are off, so a
  * missing credential fails at once instead of hanging the server. The repo cannot make it run
@@ -249,6 +292,29 @@ export async function git(
   cwd: string,
   args: readonly string[],
   options: { timeoutMs?: number; maxBufferBytes?: number; env?: Record<string, string> } = {},
+): Promise<string> {
+  const command = args[commandAt(args)] ?? "";
+  if (!INDEX_WRITERS.has(command)) return gitOnce(cwd, args, options);
+  return writes.run(resolve(cwd), async () => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await gitOnce(cwd, args, options);
+      } catch (err) {
+        // This worktree's write queue is held here, so the lock git hit is not majhi's own write: it
+        // is an agent's git in a container or the owner's. Wait for it; never remove it.
+        const wait = LOCK_RETRY_DELAYS_MS[attempt];
+        if (wait === undefined || NO_RETRY.has(command) || !(err instanceof GitError)) throw err;
+        if (!err.stderr.includes("index.lock")) throw err;
+        await sleep(wait);
+      }
+    }
+  });
+}
+
+async function gitOnce(
+  cwd: string,
+  args: readonly string[],
+  options: { timeoutMs?: number; maxBufferBytes?: number; env?: Record<string, string> },
 ): Promise<string> {
   try {
     const at = commandAt(args);

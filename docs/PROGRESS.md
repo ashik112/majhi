@@ -1,5 +1,15 @@
 # Progress
 
+## Merges no longer fail on index.lock (built, not merged)
+
+Branch `fix/git-optional-locks`.
+
+- **What the owner will notice.** A merge or rebase no longer fails with "Unable to create index.lock" because a background `git status` or `diff` ran in the same worktree.
+- **Cause.** Read-only git (checkpoint, handoff ready check, room coordinator) refreshes the index and takes `index.lock` unless told not to. Nothing set `GIT_OPTIONAL_LOCKS`.
+- **Fix.** `gitEnv` in `git/git.ts` sets `GIT_OPTIONAL_LOCKS=0` for every command the server runs through `git()` (git's docs: same as `--no-optional-locks`, safe for writes). Index-writing commands (add, commit, merge, rebase, reset, checkout and so on) now run one at a time per worktree through a keyed queue (`git/keyed-queue.ts`). A single-step write that still hits a lock held by someone else (an agent's git in its container) waits and retries up to 5 times (100 ms to 2 s); the lock file is never removed. Multi-step writes (rebase, merge, pull, stash, cherry-pick, revert, am) are queued but not retried, since they leave state behind when they stop halfway.
+- **Left.** `apps/host` git calls (clone, push) and the config-history and backup repos run their own git and are not in a task worktree's index path; unchanged. Agent containers' own git cannot be locked by majhi.
+- **Verified.** `git/locks.test.ts` (env on every command, read during a held lock, writes never overlap, wait out a foreign lock without removing it); `tasks/shipped.test.ts` 5 runs in a row under `--maxWorkers=2`; `git/` tests; typecheck clean.
+
 ## Captain checks and the new task dialog (built, not merged)
 
 Branch `fix/captain-checks-new-task`.
