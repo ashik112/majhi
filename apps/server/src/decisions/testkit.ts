@@ -67,7 +67,12 @@ export function fakeLaya(over: { version?: string; script?: LayaScript } = {}) {
 }
 
 /** A decision service on an in-memory database with a fake Laya, for tests. */
-export function service(laya = fakeLaya(), acp?: DecisionProvider, slots: readonly SlotDef[] = []) {
+export function service(
+  laya = fakeLaya(),
+  acp?: DecisionProvider,
+  slots: readonly SlotDef[] = [],
+  budgets?: DecisionServiceDeps["budgets"],
+) {
   const db = new Database(":memory:");
   migrate(db);
   const deps = {
@@ -78,6 +83,7 @@ export function service(laya = fakeLaya(), acp?: DecisionProvider, slots: readon
     slots: new SlotRegistry(slots),
     evals: new EvalStore(db),
     calibrations: new CalibrationStore(db),
+    ...(budgets === undefined ? {} : { budgets }),
     tokens: {},
     laya,
     acp: acp ?? ({ id: "acp", unavailable: async () => "no stand-in", decide: async () => ({}) } as never),

@@ -158,7 +158,8 @@ describe("rateTask", () => {
     expect(rating).toMatchObject({
       level: "small",
       confidence: 0.7,
-      counted: true,
+      // No labels yet, so the model-pick slot runs in shadow: the answer is kept, and nothing acts on it.
+      counted: false,
       provider: "laya",
       by: "Laya",
     });
@@ -178,7 +179,7 @@ describe("rateTask", () => {
     const { w } = await world({ status: READY, decide: answers("large", 0.3) });
     const rating = await w.h.majhi.services.decisions.rateTask(request);
     expect(rating).toMatchObject({ level: "large", counted: false });
-    expect(rating?.why).toBe("0.12 over chance, under 0.20");
+    expect(rating?.why).toMatch(/^shadow: 0 of 50 labels/);
   });
 });
 

@@ -32,7 +32,8 @@ import { UserError } from "../errors.ts";
 import { difficultyQuestion, isDifficulty } from "../runs/difficulty.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Decisions, RateTaskRequest, TaskRating } from "./api.ts";
-import { cacheKey, DecisionCache } from "./cache.ts";
+import { type CachedDecision, cacheKey, DecisionCache } from "./cache.ts";
+import { baseGate, fitSlot, liveGate, previewGate } from "./calibration.ts";
 import type { CalibrationStore } from "./calibrationStore.ts";
 import { CircuitBreaker, runChain } from "./chain.ts";
 import { bestLabels, type EvalProvider, EvalRunner } from "./evalRunner.ts";
@@ -43,7 +44,7 @@ import type { LayaProvider } from "./layaProvider.ts";
 import type { DecisionLog } from "./log.ts";
 import type { DecisionProvider } from "./providers.ts";
 import { readDecisionSettings } from "./settings.ts";
-import { MIN_LABELS, type SlotRegistry } from "./slots.ts";
+import { MIN_LABELS, type SlotDef, type SlotRegistry } from "./slots.ts";
 import type { DecideTokens } from "./tokens.ts";
 
 export const DECIDE_SERVER_NAME = "majhi-decide";
@@ -64,6 +65,8 @@ export interface DecisionServiceDeps {
   slots: SlotRegistry;
   evals: EvalStore;
   calibrations: CalibrationStore;
+  /** Overrides how long each provider gets, for tests. */
+  budgets?: Partial<Record<ProviderId, number>>;
   tokens: DecideTokens;
   laya: LayaProvider;
   acp: DecisionProvider;
@@ -89,6 +92,8 @@ export class DecisionService implements Decisions {
   readonly breaker = new CircuitBreaker();
   /** Laya answers the same request the same way, so a repeat is answered from here. */
   readonly cache = new DecisionCache();
+  /** Requests being answered now, so an identical one shares the answer. */
+  private readonly inflight = new Map<string, Promise<CachedDecision | undefined>>();
   private readonly runner: EvalRunner;
   /** The bar the eval scores with: refreshed when an eval starts. */
   private barSettings: DecisionSettings | undefined;
@@ -109,7 +114,13 @@ export class DecisionService implements Decisions {
       results: deps.evals,
       provider,
       calibrations: deps.calibrations,
-      gate: (_slot, q, a) => gateAnswer(q, a, this.barSettings ?? DecisionSettingsSchema.parse({})),
+      gate: (_slot, q, a, cal) =>
+        previewGate(q, a, cal, this.barSettings ?? DecisionSettingsSchema.parse({})),
+      fit: (slot, items, version) =>
+        fitSlot(slot, items, version, {
+          now: this.now,
+          settings: this.barSettings ?? DecisionSettingsSchema.parse({}),
+        }),
       now: this.now,
     });
     this.jev = new JevProvider(async () => {
@@ -133,63 +144,123 @@ export class DecisionService implements Decisions {
     const settings = await this.settings();
     // The rules always close the chain: their answer never counts, so the caller applies its own safe default at once.
     const order = settings.order.includes("rules") ? settings.order : [...settings.order, "rules" as const];
+    const model = this.deps.laya.currentVersion();
     const key = cacheKey(request, {
-      model: `${order.join(",")}|${this.deps.laya.currentVersion()}`,
-      calibration: "0",
+      model: `${order.join(",")}|${model}`,
+      calibration: this.deps.calibrations.version(),
     });
     const gated = (answers: Record<string, Answer>, provider: ProviderId) =>
       Object.fromEntries(
         Object.entries(answers).map(([name, a]) => {
           const q = request.questions[name];
-          return [name, q === undefined ? a : { ...a, gate: gate(q, a, provider, settings) }];
+          return [
+            name,
+            q === undefined ? a : { ...a, gate: this.gate(use.use, name, q, a, provider, settings, model) },
+          ];
         }),
       );
-    const seen = order[0] === "laya" ? this.cache.get(key) : undefined;
-    if (seen !== undefined) {
-      return {
-        id: seen.id,
-        answers: gated(seen.answers, "laya"),
-        provider: "laya",
-        skipped: [],
-        trimmed: seen.trimmed,
-        estimated: false,
-        durationMs: Math.round(performance.now() - started),
-        cached: true,
-      };
-    }
-    const chain = await runChain(order, this.providers(), request, { breaker: this.breaker });
-    const answers = gated(chain.answers, chain.provider);
-    const { sent, version, ...rest } = chain;
-    const result: DecisionResult = {
-      id: `dec_${randomUUID().slice(0, 8)}`,
-      ...rest,
-      answers,
+    const fromCache = (seen: CachedDecision): DecisionResult => ({
+      id: seen.id,
+      answers: gated(seen.answers, "laya"),
+      provider: "laya",
+      skipped: [],
+      trimmed: seen.trimmed,
+      estimated: false,
       durationMs: Math.round(performance.now() - started),
-    };
-    if (chain.provider === "laya" && order[0] === "laya") {
-      this.cache.set(key, { id: result.id, answers: chain.answers, trimmed: chain.trimmed });
-    }
-    this.deps.log.add({
-      id: result.id,
-      at: this.now().toISOString(),
-      use: use.use,
-      ...(use.task === undefined ? {} : { task: use.task }),
-      ...(use.agent === undefined ? {} : { agent: use.agent }),
-      summary: summarize(request),
-      provider: result.provider,
-      answers: result.answers,
-      estimated: result.estimated,
-      durationMs: result.durationMs,
-      request: {
-        state: sent?.state ?? request.state,
-        questions: request.questions,
-        ...(sent === undefined ? {} : { sent: sent.questions }),
-      },
-      trimmed: result.trimmed,
-      skipped: result.skipped,
-      ...(version === undefined ? {} : { version }),
+      cached: true,
     });
-    return result;
+    const cacheable = order[0] === "laya";
+    if (cacheable) {
+      const seen = this.cache.get(key);
+      if (seen !== undefined) return fromCache(seen);
+      // The same request is being answered right now: share that answer instead of asking twice.
+      const flying = this.inflight.get(key);
+      if (flying !== undefined) {
+        const shared = await flying;
+        if (shared !== undefined) return fromCache(shared);
+      }
+    }
+    let settle: (value: CachedDecision | undefined) => void = () => {};
+    const mine = cacheable && !this.inflight.has(key);
+    if (mine)
+      this.inflight.set(key, new Promise<CachedDecision | undefined>((resolve) => (settle = resolve)));
+    try {
+      const chain = await runChain(order, this.providers(), request, {
+        breaker: this.breaker,
+        ...(this.deps.budgets === undefined ? {} : { budgets: this.deps.budgets }),
+      });
+      const answers = gated(chain.answers, chain.provider);
+      const { sent, version, ...rest } = chain;
+      const result: DecisionResult = {
+        id: `dec_${randomUUID().slice(0, 8)}`,
+        ...rest,
+        answers,
+        durationMs: Math.round(performance.now() - started),
+      };
+      const entry: CachedDecision = { id: result.id, answers: chain.answers, trimmed: chain.trimmed };
+      if (chain.provider === "laya" && cacheable) this.cache.set(key, entry);
+      this.deps.log.add({
+        id: result.id,
+        at: this.now().toISOString(),
+        use: use.use,
+        ...(use.task === undefined ? {} : { task: use.task }),
+        ...(use.agent === undefined ? {} : { agent: use.agent }),
+        summary: summarize(request),
+        provider: result.provider,
+        answers: result.answers,
+        estimated: result.estimated,
+        durationMs: result.durationMs,
+        request: {
+          state: sent?.state ?? request.state,
+          questions: request.questions,
+          ...(sent === undefined ? {} : { sent: sent.questions }),
+        },
+        trimmed: result.trimmed,
+        skipped: result.skipped,
+        ...(version === undefined ? {} : { version }),
+      });
+      settle(chain.provider === "laya" ? entry : undefined);
+      return result;
+    } catch (err) {
+      settle(undefined);
+      throw err;
+    } finally {
+      if (mine) this.inflight.delete(key);
+    }
+  }
+
+  /**
+   * Whether an answer counts. The rules provider only guesses, so its answers never do. Laya's answer
+   * to a slot counts only when the slot is live (a passing eval on this checkpoint) and the answer
+   * clears the slot's calibrated bar with every option order agreeing; otherwise it is a shadow.
+   * The stand-in agent and Jev keep the base bar.
+   */
+  private gate(
+    use: Use["use"],
+    name: string,
+    q: Question,
+    a: Answer,
+    provider: ProviderId,
+    settings: DecisionSettings,
+    model: string,
+  ): Gate {
+    if (provider === "rules")
+      return { ...gateAnswer(q, a, settings), accepted: false, reason: "the rules only guess" };
+    if (provider !== "laya") return baseGate(q, a, settings);
+    const slot = this.deps.slots.of(use, name);
+    return liveGate({
+      slot,
+      q,
+      a,
+      cal: this.deps.calibrations.get(slot.id),
+      settings,
+      version: model,
+      labels: this.labelCount(slot),
+    });
+  }
+
+  private labelCount(slot: SlotDef): number {
+    return bestLabels(this.deps.labels.forUse(slot.use).filter((l) => this.deps.slots.has(slot, l))).length;
   }
 
   outcome(id: string, outcome: DecisionOutcome): void {
@@ -416,12 +487,6 @@ export class DecisionService implements Decisions {
   revoke(token: string): void {
     this.deps.tokens.revoke(token);
   }
-}
-
-/** Whether an answer counts. The rules provider only guesses, so its answers never do. */
-function gate(q: Question, a: Answer, provider: ProviderId, settings: DecisionSettings): Gate {
-  const g = gateAnswer(q, a, settings);
-  return provider === "rules" ? { ...g, accepted: false, reason: "the rules only guess" } : g;
 }
 
 function layaReason(laya: LayaStatus): string | undefined {
