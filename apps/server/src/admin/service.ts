@@ -57,6 +57,12 @@ const LINE_MAX = 240;
 type ApprovalItem = Extract<RoomItem, { type: "approval" }>;
 type SecretRequestItem = Extract<RoomItem, { type: "secret-request" }>;
 
+/** Who ends a secret request without an answer, and the one line they gave. */
+export interface Dismissal {
+  by: "owner" | "captain";
+  reason?: string | undefined;
+}
+
 export interface AdminDeps {
   config: ConfigService;
   room: RoomService;
@@ -568,9 +574,10 @@ export class AdminService {
     itemId: string,
     decision: "approve" | "reject",
     always?: { scope: "task" | "org"; change: ChangeRecord },
+    dismissal: Dismissal = { by: "owner" },
   ): Promise<RoomItem> {
     const item = this.deps.room.get(taskId, itemId);
-    if (item?.type === "secret-request") return this.cancelSecret(item, decision);
+    if (item?.type === "secret-request") return this.cancelSecret(item, decision, dismissal);
     if (item?.type !== "approval") throw new UserError("That is not something to approve.", 409);
     if (item.state !== "pending" || this.deciding.has(item.id)) {
       throw new UserError("That request was already decided.", 409);
@@ -867,13 +874,21 @@ export class AdminService {
     });
   }
 
-  private async cancelSecret(item: SecretRequestItem, decision: "approve" | "reject"): Promise<RoomItem> {
+  /** Dismiss (the owner) or withdraw (the captain's upkeep) a secret request, and tell the asking agent so it stops waiting. */
+  private async cancelSecret(
+    item: SecretRequestItem,
+    decision: "approve" | "reject",
+    dismissal: Dismissal,
+  ): Promise<RoomItem> {
     if (decision === "approve") throw new UserError("Paste the secret into the field and press Save.", 409);
     if (item.state !== "pending") throw new UserError("That request was already answered.", 409);
     this.deps.room.post(item.task, item.id, secretPayload(item, "cancelled"));
+    const reason = redactText(dismissal.reason?.trim() ?? "");
+    const tail = reason === "" ? "" : `: ${reason}`;
+    const owner = dismissal.by === "owner";
     await this.notify(item.task, item.agent, {
-      text: `The owner did not provide ${item.name}.`,
-      shown: `You did not provide ${item.label}`,
+      text: `${owner ? "The owner dismissed" : "The captain withdrew"} the request for ${item.name}${tail}. Do not wait for it: find another way.`,
+      shown: owner ? `You dismissed ${item.label}${tail}` : `Withdrawn: ${item.label}${tail}`,
     });
     return this.mustGet(item.task, item.id);
   }

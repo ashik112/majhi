@@ -2,7 +2,9 @@ import { execFile } from "node:child_process";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { PRIVATE } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
+import { upkeepWorld } from "../captain/upkeep-world.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 
 const run = promisify(execFile);
@@ -70,7 +72,7 @@ describe("secret capture", () => {
 });
 
 describe("secret requests", () => {
-  const _request = async () => {
+  const request = async () => {
     const token = w.h.majhi.services.adminTokens.issue({ task: w.chat.id, agent: "boss" });
     const res = await fetch(w.mcpUrl, {
       method: "POST",
@@ -94,6 +96,58 @@ describe("secret requests", () => {
     if (card === undefined) throw new Error("no card");
     return card;
   };
+
+  it("dismiss resolves the card and tells the agent why, with the reason redacted", async () => {
+    w = await bossWorld({ real: false });
+    const told: string[] = [];
+    w.h.majhi.services.runs.notify = (_task, _agent, text) => {
+      told.push(text);
+    };
+    const card = await request();
+    const out = await w.h.cmd("room.approve", {
+      task: w.chat.id,
+      item: card.id,
+      decision: "reject",
+      reason: `use the read-only user instead, not ${KEY}`,
+    });
+    expect(out.body.item).toMatchObject({ type: "secret-request", state: "cancelled" });
+    const items = JSON.stringify(await w.items());
+    expect(items).toContain("You dismissed New Relic key: use the read-only user instead");
+    const prompt = told.join("\n");
+    expect(prompt).toContain(
+      "The owner dismissed the request for newrelic-acme: use the read-only user instead",
+    );
+    for (const text of [items, prompt]) expect(text).not.toContain(KEY);
+    expect(await everythingOnDisk(w.h.env.majhiHome)).not.toContain(KEY);
+    // It no longer waits, and a second dismissal is refused.
+    const again = await w.h.cmd("room.approve", { task: w.chat.id, item: card.id, decision: "reject" });
+    expect(again.status).toBe(409);
+  });
+
+  it("upkeep withdraws a request left 3 days once the secret came another way", async () => {
+    w = await bossWorld({ real: false });
+    w.h.majhi.services.runs.notify = () => undefined;
+    const card = await request();
+    const later = new Date(Date.now() + 4 * 86_400_000);
+    const upkeep = upkeepWorld({
+      run: async (command, input) => ({ output: (await w.h.cmd(command, input)).body }),
+      store: w.h.majhi.services.store,
+      now: () => later,
+    });
+    const org = PRIVATE;
+    expect(await upkeep.staleSecrets(org)).toEqual([
+      { task: w.chat.id, item: card.id, label: "New Relic key", obsolete: undefined },
+    ]);
+    await w.h.cmd("secrets.save", { name: "newrelic-acme", value: KEY });
+    const [stale] = await upkeep.staleSecrets(org);
+    expect(stale?.obsolete).toBe("newrelic-acme was saved another way");
+    await upkeep.withdrawSecret(w.chat.id, card.id, stale?.obsolete ?? "");
+    const waiting = w.h.majhi.services.store.room.waitingDecisions();
+    expect(waiting.filter((i) => i.type === "secret-request")).toEqual([]);
+    expect(JSON.stringify(await w.items())).toContain(
+      "no longer needed (newrelic-acme was saved another way)",
+    );
+  });
 
   it("keeps secrets out of approval cards", async () => {
     w = await bossWorld({ real: false });

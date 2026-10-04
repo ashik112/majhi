@@ -4,7 +4,6 @@ import { Bot, ChevronRight, KeyRound, ShieldCheck, Undo2 } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import {
@@ -21,6 +20,7 @@ import { describeError } from "@/lib/errors";
 import { queryKeys } from "@/lib/queries";
 import { useTask } from "@/lib/task-queries";
 import { DOCK_ACTIONS } from "./dock";
+import { SecretAnswer } from "./secret-answer";
 
 type Scope = "task" | "org";
 
@@ -255,32 +255,10 @@ function Details({
  * room, never echoed, and the agent gets only the reference.
  */
 export function SecretRequestCard({ item }: { item: Item<"secret-request"> }) {
-  const toast = useToast();
-  const client = useQueryClient();
-  const [value, setValue] = useState("");
-  const save = useMutation<unknown, ApiRequestError, string>({
-    mutationFn: (secret) => cmd("room.secret", { task: item.task, item: item.id, value: secret }),
-    onSuccess: () => {
-      setValue("");
-      return client.invalidateQueries({ queryKey: queryKeys.secrets });
-    },
-    onError: (error) => toast("Could not save the secret", { detail: describeError(error), tone: "error" }),
-  });
-  // Cancel is a rejection of the request.
-  const cancel = useMutation<unknown, ApiRequestError, void>({
-    mutationFn: () => cmd("room.approve", { task: item.task, item: item.id, decision: "reject" }),
-    onError: (error) => toast("Could not cancel", { detail: describeError(error), tone: "error" }),
-  });
-
   if (item.state !== "pending") return <SecretDone item={item} />;
-
   return (
-    <form
+    <section
       aria-label={`Secret requested: ${item.label}`}
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (value !== "") save.mutate(value);
-      }}
       className="flex max-w-[72ch] flex-col gap-2.5 rounded-lg border border-amber-line bg-amber-wash px-3.5 py-3"
     >
       <p className="flex items-start gap-2 text-base text-fg">
@@ -290,28 +268,13 @@ export function SecretRequestCard({ item }: { item: Item<"secret-request"> }) {
           <span className="font-medium">{item.label}</span>
         </span>
       </p>
-      <div className="flex gap-2 pl-6">
-        <Input
-          type="password"
-          aria-label={`${item.label} (saved as secret:${item.name})`}
-          autoComplete="new-password"
-          placeholder="Paste it here"
-          value={value}
-          disabled={save.isPending}
-          onChange={(event) => setValue(event.target.value)}
-          className="min-w-0 flex-1 font-mono"
-        />
-        <Button type="submit" size="md" variant="primary" disabled={value === "" || save.isPending}>
-          Save
-        </Button>
-        <Button size="md" disabled={cancel.isPending || save.isPending} onClick={() => cancel.mutate()}>
-          Cancel
-        </Button>
+      <div className="pl-6">
+        <SecretAnswer task={item.task} item={item.id} label={item.label} name={item.name} />
       </div>
       <p className="pl-6 text-xs text-fg-faint">
         Stored encrypted as secret:{item.name}. The agent sees only that name.
       </p>
-    </form>
+    </section>
   );
 }
 
@@ -319,7 +282,7 @@ function SecretDone({ item }: { item: SecretRequestItem }) {
   return (
     <p className="flex items-center gap-2 pl-[34px] text-sm text-fg-faint">
       <KeyRound aria-hidden="true" className="size-3.5" />
-      {item.state === "saved" ? `Saved ${item.label} as secret:${item.name}` : `Cancelled: ${item.label}`}
+      {item.state === "saved" ? `Saved ${item.label} as secret:${item.name}` : `Dismissed: ${item.label}`}
     </p>
   );
 }

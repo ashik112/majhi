@@ -19,10 +19,11 @@ import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { Textarea } from "@/components/ui/select";
+import { SecretAnswer } from "@/features/room/secret-answer";
 import { cn } from "@/lib/cn";
 import { badgeLetters, formatAgo } from "@/lib/format";
 import { useOrgs } from "@/lib/studio-queries";
-import { actionOf, openLabel, primaryOption, rowTitle, workspaceOf } from "./model";
+import { actionOf, openLabel, primaryOption, rowTitle, secretCardOf, workspaceOf } from "./model";
 
 const ICON: Record<OwnerDecisionKind, ReactNode> = {
   ship: <GitMerge aria-hidden="true" />,
@@ -99,6 +100,7 @@ function DecisionCard({
   const suggestion = d.suggestion;
   const main = primaryOption(d, undefined);
   const textOption = d.options.find((o) => o.text === true);
+  const secret = secretCardOf(d);
   const [replyOpen, setReplyOpen] = useState(false);
   const [reply, setReply] = useState("");
   const submit = () => {
@@ -147,6 +149,8 @@ function DecisionCard({
         </button>
         {isHeld ? (
           <span className="text-xs text-fg-muted">Waiting to be sent</span>
+        ) : secret !== undefined ? (
+          <SecretAnswer task={secret.task} item={secret.item} label={d.title} compact />
         ) : (
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             {d.options.map((o) => {

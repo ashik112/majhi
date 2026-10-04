@@ -5,7 +5,8 @@ import { useRunAttention } from "@/components/shell/banner";
 import { Button } from "@/components/ui/button";
 import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
 import { useToast } from "@/components/ui/toast";
-import { actionOf, openLabel, workspaceOf } from "@/features/decisions/model";
+import { actionOf, openLabel, secretCardOf, workspaceOf } from "@/features/decisions/model";
+import { SecretAnswer } from "@/features/room/secret-answer";
 import { useAgentIndex } from "@/lib/agent-index";
 import { useCaptainUndo } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
@@ -101,7 +102,8 @@ export function DecisionCard({ decision }: { decision: OwnerDecision }) {
       { onError: (error) => toast("Could not answer it", { detail: describeError(error), tone: "error" }) },
     );
   const title = ship && decision.taskTitle !== undefined ? decision.taskTitle : decision.title;
-  const showOpen = options.length === 0 || ship || typed;
+  const secret = secretCardOf(decision);
+  const showOpen = (options.length === 0 && secret === undefined) || ship || typed;
   return (
     <Frame tone={decision.kind === "paused" ? "paused" : "needs"}>
       <Meta
@@ -125,6 +127,9 @@ export function DecisionCard({ decision }: { decision: OwnerDecision }) {
       )}
       {detail?.checks && (
         <span className="font-mono text-xs text-green text-pretty break-words">✓ {detail.checks}</span>
+      )}
+      {secret !== undefined && (
+        <SecretAnswer task={secret.task} item={secret.item} label={decision.title} compact />
       )}
       <div className="relative z-10 flex flex-wrap gap-1.5 pt-0.5">
         {options.map((option) => (
