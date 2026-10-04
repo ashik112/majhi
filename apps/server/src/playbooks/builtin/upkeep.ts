@@ -189,6 +189,77 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     ],
     runner: { kind: "chore", chore: "followups" },
   }),
+  upkeep({
+    id: "upkeep-discover",
+    name: "Discover tools",
+    purpose:
+      "Once a day, searches the MCP registry and the skills directory for tools that fit your projects, and proposes the best few.",
+    trigger: { cadence: DAILY, events: [] },
+    inputs: ["Projects of the workspace", "Connections", "The MCP registry and skills.sh"],
+    steps:
+      "Read what the workspace's projects use. Search the registry and the directory for each. Propose the top few as findings with the reason. Never propose one you proposed before and the owner turned down. With full access, install a skill (never enabled for any agent) and say so.",
+    outputs: ["finding", "log"],
+    cost: { tier: "rules", tokens: RUN_TOKENS },
+    turnOn: "Looks for useful MCP servers and skills once a day where Upkeep is Captain.",
+    outcomes: [
+      { id: "disc-propose", text: "A tool that fits a project: propose it in Needs you" },
+      { id: "disc-install", text: "Full access and a low-risk skill: install it, tell me" },
+    ],
+    runner: { kind: "chore", chore: "discover" },
+  }),
+  upkeep({
+    id: "upkeep-tidy",
+    name: "Tidy up",
+    purpose: "Finds stale inbox items, old previews, dead watches and failing connections. Proposes, never deletes.",
+    trigger: { cadence: DAILY, events: [] },
+    inputs: ["Tasks", "Previews", "Watches", "Connections", "Worktrees of done tasks", "Items waiting for you"],
+    steps:
+      "Re-test a failing connection. File what is stale as a finding with a proposal to close it. Leave a worktree with uncommitted changes for the owner. Send one summary line.",
+    outputs: ["finding", "log"],
+    cost: { tier: "rules", tokens: RUN_TOKENS },
+    turnOn: "Tidies majhi once a day where Upkeep is Captain. Destructive steps wait for you.",
+    outcomes: [
+      { id: "tidy-retest", text: "A failing connection: test it again" },
+      { id: "tidy-propose", text: "Something stale: propose closing it" },
+      { id: "tidy-dirty", text: "A worktree with uncommitted changes: ask me, never remove" },
+    ],
+    runner: { kind: "chore", chore: "tidy" },
+  }),
+  upkeep({
+    id: "upkeep-health",
+    name: "Health sweep",
+    purpose: "Runs the health checks, applies the fixes majhi offers itself, and files a bug for the rest.",
+    trigger: { cadence: { kind: "every", minutes: 720 }, events: [] },
+    inputs: ["The health checks"],
+    steps:
+      "Run every check. Run the fix of a failed check that has one. File what stays failed as a bug on majhi, or ask the owner when it needs a sign-in or a form.",
+    outputs: ["log"],
+    cost: { tier: "rules", tokens: RUN_TOKENS },
+    turnOn: "Runs the health checks twice a day where Upkeep is Captain.",
+    outcomes: [
+      { id: "health-fix", text: "A failed check with a fix: run the fix" },
+      { id: "health-bug", text: "Still failing: file a bug on majhi" },
+    ],
+    runner: { kind: "chore", chore: "health" },
+  }),
+  upkeep({
+    id: "upkeep-checklist",
+    name: "Owner checklist",
+    purpose:
+      "Walks through what you are not thinking about: backups, disk, spend, connections, previews and agent slots.",
+    trigger: { cadence: DAILY, events: [] },
+    inputs: ["Backups", "Disk", "Budgets", "Agent slots"],
+    steps:
+      "Check that a backup is recent and verified, disk is free, no budget is near its cap, and agents are not stuck waiting for a slot. File each finding once. With full access, raise the slots of an account by one, up to 4, when it has room.",
+    outputs: ["finding", "log"],
+    cost: { tier: "rules", tokens: RUN_TOKENS },
+    turnOn: "Checks what you may not think about once a day where Upkeep is Captain.",
+    outcomes: [
+      { id: "check-finding", text: "Something is off: file a finding" },
+      { id: "check-slots", text: "Agents wait for a slot and the account has room: raise it by one, up to 4" },
+    ],
+    runner: { kind: "chore", chore: "checklist" },
+  }),
   // Runs once for the whole business, from Private. Pure code: it asks Laya, which is local, so it costs no tokens.
   {
     id: "upkeep-laya-eval",

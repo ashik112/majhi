@@ -8,6 +8,7 @@ import type { CaptainPorts, PendingFact, QuestionCard } from "./ports.ts";
 import { loopLine, nudgeText, questionLoop } from "./question-loop.ts";
 import { branchAllowed, typingWhy } from "./rules.ts";
 import type { ChoreRun } from "./runner.ts";
+import { createUpkeepChores } from "./upkeep.ts";
 
 /**
  * The upkeep chores (the table in SPEC 5.18). Each reads the workspace's state through the ports and
@@ -125,6 +126,7 @@ export function createChores(
   };
 
   return {
+    ...createUpkeepChores(ports),
     async ship(run) {
       const { org, ws } = run;
       for (const t of await ports.reviewTasks(org)) {
