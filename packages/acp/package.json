@@ -8,6 +8,7 @@
     "./testing": "./testing/index.ts"
   },
   "scripts": {
+    "test": "vitest run --root ../.. packages/acp/",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

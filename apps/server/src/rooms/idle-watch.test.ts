@@ -466,10 +466,11 @@ describe("a turn that failed on its account's sign-in", () => {
   });
 
   it("pauses the task as signed-out when the lead cannot sign in, and goes on once it can", async () => {
-    const { prompts } = await parentWorld({
-      "acme-lead": [signedOut, say("@acme-builder please build the export.")],
-      "acme-builder": [say("Built.")],
-    });
+    // The lead is alone on the team: a teammate with a working account would take a signed-out lead's place.
+    const { prompts } = await parentWorld(
+      { "acme-lead": [signedOut, say("Exporting orders.")] },
+      { alone: true },
+    );
     await until(async () => (await task()).status === "paused", "the pause");
     expect(await task()).toMatchObject({ status: "paused", pausedReason: "signed-out" });
     expect(await statusOf("codex-acme")).toBe("needs-login");
@@ -486,7 +487,7 @@ describe("a turn that failed on its account's sign-in", () => {
       updatedAt: "2026-10-03T00:00:00.000Z",
     };
     await w.h.majhi.services.resilience.checkSignIns();
-    await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "the work going on");
+    await until(() => (prompts["acme-lead"]?.length ?? 0) === 2, "the work going on");
     expect(prompts["acme-lead"]?.[1]).toBe(prompts["acme-lead"]?.[0]);
     expect(await statusOf("codex-acme")).not.toBe("needs-login");
   });
