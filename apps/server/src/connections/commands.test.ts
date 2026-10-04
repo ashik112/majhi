@@ -95,6 +95,48 @@ describe("connections commands", () => {
     expect(owner.body.fields.imap_host).toEqual({ kind: "text", set: true, value: "mail.acme.com" });
   });
 
+  it("lets an agent rename a variable, keeping its secret, but not to a reserved or taken name", async () => {
+    await h.cmd("connections.create", {
+      org: "acme",
+      id: "acme-db",
+      type: "env",
+      name: "Acme DB",
+      vars: { DATABASE_URL: { kind: "secret" }, REGION: { kind: "text", value: "eu" } },
+    });
+    expect(
+      (
+        await h.cmd("connections.setSecret", {
+          id: "acme-db",
+          list: "vars",
+          field: "DATABASE_URL",
+          value: "postgres://a:b@h/d",
+        })
+      ).status,
+    ).toBe(200);
+    const renamed = await h.cmd(
+      "connections.renameVar",
+      { id: "acme-db", from: "DATABASE_URL", to: "ACME_DATABASE_URL" },
+      BOSS,
+    );
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.vars).toEqual({
+      ACME_DATABASE_URL: { kind: "secret", set: true },
+      REGION: { kind: "text", set: true, value: "eu" },
+    });
+    const reserved = await h.cmd(
+      "connections.renameVar",
+      { id: "acme-db", from: "REGION", to: "HTTP_PROXY" },
+      BOSS,
+    );
+    expect(reserved.status).toBe(400);
+    const taken = await h.cmd(
+      "connections.renameVar",
+      { id: "acme-db", from: "REGION", to: "ACME_DATABASE_URL" },
+      BOSS,
+    );
+    expect(taken.status).toBe(409);
+  });
+
   it("keeps an agent from loosening the gate, even without a secret", async () => {
     await h.cmd("connections.create", {
       org: "acme",
@@ -156,7 +198,10 @@ describe("connections commands", () => {
     expect(row("acme-lab")).toMatchObject({ level: "warn", detail: "Not tested since majhi started." });
     expect((await h.cmd("connections.get", { id: "acme-lab" })).body.lastTest).toBeUndefined();
     const fixed = await h.cmd("health.fix", { id: "connection:acme-lab" });
-    expect(fixed.body).toEqual({ ok: false, detail: "~/.ssh/config has no Host lab. Use user@address, like root@203.0.113.10." });
+    expect(fixed.body).toEqual({
+      ok: false,
+      detail: "~/.ssh/config has no Host lab. Use user@address, like root@203.0.113.10.",
+    });
   });
 
   it("sets a file from a connection upload of any type", async () => {

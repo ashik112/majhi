@@ -22,6 +22,7 @@ import {
   formatIssue,
   GLOBAL_CONNECTIONS,
   type OrgConfig,
+  reservedVariable,
   suggestConnectionId,
   TOOL_CATALOG,
 } from "@majhi/shared";
@@ -194,6 +195,33 @@ export class ConnectionService {
     if (switched.length > 0) this.deps.agentsChanged?.(switched);
     if (input.fields !== undefined) this.deps.fieldsChanged?.(input.id);
     await this.release(input.id, released);
+    return this.get(input.id);
+  }
+
+  /** Renames one entry of `vars` or `env`, keeping its kind and its stored value, secret or file. */
+  async renameVar(
+    input: { id: string; list: "vars" | "env"; from: string; to: string },
+    command: string,
+    meta: CommandMeta,
+  ): Promise<ConnectionView> {
+    if (reservedVariable(input.to)) throw new UserError(`${input.to} is kept for majhi and the agent CLIs.`);
+    await this.deps.config.change(
+      { command, meta, summary: `renamed ${input.from} to ${input.to} on connection ${input.id}` },
+      async () => {
+        const found = await this.require(input.id);
+        assertGlobalOwner(found.org, meta);
+        const current = found.connection[input.list] ?? {};
+        const entry = current[input.from];
+        if (entry === undefined) throw new UserError(`${input.id} has no ${input.from}.`, 404);
+        if (current[input.to] !== undefined) throw new UserError(`${input.id} already has ${input.to}.`, 409);
+        const renamed = Object.fromEntries(
+          Object.entries(current).map(([name, e]) => [name === input.from ? input.to : name, e]),
+        );
+        const next: ConnectionConfig = { ...found.connection, [input.list]: renamed };
+        await writeConnection(this.deps.config.file, found.org, found.entry, input.id, checked(next));
+      },
+    );
+    this.deps.fieldsChanged?.(input.id);
     return this.get(input.id);
   }
 

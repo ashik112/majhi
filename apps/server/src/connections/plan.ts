@@ -99,7 +99,9 @@ export async function planConnections(
   const setVar = (owner: string, name: string, value: string) => {
     const first = setBy.get(name);
     if (first !== undefined && first !== owner) {
-      plan.problems.push(`${name} is set by ${first} and ${owner}; the run gets ${first}'s.`);
+      plan.problems.push(
+        `${name} is set by ${first} and ${owner}; the run gets ${first}'s. Rename one with connections.renameVar.`,
+      );
       return;
     }
     setBy.set(name, owner);

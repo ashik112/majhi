@@ -134,6 +134,7 @@ import {
   ConnectionTypeDefSchema,
   ConnectionUpdateInputSchema,
   ConnectionViewSchema,
+  VariableNameSchema,
 } from "./connections.ts";
 import {
   ContainerInfoSchema,
@@ -2618,6 +2619,18 @@ export const commands = {
     summary:
       "Edit a connection's name, description or text values (null clears one). A vars, headers or env list given replaces the old one, and an entry left out is deleted with its secret or file",
     input: ConnectionUpdateInputSchema,
+    output: ConnectionViewSchema,
+  },
+  "connections.renameVar": {
+    risk: "change",
+    summary:
+      "Rename one variable of a connection (vars, or a local MCP server's env), keeping its value or secret where it is: use it when two connections set the same variable. Agents may call it; reserved names are refused",
+    input: z.object({
+      id: IdSchema,
+      list: z.enum(["vars", "env"]).default("vars"),
+      from: VariableNameSchema,
+      to: VariableNameSchema,
+    }),
     output: ConnectionViewSchema,
   },
   "connections.remove": {

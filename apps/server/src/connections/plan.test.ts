@@ -266,7 +266,7 @@ describe("planConnections", () => {
     expect(plan.problems).toEqual([
       "acme-broken: The kubeconfig is not a YAML map.",
       "acme-empty is not set up, so the run does not get it.",
-      "REGION is set by acme-a and acme-b; the run gets acme-a's.",
+      "REGION is set by acme-a and acme-b; the run gets acme-a's. Rename one with connections.renameVar.",
     ]);
   });
 });

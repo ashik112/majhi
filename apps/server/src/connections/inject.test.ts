@@ -9,7 +9,9 @@ import { runFilesRoot } from "./run-files.ts";
 
 /** A run's variables without the workspace package-cache paths every run gets (no secrets in them). */
 const noCaches = (env: Record<string, string> | undefined): Record<string, string> =>
-  Object.fromEntries(Object.entries(env ?? {}).filter(([k]) => k !== "MAJHI_TOOLS" && !(k in cacheEnv("/x"))));
+  Object.fromEntries(
+    Object.entries(env ?? {}).filter(([k]) => k !== "MAJHI_TOOLS" && !(k in cacheEnv("/x"))),
+  );
 
 const KUBECONFIG = `apiVersion: v1
 kind: Config
