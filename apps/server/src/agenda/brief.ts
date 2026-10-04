@@ -78,8 +78,6 @@ export function templateLines(f: BriefFacts): string[] {
       }`,
     );
   }
-  const date = f.deadlines[0];
-  if (date !== undefined) lines.push(`Next date: ${oneLine(date.title, 60)}, ${date.when}.`);
   if (f.next.length > 0) {
     lines.push(`The captain plans: ${f.next.map((n) => oneLine(n, 50)).join("; ")}.`);
   } else if (f.empty) {
@@ -102,7 +100,6 @@ export function factLines(f: BriefFacts): string[] {
   if (f.scorecard !== undefined) out.push(`scorecard: ${oneLine(f.scorecard, 160)}`);
   out.push(`needs the owner: ${f.needs.count} items, ${minutesWord(f.needs.minutes)}`);
   for (const t of f.needs.top) out.push(`needs first: ${oneLine(t)}`);
-  for (const d of f.deadlines) out.push(`deadline: ${oneLine(d.title)} (${oneLine(d.when, 30)})`);
   for (const n of f.next) out.push(`captain plans: ${oneLine(n)}`);
   if (f.empty) out.push("nothing needs the owner today");
   return out;

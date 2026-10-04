@@ -20,7 +20,6 @@ function facts(over: Partial<BriefFacts> = {}): BriefFacts {
     captainDecided: 4,
     captainUpkeep: 6,
     needs: { count: 7, minutes: 22, top: ["Ship the invoice export", "Which currency?"] },
-    deadlines: [{ title: "Spring hack signup", when: "tomorrow" }],
     next: ["Start the export task", "Review the CI findings"],
     empty: false,
     ...over,
@@ -37,7 +36,6 @@ const EMPTY = facts({
   captainDecided: 0,
   captainUpkeep: 0,
   needs: { count: 0, minutes: 0, top: [] },
-  deadlines: [],
   next: ["Start the export task"],
   empty: true,
 });
@@ -54,7 +52,6 @@ describe("the template", () => {
     expect(
       lines.some((l) => l.startsWith("7 things need you, about 22 min. First: Ship the invoice export.")),
     ).toBe(true);
-    expect(lines).toContain("Next date: Spring hack signup, tomorrow.");
     expect(lines.at(-1)).toBe("The captain plans: Start the export task; Review the CI findings.");
     for (const l of lines) expect(l.length).toBeLessThanOrEqual(BRIEF_LINE_MAX);
   });
@@ -118,11 +115,6 @@ describe("the prompt", () => {
       facts({
         shippedTitles: [long, long, long],
         needs: { count: 99, minutes: 300, top: [long, long, long] },
-        deadlines: [
-          { title: long, when: "Thu 9 Oct" },
-          { title: long, when: "Fri 10 Oct" },
-          { title: long, when: "Sat 11 Oct" },
-        ],
         next: [long, long, long],
       }),
     );

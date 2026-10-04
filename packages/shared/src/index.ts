@@ -12,7 +12,6 @@ export * from "./automation.ts";
 export * from "./autonomy.ts";
 export * from "./backup.ts";
 export * from "./budgets.ts";
-export * from "./deadlines.ts";
 export * from "./captain.ts";
 export {
   type ChoreCap,

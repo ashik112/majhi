@@ -2,7 +2,7 @@ import type { PageName } from "@majhi/shared";
 
 /** More words that find a page in the palette. */
 export const PAGE_KEYWORDS: Record<PageName, string> = {
-  today: "brief morning agenda day plan deadlines review time watch what needs me",
+  today: "brief morning agenda day plan review time watch what needs me",
   board: "tasks home columns",
   chats: "conversations talk",
   captain: "boss chief of staff autonomous autopilot away rules log summary upkeep workspaces authority",
@@ -10,7 +10,6 @@ export const PAGE_KEYWORDS: Record<PageName, string> = {
   watch:
     "services uptime incidents down outage status ntfy phone push alerts escalation health certificate dns monitor",
   limits: "budget budgets spend cost daily weekly floors safety money raise",
-  deadlines: "dates due hackathon grant launch renewal client calendar",
   decisions: "inbox needs you waiting questions approvals ship recommend answer",
   agents: "team roles models",
   accounts: "sign in claude codex login",

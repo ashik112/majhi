@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
-import { deadline, decision, finding } from "./fixtures.ts";
+import { decision, finding } from "./fixtures.ts";
 import type { Overnight } from "./overnight.ts";
 import { AgendaRepo } from "./repo.ts";
 import { type AgendaDeps, AgendaService, notifyText } from "./service.ts";
@@ -36,7 +36,6 @@ function world(start = "2026-10-04T05:30:00.000Z") {
   };
   const state = {
     decisions: [] as ReturnType<typeof decision>[],
-    deadlines: [] as ReturnType<typeof deadline>[],
     findings: [] as ReturnType<typeof finding>[],
     night: NIGHT as Overnight & { spent: number; budget?: number },
     next: ["Start the export task"],
@@ -47,7 +46,6 @@ function world(start = "2026-10-04T05:30:00.000Z") {
       repo: new AgendaRepo(store.raw),
       clock: async () => ({ at: clock.hour, tz: clock.tz }),
       decisions: async () => state.decisions,
-      deadlines: (within) => state.deadlines.filter((d) => d.daysLeft <= within),
       findings: () => state.findings,
       goals: () => [],
       running: () => [],
@@ -313,14 +311,10 @@ describe("what the page gets", () => {
     expect((await agenda.today()).today.map((i) => i.id).sort()).toEqual(["finding:1", "finding:2"]);
   });
 
-  it("puts open incidents in Watch and this week's dates in Plan, in the owner's calendar", async () => {
+  it("puts open incidents in Watch", async () => {
     const w = world("2026-10-04T09:00:00.000Z");
     w.state.findings = [
       finding({ id: 5, org: "acme", source: "incident", severity: "high", title: "API is down" }),
-    ];
-    w.state.deadlines = [
-      deadline({ id: 1, due: "2026-10-06", now: w.clock.at }),
-      deadline({ id: 2, due: "2026-10-25", now: w.clock.at, daysLeft: 21 }),
     ];
     const day = await w.make().today();
     expect(day.watch.incidents).toEqual([
@@ -333,7 +327,6 @@ describe("what the page gets", () => {
         at: "2026-10-03T12:00:00.000Z",
       },
     ]);
-    expect(day.plan.deadlines.map((d) => [d.id, d.when, d.daysLeft])).toEqual([[1, "Tue 6 Oct", 2]]);
   });
 
   it("dismissing the brief sticks for every tab", async () => {

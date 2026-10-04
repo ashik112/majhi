@@ -21,7 +21,6 @@ import { agendaHandlers } from "../agenda/handlers.ts";
 import { scheduleHandlers } from "../automation/handlers.ts";
 import { autonomyHandlers } from "../autonomy/handlers.ts";
 import { backupHandlers } from "../backup/handlers.ts";
-import { deadlineHandlers } from "../deadlines/handlers.ts";
 import { captainHandlers } from "../captain/handlers.ts";
 import type { ConfigService } from "../config/service.ts";
 import { connectHandlers } from "../connect/handlers.ts";
@@ -172,7 +171,6 @@ export function createHandlers({
       lanes: services.lanes,
       store: services.store,
     }),
-    ...deadlineHandlers({ deadlines: services.deadlines, lanes: services.lanes, store: services.store }),
     ...findingsHandlers({ findings: services.findings, lanes: services.lanes, store: services.store }),
     ...playbookHandlers({
       findings: services.findings,

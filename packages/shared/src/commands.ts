@@ -69,13 +69,6 @@ import {
 import { BACKUP_PASSPHRASE_MAX, BackupListSchema, BackupVerifySchema } from "./backup.ts";
 import { BudgetStatusSchema } from "./budgets.ts";
 import {
-  DeadlineIdInputSchema,
-  DeadlineSchema,
-  DeadlinesListInputSchema,
-  DeadlinesListSchema,
-  DeadlineUpsertInputSchema,
-} from "./deadlines.ts";
-import {
   BudgetAnswerInputSchema,
   CaptainAsksSchema,
   CaptainCapAnswerInputSchema,
@@ -1166,32 +1159,11 @@ export const commands = {
     input: HandoffCheckInputSchema,
     output: HandoffStateSchema,
   },
-  // Deadlines (5.19) ---------------------------------------------------------
-  "deadlines.list": {
-    risk: "read",
-    summary:
-      "Dated items: hackathons, grants, launches, client deadlines and renewals, soonest first, with days left and the state in the deadline's own time zone. Default: open ones. Your workspace and the business-wide ones",
-    input: DeadlinesListInputSchema,
-    output: DeadlinesListSchema,
-  },
-  "deadlines.upsert": {
-    risk: "change",
-    summary:
-      "Add or change a deadline in your workspace: kind, title, the due day (2026-11-20) or time (2026-11-20T17:00) in its time zone, the source, reminder lead times in days, and a linked goal, finding or contact",
-    input: DeadlineUpsertInputSchema,
-    output: DeadlineSchema,
-  },
-  "deadlines.remove": {
-    risk: "destructive",
-    summary: "Delete a deadline. The owner only",
-    input: DeadlineIdInputSchema,
-    output: z.object({ id: z.number().int().positive() }),
-  },
   // The agenda and the morning brief (5.18) -----------------------------------
   "agenda.today": {
     risk: "read",
     summary:
-      "The owner's day in one call: today's brief, the ordered agenda (decisions, deadlines in the next 14 days, incidents and high findings, budget holds, playbook drafts, follow-ups due) cut at the owner's review budget into today and later, what is running, and the week's deadlines and goals. Computed in code. The owner and the captain; a captain lane reads its own workspace",
+      "The owner's day in one call: today's brief, the ordered agenda (decisions, incidents and high findings, budget holds, playbook drafts) cut at the owner's review budget into today and later, what is running, and goals. Computed in code. The owner and the captain; a captain lane reads its own workspace",
     input: AgendaTodayInputSchema,
     output: AgendaTodaySchema,
   },

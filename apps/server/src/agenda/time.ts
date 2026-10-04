@@ -1,5 +1,55 @@
-import { wallIn, zonedToUtc } from "../deadlines/time.ts";
 import { defaultTimeZone, localDay } from "../usage/ranges.ts";
+
+/** Wall-clock time in a named zone, which `Date` does not give. */
+
+interface Wall {
+  y: number;
+  m: number;
+  d: number;
+  h: number;
+  mi: number;
+  s: number;
+}
+
+/** The wall-clock time a moment has in a zone. */
+export function wallIn(date: Date, tz: string): Wall {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+  }).formatToParts(date);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? "0");
+  return {
+    y: get("year"),
+    m: get("month"),
+    d: get("day"),
+    h: get("hour") % 24,
+    mi: get("minute"),
+    s: get("second"),
+  };
+}
+
+/** How far the zone is ahead of UTC at a moment, in ms. */
+function offsetAt(date: Date, tz: string): number {
+  const w = wallIn(date, tz);
+  return Date.UTC(w.y, w.m - 1, w.d, w.h, w.mi, w.s) - Math.floor(date.getTime() / 1000) * 1000;
+}
+
+/**
+ * The moment a wall-clock time falls in a zone. A time that does not exist (the hour skipped when
+ * the clocks go forward) lands just after the gap; one that exists twice (clocks go back) takes the first.
+ */
+export function zonedToUtc(w: Wall, tz: string): Date {
+  const guess = Date.UTC(w.y, w.m - 1, w.d, w.h, w.mi, w.s);
+  const first = guess - offsetAt(new Date(guess), tz);
+  // The offset at the first guess may be the other side of a change: look again at the result.
+  return new Date(guess - offsetAt(new Date(first), tz));
+}
 
 /** The zone of the owner's day: the settings' zone when it is a real one, else the server's. */
 export function ownerZone(tz: string | undefined): string {

@@ -73,7 +73,6 @@ import { AcpProvider } from "./decisions/acp.ts";
 import { builtinRegistry } from "./decisions/builtinSlots.ts";
 import { CalibrationStore } from "./decisions/calibrationStore.ts";
 import { EvalStore } from "./decisions/evalStore.ts";
-import { DeadlinesService } from "./deadlines/deadlines.ts";
 import { LabelStore } from "./decisions/labels.ts";
 import { dockerCli, LayaDocker } from "./decisions/layaDocker.ts";
 import { LayaProvider } from "./decisions/layaProvider.ts";
@@ -339,8 +338,6 @@ export interface Services {
   outcomes: OutcomesService;
   /** The checked hand-off: tests, build, lint and a review before "Ready to ship" (5.18). */
   handoff: HandoffService;
-  /** Deadlines (5.19). */
-  deadlines: DeadlinesService;
   /** The owner's agenda and the morning brief (5.18). */
   agenda: AgendaService;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
@@ -1365,16 +1362,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   findingsStore = findings;
   reportFinding = (input, actor) => findings.report(input, actor);
-  const businessChanged = () => events.emit(["business"]);
-  const orgExists = async (org: string) => org === PRIVATE || org in (await config.sections()).orgs;
-  const businessNow = options.runClock === undefined ? {} : { now: options.runClock };
-  const deadlines = new DeadlinesService({
-    db: store.raw,
-    orgExists,
-    findingExists: (id) => findings.exists(id),
-    changed: businessChanged,
-    ...businessNow,
-  });
   const agendaOwner = { kind: "owner" } as const;
   const agenda = new AgendaService({
     repo: new AgendaRepo(store.raw),
@@ -1383,7 +1370,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return { at: a.summary_at, tz: a.tz };
     },
     decisions: (org) => inbox.list(org),
-    deadlines: (within) => deadlines.list({ withinDays: within, limit: 500 }, agendaOwner).deadlines,
     findings: () => findings.list({ limit: 500 }, agendaOwner).findings,
     briefHidden: (f) => ruleSwitches.briefHidden(f.org, f.playbook),
     goals: () => goals.list({}, agendaOwner),
@@ -2024,7 +2010,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outbound,
     outcomes,
     handoff,
-    deadlines,
     agenda,
     captainTell: new CaptainTell({
       tasks,

@@ -67,8 +67,6 @@ export const queryKeys = {
   ops: ["ops"],
   /** `agenda.today`: the brief, the agenda, Watch and Plan. */
   agenda: ["agenda"],
-  /** Every `deadlines.*` read. */
-  business: ["business"],
   /** `decisions.list`: the owner's inbox. Every topic that changes what waits for them refetches it. */
   decisions: ["decisions"],
   /** `git.signIn.poll` for each flow. */

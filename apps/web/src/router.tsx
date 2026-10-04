@@ -227,11 +227,6 @@ const decisionsRoute = createRoute({
   path: PAGE_PATH.decisions,
   component: lazyRouteComponent(() => import("@/pages/decisions-page"), "DecisionsPage"),
 });
-const deadlinesRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: PAGE_PATH.deadlines,
-  component: lazyRouteComponent(() => import("@/pages/deadlines-page"), "DeadlinesPage"),
-});
 const setupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.setup,
@@ -254,21 +249,6 @@ const editRootsRoute = createRoute({
   component: EditRootsRoute,
 });
 
-// The Deadlines page was called Business, then Knowledge.
-const oldBusinessRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/business",
-  beforeLoad: ({ search }) => {
-    throw redirect({ to: PAGE_PATH.deadlines, search });
-  },
-});
-const oldKnowledgeRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/knowledge",
-  beforeLoad: ({ search }) => {
-    throw redirect({ to: PAGE_PATH.deadlines, search });
-  },
-});
 // Old addresses from the three-column design.
 const reposRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -316,9 +296,6 @@ export const router = createRouter({
     limitsRoute,
     todayRoute,
     decisionsRoute,
-    deadlinesRoute,
-    oldBusinessRoute,
-    oldKnowledgeRoute,
     setupRoute,
     projectsRoute,
     orgsRoute,

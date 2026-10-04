@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { DeadlineKindSchema, IsoDaySchema } from "./deadlines.ts";
 import { FindingSeveritySchema } from "./findings.ts";
 
 /**
@@ -7,14 +6,16 @@ import { FindingSeveritySchema } from "./findings.ts";
  * in code with no model, and one short brief per day. `agenda.today` returns everything the Today page needs.
  */
 
+/** A calendar day, `2026-11-20`. */
+export const IsoDaySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-11-20");
+
 /** What an agenda item is. `decision` covers ships, questions, approvals and sign-ins; `budget` a budget hold. */
-export const AGENDA_KINDS = ["incident", "deadline", "budget", "decision", "finding", "draft"] as const;
+export const AGENDA_KINDS = ["incident", "budget", "decision", "finding", "draft"] as const;
 export const AgendaKindSchema = z.enum(AGENDA_KINDS);
 export type AgendaKind = z.infer<typeof AgendaKindSchema>;
 
 export const AGENDA_KIND_LABEL: Record<AgendaKind, string> = {
   incident: "Incident",
-  deadline: "Deadline",
   budget: "Budget",
   decision: "Decision",
   finding: "Finding",
@@ -25,7 +26,6 @@ export const AGENDA_KIND_LABEL: Record<AgendaKind, string> = {
 export const AgendaTargetSchema = z.discriminatedUnion("to", [
   z.object({ to: z.literal("decision"), id: z.string().min(1).max(300) }),
   z.object({ to: z.literal("finding"), id: z.number().int().positive() }),
-  z.object({ to: z.literal("deadline"), id: z.number().int().positive() }),
   z.object({ to: z.literal("limits") }),
   z.object({ to: z.literal("playbooks") }),
 ]);
@@ -34,12 +34,11 @@ export type AgendaTarget = z.infer<typeof AgendaTargetSchema>;
 /** What `e` does with an item where the owner may do it from Today. */
 export const AgendaDoneSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("dismiss-finding"), id: z.number().int().positive() }),
-  z.object({ kind: z.literal("close-deadline"), id: z.number().int().positive() }),
 ]);
 export type AgendaDone = z.infer<typeof AgendaDoneSchema>;
 
 export const AgendaItemSchema = z.object({
-  /** Stable for the same thing: `decision:<id>`, `finding:12`, `deadline:3`. */
+  /** Stable for the same thing: `decision:<id>`, `finding:12`. */
   id: z.string().min(1).max(320),
   kind: AgendaKindSchema,
   /** The workspace id; absent for the whole business. */
@@ -57,7 +56,7 @@ export const AgendaItemSchema = z.object({
   weight: z.number(),
   /** The moment it matters (due, arrived), for ties and for the "age". */
   at: z.string().optional(),
-  /** Always planned for today, whatever the review budget says: an incident or a deadline due today. */
+  /** Always planned for today, whatever the review budget says: an incident. */
   must: z.boolean(),
   done: AgendaDoneSchema.optional(),
 });
@@ -91,7 +90,6 @@ export const BriefFactsSchema = z.object({
     minutes: z.number().int().min(0),
     top: z.array(z.string()).max(3),
   }),
-  deadlines: z.array(z.object({ title: z.string(), when: z.string() })).max(3),
   next: z.array(z.string()).max(3),
   /** Nothing waits for the owner. */
   empty: z.boolean(),
@@ -120,18 +118,6 @@ export const AgendaWatchTaskSchema = z.object({
   since: z.string().optional(),
 });
 
-export const AgendaPlanDeadlineSchema = z.object({
-  id: z.number().int().positive(),
-  title: z.string(),
-  kind: DeadlineKindSchema,
-  org: z.string().optional(),
-  orgName: z.string().optional(),
-  /** When it falls due in the owner's own calendar: `today`, `tomorrow`, `Thu 9 Oct`. */
-  when: z.string(),
-  dueAt: z.string(),
-  daysLeft: z.number().int(),
-});
-
 export const AgendaPlanGoalSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -140,7 +126,7 @@ export const AgendaPlanGoalSchema = z.object({
   target: z.string().optional(),
   due: z.string().optional(),
   status: z.string(),
-  /** Open findings and open deadlines tied to it. */
+  /** Open findings tied to it. */
   linked: z.number().int().min(0),
 });
 
@@ -179,7 +165,6 @@ export const AgendaTodaySchema = z.object({
     budget: z.number().min(0).optional(),
   }),
   plan: z.object({
-    deadlines: z.array(AgendaPlanDeadlineSchema),
     goals: z.array(AgendaPlanGoalSchema),
     /** What the captain will do next, as the queue says. Shown when nothing needs the owner. */
     captainNext: z.array(z.string()).max(5),

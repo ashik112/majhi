@@ -21,7 +21,6 @@ import {
 import { z } from "zod";
 import { auditDetail } from "../audit.ts";
 import type { AutonomyVerdict } from "../autonomy/policy.ts";
-import { DEADLINE_TOOL_COMMANDS } from "../deadlines/handlers.ts";
 import { authorityOf, keptRowOf } from "../captain/levels.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
 import type { ChangeRecord, ConfigService } from "../config/service.ts";
@@ -226,7 +225,6 @@ export class AdminService {
       // Findings stay in the caller's own workspace (the handler scopes them), so no card waits for them.
       if (
         FINDINGS_TOOL_COMMANDS.has(spec.command) ||
-        DEADLINE_TOOL_COMMANDS.has(spec.command) ||
         PLAYBOOK_TOOL_COMMANDS.has(spec.command) ||
         OUTCOMES_TOOL_COMMANDS.has(spec.command) ||
         HANDOFF_TOOL_COMMANDS.has(spec.command)

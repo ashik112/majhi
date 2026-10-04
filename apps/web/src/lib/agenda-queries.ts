@@ -1,4 +1,4 @@
-import type { AgendaToday, DeadlineUpsertInput } from "@majhi/shared";
+import type { AgendaToday } from "@majhi/shared";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
@@ -48,28 +48,4 @@ export function useDismissFinding() {
   return useAgendaCommand<number, unknown>((id) =>
     cmd("findings.dismiss", { id, reason: "Dismissed from Today" }, { reason: "Owner dismissed a finding" }),
   );
-}
-
-/** Marks a deadline done. It reads the deadline first so nothing else on it changes. */
-export function useCloseDeadline() {
-  return useAgendaCommand<number, unknown>(async (id) => {
-    const { deadlines } = await cmd("deadlines.list", { status: "all", limit: 2000 });
-    const d = deadlines.find((x) => x.id === id);
-    if (d === undefined) return undefined;
-    const input: DeadlineUpsertInput = {
-      id: d.id,
-      ...(d.org === undefined ? {} : { org: d.org }),
-      kind: d.kind,
-      title: d.title,
-      due: d.due,
-      tz: d.tz,
-      source: d.source,
-      notes: d.notes,
-      leadDays: d.leadDays,
-      ...(d.goal === undefined ? {} : { goal: d.goal }),
-      ...(d.finding === undefined ? {} : { finding: d.finding }),
-      status: "done",
-    };
-    return cmd("deadlines.upsert", input, { reason: "Owner closed a deadline from Today" });
-  });
 }
