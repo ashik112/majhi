@@ -9,6 +9,7 @@ export type DecisionsStatus = CommandOutput<"decisions.status">;
 const keys = {
   status: [...queryKeys.config, "decisions"],
   recent: [...queryKeys.config, "decisions-recent"],
+  slots: [...queryKeys.config, "decisions-slots"],
 } as const;
 
 /** Polls every 2 seconds while Laya installs or downloads its model. */
@@ -39,6 +40,41 @@ export function useCorrectDecision() {
   const client = useQueryClient();
   return useMutation<CommandOutput<"decisions.correct">, ApiRequestError, CommandInput<"decisions.correct">>({
     mutationFn: (input) => cmd("decisions.correct", input, { reason: "Owner corrected a decision" }),
+    onSuccess: () => client.invalidateQueries({ queryKey: keys.recent }),
+  });
+}
+
+/** Every decision slot with its mode and last eval. */
+export function useDecisionSlots() {
+  return useQuery<CommandOutput<"decisions.slots">, ApiRequestError>({
+    queryKey: keys.slots,
+    queryFn: () => cmd("decisions.slots", {}),
+  });
+}
+
+/** Runs the evals of one slot, or `all`. Owner only. */
+export function useRunEvals() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"decisions.eval">, ApiRequestError, string>({
+    mutationFn: (use) => cmd("decisions.eval", { use }, { reason: "Owner ran the decision evals" }),
+    onSuccess: () => client.invalidateQueries({ queryKey: keys.slots }),
+  });
+}
+
+/** One decision from the log, for the "Wrong?" control. Loaded only once the owner opens it. */
+export function useDecisionRecord(id: string, enabled: boolean) {
+  return useQuery<CommandOutput<"decisions.get">, ApiRequestError>({
+    queryKey: [...keys.recent, "one", id],
+    queryFn: () => cmd("decisions.get", { id }),
+    enabled,
+  });
+}
+
+/** The owner's "Wrong?": the right answer, kept as a label. */
+export function useLabelDecision() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"decisions.label">, ApiRequestError, CommandInput<"decisions.label">>({
+    mutationFn: (input) => cmd("decisions.label", input, { reason: "Owner labeled a decision" }),
     onSuccess: () => client.invalidateQueries({ queryKey: keys.recent }),
   });
 }

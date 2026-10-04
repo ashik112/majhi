@@ -83,7 +83,15 @@ import {
   ServiceStartInputSchema,
 } from "./containers.ts";
 import {
+  DecisionLabelSchema,
+  EvalInputSchema,
+  EvalReportSchema,
+  LabelInputSchema,
+  SlotStatusSchema,
+} from "./decision-learning.ts";
+import {
   DecideRequestSchema,
+  DecisionCacheStatsSchema,
   DecisionPatchSchema,
   DecisionRecordSchema,
   DecisionResultSchema,
@@ -92,7 +100,6 @@ import {
   ProviderIdSchema,
 } from "./decisions.ts";
 import { E2ePatchSchema, E2eRunSchema, E2eStatusSchema } from "./e2e.ts";
-import { ProjectCardSchema } from "./project-card.ts";
 import { EmojiSchema } from "./emoji.ts";
 import {
   FindingDismissInputSchema,
@@ -182,6 +189,7 @@ import {
 import { PendingNoticeSchema } from "./notify.ts";
 import { OnboardingStatusSchema } from "./onboarding.ts";
 import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
+import { ProjectCardSchema } from "./project-card.ts";
 import {
   ConnectRemoteInputSchema,
   ConnectRemoteSchema,
@@ -2351,14 +2359,43 @@ export const commands = {
     }),
     output: DecisionRecordSchema,
   },
+  "decisions.get": {
+    risk: "read",
+    summary: "One decision from the log by id, with its request, every probability and its outcome",
+    input: z.object({ id: z.string().min(1).max(40) }),
+    output: DecisionRecordSchema,
+  },
+  "decisions.label": {
+    risk: "change",
+    summary:
+      "Say what the right answer to a decision's question was (Wrong?). Stored as an owner label for the evals and calibration; changes nothing else. question may be left out when the decision asked one",
+    input: LabelInputSchema,
+    output: DecisionLabelSchema,
+  },
+  "decisions.eval": {
+    risk: "change",
+    summary:
+      "Owner only. Run the decision provider on the labeled set and the built-in fixtures of one decision slot (task-size, mention-wake, memory-verdict, ...) or all, and store the report: accuracy, per-class recall, precision and coverage at the gate, calibration error, order consistency, latency and cost. With enough labels it also fits the slot's calibration and moves it between shadow and live",
+    input: EvalInputSchema,
+    output: z.array(EvalReportSchema),
+  },
+  "decisions.slots": {
+    risk: "read",
+    summary:
+      "Every decision slot with its mode (shadow or live), how many labels it has, its calibration and its last eval reports",
+    input: Empty,
+    output: z.array(SlotStatusSchema),
+  },
   "decisions.status": {
     risk: "read",
-    summary: "The provider order and whether each provider can answer now, with Laya's install state",
+    summary:
+      "The provider order and whether each provider can answer now, with Laya's install state and the answer cache's hit rate",
     input: Empty,
     output: z.object({
       settings: DecisionSettingsSchema,
       laya: LayaStatusSchema,
       providers: z.array(z.object({ id: ProviderIdSchema, available: z.boolean(), detail: z.string() })),
+      cache: DecisionCacheStatsSchema,
     }),
   },
   "decisions.set": {

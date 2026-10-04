@@ -17,7 +17,7 @@ export const TOOL_CATALOG = [
   {
     name: "majhi-decide",
     summary: "Quick typed judgment calls from the decision model instead of reasoning tokens",
-    rule: "On for every agent",
+    rule: "Off unless the agent lists it. No agent called it in five days, and its schema costs context in every session",
   },
   {
     name: "majhi-processes",

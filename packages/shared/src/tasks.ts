@@ -835,6 +835,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     level: z.enum(["info", "warn", "error"]),
     text: z.string(),
     agent: IdSchema.optional(),
+    /** The decision this line reports, so the owner can say it was wrong (5.12). */
+    decision: z.string().max(40).optional(),
   }),
 ]);
 export type RoomItem = z.infer<typeof RoomItemSchema>;

@@ -22,8 +22,16 @@ const agent = (patch: Partial<{ id: string; role: Role; scope: string; tools: st
 });
 
 describe("gateTools: the defaults are what agents had before gating", () => {
-  it("gives a builder alone decide, processes and memory", () => {
-    expect(gateTools(agent(), ctx)).toEqual(["majhi-decide", "majhi-processes", "majhi-memory"]);
+  it("gives a builder alone processes and memory, and no majhi-decide", () => {
+    expect(gateTools(agent(), ctx)).toEqual(["majhi-processes", "majhi-memory"]);
+  });
+
+  it("attaches majhi-decide only to an agent that lists it", () => {
+    expect(gateTools(agent({ tools: ["majhi-decide"] }), ctx)).toContain("majhi-decide");
+    expect(gateTools(agent({ role: "Lead", scope: "root" }), { ...ctx, teamSize: 3 })).not.toContain(
+      "majhi-decide",
+    );
+    expect(gateTools(agent({ tools: ["majhi-decide", "-majhi-decide"] }), ctx)).not.toContain("majhi-decide");
   });
 
   it("gives a team member the room, and a lead tasks too", () => {
@@ -74,8 +82,8 @@ describe("gateTools: the agent's tools list", () => {
   });
 
   it("turns a default off with a dash", () => {
-    const got = gateTools(agent({ tools: ["-majhi-decide"] }), ctx);
-    expect(got).not.toContain("majhi-decide");
+    const got = gateTools(agent({ tools: ["-majhi-processes"] }), ctx);
+    expect(got).not.toContain("majhi-processes");
     expect(got).toContain("majhi-memory");
   });
 

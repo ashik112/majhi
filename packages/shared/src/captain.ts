@@ -97,6 +97,8 @@ export const CaptainActionSchema = z.object({
   /** What it looked at, one line: the checks that passed, the card, the rule. */
   evidence: z.string().optional(),
   task: TaskIdSchema.optional(),
+  /** The decision provider's decision this line came from, so the owner can say it was wrong (5.12). */
+  decision: z.string().max(40).optional(),
   outcome: z.enum(["done", "asked", "skipped", "failed"]),
   /** `yes`: Undo works. `no`: it cannot be undone (a push, a removed worktree), with `undoNote`. `done`: undone. */
   undo: z.enum(["yes", "no", "done"]).optional(),

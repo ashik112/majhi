@@ -30,7 +30,7 @@ export interface CurationTask {
 
 export interface CuratorDeps {
   memory: MemoryService;
-  decisions: Pick<Decisions, "decide" | "outcome">;
+  decisions: Pick<Decisions, "decide" | "outcome" | "link">;
   /** The memory section of majhi.yaml, read at each use so changes apply at once. */
   settings: () => Promise<MemorySettings>;
   /** The task by id, or undefined when it is gone. */
@@ -194,6 +194,7 @@ export class Curator {
       .catch(() => undefined);
     // No answer: nothing is kept or dropped on a guess; the fact keeps waiting.
     if (result === undefined) return { reason: "no provider answered" };
+    decisions.link?.("memory", String(fact.id), result.id, "verdict");
     const { verdict, relation, private: secret } = result.answers;
     const note = (reason: string, a: Answer | undefined) => ({
       reason,
@@ -407,6 +408,8 @@ export class Curator {
       });
       return "kept";
     }
+
+    decisions.link?.("memory", String(fact.id), result.id, "worth");
 
     /**
      * The answer's probability when it passes majhi's gate and a stricter lift over chance for
