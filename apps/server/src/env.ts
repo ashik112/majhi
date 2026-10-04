@@ -84,6 +84,12 @@ const EnvSchema = z.object({
     .trim()
     .regex(/^\d+[kmg]$/, "Use a size like 4g")
     .default("4g"),
+  /** CPU cap per run: cores one agent run may use. */
+  MAJHI_RUNNER_CPUS: z
+    .string()
+    .trim()
+    .regex(/^\d+(\.\d+)?$/, "Use a number of cores like 2")
+    .default("2"),
 });
 
 export interface ServerEnv {
@@ -122,6 +128,7 @@ export interface RunnerEnv {
   user?: string;
   mcpHost: string;
   memory: string;
+  cpus: string;
   /** The docker CLI. */
   docker: string;
   /** PATH and DOCKER_HOST for the docker CLI. Never passed to an agent. */
@@ -174,6 +181,7 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
       ...(env.MAJHI_RUNNER_USER === undefined ? {} : { user: env.MAJHI_RUNNER_USER }),
       mcpHost: env.MAJHI_RUNNER_MCP_HOST,
       memory: env.MAJHI_RUNNER_MEMORY,
+      cpus: env.MAJHI_RUNNER_CPUS,
       docker: "docker",
       cliEnv: {
         PATH: source.PATH || "/usr/local/bin:/usr/bin:/bin",
