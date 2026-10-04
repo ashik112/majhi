@@ -41,7 +41,6 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "captain.undo",
   "captain.choreOn",
   "captain.runChore",
-  "captain.answerCap",
   "captain.answerBudget",
   // The decisions inbox answers for the owner: the owner's click only.
   "decisions.answer",
@@ -441,7 +440,6 @@ export const PERMISSION_COMMANDS: ReadonlySet<string> = new Set([
   "captain.stop",
   "captain.resume",
   "captain.choreOn",
-  "captain.answerCap",
   "captain.answerBudget",
   "money.set",
   "trust.unmute",

@@ -131,9 +131,6 @@ export function shortWhen(iso: string, now: number): string {
   return today ? hm : `${d.toLocaleDateString([], { weekday: "short" })} ${hm}`;
 }
 
-/** The daily limits the menu offers, besides "No cap". */
-export const LIMIT_CHOICES: readonly number[] = [1, 3, 5, 10, 20, 40, 100];
-
 export const RUN_LAMP: Record<PlaybookRun["status"], LampState> = {
   running: "working",
   done: "done",

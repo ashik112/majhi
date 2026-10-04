@@ -38,6 +38,7 @@ function desk(
     ...(second === undefined ? {} : { ownSecondOpinion: second }),
     answer: async (_org: string, card: QuestionCard, option: string, reason: string) => {
       answers.push({ task: card.task, item: card.item, option, reason });
+      return { answered: true as const };
     },
     flagLoop: async () => {},
     laneRest: async () => undefined,

@@ -90,6 +90,7 @@ function desk() {
     typing: () => false,
     answer: async (_org: string, card: QuestionCard, option: string) => {
       answers.push({ item: card.item, option });
+      return { answered: true as const };
     },
     flagLoop: async (_org: string, _card: QuestionCard, line: string, nudge: string) => {
       flags.push({ line, nudge });

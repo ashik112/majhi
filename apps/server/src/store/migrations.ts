@@ -1473,6 +1473,25 @@ ALTER TABLE handoff_deep ADD COLUMN env TEXT NOT NULL DEFAULT '';
 ALTER TABLE handoff_deep ADD COLUMN attempts INTEGER NOT NULL DEFAULT 1;
 `,
   },
+  {
+    // The captain's action keys (D9, G1). Every captain action that must happen once per state
+    // (a ship, an answer to a card, a note to a lead) takes a key first: `INSERT OR IGNORE` on the
+    // primary key is the atomic step, so two calls with the same key make one action. `settled` is 0
+    // while the action runs (a claim a crashed call left is taken over after an hour) and 1 once it
+    // ran. A key whose action failed is deleted, so it can be tried again.
+    id: 151,
+    name: "captain action keys",
+    sql: `
+CREATE TABLE captain_keys (
+  key TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  task TEXT,
+  at TEXT NOT NULL,
+  settled INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX captain_keys_task ON captain_keys (task);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

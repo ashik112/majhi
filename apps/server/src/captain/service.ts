@@ -1,7 +1,6 @@
 import {
   type AutonomyMode,
   type AutonomySettings,
-  type CaptainCapAsk,
   type CaptainChore,
   CaptainChoreSchema,
   type CaptainOrg,
@@ -12,7 +11,6 @@ import {
   type CommandMeta,
   type CommandName,
   commands,
-  DAILY_CHORE_CAPS,
   type Fact,
   PRIVATE,
   type RoomItem,
@@ -33,13 +31,10 @@ import { laneOfScope } from "./memory-scopes.ts";
 import type { CaptainPorts } from "./ports.ts";
 import { CaptainRepo, type StoredAction } from "./repo.ts";
 import { type RollupDeps, RollupPoster } from "./rollup-post.ts";
-import { dailyCaps, MEMORY_WAITING, restWhy } from "./rules.ts";
+import { MEMORY_WAITING, restWhy } from "./rules.ts";
 import { ChoreRunner, type Workspace } from "./runner.ts";
 import { summaryOf } from "./summary.ts";
 import { type Identity, revertMerge } from "./undo.ts";
-
-const CHORES = CaptainChoreSchema.options;
-const DAILY_CAPS = DAILY_CHORE_CAPS;
 
 /** How often the daily chores, the hourly checks and the daily summary are looked at. */
 export const CAPTAIN_SWEEP_MS = 60_000;
@@ -129,10 +124,6 @@ export class CaptainService {
       ports: deps.ports,
       workspace: (org) => this.workspace(org),
       now: () => this.now(),
-      capAsked: (ask) => {
-        this.deps.tell(`captain-cap:${ask.org}:${ask.chore}:${ask.day}`, ask.text);
-        this.deps.events.emit(["captain"]);
-      },
     });
     this.runner = new ChoreRunner({
       repo: this.repo,
@@ -149,10 +140,6 @@ export class CaptainService {
       enabled: (org, chore) => this.plays.enabled(org, chore),
       afterRun: (org, chore, did) => this.plays.afterRun(org, chore, did),
       changed: () => this.deps.events.emit(["captain"]),
-      capAsked: (ask) => {
-        this.deps.tell(`captain-cap:${ask.org}:${ask.chore}:${ask.day}`, ask.text);
-        this.deps.events.emit(["captain"]);
-      },
     });
   }
 
@@ -364,7 +351,8 @@ export class CaptainService {
    */
   afterUpdate(orgs: readonly string[]): void {
     for (const org of new Set(orgs)) {
-      for (const chore of ["cards", "ship", "tidy"] as const) this.trigger(org, chore, "majhi was updated", "majhi");
+      for (const chore of ["cards", "ship", "tidy"] as const)
+        this.trigger(org, chore, "majhi was updated", "majhi");
     }
   }
 
@@ -429,24 +417,13 @@ export class CaptainService {
     const tz = zoneOr(rules?.tz ?? autonomy.tz);
     const now = this.now();
     const rest = restWhy(rules, now, tz);
-    // The daily limits the owner set on the playbooks come before the ones in Limits.
-    let limited = rules;
-    for (const chore of CHORES) {
-      const limit = this.plays.limit(org, chore);
-      if (limit === undefined) continue;
-      const key = DAILY_CAPS[chore].actions !== undefined ? "actions" : "runs";
-      limited = {
-        ...limited,
-        chores: { ...limited?.chores, [chore]: { ...limited?.chores?.[chore], [key]: limit } },
-      };
-    }
     const off = this.plays.rulesOff(org);
     return {
       org,
       name: name ?? (org === PRIVATE ? "Private" : org),
       mode: this.deps.autonomy.mode(),
       authority: effectiveAuthority(authorityOf(autonomy, org), this.deps.autonomy.mode()),
-      rules: limited,
+      rules,
       ...(off.length === 0 ? {} : { rulesOff: new Set(off) }),
       tz,
       day: localDay(now, tz),
@@ -493,17 +470,12 @@ export class CaptainService {
         thread: lane === undefined ? "idle" : (threadOf?.(lane, org) ?? "idle"),
         chores: choresNow(authority, mode).map((chore) => {
           const c = this.repo.chore(org, chore);
-          const caps = dailyCaps(chore, this.repo.capRaised(org, chore, ws.day), ws);
           const last = this.repo.lastRun(org, chore);
           return {
             chore,
             ...(this.runner.running(org, chore) ? { running: true as const } : {}),
             ...(c.offWhy === undefined ? {} : { off: c.offWhy }),
-            today:
-              caps.actions !== undefined
-                ? this.repo.actionsToday(org, chore, ws.day)
-                : this.repo.runsToday(org, chore, ws.day),
-            cap: caps.actions ?? caps.runs ?? 1,
+            today: this.repo.actionsToday(org, chore, ws.day),
             ...(last === undefined ? {} : { lastRun: last }),
           };
         }),
@@ -567,60 +539,17 @@ export class CaptainService {
    */
   async runChore(org: string, chore: CaptainRunnableChore): Promise<CaptainRunChoreResult> {
     const started = await this.runner.startNow(org, chore);
-    if (!started.ran) return { started: false, text: started.why, overCap: false };
+    if (!started.ran) return { started: false, text: started.why };
     this.deps.events.emit(["captain"]);
     void started.done.catch(() => undefined).finally(() => this.deps.events.emit(["captain"]));
     const label = CHORE_LABEL[chore].toLowerCase();
-    return {
-      started: true,
-      overCap: started.overCap,
-      text: started.overCap
-        ? `Started ${label}. Today's limit was reached, and this run goes past it because you asked.`
-        : `Started ${label}.`,
-    };
+    return { started: true, text: `Started ${label}.` };
   }
 
   async choreOn(org: string, chore: CaptainChore): Promise<CaptainStatus> {
     this.repo.turnOn(org, chore);
     this.deps.events.emit(["captain"]);
     return this.status();
-  }
-
-  /** The questions about daily caps that wait for the owner, of each workspace's today only. */
-  async asks(): Promise<{ asks: CaptainCapAsk[] }> {
-    const settings = (await this.deps.config.settings()).autonomy;
-    const today = (org: string) => localDay(this.now(), zoneOr(settings.orgs[org]?.tz ?? settings.tz));
-    return { asks: this.repo.pendingCapAsks().filter((a) => a.day === today(a.org)) };
-  }
-
-  /**
-   * The owner's answer about a chore that reached its daily cap today. Raise doubles the chore's caps
-   * for that day only, and the chore looks again at once; Leave it keeps them.
-   */
-  async answerCap(
-    org: string,
-    chore: CaptainChore,
-    answer: "raise" | "leave",
-  ): Promise<{ asks: CaptainCapAsk[] }> {
-    const ask = (await this.asks()).asks.find((a) => a.org === org && a.chore === chore);
-    if (ask === undefined) {
-      throw new UserError(
-        `The captain is not asking about ${CHORE_LABEL[chore].toLowerCase()} in ${org} today.`,
-        409,
-      );
-    }
-    this.repo.answerCapAsk(
-      org,
-      chore,
-      ask.day,
-      answer === "raise" ? "raised" : "left",
-      this.now().toISOString(),
-    );
-    this.deps.events.emit(["captain"]);
-    if (answer === "raise") {
-      void this.runner.start(org, chore, "The owner raised today's limit").catch(() => undefined);
-    }
-    return this.asks();
   }
 
   /** Undo one action of the log through majhi's own paths. */

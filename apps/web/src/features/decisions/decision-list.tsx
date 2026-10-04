@@ -31,7 +31,6 @@ const ICON: Record<OwnerDecisionKind, ReactNode> = {
   approval: <ShieldCheck aria-hidden="true" />,
   secret: <KeyRound aria-hidden="true" />,
   budget: <CircleDollarSign aria-hidden="true" />,
-  cap: <CircleDollarSign aria-hidden="true" />,
   paused: <CirclePause aria-hidden="true" />,
   "sign-in": <LogIn aria-hidden="true" />,
   draft: <Mail aria-hidden="true" />,

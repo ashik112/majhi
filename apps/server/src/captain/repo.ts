@@ -1,8 +1,6 @@
 import {
   type CaptainAction,
   CaptainActionSchema,
-  type CaptainCapAsk,
-  CaptainCapAskSchema,
   type CaptainChore,
   type CaptainRun,
   CaptainRunSchema,
@@ -46,6 +44,13 @@ interface RunRow {
   tokens: number;
   note: string | null;
 }
+
+/** What taking a key found: `taken` is the caller's; the others are why it is not. */
+export type KeyClaim = "taken" | "repeat" | "in-flight";
+export type KeyState = "free" | "repeat" | "in-flight";
+
+/** A claim a crashed call left running is taken over after this long. Longer than the slowest ship (45 minutes). */
+export const KEY_IN_FLIGHT_MS = 60 * 60_000;
 
 export interface NewAction {
   key: string;
@@ -322,6 +327,54 @@ export class CaptainRepo {
   hasAction(key: string): boolean {
     return this.db.prepare("SELECT 1 FROM captain_actions WHERE key = ?").get(key) !== undefined;
   }
+  // ---------------------------------------------------------------------------
+  // Action keys (G1): one action per state
+
+  /** Whether a key is free, held by a call that is still running, or used: read only. */
+  keyState(key: string, now: string): KeyState {
+    if (this.hasAction(key)) return "repeat";
+    const row = this.db.prepare("SELECT settled, at FROM captain_keys WHERE key = ?").get(key) as
+      | { settled: number; at: string }
+      | undefined;
+    if (row === undefined) return "free";
+    if (row.settled === 1) return "repeat";
+    return Date.parse(now) - Date.parse(row.at) >= KEY_IN_FLIGHT_MS ? "free" : "in-flight";
+  }
+
+  /**
+   * Takes a key for one action. The insert on the primary key is the atomic step: of two calls with
+   * the same key, one gets "taken" and the other "repeat" (done before) or "in-flight" (still running).
+   * A claim a crashed call left unsettled for an hour is taken over.
+   */
+  claimKey(kind: string, key: string, task: string | undefined, now: string): KeyClaim {
+    return this.db.transaction((): KeyClaim => {
+      if (this.hasAction(key)) return "repeat";
+      const res = this.db
+        .prepare("INSERT OR IGNORE INTO captain_keys (key, kind, task, at, settled) VALUES (?, ?, ?, ?, 0)")
+        .run(key, kind, task ?? null, now);
+      if (res.changes > 0) return "taken";
+      const stale = new Date(Date.parse(now) - KEY_IN_FLIGHT_MS).toISOString();
+      const took = this.db
+        .prepare("UPDATE captain_keys SET at = ?, kind = ? WHERE key = ? AND settled = 0 AND at <= ?")
+        .run(now, kind, key, stale);
+      if (took.changes > 0) return "taken";
+      const row = this.db.prepare("SELECT settled FROM captain_keys WHERE key = ?").get(key) as
+        | { settled: number }
+        | undefined;
+      return row?.settled === 1 ? "repeat" : "in-flight";
+    })();
+  }
+
+  /** The action ran: the key stays, so the same state is not acted on again, also after a restart. */
+  settleKey(key: string): void {
+    this.db.prepare("UPDATE captain_keys SET settled = 1 WHERE key = ?").run(key);
+  }
+
+  /** The action did not happen, or its log line holds the key now: the claim goes. */
+  releaseKey(key: string): void {
+    this.db.prepare("DELETE FROM captain_keys WHERE key = ?").run(key);
+  }
+
   /** How many actions have a key starting with `prefix`, in any run. */
   countActions(prefix: string): number {
     const row = this.db
@@ -513,61 +566,6 @@ export class CaptainRepo {
         "UPDATE captain_chores SET failures = 0, off_at = NULL, off_why = NULL WHERE org = ? AND chore = ?",
       )
       .run(org, chore);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Daily caps the owner is asked about
-
-  /** Records the question; false when one was asked about this chore, workspace and day already. */
-  addCapAsk(ask: CaptainCapAsk): boolean {
-    const done = this.db
-      .prepare(
-        "INSERT OR IGNORE INTO captain_cap_asks (org, chore, day, kind, cap, raise_to, text, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      )
-      .run(ask.org, ask.chore, ask.day, ask.kind, ask.cap, ask.raiseTo, ask.text, ask.at);
-    return done.changes > 0;
-  }
-
-  /** The owner raised the chore's caps in the workspace for that day. */
-  capRaised(org: string, chore: CaptainChore, day: string): boolean {
-    const row = this.db
-      .prepare(
-        "SELECT 1 AS yes FROM captain_cap_asks WHERE org = ? AND chore = ? AND day = ? AND state = 'raised'",
-      )
-      .get(org, chore, day);
-    return row !== undefined;
-  }
-
-  /** Questions still waiting for the owner, oldest first. */
-  pendingCapAsks(): CaptainCapAsk[] {
-    const rows = this.db
-      .prepare(
-        "SELECT org, chore, day, kind, cap, raise_to, text, at FROM captain_cap_asks WHERE state = 'pending' ORDER BY at",
-      )
-      .all() as {
-      org: string;
-      chore: string;
-      day: string;
-      kind: string;
-      cap: number;
-      raise_to: number;
-      text: string;
-      at: string;
-    }[];
-    return rows.flatMap((r) => {
-      const ask = CaptainCapAskSchema.safeParse({ ...r, raiseTo: r.raise_to });
-      return ask.success ? [ask.data] : [];
-    });
-  }
-
-  /** The owner's answer to the day's question. False when there was none waiting. */
-  answerCapAsk(org: string, chore: CaptainChore, day: string, state: "raised" | "left", at: string): boolean {
-    const done = this.db
-      .prepare(
-        "UPDATE captain_cap_asks SET state = ?, answered_at = ? WHERE org = ? AND chore = ? AND day = ? AND state = 'pending'",
-      )
-      .run(state, at, org, chore, day);
-    return done.changes > 0;
   }
 
   // ---------------------------------------------------------------------------

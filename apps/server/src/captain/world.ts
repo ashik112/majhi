@@ -32,6 +32,7 @@ import type { CleanupService } from "../tasks/cleanup.ts";
 import type { TaskFolderSweep } from "../tasks/folder-sweep.ts";
 import type { TaskService } from "../tasks/service.ts";
 import { callOutcome, toolItemIdOf } from "./call-outcome.ts";
+import { answerOnce } from "./keys.ts";
 import type { Lanes } from "./lanes.ts";
 import { askedSentence, SHIP_ROW } from "./levels.ts";
 import { laneScopes } from "./memory-scopes.ts";
@@ -210,9 +211,12 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         const task = store.tasks.get(summary.id);
         if (task === undefined || task.repos.length === 0) continue;
         const heads: string[] = [];
-        for (const r of task.repos)
+        const bases: string[] = [];
+        for (const r of task.repos) {
           heads.push(`${r.project}@${(await branchTip(r.source, r.branch)).slice(0, 12)}`);
-        out.push({ id: task.id, title: task.title, heads: heads.join(",") });
+          bases.push(`${r.project}@${(await branchTip(r.source, r.base)).slice(0, 12)}`);
+        }
+        out.push({ id: task.id, title: task.title, heads: heads.join(","), bases: bases.join(",") });
       }
       return out;
     },
@@ -407,7 +411,15 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
 
     async decideCard(_org, card, verdict) {
       const captain = (await deps.lanes.boss()) ?? "captain";
-      return deps.admin.captainDecide(card.task, card.item, verdict, captain);
+      // A card is left (marked for the owner) any number of times; it is answered once. A card whose
+      // command failed was still answered: the key stays, so the same approval is not run again.
+      if (verdict.decision === "left")
+        return deps.admin.captainDecide(card.task, card.item, verdict, captain);
+      let decided: Awaited<ReturnType<typeof deps.admin.captainDecide>> | undefined;
+      const result = await answerOnce(deps.repo, new Date(), card, async () => {
+        decided = await deps.admin.captainDecide(card.task, card.item, verdict, captain);
+      });
+      return result.answered ? (decided ?? { ok: true }) : { ok: true, repeat: true };
     },
 
     // -------------------------------------------------------------------------
@@ -444,36 +456,38 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       ),
 
     async answer(_org, card, option, reason) {
-      // Recorded as the captain's answer, never the owner's (5.18).
+      // Recorded as the captain's answer, never the owner's (5.18). One answer per card.
       const captain = (await deps.lanes.boss()) ?? "captain";
-      let answered: RoomItem;
-      switch (card.kind) {
-        case "permission": {
-          // A tool a rule covers is allowed for the task, so its next call does not ask again.
-          const item = deps.room.get(card.task, card.item);
-          const chosen = item?.type === "permission" ? answerFor(item.title, item.options, option) : option;
-          answered = deps.tasks.answerPermission(card.task, card.item, chosen, captain);
-          break;
+      return answerOnce(deps.repo, new Date(), card, async () => {
+        let answered: RoomItem;
+        switch (card.kind) {
+          case "permission": {
+            // A tool a rule covers is allowed for the task, so its next call does not ask again.
+            const item = deps.room.get(card.task, card.item);
+            const chosen = item?.type === "permission" ? answerFor(item.title, item.options, option) : option;
+            answered = deps.tasks.answerPermission(card.task, card.item, chosen, captain);
+            break;
+          }
+          case "choice":
+            answered = await deps.tasks.answerChoice(card.task, card.item, option, captain);
+            break;
+          case "ask":
+            answered = await deps.tasks.answerAsk(
+              card.task,
+              card.item,
+              { [card.question ?? "q"]: option },
+              captain,
+            );
+            break;
+          case "owner-question":
+            answered = await deps.tasks.answerQuestion(card.task, card.item, option, captain);
+            break;
         }
-        case "choice":
-          answered = await deps.tasks.answerChoice(card.task, card.item, option, captain);
-          break;
-        case "ask":
-          answered = await deps.tasks.answerAsk(
-            card.task,
-            card.item,
-            { [card.question ?? "q"]: option },
-            captain,
-          );
-          break;
-        case "owner-question":
-          answered = await deps.tasks.answerQuestion(card.task, card.item, option, captain);
-          break;
-      }
-      deps.room.post(card.task as TaskId, `captain:${randomUUID()}`, {
-        type: "system",
-        level: "info",
-        text: captainAnsweredLine(answered, reason),
+        deps.room.post(card.task as TaskId, `captain:${randomUUID()}`, {
+          type: "system",
+          level: "info",
+          text: captainAnsweredLine(answered, reason),
+        });
       });
     },
 

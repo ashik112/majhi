@@ -200,6 +200,20 @@ export const taskPlans = sqliteTable(
   (t) => [index("task_plans_task_version").on(t.task, t.version), index("task_plans_org_at").on(t.org, t.at)],
 );
 
+/** The captain's action keys (migration 151): one row per state a ship, an answer or a tell acted on. */
+export const captainKeys = sqliteTable(
+  "captain_keys",
+  {
+    key: text("key").primaryKey(),
+    kind: text("kind").notNull(),
+    task: text("task"),
+    at: text("at").notNull(),
+    /** 0 while the action runs, 1 once it ran. */
+    settled: integer("settled").notNull().default(0),
+  },
+  (t) => [index("captain_keys_task").on(t.task)],
+);
+
 /** The tasks autonomous mode runs (PRV-74). The rest of its tables are read in `autonomy/repo.ts`. */
 export const autonomyTasks = sqliteTable("autonomy_tasks", {
   task: text("task").primaryKey(),

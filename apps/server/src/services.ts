@@ -1166,7 +1166,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       const task = store.tasks.subjectInfo(id);
       return task === undefined || task.status === "done" ? undefined : subjectOf(id);
     },
-    caps: async () => (await captain.asks()).asks,
     budgets: () => autonomy.budgetAsks(),
     signedOut: async () =>
       (await accounts.list())
@@ -1201,7 +1200,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           mode: "queue",
           ...(lead === undefined ? {} : { agent: lead }),
         }),
-      answerCap: (org, chore, answer) => captain.answerCap(org, chore as CaptainChore, answer),
       answerBudget: (scope, answer) => autonomy.answerBudget(scope, answer),
       decideDraft: (id, decision) => outbound.decide(id, decision),
       decideBatch: (org, channel, decision) => outbound.decideBatch(org, channel, decision),
@@ -2015,6 +2013,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       tasks,
       lanes,
       store,
+      keys: captainRepo,
+      lastTurn: (task, agent) => usageRepo.lastTurnId(task, agent),
       ...(options.runClock === undefined ? {} : { now: options.runClock }),
     }),
     lanes,

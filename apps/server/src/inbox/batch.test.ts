@@ -68,7 +68,6 @@ function setup(items: RoomItem[], options: { failOn?: ReadonlySet<string> } = {}
       return {};
     },
     askChanges: async () => {},
-    answerCap: async () => {},
     answerBudget: async () => {},
     decideDraft: async () => {},
     decideBatch: async () => {},
@@ -76,7 +75,6 @@ function setup(items: RoomItem[], options: { failOn?: ReadonlySet<string> } = {}
   const inbox = new InboxService({
     items: () => items.filter((i) => pending.has(`${i.task}:${i.id}`)),
     subject: (task) => subjects[task as keyof typeof subjects],
-    caps: async () => [],
     budgets: async () => [],
     signedOut: async () => [],
     recommendations: repo,

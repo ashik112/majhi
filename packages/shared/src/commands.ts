@@ -71,7 +71,6 @@ import { BudgetStatusSchema } from "./budgets.ts";
 import {
   BudgetAnswerInputSchema,
   CaptainAsksSchema,
-  CaptainCapAnswerInputSchema,
   CaptainChoreInputSchema,
   CaptainLogInputSchema,
   CaptainLogResultSchema,
@@ -496,6 +495,26 @@ export const ShipOptionsSchema = z.object({
 export type ShipOptions = z.infer<typeof ShipOptionsSchema>;
 const ById = z.object({ id: IdSchema });
 
+/**
+ * The captain's answer to a card (G1): once per card. A second answer is not an error: `refused` says
+ * why nothing ran (`already-answered`, or `in-flight` while the first is still running), and `item` is the card as it is.
+ */
+const CardAnswerOutput = z.object({
+  item: RoomItemSchema,
+  refused: z.enum(["already-answered", "in-flight"]).optional(),
+});
+
+/**
+ * A note from the captain to a lead (G1): one per turn of the lead. `told: false` with `refused`
+ * says why nothing was sent: `already-told` (wait for the lead's next turn), or `in-flight`.
+ */
+const TellOutput = z.object({
+  id: TaskIdSchema,
+  agent: IdSchema,
+  told: z.boolean(),
+  refused: z.enum(["already-told", "in-flight"]).optional(),
+});
+
 /** Agent fields a caller sets. `id` comes from the command input, never from here. */
 const AgentDraftSchema = z.object({
   frontmatter: AgentFrontmatterSchema.omit({ id: true }),
@@ -775,7 +794,7 @@ export const commands = {
   "decisions.list": {
     risk: "read",
     summary:
-      "Everything that waits for the owner, as decisions: questions, approvals, ready-to-ship work, budget and daily-limit questions, paused tasks, sign-ins and secret requests, with the options a click gives and the captain's recommendation. Ship and budget first, then oldest first",
+      "Everything that waits for the owner, as decisions: questions, approvals, ready-to-ship work, budget questions, paused tasks, sign-ins and secret requests, with the options a click gives and the captain's recommendation. Ship and budget first, then oldest first",
     input: z.object({ org: z.string().optional() }),
     output: DecisionListSchema,
   },
@@ -1749,14 +1768,14 @@ export const commands = {
   "tasks.tell": {
     risk: "change",
     summary:
-      "The captain writes to the lead of a running task in its own workspace (or to a named agent on its team), shown in the room as a note from the Captain, and wakes that agent like a message from the owner. The task keeps running and its brief is not edited. Use it instead of editing a brief or restarting a task: to steer, answer, or ask the lead to resolve something. The text is advice to the agent, never an approval. At most 3 per task in 10 minutes. Only the captain in a lane may call it; an ordinary agent may not",
+      "The captain writes to the lead of a running task in its own workspace (or to a named agent on its team), shown in the room as a note from the Captain, and wakes that agent like a message from the owner. The task keeps running and its brief is not edited. Use it instead of editing a brief or restarting a task: to steer, answer, or ask the lead to resolve something. The text is advice to the agent, never an approval. A second note before the lead has taken a new turn is not sent (told: false, refused: already-told): wait for the lead's next turn. Only the captain in a lane may call it; an ordinary agent may not",
     input: z.object({
       id: TaskIdSchema,
       /** Default: the task's lead. */
       agent: IdSchema.optional(),
       text: z.string().trim().min(1).max(4000),
     }),
-    output: z.object({ id: TaskIdSchema, agent: IdSchema }),
+    output: TellOutput,
   },
   "tasks.setLead": {
     risk: "change",
@@ -2272,7 +2291,7 @@ export const commands = {
       /** Rejecting a secret request: the one line the asking agent is told. */
       reason: z.string().max(300).optional(),
     }),
-    output: z.object({ item: RoomItemSchema }),
+    output: CardAnswerOutput,
   },
   "room.secret": {
     risk: "change",
@@ -2315,7 +2334,7 @@ export const commands = {
     summary:
       'Answer an agent\'s plain-text question to the owner with one of the choices read from it. The agent gets "Owner chose: <choice>"',
     input: z.object({ task: TaskIdSchema, item: z.string(), choice: z.string().min(1).max(200) }),
-    output: z.object({ item: RoomItemSchema }),
+    output: CardAnswerOutput,
   },
   "room.answerAsk": {
     risk: "change",
@@ -2326,7 +2345,7 @@ export const commands = {
       /** questionId -> the option id chosen, or free text typed. */
       answers: z.record(z.string(), z.string()),
     }),
-    output: z.object({ item: RoomItemSchema }),
+    output: CardAnswerOutput,
   },
 
   // Secrets (5.16) ------------------------------------------------------------
@@ -3321,7 +3340,7 @@ export const commands = {
   "autonomy.configure": {
     risk: "change",
     summary:
-      "Change autonomous mode's day cap, account floors, summary time, time zone and the largest task size it may start, or a workspace's entry under orgs: who decides what there (authority: start, questions, approvals, upkeep, merge and push, each decide or ask; only the rows you name change), its daily budget (cap), its daily caps per chore (chores: {ship: {actions: 10}}; null in a count means no cap), and the More rules (hours, freeze, tz, branches, providers, account). null clears a field. Owner only",
+      "Change autonomous mode's day cap, account floors, summary time, time zone and the largest task size it may start, or a workspace's entry under orgs: who decides what there (authority: start, questions, approvals, upkeep, merge and push, each decide or ask; only the rows you name change), its daily budget (cap), and the More rules (hours, freeze, tz, branches, providers, account). null clears a field. Owner only",
     input: AutonomyPatchSchema,
     output: AutonomyStatusSchema,
   },
@@ -3408,22 +3427,15 @@ export const commands = {
   "captain.runChore": {
     risk: "change",
     summary:
-      "Run the memory or cleanup chore of a workspace now (Review now), also while Autonomous is Off. One run at a time per chore and workspace; a run that goes past today's cap is allowed once because the owner asked, and the answer says so. The run goes on in the background: captain.status shows chores[].running. Owner only",
+      "Run the memory or cleanup chore of a workspace now (Review now), also while Autonomous is Off. One run at a time per chore and workspace; The run goes on in the background: captain.status shows chores[].running. Owner only",
     input: CaptainRunChoreInputSchema,
     output: CaptainRunChoreResultSchema,
   },
   "captain.asks": {
     risk: "read",
     summary:
-      "What the captain asks the owner about its daily caps today: each chore that reached its cap in a workspace, with the cap a raise would give",
+      "What the captain asks the owner about its budgets today: each budget that ran out while work waits, with the budget a raise would give",
     input: Empty,
-    output: CaptainAsksSchema,
-  },
-  "captain.answerCap": {
-    risk: "change",
-    summary:
-      "Answer the captain's question about a chore that reached its daily cap in a workspace: raise doubles that chore's caps for today only, leave keeps them. Owner only",
-    input: CaptainCapAnswerInputSchema,
     output: CaptainAsksSchema,
   },
   "captain.answerBudget": {

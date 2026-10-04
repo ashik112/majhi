@@ -220,8 +220,8 @@ export const PlaybookStateSchema = z.object({
   outcomes: z.record(IdSchema, z.boolean()).optional(),
   /** "Or do this": what the captain does after a run. */
   orDo: z.string().max(500).nullable().optional(),
-  /** Actions per day for a chore. `null`: no cap. Absent: majhi's default. */
-  dailyLimit: z.number().int().min(1).max(1000).nullable().optional(),
+  /** Removed in D9, kept so old config loads. */
+  dailyLimit: z.unknown().optional(),
   /** A clock playbook: its next run (UTC ISO), whether a one-off has run, its last run record and last edit. */
   next: z.string().nullable().optional(),
   done: z.boolean().optional(),
@@ -304,8 +304,6 @@ export const PlaybookViewSchema = z.object({
   /** Each outcome rule with its switch. */
   outcomes: z.array(z.object({ id: IdSchema, text: z.string(), on: z.boolean() })).default([]),
   orDo: z.string().optional(),
-  /** Actions per day for a chore; null is no cap. Absent for a playbook that is not a chore. */
-  dailyLimit: z.number().int().nullable().optional(),
   /** The last run in plain words ("freed 31 GB", "2 failing: x, y"). */
   result: z.string().optional(),
   needsLook: z.boolean().default(false),
@@ -335,7 +333,6 @@ export const PlaybookUpdateInputSchema = z.object({
   settings: z.record(IdSchema, z.array(z.string().trim().min(1).max(500)).max(50)).optional(),
   outcomes: z.record(IdSchema, z.boolean()).optional(),
   orDo: z.string().trim().max(500).nullable().optional(),
-  dailyLimit: z.number().int().min(1).max(1000).nullable().optional(),
   /** A clock playbook: change its name, time, action or overlap rule. Give `spec` or `phrase`, not both. */
   clock: z
     .object({

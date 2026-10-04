@@ -22,7 +22,6 @@ const DECISION_MINUTES: Record<OwnerDecisionKind, number> = {
   question: 2,
   approval: 1,
   budget: 1,
-  cap: 1,
   paused: 1,
   "sign-in": 2,
   secret: 1,
@@ -48,7 +47,6 @@ const DECISION_WEIGHT: Record<OwnerDecisionKind, number> = {
   incident: 100,
   // A budget hold is handled below: it stops new work.
   budget: 85,
-  cap: 85,
 };
 
 /** A waiting item gains up to this much weight over two days, so older ones go first within a kind. */
@@ -76,7 +74,7 @@ function named(org: string | undefined, orgName: AgendaInput["orgName"]) {
 
 function decisionItem(d: OwnerDecision, input: AgendaInput): AgendaItem {
   const waited = ageWord(d.at, input.now);
-  const hold = d.kind === "budget" || d.kind === "cap";
+  const hold = d.kind === "budget";
   const kind = hold ? "budget" : d.kind === "draft" || d.kind === "batch" ? "draft" : "decision";
   const why =
     d.kind === "ship"

@@ -123,9 +123,8 @@ export const CaptainChoreStateSchema = z.object({
   off: z.string().optional(),
   /** A run is going now. */
   running: z.boolean().optional(),
-  /** Actions it took today, against its daily cap. */
+  /** Actions it took today. */
   today: z.number().int().nonnegative(),
-  cap: z.number().int().positive(),
   lastRun: z.string().optional(),
 });
 export type CaptainChoreState = z.infer<typeof CaptainChoreStateSchema>;
@@ -203,31 +202,8 @@ export const CaptainRunChoreInputSchema = z.object({
 export const CaptainRunChoreResultSchema = z.object({
   started: z.boolean(),
   text: z.string(),
-  /** The run went past today's cap because the owner asked for it. */
-  overCap: z.boolean(),
 });
 export type CaptainRunChoreResult = z.infer<typeof CaptainRunChoreResultSchema>;
-
-/**
- * A chore reached its daily cap in a workspace, and the captain asks the owner whether to raise it
- * for today: one per chore, workspace and day. `kind` says which cap it reached, actions or runs.
- * "Raise" doubles the chore's caps for that day only; "Leave it" keeps them.
- */
-export const CaptainCapAskSchema = z.object({
-  org: z.string(),
-  chore: CaptainChoreSchema,
-  /** The workspace's day, `YYYY-MM-DD`. */
-  day: z.string(),
-  kind: z.enum(["actions", "runs"]),
-  /** The cap it reached. */
-  cap: z.number().int().positive(),
-  /** The cap for the rest of the day after "Raise". */
-  raiseTo: z.number().int().positive(),
-  /** "Hooli: the captain answered its 20 questions for today. Raise the limit for today?" */
-  text: z.string(),
-  at: z.string(),
-});
-export type CaptainCapAsk = z.infer<typeof CaptainCapAskSchema>;
 
 /**
  * A budget ran out while autonomous work waits, and the captain asks the owner whether to raise it for
@@ -252,20 +228,13 @@ export const BudgetAskSchema = z.object({
 });
 export type BudgetAsk = z.infer<typeof BudgetAskSchema>;
 
-/** `captain.asks`: what the captain asks the owner about its caps and budgets today. */
+/** `captain.asks`: what the captain asks the owner about its budgets today. */
 export const CaptainAsksSchema = z.object({
-  asks: z.array(CaptainCapAskSchema),
   budgets: z.array(BudgetAskSchema).default([]),
 });
 
 export const BudgetAnswerInputSchema = z.object({
   scope: z.string().min(1).max(63),
-  answer: z.enum(["raise", "leave"]),
-});
-
-export const CaptainCapAnswerInputSchema = z.object({
-  org: z.string().min(1).max(63),
-  chore: CaptainChoreSchema,
   answer: z.enum(["raise", "leave"]),
 });
 

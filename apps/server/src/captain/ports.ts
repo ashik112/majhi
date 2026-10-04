@@ -2,6 +2,7 @@ import type { Authority, CaptainUndo, CommandName, ShipFix, TaskPriority } from 
 import type { FollowUpPorts } from "../findings/followups.ts";
 import type { FindingsService } from "../findings/service.ts";
 import type { CallOutcome } from "./call-outcome.ts";
+import type { AnswerResult } from "./keys.ts";
 import type { OwnWorkScope } from "./own-work.ts";
 import type { SecondOpinion } from "./own-work-second.ts";
 import type { UpkeepPorts } from "./upkeep-ports.ts";
@@ -18,6 +19,8 @@ export interface ReviewTask {
   title: string;
   /** The task's head commits, one per repo: a ship-ready card is posted once per state of the work. */
   heads: string;
+  /** The tip of the branch each repo goes onto, one per repo. A ship is keyed by the heads and these. */
+  bases?: string | undefined;
 }
 
 /** A task in review with no code change: its lead's last message is the answer. */
@@ -155,7 +158,13 @@ export interface CaptainPorts {
       risky?: boolean | undefined;
       fix?: ShipFix | undefined;
     },
-  ): Promise<{ ok: boolean; error?: string | undefined; commit?: string | undefined }>;
+  ): Promise<{
+    ok: boolean;
+    error?: string | undefined;
+    commit?: string | undefined;
+    /** The card was answered before (or is being answered): nothing ran now. */
+    repeat?: true | undefined;
+  }>;
   /** The table that decides a card, with the workspace's authority rows. */
   cardVerdict(
     org: string,
@@ -182,7 +191,8 @@ export interface CaptainPorts {
   /** How the call behind a permission card the captain answered ended; unknown for anything else. */
   callOutcome?(task: string, item: string): CallOutcome | undefined;
   flagLoop(org: string, card: QuestionCard, line: string, nudge: string): Promise<void>;
-  answer(org: string, card: QuestionCard, option: string, reason: string): Promise<void>;
+  /** One answer per card: a second answer to the same card changes nothing and says so. */
+  answer(org: string, card: QuestionCard, option: string, reason: string): Promise<AnswerResult>;
   /** Why the workspace's lane rests now (its budget, the day budget, its account), or undefined. */
   laneRest(org: string): Promise<string | undefined>;
   /** A short turn of the captain in the workspace's lane. False with why when the lane rests. */

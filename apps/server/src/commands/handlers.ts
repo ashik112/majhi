@@ -10,6 +10,7 @@ import type {
   CommandOutput,
   commands,
   Remount,
+  RoomItem,
   TaskId,
 } from "@majhi/shared";
 import { PRIVATE, RESTART_COMMAND, sameImage } from "@majhi/shared";
@@ -22,6 +23,7 @@ import { scheduleHandlers } from "../automation/handlers.ts";
 import { autonomyHandlers } from "../autonomy/handlers.ts";
 import { backupHandlers } from "../backup/handlers.ts";
 import { captainHandlers } from "../captain/handlers.ts";
+import { answerOnce } from "../captain/keys.ts";
 import type { ConfigService } from "../config/service.ts";
 import { connectHandlers } from "../connect/handlers.ts";
 import { connectionHandlers } from "../connections/handlers.ts";
@@ -811,20 +813,21 @@ export function createHandlers({
     "tasks.link": (input) => services.tasks.link(input),
     "tasks.unlink": (input) => services.tasks.unlink(input),
     "room.fresh": async (input) => ({ item: await services.tasks.fresh(input.task, input.agent) }),
-    "room.approve": async (input, ctx) => ({
-      item: await services.admin.decide(
-        input.task,
-        input.item,
-        input.decision,
-        input.always === undefined
-          ? undefined
-          : {
-              scope: input.always.scope,
-              change: { command: ctx.command, meta: ctx.meta, summary: "saved an always-allow rule" },
-            },
-        { by: ctx.meta.actor.kind === "agent" ? "captain" : "owner", reason: input.reason },
+    "room.approve": (input, ctx) =>
+      answerCard(services, ctx, input, () =>
+        services.admin.decide(
+          input.task,
+          input.item,
+          input.decision,
+          input.always === undefined
+            ? undefined
+            : {
+                scope: input.always.scope,
+                change: { command: ctx.command, meta: ctx.meta, summary: "saved an always-allow rule" },
+              },
+          { by: ctx.meta.actor.kind === "agent" ? "captain" : "owner", reason: input.reason },
+        ),
       ),
-    }),
     "room.secret": async (input) => ({
       item: await services.admin.answerSecret(input.task, input.item, input.value),
     }),
@@ -834,12 +837,12 @@ export function createHandlers({
         by: actorName(ctx.meta.actor),
         agent: ctx.meta.actor.kind === "agent",
       }),
-    "room.answerQuestion": async (input) => ({
-      item: await services.tasks.answerQuestion(input.task, input.item, input.choice),
-    }),
-    "room.answerAsk": async (input) => ({
-      item: await services.tasks.answerAsk(input.task, input.item, input.answers),
-    }),
+    "room.answerQuestion": (input, ctx) =>
+      answerCard(services, ctx, input, () =>
+        services.tasks.answerQuestion(input.task, input.item, input.choice),
+      ),
+    "room.answerAsk": (input, ctx) =>
+      answerCard(services, ctx, input, () => services.tasks.answerAsk(input.task, input.item, input.answers)),
     "secrets.list": () => services.secretService.list(),
     "secrets.save": (input) => services.secretService.save(input),
     "secrets.remove": async (input) => {
@@ -1033,6 +1036,27 @@ export function createHandlers({
 }
 
 /** Tells the room which secrets were saved from the owner's text. */
+/**
+ * An answer to a card. The owner's click goes straight through. The captain's answer is keyed by the
+ * card (G1): a second answer to the same card changes nothing and says `refused`, not an error.
+ */
+async function answerCard(
+  services: Services,
+  ctx: CommandContext,
+  card: { task: string; item: string },
+  answer: () => Promise<RoomItem>,
+): Promise<CommandOutput<"room.answerAsk">> {
+  if (ctx.meta.actor.kind !== "agent") return { item: await answer() };
+  let given: RoomItem | undefined;
+  const result = await answerOnce(services.captain.repo, new Date(), card, async () => {
+    given = await answer();
+  });
+  if (result.answered && given !== undefined) return { item: given };
+  const item = services.room.get(card.task, card.item);
+  if (item === undefined) throw new UserError(`There is no card ${card.item} in ${card.task}.`, 404);
+  return { item, refused: !result.answered && result.why === "in-flight" ? "in-flight" : "already-answered" };
+}
+
 function noteSecrets(services: Services, task: string, saved: readonly string[]): void {
   for (const ref of saved) {
     services.room.post(task as TaskId, `secret-note:${randomUUID()}`, {

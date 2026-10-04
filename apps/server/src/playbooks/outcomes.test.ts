@@ -250,7 +250,10 @@ describe("outcome rules of the other chores", () => {
       ],
       answeredRecently: () => [],
       laneRest: async () => "resting",
-      answer: async (_o: string, _c: unknown, option: string) => void answered.push(option),
+      answer: async (_o: string, _c: unknown, option: string) => {
+        answered.push(option);
+        return { answered: true as const };
+      },
     };
     const wanted = { ...RUNS, own: "ask", questions: "decide" } as Authority;
     await choreRun("questions", ports, [], wanted);

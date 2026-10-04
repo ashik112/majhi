@@ -30,7 +30,6 @@ const GROUP: Record<OwnerDecisionKind, KindFilter> = {
   secret: "access",
   "sign-in": "access",
   budget: "money",
-  cap: "money",
   paused: "paused",
   draft: "access",
   batch: "access",
