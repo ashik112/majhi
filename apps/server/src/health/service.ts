@@ -7,6 +7,7 @@ import { isDirectory } from "../fs.ts";
 import type { HostLink } from "../host/link.ts";
 import type { Services } from "../services.ts";
 import type { SshHostProbe } from "../ssh/hosts.ts";
+import { sizeText } from "../tasks/folder-sweep.ts";
 import { type Check, collectChecks, type ToolCache } from "./checks.ts";
 
 /** Loading keys and asking the Keychain or keyring can take a few seconds. */
@@ -66,12 +67,28 @@ export class HealthService {
   }
 
   /** Runs the fix for one check. Answers with what happened in plain words. */
-  async fix(id: string): Promise<FixOutput> {
+  async fix(id: string, actor: "owner" | "agent" | "other" = "owner"): Promise<FixOutput> {
     const { env, services, config, hostLink, sshHosts, remount } = this.deps;
     try {
       if (id === "config-folder") {
         await mkdir(env.majhiHome, { recursive: true });
         return { ok: true, detail: "Created the config folder." };
+      }
+      if (id === "task-folders") {
+        if (actor !== "owner") return { ok: false, detail: "Only the owner frees space in task folders." };
+        const { cleanup } = await config.settings();
+        const report = await services.folderSweep.run({
+          hours: cleanup.free_after_hours,
+          worktreeDays: cleanup.worktree_after_days,
+        });
+        const n = report.tasks.filter((t) => t.bytes > 0).length;
+        return {
+          ok: true,
+          detail:
+            report.freedBytes === 0
+              ? "Nothing to free: every done task is already clean, or has changes that stay."
+              : `Freed ${sizeText(report.freedBytes)} in ${n} done ${n === 1 ? "task" : "tasks"}.`,
+        };
       }
       if (id === "tasks-dir") {
         const { state } = await config.load();

@@ -12,6 +12,7 @@ import { describeError } from "@/lib/errors";
 import { GLASS } from "@/lib/glass";
 import { usePreviewCleanup, useRunCleanup } from "@/lib/ops-queries";
 import { parseDays, stepText, taskTotals } from "./cleanup-model";
+import { FreeSpaceSettings } from "./free-space-settings";
 
 type Preview = CommandOutput<"cleanup.preview">;
 type Report = CommandOutput<"cleanup.run">;
@@ -133,6 +134,8 @@ export function CleanupPanel() {
           </p>
         )}
       </div>
+
+      <FreeSpaceSettings />
 
       {shown !== undefined && (
         <div className="flex flex-col gap-2 border-t border-line px-4 py-3">
