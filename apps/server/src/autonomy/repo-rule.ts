@@ -1,17 +1,17 @@
 /**
  * The repo rule (SPEC 5.18): the captain does not start a task whose plan touches the same
- * top-level areas of a repo and base branch as a task that is running now. Each task works in its
+ * files of a repo and base branch as a task that is running now. Each task works in its
  * own worktree and ships into one branch one at a time, so tasks on one repo run side by side unless
- * both plans name the same areas. With nothing known about either plan, they run. Pure: the service
+ * both plans name the same file, or a folder that holds the other's. With nothing known about either plan, they run. Pure: the service
  * gathers the inputs. The owner's own starts never come here.
  */
 
-/** One repo a task changes, with the top-level areas it is expected to touch. */
+/** One repo a task changes, with the files and folders it is expected to touch. */
 export interface RepoUse {
   project: string;
   base: string;
-  /** From `areasOf`. Empty when nothing is known about the plan: it blocks nothing. */
-  areas: readonly string[];
+  /** From `pathsOf`. Empty when nothing is known about the plan: it blocks nothing. */
+  paths: readonly string[];
 }
 
 export interface RepoRuleTask {
@@ -19,20 +19,16 @@ export interface RepoRuleTask {
   repos: readonly RepoUse[];
 }
 
-/** The top-level area of a path: its first folder, or "." for a file at the repo root. */
-export function areaOf(path: string): string {
-  const clean = path.replace(/^\.?\/+/, "");
-  const i = clean.indexOf("/");
-  return i === -1 ? "." : clean.slice(0, i);
+/** The paths of a plan as folders and files without leading or trailing slashes, once each. */
+export function pathsOf(paths: readonly string[]): string[] {
+  return [
+    ...new Set(paths.map((p) => p.replace(/^\.?\/+/, "").replace(/\/+$/, "")).filter((p) => p !== "")),
+  ].sort();
 }
 
-export function areasOf(paths: readonly string[]): string[] {
-  return [...new Set(paths.map(areaOf))].sort();
-}
-
-/** Only plans that name the same area overlap; an unknown plan overlaps nothing. */
+/** Two plans overlap when they name the same file, or one names a folder that holds the other's. */
 function overlap(a: readonly string[], b: readonly string[]): boolean {
-  return a.some((x) => b.includes(x));
+  return a.some((x) => b.some((y) => x === y || x.startsWith(`${y}/`) || y.startsWith(`${x}/`)));
 }
 
 /** The first task in `writers` that blocks `candidate`, with the repo it blocks on. */
@@ -47,7 +43,7 @@ export function blockingWriter(
       const theirs = other.repos.find(
         (r) => r.project === mine.project && (mine.base === "" || r.base === mine.base),
       );
-      if (theirs !== undefined && overlap(mine.areas, theirs.areas)) {
+      if (theirs !== undefined && overlap(mine.paths, theirs.paths)) {
         return { task: other.id, project: mine.project, base: theirs.base };
       }
     }

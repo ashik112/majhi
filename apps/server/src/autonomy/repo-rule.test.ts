@@ -1,16 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { areaOf, areasOf, blockingWriter, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
+import { blockingWriter, pathsOf, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
 
-const task = (id: string, base: string, areas: string[], project = "acme-api"): RepoRuleTask => ({
+const task = (id: string, base: string, paths: string[], project = "acme-api"): RepoRuleTask => ({
   id,
-  repos: [{ project, base, areas }],
+  repos: [{ project, base, paths }],
 });
 
-describe("areas", () => {
-  it("takes the top-level folder, or . for a file at the root", () => {
-    expect(areaOf("src/auth/login.ts")).toBe("src");
-    expect(areaOf("package.json")).toBe(".");
-    expect(areasOf(["src/a.ts", "src/b.ts", "docs/x.md", "README.md"])).toEqual([".", "docs", "src"]);
+describe("paths", () => {
+  it("drops leading and trailing slashes and repeats", () => {
+    expect(pathsOf(["./src/a.ts", "src/a.ts", "docs/", "README.md"])).toEqual([
+      "README.md",
+      "docs",
+      "src/a.ts",
+    ]);
   });
 });
 
@@ -23,6 +25,14 @@ describe("repo rule", () => {
       "It waits.",
     );
     expect(line).toBe("Not starting ACM-14: ACM-12 is already changing acme-api on main. It waits.");
+  });
+
+  it("runs two tasks on different files of the same folder, and waits when they name the same file or a folder holding it", () => {
+    const a = task("ACM-12", "main", ["src/auth/login.ts"]);
+    expect(blockingWriter(task("ACM-14", "main", ["src/billing/pay.ts"]), [a])).toBeUndefined();
+    expect(blockingWriter(task("ACM-14", "main", ["src/auth/login.ts"]), [a])?.task).toBe("ACM-12");
+    expect(blockingWriter(task("ACM-14", "main", ["src/auth"]), [a])?.task).toBe("ACM-12");
+    expect(blockingWriter(task("ACM-14", "main", ["src/authors.ts"]), [a])).toBeUndefined();
   });
 
   it("allows tasks whose plans touch different top-level areas", () => {

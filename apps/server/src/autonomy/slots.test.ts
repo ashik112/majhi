@@ -84,12 +84,35 @@ describe("the captain and free agent slots", () => {
   });
 });
 
+describe("the captain's plan and a full account slot", () => {
+  it("records waitFor available while the account slot is full", async () => {
+    const t = await on();
+    const id = await t.ownerTask("Fix the typo on the login page");
+    const spy = t.full();
+    await t.call("majhi_tasks_start", { id });
+    const account = spy.mock.calls[0]?.[0]?.[0];
+    expect(account).toBeDefined();
+    const plan = () =>
+      t.call("majhi_autonomy_plan", {
+        items: [
+          {
+            title: "Fix the typo",
+            task: id,
+            why: "Waits for a slot",
+            waitFor: { account, state: "available" },
+          },
+        ],
+      });
+    expect((await plan()).isError).toBe(false);
+  });
+});
+
 describe("the captain and the repo rule", () => {
-  it("keeps a second task on the same repo and base in the backlog, allows disjoint areas, and never blocks the owner", async () => {
+  it("keeps a second task naming the same file in the backlog, allows different files and areas, and never blocks the owner", async () => {
     const t = await on();
     const running = await t.ownerTask("Rework login in src/auth/login.ts");
     expect((await t.h.cmd("tasks.start", { id: running })).status).toBe(200);
-    const same = await t.ownerTask("Fix a typo in src/auth/session.ts");
+    const same = await t.ownerTask("Add a guard in src/auth/login.ts");
     const no = await t.call("majhi_tasks_start", { id: same });
     expect(no.isError).toBe(true);
     expect(no.text).toMatch(
@@ -98,6 +121,11 @@ describe("the captain and the repo rule", () => {
       ),
     );
     expect(t.status(same)).toBe("inbox");
+
+    // A different file in the same folder is not held by the repo rule.
+    const other = await t.ownerTask("Fix a typo in src/auth/session.ts");
+    const beside = await t.call("majhi_tasks_start", { id: other });
+    expect(beside.text).not.toContain("already changing");
 
     // A new task whose plan is not known yet runs beside it: its own worktree keeps them apart.
     const filed = await t.call("majhi_tasks_create", {
