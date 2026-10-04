@@ -1,0 +1,422 @@
+/**
+ * Catalog entries for services that are not a remote MCP server with self-registration: the
+ * provider's own OAuth (loopback with PKCE, or the device grant), apps the owner creates first, and
+ * command-line tools. Raw data, parsed by `SERVICE_CATALOG` in `services.ts`.
+ *
+ * Every address and scope comes from the provider's documentation (the integration research,
+ * 2026-10-04). None was run against the real service, so `verified` is false and `verifiedNote` says
+ * so. Example names are generic.
+ */
+
+import { CLI_TOOLS, type CliToolId } from "./cli-tools.ts";
+
+const DOCS_ONLY =
+  "From the provider's documentation, 2026-10-04. Not run against the real service: the first connect is the check.";
+
+const identity = (
+  url: string,
+  labelPaths: string[][],
+  idPaths: string[][],
+  more: { method?: "GET" | "POST"; body?: string } = {},
+) => ({ url, labelPaths, idPaths, ...more });
+
+const G = "https://www.googleapis.com/auth/";
+
+const google = (
+  id: string,
+  name: string,
+  summary: string,
+  test: string,
+  scopes: unknown[],
+  docs: string,
+) => ({
+  id,
+  name,
+  kind: "oauth-loopback",
+  summary,
+  app: "google",
+  ready: true,
+  verified: false,
+  verifiedNote: `${DOCS_ONLY} Google may block the app until it is published or the account is added as a test user.`,
+  packs: ["Social and inbox", "Ops watch"],
+  provider: {
+    flow: "loopback",
+    authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+    tokenUrl: "https://oauth2.googleapis.com/token",
+    revokeUrl: "https://oauth2.googleapis.com/revoke",
+    issuer: "https://accounts.google.com",
+    issSent: true,
+    pkce: true,
+    clientAuth: "secret",
+    identityScopes: ["openid", "email"],
+    extraAuthParams: { access_type: "offline", prompt: "consent" },
+    identity: identity(
+      test,
+      [["email"], ["emailAddress"], ["user", "emailAddress"]],
+      [["id"], ["emailAddress"], ["user", "emailAddress"]],
+    ),
+    refusedHint:
+      "If the Google app is still in Testing, Google ends a sign-in after 7 days. Publish the app in the Google console, then connect again.",
+    accessPage: "https://myaccount.google.com/permissions",
+  },
+  scopes,
+  test: { kind: "api", sentence: `Reads ${name} once with the token.` },
+  docs,
+});
+
+export const EXTRA_SERVICES: readonly unknown[] = [
+  {
+    id: "linear-api",
+    name: "Linear (API)",
+    kind: "oauth-loopback",
+    summary: "Issues and cycles for polling, with your own app",
+    app: "linear",
+    ready: true,
+    verified: false,
+    verifiedNote: DOCS_ONLY,
+    packs: ["Engineering", "Ops watch"],
+    provider: {
+      flow: "loopback",
+      authorizeUrl: "https://linear.app/oauth/authorize",
+      tokenUrl: "https://api.linear.app/oauth/token",
+      revokeUrl: "https://api.linear.app/oauth/revoke",
+      pkce: true,
+      clientAuth: "none",
+      scopeSeparator: ",",
+      identity: identity(
+        "https://api.linear.app/graphql",
+        [
+          ["data", "viewer", "email"],
+          ["data", "viewer", "name"],
+        ],
+        [["data", "viewer", "id"]],
+        { method: "POST", body: '{"query":"{ viewer { id name email } }"}' },
+      ),
+      tokenVar: "LINEAR_API_TOKEN",
+    },
+    scopes: [
+      { id: "read", access: "read", sentence: "Read issues, projects, comments and teams.", oauth: ["read"] },
+      {
+        id: "write",
+        access: "write",
+        sentence: "Create issues and comments. It cannot delete.",
+        oauth: ["read", "issues:create", "comments:create"],
+      },
+    ],
+    test: { kind: "api", sentence: "Asks Linear who you are." },
+    docs: "https://linear.app/developers/oauth-2-0-authentication",
+    note: "For polling and the captain's reads. The Linear connection above uses Linear's own MCP server instead.",
+  },
+  {
+    id: "outlook",
+    name: "Outlook mail and calendar",
+    kind: "oauth-loopback",
+    summary: "Microsoft 365 or Outlook.com mail and calendar",
+    app: "microsoft",
+    ready: true,
+    verified: false,
+    verifiedNote: `${DOCS_ONLY} Microsoft takes http://localhost as the loopback address, so majhi uses that name for this one.`,
+    packs: ["Social and inbox"],
+    provider: {
+      flow: "loopback",
+      authorizeUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+      tokenUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+      issuer: "https://login.microsoftonline.com/",
+      issuerPrefix: true,
+      pkce: true,
+      clientAuth: "none",
+      identityScopes: ["offline_access", "User.Read"],
+      redirectHost: "localhost",
+      identity: identity(
+        "https://graph.microsoft.com/v1.0/me",
+        [["mail"], ["userPrincipalName"], ["displayName"]],
+        [["id"]],
+      ),
+      tokenVar: "MICROSOFT_GRAPH_TOKEN",
+      accessPage: "https://account.microsoft.com/privacy/app-access",
+    },
+    scopes: [
+      {
+        id: "read",
+        access: "read",
+        sentence: "Read your mail and calendar.",
+        oauth: ["Mail.Read", "Calendars.Read"],
+      },
+      {
+        id: "draft",
+        access: "write",
+        sentence: "Write drafts and add calendar events. It does not send mail.",
+        oauth: ["Mail.ReadWrite", "Calendars.ReadWrite"],
+      },
+      {
+        id: "send",
+        access: "write",
+        level: "send",
+        sentence: "Send mail as you. Each send still asks you unless the channel allows it.",
+        oauth: ["Mail.Send"],
+      },
+    ],
+    test: { kind: "api", sentence: "Asks Microsoft Graph who you are." },
+    docs: "https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow",
+    note: "Microsoft ends this kind of access after 90 days without use. Microsoft cannot revoke it from majhi: remove it in your Microsoft account.",
+  },
+  {
+    id: "x",
+    name: "X",
+    kind: "oauth-loopback",
+    summary: "Your posts and mentions, with your own developer app",
+    app: "x",
+    ready: true,
+    verified: false,
+    verifiedNote: `${DOCS_ONLY} Whether X accepts 127.0.0.1 as a registered callback was not confirmed.`,
+    packs: ["Growth", "Social and inbox"],
+    provider: {
+      flow: "loopback",
+      authorizeUrl: "https://x.com/i/oauth2/authorize",
+      tokenUrl: "https://api.x.com/2/oauth2/token",
+      revokeUrl: "https://api.x.com/2/oauth2/revoke",
+      pkce: true,
+      clientAuth: "none",
+      identityScopes: ["users.read", "offline.access"],
+      identity: identity(
+        "https://api.x.com/2/users/me",
+        [
+          ["data", "username"],
+          ["data", "name"],
+        ],
+        [["data", "id"]],
+      ),
+      tokenVar: "X_ACCESS_TOKEN",
+    },
+    scopes: [
+      { id: "read", access: "read", sentence: "Read posts and mentions.", oauth: ["tweet.read"] },
+      {
+        id: "write",
+        access: "write",
+        sentence: "Post and reply as you.",
+        oauth: ["tweet.read", "tweet.write"],
+      },
+    ],
+    test: { kind: "api", sentence: "Asks X who you are." },
+    docs: "https://docs.x.com/resources/fundamentals/authentication/oauth-2-0/authorization-code",
+    note: "X bills the app owner for posts and reads (pay per use since February 2026).",
+  },
+  {
+    id: "github",
+    name: "GitHub",
+    kind: "device",
+    summary: "Repositories, issues and pull requests",
+    mcpUrl: "https://api.githubcopilot.com/mcp",
+    app: "github",
+    ready: true,
+    verified: false,
+    verifiedNote: `${DOCS_ONLY} GitHub's MCP address answered 401 on 2026-10-04 but does not take dynamic registration, so it gets the device-flow token as a Bearer header.`,
+    packs: ["Engineering"],
+    provider: {
+      flow: "device",
+      deviceUrl: "https://github.com/login/device/code",
+      tokenUrl: "https://github.com/login/oauth/access_token",
+      pkce: false,
+      clientAuth: "none",
+      scopeSeparator: " ",
+      identity: identity("https://api.github.com/user", [["login"], ["name"]], [["id"]]),
+      accessPage: "https://github.com/settings/applications",
+    },
+    scopes: [
+      {
+        id: "read",
+        access: "read",
+        sentence: "Read your profile, your organizations and public repositories.",
+        oauth: ["read:user", "read:org"],
+      },
+      {
+        id: "write",
+        access: "write",
+        sentence:
+          "Read and change private repositories, issues and pull requests. GitHub has no read-only option for private code here.",
+        oauth: ["read:user", "read:org", "repo"],
+      },
+    ],
+    test: { kind: "mcp-tools", sentence: "Lists GitHub's tools." },
+    docs: "https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow",
+    note: "A device code: majhi shows it and opens GitHub. GitHub cannot be asked to revoke from majhi; Disconnect says where.",
+  },
+  google(
+    "gmail",
+    "Gmail",
+    "Read and draft mail",
+    "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+    [
+      { id: "read", access: "read", sentence: "Read your mail and labels.", oauth: [`${G}gmail.readonly`] },
+      {
+        id: "draft",
+        access: "write",
+        sentence: "Write drafts. It does not send.",
+        oauth: [`${G}gmail.compose`],
+      },
+      {
+        id: "send",
+        access: "write",
+        level: "send",
+        sentence: "Send mail as you. Each send still asks you unless the channel allows it.",
+        oauth: [`${G}gmail.send`],
+      },
+    ],
+    "https://developers.google.com/gmail/api/auth/scopes",
+  ),
+  google(
+    "google-calendar",
+    "Google Calendar",
+    "Read and add events",
+    "https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=1",
+    [
+      {
+        id: "read",
+        access: "read",
+        sentence: "Read your calendars and events.",
+        oauth: [`${G}calendar.readonly`],
+      },
+      { id: "write", access: "write", sentence: "Add and change events.", oauth: [`${G}calendar.events`] },
+    ],
+    "https://developers.google.com/calendar/api/auth",
+  ),
+  google(
+    "google-drive",
+    "Google Drive",
+    "Read files and make new ones",
+    "https://www.googleapis.com/drive/v3/about?fields=user",
+    [
+      { id: "read", access: "read", sentence: "Read your files.", oauth: [`${G}drive.readonly`] },
+      {
+        id: "write",
+        access: "write",
+        sentence: "Create files and change only the ones majhi made.",
+        oauth: [`${G}drive.file`],
+      },
+    ],
+    "https://developers.google.com/drive/api/guides/api-specific-auth",
+  ),
+  {
+    id: "linkedin",
+    name: "LinkedIn",
+    kind: "oauth-loopback",
+    summary: "Your profile and posts, with your own app",
+    app: "linkedin",
+    ready: true,
+    verified: false,
+    verifiedNote: DOCS_ONLY,
+    packs: ["Growth", "Social and inbox"],
+    provider: {
+      flow: "loopback",
+      authorizeUrl: "https://www.linkedin.com/oauth/v2/authorization",
+      tokenUrl: "https://www.linkedin.com/oauth/v2/accessToken",
+      revokeUrl: "https://www.linkedin.com/oauth/v2/revoke",
+      pkce: false,
+      clientAuth: "secret",
+      identityScopes: ["openid", "profile"],
+      identity: identity("https://api.linkedin.com/v2/userinfo", [["email"], ["name"]], [["sub"]]),
+      tokenVar: "LINKEDIN_ACCESS_TOKEN",
+    },
+    scopes: [
+      { id: "read", access: "read", sentence: "Read your name and profile.", oauth: ["email"] },
+      { id: "write", access: "write", sentence: "Post as you.", oauth: ["email", "w_member_social"] },
+    ],
+    test: { kind: "api", sentence: "Asks LinkedIn who you are." },
+    docs: "https://learn.microsoft.com/en-us/linkedin/shared/authentication/authorization-code-flow",
+    note: "LinkedIn gives no renewal: the sign-in lasts 60 days and majhi reminds you at day 55.",
+  },
+  {
+    id: "slack",
+    name: "Slack",
+    kind: "api-key",
+    summary: "Channel messages and replies, through your own Slack app",
+    app: "slack",
+    ready: true,
+    verified: false,
+    verifiedNote: `${DOCS_ONLY} Slack takes only https redirect URLs, so there is no sign-in majhi can run on this computer. The app's two tokens are pasted once instead.`,
+    packs: ["Social and inbox"],
+    scopes: [
+      {
+        id: "read",
+        access: "read",
+        sentence: "Read messages in channels the app is added to, and see who posted.",
+        oauth: [
+          "channels:history",
+          "groups:history",
+          "im:history",
+          "mpim:history",
+          "channels:read",
+          "groups:read",
+          "users:read",
+        ],
+      },
+      {
+        id: "write",
+        access: "write",
+        sentence: "Post replies as the app. Each post asks you first.",
+        oauth: ["chat:write"],
+      },
+    ],
+    test: { kind: "token", sentence: "Asks Slack which workspace the app is in." },
+    docs: "https://docs.slack.dev/app-manifests/",
+  },
+  {
+    id: "discord",
+    name: "Discord",
+    kind: "api-key",
+    summary: "A bot in your server that reads and replies",
+    app: "discord",
+    ready: true,
+    verified: false,
+    verifiedNote: DOCS_ONLY,
+    packs: ["Social and inbox", "Growth"],
+    scopes: [
+      {
+        id: "read",
+        access: "read",
+        sentence: "See channels and read message history where the bot is added.",
+      },
+      { id: "write", access: "write", sentence: "Send messages as the bot. Each message asks you first." },
+    ],
+    test: { kind: "token", sentence: "Asks Discord who the bot is." },
+    docs: "https://discord.com/developers/docs/topics/oauth2#bot-users",
+  },
+  ...cli("wrangler", "Cloudflare (wrangler)", "Workers, Pages and DNS", ["Ops watch", "Engineering"]),
+  ...cli("vercel-cli", "Vercel CLI", "Projects and deployments", ["Ops watch", "Engineering"], "vercel"),
+  ...cli(
+    "stripe-cli",
+    "Stripe CLI",
+    "Payments and a 90-day restricted key",
+    ["Growth", "Analysis"],
+    "stripe",
+  ),
+  ...cli("aws", "AWS", "Your AWS account", ["Ops watch"]),
+  ...cli("gcloud", "Google Cloud", "Your Google Cloud projects", ["Ops watch"]),
+  ...cli("sentry-cli", "Sentry CLI", "Errors and releases", ["Ops watch", "Engineering"], "sentry"),
+];
+
+function cli(
+  id: string,
+  name: string,
+  summary: string,
+  packs: string[],
+  tool: CliToolId = id as CliToolId,
+): unknown[] {
+  const def = CLI_TOOLS[tool];
+  return [
+    {
+      id,
+      name,
+      kind: "cli-login",
+      summary,
+      cli: tool,
+      ready: true,
+      verified: false,
+      verifiedNote: `${def.note} Not run against a real install: the first sign-in is the check.`,
+      packs,
+      scopes: [{ id: "account", access: "write", sentence: def.access }],
+      test: { kind: "cli", sentence: "Runs the tool's own who-am-I command." },
+      docs: def.docs,
+    },
+  ];
+}

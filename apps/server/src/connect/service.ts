@@ -7,18 +7,25 @@ import {
   type ConnectFlowView,
   type ConnectionConfig,
   type ConnectionTestResult,
+  type ConnectionType,
   type ConnectScopeLine,
   type ConnectStartInput,
   type ConnectState,
   type ConnectStatus,
+  cliTool,
   SERVICE_CATALOG,
   type ServiceEntry,
+  type ServiceProvider,
+  scopesAt,
   serviceById,
   serviceByUrl,
   suggestConnectionId,
   textValue,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
+import type { AppClientStore } from "./app-client.ts";
+import { AppService } from "./app-service.ts";
+import type { CliHost } from "./cli-connect.ts";
 import type { Grant, GrantStore } from "./grant.ts";
 import {
   authorizationUrl,
@@ -35,11 +42,26 @@ import {
   register,
   revocationEndpointOf,
   revoke,
+  type TokenProbe,
   type TokenSet,
 } from "./oauth.ts";
+import {
+  type ApiProbe,
+  authorizationPage,
+  exchangeCode,
+  joinScope,
+  type ProviderClient,
+  pkce,
+  pollDevice,
+  probeProvider,
+  refreshTokens,
+  startDevice,
+} from "./provider-oauth.ts";
 
 /** How long the browser page works. The owner has this long to approve. */
 export const FLOW_TTL_MS = 10 * 60_000;
+/** A command-line tool's own sign-in may wait this long: device codes last 15 minutes. */
+const CLI_FLOW_TTL_MS = 15 * 60_000;
 /** An ended attempt stays readable this long, so a screen can show how it ended. */
 const ENDED_KEEP_MS = 30 * 60_000;
 /** An access token with less than this left is renewed before it is used. */
@@ -47,6 +69,8 @@ export const REFRESH_SKEW_MS = 5 * 60_000;
 /** The background pass renews tokens of connections in use this long before they end. */
 const SWEEP_AHEAD_MS = 10 * 60_000;
 const SWEEP_EVERY_MS = 60_000;
+/** A sign-in with no renewal gets a reminder this long before it ends. */
+const REMIND_AHEAD_MS = 5 * 24 * 60 * 60_000;
 const BACKOFF_FIRST_MS = 30_000;
 const BACKOFF_MAX_MS = 10 * 60_000;
 
@@ -56,15 +80,22 @@ export interface ConnectConnections {
     input: {
       org: string;
       id?: string;
-      type: "mcp";
+      type: ConnectionType;
       name: string;
       description?: string;
       fields: Record<string, string>;
+      vars?: Record<string, { kind: "secret" | "text"; value?: string }>;
     },
     command: string,
     meta: CommandMeta,
   ): Promise<unknown>;
   remove(id: string, command: string, meta: CommandMeta): Promise<unknown>;
+  /** Stores a secret value of a connection's list entry in secrets.age. */
+  setSecret?(
+    input: { id: string; field: string; list: "vars"; value: string },
+    command: string,
+    meta: CommandMeta,
+  ): Promise<unknown>;
   find(id: string): Promise<{ org: string; connection: ConnectionConfig } | undefined>;
 }
 
@@ -96,15 +127,32 @@ export interface ConnectDeps {
   attention?: (item: { org: string; key: string; title: string; detail: string }) => void;
   /** One line per event, never with a value. */
   log?: (line: string) => void;
+  /** The owner's apps, per workspace (guided setup). */
+  apps: AppClientStore;
+  /** Public client IDs majhi ships, by app. */
+  builtInApps?: Readonly<Record<string, string>>;
+  /** The client ID of the workspace-wide GitHub OAuth app git sign-in already uses, if any. */
+  githubClientId?: () => Promise<string | undefined>;
+  /** Command-line tool sign-ins through the host helper. */
+  cli?: CliHost;
+  /** The name of a workspace, for the app's name in the provider's list. Undefined when there is none. */
+  orgName: (org: string) => Promise<string | undefined>;
+  /** The value of a secret entry of a connection's `vars`. */
+  secretOf: (connection: string, name: string) => Promise<string | undefined>;
+  /** Waits between device polls. Tests replace it. */
+  wait?: (ms: number) => Promise<void>;
 }
 
 interface Pending {
   /** The `state` parameter the service must send back. */
   state: string;
-  verifier: string;
-  found: Discovered;
+  verifier: string | undefined;
+  /** An MCP server's discovered sign-in. Absent for a provider's own OAuth. */
+  found: Discovered | undefined;
   client: ClientIdentity;
   scope: string | undefined;
+  /** The provider's own OAuth. */
+  provider: { config: ServiceProvider; client: ProviderClient } | undefined;
 }
 
 interface Held {
@@ -133,6 +181,10 @@ interface Flow {
   scopes: ConnectScopeLine[];
   test: ConnectionTestResult | undefined;
   pending: Pending | undefined;
+  /** The device code, a code sign-in's own page. */
+  code: string | undefined;
+  /** Set to stop a device poll. */
+  stop: { stopped: boolean } | undefined;
   held: Held | undefined;
   expiresAt: number;
   endedAt: number | undefined;
@@ -154,10 +206,46 @@ export class ConnectService {
   private readonly byState = new Map<string, string>();
   private readonly inflight = new Map<string, Promise<Grant | undefined>>();
   private readonly backoff = new Map<string, { until: number; step: number }>();
+  /** What the last Test of a command-line tool or a token service found. In memory only. */
+  private readonly cliStates = new Map<string, { state: ConnectState; reason: string }>();
+  private readonly tokenStates = new Map<string, { state: ConnectState; reason: string }>();
+  private readonly warned = new Set<string>();
   private readonly discovered = new Map<string, { at: number; found: Discovered }>();
   private timer: ReturnType<typeof setInterval> | undefined;
 
-  constructor(private readonly deps: ConnectDeps) {}
+  private readonly appSvc: AppService;
+
+  constructor(private readonly deps: ConnectDeps) {
+    this.appSvc = new AppService({
+      apps: deps.apps,
+      builtIn: deps.builtInApps,
+      githubClientId: deps.githubClientId,
+      orgName: deps.orgName,
+      redirect: deps.redirect,
+      fetch: () => this.fetchFn,
+      connections: deps.connections,
+      connectionIds: deps.connectionIds,
+      secretOf: deps.secretOf,
+      changed: deps.changed,
+      log: deps.log,
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Guided app setup
+
+  appSetup(org: string, app: string, access: ConnectAccess) {
+    return this.appSvc.view(org, app, access);
+  }
+  appStatus(org: string) {
+    return this.appSvc.status(org);
+  }
+  appSave(input: Parameters<AppService["save"]>[0], meta: CommandMeta) {
+    return this.appSvc.save(input, meta);
+  }
+  appForget(org: string, app: string) {
+    return this.appSvc.forget(org, app);
+  }
 
   private get fetchFn(): Fetch {
     return this.deps.fetch ?? fetch;
@@ -187,10 +275,63 @@ export class ConnectService {
     const out: ConnectStatus[] = [];
     for (const c of await this.deps.connectionIds()) {
       if (org !== undefined && c.org !== org) continue;
+      if (c.connection.type === "cli") {
+        out.push(this.cliStatus(c.id, c.org, c.connection));
+        continue;
+      }
+      if (this.isTokenService(c.connection)) {
+        out.push(this.tokenStatus(c.id, c.org, c.connection));
+        continue;
+      }
       if (textValue(c.connection, "auth") !== "oauth") continue;
       out.push(await this.statusOf(c.id, c.org, c.connection));
     }
     return out;
+  }
+
+  /** An `env` connection a guided app setup made (Slack, Discord): tokens, no sign-in to renew. */
+  private isTokenService(connection: ConnectionConfig): boolean {
+    if (connection.type !== "env") return false;
+    const id = connection.fields?.service;
+    return id !== undefined && this.service(id)?.kind === "api-key";
+  }
+
+  private tokenStatus(id: string, org: string, connection: ConnectionConfig): ConnectStatus {
+    const entry = this.service(connection.fields?.service ?? "");
+    const account = connection.fields?.account;
+    return {
+      connection: id,
+      org,
+      ...(entry === undefined ? {} : { service: entry.id }),
+      serviceName: entry?.name ?? connection.name,
+      state: this.tokenStates.get(id)?.state ?? "connected",
+      reason: this.tokenStates.get(id)?.reason ?? "Connected with its bot token.",
+      ...(account === undefined ? {} : { account }),
+      scopes: scopeLines(entry, [], connection.fields?.access === "readwrite" ? "readwrite" : "read"),
+      missing: [],
+      renews: false,
+      revocable: entry?.id === "slack",
+    };
+  }
+
+  private cliStatus(id: string, org: string, connection: ConnectionConfig): ConnectStatus {
+    const tool = textValue(connection, "tool") ?? "";
+    const entry = this.catalog.find((s) => s.kind === "cli-login" && s.cli === tool);
+    const account = textValue(connection, "account");
+    const known = this.cliStates.get(id);
+    return {
+      connection: id,
+      org,
+      ...(entry === undefined ? {} : { service: entry.id }),
+      serviceName: entry?.name ?? connection.name,
+      state: known?.state ?? "connected",
+      reason: known?.reason ?? "Signed in with the tool's own login.",
+      ...(account === undefined ? {} : { account }),
+      scopes: scopeLines(entry, [], "readwrite"),
+      missing: [],
+      renews: false,
+      revocable: true,
+    };
   }
 
   private async statusOf(id: string, org: string, connection: ConnectionConfig): Promise<ConnectStatus> {
@@ -198,6 +339,7 @@ export class ConnectService {
     const url = textValue(connection, "url") ?? "";
     const entry =
       (grant?.service === undefined ? undefined : this.service(grant.service)) ??
+      (connection.type === "api" ? this.service(textValue(connection, "service") ?? "") : undefined) ??
       serviceByUrl(url, this.catalog);
     const name = entry?.name ?? connection.name;
     if (grant === undefined) {
@@ -243,8 +385,14 @@ export class ConnectService {
     this.prune();
     const entry = this.service(input.service);
     if (entry === undefined) throw new UserError(`There is no service ${input.service}.`, 404);
-    if (!entry.ready || entry.kind !== "mcp-oauth" || entry.mcpUrl === undefined) {
+    if (!entry.ready) {
       throw new UserError(`${entry.name} cannot be connected with one click yet. ${entry.note ?? ""}`.trim());
+    }
+    if (entry.kind === "api-key") {
+      throw new UserError(`${entry.name} connects when you save its tokens in its app setup.`, 409);
+    }
+    if (entry.kind === "mcp-oauth" && entry.mcpUrl === undefined) {
+      throw new UserError(`${entry.name} has no server address.`);
     }
     if (!(await this.deps.orgExists(input.org)))
       throw new UserError(`Org "${input.org}" does not exist.`, 404);
@@ -256,21 +404,24 @@ export class ConnectService {
     const reconnect = input.connection !== undefined;
     if (input.connection !== undefined) {
       const found = all.find((c) => c.id === input.connection);
-      if (found === undefined || found.org !== input.org || textValue(found.connection, "auth") !== "oauth") {
+      if (found === undefined || found.org !== input.org || !isOf(found.connection, entry)) {
         throw new UserError(`${input.connection} is not a connected service of ${input.org}.`, 404);
       }
-      if (textValue(found.connection, "url") !== entry.mcpUrl) {
-        throw new UserError(`${input.connection} is not ${entry.name}.`, 409);
-      }
       connection = found.id;
-      const grant = await this.deps.grants.get(connection);
-      if (grant !== undefined) {
-        expected = grant.account;
-        // More access: ask for what it already had and what it lacked.
-        if (grant.state === "insufficient-scope") requested = unique([...grant.requested, ...grant.missing]);
+      if (entry.kind === "cli-login") {
+        const account = textValue(found.connection, "account");
+        if (account !== undefined) expected = { id: account, label: account };
+      } else {
+        const grant = await this.deps.grants.get(connection);
+        if (grant !== undefined) {
+          expected = grant.account;
+          // More access: ask for what it already had and what it lacked.
+          if (grant.state === "insufficient-scope")
+            requested = unique([...grant.requested, ...grant.missing]);
+        }
       }
     } else {
-      const taken = all.find((c) => c.org === input.org && textValue(c.connection, "url") === entry.mcpUrl);
+      const taken = all.find((c) => c.org === input.org && isOf(c.connection, entry));
       if (taken !== undefined) {
         throw new UserError(
           `${entry.name} is already connected in ${input.org} as ${taken.id}. Use Reconnect there.`,
@@ -286,16 +437,6 @@ export class ConnectService {
         this.end(f, "cancelled", "Replaced by a new attempt.");
     }
 
-    const found = await this.discover(entry.mcpUrl);
-    const client = await this.clientFor(found);
-    const state = randomBytes(24).toString("base64url");
-    const scope = requested.length === 0 ? undefined : requested.join(" ");
-    let started: { url: string; verifier: string };
-    try {
-      started = await authorizationUrl(found, client, { redirect: this.deps.redirect, scope, state });
-    } catch (err) {
-      throw this.asUser(err);
-    }
     const flow: Flow = {
       id: randomBytes(12).toString("base64url"),
       org: input.org,
@@ -307,28 +448,285 @@ export class ConnectService {
       requested,
       state: "waiting",
       message: `Waiting for you in the browser. Approve ${entry.name} there.`,
-      url: started.url,
+      url: undefined,
       opened: false,
       account: undefined,
       previousAccount: expected?.label,
       scopes: [],
       test: undefined,
-      pending: { state, verifier: started.verifier, found, client, scope },
+      pending: undefined,
+      code: undefined,
+      stop: undefined,
       held: undefined,
       expiresAt: this.now().getTime() + FLOW_TTL_MS,
       endedAt: undefined,
       meta,
     };
+    if (entry.kind === "cli-login") return this.startCli(flow, entry);
+    if (entry.provider !== undefined) return this.startProvider(flow, entry, entry.provider);
+
+    const found = await this.discover(entry.mcpUrl ?? "");
+    const client = await this.clientFor(found);
+    const state = randomBytes(24).toString("base64url");
+    const scope = requested.length === 0 ? undefined : requested.join(" ");
+    let started: { url: string; verifier: string };
+    try {
+      started = await authorizationUrl(found, client, { redirect: this.deps.redirect, scope, state });
+    } catch (err) {
+      throw this.asUser(err);
+    }
+    flow.url = started.url;
+    flow.pending = { state, verifier: started.verifier, found, client, scope, provider: undefined };
+    return this.begin(flow, started.url);
+  }
+
+  /** Registers a live flow, opens its page through the helper and tells the screens. */
+  private async begin(flow: Flow, page: string): Promise<ConnectFlowView> {
     this.flows.set(flow.id, flow);
-    this.byState.set(state, flow.id);
-    flow.opened = this.deps.helperConnected()
-      ? await this.deps.openUrl(started.url).catch(() => false)
-      : false;
+    if (flow.pending !== undefined) this.byState.set(flow.pending.state, flow.id);
+    flow.opened =
+      page !== "" && this.deps.helperConnected() ? await this.deps.openUrl(page).catch(() => false) : false;
     // The address is shown only when majhi could not open it, so a screenshot never holds a live link.
     if (flow.opened) flow.url = undefined;
-    this.log(`connect: waiting for ${entry.id} in ${input.org}`);
+    this.log(`connect: waiting for ${flow.service.id} in ${flow.org}`);
     this.deps.changed();
     return this.view(flow);
+  }
+
+  /** The client ID (and secret) of the app for a workspace: majhi's own public ID, else the owner's. */
+  private async providerClient(entry: ServiceEntry, org: string): Promise<ProviderClient> {
+    const app = entry.app;
+    if (app === undefined) throw new UserError(`${entry.name} has no app setup.`);
+    const saved = await this.deps.apps.get(app, org);
+    if (saved !== undefined) return { clientId: saved.clientId, clientSecret: saved.clientSecret };
+    const builtIn = this.deps.builtInApps?.[entry.id] ?? this.deps.builtInApps?.[app];
+    if (builtIn !== undefined && builtIn !== "") return { clientId: builtIn };
+    if (app === "github") {
+      const shared = await this.deps.githubClientId?.();
+      if (shared !== undefined) return { clientId: shared };
+    }
+    throw new UserError(`Set up the ${entry.name} app first. Open it on the Connections page.`, 409);
+  }
+
+  private async startProvider(
+    flow: Flow,
+    entry: ServiceEntry,
+    provider: ServiceProvider,
+  ): Promise<ConnectFlowView> {
+    const client = await this.providerClient(entry, flow.org);
+    if (provider.clientAuth === "secret" && client.clientSecret === undefined) {
+      throw new UserError(`The ${entry.name} app has no client secret saved. Set the app up again.`, 409);
+    }
+    const scope = joinScope(provider, flow.requested);
+    if (provider.flow === "device") {
+      let device: Awaited<ReturnType<typeof startDevice>>;
+      try {
+        device = await startDevice(provider, client, scope, this.fetchFn);
+      } catch (err) {
+        throw this.asUser(err);
+      }
+      flow.code = device.userCode;
+      flow.url = device.verificationUri;
+      flow.message = `Enter the code ${device.userCode} on the ${entry.name} page.`;
+      flow.expiresAt = Math.min(flow.expiresAt, this.now().getTime() + device.expiresInMs);
+      flow.stop = { stopped: false };
+      const view = await this.begin(flow, device.verificationUri);
+      void this.pollLoop(flow, provider, client, device).catch(() => undefined);
+      return view;
+    }
+    const state = randomBytes(24).toString("base64url");
+    const pair = provider.pkce ? pkce() : undefined;
+    const page = authorizationPage(provider, client, {
+      redirect: this.deps.redirect,
+      scope,
+      state,
+      challenge: pair?.challenge,
+    });
+    flow.url = page;
+    flow.pending = {
+      state,
+      verifier: pair?.verifier,
+      found: undefined,
+      client: { clientId: client.clientId, clientSecret: client.clientSecret, via: "dcr" },
+      scope,
+      provider: { config: provider, client },
+    };
+    return this.begin(flow, page);
+  }
+
+  /** Polls the device grant until the owner answers, with the provider's interval and `slow_down`. */
+  private async pollLoop(
+    flow: Flow,
+    provider: ServiceProvider,
+    client: ProviderClient,
+    device: { deviceCode: string; intervalMs: number },
+  ): Promise<void> {
+    let interval = device.intervalMs;
+    const wait = this.deps.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+    while (flow.stop?.stopped === false && flow.state === "waiting") {
+      await wait(interval);
+      if (flow.stop?.stopped !== false || flow.state !== "waiting") return;
+      if (this.now().getTime() > flow.expiresAt) {
+        this.end(flow, "expired", "The code ran out of time. Nothing was saved. Start again.");
+        return;
+      }
+      let answer: Awaited<ReturnType<typeof pollDevice>>;
+      try {
+        answer = await pollDevice(provider, client, device.deviceCode, this.fetchFn, () => this.now());
+      } catch (err) {
+        const message =
+          err instanceof ConnectError ? err.message : `${flow.service.name} could not sign you in.`;
+        this.end(flow, "failed", `${message} Nothing was saved.`);
+        return;
+      }
+      if (answer.kind === "pending") continue;
+      if (answer.kind === "slow-down") {
+        interval += 5_000;
+        continue;
+      }
+      if (answer.kind === "denied") {
+        this.end(flow, "denied", `You did not allow ${flow.service.name}. Nothing was saved.`);
+        return;
+      }
+      if (answer.kind === "expired") {
+        this.end(flow, "expired", "The code ran out of time. Nothing was saved. Start again.");
+        return;
+      }
+      flow.state = "checking";
+      flow.message = "Checking the sign-in.";
+      flow.code = undefined;
+      this.deps.changed();
+      try {
+        await this.finishProvider(flow, provider, client, answer.tokens);
+      } catch (err) {
+        const message =
+          err instanceof ConnectError ? err.message : `Something went wrong connecting ${flow.service.name}.`;
+        this.end(flow, "failed", `${message} Nothing was saved. Start again.`);
+        this.log(
+          `connect: ${flow.service.id} failed (${err instanceof ConnectError ? err.kind : "internal"})`,
+        );
+      }
+      return;
+    }
+  }
+
+  /** The tool's own sign-in on the owner's computer, in this connection's folder. */
+  private async startCli(flow: Flow, entry: ServiceEntry): Promise<ConnectFlowView> {
+    const host = this.deps.cli;
+    const tool = entry.cli === undefined ? undefined : cliTool(entry.cli);
+    if (host === undefined || tool === undefined || !host.connected()) {
+      throw new UserError(
+        `${entry.name} signs in on this computer, so majhi's helper has to be running. Start the helper and try again.`,
+        409,
+      );
+    }
+    flow.message = `Starting ${tool.name}'s own sign-in.`;
+    flow.expiresAt = this.now().getTime() + CLI_FLOW_TTL_MS;
+    const view = await this.begin(flow, "");
+    // The helper opens the page itself; `begin` has nothing to open here.
+    flow.opened = false;
+    flow.stop = { stopped: false };
+    void this.runCli(flow, entry, tool.name).catch(() => undefined);
+    return view;
+  }
+
+  private async runCli(flow: Flow, entry: ServiceEntry, toolName: string): Promise<void> {
+    const host = this.deps.cli;
+    if (host === undefined || entry.cli === undefined) return;
+    const signIn = `cli-${flow.id}`;
+    try {
+      const result = await host.login(
+        {
+          signIn,
+          tool: entry.cli,
+          connection: flow.connection,
+          ...(flow.reconnect && flow.expected?.label !== undefined ? { expected: flow.expected.label } : {}),
+        },
+        (page) => {
+          if (!isLive(flow)) return;
+          flow.url = page.url;
+          flow.code = page.code;
+          flow.message =
+            page.code === undefined
+              ? `Approve ${toolName} in the browser page.`
+              : `Enter the code ${page.code} on the ${toolName} page.`;
+          this.deps.changed();
+          // The page is opened by the tool through the helper; the link stays visible as a fallback.
+          void (
+            this.deps.helperConnected()
+              ? this.deps.openUrl(page.url).catch(() => false)
+              : Promise.resolve(false)
+          ).then((opened) => {
+            if (opened && isLive(flow)) flow.opened = true;
+            this.deps.changed();
+          });
+        },
+      );
+      if (!isLive(flow)) return;
+      if (result.state === "cancelled") {
+        this.end(flow, "cancelled", "Cancelled. Nothing was saved.");
+        return;
+      }
+      if (result.state === "missing") {
+        this.end(
+          flow,
+          "failed",
+          `${toolName} is not installed on this computer. Install it, then try again.`,
+        );
+        return;
+      }
+      if (result.state === "other-account") {
+        this.end(
+          flow,
+          "failed",
+          `This signed in as ${result.identity ?? "another account"}, but ${entry.name} here is ${flow.expected?.label ?? "another account"}. Nothing changed. Disconnect it first to use another account.`,
+        );
+        return;
+      }
+      await this.commitCli(flow, entry, result.identity);
+    } catch (err) {
+      if (!isLive(flow)) return;
+      const message =
+        err instanceof Error && err.message !== "" ? err.message : `${toolName} did not sign in.`;
+      this.end(flow, "failed", message.endsWith(".") ? message : `${message}.`);
+      this.log(`connect: ${entry.id} failed (cli)`);
+    }
+  }
+
+  private async commitCli(flow: Flow, entry: ServiceEntry, identity: string | undefined): Promise<void> {
+    const tool = entry.cli;
+    if (tool === undefined) return;
+    if (!flow.reconnect) {
+      await this.deps.connections
+        .create(
+          {
+            org: flow.org,
+            id: flow.connection,
+            type: "cli",
+            name: entry.name,
+            description: `${entry.name}, signed in for this workspace only.`,
+            fields: { tool, ...(identity === undefined ? {} : { account: identity }) },
+          },
+          "connect.start",
+          flow.meta,
+        )
+        .catch(async (err: unknown) => {
+          // The sign-in folder must not outlive a connection that was never made.
+          await this.deps.cli?.logout({ tool, connection: flow.connection }).catch(() => undefined);
+          throw err;
+        });
+    }
+    flow.account = identity;
+    flow.scopes = scopeLines(entry, [], "readwrite");
+    flow.test = {
+      ok: true,
+      detail: `${entry.name} is signed in${identity === undefined ? "" : ` as ${identity}`}.`,
+      warnings: [],
+      at: this.now().toISOString(),
+      durationMs: 0,
+    };
+    this.end(flow, "connected", `Connected${identity === undefined ? "" : ` as ${identity}`}.`);
+    this.log(`connect: ${entry.id} connected in ${flow.org}`);
   }
 
   flow(id: string): ConnectFlowView {
@@ -356,6 +754,11 @@ export class ConnectService {
     flow.message = message;
     flow.endedAt = this.now().getTime();
     flow.url = undefined;
+    flow.code = undefined;
+    if (flow.stop !== undefined) flow.stop.stopped = true;
+    if (flow.service.kind === "cli-login" && (state === "cancelled" || state === "expired")) {
+      void this.deps.cli?.cancel(`cli-${flow.id}`).catch(() => undefined);
+    }
     if (flow.pending !== undefined) this.byState.delete(flow.pending.state);
     flow.pending = undefined;
     if (state !== "confirm-account") flow.held = undefined;
@@ -408,10 +811,8 @@ export class ConnectService {
       return { ok: false, message: flow.message };
     }
     const iss = params.get("iss");
-    const issuerSent =
-      (pending.found.metadata as { authorization_response_iss_parameter_supported?: unknown })
-        .authorization_response_iss_parameter_supported === true;
-    if ((iss !== null && !sameIssuer(iss, pending.found.issuer)) || (iss === null && issuerSent)) {
+    const expectIss = issuerExpectation(pending);
+    if (issuerWrong(iss, expectIss)) {
       this.end(flow, "failed", "The answer did not come from the service majhi asked. Nothing was saved.");
       return { ok: false, message: flow.message };
     }
@@ -435,14 +836,66 @@ export class ConnectService {
   }
 
   private async finish(flow: Flow, pending: Pending, code: string): Promise<void> {
+    if (pending.provider !== undefined) {
+      const tokens = await exchangeCode(
+        pending.provider.config,
+        pending.provider.client,
+        { code, verifier: pending.verifier, redirect: this.deps.redirect },
+        this.fetchFn,
+        () => this.now(),
+      );
+      await this.finishProvider(flow, pending.provider.config, pending.provider.client, tokens);
+      return;
+    }
+    const found = pending.found;
+    if (found === undefined || pending.verifier === undefined) {
+      throw new ConnectError("The sign-in lost its place. Start again.", "protocol");
+    }
     const tokens = await exchange(
-      pending.found,
+      found,
       pending.client,
       { redirect: this.deps.redirect, code, verifier: pending.verifier },
       this.fetchFn,
       () => this.now(),
     );
-    const account = await identify(tokens, pending.found.metadata, this.fetchFn);
+    const account = await identify(tokens, found.metadata, this.fetchFn);
+    await this.settle(flow, found, pending.client, tokens, account, undefined);
+  }
+
+  /** A provider's tokens in hand: asks it who signed in (which also proves the token), then settles. */
+  private async finishProvider(
+    flow: Flow,
+    provider: ServiceProvider,
+    client: ProviderClient,
+    tokens: TokenSet,
+  ): Promise<void> {
+    const probe = await probeProvider(provider, tokens.accessToken, this.fetchFn);
+    if (probe.kind === "invalid") {
+      throw new ConnectError(`${flow.service.name} did not accept the new sign-in.`, "refused");
+    }
+    if (probe.kind === "unreachable") {
+      throw new ConnectError(`majhi could not reach ${flow.service.name} to check the sign-in.`, "network");
+    }
+    const account = probe.kind === "ok" ? probe.identity : {};
+    await this.settle(
+      flow,
+      undefined,
+      { clientId: client.clientId, clientSecret: client.clientSecret, via: "dcr" },
+      tokens,
+      account,
+      provider,
+    );
+  }
+
+  /** Holds a sign-in as another account for the owner's answer, or saves it. */
+  private async settle(
+    flow: Flow,
+    found: Discovered | undefined,
+    client: ClientIdentity,
+    tokens: TokenSet,
+    account: Held["account"],
+    provider: ServiceProvider | undefined,
+  ): Promise<void> {
     flow.account = account.label;
     const expected = flow.expected;
     if (
@@ -459,7 +912,7 @@ export class ConnectService {
       this.deps.changed();
       return;
     }
-    await this.commit(flow, pending.found, pending.client, tokens, account);
+    await this.commit(flow, found, client, tokens, account, provider);
   }
 
   /** The owner answers a reconnect that signed in as another account. */
@@ -470,11 +923,19 @@ export class ConnectService {
     if (flow.state !== "confirm-account" || held === undefined) {
       throw new UserError("That sign-in is not waiting for an answer.", 409);
     }
-    const found = await this.discover(flow.service.mcpUrl ?? "");
-    const client = await this.clientFor(found);
+    const provider = flow.service.provider;
+    const found = provider === undefined ? await this.discover(flow.service.mcpUrl ?? "") : undefined;
+    const client: ClientIdentity =
+      found !== undefined
+        ? await this.clientFor(found)
+        : { ...(await this.providerClient(flow.service, flow.org)), via: "dcr" };
     if (!accept) {
       // The other account's sign-in must not linger at the service.
-      await this.revokeTokens(revocationEndpointOf(found.metadata), client, held.tokens);
+      await this.revokeTokens(
+        found === undefined ? provider?.revokeUrl : revocationEndpointOf(found.metadata),
+        client,
+        held.tokens,
+      );
       this.end(
         flow,
         "cancelled",
@@ -485,7 +946,7 @@ export class ConnectService {
     const old = await this.deps.grants.get(flow.connection);
     flow.state = "checking";
     try {
-      await this.commit(flow, found, client, held.tokens, held.account);
+      await this.commit(flow, found, client, held.tokens, held.account, provider);
     } catch (err) {
       const message = err instanceof ConnectError ? err.message : "Something went wrong.";
       this.end(flow, "failed", `${message} Nothing was saved.`);
@@ -499,14 +960,18 @@ export class ConnectService {
   /** Tests the token, then saves the grant (and the connection for a first connect). */
   private async commit(
     flow: Flow,
-    found: Discovered,
+    found: Discovered | undefined,
     client: ClientIdentity,
     tokens: TokenSet,
     account: Held["account"],
+    provider: ServiceProvider | undefined,
   ): Promise<void> {
     const entry = flow.service;
-    const url = entry.mcpUrl ?? "";
-    const probe = await probeToken(url, tokens.accessToken, this.fetchFn);
+    const url = entry.mcpUrl ?? provider?.identity.url ?? "";
+    const probe: TokenProbe =
+      provider !== undefined && entry.mcpUrl === undefined
+        ? asTokenProbe(await probeProvider(provider, tokens.accessToken, this.fetchFn))
+        : await probeToken(url, tokens.accessToken, this.fetchFn);
     let state: ConnectState = "connected";
     let reason = "";
     let missing: string[] = [];
@@ -529,12 +994,12 @@ export class ConnectService {
       org: flow.org,
       service: entry.id,
       serverUrl: url,
-      resource: found.resource,
-      issuer: found.issuer,
-      authorizationServerUrl: found.authorizationServerUrl,
-      ...(revocationEndpointOf(found.metadata) === undefined
-        ? {}
-        : { revocationEndpoint: revocationEndpointOf(found.metadata) }),
+      resource: found?.resource ?? url,
+      issuer: found?.issuer ?? provider?.issuer ?? hostOf(provider?.tokenUrl ?? url),
+      authorizationServerUrl:
+        found?.authorizationServerUrl ?? provider?.authorizeUrl ?? provider?.tokenUrl ?? url,
+      ...(revokeAt(found, provider) === undefined ? {} : { revocationEndpoint: revokeAt(found, provider) }),
+      ...(provider === undefined ? {} : { provider: true as const }),
       clientId: client.clientId,
       state,
       stateReason: reason,
@@ -559,10 +1024,19 @@ export class ConnectService {
         {
           org: flow.org,
           id: flow.connection,
-          type: "mcp",
-          name: entry.name,
-          description: entry.summary,
-          fields: { transport: "remote", url, protocol: "http", auth: "oauth" },
+          ...(entry.mcpUrl === undefined
+            ? {
+                type: "api" as const,
+                name: entry.name,
+                description: `${entry.summary}. Runs get a short-lived token in ${provider?.tokenVar ?? "ACCESS_TOKEN"}.`,
+                fields: { service: entry.id, auth: "oauth", token_var: provider?.tokenVar ?? "ACCESS_TOKEN" },
+              }
+            : {
+                type: "mcp" as const,
+                name: entry.name,
+                description: entry.summary,
+                fields: { transport: "remote", url, protocol: "http", auth: "oauth" },
+              }),
         },
         "connect.start",
         flow.meta,
@@ -578,7 +1052,7 @@ export class ConnectService {
       throw err;
     }
     this.backoff.delete(flow.connection);
-    this.discovered.set(found.issuer, { at: this.now().getTime(), found });
+    if (found !== undefined) this.discovered.set(found.issuer, { at: this.now().getTime(), found });
     flow.scopes = scopeLines(entry, granted, flow.access);
     if (state === "insufficient-scope") {
       this.deps.attention?.({
@@ -677,22 +1151,26 @@ export class ConnectService {
     }
     let tokens: TokenSet;
     try {
-      const found = await this.discover(grant.serverUrl, grant.issuer);
-      const client = await this.clientOf(grant);
-      tokens = await refresh(
-        found,
-        client,
-        { redirect: this.deps.redirect, refreshToken: grant.tokens.refreshToken },
-        this.fetchFn,
-        () => this.now(),
-      );
+      if (grant.provider === true) {
+        tokens = await this.renewProvider(grant, grant.tokens.refreshToken);
+      } else {
+        const found = await this.discover(grant.serverUrl, grant.issuer);
+        const client = await this.clientOf(grant);
+        tokens = await refresh(
+          found,
+          client,
+          { redirect: this.deps.redirect, refreshToken: grant.tokens.refreshToken },
+          this.fetchFn,
+          () => this.now(),
+        );
+      }
     } catch (err) {
       if (err instanceof ConnectError && err.kind === "refused") {
         this.log(`connect: ${grant.service ?? connection} needs reconnect`);
         return this.markState(
           connection,
           "needs-reconnect",
-          `${this.nameOf(grant)} no longer accepts majhi's sign-in. Reconnect it.`,
+          `${this.nameOf(grant)} no longer accepts majhi's sign-in.${grant.provider === true ? ` ${this.service(grant.service ?? "")?.provider?.refusedHint ?? ""}`.trimEnd() : ""} Reconnect it.`,
         );
       }
       const step = Math.min((wait?.step ?? BACKOFF_FIRST_MS / 2) * 2, BACKOFF_MAX_MS);
@@ -714,6 +1192,19 @@ export class ConnectService {
     }));
     this.deps.changed();
     return saved;
+  }
+
+  /** Renews a provider's token with the workspace's own app. A forgotten app means a new sign-in. */
+  private async renewProvider(grant: Grant, refreshToken: string): Promise<TokenSet> {
+    const entry = grant.service === undefined ? undefined : this.service(grant.service);
+    if (entry?.provider === undefined) throw new ConnectError("The service is no longer listed.", "refused");
+    let client: ProviderClient;
+    try {
+      client = await this.providerClient(entry, grant.org);
+    } catch {
+      throw new ConnectError(`The ${entry.name} app was removed.`, "refused");
+    }
+    return refreshTokens(entry.provider, client, refreshToken, this.fetchFn, () => this.now());
   }
 
   private async markState(
@@ -751,10 +1242,50 @@ export class ConnectService {
 
   /** The Test of an OAuth connection: renews, calls the server with the token, lists its tools. */
   async test(connection: string): Promise<ConnectionTestResult> {
+    const found = (await this.deps.connectionIds()).find((c) => c.id === connection);
+    if (found?.connection.type === "cli") return this.testCli(found.id, found.connection);
+    if (found !== undefined && this.isTokenService(found.connection)) {
+      const service = found.connection.fields?.service ?? "";
+      const result = await this.appSvc.test(found.id, service);
+      this.tokenStates.set(found.id, {
+        state: result.ok ? "connected" : "error",
+        reason: result.ok ? "Connected with its bot token." : result.detail,
+      });
+      this.deps.changed();
+      return result;
+    }
     const grant = await this.deps.grants.get(connection);
     if (grant === undefined)
       return this.result(false, "majhi has no sign-in for it. Connect it again.", Date.now());
     return this.testGrant(grant);
+  }
+
+  /** A command-line tool's Test: its own who-am-I command, in this workspace's folder. */
+  private async testCli(id: string, connection: ConnectionConfig): Promise<ConnectionTestResult> {
+    const started = Date.now();
+    const tool = cliTool(textValue(connection, "tool") ?? "");
+    const host = this.deps.cli;
+    if (tool === undefined) return this.result(false, "That tool is not known to majhi.", started);
+    if (host === undefined || !host.connected()) {
+      return this.result(false, "majhi's helper is not running, so the tool cannot be checked now.", started);
+    }
+    try {
+      const checked = await host.check({ tool: tool.id, connection: id });
+      this.cliStates.set(id, {
+        state: checked.ok ? "connected" : "needs-reconnect",
+        reason: checked.ok ? "Signed in with the tool's own login." : `${checked.detail} Reconnect it.`,
+      });
+      this.deps.changed();
+      return this.result(
+        checked.ok,
+        checked.ok
+          ? `${tool.name}: signed in${checked.identity === undefined ? "" : ` as ${checked.identity}`}.`
+          : checked.detail,
+        started,
+      );
+    } catch {
+      return this.result(false, "majhi's helper did not answer. Try again.", started);
+    }
   }
 
   private async testGrant(first: Grant): Promise<ConnectionTestResult> {
@@ -768,7 +1299,18 @@ export class ConnectService {
     if (grant.state === "needs-reconnect" || grant.state === "revoked") {
       return this.result(false, grant.stateReason || stateWords(grant.state, this.nameOf(grant)), started);
     }
-    let probe = await probeToken(grant.serverUrl, grant.tokens.accessToken, this.fetchFn);
+    const apiEntry = grant.provider === true ? this.service(grant.service ?? "") : undefined;
+    const apiOnly = apiEntry?.provider !== undefined && apiEntry.mcpUrl === undefined;
+    let identityLabel: string | undefined;
+    const probeNow = async (g: Grant): Promise<TokenProbe> => {
+      if (apiOnly && apiEntry?.provider !== undefined) {
+        const answer = await probeProvider(apiEntry.provider, g.tokens.accessToken, this.fetchFn);
+        if (answer.kind === "ok") identityLabel = answer.identity.label;
+        return asTokenProbe(answer);
+      }
+      return probeToken(g.serverUrl, g.tokens.accessToken, this.fetchFn);
+    };
+    let probe = await probeNow(grant);
     if (probe.kind === "invalid" && grant.tokens.refreshToken !== undefined) {
       // The access token may have been cut short. One forced renewal tells that from a revoked grant.
       try {
@@ -777,7 +1319,7 @@ export class ConnectService {
         if (!(err instanceof Transient)) throw err;
       }
       if (grant.state === "needs-reconnect") return this.result(false, grant.stateReason, started);
-      probe = await probeToken(grant.serverUrl, grant.tokens.accessToken, this.fetchFn);
+      probe = await probeNow(grant);
     }
     const name = this.nameOf(grant);
     if (probe.kind === "invalid") {
@@ -805,6 +1347,14 @@ export class ConnectService {
       return this.result(
         false,
         `majhi could not reach ${hostOf(grant.serverUrl)} just now. The sign-in is kept; try again.`,
+        started,
+      );
+    }
+    if (apiOnly) {
+      if (grant.state === "error") await this.markState(grant.connection, "connected", "");
+      return this.result(
+        true,
+        `Signed in${identityLabel === undefined ? "" : ` as ${identityLabel}`}.`,
         started,
       );
     }
@@ -873,6 +1423,10 @@ export class ConnectService {
     meta: CommandMeta,
   ): Promise<{ removed: string; revoked: boolean; note: string }> {
     const found = await this.deps.connections.find(connection);
+    if (found?.connection.type === "cli") return this.disconnectCli(connection, found.connection, meta);
+    if (found !== undefined && this.isTokenService(found.connection)) {
+      return this.disconnectToken(connection, found.connection, meta);
+    }
     if (found === undefined || textValue(found.connection, "auth") !== "oauth") {
       throw new UserError(`${connection} is not a connected service.`, 404);
     }
@@ -888,7 +1442,63 @@ export class ConnectService {
       revoked,
       note: revoked
         ? `${name} is disconnected and its access was revoked.`
-        : `${name} is disconnected and majhi deleted its tokens. ${name} could not be asked to revoke them: remove majhi from the authorized apps in your ${name} account settings.`,
+        : `${name} is disconnected and majhi deleted its tokens. ${name} could not be asked to revoke them: ${this.whereToRemove(grant, name)}`,
+    };
+  }
+
+  private whereToRemove(grant: Grant | undefined, name: string): string {
+    const page = (grant?.service === undefined ? undefined : this.service(grant.service))?.provider
+      ?.accessPage;
+    return page === undefined
+      ? `remove majhi from the authorized apps in your ${name} account settings.`
+      : `remove the app's access at ${page}.`;
+  }
+
+  /** Signs the tool out in the workspace's folder, then removes the connection and with it the folder. */
+  private async disconnectCli(
+    connection: string,
+    config: ConnectionConfig,
+    meta: CommandMeta,
+  ): Promise<{ removed: string; revoked: boolean; note: string }> {
+    const tool = cliTool(textValue(config, "tool") ?? "");
+    let revoked = false;
+    if (tool !== undefined && this.deps.cli?.connected() === true) {
+      revoked = (await this.deps.cli.logout({ tool: tool.id, connection }).catch(() => ({ revoked: false })))
+        .revoked;
+    }
+    await this.deps.connections.remove(connection, "connect.disconnect", meta);
+    this.cliStates.delete(connection);
+    this.deps.changed();
+    const name = tool?.name ?? config.name;
+    this.log(`connect: ${connection} disconnected (${revoked ? "signed out" : "folder removed"})`);
+    return {
+      removed: connection,
+      revoked,
+      note: revoked
+        ? `${name} is signed out and this workspace's sign-in folder is removed.`
+        : `This workspace's ${name} sign-in folder is removed. majhi could not run ${name}'s own sign-out, so its session may stay valid at the service until it ends.`,
+    };
+  }
+
+  private async disconnectToken(
+    connection: string,
+    config: ConnectionConfig,
+    meta: CommandMeta,
+  ): Promise<{ removed: string; revoked: boolean; note: string }> {
+    const service = config.fields?.service ?? "";
+    const entry = this.service(service);
+    const name = entry?.name ?? config.name;
+    const revoked = await this.appSvc.revoke(connection, service).catch(() => false);
+    await this.deps.connections.remove(connection, "connect.disconnect", meta);
+    this.tokenStates.delete(connection);
+    this.deps.changed();
+    this.log(`connect: ${connection} disconnected (${revoked ? "revoked" : "not revoked"})`);
+    return {
+      removed: connection,
+      revoked,
+      note: revoked
+        ? `${name} is disconnected and its token was revoked.`
+        : `${name} is disconnected and majhi deleted its tokens. They still work until you remove the app in ${name}'s own settings.`,
     };
   }
 
@@ -901,8 +1511,19 @@ export class ConnectService {
   }
 
   private async revokeGrant(grant: Grant): Promise<boolean> {
-    const registration = await this.deps.grants.registration(grant.issuer, this.deps.redirect);
-    const client = { clientId: grant.clientId, clientSecret: registration?.clientSecret };
+    const entry = grant.service === undefined ? undefined : this.service(grant.service);
+    const own =
+      grant.provider === true && entry?.app !== undefined
+        ? await this.deps.apps.get(entry.app, grant.org)
+        : undefined;
+    const registration =
+      grant.provider === true
+        ? undefined
+        : await this.deps.grants.registration(grant.issuer, this.deps.redirect);
+    const client = {
+      clientId: grant.clientId,
+      clientSecret: own?.clientSecret ?? registration?.clientSecret,
+    };
     return this.revokeTokens(grant.revocationEndpoint, client, {
       accessToken: grant.tokens.accessToken,
       refreshToken: grant.tokens.refreshToken,
@@ -944,6 +1565,7 @@ export class ConnectService {
 
   /** Renews tokens that end soon, for connections a session holds, and restarts those sessions at their next turn end. */
   async sweep(): Promise<void> {
+    await this.remind();
     for (const connection of await this.deps.grants.connections()) {
       if (this.deps.inUse?.(connection) !== true) continue;
       const before = await this.deps.grants.get(connection);
@@ -956,6 +1578,31 @@ export class ConnectService {
       } catch (err) {
         if (!(err instanceof Transient)) throw err;
       }
+    }
+  }
+
+  /** A sign-in with no renewal (LinkedIn's 60 days) says so five days before it ends, once. */
+  private async remind(): Promise<void> {
+    for (const connection of await this.deps.grants.connections()) {
+      const grant = await this.deps.grants.get(connection);
+      if (
+        grant === undefined ||
+        grant.tokens.refreshToken !== undefined ||
+        grant.tokens.expiresAt === undefined
+      )
+        continue;
+      if (grant.state === "needs-reconnect" || grant.state === "revoked") continue;
+      const left = Date.parse(grant.tokens.expiresAt) - this.now().getTime();
+      const key = `connect:${connection}:ends:${grant.tokens.expiresAt}`;
+      if (left > REMIND_AHEAD_MS || this.warned.has(key)) continue;
+      this.warned.add(key);
+      const name = this.nameOf(grant);
+      this.deps.attention?.({
+        org: grant.org,
+        key,
+        title: `${name} sign-in ends soon`,
+        detail: `${name} gives no renewal, so this sign-in ends on ${grant.tokens.expiresAt.slice(0, 10)}. Open Connections, pick ${name} and choose Reconnect.`,
+      });
     }
   }
 
@@ -1013,7 +1660,7 @@ export class ConnectService {
   }
 
   private scopesFor(entry: ServiceEntry, access: ConnectAccess): string[] {
-    const wanted = entry.scopes.filter((s) => (access === "read" ? s.access === "read" : true));
+    const wanted = scopesAt(entry, access);
     const names = wanted.flatMap((s) => s.oauth ?? []);
     // Without published scope names for every part, the service decides what to offer.
     const complete = wanted.every((s) => s.oauth !== undefined);
@@ -1030,6 +1677,7 @@ export class ConnectService {
       state: flow.state,
       message: flow.message,
       ...(flow.url === undefined ? {} : { url: flow.url }),
+      ...(flow.code === undefined ? {} : { code: flow.code }),
       opened: flow.opened,
       ...(flow.account === undefined ? {} : { account: flow.account }),
       ...(flow.previousAccount === undefined || flow.state !== "confirm-account"
@@ -1086,9 +1734,7 @@ export function scopeLines(
     return granted.map((name) => ({ access: "other", sentence: `Permission ${name}.` }));
   const named = entry.scopes.filter((s) => s.oauth !== undefined);
   if (named.length === 0) {
-    return entry.scopes
-      .filter((s) => access === "readwrite" || s.access === "read")
-      .map((s) => ({ access: s.access, sentence: s.sentence }));
+    return scopesAt(entry, access).map((s) => ({ access: s.access, sentence: s.sentence }));
   }
   const covered = named.filter((s) => s.oauth?.every((o) => granted.includes(o)));
   const subsumed = (s: (typeof named)[number]) =>
@@ -1101,8 +1747,64 @@ export function scopeLines(
   const lines: ConnectScopeLine[] = covered
     .filter((s) => !subsumed(s))
     .map((s) => ({ access: s.access, sentence: s.sentence }));
-  const known = new Set(named.flatMap((s) => s.oauth ?? []));
+  const known = new Set([...named.flatMap((s) => s.oauth ?? []), ...(entry.provider?.identityScopes ?? [])]);
   for (const name of granted)
     if (!known.has(name)) lines.push({ access: "other", sentence: `Permission ${name}.` });
   return lines;
+}
+
+/** Whether a connection is the one this catalog entry makes. */
+function isOf(connection: ConnectionConfig, entry: ServiceEntry): boolean {
+  if (entry.kind === "cli-login") {
+    return connection.type === "cli" && textValue(connection, "tool") === entry.cli;
+  }
+  if (entry.mcpUrl !== undefined) {
+    return textValue(connection, "auth") === "oauth" && textValue(connection, "url") === entry.mcpUrl;
+  }
+  return connection.type === "api" && textValue(connection, "service") === entry.id;
+}
+
+interface IssuerExpectation {
+  issuer: string | undefined;
+  prefix: boolean;
+  /** The provider always sends `iss`, so a missing one is wrong. */
+  required: boolean;
+}
+
+function issuerExpectation(pending: Pending): IssuerExpectation {
+  if (pending.provider !== undefined) {
+    const c = pending.provider.config;
+    return { issuer: c.issuer, prefix: c.issuerPrefix, required: c.issSent };
+  }
+  return {
+    issuer: pending.found?.issuer,
+    prefix: false,
+    required:
+      (pending.found?.metadata as { authorization_response_iss_parameter_supported?: unknown } | undefined)
+        ?.authorization_response_iss_parameter_supported === true,
+  };
+}
+
+/** True when the callback's `iss` is not the issuer majhi asked, or is missing where it must be there. */
+function issuerWrong(iss: string | null, expected: IssuerExpectation): boolean {
+  if (iss === null) return expected.required;
+  if (expected.issuer === undefined) return false;
+  return expected.prefix ? !iss.startsWith(expected.issuer) : !sameIssuer(iss, expected.issuer);
+}
+
+function asTokenProbe(probe: ApiProbe): TokenProbe {
+  switch (probe.kind) {
+    case "ok":
+      return { kind: "ok" };
+    case "invalid":
+      return { kind: "invalid" };
+    case "forbidden":
+      return { kind: "other" };
+    case "unreachable":
+      return { kind: "unreachable" };
+  }
+}
+
+function revokeAt(found: Discovered | undefined, provider: ServiceProvider | undefined): string | undefined {
+  return found === undefined ? provider?.revokeUrl : revocationEndpointOf(found.metadata);
 }

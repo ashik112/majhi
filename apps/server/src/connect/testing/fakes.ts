@@ -427,6 +427,7 @@ export function fakeService(url: string, overrides: Partial<ServiceEntry> = {}):
     ready: true,
     verified: false,
     verifiedNote: "A test double.",
+    packs: [],
     scopes: [
       { id: "read", access: "read", sentence: "Read issues.", oauth: ["read"] },
       { id: "write", access: "write", sentence: "Create and change issues.", oauth: ["read", "write"] },

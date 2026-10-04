@@ -1,4 +1,6 @@
 import type {
+  CliCheckResult,
+  CliLoginResult,
   DirListing,
   E2eRunResult,
   EditorApp,
@@ -85,6 +87,14 @@ export interface JobHandlers {
   ) => Promise<GitCliLoginResult>;
   /** Stops a running `gitCliLogin`. False when none runs for that sign-in. */
   gitCliLoginCancel?: (params: Extract<HostJob, { method: "git.cliLoginCancel" }>["params"]) => boolean;
+  /** Signs a workspace in to a command-line tool in its connection's own profile folder. */
+  cliLogin?: (
+    params: Extract<HostJob, { method: "cli.login" }>["params"],
+    progress: (progress: Omit<HostLoginProgress, "id">) => void,
+  ) => Promise<CliLoginResult>;
+  cliLoginCancel?: (params: Extract<HostJob, { method: "cli.loginCancel" }>["params"]) => boolean;
+  cliCheck?: (params: Extract<HostJob, { method: "cli.check" }>["params"]) => Promise<CliCheckResult>;
+  cliLogout?: (params: Extract<HostJob, { method: "cli.logout" }>["params"]) => Promise<{ revoked: boolean }>;
 }
 
 /** Sends progress for a running job to `POST /api/host/progress`. Failures are dropped. */
@@ -218,6 +228,40 @@ export async function runJob(
           result: { cancelled: handlers.gitCliLoginCancel?.(job.params) ?? false },
         });
         return;
+      case "cli.login": {
+        if (handlers.cliLogin === undefined) {
+          await reply({ id: job.id, ok: false, error: NOT_BUILT_JOB });
+          return;
+        }
+        const result = await handlers.cliLogin(job.params, (progress) => {
+          void sendProgress({ id: job.id, ...progress }).catch(() => undefined);
+        });
+        await reply({ id: job.id, ok: true, result });
+        return;
+      }
+      case "cli.loginCancel":
+        await reply({
+          id: job.id,
+          ok: true,
+          result: { cancelled: handlers.cliLoginCancel?.(job.params) ?? false },
+        });
+        return;
+      case "cli.check": {
+        if (handlers.cliCheck === undefined) {
+          await reply({ id: job.id, ok: false, error: NOT_BUILT_JOB });
+          return;
+        }
+        await reply({ id: job.id, ok: true, result: await handlers.cliCheck(job.params) });
+        return;
+      }
+      case "cli.logout": {
+        if (handlers.cliLogout === undefined) {
+          await reply({ id: job.id, ok: false, error: NOT_BUILT_JOB });
+          return;
+        }
+        await reply({ id: job.id, ok: true, result: await handlers.cliLogout(job.params) });
+        return;
+      }
       case "git.credential":
         await reply({ id: job.id, ok: true, result: { secret: await handlers.gitCredential(job.params) } });
         return;
