@@ -4,6 +4,8 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { type ApiError, COMMAND_META_HEADER, type Health } from "@majhi/shared";
 import { Hono } from "hono";
 import { mcpRoutes } from "../admin/mcp.ts";
+import { connectRoutes } from "../connect/routes.ts";
+import type { ConnectService } from "../connect/service.ts";
 import type { AdminService } from "../admin/service.ts";
 import type { AdminTokens } from "../admin/tokens.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
@@ -29,6 +31,8 @@ export interface AppDeps {
   uploads: UploadStore;
   /** Serves `GET /api/tasks/<id>/files/<path>`. */
   taskFiles: TaskFilesDeps;
+  /** `GET /oauth/callback`, where services send the owner back after Connect's consent page. */
+  connect?: ConnectService;
   /** The majhi-admin MCP server at `/mcp`. */
   mcp?: { tokens: AdminTokens; admin: AdminService };
   /** The majhi-decide MCP server at `/mcp/decide`. */
@@ -87,6 +91,7 @@ export function createApp(deps: AppDeps): Hono {
     return result.ok ? c.json(result.output) : c.json(result.error, result.status);
   });
 
+  if (deps.connect !== undefined) app.route("/", connectRoutes(deps.connect));
   if (deps.mcp !== undefined) app.route("/", mcpRoutes(deps.mcp));
   if (deps.decideMcp !== undefined) app.route("/", decideMcpRoutes(deps.decideMcp));
   if (deps.roomMcp !== undefined) app.route("/", roomMcpRoutes(deps.roomMcp));

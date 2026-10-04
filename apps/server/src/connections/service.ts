@@ -77,8 +77,14 @@ interface Found {
 export class ConnectionService {
   /** The last Test of each connection since majhi started. */
   private readonly tests = new Map<string, ConnectionTestResult>();
+  private removedHook: ((id: string) => Promise<void>) | undefined;
 
   constructor(private readonly deps: ConnectionDeps) {}
+
+  /** Called after a connection is removed, so Connect can revoke and delete its tokens. */
+  onRemoved(hook: (id: string) => Promise<void>): void {
+    this.removedHook = hook;
+  }
 
   list(org?: string): Promise<ConnectionView[]> {
     return this.views((o) => org === undefined || o === org);
@@ -198,6 +204,7 @@ export class ConnectionService {
     await this.release(id, released);
     await rm(this.dir(id), { recursive: true, force: true });
     this.tests.delete(id);
+    await this.removedHook?.(id);
     return { removed: id };
   }
 

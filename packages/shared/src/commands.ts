@@ -66,6 +66,16 @@ import {
 } from "./captain.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
+  ConnectCatalogSchema,
+  ConnectConfirmInputSchema,
+  ConnectDisconnectResultSchema,
+  ConnectFlowInputSchema,
+  ConnectFlowViewSchema,
+  ConnectNeedScopeInputSchema,
+  ConnectStartInputSchema,
+  ConnectStatusSchema,
+} from "./connect.ts";
+import {
   ConnectionCreateInputSchema,
   ConnectionSetFileInputSchema,
   ConnectionSetSecretInputSchema,
@@ -1947,6 +1957,63 @@ export const commands = {
       "Test a connection the way a run would reach it: kubectl auth can-i --list, an MCP server's tool list, an SSH login, the env test command, an IMAP login and the SMTP greeting, or the browser MCP server starting. Warns when a kubectl identity can change things. Never shows a secret",
     input: ById,
     output: ConnectionTestResultSchema,
+  },
+
+  // Connect (5.14) -------------------------------------------------------------
+  "connect.catalog": {
+    risk: "read",
+    summary:
+      "The services majhi can connect with one click: name, what it is for, whether it is ready, the access it can ask for in plain words, and whether its address was checked. Also the address the service sends the owner back to and whether the host helper can open the browser",
+    input: Empty,
+    output: ConnectCatalogSchema,
+  },
+  "connect.status": {
+    risk: "read",
+    summary:
+      "Where every connected service stands, of one org or all: who signed in, the access it has in plain words, and whether it is connected, needs a new sign-in, needs more access or was revoked. Never returns a token",
+    input: z.object({ org: IdSchema.optional() }),
+    output: z.array(ConnectStatusSchema),
+  },
+  "connect.start": {
+    risk: "change",
+    summary:
+      "Connect a service to an org: opens the service's own sign-in page in the owner's browser and waits for them. Read access first; readwrite also asks to change things. Pass connection to sign in again for an existing one (to renew it, or to give it more access). Only the owner starts this, on the Connections page",
+    input: ConnectStartInputSchema,
+    output: ConnectFlowViewSchema,
+  },
+  "connect.flow": {
+    risk: "read",
+    summary:
+      "Where one connect attempt stands: waiting for the owner in the browser, checking, connected, or why it ended. Never returns a code or a token",
+    input: ConnectFlowInputSchema,
+    output: ConnectFlowViewSchema,
+  },
+  "connect.cancel": {
+    risk: "change",
+    summary: "Stop waiting for the owner in the browser. Nothing is saved and an old connection stays as it was",
+    input: ConnectFlowInputSchema,
+    output: ConnectFlowViewSchema,
+  },
+  "connect.confirmAccount": {
+    risk: "change",
+    summary:
+      "A reconnect signed in as a different account than the connection had. accept: true replaces the account; false keeps the old one and drops the new sign-in. Only the owner answers this",
+    input: ConnectConfirmInputSchema,
+    output: ConnectFlowViewSchema,
+  },
+  "connect.disconnect": {
+    risk: "destructive",
+    summary:
+      "Disconnect a service: revokes the grant at the service when it supports that, deletes the tokens and removes the connection. Says what stays at the service when it cannot revoke",
+    input: z.object({ connection: IdSchema }),
+    output: ConnectDisconnectResultSchema,
+  },
+  "connect.needScope": {
+    risk: "change",
+    summary:
+      "Say that a tool call on a connected service failed with 403 insufficient_scope. The connection shows that it needs more access and the owner is asked to allow it. Changes nothing else, and the token keeps working",
+    input: ConnectNeedScopeInputSchema,
+    output: ConnectStatusSchema,
   },
 
   // Trackers (5.11) -----------------------------------------------------------
