@@ -7,12 +7,14 @@ import {
   type CaptainStatus,
   CHORE_LABEL,
   FULL_ACCESS_KEEPS,
+  TASKS_AT_ONCE,
   type TaskSizeLimit,
 } from "@majhi/shared";
 import { Check, ChevronRight, MoreHorizontal, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Lamp } from "@/components/ui/lamp";
 import { Menu } from "@/components/ui/menu";
 import { Modal } from "@/components/ui/modal";
@@ -134,6 +136,41 @@ function BudgetCell({ org }: { org: CaptainOrg }) {
       }}
       className="tnum h-8 w-[88px] px-2 text-center font-mono text-sm"
     />
+  );
+}
+
+/** How many tasks the captain works on at once in a workspace. */
+function AtOnceCell({ org }: { org: CaptainOrg }) {
+  const toast = useToast();
+  const save = useCaptainRules();
+  const current = org.rules.tasksAtOnce ?? TASKS_AT_ONCE;
+  return (
+    <Select
+      aria-label={`Tasks at once in ${org.name}`}
+      title="How many tasks the captain works on at the same time here"
+      value={String(current)}
+      disabled={save.isPending}
+      onChange={(e) => {
+        const n = Number(e.target.value);
+        save.mutate(
+          {
+            input: { orgs: { [org.org]: { tasksAtOnce: n === TASKS_AT_ONCE ? null : n } } },
+            reason: `Owner set tasks at once in ${org.name} to ${n}`,
+          },
+          {
+            onSuccess: () => toast(`${org.name}: ${n} ${n === 1 ? "task" : "tasks"} at once`),
+            onError: (error) => toast("Could not save it", { detail: describeError(error), tone: "error" }),
+          },
+        );
+      }}
+      className="h-8 w-[88px] px-2 text-center font-mono text-sm"
+    >
+      {[1, 2, 3, 4, 5].map((n) => (
+        <option key={n} value={n}>
+          {n}
+        </option>
+      ))}
+    </Select>
   );
 }
 
@@ -260,6 +297,17 @@ function Grid({
                   )
                 }
               />
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 border-b border-line py-1.5">
+          <div className={cn(FIRST_COLUMN, sticky, "flex flex-col pr-2 leading-snug")}>
+            <span className="text-base text-fg">Tasks at once</span>
+            <span className="text-xs text-fg-faint">Started by the captain here</span>
+          </div>
+          {orgs.map((org) => (
+            <div key={org.org} className={COLUMN}>
+              <AtOnceCell org={org} />
             </div>
           ))}
         </div>
