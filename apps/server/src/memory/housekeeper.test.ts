@@ -408,7 +408,7 @@ describe("when a task is done", () => {
     if (done === undefined) throw new Error("no task");
     extraction.afterClose(done);
     extraction.afterClose(done);
-    await new Promise((r) => setTimeout(r, 50));
+    await extraction.idle();
     expect(sessions).toHaveLength(1);
     expect(await record(task.id)).toEqual(first);
 
@@ -422,10 +422,10 @@ describe("when a task is done", () => {
   });
 
   it("writes nothing for a task where no agent wrote, while memory.extract still reads it", async () => {
-    const { must, sessions, newTask, extract, record } = await world();
+    const { h, must, sessions, newTask, extract, record } = await world();
     const quiet = await newTask("fix the health check in api", false);
     await must("tasks.close", { id: quiet.id });
-    await new Promise((r) => setTimeout(r, 100));
+    await h.majhi.services.extraction.idle();
     expect(sessions).toHaveLength(0);
     expect(await record(quiet.id)).toBeNull();
     expect((await extract(quiet.id)).body).toMatchObject({ record: true });
@@ -448,7 +448,8 @@ describe("when a task is done", () => {
     const { h, must, sessions, task, extract, record } = await world({ housekeeper: false });
     const closed = (await must("tasks.close", { id: task.id })) as { status: string };
     expect(closed.status).toBe("done");
-    await new Promise((r) => setTimeout(r, 50));
+    // The read the close started ends first (it finds nobody to ask); a fixed sleep lost to a busy machine.
+    await h.majhi.services.extraction.idle();
     const res = await extract(task.id);
     expect(res.status).toBe(409);
     expect(JSON.stringify(res.body)).toContain("No Housekeeper");

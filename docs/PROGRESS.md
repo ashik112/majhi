@@ -1,5 +1,15 @@
 # Progress
 
+## Test health (built, not merged)
+
+Branch `test/suite-health`. Test and harness changes only; no product behavior changed.
+
+- **Fixed (harness or stale test).** `config/settings.test.ts` lists the current schema defaults. `testing/fixtures.ts` `tempDir` cleanup retries ENOTEMPTY (a size rating ends after the world closes and asks a decision provider, which makes its scratch folder). `installs.test.ts` and `runner/isolation.test.ts` follow two earlier design changes (a connection reaches agents by org; the task branch folder is named by kind). `rooms/idle-watch.test.ts` signed-out pause: the lead is alone, since a teammate with a working account now takes over. `memory/housekeeper.test.ts` waits for the project card pass before it counts sessions. `packages/acp/src/runner/docker.test.ts` fake docker writes its state atomically. `host/gitGuard.test.ts` ignores the system git config (on a Mac it named the Keychain as credential helper: the test hung on a prompt and stored a fake password). `autonomy/perf.test.ts` reads the fastest of five calls. `captain/done-when.test.ts` has a 60 s timeout (about 1000 real git processes). `pnpm --filter <package> test` now exists and uses the root config, so a run from a package gets the same 20 s timeout as `pnpm test` (inside a package folder vitest used its 5 s default).
+- **Left failing on purpose.** `captain/desk.test.ts` "resumes what Autonomous paused" (rule conflict, see docs/design/task-lifecycle.md and the D10 entry below). `web/lib/naming.test.ts`: `features/captain/dashboard/strip.tsx` has the retired words "day cap" (copy change, the owner approves copy).
+- **Real bug, not fixed.** A merge can fail with `index.lock: File exists` in the task worktree when a background `git status` (checkpoint, hand-off, coordinator) runs at the same time. No git call in the server uses `--no-optional-locks`. Seen under load in `tasks/shipped.test.ts` "closes after a rebase". Fix in the code: read-only git calls run with `GIT_OPTIONAL_LOCKS=0`.
+- **Full run.** Before: 3495 tests, 3484 passed, 11 failed, 0 skipped, 4 min 43 s. After: 3490 passed, 5 failed, 0 skipped, 9 min 21 s, on a machine at load average 45 (other jobs). Of the 5, two stay failing on purpose (above), `housekeeper.test.ts` was a fixed 50 ms sleep (now waits for the extraction), and `budgets/limit.test.ts` and `mrs/multi-repo-ship.test.ts` timed out at 20 s under that load (3 to 5 s alone). Tests of 20 s or more under load: the hand-off, ship and merge tests that run real git.
+- **Slow by nature.** Config writes cost about 110 ms each (the home is a git repo and each write commits), so a world takes about 1 s to build. Tests that ship, merge or hand off run hundreds of real git processes.
+
 ## After D1 to D10: one day of use, then one list
 
 Deployed 2026-10-05 (707aedbf). Collect what you see in one list, not one fix at a time. Watch:

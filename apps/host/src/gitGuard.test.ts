@@ -217,8 +217,7 @@ describe("the helper's git in a repo whose config names commands", () => {
     } finally {
       server.close();
     }
-    // Real git, a local git server and a dozen hooks and helpers: 7 s alone, over 20 s on a busy machine.
-  }, 60_000);
+  });
 });
 
 describe("the helper's git in a majhi checkout whose shared .git/config names commands", () => {
