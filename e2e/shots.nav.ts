@@ -152,10 +152,7 @@ for (const kind of ["short", "long"] as const) {
         await stub(page, kind);
         await page.goto("/agents");
         await theme(page, t);
-        await expect(nav(page).getByRole("link", { name: /^Agents/ })).toHaveAttribute(
-          "aria-current",
-          "page",
-        );
+        await expect(nav(page).getByRole("button", { name: /^Setup/ })).toContainText("Agents");
         await page.waitForTimeout(700);
         await page.screenshot({ path: `${SHOTS}/sidebar-${kind}-${w}x${h}-${t}.png` });
         await fits(page, h);
@@ -235,13 +232,23 @@ test("choosing a workspace on Agents stays on Agents and filters it; All shows e
   await page.screenshot({ path: `${SHOTS}/agents-filtered-acme.png` });
 
   // The choice stays while the owner moves between pages.
-  await nav(page)
-    .getByRole("link", { name: /^Accounts/ })
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("button", { name: /^Setup/ })
+    .click();
+  await page
+    .getByRole("menu", { name: "Setup" })
+    .getByRole("menuitem", { name: /^Accounts/ })
     .click();
   await expect(page).toHaveURL(/\/accounts$/);
   await expect(switcher(page)).toHaveAccessibleName("Workspace: Acme. Change workspace");
-  await nav(page)
-    .getByRole("link", { name: /^Agents/ })
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("button", { name: /^Setup/ })
+    .click();
+  await page
+    .getByRole("menu", { name: "Setup" })
+    .getByRole("menuitem", { name: /^Agents/ })
     .click();
 
   await switcher(page).click();
@@ -258,19 +265,13 @@ test("every sidebar item opens its page", async ({ page }) => {
   await stub(page, "short");
   await page.goto("/agents");
   for (const [name, path, heading] of [
+    ["Today", "/today", "Today"],
+    ["Decisions", "/decisions", "Decisions"],
     ["Board", "/", "Board"],
     ["Chats", "/chats", undefined],
+    ["Business", "/business", "Business"],
     ["Captain", "/captain", "Captain"],
-    ["Agents", "/agents", "Agents"],
-    ["Accounts", "/accounts", "Accounts"],
-    ["Connections", "/connections", "Connections"],
-    ["Projects and links", "/projects", "Projects and links"],
-    ["Skills", "/skills", "Skills"],
-    ["Memory", "/memory", "Memory"],
-    ["Automations", "/automations", "Automations"],
-    ["Hub setup", "/setup", "Hub setup"],
-    ["Health and usage", "/usage", "Health and usage"],
-    ["Audit log", "/audit", "Audit log"],
+    ["Playbooks", "/playbooks", "Playbooks"],
   ] as const) {
     const link = nav(page).getByRole("link", { name: new RegExp(`^${name}`) });
     await link.click();
@@ -278,6 +279,31 @@ test("every sidebar item opens its page", async ({ page }) => {
     await expect(link).toHaveAttribute("aria-current", "page");
     if (heading)
       await expect(page.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
+  }
+  // Everything set up once opens from the one Setup row, which then names the page.
+  for (const [name, path, heading] of [
+    ["Agents", "/agents", "Agents"],
+    ["Accounts", "/accounts", "Accounts"],
+    ["Connections", "/connections", "Connections"],
+    ["Projects and links", "/projects", "Projects and links"],
+    ["Skills", "/skills", "Skills & MCP"],
+    ["Memory", "/memory", "Memory"],
+    ["Automations", "/automations", "Automations"],
+    ["Limits", "/limits", "Limits"],
+    ["Hub setup", "/setup", "Hub setup"],
+    ["Health and usage", "/usage", "Health and usage"],
+    ["Audit log", "/audit", "Audit log"],
+  ] as const) {
+    await nav(page)
+      .getByRole("button", { name: /^Setup/ })
+      .click();
+    await page
+      .getByRole("menu", { name: "Setup" })
+      .getByRole("menuitem", { name: new RegExp(`^${name}`) })
+      .click();
+    await expect(page).toHaveURL(new RegExp(`${path}$`));
+    await expect(nav(page).getByRole("button", { name: /^Setup/ })).toContainText(name);
+    await expect(page.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
   }
 
   // Captain opens its page, and the chat button beside it opens the drawer; Workspaces open from the switcher.

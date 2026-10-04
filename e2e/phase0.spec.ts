@@ -53,7 +53,14 @@ test("first run: suggestions list folders with repos, and one click on ~/Work se
 
   // Home is the board now; the projects list is its own page.
   await expect(page.getByRole("heading", { name: "Board", exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "Projects and links" }).click();
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("button", { name: /^Setup/ })
+    .click();
+  await page
+    .getByRole("menu", { name: "Setup" })
+    .getByRole("menuitem", { name: /^Projects and links/ })
+    .click();
   await expect(page).toHaveURL(/\/projects$/);
   await expect(page.getByRole("heading", { name: "Projects and links", exact: true })).toBeVisible();
   await expect(rows(page)).toHaveCount(3);

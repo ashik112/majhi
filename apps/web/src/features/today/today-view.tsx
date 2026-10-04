@@ -118,7 +118,7 @@ function TodaySkeleton() {
   );
 }
 
-function BriefPanel({ today }: { today: AgendaToday }) {
+function BriefPanel({ today, scoped }: { today: AgendaToday; scoped: boolean }) {
   const make = useMakeBrief();
   const dismiss = useDismissBrief();
   const toast = useToast();
@@ -184,7 +184,10 @@ function BriefPanel({ today }: { today: AgendaToday }) {
       meta={
         brief === undefined ? undefined : (
           <span className="flex items-center gap-2">
-            <span className="tnum font-mono text-xs">{clockText(brief.at, today.tz)}</span>
+            <span className="tnum font-mono text-xs">
+              {scoped ? "All workspaces, " : ""}
+              {clockText(brief.at, today.tz)}
+            </span>
             <button
               type="button"
               aria-label="Dismiss the brief"
@@ -444,6 +447,7 @@ function RightNowPanel({ today, org }: { today: AgendaToday; org: string | undef
         <span className="tnum font-mono text-xs">
           {formatMoney(watch.spent)}
           {watch.budget === undefined ? "" : ` of ${formatMoney(watch.budget)}`} today
+          {org === undefined ? "" : ", all workspaces"}
         </span>
       }
     >
@@ -661,7 +665,7 @@ export function TodayView() {
     body = (
       <div className="grid min-h-0 min-w-0 flex-1 gap-3 max-[999px]:overflow-y-auto min-[1000px]:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] min-[1000px]:grid-rows-[minmax(0,1fr)]">
         <div className="flex min-h-0 min-w-0 flex-col gap-3">
-          <BriefPanel today={today} />
+          <BriefPanel today={today} scoped={org !== undefined} />
           <AgendaPanel
             today={today}
             selectedId={selectedId}

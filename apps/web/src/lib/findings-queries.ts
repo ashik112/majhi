@@ -3,14 +3,24 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
 
-/** Every finding the sheet can show, newest first. The groups and filters are applied on the page. */
-const FINDINGS_LIMIT = 500;
+/** The most the sheet reads at once, newest first. The groups and filters are applied on the page. */
+export const FINDINGS_LIMIT = 500;
 
-/** `findings.list`: the `findings` topic refetches it. */
-export function useFindings() {
+/**
+ * `findings.list`: the `findings` topic refetches it. `live` (the default) is every finding that is not
+ * dismissed or fixed; `history` is the newest of every status, read only when the owner looks at
+ * Dismissed, Fixed or All. Reading every status at once let a few hundred dismissed ones push the open ones
+ * out of the newest 500, and the Open count came out far too low.
+ */
+export function useFindings(scope: "live" | "history" = "live", enabled = true) {
   return useQuery<CommandOutput<"findings.list">, ApiRequestError>({
-    queryKey: [...queryKeys.findings, "list"],
-    queryFn: () => cmd("findings.list", { limit: FINDINGS_LIMIT }),
+    queryKey: [...queryKeys.findings, scope === "live" ? "live" : "list"],
+    queryFn: () =>
+      cmd(
+        "findings.list",
+        scope === "live" ? { status: "live", limit: FINDINGS_LIMIT } : { limit: FINDINGS_LIMIT },
+      ),
+    enabled,
   });
 }
 

@@ -124,6 +124,12 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   },
   { id: "decisions-reply", keys: ["r"], what: "Write a reply", group: "Decisions" },
   { id: "decisions-open", keys: ["o"], what: "Open the task", group: "Decisions" },
+  {
+    id: "decisions-select",
+    keys: ["x"],
+    what: "Select for a batch (Shift x: everything up to here)",
+    group: "Decisions",
+  },
   { id: "today-move", keys: ["j", "k"], what: "Next or previous item (arrows too)", group: "Today" },
   { id: "today-open", keys: ["Enter"], what: "Take the item's action", group: "Today" },
   { id: "today-done", keys: ["e"], what: "Dismiss a finding or close a date", group: "Today" },

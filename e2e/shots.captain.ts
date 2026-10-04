@@ -1117,20 +1117,22 @@ test("cohesion rules: the update row never hides a navigation row", async ({ pag
   const region = page.getByRole("region", { name: "Update ready" });
   await expect(region).toBeVisible();
   const nav = page.getByRole("navigation", { name: "Main" });
-  for (const name of [/Hub setup/, /Health and usage/, /Audit log/]) {
+  // The pages set up once sit behind one Setup row, so the sidebar is the same height on any window.
+  const rows = [/^Today/, /^Decisions/, /^Board/, /^Chats/, /^Business/, /^Playbooks/];
+  for (const name of rows) {
     await expect(nav.getByRole("link", { name })).toBeInViewport();
   }
+  await expect(nav.getByRole("button", { name: /^Setup/ })).toBeInViewport();
   for (const [w, h] of [
     [1100, 760],
     [900, 700],
   ] as const) {
     await openCohesion(page, "/", w, h, "dark");
     await expect(region).toBeInViewport();
-    for (const name of [/Hub setup/, /Health and usage/, /Audit log/]) {
-      const link = nav.getByRole("link", { name });
-      await link.scrollIntoViewIfNeeded();
-      await expect(link).toBeInViewport();
+    for (const name of rows) {
+      await expect(nav.getByRole("link", { name })).toBeInViewport();
     }
+    await expect(nav.getByRole("button", { name: /^Setup/ })).toBeInViewport();
   }
   await region.getByRole("button", { name: /Update ready/ }).click();
   await expect(region.getByRole("list", { name: "Changes" })).toContainText("feat(health)");

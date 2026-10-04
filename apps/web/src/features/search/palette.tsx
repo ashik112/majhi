@@ -13,6 +13,7 @@ import { GLOBAL } from "@/features/memory/model";
 import { useNewTask } from "@/features/new-task/new-task-context";
 import { AskBox } from "@/features/setup/decisions-panel";
 import { PAGE_KEYWORDS, PAGE_LABEL } from "@/features/shell/nav";
+import { chordOf } from "@/features/shell/shortcuts";
 import { openTaskIds } from "@/features/shell/use-shortcuts";
 import { useCandidates } from "@/features/task/team-controls";
 import { useAgentIndex } from "@/lib/agent-index";
@@ -278,7 +279,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
     id: `page:${name}`,
     name: PAGE_LABEL[name],
     keywords: `page go open ${PAGE_KEYWORDS[name]}`,
-    hint: "Page",
+    hint: chordOf(PAGE_PATH[name]) ?? "Page",
     run: () => go(PAGE_PATH[name]),
   }));
 

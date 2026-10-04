@@ -13,6 +13,7 @@ import { TaskRef } from "@/features/autonomy/task-ref";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import {
+  FINDINGS_LIMIT,
   useFindingDeadline,
   useFindingDismiss,
   useFindingProposal,
@@ -354,7 +355,11 @@ export function FindingsSheet({
   /** A finding to select first, from a link. */
   focus?: number | undefined;
 }) {
-  const query = useFindings();
+  const live = useFindings("live");
+  const [group, setGroup] = useState<FindingGroup>("open");
+  const wantsHistory = group === "dismissed" || group === "fixed" || group === "all";
+  const history = useFindings("history", wantsHistory);
+  const query = wantsHistory ? history : live;
   const toTask = useFindingToTask();
   const dismiss = useFindingDismiss();
   const reopen = useFindingReopen();
@@ -362,17 +367,30 @@ export function FindingsSheet({
   const addDeadline = useFindingDeadline();
   const toast = useToast();
   const all = useMemo(() => query.data?.findings ?? [], [query.data]);
-  const [group, setGroup] = useState<FindingGroup>("open");
   const [org, setOrg] = useState("");
   const [source, setSource] = useState("");
   const [selectedId, setSelectedId] = useState<number | undefined>(focus);
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set());
   const [dismissing, setDismissing] = useState(false);
 
-  const counts = useMemo(
-    () => Object.fromEntries(GROUPS.map((g) => [g.value, all.filter((f) => inGroup(f, g.value)).length])),
-    [all],
-  );
+  // Open and Tasks come from the live list, whose Open is the server's count. The others show a count once read.
+  const counts = useMemo(() => {
+    const liveRows = live.data?.findings ?? [];
+    const historyRows = history.data?.findings;
+    const of = (rows: readonly Finding[], g: FindingGroup) => rows.filter((f) => inGroup(f, g)).length;
+    const full = historyRows !== undefined && historyRows.length >= FINDINGS_LIMIT;
+    const out: Partial<Record<FindingGroup, number>> = {};
+    if (live.data !== undefined) {
+      out.open = live.data.open;
+      out.tasks = of(liveRows, "tasks");
+    }
+    if (historyRows !== undefined && !full) {
+      out.dismissed = of(historyRows, "dismissed");
+      out.fixed = of(historyRows, "fixed");
+      out.all = historyRows.length;
+    }
+    return out;
+  }, [live.data, history.data]);
   const rows = useMemo(
     () =>
       all.filter(
@@ -457,7 +475,10 @@ export function FindingsSheet({
         <Segmented
           label="Show findings"
           value={group}
-          segments={GROUPS.map((g) => ({ ...g, count: counts[g.value] ?? 0 }))}
+          segments={GROUPS.map((g) => {
+            const count = counts[g.value];
+            return count === undefined ? g : { ...g, count };
+          })}
           onChange={(g) => {
             setGroup(g);
             setDismissing(false);
