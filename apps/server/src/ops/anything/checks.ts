@@ -1,8 +1,12 @@
 import {
   databaseQueryProblem,
+  evaluate,
+  FormulaError,
   numberAtPath,
   parseImageCommand,
+  pick,
   type RepoMr,
+  readNumber,
   readOnlySqlProblem,
   reviewLine,
   taskGroup,
@@ -498,34 +502,70 @@ async function metric(
 ): Promise<Reading> {
   if (WRITE_TOOL.test(spec.tool))
     throw new Unavailable("that tool name looks like it changes something. A watch only reads");
-  const conn = await connectionOf(ports, org, spec.connection, ["mcp"]);
-  void conn;
-  let args: Record<string, unknown>;
-  try {
-    const parsed: unknown = JSON.parse(spec.args);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("x");
-    args = parsed as Record<string, unknown>;
-  } catch {
-    throw new Unavailable("the tool's arguments are not a JSON object");
+  await connectionOf(ports, org, spec.connection, ["mcp"]);
+  /** One read's answer, with a single wrapper key looked inside when the path misses at the top. */
+  const answerOf = async (
+    tool: string,
+    argText: string,
+    path: string,
+  ): Promise<{ raw: unknown; answer: unknown }> => {
+    let a: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(argText);
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("x");
+      a = parsed as Record<string, unknown>;
+    } catch {
+      throw new Unavailable("the tool's arguments are not a JSON object");
+    }
+    if (WRITE_TOOL.test(tool))
+      throw new Unavailable("that tool name looks like it changes something. A watch only reads");
+    const raw = await guarded(() => ports.monitor(spec.connection, tool, a));
+    const keys = raw !== null && typeof raw === "object" && !Array.isArray(raw) ? Object.keys(raw) : [];
+    const inner = keys.length === 1 ? (raw as Record<string, unknown>)[keys[0] ?? ""] : undefined;
+    const top = pick(raw, path).length > 0;
+    return { raw, answer: !top && inner !== undefined && pick(inner, path).length > 0 ? inner : raw };
+  };
+  const missing = (raw: unknown, path: string) => {
+    const there = pathsOf(raw);
+    return new Unavailable(
+      `no number or text at ${path}${there.length === 0 ? "" : `. The answer has: ${there.join(", ")}`}`,
+    );
+  };
+  if (spec.formula !== undefined || spec.reads !== undefined) {
+    const vars: Record<string, number> = {};
+    const all = {
+      a: { tool: spec.tool, args: spec.args, path: spec.path, agg: spec.agg, where: spec.where },
+      ...spec.reads,
+    };
+    for (const [name, read] of Object.entries(all)) {
+      const { raw, answer } = await answerOf(read.tool, read.args ?? "{}", read.path);
+      const n = readNumber(answer, read);
+      if (n === undefined) throw missing(raw, read.path);
+      vars[name] = n;
+    }
+    let n: number;
+    try {
+      n = evaluate(spec.formula ?? "a", vars);
+    } catch (err) {
+      throw new Unavailable(err instanceof FormulaError ? err.message : "the formula could not be computed");
+    }
+    const unit = spec.unit === undefined || spec.unit === "" ? "" : ` ${spec.unit}`;
+    return {
+      number: n,
+      display: `${spec.label === undefined || spec.label === "" ? "" : `${spec.label} `}${fmt(n)}${unit}`,
+      healthy: true,
+      signature: String(n),
+    };
   }
-  const raw = await guarded(() => ports.monitor(spec.connection, spec.tool, args));
-  // Many tools wrap their answer in one key (`{ account: {...} }`): the path is tried inside it too.
-  const keys = raw !== null && typeof raw === "object" && !Array.isArray(raw) ? Object.keys(raw) : [];
-  const inner = keys.length === 1 ? (raw as Record<string, unknown>)[keys[0] ?? ""] : undefined;
-  const answer =
-    valueAt(raw, spec.path) === undefined && inner !== undefined && valueAt(inner, spec.path) !== undefined
-      ? inner
-      : raw;
-  const n = numberAt(answer, spec.path);
+  const { raw, answer } = await answerOf(spec.tool, spec.args, spec.path);
+  const n =
+    spec.agg !== undefined || spec.where !== undefined || spec.path.includes("*")
+      ? readNumber(answer, spec)
+      : numberAt(answer, spec.path);
   if (n === undefined) {
     // A word, like a droplet's `active` or a database's `online`: a change of it is what alerts.
     const text = textAt(answer, spec.path);
-    if (text === undefined) {
-      const there = pathsOf(raw);
-      throw new Unavailable(
-        `no number or text at ${spec.path}${there.length === 0 ? "" : `. The answer has: ${there.join(", ")}`}`,
-      );
-    }
+    if (text === undefined) throw missing(raw, spec.path);
     const label = spec.label === undefined || spec.label === "" ? "" : `${spec.label} `;
     return { display: `${label}${text}`, healthy: true, signature: text };
   }
