@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { cn } from "@/lib/cn";
 import { GLASS } from "@/lib/glass";
 
@@ -15,11 +15,14 @@ export function ListDetail({ children, className }: { children: ReactNode; class
 export function ListPane({
   label,
   footer,
+  scrollRef,
   children,
   className,
 }: {
   label: string;
   footer?: ReactNode;
+  /** The scrolling element, for a list that renders only the rows on screen. */
+  scrollRef?: Ref<HTMLDivElement>;
   children: ReactNode;
   className?: string;
 }) {
@@ -32,7 +35,10 @@ export function ListPane({
         className,
       )}
     >
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pt-2 pb-6 scroll-fade">
+      <div
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pt-2 pb-6 scroll-fade"
+      >
         {children}
       </div>
       {footer && <div className="shrink-0 border-t border-line p-2">{footer}</div>}

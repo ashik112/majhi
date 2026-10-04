@@ -179,3 +179,12 @@ export function needsYouCount(
   if (org === undefined) return decisions.length;
   return decisions.filter((d) => workspaceOf(d) === org).length;
 }
+
+/** The ids from one row to another in the queue, both included, whichever comes first. */
+export function rangeIds(queue: readonly string[], from: string | undefined, to: string): string[] {
+  const end = queue.indexOf(to);
+  if (end < 0) return [];
+  const start = from === undefined ? end : queue.indexOf(from);
+  if (start < 0) return [to];
+  return queue.slice(Math.min(start, end), Math.max(start, end) + 1);
+}

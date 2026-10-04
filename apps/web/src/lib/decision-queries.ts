@@ -1,4 +1,10 @@
-import type { DecisionAnswerInput, DecisionDetail, DecisionList } from "@majhi/shared";
+import type {
+  DecisionAnswerInput,
+  DecisionBatchInput,
+  DecisionBatchResult,
+  DecisionDetail,
+  DecisionList,
+} from "@majhi/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
@@ -60,5 +66,29 @@ export function useAnswerDecision() {
         client.invalidateQueries({ queryKey: queryKeys.autonomy }),
       ]);
     },
+  });
+}
+
+/** What still waits after a batch: the list, and the other places that count decisions. */
+export function useAfterBatch() {
+  const client = useQueryClient();
+  return (result: DecisionBatchResult) => {
+    if (result.done.length > 0) rememberAnswer();
+    client.setQueryData(queryKeys.decisions, { decisions: result.decisions });
+    return Promise.all([
+      client.invalidateQueries({ queryKey: queryKeys.tasks }),
+      client.invalidateQueries({ queryKey: queryKeys.captain }),
+      client.invalidateQueries({ queryKey: queryKeys.autonomy }),
+    ]);
+  };
+}
+
+/** Approve or leave many decisions at once. Each is taken on its own; the result lists what was not. */
+export function useAnswerBatch() {
+  const after = useAfterBatch();
+  return useMutation<DecisionBatchResult, ApiRequestError, DecisionBatchInput>({
+    mutationFn: (input) =>
+      cmd("decisions.answerBatch", input, { reason: "Owner answered decisions in a batch" }),
+    onSuccess: (result) => after(result),
   });
 }
