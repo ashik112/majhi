@@ -1,4 +1,5 @@
 import type { Playbook } from "@majhi/shared";
+import { healthRules } from "./health-rules.ts";
 
 /**
  * The engineering pack: five sensors (captain v2, step 9; `apps/server/src/sensors`). They are cheap
@@ -29,6 +30,7 @@ export const ENGINEERING_PLAYBOOKS: Playbook[] = [
     turnOn:
       "Files a finding when CI fails or turns flaky on GitHub or GitLab. Needs the workspace signed in to that host.",
     runner: { kind: "rules", id: "sensor-ci" },
+    outcomes: healthRules("ci", "CI fails or turns flaky"),
     settings: [],
   },
   {
@@ -51,6 +53,7 @@ export const ENGINEERING_PLAYBOOKS: Playbook[] = [
     turnOn:
       "Files a finding for each known vulnerability in a lockfile and for dependencies two majors behind. Sends package names and versions to osv.dev and the registry, nothing else.",
     runner: { kind: "rules", id: "sensor-deps" },
+    outcomes: healthRules("deps", "A vulnerable or far-behind package"),
     settings: [],
   },
   {
@@ -70,6 +73,7 @@ export const ENGINEERING_PLAYBOOKS: Playbook[] = [
     turnOn:
       "Files a finding when a tracked file holds what looks like a secret, with the file and line but never the value. Nothing leaves your machine.",
     runner: { kind: "rules", id: "sensor-secrets" },
+    outcomes: healthRules("secrets", "A secret in a tracked file"),
     settings: [],
   },
   {
@@ -88,6 +92,7 @@ export const ENGINEERING_PLAYBOOKS: Playbook[] = [
     turnOn:
       "Files a finding when Node, Python, Go, PostgreSQL or another runtime on a project card nears end of life. Sends only the product name to endoflife.date.",
     runner: { kind: "rules", id: "sensor-eol" },
+    outcomes: healthRules("eol", "A runtime near end of life"),
     settings: [],
   },
   {
@@ -111,6 +116,7 @@ export const ENGINEERING_PLAYBOOKS: Playbook[] = [
     turnOn:
       "Files a radar finding when a main dependency ships a release that matters to the project. Spends a few thousand tokens a week at most, and only when there is a new release.",
     runner: { kind: "rules", id: "sensor-radar" },
+    outcomes: healthRules("radar", "A new release worth a look"),
     settings: [],
   },
 ];

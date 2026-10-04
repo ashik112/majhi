@@ -781,6 +781,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     majhiHome: env.majhiHome,
     usage: usageRecorder,
   });
+  // The owner's outcome switches, by workspace and rule id. Bound below, once the playbooks exist.
+  const ruleSwitches: {
+    off: (org: string, rule: string) => boolean;
+    briefHidden: (org: string, playbook: string | undefined) => boolean;
+  } = { off: () => false, briefHidden: () => false };
   // Bound below: the findings store is built after the cards.
   let reportFinding: FindingsService["report"] | undefined;
   let findingsStore: FindingsService | undefined;
@@ -790,6 +795,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     memory,
     housekeeper,
     log: (message) => console.error(message),
+    ruleOff: (org, rule) => ruleSwitches.off(org, rule),
     reportGap: async (project, gap) => {
       await reportFinding?.(
         {
@@ -1272,6 +1278,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     decisions: (org) => inbox.list(org),
     deadlines: (within) => business.deadlines.list({ withinDays: within, limit: 500 }, agendaOwner).deadlines,
     findings: () => findings.list({ limit: 500 }, agendaOwner).findings,
+    briefHidden: (f) => ruleSwitches.briefHidden(f.org, f.playbook),
     steps: () =>
       crm
         .nextSteps(
@@ -1334,6 +1341,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     repoMounts: (task) => repoMounts(task),
     mergeDecides: async (org) => authorityOf((await config.settings()).autonomy, org).merge === "decide",
     autonomous: () => autonomy.mode() === "on",
+    ruleOff: (org, rule) => ruleSwitches.off(org, rule),
     ceilingHeld: () => outcomesService?.ceilingHeld(),
     changed: () => events.emit(["tasks"]),
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
@@ -1373,7 +1381,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       decisions,
       memory,
       findings,
-      curate: (fact) => curator.review(fact),
+      curate: (fact, off) => curator.review(fact, off === undefined ? {} : { off }),
       scanner: new RepoScanner(),
       cleanup,
       folders: folderSweep,
@@ -1490,6 +1498,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     changed: () => events.emit(["playbooks", "captain"]),
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
+  ruleSwitches.off = (org, rule) => playbooks.ruleOff(org, rule);
+  ruleSwitches.briefHidden = (org, playbook) => playbooks.briefOff(org, playbook);
   captain.usePlaybooks(playbooks, () => playbooks.sweep());
   playbooks.boot();
   const outcomes = new OutcomesService({
@@ -1698,6 +1708,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     secrets,
     notifier,
     wake: (org, text) => autonomy.news(text, org),
+    ruleOff: (org, rule) => ruleSwitches.off(org, rule),
     orgName: async (org) =>
       org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org),
     projectOrg: async (id) => (await config.sections()).projects[id]?.org,

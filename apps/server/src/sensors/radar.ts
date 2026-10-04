@@ -6,7 +6,7 @@ import { fresh } from "./cache.ts";
 import { isLockfile, type Pkg, parseLockfile } from "./lockfiles.ts";
 import { Unavailable } from "./net.ts";
 import { plainSummary } from "./osv.ts";
-import { file, type Reporter, type SensorPorts, type SensorProject } from "./ports.ts";
+import { file, type Reporter, reporterOf, type SensorPorts, type SensorProject } from "./ports.ts";
 
 /**
  * The tech radar feed (SPEC 5.18, sensors). Once a week, for the ten npm dependencies a project uses
@@ -218,7 +218,10 @@ async function repoOf(ports: SensorPorts, name: string, left: { n: number }): Pr
 export function techRadar(ports: SensorPorts, weekTokens: number = WEEK_TOKENS) {
   return {
     async run(ctx: RulesContext): Promise<RulesResult> {
-      const r: Reporter = { findings: ctx.findings, org: ctx.org, playbook: ctx.playbook.id };
+      const r = reporterOf(ctx);
+      // Nothing would be filed, so the model is not asked.
+      if (ctx.rulesOff?.has("radar-finding") === true && ctx.rulesOff.has("radar-task"))
+        return { findings: 0, note: "Its switches are off, so it looked at nothing" };
       const projects = await ports.projects(ctx.org);
       if (projects.length === 0) return { findings: 0, note: "No project is registered" };
       const budgetKey = `radar:tokens:${ctx.org}:${isoWeek(ports.now())}`;

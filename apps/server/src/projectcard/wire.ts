@@ -18,6 +18,8 @@ export interface CardsWiring {
   /** Absent in tests that never spend tokens: the README start stands in for the paragraph. */
   housekeeper?: Housekeeper | undefined;
   log?: (message: string) => void;
+  /** The owner switched an outcome rule of the Projects playbook off. */
+  ruleOff?: ((org: string, rule: string) => boolean) | undefined;
   /** Readiness gaps become findings (source setup), one per project and missing item. */
   reportGap?: (project: CardProject, gap: ReadinessItem) => Promise<void>;
 }
@@ -140,6 +142,7 @@ export function createCards(w: CardsWiring): ProjectCards {
         );
       }
     },
+    ...(w.ruleOff === undefined ? {} : { ruleOff: w.ruleOff }),
     ...(w.log === undefined ? {} : { log: w.log }),
   });
 }

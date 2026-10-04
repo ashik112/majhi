@@ -49,6 +49,7 @@ export function economicsRunner(
       for (const flag of row.flags) {
         const key = economicsKey(ctx.org, flag.kind, week);
         thisWeek.add(key);
+        if (ctx.rulesOff?.has("econ-finding") === true) continue;
         await ctx.findings.report(
           {
             org: ctx.org,
@@ -64,7 +65,7 @@ export function economicsRunner(
         );
         filed += 1;
       }
-      for (const old of mine) {
+      for (const old of ctx.rulesOff?.has("econ-close") === true ? [] : mine) {
         if (thisWeek.has(old.dedupeKey)) continue;
         const kind = old.dedupeKey.split(":")[2];
         const again = row.flags.some((f) => f.kind === kind);

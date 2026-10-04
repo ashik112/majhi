@@ -114,6 +114,7 @@ export function layaEvalRunner(deps: { decisions: LayaEvalPort; backlog?: Backlo
           continue;
         }
         worse += 1;
+        if (ctx.rulesOff?.has("laya-finding") === true) continue;
         await ctx.findings.report(
           {
             org: ctx.org,
@@ -134,7 +135,10 @@ export function layaEvalRunner(deps: { decisions: LayaEvalPort; backlog?: Backlo
         filed += 1;
       }
       // Findings from before triage existed get their read too, a few at a time.
-      const triaged = (await deps.backlog?.triageBacklog(BACKLOG_PER_RUN).catch(() => 0)) ?? 0;
+      const triaged =
+        ctx.rulesOff?.has("laya-backlog") === true
+          ? 0
+          : ((await deps.backlog?.triageBacklog(BACKLOG_PER_RUN).catch(() => 0)) ?? 0);
       const note = `${now.length} slots checked, ${worse} worse, ${recalibrated} changed mode${triaged > 0 ? `, ${triaged} old findings read` : ""}`;
       return { findings: filed, note };
     },

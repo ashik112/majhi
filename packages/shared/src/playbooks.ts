@@ -152,8 +152,15 @@ export const PlaybookSchema = z.object({
   runner: PlaybookRunnerSchema,
   /** What it does when it finds something: each rule has a switch, and an off rule stops that action. */
   outcomes: z
-    .array(z.object({ id: IdSchema, text: z.string().max(160) }))
-    .max(8)
+    .array(
+      z.object({
+        id: IdSchema,
+        text: z.string().max(160),
+        /** Off until the owner switches it on. Absent means on. */
+        default: z.boolean().optional(),
+      }),
+    )
+    .max(12)
     .optional(),
   /** Made by the owner (by a sentence or by hand), not shipped with majhi. */
   custom: z.boolean().optional(),

@@ -80,6 +80,8 @@ export interface HandoffPorts {
   review(task: { id: string; org: string }, prompt: string): Promise<{ gaps: string[]; tokens: number }>;
   /** Autonomous is on: the captain may send a lead back to work and spend on a review. */
   autonomous(): boolean;
+  /** The owner switched an outcome rule of Ship finished work off in the task's workspace (`ship-checks`). */
+  ruleOff?(org: string, rule: string): boolean;
   /** Why the model may not be used now (the monthly ceiling), or undefined. */
   modelBlocked(org: string): string | undefined;
   /** Writes to the task's lead as majhi's check. Rejects when the task has no lead to tell. */
@@ -524,10 +526,12 @@ export class HandoffService {
 
     const existing = this.repo.historyOf(task.id, head);
     const state = this.repo.state(task.id);
+    // "Checks fail: send the failures to the lead" is switched off: the lead is not told, and the card says why.
+    const tells = this.ports.autonomous() && this.ports.ruleOff?.(task.org, "ship-checks") !== true;
     if (existing !== undefined) {
       if (force) this.repo.replaceHistory(task.id, item(existing.action), result);
       // Failed with Autonomous off before and it is on now: the lead is told, once, with no new strike.
-      if (existing.action === "none" && !state.escalated && this.ports.autonomous()) {
+      if (existing.action === "none" && !state.escalated && tells) {
         await this.tellLead(task, result, Math.max(1, state.strikes));
         return;
       }
@@ -542,6 +546,10 @@ export class HandoffService {
     }
     const strikes = state.strikes + 1;
     this.repo.addHistory(task.id, item("none"), result);
+    if (!tells && this.ports.autonomous()) {
+      this.ports.hold(task.id, `Checks failed: ${firstLine(result.failures)}`);
+      return;
+    }
     if (strikes >= HANDOFF_STRIKES || state.escalated) {
       this.repo.setState(task.id, strikes, true);
       this.repo.setAction(task.id, head, "escalated");
@@ -552,7 +560,7 @@ export class HandoffService {
       return;
     }
     this.repo.setState(task.id, strikes, false);
-    if (this.ports.autonomous()) await this.tellLead(task, result, strikes);
+    if (tells) await this.tellLead(task, result, strikes);
     else this.ports.hold(task.id, `Checks failed: ${firstLine(result.failures)}`);
   }
 

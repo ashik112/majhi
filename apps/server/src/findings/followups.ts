@@ -83,6 +83,9 @@ const one = (s: string) => s.replace(/\s+/g, " ").trim();
 export async function runFollowUps(run: ChoreRun, deps: FollowUpDeps): Promise<void> {
   const { ports, findings } = deps;
   const { org } = run;
+  // The owner's switches (the Follow-ups playbook).
+  const off = (id: string): boolean => run.ws.rulesOff?.has(id) === true;
+  const closing = !off("fu-close");
   const threads = ports.openThreads(org).slice(0, MAX_THREADS);
   if (threads.length === 0) return;
   const known = findings.list({ status: "live", limit: 500 }, { kind: "captain", org }).findings;
@@ -153,7 +156,7 @@ export async function runFollowUps(run: ChoreRun, deps: FollowUpDeps): Promise<v
     // 1. The task made for it is done.
     if (t.follow_up !== undefined) {
       const made = ports.task(t.follow_up);
-      if (made?.status === "done") {
+      if (made?.status === "done" && closing) {
         await run.act({
           key: `followup:${t.id}:close`,
           text: `Closed follow-up: ${words80} (fixed in ${made.id})`,
@@ -177,7 +180,7 @@ export async function runFollowUps(run: ChoreRun, deps: FollowUpDeps): Promise<v
       const score = similar(t.text, d.text);
       if (best === undefined || score > best.score) best = { task: d, score };
     }
-    if (best !== undefined && best.score >= SAME_COSINE) {
+    if (closing && best !== undefined && best.score >= SAME_COSINE) {
       const fixed = best.task;
       await run.act({
         key: `followup:${t.id}:close`,
@@ -195,7 +198,7 @@ export async function runFollowUps(run: ChoreRun, deps: FollowUpDeps): Promise<v
     const maybe = best !== undefined && best.score >= MAYBE_COSINE ? best.task : undefined;
 
     // 3. It repeats an older open thread of the same project.
-    const twin = threads
+    const twin = (closing ? threads : [])
       .slice(0, index)
       .find((u) => !closed.has(u.id) && u.project === t.project && similar(t.text, u.text) >= SAME_COSINE);
     if (twin !== undefined) {
@@ -258,8 +261,10 @@ export async function runFollowUps(run: ChoreRun, deps: FollowUpDeps): Promise<v
       );
       continue;
     }
-    const concrete = maybe === undefined && isConcrete(t);
-    if (maybe !== undefined) ambiguous.push({ thread: t, task: maybe });
+    // A follow-up that is neither a finding nor a task by the owner's switches is left where it is.
+    if (off("fu-finding") && off("fu-task")) continue;
+    const concrete = maybe === undefined && isConcrete(t) && !off("fu-task");
+    if (maybe !== undefined && closing) ambiguous.push({ thread: t, task: maybe });
     await run.act({
       key: `followup:${t.id}:report`,
       text: concrete ? `Proposed task: ${clip(one(t.text), 100)}` : `Noted a follow-up: ${words80}`,

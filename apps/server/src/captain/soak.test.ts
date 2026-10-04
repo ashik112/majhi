@@ -162,6 +162,9 @@ class Sim {
         this.echo.review(id);
         return { text: `Shipped ${id}`, undoNote: "simulated" };
       },
+      resolveShip: async (org, id) => {
+        this.act("resolveShip", org, id, id);
+      },
       shipReady: async (org, id) => {
         const t = this.tasks.get(id);
         this.act("shipReady", org, `${id}@${t?.heads}`, id);
@@ -243,7 +246,7 @@ class Sim {
       cleanable: async (org) =>
         this.cleanable
           .filter((c) => c.org === org && c.done !== true)
-          .map((c) => ({ id: c.id, title: c.id, steps: [`worktree ${c.id}`] })),
+          .map((c) => ({ id: c.id, title: c.id, steps: [`worktree ${c.id}`], dirty: [] })),
       clean: async (org, id) => {
         this.act("clean", org, id);
         const found = this.cleanable.find((c) => c.id === id);

@@ -57,7 +57,7 @@ export interface WorldDeps {
   decisions: DecisionService;
   memory: MemoryService;
   findings: FindingsService;
-  curate: (fact: Fact) => Promise<{ reason?: string }>;
+  curate: (fact: Fact, off?: ReadonlySet<string>) => Promise<{ reason?: string }>;
   scanner: RepoScanner;
   cleanup: CleanupService;
   folders?: TaskFolderSweep;
@@ -261,6 +261,10 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       };
     },
 
+    async resolveShip(_org, id, reason) {
+      await run("tasks.resolveShip", { id, action: "merge" }, reason, id);
+    },
+
     async shipReady(_org, id, line) {
       deps.tasks.cards.shipReady(id, line);
     },
@@ -306,6 +310,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         return {
           decision: "left",
           why: `The captain never does this: ${verdict.why.replace(/^Refused: /, "")}`,
+          risky: true,
         };
       if (verdict.decision === "left") return verdict;
       const row = startsWork(call.command, call.parsed) ? "start" : SHIP_ROW[call.command];
@@ -463,10 +468,10 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         .map((f) => ({ id: f.id, text: f.text }));
     },
 
-    async curate(_org, fact) {
+    async curate(_org, fact, off) {
       const before = deps.memory.get(fact.id);
       if (before === undefined || before.status !== "pending") return { outcome: "pending" };
-      const { reason } = await deps.curate(before);
+      const { reason } = await deps.curate(before, off);
       const why = reason === undefined ? {} : { reason };
       const after = deps.memory.get(fact.id);
       const event = deps.memory.events({ fact: fact.id, limit: 1 })[0]?.id;
@@ -540,6 +545,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
           ...(t.priority === undefined ? {} : { priority: t.priority }),
           ...(t.due === undefined ? {} : { due: t.due }),
           updatedAt: t.updatedAt,
+          checklist: checklistItems(store.tasks.get(t.id)?.brief ?? ""),
         }));
     },
 
@@ -554,12 +560,16 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       const days = (await deps.config.settings()).cleanup.after_days;
       const preview = await deps.cleanup.preview(days);
       return preview.tasks
-        .filter((t) => orgOfTask(t.id) === org && t.steps.some((s) => s.action === "remove"))
+        .filter((t) => orgOfTask(t.id) === org)
         .map((t) => ({
           id: t.id,
           title: t.title,
           steps: t.steps.filter((s) => s.action === "remove").map((s) => `${s.kind} ${s.name}`),
-        }));
+          dirty: t.steps
+            .filter((s) => s.action === "skip" && s.reason?.startsWith("it has uncommitted") === true)
+            .map((s) => `${s.name}: ${s.reason}`),
+        }))
+        .filter((t) => t.steps.length > 0 || t.dirty.length > 0);
     },
 
     async clean(_org, task) {
@@ -715,4 +725,9 @@ function slugOf(name: string): string {
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 63);
+}
+
+/** The steps a brief lists: `- [ ]` and `- [x]` items. */
+export function checklistItems(brief: string): number {
+  return brief.split("\n").filter((l) => /^\s*[-*] \[[ xX]\]/.test(l)).length;
 }

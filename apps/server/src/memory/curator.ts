@@ -154,20 +154,26 @@ export class Curator {
    * fact the provider cannot sort, wait for the owner. Every step names its reason and can be undone.
    * Never throws: the fact stays pending. `reason` is the short phrase the captain's log shows.
    */
-  async review(fact: Fact): Promise<{ reason?: string }> {
+  async review(fact: Fact, options: { off?: ReadonlySet<string> } = {}): Promise<{ reason?: string }> {
     try {
-      return await this.reviewOne(fact);
+      return await this.reviewOne(fact, options.off ?? new Set());
     } catch (err) {
       console.error(`Memory review of fact ${fact.id} failed: ${errorMessage(err)}`);
       return {};
     }
   }
 
-  private async reviewOne(fact: Fact): Promise<{ reason?: string }> {
+  private async reviewOne(fact: Fact, off: ReadonlySet<string>): Promise<{ reason?: string }> {
     const { memory, decisions } = this.deps;
+    // The owner's switches (the Memory playbook): an action that is off leaves the memory waiting for the owner.
+    const noDrop = off.has("mem-drop")
+      ? { reason: "dropping and merging memories is switched off" }
+      : undefined;
+    const noKeep = off.has("mem-keep") ? { reason: "keeping memories is switched off" } : undefined;
     const task = fact.task === undefined ? undefined : this.deps.task(fact.task);
     const rule = forbiddenReason(fact.text);
     if (rule !== undefined) {
+      if (noDrop !== undefined) return noDrop;
       memory.drop(fact.id, {
         reason: `${rule} Facts never hold secrets or personal data.`,
         provider: "rules",
@@ -176,6 +182,7 @@ export class Curator {
     }
     const file = await this.deps.inDocs?.(task, fact.text);
     if (file !== undefined) {
+      if (noDrop !== undefined) return noDrop;
       const reason = `already in the repo docs (${file})`;
       memory.drop(fact.id, { reason, provider: REPO_DOCS });
       return { reason };
@@ -185,6 +192,7 @@ export class Curator {
     );
     const top = near[0];
     if (top !== undefined && top.cosine >= DUPLICATE_COSINE) {
+      if (noDrop !== undefined) return noDrop;
       const reason = `the same as fact ${top.fact.id}`;
       memory.merge(fact.id, top.fact.id, { reason, confidence: top.cosine });
       return { reason };
@@ -207,7 +215,9 @@ export class Curator {
     // owner is left only with what still nobody can settle. Down or out of budget: it waits, as before.
     const via = new Map<Answer, ProviderId>();
     const unsure =
-      this.deps.escalate === undefined ? [] : unsureQuestions(result.answers, counts, related !== undefined);
+      this.deps.escalate === undefined || off.has("mem-escalate")
+        ? []
+        : unsureQuestions(result.answers, counts, related !== undefined);
     if (this.deps.escalate !== undefined && unsure.length > 0) {
       const up = await escalateReview(decisions, reviewRequest(fact, related?.fact), unsure, counts, {
         perDay: this.deps.escalate.perDay,
@@ -243,6 +253,7 @@ export class Curator {
       return { reason };
     };
     if (secret?.value === true && counts(secret)) {
+      if (noDrop !== undefined) return noDrop;
       const reason = "it may hold a secret or personal data";
       memory.drop(fact.id, note(reason, secret));
       return done("Dropped: secret or personal data.", reason);
@@ -253,6 +264,7 @@ export class Curator {
         return done(`It may contradict fact ${related.fact.id}, so the owner decides.`, reason, true);
       }
       if (relation.value === SAME) {
+        if (noDrop !== undefined) return noDrop;
         const reason = `the same point as fact ${related.fact.id}`;
         memory.merge(fact.id, related.fact.id, note(reason, relation));
         return done(`Merged into fact ${related.fact.id}.`, reason);
@@ -264,12 +276,14 @@ export class Curator {
       return done("Waits for the owner: a judgment call.", "it would change how agents behave broadly", true);
     }
     if (kind === KEEP) {
+      if (noKeep !== undefined) return noKeep;
       const reason = "a durable fact for later tasks";
       memory.keep(fact.id, note(reason, verdict));
       return done("Kept: a durable fact.", reason);
     }
     const why = DROP_REASON[kind];
     if (why === undefined) return done("Waits for the owner: unknown kind.", "not sure what it is", true);
+    if (noDrop !== undefined) return noDrop;
     memory.drop(fact.id, note(why, verdict));
     return done(`Dropped: ${why}.`, why);
   }

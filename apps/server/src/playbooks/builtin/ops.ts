@@ -28,6 +28,12 @@ export const OPS_PLAYBOOKS: Playbook[] = [
     watch: true,
     turnOn:
       "Checks your services every 5 minutes. A confirmed failure opens an incident and wakes the captain.",
+    outcomes: [
+      { id: "ops-incident", text: "A service stays down: open an incident" },
+      { id: "ops-alert", text: "A new incident: alert me" },
+      { id: "ops-wake", text: "A new incident: wake the captain with the evidence" },
+      { id: "ops-resolve", text: "Green for 10 minutes: close the incident with its timeline" },
+    ],
     runner: { kind: "rules", id: "uptime" },
     settings: [],
   },

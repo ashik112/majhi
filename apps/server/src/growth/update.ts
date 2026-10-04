@@ -101,6 +101,8 @@ export function clientUpdate(deps: GrowthDeps): RulesRunner {
   return {
     async run(ctx: RulesContext): Promise<RulesResult> {
       const org = ctx.org;
+      if (ctx.rulesOff?.has("update-draft") === true)
+        return { findings: 0, note: "Drafting updates is switched off" };
       if (org === PRIVATE) return { findings: 0, note: "Private has no client to update" };
       const now = ctx.now();
       const week = isoWeek(now);

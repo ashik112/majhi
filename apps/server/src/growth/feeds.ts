@@ -166,6 +166,9 @@ export function feedsRunner(ports: FeedsPorts): RulesRunner {
     },
 
     async run(ctx: RulesContext): Promise<RulesResult> {
+      if (ctx.rulesOff?.has("feeds-finding") === true) {
+        return { findings: 0, note: "Filing matches is switched off, so no feed was read" };
+      }
       const now = ctx.now();
       const hosts = (ctx.settings.hosts ?? []).flatMap((h) => normalizeHost(h) ?? []);
       const net = ports.net.restrictedTo(hosts);

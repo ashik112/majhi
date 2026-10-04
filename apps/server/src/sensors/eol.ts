@@ -2,7 +2,14 @@ import { z } from "zod";
 import type { RulesContext, RulesResult } from "../playbooks/rules.ts";
 import { fresh } from "./cache.ts";
 import { Unavailable } from "./net.ts";
-import { closeUnseen, file, type Reporter, type SensorPorts, type SensorProject } from "./ports.ts";
+import {
+  closeUnseen,
+  file,
+  type Reporter,
+  reporterOf,
+  type SensorPorts,
+  type SensorProject,
+} from "./ports.ts";
 
 /**
  * The end-of-life sensor (SPEC 5.18, sensors). The runtimes and databases on a project's card are
@@ -107,7 +114,7 @@ export function eolOf(cycles: Cycles, cycle: string): Date | "past" | undefined 
 export function eolWatch(ports: SensorPorts, base: string = EOL_URL) {
   return {
     async run(ctx: RulesContext): Promise<RulesResult> {
-      const r: Reporter = { findings: ctx.findings, org: ctx.org, playbook: ctx.playbook.id };
+      const r = reporterOf(ctx);
       const projects = await ports.projects(ctx.org);
       if (projects.length === 0) return { findings: 0, note: "No project is registered" };
       let filed = 0;

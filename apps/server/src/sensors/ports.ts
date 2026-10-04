@@ -1,5 +1,6 @@
 import type { Finding, FindingSeverity, FindingSource, MrHost } from "@majhi/shared";
 import type { FindingsService } from "../findings/service.ts";
+import type { RulesContext } from "../playbooks/rules.ts";
 import type { SensorCache } from "./cache.ts";
 import type { Net } from "./net.ts";
 
@@ -57,6 +58,22 @@ export interface Reporter {
   findings: FindingsService;
   org: string;
   playbook: string;
+  /** Outcome rules the owner switched off, and the id prefix of this playbook's rules (`ci` for `ci-finding`). */
+  off?: ReadonlySet<string>;
+  prefix?: string;
+}
+
+/** The reporter of a rules run: findings are filed and tasks proposed by the playbook's switches. */
+export function reporterOf(ctx: RulesContext): Reporter {
+  const lead = (ctx.playbook.outcomes ?? []).find((o) => o.id.endsWith("-finding"));
+  return {
+    findings: ctx.findings,
+    org: ctx.org,
+    playbook: ctx.playbook.id,
+    ...(lead === undefined || ctx.rulesOff === undefined
+      ? {}
+      : { off: ctx.rulesOff, prefix: lead.id.slice(0, -"-finding".length) }),
+  };
 }
 
 export interface FindingSpec {
@@ -69,8 +86,19 @@ export interface FindingSpec {
   severity: FindingSeverity;
 }
 
-/** Files or refreshes one finding as the captain's lane of this workspace. Returns whether it is news. */
-export async function file(r: Reporter, spec: FindingSpec): Promise<"created" | "refreshed" | "reopened"> {
+/**
+ * Files or refreshes one finding as the captain's lane of this workspace. Returns whether it is news.
+ * The switches of the playbook gate it: with "file a finding" and "propose a fix task" both off nothing
+ * is filed; with the task switch on, the finding is the evidence of a task proposed in the inbox, which
+ * the captain never starts.
+ */
+export async function file(
+  r: Reporter,
+  spec: FindingSpec,
+): Promise<"created" | "refreshed" | "reopened" | "skipped"> {
+  const wantFinding = r.prefix === undefined || r.off?.has(`${r.prefix}-finding`) !== true;
+  const wantTask = r.prefix !== undefined && r.off?.has(`${r.prefix}-task`) !== true;
+  if (!wantFinding && !wantTask) return "skipped";
   const res = await r.findings.report(
     {
       org: r.org,
@@ -85,6 +113,13 @@ export async function file(r: Reporter, spec: FindingSpec): Promise<"created" | 
     },
     { kind: "captain", org: r.org },
   );
+  if (wantTask && res.finding.status === "open" && res.finding.task === undefined) {
+    try {
+      await r.findings.toTask(res.finding.id, { kind: "captain", org: r.org });
+    } catch {
+      // Already a task, or the owner moved the finding meanwhile: nothing more to propose.
+    }
+  }
   return res.result;
 }
 

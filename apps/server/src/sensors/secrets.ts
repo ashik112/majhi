@@ -2,7 +2,14 @@ import { createHash } from "node:crypto";
 import { detectSecrets } from "@majhi/shared";
 import type { RulesContext, RulesResult } from "../playbooks/rules.ts";
 import { fresh } from "./cache.ts";
-import { closeUnseen, file, type Reporter, type SensorPorts, type SensorProject } from "./ports.ts";
+import {
+  closeUnseen,
+  file,
+  type Reporter,
+  reporterOf,
+  type SensorPorts,
+  type SensorProject,
+} from "./ports.ts";
 
 /**
  * The secret scan (SPEC 5.18, sensors): the tracked files of each checkout, read-only, through the same
@@ -78,7 +85,7 @@ async function scan(ports: SensorPorts, project: SensorProject): Promise<SecretH
 export function secretScan(ports: SensorPorts) {
   return {
     async run(ctx: RulesContext): Promise<RulesResult> {
-      const r: Reporter = { findings: ctx.findings, org: ctx.org, playbook: ctx.playbook.id };
+      const r = reporterOf(ctx);
       const projects = await ports.projects(ctx.org);
       if (projects.length === 0) return { findings: 0, note: "No project is registered" };
       let filed = 0;

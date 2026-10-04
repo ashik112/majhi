@@ -34,6 +34,8 @@ export interface CardDeps {
   summarize?: ((project: CardProject, facts: ScanFacts) => Promise<string | undefined>) | undefined;
   /** Readiness gaps found (the first time, or new ones). The findings store takes them as findings. */
   onGaps?: ((project: CardProject, gaps: ReadinessItem[]) => void) | undefined;
+  /** The owner switched an outcome rule of the Projects playbook off (`proj-cards`, `proj-readiness`). */
+  ruleOff?: ((org: string, rule: string) => boolean) | undefined;
   /** The card was written. */
   onCard?: ((project: CardProject, card: ProjectCard) => void) | undefined;
   files?: (path: string) => RepoFiles;
@@ -141,6 +143,8 @@ export class ProjectCards {
       }
       if (now - seen.since < wait) continue;
       this.pending.delete(p.id);
+      // "Refresh a project card when its base branch moves" is off: the card stays as it is until Refresh.
+      if (this.deps.ruleOff?.(p.org, "proj-cards") === true) continue;
       await this.settle(p, have, tip).catch((err: unknown) => this.log(`cards: ${p.id}: ${String(err)}`));
     }
   }
@@ -231,7 +235,9 @@ export class ProjectCards {
     const missing = readinessGaps(card.readiness);
     const known = new Set(before === undefined ? [] : readinessGaps(before.card.readiness).map((g) => g.id));
     const fresh = missing.filter((g) => !known.has(g.id));
-    if (fresh.length > 0) this.deps.onGaps?.(project, fresh);
+    if (fresh.length > 0 && this.deps.ruleOff?.(project.org, "proj-readiness") !== true) {
+      this.deps.onGaps?.(project, fresh);
+    }
     this.deps.onCard?.(project, card);
     if (wantModel && opts.auto) this.polish(project, facts, factsHash);
     return card;

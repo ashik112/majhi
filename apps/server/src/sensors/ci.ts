@@ -2,7 +2,7 @@ import { z } from "zod";
 import { errorMessage } from "../errors.ts";
 import type { RulesContext, RulesResult } from "../playbooks/rules.ts";
 import { Unavailable } from "./net.ts";
-import { file, type Reporter, type SensorPorts, type SensorProject } from "./ports.ts";
+import { file, type Reporter, reporterOf, type SensorPorts, type SensorProject } from "./ports.ts";
 
 /**
  * The CI sensor (SPEC 5.18, sensors). For each project with a GitHub or GitLab remote it reads the
@@ -354,7 +354,7 @@ async function report(
 export function ciHealth(ports: SensorPorts) {
   return {
     async run(ctx: RulesContext): Promise<RulesResult> {
-      const r: Reporter = { findings: ctx.findings, org: ctx.org, playbook: ctx.playbook.id };
+      const r = reporterOf(ctx);
       const projects = (await ports.projects(ctx.org)).filter(
         (p) => p.remote !== undefined && p.base !== undefined,
       );

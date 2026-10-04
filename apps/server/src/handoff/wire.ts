@@ -30,6 +30,8 @@ export interface HandoffWiring {
   mergeDecides: (org: string) => Promise<boolean>;
   /** Autonomous is on. */
   autonomous: () => boolean;
+  /** The owner switched an outcome rule off in a workspace. Bound late: the playbooks come after the hand-off. */
+  ruleOff?: ((org: string, rule: string) => boolean) | undefined;
   /** The monthly ceiling is reached, in words, or undefined. Bound late. */
   ceilingHeld: () => string | undefined;
   changed: (task: string) => void;
@@ -108,6 +110,7 @@ export function createHandoff(w: HandoffWiring): HandoffService {
       return { gaps: value, tokens: tokensOf(prompt, value.join("\n")) };
     },
     autonomous: w.autonomous,
+    ruleOff: (org, rule) => w.ruleOff?.(org, rule) === true,
     modelBlocked: () => w.ceilingHeld(),
     tell: (id, text) => w.tasks.handoffTell({ task: id, text }),
     hold: (id, line) => {
