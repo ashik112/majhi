@@ -369,7 +369,7 @@ describe("personal data stays out of logs and errors", () => {
       name: PII[2] ?? "",
       emails: [PII[0] ?? ""],
       links: [PII[3] ?? ""],
-      notes: PII[1],
+      notes: PII[1] ?? "",
       org: "acme",
     });
     t.crm.log({ contact: made.contact.id, channel: "call", summary: `Called ${PII[1]}` }, OWNER);
