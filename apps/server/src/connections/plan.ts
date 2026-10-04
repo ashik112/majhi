@@ -200,7 +200,7 @@ export async function planConnections(
       }
       case "mail": {
         if (textValue(c, "mode") === "mcp") {
-          await mcpServer(h, plan, entries, gate, use, deps.oauth);
+          await mcpServer(h, plan, entries, gate, use, deps.oauth, setVar);
           break;
         }
         const values: [string, string | undefined][] = [
@@ -220,7 +220,7 @@ export async function planConnections(
         break;
       }
       case "mcp":
-        await mcpServer(h, plan, entries, gate, use, deps.oauth);
+        await mcpServer(h, plan, entries, gate, use, deps.oauth, setVar);
         break;
       case "browser": {
         const server = browserServer(textValue(c, "server"));
@@ -316,6 +316,7 @@ async function mcpServer(
   gate: (h: HeldConnection, extra?: Partial<GateConnection>) => void,
   use: (h: HeldConnection, line: string) => void,
   oauth: PlanDeps["oauth"],
+  setVar: (owner: string, name: string, value: string) => void,
 ): Promise<void> {
   const c: ConnectionConfig = h.connection;
   const lists = activeLists(c.type, c.fields ?? {}).map((l) => l.key);
@@ -344,6 +345,9 @@ async function mcpServer(
       }
       headers.Authorization = `Bearer ${answer.token}`;
       plan.secrets.push({ name: `${h.id}.oauth`, value: answer.token });
+      // The service's own command-line tool reads the same sign-in from a variable.
+      const tokenVar = serviceByUrl(url)?.tokenVar;
+      if (tokenVar !== undefined) setVar(h.id, tokenVar, answer.token);
     }
     const type = textValue(c, "protocol") === "sse" ? "sse" : "http";
     const products = productsOf(c);
@@ -356,6 +360,7 @@ async function mcpServer(
           server: name,
           readTools: words(textValue(c, "read_tools")),
           writeTools: words(textValue(c, "write_tools")),
+          ...cliGate(c),
         });
       }
       use(h, useLine(h));
@@ -367,8 +372,16 @@ async function mcpServer(
     server: h.id,
     readTools: words(textValue(c, "read_tools")),
     writeTools: words(textValue(c, "write_tools")),
+    ...cliGate(c),
   });
   use(h, useLine(h));
+}
+
+/** The command-line tools of a signed-in service that gives its token as a variable, for the gate. */
+function cliGate(c: ConnectionConfig): Partial<GateConnection> {
+  if (textValue(c, "auth") !== "oauth") return {};
+  const service = serviceByUrl(textValue(c, "url") ?? "");
+  return service?.tokenVar === undefined ? {} : { clis: service.clis ?? [] };
 }
 
 /** The products a remote MCP connection turned on, as its service lists them. */
@@ -401,9 +414,14 @@ export function useLine(h: HeldConnection, current = false): string {
         : "Variables MAIL_IMAP_HOST, MAIL_IMAP_PORT, MAIL_SMTP_HOST, MAIL_SMTP_PORT, MAIL_USER and MAIL_PASSWORD. Sending mail asks the owner first.";
     case "mcp": {
       const products = productsOf(c);
-      return products.length === 0
-        ? `MCP server ${h.id}.`
-        : `MCP servers ${products.map((p) => `${h.id}-${p.id} (${p.name})`).join(", ")}.`;
+      const servers =
+        products.length === 0
+          ? `MCP server ${h.id}.`
+          : `MCP servers ${products.map((p) => `${h.id}-${p.id} (${p.name})`).join(", ")}.`;
+      const service = textValue(c, "auth") === "oauth" ? serviceByUrl(textValue(c, "url") ?? "") : undefined;
+      if (service?.tokenVar === undefined) return servers;
+      const clis = service.clis ?? [];
+      return `${servers} Variable ${service.tokenVar} holds the sign-in${clis.length > 0 ? ` for ${clis.join(", ")}` : ""}. Commands that change something ask the owner first.`;
     }
     case "browser":
       return `MCP server ${h.id} (${browserServer(textValue(c, "server")).label}), with its own browser profile.`;

@@ -117,6 +117,13 @@ export const ServiceEntrySchema = z.object({
   products: z.array(ServiceProductSchema).max(30).optional(),
   /** Hosts of the service's own API that a watch may read with this sign-in. The token goes nowhere else. */
   apiHosts: z.array(z.string().min(1).max(100)).max(5).optional(),
+  /** `mcp-oauth`: the variable a run gets the signed-in token in, for the service's own command-line tool. */
+  tokenVar: z
+    .string()
+    .regex(/^[A-Z][A-Z0-9_]{0,63}$/)
+    .optional(),
+  /** The command-line tools `tokenVar` is for, so the gate checks their commands. */
+  clis: z.array(z.string().min(1).max(40)).max(5).optional(),
   /** The provider's OAuth, for a service without one the SDK can discover. */
   provider: ServiceProviderSchema.optional(),
   /** The guided app setup (`app-setup.ts`) the owner does first, once per workspace. */
@@ -394,6 +401,8 @@ export const SERVICE_CATALOG: readonly ServiceEntry[] = z.array(ServiceEntrySche
     summary: "Droplets, Kubernetes, databases, apps and more",
     mcpUrl: "https://accounts.mcp.digitalocean.com/mcp",
     apiHosts: ["api.digitalocean.com"],
+    tokenVar: "DIGITALOCEAN_ACCESS_TOKEN",
+    clis: ["doctl"],
     products: [
       ["droplets", "Droplets"],
       ["doks", "Kubernetes"],

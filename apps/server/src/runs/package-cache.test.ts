@@ -73,7 +73,7 @@ describe("a workspace's package store", () => {
     const own = join(h.env.majhiHome, "cache", "acme");
     expect(start?.mounts).toContainEqual({ path: own });
     expect((start?.mounts ?? []).filter((m) => m.path.includes("/cache/"))).toEqual([{ path: own }]);
-    expect(start?.env).toEqual(cacheEnv(own));
+    expect(start?.env).toEqual({ ...cacheEnv(own), MAJHI_TOOLS: join(h.env.majhiHome, "tools", "acme") });
     expect(JSON.stringify(start?.env)).not.toContain("leak-me");
     expect(JSON.stringify(start?.env)).not.toContain("/host/store");
   });

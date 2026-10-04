@@ -228,6 +228,22 @@ describe("runMounts and package stores", () => {
     await symlink(join(majhiHome, "accounts"), link);
     expect(refused({ mounts: [{ path: link }] })).toThrow(MountRefused);
   });
+
+  it("mounts one workspace's tools folder read-write, and not the tools folder, its bin, or a read-only one", async () => {
+    const own = join(majhiHome, "tools", "acme");
+    await mkdir(join(own, "bin"), { recursive: true });
+    const args = dockerRunArgs(request({ mounts: [{ path: own }] }), cfg, "majhi-run-1");
+    expect(args).toContain(`type=bind,source=${own},target=${own}`);
+    const refused = (extra: Partial<SpawnRequest>) => () => runMounts(request(extra), cfg);
+    for (const m of [
+      { path: join(majhiHome, "tools") },
+      { path: join(own, "bin") },
+      { path: own, readOnly: true },
+      { path: join(majhiHome, "tools", "Bad_Name") },
+    ]) {
+      expect(refused({ mounts: [m] }), m.path).toThrow(MountRefused);
+    }
+  });
 });
 
 describe("dockerSpawner", () => {

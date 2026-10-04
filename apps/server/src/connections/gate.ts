@@ -16,7 +16,7 @@ export interface GateConnection {
   type: ConnectionType;
   /** kubectl: the context name in the run's kubeconfig. */
   context?: string | undefined;
-  /** env: the CLIs it is for. */
+  /** env, or a signed-in MCP service that gives its token as a variable: the CLIs it is for. */
   clis?: readonly string[] | undefined;
   /** mcp, browser, a mail MCP server: the name of its MCP server on the session. */
   server?: string | undefined;
@@ -528,7 +528,7 @@ function readCommand(
     return;
   }
   const env = held.find(
-    (c) => (c.type === "env" || c.type === "cli" || c.type === "git") && c.clis?.includes(name),
+    (c) => (c.type === "env" || c.type === "cli" || c.type === "git" || c.type === "mcp") && c.clis?.includes(name),
   );
   if (env !== undefined) {
     const verb = cliVerb(args);
