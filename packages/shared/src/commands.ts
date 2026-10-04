@@ -48,7 +48,7 @@ import {
   AutonomyStatusSchema,
   AutonomyStopInputSchema,
 } from "./autonomy.ts";
-import { BackupListSchema } from "./backup.ts";
+import { BACKUP_PASSPHRASE_MAX, BackupListSchema, BackupVerifySchema } from "./backup.ts";
 import { BudgetStatusSchema } from "./budgets.ts";
 import {
   BudgetAnswerInputSchema,
@@ -1709,32 +1709,55 @@ export const commands = {
     output: z.object({ container: ContainerInfoSchema }),
   },
 
-  // Backups of majhi.db (PRV-31) ---------------------------------------------------
+  // Backups of majhi's data ----------------------------------------------------------
   "backup.list": {
     risk: "read",
     summary:
-      "The snapshots of majhi.db (tasks, rooms, history): a daily one, kept for 7 days, the ones taken on request and the ones a restore replaced, newest first, and whether a restore waits for the next start",
+      "The backups of majhi's data (database, memory, config history, agent and skill files, the encrypted secrets file), newest first, with the folder they go to, the last and next one, and the last check",
     input: Empty,
     output: BackupListSchema,
   },
   "backup.now": {
     risk: "change",
-    summary: "Take a snapshot of majhi.db now, besides the daily one",
-    input: Empty,
+    summary:
+      "Back up majhi's data now, besides the daily one. Encrypted with the secrets key, or with a passphrase when one is given (used once, never stored)",
+    input: z.object({ passphrase: z.string().min(8).max(BACKUP_PASSPHRASE_MAX).optional() }),
     output: z.object({ name: z.string() }),
   },
-  "backup.restore": {
-    risk: "change",
+  "backup.verify": {
+    risk: "read",
     summary:
-      "Restore majhi.db from a snapshot. The current database is snapshotted first, and the swap happens when majhi next starts. Owner only",
-    input: z.object({ name: z.string().min(1).max(100) }),
-    output: z.object({ restored: z.string(), safety: z.string() }),
+      "Check a backup (the newest when no name is given): decrypt it into a temporary folder, check every file against its checksum, open the databases and run their integrity check. Nothing live is touched",
+    input: z.object({
+      name: z.string().min(1).max(200).optional(),
+      /** For a backup made with a passphrase. Used once, never stored. */
+      passphrase: z.string().min(1).max(BACKUP_PASSPHRASE_MAX).optional(),
+    }),
+    output: z.object({ name: z.string(), result: BackupVerifySchema }),
+  },
+  "backup.restore": {
+    risk: "destructive",
+    summary:
+      "Restore majhi's data from a backup: check it, prepare it in a fresh folder, then swap it in and restart majhi. The data it replaces is kept as a rollback. Owner only",
+    input: z.object({
+      name: z.string().min(1).max(200),
+      /** For a backup made with a passphrase. Used once, never stored. */
+      passphrase: z.string().min(1).max(BACKUP_PASSPHRASE_MAX).optional(),
+    }),
+    output: z.object({ restored: z.string(), safety: z.string(), restarting: z.boolean() }),
   },
   "backup.cancelRestore": {
     risk: "change",
-    summary: "Drop a restore that waits for the next start, so majhi keeps its current database. Owner only",
+    summary: "Drop a restore that waits for the next start, so majhi keeps its current data. Owner only",
     input: Empty,
     output: z.object({ cancelled: z.boolean() }),
+  },
+  "backup.setDestination": {
+    risk: "change",
+    summary:
+      "Choose the folder backups go to (for example a synced folder), or null for the default inside the majhi home. Owner only",
+    input: z.object({ path: z.string().min(1).max(4096).nullable() }),
+    output: z.object({ path: z.string() }),
   },
 
   // Task links (5.4a) ---------------------------------------------------------

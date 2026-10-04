@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Command, dockerTty, localSpawner } from "@majhi/acp";
@@ -349,13 +350,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onChanged: () => events.emit(["accounts"]),
   });
   const store = Store.open(env.majhiHome);
+  const memory = createMemory(env.majhiHome, options.embedder);
   const backup = new BackupService({
     majhiHome: env.majhiHome,
-    sqlite: () => store.raw,
-    dbFile: DB_FILE_NAME,
+    databases: () => [
+      { rel: DB_FILE_NAME, backup: async (dest) => void (await store.raw.backup(dest)) },
+      { rel: "memory/memory.db", backup: async (dest) => void (await memory.rawDatabase.backup(dest)) },
+    ],
+    history: config.history,
+    key: () => secrets.identityForBackups(),
+    version: { version: env.version, commit: env.commit },
+    // Under docker compose the container restarts itself (restart: unless-stopped), onto the staged restore.
+    ...(existsSync("/.dockerenv") ? { restart: () => void setTimeout(() => process.kill(process.pid, "SIGTERM"), 1000) } : {}),
   });
   backup.start();
-  const memory = createMemory(env.majhiHome, options.embedder);
   memory.project.setLanded(async (task, repo) => {
     const found = store.tasks
       .get(task)

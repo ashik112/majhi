@@ -48,6 +48,8 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   // A restore replaces the whole database: the owner's call.
   "backup.restore",
   "backup.cancelRestore",
+  // Where backups are written is the owner's choice: a synced folder carries them off this computer.
+  "backup.setDestination",
   // Git sign-in happens in the owner's browser or with a token the owner pastes: the owner's alone.
   "git.oauthApps.set",
   "git.signIn.start",

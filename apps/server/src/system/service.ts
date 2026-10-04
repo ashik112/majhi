@@ -12,6 +12,11 @@ export interface SystemDeps {
   majhiHome: string;
   /** Agents in the middle of a turn right now. Default: none. */
   working?: () => number;
+  /**
+   * Runs just before the helper rebuilds majhi: the safety backup. A failure is logged and the update
+   * goes on, because a stuck backup must not leave the owner on an old version.
+   */
+  beforeUpdate?: () => Promise<unknown>;
   /** How often a waiting update looks again. Default 2 s. */
   waitPollMs?: number;
 }
@@ -145,6 +150,9 @@ export class SystemService {
     await this.dropWait();
     if (blocked !== undefined) return blocked;
     try {
+      await this.deps.beforeUpdate?.().catch((err: unknown) => {
+        console.error(`The backup before the update failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
       await hostLink.call("update", {});
       return { state: "restarting" };
     } catch (err) {
