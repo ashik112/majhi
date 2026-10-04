@@ -602,8 +602,9 @@ describe("mentions that ask for nothing", () => {
   async function mentionWorld(
     lead: Turns,
     answer: (message: string) => { value: boolean; confidence: number },
+    builder: Turns = [],
   ) {
-    const world = await teamWorld({ "acme-lead": lead }, { reviewer: false });
+    const world = await teamWorld({ "acme-lead": lead, "acme-builder": builder }, { reviewer: false });
     const { h } = world;
     expect(
       (await h.cmd("decisions.set", { order: ["acp", "rules"], acp_agent: "acme-builder" })).status,
@@ -815,5 +816,87 @@ describe("mentions that ask for nothing", () => {
     await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "the builder woken by the handoff");
     expect(asked).toEqual([]);
     expect(await handoffs("ACM-1")).toEqual(["acme-lead>acme-builder (mention)"]);
+  });
+
+  it("a teammate's report to the lead after changes the lead has not seen wakes it without the provider; a later no-op stays quiet", async () => {
+    const worktree = () => join(w.taskDir("ACM-1"), "acme-api");
+    const { h, prompts, asked } = await mentionWorld(
+      [say("@acme-builder: please build the web half."), say("Reviewed the web half. Done.")],
+      () => ({ value: false, confidence: 0.95 }),
+      [
+        // The work, with a question for the owner: the owner has the next move, so the lead is not woken yet.
+        async () => {
+          await writeFile(join(worktree(), "web.ts"), "export const lamp = 'green';\n");
+          return "Built the web half. @owner should the lamp be green or amber?";
+        },
+        // The report comes in a later turn that changes nothing itself (PRV-22).
+        say(
+          "@acme-lead: web half done in four commits: a1b2c3d, e4f5a6b, c7d8e9f, 0a1b2c3.\n\nThings to check:\n- say if you meant a lamp colour other than green.",
+        ),
+        say("@acme-lead: nothing else from me."),
+      ],
+    );
+    await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "the builder's first turn");
+    await until(
+      async () => (await items("ACM-1")).some((i) => i.type === "owner-question"),
+      "the builder's question",
+    );
+    await until(async () => (await status("ACM-1")) === "review", "review while the owner's answer waits");
+    expect(prompts["acme-lead"]).toHaveLength(1);
+    await h.cmd("room.send", { task: "ACM-1", text: "@acme-builder green" });
+    await until(() => (prompts["acme-lead"]?.length ?? 0) === 2, "the lead woken by the report");
+    await until(async () => (await status("ACM-1")) === "review", "review after the lead's turn");
+    expect(asked).toEqual([]);
+    expect(await handoffs("ACM-1")).toEqual([
+      "acme-lead>acme-builder (mention)",
+      "acme-builder>acme-lead (mention)",
+    ]);
+    expect(
+      (await systemTexts("ACM-1")).some((t) =>
+        t.includes("without asking for anything, so they were not woken"),
+      ),
+    ).toBe(false);
+
+    // The lead has seen the work: a later no-op to it goes the usual way, and the sure no keeps it asleep.
+    await h.cmd("room.send", { task: "ACM-1", text: "@acme-builder anything else?" });
+    await until(() => (prompts["acme-builder"]?.length ?? 0) === 3, "the builder's last turn");
+    await until(async () => (await status("ACM-1")) === "review", "review after the no-op");
+    expect(prompts["acme-lead"]).toHaveLength(2);
+    expect(asked).toHaveLength(1);
+    expect(await systemTexts("ACM-1")).toContain(
+      "@acme-builder mentioned @acme-lead without asking for anything, so they were not woken.",
+    );
+  });
+});
+
+describe("work the lead has not reviewed", () => {
+  it("wakes the lead once instead of going to review, then the task goes to review", async () => {
+    const worktree = () => join(w.taskDir("ACM-1"), "acme-api");
+    const { h, prompts, full } = await teamWorld(
+      {
+        "acme-lead": [say("@acme-builder: please build the health endpoint."), say("Looked at it. Done.")],
+        "acme-builder": [
+          async () => {
+            await writeFile(join(worktree(), "health.ts"), "export const health = () => 'ok';\n");
+            return "Built the health endpoint.";
+          },
+        ],
+      },
+      { reviewer: false },
+    );
+    await h.cmd("tasks.create", {
+      text: "add a health endpoint to api",
+      repos: [{ project: "acme-api" }],
+      team: ["acme-lead", "acme-builder"],
+      start: true,
+    });
+    await until(() => (prompts["acme-lead"]?.length ?? 0) === 2, "the lead woken to review");
+    await until(async () => (await status("ACM-1")) === "review", "review after the lead's turn");
+    expect(full["acme-lead"]?.[1]).toContain("A teammate changed the worktrees since your last turn");
+    expect(await systemTexts("ACM-1")).toContain(
+      "Nobody is working on ACM-1, but a teammate changed the worktrees and nobody has reviewed it. Woke @acme-lead to review that work before the task goes to review.",
+    );
+    expect(await handoffs("ACM-1")).toEqual(["acme-lead>acme-builder (mention)"]);
+    expect(prompts["acme-lead"]).toHaveLength(2);
   });
 });

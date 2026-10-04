@@ -275,6 +275,19 @@ function onlySays(text: string, idle: (sentence: string) => boolean): boolean {
   return said;
 }
 
+/**
+ * Whether the worktrees changed since the last turn of the lead or a reviewer: a teammate committed
+ * or edited and nobody has reviewed it. In lead mode the lead reviews and integrates that work
+ * before the task can go to review. False when either state is unknown.
+ */
+export function unreviewed(state: Pick<RoomState, "fingerprint" | "reviewedFingerprint">): boolean {
+  return (
+    state.fingerprint !== undefined &&
+    state.reviewedFingerprint !== undefined &&
+    state.fingerprint !== state.reviewedFingerprint
+  );
+}
+
 /** Whether `planTurn` hands work to the agents a message from `from` mentions. */
 export function routesMentions(mode: CoordinationMode, team: readonly Member[], from: string): boolean {
   if (mode === "lead") return true;
