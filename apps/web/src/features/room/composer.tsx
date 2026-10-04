@@ -107,6 +107,7 @@ export function Composer({
 
   const secretInText = useMemo(() => looksLikeSecret(text), [text]);
   const busy = isBusy(agents) || starting;
+  const offline = useServerOffline();
   const commands = agents[0]?.commands ?? [];
   const trigger = detectTrigger(text, caret);
   const popupTrigger = trigger && trigger.start !== dismissed ? trigger : null;
@@ -160,6 +161,11 @@ export function Composer({
   /** Shows the message and clears the box at once; the server stores it and starts the agent after. */
   function send(mode: "queue" | "interrupt") {
     if (!canSend) return;
+    // Nothing would arrive: say so and keep the message in the box instead of showing it as sent.
+    if (offline) {
+      toast("majhi is offline", { detail: "Your message was not sent. It stays here.", tone: "error" });
+      return;
+    }
     const sentText = text;
     const sentFiles = attachments.items;
     pendingCount += 1;

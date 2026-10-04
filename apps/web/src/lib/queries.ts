@@ -121,18 +121,24 @@ export function useSetWorkspaces(onSaved?: (result: WorkspacesUpdateResult) => v
   });
 }
 
+/** How often `/health` is asked, and how long one answer may take. A server that is gone shows within about 3 s. */
+const HEALTH_EVERY_MS = 1500;
+const HEALTH_TIMEOUT_MS = 1500;
+
 /**
- * Polls `/health` every 10 s for the online pill. When the server comes back after being
- * unreachable (for example after `make up`), every other query is refetched.
+ * Polls `/health` every 1.5 s for the online pill. One failed answer is asked again at once
+ * before the pill says offline, so a busy server does not flicker it. When the server comes back
+ * after being unreachable (for example after `make up`), every other query is refetched.
  */
 export function useHealth() {
   const client = useQueryClient();
   const query = useQuery({
     queryKey: queryKeys.health,
-    queryFn: ({ signal }) => getHealth(signal),
-    refetchInterval: 10_000,
+    queryFn: ({ signal }) => getHealth(AbortSignal.any([signal, AbortSignal.timeout(HEALTH_TIMEOUT_MS)])),
+    refetchInterval: HEALTH_EVERY_MS,
     refetchIntervalInBackground: false,
-    retry: false,
+    retry: 1,
+    retryDelay: 200,
   });
 
   const online = query.isSuccess;
@@ -146,6 +152,15 @@ export function useHealth() {
   }, [online, query.isError, client]);
 
   return { ...query, online };
+}
+
+/** True while the last health check failed: majhi cannot be reached, so nothing sent now would arrive. */
+export function useServerOffline(): boolean {
+  return useQuery({
+    queryKey: queryKeys.health,
+    queryFn: ({ signal }) => getHealth(signal),
+    enabled: false,
+  }).isError;
 }
 
 /** Whether the host helper is connected. Polled every 10 s, like the online pill. */
