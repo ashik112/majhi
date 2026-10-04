@@ -115,6 +115,20 @@ export class TaskRepo {
     };
   }
 
+  /**
+   * The subtasks of a parent that are not done, and when the newest one was made. A parent with open
+   * subtasks waits on them, not on the owner.
+   */
+  openSubtasks(parent: string): { open: number; newest?: string } {
+    const row = this.db
+      .select({ n: sql<number>`count(*)`, newest: sql<string | null>`max(${tasks.createdAt})` })
+      .from(taskLinks)
+      .innerJoin(tasks, eq(tasks.id, taskLinks.task))
+      .where(and(eq(taskLinks.type, "parent"), eq(taskLinks.other, parent), ne(tasks.status, "done")))
+      .get();
+    return { open: row?.n ?? 0, ...(row?.newest == null ? {} : { newest: row.newest }) };
+  }
+
   /** Hands out the next id for a key prefix: `GLX-1`, `GLX-2`, ... Numbers are never reused. */
   allocateKey(prefix: string): TaskId {
     const row = this.db

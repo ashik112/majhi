@@ -379,6 +379,22 @@ export class RunManager {
       .map((r) => r.agent);
   }
 
+  /**
+   * The tasks an agent is working on right now: starting or in a turn. An agent that is queued for a
+   * slot or waits on an answer is not working, so its task is not counted here.
+   */
+  workingTasks(): string[] {
+    const out = new Set<string>();
+    for (const r of this.runs.values()) {
+      const status = r.live.status;
+      const idleish = status === "queued" || status === "waiting";
+      if (status === "starting" || status === "working" || (r.turning && !r.closing && !r.settling && !idleish)) {
+        out.add(r.task);
+      }
+    }
+    return [...out];
+  }
+
   /** Agents in the middle of a turn, across majhi. An update waits for these with "when they finish". */
   turnsInFlight(): number {
     let n = 0;
@@ -2289,6 +2305,31 @@ export class RunManager {
     return run.agent === (await this.deps.config.sections()).boss;
   }
 
+  /**
+   * The line a queued run says: its place, which limit is full and which tasks hold the slots, with
+   * the ones that wait on the owner marked, since an agent waiting on an answer still holds its slot.
+   */
+  private queuedLine(run: AgentRun, key: string, slot: number): string {
+    const why = this.slots.blockedBy(key);
+    const start = `@${run.agent} starts when one frees.`;
+    if (why === undefined) return `Queued, #${slot} in line, behind earlier starts. ${start}`;
+    const asking = this.deps.store.room.tasksWaitingOnOwner();
+    const holders = why.holders.map((h) => {
+      const holder = this.runs.get(h.key);
+      const mark = asking.has(h.task) ? ", waiting for you" : "";
+      return `${h.task} (${holder === undefined ? h.account : `@${holder.agent}`}${mark})`;
+    });
+    const shown = holders.slice(0, 4).join(", ");
+    const more = holders.length > 4 ? ` and ${holders.length - 4} more` : "";
+    const full =
+      why.limit === "account"
+        ? `the limit of ${why.max} at once on ${why.account}`
+        : why.limit === "task"
+          ? `the limit of ${why.max} agents on one task`
+          : `the limit of ${why.max} agents at once`;
+    return `Queued, #${slot} in line: ${full} is reached. Holding the slots: ${shown}${more}. ${start}`;
+  }
+
   /** Shows each waiting run's place in line. */
   private showLine(positions: Map<string, number>): void {
     for (const [key, slot] of positions) {
@@ -2304,11 +2345,7 @@ export class RunManager {
       });
       if (!run.queuedNoted) {
         run.queuedNoted = true;
-        this.live.system(
-          run,
-          "info",
-          `Queued, #${slot} in line: majhi is running as many agents as the limits allow. @${run.agent} starts when a slot is free.`,
-        );
+        this.live.system(run, "info", this.queuedLine(run, key, slot));
       }
     }
   }

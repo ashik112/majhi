@@ -161,7 +161,7 @@ describe("batch approve and leave", () => {
       ids: ["room:ACM-1:pm1", "room:ACM-1:pm2"],
     });
     expect(out.done).toEqual(["room:ACM-1:pm2"]);
-    expect(out.skipped).toEqual([{ id: "room:ACM-1:pm1", reason: "The captain suggests Reject" }]);
+    expect(out.skipped).toEqual([{ id: "room:ACM-1:pm1", reason: "The captain suggests Deny" }]);
     expect(log).toEqual(["permission pm2 yes"]);
   });
 

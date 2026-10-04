@@ -353,9 +353,11 @@ describe("limits", () => {
     await until(() => live("ACM-3", "acme-three")?.status === "queued", "the queue");
     expect(live("ACM-3", "acme-three")).toMatchObject({ status: "queued", slot: 1 });
     expect(w.h.runtime.sessions).toHaveLength(2);
-    expect(await systems(w.h, "ACM-3")).toContain(
-      "Queued, #1 in line: majhi is running as many agents as the limits allow. @acme-three starts when a slot is free.",
-    );
+    // The line names the limit and who holds the slots.
+    const queued = (await systems(w.h, "ACM-3")).find((line) => line.startsWith("Queued, #1 in line"));
+    expect(queued).toContain("the limit of 2 at once on");
+    expect(queued).toContain("Holding the slots: ACM-1 (@acme-builder), ACM-2 (@acme-two).");
+    expect(queued).toContain("@acme-three starts when one frees.");
 
     // The first agent ends its turn and goes idle: its process makes room for the one waiting.
     await until(() => gates.has("ACM-1"), "the first turn");

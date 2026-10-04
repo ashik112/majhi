@@ -6,7 +6,7 @@ import type {
   DecisionList,
 } from "@majhi/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ApiRequestError, cmd } from "./api";
+import { ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
 
 /**
@@ -22,13 +22,23 @@ export function useDecisions() {
 
 /**
  * `decisions.detail`: the hand-back, diff stat, checks and target of the selected decision. Kept under
- * the list's key, so the same topics refetch it. A decision that is gone answers 404 and is not retried.
+ * the list's key, so the same topics refetch it. It is read only while the list still holds the
+ * decision: an item that just left is not asked for again. One that leaves between the two reads
+ * answers 404, which is an empty detail, not an error.
  */
 export function useDecisionDetail(id: string | undefined) {
+  const listed = useDecisions().data?.decisions.some((d) => d.id === id) === true;
   return useQuery<DecisionDetail, ApiRequestError>({
     queryKey: [...queryKeys.decisions, "detail", id],
-    queryFn: () => cmd("decisions.detail", { id: id ?? "" }),
-    enabled: id !== undefined,
+    queryFn: async () => {
+      try {
+        return await cmd("decisions.detail", { id: id ?? "" });
+      } catch (error) {
+        if (error instanceof ApiRequestError && error.status === 404) return { id: id ?? "" };
+        throw error;
+      }
+    },
+    enabled: id !== undefined && listed,
     retry: false,
   });
 }
@@ -57,8 +67,9 @@ export function useAnswerDecision() {
   const client = useQueryClient();
   return useMutation<DecisionList, ApiRequestError, DecisionAnswerInput>({
     mutationFn: (input) => cmd("decisions.answer", input, { reason: "Owner answered a decision" }),
-    onSuccess: (left) => {
+    onSuccess: (left, input) => {
       rememberAnswer();
+      client.removeQueries({ queryKey: [...queryKeys.decisions, "detail", input.id] });
       client.setQueryData(queryKeys.decisions, left);
       return Promise.all([
         client.invalidateQueries({ queryKey: queryKeys.tasks }),
@@ -74,7 +85,8 @@ export function useAfterBatch() {
   const client = useQueryClient();
   return (result: DecisionBatchResult) => {
     if (result.done.length > 0) rememberAnswer();
-    client.setQueryData(queryKeys.decisions, { decisions: result.decisions });
+    for (const id of result.done) client.removeQueries({ queryKey: [...queryKeys.decisions, "detail", id] });
+    client.setQueryData(queryKeys.decisions, { decisions: result.decisions, counts: result.counts });
     return Promise.all([
       client.invalidateQueries({ queryKey: queryKeys.tasks }),
       client.invalidateQueries({ queryKey: queryKeys.captain }),

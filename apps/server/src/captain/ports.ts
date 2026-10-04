@@ -41,6 +41,12 @@ export type ShipCheck =
       owner?: boolean;
       /** It conflicts with its base. Who resolves that follows the workspace's Merge row. */
       conflict?: boolean;
+      /**
+       * Merge would fail now: `empty` when nothing is ahead of the base, `failing` for a conflict,
+       * uncommitted work, a secret in the diff or a merge git refuses. The owner's card says so
+       * instead of offering Merge.
+       */
+      unmergeable?: "empty" | "failing";
       /** Work left uncommitted in a repo: the lead is asked to commit or discard it. */
       uncommitted?: { project: string; files: string[] };
     }

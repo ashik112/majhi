@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PRIVATE } from "./accounts.ts";
 import { DraftSchema } from "./playbooks.ts";
 import { TaskIdSchema } from "./tasks.ts";
 
@@ -72,6 +73,11 @@ export const OwnerDecisionSchema = z.object({
   title: z.string().min(1).max(300),
   /** What it is in a sentence the owner can act on ("@acme-builder finished 'Fix the invoice total' and it is ready to ship"). */
   sentence: z.string().max(500).optional(),
+  /**
+   * One line when the server already knows the main action cannot succeed (nothing to merge, checks
+   * failed). The card says it instead of offering a button that would fail.
+   */
+  blocked: z.string().max(300).optional(),
   /** The answers a click gives, primary first. Empty when the answer needs the task open. */
   options: z.array(DecisionOptionSchema),
   suggestion: DecisionSuggestionSchema.optional(),
@@ -121,10 +127,68 @@ export const DecisionDetailSchema = z.object({
   draft: DraftSchema.optional(),
   /** Options that cannot be taken now, with the reason (Merge when nothing is committed). */
   blocked: z.record(z.string(), z.string()).optional(),
+  /** What a permission or approval asks to run, whole: the command, the tool call. */
+  command: z.string().max(8000).optional(),
+  /** Who asks, so the pane can say "@agent in ACM-3". */
+  agent: z.string().optional(),
 });
 export type DecisionDetail = z.infer<typeof DecisionDetailSchema>;
 
-export const DecisionListSchema = z.object({ decisions: z.array(OwnerDecisionSchema) });
+/** What one workspace (or all of them) has waiting and working. */
+export const WorkCountsSchema = z.object({
+  needsYou: z.number().int().nonnegative(),
+  working: z.number().int().nonnegative(),
+});
+export type WorkCounts = z.infer<typeof WorkCountsSchema>;
+
+/**
+ * The one count every screen shows (Home header and columns, the bell, the sidebar, the banner),
+ * computed on the server from the decisions it lists and the agents that are working now. `orgs` is
+ * keyed by workspace id; a task of none counts under Private.
+ */
+export const BoardCountsSchema = WorkCountsSchema.extend({
+  /** The tasks an agent is working on right now, so a column lists exactly what is counted. */
+  workingTasks: z.array(z.string()),
+  orgs: z.record(z.string(), WorkCountsSchema),
+});
+export type BoardCounts = z.infer<typeof BoardCountsSchema>;
+
+/** The workspace a decision belongs to: its org, Private for a task of none, nothing for an account or the day's budget. */
+function decisionWorkspace(d: Pick<OwnerDecision, "org" | "task">): string | undefined {
+  return d.org ?? (d.task === undefined ? undefined : PRIVATE);
+}
+
+/**
+ * Counts what waits and what works. A task is working only when an agent is working on it right
+ * now and nothing waits for the owner in it: an agent that waits on an answer is waiting, not working.
+ */
+export function boardCounts(
+  decisions: readonly Pick<OwnerDecision, "org" | "task">[],
+  working: readonly { task: string; org?: string | undefined }[],
+): BoardCounts {
+  const orgs: Record<string, WorkCounts> = {};
+  const of = (org: string): WorkCounts => {
+    orgs[org] ??= { needsYou: 0, working: 0 };
+    return orgs[org];
+  };
+  const asking = new Set(decisions.flatMap((d) => (d.task === undefined ? [] : [d.task])));
+  for (const d of decisions) {
+    const org = decisionWorkspace(d);
+    if (org !== undefined) of(org).needsYou += 1;
+  }
+  const workingTasks: string[] = [];
+  for (const w of working) {
+    if (asking.has(w.task) || workingTasks.includes(w.task)) continue;
+    workingTasks.push(w.task);
+    of(w.org ?? PRIVATE).working += 1;
+  }
+  return { needsYou: decisions.length, working: workingTasks.length, workingTasks, orgs };
+}
+
+export const DecisionListSchema = z.object({
+  decisions: z.array(OwnerDecisionSchema),
+  counts: BoardCountsSchema,
+});
 export type DecisionList = z.infer<typeof DecisionListSchema>;
 
 /** `decisions.answer`: `option` is one of the decision's option ids. `text` replaces it on an ask card's free-text answer. */
@@ -149,7 +213,7 @@ export type DecisionRecommendInput = z.infer<typeof DecisionRecommendInputSchema
  */
 export const DECISION_KIND_LABEL: Record<OwnerDecisionKind, string> = {
   question: "Question",
-  approval: "Access",
+  approval: "Permission",
   ship: "Ship",
   budget: "Money",
   paused: "Paused",
@@ -244,6 +308,7 @@ export const DecisionBatchResultSchema = z.object({
   failed: z.array(z.object({ id: z.string(), error: z.string() })),
   /** What still waits. */
   decisions: z.array(OwnerDecisionSchema),
+  counts: BoardCountsSchema,
 });
 export type DecisionBatchResult = z.infer<typeof DecisionBatchResultSchema>;
 
