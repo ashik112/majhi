@@ -70,6 +70,8 @@ function setup(items: RoomItem[], options: { failOn?: ReadonlySet<string> } = {}
     askChanges: async () => {},
     answerCap: async () => {},
     answerBudget: async () => {},
+    decideDraft: async () => {},
+    decideBatch: async () => {},
   };
   const inbox = new InboxService({
     items: () => items.filter((i) => pending.has(`${i.task}:${i.id}`)),
