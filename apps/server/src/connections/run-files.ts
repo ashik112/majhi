@@ -64,6 +64,7 @@ export async function prepareRunConnections(
     agent: { scope: fm.scope, connections: fm.connections },
     task: { org: task.org, connections: task.connections ?? [] },
     orgs: sections.orgs,
+    global: sections.connections,
   });
   if (held.length === 0) return undefined;
   const root = runFilesRoot(deps.majhiHome);
@@ -103,6 +104,7 @@ export async function taskSecrets(
     agent: { scope: "root", connections: [] },
     task: { org: task.org, connections: task.connections ?? [] },
     orgs: sections.orgs,
+    global: sections.connections,
   });
   if (held.length === 0) return [];
   // Nothing is written: only the plan's secret values are read.

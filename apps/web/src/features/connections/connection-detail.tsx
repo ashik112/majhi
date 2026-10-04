@@ -1,4 +1,4 @@
-import { type ConnectionView, connectionType, type OrgView } from "@majhi/shared";
+import { type ConnectionView, connectionType, GLOBAL_CONNECTIONS, type OrgView } from "@majhi/shared";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -6,7 +6,6 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
 import { DetailPane, DetailSection } from "@/components/ui/list-detail";
-import { OrgBadge } from "@/components/ui/org-badge";
 import { PageLink } from "@/components/ui/page-link";
 import { SaveSection, type SaveState } from "@/components/ui/save-section";
 import { Textarea } from "@/components/ui/select";
@@ -14,10 +13,11 @@ import { orgLabel } from "@/features/accounts/model";
 import { cn } from "@/lib/cn";
 import { useConnectionCommand } from "@/lib/connection-queries";
 import { describeError, errorDetails } from "@/lib/errors";
-import { badgeLetters, formatAgo } from "@/lib/format";
+import { formatAgo } from "@/lib/format";
 import { ConnectSection, isOauth } from "./connect-section";
 import { ConnectionFields } from "./connection-fields";
 import { type ConnectionDraft, connectionStatus, draftOf, updateInput } from "./model";
+import { ServiceLogo, serviceOf } from "./service-logo";
 
 /** The picked connection: how its last Test went, then its details, its values and what it may change unasked. */
 export function ConnectionDetail({
@@ -37,7 +37,6 @@ export function ConnectionDetail({
 }) {
   const def = connectionType(view.type);
   const org = orgLabel(view.org, orgs);
-  const orgKey = orgs.find((o) => o.id === view.org)?.key;
   const [removing, setRemoving] = useState(false);
   const remove = useConnectionCommand("connections.remove");
   return (
@@ -45,11 +44,7 @@ export function ConnectionDetail({
       label="Connection details"
       head={
         <div className="flex min-w-0 items-center gap-3">
-          <OrgBadge
-            label={badgeLetters(orgKey ?? org.name)}
-            color={org.color}
-            className="size-8 rounded-lg text-xs"
-          />
+          <ServiceLogo service={serviceOf(view)} type={view.type} />
           <div className="flex min-w-0 flex-col gap-0.5">
             <h2 className="truncate text-md leading-6 font-semibold">{view.name}</h2>
             <p className="flex min-w-0 items-center gap-1.5 text-sm text-fg-muted">
@@ -57,11 +52,9 @@ export function ConnectionDetail({
               <span aria-hidden="true" className="text-fg-dim">
                 ·
               </span>
-              <span className="shrink-0">{org.name}</span>
-              <span aria-hidden="true" className="text-fg-dim">
-                ·
+              <span className="shrink-0">
+                {view.org === GLOBAL_CONNECTIONS ? "Global · Shared with all workspaces" : org.name}
               </span>
-              <span className="min-w-0 truncate font-mono text-fg-faint">{view.id}</span>
             </p>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -99,8 +92,10 @@ export function ConnectionDetail({
           body={
             <>
               Its secrets and files are deleted.
-              {view.agents.length > 0 &&
-                ` ${view.agents.length === 1 ? "The agent that uses it loses it" : `The ${view.agents.length} agents that use it lose it`}.`}{" "}
+              {view.org === GLOBAL_CONNECTIONS
+                ? " Agents in every workspace lose access to this connection."
+                : view.agents.length > 0 &&
+                  ` ${view.agents.length === 1 ? "The agent that uses it loses it" : `The ${view.agents.length} agents that use it lose it`}.`}{" "}
               This cannot be undone.
             </>
           }
@@ -157,7 +152,9 @@ function StatusSection({ view, testing, now }: { view: ConnectionView; testing: 
             </p>
           ))}
         <p className="text-sm text-fg-faint text-pretty">
-          {view.agents.length === 0 ? (
+          {view.org === GLOBAL_CONNECTIONS ? (
+            "Available to agents in every workspace. Global connections are included automatically."
+          ) : view.agents.length === 0 ? (
             "No agent of this workspace lists it yet. Root agents get every connection of the task's workspace."
           ) : (
             <>

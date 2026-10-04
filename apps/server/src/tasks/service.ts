@@ -44,6 +44,7 @@ import type { AccountService } from "../accounts/service.ts";
 import { isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
 import { logShip } from "../audit.ts";
+import { connectionScopes } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
 import { runConnections } from "../connections/access.ts";
 import { useLine } from "../connections/plan.ts";
@@ -404,7 +405,7 @@ export class TaskService {
     }
     const connections = [...new Set(input.connections ?? [])];
     for (const id of connections) {
-      if (!Object.values(sections.orgs).some((o) => o.connections?.[id] !== undefined)) {
+      if (!Object.values(connectionScopes(sections)).some((o) => o.connections?.[id] !== undefined)) {
         throw new UserError(`There is no connection ${id}.`, 404);
       }
     }
@@ -2486,13 +2487,15 @@ export class TaskService {
     task: Task,
     agents: readonly AgentFrontmatter[],
   ): Promise<BriefConnection[]> {
-    const { orgs } = await this.deps.config.sections();
+    const sections = await this.deps.config.sections();
+    const { orgs } = sections;
     const found = new Map<string, BriefConnection>();
     for (const fm of agents.filter((a) => task.team.includes(a.id))) {
       const held = runConnections({
         agent: { scope: fm.scope, connections: fm.connections },
         task: { org: task.org, connections: task.connections ?? [] },
         orgs,
+        global: sections.connections,
       });
       for (const h of held) {
         if (found.has(h.id)) continue;

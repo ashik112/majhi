@@ -6,6 +6,7 @@ import { type Command, dockerTty, localSpawner } from "@majhi/acp";
 import {
   BUILT_IN_CONNECT_APPS,
   type CaptainChore,
+  GLOBAL_CONNECTIONS,
   isOwnerChat,
   NotificationsSettingsSchema,
   PRIVATE,
@@ -53,6 +54,7 @@ import { CaptainTell } from "./captain/tell.ts";
 import { captainWorld } from "./captain/world.ts";
 import type { Dispatch } from "./commands/dispatch.ts";
 import { resolvePath } from "./config/load.ts";
+import { connectionScopes } from "./config/sections.ts";
 import { ConfigService } from "./config/service.ts";
 import { AppClientStore } from "./connect/app-client.ts";
 import { hostCli } from "./connect/cli-connect.ts";
@@ -1557,9 +1559,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     builtInApps: BUILT_IN_CONNECT_APPS,
     githubClientId: async () => (await gitConnect.apps()).github?.clientId,
     ...(options.hostLink === undefined ? {} : { cli: hostCli(options.hostLink) }),
-    orgName: async (org) => (await config.sections()).orgs[org]?.name,
+    orgName: async (org) => connectionScopes(await config.sections())[org]?.name,
     secretOf: async (connection, name) => {
-      const orgs = (await config.sections()).orgs;
+      const orgs = connectionScopes(await config.sections());
       for (const entry of Object.values(orgs)) {
         const ref = entry.connections?.[connection]?.vars?.[name]?.value;
         if (ref !== undefined && ref.startsWith("secret:")) return secrets.get(ref.slice("secret:".length));
@@ -1573,10 +1575,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       setSecret: (input, command, meta) => connections.setSecret(input, command, meta),
     },
     connectionIds: async () =>
-      Object.entries((await config.sections()).orgs).flatMap(([org, entry]) =>
+      Object.entries(connectionScopes(await config.sections())).flatMap(([org, entry]) =>
         Object.entries(entry.connections ?? {}).map(([id, connection]) => ({ org, id, connection })),
       ),
-    orgExists: async (org) => (await config.sections()).orgs[org] !== undefined,
+    orgExists: async (org) => org === GLOBAL_CONNECTIONS || (await config.sections()).orgs[org] !== undefined,
     redirect: `${env.origin}/oauth/callback`,
     openUrl: async (url) => {
       if (options.hostLink === undefined || !options.hostLink.isConnected()) return false;

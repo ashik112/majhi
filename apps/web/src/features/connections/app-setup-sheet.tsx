@@ -130,7 +130,7 @@ export function AppSetupSheet({
   app: string;
   access: ConnectAccess;
   serviceName: string;
-  onDone: (saved: boolean) => void;
+  onDone: (saved: boolean, connection?: string) => void;
 }) {
   const setup = useAppSetup(org, app, access);
   const save = useConnectCommand("connect.appSave");
@@ -167,7 +167,10 @@ export function AppSetupSheet({
               </a>
             </Button>
           )}
-          <Button variant={result.next === undefined ? "primary" : "secondary"} onClick={() => onDone(true)}>
+          <Button
+            variant={result.next === undefined ? "primary" : "secondary"}
+            onClick={() => onDone(true, result.connection)}
+          >
             {view.finishes === "tokens" ? "Done" : "Continue"}
           </Button>
         </div>

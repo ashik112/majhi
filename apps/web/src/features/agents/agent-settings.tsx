@@ -5,6 +5,7 @@ import {
   connectionType,
   EFFORT_TIER_LABEL,
   EffortTierSchema,
+  GLOBAL_CONNECTIONS,
   MODEL_TIER_LABEL,
   ModelTierSchema,
   type OrgView,
@@ -566,21 +567,30 @@ function ConnectionsSection({ draft, onChange, ...section }: SectionProps) {
     return (
       <DetailSection title="Connections">
         <p className="text-sm text-fg-muted text-pretty">
-          A root agent gets every connection of the task's workspace, and can attach one of another workspace
-          to a task. Each attach shows in the room.
+          A root agent gets every Global connection and every connection of the task's workspace, and can
+          attach one of another workspace to a task. Each attach shows in the room.
         </p>
       </DetailSection>
     );
   }
   const inOrg = (connections ?? []).filter((c) => c.org === draft.scope);
   const own = inOrg.filter((c) => c.type !== "mcp");
-  const gone = draft.connections.filter((id) => connections !== undefined && !inOrg.some((c) => c.id === id));
+  const gone = draft.connections.filter(
+    (id) =>
+      connections !== undefined &&
+      !connections.some((c) => c.id === id && (c.org === draft.scope || c.org === GLOBAL_CONNECTIONS)),
+  );
   return (
     <SettingsSection
       title="Connections"
       note="What it may reach outside its repos. Only this workspace's connections. MCP servers are in their own section below."
       {...section}
     >
+      {(connections ?? []).some((c) => c.org === GLOBAL_CONNECTIONS && c.type !== "mcp") && (
+        <p className="text-sm text-fg-muted">
+          Global connections are available automatically in every workspace.
+        </p>
+      )}
       {own.length === 0 ? (
         <p className="text-sm text-fg-muted text-pretty">
           This workspace has no connections yet.{" "}
@@ -628,7 +638,7 @@ function McpSection({ draft, onChange, ...section }: SectionProps) {
     return (
       <DetailSection title="MCP servers">
         <p className="text-sm text-fg-muted text-pretty">
-          A root agent gets every MCP server of the task's workspace, like its other connections.
+          A root agent gets every Global MCP server and every MCP server of the task's workspace.
         </p>
       </DetailSection>
     );
@@ -644,6 +654,11 @@ function McpSection({ draft, onChange, ...section }: SectionProps) {
       note="Servers it may use in its next run. Only this workspace's MCP servers."
       {...section}
     >
+      {(connections ?? []).some((c) => c.org === GLOBAL_CONNECTIONS && c.type === "mcp") && (
+        <p className="text-sm text-fg-muted">
+          Global MCP servers are available automatically in every workspace.
+        </p>
+      )}
       {servers.length === 0 ? (
         <p className="text-sm text-fg-muted text-pretty">
           This workspace has no MCP servers yet.{" "}

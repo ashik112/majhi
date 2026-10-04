@@ -1,21 +1,22 @@
 import type { ConnectAccess, ConnectStatus, OrgView, ServiceEntry } from "@majhi/shared";
-import { scopesAt } from "@majhi/shared";
-import { ArrowLeft, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { type ConnectionType, GLOBAL_CONNECTIONS, PRIVATE, scopesAt } from "@majhi/shared";
+import { ArrowLeft, ChevronRight, Globe, KeyRound, Network, Plug, Search, Server } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChoiceGroup } from "@/components/ui/choice-group";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { DetailPane } from "@/components/ui/list-detail";
-import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/cn";
 import { useAppStatus, useConnectCatalog, useConnectCommand, useConnectStatus } from "@/lib/connect-queries";
 import { describeError } from "@/lib/errors";
 import { AppSetupSheet } from "./app-setup-sheet";
 import { ConnectFlowCard, ScopeList } from "./connect-flow";
+import { ScopePicker } from "./scope-picker";
+import { ServiceLogo } from "./service-logo";
 
 /** Matches the name and the one-line summary, ignoring case. */
 export function matchesService(service: Pick<ServiceEntry, "name" | "summary">, query: string): boolean {
@@ -27,42 +28,55 @@ const hasSend = (s: ServiceEntry) => s.scopes.some((x) => x.level === "send");
 const hasWrite = (s: ServiceEntry) => s.scopes.some((x) => x.access === "write");
 
 /**
- * The services majhi connects, for one workspace. Pick one, read what it can do, connect in the
- * browser, and see who signed in. A service that needs the owner's own app opens its guided setup
- * first. A service already connected in the workspace opens its connection instead. Command-line
- * tools are their own group: majhi runs the tool's own login in a folder of this workspace.
+ * Choose a destination and service, then reuse the provider's sign-in or guided app setup.
  */
 export function ConnectCatalog({
   orgs,
   defaultOrg,
   onOpen,
-  onClose,
+  onCustom,
+  onBusyChange,
 }: {
   orgs: readonly OrgView[];
   defaultOrg: string | undefined;
   onOpen: (connection: string) => void;
-  onClose: () => void;
+  onCustom: (org: string, type: ConnectionType) => void;
+  onBusyChange: (busy: boolean) => void;
 }) {
   const catalog = useConnectCatalog();
   const status = useConnectStatus();
   const start = useConnectCommand("connect.start");
-  const [org, setOrg] = useState(defaultOrg ?? orgs[0]?.id ?? "");
+  const [org, setOrg] = useState(defaultOrg ?? PRIVATE);
   const apps = useAppStatus(org);
+  const [category, setCategory] = useState("all");
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<ServiceEntry>();
   const [access, setAccess] = useState<ConnectAccess>("read");
   const [flow, setFlow] = useState<string>();
   const [sheet, setSheet] = useState(false);
+  const busy = flow !== undefined || start.isPending;
+  useEffect(() => {
+    onBusyChange(busy);
+    return () => onBusyChange(false);
+  }, [busy, onBusyChange]);
 
   const services = useMemo(
-    () => (catalog.data?.services ?? []).filter((s) => matchesService(s, query)),
-    [catalog.data, query],
+    () =>
+      (catalog.data?.services ?? [])
+        .filter(
+          (s) =>
+            matchesService(s, query) &&
+            (category === "all" || categoryOf(s.id) === category) &&
+            (!s.id.startsWith("digitalocean-") || query.trim() !== ""),
+        )
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [catalog.data, query, category],
   );
   const tools = services.filter((s) => s.kind === "cli-login");
   const others = services.filter((s) => s.kind !== "cli-login");
   const connected = (service: ServiceEntry): ConnectStatus | undefined =>
     (status.data ?? []).find((s) => s.org === org && s.service === service.id);
-  const orgName = orgs.find((o) => o.id === org)?.name ?? org;
+  const pickedConnection = picked ? connected(picked) : undefined;
   /** True when the service needs the owner's own app and the workspace has none yet. */
   const needsApp = (service: ServiceEntry): boolean => {
     if (service.app === undefined) return false;
@@ -79,46 +93,70 @@ export function ConnectCatalog({
     start.reset();
   };
 
-  const tile = (s: ServiceEntry) => {
-    const have = connected(s);
+  const tile = (service: ServiceEntry) => {
+    const have = connected(service);
+    const shared =
+      org !== GLOBAL_CONNECTIONS &&
+      (status.data ?? []).some(
+        (s) => s.org === GLOBAL_CONNECTIONS && s.service === service.id && s.state === "connected",
+      );
+    const method =
+      service.kind === "api-key"
+        ? "Access token"
+        : service.kind === "cli-login"
+          ? "Tool sign-in"
+          : "Browser sign-in";
     return (
-      <li key={s.id}>
+      <li key={service.id}>
         <button
           type="button"
-          disabled={!s.ready}
-          onClick={() => (have !== undefined ? onOpen(have.connection) : pick(s))}
-          className={cn(
-            "flex h-full w-full min-w-0 flex-col gap-1 rounded-lg border border-line bg-raised p-3 text-left",
-            "hover:border-line-hover focus-visible:outline-2 focus-visible:outline-accent",
-            "disabled:cursor-not-allowed disabled:opacity-60",
-          )}
+          disabled={!service.ready || start.isPending || status.isPending || status.isError}
+          onClick={() => (have && service.id !== "digitalocean" ? onOpen(have.connection) : pick(service))}
+          className="group flex h-full w-full cursor-pointer flex-col gap-3 rounded-xl border border-line-strong bg-card p-4 text-left transition-colors duration-150 hover:border-line-hover hover:bg-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="min-w-0 truncate text-base font-medium text-fg">{s.name}</span>
-            {have !== undefined ? (
-              <Badge tone={have.state === "connected" ? "green" : "amber"} className="ml-auto">
-                {have.state === "connected" ? "Connected" : "Needs you"}
+          <span className="flex min-w-0 items-center gap-3">
+            <ServiceLogo service={service.id} />
+            <span className="min-w-0 text-base font-semibold text-fg">{service.name}</span>
+            <ChevronRight
+              aria-hidden="true"
+              className="ml-auto size-4 shrink-0 text-fg-faint group-hover:text-fg"
+            />
+          </span>
+          <span className="text-sm text-fg-muted">
+            {service.id === "digitalocean"
+              ? "Droplets, Kubernetes, databases, apps and more"
+              : service.summary}
+          </span>
+          <span className="mt-auto flex flex-wrap items-center justify-between gap-2 text-xs text-fg-faint">
+            <span>
+              {!service.ready
+                ? "Coming soon"
+                : service.app && needsApp(service) && service.kind !== "api-key"
+                  ? "App setup required"
+                  : method}
+            </span>
+            {have ? (
+              <Badge tone={have.state === "connected" ? "green" : "amber"}>
+                {have.state === "connected" ? "Connected" : "Reconnect"}
               </Badge>
-            ) : !s.ready ? (
-              <Badge className="ml-auto">Coming next</Badge>
-            ) : needsApp(s) ? (
-              <Badge tone="amber" className="ml-auto">
-                Set up the app first
-              </Badge>
+            ) : shared ? (
+              <Badge>Available globally</Badge>
+            ) : service.ready ? (
+              <span className="text-sm text-fg-soft">Connect</span>
             ) : null}
           </span>
-          <span className="text-sm text-fg-muted text-pretty">{s.summary}</span>
-          {have?.account && <span className="min-w-0 truncate text-xs text-fg-faint">{have.account}</span>}
         </button>
       </li>
     );
   };
-
   const group = (label: string, list: readonly ServiceEntry[]) =>
     list.length === 0 ? null : (
-      <section aria-label={label} className="flex flex-col gap-2">
-        <SectionLabel>{label}</SectionLabel>
-        <ul aria-label={label} className="grid gap-2 @[440px]:grid-cols-2 @[900px]:grid-cols-3">
+      <section aria-label={label} className="flex flex-col gap-3">
+        <h3 className="text-base font-semibold text-fg-soft">{label}</h3>
+        <ul
+          aria-label={label}
+          className="grid gap-3 @[480px]:grid-cols-2 @[820px]:grid-cols-3 @[1120px]:grid-cols-4"
+        >
           {list.map(tile)}
         </ul>
       </section>
@@ -126,7 +164,7 @@ export function ConnectCatalog({
 
   const accessChoices = (s: ServiceEntry) => [
     { value: "read" as const, label: "Read only" },
-    { value: "readwrite" as const, label: "Read and write drafts" },
+    { value: "readwrite" as const, label: "Read and write" },
     ...(hasSend(s) ? [{ value: "send" as const, label: "Read, write and send" }] : []),
   ];
 
@@ -134,31 +172,17 @@ export function ConnectCatalog({
     <DetailPane
       label="Connect a service"
       head={
-        <div className="flex min-w-0 flex-wrap items-center gap-3">
-          <h2 className="text-md leading-6 font-semibold">Connect a service</h2>
-          <p className="min-w-0 text-sm text-fg-muted">Once per workspace. Nothing else to set up by hand.</p>
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            <span className="flex items-center gap-2 text-sm text-fg-faint">
-              Workspace
-              <Select
-                aria-label="Workspace"
-                className="w-[180px]"
-                value={org}
-                disabled={flow !== undefined}
-                onChange={(e) => setOrg(e.target.value)}
-              >
-                {orgs.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </Select>
-            </span>
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              Close
-            </Button>
-          </div>
-        </div>
+        <ScopePicker
+          orgs={orgs}
+          value={org}
+          disabled={flow !== undefined || start.isPending}
+          onChange={(next) => {
+            setOrg(next);
+            setPicked(undefined);
+            setSheet(false);
+            start.reset();
+          }}
+        />
       }
     >
       {catalog.isError ? (
@@ -173,9 +197,37 @@ export function ConnectCatalog({
               All services
             </Button>
           )}
-          <h3 className="text-md font-semibold">
-            {picked.name} <span className="font-normal text-fg-muted">for {orgName}</span>
-          </h3>
+          <div className="flex items-center gap-3">
+            <ServiceLogo service={picked.id} className="size-12" />
+            <div>
+              <h3 className="text-md font-semibold">Connect {picked.name}</h3>
+              <p className="text-sm text-fg-muted">{picked.summary}</p>
+            </div>
+          </div>
+          {picked.id.startsWith("digitalocean") && flow === undefined && (
+            <Field label="DigitalOcean service">
+              {(props) => (
+                <Select
+                  {...props}
+                  aria-label="DigitalOcean service"
+                  className="max-w-[380px]"
+                  value={picked.id}
+                  onChange={(e) => {
+                    const next = catalog.data?.services.find((s) => s.id === e.target.value);
+                    if (next) pick(next);
+                  }}
+                >
+                  {(catalog.data?.services ?? [])
+                    .filter((s) => s.id.startsWith("digitalocean"))
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.id === "digitalocean" ? "Droplets" : s.name.replace("DigitalOcean ", "")}
+                      </option>
+                    ))}
+                </Select>
+              )}
+            </Field>
+          )}
           {flow !== undefined ? (
             <ConnectFlowCard
               flow={flow}
@@ -189,15 +241,24 @@ export function ConnectCatalog({
                 else setPicked(undefined);
               }}
             />
+          ) : pickedConnection ? (
+            <div className="flex flex-col items-start gap-3">
+              <p className="text-base text-fg-muted">This service already has a connection for this scope.</p>
+              <Button variant="primary" onClick={() => onOpen(pickedConnection.connection)}>
+                Open connection
+              </Button>
+            </div>
           ) : picked.app !== undefined && (sheet || picked.kind === "api-key" || needsApp(picked)) ? (
             <AppSetupSheet
               org={org}
               app={picked.app}
               access={access}
               serviceName={picked.name}
-              onDone={(saved) => {
+              key={`${org}-${picked.app}`}
+              onDone={(saved, connection) => {
                 setSheet(false);
-                if (saved && picked.kind === "api-key") setPicked(undefined);
+                if (saved && connection !== undefined) onOpen(connection);
+                else if (saved && picked.kind === "api-key") setPicked(undefined);
                 if (!saved && needsApp(picked)) setPicked(undefined);
               }}
             />
@@ -205,14 +266,12 @@ export function ConnectCatalog({
             <div className="flex max-w-[620px] flex-col gap-4">
               <p className="text-base text-fg-muted text-pretty">
                 {picked.kind === "cli-login"
-                  ? `majhi runs ${picked.name}'s own sign-in on this computer, in a folder of ${orgName}. Only runs of ${orgName} see it. Another workspace can sign in as a different account.`
+                  ? `Sign in through ${picked.name}'s own login. majhi keeps this sign-in separate from other connections.`
                   : picked.kind === "device"
-                    ? `majhi shows a code and opens ${picked.name}. Type the code there. Agents of ${orgName} can then use ${picked.name}. Other workspaces never get this sign-in.`
-                    : `majhi opens ${picked.name}'s own sign-in page in your browser. Agents of ${orgName} can then use ${picked.name}. Other workspaces never get this sign-in.`}
+                    ? `Continue to ${picked.name} and enter the code majhi shows you.`
+                    : `Continue to ${picked.name} to sign in and approve access. You'll return here when it's connected.`}
               </p>
-              {picked.packs.length > 0 && (
-                <p className="text-sm text-fg-faint">For {picked.packs.join(", ")}.</p>
-              )}
+
               {picked.kind === "cli-login" && catalog.data?.helper === false && (
                 <p role="alert" className="text-base text-amber text-pretty">
                   majhi's helper is not running, so the tool cannot sign in now. Start the helper first.
@@ -281,35 +340,135 @@ export function ConnectCatalog({
           )}
         </div>
       ) : (
-        <div className="flex flex-col gap-5 pt-4">
-          <Field label="Search services">
-            {(props) => (
-              <div className="relative max-w-[360px]">
-                <Search aria-hidden="true" className="absolute top-2.5 left-2.5 size-3.5 text-fg-faint" />
-                <Input
-                  {...props}
-                  type="search"
-                  autoFocus
-                  className="pl-8"
-                  placeholder="Linear, Gmail, wrangler"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
-              </div>
-            )}
-          </Field>
+        <div className="flex flex-col gap-6 pt-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="mr-auto">
+              <h2 className="text-md font-semibold">Choose a service</h2>
+              <p className="mt-1 text-sm text-fg-muted">
+                Sign in to a service, or use custom setup for your own server.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <div className="relative min-w-[200px] flex-1">
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute top-2.5 left-3 size-3.5 text-fg-faint"
+              />
+              <Input
+                type="search"
+                aria-label="Search services"
+                className="pl-9"
+                placeholder="Search services, e.g. DigitalOcean, Gmail, Slack"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
+            <Select
+              aria-label="Service category"
+              className="w-[200px]"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            >
+              <option value="all">All services</option>
+              <option value="work">Work & communication</option>
+              <option value="cloud">Cloud & hosting</option>
+              <option value="monitoring">Monitoring</option>
+              <option value="payments">Payments</option>
+              <option value="social">Social</option>
+            </Select>
+          </div>
+          {status.isError && (
+            <p role="alert" className="text-sm text-red">
+              Could not check existing connections.{" "}
+              <Button size="sm" variant="ghost" onClick={() => void status.refetch()}>
+                Retry
+              </Button>
+            </p>
+          )}
           {catalog.isPending ? (
-            <p className="text-base text-fg-muted">Loading</p>
+            <div aria-busy="true" className="grid grid-cols-2 gap-3">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <Skeleton key={i} className="h-36 rounded-xl" />
+              ))}
+            </div>
           ) : services.length === 0 ? (
-            <p className="text-base text-fg-muted">No service matches "{query}".</p>
+            <div className="flex flex-col items-start gap-2">
+              <p className="text-base text-fg">No services match {query ? `"${query}"` : "this category"}.</p>
+              <p className="text-sm text-fg-muted">
+                Use custom setup below to connect an MCP server, API or host.
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setQuery("");
+                  setCategory("all");
+                }}
+              >
+                Clear filters
+              </Button>
+            </div>
           ) : (
             <>
               {group("Services", others)}
-              {group("Command-line tools", tools)}
+              {group("Cloud tools", tools)}
             </>
           )}
+          <section aria-label="Custom setup" className="flex flex-col gap-3 border-t border-line pt-5">
+            <div>
+              <h3 className="text-base font-semibold">Custom setup</h3>
+              <p className="mt-1 text-sm text-fg-muted">
+                Connect a service that is not listed above, or your own infrastructure.
+              </p>
+            </div>
+            <div className="grid gap-1 @[620px]:grid-cols-2">
+              {CUSTOM.map(({ type, label, hint, icon: Icon }) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => onCustom(org, type)}
+                  className="flex cursor-pointer items-center gap-3 rounded-lg p-3 text-left transition-colors hover:bg-raised focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  <Icon aria-hidden="true" className="size-5 shrink-0 text-fg-muted" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-base font-medium">{label}</span>
+                    <span className="block text-sm text-fg-muted">{hint}</span>
+                  </span>
+                  <ChevronRight aria-hidden="true" className="size-4 text-fg-faint" />
+                </button>
+              ))}
+            </div>
+          </section>
         </div>
       )}
     </DetailPane>
   );
+}
+
+const CUSTOM = [
+  { type: "mcp" as const, label: "MCP server", hint: "Connect by URL or local command", icon: Plug },
+  {
+    type: "env" as const,
+    label: "API keys & credentials",
+    hint: "Use any service with an API key",
+    icon: KeyRound,
+  },
+  { type: "ssh" as const, label: "SSH host", hint: "Reach a server through SSH", icon: Server },
+  { type: "kubectl" as const, label: "Kubernetes cluster", hint: "Upload a kubeconfig", icon: Network },
+  { type: "mail" as const, label: "Mail server", hint: "IMAP and SMTP credentials", icon: Plug },
+  { type: "browser" as const, label: "Browser", hint: "An isolated browser for your agents", icon: Globe },
+] satisfies readonly { type: ConnectionType; label: string; hint: string; icon: typeof Plug }[];
+
+function categoryOf(id: string): string {
+  if (
+    id.startsWith("digitalocean") ||
+    ["vercel", "vercel-cli", "cloudflare-observability", "wrangler", "aws", "gcloud"].includes(id)
+  )
+    return "cloud";
+  if (["sentry", "sentry-cli", "posthog", "grafana", "datadog", "betterstack"].includes(id))
+    return "monitoring";
+  if (id.startsWith("stripe")) return "payments";
+  if (["x", "linkedin"].includes(id)) return "social";
+  return "work";
 }

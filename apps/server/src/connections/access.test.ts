@@ -57,4 +57,33 @@ describe("runConnections", () => {
     const task = { org: undefined, connections: ["globex-prod", "gone"] };
     expect(ids(runConnections({ agent: root, task, orgs }))).toEqual(["globex-prod"]);
   });
+  it("shares only explicit Global connections with every workspace, after workspace-specific connections", () => {
+    const global = { "shared-cloud": conn("shared") };
+    const task = { org: "acme", connections: [] };
+    expect(
+      ids(runConnections({ agent: { scope: "acme", connections: ["acme-prod"] }, task, orgs, global })),
+    ).toEqual(["acme-prod", "shared-cloud"]);
+    expect(
+      ids(
+        runConnections({
+          agent: { scope: "globex", connections: [] },
+          task: { org: "globex", connections: [] },
+          orgs,
+          global,
+        }),
+      ),
+    ).toEqual(["shared-cloud"]);
+    expect(
+      runConnections({
+        agent: { scope: "acme", connections: [] },
+        task: { org: "globex", connections: [] },
+        orgs,
+        global,
+      }),
+    ).toEqual([]);
+    const root = { scope: "root", connections: [] };
+    expect(
+      runConnections({ agent: root, task: { org: undefined, connections: ["shared-cloud"] }, orgs, global }),
+    ).toEqual([{ id: "shared-cloud", org: "global", connection: global["shared-cloud"] }]);
+  });
 });

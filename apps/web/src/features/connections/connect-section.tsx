@@ -1,4 +1,5 @@
 import type { ConnectionView, ConnectState } from "@majhi/shared";
+import { GLOBAL_CONNECTIONS } from "@majhi/shared";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -77,7 +78,9 @@ export function ConnectSection({ view, now }: { view: ConnectionView; now: numbe
           <p className="text-base text-fg-muted text-pretty">
             {mine.account ? `Signed in as ${mine.account}. ` : "The service does not say which account. "}
             {view.type === "cli"
-              ? "The tool keeps its sign-in in a folder of this workspace. Only runs of this workspace see it."
+              ? view.org === GLOBAL_CONNECTIONS
+                ? "The tool keeps a separate sign-in for this connection. Agents in every workspace can use it."
+                : "The tool keeps a separate sign-in for this connection. Only agents in this workspace can use it."
               : view.type === "env"
                 ? "majhi holds the bot's tokens. They do not expire."
                 : mine.renews
