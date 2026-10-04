@@ -175,6 +175,7 @@ import { SkillStore } from "./skills/store.ts";
 import { DB_FILE_NAME, Store } from "./store/index.ts";
 import { CardActions } from "./tasks/card-actions.ts";
 import { CleanupService } from "./tasks/cleanup.ts";
+import { TaskFolderSweep } from "./tasks/folder-sweep.ts";
 import type { LinkOptions } from "./tasks/links.ts";
 import { PendingShips } from "./tasks/pending-ship.ts";
 import { TaskService } from "./tasks/service.ts";
@@ -322,6 +323,8 @@ export interface Services {
   pendingShips: PendingShips;
   /** Worktrees, merged branches and room logs of tasks done for a while. */
   cleanup: CleanupService;
+  /** Frees dependency folders and build output of done tasks (5.18 Cleanup). */
+  folderSweep: TaskFolderSweep;
   mrPoller: MrPoller;
   /** Jira, ClickUp and GitHub Issues per org: pull into Up next, push, write MR links and status back (5.11). */
   trackers: TrackerService;
@@ -1187,6 +1190,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   );
   admin.useAutonomy(autonomy);
   const cleanup = new CleanupService({ store, room, events, projects });
+  const folderSweep = new TaskFolderSweep({
+    store,
+    tasksDir: async () => {
+      const loaded = await config.load();
+      if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
+      return loaded.state.config.tasksDir;
+    },
+  });
   const findings = new FindingsService({
     repo: new FindingsRepo(store.raw),
     projectOrg: async (id) => (await config.sections()).projects[id]?.org ?? PRIVATE,
@@ -1357,6 +1368,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       curate: (fact) => curator.review(fact),
       scanner: new RepoScanner(),
       cleanup,
+      folders: folderSweep,
       idle: idleWatch,
       runs,
       lanes,
@@ -1777,6 +1789,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     cardActions,
     pendingShips,
     cleanup,
+    folderSweep,
     notifier,
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
     trackers,
