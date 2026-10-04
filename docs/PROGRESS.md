@@ -1,5 +1,16 @@
 # Progress
 
+## Lifecycle A and B: census guard and pure model (built, not merged)
+
+Branch `feat/lifecycle-a-b`. Nothing in `apps/server` or `apps/web` uses the new module yet.
+
+- **A, census guard.** `scripts/census-baseline.json` refreshed against main (acd08080). `apps/server/src/tasks/census-guard.test.ts` runs `scripts/census-lifecycle.ts --check` through the TypeScript compiler API and fails if any tracked symbol's count outside the lifecycle module rises. Going down is allowed; refresh with `pnpm exec tsx scripts/census-lifecycle.ts --write scripts/census-baseline.json`. Total outside the lifecycle module: 208 sites in 31 files (was 211 in 33).
+- **B, the pure model**, in `packages/shared/src/lifecycle/` (exported as `lifecycle`): `hold.ts` (`HoldSchema`, twelve kinds, `HOLD_TABLE` with lifters, typed auto-clear condition and the owner sentence, exhaustive by type; `liftersOf`, `autoClears`, `sentenceOf`, `conditionMet`, `mergeHold`), `transition.ts` (`LifecycleStatus`, `TaskState`, `LifecycleEvent`, `Effect`, `Refusal`, `transition`), `stored.ts` (`fromStored` and `toStored` for status, `paused_reason`, `paused_by`, `held`, `held_scope`, `resumed_at`). `TaskStatusSchema` is unchanged and still has `paused`.
+- **Design doc updated.** The hold list in `docs/design/task-lifecycle.md` section 4.2 now says what D1 to D10 changed, and 4.4 lists the choices the build made.
+- **Tests.** `lifecycle/hold.test.ts` (32), `transition.test.ts` (214: every table row, every illegal status per event, hold refusals, lift permissions per cause and lifter, reachability invariants), `stored.test.ts` (76: every combination that exists today, round trips, and the seven that cannot round-trip with the reason), plus the census guard (1).
+- **Left for step C.** `apply()` with the per-task lock, routing the 14 `setStatus` sites, dual-writing through `toStored`, raw SQL on `autonomy_tasks` onto drizzle. The characterization test of `tellAgent` on an `mr` task comes with C, where the old behaviour can be run.
+- **Known.** `packages/acp/testing/fake-turn.ts` typecheck error at line 920 is not from this branch.
+
 ## After D1 to D10: one day of use, then one list
 
 Deployed 2026-10-05 (707aedbf). Collect what you see in one list, not one fix at a time. Watch:

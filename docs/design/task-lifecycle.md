@@ -220,6 +220,18 @@ export type HoldCause = Hold["cause"];
 
 Twelve kinds, down from fifteen: the three money causes (`autopilot-cap`, `account-floor`, budget `limit`) are one `budget-limit`, and the Auto-pilot switch causes are one `autopilot-off`.
 
+**Updated after D1 to D10 (2026-10-05), to match the code on `main` at acd08080.** The list stays at twelve kinds. What changed against the first draft above:
+
+- `loop-guard` is the D10 progress counter (`captain/loop-guard.ts`: three captain answers to one task with no progress between them), not the question-loop similarity rule, the stuck chore or the repeated-line rule. Those are deleted, so no hold is raised from message text. The hold carries only a display `why`.
+- `signed-out` is raised only when the lead's hand-off found nobody. A signed-out lead hands the step to a fallback or a teammate first (`runs/manager.ts`, `takeOverFor`, the same `resume.handoff` switch as a limit); the task pauses `signed-out` only when neither works. The same holds for `account-limit`. So both are rarer than the table below suggested, and neither is raised by a chore any more.
+- `budget-limit` is the one money hold (Auto-pilot day and org caps and floors fold into it, as the design said). Its shape gained `scopeId`, the org or account the scope names. The run gate's cap hold stores that org in `autonomy_tasks.held_scope`, and without a field it would be lost on the way into the new model. `alertId` is set when a budget alert fired it; a plain `limit` pause migrated with no known alert gets `alertId = "legacy"`, which keeps it apart from a run-gate cap hold in the old fields.
+- `idle` lists majhi as a lifter (it auto-clears on activity, so someone with a condition has to be allowed to lift it). The first draft listed only O and C.
+- Auto-pilot "leave paused" is not a hold with narrower lifters (lifters are derived from the cause, never stored). Turning Auto-pilot on without resume turns `autopilot-off(now)` into `owner-stop`, so only the owner can lift it. Contradiction 2 is solved by a new cause, not a stored lifter list.
+- `autopilot-off(step)` has an old-field form (`autonomy_tasks.held = owner`, no scope, the task still `running`); `autopilot-off(now)` is `paused` plus `paused_by = autonomy-off` plus `held = owner` at scope `stop-now`.
+- Not holds, unchanged: dependency waits, machine busy, slots, tasks-at-once (blockers, section 5).
+
+Built in step B at `packages/shared/src/lifecycle/` (exported as `lifecycle` from `@majhi/shared`): `hold.ts` (the schema and the one table, `HOLD_TABLE`, typed over every cause), `transition.ts` (`transition`, events, effects, refusals), `stored.ts` (old fields to and from the model). Where the build made a choice the design left open, section 4.4 says so.
+
 What the shape fixes:
 
 - `owner-stop` and `captain-stop` are separate kinds. Today the difference is a second column that is null for owner stops and for the Auto-pilot run gate (contradiction 1).
@@ -327,6 +339,16 @@ R4 n is the transition number in the transitions audit. Every current writer is 
 | dependencyChanged removed | inbox, ready, running, review with a dependency hold | same | set dependency-removed | same | R4 15, T:2518 |
 | dependencyChanged met | inbox, ready | same | none (blocker disappears) | none | orchestrator advance |
 | runLost | running | running | none, or set error(restart) if auto resume is off | runs.start through the resume drip | recover, Resilience.startup |
+
+Choices made when step B built `transition` (the design left them open):
+
+- `transition(task | undefined, event)`: `create` is the only event for no task. Time comes in on the event (`at`), never from a clock.
+- A held task does not move. `start`, `sendBack`, `agentsIdle` and `processEnded` refuse with the hold's sentence (code `held`). World events (`mrOpened`, `changeAndReview`) are accepted and keep the hold. Only a lift, a stop, `close` or a dependency event changes a hold.
+- `holdCleared` by majhi carries a `ClearReading` and is refused (`condition-not-met`) unless the hold's typed condition holds in it. By the owner or the captain it needs only that they are in `liftersOf`. Whether the captain is currently allowed to act (Autonomous on, Start row) stays an authority gate outside the core.
+- Two holds on one task: the same cause refreshes the data and runs no effects again (a repeated stop is a no-op, G1). Otherwise the hold fewer parties can lift stays. A tie keeps the existing one. Exceptions: `autopilot-off` `now` beats `step`, and `dependency-removed` replaces `dependency-closed`.
+- The wish to start (`startWhenReady`) is cleared whenever a task leaves inbox or ready.
+- `runLost` is accepted from `running` only (this table); the section 4.6 reconciler text says "running or review". A review task normally has no live run, so `runLost` there would fire for every task. Left as `running` only.
+- Owner lifting a `budget-limit` sets `exemptUntilRunEnds` on the task state and emits `budgets.exempt`. Majhi lifting one does not.
 
 Illegal today, refused in the new core:
 
@@ -547,7 +569,7 @@ Order: deletions first (each a small mergeable step), then the lifecycle, then t
 
 Limit: the compiler sees code only. Raw SQL strings (`db.prepare("UPDATE autonomy_tasks SET held ...")` in `autonomy/repo.ts`) are not references. Step C moves those statements onto the typed drizzle tables first; after that `tsc` catches them. Comparisons with the `"paused"` status literal are not counted yet; once `paused` leaves the enum, `tsc` lists them all.
 
-Baseline on `main` at bbbff1a9, 2026-10-05, references outside the lifecycle module (declarations included):
+Baseline refreshed on `main` at acd08080 after D1 to D10 (`Task.pausedReason` 44 to 41, total 208 sites in 31 files; the rest unchanged). `apps/server/src/tasks/census-guard.test.ts` runs `--check` and fails when any count rises; after a drop, refresh with `--write scripts/census-baseline.json`. The original baseline, on `main` at bbbff1a9, 2026-10-05, references outside the lifecycle module (declarations included):
 
 ```
 symbol                                sites
@@ -598,7 +620,7 @@ Largest: `runs/manager.ts` (44 plus 20 on `AgentRun.paused / held`), `tasks/serv
 
 | step | what | verified by | undo cost |
 |---|---|---|---|
-| A | The census and baseline (done in this branch). A guard test runs `census-lifecycle.ts --check` and fails when a count rises | The test itself | Trivial |
+| A | The census and baseline (done, refreshed after D1 to D10). `apps/server/src/tasks/census-guard.test.ts` runs `census-lifecycle.ts --check` and fails when a count rises | The test itself | Trivial |
 | B | `Hold` schema, `transition()`, `liftersOf`, `autoClears`, `sentenceOf` in `packages/shared/src/lifecycle/`, no callers. First a characterization test for the illegal list (especially `tellAgent` on an `mr` task). Table-driven tests: every event x every status, asserting next state, effects and Refusals; exhaustiveness: every `HoldCause` has lifters, auto-clear and sentence. Also confirm the open structured signals of section 3 | New `lifecycle/transition.test.ts`, `hold.test.ts`; no existing test changes | Trivial |
 | C | `apply()` in `apps/server/src/tasks/lifecycle/` with the per-task lock. Route the 14 `setStatus` sites through it. Dual-write `paused_reason` and `paused_by` from the hold; `paused` stays in the enum and DB. Move raw SQL on `autonomy_tasks` onto drizzle. `setStatus` becomes private | Stay green: `tasks/*.test.ts`, `mrs/flow.test.ts`, `runs/{resume,start-failure,limit,limits,queue,resume-drip,fair-slots,captain-slot}.test.ts`, `budgets/limit.test.ts`, `autonomy/{driver,resume,service,pick,slots}.test.ts`, `captain/{desk,tell-ship,sign-in}.test.ts`, `rooms/idle-watch.test.ts`, `processes/tasks.test.ts`, `store/*.test.ts`. Census: status writes 15 to 1 | Medium: old columns still hold the truth, so revert is a code revert |
 | D | Readers: server then web read `hold`. One text table replaces the 5 web and 3 server maps. Remove `paused` from `TaskStatus`; `tsc` lists every compare. `AgentRun.paused` becomes a getter. SPEC edits (section 8) land with this step | Typecheck. Table test: every `HoldCause` has a sentence. Census near zero | Medium: the enum change touches about 100 files |
