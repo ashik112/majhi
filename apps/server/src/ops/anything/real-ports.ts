@@ -213,7 +213,7 @@ function runRedis(url: string, commands: readonly string[][], timeoutMs: number)
 
 /** The real ports. `connection` and `monitor` come from the connections of the workspace. */
 export function realWatchPorts(
-  parts: Pick<WatchPorts, "fetch" | "lookup" | "now" | "connection" | "monitor">,
+  parts: Pick<WatchPorts, "fetch" | "lookup" | "now" | "connection" | "monitor" | "pathPrint">,
 ): WatchPorts {
   return {
     ...parts,

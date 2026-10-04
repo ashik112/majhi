@@ -30,6 +30,13 @@ export class Catalog {
     return pb;
   }
 
+  /** Adds a playbook or replaces the one with its id (a clock playbook the owner edited). */
+  put(raw: Playbook): Playbook {
+    const pb = PlaybookSchema.parse(raw);
+    this.byId.set(pb.id, pb);
+    return pb;
+  }
+
   /** Removes a playbook the owner made. Shipped ones stay. */
   unregister(id: string): boolean {
     return this.byId.get(id)?.custom === true && this.byId.delete(id);

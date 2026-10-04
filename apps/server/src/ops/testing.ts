@@ -87,7 +87,13 @@ export interface OpsWorld {
 }
 
 export function opsWorld(
-  over: { db?: Database.Database; clock?: { at: Date }; keep?: Partial<OpsWorld> } = {},
+  over: {
+    db?: Database.Database;
+    clock?: { at: Date };
+    keep?: Partial<OpsWorld>;
+    /** Extra wiring, like the action runner of a watch. */
+    wiring?: Partial<OpsWiring>;
+  } = {},
 ): OpsWorld {
   const db = over.db ?? new Store(":memory:").raw;
   const clock = over.clock ?? { at: new Date(T0) };
@@ -244,7 +250,11 @@ export function opsWorld(
     retryMs: 0,
     sleep: async () => undefined,
   };
-  world.ops = createOps(wiring);
+  world.ops = createOps({
+    ...wiring,
+    ...over.wiring,
+    watchPorts: { ...wiring.watchPorts, ...over.wiring?.watchPorts },
+  });
   return world;
 }
 

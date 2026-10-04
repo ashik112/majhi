@@ -1,6 +1,6 @@
-import { randomBytes } from "node:crypto";
 import {
   type AutomationRun,
+  clockPlaybookSpec,
   DEFAULT_TIME_ZONE,
   nextRunAfter,
   resolveSpec,
@@ -9,6 +9,8 @@ import {
   type ScheduleView,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
+import type { Catalog } from "../playbooks/catalog.ts";
+import { customId, customPlaybook } from "../playbooks/custom.ts";
 import type { ActionRunner } from "./actions.ts";
 import type { Scheduler } from "./scheduler.ts";
 import type { ScheduleRepo, ScheduleRow } from "./schedules.ts";
@@ -17,13 +19,18 @@ export interface ScheduleServiceDeps {
   repo: ScheduleRepo;
   runner: ActionRunner;
   scheduler: Scheduler;
+  /** The playbook catalog: a schedule is a clock playbook and is listed there. */
+  catalog: Catalog;
   /** Org ids that exist, Private included. */
   orgIds: () => Promise<ReadonlySet<string>>;
   now?: () => Date;
   changed?: () => void;
 }
 
-/** What the `schedules.*` commands do: check, save, and tell the scheduler. */
+/**
+ * What the `schedules.*` commands do: check, save, and tell the scheduler. A schedule is a clock
+ * playbook (SPEC 5.18): these commands are thin aliases kept for callers that still name schedules.
+ */
 export class ScheduleService {
   private readonly now: () => Date;
 
@@ -34,6 +41,22 @@ export class ScheduleService {
   async list(org?: string): Promise<ScheduleView[]> {
     await this.deps.runner.reconcile();
     return this.deps.repo.list(org).map((row) => this.view(row));
+  }
+
+  /** Ends the runs whose task or process finished, so the views read true. */
+  reconcile(): Promise<void> {
+    return this.deps.runner.reconcile();
+  }
+
+  /** One schedule as it stands, without ending finished runs first. */
+  peek(id: string): ScheduleView | undefined {
+    const row = this.deps.repo.get(id);
+    return row === undefined ? undefined : this.view(row);
+  }
+
+  /** The last runs, newest first, as they stand. */
+  recent(id: string, limit: number): AutomationRun[] {
+    return this.deps.runner.history.list("schedule", id, limit);
   }
 
   async get(id: string): Promise<ScheduleView> {
@@ -48,7 +71,7 @@ export class ScheduleService {
     return this.deps.runner.history.list("schedule", id, limit);
   }
 
-  async create(input: ScheduleCreateInput): Promise<ScheduleView> {
+  async create(input: ScheduleCreateInput, opts: { enabled?: boolean } = {}): Promise<ScheduleView> {
     if (!(await this.deps.orgIds()).has(input.org))
       throw new UserError(`Org "${input.org}" does not exist.`, 404);
     const timeZone = input.timeZone ?? DEFAULT_TIME_ZONE;
@@ -59,22 +82,24 @@ export class ScheduleService {
     const next = nextRunAfter(resolved.spec, timeZone, at);
     if (next === undefined) throw new UserError(this.neverRuns(resolved.spec.kind));
     const stamp = at.toISOString();
+    const enabled = opts.enabled ?? true;
     const row: ScheduleRow = {
-      id: `sch-${randomBytes(5).toString("hex")}`,
+      id: customId(input.name),
       org: input.org,
       name: input.name,
       spec: resolved.spec,
       timeZone,
       action: input.action,
       overlap: input.overlap,
-      paused: false,
+      paused: !enabled,
       done: false,
-      nextRunAt: next.toISOString(),
+      nextRunAt: enabled ? next.toISOString() : null,
       lastRunId: null,
       createdAt: stamp,
       updatedAt: stamp,
     };
     this.deps.repo.insert(row);
+    this.sync(row.id);
     this.saved();
     return this.view(row);
   }
@@ -108,6 +133,7 @@ export class ScheduleService {
       });
     }
     this.deps.repo.update(row.id, patch, this.now().toISOString());
+    this.sync(row.id);
     this.saved();
     return this.get(row.id);
   }
@@ -144,9 +170,28 @@ export class ScheduleService {
   delete(id: string): { removed: string } {
     this.row(id);
     this.deps.repo.delete(id);
+    this.deps.catalog.unregister(id);
     this.deps.runner.history.deleteFor("schedule", id);
     this.saved();
     return { removed: id };
+  }
+
+  /** Puts the playbook the row describes into the catalog, new or changed. */
+  sync(id: string): void {
+    const row = this.deps.repo.get(id);
+    if (row === undefined) return;
+    this.deps.catalog.put(
+      customPlaybook(
+        id,
+        clockPlaybookSpec(row.name, {
+          org: row.org,
+          when: row.spec,
+          timeZone: row.timeZone,
+          action: row.action,
+          overlap: row.overlap,
+        }),
+      ),
+    );
   }
 
   private row(id: string): ScheduleRow {

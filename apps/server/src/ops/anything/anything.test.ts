@@ -121,6 +121,7 @@ describe("a database watch only reads", () => {
       now: () => new Date(),
       connection: async () => undefined,
       monitor: async () => ({}),
+      pathPrint: async () => "missing",
     });
     await expect(ports.sql("postgres", DB_URL, "DELETE FROM orders", 1000)).rejects.toThrow(Unavailable);
     await expect(ports.sql("mysql", "mysql://a:b@h/db", "DROP DATABASE x", 1000)).rejects.toThrow(
@@ -437,6 +438,7 @@ describe("a price or page watch treats the page as data", () => {
       now: () => new Date(),
       connection: async () => undefined,
       monitor: async () => ({}),
+      pathPrint: async () => "missing",
     });
     const r = await readWatch(
       { kind: "price", url: PAGE, mode: "value", selector: ".price", compare: [] },

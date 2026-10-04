@@ -1,5 +1,8 @@
 import { randomBytes } from "node:crypto";
+import { isAbsolute, normalize } from "node:path";
 import {
+  type AutomationAction,
+  type AutomationRun,
   type OpsIncident,
   PRIVATE,
   readOnlySqlProblem,
@@ -14,7 +17,8 @@ import {
   type WatchTestResult,
   type WatchView,
 } from "@majhi/shared";
-import { UserError } from "../../errors.ts";
+import { withEvent } from "../../automation/triggers/engine.ts";
+import { errorMessage, UserError } from "../../errors.ts";
 import { urlProblem } from "../probes.ts";
 import type { OpsWatch, Subject } from "../watch.ts";
 import { fmt, publicHostProblem, type Reading, readWatch, Unavailable, type WatchPorts } from "./checks.ts";
@@ -77,6 +81,21 @@ export interface EngineDeps {
   recheckMs?: number;
   /** For tests: run the recheck after a fix at once instead of on a timer. */
   schedule?: (run: () => Promise<void>, ms: number) => void;
+  /**
+   * What a watch's "start a task, post, run a process" does when it fires. majhi's own code runs it
+   * with the same guards as a schedule (the workspace of everything it names, secrets refused, the
+   * overlap rule); no model. Absent: a watch cannot have an action.
+   */
+  action?: {
+    validate(org: string, action: AutomationAction): Promise<void>;
+    run(
+      source: { kind: "watch"; id: string; org: string; name: string },
+      action: AutomationAction,
+      overlap: "skip" | "allow",
+    ): Promise<AutomationRun>;
+    runs(id: string, limit: number): AutomationRun[];
+    forget(id: string): void;
+  };
 }
 
 function span(ms: number): string {
@@ -182,6 +201,24 @@ export class WatchEngine {
       if (conn === undefined) return "That connection does not exist.";
       if (conn.org !== org) return "That connection belongs to another workspace.";
     }
+    if (spec.kind === "path") {
+      if (c.type !== "changed") return "A file or folder can only alert on a change.";
+      const owner = await this.deps.projectOrg(spec.project);
+      if (owner === undefined) return `Project ${spec.project} does not exist.`;
+      if (owner !== org) return `Project ${spec.project} belongs to another workspace.`;
+      const rel = normalize(spec.path);
+      if (isAbsolute(rel) || rel === ".." || rel.startsWith("../") || rel.startsWith("..\\")) {
+        return `"${spec.path}" must be inside the project: use a path relative to it.`;
+      }
+    }
+    if (def.fire.run !== undefined) {
+      if (this.deps.action === undefined) return "This watch cannot run an action here.";
+      try {
+        await this.deps.action.validate(org, def.fire.run);
+      } catch (err) {
+        return errorMessage(err);
+      }
+    }
     if (def.project !== undefined) {
       const owner = await this.deps.projectOrg(def.project);
       if (owner === undefined) return `Project ${def.project} does not exist.`;
@@ -228,6 +265,7 @@ export class WatchEngine {
 
   async remove(id: string): Promise<void> {
     const w = this.mustGet(id);
+    this.deps.action?.forget(id);
     await this.deps.ops.closeSubject(id, "No longer watched");
     this.deps.repo.remove(w.id);
     this.deps.changed();
@@ -494,6 +532,9 @@ export class WatchEngine {
         break;
     }
     // How long it has held, and two failing looks for a plain "down", so one blip is not an alert.
+    const act = w.def.fire.run;
+    // An action with no alert is the whole point of the watch: no incident, no phone.
+    const actionOnly = act !== undefined && !w.def.fire.alert.on;
     let firing = false;
     if (breach) {
       state.breachSince ??= at;
@@ -506,17 +547,44 @@ export class WatchEngine {
       delete state.breachSince;
       state.fails = 0;
     }
+    // The action runs once per change: when it starts firing, not on every look while it holds.
+    let edge = firing && !w.state.firing;
+    if (actionOnly && firing && c.type === "changed") {
+      // Nothing waits to be acknowledged, so the new value is the one the next look compares with.
+      if (r.signature !== undefined) state.baseline = r.signature;
+      delete state.breachSince;
+      state.fails = 0;
+      firing = false;
+      edge = true;
+    }
     if (firing) state.firingSince ??= at;
     else delete state.firingSince;
     state.firing = firing;
     const detail = breach ? breachLine(c, r) : r.display;
     this.deps.repo.save({ ...w, state });
     if (!this.quiet(state)) {
-      await this.deps.ops.record(w.id, "watch", { ok: !firing, detail });
-      await this.deps.ops.evaluate(this.subjectOf(this.mustGet(w.id)));
-      await this.afterLook(this.mustGet(w.id));
+      if (!actionOnly) {
+        await this.deps.ops.record(w.id, "watch", { ok: !firing, detail });
+        await this.deps.ops.evaluate(this.subjectOf(this.mustGet(w.id)));
+        await this.afterLook(this.mustGet(w.id));
+      }
+      if (edge && act !== undefined) await this.runAction(w, act, detail);
     }
     this.deps.changed();
+  }
+
+  /** Runs the watch's action under its overlap rule. The run, good or bad, is in its history. */
+  private async runAction(w: StoredWatch, action: AutomationAction, detail: string): Promise<void> {
+    if (this.deps.action === undefined) return;
+    try {
+      await this.deps.action.run(
+        { kind: "watch", id: w.id, org: w.org, name: w.def.name },
+        withEvent(action, `${w.def.name}: ${detail}`),
+        w.def.fire.runOverlap,
+      );
+    } catch {
+      // The runner records a failed run; nothing here may stop the watch.
+    }
   }
 
   // Incidents and fixes ----------------------------------------------------------------
@@ -875,6 +943,7 @@ export class WatchEngine {
                 ? `alert when it contains "${c.text}"`
                 : `alert when it no longer contains "${c.text}"`;
     const phone = w.def.fire.alert.on && w.def.fire.alert.phone ? " · phone alert on" : "";
+    const acts = w.def.fire.run !== undefined && !w.def.fire.alert.on;
     let what: string;
     switch (spec.kind) {
       case "website":
@@ -898,11 +967,14 @@ export class WatchEngine {
       case "metric":
         what = `${spec.tool}${on}`;
         break;
+      case "path":
+        what = `${spec.path} in ${spec.project}`;
+        break;
       case "custom":
         what = "the captain, on a strict budget";
         break;
     }
-    return `${what} every ${every} · ${cond}${phone}`;
+    return `${what} every ${every} · ${acts ? cond.replace(/^alert /, "act ") : cond}${phone}`;
   }
 
   private view(w: StoredWatch, ctx: { connections: FixConnection[] }): WatchView {
@@ -977,6 +1049,7 @@ export class WatchEngine {
           }),
       fixes: fixViews(w.def, ctx),
       how: this.how(w, conn),
+      runs: this.deps.action?.runs(w.id, 10) ?? [],
     };
   }
 
@@ -1013,6 +1086,8 @@ function kindWord(def: WatchDef): string {
       return "website";
     case "metric":
       return "metric";
+    case "path":
+      return "file";
     case "custom":
       return "in words";
   }

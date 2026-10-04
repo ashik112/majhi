@@ -104,7 +104,7 @@ const COLUMNS: Record<keyof TriggerPatch, string> = {
   lastRunId: "last_run_id",
 };
 
-/** The `triggers` table. */
+/** The `triggers` table. A trigger copied to a watch (`migrated_to` set) no longer shows or runs here. */
 export class TriggerRepo {
   constructor(private readonly db: Database.Database) {}
 
@@ -136,7 +136,9 @@ export class TriggerRepo {
   }
 
   get(id: string): TriggerRow | undefined {
-    const row = this.db.prepare("SELECT * FROM triggers WHERE id = ?").get(id) as Row | undefined;
+    const row = this.db.prepare("SELECT * FROM triggers WHERE id = ? AND migrated_to IS NULL").get(id) as
+      | Row
+      | undefined;
     return row === undefined ? undefined : toRow(row);
   }
 
@@ -144,15 +146,21 @@ export class TriggerRepo {
   list(org?: string): TriggerRow[] {
     const rows =
       org === undefined
-        ? (this.db.prepare("SELECT * FROM triggers ORDER BY created_at, id").all() as Row[])
-        : (this.db.prepare("SELECT * FROM triggers WHERE org = ? ORDER BY created_at, id").all(org) as Row[]);
+        ? (this.db
+            .prepare("SELECT * FROM triggers WHERE migrated_to IS NULL ORDER BY created_at, id")
+            .all() as Row[])
+        : (this.db
+            .prepare("SELECT * FROM triggers WHERE org = ? AND migrated_to IS NULL ORDER BY created_at, id")
+            .all(org) as Row[]);
     return rows.flatMap((r) => toRow(r) ?? []);
   }
 
   /** Triggers that are checking: not paused. */
   active(): TriggerRow[] {
     return (
-      this.db.prepare("SELECT * FROM triggers WHERE paused = 0 ORDER BY created_at, id").all() as Row[]
+      this.db
+        .prepare("SELECT * FROM triggers WHERE paused = 0 AND migrated_to IS NULL ORDER BY created_at, id")
+        .all() as Row[]
     ).flatMap((r) => toRow(r) ?? []);
   }
 

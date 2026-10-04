@@ -1,11 +1,20 @@
 import {
   type AutomationAction,
-  AutomationActionSchema,
+  type ClockAction,
+  CustomPlaybookSpecSchema,
+  clockPlaybookSpec,
   type OverlapPolicy,
+  type PlaybookState,
+  PlaybookStateSchema,
   type ScheduleSpec,
-  ScheduleSpecSchema,
 } from "@majhi/shared";
 import type Database from "better-sqlite3";
+
+/**
+ * A schedule is a clock playbook: its definition is a `playbook_custom` row whose spec has a `clock`,
+ * and its switch, next run and last run live in `playbook_state` (org = the clock's org). The old
+ * `schedules` table is only read by the migration (`migrate.ts`).
+ */
 
 export interface ScheduleRow {
   id: string;
@@ -15,6 +24,7 @@ export interface ScheduleRow {
   timeZone: string;
   action: AutomationAction;
   overlap: OverlapPolicy;
+  /** The playbook's switch is off. */
   paused: boolean;
   /** A `once` schedule that has run. */
   done: boolean;
@@ -25,22 +35,6 @@ export interface ScheduleRow {
   updatedAt: string;
 }
 
-interface Row {
-  id: string;
-  org: string;
-  name: string;
-  spec: string;
-  time_zone: string;
-  action: string;
-  overlap: OverlapPolicy;
-  paused: number;
-  done: number;
-  next_run_at: string | null;
-  last_run_id: number | null;
-  created_at: string;
-  updated_at: string;
-}
-
 /** What `update` may change. `undefined` leaves a column alone. */
 export type SchedulePatch = Partial<
   Pick<
@@ -49,123 +43,163 @@ export type SchedulePatch = Partial<
   >
 >;
 
-function toRow(r: Row): ScheduleRow | undefined {
-  // A row that no longer parses (a spec from an older build) is left out rather than crashing the loop.
-  const spec = ScheduleSpecSchema.safeParse(JSON.parse(r.spec));
-  const action = AutomationActionSchema.safeParse(JSON.parse(r.action));
-  if (!spec.success || !action.success) return undefined;
-  return {
-    id: r.id,
-    org: r.org,
-    name: r.name,
-    spec: spec.data,
-    timeZone: r.time_zone,
-    action: action.data,
-    overlap: r.overlap,
-    paused: r.paused === 1,
-    done: r.done === 1,
-    nextRunAt: r.next_run_at,
-    lastRunId: r.last_run_id,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  };
+interface CustomRow {
+  id: string;
+  spec: string;
+  created_at: string;
 }
 
-/** The `schedules` table. */
+function parseJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
 export class ScheduleRepo {
   constructor(private readonly db: Database.Database) {}
 
-  insert(row: ScheduleRow): void {
+  /** The spec and clock of a row, or undefined when it is not a clock playbook (or is damaged). */
+  private parse(r: CustomRow): { name: string; clock: ClockAction } | undefined {
+    const spec = CustomPlaybookSpecSchema.safeParse(parseJson(r.spec));
+    if (!spec.success || spec.data.clock === undefined) return undefined;
+    return { name: spec.data.name, clock: spec.data.clock };
+  }
+
+  private state(org: string, id: string): PlaybookState {
+    const row = this.db
+      .prepare("SELECT state FROM playbook_state WHERE org = ? AND playbook = ?")
+      .get(org, id) as { state: string } | undefined;
+    if (row === undefined) return {};
+    return PlaybookStateSchema.safeParse(parseJson(row.state)).data ?? {};
+  }
+
+  private writeState(org: string, id: string, state: PlaybookState): void {
     this.db
       .prepare(
-        `INSERT INTO schedules
-           (id, org, name, spec, time_zone, action, overlap, paused, done, next_run_at, last_run_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO playbook_state (org, playbook, state) VALUES (?, ?, ?)
+         ON CONFLICT(org, playbook) DO UPDATE SET state = excluded.state`,
       )
-      .run(
-        row.id,
-        row.org,
-        row.name,
-        JSON.stringify(row.spec),
-        row.timeZone,
-        JSON.stringify(row.action),
-        row.overlap,
-        row.paused ? 1 : 0,
-        row.done ? 1 : 0,
-        row.nextRunAt,
-        row.lastRunId,
-        row.createdAt,
-        row.updatedAt,
-      );
+      .run(org, id, JSON.stringify(state));
+  }
+
+  private row(r: CustomRow): ScheduleRow | undefined {
+    const parsed = this.parse(r);
+    if (parsed === undefined) return undefined;
+    const { clock } = parsed;
+    const state = this.state(clock.org, r.id);
+    return {
+      id: r.id,
+      org: clock.org,
+      name: parsed.name,
+      spec: clock.when,
+      timeZone: clock.timeZone,
+      action: clock.action,
+      overlap: clock.overlap,
+      paused: state.enabled !== true,
+      done: state.done === true,
+      nextRunAt: state.next ?? null,
+      lastRunId: state.lastRunId ?? null,
+      createdAt: r.created_at,
+      updatedAt: state.touched ?? r.created_at,
+    };
+  }
+
+  /** Writes a new clock playbook: its definition and its switch. */
+  insert(row: ScheduleRow): void {
+    const spec = clockPlaybookSpec(row.name, {
+      org: row.org,
+      when: row.spec,
+      timeZone: row.timeZone,
+      action: row.action,
+      overlap: row.overlap,
+    });
+    this.db.transaction(() => {
+      this.db
+        .prepare("INSERT INTO playbook_custom (id, spec, created_at) VALUES (?, ?, ?)")
+        .run(row.id, JSON.stringify(spec), row.createdAt);
+      this.writeState(row.org, row.id, {
+        enabled: !row.paused,
+        done: row.done,
+        next: row.nextRunAt,
+        lastRunId: row.lastRunId,
+        touched: row.updatedAt,
+      });
+    })();
   }
 
   get(id: string): ScheduleRow | undefined {
-    const row = this.db.prepare("SELECT * FROM schedules WHERE id = ?").get(id) as Row | undefined;
-    return row === undefined ? undefined : toRow(row);
+    const r = this.db.prepare("SELECT id, spec, created_at FROM playbook_custom WHERE id = ?").get(id) as
+      | CustomRow
+      | undefined;
+    return r === undefined ? undefined : this.row(r);
   }
 
   /** Oldest first, optionally for one org. */
   list(org?: string): ScheduleRow[] {
-    const rows =
-      org === undefined
-        ? (this.db.prepare("SELECT * FROM schedules ORDER BY created_at, id").all() as Row[])
-        : (this.db
-            .prepare("SELECT * FROM schedules WHERE org = ? ORDER BY created_at, id")
-            .all(org) as Row[]);
-    return rows.flatMap((r) => toRow(r) ?? []);
+    const rows = this.db
+      .prepare("SELECT id, spec, created_at FROM playbook_custom ORDER BY created_at, id")
+      .all() as CustomRow[];
+    return rows.flatMap((r) => {
+      const row = this.row(r);
+      return row === undefined || (org !== undefined && row.org !== org) ? [] : [row];
+    });
   }
 
   update(id: string, patch: SchedulePatch, updatedAt: string): void {
-    const columns: Record<keyof SchedulePatch, string> = {
-      name: "name",
-      spec: "spec",
-      timeZone: "time_zone",
-      action: "action",
-      overlap: "overlap",
-      paused: "paused",
-      done: "done",
-      nextRunAt: "next_run_at",
-      lastRunId: "last_run_id",
+    const r = this.db.prepare("SELECT id, spec, created_at FROM playbook_custom WHERE id = ?").get(id) as
+      | CustomRow
+      | undefined;
+    const current = r === undefined ? undefined : this.parse(r);
+    if (r === undefined || current === undefined) return;
+    const org = current.clock.org;
+    const clock: ClockAction = {
+      ...current.clock,
+      ...(patch.spec === undefined ? {} : { when: patch.spec }),
+      ...(patch.timeZone === undefined ? {} : { timeZone: patch.timeZone }),
+      ...(patch.action === undefined ? {} : { action: patch.action }),
+      ...(patch.overlap === undefined ? {} : { overlap: patch.overlap }),
     };
-    const sets: string[] = ["updated_at = ?"];
-    const values: unknown[] = [updatedAt];
-    for (const key of Object.keys(columns) as (keyof SchedulePatch)[]) {
-      const value = patch[key];
-      if (value === undefined) continue;
-      sets.push(`${columns[key]} = ?`);
-      values.push(
-        key === "spec" || key === "action"
-          ? JSON.stringify(value)
-          : typeof value === "boolean"
-            ? Number(value)
-            : value,
-      );
-    }
-    this.db.prepare(`UPDATE schedules SET ${sets.join(", ")} WHERE id = ?`).run(...values, id);
-  }
-
-  delete(id: string): void {
-    this.db.prepare("DELETE FROM schedules WHERE id = ?").run(id);
-  }
-
-  /** Schedules that should have run by `now`: active, with a next run at or before it. */
-  due(now: string): ScheduleRow[] {
-    return (
+    const state = this.state(org, id);
+    const next: PlaybookState = {
+      ...state,
+      ...(patch.paused === undefined ? {} : { enabled: !patch.paused }),
+      ...(patch.done === undefined ? {} : { done: patch.done }),
+      ...(patch.nextRunAt === undefined ? {} : { next: patch.nextRunAt }),
+      ...(patch.lastRunId === undefined ? {} : { lastRunId: patch.lastRunId }),
+      touched: updatedAt,
+    };
+    this.db.transaction(() => {
       this.db
-        .prepare(
-          "SELECT * FROM schedules WHERE paused = 0 AND done = 0 AND next_run_at IS NOT NULL AND next_run_at <= ? ORDER BY next_run_at, id",
-        )
-        .all(now) as Row[]
-    ).flatMap((r) => toRow(r) ?? []);
+        .prepare("UPDATE playbook_custom SET spec = ? WHERE id = ?")
+        .run(JSON.stringify(clockPlaybookSpec(patch.name ?? current.name, clock)), id);
+      this.writeState(org, id, next);
+    })();
+  }
+
+  /** Removes the playbook with its state and its playbook runs. Run history is the service's to remove. */
+  delete(id: string): void {
+    this.db.transaction(() => {
+      this.db.prepare("DELETE FROM playbook_custom WHERE id = ?").run(id);
+      this.db.prepare("DELETE FROM playbook_state WHERE playbook = ?").run(id);
+      this.db.prepare("DELETE FROM playbook_runs WHERE playbook = ?").run(id);
+    })();
+  }
+
+  /** Schedules that should have run by `now`: on, not finished, with a next run at or before it. */
+  due(now: string): ScheduleRow[] {
+    return this.list()
+      .filter((s) => !s.paused && !s.done && s.nextRunAt !== null && s.nextRunAt <= now)
+      .sort((a, b) => (a.nextRunAt ?? "").localeCompare(b.nextRunAt ?? "") || a.id.localeCompare(b.id));
   }
 
   /** The earliest next run of any active schedule, or undefined when none is waiting. */
   earliest(): string | undefined {
-    const row = this.db
-      .prepare(
-        "SELECT MIN(next_run_at) AS at FROM schedules WHERE paused = 0 AND done = 0 AND next_run_at IS NOT NULL",
-      )
-      .get() as { at: string | null };
-    return row.at ?? undefined;
+    const times = this.list()
+      .filter((s) => !s.paused && !s.done && s.nextRunAt !== null)
+      .map((s) => s.nextRunAt as string)
+      .sort();
+    return times[0];
   }
 }

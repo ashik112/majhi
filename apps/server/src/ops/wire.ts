@@ -1,10 +1,18 @@
-import type { Draft, NotificationsSettings, OwnerDecision } from "@majhi/shared";
+import type {
+  AutomationAction,
+  AutomationRun,
+  Draft,
+  NotificationsSettings,
+  OwnerDecision,
+} from "@majhi/shared";
 import type Database from "better-sqlite3";
+import { pathPrint } from "../automation/triggers/probe.ts";
 import type { ConnectionTester } from "../connections/tester.ts";
+import { errorMessage } from "../errors.ts";
 import type { FindingsService } from "../findings/service.ts";
 import { inQuietHours } from "../notify/attention.ts";
 import type { Notifier } from "../notify/service.ts";
-import type { ConnInfo, WatchPorts } from "./anything/checks.ts";
+import { type ConnInfo, Unavailable, type WatchPorts } from "./anything/checks.ts";
 import { WatchEngine } from "./anything/engine.ts";
 import type { Core } from "./anything/plan.ts";
 import { realWatchPorts } from "./anything/real-ports.ts";
@@ -27,6 +35,19 @@ export interface OpsWiring {
   ruleOff?: ((org: string, rule: string) => boolean) | undefined;
   orgName: (org: string) => Promise<string>;
   projectOrg: (project: string) => Promise<string | undefined>;
+  /** The workspace and checkout folder of a project, for the file and folder watches. */
+  projectCheckout?: ((project: string) => Promise<{ org: string; path: string } | undefined>) | undefined;
+  /** What a watch's action does when it fires (the schedules' action runner). */
+  action?: {
+    validate(org: string, action: AutomationAction): Promise<void>;
+    run(
+      source: { kind: "watch"; id: string; org: string; name: string },
+      action: AutomationAction,
+      overlap: "skip" | "allow",
+    ): Promise<AutomationRun>;
+    runs(id: string, limit: number): AutomationRun[];
+    forget(id: string): void;
+  };
   connections: {
     /** The workspace's connections: id, name, type. */
     list: (org: string) => Promise<{ id: string; name: string; type: string }[]>;
@@ -171,6 +192,21 @@ export function createOps(w: OpsWiring): Ops {
       now,
       connection: async (id): Promise<ConnInfo | undefined> => w.tester.valuesForWatch?.(id),
       monitor: (id, tool, args) => w.tester.callRemoteTool(id, tool, args),
+      pathPrint: async (org, project, path) => {
+        const found = await w.projectCheckout?.(project);
+        if (found === undefined) throw new Unavailable("the project is gone");
+        if (found.org !== org) throw new Unavailable("the project belongs to another workspace");
+        try {
+          return await pathPrint(found.path, path);
+        } catch (err) {
+          // A path that leaves the checkout is refused with a fixed phrase; the rest is a read error.
+          throw new Unavailable(
+            /outside the project|leads outside/.test(errorMessage(err))
+              ? "the path leaves the project"
+              : "the path could not be read",
+          );
+        }
+      },
     }),
     ...w.watchPorts,
   };
@@ -192,6 +228,7 @@ export function createOps(w: OpsWiring): Ops {
     changed: w.changed,
     now,
     ...(w.scheduleRecheck === undefined ? {} : { schedule: w.scheduleRecheck }),
+    ...(w.action === undefined ? {} : { action: w.action }),
   });
   const looks = engine;
   let timer: NodeJS.Timeout | undefined;
