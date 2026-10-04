@@ -108,6 +108,7 @@ import { clientUpdate } from "./growth/update.ts";
 import type { HandoffService } from "./handoff/service.ts";
 import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
 import type { HostLink } from "./host/link.ts";
+import { MachineSensor } from "./machine/sensor.ts";
 import { RecommendationRepo } from "./inbox/recommendations.ts";
 import { InboxService } from "./inbox/service.ts";
 import { InstallRequests } from "./installs/service.ts";
@@ -337,6 +338,8 @@ export interface Services {
   cleanup: CleanupService;
   /** Frees dependency folders and build output of done tasks (5.18 Cleanup). */
   folderSweep: TaskFolderSweep;
+  /** The owner's computer and majhi's containers, polled every 45 s. */
+  machine: MachineSensor;
   mrPoller: MrPoller;
   /** Jira, ClickUp and GitHub Issues per org: pull into Up next, push, write MR links and status back (5.11). */
   trackers: TrackerService;
@@ -1275,7 +1278,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     // Bound below: autonomous mode measures the spend.
     rest: (org, account) => autonomy.laneRest(org, account),
   });
+  const machine = new MachineSensor({
+    host: async () =>
+      options.hostLink?.isConnected() === true
+        ? await options.hostLink.call("machine.read", {}, 15_000)
+        : undefined,
+    docker: dockerCli(env.runner.cliEnv),
+    onChange: () => autonomy.machineRead(),
+  });
   const autonomy = new AutonomyService({
+    machine: () => machine.get(),
     lanes,
     typing: (task) => events.typing.holds(task),
     protectedProjects: async () =>
@@ -1702,6 +1714,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     accountSignedIn: async (id) => signedIn((await accounts.health(id, true)).account.status),
     ...(options.runClock === undefined ? {} : { now: () => (options.runClock?.() ?? new Date()).getTime() }),
   });
+  if (options.hostLink !== undefined) machine.start();
   options.hostLink?.onWake(() => background.run(() => resilience.wake()));
   background.run(
     () => resilience.startup(),
@@ -2049,6 +2062,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     pendingShips,
     cleanup,
     folderSweep,
+    machine,
     notifier,
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
     trackers,
@@ -2095,6 +2109,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       const settled = background.stop();
       resilience.stop();
       connect.stop();
+      machine.close();
       autonomy.close();
       captain.close();
       playbooks.close();

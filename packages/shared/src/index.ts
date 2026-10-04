@@ -39,6 +39,7 @@ export * from "./git-signin.ts";
 export * from "./handoff.ts";
 export * from "./host.ts";
 export * from "./inbox.ts";
+export * from "./machine.ts";
 export * from "./mcp-servers.ts";
 export * from "./media.ts";
 export * from "./memory.ts";

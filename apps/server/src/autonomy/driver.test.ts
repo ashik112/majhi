@@ -81,6 +81,8 @@ function fakes(wakeGate?: ConstructorParameters<typeof AutonomyDriver>[0]["wakeG
   const autonomy = {
     repo: { state: () => ({ mode: state.mode, queue: [], holds: [] }), tasks: () => [] },
     mode: () => state.mode,
+    machineLine: () => undefined,
+    machineBusy: () => undefined,
     runsOrgs: async () => ["acme"],
     laneChats: () => Object.values(lanes),
     laneOrg: (task: string) => Object.entries(lanes).find(([, chat]) => chat === task)?.[0],
