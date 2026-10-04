@@ -30,7 +30,7 @@ import { customId, customPlaybook, planLine } from "./custom.ts";
 import type { GoalsService } from "./goals.ts";
 import type { PlaybookRepo } from "./repo.ts";
 import { choreResult, needsLook, runResult } from "./results.ts";
-import { RULES_RUNNERS, type RulesRunner } from "./rules.ts";
+import { isRuleOn, RULES_RUNNERS, type RulesRunner } from "./rules.ts";
 import { inQuiet, isDue, nextRun, whenText } from "./schedule.ts";
 
 /**
@@ -155,8 +155,20 @@ export class PlaybookService implements ChorePlaybooks {
   rulesOff(org: string): string[] {
     return this.catalog.all().flatMap((def) => {
       const set = this.effective(def, org).outcomes;
-      return (def.outcomes ?? []).filter((o) => set[o.id] === false).map((o) => o.id);
+      return (def.outcomes ?? []).filter((o) => !isRuleOn(o, set)).map((o) => o.id);
     });
+  }
+
+  /** Whether an outcome rule is switched off for a workspace. Code that acts outside a chore reads this. */
+  ruleOff(org: string, id: string): boolean {
+    return this.rulesOff(org).includes(id);
+  }
+
+  /** Whether the playbook's "tell me in the morning brief" rule is off in a workspace, for what it filed. */
+  briefOff(org: string, playbook: string | undefined): boolean {
+    const def = playbook === undefined ? undefined : this.catalog.get(playbook);
+    const rule = (def?.outcomes ?? []).find((o) => o.id.endsWith("-brief"));
+    return rule !== undefined && this.ruleOff(org, rule.id);
   }
 
   /** The owner's daily limit of a chore in a workspace (ChorePlaybooks). */
@@ -294,7 +306,7 @@ export class PlaybookService implements ChorePlaybooks {
     return {
       playbook: def,
       org,
-      outcomes: (def.outcomes ?? []).map((o) => ({ id: o.id, text: o.text, on: e.outcomes[o.id] !== false })),
+      outcomes: (def.outcomes ?? []).map((o) => ({ id: o.id, text: o.text, on: isRuleOn(o, e.outcomes) })),
       ...(e.orDo === undefined ? {} : { orDo: e.orDo }),
       ...(dailyLimit === undefined ? {} : { dailyLimit }),
       ...(result === undefined ? {} : { result }),
@@ -540,6 +552,15 @@ export class PlaybookService implements ChorePlaybooks {
     const why = this.held(def, org, ws, manual);
     if (why !== undefined) return { started: false, text: why };
     if (def.runner.kind === "chore") return { started: false, text: "That runs as an upkeep chore." };
+    // The captain only follows the owner's switches: with every one off there is nothing it may do, so it is not woken.
+    const rules = def.outcomes ?? [];
+    if (
+      def.runner.kind === "captain" &&
+      rules.length > 0 &&
+      rules.every((o) => !isRuleOn(o, this.effective(def, org).outcomes))
+    ) {
+      return { started: false, text: `Every switch of ${def.name} is off, so it has nothing to do.` };
+    }
     const at = this.now().toISOString();
     if (def.runner.kind === "captain") {
       const skip = await this.deps.preflight?.[def.id]?.(org);
@@ -578,6 +599,7 @@ export class PlaybookService implements ChorePlaybooks {
         playbook: def,
         settings: e.settings,
         findings: this.deps.findings,
+        rulesOff: new Set((def.outcomes ?? []).filter((o) => !isRuleOn(o, e.outcomes)).map((o) => o.id)),
         manual,
         now: () => this.now(),
         fetch: this.deps.fetch ?? fetch,
@@ -620,7 +642,11 @@ export class PlaybookService implements ChorePlaybooks {
       id,
       e.settings,
       goal === undefined ? undefined : { id: goal.id, title: goal.title },
-      [brief, e.orDo === undefined ? undefined : `After you report, the owner asked for this: ${e.orDo}`]
+      [
+        brief,
+        rulesBrief(def, e.outcomes),
+        e.orDo === undefined ? undefined : `After you report, the owner asked for this: ${e.orDo}`,
+      ]
         .filter((x): x is string => x !== undefined && x !== "")
         .join("\n\n"),
     );
@@ -753,6 +779,19 @@ function choreStatus(status: string, actions: number): PlaybookRunStatus {
 /** A quiet-hours window as text for a settings line. */
 export function quietText(q: QuietHours | undefined): string {
   return q === undefined ? "No quiet hours" : `Quiet ${q.from} to ${q.to}`;
+}
+
+/** The owner's outcome switches as the captain reads them: what it may do when it finds something, and what it must not. */
+export function rulesBrief(def: Playbook, set: Readonly<Record<string, boolean>>): string | undefined {
+  const rules = def.outcomes ?? [];
+  if (rules.length === 0) return undefined;
+  const on = rules.filter((o) => isRuleOn(o, set)).map((o) => `- ${o.text}`);
+  const off = rules.filter((o) => !isRuleOn(o, set)).map((o) => `- ${o.text}`);
+  return [
+    "What to do with what you find (the owner's switches):",
+    on.length === 0 ? "Allowed: nothing. Only report in the run summary." : `Allowed:\n${on.join("\n")}`,
+    ...(off.length === 0 ? [] : [`Switched off, so do not do these:\n${off.join("\n")}`]),
+  ].join("\n");
 }
 
 /**

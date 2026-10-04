@@ -34,6 +34,8 @@ export interface AgendaDeps {
   deadlines: (withinDays: number) => Deadline[];
   /** Every finding, newest first (the agenda picks the live ones; the brief counts new and fixed). */
   findings: () => Finding[];
+  /** A finding the owner does not want counted in the brief (its playbook's "tell me in the brief" is off). */
+  briefHidden?: ((f: Finding) => boolean) | undefined;
   steps: () => AgendaStep[];
   goals: () => Goal[];
   running: () => { id: string; title: string; org?: string | undefined; since?: string | undefined }[];
@@ -146,7 +148,7 @@ export class AgendaService {
     const org = (o: string | undefined) => (o === undefined ? undefined : names.get(o));
     const { today, later } = this.planned(undefined, await this.deps.decisions(), tz, org);
     const all = [...today, ...later];
-    const findings = this.deps.findings();
+    const findings = this.deps.findings().filter((f) => this.deps.briefHidden?.(f) !== true);
     const fromMs = new Date(from).getTime();
     const toMs = new Date(to).getTime();
     const within = (iso: string) => {

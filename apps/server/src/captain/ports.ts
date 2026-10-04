@@ -87,6 +87,8 @@ export interface TriageTask {
   priority?: TaskPriority | undefined;
   due?: string | undefined;
   updatedAt: string;
+  /** Steps the brief lists (`- [ ]` items), when there are any. */
+  checklist?: number | undefined;
 }
 
 export interface CaptainPorts {
@@ -100,6 +102,8 @@ export interface CaptainPorts {
     how: { push: boolean },
     reason: string,
   ): Promise<{ text: string; undo?: CaptainUndo | undefined; undoNote?: string | undefined }>;
+  /** Asks the task's lead to bring main in, resolve the conflicts and merge (tasks.resolveShip), as the captain. */
+  resolveShip(org: string, task: string, reason: string): Promise<void>;
   /** Puts the captain's line on the task's review card: ready to ship, the owner decides. */
   shipReady(org: string, task: string, line: string): Promise<void>;
 
@@ -109,14 +113,14 @@ export interface CaptainPorts {
   decideCard(
     org: string,
     card: ApprovalCard,
-    verdict: { decision: "approved" | "left"; why: string },
+    verdict: { decision: "approved" | "left"; why: string; risky?: boolean | undefined },
   ): Promise<{ ok: boolean; error?: string | undefined; commit?: string | undefined }>;
   /** The table that decides a card, with the workspace's authority rows. */
   cardVerdict(
     org: string,
     card: ApprovalCard,
     authority: Authority,
-  ): Promise<{ decision: "approved" | "left"; why: string }>;
+  ): Promise<{ decision: "approved" | "left"; why: string; risky?: boolean | undefined }>;
 
   // Agents' questions
   questions(org: string): QuestionCard[];
@@ -146,6 +150,8 @@ export interface CaptainPorts {
   curate(
     org: string,
     fact: PendingFact,
+    /** Outcome rules the owner switched off (`mem-keep`, `mem-drop`, `mem-escalate`). */
+    off?: ReadonlySet<string> | undefined,
   ): Promise<{
     outcome: "kept" | "dropped" | "merged" | "pending";
     event?: number | undefined;
@@ -162,7 +168,8 @@ export interface CaptainPorts {
   setPriority(org: string, task: string, priority: TaskPriority, reason: string): Promise<void>;
 
   // Cleanup
-  cleanable(org: string): Promise<{ id: string; title: string; steps: string[] }[]>;
+  /** Done tasks with something to remove, and the worktrees of them that hold uncommitted changes (never removed). */
+  cleanable(org: string): Promise<{ id: string; title: string; steps: string[]; dirty: string[] }[]>;
   clean(org: string, task: string): Promise<{ removed: string[]; kept: string[] }>;
   /** What deleting rebuildable folders of done tasks would free in the workspace (code only). */
   foldersFreeable?(org: string): Promise<{ bytes: number; tasks: number }>;

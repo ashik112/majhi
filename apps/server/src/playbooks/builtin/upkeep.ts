@@ -38,7 +38,9 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     outcomes: [
       { id: "ship-merge", text: "Checks pass and Merge is Captain: merge it, tell me in the brief" },
       { id: "ship-ask", text: "Checks pass and Merge is You: ask me in Needs you" },
-      { id: "ship-notready", text: "Not ready (checks fail, or it conflicts with main): tell me why" },
+      { id: "ship-checks", text: "Checks fail: send the exact failures to the lead, ask me after 3 tries" },
+      { id: "ship-conflict", text: "Conflicts with main: ask the lead to resolve it, then try again" },
+      { id: "ship-notready", text: "Not committed, a card waits or a secret in the diff: tell me why" },
     ],
     runner: { kind: "chore", chore: "ship" },
   }),
@@ -55,7 +57,8 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     turnOn: "Answers routine approval cards where Approvals is Captain.",
     outcomes: [
       { id: "cards-approve", text: "A routine card: approve it" },
-      { id: "cards-left", text: "A risky or unclear card: leave a note for me in Needs you" },
+      { id: "cards-left", text: "An unclear card: leave a note for me in Needs you" },
+      { id: "cards-risky", text: "A risky request: leave it for me with the reason" },
     ],
     runner: { kind: "chore", chore: "cards" },
   }),
@@ -70,6 +73,11 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     outputs: ["decision", "log"],
     cost: { tier: "small", tokens: RUN_TOKENS },
     turnOn: "Answers agents' questions where Questions is Captain.",
+    outcomes: [
+      { id: "q-answer", text: "Sure of the answer: answer it" },
+      { id: "q-ask", text: "Not sure: ask me" },
+      { id: "q-loop", text: "The same agent keeps asking: tell me it may be stuck" },
+    ],
     runner: { kind: "chore", chore: "questions" },
   }),
   upkeep({
@@ -83,6 +91,11 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     outputs: ["log"],
     cost: { tier: "laya", tokens: RUN_TOKENS },
     turnOn: "Reviews waiting memories once a day. It also runs while Auto-pilot is off.",
+    outcomes: [
+      { id: "mem-keep", text: "A good lesson: keep it" },
+      { id: "mem-drop", text: "A duplicate or a wrong one: drop it" },
+      { id: "mem-escalate", text: "Not sure: let the small model look first, then ask me" },
+    ],
     runner: { kind: "chore", chore: "memory" },
   }),
   upkeep({
@@ -96,6 +109,11 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     outputs: ["log"],
     cost: { tier: "rules", tokens: RUN_TOKENS },
     turnOn: "Registers new repos where Upkeep is Captain.",
+    outcomes: [
+      { id: "proj-register", text: "A new repo in the workspace folder: register it" },
+      { id: "proj-cards", text: "Refresh a project card when its base branch moves" },
+      { id: "proj-readiness", text: "A readiness gap: file a finding" },
+    ],
     runner: { kind: "chore", chore: "projects" },
   }),
   upkeep({
@@ -109,6 +127,12 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     outputs: ["log"],
     cost: { tier: "rules", tokens: RUN_TOKENS },
     turnOn: "Triages open tasks once a day where Upkeep is Captain.",
+    outcomes: [
+      { id: "triage-priority", text: "Due soon: set high priority" },
+      { id: "triage-split", text: "A big task: propose subtasks" },
+      { id: "triage-duplicate", text: "Same title as another: suggest closing one" },
+      { id: "triage-stale", text: "Untouched for 30 days: ask me to close it" },
+    ],
     runner: { kind: "chore", chore: "triage" },
   }),
   upkeep({
@@ -122,6 +146,11 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     outputs: ["log"],
     cost: { tier: "rules", tokens: RUN_TOKENS },
     turnOn: "Cleans up done tasks once a day. It also runs while Auto-pilot is off.",
+    outcomes: [
+      { id: "cleanup-caches", text: "A done task's rebuildable caches: remove them" },
+      { id: "cleanup-worktrees", text: "A merged done task's worktree, after the set days: remove it" },
+      { id: "cleanup-ask", text: "Uncommitted changes: ask me, never remove" },
+    ],
     runner: { kind: "chore", chore: "cleanup" },
   }),
   upkeep({
@@ -135,6 +164,11 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     outputs: ["log"],
     cost: { tier: "rules", tokens: RUN_TOKENS },
     turnOn: "Watches running tasks that go quiet where Upkeep is Captain.",
+    outcomes: [
+      { id: "stuck-signin", text: "An account needs a sign-in: move the step to a teammate" },
+      { id: "stuck-wake", text: "A stuck run: wake the lead once" },
+      { id: "stuck-tell", text: "Still stuck: pause it and tell me" },
+    ],
     runner: { kind: "chore", chore: "stuck" },
   }),
   upkeep({
@@ -148,6 +182,11 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     outputs: ["finding", "task", "log"],
     cost: { tier: "laya", tokens: RUN_TOKENS },
     turnOn: "Reads the open follow-ups of memory once a day where Upkeep is Captain.",
+    outcomes: [
+      { id: "fu-close", text: "A follow-up already done: close it" },
+      { id: "fu-finding", text: "The rest: file them as findings" },
+      { id: "fu-task", text: "Concrete work: propose a task in the inbox", default: false },
+    ],
     runner: { kind: "chore", chore: "followups" },
   }),
   // Runs once for the whole business, from Private. Pure code: it asks Laya, which is local, so it costs no tokens.
@@ -172,6 +211,10 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     enabledByDefault: true,
     turnOn:
       "Checks Laya against your own corrections once a week and files a finding if a decision got worse. Nothing leaves your machine.",
+    outcomes: [
+      { id: "laya-finding", text: "A decision got worse: file a finding" },
+      { id: "laya-backlog", text: "Read a few old findings each week" },
+    ],
     runner: { kind: "rules", id: "laya-eval" },
     settings: [],
   },

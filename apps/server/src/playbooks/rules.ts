@@ -13,6 +13,8 @@ export interface RulesContext {
   /** What the owner filled in, one list of lines per setting. */
   settings: Readonly<Record<string, readonly string[]>>;
   findings: FindingsService;
+  /** Outcome rules the owner switched off for this playbook in this workspace. Each stops its action. */
+  rulesOff?: ReadonlySet<string> | undefined;
   /** The owner pressed Run now: look at everything, whatever was looked at lately. */
   manual?: boolean;
   now: () => Date;
@@ -37,3 +39,11 @@ export interface RulesRunner {
 
 /** The rules runners that ship with the playbooks themselves. The ops watch and the sensors register theirs. */
 export const RULES_RUNNERS: Readonly<Record<string, RulesRunner>> = {};
+
+/** Whether an outcome rule is on, given what the owner set: a rule not set follows its default (on unless it says off). */
+export function isRuleOn(
+  rule: { id: string; default?: boolean | undefined },
+  set: Readonly<Record<string, boolean>>,
+): boolean {
+  return set[rule.id] ?? rule.default !== false;
+}

@@ -27,6 +27,10 @@ export const BUSINESS_PLAYBOOKS: Playbook[] = [
     readOnly: true,
     turnOn:
       "Files a finding when a workspace spends more without shipping more, goes quiet, or nears its retainer. No model, no tokens.",
+    outcomes: [
+      { id: "econ-finding", text: "A flag trips (spend, quiet, near budget): file a finding" },
+      { id: "econ-close", text: "A flag clears: close its finding" },
+    ],
     runner: { kind: "rules", id: "economics" },
     settings: [],
   },
@@ -50,6 +54,7 @@ export const BUSINESS_PLAYBOOKS: Playbook[] = [
     enabledByDefault: false,
     turnOn:
       "Drafts a client update every Friday afternoon, about 2,000 tokens of the smallest model. Nothing is sent: each draft waits in Decisions.",
+    outcomes: [{ id: "update-draft", text: "A week with news: draft the update, it waits in Needs you" }],
     runner: { kind: "rules", id: "client-update" },
     settings: [],
   },

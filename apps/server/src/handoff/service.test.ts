@@ -40,6 +40,7 @@ function world(
     modelBlocked: undefined as string | undefined,
     review: async (): Promise<string[]> => [],
     tellFails: false,
+    off: new Set<string>(),
     active: 0,
     maxActive: 0,
   };
@@ -88,6 +89,7 @@ function world(
       return { gaps, tokens: Math.ceil(prompt.length / 4) };
     },
     autonomous: () => state.autonomous,
+    ruleOff: (_org, rule) => state.off.has(rule),
     modelBlocked: () => state.modelBlocked,
     tell: async (id, text) => {
       if (state.tellFails) throw new Error("it is paused");
@@ -195,6 +197,18 @@ describe("a red hand-off", () => {
     expect(w.calls.tell).toHaveLength(1);
     expect((await w.service.state("ACM-1")).strikes).toBe(1);
     expect((await w.service.state("ACM-1")).history).toHaveLength(1);
+  });
+
+  it("tells nobody when the owner switched off sending failures to the lead, and the card says why", async () => {
+    const w = world();
+    w.state.off.add("ship-checks");
+    w.state.exec = (c) => (c === "pnpm test" ? bad("FAIL src/total.test.ts\nexpected 1 to be 2") : ok());
+    const r = await w.service.ensure("ACM-1", { force: false });
+    expect(r.verdict).toBe("red");
+    expect(w.calls.tell).toEqual([]);
+    expect(w.calls.holds.at(-1)).toContain("Checks failed:");
+    // No strike counted: the owner is not asked after 3 tries the lead never had.
+    expect((await w.service.state("ACM-1")).strikes).toBe(0);
   });
 
   it("a test that fails and then passes on a retry is flaky, not green", async () => {

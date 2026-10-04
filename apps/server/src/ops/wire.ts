@@ -23,6 +23,8 @@ export interface OpsWiring {
   notifier: Notifier;
   /** News for a workspace's captain lane. */
   wake: (org: string, text: string) => void;
+  /** The owner switched an outcome rule off in a workspace. */
+  ruleOff?: ((org: string, rule: string) => boolean) | undefined;
   orgName: (org: string) => Promise<string>;
   projectOrg: (project: string) => Promise<string | undefined>;
   connections: {
@@ -137,6 +139,7 @@ export function createOps(w: OpsWiring): Ops {
       await w.notifier.incident({ id: n.id, text: n.text, severity: n.severity, repeat: n.repeat });
     },
     wake: w.wake,
+    ...(w.ruleOff === undefined ? {} : { ruleOff: w.ruleOff }),
     orgName: w.orgName,
     projectOrg: w.projectOrg,
     connections: async (org) =>

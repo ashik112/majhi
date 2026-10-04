@@ -28,6 +28,10 @@ export const GROWTH_PLAYBOOKS: Playbook[] = [
     enabledByDefault: false,
     turnOn:
       "Wakes the captain once a week, only when the facts changed since the last time, and lists up to five opportunities as findings. Proposals wait in Decisions as drafts.",
+    outcomes: [
+      { id: "opp-finding", text: "An opportunity: list it as a finding" },
+      { id: "opp-proposal", text: "The best upsell: draft a proposal email that waits for me" },
+    ],
     runner: { kind: "captain" },
     settings: [],
   },
@@ -51,6 +55,7 @@ export const GROWTH_PLAYBOOKS: Playbook[] = [
     readOnly: true,
     turnOn:
       "Reads the feeds you list, once a day at most per feed, and files what matches your goals. No model, no tokens. A host works only after you add it to Allowed hosts.",
+    outcomes: [{ id: "feeds-finding", text: "A hackathon, grant or launch that fits: file a finding" }],
     runner: { kind: "rules", id: "feeds" },
     settings: [
       { key: "feeds", label: "Feed addresses", hint: "One per line, like https://feeds.example/grants.xml" },

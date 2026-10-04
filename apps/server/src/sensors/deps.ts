@@ -6,7 +6,14 @@ import { fresh } from "./cache.ts";
 import { isLockfile, MAX_LOCKFILE_BYTES, majorOf, type Pkg, parseLockfile } from "./lockfiles.ts";
 import { Unavailable } from "./net.ts";
 import { type Advisory, fixFor, MAX_DETAILS, Osv, pkgKey, type Severity } from "./osv.ts";
-import { closeUnseen, file, type Reporter, type SensorPorts, type SensorProject } from "./ports.ts";
+import {
+  closeUnseen,
+  file,
+  type Reporter,
+  reporterOf,
+  type SensorPorts,
+  type SensorProject,
+} from "./ports.ts";
 
 /**
  * The dependency and security sweep (SPEC 5.18, sensors). Per project it reads the tracked lockfiles
@@ -335,7 +342,7 @@ export function dependencySweep(ports: SensorPorts, osvBase?: string) {
   const osv = new Osv(ports.net, ports.cache, () => ports.now(), osvBase);
   return {
     async run(ctx: RulesContext): Promise<RulesResult> {
-      const r: Reporter = { findings: ctx.findings, org: ctx.org, playbook: ctx.playbook.id };
+      const r = reporterOf(ctx);
       const projects = (await ports.projects(ctx.org)).filter((p) => p.path !== "");
       if (projects.length === 0) return { findings: 0, note: "No project is registered" };
       const budget = { left: MAX_DETAILS };

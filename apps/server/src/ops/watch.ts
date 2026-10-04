@@ -86,6 +86,8 @@ export interface OpsDeps {
   retryMs?: number;
   now: () => Date;
   changed: () => void;
+  /** The owner switched an outcome rule of the Service watch off in a workspace (`ops-incident`, ...). */
+  ruleOff?: (org: string, rule: string) => boolean;
   /** Watch anything: the owner acknowledged one of its incidents, or one closed. */
   onAcked?: (inc: OpsIncident) => void;
   onResolved?: (inc: OpsIncident) => void;
@@ -404,6 +406,10 @@ export class OpsWatch {
     };
   }
 
+  private off(org: string, rule: string): boolean {
+    return this.deps.ruleOff?.(org, rule) === true;
+  }
+
   /** Opens, refreshes or resolves the incident of a subject from the persisted window. Returns the changes made. */
   async evaluate(subject: Subject): Promise<number> {
     const states = this.deps.repo.states(subject.id);
@@ -418,6 +424,7 @@ export class OpsWatch {
     const greenSince = Math.max(...states.map((s) => Date.parse(s.greenSince ?? this.at())));
     const need = this.settings().resolveMin * 60_000;
     if (this.now().getTime() - greenSince < need) return 0;
+    if (this.off(open.org, "ops-resolve")) return 0;
     await this.resolve(open, `All checks green for ${span(need)}`);
     return 1;
   }
@@ -492,6 +499,8 @@ export class OpsWatch {
       this.deps.changed();
       return raised;
     }
+    // "A service stays down: open an incident" is off: the failure is counted and shown, nothing is opened.
+    if (this.off(subject.org, "ops-incident")) return false;
     const last = this.deps.repo.latestByKey(key);
     if (
       last !== undefined &&
@@ -599,7 +608,7 @@ export class OpsWatch {
 
   /** The first alert of an incident: desktop for high and medium, and the phone for high. */
   private async alert(inc: StoredIncident, subject: Subject, repeat: boolean): Promise<void> {
-    if (inc.severity === "low") return;
+    if (inc.severity === "low" || this.off(inc.org, "ops-alert")) return;
     const ws = await this.deps.orgName(inc.org);
     const text = repeat
       ? `${ws}: an incident has not been acknowledged yet`
@@ -627,6 +636,7 @@ export class OpsWatch {
   }
 
   private async wake(inc: StoredIncident, subject: Subject, evidence: string[]): Promise<void> {
+    if (this.off(inc.org, "ops-wake")) return;
     if (subject.wakeText !== undefined) {
       const text = subject.wakeText(inc, evidence);
       if (text !== undefined) this.deps.wake(inc.org, text);
