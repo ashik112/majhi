@@ -1,5 +1,36 @@
 # Progress
 
+## Server data layer performance (built, not merged)
+
+Branch `perf/db-layer`. Measured on the audit's seeded rig (2,000 tasks, 200k room items, 50k autonomy events, 20k turns and audit rows), same machine, old and new code run back to back. The machine is shared, so read the ratios, not the absolute times.
+
+| Item | Before | After |
+|---|---|---|
+| `tasks.get` for all 2,000 tasks (4 queries each) | 362 to 906 ms | 36 to 76 ms |
+| Orchestrator `waiting()` (every sweep, and per done task at boot) | 15 to 42 ms | 0.1 ms |
+| Planner `running()` | 7 to 19 ms | 0.1 ms |
+| Chat memory sweep, task part (every minute) | 11 to 38 ms | 0.1 ms (plus no room read for a chat with nothing new) |
+| Budget lift, task part (every minute) | 7 to 23 ms | 6 to 9 ms with 504 paused tasks (a few in real use) |
+| Room item write (`room.upsert`) | 0.6 ms | 0.13 to 0.15 ms |
+| `pendingOfType` per task, 200 tasks | 21 to 48 ms | 10 to 16 ms |
+| `pendingOfTypes` for 2,000 tasks | 4 to 9 ms | 1.7 to 2.7 ms |
+| Captain key claim, settle and read, 2,000 times | 105 to 362 ms | 78 to 92 ms |
+| `autonomy.task` 2,000 times | 15 to 54 ms | 3 to 4 ms |
+| Outcomes pass, rows written when nothing changed | 5,015 rows, 62 ms (160 to 250 ms in the audit) | 0 rows, 0 ms (a pass that derives the same does nothing; a changed one writes only the changed rows, 1.3 ms to find them) |
+| Worst-case first prune (all seeded rows old) | not possible, no pruning | 958 batches of 500, 329 ms total, event loop lag at most 6 ms |
+
+What changed.
+- **Prepared statements.** `TaskRepo` (get, list, getMany, has, statuses, links, unmerged, start-when-ready) and `RoomRepo` (upsert, get, page, pageAfter, around) build their Drizzle queries once with placeholders. `getMany` loads any number of tasks in four queries through `json_each`, so no per-id loop is left in the store. Every connection also keeps one compiled statement per SQL text (`cacheStatements` in `store/db.ts`, 400 entries), which covers the raw `db.prepare` repos (autonomy, captain keys, outcomes, findings, agenda) and Drizzle's own prepare without touching them. New loop methods: `waitingToStart()`, `runningTasks(except)`, `chatIds()`. `Orchestrator.waiting`, `TaskPlanner.running`, `ChatMemory.sweepDue` and the budget lift use them.
+- **SQLite baseline.** Startup sets and reads back WAL, synchronous NORMAL, busy timeout 5000 ms and foreign keys, and logs one line with the version. A warning shows if any is below the baseline. better-sqlite3 is already 13.0.3 with SQLite 3.53.4, newer than the 3.51.3 WAL-reset fix, so nothing was upgraded. A test asserts the baseline and the version.
+- **Indexes, migration 153.** `room_items.pending` is a virtual column over the payload's `state` (safe for a payload that is not JSON) with a partial index `(type, task) WHERE pending = 1`, so the owner's pending cards are an index lookup, not a JSON parse per card ever made. Also `tasks(status, updated_at)`, a partial index for open MRs, `tasks(brief) WHERE kind = 'chat'`, `findings(created_at)`, `findings(status, last_seen)`, `autonomy_events(kind, at)`, `outcomes(at)`, `captain_actions(at)`, `audit(kind)` and `audit(agent)` (the audit page's DISTINCT lists read an index now). Each was checked with EXPLAIN QUERY PLAN. Test: the migration on a pre-153 database with damaged payloads.
+- **Retention.** `store/retention.ts`, numbers in `RETENTION`. A daily job (first run 10 minutes after boot) deletes in batches of 500 with the event loop free between batches: audit 365 days, turns 730, autonomy events 180, outcomes 400, captain actions 365, settled action keys 180, ended captain, playbook and automation runs 180 (the newest of each kind always stays), hand-off history 180, usage events 365. Rooms of tasks done more than 90 days: tool output, thoughts and context notes only. Messages, plans, reviews, every card, anything pending and the newest item (the room's `seq` counter) stay. Tasks, decisions and the Laya decision log are never pruned. Tests: what is kept and deleted, batching, twice in a row.
+- **Idle loops.** The outcomes pass hashes what it derived and writes nothing when it is the same as the last pass, otherwise only the rows that differ; it tells the UI to refetch only when something was written. The ladder still runs every pass (it reads settings and the clock). The chat sweep reads only chats with an item newer than their last memory read. Test: only changed rows are written.
+- **One bad row.** `store/tolerant.ts`: tasks, task links, task statuses and findings are parsed row by row; a bad row is skipped and logged once. `findings.list` and `agenda.today` no longer fail on a finding with an unknown source. Test: one invalid finding and one invalid task, the rest returned, one log line.
+
+How verified. Typecheck of every package clean. Tests run: `store/*` (retention, migration, tolerant reads, existing store, audit and room tests), `outcomes/*`, `memory/chats`, `tasks/orchestrator`, `tasks/planner`, `budgets/*`, census guard (the start-when-ready column count went down by one). Bench scripts are in the scratchpad (`perf-db-layer/`).
+
+Left. `tasks.list` is still about 9 to 20 ms for 2,000 tasks: the cost is zod and JSON parsing of each row, not SQL. `RoomRepo.page` is dominated by zod parsing of each item. The `autonomy.status` N+1 and the boot storm are outside this branch.
+
 ## Captain checks and the new task dialog (built, not merged)
 
 Branch `fix/captain-checks-new-task`.
