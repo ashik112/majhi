@@ -19,7 +19,10 @@
     "better-sqlite3": "13.0.3",
     "drizzle-orm": "0.45.3",
     "hono": "4.13.9",
+    "mongodb": "7.7.0",
+    "mysql2": "3.24.5",
     "node-pty": "1.1.0",
+    "pg": "8.23.1",
     "sqlite-vec": "0.1.9",
     "ws": "8.22.0",
     "yaml": "2.9.1",
@@ -27,6 +30,7 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "9.6.0",
+    "@types/pg": "8.23.1",
     "@types/ws": "8.18.1",
     "esbuild": "0.28.2",
     "tsx": "4.23.15"

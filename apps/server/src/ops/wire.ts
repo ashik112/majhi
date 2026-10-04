@@ -40,6 +40,8 @@ export interface OpsWiring {
   projectCheckout?: ((project: string) => Promise<{ org: string; path: string } | undefined>) | undefined;
   /** What the task, process, usage, branch and command watches look at. */
   host?: WatchHost | undefined;
+  /** Runs a database client image for the `image` database checks. Absent without Docker. */
+  imageRun?: WatchPorts["image"] | undefined;
   /** What a watch's action does when it fires (the schedules' action runner). */
   action?: {
     validate(org: string, action: AutomationAction): Promise<void>;
@@ -150,6 +152,7 @@ export function createOps(w: OpsWiring): Ops {
         }
       },
     }),
+    ...(w.imageRun === undefined ? {} : { image: w.imageRun }),
     ...w.probes,
   };
   let engine: WatchEngine | undefined;

@@ -42,7 +42,7 @@ interface Draft {
   jsonPath: string;
   expectStatus: string;
   connection: string;
-  engine: "postgres" | "mysql";
+  engine: "postgres" | "mysql" | "mongodb" | "image";
   query: string;
   label: string;
   unit: string;
@@ -294,7 +294,13 @@ function specOf(d: Draft): unknown {
     case "queue":
       return d.source === "redis_list"
         ? { kind: "queue", connection: d.connection, source: "redis_list", key: d.key.trim() }
-        : { kind: "queue", connection: d.connection, source: "sql", engine: d.engine, query: d.query };
+        : {
+            kind: "queue",
+            connection: d.connection,
+            source: "sql",
+            engine: d.engine === "mysql" ? "mysql" : "postgres",
+            query: d.query,
+          };
     case "price":
       return {
         kind: "price",
@@ -974,6 +980,8 @@ export function WatchForm({
                   >
                     <option value="postgres">Postgres</option>
                     <option value="mysql">MySQL</option>
+                    {d.kind === "database" && <option value="mongodb">MongoDB</option>}
+                    {d.kind === "database" && <option value="image">Other (official image)</option>}
                   </Select>
                 )}
               </Field>
@@ -1002,17 +1010,14 @@ export function WatchForm({
                 </>
               )}
             </div>
-            <Field
-              label="Query"
-              hint="One SELECT, SHOW or EXPLAIN that returns a number. Anything that writes is refused."
-            >
+            <Field label="Query" hint={queryHint(d.kind === "database" ? d.engine : "postgres")}>
               {(p) => (
                 <textarea
                   {...p}
                   rows={3}
                   className="min-h-[72px] w-full resize-y rounded-md border border-line bg-field px-2.5 py-1.5 font-mono text-sm text-fg"
                   value={d.query}
-                  placeholder="SELECT count(*) FROM jobs WHERE state = 'waiting'"
+                  placeholder={queryPlaceholder(d.kind === "database" ? d.engine : "postgres")}
                   onChange={(e) => set("query", e.target.value)}
                 />
               )}
@@ -1299,4 +1304,22 @@ export function WatchForm({
       </form>
     </Sheet>
   );
+}
+
+function queryHint(engine: Draft["engine"]): string {
+  if (engine === "mongodb") {
+    return "A JSON read command with the path to a number. Only count, dbStats, collStats and serverStatus run.";
+  }
+  if (engine === "image") {
+    return "JSON: the database's official image, its client as a list of words, and an optional path to the number. Use a read-only login in the connection. Anything that writes is refused.";
+  }
+  return "One SELECT, SHOW or EXPLAIN that returns a number. Anything that writes is refused.";
+}
+
+function queryPlaceholder(engine: Draft["engine"]): string {
+  if (engine === "mongodb") return '{"command":"count","collection":"orders","query":{"status":"open"}}';
+  if (engine === "image") {
+    return '{"image":"clickhouse/clickhouse-server:24","command":["clickhouse-client","--query","SELECT count() FROM jobs"]}';
+  }
+  return "SELECT count(*) FROM jobs WHERE state = 'waiting'";
 }
