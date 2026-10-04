@@ -318,7 +318,7 @@ export class WatchEngine {
   // The sentence -----------------------------------------------------------------------
 
   async plan(input: { text: string; org?: string | undefined }): Promise<WatchPlan> {
-    const org = input.org ?? PRIVATE;
+    const org = input.org ?? (await this.orgFor(input.text));
     const conns = await this.deps.connections(org);
     let core: Core | undefined;
     let by: "model" | "rules" = "rules";
@@ -364,6 +364,18 @@ export class WatchEngine {
     const now = test.ok ? (def.spec.kind === "custom" ? "" : `Right now it's ${test.value}.`) : test.value;
     const line = planLine(def, { conn: conn?.name, kindWord: kindWord(def), org: orgName }, now);
     return { org, def, line, test, by };
+  }
+
+  /** With no workspace given: the one whose connection the sentence names, else Private. */
+  private async orgFor(text: string): Promise<string> {
+    const t = text.toLowerCase();
+    const orgs = await this.deps.orgs();
+    for (const o of [{ id: PRIVATE, name: "Private" }, ...orgs.filter((x) => x.id !== PRIVATE)]) {
+      for (const c of await this.deps.connections(o.id)) {
+        if (t.includes(c.name.toLowerCase()) || t.includes(c.id.toLowerCase())) return o.id;
+      }
+    }
+    return PRIVATE;
   }
 
   // Looking ----------------------------------------------------------------------------

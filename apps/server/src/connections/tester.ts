@@ -182,9 +182,7 @@ export class ConnectionTester {
    * What the watches need of a connection: its text values and, for a Variables connection, the values of its
    * variables (secrets read from secrets.age). Held only for one look: the caller never stores or logs them.
    */
-  async valuesForWatch(
-    id: string,
-  ): Promise<
+  async valuesForWatch(id: string): Promise<
     | {
         org: string;
         type: string;

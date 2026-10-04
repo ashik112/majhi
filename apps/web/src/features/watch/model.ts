@@ -30,6 +30,7 @@ export const KIND_LABEL: Record<OpsCheckKind, string> = {
   monitor: "Monitor",
   dns: "Name",
   tls: "Certificate",
+  watch: "Watch",
 };
 
 /** An open incident: red when it is high, magenta when it is not, green once resolved. */
