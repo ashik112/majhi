@@ -25,6 +25,8 @@ export interface ReviewTask {
 export interface AnswerTask {
   id: string;
   title: string;
+  /** An investigation or an answer. A code task that changed nothing is not one: it is left for the owner. */
+  investigation: boolean;
   lead?: string | undefined;
   /** The lead's last message, its final report. Absent when it never wrote one. */
   report?: { text: string; at: string } | undefined;

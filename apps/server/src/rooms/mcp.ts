@@ -658,7 +658,7 @@ async function refuseOutsideOrg(
         )
       : [];
     const orgs = [...new Set(listed.flatMap((id) => projects.find((p) => p.id === id)?.org ?? []))];
-    if (orgs.length > 1) return "Those repos are in more than one org.";
+    if (orgs.length > 1) return "Those repos are in more than one workspace.";
     const parentId = command === "tasks.split" ? args.task : args.parent;
     const parent = typeof parentId === "string" ? deps.store.tasks.get(parentId)?.org : undefined;
     const org = orgs[0] ?? (listed.length === 0 ? parent : undefined);

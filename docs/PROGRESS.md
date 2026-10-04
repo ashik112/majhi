@@ -1,5 +1,14 @@
 # Progress
 
+## Captain checks and the new task dialog (built, not merged)
+
+Branch `fix/captain-checks-new-task`.
+
+- **What the owner will notice.** Auto-pilot no longer sends finished code tasks with no changes back to running. They get one line on the log: "not ready to ship: nothing changed since it started". Investigation tasks with an empty report are still sent back. The new task dialog keeps "Add and start" on screen, the body scrolls, Enter in the title and Cmd+Enter anywhere send it, repos from two workspaces block the save with the reason beside the picker, each picked repo has a "starts from" branch field, and the dependency chip never wraps.
+- **Cause.** `answerTasks` took every review task with no diff, code tasks included, and judged the report length. Now it marks `investigation` from the task's kind, repos and read mounts, and the chore skips the rest. The authority gate is one function (`answerGate`) used before the pass and again in the recheck before a turn.
+- **Left as is.** The sentence still attaches no repos or branches (SPEC, decision 2026-10-02); aliases are suggested with one click. See DECISIONS.
+- **Verified.** `captain/ship-mr.test.ts` (code task not bounced, investigation bounced, no turn when the workspace asks), typecheck clean. Browser on an isolated server at 1440x900, 1100x800 and 1100x600: footer visible, cross-workspace block, Enter and Cmd+Enter submit, base `develop` saved, no console errors. Isolated Auto-pilot run with three no-change review tasks: none bounced.
+
 ## Live-state counts and restart reconcile (built, not merged)
 
 Branch `fix/live-state-counts`.

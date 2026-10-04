@@ -387,7 +387,7 @@ export class TaskService {
     const orgs = new Set(parsed.repos.map((r) => projects.find((p) => p.id === r.project)?.org));
     if (orgs.size > 1) {
       throw new UserError(
-        `${parsed.warnings.find((w) => w.startsWith("Repos from")) ?? "Repos from more than one org"}. Make one task per org.`,
+        `${parsed.warnings.find((w) => w.startsWith("Repos from")) ?? "Repos from more than one workspace"}. Make one task per workspace.`,
       );
     }
     // An investigation reads the repos it names. It gets no branch, no worktree, no Changes and no Ship.
