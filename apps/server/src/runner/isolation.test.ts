@@ -215,4 +215,136 @@ describe("the runner isolation check", () => {
       rebuild: true,
     });
   });
+
+  /** A failed `docker run` as execFile rejects it: the argv on the first line, stderr after it. */
+  function dockerFailed(args: string[], stderr: string, more: Record<string, unknown> = {}): Error {
+    return Object.assign(new Error(`Command failed: docker ${args.join(" ")}\n${stderr}`), {
+      code: 125,
+      stdout: "",
+      stderr,
+      ...more,
+    });
+  }
+
+  async function failingCheck(fail: (args: string[]) => Error) {
+    const { dir, cleanup } = await tempDir();
+    cleanups.push(cleanup);
+    const env = testEnv(dir);
+    const runner = runnerSetup({ ...env, runner: { ...env.runner, mode: "container" } }, async () =>
+      parseSubnets(RUNNERS),
+    ).runner;
+    if (runner === undefined) throw new Error("no runner");
+    let calls = 0;
+    const verdict = await checkRunnerIsolation({
+      runner,
+      majhiHome: env.majhiHome,
+      hostHome: env.hostHome,
+      secretsKeyFile: env.secretsKeyFile,
+      retryAfterMs: 0,
+      docker: (args) => {
+        calls++;
+        return Promise.reject(fail(args));
+      },
+    });
+    return { verdict, calls, majhiHome: env.majhiHome };
+  }
+
+  it("reports what Docker said, never the docker command line", async () => {
+    const { verdict, calls, majhiHome } = await failingCheck((args) =>
+      dockerFailed(
+        args,
+        "docker: Error response from daemon: failed to create task: OCI runtime create failed: unexpected EOF.\nRun 'docker run --help' for more information\n",
+      ),
+    );
+    expect(verdict).toEqual({
+      ok: false,
+      detail: "failed to create task: OCI runtime create failed: unexpected EOF.",
+    });
+    expect(verdict.detail).not.toContain("Command failed");
+    expect(verdict.detail).not.toContain("--mount");
+    expect(verdict.detail).not.toContain(majhiHome);
+    // A Docker failure is tried once more before it is reported.
+    expect(calls).toBe(2);
+  });
+
+  it("says in plain words when a mount source is missing or the name is taken", async () => {
+    const mount = await failingCheck((args) =>
+      dockerFailed(
+        args,
+        "docker: Error response from daemon: invalid mount config for type \"bind\": bind source path does not exist: /Users/owner/.majhi/accounts/_runner-check.\n",
+      ),
+    );
+    expect(mount.verdict.detail).toBe(
+      "Docker could not find a folder to mount (/Users/owner/.majhi/accounts/_runner-check); this happens briefly while Docker remounts the host's folders.",
+    );
+    const taken = await failingCheck((args) =>
+      dockerFailed(
+        args,
+        'docker: Error response from daemon: Conflict. The container name "/majhi-run-check-x" is already in use by container "abc".\n',
+      ),
+    );
+    expect(taken.verdict.detail).toBe(
+      "A container with the check's name was still there; Docker had not removed it yet.",
+    );
+  });
+
+  it("reports a timeout, with Docker's last words, and does not wait for it twice", async () => {
+    const { verdict, calls } = await failingCheck((args) =>
+      dockerFailed(args, "docker: context canceled\n", {
+        code: null,
+        killed: true,
+        signal: "SIGTERM",
+      }),
+    );
+    expect(verdict).toEqual({
+      ok: false,
+      detail:
+        "Docker did not answer within 120 s, so the check was stopped. Docker last said: context canceled",
+    });
+    expect(calls).toBe(1);
+  });
+
+  it("passes when a brief failure clears on the retry, and never retries a run that saw too much", async () => {
+    const { dir, cleanup } = await tempDir();
+    cleanups.push(cleanup);
+    const env = testEnv(dir);
+    const runner = runnerSetup({ ...env, runner: { ...env.runner, mode: "container" } }, async () =>
+      parseSubnets(RUNNERS),
+    ).runner;
+    if (runner === undefined) throw new Error("no runner");
+    const input = {
+      runner,
+      majhiHome: env.majhiHome,
+      hostHome: env.hostHome,
+      secretsKeyFile: env.secretsKeyFile,
+      retryAfterMs: 0,
+    };
+    let calls = 0;
+    const cleared = await checkRunnerIsolation({
+      ...input,
+      docker: () =>
+        ++calls === 1
+          ? Promise.reject(
+              Object.assign(new Error("Command failed"), {
+                stdout: "the run's own account home is not mounted\n",
+              }),
+            )
+          : Promise.resolve({ stdout: "isolated\n" }),
+    });
+    expect(cleared.ok).toBe(true);
+    expect(calls).toBe(2);
+
+    calls = 0;
+    const seeing = await checkRunnerIsolation({
+      ...input,
+      docker: () => {
+        calls++;
+        return Promise.reject(
+          Object.assign(new Error("Command failed"), { stdout: `a run can see ${env.secretsKeyFile}\n` }),
+        );
+      },
+    });
+    expect(seeing).toEqual({ ok: false, detail: `a run can see ${env.secretsKeyFile}` });
+    expect(calls).toBe(1);
+  });
 });
