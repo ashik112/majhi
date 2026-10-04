@@ -19,7 +19,7 @@ import { classifyProbe, runSsh, type SshRunFn } from "../ssh/hosts.ts";
 import { type BrowserServer, browserServer } from "./browser.ts";
 import { cutKubeconfig, KubeconfigError } from "./kubeconfig.ts";
 import { imapLogin, smtpGreeting } from "./mail.ts";
-import { listTools, remoteTransport, SpawnedTransport } from "./mcp-client.ts";
+import { callTool, listTools, remoteTransport, SpawnedTransport } from "./mcp-client.ts";
 import { type ConnectionService, ownerOnlyDir } from "./service.ts";
 
 const KUBECTL_TIMEOUT_MS = 45_000;
@@ -52,7 +52,12 @@ export interface TesterDeps {
   browserCommand?: (server: BrowserServer) => Command;
   now?: () => Date;
   /** The Test of a connection signed in through Connect (5.14). */
-  oauth?: { test(id: string): Promise<ConnectionTestResult> } | undefined;
+  oauth?:
+    | {
+        test(id: string): Promise<ConnectionTestResult>;
+        bearer?(id: string): Promise<{ token: string } | { problem: string }>;
+      }
+    | undefined;
 }
 
 interface Outcome {
@@ -141,6 +146,34 @@ export class ConnectionTester {
     };
     this.deps.connections.recordTest(id, result);
     return result;
+  }
+
+  /**
+   * Calls one tool of a remote MCP connection and returns its JSON answer, for the ops watch's monitoring
+   * read. Remote servers only (a local one would start a program on every look). Throws with a sentence.
+   */
+  async callRemoteTool(
+    id: string,
+    tool: string,
+    args: Record<string, unknown>,
+    timeoutMs = MCP_TIMEOUT_MS,
+  ): Promise<unknown> {
+    const found = await this.deps.connections.find(id);
+    if (found === undefined || found.connection.type !== "mcp") throw new Error("not an MCP connection");
+    const headers: Record<string, string> = {};
+    if (textValue(found.connection, "auth") === "oauth") {
+      const bearer = await this.deps.oauth?.bearer?.(id);
+      if (bearer === undefined || "problem" in bearer) throw new Error("the connection is not signed in");
+      headers.Authorization = `Bearer ${bearer.token}`;
+      const url = textValue(found.connection, "url") ?? "";
+      const protocol = textValue(found.connection, "protocol") === "sse" ? "sse" : "http";
+      return callTool(remoteTransport(url, headers, protocol), tool, args, timeoutMs);
+    }
+    const values = await this.resolve(id, found.connection);
+    if ((values.fields.transport ?? "remote") !== "remote") throw new Error("only remote servers are read");
+    for (const e of values.lists.headers ?? []) if (e.value !== undefined) headers[e.name] = e.value;
+    const protocol = values.fields.protocol === "sse" ? "sse" : "http";
+    return callTool(remoteTransport(values.fields.url ?? "", headers, protocol), tool, args, timeoutMs);
   }
 
   private run(type: ConnectionType, values: Values): Promise<Outcome> {

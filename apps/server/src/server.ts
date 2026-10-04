@@ -5,13 +5,18 @@ import { createHandlers, requestRemount } from "./commands/handlers.ts";
 import type { ServerEnv } from "./env.ts";
 import { UserError } from "./errors.ts";
 import { topicsFor } from "./events/hub.ts";
+import { totalmem } from "node:os";
+import { join } from "node:path";
+import { destinationOf } from "./backup/state.ts";
 import { HealthService } from "./health/service.ts";
 import { HostLink } from "./host/link.ts";
 import { createApp } from "./http/app.ts";
 import { RepoScanner } from "./scan/scanner.ts";
 import { createServices, type ServiceOptions, type Services } from "./services.ts";
 import { attachSockets, type UpgradeSource } from "./sockets.ts";
+import { eventLoopLag, LIMITS, SelfChecks, startSelfWatch } from "./ops/self.ts";
 import { SshHostProbe, sshTargets } from "./ssh/hosts.ts";
+import { DB_FILE_NAME } from "./store/index.ts";
 import { SystemService } from "./system/service.ts";
 
 /** Unused uploads are looked for this often. */
@@ -89,6 +94,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     dispatch,
     host: { link: hostLink, majhiHome: env.majhiHome },
     uploads: services.uploads,
+    phone: services.ops.phone,
     connect: services.connect,
     taskFiles: {
       folderOf: (id) => services.store.tasks.get(id)?.folder,
@@ -144,6 +150,34 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       ? {}
       : { isRunner: (address: string | undefined) => services.runner?.network.isRunner(address) ?? false }),
   });
+  // majhi watches itself: Health's checks and a few measurements of its own become incidents in Private.
+  const selfChecks = new SelfChecks({
+    health: async () => (await health.checks()).map((c) => ({ id: c.id, name: c.name, status: c.status, detail: c.detail, fix: c.fix })),
+    disks: async () => [
+      { label: "majhi data", path: env.majhiHome },
+      { label: "backups", path: (await destinationOf(env.majhiHome)).path },
+    ],
+    dbPath: () => join(env.majhiHome, DB_FILE_NAME),
+    trees: async () => {
+      const loaded = await config.load();
+      return [
+        ...(loaded.state.status === "loaded"
+          ? [{ id: "self-tasks-size", label: "Task worktrees", path: loaded.state.config.tasksDir, failBytes: LIMITS.worktreesFailBytes }]
+          : []),
+        { id: "self-e2e-size", label: "e2e traces", path: join(env.majhiHome, "e2e"), failBytes: LIMITS.e2eFailBytes },
+      ];
+    },
+    queueStall: () => services.autonomy.queueStall(),
+    laya: async () => {
+      const laya = hostLink.status().info?.laya;
+      return laya === undefined ? undefined : { state: laya.state, detail: laya.detail ?? "Laya" };
+    },
+    lagMs: eventLoopLag(),
+    memory: () => ({ rss: process.memoryUsage.rss(), total: totalmem() }),
+    recall: { get: (key) => services.ops.repo.setting(key), set: (key, value) => services.ops.repo.setSetting(key, value) },
+    now: () => new Date(),
+  });
+  let stopSelfWatch: (() => void) | undefined;
   let sockets: { close: () => void } | undefined;
   let sweeper: NodeJS.Timeout | undefined;
   return {
@@ -161,6 +195,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       services.automation.triggerEngine.start();
       services.autonomy.startSweep();
       services.captain.startSweep();
+      stopSelfWatch = startSelfWatch(services.ops.watch, selfChecks);
       sockets = attachSockets(server, {
         events: services.events,
         terminals: services.terminals,
@@ -179,6 +214,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       services.mrPoller.stop();
       system.close();
       services.terminals.closeAll();
+      stopSelfWatch?.();
       sockets?.close();
       if (sweeper !== undefined) clearInterval(sweeper);
       return services.close().catch(() => undefined);

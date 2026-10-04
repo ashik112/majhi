@@ -4,7 +4,7 @@ import { serve } from "@hono/node-server";
 import { startSession } from "@majhi/acp";
 import { fakeAdapter } from "@majhi/acp/testing";
 import type { RoomItem, Task } from "@majhi/shared";
-import { taskWorld, type World } from "./world.ts";
+import { taskWorld, type World, type WorldOptions } from "./world.ts";
 
 export interface BossWorld extends World {
   /** The captain chat task. */
@@ -20,8 +20,14 @@ export interface BossWorld extends World {
  * A world with a root agent that is the captain, its chat task, a real listening server (so agent
  * processes can reach `/mcp`), and sessions that run the fake ACP adapter.
  */
-export async function bossWorld(options: { real?: boolean; runClock?: () => Date } = {}): Promise<BossWorld> {
-  const w = await taskWorld(options.runClock === undefined ? {} : { runClock: options.runClock });
+export async function bossWorld(
+  options: { real?: boolean; runClock?: () => Date; opsProbes?: WorldOptions["opsProbes"]; ntfyFetch?: WorldOptions["ntfyFetch"] } = {},
+): Promise<BossWorld> {
+  const w = await taskWorld({
+    ...(options.runClock === undefined ? {} : { runClock: options.runClock }),
+    ...(options.opsProbes === undefined ? {} : { opsProbes: options.opsProbes }),
+    ...(options.ntfyFetch === undefined ? {} : { ntfyFetch: options.ntfyFetch }),
+  });
   const { h } = w;
   if (options.real !== false) {
     h.env.runtime.adapters = { claude: fakeAdapter("claude", { signedIn: true }) };

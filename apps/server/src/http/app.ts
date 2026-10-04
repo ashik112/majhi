@@ -12,6 +12,8 @@ import type { Dispatch } from "../commands/dispatch.ts";
 import { type DecideMcpDeps, decideMcpRoutes } from "../decisions/mcp.ts";
 import { errorMessage } from "../errors.ts";
 import { type HostRoutesDeps, hostRoutes } from "../host/routes.ts";
+import type { PhoneChannel } from "../ops/phone.ts";
+import { opsPhoneRoutes } from "../ops/routes.ts";
 import { type RoomMcpDeps, roomMcpRoutes } from "../rooms/mcp.ts";
 import { uploadRoutes } from "../uploads/routes.ts";
 import type { UploadStore } from "../uploads/store.ts";
@@ -33,6 +35,8 @@ export interface AppDeps {
   taskFiles: TaskFilesDeps;
   /** `GET /oauth/callback`, where services send the owner back after Connect's consent page. */
   connect?: ConnectService;
+  /** The phone's action links at `/ops/phone/...` (single-use signed tokens). */
+  phone?: PhoneChannel;
   /** The majhi-admin MCP server at `/mcp`. */
   mcp?: { tokens: AdminTokens; admin: AdminService };
   /** The majhi-decide MCP server at `/mcp/decide`. */
@@ -92,6 +96,7 @@ export function createApp(deps: AppDeps): Hono {
   });
 
   if (deps.connect !== undefined) app.route("/", connectRoutes(deps.connect));
+  if (deps.phone !== undefined) app.route("/", opsPhoneRoutes({ phone: deps.phone }));
   if (deps.mcp !== undefined) app.route("/", mcpRoutes(deps.mcp));
   if (deps.decideMcp !== undefined) app.route("/", decideMcpRoutes(deps.decideMcp));
   if (deps.roomMcp !== undefined) app.route("/", roomMcpRoutes(deps.roomMcp));

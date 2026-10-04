@@ -7,6 +7,7 @@ import {
   type DecisionOption,
   type DecisionSuggestion,
   draftDecisionId,
+  incidentDecisionId,
   OUTBOUND_CHANNEL_LABEL,
   type OutboundChannel,
   type Draft as OutboundDraft,
@@ -39,6 +40,8 @@ export interface DecisionSources {
   drafts?: readonly OutboundDraft[];
   /** Batches that are due in front of the owner: queued drafts of a channel in Batch mode. */
   batches?: readonly { org: string; channel: OutboundChannel; drafts: readonly OutboundDraft[] }[];
+  /** High incidents nobody has acknowledged (the ops watch). */
+  incidents?: readonly { id: number; org: string; title: string; at: string; escalated: boolean }[];
   /** A workspace's name, for the sentences that name it. */
   orgName?: (org: string) => string | undefined;
 }
@@ -253,7 +256,7 @@ export function decisionIdOf(item: RoomItem): string {
 }
 
 function priority(d: OwnerDecision): number {
-  return d.kind === "ship" || d.kind === "budget" ? 0 : 1;
+  return d.kind === "incident" ? -1 : d.kind === "ship" || d.kind === "budget" ? 0 : 1;
 }
 
 /**
@@ -395,6 +398,23 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       ...decorate(id, options, undefined, src.orgName?.(b.org)),
       at: b.drafts[0]?.createdAt ?? new Date(0).toISOString(),
       link: { kind: "playbooks" },
+    });
+  }
+
+  for (const inc of src.incidents ?? []) {
+    const id = incidentDecisionId(inc.id);
+    const options: DecisionOption[] = [{ id: "ack", label: "Acknowledge", primary: true }];
+    out.push({
+      id,
+      kind: "incident",
+      org: inc.org,
+      title: oneLine(inc.escalated ? `${inc.title} (not acknowledged yet)` : inc.title),
+      sentence: inc.escalated
+        ? `${inc.title}. majhi alerted you twice and nobody has acknowledged it. Acknowledging stops the alerts; it closes when its checks are green.`
+        : `${inc.title}. Acknowledging stops the alerts; it closes when its checks are green.`,
+      options,
+      at: inc.at,
+      link: { kind: "watch" },
     });
   }
 

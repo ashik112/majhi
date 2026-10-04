@@ -1,29 +1,33 @@
 import type { Playbook } from "@majhi/shared";
 
 /**
- * The ops watch pack, kept minimal (the full pack is captain v2 step 6a): a plain uptime check for URLs
- * the owner lists. It runs as code and spends no tokens until something fails.
+ * The ops watch pack (`apps/server/src/ops`): the services the owner lists on the Watch page, checked
+ * as code. It spends no tokens until a failure is confirmed; then the incident wakes the captain.
+ * Its switch, cadence and history are the playbook's; the services, counts and incidents are the watch's.
  */
 
 export const OPS_PLAYBOOKS: Playbook[] = [
   {
     id: "ops-uptime",
-    name: "Service up check",
-    purpose: "Check that the URLs you list answer, and file an incident when one stays down.",
+    name: "Service watch",
+    purpose: "Watch the services you list and open an incident when one stays down.",
     pack: "ops",
     trigger: { cadence: { kind: "every", minutes: 5 }, events: [] },
     scope: "workspace",
-    inputs: ["The URLs listed in this playbook's settings"],
+    inputs: [
+      "The services listed on the Watch page: address, status, keyword, latency, certificate, name lookup",
+      "A monitoring connection's read tool, when one is set",
+    ],
     steps:
-      "Request each URL. A status below 400 within 10 seconds is up. A URL that fails twice in a row files one incident finding (severity high) and wakes the captain. A URL that answers again closes its incident as fixed.",
+      "Request each address (a status below 400 within its limits is up). Look at certificates and names once a day. A failure gets a second look at once; 2 of the last 3 looks failing opens one incident (a finding, severity by impact) and wakes the captain with the evidence. Green for 10 minutes closes it with a timeline. No network here means unknown, never down.",
     outputs: ["finding", "log"],
     channels: [],
     cost: { tier: "rules", tokens: 0 },
     enabledByDefault: false,
-    turnOn: "Checks the URLs you list every 5 minutes. A failure files an incident and wakes the captain.",
+    readOnly: true,
+    watch: true,
+    turnOn: "Checks your services every 5 minutes. A confirmed failure opens an incident and wakes the captain.",
     runner: { kind: "rules", id: "uptime" },
-    settings: [
-      { key: "urls", label: "URLs to check", hint: "One per line, like https://acme.example/health" },
-    ],
+    settings: [],
   },
 ];

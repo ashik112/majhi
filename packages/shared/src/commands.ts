@@ -262,6 +262,22 @@ import {
   PlaybookUpdateInputSchema,
   PlaybookViewSchema,
 } from "./playbooks.ts";
+import {
+  OpsAckInputSchema,
+  OpsIncidentSchema,
+  OpsOverviewInputSchema,
+  OpsOverviewSchema,
+  OpsPhoneSetInputSchema,
+  OpsPhoneSetupInputSchema,
+  OpsPhoneSetupResultSchema,
+  OpsPhoneStatusSchema,
+  OpsPhoneTestResultSchema,
+  OpsServiceIdInputSchema,
+  OpsServiceSaveInputSchema,
+  OpsServiceViewSchema,
+  OpsSettingsInputSchema,
+  OpsSettingsSchema,
+} from "./ops.ts";
 import { ProcessIdSchema, ProcessInfoSchema } from "./processes.ts";
 import { ProjectCardSchema } from "./project-card.ts";
 import {
@@ -914,6 +930,73 @@ export const commands = {
     summary: "Send or discard every queued draft of a channel in a workspace. The owner's",
     input: OutboundBatchInputSchema,
     output: OutboundDecideResultSchema,
+  },
+  // Ops watch (5.18) ------------------------------------------------------------
+  "ops.overview": {
+    risk: "read",
+    summary:
+      "The watched services of every workspace with their check state and 24 hour latency, the open and recent incidents with their timelines, the phone push status and the escalation settings. The owner's",
+    input: OpsOverviewInputSchema,
+    output: OpsOverviewSchema,
+  },
+  "ops.serviceSave": {
+    risk: "change",
+    summary:
+      "Add or change a watched service in a workspace: an address with the status, keyword or latency that counts as up, optional certificate and DNS checks, how bad an outage is, the project a fix opens in, and an optional monitoring read through an MCP connection. The owner's",
+    input: OpsServiceSaveInputSchema,
+    output: OpsServiceViewSchema,
+  },
+  "ops.serviceRemove": {
+    risk: "change",
+    summary: "Stop watching a service. Its open incident is resolved. The owner's",
+    input: OpsServiceIdInputSchema,
+    output: z.object({ id: z.string() }),
+  },
+  "ops.checkNow": {
+    risk: "change",
+    summary: "Run every check of one watched service now. The owner's",
+    input: OpsServiceIdInputSchema,
+    output: OpsServiceViewSchema,
+  },
+  "ops.ack": {
+    risk: "change",
+    summary:
+      "Acknowledge an incident: the owner has seen it, so it stops alerting and leaves Decisions. It stays open until its checks are green. The owner's",
+    input: OpsAckInputSchema,
+    output: OpsIncidentSchema,
+  },
+  "ops.settings": {
+    risk: "change",
+    summary:
+      "Set how long an unanswered high incident waits before it alerts again (default 10 minutes) and how long checks stay green before an incident closes (default 10 minutes). The owner's",
+    input: OpsSettingsInputSchema,
+    output: OpsSettingsSchema,
+  },
+  "ops.phoneSetup": {
+    risk: "change",
+    summary:
+      "Set up the phone push through ntfy: makes a long random topic, stores it in secrets.age and returns it once, with the link for the QR code. Calling it again replaces the topic. Off until switched on. The owner's",
+    input: OpsPhoneSetupInputSchema,
+    output: OpsPhoneSetupResultSchema,
+  },
+  "ops.phoneSet": {
+    risk: "change",
+    summary:
+      "Switch the phone push on or off, set the address the phone reaches majhi on, and choose which decisions get Approve and Leave buttons (permissions, merges, drafts). The owner's",
+    input: OpsPhoneSetInputSchema,
+    output: OpsPhoneStatusSchema,
+  },
+  "ops.phoneTest": {
+    risk: "change",
+    summary: "Send one test push to the phone. The owner's",
+    input: z.object({}),
+    output: OpsPhoneTestResultSchema,
+  },
+  "ops.phoneForget": {
+    risk: "change",
+    summary: "Turn the phone push off and delete its topic and tokens. The owner's",
+    input: z.object({}),
+    output: OpsPhoneStatusSchema,
   },
   // Business memory (5.19) -----------------------------------------------------
   "kb.list": {

@@ -219,6 +219,18 @@ export class AutonomyService {
     return this.deps.now?.() ?? new Date();
   }
 
+  /**
+   * Minutes the queue has held ready work while no step was taken, for majhi's self-watch. Undefined when
+   * the switch is off, nothing is ready, or it is moving.
+   */
+  queueStall(): number | undefined {
+    const state = this.repo.state();
+    if (state.mode !== "on" || !state.queue.some((q) => q.waitFor === undefined)) return undefined;
+    const since = state.lastTick ?? state.queuedAt;
+    if (since === undefined) return undefined;
+    return Math.max(0, (this.now().getTime() - Date.parse(since)) / 60_000);
+  }
+
   mode(): AutonomyMode {
     return this.repo.state().mode;
   }

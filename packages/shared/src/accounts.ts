@@ -502,6 +502,8 @@ export const EventTopicSchema = z.enum([
   "findings",
   /** Playbooks, goals and the outbound gate (5.18): `playbooks.*`, `goals.*`, `outbound.*`. */
   "playbooks",
+  /** The ops watch (5.18): watched services, incidents and the phone push, `ops.*`. */
+  "ops",
   /** Business memory (5.19): the knowledge base, voice, contacts and deadlines. */
   "business",
   /** A git sign-in flow changed state: refetch `git.signIn.poll`. Ending one also emits `orgs`. */

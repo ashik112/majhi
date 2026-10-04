@@ -106,12 +106,16 @@ import { MrPoller } from "./mrs/poller.ts";
 import { MrService } from "./mrs/service.ts";
 import type { Subject } from "./notify/attention.ts";
 import { Notifier } from "./notify/service.ts";
+import type { ProbePorts } from "./ops/probes.ts";
+import { opsRunners } from "./ops/runner.ts";
+import type { OpsWatch } from "./ops/watch.ts";
+import { createOps, type Ops } from "./ops/wire.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
 import { GoalsService } from "./playbooks/goals.ts";
 import { OutboundGate } from "./playbooks/outbound.ts";
 import { PlaybookRepo } from "./playbooks/repo.ts";
-import { RULES_RUNNERS } from "./playbooks/rules.ts";
+import { RULES_RUNNERS, type RulesRunner } from "./playbooks/rules.ts";
 import { PlaybookService } from "./playbooks/service.ts";
 import { ProcessManager } from "./processes/manager.ts";
 import { CardRepo } from "./projectcard/repo.ts";
@@ -204,6 +208,12 @@ export interface ServiceOptions {
   gitFetch?: Fetch;
   /** Replaces the sensors' network (advisories, end-of-life dates, releases, CI), so tests never reach a real host. */
   sensorNet?: Net;
+  /** Replaces the ops watch's network (addresses, certificates, names), so tests never reach a real host. */
+  opsProbes?: Partial<ProbePorts>;
+  /** Replaces `fetch` for the phone push, so tests never reach an ntfy server. */
+  ntfyFetch?: typeof fetch;
+  /** The wait between a failed look and its second look. Default 15 s. */
+  opsRetryMs?: number;
   /** Replaces `fetch` for Connect's sign-in calls, so tests reach a fake authorization server. */
   connectFetch?: Fetch;
   /** Replaces the service catalog, so tests connect to a fake server. */
@@ -308,6 +318,8 @@ export interface Services {
   playbooks: PlaybookService;
   /** The owner's goals (5.18). */
   goals: GoalsService;
+  /** The ops watch: services, incidents, escalation and the phone push (5.18). */
+  ops: Ops;
   /** The outbound gate: everything that would leave the machine passes it (5.18). */
   outbound: OutboundGate;
   /** The knowledge base, voice, contacts and deadlines (5.19). */
@@ -1004,8 +1016,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     changed: () => events.emit(["playbooks"]),
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
+  let opsWatch: OpsWatch | undefined;
   const inbox = new InboxService({
     outbound,
+    incidents: () => opsWatch?.unacked() ?? [],
     items: () => store.room.waitingDecisions(),
     subject: (id) => {
       const task = store.tasks.get(id);
@@ -1050,6 +1064,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       answerBudget: (scope, answer) => autonomy.answerBudget(scope, answer),
       decideDraft: (id, decision) => outbound.decide(id, decision),
       decideBatch: (org, channel, decision) => outbound.decideBatch(org, channel, decision),
+      ackIncident: async (id) => {
+        await opsWatch?.ack(id);
+      },
     },
   });
   const lanes = new Lanes({
@@ -1136,6 +1153,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     changed: () => events.emit(["findings"]),
     // A new finding is news to its workspace's lane, where Start is You too (it files a proposal).
     appeared: (f) => {
+      // An incident wakes the lane itself, with its evidence and what the captain may do (ops watch).
+      if (f.source === "incident") return;
       if (f.severity !== "info") autonomy.news(`New finding #${f.id} (${f.severity}): ${f.title}`, f.org);
     },
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
@@ -1233,8 +1252,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
     log: (message) => console.error(message),
   });
+  // The ops watch adds its runner below, once the connections it reads through exist.
+  const rulesTable: Record<string, RulesRunner> = { ...RULES_RUNNERS, ...sensorRunners(sensors) };
   const playbooks = new PlaybookService({
-    rules: { ...RULES_RUNNERS, ...sensorRunners(sensors) },
+    rules: rulesTable,
     repo: new PlaybookRepo(store.raw),
     captain,
     findings,
@@ -1402,6 +1423,39 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ? { browserCommand: (server: BrowserServer) => ({ command: server.command, args: [] }) }
       : {}),
   });
+  const ops = createOps({
+    db: store.raw,
+    findings,
+    secrets,
+    notifier,
+    wake: (org, text) => autonomy.news(text, org),
+    orgName: async (org) =>
+      org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org),
+    projectOrg: async (id) => (await config.sections()).projects[id]?.org,
+    connections: {
+      list: async (org) => (await connections.list(org)).map((c) => ({ id: c.id, name: c.name, type: c.type })),
+      orgOf: async (id) => (await connections.find(id))?.org,
+    },
+    tester: connectionTests,
+    inbox: { list: () => inbox.list(), answer: (input) => inbox.answer(input) },
+    drafts: (org) => outbound.list(org, 200),
+    notifications: async () => {
+      try {
+        return (await config.settings()).notifications;
+      } catch {
+        return NotificationsSettingsSchema.parse({});
+      }
+    },
+    online: options.probe ?? probeFromSetting(env.netProbe),
+    changed: () => events.emit(["ops", "playbooks", "findings"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+    ...(options.opsProbes === undefined ? {} : { probes: options.opsProbes }),
+    ...(options.ntfyFetch === undefined ? {} : { ntfyFetch: options.ntfyFetch }),
+    ...(options.opsRetryMs === undefined ? {} : { retryMs: options.opsRetryMs }),
+  });
+  opsWatch = ops.watch;
+  Object.assign(rulesTable, opsRunners(ops.watch));
+  ops.start();
   const mcpServers = new McpService({
     connections,
     tester: connectionTests,
@@ -1495,6 +1549,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     findings,
     playbooks,
     goals,
+    ops,
     outbound,
     business,
     captainTell: new CaptainTell({
@@ -1527,6 +1582,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       autonomy.close();
       captain.close();
       playbooks.close();
+      ops.close();
       idleWatch.stop();
       clearInterval(chatSweep);
       clearInterval(limitSweep);
