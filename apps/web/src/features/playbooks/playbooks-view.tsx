@@ -41,7 +41,8 @@ function resultOf(v: PlaybookView, now: number): { text: string; look: boolean }
     const when = v.lastRun === undefined ? "" : `${shortWhen(v.lastRun, now)} `;
     return { text: `${when}${v.result}`, look: v.needsLook };
   }
-  if (v.held !== undefined) return { text: v.held, look: false };
+  if (v.held !== undefined)
+    return { text: `paused: ${v.held.charAt(0).toLowerCase()}${v.held.slice(1)}`, look: false };
   return { text: "not run yet", look: false };
 }
 

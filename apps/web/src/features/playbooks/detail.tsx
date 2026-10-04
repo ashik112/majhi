@@ -34,7 +34,7 @@ function Row({
   children: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-1 items-start gap-x-4 gap-y-1 @[560px]:grid-cols-[130px_minmax(0,1fr)]">
+    <div className="grid grid-cols-1 items-start gap-x-4 gap-y-1 @[420px]:grid-cols-[120px_minmax(0,1fr)]">
       <div className="pt-[7px] text-sm text-fg-faint">{label}</div>
       <div className="flex min-w-0 flex-col gap-1">
         {children}
