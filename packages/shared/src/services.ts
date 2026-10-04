@@ -70,7 +70,8 @@ export const ServiceEntrySchema = z.object({
 });
 export type ServiceEntry = z.infer<typeof ServiceEntrySchema>;
 
-const CHECKED = "Checked 2026-10-04: the address answers 401 with protected resource metadata, and sign-in accepts dynamic registration.";
+const CHECKED =
+  "Checked 2026-10-04: the address answers 401 with protected resource metadata, and sign-in accepts dynamic registration.";
 
 const TOOLS_TEST = (what: string) => ({ kind: "mcp-tools" as const, sentence: what });
 
@@ -188,7 +189,11 @@ export const SERVICE_CATALOG: readonly ServiceEntry[] = z.array(ServiceEntrySche
     verifiedNote: CHECKED,
     scopes: [
       { id: "read", access: "read", sentence: "Read customers, payments, subscriptions and balances." },
-      { id: "write", access: "write", sentence: "Create and change Stripe objects. Moving money always asks you." },
+      {
+        id: "write",
+        access: "write",
+        sentence: "Create and change Stripe objects. Moving money always asks you.",
+      },
     ],
     test: TOOLS_TEST("Lists Stripe's tools."),
     docs: "https://docs.stripe.com/mcp",

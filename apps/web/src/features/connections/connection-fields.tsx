@@ -49,15 +49,17 @@ export function ConnectionFields({
     <div className="flex flex-col gap-4">
       {fields.length > 0 && (
         <div className="grid gap-3 @[560px]:grid-cols-2">
-          {fields.map((field) => (
-            <FieldControl
-              key={field.key}
-              field={field}
-              text={draft.fields[field.key] ?? ""}
-              view={view}
-              onText={(text) => onChange({ ...draft, fields: { ...draft.fields, [field.key]: text } })}
-            />
-          ))}
+          {fields
+            .filter((f) => f.managed !== true)
+            .map((field) => (
+              <FieldControl
+                key={field.key}
+                field={field}
+                text={draft.fields[field.key] ?? ""}
+                view={view}
+                onText={(text) => onChange({ ...draft, fields: { ...draft.fields, [field.key]: text } })}
+              />
+            ))}
         </div>
       )}
       {lists.map((list) => (

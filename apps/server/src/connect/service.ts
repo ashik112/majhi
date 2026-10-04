@@ -5,12 +5,12 @@ import {
   type ConnectCatalog,
   type ConnectFlowState,
   type ConnectFlowView,
+  type ConnectionConfig,
+  type ConnectionTestResult,
   type ConnectScopeLine,
   type ConnectStartInput,
   type ConnectState,
   type ConnectStatus,
-  type ConnectionConfig,
-  type ConnectionTestResult,
   SERVICE_CATALOG,
   type ServiceEntry,
   serviceById,
@@ -19,7 +19,7 @@ import {
   textValue,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
-import { type Grant, GrantStore } from "./grant.ts";
+import type { Grant, GrantStore } from "./grant.ts";
 import {
   authorizationUrl,
   type ClientIdentity,
@@ -32,8 +32,8 @@ import {
   identify,
   probeToken,
   refresh,
-  revocationEndpointOf,
   register,
+  revocationEndpointOf,
   revoke,
   type TokenSet,
 } from "./oauth.ts";
@@ -196,7 +196,9 @@ export class ConnectService {
   private async statusOf(id: string, org: string, connection: ConnectionConfig): Promise<ConnectStatus> {
     const grant = await this.deps.grants.get(id);
     const url = textValue(connection, "url") ?? "";
-    const entry = (grant?.service === undefined ? undefined : this.service(grant.service)) ?? serviceByUrl(url, this.catalog);
+    const entry =
+      (grant?.service === undefined ? undefined : this.service(grant.service)) ??
+      serviceByUrl(url, this.catalog);
     const name = entry?.name ?? connection.name;
     if (grant === undefined) {
       return {
@@ -244,7 +246,8 @@ export class ConnectService {
     if (!entry.ready || entry.kind !== "mcp-oauth" || entry.mcpUrl === undefined) {
       throw new UserError(`${entry.name} cannot be connected with one click yet. ${entry.note ?? ""}`.trim());
     }
-    if (!(await this.deps.orgExists(input.org))) throw new UserError(`Org "${input.org}" does not exist.`, 404);
+    if (!(await this.deps.orgExists(input.org)))
+      throw new UserError(`Org "${input.org}" does not exist.`, 404);
 
     const all = await this.deps.connectionIds();
     let connection: string;
@@ -279,7 +282,8 @@ export class ConnectService {
 
     // One attempt per connection: a new click replaces the old one.
     for (const f of this.flows.values()) {
-      if (f.connection === connection && f.org === input.org && isLive(f)) this.end(f, "cancelled", "Replaced by a new attempt.");
+      if (f.connection === connection && f.org === input.org && isLive(f))
+        this.end(f, "cancelled", "Replaced by a new attempt.");
     }
 
     const found = await this.discover(entry.mcpUrl);
@@ -317,7 +321,9 @@ export class ConnectService {
     };
     this.flows.set(flow.id, flow);
     this.byState.set(state, flow.id);
-    flow.opened = this.deps.helperConnected() ? await this.deps.openUrl(started.url).catch(() => false) : false;
+    flow.opened = this.deps.helperConnected()
+      ? await this.deps.openUrl(started.url).catch(() => false)
+      : false;
     // The address is shown only when majhi could not open it, so a screenshot never holds a live link.
     if (flow.opened) flow.url = undefined;
     this.log(`connect: waiting for ${entry.id} in ${input.org}`);
@@ -378,7 +384,10 @@ export class ConnectService {
     const pending = flow?.pending;
     if (state === null || flow === undefined || pending === undefined || pending.state !== state) {
       // Unknown, used or from another attempt. Nothing is changed and nothing is said about why.
-      return { ok: false, message: "majhi did not start this sign-in, or it was already used. Start again from majhi." };
+      return {
+        ok: false,
+        message: "majhi did not start this sign-in, or it was already used. Start again from majhi.",
+      };
     }
     // Single use: the state cannot be presented twice.
     this.byState.delete(state);
@@ -399,8 +408,9 @@ export class ConnectService {
       return { ok: false, message: flow.message };
     }
     const iss = params.get("iss");
-    const issuerSent = (pending.found.metadata as { authorization_response_iss_parameter_supported?: unknown })
-      .authorization_response_iss_parameter_supported === true;
+    const issuerSent =
+      (pending.found.metadata as { authorization_response_iss_parameter_supported?: unknown })
+        .authorization_response_iss_parameter_supported === true;
     if ((iss !== null && !sameIssuer(iss, pending.found.issuer)) || (iss === null && issuerSent)) {
       this.end(flow, "failed", "The answer did not come from the service majhi asked. Nothing was saved.");
       return { ok: false, message: flow.message };
@@ -416,7 +426,8 @@ export class ConnectService {
     try {
       await this.finish(flow, pending, code);
     } catch (err) {
-      const message = err instanceof ConnectError ? err.message : `Something went wrong connecting ${flow.service.name}.`;
+      const message =
+        err instanceof ConnectError ? err.message : `Something went wrong connecting ${flow.service.name}.`;
       this.end(flow, "failed", `${message} Nothing was saved. Start again.`);
       this.log(`connect: ${flow.service.id} failed (${err instanceof ConnectError ? err.kind : "internal"})`);
     }
@@ -464,7 +475,11 @@ export class ConnectService {
     if (!accept) {
       // The other account's sign-in must not linger at the service.
       await this.revokeTokens(revocationEndpointOf(found.metadata), client, held.tokens);
-      this.end(flow, "cancelled", `Kept ${flow.expected?.label ?? "the old account"}. The other sign-in was dropped.`);
+      this.end(
+        flow,
+        "cancelled",
+        `Kept ${flow.expected?.label ?? "the old account"}. The other sign-in was dropped.`,
+      );
       return this.view(flow);
     }
     const old = await this.deps.grants.get(flow.connection);
@@ -532,7 +547,10 @@ export class ConnectService {
       missing,
       requested: flow.requested,
       access: flow.access,
-      account: { ...(account.id === undefined ? {} : { id: account.id }), ...(account.label === undefined ? {} : { label: account.label }) },
+      account: {
+        ...(account.id === undefined ? {} : { id: account.id }),
+        ...(account.label === undefined ? {} : { label: account.label }),
+      },
       connectedAt: now,
       updatedAt: now,
     };
@@ -553,7 +571,10 @@ export class ConnectService {
     try {
       await this.deps.grants.save(grant);
     } catch (err) {
-      if (!flow.reconnect) await this.deps.connections.remove(flow.connection, "connect.start", flow.meta).catch(() => undefined);
+      if (!flow.reconnect)
+        await this.deps.connections
+          .remove(flow.connection, "connect.start", flow.meta)
+          .catch(() => undefined);
       throw err;
     }
     this.backoff.delete(flow.connection);
@@ -596,7 +617,9 @@ export class ConnectService {
       // The service is unreachable. A token that has not ended still works.
       grant = await this.deps.grants.get(connection);
       if (grant === undefined || isExpired(grant, this.now())) {
-        return { problem: "The service is unreachable, so its token could not be renewed. majhi tries again soon." };
+        return {
+          problem: "The service is unreachable, so its token could not be renewed. majhi tries again soon.",
+        };
       }
     }
     if (grant === undefined) {
@@ -609,21 +632,32 @@ export class ConnectService {
   }
 
   /** Renews the grant when its access token ends soon. One request at a time per connection. */
-  async ensureFresh(connection: string, options: { force?: boolean; skewMs?: number } = {}): Promise<Grant | undefined> {
+  async ensureFresh(
+    connection: string,
+    options: { force?: boolean; skewMs?: number } = {},
+  ): Promise<Grant | undefined> {
     const grant = await this.deps.grants.get(connection);
     if (grant === undefined || grant.state === "needs-reconnect" || grant.state === "revoked") return grant;
     const skew = options.skewMs ?? REFRESH_SKEW_MS;
-    const due = grant.tokens.expiresAt !== undefined && Date.parse(grant.tokens.expiresAt) - this.now().getTime() < skew;
+    const due =
+      grant.tokens.expiresAt !== undefined &&
+      Date.parse(grant.tokens.expiresAt) - this.now().getTime() < skew;
     if (options.force !== true && !due) return grant;
     if (grant.tokens.refreshToken === undefined) {
       if (isExpired(grant, this.now())) {
-        return this.markState(connection, "needs-reconnect", `${this.nameOf(grant)} ended the sign-in and gave no renewal. Reconnect it.`);
+        return this.markState(
+          connection,
+          "needs-reconnect",
+          `${this.nameOf(grant)} ended the sign-in and gave no renewal. Reconnect it.`,
+        );
       }
       return grant;
     }
     const running = this.inflight.get(connection);
     if (running !== undefined) return running;
-    const flight = this.renew(connection, options.force === true, skew).finally(() => this.inflight.delete(connection));
+    const flight = this.renew(connection, options.force === true, skew).finally(() =>
+      this.inflight.delete(connection),
+    );
     this.inflight.set(connection, flight);
     return flight;
   }
@@ -632,7 +666,9 @@ export class ConnectService {
     // Another flight may have renewed it between the check and here.
     const grant = await this.deps.grants.get(connection);
     if (grant === undefined || grant.tokens.refreshToken === undefined) return grant;
-    const due = grant.tokens.expiresAt !== undefined && Date.parse(grant.tokens.expiresAt) - this.now().getTime() < skew;
+    const due =
+      grant.tokens.expiresAt !== undefined &&
+      Date.parse(grant.tokens.expiresAt) - this.now().getTime() < skew;
     if (!force && !due) return grant;
     const wait = this.backoff.get(connection);
     if (wait !== undefined && wait.until > this.now().getTime()) {
@@ -643,11 +679,21 @@ export class ConnectService {
     try {
       const found = await this.discover(grant.serverUrl, grant.issuer);
       const client = await this.clientOf(grant);
-      tokens = await refresh(found, client, { redirect: this.deps.redirect, refreshToken: grant.tokens.refreshToken }, this.fetchFn, () => this.now());
+      tokens = await refresh(
+        found,
+        client,
+        { redirect: this.deps.redirect, refreshToken: grant.tokens.refreshToken },
+        this.fetchFn,
+        () => this.now(),
+      );
     } catch (err) {
       if (err instanceof ConnectError && err.kind === "refused") {
         this.log(`connect: ${grant.service ?? connection} needs reconnect`);
-        return this.markState(connection, "needs-reconnect", `${this.nameOf(grant)} no longer accepts majhi's sign-in. Reconnect it.`);
+        return this.markState(
+          connection,
+          "needs-reconnect",
+          `${this.nameOf(grant)} no longer accepts majhi's sign-in. Reconnect it.`,
+        );
       }
       const step = Math.min((wait?.step ?? BACKOFF_FIRST_MS / 2) * 2, BACKOFF_MAX_MS);
       this.backoff.set(connection, { until: this.now().getTime() + step, step });
@@ -670,7 +716,11 @@ export class ConnectService {
     return saved;
   }
 
-  private async markState(connection: string, state: ConnectState, reason: string): Promise<Grant | undefined> {
+  private async markState(
+    connection: string,
+    state: ConnectState,
+    reason: string,
+  ): Promise<Grant | undefined> {
     const before = await this.deps.grants.get(connection);
     const saved = await this.deps.grants.update(connection, (g) => ({
       ...g,
@@ -691,7 +741,9 @@ export class ConnectService {
   }
 
   private nameOf(grant: Grant): string {
-    return (grant.service === undefined ? undefined : this.service(grant.service)?.name) ?? hostOf(grant.serverUrl);
+    return (
+      (grant.service === undefined ? undefined : this.service(grant.service)?.name) ?? hostOf(grant.serverUrl)
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -700,7 +752,8 @@ export class ConnectService {
   /** The Test of an OAuth connection: renews, calls the server with the token, lists its tools. */
   async test(connection: string): Promise<ConnectionTestResult> {
     const grant = await this.deps.grants.get(connection);
-    if (grant === undefined) return this.result(false, "majhi has no sign-in for it. Connect it again.", Date.now());
+    if (grant === undefined)
+      return this.result(false, "majhi has no sign-in for it. Connect it again.", Date.now());
     return this.testGrant(grant);
   }
 
@@ -728,21 +781,42 @@ export class ConnectService {
     }
     const name = this.nameOf(grant);
     if (probe.kind === "invalid") {
-      await this.markState(grant.connection, "revoked", `${name} no longer accepts majhi. The access was revoked. Reconnect it.`);
-      return this.result(false, `${name} no longer accepts majhi. The access was revoked. Reconnect it.`, started);
+      await this.markState(
+        grant.connection,
+        "revoked",
+        `${name} no longer accepts majhi. The access was revoked. Reconnect it.`,
+      );
+      return this.result(
+        false,
+        `${name} no longer accepts majhi. The access was revoked. Reconnect it.`,
+        started,
+      );
     }
     if (probe.kind === "insufficient-scope") {
       const missing = probe.scope;
       await this.markScope(grant.connection, missing);
-      return this.result(false, `${name} needs more access${missing.length > 0 ? ` (${missing.join(", ")})` : ""}. Reconnect and allow it.`, started);
+      return this.result(
+        false,
+        `${name} needs more access${missing.length > 0 ? ` (${missing.join(", ")})` : ""}. Reconnect and allow it.`,
+        started,
+      );
     }
     if (probe.kind === "unreachable" || probe.kind === "other") {
-      return this.result(false, `majhi could not reach ${hostOf(grant.serverUrl)} just now. The sign-in is kept; try again.`, started);
+      return this.result(
+        false,
+        `majhi could not reach ${hostOf(grant.serverUrl)} just now. The sign-in is kept; try again.`,
+        started,
+      );
     }
     try {
       const tools = await this.deps.listTools(grant.serverUrl, grant.tokens.accessToken);
       if (grant.state === "error") await this.markState(grant.connection, "connected", "");
-      return this.result(true, `${tools.length} tool${tools.length === 1 ? "" : "s"}${tools.length > 0 ? `: ${tools.slice(0, 4).join(", ")}${tools.length > 4 ? ", ..." : ""}` : ""}`, started, tools);
+      return this.result(
+        true,
+        `${tools.length} tool${tools.length === 1 ? "" : "s"}${tools.length > 0 ? `: ${tools.slice(0, 4).join(", ")}${tools.length > 4 ? ", ..." : ""}` : ""}`,
+        started,
+        tools,
+      );
     } catch {
       return this.result(false, `${name} signed majhi in but would not list its tools. Try again.`, started);
     }
@@ -794,7 +868,10 @@ export class ConnectService {
   }
 
   /** Revokes at the service when it can, deletes the tokens and the connection. */
-  async disconnect(connection: string, meta: CommandMeta): Promise<{ removed: string; revoked: boolean; note: string }> {
+  async disconnect(
+    connection: string,
+    meta: CommandMeta,
+  ): Promise<{ removed: string; revoked: boolean; note: string }> {
     const found = await this.deps.connections.find(connection);
     if (found === undefined || textValue(found.connection, "auth") !== "oauth") {
       throw new UserError(`${connection} is not a connected service.`, 404);
@@ -839,7 +916,12 @@ export class ConnectService {
   ): Promise<boolean> {
     // The refresh token ends the whole grant at most services; the access token follows.
     if (tokens.refreshToken !== undefined) {
-      const ok = await revoke(endpoint, client, { value: tokens.refreshToken, hint: "refresh_token" }, this.fetchFn);
+      const ok = await revoke(
+        endpoint,
+        client,
+        { value: tokens.refreshToken, hint: "refresh_token" },
+        this.fetchFn,
+      );
       await revoke(endpoint, client, { value: tokens.accessToken, hint: "access_token" }, this.fetchFn);
       return ok;
     }
@@ -893,10 +975,15 @@ export class ConnectService {
   /** The client for this issuer: the saved registration, else a new one that is saved. */
   private async clientFor(found: Discovered): Promise<ClientIdentity> {
     const saved = await this.deps.grants.registration(found.issuer, this.deps.redirect);
-    if (saved !== undefined) return { clientId: saved.clientId, clientSecret: saved.clientSecret, via: saved.via };
+    if (saved !== undefined)
+      return { clientId: saved.clientId, clientSecret: saved.clientSecret, via: saved.via };
     let client: ClientIdentity;
     try {
-      client = await register(found, { redirect: this.deps.redirect, clientMetadataUrl: this.deps.clientMetadataUrl }, this.fetchFn);
+      client = await register(
+        found,
+        { redirect: this.deps.redirect, clientMetadataUrl: this.deps.clientMetadataUrl },
+        this.fetchFn,
+      );
     } catch (err) {
       throw this.asUser(err);
     }
@@ -945,7 +1032,9 @@ export class ConnectService {
       ...(flow.url === undefined ? {} : { url: flow.url }),
       opened: flow.opened,
       ...(flow.account === undefined ? {} : { account: flow.account }),
-      ...(flow.previousAccount === undefined || flow.state !== "confirm-account" ? {} : { previousAccount: flow.previousAccount }),
+      ...(flow.previousAccount === undefined || flow.state !== "confirm-account"
+        ? {}
+        : { previousAccount: flow.previousAccount }),
       scopes: flow.scopes,
       ...(flow.test === undefined ? {} : { test: flow.test }),
       expiresAt: new Date(flow.expiresAt).toISOString(),
@@ -993,7 +1082,8 @@ export function scopeLines(
   granted: readonly string[],
   access: ConnectAccess,
 ): ConnectScopeLine[] {
-  if (entry === undefined) return granted.map((name) => ({ access: "other", sentence: `Permission ${name}.` }));
+  if (entry === undefined)
+    return granted.map((name) => ({ access: "other", sentence: `Permission ${name}.` }));
   const named = entry.scopes.filter((s) => s.oauth !== undefined);
   if (named.length === 0) {
     return entry.scopes
@@ -1002,9 +1092,17 @@ export function scopeLines(
   }
   const covered = named.filter((s) => s.oauth?.every((o) => granted.includes(o)));
   const subsumed = (s: (typeof named)[number]) =>
-    covered.some((o) => o !== s && (o.oauth?.length ?? 0) > (s.oauth?.length ?? 0) && s.oauth?.every((n) => o.oauth?.includes(n)));
-  const lines: ConnectScopeLine[] = covered.filter((s) => !subsumed(s)).map((s) => ({ access: s.access, sentence: s.sentence }));
+    covered.some(
+      (o) =>
+        o !== s &&
+        (o.oauth?.length ?? 0) > (s.oauth?.length ?? 0) &&
+        s.oauth?.every((n) => o.oauth?.includes(n)),
+    );
+  const lines: ConnectScopeLine[] = covered
+    .filter((s) => !subsumed(s))
+    .map((s) => ({ access: s.access, sentence: s.sentence }));
   const known = new Set(named.flatMap((s) => s.oauth ?? []));
-  for (const name of granted) if (!known.has(name)) lines.push({ access: "other", sentence: `Permission ${name}.` });
+  for (const name of granted)
+    if (!known.has(name)) lines.push({ access: "other", sentence: `Permission ${name}.` });
   return lines;
 }

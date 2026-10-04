@@ -108,7 +108,11 @@ export class ConnectionTester {
     const view = await this.deps.connections.get(id);
     const found = await this.deps.connections.find(id);
     if (found === undefined) throw new UserError(`There is no connection ${id}.`, 404);
-    if (this.deps.oauth !== undefined && found.connection.type === "mcp" && textValue(found.connection, "auth") === "oauth") {
+    if (
+      this.deps.oauth !== undefined &&
+      found.connection.type === "mcp" &&
+      textValue(found.connection, "auth") === "oauth"
+    ) {
       // Signed in through Connect: the token is majhi's to renew and send, not a header of the form.
       const result = await this.deps.oauth.test(id);
       this.deps.connections.recordTest(id, result);

@@ -41,7 +41,12 @@ interface Rig {
 }
 
 async function rig(
-  options: { auth?: ConstructorParameters<typeof FakeAuthServer>[0]; requiredScope?: string; helper?: boolean; cimdUrl?: string } = {},
+  options: {
+    auth?: ConstructorParameters<typeof FakeAuthServer>[0];
+    requiredScope?: string;
+    helper?: boolean;
+    cimdUrl?: string;
+  } = {},
 ): Promise<Rig> {
   const { dir, cleanup } = await tempDir();
   const keyFile = join(dir, "secrets.key");
@@ -51,7 +56,10 @@ async function rig(
   const grants = new GrantStore(secrets);
   const auth = new FakeAuthServer(options.auth);
   await auth.start();
-  const mcp = new FakeMcpServer(auth, options.requiredScope === undefined ? {} : { requiredScope: options.requiredScope });
+  const mcp = new FakeMcpServer(
+    auth,
+    options.requiredScope === undefined ? {} : { requiredScope: options.requiredScope },
+  );
   await mcp.start();
   const connections = new Map<string, { org: string; connection: ConnectionConfig }>();
   const logs: string[] = [];
@@ -86,7 +94,8 @@ async function rig(
       },
       helperConnected: () => options.helper === true,
       changed: () => undefined,
-      listTools: (url, token) => listTools(remoteTransport(url, { Authorization: `Bearer ${token}` }), 10_000),
+      listTools: (url, token) =>
+        listTools(remoteTransport(url, { Authorization: `Bearer ${token}` }), 10_000),
       catalog: [fakeService(mcp.url)],
       now: () => new Date(Date.now() + offset),
       attention: (item) => attention.push(item),
@@ -121,7 +130,8 @@ async function rig(
         OWNER,
       );
       const url = flow.url ?? opened.at(-1) ?? "";
-      const back = new URL(auth.approve(url, { account, ...(o.deny === true ? { deny: true } : {}) })).searchParams;
+      const back = new URL(auth.approve(url, { account, ...(o.deny === true ? { deny: true } : {}) }))
+        .searchParams;
       return { flow: flow.flow, back, url };
     },
     async connectAs(account, o = {}) {
@@ -135,7 +145,9 @@ async function rig(
         OWNER,
       );
       const url = flow.url ?? opened.at(-1) ?? "";
-      const back = new URL(auth.approve(url, { account, ...(o.scope === undefined ? {} : { scope: o.scope }) }));
+      const back = new URL(
+        auth.approve(url, { account, ...(o.scope === undefined ? {} : { scope: o.scope }) }),
+      );
       await connect.callback(back.searchParams);
       return connect.flow(flow.flow);
     },
@@ -500,7 +512,7 @@ describe("tokens: fresh, single flight, saved before use", () => {
   it("a server error on renewal is not a refusal", async () => {
     r.skip(2 * 3600_000);
     r.auth.failRefresh = "server_error";
-    expect((await r.connect.bearer("fakesvc")).hasOwnProperty("problem")).toBe(true);
+    expect(Object.hasOwn(await r.connect.bearer("fakesvc"), "problem")).toBe(true);
     expect((await r.grants.get("fakesvc"))?.state).toBe("connected");
     expect(r.attention).toEqual([]);
   });
@@ -651,7 +663,10 @@ describe("accounts and access", () => {
     await r.connect.test("fakesvc");
     expect(r.attention).toHaveLength(1);
     // Allow more access: the next page asks for what it had and what it lacked.
-    const flow = await r.connect.start({ org: "acme", service: "fakesvc", access: "read", connection: "fakesvc" }, OWNER);
+    const flow = await r.connect.start(
+      { org: "acme", service: "fakesvc", access: "read", connection: "fakesvc" },
+      OWNER,
+    );
     expect(new URL(flow.url ?? "").searchParams.get("scope")).toBe("read write");
     const back = new URL(r.auth.approve(flow.url ?? "", { account: "maria@acme.example" }));
     await r.connect.callback(back.searchParams);
@@ -677,7 +692,9 @@ describe("accounts and access", () => {
       revoked: true,
       note: "Fake Service is disconnected and its access was revoked.",
     });
-    expect(r.auth.revoked).toEqual(expect.arrayContaining([grant?.tokens.refreshToken, grant?.tokens.accessToken]));
+    expect(r.auth.revoked).toEqual(
+      expect.arrayContaining([grant?.tokens.refreshToken, grant?.tokens.accessToken]),
+    );
     expect(await r.grants.get("fakesvc")).toBeUndefined();
     expect(r.connections.size).toBe(0);
   });

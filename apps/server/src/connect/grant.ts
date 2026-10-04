@@ -109,9 +109,7 @@ export class GrantStore {
   /** The connections that hold a grant. */
   async connections(): Promise<string[]> {
     const names = await this.secrets.names();
-    return names
-      .filter((n) => n.startsWith("oauth-"))
-      .map((n) => n.slice("oauth-".length));
+    return names.filter((n) => n.startsWith("oauth-")).map((n) => n.slice("oauth-".length));
   }
 
   async registration(issuer: string, redirect: string): Promise<Registration | undefined> {

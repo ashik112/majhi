@@ -63,7 +63,12 @@ async function body(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function json(res: ServerResponse, status: number, value: unknown, headers: Record<string, string> = {}): void {
+function json(
+  res: ServerResponse,
+  status: number,
+  value: unknown,
+  headers: Record<string, string> = {},
+): void {
   res.writeHead(status, { "content-type": "application/json", ...headers });
   res.end(JSON.stringify(value));
 }
@@ -77,7 +82,10 @@ export class FakeAuthServer {
   private readonly clients = new Map<string, { redirects: string[] }>();
   private readonly codes = new Map<string, Code>();
   private readonly access = new Map<string, Access>();
-  private readonly refresh = new Map<string, { account: string; scope: string[]; client: string; valid: boolean }>();
+  private readonly refresh = new Map<
+    string,
+    { account: string; scope: string[]; client: string; valid: boolean }
+  >();
   private readonly issued: string[] = [];
   registrations = 0;
   refreshCalls = 0;
@@ -204,7 +212,8 @@ export class FakeAuthServer {
 
   private mint(account: string, scope: string[], client: string, ttl: number, refreshOld?: string) {
     const accessToken = `at-${randomBytes(12).toString("hex")}`;
-    const refreshToken = refreshOld !== undefined && !this.options.rotate ? refreshOld : `rt-${randomBytes(12).toString("hex")}`;
+    const refreshToken =
+      refreshOld !== undefined && !this.options.rotate ? refreshOld : `rt-${randomBytes(12).toString("hex")}`;
     this.issued.push(accessToken, refreshToken);
     this.access.set(accessToken, { account, scope, valid: true });
     this.refresh.set(refreshToken, { account, scope, client, valid: true });
@@ -356,9 +365,14 @@ export class FakeMcpServer {
     this.seen.push(header);
     const access = this.auth.accessOf(header.replace(/^Bearer /, ""));
     if (access === undefined || this.rejectAll) {
-      return json(res, 401, { error: "unauthorized" }, {
-        "www-authenticate": `Bearer realm="OAuth", resource_metadata="${meta}"`,
-      });
+      return json(
+        res,
+        401,
+        { error: "unauthorized" },
+        {
+          "www-authenticate": `Bearer realm="OAuth", resource_metadata="${meta}"`,
+        },
+      );
     }
     if (req.method === "GET") {
       res.writeHead(405).end();
@@ -366,9 +380,14 @@ export class FakeMcpServer {
     }
     const message = JSON.parse(await body(req)) as { id?: number; method: string };
     if (this.requiredScope !== undefined && !access.scope.includes(this.requiredScope)) {
-      return json(res, 403, { error: "forbidden" }, {
-        "www-authenticate": `Bearer error="insufficient_scope", scope="${this.requiredScope}", resource_metadata="${meta}"`,
-      });
+      return json(
+        res,
+        403,
+        { error: "forbidden" },
+        {
+          "www-authenticate": `Bearer error="insufficient_scope", scope="${this.requiredScope}", resource_metadata="${meta}"`,
+        },
+      );
     }
     if (message.method === "initialize") {
       return json(res, 200, {

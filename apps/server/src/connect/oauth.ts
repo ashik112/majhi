@@ -6,12 +6,15 @@ import {
   startAuthorization,
 } from "@modelcontextprotocol/sdk/client/auth.js";
 import { OAuthError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
-import { checkResourceAllowed, resourceUrlFromServerUrl } from "@modelcontextprotocol/sdk/shared/auth-utils.js";
 import type {
   AuthorizationServerMetadata,
   OAuthClientInformationMixed,
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
+import {
+  checkResourceAllowed,
+  resourceUrlFromServerUrl,
+} from "@modelcontextprotocol/sdk/shared/auth-utils.js";
 
 /**
  * The OAuth 2.1 client for remote MCP servers (SPEC 5.14), over the MCP SDK's discovery,
@@ -112,7 +115,10 @@ export interface ClientIdentity {
 
 /** The authorization server tells whether it takes a client metadata document as a client ID. */
 function takesMetadataDocument(metadata: AuthorizationServerMetadata): boolean {
-  return (metadata as { client_id_metadata_document_supported?: unknown }).client_id_metadata_document_supported === true;
+  return (
+    (metadata as { client_id_metadata_document_supported?: unknown })
+      .client_id_metadata_document_supported === true
+  );
 }
 
 /**
@@ -419,7 +425,11 @@ export async function probeToken(url: string, token: string, fetchFn: Fetch): Pr
     if (res.status === 403) {
       const header = res.headers.get("www-authenticate") ?? "";
       if (/error="?insufficient_scope"?/i.test(header)) {
-        const scope = /scope="([^"]*)"/i.exec(header)?.[1]?.split(/\s+/).filter((s) => s !== "") ?? [];
+        const scope =
+          /scope="([^"]*)"/i
+            .exec(header)?.[1]
+            ?.split(/\s+/)
+            .filter((s) => s !== "") ?? [];
         return { kind: "insufficient-scope", scope };
       }
     }
