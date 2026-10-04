@@ -74,7 +74,7 @@ function RowLine({
   onSelect: () => void;
 }) {
   const Icon = SORT_ICON[row.sort];
-  const alerting = row.status === "alerting" || row.status === "changed";
+  const alerting = (row.status === "alerting" || row.status === "changed") && row.acked !== true;
   return (
     <button
       type="button"
@@ -103,8 +103,8 @@ function RowLine({
           alerting ? "text-red" : "text-fg-soft",
         )}
       >
-        <Lamp state={STATUS_LAMP[row.status]} size={6} />
-        <span className="truncate">{row.word}</span>
+        <Lamp state={row.acked === true ? "paused" : STATUS_LAMP[row.status]} size={6} />
+        <span className="truncate">{row.acked === true ? "Acknowledged" : row.word}</span>
       </span>
     </button>
   );
@@ -144,26 +144,40 @@ export function WatchView() {
   const anything = watches.data;
   const inOrg = (org: string) => (orgFilter === undefined || org === orgFilter) && (ws === "" || org === ws);
 
+  const ackedIncident = new Set(
+    [...(data?.incidents ?? []), ...(anything?.incidents ?? [])]
+      .filter((i) => i.status === "open" && i.ackedAt !== undefined)
+      .map((i) => i.id),
+  );
+  const markAcked = (r: Row): Row => {
+    const id = r.incident?.id ?? r.watch?.incident ?? r.service?.incident;
+    return id !== undefined && ackedIncident.has(id) ? { ...r, acked: true } : r;
+  };
   const all: Row[] = [
     ...(anything?.watches ?? []).map(watchRow),
     ...(data?.services ?? []).map(serviceRow),
     ...(data?.incidents ?? [])
       .filter((i) => i.status === "open" && i.service === undefined && i.watch === undefined)
       .map(selfRow),
-  ].filter((r) => inOrg(r.org));
+  ]
+    .map(markAcked)
+    .filter((r) => inOrg(r.org));
   const q = query.trim().toLowerCase();
   const matches = (r: Row) =>
     (status === "all" ||
-      (status === "alerting" && (r.status === "alerting" || r.status === "changed")) ||
+      (status === "alerting" && (r.status === "alerting" || r.status === "changed") && r.acked !== true) ||
       (status === "paused" && r.status === "paused") ||
       (status === "fine" && (r.status === "ok" || r.status === "new" || r.status === "unknown"))) &&
     (q === "" || r.name.toLowerCase().includes(q) || nameOf(r.org).toLowerCase().includes(q));
   const bySort = (r: Row) => sort === "all" || r.sort === sort;
   const rows = sortRows(all.filter((r) => matches(r) && bySort(r)));
   const counts = (pick: (r: Row) => boolean) => all.filter((r) => pick(r) && matches(r)).length;
-  const alerting = all.filter((r) => r.status === "alerting" || r.status === "changed").length;
+  const alerting = all.filter(
+    (r) => (r.status === "alerting" || r.status === "changed") && r.acked !== true,
+  ).length;
+  const acknowledged = all.filter((r) => r.acked === true).length;
   const paused = all.filter((r) => r.status === "paused").length;
-  const fine = all.length - alerting - paused;
+  const fine = all.length - alerting - acknowledged - paused;
   const workspaces = [
     ...new Set([...(anything?.watches ?? []).map((w) => w.org), ...(data?.services ?? []).map((s) => s.org)]),
   ];
@@ -384,6 +398,7 @@ export function WatchView() {
         {data !== undefined && anything !== undefined && (
           <>
             {alerting > 0 && <span className="text-base text-red">{alerting} alerting</span>}
+            {acknowledged > 0 && <span className="text-base text-fg-muted">{acknowledged} acknowledged</span>}
             <span className="text-base text-fg-muted">{fine} fine</span>
           </>
         )}
