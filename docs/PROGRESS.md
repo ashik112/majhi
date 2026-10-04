@@ -1,5 +1,28 @@
 # Progress
 
+## Resource lifecycle correction (merged, applied locally)
+
+- **Reclaimed:** About 3.7 GiB on the local installation: 1.9 GiB of abandoned backup scratch copies and 1.8 GiB from seven ignored dependency/cache directories in finished work. No source worktree, branch, saved service volume or room history was removed.
+- **Limits and reuse:** Previews and services now share an installation-wide cap of eight, with one concurrent preview build by default. Slots are reserved before asynchronous allocation. Starting the same named service with the same configuration returns its existing process. Settings remain adjustable in Setup, Containers.
+- **Pause:** A service without a saved volume no longer keeps the entire task stack running. Only that service remains; previews, saved-volume services and the builder stop. Resume restarts parked services using their existing volumes.
+- **Disk lifecycle:** Health & usage offers Preview dependency caches and cache-only cleanup for finished tasks, including recently finished tasks. Only ignored, untracked dependency/tool cache directories qualify; symlinks and tracked files are protected. Full worktree/history cleanup keeps the configured retention period. Failed Git inspection now protects existing worktrees rather than assuming they are clean. Backup operations serialize scratch cleanup so crash-left database copies cannot accumulate.
+- **Remaining:** Task folders still use about 11.9 GiB. The formerly largest folders now belong mainly to paused or review tasks. Many older worktrees contain uncommitted changes and remain protected. Docker also contains unrelated applications, so no installation-wide Docker prune was performed.
+- **Verified:** Repository typecheck, server/web builds and 85 affected cleanup, worktree, container and backup tests pass. Browser checks cover cache preview/confirmation and both global limit fields without submitting another cleanup. No real agent runs were started.
+- **Deployment:** Updated the local server/web runtime on port 7070 with no active agent runners, then checked restart and health. The previous runtime is backed up in `/tmp`. Merged locally into `main` from `fix/connections-and-resource-lifecycle` with owner approval. The runtime update lasts until image recreation. No push was made.
+- **Owner-only check:** Decide which unfinished tasks can close and which uncommitted work can be discarded before reclaiming their source folders.
+
+## Connections usability pass (merged, applied locally)
+
+- **Flow:** Connect a service is the primary header action. Browse services has local brand logos, alphabetical cards, search and categories. Connected rows show the account, scope and test status. Custom setup replaces the old New Connection entry and offers unlisted MCP servers, API credentials and infrastructure.
+- **Destination:** Global or a named workspace is visible before choosing a service and stays locked during sign-in. Global connections are stored outside orgs, shared with agents across workspaces, and editable only by the owner. Existing workspace connections remain scoped. SPEC 5.14 records the owner-approved sharing rule.
+- **DigitalOcean:** Browser sign-in through seven product-specific MCP servers: Droplets, App Platform, Kubernetes, Databases, Networking, Spaces and Account. Public endpoint and OAuth metadata were checked against the official documentation. Actual consent needs the owner's account.
+- **Try:** Open Connections, choose Connect a service, select Global or one workspace, then choose a service. DigitalOcean offers a product selector. Custom setup retains the selected destination.
+- **Verified:** Repository typecheck, web build, and 136 affected tests across 12 connection, consent, configuration and shared-schema test files pass. Browser checks use an isolated temporary server and fake sign-in. Checked search, scope, product selection, custom setup, saved scoped entries, Global detail, and sign-in cancellation in dark and light themes at 1440, 1100 and 800 pixels. No real credentials were changed.
+- **Deployment:** Applied the built web and server assets to the local Docker instance on port 7070 after checking no agent runners were active. Its previous runtime is backed up in `/tmp`; restart and health check passed. Merged locally into `main` from `fix/connections-and-resource-lifecycle` with owner approval. The runtime update lasts until image recreation. No push was made.
+- **Follow-up task:** Adapt the application shell below desktop widths. At 390 pixels its existing fixed sidebar clips every page, including Connections. This requires a shell navigation change outside this pass.
+- **Design review:** The independent reviewer approved the desktop composition and scored the Global access and removal copy fix resolved.
+- **Owner-only check:** Real-provider consent, identity and tool access, including DigitalOcean, on the updated live instance.
+
 ## Cohesion pass 2: the daily loop in the sidebar, honest counts (built)
 
 - **Sidebar.** Order is the loop: Today, Decisions, Watch (only when something is watched), then Board, Chats, Business, then Captain with Autonomous and Playbooks, then one Setup row that opens a menu of the eleven set-up pages. The row names the page you are on and shows one amber dot with a tooltip when something inside needs a look. Setup rows are amber, never red. At 1100x760 with the Update row open every daily row and Setup show, with no scrolling. Old routes are untouched (`/` is the Board; `/autonomous`, `/repos`, `/studio/*` still redirect). Hub setup's first list group is "Basics" and the Skills page is "Skills & MCP" everywhere.

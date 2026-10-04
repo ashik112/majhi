@@ -351,6 +351,13 @@ One selection treatment everywhere (sidebar pages, the rows of every list-and-de
 ### List and detail
 Agents, Accounts, Health and usage, Projects and links and Workspaces share one frame (`components/ui/list-detail.tsx`): a glass list on the left (264px, 296px from 1320px) and the picked item on the right, both as tall as the page and each scrolling inside itself with edge fades. The list groups rows by org under a small head (org badge, name, count, and a ghost + button when the group takes new items); a row is two lines, the name first and a status line under it, with its lamp or dot and word. A pinned footer holds the list's one action (New workspace, Add account, Register a repo). The detail has a fixed head (name, key facts, actions) over sections divided by hairlines, never boxed; each editable section keeps its own draft with Cancel and Save showing only while something changed.
 
+### Connections
+Connections has one primary **Connect a service** action in the page header, with **Connected** and **Browse services** views below. The catalog's fixed head shows **Connect for**, offering Global or a named workspace with a sentence stating who can use the connection. The destination stays visible and locks during sign-in.
+
+The scrolling pane holds search, category filters, and service cards sorted alphabetically within Services and Cloud tools. Cards use the existing glass, corners, Sans type, and focus treatment. Locally sourced SVG brand marks keep their colours on white backplates in both themes. Each card names its sign-in method or app setup requirement. Service access, OAuth progress, and guided app setup open inline. **Custom setup** sits below the catalog as a secondary path.
+
+Saved rows show the service mark, account or description, Global or workspace label, and a status lamp with its word. Details repeat the scope and audience. Global removal explicitly says agents in every workspace lose access. Lists and setup scroll inside the pane; the shell stays fixed.
+
 ### Status Lamp (signature)
 A round lamp, 8px by default (7px in rails and docks, 6px in the connection indicator). Working: filled and breathing. Needs you and paused: filled with a steady glow ring. Done: filled, no glow. Idle: an unlit 1.5px ring. A dim lamp (35% opacity) keeps its colour but unlit, for a count of zero.
 
