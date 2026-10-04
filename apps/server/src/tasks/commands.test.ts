@@ -36,7 +36,7 @@ describe("tasks.create", () => {
           project: "acme-api",
           source: w.repo("api"),
           base: "develop",
-          branch: "task/acm-1-add-a-health-endpoint-to-api-from-develo",
+          branch: "feat/acm-1-add-a-health-endpoint-to-api-from",
           createdBranch: true,
         },
       ],
@@ -46,7 +46,7 @@ describe("tasks.create", () => {
     const taskMd = await readFile(join(task.folder, "TASK.md"), "utf8");
     expect(taskMd).toContain("# ACM-1: add a health endpoint to api from develop");
     expect(taskMd).toContain(
-      `- acme-api: worktree \`${join(task.folder, "acme-api")}\`, branch \`task/acm-1-add-a-health-endpoint-to-api-from-develo\` (new, from \`develop\`)`,
+      `- acme-api: worktree \`${join(task.folder, "acme-api")}\`, branch \`feat/acm-1-add-a-health-endpoint-to-api-from\` (new, from \`develop\`)`,
     );
     expect(taskMd).toContain("@acme-builder (Builder)");
     expect(taskMd).toContain("Never push");
@@ -66,7 +66,7 @@ describe("tasks.create", () => {
         team: ["acme-builder"],
         mode: "lead",
         updatedAt: task.updatedAt,
-        repos: [{ project: "acme-api", branch: "task/acm-1-add-a-health-endpoint-to-api-from-develo" }],
+        repos: [{ project: "acme-api", branch: "feat/acm-1-add-a-health-endpoint-to-api-from" }],
         working: [],
         links: [],
         waitingOn: [],
@@ -87,7 +87,7 @@ describe("tasks.start", () => {
     const wt = join(res.body.folder, "acme-api");
     expect(res.body.repos[0].worktree).toBe(wt);
     expect(await git(wt, "symbolic-ref", "--short", "HEAD")).toBe(
-      "task/acm-1-add-a-health-endpoint-to-api-from-develo",
+      "feat/acm-1-add-a-health-endpoint-to-api-from",
     );
     expect((await stat(join(wt, "README.md"))).isFile()).toBe(true);
 

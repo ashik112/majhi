@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { type Attachment, MODE_LABELS, type Task } from "@majhi/shared";
+import { type Attachment, type BranchType, MODE_LABELS, type Task } from "@majhi/shared";
 import { hasRelated, type Related } from "./relations.ts";
 import { leadPlanLines, type TeamFacts, teamFactsLines } from "./team-facts.ts";
 
@@ -23,6 +23,18 @@ export interface BriefAgent {
   perms?: readonly string[];
   /** Projects it edits in this task, when the owner narrowed them. */
   repos?: readonly string[];
+}
+
+/** The commit message style TASK.md asks for: `type(scope): summary`, the type of the task's branch. */
+export interface CommitGuide {
+  type: BranchType;
+  /** Set when only some of the task's repos follow it: their names. */
+  only?: readonly string[];
+}
+
+function commitRule(g: CommitGuide): string {
+  const where = g.only === undefined ? "" : ` in ${g.only.join(", ")}`;
+  return `- Write commit messages${where} as Conventional Commits, \`type(scope): summary\`, like \`${g.type}(api): add the health endpoint\`. The type here is \`${g.type}\`; use another when a commit is only a fix, docs or a chore.`;
 }
 
 /** What the agent may do beyond its worktree, from its permissions. Without one, the owner does it. */
@@ -60,6 +72,8 @@ export function renderTaskMd(
   readable: readonly { id: string; org: string; path: string }[] = [],
   /** The connections the task's agents may hold, listed next to the Ops section. Only an attach changes them. */
   connections: readonly BriefConnection[] = [],
+  /** The commit style the repos ask for, when any does not use another. */
+  commits?: CommitGuide,
 ): string {
   const members = team ?? (agent === undefined ? [] : [agent]);
   const multi = members.length > 1;
@@ -117,6 +131,7 @@ export function renderTaskMd(
     "## Rules",
     "",
     "- Work inside the worktrees above. Commit on the task branch.",
+    ...(commits === undefined ? [] : [commitRule(commits)]),
     "- To change another task's branch, use the majhi-tasks change_task_branch tool. Never commit, update-ref or reset there with git: majhi refuses it, and that task's worktree would not follow.",
     // In a team the rules hold for everyone, so only what every member may do is allowed.
     ...outboundRules(multi ? sharedPerms(members) : (agent?.perms ?? [])),
@@ -290,23 +305,4 @@ export const CONTEXT_PROMPT = "First read TASK.md in this folder for the task an
 export function startingBranches(repos: readonly Pick<Task["repos"][number], "project" | "base">[]): string {
   if (repos.length === 1) return `Starting branch: ${repos[0]?.base}.`;
   return `Starting branches: ${repos.map((r) => `${r.base} (${r.project})`).join(", ")}.`;
-}
-
-/** `task/<key>-<slug>`, the slug from the title at most 40 characters. */
-export function branchName(id: string, title: string): string {
-  const slug = slugify(title).slice(0, 40).replace(/-+$/, "");
-  return `task/${id.toLowerCase()}${slug === "" ? "" : `-${slug}`}`;
-}
-
-/**
- * Lowercase words joined by dashes. Links and mentions are dropped first. Every other word stays:
- * a title is prose, so "work on main" or "the base branch" is never a setting to cut out.
- */
-export function slugify(text: string): string {
-  return text
-    .replace(/https?:\/\/\S+/gi, " ")
-    .replace(/(?<![\w@/.-])@[\w-]+/g, " ")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
 }

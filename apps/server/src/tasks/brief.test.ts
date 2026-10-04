@@ -1,6 +1,6 @@
 import type { Task } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { branchName, outboundRules, renderPointer, renderTaskMd, slugify } from "./brief.ts";
+import { outboundRules, renderPointer, renderTaskMd } from "./brief.ts";
 import type { Related } from "./relations.ts";
 import type { TeamFacts } from "./team-facts.ts";
 
@@ -104,39 +104,6 @@ describe("the pointer file", () => {
     expect(text).toContain("[title](media/report.html)");
     expect(text).toContain("Web links are clickable.");
     expect(text).toContain("You have no SSH access. To fetch or pull, ask the owner in the room.");
-  });
-});
-
-describe("branch names", () => {
-  it("builds task/<key>-<slug> and drops links and mentions", () => {
-    expect(slugify("@builder Add a Health endpoint to api https://e.com/x")).toBe(
-      "add-a-health-endpoint-to-api",
-    );
-    expect(branchName("GLX-420", "Fix the login redirect")).toBe("task/glx-420-fix-the-login-redirect");
-  });
-
-  // A title is prose: the words after from, on, base or branch are part of it (PRV-66 lost "branch").
-  it.each([
-    ["Task text picks the base branch by mistake", "task-text-picks-the-base-branch-by-mistake"],
-    [
-      "Screenshots taken with Playwright from the staging site",
-      "screenshots-taken-with-playwright-from-the-staging-site",
-    ],
-    ["Fix api, work on main later", "fix-api-work-on-main-later"],
-    ["Use the default branch name", "use-the-default-branch-name"],
-    ["Turn off caching", "turn-off-caching"],
-  ])("keeps every word of %s", (title, slug) => {
-    expect(slugify(title)).toBe(slug);
-  });
-
-  it("cuts the slug at 40 characters", () => {
-    const name = branchName("GLX-1", "implement the very long feature name that goes on and on forever");
-    expect(name).toBe("task/glx-1-implement-the-very-long-feature-name-tha");
-    expect(name.slice("task/glx-1-".length).length).toBeLessThanOrEqual(40);
-  });
-
-  it("has no slug for a title of only symbols", () => {
-    expect(branchName("LOCAL-2", "!!!")).toBe("task/local-2");
   });
 });
 

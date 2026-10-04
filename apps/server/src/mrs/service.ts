@@ -32,6 +32,7 @@ import type { ProjectInfo, ProjectService } from "../projects/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
+import { inferBranchType, readRepoStyle, titleFor, typeOfBranch } from "../tasks/branch-naming.ts";
 import type { TaskService } from "../tasks/service.ts";
 import {
   HELD,
@@ -43,7 +44,7 @@ import {
   splitChanged,
   targetsFor,
 } from "../tasks/ship-plan.ts";
-import { mrTitle, renderMrDescription } from "./description.ts";
+import { renderMrDescription } from "./description.ts";
 import type { HostGit } from "./hostGit.ts";
 import type { MrHostClient, MrTarget } from "./hosts/index.ts";
 import { MergeOrderCycle, mergeOrder, orderViolations, type ProjectGraph } from "./order.ts";
@@ -396,7 +397,7 @@ export class MrService {
           const mr = await ctx.client.open(target, {
             head: ctx.repo.branch,
             base: plan.into ?? ctx.repo.base,
-            title: mrTitle(task.id, task.title),
+            title: await this.titleOf(task, ctx.repo),
             body,
           });
           this.deps.store.tasks.setMr(id, project, {
@@ -427,7 +428,7 @@ export class MrService {
         try {
           const project = ctx.project.id;
           await ctx.client.updateDescription(target, number, {
-            title: mrTitle(task.id, task.title),
+            title: await this.titleOf(task, ctx.repo),
             body: this.body(task, project, this.siblings(id, plans)),
           });
         } catch (err) {
@@ -480,6 +481,13 @@ export class MrService {
         project: p.ctx.project.id,
         url: stored.find((r) => r.project === p.ctx.project.id)?.mr?.url,
       }));
+  }
+
+  /** `feat(acm-1): add login` when the repo's commits follow Conventional Commits, else `ACM-1: Add login`. */
+  private async titleOf(task: Task, repo: TaskRepo): Promise<string> {
+    const { commits } = await readRepoStyle(repo.source);
+    const type = typeOfBranch(repo.branch) ?? inferBranchType(task.title);
+    return titleFor({ id: task.id, title: task.title, type }, commits);
   }
 
   private body(

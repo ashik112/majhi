@@ -6,6 +6,7 @@ import {
   AgentEntrySchema,
   AgentFrontmatterSchema,
   AuthModeSchema,
+  BranchTypeSchema,
   HealthCheckSchema,
   IdSchema,
   LEGACY_PERSONAL,
@@ -1711,6 +1712,8 @@ export const commands = {
         links: ProjectConfigSchema.shape.links.nullable().optional(),
         /** Overrides the org's `commits.attribution` for this project. null clears it. */
         commits: ProjectConfigSchema.shape.commits.nullable().optional(),
+        /** How new task branches are named, like {type}/{id}-{slug}. null clears it. */
+        branch_pattern: ProjectConfigSchema.shape.branch_pattern.nullable().optional(),
       }),
     output: ProjectViewSchema,
   },
@@ -1781,6 +1784,11 @@ export const commands = {
       title: z.string().trim().min(1).max(120).optional(),
       /** Overrides what the parser inferred. */
       kind: TaskKindSchema.optional(),
+      /**
+       * The type its new branch starts with (feat, fix, chore, docs, refactor, test, perf, ci, build).
+       * Default: read from the title.
+       */
+      branchType: BranchTypeSchema.optional(),
       /**
        * An investigation: the repos listed in repos are mounted read-only. No branch, no worktree, no
        * Changes and no Ship. `kind: "ops"` does the same.

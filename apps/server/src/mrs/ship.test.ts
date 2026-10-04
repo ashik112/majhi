@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 
 const cmd = (name: string, body?: unknown) => w.h.cmd(name, body);
-const branch = "task/acm-1-fix-api";
+const branch = "fix/acm-1-fix-api";
 const tip = (repo: string, ref: string) => git(repo, "rev-parse", ref).then((s) => s.trim());
 const present = (path: string) =>
   stat(path).then(

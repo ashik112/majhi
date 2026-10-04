@@ -151,6 +151,38 @@ export const DismissedLoginSchema = z.strictObject({
 });
 export type DismissedLogin = z.infer<typeof DismissedLoginSchema>;
 
+/** The conventional types a task branch can start with: `feat/acm-1-add-login`. */
+export const BRANCH_TYPES = [
+  "feat",
+  "fix",
+  "chore",
+  "docs",
+  "refactor",
+  "test",
+  "perf",
+  "ci",
+  "build",
+] as const;
+export const BranchTypeSchema = z.enum(BRANCH_TYPES);
+export type BranchType = z.infer<typeof BranchTypeSchema>;
+
+/**
+ * How a repo names task branches, like `{type}/{id}-{slug}`. `{type}` is the branch type, `{id}` the
+ * task id in lowercase (`{ID}`: uppercase), `{slug}` the title. It needs a `/` (a run may write only
+ * the folder its own branch is in) and an id.
+ */
+export const BranchPatternSchema = z
+  .string()
+  .trim()
+  .max(80)
+  .regex(/^[A-Za-z0-9{}._/-]+$/, "Use letters, digits, {type}, {id}, {slug}, and / . _ -")
+  .refine(
+    (p) => p.includes("/") && !p.startsWith("/") && !p.endsWith("/"),
+    "Put a / between a folder and the name",
+  )
+  .refine((p) => /\{id\}|\{ID\}/.test(p), "Include {id}, so each task gets its own branch")
+  .refine((p) => !p.includes("..") && !p.includes("//"), "No .. or // in a branch name");
+
 export const OrgConfigSchema = z.looseObject({
   name: z.string().trim().min(1),
   /** Hex color used for the org's dot and badges. */
@@ -179,6 +211,8 @@ export const OrgConfigSchema = z.looseObject({
   resume: ResumePatchSchema.optional(),
   /** Overrides whether this org's commits name the agent and the task (5.7). */
   commits: CommitsPatchSchema.optional(),
+  /** How new task branches are named in this org's repos. Default: what the repo's own branches show, else `{type}/{id}-{slug}`. */
+  branch_pattern: BranchPatternSchema.optional(),
   /** Overrides the loop guard for this org's tasks (5.3). */
   rooms: RoomPatchSchema.pick({ max_agent_turns: true }).optional(),
   /** Overrides majhi's turn limits for this org's agents, field by field (PRV-96). */

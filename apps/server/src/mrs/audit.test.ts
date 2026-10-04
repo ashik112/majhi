@@ -16,7 +16,7 @@ afterEach(async () => {
 
 const cmd = (name: string, body?: unknown) => w.h.cmd(name, body);
 const audit = () => w.h.majhi.services.store.permissions.audit("ACM-1");
-const branch = "task/acm-1-fix-api";
+const branch = "fix/acm-1-fix-api";
 
 /** ACM-1 on api, in review, with one committed change on its branch. */
 async function reviewed(): Promise<void> {

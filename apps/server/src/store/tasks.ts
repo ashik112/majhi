@@ -756,6 +756,16 @@ export class TaskRepo {
   }
 
   /** Ids of tasks that are not done and use the project. */
+  /** The working branches of every task in the repo at `source`, whatever their names. */
+  branchesIn(source: string): Set<string> {
+    const rows = this.db
+      .select({ branch: taskRepos.branch })
+      .from(taskRepos)
+      .where(eq(taskRepos.source, source))
+      .all();
+    return new Set(rows.map((r) => r.branch));
+  }
+
   openTasksUsing(project: string): string[] {
     return this.db
       .select({ id: taskRepos.task })
