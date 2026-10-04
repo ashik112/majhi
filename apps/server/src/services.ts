@@ -111,8 +111,10 @@ import { OrgService } from "./orgs/service.ts";
 import { GoalsService } from "./playbooks/goals.ts";
 import { OutboundGate } from "./playbooks/outbound.ts";
 import { PlaybookRepo } from "./playbooks/repo.ts";
+import { RULES_RUNNERS } from "./playbooks/rules.ts";
 import { PlaybookService } from "./playbooks/service.ts";
 import { ProcessManager } from "./processes/manager.ts";
+import { CardRepo } from "./projectcard/repo.ts";
 import { suggestRepoAliases } from "./projectcard/scanner.ts";
 import type { ProjectCards } from "./projectcard/service.ts";
 import { createCards } from "./projectcard/wire.ts";
@@ -136,6 +138,9 @@ import { RepoScanner } from "./scan/scanner.ts";
 import { KeyExports } from "./secrets/backup.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
+import type { Net } from "./sensors/net.ts";
+import { sensorRunners } from "./sensors/runners.ts";
+import { createSensorPorts } from "./sensors/wire.ts";
 import { SkillsCli } from "./skills/cli.ts";
 import { skillGitEnv } from "./skills/git-env.ts";
 import { SkillRegistry } from "./skills/registry.ts";
@@ -197,6 +202,8 @@ export interface ServiceOptions {
   idleWatchMs?: number;
   /** Replaces `fetch` for git sign-in and the git hosts' APIs, so tests never reach a real host. */
   gitFetch?: Fetch;
+  /** Replaces the sensors' network (advisories, end-of-life dates, releases, CI), so tests never reach a real host. */
+  sensorNet?: Net;
   /** Replaces `fetch` for Connect's sign-in calls, so tests reach a fake authorization server. */
   connectFetch?: Fetch;
   /** Replaces the service catalog, so tests connect to a fake server. */
@@ -1210,7 +1217,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
+  // The sensors behind the Engineering playbooks: cheap code that reads checkouts and public advisories.
+  const sensors = createSensorPorts({
+    store,
+    projects,
+    cards: new CardRepo(store.raw),
+    tokens: gitTokens,
+    orgs: async () => (await config.sections()).orgs,
+    housekeeper,
+    ...(options.sensorNet === undefined ? {} : { net: options.sensorNet }),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+    log: (message) => console.error(message),
+  });
   const playbooks = new PlaybookService({
+    rules: { ...RULES_RUNNERS, ...sensorRunners(sensors) },
     repo: new PlaybookRepo(store.raw),
     captain,
     findings,

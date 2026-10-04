@@ -163,8 +163,10 @@ export class PlaybookService implements ChorePlaybooks {
       if (off.offAt !== undefined)
         return `Turned off after failures: ${off.offWhy ?? "two runs failed in a row"}.`;
     } else {
-      if (this.deps.mode() !== "on") return "Autonomous is off.";
-      if (ws.authority.upkeep !== "decide") return `Upkeep is on You in ${ws.name}.`;
+      // A read-only playbook (the sensors) only files findings that wait, so Autonomous off and
+      // Upkeep on You do not hold it.
+      if (!def.readOnly && this.deps.mode() !== "on") return "Autonomous is off.";
+      if (!def.readOnly && ws.authority.upkeep !== "decide") return `Upkeep is on You in ${ws.name}.`;
       if (def.runner.kind === "rules") {
         const runner = this.rules[def.runner.id];
         if (runner === undefined) return "Its checker is not installed.";
@@ -408,6 +410,8 @@ export class PlaybookService implements ChorePlaybooks {
         now: () => this.now(),
         fetch: this.deps.fetch ?? fetch,
       });
+      // Majhi shut down while it ran: the database is closed, and a restart ends the run (boot).
+      if (this.closed) return;
       this.deps.repo.succeeded(org, def.id);
       this.deps.repo.closeRun(
         id,
@@ -419,6 +423,7 @@ export class PlaybookService implements ChorePlaybooks {
         },
       );
     } catch (err) {
+      if (this.closed) return;
       this.fail(org, def, id, errorMessage(err));
     }
     this.deps.changed?.();

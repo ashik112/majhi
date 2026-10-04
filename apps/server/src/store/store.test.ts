@@ -126,6 +126,7 @@ describe("store", () => {
       "room_search",
       "runs",
       "schedules",
+      "sensor_cache",
       "task_allowances",
       "task_counters",
       "task_links",

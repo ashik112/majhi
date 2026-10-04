@@ -5,6 +5,7 @@ import {
   type Finding,
   type FindingReportInput,
   type FindingReportResult,
+  type FindingSource,
   type FindingStatus,
   type FindingsList,
   type FindingsListInput,
@@ -102,6 +103,13 @@ export class FindingsService {
   /** The finding with this dedupe key in a workspace, if any. */
   find(org: string, key: string): Finding | undefined {
     return this.repo.byKey(org, key);
+  }
+
+  /** The live findings of a project and source whose dedupe key starts with `prefix`: a sensor closes the ones it no longer sees. */
+  liveWithPrefix(org: string, project: string, source: FindingSource, prefix: string): Finding[] {
+    return this.repo
+      .list({ org, project, source, statuses: FINDING_LIVE, limit: 5_000 })
+      .filter((f) => f.dedupeKey.startsWith(prefix));
   }
 
   /** How many findings a playbook filed, and how many were taken up or dismissed. */
