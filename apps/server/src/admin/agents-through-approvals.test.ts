@@ -107,7 +107,7 @@ describe("full access for the captain", () => {
       ...plain,
     });
     expect(allow).toEqual({ text: WAITING_TEXT, isError: false });
-    const remove = await admin.call(caller, "majhi_watch_remove", { id: "wch-gone", ...plain });
+    const remove = await admin.call(caller, "majhi_tasks_remove", { id: "ACM-99", ...plain });
     expect(remove).toEqual({ text: WAITING_TEXT, isError: false });
   });
 
