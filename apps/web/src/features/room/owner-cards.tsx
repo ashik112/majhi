@@ -1,4 +1,10 @@
-import { type AccountView, type CardOutcome, plainAuthorityText, type RoomItem, type Task } from "@majhi/shared";
+import {
+  type AccountView,
+  type CardOutcome,
+  plainAuthorityText,
+  type RoomItem,
+  type Task,
+} from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
 import { Check, CircleCheck, CirclePause, MessageSquareReply, RotateCw, SendHorizontal } from "lucide-react";
 import { useState } from "react";
@@ -84,7 +90,8 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
   const options = useShipOptions(task, true);
   const orgs = useOrgs().data;
   // Cards saved before the authority table name a retired level; show the plain rule instead.
-  const workspace = orgs?.find((o) => o.id === task.org)?.name ?? (task.org === undefined ? "Private" : task.org);
+  const workspace =
+    orgs?.find((o) => o.id === task.org)?.name ?? (task.org === undefined ? "Private" : task.org);
   const lead = item.lead ?? task.team[0];
   const act = (
     action: "merge" | "mergePush" | "push" | "mr" | "done",

@@ -1,8 +1,8 @@
 import { useNavigate } from "@tanstack/react-router";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import type { Banner, BannerAction } from "@/features/shell/model";
 import { useNeedsYou } from "@/features/decisions/needs-you";
+import type { Banner, BannerAction } from "@/features/shell/model";
 import { cn } from "@/lib/cn";
 import { setNoticesOpen } from "@/lib/notices";
 

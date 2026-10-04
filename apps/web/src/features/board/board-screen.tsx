@@ -233,10 +233,11 @@ function Telemetry({ counts, org }: { counts: BoardCounts; org: string | undefin
   const needs = useNeedsYou(org);
   return (
     <p className="flex min-w-0 items-center gap-3 overflow-hidden text-sm min-[1280px]:gap-4 whitespace-nowrap text-fg-muted">
-      <span className="tnum">
+      {/* Under 1000px the readouts that matter (working, waiting for you) keep the room. */}
+      <span className="tnum max-[999px]:hidden">
         <span className="font-mono text-md font-medium text-fg">{counts.open}</span> open
       </span>
-      <Divider />
+      <Divider className="max-[999px]:hidden" />
       <span className="tnum flex items-center gap-1.5">
         <Lamp state="working" dim={counts.working === 0} size={7} />
         <span

@@ -202,7 +202,7 @@ export function boardCounts(tasks: readonly TaskSummary[], org: string | undefin
   return {
     open: own.filter(isOpen).length,
     working: own.filter((t) => columnOf(t) === "working").length,
-      done: own.filter((t) => !isOpen(t)).length,
+    done: own.filter((t) => !isOpen(t)).length,
   };
 }
 

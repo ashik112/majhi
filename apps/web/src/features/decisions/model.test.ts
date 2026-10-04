@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { needsYouCount } from "./model.ts";
 
-const rows = [
-  { org: "acme", task: "ACM-1" },
-  { org: "globex", task: "GLX-2" },
-  { task: "LOCAL-3" },
-  {},
-];
+const rows = [{ org: "acme", task: "ACM-1" }, { org: "globex", task: "GLX-2" }, { task: "LOCAL-3" }, {}];
 
 describe("the one needs-you count", () => {
   it("counts every decision, whatever its kind or workspace", () => {

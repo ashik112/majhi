@@ -83,12 +83,6 @@ export function CaptainView() {
         <Problem icon={<Ship />} title="Could not load the captain" body={describeError(query.error)} />
       </div>
     );
-  if (!status)
-    return (
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <RowsSkeleton rows={3} height={180} />
-      </div>
-    );
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <CaptainHeader
@@ -114,13 +108,13 @@ export function CaptainView() {
           onSummary={summary === undefined ? undefined : openSummary}
         />
       </div>
-      {open === "delegation" && <DelegationSheet captain={status} now={now} onClose={close} />}
-      {open === "log" && (
+      {open === "delegation" && status && <DelegationSheet captain={status} now={now} onClose={close} />}
+      {open === "log" && status && (
         <Sheet title="Log" subtitle="What the captain did, and why" onClose={close}>
           <FullLog orgs={status.orgs} now={now} />
         </Sheet>
       )}
-      {open === "findings" && (
+      {open === "findings" && status && (
         <Sheet title="Findings" subtitle="What the captain and your agents noticed" onClose={close} wide>
           <FindingsSheet orgs={status.orgs} now={now} />
         </Sheet>

@@ -20,7 +20,6 @@ import { useNow } from "@/lib/use-now";
 import type { AppSearch } from "@/router";
 import { DecisionDetailPane } from "./decision-detail";
 import { DecisionList } from "./decision-list";
-import { useNeedsYou } from "./needs-you";
 import {
   actionOf,
   afterAnswer,
@@ -33,6 +32,7 @@ import {
   rowTitle,
   workspaceCounts,
 } from "./model";
+import { useNeedsYou } from "./needs-you";
 
 function typing(target: EventTarget | null): boolean {
   return (

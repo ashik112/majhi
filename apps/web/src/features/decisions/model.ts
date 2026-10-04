@@ -1,4 +1,10 @@
-import { DECISION_KIND_LABEL, type DecisionLink, type OwnerDecision, type OwnerDecisionKind, PRIVATE } from "@majhi/shared";
+import {
+  DECISION_KIND_LABEL,
+  type DecisionLink,
+  type OwnerDecision,
+  type OwnerDecisionKind,
+  PRIVATE,
+} from "@majhi/shared";
 import type { BannerAction } from "../shell/model";
 
 /**

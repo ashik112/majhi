@@ -3,6 +3,7 @@ import { SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
 import { PageLink } from "@/components/ui/page-link";
+import { Skeleton } from "@/components/ui/skeleton";
 import { capTone, MODE_LAMP, MODE_WORD } from "@/features/autonomy/model";
 import { useUnseenSummary } from "@/features/autonomy/summary-seen";
 import { useAutonomousSwitch } from "@/features/autonomy/switch";
@@ -89,7 +90,8 @@ export function CaptainHeader({
   onDelegation,
   onSummary,
 }: {
-  captain: CaptainStatus;
+  /** Undefined while `captain.status` loads: the header draws at once and fills in. */
+  captain: CaptainStatus | undefined;
   autonomy: AutonomyStatus | undefined;
   now: number;
   onDelegation: () => void;
@@ -100,13 +102,16 @@ export function CaptainHeader({
   const lamp = MODE_LAMP[mode];
   const unseen = useUnseenSummary(now);
   const chip = unseen === undefined ? undefined : summaryLine(unseen, now);
-  const sentence = statusSentence({
-    mode,
-    upkeep: captain.orgs.some((o) => o.authority.upkeep === "decide"),
-    running: autonomy?.now.length ?? 0,
-    next: autonomy?.queue.length ?? 0,
-    decisions: decisions ?? 0,
-  });
+  const sentence =
+    captain === undefined
+      ? undefined
+      : statusSentence({
+          mode,
+          upkeep: captain.orgs.some((o) => o.authority.upkeep === "decide"),
+          running: autonomy?.now.length ?? 0,
+          next: autonomy?.queue.length ?? 0,
+          decisions: decisions ?? 0,
+        });
   return (
     <header className={cn("mb-3 flex shrink-0 flex-col gap-2 rounded-2xl px-6 py-3", GLASS)}>
       <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5">
@@ -119,9 +124,13 @@ export function CaptainHeader({
             <span className={cn("font-medium", LAMP_TEXT[lamp])}>{MODE_WORD[mode]}</span>
           </span>
         </div>
-        <p className="min-w-[260px] flex-1 basis-[320px] text-base text-fg-soft text-pretty">{sentence}</p>
+        {sentence === undefined ? (
+          <Skeleton className="h-5 min-w-[260px] flex-1 basis-[320px]" />
+        ) : (
+          <p className="min-w-[260px] flex-1 basis-[320px] text-base text-fg-soft text-pretty">{sentence}</p>
+        )}
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          <Button variant="secondary" onClick={onDelegation}>
+          <Button variant="secondary" disabled={captain === undefined} onClick={onDelegation}>
             <SlidersHorizontal aria-hidden="true" />
             Delegation
           </Button>
@@ -147,7 +156,7 @@ export function CaptainHeader({
           </button>
         )}
         <div className="ml-auto flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1.5">
-          <SpendLine orgs={captain.orgs} autonomy={autonomy} />
+          <SpendLine orgs={captain?.orgs ?? []} autonomy={autonomy} />
         </div>
       </div>
       {dialogs}

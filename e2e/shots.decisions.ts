@@ -70,7 +70,7 @@ const DECISIONS: OwnerDecision[] = [
     org: "goama",
     task: "GOA-12",
     taskTitle: "Update the onboarding docs",
-    title: "Ready for review: Update the onboarding docs",
+    title: "Ready to ship: Update the onboarding docs",
     sentence: '@goama-writer finished "Update the onboarding docs" and waits for your review.',
     options: [
       { id: "merge", label: "Merge", primary: true },
@@ -85,7 +85,7 @@ const DECISIONS: OwnerDecision[] = [
     kind: "ship",
     task: "PRV-4",
     taskTitle: "Tidy the invoice template",
-    title: "Ready for review: Tidy the invoice template",
+    title: "Ready to ship: Tidy the invoice template",
     sentence: '@majhi-builder finished "Tidy the invoice template" and waits for your review.',
     options: [
       { id: "merge", label: "Merge", primary: true },
@@ -101,7 +101,7 @@ const DECISIONS: OwnerDecision[] = [
     org: "pyzasoft",
     task: "PYZ-33",
     taskTitle: "Rename the shipping zones",
-    title: "Ready for review: Rename the shipping zones",
+    title: "Ready to ship: Rename the shipping zones",
     sentence: '@pyzasoft-claude finished "Rename the shipping zones" and waits for your review.',
     options: [
       { id: "merge", label: "Merge", primary: true },

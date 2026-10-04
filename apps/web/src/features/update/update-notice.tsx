@@ -1,4 +1,4 @@
-import { ArrowUpCircle, ChevronDown, LoaderCircle } from "lucide-react";
+import { ArrowUpCircle, LoaderCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { CommandLine } from "@/components/command-line";
 import { Button } from "@/components/ui/button";
@@ -58,15 +58,13 @@ export function UpdateNotice() {
         <button
           type="button"
           aria-expanded={open}
+          title={`${changeSummary(notice.changes)}. Show what changed`}
           onClick={() => setOpen(!open)}
           className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left text-amber-soft"
         >
           <ArrowUpCircle aria-hidden="true" className="size-4 shrink-0" />
           <span className="min-w-0 flex-1 truncate text-sm font-medium">Update ready</span>
-          <ChevronDown
-            aria-hidden="true"
-            className={cn("size-3.5 shrink-0 transition-transform duration-150", !open && "rotate-180")}
-          />
+          <span className="sr-only">{changeSummary(notice.changes)}</span>
         </button>
         {!manualOnly && direct && (
           <Button variant="primary" size="sm" disabled={start.isPending} onClick={() => void update("now")}>
@@ -80,7 +78,6 @@ export function UpdateNotice() {
           </Button>
         )}
       </div>
-      <p className="truncate px-2.5 pt-1 text-xs text-fg-muted">{changeSummary(notice.changes)}</p>
       {showPanel && (
         <div
           className={cn(
@@ -88,6 +85,7 @@ export function UpdateNotice() {
             GLASS_STRONG,
           )}
         >
+          <p className="text-xs font-medium text-fg">{changeSummary(notice.changes)}</p>
           {notice.changes.length > 0 && (
             <ul
               aria-label="Changes"

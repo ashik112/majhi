@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { MessageSquare } from "lucide-react";
 import { useMemo } from "react";
@@ -20,6 +21,7 @@ import { accountsNeedingYou, agentsRightNow, healthCheckedText } from "@/feature
 import { NAV_GROUPS, PAGE_LABEL } from "@/features/shell/nav";
 import { UpdateNotice } from "@/features/update/update-notice";
 import { useAgentIndex } from "@/lib/agent-index";
+import { prefetchCaptain } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
@@ -229,11 +231,16 @@ function CaptainRow() {
   const active = pathname.startsWith(PAGE_PATH.captain);
   const now = useNow(60_000);
   const summary = useUnseenSummary(now);
+  const client = useQueryClient();
+  const warm = () => prefetchCaptain(client);
   return (
     <div className="flex h-8 shrink-0 items-center gap-1">
       <Link
         to={PAGE_PATH.captain}
         search={{}}
+        onPointerEnter={warm}
+        onFocus={warm}
+        aria-description={summary === undefined ? undefined : "A new daily summary is ready"}
         aria-current={active ? "page" : undefined}
         className={cn(
           ITEM,
@@ -243,20 +250,18 @@ function CaptainRow() {
       >
         <span className="truncate">Captain</span>
         {summary !== undefined && (
-          <>
-            <span
-              aria-hidden="true"
-              title="A new daily summary is ready"
-              className="size-1.5 shrink-0 rounded-full bg-lamp-needs shadow-[0_0_6px_currentColor]"
-            />
-            <span className="sr-only">A new daily summary is ready</span>
-          </>
+          <span
+            aria-hidden="true"
+            title="A new daily summary is ready"
+            className="size-1.5 shrink-0 rounded-full bg-lamp-needs shadow-[0_0_6px_currentColor]"
+          />
         )}
       </Link>
       <button
         type="button"
         aria-pressed={open}
         aria-label="Open the captain chat"
+        onPointerEnter={warm}
         title={`Open the captain chat (${MOD_KEY} J)`}
         onClick={toggle}
         className={cn(
