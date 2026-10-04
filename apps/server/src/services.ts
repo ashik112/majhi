@@ -171,7 +171,9 @@ import { skillGitEnv } from "./skills/git-env.ts";
 import { SkillRegistry } from "./skills/registry.ts";
 import { SkillService } from "./skills/service.ts";
 import { SkillStore } from "./skills/store.ts";
+import { logSqliteBaseline } from "./store/db.ts";
 import { DB_FILE_NAME, Store } from "./store/index.ts";
+import { pruneOld } from "./store/retention.ts";
 import { CardActions } from "./tasks/card-actions.ts";
 import { CleanupService } from "./tasks/cleanup.ts";
 import { TaskFolderSweep } from "./tasks/folder-sweep.ts";
@@ -188,6 +190,8 @@ import { UsageService } from "./usage/service.ts";
 
 /** How often chats are checked for memory. */
 const CHAT_SWEEP_MS = 60_000;
+const RETENTION_SWEEP_MS = 24 * 60 * 60_000;
+const RETENTION_FIRST_MS = 10 * 60_000;
 /** How often paused budget runs are checked against the week. */
 const LIMIT_SWEEP_MS = 60_000;
 const AGENDA_SWEEP_MS = 60_000;
@@ -420,6 +424,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     now: () => options.runClock?.() ?? new Date(),
   });
   const store = Store.open(env.majhiHome);
+  logSqliteBaseline(store.baseline);
   const memory = createMemory(env.majhiHome, options.embedder);
   const backup = new BackupService({
     majhiHome: env.majhiHome,
@@ -494,7 +499,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         // A run autonomous mode holds stays held when no budget does.
         limited: async (task, agent) => (await limitedRun(task, agent)) ?? autonomy.holdFor(task)?.why,
         pausedTasks: () =>
-          store.tasks.list(false).filter((t) => t.status === "paused" && t.pausedReason === "limit"),
+          store.tasks.getMany(store.tasks.idsWithStatus("paused")).filter((t) => t.pausedReason === "limit"),
         start: (id) => tasks.start(id, "majhi"),
       });
     },
@@ -1639,6 +1644,21 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   void outcomes.sweep().catch(() => undefined);
   const outcomeSweep = setInterval(() => void outcomes.sweep().catch(() => undefined), 5 * 60_000);
   outcomeSweep.unref();
+  // Old rows of the growing tables go once a day, a small batch at a time. The first run waits, so a
+  // restart is not also a prune.
+  const pruneDb = () =>
+    background.run(async () => {
+      const done = await pruneOld(
+        store.raw,
+        options.runClock === undefined ? {} : { now: options.runClock() },
+      );
+      if (Object.keys(done.deleted).length > 0)
+        console.log(`retention pruned ${JSON.stringify(done.deleted)} in ${done.batches} batches`);
+    });
+  const retentionSweep = setInterval(pruneDb, RETENTION_SWEEP_MS);
+  retentionSweep.unref();
+  const retentionFirst = setTimeout(pruneDb, RETENTION_FIRST_MS);
+  retentionFirst.unref();
   // A backlog of waiting memories runs the memory chore of the workspace that reviews them.
   autonomy.useLaneGate(captain.laneGate);
   events.typing.onIdle((task) => captain.ownerIdle(task));
@@ -2085,6 +2105,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ops.close();
       idleWatch.stop();
       clearInterval(outcomeSweep);
+      clearInterval(retentionSweep);
+      clearTimeout(retentionFirst);
       clearInterval(chatSweep);
       clearInterval(limitSweep);
       clearInterval(agendaSweep);
