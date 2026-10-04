@@ -1149,69 +1149,6 @@ CREATE INDEX outbound_drafts_org ON outbound_drafts (org, status);
 `,
   },
   {
-    // Outcomes, the scorecard, the trust ladder and the money ceiling (SPEC 5.18, captain v2 step 8).
-    // `outcomes` is one row per captain output (`subject` names it: action:12, start:ACM-3, draft:5,
-    // finding:9, rec:<decision>), joined to its workspace, authority row or channel (`key`), playbook
-    // and task by value, so it outlives a deleted task. `result` is empty until it is judged.
-    // `trust_state` is what the ladder last did per workspace and row; `trust_notices` are the Decisions
-    // items it raises, with what an undo needs in `data`. `money_state` holds the monthly ceiling and
-    // the owner's raise for a month; `org_rates` the optional retainer and hourly rate per workspace.
-    id: 138,
-    name: "outcomes scorecard trust money",
-    sql: `
-CREATE TABLE outcomes (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  subject TEXT NOT NULL UNIQUE,
-  kind TEXT NOT NULL,
-  org TEXT NOT NULL,
-  key TEXT,
-  playbook TEXT,
-  action INTEGER,
-  task TEXT,
-  at TEXT NOT NULL,
-  result TEXT,
-  settled_at TEXT
-);
-CREATE INDEX outcomes_org_at ON outcomes (org, at);
-CREATE INDEX outcomes_key ON outcomes (org, key, at);
-CREATE INDEX outcomes_playbook ON outcomes (org, playbook, at);
-CREATE TABLE trust_state (
-  org TEXT NOT NULL,
-  key TEXT NOT NULL,
-  since TEXT,
-  snoozed_until TEXT,
-  auto_ok INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (org, key)
-);
-CREATE TABLE trust_notices (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  org TEXT NOT NULL,
-  key TEXT NOT NULL,
-  kind TEXT NOT NULL,
-  text TEXT NOT NULL,
-  evidence TEXT NOT NULL DEFAULT '',
-  state TEXT NOT NULL DEFAULT 'open',
-  data TEXT NOT NULL DEFAULT '{}',
-  at TEXT NOT NULL,
-  answered_at TEXT
-);
-CREATE UNIQUE INDEX trust_notices_open ON trust_notices (org, key, kind) WHERE state = 'open';
-CREATE TABLE scorecard_minutes (
-  kind TEXT PRIMARY KEY,
-  minutes REAL NOT NULL
-);
-CREATE TABLE money_state (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL
-);
-CREATE TABLE org_rates (
-  org TEXT PRIMARY KEY,
-  retainer_usd REAL,
-  hourly_usd REAL
-);
-`,
-  },
-  {
     // Sensors (SPEC 5.18, captain v2 step 9): what a sensor remembers between runs, so it asks upstream
     // only when something may have changed: ETags, lockfile hashes, advisory and release answers, and
     // the radar's weekly token count. Public answers and counters only, never a secret or a source line.
@@ -1277,6 +1214,69 @@ SET status = 'dismissed',
 WHERE source = 'security'
   AND dedupe_key LIKE 'osv:%'
   AND status IN ('open', 'proposed', 'task', 'decision');
+`,
+  },
+  {
+    // Outcomes, the scorecard, the trust ladder and the money ceiling (SPEC 5.18, captain v2 step 8).
+    // `outcomes` is one row per captain output (`subject` names it: action:12, start:ACM-3, draft:5,
+    // finding:9, rec:<decision>), joined to its workspace, authority row or channel (`key`), playbook
+    // and task by value, so it outlives a deleted task. `result` is empty until it is judged.
+    // `trust_state` is what the ladder last did per workspace and row; `trust_notices` are the Decisions
+    // items it raises, with what an undo needs in `data`. `money_state` holds the monthly ceiling and
+    // the owner's raise for a month; `org_rates` the optional retainer and hourly rate per workspace.
+    id: 138,
+    name: "outcomes scorecard trust money",
+    sql: `
+CREATE TABLE outcomes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subject TEXT NOT NULL UNIQUE,
+  kind TEXT NOT NULL,
+  org TEXT NOT NULL,
+  key TEXT,
+  playbook TEXT,
+  action INTEGER,
+  task TEXT,
+  at TEXT NOT NULL,
+  result TEXT,
+  settled_at TEXT
+);
+CREATE INDEX outcomes_org_at ON outcomes (org, at);
+CREATE INDEX outcomes_key ON outcomes (org, key, at);
+CREATE INDEX outcomes_playbook ON outcomes (org, playbook, at);
+CREATE TABLE trust_state (
+  org TEXT NOT NULL,
+  key TEXT NOT NULL,
+  since TEXT,
+  snoozed_until TEXT,
+  auto_ok INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (org, key)
+);
+CREATE TABLE trust_notices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT NOT NULL,
+  key TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  text TEXT NOT NULL,
+  evidence TEXT NOT NULL DEFAULT '',
+  state TEXT NOT NULL DEFAULT 'open',
+  data TEXT NOT NULL DEFAULT '{}',
+  at TEXT NOT NULL,
+  answered_at TEXT
+);
+CREATE UNIQUE INDEX trust_notices_open ON trust_notices (org, key, kind) WHERE state = 'open';
+CREATE TABLE scorecard_minutes (
+  kind TEXT PRIMARY KEY,
+  minutes REAL NOT NULL
+);
+CREATE TABLE money_state (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE TABLE org_rates (
+  org TEXT PRIMARY KEY,
+  retainer_usd REAL,
+  hourly_usd REAL
+);
 `,
   },
 ];
