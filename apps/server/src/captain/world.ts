@@ -503,7 +503,13 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
     // Follow-ups and findings
 
     findings: deps.findings,
-    upkeep: upkeepWorld({ run, store, now: () => new Date(), machineBusy: deps.machineBusy }),
+    upkeep: upkeepWorld({
+      run,
+      store,
+      now: () => new Date(),
+      machineBusy: deps.machineBusy,
+      wake: (org, line) => deps.autonomy.news(line, org),
+    }),
     followUps: {
       openThreads: (org) =>
         deps.memory.project

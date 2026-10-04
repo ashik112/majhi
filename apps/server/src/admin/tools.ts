@@ -1,5 +1,6 @@
 import { AGENT_BLOCKED_COMMANDS, type CommandName, commands, type RiskClass } from "@majhi/shared";
 import { z } from "zod";
+import { SAVE_FROM_SCRIPT_TOOL, WITHDRAW_SECRET_TOOL } from "./fetch-secret.ts";
 
 /** Commands an agent must never call: they approve, answer or reach outside majhi for the owner. */
 export const NOT_TOOLS: ReadonlySet<CommandName> = AGENT_BLOCKED_COMMANDS;
@@ -82,5 +83,45 @@ export function adminTools(): AdminTool[] {
       required: ["name", "label"],
     },
   });
+  tools.push(
+    {
+      name: SAVE_FROM_SCRIPT_TOOL,
+      command: undefined,
+      risk: undefined,
+      description:
+        "The captain in its lane only. Fetch a secret through the workspace's connections without the value passing through chat: runs a short read-only script in the runner with the named connections (like doctl with the DigitalOcean connection) and saves what it prints straight into the secret store. You get only the reference secret:<name>, never the value. Pass task and item to answer a pending secret request (saved under its name, the asking agent is told), or name to save a new one. The script is shown to the owner in the room.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task: { type: "string", description: "The task of the secret request to answer" },
+          item: { type: "string", description: "The id of the secret request to answer" },
+          name: { type: "string", description: "Without a request: the lowercase id to save under" },
+          script: { type: "string", description: "A short read-only shell script. Its output is the secret" },
+          connections: {
+            type: "array",
+            items: { type: "string" },
+            description: "Ids of this workspace's connections the script needs",
+          },
+        },
+        required: ["script", "connections"],
+      },
+    },
+    {
+      name: WITHDRAW_SECRET_TOOL,
+      command: undefined,
+      risk: undefined,
+      description:
+        "The captain in its lane only. Withdraw a pending secret request of this workspace that is no longer needed (a duplicate of another, or saved another way). The asking agent is told why and looks for another way.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          task: { type: "string", description: "The task of the secret request" },
+          item: { type: "string", description: "The id of the secret request" },
+          reason: { type: "string", description: "Why it is no longer needed, in one line" },
+        },
+        required: ["task", "item", "reason"],
+      },
+    },
+  );
   return tools;
 }

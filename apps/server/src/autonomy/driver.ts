@@ -317,10 +317,26 @@ export class AutonomyDriver {
       findings: this.deps.findingLines?.(org) ?? [],
       incidents: this.deps.incidentLines?.(org) ?? [],
       ...this.deskTasks(org, new Set(status.now.map((t) => t.task))),
+      secretRequests: this.secretLines(org),
       starts: authorityOf(status.settings, org).start === "decide",
       machine: machineOf(autonomy),
     };
     return { input, boss };
+  }
+
+  /** Pending secret requests of the workspace's tasks, one line each, oldest first. */
+  private secretLines(org: string): string[] {
+    try {
+      return this.deps.store.room
+        .waitingDecisions()
+        .flatMap((item) =>
+          item.type === "secret-request" && (this.deps.store.tasks.get(item.task)?.org ?? PRIVATE) === org
+            ? [`${item.task} item ${item.id}: @${item.agent} asks for ${item.label} (as secret:${item.name})`]
+            : [],
+        );
+    } catch {
+      return [];
+    }
   }
 
   /** The workspace's tasks in review and paused that the digest's own task list does not show. */

@@ -78,6 +78,8 @@ export interface DigestInput {
   review?: readonly string[] | undefined;
   /** Paused tasks of the workspace with why, and whether the captain may resume them. */
   paused?: readonly string[] | undefined;
+  /** Secret requests of the workspace's tasks waiting for the owner, one line each. */
+  secretRequests?: readonly string[] | undefined;
   /**
    * Whether the captain decides when work starts here. False (Start is You): the lane files
    * proposals and does upkeep; it starts nothing.
@@ -131,6 +133,7 @@ export function factsOf(input: DigestInput): Facts {
     incidents: input.incidents,
     review: input.review,
     paused: input.paused,
+    secretRequests: input.secretRequests,
   };
 }
 
@@ -163,6 +166,7 @@ const BASE = {
   incidents: 6,
   review: 6,
   paused: 6,
+  secretRequests: 8,
 };
 
 export function digest(input: DigestInput): string {
@@ -282,6 +286,11 @@ function build(input: DigestInput, scale: number): string {
       "In review in this workspace (code: merge it where Merge is Captain, else open the merge request where Push is Captain; no code change: close it if the report answers the brief)",
       input.review,
       max(BASE.review),
+    ),
+    ...optional(
+      "Secret requests waiting for the owner. Before the owner is asked, try to fetch each one through a connection of this workspace (doctl with a DigitalOcean connection, a token from a GitHub connection): majhi_secrets_saveFromScript with its task and item runs a read-only script and saves what it prints, and the value never reaches chat. Requests for the same thing (a password and a connection URL of one database user) collapse: fetch one, then withdraw the others with majhi_secrets_withdrawRequest. Leave a request only when no connection can produce it",
+      input.secretRequests,
+      max(BASE.secretRequests),
     ),
     ...optional("Paused tasks of this workspace (not in your list above)", input.paused, max(BASE.paused)),
     ...((input.findings ?? []).length === 0
