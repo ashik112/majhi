@@ -197,7 +197,7 @@ export function dockerRunArgs(
     "--memory",
     cfg.memory ?? "4g",
     "--cpus",
-    cfg.cpus ?? "2",
+    cfg.cpus ?? "1",
   ];
   if (cfg.user) args.push("--user", cfg.user);
   args.push("--workdir", req.scratch ? "/tmp" : req.cwd);

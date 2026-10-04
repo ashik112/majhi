@@ -88,8 +88,8 @@ const EnvSchema = z.object({
   MAJHI_RUNNER_CPUS: z
     .string()
     .trim()
-    .regex(/^\d+(\.\d+)?$/, "Use a number of cores like 2")
-    .default("2"),
+    .regex(/^\d+(\.\d+)?$/, "Use a number of cores like 1")
+    .default("1"),
 });
 
 export interface ServerEnv {

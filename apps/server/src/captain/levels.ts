@@ -9,6 +9,7 @@ import {
   type CaptainChore,
   CaptainChoreSchema,
   type CaptainLevel,
+  FULL_ACCESS_KEEPS,
   PRIVATE,
 } from "@majhi/shared";
 
@@ -51,7 +52,15 @@ const ALL_DECIDE: Authority = {
 
 export function authorityOf(settings: Pick<AutonomySettings, "orgs">, org: string): Authority {
   const own = settings.orgs[org];
-  if (own?.fullAccess === true) return ALL_DECIDE;
+  if (own?.fullAccess === true) {
+    // Full access gives every row but Merge and Push, which keep the owner's own switch.
+    const saved =
+      own.authority ??
+      (own.level !== undefined ? fromLevel(own.level, own.push === true, own.merge === true) : undefined);
+    const kept: Partial<Authority> = {};
+    for (const row of FULL_ACCESS_KEEPS) if (saved?.[row] === "ask") kept[row] = "ask";
+    return { ...ALL_DECIDE, ...kept };
+  }
   if (own?.authority !== undefined) return own.authority;
   if (own?.level !== undefined) return fromLevel(own.level, own.push === true, own.merge === true);
   const base: Authority =
@@ -151,3 +160,18 @@ export function migratePickOrgs(
   }
   return { orgs, pick: { size: autonomy.pick.size } };
 }
+
+/** The row a command needs on top of full access: merging and pushing keep their own switch. */
+export function keptRowOf(command: string): AuthorityRow | undefined {
+  if (MERGE_COMMANDS.has(command)) return "merge";
+  if (PUSH_COMMANDS.has(command)) return "push";
+  return undefined;
+}
+
+const MERGE_COMMANDS: ReadonlySet<string> = new Set([
+  "tasks.merge",
+  "tasks.resolveShip",
+  "tasks.mergeMrs",
+  "tasks.markMerged",
+]);
+const PUSH_COMMANDS: ReadonlySet<string> = new Set(["tasks.push", "tasks.openMrs"]);
