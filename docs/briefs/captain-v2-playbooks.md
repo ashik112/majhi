@@ -56,6 +56,8 @@ Gaps no product covers: a portfolio view for one developer serving several isola
 
 ## Essentials the business packs need (added 2026-10-04)
 
+Built (2026-10-04): essentials 1 to 4 as the Business page and the `kb`, `voice`, `crm` and `deadlines` commands and tools (SPEC 5.19). Not yet: the captain proposing entries from shipped work and project cards, drafting contacts from mail, and deadlines in the daily agenda and Today.
+
 1. **Company knowledge base**: the owner's bio, products, pricing, positioning, past wins, metrics, screenshots and decks, per workspace and for the business. Grant applications, launches, investor mail and replies draw on it.
 2. **Voice profile**: how the owner writes, learned from sent mail and posts (with the owner's approval), with a voice per client where needed.
 3. **Light CRM**: people and organisations (clients, leads, investors, hackathon and grant contacts) with last touch, next step and deadline.
