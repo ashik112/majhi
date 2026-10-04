@@ -66,3 +66,4 @@ export * from "./tiers.ts";
 export * from "./trackers.ts";
 export * from "./triggers.ts";
 export * from "./usage.ts";
+export * from "./watches.ts";

@@ -86,6 +86,11 @@ export interface OpsDeps {
   retryMs?: number;
   now: () => Date;
   changed: () => void;
+  /** Watch anything: the owner acknowledged one of its incidents, or one closed. */
+  onAcked?: (inc: OpsIncident) => void;
+  onResolved?: (inc: OpsIncident) => void;
+  /** A question the owner waits to answer on an open incident (a fix to approve), as Needs you shows it. */
+  question?: (inc: OpsIncident) => { text: string; options: { id: string; label: string }[] } | undefined;
 }
 
 /** What a look found, for one check of one subject. */
@@ -98,7 +103,7 @@ interface Look {
 }
 
 /** A thing the watch keeps an incident for: a service, or one of majhi's own checks. */
-interface Subject {
+export interface Subject {
   id: string;
   org: string;
   name: string;
@@ -106,13 +111,20 @@ interface Subject {
   project?: string | undefined;
   fix?: { check: string; label: string } | undefined;
   url?: string | undefined;
+  /** A watch: the incident's title, and the news for the captain (undefined: it is not woken). */
+  title?: string | undefined;
+  wakeText?: ((inc: OpsIncident, evidence: string[]) => string | undefined) | undefined;
 }
 
 const RANK = { high: 3, medium: 2, low: 1 } as const;
-const KIND_ORDER: OpsCheckKind[] = ["url", "monitor", "dns", "tls"];
+const KIND_ORDER: OpsCheckKind[] = ["url", "monitor", "dns", "tls", "watch"];
 
-function incidentKey(subject: string): string {
-  return subject.startsWith("self:") ? subject : `ops:${subject}`;
+export function incidentKey(subject: string): string {
+  return subject.startsWith("self:")
+    ? subject
+    : subject.startsWith("wch-")
+      ? `watch:${subject}`
+      : `ops:${subject}`;
 }
 
 function minSeverity(a: OpsImpact, b: OpsImpact): OpsImpact {
@@ -377,7 +389,7 @@ export class OpsWatch {
   /** Whether the failures of one check are confirmed: 2 of the last 3, the newest among them. */
   private confirmed(s: CheckState): boolean {
     if (s.lastOk !== false || s.unknown) return false;
-    if (s.kind === "tls" || s.kind === "dns") return true;
+    if (s.kind === "tls" || s.kind === "dns" || s.kind === "watch") return true;
     return s.recent.filter((x) => x === 0).length >= CONFIRM_FAILS && s.recent[s.recent.length - 1] === 0;
   }
 
@@ -427,6 +439,7 @@ export class OpsWatch {
   private titleOf(subject: Subject, failing: readonly CheckState[]): string {
     const first = [...failing].sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind))[0];
     if (first === undefined) return subject.name;
+    if (subject.title !== undefined) return subject.title;
     if (subject.id.startsWith("self:")) return `majhi: ${subject.name} is failing`;
     if (first.kind === "url") {
       if (first.lastDetail.startsWith("slow")) return `${subject.name} is slow`;
@@ -439,7 +452,7 @@ export class OpsWatch {
 
   private evidenceOf(subject: Subject, failing: readonly CheckState[]): string[] {
     return failing.map((s) => {
-      if (subject.id.startsWith("self:")) return `${subject.name}: ${s.lastDetail}`;
+      if (subject.id.startsWith("self:") || s.kind === "watch") return `${subject.name}: ${s.lastDetail}`;
       return `${s.kind === "url" ? (subject.url ?? "address") : s.kind}: ${s.lastDetail}`;
     });
   }
@@ -505,7 +518,7 @@ export class OpsWatch {
     }
     const draft: Omit<StoredIncident, "id"> = {
       org: subject.org,
-      ...(subject.id.startsWith("self:") ? {} : { service: subject.id }),
+      ...(subject.id.startsWith("self:") || subject.id.startsWith("wch-") ? {} : { service: subject.id }),
       key,
       title,
       severity,
@@ -579,6 +592,7 @@ export class OpsWatch {
       }
     }
     this.deps.changed();
+    this.deps.onResolved?.(next);
   }
 
   // Alerts and escalation -------------------------------------------------------
@@ -613,6 +627,11 @@ export class OpsWatch {
   }
 
   private async wake(inc: StoredIncident, subject: Subject, evidence: string[]): Promise<void> {
+    if (subject.wakeText !== undefined) {
+      const text = subject.wakeText(inc, evidence);
+      if (text !== undefined) this.deps.wake(inc.org, text);
+      return;
+    }
     const ws = await this.deps.orgName(inc.org);
     const lines: string[] = [];
     if (subject.id.startsWith("self:")) {
@@ -722,21 +741,60 @@ export class OpsWatch {
     this.deps.repo.saveIncident(next);
     this.deps.phone.voidFor(`incident:${id}`);
     this.deps.changed();
+    this.deps.onAcked?.(next);
     return next;
   }
 
+  /** A fix did not work, or made it worse: this one is high now, and the phone is told. */
+  async escalate(id: number, text: string): Promise<void> {
+    const inc = this.deps.repo.incident(id);
+    if (inc === undefined || inc.status !== "open") return;
+    const { ackedAt: _acked, ...rest } = inc;
+    const next: StoredIncident = {
+      ...rest,
+      severity: "high",
+      timeline: cap([...inc.timeline, { at: this.at(), kind: "note", text }]),
+    };
+    this.deps.repo.saveIncident(next);
+    this.deps.phone.voidFor(`incident:${id}`);
+    await this.alert(next, await this.subjectOfIncident(next), false);
+    this.deps.changed();
+  }
+
+  /** Adds a line to an open or resolved incident's timeline (what a fix did, what the captain found). */
+  note(id: number, kind: OpsTimelineEntry["kind"], text: string): void {
+    const inc = this.deps.repo.incident(id);
+    if (inc === undefined) return;
+    this.deps.repo.saveIncident({
+      ...inc,
+      timeline: cap([...inc.timeline, { at: this.at(), kind, text: text.slice(0, 300) }]),
+    });
+    this.deps.changed();
+  }
+
   /** The high incidents that wait for an acknowledgement: Decisions lists them. */
-  unacked(): { id: number; org: string; title: string; at: string; escalated: boolean }[] {
-    return this.deps.repo
-      .open()
-      .filter((i) => i.severity === "high" && i.ackedAt === undefined)
-      .map((i) => ({
+  unacked(): {
+    id: number;
+    org: string;
+    title: string;
+    at: string;
+    escalated: boolean;
+    question?: { text: string; options: { id: string; label: string }[] };
+  }[] {
+    const out: ReturnType<OpsWatch["unacked"]> = [];
+    for (const i of this.deps.repo.open()) {
+      const question = i.ackedAt === undefined ? this.deps.question?.(i) : undefined;
+      if (!(i.severity === "high" && i.ackedAt === undefined) && question === undefined) continue;
+      out.push({
         id: i.id,
         org: i.org,
         title: i.title,
         at: i.openedAt,
         escalated: i.escalatedAt !== undefined,
-      }));
+        ...(question === undefined ? {} : { question }),
+      });
+    }
+    return out;
   }
 
   /** Open incidents, newest first, for the sidebar lamp and the page. */
@@ -788,6 +846,22 @@ export class OpsWatch {
   }
 
   // Views -----------------------------------------------------------------------
+
+  /** Resolves the open incident of a subject that is no longer watched. */
+  async closeSubject(subject: string, why: string): Promise<void> {
+    const open = this.openIncident(subject);
+    if (open !== undefined) await this.resolve(open, why);
+  }
+
+  /** The incident of a watch, open or the latest. */
+  incidentOf(subject: string): StoredIncident | undefined {
+    return this.deps.repo.latestByKey(incidentKey(subject));
+  }
+
+  /** The open incident of a watch. */
+  openIncidentOf(subject: string): StoredIncident | undefined {
+    return this.openIncident(subject);
+  }
 
   /** The worst of a service's checks. */
   private status(id: string): OpsCheckStatus {

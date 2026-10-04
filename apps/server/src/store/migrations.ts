@@ -1400,6 +1400,29 @@ CREATE TABLE handoff_state (
 CREATE INDEX captain_actions_org_day ON captain_actions (org, day);
 `,
   },
+  {
+    // Watch anything (5.18): the watches the owner declares, their state and their history of numbers.
+    id: 143,
+    name: "watch anything",
+    sql: `
+CREATE TABLE watches (
+  id TEXT PRIMARY KEY,
+  org TEXT NOT NULL,
+  def TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT '{}',
+  paused INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX watches_org ON watches(org);
+CREATE TABLE watch_samples (
+  watch TEXT NOT NULL,
+  at TEXT NOT NULL,
+  v REAL,
+  ok INTEGER NOT NULL
+);
+CREATE INDEX watch_samples_at ON watch_samples(watch, at);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

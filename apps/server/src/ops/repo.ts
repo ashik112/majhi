@@ -98,6 +98,7 @@ function toIncident(r: IncidentRow): StoredIncident {
     id: r.id,
     org: r.org,
     ...(r.service === null ? {} : { service: r.service }),
+    ...(r.key.startsWith("watch:") ? { watch: r.key.slice("watch:".length) } : {}),
     title: r.title,
     severity: r.severity,
     status: r.status,

@@ -178,6 +178,39 @@ export class ConnectionTester {
     return callTool(remoteTransport(values.fields.url ?? "", headers, protocol), tool, args, timeoutMs);
   }
 
+  /**
+   * What the watches need of a connection: its text values and, for a Variables connection, the values of its
+   * variables (secrets read from secrets.age). Held only for one look: the caller never stores or logs them.
+   */
+  async valuesForWatch(
+    id: string,
+  ): Promise<
+    | {
+        org: string;
+        type: string;
+        name: string;
+        fields: Record<string, string>;
+        vars: Record<string, string>;
+      }
+    | undefined
+  > {
+    const found = await this.deps.connections.find(id);
+    if (found === undefined) return undefined;
+    const { connection } = found;
+    if (connection.type !== "env") {
+      const fields: Record<string, string> = {};
+      for (const [k, v] of Object.entries(connection.fields ?? {}))
+        if (!v.startsWith("secret:") && !v.startsWith("file:")) fields[k] = v;
+      return { org: found.org, type: connection.type, name: connection.name, fields, vars: {} };
+    }
+    const values = await this.resolve(id, connection);
+    const vars: Record<string, string> = {};
+    for (const e of values.lists.vars ?? []) {
+      if (e.value !== undefined && e.kind !== "file") vars[e.name] = e.value;
+    }
+    return { org: found.org, type: connection.type, name: connection.name, fields: values.fields, vars };
+  }
+
   private run(type: ConnectionType, values: Values): Promise<Outcome> {
     switch (type) {
       case "kubectl":

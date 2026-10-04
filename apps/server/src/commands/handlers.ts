@@ -181,7 +181,12 @@ export function createHandlers({
       goals: services.goals,
       outbound: services.outbound,
     }),
-    ...opsHandlers({ watch: services.ops.watch, phone: services.ops.phone, playbooks: services.playbooks }),
+    ...opsHandlers({
+      watch: services.ops.watch,
+      engine: services.ops.engine,
+      phone: services.ops.phone,
+      playbooks: services.playbooks,
+    }),
     ...outcomesHandlers({
       findings: services.findings,
       lanes: services.lanes,

@@ -41,7 +41,15 @@ export interface DecisionSources {
   /** Batches that are due in front of the owner: queued drafts of a channel in Batch mode. */
   batches?: readonly { org: string; channel: OutboundChannel; drafts: readonly OutboundDraft[] }[];
   /** High incidents nobody has acknowledged (the ops watch). */
-  incidents?: readonly { id: number; org: string; title: string; at: string; escalated: boolean }[];
+  incidents?: readonly {
+    id: number;
+    org: string;
+    title: string;
+    at: string;
+    escalated: boolean;
+    /** A fix the owner is asked to approve (Watch anything). */
+    question?: { text: string; options: { id: string; label: string }[] } | undefined;
+  }[];
   /** A workspace's name, for the sentences that name it. */
   orgName?: (org: string) => string | undefined;
   /** Decisions another part of majhi builds itself: the trust ladder's notices, the monthly ceiling. */
@@ -408,15 +416,25 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
 
   for (const inc of src.incidents ?? []) {
     const id = incidentDecisionId(inc.id);
-    const options: DecisionOption[] = [{ id: "ack", label: "Acknowledge", primary: true }];
+    const options: DecisionOption[] =
+      inc.question === undefined
+        ? [{ id: "ack", label: "Acknowledge", primary: true }]
+        : inc.question.options.map((o, i) => ({
+            id: o.id,
+            label: o.label,
+            ...(i === 0 ? { primary: true as const } : {}),
+          }));
     out.push({
       id,
       kind: "incident",
       org: inc.org,
       title: oneLine(inc.escalated ? `${inc.title} (not acknowledged yet)` : inc.title),
-      sentence: inc.escalated
-        ? `${inc.title}. majhi alerted you twice and nobody has acknowledged it. Acknowledging stops the alerts; it closes when its checks are green.`
-        : `${inc.title}. Acknowledging stops the alerts; it closes when its checks are green.`,
+      sentence:
+        inc.question !== undefined
+          ? oneLine(`${inc.title}. ${inc.question.text}`).slice(0, 500)
+          : inc.escalated
+            ? `${inc.title}. majhi alerted you twice and nobody has acknowledged it. Acknowledging stops the alerts; it closes when its checks are green.`
+            : `${inc.title}. Acknowledging stops the alerts; it closes when its checks are green.`,
       options,
       at: inc.at,
       link: { kind: "watch" },
