@@ -104,7 +104,13 @@ Branch `task/prv-22-phase-7-resilience-and-health`. The server and web halves re
 
 ### Verified
 
-VERIFIED_PLACEHOLDER
+On the branch with `main` merged at `a99f71c0`, 4 Oct:
+
+- `pnpm -r typecheck` and `tsc -p e2e` pass. The e2e check needed `agentsOff` in the two Connect screenshot fixtures, which `main` lacked.
+- Biome passes on the changed files.
+- Phase 7 unit tests: 73 of 73 pass. They cover `limit-failure`, the fake agent, `config/settings`, `accounts/limit`, `budgets/limit`, `runs/context`, `runs/limit` and `runs/start-failure`. The settings test also needed `main`'s new cleanup and container defaults.
+- Done when, in the browser with the fake adapters: 3 of 3 pass. The specs are `e2e/phase7-limits.spec.ts` and `e2e/phase2b-runs.spec.ts`: the limit handoff, offline pause and resume, and waiting in line at the account limit.
+- The whole unit and e2e suites were not run from the task (CLAUDE.md test rule: they run once, at the end of a phase).
 
 ### Left and known issues
 
