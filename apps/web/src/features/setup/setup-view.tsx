@@ -17,6 +17,7 @@ import { HealthDialog } from "@/features/accounts/health-dialog";
 import { useBoss } from "@/features/boss/boss-context";
 import { EditRootsDialog } from "@/features/roots/edit-roots-dialog";
 import { useMountNow } from "@/features/roots/use-mount-now";
+import { useInSettingsFrame } from "@/features/settings/settings-frame";
 import { ACCENT_LABEL, useAppearance } from "@/lib/appearance";
 import { useBackups } from "@/lib/backup-queries";
 import { useSettings } from "@/lib/boss-queries";
@@ -57,6 +58,7 @@ import {
  * change that can be undone. The captain is one click (or Cmd+J) away in its drawer.
  */
 export function SetupView() {
+  const inFrame = useInSettingsFrame();
   const config = useConfig();
   const repos = useRepos(true);
   const host = useHostStatus();
@@ -182,6 +184,77 @@ export function SetupView() {
     history: "Undo any change",
   };
 
+  const detail = (
+    <DetailPane
+      key={section}
+      label={SECTION_TITLE[section]}
+      head={
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <h2 className="text-md leading-6 font-semibold">{SECTION_TITLE[section]}</h2>
+          <p className="truncate text-sm text-fg-muted">{SECTION_ABOUT[section]}</p>
+        </div>
+      }
+    >
+      {section === "overview" && (
+        <OverviewSection rows={readiness} ready={ready} onOpen={(id) => setParam(id)} />
+      )}
+      {section === "roots" && (
+        <RootsSection
+          roots={repos.data?.roots}
+          configured={configured}
+          home={home}
+          state={roots}
+          actions={rootActions}
+        />
+      )}
+      {section === "ssh" && <SshSection host={host.data} state={ssh} />}
+      {section === "decisions" && <DecisionsSection />}
+      {section === "memory" && (
+        <WithSettings settings={settings}>{(data) => <MemorySection saved={data.memory} />}</WithSettings>
+      )}
+      {section === "context" && (
+        <WithSettings settings={settings}>{(data) => <ContextSection settings={data} />}</WithSettings>
+      )}
+      {section === "turns" && (
+        <WithSettings settings={settings}>{(data) => <TurnsSection settings={data} />}</WithSettings>
+      )}
+      {section === "teams" && (
+        <WithSettings settings={settings}>{(data) => <TeamsSection settings={data} />}</WithSettings>
+      )}
+      {section === "approvals" && (
+        <>
+          <WithSettings settings={settings}>{(data) => <ApprovalsSection settings={data} />}</WithSettings>
+          <RulesPanel />
+        </>
+      )}
+      {section === "notifications" && (
+        <WithSettings settings={settings}>
+          {(data) => <NotificationsSection saved={data.notifications} />}
+        </WithSettings>
+      )}
+      {section === "editor" && (
+        <WithSettings settings={settings}>{(data) => <EditorSection saved={data.editor} />}</WithSettings>
+      )}
+      {section === "e2e" && (
+        <WithSettings settings={settings}>{(data) => <E2eSection saved={data.e2e} />}</WithSettings>
+      )}
+      {section === "containers" && <ContainersSection />}
+      {section === "appearance" && (
+        <DetailSection
+          title="Theme and accent"
+          note="The same as the sidebar's Appearance button"
+          className="border-t-0"
+        >
+          <AppearanceControls className="max-w-[320px]" />
+        </DetailSection>
+      )}
+      {section === "backups" && <BackupsSection home={home} />}
+      {section === "history" && <HistorySection />}
+    </DetailPane>
+  );
+  // Inside the Settings frame the frame lists the sections; the page is the picked section only.
+  if (inFrame) return <div className="flex min-h-0 min-w-0 flex-1 flex-col">{detail}</div>;
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
@@ -218,74 +291,7 @@ export function SetupView() {
             ))}
           </div>
         </ListPane>
-        <DetailPane
-          key={section}
-          label={SECTION_TITLE[section]}
-          head={
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <h2 className="text-md leading-6 font-semibold">{SECTION_TITLE[section]}</h2>
-              <p className="truncate text-sm text-fg-muted">{SECTION_ABOUT[section]}</p>
-            </div>
-          }
-        >
-          {section === "overview" && (
-            <OverviewSection rows={readiness} ready={ready} onOpen={(id) => setParam(id)} />
-          )}
-          {section === "roots" && (
-            <RootsSection
-              roots={repos.data?.roots}
-              configured={configured}
-              home={home}
-              state={roots}
-              actions={rootActions}
-            />
-          )}
-          {section === "ssh" && <SshSection host={host.data} state={ssh} />}
-          {section === "decisions" && <DecisionsSection />}
-          {section === "memory" && (
-            <WithSettings settings={settings}>{(data) => <MemorySection saved={data.memory} />}</WithSettings>
-          )}
-          {section === "context" && (
-            <WithSettings settings={settings}>{(data) => <ContextSection settings={data} />}</WithSettings>
-          )}
-          {section === "turns" && (
-            <WithSettings settings={settings}>{(data) => <TurnsSection settings={data} />}</WithSettings>
-          )}
-          {section === "teams" && (
-            <WithSettings settings={settings}>{(data) => <TeamsSection settings={data} />}</WithSettings>
-          )}
-          {section === "approvals" && (
-            <>
-              <WithSettings settings={settings}>
-                {(data) => <ApprovalsSection settings={data} />}
-              </WithSettings>
-              <RulesPanel />
-            </>
-          )}
-          {section === "notifications" && (
-            <WithSettings settings={settings}>
-              {(data) => <NotificationsSection saved={data.notifications} />}
-            </WithSettings>
-          )}
-          {section === "editor" && (
-            <WithSettings settings={settings}>{(data) => <EditorSection saved={data.editor} />}</WithSettings>
-          )}
-          {section === "e2e" && (
-            <WithSettings settings={settings}>{(data) => <E2eSection saved={data.e2e} />}</WithSettings>
-          )}
-          {section === "containers" && <ContainersSection />}
-          {section === "appearance" && (
-            <DetailSection
-              title="Theme and accent"
-              note="The same as the sidebar's Appearance button"
-              className="border-t-0"
-            >
-              <AppearanceControls className="max-w-[320px]" />
-            </DetailSection>
-          )}
-          {section === "backups" && <BackupsSection home={home} />}
-          {section === "history" && <HistorySection />}
-        </DetailPane>
+        {detail}
       </ListDetail>
 
       {editingRoots && <EditRootsDialog onClose={() => setEditingRoots(false)} />}

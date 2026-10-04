@@ -1,12 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ChevronsUpDown, MessageSquare } from "lucide-react";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { MessageSquare } from "lucide-react";
+import { useMemo } from "react";
 import { AppearanceButton } from "@/components/shell/appearance";
 import { Bell } from "@/components/shell/bell";
 import { WorkspaceSwitcher } from "@/components/shell/workspace-switcher";
-import { useAnchoredPanel } from "@/components/ui/anchored";
 import { Kbd } from "@/components/ui/kbd";
 import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
 import { ROW_SELECTED } from "@/components/ui/list-detail";
@@ -18,22 +16,22 @@ import { SpendToday, useAutonomousSwitch } from "@/features/autonomy/switch";
 import { useBoss } from "@/features/boss/boss-context";
 import { useNeedsYou } from "@/features/decisions/needs-you";
 import { checksNeedingYou } from "@/features/health/model";
-import { reviewTarget } from "@/features/memory/model";
+import { isSettingsPath } from "@/features/settings/settings-frame";
 import { accountsNeedingYou, agentsRightNow, healthCheckedText } from "@/features/shell/model";
-import { PAGE_LABEL, SETTINGS_PAGES } from "@/features/shell/nav";
+import { PAGE_LABEL } from "@/features/shell/nav";
 import { chordOf } from "@/features/shell/shortcuts";
 import { UpdateNotice } from "@/features/update/update-notice";
 import { useAgentIndex } from "@/lib/agent-index";
 import { prefetchCaptain } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
-import { GLASS, GLASS_STRONG } from "@/lib/glass";
+import { GLASS } from "@/lib/glass";
 import { useFacts } from "@/lib/memory-queries";
 import { useHealthChecks } from "@/lib/ops-queries";
 import { PAGE_PATH, type PageName } from "@/lib/pages";
 import { useHealth, useHostStatus } from "@/lib/queries";
 import { useAccounts } from "@/lib/studio-queries";
-import { useProjects, useTasks } from "@/lib/task-queries";
+import { useTasks } from "@/lib/task-queries";
 import { useAfterFirstPaint } from "@/lib/use-after-paint";
 import { useNow } from "@/lib/use-now";
 import { useWatch } from "@/lib/watch-queries";
@@ -193,166 +191,36 @@ function TeamGroup({ isActive }: { isActive: (to: string) => boolean }) {
 }
 
 /**
- * Settings: one row that opens a menu of the configuration pages, so the sidebar keeps its size on any
- * window. When one of them is on screen the row is selected and names it. A dot says that something
- * inside needs a look, and the menu says what. None of it is a decision, so none of it is red.
+ * Settings: one row that opens the Settings page, which lists every configuration page on its own left.
+ * It is selected on any of those pages. A note says what inside needs a look; none of it is a decision,
+ * so none of it is red.
  */
 function SettingsGroup({ isActive }: { isActive: (to: string) => boolean }) {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
   const settled = useAfterFirstPaint(6_000);
-  const pendingFacts = useFacts({ status: "pending" }, settled).data ?? [];
-  const projects = useProjects().data;
-  const toReview = pendingFacts.length;
-  const reviewAt = reviewTarget(pendingFacts, new Map((projects ?? []).map((p) => [p.id, p.org])));
-  const current = SETTINGS_PAGES.find((page) => isActive(PAGE_PATH[page]));
-  const [open, setOpen] = useState(false);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const id = useId();
-  const close = useCallback(() => setOpen(false), []);
-  const { panel, style, container } = useAnchoredPanel({
-    open,
-    close,
-    trigger,
-    matchWidth: true,
-    maxHeight: 520,
-  });
-
-  useEffect(() => {
-    if (!open) return;
-    const items = panel.current?.querySelectorAll<HTMLElement>('[role="menuitem"]');
-    const here = panel.current?.querySelector<HTMLElement>('[aria-current="page"]');
-    (here ?? items?.[0])?.focus();
-  }, [open, panel]);
-
-  // Esc closes the menu wherever the focus is.
-  useEffect(() => {
-    if (!open) return;
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setOpen(false);
-      trigger.current?.focus();
-    };
-    document.addEventListener("keydown", onEscape);
-    return () => document.removeEventListener("keydown", onEscape);
-  }, [open]);
-
-  function onKeyDown(event: React.KeyboardEvent) {
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-    event.preventDefault();
-    const nodes = Array.from(panel.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
-    const at = nodes.indexOf(document.activeElement as HTMLElement);
-    const next = event.key === "ArrowDown" ? at + 1 : at - 1;
-    nodes[(next + nodes.length) % nodes.length]?.focus();
-  }
-
-  const notes = [toReview > 0 ? `${toReview} to review` : undefined].filter(
-    (note): note is string => note !== undefined,
-  );
-  const badge: Partial<Record<PageName, NavBadge>> = {};
-  if (toReview > 0) badge.memory = { text: `${toReview} to review`, tone: "check" };
-
+  const toReview = (useFacts({ status: "pending" }, settled).data ?? []).length;
+  const active = isSettingsPath(pathname) || isActive(PAGE_PATH.setup);
   return (
     <div className="flex flex-col gap-px">
-      <button
-        ref={trigger}
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? id : undefined}
-        title={notes.length > 0 ? `Settings: ${notes.join(", ")}` : "Settings"}
-        onClick={() => setOpen((v) => !v)}
+      <Link
+        to={PAGE_PATH.setup}
+        search={{}}
+        aria-current={active ? "page" : undefined}
+        title={toReview > 0 ? `Settings: ${toReview} lessons to review in Memory` : "Settings"}
         className={cn(
           ITEM,
           "h-8 shrink-0 gap-2 px-2.5 text-body font-medium",
-          current !== undefined || open ? ROW_SELECTED : "text-fg-muted",
+          active ? ROW_SELECTED : "text-fg-muted",
         )}
       >
         <span className="shrink-0">Settings</span>
-        <span className="ml-auto flex min-w-0 items-center gap-2">
-          {current !== undefined && (
-            <span className="min-w-0 truncate text-sm font-normal text-fg-muted">{PAGE_LABEL[current]}</span>
-          )}
-          {notes.length > 0 && (
-            <span className="flex shrink-0 items-center gap-1.5 text-xs font-normal text-caution">
-              <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
-              <span className="sr-only">{notes.join(", ")}</span>
-              {current === undefined && (notes.length > 1 ? notes.length : notes[0])}
-            </span>
-          )}
-          <ChevronsUpDown aria-hidden="true" className="size-3.5 shrink-0 text-fg-faint" />
-        </span>
-      </button>
-      {open &&
-        createPortal(
-          <div
-            ref={panel}
-            popover="manual"
-            id={id}
-            role="menu"
-            aria-label="Settings"
-            style={style}
-            onKeyDown={onKeyDown}
-            className={cn(
-              "z-50 flex min-w-[220px] max-w-[300px] flex-col overflow-y-auto rounded-lg p-1",
-              GLASS_STRONG,
-            )}
-          >
-            {SETTINGS_PAGES.flatMap((page) => {
-              const b = badge[page];
-              const chord = chordOf(PAGE_PATH[page]);
-              const link = page === "memory" && b !== undefined && reviewAt !== undefined;
-              const item = (
-                <Link
-                  key={page}
-                  to={PAGE_PATH[page]}
-                  search={link ? { project: reviewAt, tab: "lessons" } : {}}
-                  role="menuitem"
-                  aria-current={isActive(PAGE_PATH[page]) ? "page" : undefined}
-                  onClick={close}
-                  className={cn(
-                    "flex h-8 min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-sm px-2 text-left text-base hover:bg-raised focus-visible:bg-raised focus-visible:outline-none",
-                    isActive(PAGE_PATH[page]) ? "font-medium text-fg" : "text-fg-soft",
-                  )}
-                >
-                  <span className="min-w-0 truncate">{PAGE_LABEL[page]}</span>
-                  {b !== undefined && (
-                    <span
-                      className={cn(
-                        "tnum ml-auto flex shrink-0 items-center gap-1.5 text-xs",
-                        b.tone === "check" ? "text-caution" : "text-fg-faint",
-                      )}
-                    >
-                      {b.dot && (
-                        <>
-                          <Lamp state="needs" size={6} />
-                          <span className="sr-only">An account needs you. </span>
-                        </>
-                      )}
-                      {b.text}
-                    </span>
-                  )}
-                  {b === undefined && chord !== undefined && <Kbd className="ml-auto">{chord}</Kbd>}
-                </Link>
-              );
-              // Backups is a section of Hub setup, listed on its own so it is found.
-              return page === "setup"
-                ? [
-                    item,
-                    <Link
-                      key="backups"
-                      to={PAGE_PATH.setup}
-                      search={{ section: "backups" }}
-                      role="menuitem"
-                      onClick={close}
-                      className="flex h-8 min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-sm px-2 text-left text-base text-fg-soft hover:bg-raised focus-visible:bg-raised focus-visible:outline-none"
-                    >
-                      <span className="min-w-0 truncate">Backups</span>
-                    </Link>,
-                  ]
-                : [item];
-            })}
-          </div>,
-          container,
+        {toReview > 0 && (
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs font-normal text-caution">
+            <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
+            {toReview} to review
+          </span>
         )}
+      </Link>
     </div>
   );
 }

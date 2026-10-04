@@ -14,6 +14,7 @@ import { useNeedsYou } from "@/features/decisions/needs-you";
 import { AppGate } from "@/features/home/app-gate";
 import { NewTaskProvider, useNewTask } from "@/features/new-task/new-task-context";
 import { Palette } from "@/features/search/palette";
+import { isSettingsPath, SettingsFrame } from "@/features/settings/settings-frame";
 import { deriveBanner } from "@/features/shell/model";
 import { useShortcuts } from "@/features/shell/use-shortcuts";
 import { TaskDrawer } from "@/features/task-drawer/task-drawer";
@@ -107,7 +108,9 @@ function Frame() {
   });
   // The board, the task view and the list-and-detail pages fix their own frame and scroll inside it;
   // other pages scroll here.
-  const pinned = section === "/" || PINNED.has(section);
+  // Settings pages sit in one frame with the Settings list; the frame scrolls the page itself.
+  const settings = isSettingsPath(section);
+  const pinned = section === "/" || PINNED.has(section) || settings;
 
   return (
     <div className="flex min-h-0 flex-1 gap-3 p-3">
@@ -116,7 +119,7 @@ function Frame() {
         <NotifyPrompt />
         <AttentionBanner banner={banner} />
         <m.div
-          key={section}
+          key={settings ? "settings" : section}
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
@@ -128,7 +131,13 @@ function Frame() {
           )}
         >
           <InShellContext.Provider value={true}>
-            <Outlet />
+            {settings ? (
+              <SettingsFrame>
+                <Outlet />
+              </SettingsFrame>
+            ) : (
+              <Outlet />
+            )}
           </InShellContext.Provider>
         </m.div>
       </main>
