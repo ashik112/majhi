@@ -2,17 +2,18 @@ import type { CaptainAction, CaptainChore } from "@majhi/shared";
 
 /**
  * One line per workspace for a day (SPEC 5.18): "shipped 2, tidied 8 memories, 1 thing for you".
- * Pure: it counts the day's log.
+ * Pure: it counts the day's log. "For you" is not read from the log: the caller passes the open
+ * owner cards of the workspace (the same count as Needs you), since a card asked yesterday may be
+ * answered today and one the captain never logged still waits.
  */
-export function summaryOf(actions: readonly Pick<CaptainAction, "chore" | "outcome" | "text">[]): {
-  line: string;
-  forYou: number;
-} {
+export function summaryOf(
+  actions: readonly Pick<CaptainAction, "chore" | "outcome" | "text">[],
+  forYou = 0,
+): string {
   const done = (chore: CaptainChore, starts?: string) =>
     actions.filter(
       (a) => a.chore === chore && a.outcome === "done" && (starts === undefined || a.text.startsWith(starts)),
     ).length;
-  const forYou = actions.filter((a) => a.outcome === "asked").length;
   const parts: string[] = [];
   const count = (n: number, one: string, many = `${one}s`) => {
     if (n > 0) parts.push(`${n} ${n === 1 ? one : many}`);
@@ -31,5 +32,5 @@ export function summaryOf(actions: readonly Pick<CaptainAction, "chore" | "outco
   const cleaned = done("cleanup");
   if (cleaned > 0) parts.push(`cleaned up ${cleaned} old task${cleaned === 1 ? "" : "s"}`);
   if (forYou > 0) parts.push(`${forYou} thing${forYou === 1 ? "" : "s"} for you`);
-  return { line: parts.join(", "), forYou };
+  return parts.join(", ");
 }

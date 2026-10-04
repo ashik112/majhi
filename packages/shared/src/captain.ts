@@ -143,7 +143,7 @@ export const CaptainOrgSchema = z.object({
   used: SpendSchema,
   /** Today's one line: "shipped 2, tidied 8 memories, 1 thing for you". Empty when nothing happened. */
   summary: z.string(),
-  /** How many things it handed to the owner today. */
+  /** Open owner cards in this workspace now: the same count as Needs you. */
   forYou: z.number().int().nonnegative(),
   /** Why it does not act right now (outside hours, a freeze, budget reached). */
   resting: z.string().optional(),

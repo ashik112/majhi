@@ -156,6 +156,8 @@ export interface AutonomyDeps {
    * a turn that is running is never stopped by it (SPEC 5.18, one cost ceiling).
    */
   ceilingHeld?: () => string | undefined;
+  /** Whether the task waits on a background process an agent started: live work with no agent in a turn. */
+  processWaiting?: (task: string) => boolean;
   /** The last reading of the owner's computer and majhi's containers (the machine sensor). */
   machine?: () => MachineReading | undefined;
   now?: () => Date;
@@ -926,7 +928,8 @@ export class AutonomyService {
 
   /**
    * The workspace's limit on tasks the captain works on at once (`tasksAtOnce`, default 1): the line
-   * when it is reached, or undefined. Counts the workspace's running tasks, not chats or the lanes.
+   * when it is reached, or undefined. Counts the workspace's running tasks that have a live run, not
+   * chats or the lanes. A task whose status says running with no run (a restart cut it) holds no slot.
    */
   private async workspaceFull(org: string, except?: string): Promise<string | undefined> {
     const settings = (await this.deps.config.settings()).autonomy;
@@ -936,6 +939,7 @@ export class AutonomyService {
       .filter(
         (t) =>
           t.status === "running" &&
+          this.isLive(t.id) &&
           t.kind !== "chat" &&
           t.id !== except &&
           (t.org ?? PRIVATE) === org &&
@@ -944,6 +948,14 @@ export class AutonomyService {
     if (running.length < limit) return undefined;
     const names = running.map((t) => t.id).join(", ");
     return `This workspace works on ${limit} ${limit === 1 ? "task" : "tasks"} at once and ${names} ${running.length === 1 ? "is" : "are"} running.`;
+  }
+
+  /**
+   * The task has a live run: queued for a slot, starting, working, waiting on a card, held to go on by
+   * itself, or waiting on a background process. The run manager's state, not the stored status.
+   */
+  private isLive(task: string): boolean {
+    return this.deps.runs.busy(task) || this.deps.processWaiting?.(task) === true;
   }
 
   /** Why the task's agents would only wait for a slot now, or undefined when there is room. */
@@ -1609,7 +1621,7 @@ export class AutonomyService {
     const out: RepoRuleTask[] = [];
     for (const s of this.deps.store.tasks.list(false)) {
       // Only work that is changing code now: a task in review waits for the owner and holds nothing.
-      if (s.status !== "running" || skip.includes(s.id)) continue;
+      if (s.status !== "running" || !this.isLive(s.id) || skip.includes(s.id)) continue;
       const task = this.deps.store.tasks.get(s.id);
       if (task === undefined) continue;
       out.push(await this.repoUses(task));
