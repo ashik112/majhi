@@ -21,6 +21,7 @@ import {
 import type { ServerEnv } from "../env.ts";
 import { errorCode, errorMessage, exitCode } from "../errors.ts";
 import { isDirectory } from "../fs.ts";
+import { machineLine, machineWarnings, upperFirst } from "../machine/busy.ts";
 import { checkRunnerIsolation, checkSerena } from "../runner/check.ts";
 import { SERENA_COMMAND } from "../runs/serena.ts";
 import type { KeyExportRecord } from "../secrets/backup.ts";
@@ -92,6 +93,7 @@ export async function collectChecks(ctx: CheckContext): Promise<Check[]> {
     checkTasksDir(state, home),
     checkDisk(state, home).then((c) => [c]),
     [checkTaskFolders(ctx.services)],
+    [checkMachine(ctx.services)],
     checkSecrets(ctx.services),
     checkKeyBackup(ctx),
     checkBackups(ctx),
@@ -428,6 +430,19 @@ async function checkDisk(state: ConfigState, home: string): Promise<Check> {
   } catch (err) {
     return { ...base, status: "fail", detail: `Cannot measure ${probe}: ${errorMessage(err)}` };
   }
+}
+
+/** Load, memory and disk of the owner's computer, from the machine sensor (not the container's view). */
+function checkMachine(services: Services): Check {
+  const base = { id: "machine", group: "host", name: "Machine load" } as const;
+  const reading = services.machine.get();
+  if (reading?.host === undefined) {
+    return { ...base, status: "pass", detail: "Not read yet. It needs the host helper." };
+  }
+  const warnings = machineWarnings(reading.host, services.machine.idleLowMs());
+  const detail = machineLine(reading);
+  if (warnings.length === 0) return { ...base, status: "pass", detail };
+  return { ...base, status: "warn", detail: `${upperFirst(warnings.join(", "))}. ${detail}` };
 }
 
 /** Task folders above this size are a warning, with a fix that frees what done tasks can rebuild. */

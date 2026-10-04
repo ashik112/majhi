@@ -314,6 +314,7 @@ export class AutonomyDriver {
       accountStatus: Object.fromEntries(status.accounts.map((a) => [a.id, a.status])),
       findings: this.deps.findingLines?.(org) ?? [],
       starts: authorityOf(status.settings, org).start === "decide",
+      machine: machineOf(autonomy),
     };
     return { input, boss };
   }
@@ -587,4 +588,9 @@ export function changeOf(
     default:
       return undefined;
   }
+}
+
+function machineOf(autonomy: AutonomyService): DigestInput["machine"] {
+  const line = autonomy.machineLine();
+  return line === undefined ? undefined : { line, busy: autonomy.machineBusy() };
 }

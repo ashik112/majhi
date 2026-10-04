@@ -13,6 +13,7 @@ import type {
   HostReply,
   LayaDecideResult,
   LayaStatus,
+  MachineHost,
   RootSuggestion,
   SecretsKeyBackup,
   SecretsKeyRestore,
@@ -28,6 +29,8 @@ export interface JobHandlers {
   sshReload(): Promise<SshStatus>;
   /** HEAD of the checkout and the subjects after `from`. Throws when there is no checkout. */
   versionChanges(params: { from: string }): Promise<{ head: string; dirty: boolean; changes: string[] }>;
+  /** Load, memory and free disk of this computer. Absent in tests that do not read them. */
+  machineRead?: () => Promise<MachineHost>;
   /** Starts the update and returns false when one is already running. Undefined without a checkout or docker. */
   update: (() => boolean) | undefined;
   /** Ends the helper so its login service (launchd or systemd) starts it again. */
@@ -135,6 +138,13 @@ export async function runJob(
         return;
       case "version.changes":
         await reply({ id: job.id, ok: true, result: await handlers.versionChanges(job.params) });
+        return;
+      case "machine.read":
+        if (handlers.machineRead === undefined) {
+          await reply({ id: job.id, ok: false, error: NOT_BUILT_JOB });
+          return;
+        }
+        await reply({ id: job.id, ok: true, result: await handlers.machineRead() });
         return;
       case "update": {
         if (handlers.update === undefined) {

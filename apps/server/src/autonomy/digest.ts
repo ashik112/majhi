@@ -77,6 +77,11 @@ export interface DigestInput {
    * proposals and does upkeep; it starts nothing.
    */
   starts?: boolean | undefined;
+  /**
+   * The owner's computer and majhi's containers, one line (the machine sensor). `busy` is why new
+   * work must not start now. Absent: no sensor runs.
+   */
+  machine?: { line: string; busy?: string | undefined } | undefined;
 }
 
 /**
@@ -116,6 +121,7 @@ export function factsOf(input: DigestInput): Facts {
     queue: input.queue.map((q) => [q.title, q.task, q.after, q.waitFor, q.readyAt !== undefined]),
     projects: input.projects,
     findings: input.findings,
+    machineBusy: input.machine?.busy !== undefined,
   };
 }
 
@@ -169,6 +175,16 @@ function build(input: DigestInput, scale: number): string {
     `Spend today: ${use(input.spend.total)}. Resets ${time(input.spend.resetsAt)}.`,
     ...input.spend.orgs.slice(0, max(BASE.accounts)).map((o) => `- ${o.org}: ${use(o)}`),
     ...more(input.spend.orgs.length - max(BASE.accounts)),
+    ...(input.machine === undefined
+      ? []
+      : [
+          `Machine: ${input.machine.line}.`,
+          ...(input.machine.busy === undefined
+            ? []
+            : [
+                `Do not start work: ${input.machine.busy}. majhi refuses starts until it calms down. Tell the owner which runs use the most and propose pausing one.`,
+              ]),
+        ]),
     ...list(
       "Holds on new work",
       input.holds.map((h) => `${h.text}${h.until === undefined ? "" : `, until ${time(h.until)}`}`),

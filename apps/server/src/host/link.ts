@@ -51,6 +51,7 @@ const parseResult: { [M in HostMethod]: (value: unknown) => z.ZodSafeParseResult
   "cli.loginCancel": (value) => HostResultSchemas["cli.loginCancel"].safeParse(value),
   "cli.check": (value) => HostResultSchemas["cli.check"].safeParse(value),
   "cli.logout": (value) => HostResultSchemas["cli.logout"].safeParse(value),
+  "machine.read": (value) => HostResultSchemas["machine.read"].safeParse(value),
   "version.changes": (value) => HostResultSchemas["version.changes"].safeParse(value),
   update: (value) => HostResultSchemas.update.safeParse(value),
   restart: (value) => HostResultSchemas.restart.safeParse(value),

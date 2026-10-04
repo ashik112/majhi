@@ -32,6 +32,7 @@ import {
   detectSecrets,
   type GitLoginsResult,
   isCaptainLane,
+  type MachineReading,
   PRIVATE,
   type RoomItem,
   type Spend,
@@ -65,6 +66,7 @@ import type { ConfigSections } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
+import { busyReason, machineLine, upperFirst } from "../machine/busy.ts";
 import type { RoomService } from "../room/service.ts";
 import { noRoomLine } from "../runs/limits.ts";
 import type { RunManager } from "../runs/manager.ts";
@@ -155,6 +157,8 @@ export interface AutonomyDeps {
    * a turn that is running is never stopped by it (SPEC 5.18, one cost ceiling).
    */
   ceilingHeld?: () => string | undefined;
+  /** The last reading of the owner's computer and majhi's containers (the machine sensor). */
+  machine?: () => MachineReading | undefined;
   now?: () => Date;
 }
 
@@ -801,6 +805,26 @@ export class AutonomyService {
     });
   }
 
+  /** Why new work must not start on a loaded computer, or undefined. */
+  machineBusy(): string | undefined {
+    return busyReason(this.deps.machine?.()?.host);
+  }
+
+  /** The "Machine" line of the digest, or undefined when no sensor runs. */
+  machineLine(): string | undefined {
+    const reading = this.deps.machine?.();
+    return this.deps.machine === undefined ? undefined : machineLine(reading);
+  }
+
+  private wasBusy = false;
+
+  /** The sensor read again: wakes the captain once when a busy machine has calmed down. */
+  machineRead(): void {
+    const busy = this.machineBusy() !== undefined;
+    if (this.wasBusy && !busy) this.wake("The machine is no longer busy", undefined, "news");
+    this.wasBusy = busy;
+  }
+
   /** True while the mode is On: agent slots are shared evenly across workspaces (5.18). */
   slotsFair(): boolean {
     try {
@@ -910,6 +934,8 @@ export class AutonomyService {
 
   /** Why the task's agents would only wait for a slot now, or undefined when there is room. */
   private async noRoomFor(task: Pick<Task, "team">): Promise<string | undefined> {
+    const busy = this.machineBusy();
+    if (busy !== undefined) return `${upperFirst(busy)}.`;
     const accounts = await this.teamAccountIds(task);
     return noRoomLine(await this.deps.runs.capacity(accounts), accounts);
   }
@@ -1463,6 +1489,7 @@ export class AutonomyService {
       command === "tasks.start" ||
       ((command === "tasks.create" || command === "tasks.split") && input.start === true);
     if (!starts || (await this.callerKind(caller)) !== "boss") return undefined;
+    const busy = this.machineBusy();
     const { world, sections } = await this.context(caller, command, input);
     const named = this.teamAccounts(command, input, world, sections);
     // A new task with no team named gets one picked when it is made: it has room when any account
@@ -1478,11 +1505,13 @@ export class AutonomyService {
     const capacity = await this.deps.runs.capacity([...named, ...candidates]);
     const lines = candidates.map((a) => noRoomLine(capacity, [a]));
     const full =
-      candidates.length === 0
-        ? noRoomLine(capacity, named)
-        : lines.every((l) => l !== undefined)
-          ? lines[0]
-          : undefined;
+      busy !== undefined
+        ? `${upperFirst(busy)}.`
+        : candidates.length === 0
+          ? noRoomLine(capacity, named)
+          : lines.every((l) => l !== undefined)
+            ? lines[0]
+            : undefined;
     const then =
       command === "tasks.start"
         ? `${str(input.id) ?? "The task"} waits.`

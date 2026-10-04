@@ -4,6 +4,7 @@ import { LayaStatusSchema } from "./decisions.ts";
 import { E2eRunResultSchema } from "./e2e.ts";
 import { GitHostNameSchema, SignInIdSchema } from "./git-signin.ts";
 import { IdSchema } from "./ids.ts";
+import { MachineHostSchema } from "./machine.ts";
 import { CloneIdSchema, ClonePhaseSchema } from "./remote-repos.ts";
 import { EditorAppSchema } from "./settings.ts";
 
@@ -347,6 +348,8 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     params: z.object({ path: z.string(), showHidden: z.boolean() }),
   }),
   z.object({ id: z.string(), method: z.literal("suggestRoots"), params: z.object({}) }),
+  /** Load, memory and free disk of this computer. */
+  z.object({ id: z.string(), method: z.literal("machine.read"), params: z.object({}) }),
   /** Regenerate the compose override from majhi.yaml and recreate the server container. */
   z.object({ id: z.string(), method: z.literal("remount"), params: z.object({}) }),
   /** Load this computer's SSH keys into the agent majhi uses again and report the result. */
@@ -607,6 +610,7 @@ export const HostResultSchemas = {
     dirty: z.boolean(),
     changes: z.array(z.string()).max(20),
   }),
+  "machine.read": MachineHostSchema,
   "editor.open": z.object({ opened: z.literal(true) }),
   "e2e.run": E2eRunResultSchema,
   /** `clickable`: a click on the notification opens majhi. */

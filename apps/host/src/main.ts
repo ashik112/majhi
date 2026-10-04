@@ -28,6 +28,7 @@ import { createKeyRestorer } from "./keyRestore.ts";
 import { createLaya } from "./laya.ts";
 import { listDirs } from "./listDirs.ts";
 import { createFileLogger, type Logger } from "./log.ts";
+import { readMachine } from "./machine.ts";
 import { desktopNotifier, plainLine, showNotification } from "./notify.ts";
 import { findExecutable } from "./paths.ts";
 import { createPlatform, currentOs, nodePlatform, processDeps } from "./platform/index.ts";
@@ -323,6 +324,7 @@ async function main(): Promise<void> {
     sshReload: () => ssh.reload(),
     editorOpen,
     e2eRun,
+    machineRead: () => readMachine({ os, exec, home: config.home, env: { ...process.env, PATH: path } }),
     versionChanges: async (params: { from: string }) => {
       if (gitContext === undefined) throw new Error("This helper has no majhi checkout to read.");
       const repo = await readRepo(gitContext);
