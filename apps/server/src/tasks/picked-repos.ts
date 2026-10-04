@@ -50,8 +50,8 @@ export function withPickedRepos(
     if (pick.base !== undefined) bases.set(pick.project, pick.base);
   }
   const orgs = [...new Set(repos.flatMap((r) => projects.find((p) => p.id === r.project)?.org ?? []))];
-  const warnings = parsed.warnings.filter((w) => !w.startsWith("Repos from more than one org"));
-  if (orgs.length > 1) warnings.push(`Repos from more than one org: ${orgs.join(", ")}`);
+  const warnings = parsed.warnings.filter((w) => !w.startsWith("Repos from more than one workspace"));
+  if (orgs.length > 1) warnings.push(`Repos from more than one workspace: ${orgs.join(", ")}`);
   const { org: _named, ...rest } = parsed;
   // The kind as the words say it for the repos that joined: an investigation stays ops.
   const kind = taskKindOf(text, repos.length > 0);

@@ -33,7 +33,7 @@ export function TaskChips({
           key={id}
           className="flex h-8 max-w-[280px] items-center gap-1.5 rounded-lg border border-blue-line bg-blue-wash pr-1 pl-2.5 text-xs"
         >
-          <span className="font-mono">{id}</span>
+          <span className="shrink-0 whitespace-nowrap font-mono">{id}</span>
           <span className="min-w-0 truncate text-fg-muted">{byId.get(id)?.title}</span>
           <button
             type="button"
