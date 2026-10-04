@@ -32,6 +32,7 @@ import {
   rowTitle,
   workspaceCounts,
 } from "./model";
+import { useNeedsYou } from "./needs-you";
 
 function typing(target: EventTarget | null): boolean {
   return (
@@ -178,6 +179,7 @@ export function DecisionsView() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  const total = useNeedsYou();
   const byOrg = useMemo(() => workspaceCounts(all ?? [], kind), [all, kind]);
   const byKind = useMemo(() => kindCounts(all ?? [], org), [all, org]);
   const subtitle =
@@ -185,7 +187,7 @@ export function DecisionsView() {
       ? "What waits for you, with a recommendation where the captain has one."
       : all.length === 0
         ? "All answered."
-        : `${all.length} waiting for you`;
+        : `${total} waiting for you`;
   const answered = lastAnswerText(lastAnsweredAt(), (iso) => formatAgo(iso, now));
 
   let body: React.ReactNode;

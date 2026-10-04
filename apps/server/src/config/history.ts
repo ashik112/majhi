@@ -20,6 +20,12 @@ export const GITIGNORE = [
   "*.db",
   "*.db-*",
   "cache/",
+  "backups/",
+  "backup-settings.json",
+  "backup-state.json",
+  "restore-staging/",
+  "restore-journal.json",
+  "rollback/",
   "secrets.age",
   "host.token",
   "bin/",
@@ -126,6 +132,24 @@ export class ConfigHistory {
     ]);
     const { stdout } = await this.git(["rev-parse", "HEAD"]);
     return stdout.trim();
+  }
+
+  /**
+   * Writes the whole history (every branch) to a git bundle. False when there is no commit yet,
+   * because git refuses an empty bundle.
+   */
+  async bundleTo(file: string): Promise<boolean> {
+    if ((await this.head()) === undefined) return false;
+    await this.git(["bundle", "create", "--quiet", file, "--all"]);
+    return true;
+  }
+
+  /** Every file in the folder that git does not ignore, tracked or not, relative to it. */
+  async visibleFiles(): Promise<string[]> {
+    // A backup before the first start of the config service still has to know what is ignored.
+    if (!existsSync(join(this.dir, ".git"))) await this.ensureRepo();
+    const { stdout } = await this.git(["ls-files", "-z", "--cached", "--others", "--exclude-standard"]);
+    return stdout.split("\0").filter((f) => f !== "");
   }
 
   /** The commit at HEAD, or undefined before the first commit. */
@@ -253,6 +277,7 @@ export class ConfigHistory {
     return run("git", [...settings.flatMap((s) => ["-c", s]), ...args], {
       cwd: this.dir,
       env: gitEnv(),
+      maxBuffer: 64 * 1024 * 1024,
     });
   }
 }

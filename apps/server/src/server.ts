@@ -63,6 +63,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     commit: env.commit,
     majhiHome: env.majhiHome,
     working: () => services.runs.turnsInFlight(),
+    beforeUpdate: () => services.backup.before("before-update"),
   });
   // An "Update when they finish" from before a restart goes on waiting.
   void system.restore().catch(() => undefined);

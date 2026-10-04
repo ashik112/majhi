@@ -71,7 +71,7 @@ export function TaskLinks({ task }: { task: Task }) {
             <span key={d.id} className={chip}>
               <Link
                 {...linkTo(d.id)}
-                title={`${d.title ?? d.id} (until ${d.when === "ready" ? "ready for review" : "done"})`}
+                title={`${d.title ?? d.id} (until ${d.when === "ready" ? "ready to ship" : "done"})`}
                 className={cn(
                   "flex items-center gap-1 font-mono hover:text-fg",
                   d.waiting ? "text-coral" : "text-fg-muted",
@@ -248,7 +248,7 @@ function LinkPicker({
               Done
             </ChoiceChip>
             <ChoiceChip pressed={when === "ready"} onClick={() => setWhen("ready")}>
-              Ready for review
+              Ready to ship
             </ChoiceChip>
           </fieldset>
         )}

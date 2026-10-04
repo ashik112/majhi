@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useAnchoredPanel } from "@/components/ui/anchored";
 import { DecisionRow } from "@/features/decisions/decision-row";
+import { useNeedsYou } from "@/features/decisions/needs-you";
 import { cn } from "@/lib/cn";
 import { useDecisions } from "@/lib/decision-queries";
 import { GLASS_STRONG } from "@/lib/glass";
@@ -39,7 +40,7 @@ export function Bell() {
   const id = useId();
   const close = useCallback(() => setNoticesOpen(false), []);
   const { panel, style, container } = useAnchoredPanel({ open, close, trigger });
-  const count = decisions.length;
+  const count = useNeedsYou() ?? decisions.length;
   // The panel opens beside the sidebar, from its top, rather than over the sidebar's own rows.
   const side = open ? besideSidebar(trigger.current) : undefined;
 

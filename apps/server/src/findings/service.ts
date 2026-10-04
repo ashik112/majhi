@@ -114,6 +114,11 @@ export class FindingsService {
     return this.repo.countSince(org, playbook, since);
   }
 
+  /** Whether a finding exists, for a deadline that links to one. */
+  exists(id: number): boolean {
+    return this.repo.get(id) !== undefined;
+  }
+
   get(id: number): Finding {
     const found = this.repo.get(id);
     if (found === undefined) throw new UserError(`Finding ${id} does not exist.`, 404);

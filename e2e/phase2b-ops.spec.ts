@@ -31,7 +31,7 @@ test("Health shows the checks, and a Fix creates a missing folder", async ({ pag
   expect(checksBox && accountsBox && checksBox.y < accountsBox.y).toBe(true);
 
   // The checks fold to one line per group; a failing one stays open with its fix.
-  await expect(checks.getByRole("list", { name: "Checks that need you" })).toContainText("Tasks folder");
+  await expect(checks.getByRole("list", { name: "Checks to fix" })).toContainText("Tasks folder");
   await checks.getByRole("button", { name: /^Show all/ }).click();
   await expect(
     checks.getByRole("list", { name: "majhi" }).getByText("Config", { exact: true }),
@@ -59,7 +59,7 @@ test("a failed check with no fix says what to do, and counts in the sidebar", as
   await expect(row.getByRole("button")).toHaveCount(0);
   await expect(
     page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: /Health and usage/ }),
-  ).toContainText("1 need you");
+  ).toContainText("1 to fix");
   await setRoots(request, [join(HOST_HOME, "Work")]);
 });
 

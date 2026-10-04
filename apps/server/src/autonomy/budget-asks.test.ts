@@ -16,10 +16,10 @@ const window = (day: string) => ({ day, end: `${day}T23:59:59.000Z` });
 
 const saved = AutonomySettingsSchema.parse({
   day: { cost: 20 },
-  orgs: { pyzasoft: { cap: { cost: 20 } }, acme: {} },
+  orgs: { hooli: { cap: { cost: 20 } }, acme: {} },
 });
-const rows = [{ org: "pyzasoft", tokens: 1000, cost: 20 }];
-/** Room under the autonomous budget, so only Pyzasoft's own budget runs out. */
+const rows = [{ org: "hooli", tokens: 1000, cost: 20 }];
+/** Room under the autonomous budget, so only Hooli's own budget runs out. */
 const roomy = AutonomySettingsSchema.parse({ ...saved, day: { cost: 100 } });
 
 function ask(scope: string, day: string): BudgetAsk {
@@ -37,20 +37,20 @@ function ask(scope: string, day: string): BudgetAsk {
 
 describe("a raise for today", () => {
   it("lifts the hold today, leaves the roomy budget alone and is gone tomorrow", () => {
-    const names = { pyzasoft: "Pyzasoft" };
+    const names = { hooli: "Hooli" };
     const held = holdsOf(spendOf(rows, roomy, window(TODAY), "UTC"), [], names);
     expect(held.map((h) => h.kind)).toEqual(["org-cap"]);
 
     const store = new Store(":memory:");
     const repo = new AutonomyRepo(store.raw);
-    expect(repo.addBudgetAsk(ask("pyzasoft", TODAY))).toBe(true);
-    expect(repo.answerBudgetAsk("pyzasoft", TODAY, "raised", `${TODAY}T11:00:00.000Z`)).toBe(true);
+    expect(repo.addBudgetAsk(ask("hooli", TODAY))).toBe(true);
+    expect(repo.answerBudgetAsk("hooli", TODAY, "raised", `${TODAY}T11:00:00.000Z`)).toBe(true);
 
     const today = withRaises(roomy, repo.raisedBudgets(TODAY));
-    expect(today.orgs.pyzasoft?.cap).toEqual({ cost: 40 });
+    expect(today.orgs.hooli?.cap).toEqual({ cost: 40 });
     expect(holdsOf(spendOf(rows, today, window(TODAY), "UTC"), [], names)).toEqual([]);
     // The roomy setting is the same object it was.
-    expect(roomy.orgs.pyzasoft?.cap).toEqual({ cost: 20 });
+    expect(roomy.orgs.hooli?.cap).toEqual({ cost: 20 });
 
     // Tomorrow nothing is raised: the roomy budget holds the same spend again.
     const tomorrow = withRaises(roomy, repo.raisedBudgets(TOMORROW));
@@ -84,34 +84,32 @@ describe("a raise for today", () => {
 describe("one question per budget and day", () => {
   it("is asked once a day, then again the next day", () => {
     const repo = new AutonomyRepo(new Store(":memory:").raw);
-    expect(repo.addBudgetAsk(ask("pyzasoft", TODAY))).toBe(true);
-    expect(repo.addBudgetAsk(ask("pyzasoft", TODAY))).toBe(false);
-    expect(repo.hasBudgetAsk("pyzasoft", TODAY)).toBe(true);
-    expect(repo.hasBudgetAsk("pyzasoft", TOMORROW)).toBe(false);
+    expect(repo.addBudgetAsk(ask("hooli", TODAY))).toBe(true);
+    expect(repo.addBudgetAsk(ask("hooli", TODAY))).toBe(false);
+    expect(repo.hasBudgetAsk("hooli", TODAY)).toBe(true);
+    expect(repo.hasBudgetAsk("hooli", TOMORROW)).toBe(false);
     // Answered or not, it is not asked again that day.
-    repo.answerBudgetAsk("pyzasoft", TODAY, "left", `${TODAY}T11:00:00.000Z`);
-    expect(repo.addBudgetAsk(ask("pyzasoft", TODAY))).toBe(false);
+    repo.answerBudgetAsk("hooli", TODAY, "left", `${TODAY}T11:00:00.000Z`);
+    expect(repo.addBudgetAsk(ask("hooli", TODAY))).toBe(false);
     expect(repo.pendingBudgetAsks(TODAY)).toEqual([]);
-    expect(repo.addBudgetAsk(ask("pyzasoft", TOMORROW))).toBe(true);
-    expect(repo.pendingBudgetAsks(TOMORROW).map((a) => a.scope)).toEqual(["pyzasoft"]);
+    expect(repo.addBudgetAsk(ask("hooli", TOMORROW))).toBe(true);
+    expect(repo.pendingBudgetAsks(TOMORROW).map((a) => a.scope)).toEqual(["hooli"]);
     expect(repo.pendingBudgetAsks(TODAY)).toEqual([]);
   });
 
   it("asks about the autonomous budget when it ran out, not about each workspace under it", () => {
-    const both = AutonomySettingsSchema.parse({ day: { cost: 5 }, orgs: { pyzasoft: { cap: { cost: 2 } } } });
-    const held = holdsOf(spendOf([{ org: "pyzasoft", tokens: 1, cost: 6 }], both, window(TODAY), "UTC"), []);
+    const both = AutonomySettingsSchema.parse({ day: { cost: 5 }, orgs: { hooli: { cap: { cost: 2 } } } });
+    const held = holdsOf(spendOf([{ org: "hooli", tokens: 1, cost: 6 }], both, window(TODAY), "UTC"), []);
     expect(held.map((h) => h.kind).sort()).toEqual(["day-cap", "org-cap"]);
     expect(askableHolds(held).map((h) => h.kind)).toEqual(["day-cap"]);
   });
 
   it("asks nothing while nothing waits, and words the question with the doubled budget", () => {
     const spend = spendOf(rows, saved, window(TODAY), "UTC");
-    const input = { scope: "pyzasoft", name: "Pyzasoft", spend, day: TODAY, at: `${TODAY}T10:00:00.000Z` };
+    const input = { scope: "hooli", name: "Hooli", spend, day: TODAY, at: `${TODAY}T10:00:00.000Z` };
     expect(buildAsk({ ...input, waiting: 0 })).toBeUndefined();
     const made = buildAsk({ ...input, waiting: 3 });
-    expect(made?.text).toBe(
-      "Pyzasoft used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?",
-    );
+    expect(made?.text).toBe("Hooli used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?");
     expect(made?.raiseTo).toEqual({ cost: 40 });
     expect(askText("Acme", { cost: 7.5 }, doubled({ cost: 7.5 }), 1)).toBe(
       "Acme used its $7.50 for today. 1 task is waiting. Raise it to $15 for today?",
@@ -137,7 +135,7 @@ describe("a workspace without a budget", () => {
 
 describe("what a held task says", () => {
   it("names the budget and what it used", () => {
-    expect(waitText("pyzasoft", "Pyzasoft", 20)).toBe("Waiting for Pyzasoft's daily budget, $20 used");
+    expect(waitText("hooli", "Hooli", 20)).toBe("Waiting for Hooli's daily budget, $20 used");
     expect(waitText("day", "Autonomous work", 20.5)).toBe(
       "Waiting for the autonomous daily budget, $20.50 used",
     );

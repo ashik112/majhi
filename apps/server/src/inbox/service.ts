@@ -11,11 +11,11 @@ import {
   type RepoDiff,
   type RoomItem,
   type ShipOptions,
+  splitReady,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import type { Subject } from "../notify/attention.ts";
 import { buildDecisions, type DecisionSources, type Recommendation } from "./build.ts";
-import { splitReady } from "./plain.ts";
 
 /** The paths a decision is answered through: the same ones its card uses. */
 export interface DecisionActions {

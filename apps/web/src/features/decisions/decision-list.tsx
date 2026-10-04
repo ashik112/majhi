@@ -44,9 +44,8 @@ export function KindIcon({ kind, className }: { kind: OwnerDecisionKind; classNa
   );
 }
 
-/** What a ship decision is, in the queue: "Ready for review" differs from "Ready to ship". */
+/** What a decision is, in the queue: the shared word for its kind. */
 export function kindWord(decision: OwnerDecision): string {
-  if (decision.kind === "ship" && decision.title.startsWith("Ready for review")) return "Review";
   return DECISION_KIND_LABEL[decision.kind];
 }
 
@@ -62,7 +61,7 @@ export function WorkspaceName({ id, className }: { id: string; className?: strin
 }
 
 /**
- * The queue: two lines per decision. The title first (the task's, not "Ready to ship"), then what
+ * The queue: two lines per decision. The title first (the task's, not the kind), then what
  * kind it is, whose it is, and the captain's pick as a chip. The selected row follows ROW_SELECTED.
  */
 export function DecisionList({

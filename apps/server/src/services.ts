@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Command, dockerTty, localSpawner } from "@majhi/acp";
@@ -35,6 +36,10 @@ import { alertLine } from "./budgets/alert-line.ts";
 import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
 import { BudgetAlertRepo } from "./budgets/repo.ts";
+import { CrmService } from "./business/crm.ts";
+import { DeadlinesService } from "./business/deadlines.ts";
+import { KbService } from "./business/kb.ts";
+import { VoiceService } from "./business/voice.ts";
 import { Lanes } from "./captain/lanes.ts";
 import { authorityOf, workspaceIds } from "./captain/levels.ts";
 import { CaptainRepo } from "./captain/repo.ts";
@@ -209,6 +214,13 @@ export interface ServiceOptions {
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
+export interface BusinessServices {
+  kb: KbService;
+  voice: VoiceService;
+  crm: CrmService;
+  deadlines: DeadlinesService;
+}
+
 export interface Services {
   config: ConfigService;
   runtime: AcpRuntime;
@@ -291,6 +303,8 @@ export interface Services {
   goals: GoalsService;
   /** The outbound gate: everything that would leave the machine passes it (5.18). */
   outbound: OutboundGate;
+  /** The knowledge base, voice, contacts and deadlines (5.19). */
+  business: BusinessServices;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
   captainTell: CaptainTell;
   /** The captain's chat per workspace (5.18). */
@@ -372,13 +386,22 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onChanged: () => events.emit(["accounts"]),
   });
   const store = Store.open(env.majhiHome);
+  const memory = createMemory(env.majhiHome, options.embedder);
   const backup = new BackupService({
     majhiHome: env.majhiHome,
-    sqlite: () => store.raw,
-    dbFile: DB_FILE_NAME,
+    databases: () => [
+      { rel: DB_FILE_NAME, backup: async (dest) => void (await store.raw.backup(dest)) },
+      { rel: "memory/memory.db", backup: async (dest) => void (await memory.rawDatabase.backup(dest)) },
+    ],
+    history: config.history,
+    key: () => secrets.identityForBackups(),
+    version: { version: env.version, commit: env.commit },
+    // Under docker compose the container restarts itself (restart: unless-stopped), onto the staged restore.
+    ...(existsSync("/.dockerenv")
+      ? { restart: () => void setTimeout(() => process.kill(process.pid, "SIGTERM"), 1000) }
+      : {}),
   });
   backup.start();
-  const memory = createMemory(env.majhiHome, options.embedder);
   memory.project.setLanded(async (task, repo) => {
     const found = store.tasks
       .get(task)
@@ -1110,6 +1133,31 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   findingsStore = findings;
   reportFinding = (input, actor) => findings.report(input, actor);
+  const businessChanged = () => events.emit(["business"]);
+  const orgExists = async (org: string) => org === PRIVATE || org in (await config.sections()).orgs;
+  const businessNow = options.runClock === undefined ? {} : { now: options.runClock };
+  const crm = new CrmService({ db: store.raw, orgExists, changed: businessChanged, ...businessNow });
+  const business: BusinessServices = {
+    kb: new KbService({
+      db: store.raw,
+      embed: (texts) => memory.embed(texts),
+      takeUpload: (id, dir) => uploads.take(id, dir),
+      filesDir: (entry) => join(env.majhiHome, "business", "kb", String(entry)),
+      orgExists,
+      changed: businessChanged,
+      ...businessNow,
+    }),
+    voice: new VoiceService({ db: store.raw, orgExists, changed: businessChanged, ...businessNow }),
+    crm,
+    deadlines: new DeadlinesService({
+      db: store.raw,
+      orgExists,
+      contactVisible: (id, actor) => crm.exists(id, actor),
+      findingExists: (id) => findings.exists(id),
+      changed: businessChanged,
+      ...businessNow,
+    }),
+  };
   /** Bound when the server made the dispatcher: the captain's chores run commands as the captain. */
   let captainDispatch: Dispatch | undefined;
   const captain = new CaptainService({
@@ -1424,6 +1472,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     playbooks,
     goals,
     outbound,
+    business,
     captainTell: new CaptainTell({
       tasks,
       lanes,

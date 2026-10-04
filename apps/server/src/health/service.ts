@@ -118,6 +118,17 @@ export class HealthService {
           ? { ok: true, detail: `${account} answered.` }
           : { ok: false, detail: health.steps.find((s) => !s.ok)?.detail ?? `${account} did not answer.` };
       }
+      if (id === "backups") {
+        const name = await services.backup.now();
+        return { ok: true, detail: `Backed up (${name}).` };
+      }
+      if (id === "backups-verify") {
+        const { result } = await services.backup.verify();
+        return {
+          ok: result.ok,
+          detail: result.ok ? `The test restore worked: ${result.detail}` : result.detail,
+        };
+      }
       if (id === "runner" && this.deps.rebuild !== undefined) {
         this.toolCache.delete("runner");
         const result = await this.deps.rebuild();

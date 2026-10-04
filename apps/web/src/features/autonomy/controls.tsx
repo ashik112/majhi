@@ -40,7 +40,7 @@ export function useAutonomyActions() {
   };
 }
 
-/** "PRV-105, IDE-6 and 2 more": a few ids, then a count. */
+/** "PRV-105, UMB-6 and 2 more": a few ids, then a count. */
 export function taskList(ids: readonly string[], max = 4): string {
   if (ids.length <= max) return ids.join(", ");
   return `${ids.slice(0, max).join(", ")} and ${ids.length - max} more`;

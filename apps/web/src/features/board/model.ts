@@ -8,7 +8,7 @@ export type ColumnId = "inbox" | "working" | "needs" | "mr" | "done";
 export const COLUMN_LABEL: Record<ColumnId, string> = {
   inbox: "Inbox",
   working: "Working",
-  needs: "Needs you",
+  needs: "Waiting",
   mr: "MR open",
   done: "Done",
 };
@@ -25,8 +25,8 @@ export const COLUMN_LAMP: Record<ColumnId, LampState> = {
 const COLUMNS: readonly ColumnId[] = ["inbox", "working", "needs", "mr", "done"];
 
 /**
- * The column of a task. Inbox holds what nobody works on yet (inbox and ready). Needs you holds every
- * task that waits for the owner: a finished one to review, a running one whose agents all finished
+ * The column of a task. Inbox holds what nobody works on yet (inbox and ready). Waiting holds every
+ * task that stopped and waits to be picked up: a finished one to review, a running one whose agents all finished
  * their turn, and a paused one.
  */
 export function columnOf(task: Pick<TaskSummary, "status" | "working" | "asking">): ColumnId {
@@ -193,37 +193,27 @@ export function buildColumns(tasks: readonly TaskSummary[], options: BoardOption
 export interface BoardCounts {
   open: number;
   working: number;
-  needs: number;
   done: number;
 }
 
-/** The telemetry of the org filter's tasks: open, working now, waiting for the owner, done. */
+/** The telemetry of the org filter's tasks: open, working now, done. What needs the owner is `useNeedsYou`. */
 export function boardCounts(tasks: readonly TaskSummary[], org: string | undefined): BoardCounts {
   const own = tasks.filter((t) => inOrg(t, org));
   return {
     open: own.filter(isOpen).length,
     working: own.filter((t) => columnOf(t) === "working").length,
-    needs: own.filter(needsOwner).length,
     done: own.filter((t) => !isOpen(t)).length,
   };
 }
 
 /**
- * Whether a task or chat counts as needing the owner: it sits under Needs you, and a chat only counts
- * while it asks something or is paused (an idle chat waits for the next message, not for a decision).
+ * Whether a task or chat is worth showing in the Waiting column: a chat only counts while it asks
+ * something or is paused (an idle chat waits for the next message). It hides quiet chats from the
+ * board. The count of what needs the owner is the Decisions inbox's, not this.
  */
 export function needsOwner(task: Pick<TaskSummary, "status" | "working" | "asking" | "chat">): boolean {
   if (columnOf(task) !== "needs") return false;
   return task.chat !== true || task.asking === true || task.status === "paused" || task.status === "review";
-}
-
-/** Everything that needs the owner, as the tab title and the banner count it: tasks, chats and sign-ins. */
-export function needsYouCount(
-  tasks: readonly TaskSummary[],
-  accounts: readonly { status: string }[],
-): number {
-  const signedOut = accounts.filter((a) => a.status === "needs-login" || a.status === "unreachable").length;
-  return tasks.filter(needsOwner).length + signedOut;
 }
 
 export type Direction = "up" | "down" | "left" | "right";

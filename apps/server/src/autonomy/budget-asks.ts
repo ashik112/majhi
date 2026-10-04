@@ -64,7 +64,7 @@ export function withRaises(
   return { ...settings, orgs, day: day === undefined ? settings.day : larger(settings.day, day) };
 }
 
-/** "Pyzasoft used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?" */
+/** "Hooli used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?" */
 export function askText(name: string, cap: Budget, raiseTo: Budget, waiting: number): string {
   const tasks = waiting === 1 ? "1 task is waiting" : `${waiting} tasks are waiting`;
   return `${name} used its ${budgetWord(cap)} for today. ${tasks}. Raise it to ${budgetWord(raiseTo)} for today?`;
@@ -77,7 +77,7 @@ export function askName(scope: string, names: Readonly<Record<string, string>>):
 }
 
 /**
- * The line on a held task's card: "Waiting for Pyzasoft's daily budget, $20 used". `used` is what the
+ * The line on a held task's card: "Waiting for Hooli's daily budget, $20 used". `used` is what the
  * budget's scope spent today.
  */
 export function waitText(scope: string, name: string, used: number): string {

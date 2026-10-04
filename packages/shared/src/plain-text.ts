@@ -1,7 +1,7 @@
 /**
  * Wording of what the captain stored about a decision, made plain for the owner. Pure.
  *
- * Reasons stored before the authority table speak of levels ("Ideeza is set to Keeps things tidy, so the
+ * Reasons stored before the authority table speak of levels ("Umbrella is set to Keeps things tidy, so the
  * captain asks before shipping"). The levels are gone; the rule is now "you decide when work is merged".
  * Those sentences are rewritten into that, so old text never shows a name that no screen has.
  */
@@ -23,7 +23,7 @@ function sentences(text: string): string[] {
  * The text with each sentence about an old level rewritten as the authority sentence (once), or
  * dropped when it is not about shipping or merging.
  */
-export function plainText(text: string, workspace?: string): string {
+export function plainAuthorityText(text: string, workspace?: string): string {
   const flat = text.replace(/\s+/g, " ").trim();
   if (!OLD_LEVEL.test(flat)) return flat;
   const line = authorityLine(workspace);
@@ -44,7 +44,7 @@ export function plainText(text: string, workspace?: string): string {
  * main, no card waits. In Acme you decide when work is merged.") as what it checked and what it adds.
  */
 export function splitReady(line: string, workspace?: string): { checks?: string; note?: string } {
-  const plain = plainText(line, workspace);
+  const plain = plainAuthorityText(line, workspace);
   const found = /^Ready to ship(?: to [^:]+)?:\s*(.+?)\.(?:\s+(.*))?$/s.exec(plain);
   if (found === null) return plain === "" ? {} : { note: plain };
   const [, checks, note] = found;

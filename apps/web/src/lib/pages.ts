@@ -18,6 +18,7 @@ export const PAGE_PATH = {
   playbooks: "/playbooks",
   limits: "/limits",
   decisions: "/decisions",
+  business: "/business",
 } as const;
 
 export type PageName = keyof typeof PAGE_PATH;

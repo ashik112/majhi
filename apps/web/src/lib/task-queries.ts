@@ -21,7 +21,7 @@ export function useProjects(enabled = true) {
   });
 }
 
-/** Chats live in Chats. On the board and in counts they show only while they need the owner: they ask, are paused or ready for review. */
+/** Chats live in Chats. On the board and in counts they show only while they need the owner: they ask, are paused or ready to ship. */
 const withoutQuietChats = (list: TaskSummary[]) => list.filter((t) => t.chat !== true || needsOwner(t));
 const onlyChats = (list: TaskSummary[]) => list.filter((t) => t.chat === true);
 

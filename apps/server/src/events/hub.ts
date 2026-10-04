@@ -42,7 +42,9 @@ export function topicsFor(command: string): EventTopic[] {
     case "agents":
       return ["agents"];
     case "boss":
-      return ["agents", "config"];
+      // `boss.chat` only opens the captain chat. It must not emit: the page reads it under the agents key, so an
+      // event refetched it, which emitted again, and one open tab kept the server and every page busy.
+      return command === "boss.set" ? ["agents", "config"] : [];
     case "workspaces":
       return ["config"];
     case "projects":
@@ -90,6 +92,11 @@ export function topicsFor(command: string): EventTopic[] {
     case "findings":
       // A task made from a finding shows on the board too.
       return ["findings", "tasks"];
+    case "kb":
+    case "voice":
+    case "crm":
+    case "deadlines":
+      return ["business"];
     case "captain":
       // The stop switch also stops autonomous mode; Undo reverts config, tasks or memory.
       return ["captain", "autonomy", "config", "tasks", "memory"];

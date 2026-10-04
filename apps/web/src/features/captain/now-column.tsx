@@ -11,6 +11,7 @@ import { useExclude } from "@/features/autonomy/desk";
 import { clockTime } from "@/features/autonomy/model";
 import { TaskRef } from "@/features/autonomy/task-ref";
 import { DecisionRow } from "@/features/decisions/decision-row";
+import { useNeedsYou } from "@/features/decisions/needs-you";
 import { cn } from "@/lib/cn";
 import { useDecisions } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
@@ -71,7 +72,7 @@ function NeedsYou() {
   const query = useDecisions();
   const decisions = query.data?.decisions;
   const shown = (decisions ?? []).slice(0, SHOWN_DECISIONS);
-  const total = decisions?.length ?? 0;
+  const total = useNeedsYou() ?? 0;
   return (
     <Box
       title="Needs you"
@@ -257,16 +258,17 @@ export function NowColumn({
   onSummary,
   onFindings,
 }: {
-  captain: CaptainStatus;
+  captain: CaptainStatus | undefined;
   autonomy: AutonomyStatus | undefined;
   now: number;
   onLog: () => void;
   onSummary: (() => void) | undefined;
   onFindings: () => void;
 }) {
+  const orgs = captain?.orgs ?? [];
   const names = (org: string | undefined) => {
-    if (captain.orgs.length < 2) return undefined;
-    return captain.orgs.find((o) => o.org === (org ?? PRIVATE))?.name;
+    if (orgs.length < 2) return undefined;
+    return orgs.find((o) => o.org === (org ?? PRIVATE))?.name;
   };
   return (
     // One panel that scrolls as a whole: no box scrolls on its own, so every section is reachable.
@@ -278,7 +280,7 @@ export function NowColumn({
       )}
     >
       <NeedsYou />
-      <FindingsBox orgs={captain.orgs} onOpen={onFindings} />
+      {captain !== undefined && <FindingsBox orgs={orgs} onOpen={onFindings} />}
       {autonomy ? (
         <>
           <Running autonomy={autonomy} names={names} />
@@ -303,7 +305,7 @@ export function NowColumn({
           </>
         }
       >
-        <RecentLog orgs={captain.orgs} now={now} />
+        {captain === undefined ? <RowsSkeleton rows={2} height={44} /> : <RecentLog orgs={orgs} now={now} />}
       </Box>
     </div>
   );

@@ -169,7 +169,7 @@ function Body({ task, list }: { task: Task; list: readonly TaskSummary[] }) {
                   <Linked id={d.id} title={d.title} />
                   <span className={cn("shrink-0 text-xs", d.waiting ? "text-coral" : "text-green")}>
                     {d.waiting ? (
-                      `until ${d.when === "ready" ? "ready for review" : "done"}`
+                      `until ${d.when === "ready" ? "ready to ship" : "done"}`
                     ) : (
                       <Check aria-label="met" className="inline size-3" />
                     )}

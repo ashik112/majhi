@@ -8,6 +8,7 @@ export const PAGE_LABEL: Record<PageName, string> = {
   playbooks: "Playbooks",
   limits: "Limits",
   decisions: "Decisions",
+  business: "Business",
   agents: "Agents",
   accounts: "Accounts",
   connections: "Connections",
@@ -28,6 +29,8 @@ export const PAGE_KEYWORDS: Record<PageName, string> = {
   captain: "boss chief of staff autonomous autopilot away rules log summary upkeep workspaces authority",
   playbooks: "standing work packs upkeep goals outbound drafts gate cadence schedule uptime incidents",
   limits: "budget budgets spend cost daily weekly floors safety money raise",
+  business:
+    "knowledge base facts voice style people crm contacts leads investors clients deadlines hackathon grant launch renewal",
   decisions: "inbox needs you waiting questions approvals ship recommend answer",
   agents: "team roles models",
   accounts: "sign in claude codex login",

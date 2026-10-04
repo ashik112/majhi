@@ -12,26 +12,26 @@ import type { DecisionDetail, OrgView, OwnerDecision } from "../packages/shared/
 const SHOTS = process.env.SHOTS ?? "/private/tmp/claude-501/decisions-shots";
 const NOW = Date.now();
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
-const LONG = "Ideeza Interactive Technologies and Retail Platforms Limited";
+const LONG = "Umbrella Interactive Technologies and Retail Platforms Limited";
 
 const ORGS: Record<string, { name: string; key: string; color: string }> = {
-  pyzasoft: { name: "Pyzasoft", key: "PYZ", color: "#4f8fd9" },
-  goama: { name: "Goama", key: "GOA", color: "#d98a4f" },
-  ideeza: { name: LONG, key: "IDZ", color: "#4f9d8a" },
+  hooli: { name: "Hooli", key: "HOO", color: "#4f8fd9" },
+  initech: { name: "Initech", key: "INI", color: "#d98a4f" },
+  umbrella: { name: LONG, key: "UMB", color: "#4f9d8a" },
 };
 
 const SHIP_REASON =
-  "In Pyzasoft you decide when work is merged. The change is small and committed, it merges cleanly into main, no card waits and the diff holds no secret. The two new tests fail without the fix and pass with it.";
+  "In Hooli you decide when work is merged. The change is small and committed, it merges cleanly into main, no card waits and the diff holds no secret. The two new tests fail without the fix and pass with it.";
 
 const DECISIONS: OwnerDecision[] = [
   {
-    id: "room:PYZ-31:rv1",
+    id: "room:HOO-31:rv1",
     kind: "ship",
-    org: "pyzasoft",
-    task: "PYZ-31",
+    org: "hooli",
+    task: "HOO-31",
     taskTitle: "Shop orders created twice",
     title: "Ready to ship: Shop orders created twice",
-    sentence: '@pyzasoft-claude finished "Shop orders created twice" and it is ready to merge.',
+    sentence: '@hooli-claude finished "Shop orders created twice" and it is ready to merge.',
     options: [
       { id: "merge", label: "Merge", primary: true },
       { id: "done", label: "Mark done" },
@@ -39,17 +39,17 @@ const DECISIONS: OwnerDecision[] = [
     ],
     suggestion: { option: "merge", reason: SHIP_REASON, by: "captain" },
     at: ago(18),
-    link: { kind: "task", id: "PYZ-31", item: "rv1" },
+    link: { kind: "task", id: "HOO-31", item: "rv1" },
   },
   {
-    id: "room:IDZ-8:rv2",
+    id: "room:UMB-8:rv2",
     kind: "ship",
-    org: "ideeza",
-    task: "IDZ-8",
+    org: "umbrella",
+    task: "UMB-8",
     taskTitle: "Move the notes export to a background job",
     title: "Ready to ship: Move the notes export to a background job",
     sentence:
-      '@ideeza-builder finished "Move the notes export to a background job" and it is ready to merge.',
+      '@umbrella-builder finished "Move the notes export to a background job" and it is ready to merge.',
     options: [
       { id: "merge", label: "Merge", primary: true },
       { id: "done", label: "Mark done" },
@@ -62,30 +62,30 @@ const DECISIONS: OwnerDecision[] = [
       by: "captain",
     },
     at: ago(44),
-    link: { kind: "task", id: "IDZ-8", item: "rv2" },
+    link: { kind: "task", id: "UMB-8", item: "rv2" },
   },
   {
-    id: "room:GOA-12:rv3",
+    id: "room:INI-12:rv3",
     kind: "ship",
-    org: "goama",
-    task: "GOA-12",
+    org: "initech",
+    task: "INI-12",
     taskTitle: "Update the onboarding docs",
-    title: "Ready for review: Update the onboarding docs",
-    sentence: '@goama-writer finished "Update the onboarding docs" and waits for your review.',
+    title: "Ready to ship: Update the onboarding docs",
+    sentence: '@initech-writer finished "Update the onboarding docs" and waits for your review.',
     options: [
       { id: "merge", label: "Merge", primary: true },
       { id: "done", label: "Mark done" },
       { id: "changes", label: "Ask for changes", text: true },
     ],
     at: ago(25),
-    link: { kind: "task", id: "GOA-12", item: "rv3" },
+    link: { kind: "task", id: "INI-12", item: "rv3" },
   },
   {
     id: "room:PRV-4:rv4",
     kind: "ship",
     task: "PRV-4",
     taskTitle: "Tidy the invoice template",
-    title: "Ready for review: Tidy the invoice template",
+    title: "Ready to ship: Tidy the invoice template",
     sentence: '@majhi-builder finished "Tidy the invoice template" and waits for your review.',
     options: [
       { id: "merge", label: "Merge", primary: true },
@@ -96,27 +96,27 @@ const DECISIONS: OwnerDecision[] = [
     link: { kind: "task", id: "PRV-4", item: "rv4" },
   },
   {
-    id: "room:PYZ-33:rv5",
+    id: "room:HOO-33:rv5",
     kind: "ship",
-    org: "pyzasoft",
-    task: "PYZ-33",
+    org: "hooli",
+    task: "HOO-33",
     taskTitle: "Rename the shipping zones",
-    title: "Ready for review: Rename the shipping zones",
-    sentence: '@pyzasoft-claude finished "Rename the shipping zones" and waits for your review.',
+    title: "Ready to ship: Rename the shipping zones",
+    sentence: '@hooli-claude finished "Rename the shipping zones" and waits for your review.',
     options: [
       { id: "merge", label: "Merge", primary: true },
       { id: "done", label: "Mark done" },
       { id: "changes", label: "Ask for changes", text: true },
     ],
     at: ago(12),
-    link: { kind: "task", id: "PYZ-33", item: "rv5" },
+    link: { kind: "task", id: "HOO-33", item: "rv5" },
   },
   {
-    id: "budget:pyzasoft:2026-10-04",
+    id: "budget:hooli:2026-10-04",
     kind: "budget",
-    org: "pyzasoft",
-    title: "Pyzasoft used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?",
-    sentence: "Pyzasoft used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?",
+    org: "hooli",
+    title: "Hooli used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?",
+    sentence: "Hooli used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?",
     options: [
       { id: "raise", label: "Raise to $40 for today", primary: true },
       { id: "leave", label: "Leave it" },
@@ -125,14 +125,14 @@ const DECISIONS: OwnerDecision[] = [
     link: { kind: "limits" },
   },
   {
-    id: "room:GOA-7:ask1",
+    id: "room:INI-7:ask1",
     kind: "question",
-    org: "goama",
-    task: "GOA-7",
+    org: "initech",
+    task: "INI-7",
     taskTitle: "Export orders to CSV",
-    title: "@goama-builder asks: Which queue should the export use?",
+    title: "@initech-builder asks: Which queue should the export use?",
     sentence:
-      "@goama-builder asks: Which queue should the export use? Orders can reach 40,000 rows on a busy day.",
+      "@initech-builder asks: Which queue should the export use? Orders can reach 40,000 rows on a busy day.",
     options: [
       { id: "sqs", label: "SQS", primary: true },
       { id: "redis", label: "Redis" },
@@ -141,19 +141,19 @@ const DECISIONS: OwnerDecision[] = [
     ],
     suggestion: { option: "sqs", reason: "The agent's suggestion", by: "agent" },
     at: ago(95),
-    link: { kind: "task", id: "GOA-7", item: "ask1" },
+    link: { kind: "task", id: "INI-7", item: "ask1" },
   },
   {
-    id: "room:IDZ-5:paused1",
+    id: "room:UMB-5:paused1",
     kind: "paused",
-    org: "ideeza",
-    task: "IDZ-5",
+    org: "umbrella",
+    task: "UMB-5",
     taskTitle: "Migrate the billing job",
     title: "Paused: the account hit its usage limit",
     sentence: '"Migrate the billing job" paused: the account hit its usage limit.',
     options: [{ id: "resume", label: "Resume", primary: true }],
     at: ago(130),
-    link: { kind: "task", id: "IDZ-5", item: "paused1" },
+    link: { kind: "task", id: "UMB-5", item: "paused1" },
   },
   {
     id: "room:PRV-9:perm1",
@@ -170,13 +170,13 @@ const DECISIONS: OwnerDecision[] = [
     link: { kind: "task", id: "PRV-9", item: "perm1" },
   },
   {
-    id: "signin:claude-pyzasoft",
+    id: "signin:claude-hooli",
     kind: "sign-in",
-    title: "Sign in claude-pyzasoft: its agents cannot run until you do",
-    sentence: "claude-pyzasoft is signed out. Its agents cannot run until you sign in again.",
+    title: "Sign in claude-hooli: its agents cannot run until you do",
+    sentence: "claude-hooli is signed out. Its agents cannot run until you sign in again.",
     options: [],
     at: ago(300),
-    link: { kind: "account", id: "claude-pyzasoft" },
+    link: { kind: "account", id: "claude-hooli" },
   },
 ];
 
@@ -193,9 +193,9 @@ One thing to know: orders created twice before this fix stay as they are. A one-
 Next steps if you want them: a unique index on \`orders.payment_ref\`, and an alert when the same ref is seen twice.`;
 
 const DETAILS: Record<string, DecisionDetail> = {
-  "room:PYZ-31:rv1": {
-    id: "room:PYZ-31:rv1",
-    handback: { agent: "pyzasoft-claude", text: HANDBACK, at: ago(20) },
+  "room:HOO-31:rv1": {
+    id: "room:HOO-31:rv1",
+    handback: { agent: "hooli-claude", text: HANDBACK, at: ago(20) },
     diff: {
       files: 6,
       additions: 142,
@@ -209,13 +209,13 @@ const DETAILS: Record<string, DecisionDetail> = {
       ],
       uncommitted: false,
     },
-    repos: [{ project: "pyzasoft-shop", branch: "majhi/PYZ-31", into: "main" }],
+    repos: [{ project: "hooli-shop", branch: "majhi/HOO-31", into: "main" }],
     checks: "committed, merges cleanly into main, no card waits, no secret in the diff",
   },
-  "room:IDZ-8:rv2": {
-    id: "room:IDZ-8:rv2",
+  "room:UMB-8:rv2": {
+    id: "room:UMB-8:rv2",
     handback: {
-      agent: "ideeza-builder",
+      agent: "umbrella-builder",
       text: "The export now runs as a background job and posts a link when it is done. Tests pass.",
       at: ago(50),
     },
@@ -226,13 +226,13 @@ const DETAILS: Record<string, DecisionDetail> = {
       top: [{ path: "src/notes/export.ts", additions: 40, deletions: 18 }],
       uncommitted: false,
     },
-    repos: [{ project: "ideeza-notes", branch: "majhi/IDZ-8", into: "main" }],
+    repos: [{ project: "umbrella-notes", branch: "majhi/UMB-8", into: "main" }],
     checks: "committed, merges cleanly into main, no card waits",
   },
-  "room:GOA-12:rv3": {
-    id: "room:GOA-12:rv3",
+  "room:INI-12:rv3": {
+    id: "room:INI-12:rv3",
     handback: {
-      agent: "goama-writer",
+      agent: "initech-writer",
       text: "I rewrote the first-day checklist and added a section on access requests. The screenshots are old; I left a note where each one needs replacing.",
       at: ago(30),
     },
@@ -247,7 +247,7 @@ const DETAILS: Record<string, DecisionDetail> = {
       ],
       uncommitted: true,
     },
-    repos: [{ project: "goama-docs", branch: "majhi/GOA-12", into: "main" }],
+    repos: [{ project: "initech-docs", branch: "majhi/INI-12", into: "main" }],
     blocked: { merge: "Some changes are not committed yet." },
   },
   "room:PRV-4:rv4": {
@@ -262,10 +262,10 @@ const DETAILS: Record<string, DecisionDetail> = {
     },
     repos: [{ project: "notes", branch: "majhi/PRV-4", into: "main" }],
   },
-  "room:PYZ-33:rv5": {
-    id: "room:PYZ-33:rv5",
+  "room:HOO-33:rv5": {
+    id: "room:HOO-33:rv5",
     handback: {
-      agent: "pyzasoft-claude",
+      agent: "hooli-claude",
       text: "Renamed the zones to the carrier's names. The old names stay as aliases for a release.",
       at: ago(14),
     },
@@ -276,12 +276,12 @@ const DETAILS: Record<string, DecisionDetail> = {
       top: [{ path: "apps/shop/src/shipping/zones.ts", additions: 22, deletions: 20 }],
       uncommitted: false,
     },
-    repos: [{ project: "pyzasoft-shop", branch: "majhi/PYZ-33", into: "main" }],
+    repos: [{ project: "hooli-shop", branch: "majhi/HOO-33", into: "main" }],
   },
-  "room:GOA-7:ask1": {
-    id: "room:GOA-7:ask1",
+  "room:INI-7:ask1": {
+    id: "room:INI-7:ask1",
     handback: {
-      agent: "goama-builder",
+      agent: "initech-builder",
       text: "I measured the export on last week's data: 38,000 rows take 41 seconds inline, which times out behind the proxy. A queue fixes that. SQS is already in the stack for the invoices; Redis would be a new service to run.",
       at: ago(96),
     },
@@ -293,10 +293,10 @@ const DETAILS: Record<string, DecisionDetail> = {
       },
     ],
   },
-  "room:IDZ-5:paused1": {
-    id: "room:IDZ-5:paused1",
+  "room:UMB-5:paused1": {
+    id: "room:UMB-5:paused1",
     handback: {
-      agent: "ideeza-builder",
+      agent: "umbrella-builder",
       text: "Stopped before the schema step. Nothing is half done.",
       at: ago(131),
     },
@@ -356,9 +356,9 @@ const SIZES = [
 for (const [w, h] of SIZES) {
   for (const theme of ["dark", "light"]) {
     test(`the queue with a selection ${w} ${theme}`, async ({ page }) => {
-      await open(page, "/decisions?id=room:PYZ-31:rv1", w, h, theme);
+      await open(page, "/decisions?id=room:HOO-31:rv1", w, h, theme);
       await expect(page.getByRole("heading", { name: "Shop orders created twice" })).toBeVisible();
-      await expect(page.getByText("What @pyzasoft-claude said last")).toBeVisible();
+      await expect(page.getByText("What @hooli-claude said last")).toBeVisible();
       await page.waitForTimeout(300);
       await page.screenshot({ path: `${SHOTS}/queue-${w}x${h}-${theme}.png` });
       await noPageScroll(page);
@@ -376,15 +376,15 @@ for (const [w, h] of SIZES) {
 }
 
 const KINDS: [string, string][] = [
-  ["ship-ready", "room:PYZ-31:rv1"],
-  ["ship-long-name", "room:IDZ-8:rv2"],
-  ["review-blocked", "room:GOA-12:rv3"],
-  ["review", "room:PYZ-33:rv5"],
-  ["question", "room:GOA-7:ask1"],
-  ["budget", "budget:pyzasoft:2026-10-04"],
-  ["paused", "room:IDZ-5:paused1"],
+  ["ship-ready", "room:HOO-31:rv1"],
+  ["ship-long-name", "room:UMB-8:rv2"],
+  ["review-blocked", "room:INI-12:rv3"],
+  ["review", "room:HOO-33:rv5"],
+  ["question", "room:INI-7:ask1"],
+  ["budget", "budget:hooli:2026-10-04"],
+  ["paused", "room:UMB-5:paused1"],
   ["approval", "room:PRV-9:perm1"],
-  ["sign-in", "signin:claude-pyzasoft"],
+  ["sign-in", "signin:claude-hooli"],
 ];
 
 for (const theme of ["dark", "light"]) {
@@ -400,12 +400,12 @@ for (const theme of ["dark", "light"]) {
 }
 
 test("the reply box, the filters and the empty state", async ({ page }) => {
-  await open(page, "/decisions?id=room:GOA-12:rv3", 1440, 900, "dark");
+  await open(page, "/decisions?id=room:INI-12:rv3", 1440, 900, "dark");
   await page.getByRole("button", { name: /Ask for changes/ }).click();
   await page.getByRole("textbox", { name: "Ask for changes" }).fill("Replace the old screenshots first.");
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${SHOTS}/reply-1440-dark.png` });
-  await page.getByRole("button", { name: /^Pyzasoft \d/ }).click();
+  await page.getByRole("button", { name: /^Hooli \d/ }).click();
   await page.getByRole("button", { name: /^Ship \d/ }).click();
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${SHOTS}/filtered-1440-dark.png` });
@@ -416,15 +416,15 @@ test("the reply box, the filters and the empty state", async ({ page }) => {
 
 test("the narrow layout: the queue, then one decision, then back", async ({ page }) => {
   await open(page, "/decisions", 900, 760, "dark");
-  await expect(page.locator('[data-decision="room:PYZ-31:rv1"]')).toBeVisible();
+  await expect(page.locator('[data-decision="room:HOO-31:rv1"]')).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/narrow-queue-900-dark.png` });
-  await page.locator('[data-decision="room:PYZ-31:rv1"]').click();
+  await page.locator('[data-decision="room:HOO-31:rv1"]').click();
   await expect(page.getByRole("heading", { name: "Shop orders created twice" })).toBeVisible();
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${SHOTS}/narrow-detail-900-dark.png` });
   await noPageScroll(page);
   await page.getByRole("button", { name: "All decisions" }).click();
-  await expect(page.locator('[data-decision="room:GOA-7:ask1"]')).toBeVisible();
+  await expect(page.locator('[data-decision="room:INI-7:ask1"]')).toBeVisible();
 });
 
 test("keys move, pick an answer and the next decision is selected after it", async ({ page }) => {
@@ -447,19 +447,19 @@ test("keys move, pick an answer and the next decision is selected after it", asy
   await page.keyboard.press("2");
   await expect.poll(() => (calls.at(-1)?.body as { id?: string } | undefined)?.id).toBe(second);
   // R opens the reply box on a decision that takes words, and Esc closes it.
-  await page.locator('[data-decision="room:GOA-7:ask1"]').click();
+  await page.locator('[data-decision="room:INI-7:ask1"]').click();
   await page.keyboard.press("r");
   await expect(page.getByRole("textbox", { name: "Write an answer" })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("textbox", { name: "Write an answer" })).toBeHidden();
   // Ask for changes sends the words.
-  await page.locator('[data-decision="room:GOA-12:rv3"]').click();
+  await page.locator('[data-decision="room:INI-12:rv3"]').click();
   await page.keyboard.press("r");
   await page.getByRole("textbox", { name: "Ask for changes" }).fill("Replace the old screenshots first.");
   await page.keyboard.press("Meta+Enter");
   await expect
     .poll(() => calls.at(-1)?.body)
-    .toEqual({ id: "room:GOA-12:rv3", option: "changes", text: "Replace the old screenshots first." });
+    .toEqual({ id: "room:INI-12:rv3", option: "changes", text: "Replace the old screenshots first." });
 });
 
 test("a bell row opens its decision on the page, and Open task still opens the task", async ({ page }) => {
@@ -467,12 +467,12 @@ test("a bell row opens its decision on the page, and Open task still opens the t
   await page.getByRole("button", { name: /^Decisions/ }).click();
   const panel = page.getByRole("dialog", { name: "Decisions" });
   await panel
-    .locator('[data-decision="room:GOA-7:ask1"]')
+    .locator('[data-decision="room:INI-7:ask1"]')
     .getByRole("button", { name: "Export orders to CSV" })
-    .or(panel.locator('[data-decision="room:GOA-7:ask1"]').getByRole("button", { name: /Which queue/ }))
+    .or(panel.locator('[data-decision="room:INI-7:ask1"]').getByRole("button", { name: /Which queue/ }))
     .click();
-  await expect(page).toHaveURL(/\/decisions\?id=room(%3A|:)GOA-7(%3A|:)ask1/);
-  await expect(page.locator('[data-decision="room:GOA-7:ask1"][aria-current="true"]')).toBeVisible();
+  await expect(page).toHaveURL(/\/decisions\?id=room(%3A|:)INI-7(%3A|:)ask1/);
+  await expect(page.locator('[data-decision="room:INI-7:ask1"][aria-current="true"]')).toBeVisible();
   await page.getByRole("button", { name: /^Open task/ }).click();
-  await expect(page).toHaveURL(/\/t\/GOA-7/);
+  await expect(page).toHaveURL(/\/t\/INI-7/);
 });

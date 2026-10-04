@@ -13,20 +13,22 @@ afterEach(async () => {
 
 const item = (state: "signed-in" | "available"): QueueItem => ({
   title: "Restart the export",
-  task: "IDE-6",
+  task: "UMB-6",
   why: "Waits for the account",
-  waitFor: { account: "claude-ideeza-pm", state },
+  waitFor: { account: "claude-umbrella-pm", state },
 });
 const NOW = new Date("2026-10-04T20:00:00.000Z");
 
 describe("queue items that wait for an account", () => {
   const status = (s: AccountStatus | undefined) => (id: string) =>
-    id === "claude-ideeza-pm" ? s : undefined;
+    id === "claude-umbrella-pm" ? s : undefined;
 
   it("becomes ready, with one line, when the account is signed in again", () => {
     const out = evaluateWaits([item("signed-in")], status("healthy"), NOW, () => true);
     expect(out.queue[0]?.readyAt).toBe(NOW.toISOString());
-    expect(out.lifted.map((l) => l.line)).toEqual(["claude-ideeza-pm is signed in again: IDE-6 can resume"]);
+    expect(out.lifted.map((l) => l.line)).toEqual([
+      "claude-umbrella-pm is signed in again: UMB-6 can resume",
+    ]);
     // Looked at again: nothing new to say.
     const again = evaluateWaits(out.queue, status("healthy"), NOW, () => true);
     expect(again.lifted).toEqual([]);
@@ -46,14 +48,14 @@ describe("queue items that wait for an account", () => {
     expect(evaluateWaits([item("available")], status("at-limit"), NOW, () => true).lifted).toEqual([]);
     expect(evaluateWaits([item("signed-in")], status("at-limit"), NOW, () => true).lifted).toHaveLength(1);
     expect(evaluateWaits([item("available")], status("running-high"), NOW, () => false).lifted[0]?.line).toBe(
-      "claude-ideeza-pm is available again: IDE-6 can start",
+      "claude-umbrella-pm is available again: UMB-6 can start",
     );
   });
 
   it("refuses a wait the account already meets, and an account that does not exist", () => {
-    const known = (id: string) => id === "claude-ideeza-pm";
+    const known = (id: string) => id === "claude-umbrella-pm";
     expect(waitProblem(item("signed-in"), status("healthy"), known)).toBe(
-      "claude-ideeza-pm is signed in right now, so IDE-6 does not wait for it. Start or resume it now instead of planning around it.",
+      "claude-umbrella-pm is signed in right now, so UMB-6 does not wait for it. Start or resume it now instead of planning around it.",
     );
     expect(waitProblem(item("signed-in"), status("needs-login"), known)).toBeUndefined();
     expect(waitProblem(item("signed-in"), status("healthy"), () => false)).toContain("There is no account");
@@ -80,12 +82,12 @@ describe("queue items that wait for an account", () => {
       backlog: [],
       leftOut: 0,
       rules: [],
-      queue: [{ ...item("signed-in"), why: "Restart once the ideeza accounts are signed in again" }],
+      queue: [{ ...item("signed-in"), why: "Restart once the umbrella accounts are signed in again" }],
     };
-    const signedOut = digest({ ...base, accountStatus: { "claude-ideeza-pm": "needs-login" } });
-    expect(signedOut).toContain("Waits for claude-ideeza-pm to be signed in; it is signed out now");
-    const healthy = digest({ ...base, accountStatus: { "claude-ideeza-pm": "healthy" } });
-    expect(healthy).toContain("READY: claude-ideeza-pm is signed in now, so this no longer waits");
+    const signedOut = digest({ ...base, accountStatus: { "claude-umbrella-pm": "needs-login" } });
+    expect(signedOut).toContain("Waits for claude-umbrella-pm to be signed in; it is signed out now");
+    const healthy = digest({ ...base, accountStatus: { "claude-umbrella-pm": "healthy" } });
+    expect(healthy).toContain("READY: claude-umbrella-pm is signed in now, so this no longer waits");
   });
 });
 

@@ -3,8 +3,7 @@ import { Ship } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Problem } from "@/components/problem";
 import { Sheet } from "@/components/ui/sheet";
-import { RowsSkeleton } from "@/components/ui/skeleton";
-import { markSummarySeen } from "@/features/autonomy/model";
+import { markSeen } from "@/features/autonomy/summary-seen";
 import { useBoss } from "@/features/boss/boss-context";
 import { useAutonomyStatus } from "@/lib/autonomy-queries";
 import { useCaptainStatus } from "@/lib/captain-queries";
@@ -46,7 +45,6 @@ export function CaptainView() {
   const navigate = useNavigate();
   const { setTab } = useBoss();
   const [open, setOpen] = useState<Open | undefined>(() => sheetOf(search.tab));
-  const [seen, setSeen] = useState<string>();
   const thread = search.thread;
   const tab = search.tab;
   // A link to a thread (an old address of a lane chat) selects it in the conversation.
@@ -74,8 +72,7 @@ export function CaptainView() {
   const summary = autonomy?.summary;
   const openSummary = () => {
     if (summary === undefined) return;
-    markSummarySeen(summary.day);
-    setSeen(summary.day);
+    markSeen(summary.day);
     setOpen("summary");
   };
 
@@ -85,19 +82,12 @@ export function CaptainView() {
         <Problem icon={<Ship />} title="Could not load the captain" body={describeError(query.error)} />
       </div>
     );
-  if (!status)
-    return (
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <RowsSkeleton rows={3} height={180} />
-      </div>
-    );
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <CaptainHeader
         captain={status}
         autonomy={autonomy}
         now={now}
-        summarySeen={seen}
         onDelegation={() => setOpen("delegation")}
         onSummary={openSummary}
       />
@@ -117,13 +107,13 @@ export function CaptainView() {
           onSummary={summary === undefined ? undefined : openSummary}
         />
       </div>
-      {open === "delegation" && <DelegationSheet captain={status} now={now} onClose={close} />}
-      {open === "log" && (
+      {open === "delegation" && status && <DelegationSheet captain={status} now={now} onClose={close} />}
+      {open === "log" && status && (
         <Sheet title="Log" subtitle="What the captain did, and why" onClose={close}>
           <FullLog orgs={status.orgs} now={now} />
         </Sheet>
       )}
-      {open === "findings" && (
+      {open === "findings" && status && (
         <Sheet title="Findings" subtitle="What the captain and your agents noticed" onClose={close} wide>
           <FindingsSheet orgs={status.orgs} now={now} />
         </Sheet>
