@@ -1475,9 +1475,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
             : "idle";
     },
     fresh: (chat, agent) => tasks.fresh(chat, agent),
-    rollup: {
-      spend: () => autonomy.daySpend(),
-      incidents: () => (opsWatch?.unacked() ?? []).map((i) => ({ id: i.id, title: i.title })),
+    relay: {
       bossChat: async () => {
         const boss = await lanes.boss();
         const chat = boss === undefined ? undefined : findBossChat({ store, tasks }, boss);
