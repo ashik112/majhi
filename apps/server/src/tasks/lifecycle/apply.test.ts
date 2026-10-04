@@ -34,7 +34,7 @@ interface Rig {
   store: Store;
   life: TaskLifecycle;
   ran: { id: string; effect: Effect; ctx: EffectContext }[];
-  failOn: { kind?: string };
+  failOn: { kind?: string | undefined };
 }
 
 function rig(): Rig {

@@ -1108,7 +1108,14 @@ export class TaskService {
         event = { type: "holdPlaced", hold: { cause: "idle", at, why: why ?? "No agent is left to wake." } };
       // A hold placed from outside carries no stop effects of its own: tear down first, as a stop does.
       if (event.type === "holdPlaced") await this.teardown(id, ctx);
-      const out = await this.lifecycle.apply(id, event, { ctx, skip: ["publishTask"] });
+      // A task the run gate already paused reads as an owner's stop; turning Auto-pilot off marks it as its own.
+      const out = await this.lifecycle.apply(id, event, {
+        ctx,
+        skip: ["publishTask"],
+        ...(event.type === "autopilotOff"
+          ? { holdAs: { cause: "autopilot-off", at, mode: "now" } as const }
+          : {}),
+      });
       if (wasRefused(out)) await this.teardown(id, ctx);
     } else {
       await this.teardown(id, ctx);
