@@ -1,4 +1,5 @@
 import type { CaptainChore } from "@majhi/shared";
+import { errorMessage } from "../errors.ts";
 import { upperFirst } from "../machine/busy.ts";
 import type { CaptainPorts } from "./ports.ts";
 import type { ChoreRun } from "./runner.ts";
@@ -116,7 +117,30 @@ export function createUpkeepChores(ports: CaptainPorts): Chores {
             text: `Installed the skill ${c.title}`,
             reason: `A low-risk skill that fits ${ws.name}'s projects. It is enabled for no agent. ${why}`,
             do: async () => {
-              await u.installSkill(org, c);
+              try {
+                await u.installSkill(org, c);
+              } catch (err) {
+                // A skill that fails to install (it does not validate, say) fails once, with its reason.
+                // The finding is kept under the same key, so no later pass tries it again.
+                const why = clip(errorMessage(err), 300);
+                await findings.report(
+                  {
+                    org,
+                    source: "setup",
+                    title: `The skill ${c.title} could not be installed`,
+                    detail: `${why}\nmajhi will not try it again. Dismiss this when you no longer need it.`,
+                    evidence: [],
+                    severity: "info",
+                    dedupeKey: key,
+                  },
+                  { kind: "captain", org },
+                );
+                return {
+                  outcome: "asked",
+                  text: `Could not install the skill ${c.title}: ${why}`,
+                  undoNote: "A finding for you: dismiss it to undo",
+                };
+              }
               return { undoNote: `Remove it with skills.remove ${c.title}` };
             },
           });

@@ -123,6 +123,24 @@ describe("discover", () => {
     expect(full.findings.filed.has("discover:mcp:io.acme/postgres")).toBe(true);
   });
 
+  it("a skill that fails to install fails once with its reason and is never tried again", async () => {
+    const installSkill = vi.fn(async () => {
+      throw new Error("The description is longer than 1024 characters.");
+    });
+    const full = setup({
+      upkeep: { profile: async () => ["x"], search, installSkill },
+      rules: { fullAccess: true } as AutonomyOrg,
+    });
+    for (const day of [1, 2, 3]) {
+      await full.runner.start("acme", "discover", `daily${day}`);
+    }
+    expect(installSkill).toHaveBeenCalledTimes(1);
+    expect(full.findings.filed.get("discover:skill:acme/lint")).toBe("open");
+    expect(full.repo.allActions().map((a) => a.text)).toContain(
+      "Could not install the skill acme/lint: The description is longer than 1024 characters.",
+    );
+  });
+
   it("proposes a skill whose registry id is not a valid local name, and never installs it", async () => {
     const installSkill = vi.fn(async () => {});
     const odd = {
