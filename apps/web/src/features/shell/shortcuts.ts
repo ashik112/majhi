@@ -78,6 +78,7 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   go("m", PAGE_PATH.memory, "Go to memory"),
   go("t", PAGE_PATH.automations, "Go to automations (timers)"),
   go("s", PAGE_PATH.setup, "Go to hub setup"),
+  go("i", PAGE_PATH.business, "Go to the business (knowledge, people, deadlines)"),
   go("p", PAGE_PATH.projects, "Go to projects and links"),
   go("o", PAGE_PATH.orgs, "Go to workspaces"),
   go("l", PAGE_PATH.audit, "Go to the audit log"),

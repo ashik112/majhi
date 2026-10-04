@@ -146,6 +146,7 @@ function MainNav() {
         />
         <CaptainRow />
         <AutonomyRow />
+        <NavRow page="business" active={isActive(PAGE_PATH.business)} />
       </div>
       {NAV_GROUPS.map((group) => (
         <div key={group.label} className="flex flex-col gap-px">
