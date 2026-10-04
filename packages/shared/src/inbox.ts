@@ -59,7 +59,7 @@ export const DecisionLinkSchema = z.discriminatedUnion("kind", [
 export type DecisionLink = z.infer<typeof DecisionLinkSchema>;
 
 export const OwnerDecisionSchema = z.object({
-  /** Stable while the decision waits: `room:<task>:<item>`, `cap:<org>:<chore>:<day>`, `budget:<scope>:<day>`, `signin:<account>`. */
+  /** Stable while the decision waits: `room:<task>:<item>`, `budget:<scope>:<day>`, `signin:<account>`. */
   id: z.string().min(1).max(300),
   kind: OwnerDecisionKindSchema,
   /** The workspace (org id). Absent for what belongs to none, like a sign-in or the autonomous budget. */

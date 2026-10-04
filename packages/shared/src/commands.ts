@@ -794,7 +794,7 @@ export const commands = {
   "decisions.list": {
     risk: "read",
     summary:
-      "Everything that waits for the owner, as decisions: questions, approvals, ready-to-ship work, budget and daily-limit questions, paused tasks, sign-ins and secret requests, with the options a click gives and the captain's recommendation. Ship and budget first, then oldest first",
+      "Everything that waits for the owner, as decisions: questions, approvals, ready-to-ship work, budget questions, paused tasks, sign-ins and secret requests, with the options a click gives and the captain's recommendation. Ship and budget first, then oldest first",
     input: z.object({ org: z.string().optional() }),
     output: DecisionListSchema,
   },
@@ -3340,7 +3340,7 @@ export const commands = {
   "autonomy.configure": {
     risk: "change",
     summary:
-      "Change autonomous mode's day cap, account floors, summary time, time zone and the largest task size it may start, or a workspace's entry under orgs: who decides what there (authority: start, questions, approvals, upkeep, merge and push, each decide or ask; only the rows you name change), its daily budget (cap), its daily caps per chore (chores: {ship: {actions: 10}}; null in a count means no cap), and the More rules (hours, freeze, tz, branches, providers, account). null clears a field. Owner only",
+      "Change autonomous mode's day cap, account floors, summary time, time zone and the largest task size it may start, or a workspace's entry under orgs: who decides what there (authority: start, questions, approvals, upkeep, merge and push, each decide or ask; only the rows you name change), its daily budget (cap), and the More rules (hours, freeze, tz, branches, providers, account). null clears a field. Owner only",
     input: AutonomyPatchSchema,
     output: AutonomyStatusSchema,
   },
