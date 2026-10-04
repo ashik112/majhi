@@ -2851,20 +2851,20 @@ export const commands = {
   "mcp.install": {
     risk: "change",
     summary:
-      "Install an MCP server as an mcp connection of an org, from a registry name, a remote URL, a local command or a pasted mcpServers snippet. The first call only returns a preview (publisher, source repo, transport, the command or URL, the headers and variables) with a previewId; nothing is created. Show the owner the preview, and after they agree call again with confirm set to the previewId: it creates the connection and runs Test with the tool list. Secret entries are created empty: never pass a secret value, ask the owner with a secret request and set it with connections.setSecret. Installing does not enable the server for any agent: use mcp.enable",
+      "Install an MCP server as an mcp connection of an org, from a registry name, a remote URL, a local command or a pasted mcpServers snippet. The first call only returns a preview (publisher, source repo, transport, the command or URL, the headers and variables) with a previewId; nothing is created. Show the owner the preview, and after they agree call again with confirm set to the previewId: it creates the connection and runs Test with the tool list. Secret entries are created empty: never pass a secret value, ask the owner with a secret request and set it with connections.setSecret. Installing turns the server on for every agent of the org; mcp.disable turns it off for one",
     input: McpInstallInputSchema,
     output: McpInstallResultSchema,
   },
   "mcp.enable": {
     risk: "change",
     summary:
-      "Turn an installed MCP server (an mcp connection) on for one agent of its org: adds it to the agent file's connections list. Its next run gets the server",
+      "Turn an MCP server (an mcp connection) back on for one agent of its org or a root agent: takes the agent off the connection's agents_off. Its next run gets the server",
     input: McpAgentInputSchema,
     output: ConnectionViewSchema,
   },
   "mcp.disable": {
     risk: "change",
-    summary: "Turn an MCP server off for one agent: takes it off the agent file's connections list",
+    summary: "Turn an MCP server off for one agent: puts the agent on the connection's agents_off",
     input: McpAgentInputSchema,
     output: ConnectionViewSchema,
   },
