@@ -1,40 +1,122 @@
 import { expect, type Page, test } from "@playwright/test";
-import type { OrgView, OwnerDecision } from "../packages/shared/src/index.ts";
+import type { DecisionDetail, OrgView, OwnerDecision } from "../packages/shared/src/index.ts";
 
 /**
- * The Decisions inbox (SPEC 5.18): the bell's popover and the /decisions page, with every kind of
- * decision, several workspaces, a long workspace name and a captain recommendation. The server is the
- * seeded one (`ui`); the decisions and the extra workspace are stubbed in the browser.
+ * The Decisions triage page (SPEC 5.18): a queue on the left and the selected decision in full on the
+ * right, the bell's compact rows, keyboard flow and the narrow layout. Volume is modeled on a real
+ * day: about a dozen decisions in four workspaces, one with a very long name. The server is the seeded
+ * one (`ui`); decisions, details and workspaces are stubbed in the browser.
  *
  * Screenshots go to SHOTS. Run: `pnpm exec playwright test -c playwright.decisions.config.ts`.
  */
 const SHOTS = process.env.SHOTS ?? "/private/tmp/claude-501/decisions-shots";
 const NOW = Date.now();
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
-const LONG = "Northwind Traders International Holdings and Logistics Group";
+const LONG = "Umbrella Interactive Technologies and Retail Platforms Limited";
+
+const ORGS: Record<string, { name: string; key: string; color: string }> = {
+  hooli: { name: "Hooli", key: "HOO", color: "#4f8fd9" },
+  initech: { name: "Initech", key: "INI", color: "#d98a4f" },
+  umbrella: { name: LONG, key: "UMB", color: "#4f9d8a" },
+};
+
+const SHIP_REASON =
+  "In Hooli you decide when work is merged. The change is small and committed, it merges cleanly into main, no card waits and the diff holds no secret. The two new tests fail without the fix and pass with it.";
 
 const DECISIONS: OwnerDecision[] = [
   {
-    id: "room:ACM-12:review-1",
+    id: "room:HOO-31:rv1",
     kind: "ship",
-    org: "acme",
-    task: "ACM-12",
-    taskTitle: "Add a health endpoint to the API",
-    title: "Ready to ship",
-    options: [{ id: "merge", label: "Merge", primary: true }],
-    suggestion: {
-      option: "merge",
-      reason: "Checks pass, 3 files changed, nothing outside the API folder.",
-      by: "captain",
-    },
+    org: "hooli",
+    task: "HOO-31",
+    taskTitle: "Shop orders created twice",
+    title: "Ready to ship: Shop orders created twice",
+    sentence: '@hooli-claude finished "Shop orders created twice" and it is ready to merge.',
+    options: [
+      { id: "merge", label: "Merge", primary: true },
+      { id: "done", label: "Mark done" },
+      { id: "changes", label: "Ask for changes", text: true },
+    ],
+    suggestion: { option: "merge", reason: SHIP_REASON, by: "captain" },
     at: ago(18),
-    link: { kind: "task", id: "ACM-12", item: "review-1" },
+    link: { kind: "task", id: "HOO-31", item: "rv1" },
   },
   {
-    id: "budget:globex:2026-10-04",
+    id: "room:UMB-8:rv2",
+    kind: "ship",
+    org: "umbrella",
+    task: "UMB-8",
+    taskTitle: "Move the notes export to a background job",
+    title: "Ready to ship: Move the notes export to a background job",
+    sentence:
+      '@umbrella-builder finished "Move the notes export to a background job" and it is ready to merge.',
+    options: [
+      { id: "merge", label: "Merge", primary: true },
+      { id: "done", label: "Mark done" },
+      { id: "changes", label: "Ask for changes", text: true },
+    ],
+    suggestion: {
+      option: "merge",
+      reason:
+        "Committed, merges cleanly into main, no card waits. In this workspace you decide when work is merged.",
+      by: "captain",
+    },
+    at: ago(44),
+    link: { kind: "task", id: "UMB-8", item: "rv2" },
+  },
+  {
+    id: "room:INI-12:rv3",
+    kind: "ship",
+    org: "initech",
+    task: "INI-12",
+    taskTitle: "Update the onboarding docs",
+    title: "Ready to ship: Update the onboarding docs",
+    sentence: '@initech-writer finished "Update the onboarding docs" and waits for your review.',
+    options: [
+      { id: "merge", label: "Merge", primary: true },
+      { id: "done", label: "Mark done" },
+      { id: "changes", label: "Ask for changes", text: true },
+    ],
+    at: ago(25),
+    link: { kind: "task", id: "INI-12", item: "rv3" },
+  },
+  {
+    id: "room:PRV-4:rv4",
+    kind: "ship",
+    task: "PRV-4",
+    taskTitle: "Tidy the invoice template",
+    title: "Ready to ship: Tidy the invoice template",
+    sentence: '@majhi-builder finished "Tidy the invoice template" and waits for your review.',
+    options: [
+      { id: "merge", label: "Merge", primary: true },
+      { id: "done", label: "Mark done" },
+      { id: "changes", label: "Ask for changes", text: true },
+    ],
+    at: ago(70),
+    link: { kind: "task", id: "PRV-4", item: "rv4" },
+  },
+  {
+    id: "room:HOO-33:rv5",
+    kind: "ship",
+    org: "hooli",
+    task: "HOO-33",
+    taskTitle: "Rename the shipping zones",
+    title: "Ready to ship: Rename the shipping zones",
+    sentence: '@hooli-claude finished "Rename the shipping zones" and waits for your review.',
+    options: [
+      { id: "merge", label: "Merge", primary: true },
+      { id: "done", label: "Mark done" },
+      { id: "changes", label: "Ask for changes", text: true },
+    ],
+    at: ago(12),
+    link: { kind: "task", id: "HOO-33", item: "rv5" },
+  },
+  {
+    id: "budget:hooli:2026-10-04",
     kind: "budget",
-    org: "globex",
-    title: "Globex used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?",
+    org: "hooli",
+    title: "Hooli used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?",
+    sentence: "Hooli used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?",
     options: [
       { id: "raise", label: "Raise to $40 for today", primary: true },
       { id: "leave", label: "Leave it" },
@@ -43,160 +125,204 @@ const DECISIONS: OwnerDecision[] = [
     link: { kind: "limits" },
   },
   {
-    id: "budget:day:2026-10-04",
-    kind: "budget",
-    title: "Autonomous work used its $60 for today. 5 tasks are waiting. Raise it to $120 for today?",
-    options: [
-      { id: "raise", label: "Raise to $120 for today", primary: true },
-      { id: "leave", label: "Leave it" },
-    ],
-    at: ago(5),
-    link: { kind: "limits" },
-  },
-  {
-    id: "room:ACM-3:ask-1",
+    id: "room:INI-7:ask1",
     kind: "question",
-    org: "acme",
-    task: "ACM-3",
-    taskTitle: "Clean the branch history",
-    title:
-      "@acme-builder asks: The branch has 41 commits with fixups. Clean the history before the merge request?",
-    options: [
-      { id: "rebuild", label: "Rebuild", primary: true },
-      { id: "keep", label: "Keep the history" },
-      { id: "squash", label: "Squash into one commit" },
-    ],
-    suggestion: { option: "rebuild", reason: "Keeps a backup branch, nothing pushed.", by: "captain" },
-    at: ago(190),
-    link: { kind: "task", id: "ACM-3", item: "ask-1" },
-  },
-  {
-    id: "room:GLX-7:ask-2",
-    kind: "question",
-    org: "globex",
-    task: "GLX-7",
+    org: "initech",
+    task: "INI-7",
     taskTitle: "Export orders to CSV",
-    title: "@globex-builder asks: Which queue should the export use?",
+    title: "@initech-builder asks: Which queue should the export use?",
+    sentence:
+      "@initech-builder asks: Which queue should the export use? Orders can reach 40,000 rows on a busy day.",
     options: [
       { id: "sqs", label: "SQS", primary: true },
       { id: "redis", label: "Redis" },
+      { id: "inline", label: "No queue, export inline" },
+      { id: "reply", label: "Write an answer", text: true },
     ],
     suggestion: { option: "sqs", reason: "The agent's suggestion", by: "agent" },
     at: ago(95),
-    link: { kind: "task", id: "GLX-7", item: "ask-2" },
+    link: { kind: "task", id: "INI-7", item: "ask1" },
   },
   {
-    id: "room:NWT-21:oq-1",
-    kind: "question",
-    org: "northwind",
-    task: "NWT-21",
-    taskTitle: "Reconcile the quarterly freight invoices against the carrier statements for every depot",
-    title: "@northwind-lead is asking you something",
-    options: [
-      { id: "c0", label: "Yes, go ahead", primary: true },
-      { id: "c1", label: "Not this quarter" },
-    ],
-    at: ago(60),
-    link: { kind: "task", id: "NWT-21", item: "oq-1" },
+    id: "room:UMB-5:paused1",
+    kind: "paused",
+    org: "umbrella",
+    task: "UMB-5",
+    taskTitle: "Migrate the billing job",
+    title: "Paused: the account hit its usage limit",
+    sentence: '"Migrate the billing job" paused: the account hit its usage limit.',
+    options: [{ id: "resume", label: "Resume", primary: true }],
+    at: ago(130),
+    link: { kind: "task", id: "UMB-5", item: "paused1" },
   },
   {
-    id: "room:NWT-22:perm-1",
+    id: "room:PRV-9:perm1",
     kind: "approval",
-    org: "northwind",
-    task: "NWT-22",
-    taskTitle: "Upgrade the warehouse scanner firmware",
-    title: "@northwind-builder needs approval: Run pnpm install in packages/scanner-firmware-updater",
+    task: "PRV-9",
+    taskTitle: "Upgrade the scanner firmware",
+    title: "@majhi-builder needs approval: Run pnpm install in packages/scanner-firmware-updater",
+    sentence: "@majhi-builder needs your approval: Run pnpm install in packages/scanner-firmware-updater",
     options: [
       { id: "allow", label: "Allow once", primary: true },
-      { id: "allow_always", label: "Always allow" },
       { id: "reject", label: "Reject" },
     ],
     at: ago(42),
-    link: { kind: "task", id: "NWT-22", item: "perm-1" },
+    link: { kind: "task", id: "PRV-9", item: "perm1" },
   },
   {
-    id: "room:PRV-4:appr-1",
-    kind: "approval",
-    task: "PRV-4",
-    taskTitle: "Set up a workspace for Initech",
-    title: "Create org Initech (key INI)",
-    options: [
-      { id: "approve", label: "Approve", primary: true },
-      { id: "reject", label: "Reject" },
-    ],
-    at: ago(33),
-    link: { kind: "task", id: "PRV-4", item: "appr-1" },
-  },
-  {
-    id: "room:ACM-9:review-2",
-    kind: "ship",
-    org: "acme",
-    task: "ACM-9",
-    taskTitle: "Update the onboarding docs",
-    title: "Ready for review",
-    options: [],
-    at: ago(25),
-    link: { kind: "task", id: "ACM-9", item: "review-2" },
-  },
-  {
-    id: "room:GLX-5:paused-1",
-    kind: "paused",
-    org: "globex",
-    task: "GLX-5",
-    taskTitle: "Migrate the billing job",
-    title: "Paused: the account hit its usage limit",
-    options: [{ id: "resume", label: "Resume", primary: true }],
-    at: ago(130),
-    link: { kind: "task", id: "GLX-5", item: "paused-1" },
-  },
-  {
-    id: "cap:acme:memory:2026-10-04",
-    kind: "cap",
-    org: "acme",
-    title: "Acme: the captain answered its 20 questions for today. Raise the limit to 40 for today?",
-    options: [
-      { id: "raise", label: "Raise to 40 for today", primary: true },
-      { id: "leave", label: "Leave it" },
-    ],
-    at: ago(240),
-    link: { kind: "captain" },
-  },
-  {
-    id: "room:ACM-3:secret-1",
-    kind: "secret",
-    org: "acme",
-    task: "ACM-3",
-    taskTitle: "Clean the branch history",
-    title: "@acme-builder needs a secret: Stripe test key",
-    options: [],
-    at: ago(22),
-    link: { kind: "task", id: "ACM-3", item: "secret-1" },
-  },
-  {
-    id: "signin:claude-acme",
+    id: "signin:claude-hooli",
     kind: "sign-in",
-    title: "Sign in claude-acme: its agents cannot run until you do",
+    title: "Sign in claude-hooli: its agents cannot run until you do",
+    sentence: "claude-hooli is signed out. Its agents cannot run until you sign in again.",
     options: [],
     at: ago(300),
-    link: { kind: "account", id: "claude-acme" },
+    link: { kind: "account", id: "claude-hooli" },
   },
 ];
+
+const HANDBACK = `Fixed. The checkout handler posted the order twice when the payment webhook arrived before the redirect.
+
+- Added an idempotency key on \`orders.create\`
+- The webhook now looks the order up first
+- Two tests cover the early webhook and the double click
+
+I ran the order tests and the lint. Nothing outside \`apps/shop\` changed.
+
+One thing to know: orders created twice before this fix stay as they are. A one-off cleanup script is in \`scripts/dedupe-orders.ts\`, not run.
+
+Next steps if you want them: a unique index on \`orders.payment_ref\`, and an alert when the same ref is seen twice.`;
+
+const DETAILS: Record<string, DecisionDetail> = {
+  "room:HOO-31:rv1": {
+    id: "room:HOO-31:rv1",
+    handback: { agent: "hooli-claude", text: HANDBACK, at: ago(20) },
+    diff: {
+      files: 6,
+      additions: 142,
+      deletions: 17,
+      top: [
+        { path: "apps/shop/src/orders/create.ts", additions: 58, deletions: 9 },
+        { path: "apps/shop/src/orders/create.test.ts", additions: 51, deletions: 0 },
+        { path: "apps/shop/src/webhooks/payment.ts", additions: 22, deletions: 6 },
+        { path: "scripts/dedupe-orders.ts", additions: 9, deletions: 0 },
+        { path: "apps/shop/src/orders/index.ts", additions: 2, deletions: 2 },
+      ],
+      uncommitted: false,
+    },
+    repos: [{ project: "hooli-shop", branch: "majhi/HOO-31", into: "main" }],
+    checks: "committed, merges cleanly into main, no card waits, no secret in the diff",
+  },
+  "room:UMB-8:rv2": {
+    id: "room:UMB-8:rv2",
+    handback: {
+      agent: "umbrella-builder",
+      text: "The export now runs as a background job and posts a link when it is done. Tests pass.",
+      at: ago(50),
+    },
+    diff: {
+      files: 3,
+      additions: 64,
+      deletions: 21,
+      top: [{ path: "src/notes/export.ts", additions: 40, deletions: 18 }],
+      uncommitted: false,
+    },
+    repos: [{ project: "umbrella-notes", branch: "majhi/UMB-8", into: "main" }],
+    checks: "committed, merges cleanly into main, no card waits",
+  },
+  "room:INI-12:rv3": {
+    id: "room:INI-12:rv3",
+    handback: {
+      agent: "initech-writer",
+      text: "I rewrote the first-day checklist and added a section on access requests. The screenshots are old; I left a note where each one needs replacing.",
+      at: ago(30),
+    },
+    diff: {
+      files: 4,
+      additions: 96,
+      deletions: 40,
+      top: [
+        { path: "docs/onboarding/first-day.md", additions: 60, deletions: 31 },
+        { path: "docs/onboarding/access.md", additions: 36, deletions: 0 },
+        { path: "docs/index.md", additions: 0, deletions: 9 },
+      ],
+      uncommitted: true,
+    },
+    repos: [{ project: "initech-docs", branch: "majhi/INI-12", into: "main" }],
+    blocked: { merge: "Some changes are not committed yet." },
+  },
+  "room:PRV-4:rv4": {
+    id: "room:PRV-4:rv4",
+    handback: { agent: "majhi-builder", text: "Spacing and fonts match the new brand sheet.", at: ago(75) },
+    diff: {
+      files: 1,
+      additions: 12,
+      deletions: 12,
+      top: [{ path: "templates/invoice.html", additions: 12, deletions: 12 }],
+      uncommitted: false,
+    },
+    repos: [{ project: "notes", branch: "majhi/PRV-4", into: "main" }],
+  },
+  "room:HOO-33:rv5": {
+    id: "room:HOO-33:rv5",
+    handback: {
+      agent: "hooli-claude",
+      text: "Renamed the zones to the carrier's names. The old names stay as aliases for a release.",
+      at: ago(14),
+    },
+    diff: {
+      files: 2,
+      additions: 30,
+      deletions: 28,
+      top: [{ path: "apps/shop/src/shipping/zones.ts", additions: 22, deletions: 20 }],
+      uncommitted: false,
+    },
+    repos: [{ project: "hooli-shop", branch: "majhi/HOO-33", into: "main" }],
+  },
+  "room:INI-7:ask1": {
+    id: "room:INI-7:ask1",
+    handback: {
+      agent: "initech-builder",
+      text: "I measured the export on last week's data: 38,000 rows take 41 seconds inline, which times out behind the proxy. A queue fixes that. SQS is already in the stack for the invoices; Redis would be a new service to run.",
+      at: ago(96),
+    },
+    questions: [
+      {
+        question: "Which queue should the export use?",
+        options: ["SQS", "Redis", "No queue, export inline"],
+        freeText: true,
+      },
+    ],
+  },
+  "room:UMB-5:paused1": {
+    id: "room:UMB-5:paused1",
+    handback: {
+      agent: "umbrella-builder",
+      text: "Stopped before the schema step. Nothing is half done.",
+      at: ago(131),
+    },
+  },
+};
 
 async function stub(page: Page, decisions: OwnerDecision[]) {
   const calls: { name: string; body: unknown }[] = [];
   let left = decisions;
   await page.route("**/api/cmd/decisions.list", (r) => r.fulfill({ json: { decisions: left } }));
+  await page.route("**/api/cmd/decisions.detail", (r) => {
+    const { id } = r.request().postDataJSON() as { id: string };
+    return r.fulfill({ json: DETAILS[id] ?? { id } });
+  });
   await page.route("**/api/cmd/decisions.answer", (r) => {
     const body = r.request().postDataJSON() as { id: string };
     calls.push({ name: "decisions.answer", body });
     left = left.filter((d) => d.id !== body.id);
     return r.fulfill({ json: { decisions: left } });
   });
-  // The seeded workspaces, plus one with a very long name.
   await page.route("**/api/cmd/orgs.list", async (r) => {
     const real = (await (await r.fetch()).json()) as OrgView[];
-    const extra = { ...real[0], id: "northwind", name: LONG, key: "NWT", color: "#4f9d8a" } as OrgView;
-    return r.fulfill({ json: [...real.filter((o) => o.id !== "northwind"), extra] });
+    const extra = Object.entries(ORGS).map(
+      ([id, o]) => ({ ...real[0], id, name: o.name, key: o.key, color: o.color }) as OrgView,
+    );
+    return r.fulfill({ json: [...real.filter((o) => !(o.id in ORGS)), ...extra] });
   });
   return { calls };
 }
@@ -221,69 +347,132 @@ async function noPageScroll(page: Page) {
   expect(overflow).toEqual({ x: 0, y: 0 });
 }
 
-for (const [w, h] of [
+const SIZES = [
   [1440, 900],
+  [1280, 720],
   [1100, 760],
-] as const) {
+] as const;
+
+for (const [w, h] of SIZES) {
   for (const theme of ["dark", "light"]) {
+    test(`the queue with a selection ${w} ${theme}`, async ({ page }) => {
+      await open(page, "/decisions?id=room:HOO-31:rv1", w, h, theme);
+      await expect(page.getByRole("heading", { name: "Shop orders created twice" })).toBeVisible();
+      await expect(page.getByText("What @hooli-claude said last")).toBeVisible();
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${SHOTS}/queue-${w}x${h}-${theme}.png` });
+      await noPageScroll(page);
+    });
     test(`the bell ${w} ${theme}`, async ({ page }) => {
       await open(page, "/", w, h, theme);
       await page.getByRole("button", { name: /^Decisions/ }).click();
       const panel = page.getByRole("dialog", { name: "Decisions" });
-      await expect(panel.getByText("Ready to ship").first()).toBeVisible();
+      await expect(panel.getByText("Shop orders created twice").first()).toBeVisible();
       await page.waitForTimeout(300);
-      await page.screenshot({ path: `${SHOTS}/bell-${w}-${theme}.png` });
-      // No row may spill out of the popover sideways.
-      const spill = await panel.evaluate((el) => el.scrollWidth - el.clientWidth);
-      expect(spill).toBe(0);
-    });
-    test(`the page ${w} ${theme}`, async ({ page }) => {
-      await open(page, "/decisions", w, h, theme);
-      await expect(page.getByRole("heading", { name: "Decisions" })).toBeVisible();
-      await page.screenshot({ path: `${SHOTS}/page-${w}-${theme}.png` });
-      await noPageScroll(page);
-      // The long lower half of the list too.
-      await page
-        .locator("main, [role=main]")
-        .first()
-        .evaluate((el) => el.scrollTo?.(0, 99999));
-      await page.getByText("Sign in claude-acme").scrollIntoViewIfNeeded();
-      await page.waitForTimeout(300);
-      await page.screenshot({ path: `${SHOTS}/page-end-${w}-${theme}.png` });
+      await page.screenshot({ path: `${SHOTS}/bell-${w}x${h}-${theme}.png` });
+      expect(await panel.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
     });
   }
 }
 
-test("the page filtered to one workspace, and the empty state", async ({ page }) => {
-  await open(page, "/decisions", 1440, 900, "dark");
-  await page.getByRole("button", { name: /^Globex/ }).click();
-  await expect(page.getByText("Which queue should the export use?")).toBeVisible();
-  await expect(page.getByText("Create org Initech")).toBeHidden();
-  await page.waitForTimeout(400);
-  await page.screenshot({ path: `${SHOTS}/page-globex-1440-dark.png` });
+const KINDS: [string, string][] = [
+  ["ship-ready", "room:HOO-31:rv1"],
+  ["ship-long-name", "room:UMB-8:rv2"],
+  ["review-blocked", "room:INI-12:rv3"],
+  ["review", "room:HOO-33:rv5"],
+  ["question", "room:INI-7:ask1"],
+  ["budget", "budget:hooli:2026-10-04"],
+  ["paused", "room:UMB-5:paused1"],
+  ["approval", "room:PRV-9:perm1"],
+  ["sign-in", "signin:claude-hooli"],
+];
+
+for (const theme of ["dark", "light"]) {
+  test(`each kind's detail ${theme}`, async ({ page }) => {
+    await open(page, "/decisions", 1440, 900, theme);
+    for (const [name, id] of KINDS) {
+      await page.locator(`[data-decision="${id}"]`).click();
+      await page.waitForTimeout(350);
+      await page.screenshot({ path: `${SHOTS}/kind-${name}-1440-${theme}.png` });
+      await noPageScroll(page);
+    }
+  });
+}
+
+test("the reply box, the filters and the empty state", async ({ page }) => {
+  await open(page, "/decisions?id=room:INI-12:rv3", 1440, 900, "dark");
+  await page.getByRole("button", { name: /Ask for changes/ }).click();
+  await page.getByRole("textbox", { name: "Ask for changes" }).fill("Replace the old screenshots first.");
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${SHOTS}/reply-1440-dark.png` });
+  await page.getByRole("button", { name: /^Hooli \d/ }).click();
+  await page.getByRole("button", { name: /^Ship \d/ }).click();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${SHOTS}/filtered-1440-dark.png` });
   await open(page, "/decisions", 1440, 900, "dark", []);
-  await expect(page.getByText("Nothing needs you.").first()).toBeVisible();
-  await page.screenshot({ path: `${SHOTS}/page-empty-1440-dark.png` });
+  await expect(page.getByText("Nothing needs you.")).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/empty-1440-dark.png` });
 });
 
-test("answering from the bell asks the server and removes the row", async ({ page }) => {
-  const { calls } = await open(page, "/", 1440, 900, "dark");
+test("the narrow layout: the queue, then one decision, then back", async ({ page }) => {
+  await open(page, "/decisions", 900, 760, "dark");
+  await expect(page.locator('[data-decision="room:HOO-31:rv1"]')).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/narrow-queue-900-dark.png` });
+  await page.locator('[data-decision="room:HOO-31:rv1"]').click();
+  await expect(page.getByRole("heading", { name: "Shop orders created twice" })).toBeVisible();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${SHOTS}/narrow-detail-900-dark.png` });
+  await noPageScroll(page);
+  await page.getByRole("button", { name: "All decisions" }).click();
+  await expect(page.locator('[data-decision="room:INI-7:ask1"]')).toBeVisible();
+});
+
+test("keys move, pick an answer and the next decision is selected after it", async ({ page }) => {
+  const { calls } = await open(page, "/decisions", 1440, 900, "dark");
+  const current = () => page.locator('[data-decision][aria-current="true"]').getAttribute("data-decision");
+  // The first of the queue is selected; the server sorted ship first.
+  const first = await current();
+  await page.keyboard.press("j");
+  const second = await current();
+  expect(second).not.toBe(first);
+  await page.keyboard.press("k");
+  expect(await current()).toBe(first);
+  // Enter takes the main action of the first one, which is a merge.
+  await page.keyboard.press("Enter");
+  await expect.poll(() => calls.at(-1)?.body).toMatchObject({ id: first, option: "merge" });
+  // The next decision of the queue is now selected.
+  await expect.poll(current).toBe(second);
+  // 2 picks the second answer: Mark done on a review, or the second option of another kind.
+  await expect(page.getByRole("button", { name: /^Mark done/ })).toBeEnabled();
+  await page.keyboard.press("2");
+  await expect.poll(() => (calls.at(-1)?.body as { id?: string } | undefined)?.id).toBe(second);
+  // R opens the reply box on a decision that takes words, and Esc closes it.
+  await page.locator('[data-decision="room:INI-7:ask1"]').click();
+  await page.keyboard.press("r");
+  await expect(page.getByRole("textbox", { name: "Write an answer" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("textbox", { name: "Write an answer" })).toBeHidden();
+  // Ask for changes sends the words.
+  await page.locator('[data-decision="room:INI-12:rv3"]').click();
+  await page.keyboard.press("r");
+  await page.getByRole("textbox", { name: "Ask for changes" }).fill("Replace the old screenshots first.");
+  await page.keyboard.press("Meta+Enter");
+  await expect
+    .poll(() => calls.at(-1)?.body)
+    .toEqual({ id: "room:INI-12:rv3", option: "changes", text: "Replace the old screenshots first." });
+});
+
+test("a bell row opens its decision on the page, and Open task still opens the task", async ({ page }) => {
+  await open(page, "/", 1440, 900, "dark");
   await page.getByRole("button", { name: /^Decisions/ }).click();
   const panel = page.getByRole("dialog", { name: "Decisions" });
-  const row = panel.locator('[data-decision="room:ACM-3:ask-1"]');
-  await expect(row.getByText("Captain recommends")).toBeVisible();
-  await row.getByRole("button", { name: "Rebuild", exact: true }).click();
-  await expect
-    .poll(() => calls.find((c) => c.name === "decisions.answer")?.body)
-    .toEqual({ id: "room:ACM-3:ask-1", option: "rebuild" });
-  await expect(row).toBeHidden();
-});
-
-test("Open task still opens the task, and a sign-in opens Accounts", async ({ page }) => {
-  await open(page, "/decisions", 1440, 900, "dark");
-  await page.locator('[data-decision="room:GLX-7:ask-2"]').getByRole("button", { name: "Open task" }).click();
-  await expect(page).toHaveURL(/\/t\/GLX-7/);
-  await page.goto("/decisions");
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page).toHaveURL(/\/accounts/);
+  await panel
+    .locator('[data-decision="room:INI-7:ask1"]')
+    .getByRole("button", { name: "Export orders to CSV" })
+    .or(panel.locator('[data-decision="room:INI-7:ask1"]').getByRole("button", { name: /Which queue/ }))
+    .click();
+  await expect(page).toHaveURL(/\/decisions\?id=room(%3A|:)INI-7(%3A|:)ask1/);
+  await expect(page.locator('[data-decision="room:INI-7:ask1"][aria-current="true"]')).toBeVisible();
+  await page.getByRole("button", { name: /^Open task/ }).click();
+  await expect(page).toHaveURL(/\/t\/INI-7/);
 });

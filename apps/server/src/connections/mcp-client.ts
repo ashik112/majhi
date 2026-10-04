@@ -5,6 +5,12 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { ReadBuffer, serializeMessage } from "@modelcontextprotocol/sdk/shared/stdio.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { JSONRPCMessage, MessageExtraInfo } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
+
+const ToolNamesSchema = z.object({
+  tools: z.array(z.looseObject({ name: z.string() })),
+  nextCursor: z.string().optional(),
+});
 
 /** Pages of `tools/list` read at most. */
 const MAX_PAGES = 10;
@@ -85,14 +91,55 @@ export async function listTools(transport: Transport, timeoutMs: number): Promis
     const names: string[] = [];
     let cursor: string | undefined;
     for (let page = 0; page < MAX_PAGES; page++) {
-      const result = await client.listTools(cursor === undefined ? undefined : { cursor }, {
-        timeout: timeoutMs,
-      });
+      // Only the names: a strict read of every tool's schemas fails the whole list on one tool a
+      // server describes loosely (DigitalOcean's Networking and Functions do).
+      const result = await client.request(
+        { method: "tools/list", ...(cursor === undefined ? {} : { params: { cursor } }) },
+        ToolNamesSchema,
+        { timeout: timeoutMs },
+      );
       names.push(...result.tools.map((t) => t.name));
       cursor = result.nextCursor;
       if (cursor === undefined) break;
     }
     return names;
+  } finally {
+    await client.close().catch(() => undefined);
+  }
+}
+
+/**
+ * Connects, calls one tool and closes. The answer is the tool's structured content, or its first text
+ * part that parses as JSON. Throws with why it could not. Only for reads the owner chose, like the ops
+ * watch's error rate: majhi calls the tool named, with the arguments given, and uses one number from
+ * the answer.
+ */
+export async function callTool(
+  transport: Transport,
+  tool: string,
+  args: Record<string, unknown>,
+  timeoutMs: number,
+): Promise<unknown> {
+  const client = new Client({ name: "majhi-ops-watch", version: "1.0.0" });
+  try {
+    await client.connect(transport, { timeout: timeoutMs });
+    const result = await client.callTool({ name: tool, arguments: args }, undefined, { timeout: timeoutMs });
+    if (result.isError === true) throw new Error("the tool reported an error");
+    if (result.structuredContent !== undefined) return result.structuredContent;
+    const content = Array.isArray(result.content) ? result.content : [];
+    for (const part of content) {
+      if (typeof part === "object" && part !== null && (part as { type?: unknown }).type === "text") {
+        const text = (part as { text?: unknown }).text;
+        if (typeof text === "string") {
+          try {
+            return JSON.parse(text);
+          } catch {
+            // Not JSON: try the next part.
+          }
+        }
+      }
+    }
+    throw new Error("the answer had no JSON");
   } finally {
     await client.close().catch(() => undefined);
   }

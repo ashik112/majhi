@@ -105,7 +105,8 @@ function left(w: UsageWindow | undefined, now: Date): number | undefined {
  * their floors, the weekly one says it: it lasts longer.
  */
 export function accountsOf(
-  views: readonly Pick<AccountView, "id" | "org" | "tool" | "usage">[],
+  views: readonly (Pick<AccountView, "id" | "org" | "tool" | "usage"> &
+    Partial<Pick<AccountView, "status">>)[],
   floors: AutonomySettings["floors"],
   now: Date,
 ): AutonomyAccount[] {
@@ -130,6 +131,7 @@ export function accountsOf(
       id: v.id,
       org: v.org,
       tool: v.tool,
+      ...(v.status === undefined ? {} : { status: v.status }),
       ...(window === undefined ? {} : { window }),
       ...(weekly === undefined ? {} : { weekly }),
       ...(blocked === undefined ? {} : { blocked }),
@@ -147,7 +149,7 @@ export function holdsOf(
   if (spend.total.reached && spend.total.cap !== undefined) {
     holds.push({
       kind: "day-cap",
-      text: `Autonomous reached its ${capText(spend.total.cap)} cap for today`,
+      text: `Auto-pilot reached its ${capText(spend.total.cap)} cap for today`,
       until: spend.resetsAt,
     });
   }
@@ -216,7 +218,7 @@ export function capPassed(
   names: Readonly<Record<string, string>> = {},
 ): { text: string; scope: string } | undefined {
   if (spend.total.cap !== undefined && pastMargin(spend.total, turnCost)) {
-    return { text: `Autonomous passed its ${capText(spend.total.cap)} cap for today`, scope: "day" };
+    return { text: `Auto-pilot passed its ${capText(spend.total.cap)} cap for today`, scope: "day" };
   }
   const own = spend.orgs.find((o) => o.org === org);
   if (own?.cap !== undefined && pastMargin(own, turnCost)) {

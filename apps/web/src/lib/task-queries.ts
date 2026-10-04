@@ -21,7 +21,7 @@ export function useProjects(enabled = true) {
   });
 }
 
-/** Chats live in Chats. On the board and in counts they show only while they need the owner: they ask, are paused or ready for review. */
+/** Chats live in Chats. On the board and in counts they show only while they need the owner: they ask, are paused or ready to ship. */
 const withoutQuietChats = (list: TaskSummary[]) => list.filter((t) => t.chat !== true || needsOwner(t));
 const onlyChats = (list: TaskSummary[]) => list.filter((t) => t.chat === true);
 
@@ -175,6 +175,15 @@ export function useTaskBranches(id: string, enabled: boolean) {
     queryKey: [...queryKeys.tasks, "branches", id],
     queryFn: () => cmd("tasks.branches", { id }),
     enabled,
+  });
+}
+
+/** The public keys in the owner's ~/.ssh, to pick the key an SSH host uses. */
+export function useSshKeys() {
+  return useQuery<CommandOutput<"ssh.keys">, ApiRequestError>({
+    queryKey: ["ssh-keys"],
+    queryFn: () => cmd("ssh.keys", {}),
+    staleTime: 60_000,
   });
 }
 

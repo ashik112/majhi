@@ -348,16 +348,3 @@ export function tasksOf<T extends Pick<TaskSummary, "status" | "team" | "working
         b.updatedAt.localeCompare(a.updatedAt),
     );
 }
-
-/**
- * An agent's `connections` list holds two kinds of entry that two sections edit: MCP servers and
- * the other connections. Each section saves only the ids it shows, over the list as the file has it
- * now, so saving one never undoes an unsaved change of the other.
- */
-export function mergeConnections(
-  file: readonly string[],
-  draft: readonly string[],
-  owns: (id: string) => boolean,
-): string[] {
-  return [...file.filter((id) => !owns(id)), ...draft.filter(owns)];
-}

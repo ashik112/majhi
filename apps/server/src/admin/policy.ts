@@ -4,16 +4,10 @@ import {
   detectSecrets,
   isDestructiveCommand,
   type PolicySettings,
-  type RiskClass,
   replaceSecrets,
 } from "@majhi/shared";
 
 export type Decision = "run" | "pending";
-
-/** The mode that applies to a command: its own override, else its risk class. */
-export function modeFor(policy: PolicySettings, command: string, risk: RiskClass): ApprovalMode {
-  return policy.commands[command] ?? policy[risk];
-}
 
 /**
  * `auto` runs. `when-asked` runs when the agent says the owner asked for it in the conversation.
@@ -28,14 +22,14 @@ export function decide(mode: ApprovalMode, ownerAsked: boolean): Decision {
 /**
  * The saved rule that lets `agent` run `command` without asking, if there is one. A task rule covers
  * only its own task, an org rule only tasks in that org (`org` is undefined for a LOCAL task, so none
- * matches). A destructive command matches nothing unless `allow_destructive_rules` is on. The caller
+ * matches). A destructive command matches nothing: only the owner's click approves it. The caller
  * asks only when the mode says pending: a rule turns that into "run" and never blocks anything.
  */
 export function matchRule(
   policy: PolicySettings,
   call: { agent: string; command: string; task: string; org: string | undefined },
 ): AllowRule | undefined {
-  if (isDestructiveCommand(call.command) && !policy.allow_destructive_rules) return undefined;
+  if (isDestructiveCommand(call.command)) return undefined;
   return policy.rules.find(
     (rule) =>
       rule.agent === call.agent &&
@@ -52,10 +46,22 @@ export function sameRule(a: AllowRule, b: AllowRule): boolean {
 const SENSITIVE_KEY = /pass(word|phrase)?|secret|token|api[_-]?key|private|credential|^value$/i;
 export const REDACTED = "[redacted]";
 
+/** What a command answered never names a secret `value` field: `value` there is a reading or a result. */
+const SENSITIVE_OUTPUT_KEY = /pass(word|phrase)?|secret|token|api[_-]?key|private|credential/i;
+
+/** A copy of a command's answer safe to show: secret-looking strings and fields hidden, a plain `value` kept. */
+export function redactOutput(output: unknown): unknown {
+  return redactWith(output, SENSITIVE_OUTPUT_KEY);
+}
+
 /** A copy of the input safe to show in the room: secret-looking fields and strings are hidden. */
 export function redact(input: unknown): unknown {
+  return redactWith(input, SENSITIVE_KEY);
+}
+
+function redactWith(input: unknown, sensitive: RegExp): unknown {
   if (typeof input === "string") return redactText(input);
-  if (Array.isArray(input)) return input.map(redact);
+  if (Array.isArray(input)) return input.map((v) => redactWith(v, sensitive));
   if (typeof input === "object" && input !== null) {
     const out: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(input)) {
@@ -64,9 +70,9 @@ export function redact(input: unknown): unknown {
       // Commands type every secret as text, so a count like `inputTokens: 1200` is not one.
       const plain = typeof value === "number" || typeof value === "boolean";
       out[key] =
-        SENSITIVE_KEY.test(key) && !isRef && !plain && value !== null && value !== ""
+        sensitive.test(key) && !isRef && !plain && value !== null && value !== ""
           ? REDACTED
-          : redact(value);
+          : redactWith(value, sensitive);
     }
     return out;
   }

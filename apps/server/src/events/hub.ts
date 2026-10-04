@@ -42,7 +42,9 @@ export function topicsFor(command: string): EventTopic[] {
     case "agents":
       return ["agents"];
     case "boss":
-      return ["agents", "config"];
+      // `boss.chat` only opens the captain chat. It must not emit: the page reads it under the agents key, so an
+      // event refetched it, which emitted again, and one open tab kept the server and every page busy.
+      return command === "boss.set" ? ["agents", "config"] : [];
     case "workspaces":
       return ["config"];
     case "projects":
@@ -62,6 +64,9 @@ export function topicsFor(command: string): EventTopic[] {
     case "connections":
       // A change is a config commit, may save or delete secrets, and remove edits agent files.
       return ["connections", "config", "secrets", "agents"];
+    case "connect":
+      // A connect attempt changes a connection and its grant; a finding may be filed.
+      return ["connections", "config", "findings"];
     case "trackers":
       // A pull or a push makes or links tasks; the org page shows the last pull.
       return ["tasks", "orgs"];
@@ -79,6 +84,21 @@ export function topicsFor(command: string): EventTopic[] {
       // Settings and instructions are config commits; the mode and the queue are autonomy's own.
       // The captain's choice per workspace is in the same settings.
       return ["autonomy", "captain", "config", "tasks"];
+    case "playbooks":
+    case "goals":
+    case "outbound":
+      // A draft waits in Decisions; a playbook run files findings and shows in the captain's log.
+      return ["playbooks", "findings", "captain"];
+    case "ops":
+      return ["ops", "findings", "playbooks"];
+    case "findings":
+      // A task made from a finding shows on the board too.
+      return ["findings", "tasks"];
+    case "kb":
+    case "voice":
+    case "crm":
+    case "deadlines":
+      return ["business"];
     case "captain":
       // The stop switch also stops autonomous mode; Undo reverts config, tasks or memory.
       return ["captain", "autonomy", "config", "tasks", "memory"];

@@ -54,7 +54,7 @@ export function FileViewer({
     navigate({
       to: ".",
       search: (prev: AppSearch) => {
-        const { file: _open, ...rest } = prev;
+        const { file: _open, fileTask: _task, ...rest } = prev;
         return rest;
       },
     });

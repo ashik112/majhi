@@ -95,6 +95,48 @@ describe("connections commands", () => {
     expect(owner.body.fields.imap_host).toEqual({ kind: "text", set: true, value: "mail.acme.com" });
   });
 
+  it("lets an agent rename a variable, keeping its secret, but not to a reserved or taken name", async () => {
+    await h.cmd("connections.create", {
+      org: "acme",
+      id: "acme-db",
+      type: "env",
+      name: "Acme DB",
+      vars: { DATABASE_URL: { kind: "secret" }, REGION: { kind: "text", value: "eu" } },
+    });
+    expect(
+      (
+        await h.cmd("connections.setSecret", {
+          id: "acme-db",
+          list: "vars",
+          field: "DATABASE_URL",
+          value: "postgres://a:b@h/d",
+        })
+      ).status,
+    ).toBe(200);
+    const renamed = await h.cmd(
+      "connections.renameVar",
+      { id: "acme-db", from: "DATABASE_URL", to: "ACME_DATABASE_URL" },
+      BOSS,
+    );
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.vars).toEqual({
+      ACME_DATABASE_URL: { kind: "secret", set: true },
+      REGION: { kind: "text", set: true, value: "eu" },
+    });
+    const reserved = await h.cmd(
+      "connections.renameVar",
+      { id: "acme-db", from: "REGION", to: "HTTP_PROXY" },
+      BOSS,
+    );
+    expect(reserved.status).toBe(400);
+    const taken = await h.cmd(
+      "connections.renameVar",
+      { id: "acme-db", from: "REGION", to: "ACME_DATABASE_URL" },
+      BOSS,
+    );
+    expect(taken.status).toBe(409);
+  });
+
   it("keeps an agent from loosening the gate, even without a secret", async () => {
     await h.cmd("connections.create", {
       org: "acme",
@@ -117,6 +159,17 @@ describe("connections commands", () => {
     expect(owner.body.fields.read_tools).toEqual({ kind: "text", set: true, value: "run_nrql" });
   });
 
+  it("lets only the owner switch a connection off or on for an agent", async () => {
+    await h.cmd("connections.create", { org: "acme", id: "acme-nr", type: "mcp", name: "NR" });
+    const agent = await h.cmd("connections.update", { id: "acme-nr", agentsOff: [] }, BOSS);
+    expect(agent.status).toBe(409);
+    expect(agent.body.error).toContain("Only the owner changes the agents");
+    const off = await h.cmd("connections.update", { id: "acme-nr", agentsOff: ["acme-dev"] });
+    expect(off.body.agentsOff).toEqual(["acme-dev"]);
+    const on = await h.cmd("connections.update", { id: "acme-nr", agentsOff: [] });
+    expect(on.body.agentsOff).toEqual([]);
+  });
+
   it("tests a connection, and Health shows the last Test without testing on its own", async () => {
     await h.cmd("connections.create", { org: "acme", id: "acme-box", type: "ssh", name: "Box" });
     expect((await h.cmd("connections.test", { id: "acme-box" })).body).toMatchObject({
@@ -133,7 +186,7 @@ describe("connections commands", () => {
       fields: { alias: "lab" },
     });
     expect((await h.cmd("connections.test", { id: "acme-box" })).body.detail).toBe(
-      "~/.ssh/config has no Host nowhere.",
+      "~/.ssh/config has no Host nowhere. Use user@address, like root@203.0.113.10.",
     );
     const rows = (await h.cmd("health.run", {})).body.checks;
     const row = (id: string) => rows.find((c: { id: string }) => c.id === `connection:${id}`);
@@ -145,7 +198,10 @@ describe("connections commands", () => {
     expect(row("acme-lab")).toMatchObject({ level: "warn", detail: "Not tested since majhi started." });
     expect((await h.cmd("connections.get", { id: "acme-lab" })).body.lastTest).toBeUndefined();
     const fixed = await h.cmd("health.fix", { id: "connection:acme-lab" });
-    expect(fixed.body).toEqual({ ok: false, detail: "~/.ssh/config has no Host lab." });
+    expect(fixed.body).toEqual({
+      ok: false,
+      detail: "~/.ssh/config has no Host lab. Use user@address, like root@203.0.113.10.",
+    });
   });
 
   it("sets a file from a connection upload of any type", async () => {
@@ -178,6 +234,9 @@ describe("connections commands", () => {
       "env",
       "mail",
       "browser",
+      "api",
+      "cli",
+      "git",
     ]);
   });
 

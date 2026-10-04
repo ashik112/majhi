@@ -13,6 +13,7 @@ import { promisify } from "node:util";
 import { type HostInfo, keyringName, type LayaQuestion } from "@majhi/shared";
 import { type LinkOptions, pollLoop, sendProgress, sendReply } from "./client.ts";
 import { CliLogins } from "./cliLogin.ts";
+import { CliToolLogins } from "./cliTools.ts";
 import { parseHostConfig } from "./config.ts";
 import { createE2eRunner } from "./e2e.ts";
 import { createEditorOpener, pathKind } from "./editor.ts";
@@ -299,7 +300,20 @@ async function main(): Promise<void> {
     find: (cli) => findExecutable(cli, path),
     env: process.env,
   });
+  const cliTools = new CliToolLogins({
+    majhiHome: config.majhiHome,
+    path,
+    find: (binary) => findExecutable(binary, path),
+    env: process.env,
+  });
   const handlers = {
+    cliLogin: (
+      params: Parameters<CliToolLogins["login"]>[0],
+      progress: Parameters<CliToolLogins["login"]>[1],
+    ) => cliTools.login(params, progress),
+    cliLoginCancel: (params: { signIn: string }) => cliTools.cancel(params.signIn),
+    cliCheck: (params: Parameters<CliToolLogins["check"]>[0]) => cliTools.check(params),
+    cliLogout: (params: Parameters<CliToolLogins["logout"]>[0]) => cliTools.logout(params),
     listDirs: (params: { path: string; showHidden: boolean }) => listDirs(params, config.home),
     suggestRoots: () => suggestRoots(config.home, platform.folders.skippedAtHome),
     // Read at each job: remount and update turn on once docker is found.

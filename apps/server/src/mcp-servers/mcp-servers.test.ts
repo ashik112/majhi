@@ -202,7 +202,7 @@ describe("MCP servers", () => {
       },
     ]);
     expect(done.test).toBeUndefined();
-    expect(done.connection).toMatchObject({ type: "mcp", org: "acme", agents: [] });
+    expect(done.connection).toMatchObject({ type: "mcp", org: "acme", agents: ["acme-builder"] });
     expect(done.connection.problems).toEqual(["Authorization is not set"]);
 
     await must("connections.setSecret", {
@@ -341,21 +341,24 @@ describe("MCP servers", () => {
     expect((await run("mcp.install", { org: "acme", json: "{ not json" })).status).toBe(400);
   });
 
-  it("enables per agent through its connections list, only inside the org, and audits it", async () => {
+  it("reaches every agent of the org once installed, switches per agent only inside the org, and audits it", async () => {
     await start(() => []);
     await confirm(await preview({ command: `node ${FAKE_MCP}`, name: "Weather" }));
-    await must("mcp.enable", { connection: "weather", agent: "acme-builder" });
-    await must("mcp.enable", { connection: "weather", agent: "acme-builder" });
-    const file = join((w as World).h.env.majhiHome, "agents", "acme-builder.md");
-    expect(await readFile(file, "utf8")).toContain("connections: [weather]");
-    expect(((await must("connections.get", { id: "weather" })) as { agents: string[] }).agents).toEqual([
-      "acme-builder",
-    ]);
-    expect(audit()).toEqual(["mcp-install", "mcp-enable"]);
+    const agents = async () =>
+      ((await must("connections.get", { id: "weather" })) as { agents: string[] }).agents;
+    expect(await agents()).toEqual(["acme-builder"]);
 
     await must("mcp.disable", { connection: "weather", agent: "acme-builder" });
-    expect(((await must("connections.get", { id: "weather" })) as { agents: string[] }).agents).toEqual([]);
-    expect(audit()).toEqual(["mcp-install", "mcp-enable", "mcp-disable"]);
+    await must("mcp.disable", { connection: "weather", agent: "acme-builder" });
+    expect(await agents()).toEqual([]);
+    expect(((await must("connections.get", { id: "weather" })) as { agentsOff: string[] }).agentsOff).toEqual(
+      ["acme-builder"],
+    );
+    expect(audit()).toEqual(["mcp-install", "mcp-disable"]);
+
+    await must("mcp.enable", { connection: "weather", agent: "acme-builder" });
+    expect(await agents()).toEqual(["acme-builder"]);
+    expect(audit()).toEqual(["mcp-install", "mcp-disable", "mcp-enable"]);
 
     expect((await run("mcp.enable", { connection: "nope", agent: "acme-builder" })).status).toBe(404);
     expect((await run("mcp.enable", { connection: "weather", agent: "nobody" })).status).toBe(404);
@@ -371,7 +374,7 @@ describe("MCP servers", () => {
     expect(JSON.stringify(other.body)).toContain("own org");
   });
 
-  it("restarts the agent's open session when a server is turned on, so its next run has the tools", async () => {
+  it("restarts the agent's open session when a server is turned off or on, so its next run matches", async () => {
     await start(() => []);
     await confirm(await preview({ url: remoteUrl, name: "Weather" }));
     const task = (await must("tasks.create", {
@@ -381,10 +384,15 @@ describe("MCP servers", () => {
     })) as { id: string };
     await (w as World).h.majhi.services.runs.idle(task.id);
     const names = () => ((w as World).h.runtime.starts.at(-1)?.mcpServers ?? []).map((m) => m.name);
+    expect(names()).toContain("weather");
+
+    await must("mcp.disable", { connection: "weather", agent: "acme-builder" });
+    await must("room.send", { task: task.id, text: "what is the forecast?" });
+    await (w as World).h.majhi.services.runs.idle(task.id);
     expect(names()).not.toContain("weather");
 
     await must("mcp.enable", { connection: "weather", agent: "acme-builder" });
-    await must("room.send", { task: task.id, text: "what is the forecast?" });
+    await must("room.send", { task: task.id, text: "and now?" });
     await (w as World).h.majhi.services.runs.idle(task.id);
     expect(names()).toContain("weather");
   });

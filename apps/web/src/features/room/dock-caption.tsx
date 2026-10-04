@@ -14,7 +14,7 @@ const KINDS: Record<RoomItem["type"], string> = {
   "secret-request": "Secret",
   ask: "Question",
   choice: "Choice",
-  review: "Ready for review",
+  review: "Ready to ship",
   paused: "Paused",
   "owner-question": "Question",
   owner: "Message",

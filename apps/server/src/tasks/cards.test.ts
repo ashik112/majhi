@@ -64,6 +64,25 @@ describe("the review card", () => {
     expect(after.find((c) => c.id === cards[1]?.id)).toMatchObject({ state: "replaced" });
   });
 
+  it("carries the hand-off check's line, replaces it, clears it, and never clobbers majhi's own reason", async () => {
+    w = await taskWorld();
+    await reviewTask();
+    const { cards } = w.h.majhi.services.tasks;
+    const pending = async () => (await ofType("review")).filter((c) => c.state === "pending");
+    expect(cards.checkHeld("ACM-1", "Checks failed: tests failed")).toBe(true);
+    expect((await pending())[0]?.why).toBe("Checks failed: tests failed");
+    expect(cards.checkHeld("ACM-1", "Checks failed 3 times in a row")).toBe(true);
+    expect((await pending())[0]?.why).toBe("Checks failed 3 times in a row");
+    expect(cards.checkHeld("ACM-1", undefined)).toBe(true);
+    expect((await pending())[0]?.why).toBeUndefined();
+
+    // A reason majhi wrote when it could not ship the task itself stays.
+    cards.review(w.h.majhi.services.tasks.get("ACM-1"), "majhi tried to ship it and the push failed");
+    expect(cards.checkHeld("ACM-1", "Checks failed: lint")).toBe(true);
+    expect(cards.checkHeld("ACM-1", undefined)).toBe(true);
+    expect((await pending())[0]?.why).toBe("majhi tried to ship it and the push failed");
+  });
+
   it("is not posted while an agent's ask is pending, and is posted once it is answered and agents idle", async () => {
     w = await taskWorld();
     const { room, tasks } = w.h.majhi.services;

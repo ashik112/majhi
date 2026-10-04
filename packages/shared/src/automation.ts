@@ -92,17 +92,49 @@ export const ProcessRunActionSchema = z.object({
   cwd: z.string().trim().min(1).max(1_000).optional(),
 });
 
+/**
+ * Resumes the workspace's tasks that a limit paused (an account's window, a budget, the monthly
+ * ceiling), the ones nothing holds any more. Made for "when the 5-hour window resets".
+ */
+export const TasksResumeActionSchema = z.object({
+  kind: z.literal("tasks.resume"),
+});
+
 export const AutomationActionSchema = z.discriminatedUnion("kind", [
   TaskStartActionSchema,
   RoomPostActionSchema,
   ProcessRunActionSchema,
+  TasksResumeActionSchema,
 ]);
 export type AutomationAction = z.infer<typeof AutomationActionSchema>;
+
+const clip = (text: string, max: number): string => {
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+};
+
+/** What an action does, in one plain line. */
+export function describeAutomationAction(action: AutomationAction): string {
+  switch (action.kind) {
+    case "task.start":
+      return `Start a task in ${action.project}: ${clip(action.title, 60)}`;
+    case "room.post":
+      return `Post to ${action.task}: ${clip(action.text, 60)}`;
+    case "process.run":
+      return `Run ${clip(action.command, 50)} in ${action.task}`;
+    case "tasks.resume":
+      return "Resume the tasks a limit paused";
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Run records
 
-export const AutomationSourceKindSchema = z.enum(["schedule", "trigger"]);
+/**
+ * `schedule`: a clock playbook (its id is the playbook's id; schedules were folded into Playbooks).
+ * `watch`: a Watch whose "When it fires" runs an action. `trigger`: an old event trigger.
+ */
+export const AutomationSourceKindSchema = z.enum(["schedule", "trigger", "watch"]);
 export type AutomationSourceKind = z.infer<typeof AutomationSourceKindSchema>;
 
 /** `running` while what the run started still goes (see `overlap`). `skipped` ran nothing: `detail` says why. */
@@ -130,7 +162,10 @@ export type AutomationRun = z.infer<typeof AutomationRunSchema>;
 // ---------------------------------------------------------------------------
 // Schedules
 
-export const ScheduleIdSchema = z.string().regex(/^sch-[a-z0-9]{6,20}$/, "Not a schedule id");
+/** A schedule is a clock playbook: `sch-` for the ones that were schedules, `custom-` for new ones. */
+export const ScheduleIdSchema = z
+  .string()
+  .regex(/^(?:sch|custom)-[a-z0-9][a-z0-9-]{3,60}$/, "Not a schedule id");
 
 export const ScheduleViewSchema = z.object({
   id: ScheduleIdSchema,
@@ -165,7 +200,7 @@ const WhenFields = {
 export const ScheduleCreateInputSchema = z
   .object({
     org: IdSchema,
-    name: z.string().trim().min(1).max(120),
+    name: z.string().trim().min(1).max(60),
     ...WhenFields,
     action: AutomationActionSchema,
     overlap: OverlapPolicySchema.default("skip"),
@@ -179,7 +214,7 @@ export type ScheduleCreateInput = z.output<typeof ScheduleCreateInputSchema>;
 export const ScheduleUpdateInputSchema = z
   .object({
     id: ScheduleIdSchema,
-    name: z.string().trim().min(1).max(120).optional(),
+    name: z.string().trim().min(1).max(60).optional(),
     ...WhenFields,
     action: AutomationActionSchema.optional(),
     overlap: OverlapPolicySchema.optional(),

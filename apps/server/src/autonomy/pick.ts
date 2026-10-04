@@ -37,7 +37,7 @@ export function authorityProblem(
   if (rows.some((r) => authority[r] === "decide")) {
     // Turning off: the mode's own refusal says why nothing new starts.
     if (mode !== "off") return undefined;
-    return `Autonomous is off, so the captain does not start or change work in ${name}. It acts only when you ask`;
+    return `Auto-pilot is off, so the captain does not start or change work in ${name}. It acts only when you ask`;
   }
   return rows[0] === undefined ? undefined : askedWhy(rows[0], name);
 }

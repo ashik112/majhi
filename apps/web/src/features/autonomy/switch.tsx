@@ -15,7 +15,7 @@ export function SpendToday({ status, className }: { status: AutonomyStatus; clas
   const tone = capTone(total);
   return (
     <span
-      title="Autonomous spend today against its day budget"
+      title="Auto-pilot spend today against its day budget"
       className={cn("tnum truncate", SPEND_TONE[tone], className)}
     >
       {tone === "red" ? "Budget used up: " : ""}
@@ -25,7 +25,7 @@ export function SpendToday({ status, className }: { status: AutonomyStatus; clas
 }
 
 /**
- * The one Autonomous switch: On or Off, opening the dialog for the change. The switch needs a
+ * The one Auto-pilot switch: On or Off, opening the dialog for the change. The switch needs a
  * loaded status; `children` receives what it shows and the switch itself, so the sidebar and the
  * Captain page lay it out their own way.
  */
@@ -42,8 +42,8 @@ export function useAutonomousSwitch(): {
   const mode = status?.mode ?? "off";
   const unavailable = query.isError
     ? autonomyMissing(query.error)
-      ? "Autonomous is not ready on this server yet"
-      : "Could not read Autonomous"
+      ? "Auto-pilot is not ready on this server yet"
+      : "Could not read Auto-pilot"
     : undefined;
   return {
     status,
@@ -51,11 +51,11 @@ export function useAutonomousSwitch(): {
     mode,
     toggle: (
       <Switch
-        label="Autonomous"
+        label="Auto-pilot"
         hideLabel
         checked={mode !== "off"}
         disabled={status === undefined}
-        title={unavailable ?? (mode === "off" ? "Turn Autonomous on" : "Turn Autonomous off")}
+        title={unavailable ?? (mode === "off" ? "Turn Auto-pilot on" : "Turn Auto-pilot off")}
         onChange={(next) => setOpen(next ? "on" : "off")}
       />
     ),
@@ -77,7 +77,7 @@ export function AutonomousSwitch() {
       <div className="flex min-w-0 flex-col items-end leading-tight">
         <span className="flex items-center gap-1.5 text-base font-medium text-fg">
           <Lamp state={lamp} size={7} />
-          Autonomous
+          Auto-pilot
           <span className={cn("text-sm font-normal", LAMP_TEXT[lamp])}>{MODE_WORD[mode]}</span>
         </span>
         {status && <SpendToday status={status} className="max-w-[220px] text-xs" />}

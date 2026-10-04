@@ -35,7 +35,7 @@ describe("the Autonomous switch is On or Off", () => {
     await h.cmd("autonomy.start");
     const chat = await services.autonomy.laneChat("acme");
     await h.cmd("autonomy.stop", { how: "now" });
-    const off = { isError: true, text: "Autonomous is off, so the captain acts only when you ask." };
+    const off = { isError: true, text: "Auto-pilot is off, so the captain acts only when you ask." };
     const call = (tool: string, args: Record<string, unknown>) =>
       services.admin.call({ task: chat ?? "", agent: "boss" }, tool, { reason: "test", ...args });
     expect(await call("majhi_autonomy_note", { text: "hello" })).toEqual(off);
@@ -47,7 +47,7 @@ describe("the Autonomous switch is On or Off", () => {
       start: true,
     });
     expect(start.isError).toBe(true);
-    expect(start.text).toContain("Autonomous is off, so the captain does not start or change work in Acme");
+    expect(start.text).toContain("Auto-pilot is off, so the captain does not start or change work in Acme");
   });
 
   it("captain.stop turns Autonomous off and pauses its tasks; captain.resume turns it on and resumes them", async () => {

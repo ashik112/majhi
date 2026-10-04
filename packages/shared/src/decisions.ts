@@ -137,6 +137,10 @@ export const GateSchema = z.object({
   lift: z.number(),
   /** The answer's probability minus the next most probable option's. */
   margin: z.number(),
+  /** True when the use has no passing eval yet: the answer is logged and compared, but never counts. */
+  shadow: z.boolean().optional(),
+  /** The calibrated probability the bar was applied to, when the use has a calibration. */
+  confidence: z.number().min(0).max(1).optional(),
 });
 export type Gate = z.infer<typeof GateSchema>;
 
@@ -216,6 +220,8 @@ export const DecisionResultSchema = z.object({
   /** True for self-reported probabilities (the ACP stand-in), shown as estimated. */
   estimated: z.boolean(),
   durationMs: z.number().nonnegative(),
+  /** True when an identical earlier request was answered again from the cache; `id` is the earlier decision's. */
+  cached: z.boolean().optional(),
 });
 export type DecisionResult = z.infer<typeof DecisionResultSchema>;
 
@@ -285,6 +291,17 @@ export const DecisionRecordSchema = z.object({
   correction: DecisionCorrectionSchema.optional(),
 });
 export type DecisionRecord = z.infer<typeof DecisionRecordSchema>;
+
+/** The exact-match cache's counters, for `decisions.status`. */
+export const DecisionCacheStatsSchema = z.object({
+  hits: z.number().int().nonnegative(),
+  misses: z.number().int().nonnegative(),
+  size: z.number().int().nonnegative(),
+  /** hits / (hits + misses), 0 before the first lookup. */
+  hitRate: z.number().min(0).max(1),
+  ttlHours: z.number().nonnegative(),
+});
+export type DecisionCacheStats = z.infer<typeof DecisionCacheStatsSchema>;
 
 /** The native Laya runtime on a Mac with Apple silicon, run by the host helper. */
 export const LayaStatusSchema = z.object({

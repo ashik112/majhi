@@ -1,7 +1,6 @@
-import type { AccountView, OrgView, TaskSummary } from "@majhi/shared";
+import { type AccountView, type OrgView, PAGE_PATH, type PagePath, type TaskSummary } from "@majhi/shared";
 import type { AgentInfo } from "../../lib/agent-index";
 import { badgeLetters, formatAgo } from "../../lib/format";
-import { PAGE_PATH, type PagePath } from "../../lib/pages";
 import { limitResetAt, resetLabel } from "../accounts/model";
 
 // Organisations -------------------------------------------------------------
@@ -92,13 +91,22 @@ export function accountsNeedingYou(accounts: readonly AccountView[]): AccountVie
   );
 }
 
-/** "Health checked 2 min ago", from the newest check of any account. */
-export function healthCheckedText(accounts: readonly AccountView[], now: number): string {
-  let newest: string | undefined;
+/**
+ * When health was last checked: the newest of every account's check and the page's own run of the
+ * checks. The sidebar and the Health page both read it, so they never show two clocks.
+ */
+export function healthCheckedAt(accounts: readonly AccountView[], checksAt?: string): string | undefined {
+  let newest = checksAt;
   for (const account of accounts) {
     const at = account.lastHealth?.checkedAt;
     if (at && (newest === undefined || at > newest)) newest = at;
   }
+  return newest;
+}
+
+/** "Health checked 2 min ago", from the newest check of any kind. */
+export function healthCheckedText(accounts: readonly AccountView[], now: number, checksAt?: string): string {
+  const newest = healthCheckedAt(accounts, checksAt);
   return newest ? `Health checked ${formatAgo(newest, now)}` : "Health not checked yet";
 }
 
@@ -110,7 +118,7 @@ export type BannerAction =
   /** `item`: the room item to scroll to. */
   | { kind: "task"; id: string; item?: string }
   | { kind: "chat"; id: string }
-  | { kind: "page"; to: PagePath; search?: { account: string } }
+  | { kind: "page"; to: PagePath; search?: { account?: string; id?: string; tab?: string } }
   | { kind: "element"; id: string };
 
 /** One thing that needs the owner, as the banner above the page shows it. */

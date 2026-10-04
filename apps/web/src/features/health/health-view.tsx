@@ -1,14 +1,15 @@
+import { PAGE_PATH } from "@majhi/shared";
 import { useNavigate } from "@tanstack/react-router";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLink } from "@/components/ui/page-link";
+import { healthCheckedAt } from "@/features/shell/model";
 import { CostChartPanel, SpendPanel } from "@/features/usage/spend-panel";
 import { cn } from "@/lib/cn";
 import { formatAgo } from "@/lib/format";
 import { useHealthChecks } from "@/lib/ops-queries";
 import { useOrgFilter } from "@/lib/org-filter";
-import { PAGE_PATH } from "@/lib/pages";
 import { useAccounts, useOrgs, useTools } from "@/lib/studio-queries";
 import { useMedia } from "@/lib/use-media";
 import { useNow } from "@/lib/use-now";
@@ -17,6 +18,7 @@ import { ChecksPanel } from "./checks-panel";
 import { CleanupPanel } from "./cleanup-panel";
 import { E2ePanel } from "./e2e-panel";
 import { checksHeadline } from "./model";
+import { MoneyPanel } from "./money-panel";
 import { useCheckAll } from "./use-check-all";
 
 /**
@@ -39,18 +41,17 @@ export function HealthView() {
   const all = accounts.data ?? [];
   const rows = orgFilter === undefined ? all : all.filter((a) => a.org === orgFilter);
   const headline = checks.data ? checksHeadline(checks.data.checks) : "Running the checks";
-  const bad = headline.endsWith("need you") || headline.endsWith("needs you");
+  const bad = headline.endsWith("to fix");
+  const checkedAt = healthCheckedAt(all, checks.data?.checkedAt);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
-        title="Health and usage"
+        title="Health & usage"
         subtitle={
           <span>
             <span className={cn(bad && "text-red")}>{headline}</span>
-            {checks.data && (
-              <span className="text-fg-faint">. Checked {formatAgo(checks.data.checkedAt, now)}.</span>
-            )}
+            {checkedAt && <span className="text-fg-faint">. Checked {formatAgo(checkedAt, now)}.</span>}
           </span>
         }
       >
@@ -82,6 +83,7 @@ export function HealthView() {
         )}
       >
         <ChecksPanel onSignIn={(id) => void navigate({ to: PAGE_PATH.accounts, search: { account: id } })} />
+        <MoneyPanel />
         <E2ePanel />
         <CleanupPanel />
         <div className="flex flex-col gap-3 min-[1280px]:grid min-[1280px]:min-h-0 min-[1280px]:flex-1 min-[1280px]:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">

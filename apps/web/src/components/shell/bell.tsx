@@ -1,14 +1,15 @@
+import { PAGE_PATH } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { Bell as BellIcon } from "lucide-react";
 import { useCallback, useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useAnchoredPanel } from "@/components/ui/anchored";
 import { DecisionRow } from "@/features/decisions/decision-row";
+import { useNeedsYou } from "@/features/decisions/needs-you";
 import { cn } from "@/lib/cn";
 import { useDecisions } from "@/lib/decision-queries";
 import { GLASS_STRONG } from "@/lib/glass";
 import { setNoticesOpen, useNoticesOpen } from "@/lib/notices";
-import { PAGE_PATH } from "@/lib/pages";
 
 /** Where the panel sits: 12px right of the sidebar, level with its top, as tall as the window allows. */
 function besideSidebar(trigger: HTMLElement | null): React.CSSProperties | undefined {
@@ -39,7 +40,7 @@ export function Bell() {
   const id = useId();
   const close = useCallback(() => setNoticesOpen(false), []);
   const { panel, style, container } = useAnchoredPanel({ open, close, trigger });
-  const count = decisions.length;
+  const count = useNeedsYou() ?? decisions.length;
   // The panel opens beside the sidebar, from its top, rather than over the sidebar's own rows.
   const side = open ? besideSidebar(trigger.current) : undefined;
 

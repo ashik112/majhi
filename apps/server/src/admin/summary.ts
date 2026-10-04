@@ -50,6 +50,7 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
     `Push the branch of ${str(i.id)}${i.deleteAfter === true ? ", then delete the local branch and worktree" : ""}`,
   "tasks.resolveShip": (i) =>
     `Ask the lead of ${str(i.id)} to resolve the conflicts with ${targetsText(i.targets) || str(i.into) || "its base"}, then ${i.action === "mergePush" ? "merge and push" : "merge"} by itself`,
+  "tasks.tell": (i) => `Tell ${str(i.agent) || "the lead"} of ${str(i.id)}: ${firstLine(str(i.text))}`,
   "tasks.cancelShip": (i) => `Cancel the ship waiting on the lead of ${str(i.id)}`,
   "tasks.changeBranch": (i) => {
     const n = Array.isArray(i.files) ? i.files.length : 0;
@@ -86,9 +87,10 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
   "containers.preview.run": (i) => `Run the preview of ${str(i.task)} on port ${str(i.port)}`,
   "containers.services.start": (i) => `Start service ${str(i.name)} (${str(i.image)}) in ${str(i.task)}`,
   "containers.stop": (i) => `Stop ${str(i.name)} in ${str(i.task)}`,
-  "backup.now": () => "Back up majhi.db now",
-  "backup.restore": (i) => `Restore majhi.db from ${str(i.name)}`,
-  "backup.cancelRestore": () => "Cancel the waiting restore of majhi.db",
+  "backup.now": () => "Back up majhi's data now",
+  "backup.restore": (i) => `Restore majhi's data from ${str(i.name)}`,
+  "backup.cancelRestore": () => "Cancel the waiting restore",
+  "backup.setDestination": (i) => `Send backups to ${str(i.path)}`,
 };
 
 /** A command's own summary up to its first full stop: the rest explains, a card only names. */

@@ -30,6 +30,7 @@ import { describeError } from "@/lib/errors";
 import { useAccounts } from "@/lib/studio-queries";
 import { AUTHORITY_PRESETS, AUTHORITY_ROW_TEXT, AUTHORITY_ROWS_ORDER } from "./model";
 import { MoreRules } from "./more-rules";
+import { useStartReview } from "./review-now";
 
 const FIRST_COLUMN = "w-[184px] shrink-0";
 const COLUMN = "w-[116px] shrink-0";
@@ -79,7 +80,7 @@ function Cell({
   );
 }
 
-/** The daily budget of one workspace: an amount, or empty to share the Autonomous budget. */
+/** The daily budget of one workspace: an amount, or empty to share the Auto-pilot budget. */
 function BudgetCell({ org }: { org: CaptainOrg }) {
   const toast = useToast();
   const save = useCaptainRules();
@@ -105,7 +106,7 @@ function BudgetCell({ org }: { org: CaptainOrg }) {
         onSuccess: () =>
           toast(
             amount === undefined
-              ? `${org.name}: shares the Autonomous budget`
+              ? `${org.name}: shares the Auto-pilot budget`
               : `${org.name}: $${amount} a day`,
           ),
         onError: (error) => {
@@ -120,7 +121,7 @@ function BudgetCell({ org }: { org: CaptainOrg }) {
       aria-label={`Daily budget of ${org.name} in dollars`}
       inputMode="decimal"
       placeholder="shared"
-      title="Dollars a day. Empty shares the Autonomous budget."
+      title="Dollars a day. Empty shares the Auto-pilot budget."
       value={text}
       aria-invalid={invalid}
       disabled={save.isPending}
@@ -164,6 +165,7 @@ function Grid({
       { [row]: value },
       `${org.name}: ${AUTHORITY_ROW_TEXT[row].label} is ${value === "decide" ? "the captain's" : "yours"}`,
     );
+  const review = useStartReview();
   const sticky = "sticky left-0 z-10 bg-glass-strong";
   return (
     <fieldset
@@ -187,6 +189,18 @@ function Grid({
                     onSelect: () => change(org, preset.rows, `${org.name}: ${preset.label}`),
                   })),
                   { label: "Hours, freezes and more", onSelect: () => onMore(org.org) },
+                  {
+                    label: "Review memories now",
+                    group: "Upkeep",
+                    disabled: org.authority.upkeep !== "decide" || review.pending,
+                    onSelect: () => review.start(org.org, "memory", 0),
+                  },
+                  {
+                    label: "Clean up now",
+                    group: "Upkeep",
+                    disabled: org.authority.upkeep !== "decide" || review.pending,
+                    onSelect: () => review.start(org.org, "cleanup", 0),
+                  },
                 ]}
               />
             </div>
@@ -194,7 +208,10 @@ function Grid({
         </div>
         {AUTHORITY_ROWS_ORDER.map((row) => (
           <div key={row} className="flex items-center gap-2 border-b border-line py-1.5">
-            <div className={cn(FIRST_COLUMN, sticky, "flex flex-col pr-2 leading-snug")}>
+            <div
+              className={cn(FIRST_COLUMN, sticky, "flex flex-col pr-2 leading-snug")}
+              title={AUTHORITY_ROW_TEXT[row].detail}
+            >
               <span className="text-base text-fg">{AUTHORITY_ROW_TEXT[row].label}</span>
               <span className="text-xs text-fg-faint">{AUTHORITY_ROW_TEXT[row].hint}</span>
             </div>
@@ -210,6 +227,38 @@ function Grid({
             ))}
           </div>
         ))}
+        <div className="flex items-center gap-2 border-b border-line py-1.5">
+          <div
+            className={cn(FIRST_COLUMN, sticky, "flex flex-col pr-2 leading-snug")}
+            title="The captain decides everything here and acts without a card. It still asks before changing anyone's permissions and before anything destructive."
+          >
+            <span className="text-base text-fg">Full access</span>
+            <span className="text-xs text-fg-faint">No cards, except permissions and deletes</span>
+          </div>
+          {orgs.map((org) => (
+            <div key={org.org} className={COLUMN}>
+              <Cell
+                checked={org.rules.fullAccess === true}
+                label={`Full access in ${org.name}: ${org.rules.fullAccess === true ? "on" : "off"}`}
+                disabled={save.isPending}
+                onToggle={() =>
+                  save.mutate(
+                    {
+                      input: { orgs: { [org.org]: { fullAccess: org.rules.fullAccess !== true } } },
+                      reason: `Owner turned full access ${org.rules.fullAccess === true ? "off" : "on"} in ${org.name}`,
+                    },
+                    {
+                      onSuccess: () =>
+                        toast(`${org.name}: full access ${org.rules.fullAccess === true ? "off" : "on"}`),
+                      onError: (error) =>
+                        toast("Could not change it", { detail: describeError(error), tone: "error" }),
+                    },
+                  )
+                }
+              />
+            </div>
+          ))}
+        </div>
         <div className="flex items-center gap-2 py-1.5">
           <div className={cn(FIRST_COLUMN, sticky, "flex flex-col pr-2 leading-snug")}>
             <span className="text-base text-fg">Daily budget</span>
@@ -222,9 +271,20 @@ function Grid({
           ))}
         </div>
       </div>
+      {orgs.flatMap((org) =>
+        org.chores
+          .filter((c) => c.running === true && (c.chore === "memory" || c.chore === "cleanup"))
+          .map((c) => (
+            <p key={`${org.org}:${c.chore}`} role="status" className="mt-2 text-xs text-fg-muted">
+              {c.chore === "memory"
+                ? `Reviewing memories in ${org.name}...`
+                : `Cleaning up finished tasks in ${org.name}...`}
+            </p>
+          )),
+      )}
       {mode !== "on" && (
         <p className="mt-2 text-xs text-fg-faint text-pretty">
-          Autonomous is off, so only Upkeep acts, and only on memory and cleanup. The rest waits for you until
+          Auto-pilot is off, so only Upkeep acts, and only on memory and cleanup. The rest waits for you until
           it is on.
         </p>
       )}
@@ -285,9 +345,15 @@ function Instructions({ status, now }: { status: AutonomyStatus; now: number }) 
         <li key={i.id} className="flex min-w-0 items-start gap-2 border-t border-line py-2 first:border-t-0">
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="text-base text-fg-soft text-pretty">{i.text}</span>
-            <time dateTime={i.at} className="tnum text-xs text-fg-faint">
-              {clockTime(i.at, now)}
-            </time>
+            <span className="text-xs text-fg-faint">
+              {i.org === undefined
+                ? "Every workspace"
+                : (status.lanes.find((l) => l.org === i.org)?.name ?? i.org)}
+              {" · "}
+              <time dateTime={i.at} className="tnum">
+                {clockTime(i.at, now)}
+              </time>
+            </span>
           </span>
           <Button
             size="icon-sm"
@@ -439,7 +505,7 @@ export function DelegationSheet({
   const zone = autonomy?.settings.tz ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   return (
     <Sheet
-      title="Delegation"
+      title="Permissions"
       subtitle="Who decides what, per workspace"
       wide
       onClose={onClose}

@@ -113,7 +113,7 @@ describe("the day cap of autonomous mode", () => {
     // The owner is asked once, with the doubled budget, and the answer lifts the hold for today only.
     const asked = async () => (await h.cmd("captain.asks")).body.budgets as BudgetAsk[];
     expect(await asked()).toMatchObject([
-      { scope: "day", name: "Autonomous work", cap: { cost: CAP }, raiseTo: { cost: CAP * 2 }, waiting: 1 },
+      { scope: "day", name: "Auto-pilot work", cap: { cost: CAP }, raiseTo: { cost: CAP * 2 }, waiting: 1 },
     ]);
     await h.majhi.services.autonomy.refreshHolds();
     expect(await asked()).toHaveLength(1);

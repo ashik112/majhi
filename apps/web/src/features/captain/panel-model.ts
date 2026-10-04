@@ -1,9 +1,12 @@
 import type { CaptainOrg } from "@majhi/shared";
 import type { PanelTab } from "@/features/boss/boss-context";
 
-/** The workspaces that have a thread, in the order of the workspaces. */
+/**
+ * Every workspace is a place to talk to the captain, in the order of the workspaces. A thread is made
+ * by the owner's first message there; until then the chip opens an empty one.
+ */
 export function threadsOf(orgs: readonly CaptainOrg[]): CaptainOrg[] {
-  return orgs.filter((o) => o.lane !== undefined);
+  return [...orgs];
 }
 
 /** The tab id of a workspace's thread, and the workspace of a tab id. */
@@ -26,6 +29,6 @@ export function validTab(tab: PanelTab, threads: readonly CaptainOrg[]): PanelTa
 /** What waits in a thread, for the chip's tooltip. */
 export function waitingWord(org: Pick<CaptainOrg, "name" | "forYou">): string {
   return org.forYou > 0
-    ? `${org.name}: ${org.forYou} ${org.forYou === 1 ? "thing" : "things"} waiting on you`
+    ? `${org.name}: ${org.forYou} ${org.forYou === 1 ? "needs" : "need"} you`
     : `${org.name}: waiting on you`;
 }

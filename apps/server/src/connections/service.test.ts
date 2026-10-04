@@ -1,6 +1,6 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { AgentFrontmatterSchema, type CommandMeta } from "@majhi/shared";
+import { AgentFrontmatterSchema, type CommandMeta, GLOBAL_CONNECTIONS } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { AgentStore } from "../agents/store.ts";
@@ -57,6 +57,84 @@ describe("ConnectionService storage", () => {
     service = new ConnectionService({ config, secrets, secretService, uploads, agents, majhiHome });
   });
   afterEach(() => cleanup());
+
+  it("keeps shared connections outside orgs, encrypts their secrets, and includes them in workspace lists", async () => {
+    await service.create(
+      {
+        org: GLOBAL_CONNECTIONS,
+        id: "shared-api",
+        type: "env",
+        name: "Shared API",
+        vars: { API_TOKEN: { kind: "secret" } },
+      },
+      "connections.create",
+      OWNER,
+    );
+    await service.setSecret(
+      { id: "shared-api", field: "API_TOKEN", list: "vars", value: API_KEY },
+      "connections.setSecret",
+      OWNER,
+    );
+    const text = await yaml();
+    expect(parse(text).connections["shared-api"].vars.API_TOKEN.value).toMatch(/^secret:/);
+    expect(text).not.toContain(API_KEY);
+    expect(parse(text).orgs.global).toBeUndefined();
+    expect((await readSections(config.file)).orgs.global).toBeUndefined();
+    expect((await service.list("acme")).map((c) => c.org)).toEqual([GLOBAL_CONNECTIONS]);
+    expect((await service.get("shared-api")).vars.API_TOKEN).toEqual({ kind: "secret", set: true });
+    await service.remove("shared-api", "connections.remove", OWNER);
+    expect(parse(await yaml()).connections).toBeUndefined();
+    expect(await secrets.names()).toEqual([]);
+  });
+
+  it("refuses agents changing or creating a Global connection", async () => {
+    const agent: CommandMeta = { actor: { kind: "agent", id: "root-agent" } };
+    const input = {
+      org: GLOBAL_CONNECTIONS,
+      id: "shared-api",
+      type: "env" as const,
+      name: "Shared API",
+      vars: { API_TOKEN: { kind: "secret" as const } },
+    };
+    await expect(service.create(input, "connections.create", agent)).rejects.toThrow(/Only the owner/);
+    await service.create(input, "connections.create", OWNER);
+    const before = await yaml();
+    await expect(
+      service.update({ id: "shared-api", name: "Changed" }, "connections.update", agent),
+    ).rejects.toThrow(/Only the owner/);
+    await expect(
+      service.setSecret(
+        { id: "shared-api", field: "API_TOKEN", list: "vars", value: API_KEY },
+        "connections.setSecret",
+        agent,
+      ),
+    ).rejects.toThrow(/Only the owner/);
+    await expect(service.setAllow("shared-api", ["*"], "connections.allow", agent)).rejects.toThrow(
+      /Only the owner/,
+    );
+    await expect(service.remove("shared-api", "connections.remove", agent)).rejects.toThrow(/Only the owner/);
+    expect(await yaml()).toBe(before);
+  });
+
+  it("rejects duplicate ids across Global and workspace connections, including hand edits", async () => {
+    await service.create(
+      { org: GLOBAL_CONNECTIONS, id: "shared-api", type: "env", name: "Shared API" },
+      "connections.create",
+      OWNER,
+    );
+    await expect(
+      service.create(
+        { org: "acme", id: "shared-api", type: "env", name: "Acme API" },
+        "connections.create",
+        OWNER,
+      ),
+    ).rejects.toThrow(/already a connection/);
+    await writeFile(
+      config.file,
+      "workspaces: [~/Work]\nconnections:\n  shared-api: { type: env, name: Shared API }\norgs:\n  acme:\n    name: Acme\n    connections:\n      shared-api: { type: env, name: Acme API }\n",
+    );
+    await expect(readSections(config.file)).rejects.toThrow(/invalid orgs/);
+  });
 
   async function kubectl(id = "acme-prod", org = "acme") {
     await service.create(

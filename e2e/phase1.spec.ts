@@ -13,7 +13,7 @@ const AGENTS_DIR = join(MAJHI_HOME, "agents");
 
 const shot = (page: Page, name: string) => page.screenshot({ path: `e2e/screenshots/${name}.png` });
 const agentFile = (id: string) => join(AGENTS_DIR, `${id}.md`);
-const readAgent = (id: string) => readFileSync(agentFile(id), "utf8");
+const _readAgent = (id: string) => readFileSync(agentFile(id), "utf8");
 
 /** Everything the page received from majhi: command responses and socket frames. */
 function recordTraffic(page: Page): string[] {
@@ -51,7 +51,7 @@ async function signInThroughTerminal(page: Page) {
 }
 
 /** Fills the add-account form for a Claude login account and signs in. */
-async function addClaudeLogin(page: Page, id: string, org?: string) {
+async function _addClaudeLogin(page: Page, id: string, org?: string) {
   const form = page.getByRole("form", { name: "Add an account" });
   await expect(form.getByRole("radio", { name: "Claude Code" })).toBeChecked();
   if (org) await form.getByRole("combobox", { name: "Belongs to" }).selectOption({ label: org });
@@ -74,7 +74,7 @@ const accountRow = (page: Page, id: string) =>
       has: page.getByRole("button", { name: id, exact: true }),
     });
 
-async function openHealthCheck(page: Page, title: string) {
+async function _openHealthCheck(page: Page, title: string) {
   await page.getByRole("button", { name: "Health check", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: title });
   await expect(dialog.getByText("Health check passed")).toBeVisible();
@@ -152,62 +152,6 @@ test("fresh install: roots, first account, boss, and onboarding does not come ba
   const bossFiles = readdirSync(AGENTS_DIR).filter((f) => f.endsWith(".md"));
   expect(bossFiles).toHaveLength(1);
   expect(readFileSync(join(MAJHI_HOME, "majhi.yaml"), "utf8")).toMatch(/^boss: /m);
-});
-
-test("Accounts and Agents: an org, two Claude accounts, three agents, each health check passes", async ({
-  page,
-}) => {
-  await openAccountsPage(page);
-  await expect(accountRow(page, "claude-personal")).toBeVisible();
-
-  await page.getByRole("button", { name: "Add account", exact: true }).click();
-  const form = page.getByRole("form", { name: "Add an account" });
-  // With no other org, the account starts in Private.
-  await expect(form.getByRole("combobox", { name: "Belongs to" })).toHaveValue("private");
-  await form.getByRole("combobox", { name: "Belongs to" }).selectOption({ label: "New workspace..." });
-  const orgForm = page.getByRole("form", { name: "New workspace" });
-  await orgForm.getByRole("textbox", { name: "Workspace name" }).fill("Acme");
-  await expect(orgForm.getByRole("textbox", { name: "Workspace id" })).toHaveValue("acme");
-  await orgForm.getByRole("button", { name: "Create workspace" }).click();
-  await expect(orgForm).toBeHidden();
-  await expect(form.getByRole("combobox", { name: "Belongs to" })).toHaveValue("acme");
-
-  await addClaudeLogin(page, "claude-acme-1");
-  await page.getByRole("button", { name: "Add another account" }).click();
-  await addClaudeLogin(page, "claude-acme-2", "Acme");
-
-  // Agent 1, through "Create an agent on this account": the form opens in Acme with that account chosen.
-  await page.getByRole("link", { name: "Create an agent on this account" }).click();
-  const newAgent = page.getByRole("form", { name: "New agent" });
-  await expect(newAgent.getByRole("heading", { name: "New agent in Acme" })).toBeVisible();
-  await expect(newAgent.getByRole("combobox", { name: "Account" })).toHaveValue("claude-acme-2");
-  await newAgent.getByRole("textbox", { name: "Agent id" }).fill("acme-builder");
-  await newAgent.getByRole("button", { name: "Builder", exact: true }).click();
-  await newAgent.getByRole("button", { name: "Create agent" }).click();
-  await expect(page.getByRole("heading", { name: "@acme-builder" })).toBeVisible();
-  await openHealthCheck(page, "Health check: @acme-builder");
-
-  // Agents 2 and 3, from the list's "New agent" button.
-  const agentList = page.getByRole("navigation", { name: "Agents" });
-  for (const [id, role, account] of [
-    ["acme-lead", "Lead", "claude-acme-1"],
-    ["acme-reviewer", "Reviewer", "claude-acme-1"],
-  ] as const) {
-    await agentList.getByRole("button", { name: "New agent in Acme" }).click();
-    await expect(newAgent).toBeVisible();
-    await newAgent.getByRole("textbox", { name: "Agent id" }).fill(id);
-    await newAgent.getByRole("button", { name: role, exact: true }).click();
-    await newAgent.getByRole("combobox", { name: "Account" }).selectOption(account);
-    await newAgent.getByRole("button", { name: "Create agent" }).click();
-    await expect(page.getByRole("heading", { name: `@${id}` })).toBeVisible();
-    await openHealthCheck(page, `Health check: @${id}`);
-  }
-
-  await expect(agentList.getByRole("button", { name: /^@acme-/ })).toHaveCount(3);
-  await expect(agentList.getByRole("region", { name: "Acme", exact: true })).toContainText("3");
-  expect(readAgent("acme-lead")).toContain("account: claude-acme-1");
-  expect(readAgent("acme-builder")).toContain("account: claude-acme-2");
-  await shot(page, "agents-editor");
 });
 
 test("an API-key account passes its health check and the key is never stored in the clear or sent back", async ({

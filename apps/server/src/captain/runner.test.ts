@@ -39,7 +39,8 @@ function setup(chore: (run: ChoreRun) => Promise<void>) {
     name: "Acme",
     mode: state.mode,
     authority: state.authority,
-    rules: undefined,
+    // The owner's ship cap, so it holds whatever the Merge row says.
+    rules: { chores: { ship: { actions: 5 } } },
     tz: "UTC",
     day: state.day,
     ...(state.rest === undefined ? {} : { rest: state.rest }),
@@ -231,12 +232,22 @@ describe("the chore runner", () => {
       },
     ]);
     expect(t.repo.pendingCapAsks()).toHaveLength(1);
+    // The log says it once for the day, and says the owner is asked.
+    const stops = () =>
+      t.repo
+        .actions({ org: "acme", limit: 50 })
+        .filter((a) => a.outcome === "skipped")
+        .map((a) => a.text);
+    expect(stops()).toEqual([
+      "Ship finished work stopped: reached today's cap of 5 for ship finished work. You are asked whether to raise it for today",
+    ]);
 
     // Raise: it ships on up to 10 today, and asks nothing more at the raised cap.
     expect(t.repo.answerCapAsk("acme", "ship", DAY, "raised", `${DAY}T12:01:00.000Z`)).toBe(true);
     expect(t.repo.answerCapAsk("acme", "ship", DAY, "left", `${DAY}T12:02:00.000Z`)).toBe(false);
     expect(await t.runner.start("acme", "ship", "ready for review")).toBe("capped");
     expect(ships(DAY)).toBe(10);
+    expect(stops()).toHaveLength(2);
     expect(t.asked).toHaveLength(1);
     expect(t.repo.pendingCapAsks()).toEqual([]);
 

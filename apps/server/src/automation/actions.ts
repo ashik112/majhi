@@ -43,11 +43,13 @@ export interface ActionHost {
     cwd: string | undefined;
   }): Promise<{ id: string }>;
   process(task: string, id: string): ProcessInfo | undefined;
+  /** Resumes the org's tasks paused by a limit that nothing holds now. Returns their ids. */
+  resumeLimited(org: string): Promise<string[]>;
 }
 
 /** What starts a run: a schedule or a watch trigger. */
 export interface RunSource {
-  kind: "schedule" | "trigger";
+  kind: "schedule" | "trigger" | "watch";
   id: string;
   org: string;
   /** Shown in rooms: "Nightly build". */
@@ -111,6 +113,8 @@ export class ActionRunner {
         }
         return;
       }
+      case "tasks.resume":
+        return;
       case "room.post":
       case "process.run": {
         refuseSecrets(action.kind === "room.post" ? action.text : action.command);
@@ -173,7 +177,7 @@ export class ActionRunner {
       const started = await this.start(source, action);
       this.history.started(run.id, started);
       // A post has nothing that keeps going.
-      if (action.kind === "room.post")
+      if (action.kind === "room.post" || action.kind === "tasks.resume")
         return this.history.finish(run.id, "ok", started.detail, this.now().toISOString());
       return this.history.get(run.id) ?? run;
     } catch (err) {
@@ -196,6 +200,10 @@ export class ActionRunner {
           team: action.team,
         });
         return { detail: `Started task ${task.id}`, taskId: task.id };
+      }
+      case "tasks.resume": {
+        const ids = await this.host.resumeLimited(source.org);
+        return { detail: ids.length === 0 ? "No task was paused by a limit" : `Resumed ${ids.join(", ")}` };
       }
       case "room.post":
         await this.host.postToTask({ task: action.task, text: action.text, from: source.name });
@@ -220,7 +228,7 @@ export class ActionRunner {
    * Ends the runs whose task is done, waits for the owner or failed, or whose process exited. A process does not outlive majhi, so
    * a process run left over from before a restart ends as failed. Of one source, or of all.
    */
-  async reconcile(source?: { kind: "schedule" | "trigger"; id: string }): Promise<void> {
+  async reconcile(source?: { kind: "schedule" | "trigger" | "watch"; id: string }): Promise<void> {
     for (const run of this.history.running(source)) {
       if (this.starting.has(run.id)) continue;
       const ended = this.outcome(run);
@@ -270,5 +278,20 @@ export class ActionRunner {
     }
     // Nothing was started, so nothing can still go.
     return { status: "failed", detail: "The run did not finish: majhi stopped while it started." };
+  }
+}
+
+/** `{{event}}` in the text of an action, so a message or a task can say what happened. */
+export function withEvent(action: AutomationAction, event: string): AutomationAction {
+  const fill = (text: string): string => text.split("{{event}}").join(event);
+  switch (action.kind) {
+    case "room.post":
+      return { ...action, text: fill(action.text) };
+    case "task.start":
+      return { ...action, title: fill(action.title), text: fill(action.text) };
+    case "process.run":
+    case "tasks.resume":
+      // A command is never filled in: what matched may hold anything a repo or a page says.
+      return action;
   }
 }

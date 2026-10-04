@@ -8,6 +8,7 @@ import { GLASS } from "@/lib/glass";
 import { dockItems, waitsForOwner } from "./dock";
 import { DockCaption, dockCaption } from "./dock-caption";
 import { type ItemContext, NotesRow, OWNER_CARD_TYPES, PinnedPlan, RoomItemView, rowDomId } from "./items";
+import { RoomTaskContext } from "./media";
 import type { RoomState } from "./model";
 import { nearBottom, pinnedPlans } from "./model";
 import type { OwnerContext } from "./owner-cards";
@@ -269,124 +270,126 @@ export function Timeline({
   );
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
-      {plans.length > 0 && (
-        <div className="flex max-h-[40%] shrink-0 flex-col gap-2 overflow-y-auto pb-2">
-          {plans.map((plan) => (
-            <PinnedPlan key={plan.id} plan={plan} />
-          ))}
-        </div>
-      )}
-      <div
-        ref={scroller}
-        onScroll={onScroll}
-        role="log"
-        aria-label="Room messages"
-        aria-live="off"
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling region must take focus so the keyboard can scroll it
-        tabIndex={0}
-        className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-0.5 pt-1 pb-6 scroll-fade focus-visible:outline-none"
-      >
-        {state.more && <p className="text-center text-xs text-fg-faint">Loading earlier messages</p>}
-        {!state.loaded && state.items.length === 0 && (
-          <p className="m-auto text-sm text-fg-faint">Connecting to the room</p>
+    <RoomTaskContext.Provider value={task.id}>
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {plans.length > 0 && (
+          <div className="flex max-h-[40%] shrink-0 flex-col gap-2 overflow-y-auto pb-2">
+            {plans.map((plan) => (
+              <PinnedPlan key={plan.id} plan={plan} />
+            ))}
+          </div>
         )}
-        {state.loaded && state.items.length === 0 && (
-          <p className="m-auto text-sm text-fg-faint">Nothing yet. Messages and tool calls show up here.</p>
-        )}
-        <ol ref={list} className="m-0 mt-auto flex w-full max-w-[920px] flex-col p-0">
-          {rows.slice(from).map((row, j) => {
-            const i = from + j;
-            const gap = gapAbove(i === 0 ? undefined : beats[i - 1], beats[i] ?? "line");
-            if (row.kind === "steps")
-              return (
-                <StepsRow key={row.key} count={row.count} className={gap}>
-                  {row.items.map((item) => (
-                    <RoomItemView
-                      key={item.id}
-                      item={item}
-                      ctx={ctx}
-                      {...rowProps(item)}
-                      className="mt-0.5"
-                    />
-                  ))}
-                </StepsRow>
+        <div
+          ref={scroller}
+          onScroll={onScroll}
+          role="log"
+          aria-label="Room messages"
+          aria-live="off"
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling region must take focus so the keyboard can scroll it
+          tabIndex={0}
+          className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-0.5 pt-1 pb-6 scroll-fade focus-visible:outline-none"
+        >
+          {state.more && <p className="text-center text-xs text-fg-faint">Loading earlier messages</p>}
+          {!state.loaded && state.items.length === 0 && (
+            <p className="m-auto text-sm text-fg-faint">Connecting to the room</p>
+          )}
+          {state.loaded && state.items.length === 0 && (
+            <p className="m-auto text-sm text-fg-faint">Nothing yet. Messages and tool calls show up here.</p>
+          )}
+          <ol ref={list} className="m-0 mt-auto flex w-full max-w-[920px] flex-col p-0">
+            {rows.slice(from).map((row, j) => {
+              const i = from + j;
+              const gap = gapAbove(i === 0 ? undefined : beats[i - 1], beats[i] ?? "line");
+              if (row.kind === "steps")
+                return (
+                  <StepsRow key={row.key} count={row.count} className={gap}>
+                    {row.items.map((item) => (
+                      <RoomItemView
+                        key={item.id}
+                        item={item}
+                        ctx={ctx}
+                        {...rowProps(item)}
+                        className="mt-0.5"
+                      />
+                    ))}
+                  </StepsRow>
+                );
+              return row.kind === "notes" ? (
+                <NotesRow
+                  key={row.key}
+                  rowKey={row.key}
+                  quiet={row.quiet}
+                  at={row.items[0]?.at ?? ""}
+                  className={gap}
+                />
+              ) : (
+                <RoomItemView
+                  key={row.key}
+                  item={row.item}
+                  ctx={ctx}
+                  {...rowProps(row.item)}
+                  className={gap}
+                  inLog
+                />
               );
-            return row.kind === "notes" ? (
-              <NotesRow
-                key={row.key}
-                rowKey={row.key}
-                quiet={row.quiet}
-                at={row.items[0]?.at ?? ""}
-                className={gap}
-              />
-            ) : (
-              <RoomItemView
-                key={row.key}
-                item={row.item}
-                ctx={ctx}
-                {...rowProps(row.item)}
-                className={gap}
-                inLog
-              />
-            );
-          })}
-        </ol>
-      </div>
-      {/* Anchored to the bottom of the log, so it sits above the dock. */}
-      <div className="relative h-0">
-        {state.newer ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={onJumpToLatest}
-            className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-glass-strong shadow-pop"
-          >
-            <ArrowDown aria-hidden="true" />
-            Latest messages
-          </Button>
-        ) : (
-          unseen && (
+            })}
+          </ol>
+        </div>
+        {/* Anchored to the bottom of the log, so it sits above the dock. */}
+        <div className="relative h-0">
+          {state.newer ? (
             <Button
               variant="secondary"
               size="sm"
-              onClick={toBottom}
+              onClick={onJumpToLatest}
               className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-glass-strong shadow-pop"
             >
               <ArrowDown aria-hidden="true" />
-              New messages
+              Latest messages
             </Button>
-          )
+          ) : (
+            unseen && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={toBottom}
+                className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-glass-strong shadow-pop"
+              >
+                <ArrowDown aria-hidden="true" />
+                New messages
+              </Button>
+            )
+          )}
+        </div>
+        {waiting.length > 0 && (
+          // Whatever waits for the owner stays here, above the message box, until it is answered,
+          // so new messages never bury it. Answered, it goes back into the log in its place.
+          <section
+            aria-label="Needs you"
+            className={cn(
+              "mt-2 flex max-h-[60%] shrink-0 flex-col gap-2 overflow-hidden rounded-xl p-2.5",
+              GLASS,
+              "border-lamp-needs/30",
+            )}
+          >
+            <span className="flex items-center gap-2 px-0.5 text-sm font-medium text-lamp-needs">
+              <Lamp state="needs" size={7} />
+              Needs you
+              {waiting.length > 1 && <span className="tnum font-mono text-xs">{waiting.length}</span>}
+            </span>
+            <ol className="m-0 flex min-h-0 flex-col gap-2.5 overflow-y-auto p-0">
+              {waiting.map((item: RoomItem) => (
+                <li key={item.id} className="list-none">
+                  <DockCaption parts={dockCaption(item, lead)} />
+                  <ol className="m-0 p-0">
+                    <RoomItemView item={item} ctx={ctx} {...rowProps(item)} />
+                  </ol>
+                </li>
+              ))}
+            </ol>
+          </section>
         )}
       </div>
-      {waiting.length > 0 && (
-        // Whatever waits for the owner stays here, above the message box, until it is answered,
-        // so new messages never bury it. Answered, it goes back into the log in its place.
-        <section
-          aria-label="Needs you"
-          className={cn(
-            "mt-2 flex max-h-[60%] shrink-0 flex-col gap-2 overflow-hidden rounded-xl p-2.5",
-            GLASS,
-            "border-lamp-needs/30",
-          )}
-        >
-          <span className="flex items-center gap-2 px-0.5 text-sm font-medium text-lamp-needs">
-            <Lamp state="needs" size={7} />
-            Needs you
-            {waiting.length > 1 && <span className="tnum font-mono text-xs">{waiting.length}</span>}
-          </span>
-          <ol className="m-0 flex min-h-0 flex-col gap-2.5 overflow-y-auto p-0">
-            {waiting.map((item: RoomItem) => (
-              <li key={item.id} className="list-none">
-                <DockCaption parts={dockCaption(item, lead)} />
-                <ol className="m-0 p-0">
-                  <RoomItemView item={item} ctx={ctx} {...rowProps(item)} />
-                </ol>
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
-    </div>
+    </RoomTaskContext.Provider>
   );
 }

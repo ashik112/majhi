@@ -3,12 +3,16 @@ import {
   type AutonomySettings,
   type CaptainCapAsk,
   type CaptainChore,
+  CaptainChoreSchema,
   type CaptainOrg,
+  type CaptainRunChoreResult,
+  type CaptainRunnableChore,
   type CaptainStatus,
   CHORE_LABEL,
   type CommandMeta,
   type CommandName,
   commands,
+  DAILY_CHORE_CAPS,
   type Fact,
   PRIVATE,
   type RoomItem,
@@ -18,18 +22,23 @@ import { zoneOr } from "../autonomy/service.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
+import { type ChorePlaybooks, DefaultChorePlays } from "../playbooks/chore-plays.ts";
 import type { Store } from "../store/index.ts";
 import { addDays, localDay } from "../usage/ranges.ts";
 import { createChores, memoryKey } from "./chores.ts";
+import { LaneGate } from "./lane-gate.ts";
 import type { Lanes } from "./lanes.ts";
 import { authorityOf, choresNow, effectiveAuthority, migratePickOrgs, workspaceIds } from "./levels.ts";
 import { laneOfScope } from "./memory-scopes.ts";
 import type { CaptainPorts } from "./ports.ts";
 import { CaptainRepo, type StoredAction } from "./repo.ts";
-import { DAILY_CHORES, dailyCaps, MEMORY_WAITING, restWhy } from "./rules.ts";
+import { dailyCaps, MEMORY_WAITING, restWhy } from "./rules.ts";
 import { ChoreRunner, type Workspace } from "./runner.ts";
 import { summaryOf } from "./summary.ts";
 import { type Identity, revertMerge } from "./undo.ts";
+
+const CHORES = CaptainChoreSchema.options;
+const DAILY_CAPS = DAILY_CHORE_CAPS;
 
 /** How often the daily chores, the hourly checks and the daily summary are looked at. */
 export const CAPTAIN_SWEEP_MS = 60_000;
@@ -45,8 +54,8 @@ export interface AutonomyLink {
   mode(): AutonomyMode;
   stopNowForCaptain(): Promise<void>;
   startForCaptain(): Promise<void>;
-  /** Today's spend of the captain and autonomous work in a workspace, and its daily budget. */
-  orgSpend(org: string): Promise<{ used: Spend; tz: string }>;
+  /** Today's spend of the captain and autonomous work in every workspace, read once. */
+  orgSpends(): Promise<{ of: (org: string) => Spend; tz: string }>;
 }
 
 export interface CaptainDeps {
@@ -59,7 +68,8 @@ export interface CaptainDeps {
   /** Tells the owner through the bell, once per key. */
   tell: (key: string, text: string) => void;
   /** What a thread is doing now: the captain in a turn, an item waiting on the owner, or neither. */
-  threadState?: (chat: string, org: string) => "working" | "waiting" | "idle";
+  /** Takes the state of the room once, then answers per lane: a status asks for every workspace. */
+  threadState?: () => (chat: string, org: string) => "working" | "waiting" | "idle";
   /** Replaces the thread's session with a fresh one that carries a summary (the room's "fresh session"). */
   fresh?: (chat: string, agent: string) => Promise<RoomItem>;
   /** Cancels the captain's turn in a lane. */
@@ -83,15 +93,32 @@ export interface CaptainDeps {
 export class CaptainService {
   readonly repo: CaptainRepo;
   readonly runner: ChoreRunner;
+  /** What the lane's ships and repo registrations are held to: the chores' own rules (SPEC 5.18, One rule set). */
+  readonly laneGate: LaneGate;
   private sweep: NodeJS.Timeout | undefined;
   private readonly caused = new Map<string, number>();
   /** The captain as last read, so a room write can tell the captain's own cards at once. */
   private boss: string | undefined;
   private closed = false;
+  /** When each chore is due and whether it is on: the playbooks. Replaced by the scheduler with the owner's changes. */
+  private plays: ChorePlaybooks;
+  /** The rest of the playbook scheduler, run in the same minute sweep. */
+  private playbookSweep: (() => Promise<void>) | undefined;
   private readonly pending = new Map<string, { timer: NodeJS.Timeout; why: string; subject?: string }>();
 
   constructor(private readonly deps: CaptainDeps) {
+    this.plays = new DefaultChorePlays(undefined, () => this.now());
     this.repo = new CaptainRepo(deps.store.raw);
+    this.laneGate = new LaneGate({
+      repo: this.repo,
+      ports: deps.ports,
+      workspace: (org) => this.workspace(org),
+      now: () => this.now(),
+      capAsked: (ask) => {
+        this.deps.tell(`captain-cap:${ask.org}:${ask.chore}:${ask.day}`, ask.text);
+        this.deps.events.emit(["captain"]);
+      },
+    });
     this.runner = new ChoreRunner({
       repo: this.repo,
       now: () => this.now(),
@@ -104,6 +131,8 @@ export class CaptainService {
         return chat === undefined ? 0 : this.repo.laneSpend(chat, since).tokens;
       },
       chores: createChores(deps.ports, () => this.now()),
+      enabled: (org, chore) => this.plays.enabled(org, chore),
+      afterRun: (org, chore, did) => this.plays.afterRun(org, chore, did),
       changed: () => this.deps.events.emit(["captain"]),
       capAsked: (ask) => {
         this.deps.tell(`captain-cap:${ask.org}:${ask.chore}:${ask.day}`, ask.text);
@@ -114,6 +143,12 @@ export class CaptainService {
 
   private now(): Date {
     return this.deps.now?.() ?? new Date();
+  }
+
+  /** The playbook scheduler takes over when the chores are due and whether they are on, and sweeps the rest. */
+  usePlaybooks(plays: ChorePlaybooks, sweep: () => Promise<void>): void {
+    this.plays = plays;
+    this.playbookSweep = sweep;
   }
 
   /**
@@ -183,16 +218,14 @@ export class CaptainService {
       if (ws === undefined || ws.rest !== undefined) continue;
       for (const chore of choresNow(ws.authority, ws.mode)) {
         if (this.runner.running(org, chore) || this.repo.chore(org, chore).offAt !== undefined) continue;
-        if (DAILY_CHORES.includes(chore)) {
-          if (this.repo.runsToday(org, chore, ws.day) > 0) continue;
-          await this.runner.start(org, chore, "Daily run");
-          continue;
-        }
-        const last = this.repo.lastRun(org, chore);
-        if (last !== undefined && this.now().getTime() - Date.parse(last) < HOURLY_MS) continue;
-        await this.runner.start(org, chore, "Hourly check");
+        const why = this.plays.due(org, chore, ws, {
+          any: this.repo.lastRun(org, chore),
+          worked: this.repo.lastWorkedRun(org, chore),
+        });
+        if (why !== undefined) await this.runner.start(org, chore, why);
       }
     }
+    await this.playbookSweep?.().catch(() => undefined);
     await this.dailySummary();
   }
 
@@ -358,12 +391,25 @@ export class CaptainService {
     const tz = zoneOr(rules?.tz ?? autonomy.tz);
     const now = this.now();
     const rest = restWhy(rules, now, tz);
+    // The daily limits the owner set on the playbooks come before the ones in Limits.
+    let limited = rules;
+    for (const chore of CHORES) {
+      const limit = this.plays.limit(org, chore);
+      if (limit === undefined) continue;
+      const key = DAILY_CAPS[chore].actions !== undefined ? "actions" : "runs";
+      limited = {
+        ...limited,
+        chores: { ...limited?.chores, [chore]: { ...limited?.chores?.[chore], [key]: limit } },
+      };
+    }
+    const off = this.plays.rulesOff(org);
     return {
       org,
       name: name ?? (org === PRIVATE ? "Private" : org),
       mode: this.deps.autonomy.mode(),
       authority: effectiveAuthority(authorityOf(autonomy, org), this.deps.autonomy.mode()),
-      rules,
+      rules: limited,
+      ...(off.length === 0 ? {} : { rulesOff: new Set(off) }),
       tz,
       day: localDay(now, tz),
       ...(rest === undefined ? {} : { rest }),
@@ -381,15 +427,17 @@ export class CaptainService {
     const state = this.repo.state();
     const mode = this.deps.autonomy.mode();
     const orgs: CaptainOrg[] = [];
+    const threadOf = this.deps.threadState?.();
+    const spends = await this.deps.autonomy
+      .orgSpends()
+      .catch(() => ({ of: (): Spend => ({ tokens: 0, cost: 0 }), tz: "" }));
     let day = localDay(this.now(), zoneOr(settings.autonomy.tz));
     for (const org of workspaceIds(sections.orgs)) {
       const ws = this.workspaceOf(org, settings.autonomy, sections.orgs[org]?.name);
       if (org === PRIVATE) day = ws.day;
       const authority = authorityOf(settings.autonomy, org);
       const { line, forYou } = summaryOf(this.repo.dayActions(org, ws.day));
-      const spend = await this.deps.autonomy
-        .orgSpend(org)
-        .catch(() => ({ used: { tokens: 0, cost: 0 }, tz: ws.tz }));
+      const spend = { used: spends.of(org) };
       const lane = this.deps.lanes.chat(org);
       const cap = settings.autonomy.orgs[org]?.cap;
       orgs.push({
@@ -404,13 +452,14 @@ export class CaptainService {
         forYou,
         ...(ws.rest === undefined ? {} : { resting: ws.rest }),
         ...(lane === undefined ? {} : { lane }),
-        thread: lane === undefined ? "idle" : (this.deps.threadState?.(lane, org) ?? "idle"),
+        thread: lane === undefined ? "idle" : (threadOf?.(lane, org) ?? "idle"),
         chores: choresNow(authority, mode).map((chore) => {
           const c = this.repo.chore(org, chore);
-          const caps = dailyCaps(chore, this.repo.capRaised(org, chore, ws.day));
+          const caps = dailyCaps(chore, this.repo.capRaised(org, chore, ws.day), ws);
           const last = this.repo.lastRun(org, chore);
           return {
             chore,
+            ...(this.runner.running(org, chore) ? { running: true as const } : {}),
             ...(c.offWhy === undefined ? {} : { off: c.offWhy }),
             today:
               caps.actions !== undefined
@@ -472,6 +521,25 @@ export class CaptainService {
     const item = await this.deps.fresh(chat, agent);
     this.deps.events.emit(["captain"]);
     return { item };
+  }
+
+  /**
+   * "Review now": one run of the memory or cleanup chore of a workspace, started by the owner. The
+   * answer comes at once; the run goes on in the background and the status shows it running.
+   */
+  async runChore(org: string, chore: CaptainRunnableChore): Promise<CaptainRunChoreResult> {
+    const started = await this.runner.startNow(org, chore);
+    if (!started.ran) return { started: false, text: started.why, overCap: false };
+    this.deps.events.emit(["captain"]);
+    void started.done.catch(() => undefined).finally(() => this.deps.events.emit(["captain"]));
+    const label = CHORE_LABEL[chore].toLowerCase();
+    return {
+      started: true,
+      overCap: started.overCap,
+      text: started.overCap
+        ? `Started ${label}. Today's limit was reached, and this run goes past it because you asked.`
+        : `Started ${label}.`,
+    };
   }
 
   async choreOn(org: string, chore: CaptainChore): Promise<CaptainStatus> {

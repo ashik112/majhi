@@ -1,4 +1,4 @@
-import { canWorkIn, type TaskSummary } from "@majhi/shared";
+import { canWorkIn, PAGE_LABEL, PAGE_PATH, type PageName, type TaskSummary } from "@majhi/shared";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { ChevronLeft, Search } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -12,7 +12,8 @@ import { chatTitle } from "@/features/chats/model";
 import { GLOBAL } from "@/features/memory/model";
 import { useNewTask } from "@/features/new-task/new-task-context";
 import { AskBox } from "@/features/setup/decisions-panel";
-import { PAGE_KEYWORDS, PAGE_LABEL } from "@/features/shell/nav";
+import { PAGE_KEYWORDS } from "@/features/shell/nav";
+import { chordOf } from "@/features/shell/shortcuts";
 import { openTaskIds } from "@/features/shell/use-shortcuts";
 import { useCandidates } from "@/features/task/team-controls";
 import { useAgentIndex } from "@/lib/agent-index";
@@ -20,7 +21,6 @@ import { cn } from "@/lib/cn";
 import { formatAgo, MOD_KEY } from "@/lib/format";
 import { useMemorySearch } from "@/lib/memory-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
-import { PAGE_PATH, type PageName } from "@/lib/pages";
 import { MIN_SEARCH_LENGTH, useDebounced, useRoomSearch } from "@/lib/search-queries";
 import { useOrgs } from "@/lib/studio-queries";
 import { useStartTask, useTask, useTasks, useTeamCommand, useUpdateTask } from "@/lib/task-queries";
@@ -261,14 +261,15 @@ export function Palette({ onClose }: { onClose: () => void }) {
     },
     {
       id: "captain-log",
-      name: "Captain: log of what it did",
-      keywords: "autonomous decisions undo feed history",
+      name: "Captain: history",
+      keywords: "autonomous decisions undo feed log",
       run: () => go(PAGE_PATH.captain, { tab: "log" }),
     },
     {
       id: "captain-rules",
-      name: "Captain: delegation",
-      keywords: "autonomous rules authority who decides what budget leave alone standing instructions",
+      name: "Captain: permissions",
+      keywords:
+        "autonomous delegation rules authority who decides what budget leave alone standing instructions",
       run: () => go(PAGE_PATH.captain, { tab: "rules" }),
     },
   ];
@@ -278,7 +279,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
     id: `page:${name}`,
     name: PAGE_LABEL[name],
     keywords: `page go open ${PAGE_KEYWORDS[name]}`,
-    hint: "Page",
+    hint: chordOf(PAGE_PATH[name]) ?? "Page",
     run: () => go(PAGE_PATH[name]),
   }));
 

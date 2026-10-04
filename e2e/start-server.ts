@@ -82,7 +82,8 @@ writeFileSync(SECRETS_KEY_FILE, `${await generateKey()}\n`, { mode: 0o600 });
 
 // The screenshot configs ask for a filled-in home (`ui`); a spec asks for its own through `useHome`.
 const seed = process.env.MAJHI_E2E_SEED;
-if (seed === "ui") (await import("./ui-seed.ts")).seedUiHome();
+if (seed === "ui" || seed === "perf") (await import("./ui-seed.ts")).seedUiHome();
+if (seed === "perf") (await import("./perf-seed.ts")).seedPerf();
 if (seed === "roots" || seed === "team" || seed === "team-api")
   await (await import("./home-seed.ts")).seedHome(seed);
 

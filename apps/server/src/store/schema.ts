@@ -65,6 +65,8 @@ export const taskRepos = sqliteTable(
     mrState: text("mr_state"),
     /** `none`, `pending`, `passing` or `failing`. */
     ciState: text("ci_state"),
+    /** The reviews of the MR as the host last said (JSON, `MrReview`). */
+    mrReview: text("mr_review"),
     pushedAt: text("pushed_at"),
     /** The branch tip majhi merged, and the branch it merged into. */
     shippedHead: text("shipped_head"),

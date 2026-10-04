@@ -1,10 +1,11 @@
 import type { AutonomyStatus, RoomItem } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
+import { useBoss } from "@/features/boss/boss-context";
 import { looksLikeSecret } from "@/features/boss/model";
 import type { OwnerContext } from "@/features/room/owner-cards";
 import { Timeline } from "@/features/room/timeline";
@@ -58,6 +59,12 @@ export function ChatBox({ status, lane }: { status: AutonomyStatus; lane: string
   const guide = useGuideAutonomy();
   const [text, setText] = useState("");
   const [keep, setKeep] = useState(false);
+  const { draft, takeDraft } = useBoss();
+  useEffect(() => {
+    if (draft === undefined) return;
+    setText(draft);
+    takeDraft();
+  }, [draft, takeDraft]);
   const typed = text.trim();
   const secret = looksLikeSecret(typed);
   const tooLong = keep && typed.length > INSTRUCTION_MAX;

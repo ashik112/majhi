@@ -100,7 +100,10 @@ describe("the gate in a run", () => {
       await w.h.majhi.app.request("/api/uploads?for=connection", { method: "POST", body: form })
     ).json()) as { id: string };
     await must("connections.setFile", { id: "acme-prod", field: "kubeconfig", upload: upload.id });
-    await must("connections.allow", { id: "acme-prod", allow: ["kubectl rollout restart deployment/web"] });
+    await must("connections.allow", {
+      id: "acme-prod",
+      allow: ["kubectl rollout restart deployment/web", "kubectl delete pod api-7d9"],
+    });
 
     const answers: (string | undefined)[] = [];
     w.h.runtime.onSession = (session) => {
@@ -127,6 +130,7 @@ describe("the gate in a run", () => {
             }),
           ),
         );
+        answers.push(await turn.ask(ask({ command: "kubectl delete pod api-7d9", toolCallId: "e" })));
         return "end_turn";
       };
     };
@@ -163,7 +167,18 @@ describe("the gate in a run", () => {
     const [plan] = await pending();
     expect(plan?.options.map((o) => o.id)).toEqual(["exit-plan-default", "reject"]);
     await must("room.permission", { task: task.id, item: plan?.id, option: "reject" });
+
+    // A delete waits for the owner although allow holds it, and the captain cannot approve it.
+    await until(async () => (await pending()).length === 1 && answers.length === 4, "the delete prompt");
+    const [del] = await pending();
+    expect(del?.connection).toMatchObject({ why: "it deletes or destroys something", destructive: true });
+    expect(del?.options.map((o) => o.id)).toEqual(["allow", "reject"]);
+    expect(() => w.h.majhi.services.runs.answerPermission(task.id, del?.id ?? "", "allow", true)).toThrow(
+      "Only the owner can approve it",
+    );
+    await must("room.permission", { task: task.id, item: del?.id, option: "allow" });
     await w.h.majhi.services.runs.idle(task.id);
+    expect(answers.at(-1)).toBe("allow");
 
     const audit = w.h.majhi.services.store.permissions
       .audit(task.id)

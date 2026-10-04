@@ -26,6 +26,7 @@ interface ActionRow {
   reason: string;
   evidence: string | null;
   task: string | null;
+  decision: string | null;
   outcome: string;
   undo: string | null;
   undo_note: string | null;
@@ -57,6 +58,7 @@ export interface NewAction {
   reason: string;
   evidence?: string | undefined;
   task?: string | undefined;
+  decision?: string | undefined;
   outcome: CaptainAction["outcome"];
   undo?: CaptainUndo | undefined;
   /** Why Undo is not possible, when it is not. */
@@ -90,6 +92,7 @@ function actionOf(r: ActionRow): StoredAction | undefined {
     reason: r.reason,
     ...(r.evidence === null ? {} : { evidence: r.evidence }),
     ...(r.task === null ? {} : { task: r.task }),
+    ...(r.decision === null ? {} : { decision: r.decision }),
     outcome: r.outcome,
     ...(undo === undefined ? {} : { undo }),
     ...(r.undo_note === null ? {} : { undoNote: r.undo_note }),
@@ -266,6 +269,47 @@ export class CaptainRepo {
     return rows.flatMap((r) => runOf(r) ?? []);
   }
 
+  /** The start of the chore's last run that did not rest: what a daily schedule counts from. */
+  lastWorkedRun(org: string, chore: CaptainChore): string | undefined {
+    const row = this.db
+      .prepare(
+        "SELECT MAX(started_at) AS at FROM captain_runs WHERE org = ? AND chore = ? AND status != 'rested'",
+      )
+      .get(org, chore) as { at: string | null };
+    return row.at ?? undefined;
+  }
+
+  /** The runs of one chore in a workspace, newest first. */
+  choreRuns(org: string, chore: CaptainChore, limit: number): CaptainRun[] {
+    return (
+      this.db
+        .prepare(
+          "SELECT * FROM captain_runs WHERE org = ? AND chore = ? AND status != 'rested' ORDER BY id DESC LIMIT ?",
+        )
+        .all(org, chore, limit) as RunRow[]
+    ).flatMap((r) => runOf(r) ?? []);
+  }
+
+  /** How many runs a chore made in a workspace, not counting the ones that rested. */
+  runCount(org: string, chore: CaptainChore): number {
+    return (
+      this.db
+        .prepare("SELECT COUNT(*) AS n FROM captain_runs WHERE org = ? AND chore = ? AND status != 'rested'")
+        .get(org, chore) as { n: number }
+    ).n;
+  }
+
+  /** How many log lines the chore made that did something or handed it to the owner. */
+  actedCount(org: string, chore: CaptainChore): number {
+    return (
+      this.db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM captain_actions WHERE org = ? AND chore = ? AND outcome IN ('done', 'asked')",
+        )
+        .get(org, chore) as { n: number }
+    ).n;
+  }
+
   allRuns(): CaptainRun[] {
     return (this.db.prepare("SELECT * FROM captain_runs ORDER BY id").all() as RunRow[]).flatMap(
       (r) => runOf(r) ?? [],
@@ -279,12 +323,34 @@ export class CaptainRepo {
     return this.db.prepare("SELECT 1 FROM captain_actions WHERE key = ?").get(key) !== undefined;
   }
 
+  /** The answers the questions chore gave to one agent in one task since `since`, oldest first. */
+  answersSince(
+    org: string,
+    task: string,
+    agent: string,
+    since: string,
+  ): { at: string; text: string; evidence: string | undefined }[] {
+    const rows = this.db
+      .prepare(
+        `SELECT at, text, evidence FROM captain_actions
+         WHERE org = ? AND chore = 'questions' AND task = ? AND outcome = 'done' AND at >= ?
+           AND instr(text, ?) = 1
+         ORDER BY at`,
+      )
+      .all(org, task, since, `Answered @${agent} in `) as {
+      at: string;
+      text: string;
+      evidence: string | null;
+    }[];
+    return rows.map((r) => ({ at: r.at, text: r.text, evidence: r.evidence ?? undefined }));
+  }
+
   /** Adds a line. False when the key is there already: the action was taken before. */
   addAction(a: NewAction): number | undefined {
     const res = this.db
       .prepare(
-        `INSERT OR IGNORE INTO captain_actions (key, run, org, chore, day, at, text, reason, evidence, task, outcome, undo, undo_note)
-         VALUES (@key, @run, @org, @chore, @day, @at, @text, @reason, @evidence, @task, @outcome, @undo, @undo_note)`,
+        `INSERT OR IGNORE INTO captain_actions (key, run, org, chore, day, at, text, reason, evidence, task, decision, outcome, undo, undo_note)
+         VALUES (@key, @run, @org, @chore, @day, @at, @text, @reason, @evidence, @task, @decision, @outcome, @undo, @undo_note)`,
       )
       .run({
         key: a.key,
@@ -297,6 +363,7 @@ export class CaptainRepo {
         reason: a.reason,
         evidence: a.evidence ?? null,
         task: a.task ?? null,
+        decision: a.decision ?? null,
         outcome: a.outcome,
         undo: a.undo === undefined ? null : JSON.stringify(a.undo),
         undo_note: a.undoNote ?? null,
@@ -330,6 +397,33 @@ export class CaptainRepo {
         .prepare("SELECT * FROM captain_actions WHERE at >= ? AND at < ? ORDER BY id")
         .all(from, to) as ActionRow[]
     ).flatMap((r) => actionOf(r) ?? []);
+  }
+
+  /** The log lines one run made, oldest first. */
+  actionsOfRun(run: number): StoredAction[] {
+    return (
+      this.db.prepare("SELECT * FROM captain_actions WHERE run = ? ORDER BY id").all(run) as ActionRow[]
+    ).flatMap((r) => actionOf(r) ?? []);
+  }
+
+  /** A chore's runs, what it did and what the owner undid since `since` (UTC ISO). Rested runs do not count. */
+  weekOf(
+    org: string,
+    chore: CaptainChore,
+    since: string,
+  ): { runs: number; results: number; undone: number; tokens: number } {
+    const runs = this.db
+      .prepare(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(tokens), 0) AS t FROM captain_runs WHERE org = ? AND chore = ? AND status != 'rested' AND started_at >= ?",
+      )
+      .get(org, chore, since) as { n: number; t: number };
+    const acts = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(outcome IN ('done', 'asked')), 0) AS results, COALESCE(SUM(undone_at IS NOT NULL), 0) AS undone
+         FROM captain_actions WHERE org = ? AND chore = ? AND at >= ?`,
+      )
+      .get(org, chore, since) as { results: number; undone: number };
+    return { runs: runs.n, results: acts.results, undone: acts.undone, tokens: runs.t };
   }
 
   action(id: number): StoredAction | undefined {

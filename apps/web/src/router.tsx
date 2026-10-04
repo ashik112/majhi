@@ -1,4 +1,4 @@
-import { TaskIdSchema } from "@majhi/shared";
+import { PAGE_PATH, TaskIdSchema } from "@majhi/shared";
 import {
   createRootRoute,
   createRoute,
@@ -11,11 +11,10 @@ import { MapPinOff } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { Problem } from "@/components/problem";
 import { Button } from "@/components/ui/button";
-import { BoardScreen } from "@/features/board/board-screen";
+import { BoardScreen } from "@/features/board/home-screen";
 import { ChatsScreen } from "@/features/chats/chats-screen";
 import { EditRootsRoute } from "@/features/roots/edit-roots-route";
 import { TaskScreen } from "@/features/task/task-screen";
-import { PAGE_PATH } from "@/lib/pages";
 
 /** Search params every page may carry: the org filter, and the agent or account a link points at. */
 export interface AppSearch {
@@ -28,6 +27,8 @@ export interface AppSearch {
   create?: string;
   /** A file of the open task, shown in the viewer drawer. */
   file?: string;
+  /** The task whose file `file` is, when the viewer opens on another page (the Captain page, Chats). */
+  fileTask?: string;
   /** A room item of the open task to scroll to, from a search match. */
   item?: string;
   /** A task shown in the task drawer, opened from a task id in a message. */
@@ -43,6 +44,8 @@ export interface AppSearch {
   thread?: string;
   /** On Hub setup: the section shown. */
   section?: string;
+  /** On Decisions: the decision shown. */
+  id?: string;
   /** On the audit log: the org, the task, the agent, the kinds (comma separated), the decision and the days. */
   scope?: string;
   about?: string;
@@ -64,6 +67,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const connection = text(search.connection);
   const create = text(search.create);
   const file = text(search.file);
+  const fileTask = TaskIdSchema.safeParse(search.fileTask).data;
   const task = TaskIdSchema.safeParse(search.task).data;
   const peek = text(search.peek);
   const item = text(search.item);
@@ -77,6 +81,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const who = text(search.who);
   const kinds = text(search.kinds);
   const decision = text(search.decision);
+  const id = text(search.id);
   const from = text(search.from);
   const to = text(search.to);
   return {
@@ -87,6 +92,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
     ...(connection ? { connection } : {}),
     ...(create ? { create } : {}),
     ...(file ? { file } : {}),
+    ...(file && fileTask ? { fileTask } : {}),
     ...(task ? { task } : {}),
     ...(peek ? { peek } : {}),
     ...(item ? { item } : {}),
@@ -99,6 +105,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
     ...(who ? { who } : {}),
     ...(kinds ? { kinds } : {}),
     ...(decision ? { decision } : {}),
+    ...(id ? { id } : {}),
     ...(from ? { from } : {}),
     ...(to ? { to } : {}),
   };
@@ -141,6 +148,16 @@ const captainRoute = createRoute({
   path: PAGE_PATH.captain,
   component: lazyRouteComponent(() => import("@/pages/captain-page"), "CaptainPage"),
 });
+const playbooksRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.playbooks,
+  component: lazyRouteComponent(() => import("@/pages/playbooks-page"), "PlaybooksPage"),
+});
+const watchRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.watch,
+  component: lazyRouteComponent(() => import("@/pages/watch-page"), "WatchPage"),
+});
 const agentsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.agents,
@@ -176,12 +193,15 @@ const memoryRoute = createRoute({
   path: PAGE_PATH.memory,
   component: lazyRouteComponent(() => import("@/pages/memory-page"), "MemoryPage"),
 });
+// Automations were folded into Playbooks (schedules) and Watch (triggers): old links land on Playbooks.
 const automationsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: PAGE_PATH.automations,
-  component: lazyRouteComponent(() => import("@/pages/automations-page"), "AutomationsPage"),
+  path: "/automations",
+  beforeLoad: () => {
+    throw redirect({ to: PAGE_PATH.playbooks });
+  },
 });
-// The Autonomous page is part of the Captain page now: /autonomous lands there, and an old view opens its sheet.
+// The Auto-pilot page is part of the Captain page now: /autonomous lands there, and an old view opens its sheet.
 const autonomousRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/autonomous",
@@ -197,10 +217,20 @@ const limitsRoute = createRoute({
   path: PAGE_PATH.limits,
   component: lazyRouteComponent(() => import("@/pages/limits-page"), "LimitsPage"),
 });
+const todayRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.today,
+  component: lazyRouteComponent(() => import("@/pages/today-page"), "TodayPage"),
+});
 const decisionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.decisions,
   component: lazyRouteComponent(() => import("@/pages/decisions-page"), "DecisionsPage"),
+});
+const businessRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.business,
+  component: lazyRouteComponent(() => import("@/pages/business-page"), "BusinessPage"),
 });
 const setupRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -224,6 +254,14 @@ const editRootsRoute = createRoute({
   component: EditRootsRoute,
 });
 
+// The Knowledge page was called Business at first.
+const oldBusinessRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/business",
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: PAGE_PATH.business, search });
+  },
+});
 // Old addresses from the three-column design.
 const reposRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -266,8 +304,13 @@ export const router = createRouter({
     automationsRoute,
     autonomousRoute,
     captainRoute,
+    playbooksRoute,
+    watchRoute,
     limitsRoute,
+    todayRoute,
     decisionsRoute,
+    businessRoute,
+    oldBusinessRoute,
     setupRoute,
     projectsRoute,
     orgsRoute,

@@ -1,7 +1,7 @@
 import { ALL_ASK, type Authority, AutonomySettingsSchema } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { authorityOf, choresNow, choresOf, effectiveAuthority, migratePickOrgs } from "./levels.ts";
-import { branchAllowed, providerAllowed, restWhy, typingWhy } from "./rules.ts";
+import { branchAllowed, DAILY_CAPS, dailyCaps, providerAllowed, restWhy, typingWhy } from "./rules.ts";
 
 const settings = (raw: unknown) => AutonomySettingsSchema.parse(raw);
 
@@ -13,6 +13,7 @@ describe("the authority table per workspace", () => {
     upkeep: string,
     merge: string,
     push: string,
+    own = "ask",
   ) => ({
     start,
     questions,
@@ -20,6 +21,7 @@ describe("the authority table per workspace", () => {
     upkeep,
     merge,
     push,
+    own,
   });
 
   it("defaults to Keeps things tidy for Private and Ask me with upkeep for every other workspace", () => {
@@ -79,7 +81,15 @@ describe("the authority table per workspace", () => {
     expect(choresOf(only("approvals"))).toEqual(["cards"]);
     expect(choresOf(only("questions"))).toEqual(["questions"]);
     expect(choresOf(only("merge"))).toEqual(["ship"]);
-    expect(choresOf(only("upkeep"))).toEqual(["ship", "memory", "projects", "triage", "cleanup", "stuck"]);
+    expect(choresOf(only("upkeep"))).toEqual([
+      "ship",
+      "memory",
+      "projects",
+      "triage",
+      "cleanup",
+      "stuck",
+      "followups",
+    ]);
   });
 
   it("moves the old list of workspaces autonomous mode may work in to Runs it, once, keeping each choice made", () => {
@@ -146,5 +156,47 @@ describe("the rules that always hold", () => {
     expect(branchAllowed(listed, "develop", "develop")).toBe(false);
     expect(providerAllowed(none, "codex")).toBe(true);
     expect(providerAllowed({ ...none, providers: ["claude"] }, "codex")).toBe(false);
+  });
+});
+
+describe("daily chore caps", () => {
+  const ask = { merge: "ask" as const };
+  const decide = { merge: "decide" as const };
+
+  it("uses majhi's defaults when the owner set nothing, doubled on a raised day", () => {
+    expect(dailyCaps("ship", false, { authority: ask })).toEqual({ actions: DAILY_CAPS.ship.actions });
+    expect(dailyCaps("ship", true, { authority: ask })).toEqual({
+      actions: (DAILY_CAPS.ship.actions ?? 0) * 2,
+    });
+    expect(dailyCaps("memory", false)).toEqual({ runs: DAILY_CAPS.memory.runs });
+  });
+
+  it("does not cap ships where the captain decides merges, unless the owner set a cap", () => {
+    expect(dailyCaps("ship", false, { authority: decide })).toEqual({});
+    expect(
+      dailyCaps("ship", false, { authority: decide, rules: { chores: { ship: { actions: 12 } } } }),
+    ).toEqual({
+      actions: 12,
+    });
+  });
+
+  it("takes the owner's number, and null as no cap for that count only", () => {
+    const rules = { chores: { projects: { runs: null, actions: 50 }, ship: { actions: null } } };
+    expect(dailyCaps("projects", false, { rules, authority: ask })).toEqual({ actions: 50 });
+    expect(dailyCaps("projects", true, { rules, authority: ask })).toEqual({ actions: 100 });
+    expect(dailyCaps("ship", true, { rules, authority: ask })).toEqual({});
+    // Another chore keeps its default.
+    expect(dailyCaps("cards", false, { rules, authority: ask })).toEqual({
+      actions: DAILY_CAPS.cards.actions,
+    });
+  });
+
+  it("refuses a cap of zero or a negative one in settings", () => {
+    const parse = (chores: unknown) =>
+      AutonomySettingsSchema.safeParse({ orgs: { acme: { chores } } }).success;
+    expect(parse({ ship: { actions: 0 } })).toBe(false);
+    expect(parse({ ship: { actions: -3 } })).toBe(false);
+    expect(parse({ ship: { actions: null } })).toBe(true);
+    expect(parse({ nope: { actions: 3 } })).toBe(false);
   });
 });

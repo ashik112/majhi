@@ -15,7 +15,20 @@ import { IdSchema, SecretRefSchema } from "./ids.ts";
  * description, never a value.
  */
 
-export const ConnectionTypeSchema = z.enum(["kubectl", "mcp", "ssh", "env", "mail", "browser"]);
+/** Wire scope for owner-approved connections shared by every workspace. Never an org. */
+export const GLOBAL_CONNECTIONS = "global";
+
+export const ConnectionTypeSchema = z.enum([
+  "kubectl",
+  "mcp",
+  "ssh",
+  "env",
+  "mail",
+  "browser",
+  "api",
+  "cli",
+  "git",
+]);
 export type ConnectionType = z.infer<typeof ConnectionTypeSchema>;
 
 /** Where a value is kept: secrets.age, majhi.yaml, or a file of the connection. */
@@ -49,10 +62,12 @@ export const ConnectionFieldSchema = z.object({
   /** The field counts only while these other fields hold these values. */
   when: WhenSchema.optional(),
   /** How a text value must look: a URL, a port, a host name or alias, or words separated by spaces. */
-  format: z.enum(["url", "port", "host", "words"]).optional(),
+  format: z.enum(["url", "port", "host", "ssh", "words"]).optional(),
   placeholder: z.string().optional(),
   /** The page offers the Host aliases of ~/.ssh/config. */
-  pick: z.literal("ssh-alias").optional(),
+  pick: z.enum(["ssh-alias", "ssh-key"]).optional(),
+  /** majhi sets it (Connect), so the form does not offer it. */
+  managed: z.boolean().optional(),
 });
 export type ConnectionField = z.infer<typeof ConnectionFieldSchema>;
 
@@ -150,6 +165,29 @@ function mcpServer(when: Record<string, string> = {}): Pick<ConnectionTypeDef, "
         when: remote,
       },
       {
+        key: "auth",
+        label: "Sign-in",
+        kind: "text",
+        required: true,
+        managed: true,
+        help: "Headers set by hand, or the service's own sign-in through Connect, which majhi renews.",
+        choices: [
+          { value: "headers", label: "Headers" },
+          { value: "oauth", label: "Sign in with the service" },
+        ],
+        when: remote,
+      },
+      {
+        key: "products",
+        label: "Products",
+        kind: "text",
+        required: false,
+        managed: true,
+        format: "words",
+        help: "The products of the service its agents get, each its own server on the same sign-in.",
+        when: remote,
+      },
+      {
         key: "command",
         label: "Command",
         kind: "text",
@@ -233,10 +271,19 @@ export const CONNECTION_TYPES: readonly ConnectionTypeDef[] = [
         label: "Host",
         kind: "text",
         required: true,
-        format: "host",
+        format: "ssh",
         pick: "ssh-alias",
-        placeholder: "acme-prod",
-        help: "A Host alias of ~/.ssh/config.",
+        placeholder: "root@203.0.113.10",
+        help: "A Host of ~/.ssh/config, or user@address with an optional :port. majhi signs in with the keys in your ssh-agent.",
+      },
+      {
+        key: "key",
+        label: "Key",
+        kind: "text",
+        required: false,
+        pick: "ssh-key",
+        placeholder: "~/.ssh/id_ed25519.pub",
+        help: "Which of your keys to use, when the host needs a different one. Only its public half is used: the agent signs.",
       },
     ],
     lists: [],
@@ -246,6 +293,30 @@ export const CONNECTION_TYPES: readonly ConnectionTypeDef[] = [
     label: "Variables",
     summary: "Named values for CLIs and APIs, like aws, psql or an API key",
     fields: [
+      {
+        key: "service",
+        label: "Service",
+        kind: "text",
+        required: false,
+        managed: true,
+        help: "The catalog entry a guided app setup made this for.",
+      },
+      {
+        key: "access",
+        label: "Access",
+        kind: "text",
+        required: false,
+        managed: true,
+        help: "What the owner turned on when it was set up.",
+      },
+      {
+        key: "account",
+        label: "Signed in as",
+        kind: "text",
+        required: false,
+        managed: true,
+        help: "Who the service says the token belongs to.",
+      },
       {
         key: "clis",
         label: "For",
@@ -377,7 +448,95 @@ export const CONNECTION_TYPES: readonly ConnectionTypeDef[] = [
     ],
     lists: [],
   },
+  {
+    type: "api",
+    label: "Signed-in service",
+    summary: "A service majhi signed in to for you. Runs get a short-lived token in a variable",
+    fields: [
+      {
+        key: "service",
+        label: "Service",
+        kind: "text",
+        required: true,
+        managed: true,
+        help: "The catalog entry this sign-in is for.",
+      },
+      {
+        key: "auth",
+        label: "Sign-in",
+        kind: "text",
+        required: true,
+        managed: true,
+        help: "majhi renews the token. The refresh token never leaves majhi.",
+        choices: [{ value: "oauth", label: "Sign in with the service" }],
+      },
+      {
+        key: "token_var",
+        label: "Variable",
+        kind: "text",
+        required: true,
+        managed: true,
+        help: "The variable a run gets the access token in.",
+      },
+    ],
+    lists: [],
+  },
+  {
+    type: "cli",
+    label: "Command-line tool",
+    summary: "A tool's own login, kept in a folder of this workspace. Only its runs see it",
+    fields: [
+      {
+        key: "tool",
+        label: "Tool",
+        kind: "text",
+        required: true,
+        managed: true,
+        help: "The command-line tool this sign-in is for.",
+      },
+      {
+        key: "account",
+        label: "Signed in as",
+        kind: "text",
+        required: false,
+        managed: true,
+        help: "Who the tool says is signed in.",
+      },
+    ],
+    lists: [],
+  },
+  {
+    type: "git",
+    label: "GitLab or GitHub CLI",
+    summary: "glab or gh with this workspace's own git sign-in, renewed by majhi. Changes ask first",
+    fields: [
+      {
+        key: "provider",
+        label: "Service",
+        kind: "text",
+        required: true,
+        help: "GitLab gives runs glab with GITLAB_TOKEN, GitHub gives gh with GH_TOKEN.",
+        choices: [
+          { value: "gitlab", label: "GitLab (glab)" },
+          { value: "github", label: "GitHub (gh)" },
+        ],
+      },
+      {
+        key: "host",
+        label: "Host",
+        kind: "text",
+        required: false,
+        format: "host",
+        placeholder: "gitlab.com",
+        help: "Leave empty for gitlab.com or github.com. The workspace must be signed in to this host.",
+      },
+    ],
+    lists: [],
+  },
 ];
+
+/** Types only Connect makes (5.14): the new-connection form does not offer them. */
+export const CONNECT_ONLY_TYPES: readonly ConnectionType[] = ["api", "cli"];
 
 const BY_TYPE = new Map(CONNECTION_TYPES.map((def) => [def.type, def]));
 
@@ -572,6 +731,8 @@ export const ConnectionConfigSchema = z
     env: z.record(VariableNameSchema, ConnectionEntrySchema).optional(),
     /** The exact write actions the org allows without asking the owner. */
     allow: z.array(z.string().trim().min(1).max(500)).max(200).optional(),
+    /** Agents of the workspace this connection never reaches. Every other agent of it gets it. */
+    agents_off: z.array(IdSchema).max(200).optional(),
   })
   .superRefine((conn, ctx) => {
     for (const issue of storageIssues(conn)) ctx.addIssue({ code: "custom", ...issue });
@@ -651,10 +812,27 @@ const WORD = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
 const WEB_URL = z.url({ protocol: /^https?$/ });
 /** A host name or an ssh alias. Never starts with a dash, so it cannot pass for an option. */
 const HOST = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,252}$/;
+/** An ssh target: an alias or a host, with an optional user and port. Never starts with `-`. */
+export const SSH_TARGET =
+  /^(?:[A-Za-z0-9_][A-Za-z0-9._-]{0,63}@)?[A-Za-z0-9_][A-Za-z0-9._-]{0,252}(?::\d{1,5})?$/;
+
+/** A key under ~/.ssh, by its public file: `~/.ssh/<name>.pub`. No path leaves ~/.ssh. */
+export const SSH_PUBKEY = /^~\/\.ssh\/[A-Za-z0-9._-]{1,128}\.pub$/;
+
+/**
+ * `ssh` arguments for a target: the chosen key (its public file, so the agent signs with exactly that
+ * key), `-p <port>` when the target names one, then `--` and `user@host`.
+ */
+export function sshTargetArgs(target: string, key?: { pub: string } | undefined): string[] {
+  const m = /^(.*?)(?::(\d{1,5}))?$/.exec(target);
+  const host = m?.[1] ?? target;
+  const keyArgs = key === undefined ? [] : ["-o", "IdentitiesOnly=yes", "-o", `IdentityFile=${key.pub}`];
+  return [...keyArgs, ...(m?.[2] === undefined ? [] : ["-p", m[2]]), "--", host];
+}
 
 /** Why a text value does not fit its field's format, or undefined. */
 export function formatIssue(
-  field: Pick<ConnectionField, "format" | "label">,
+  field: Pick<ConnectionField, "format" | "label" | "pick">,
   value: string,
 ): string | undefined {
   if (field.format === "port") {
@@ -667,6 +845,16 @@ export function formatIssue(
     return WEB_URL.safeParse(value).success
       ? undefined
       : `${field.label} is a web address, like https://mcp.acme.com/mcp`;
+  }
+  if (field.pick === "ssh-key") {
+    return SSH_PUBKEY.test(value)
+      ? undefined
+      : `${field.label} is a public key in ~/.ssh, like ~/.ssh/id_ed25519.pub`;
+  }
+  if (field.format === "ssh") {
+    return SSH_TARGET.test(value)
+      ? undefined
+      : `${field.label} is a Host of ~/.ssh/config or user@address, like root@203.0.113.10`;
   }
   if (field.format === "host") {
     return HOST.test(value) ? undefined : `${field.label} is a host name, like imap.acme.com`;
@@ -765,8 +953,10 @@ export const ConnectionViewSchema = z.object({
   headers: z.record(z.string(), ConnectionValueViewSchema),
   env: z.record(z.string(), ConnectionValueViewSchema),
   allow: z.array(z.string()),
-  /** The agents whose `connections` list it. */
+  /** The agents it reaches: every agent of its workspace and every root agent, minus `agentsOff`. */
   agents: z.array(IdSchema),
+  /** The agents it is switched off for. */
+  agentsOff: z.array(IdSchema),
   /** Why it would not work yet, like a required field not set. Empty when it is ready. */
   problems: z.array(z.string()),
   /** The last Test since majhi started. */
@@ -809,6 +999,8 @@ export const ConnectionUpdateInputSchema = z.object({
   fields: z.record(z.string(), ConnectionTextSchema.nullable()).optional(),
   /** Each list given replaces the old one. A left-out entry goes, with its secret or file. */
   ...listInputs,
+  /** Replaces the agents it is switched off for. Only the owner sets it. */
+  agentsOff: z.array(IdSchema).max(200).optional(),
 });
 export type ConnectionUpdateInput = z.infer<typeof ConnectionUpdateInputSchema>;
 

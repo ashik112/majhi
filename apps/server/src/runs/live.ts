@@ -54,8 +54,14 @@ export class RunLive {
     return id;
   }
 
-  system(run: AgentRun, level: "info" | "warn" | "error", text: string): void {
-    this.post(run, { type: "system", level, text, agent: run.agent });
+  system(run: AgentRun, level: "info" | "warn" | "error", text: string, decision?: string): void {
+    this.post(run, {
+      type: "system",
+      level,
+      text,
+      agent: run.agent,
+      ...(decision === undefined ? {} : { decision }),
+    });
   }
 
   /** A system line, returned as the stored item (for commands that answer with it). */

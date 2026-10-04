@@ -9,6 +9,7 @@ import { Select } from "@/components/ui/select";
 import { RowsSkeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { clockTime, type Tone } from "@/features/autonomy/model";
+import { WrongButton } from "@/features/decisions/wrong-button";
 import { useAutonomyEvents } from "@/lib/autonomy-queries";
 import { useCaptainLog, useCaptainUndo } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
@@ -133,6 +134,7 @@ function EntryRow({
         {full && entry.checked && (
           <span className="text-xs text-fg-faint text-pretty">Checked: {entry.checked}</span>
         )}
+        {action?.decision !== undefined && <WrongButton decision={action.decision} />}
         {full && action?.outcome === "done" && action.undo === "no" && action.undoNote && (
           <span className="text-xs text-fg-faint text-pretty">No Undo: {action.undoNote}</span>
         )}
@@ -193,7 +195,7 @@ function UndoDialog({ entry, onClose }: { entry: LogEntry; onClose: () => void }
 export function RecentLog({
   orgs,
   now,
-  limit = 8,
+  limit = 4,
 }: {
   orgs: readonly CaptainOrg[];
   now: number;
@@ -201,15 +203,16 @@ export function RecentLog({
 }) {
   const { entries, loading, error } = useLogEntries("", "all", true);
   const [undoing, setUndoing] = useState<LogEntry>();
+  const [all, setAll] = useState(false);
   const name = (id: string | undefined) => orgs.find((o) => o.org === id)?.name;
-  if (error) return <p className="text-sm text-red">Could not load the log: {describeError(error)}</p>;
+  if (error) return <p className="text-sm text-red">Could not load the history: {describeError(error)}</p>;
   if (loading) return <RowsSkeleton rows={3} height={32} />;
   if (entries.length === 0)
     return <p className="text-sm text-fg-faint">Nothing yet. What the captain does shows up here.</p>;
   return (
     <>
       <ul className="flex flex-col">
-        {entries.slice(0, limit).map((entry) => (
+        {entries.slice(0, all ? 12 : limit).map((entry) => (
           <EntryRow
             key={entry.key}
             entry={entry}
@@ -220,6 +223,16 @@ export function RecentLog({
           />
         ))}
       </ul>
+      {entries.length > limit && (
+        <button
+          type="button"
+          onClick={() => setAll(!all)}
+          aria-expanded={all}
+          className="mt-1 cursor-pointer self-start text-sm text-blue hover:underline"
+        >
+          {all ? "Show fewer" : `Show ${Math.min(entries.length, 12) - limit} more`}
+        </button>
+      )}
       {undoing && <UndoDialog entry={undoing} onClose={() => setUndoing(undefined)} />}
     </>
   );
@@ -235,7 +248,7 @@ export function FullLog({ orgs, now }: { orgs: readonly CaptainOrg[]; now: numbe
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 pb-2">
-        <Segmented label="Show in the log" value={filter} segments={LOG_FILTERS} onChange={setFilter} />
+        <Segmented label="Show in History" value={filter} segments={LOG_FILTERS} onChange={setFilter} />
         <Select
           aria-label="Workspace"
           value={org}
@@ -252,7 +265,7 @@ export function FullLog({ orgs, now }: { orgs: readonly CaptainOrg[]; now: numbe
       </div>
       {error ? (
         <p role="alert" className="pt-2 text-sm text-red">
-          Could not load the log: {describeError(error)}
+          Could not load the history: {describeError(error)}
         </p>
       ) : loading ? (
         <RowsSkeleton rows={5} height={40} />

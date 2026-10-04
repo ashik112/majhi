@@ -11,18 +11,9 @@ import { TaskIdSchema, TaskPrioritySchema } from "./tasks.ts";
  * from running away. The rules are in docs/PROGRESS.md under Phase 13.
  */
 
-/** The upkeep chores (the table in 5.18). */
-export const CaptainChoreSchema = z.enum([
-  "ship",
-  "cards",
-  "questions",
-  "memory",
-  "projects",
-  "triage",
-  "cleanup",
-  "stuck",
-]);
-export type CaptainChore = z.infer<typeof CaptainChoreSchema>;
+import { type CaptainChore, CaptainChoreSchema } from "./chores.ts";
+
+export { type CaptainChore, CaptainChoreSchema };
 
 export const CHORE_LABEL: Record<CaptainChore, string> = {
   ship: "Ship finished work",
@@ -33,6 +24,7 @@ export const CHORE_LABEL: Record<CaptainChore, string> = {
   triage: "Task triage",
   cleanup: "Cleanup",
   stuck: "Stuck tasks",
+  followups: "Follow-ups",
 };
 
 /** Who caused an event. The captain's own events never start an upkeep run. */
@@ -95,6 +87,8 @@ export const CaptainActionSchema = z.object({
   /** What it looked at, one line: the checks that passed, the card, the rule. */
   evidence: z.string().optional(),
   task: TaskIdSchema.optional(),
+  /** The decision provider's decision this line came from, so the owner can say it was wrong (5.12). */
+  decision: z.string().max(40).optional(),
   outcome: z.enum(["done", "asked", "skipped", "failed"]),
   /** `yes`: Undo works. `no`: it cannot be undone (a push, a removed worktree), with `undoNote`. `done`: undone. */
   undo: z.enum(["yes", "no", "done"]).optional(),
@@ -123,6 +117,8 @@ export const CaptainChoreStateSchema = z.object({
   chore: CaptainChoreSchema,
   /** Turned off after two failures in a row, with why. Absent: on. */
   off: z.string().optional(),
+  /** A run is going now. */
+  running: z.boolean().optional(),
   /** Actions it took today, against its daily cap. */
   today: z.number().int().nonnegative(),
   cap: z.number().int().positive(),
@@ -190,6 +186,24 @@ export const CaptainChoreInputSchema = z.object({
   chore: CaptainChoreSchema,
 });
 
+/** The chores the owner can run by hand: the two that run while Autonomous is Off. */
+export const CaptainRunnableChoreSchema = z.enum(["memory", "cleanup"]);
+export type CaptainRunnableChore = z.infer<typeof CaptainRunnableChoreSchema>;
+
+export const CaptainRunChoreInputSchema = z.object({
+  org: z.string().min(1).max(63),
+  chore: CaptainRunnableChoreSchema,
+});
+
+/** `captain.runChore`: whether a run started, and one plain line either way. The run goes on in the background. */
+export const CaptainRunChoreResultSchema = z.object({
+  started: z.boolean(),
+  text: z.string(),
+  /** The run went past today's cap because the owner asked for it. */
+  overCap: z.boolean(),
+});
+export type CaptainRunChoreResult = z.infer<typeof CaptainRunChoreResultSchema>;
+
 /**
  * A chore reached its daily cap in a workspace, and the captain asks the owner whether to raise it
  * for today: one per chore, workspace and day. `kind` says which cap it reached, actions or runs.
@@ -205,7 +219,7 @@ export const CaptainCapAskSchema = z.object({
   cap: z.number().int().positive(),
   /** The cap for the rest of the day after "Raise". */
   raiseTo: z.number().int().positive(),
-  /** "Pyzasoft: the captain answered its 20 questions for today. Raise the limit for today?" */
+  /** "Hooli: the captain answered its 20 questions for today. Raise the limit for today?" */
   text: z.string(),
   at: z.string(),
 });
@@ -228,7 +242,7 @@ export const BudgetAskSchema = z.object({
   raiseTo: BudgetSchema,
   /** Tasks waiting on it when it was asked. */
   waiting: z.number().int().nonnegative(),
-  /** "Pyzasoft used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?" */
+  /** "Hooli used its $20 for today. 3 tasks are waiting. Raise it to $40 for today?" */
   text: z.string(),
   at: z.string(),
 });

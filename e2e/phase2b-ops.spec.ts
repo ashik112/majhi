@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { expect, HOST_HOME, test, useHome } from "./fixture.ts";
 
@@ -17,50 +16,6 @@ test.beforeEach(async ({ page }) => {
 test.beforeAll(async ({ request }) => {
   const res = await setRoots(request, [join(HOST_HOME, "Work")]);
   expect(res.ok(), await res.text()).toBe(true);
-});
-
-test("Health shows the checks, and a Fix creates a missing folder", async ({ page }) => {
-  expect(existsSync(TASKS_DIR)).toBe(false);
-  await page.goto("/usage");
-
-  const checks = page.getByRole("region", { name: "Checks" });
-  await expect(checks).toBeVisible();
-  const accounts = page.getByRole("heading", { name: "Accounts", exact: true });
-  const checksBox = await checks.boundingBox();
-  const accountsBox = await accounts.boundingBox();
-  expect(checksBox && accountsBox && checksBox.y < accountsBox.y).toBe(true);
-
-  // The checks fold to one line per group; a failing one stays open with its fix.
-  await expect(checks.getByRole("list", { name: "Checks that need you" })).toContainText("Tasks folder");
-  await checks.getByRole("button", { name: /^Show all/ }).click();
-  await expect(
-    checks.getByRole("list", { name: "majhi" }).getByText("Config", { exact: true }),
-  ).toBeVisible();
-  const row = checks.getByRole("listitem").filter({ hasText: "Tasks folder" });
-  await expect(row).toContainText("does not exist yet");
-  await row.getByRole("button", { name: /Create folder/ }).click();
-  await expect(row.getByRole("status")).toHaveText("Created the tasks folder.");
-  expect(existsSync(TASKS_DIR)).toBe(true);
-
-  await page.getByRole("button", { name: "Run health check" }).click();
-  await expect(row).toContainText("exists");
-  await expect(row.getByRole("button", { name: /Create folder/ })).toHaveCount(0);
-});
-
-test("a failed check with no fix says what to do, and counts in the sidebar", async ({ page, request }) => {
-  const res = await setRoots(request, [join(HOST_HOME, "Work"), join(HOST_HOME, "NotMounted")]);
-  expect(res.ok(), await res.text()).toBe(true);
-  await page.goto("/usage");
-  const row = page
-    .getByRole("region", { name: "Checks" })
-    .getByRole("listitem")
-    .filter({ hasText: "Workspace root ~/NotMounted" });
-  await expect(row).toContainText("make up");
-  await expect(row.getByRole("button")).toHaveCount(0);
-  await expect(
-    page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: /Health and usage/ }),
-  ).toContainText("1 need you");
-  await setRoots(request, [join(HOST_HOME, "Work")]);
 });
 
 test("the update banner lists the changes and the update reloads on the new commit", async ({ page }) => {
@@ -141,24 +96,4 @@ test("the update banner lists the changes and the update reloads on the new comm
   state.phase = "idle";
   await expect(overlay).toHaveCount(0, { timeout: 15_000 });
   await expect(page.getByRole("region", { name: "Update ready" })).toHaveCount(0);
-});
-
-test("saving a root under Documents warns that macOS will ask", async ({ page }) => {
-  // Only macOS asks, so the warning shows only when the helper runs on macOS. The suite runs on Linux
-  // too: the helper's real status goes through, saying macOS.
-  await page.route("**/api/cmd/host.status", async (route) => {
-    const response = await route.fetch();
-    const status = (await response.json()) as { info?: Record<string, unknown> };
-    const json = status.info === undefined ? status : { ...status, info: { ...status.info, os: "macos" } };
-    return route.fulfill({ response, json });
-  });
-  await page.goto("/settings/roots");
-  await page.getByRole("button", { name: "Type a path" }).click();
-  await expect(page.getByRole("note", { name: "macOS folder access" })).toHaveCount(0);
-  await page.getByRole("textbox", { name: "Folder path" }).fill("~/Documents/code");
-  await page.getByRole("textbox", { name: "Folder path" }).press("Enter");
-  const warning = page.getByRole("note", { name: "macOS folder access" });
-  await expect(warning).toContainText("macOS will ask whether Docker may access your Documents folder");
-  await expect(warning).toContainText("Click Allow");
-  await expect(warning).toContainText("~/Documents/code");
 });

@@ -232,11 +232,15 @@ const RUN_FLAGS: FlagTable = {
   "--mount": true,
   "--env": true,
   "--pull": true,
+  "--read-only": false,
+  "--tmpfs": true,
 };
 
 const PUBLISH = /^127\.0\.0\.1::([1-9][0-9]{0,4})$/;
 const ANONYMOUS_MOUNT = /^type=volume,target=([^,]+)$/;
 const NAMED_MOUNT = /^type=volume,source=([^,]+),target=([^,]+)$/;
+const DBCHECK_NAME = /^majhi-dbcheck-[a-z0-9]{8,16}$/;
+const DBCHECK_TMPFS = "/tmp:rw,noexec,nosuid,size=16m";
 const SERVICE_NETWORK = /^name=([^,]+),alias=([^,]+)$/;
 
 function checkRun(parts: DockerParts, s: Safety): void {
@@ -257,7 +261,7 @@ function checkRun(parts: DockerParts, s: Safety): void {
   if (!/^[1-9][0-9]{0,2}$/.test(pids) || Number(pids) > PIDS_LIMIT)
     refuse(`The process limit ${pids} is not allowed.`);
   checkLimits(flags);
-  const kind = checkLabels(flags, s, ["preview", "service"]);
+  const kind = checkLabels(flags, s, ["preview", "service", "dbcheck"]);
   const name = one(flags, "--name");
   checkKeyValues(all(flags, "--env"), 32, 4_000, "environment variables");
   if (parts.command.length > 32 || parts.command.some((a) => a.length > 2_000 || a.includes("\u0000"))) {
@@ -271,6 +275,18 @@ function checkRun(parts: DockerParts, s: Safety): void {
   const publishes = all(flags, "--publish");
   const pull = atMostOne(flags, "--pull");
 
+  if (kind === "dbcheck") {
+    // A database watch's client: a throwaway container on the default network (it must reach the
+    // database), a read-only root, one scratch folder in memory, no mount, no published port.
+    if (!DBCHECK_NAME.test(name)) refuse("A database check container is named majhi-dbcheck-<id>.");
+    if (!is(flags, "--read-only")) refuse("A database check runs with a read-only root.");
+    if (all(flags, "--tmpfs").join() !== DBCHECK_TMPFS)
+      refuse("A database check has one scratch folder, /tmp in memory.");
+    if (networks.length > 0 || mounts.length > 0 || publishes.length > 0 || pull !== undefined) {
+      refuse("A database check has no network flag, mount, published port or pull flag.");
+    }
+    return;
+  }
   if (kind === "preview") {
     if (name !== names.previewContainer)
       refuse(`The preview container must be named ${names.previewContainer}.`);
@@ -467,12 +483,10 @@ export function assertSafe(parts: DockerParts, s: Safety): void {
 // ---------------------------------------------------------------------------
 // Builders
 
-const labelFlags = (kind: ContainerKind | "image" | "network" | "volume", task: string): string[] => [
-  "--label",
-  `majhi.container=${kind}`,
-  "--label",
-  `majhi.task=${task}`,
-];
+const labelFlags = (
+  kind: ContainerKind | "dbcheck" | "image" | "network" | "volume",
+  task: string,
+): string[] => ["--label", `majhi.container=${kind}`, "--label", `majhi.task=${task}`];
 
 function safe(parts: DockerParts, s: Safety): DockerParts {
   assertSafe(parts, s);
@@ -480,7 +494,12 @@ function safe(parts: DockerParts, s: Safety): DockerParts {
 }
 
 /** The flags every container has. */
-function containerFlags(kind: "preview" | "service", name: string, limits: Limits, s: Safety): string[] {
+function containerFlags(
+  kind: "preview" | "service" | "dbcheck",
+  name: string,
+  limits: Limits,
+  s: Safety,
+): string[] {
   return [
     "--rm",
     "--name",
@@ -654,6 +673,35 @@ export function volumeCreateArgs(s: Safety, name: string): DockerParts {
       flags: labelFlags("volume", s.task),
       image: containerNames(s.task).volume(name),
       command: [],
+    },
+    s,
+  );
+}
+
+/** The task key the labels of a database check carry: a watch belongs to no task. */
+export const DBCHECK_TASK = "WATCH-1";
+
+/** `docker run` of a database watch's client. The environment is the connection's values, for this one run. */
+export function dbCheckRunArgs(
+  name: string,
+  image: string,
+  command: readonly string[],
+  env: Record<string, string>,
+  limits: Limits,
+  s: Safety,
+): DockerParts {
+  return safe(
+    {
+      verb: ["run"],
+      flags: [
+        ...containerFlags("dbcheck", name, limits, s),
+        "--read-only",
+        "--tmpfs",
+        DBCHECK_TMPFS,
+        ...envFlags(env),
+      ],
+      image,
+      command: [...command],
     },
     s,
   );

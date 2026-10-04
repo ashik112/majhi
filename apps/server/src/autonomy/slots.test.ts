@@ -99,20 +99,19 @@ describe("the captain and the repo rule", () => {
     );
     expect(t.status(same)).toBe("inbox");
 
-    // A new task the captain files with start waits in the backlog.
+    // A new task whose plan is not known yet runs beside it: its own worktree keeps them apart.
     const filed = await t.call("majhi_tasks_create", {
-      text: "Tidy the login form in src/ui/form.ts",
+      text: "Tidy the login form",
       repos: [{ project: "acme-api" }],
       start: true,
     });
-    expect(filed.text).toContain(`${running} is already changing acme-api`);
-    expect(filed.text).toContain("Filed without starting");
+    expect(filed.text).not.toContain("Not starting");
 
     // Plans naming different top-level areas may run together.
     const docs = await t.ownerTask("Update the setup guide in docs/guide.md");
     const yes = await t.call("majhi_tasks_start", { id: docs });
-    expect(yes.text).not.toContain("Not starting");
-    expect(t.status(docs)).toBe("running");
+    // Not held by the repo rule (it may still wait for a free slot).
+    expect(yes.text).not.toContain("already changing");
 
     // The owner's own start is never blocked.
     expect((await t.h.cmd("tasks.start", { id: same })).status).toBe(200);

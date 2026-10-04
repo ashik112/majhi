@@ -176,7 +176,7 @@ export function ContextSection({ settings }: { settings: Settings }) {
           <PageLink page="limits" className="underline">
             Limits page
           </PageLink>
-          : the autonomous budget, each workspace's budget, account floors and weekly budgets.
+          : the auto-pilot budget, each workspace's budget, account floors and weekly budgets.
         </p>
       </Section>
       <Section

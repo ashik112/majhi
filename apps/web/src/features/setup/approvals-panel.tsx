@@ -10,6 +10,7 @@ import {
   type CardCounts,
   EMPTY_COUNTS,
   effectiveMode,
+  isDestructiveCommand,
   type ModeChange,
   type PolicyModes,
   policyChanges,
@@ -251,15 +252,20 @@ function ModeSelect({
   label,
   value,
   onChange,
+  locked = false,
 }: {
   label: string;
   value: ApprovalMode | typeof MIXED;
   onChange: (mode: ApprovalMode) => void;
+  /** A destructive command: it always asks, so its mode cannot change. */
+  locked?: boolean;
 }) {
   return (
     <Select
       aria-label={label}
       value={value}
+      disabled={locked}
+      title={locked ? "Deletes and removals always ask you" : undefined}
       className="w-[208px] shrink-0"
       onChange={(e) => {
         const mode = MODES.find((m) => m === e.target.value);
@@ -351,7 +357,12 @@ function GroupRow({
             </span>
           </span>
         </button>
-        <ModeSelect label={`${group.label}: every command`} value={value} onChange={onGroup} />
+        <ModeSelect
+          label={`${group.label}: every command`}
+          value={value}
+          locked={group.commands.every((c) => isDestructiveCommand(c.name))}
+          onChange={onGroup}
+        />
       </div>
       {expanded && (
         <ul
@@ -375,7 +386,12 @@ function GroupRow({
                     <CountsText counts={counts.get(c.name) ?? EMPTY_COUNTS} />
                   </span>
                 </span>
-                <ModeSelect label={c.label} value={mode} onChange={(m) => onCommand(c.name, c.risk, m)} />
+                <ModeSelect
+                  label={c.label}
+                  value={mode}
+                  locked={isDestructiveCommand(c.name)}
+                  onChange={(m) => onCommand(c.name, c.risk, m)}
+                />
               </li>
             );
           })}

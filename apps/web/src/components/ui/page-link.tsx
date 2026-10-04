@@ -1,6 +1,6 @@
+import { PAGE_PATH, type PageName } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { PAGE_PATH, type PageName } from "@/lib/pages";
 import type { AppSearch } from "@/router";
 
 /** A link to another page, by name, keeping only the search params that have a value. */

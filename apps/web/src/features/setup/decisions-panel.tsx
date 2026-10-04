@@ -30,6 +30,7 @@ import {
 import { describeError } from "@/lib/errors";
 import { useHostStatus } from "@/lib/queries";
 import { RecentDecisions } from "./recent-decisions";
+import { SlotEvals } from "./slot-evals";
 
 const NAME: Record<ProviderId, string> = {
   laya: "Laya",
@@ -67,6 +68,7 @@ export function DecisionsSection() {
       <DetailSection title="Ask the decision model" note="Try a question against the order above">
         <AskBox />
       </DetailSection>
+      <SlotEvals />
       <RecentDecisions />
     </>
   );

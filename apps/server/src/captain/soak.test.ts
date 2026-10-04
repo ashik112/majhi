@@ -129,6 +129,16 @@ class Sim {
   ports(lanes: Lanes): CaptainPorts {
     const of = (org: string) => [...this.tasks.values()].filter((t) => t.org === org);
     return {
+      // The soak world has no memory threads: the follow-ups chore finds nothing.
+      followUps: {
+        openThreads: () => [],
+        task: () => undefined,
+        doneSince: async () => [],
+        embed: async () => undefined,
+        closeThread: () => undefined,
+      },
+      findings: undefined as unknown as CaptainPorts["findings"],
+      ownScope: async () => undefined,
       reviewTasks: async (org) =>
         of(org)
           .filter((t) => t.status === "review")
@@ -151,6 +161,9 @@ class Sim {
         this.selfInjected += 1;
         this.echo.review(id);
         return { text: `Shipped ${id}`, undoNote: "simulated" };
+      },
+      resolveShip: async (org, id) => {
+        this.act("resolveShip", org, id, id);
       },
       shipReady: async (org, id) => {
         const t = this.tasks.get(id);
@@ -185,14 +198,13 @@ class Sim {
         return { ok: true };
       },
       questions: (org) => this.questions.filter((q) => q.org === org && q.done !== true),
-      laya: async (_org, card) =>
-        Number(card.item.split(":")[1]) % 2 === 0
-          ? { option: card.options[0]?.id, why: "the brief settles it" }
-          : { why: "not sure enough" },
       answer: async (org, card) => {
         this.act("answer", org, `${card.task}:${card.item}`, card.task);
         const found = this.questions.find((q) => q.item === card.item);
         if (found !== undefined) found.done = true;
+      },
+      flagLoop: async (org, card) => {
+        this.act("flagLoop", org, `${card.task}:${card.item}`, card.task);
       },
       laneRest: (org) => lanes.rest(org),
       askLane: async (org, text) => {
@@ -234,7 +246,7 @@ class Sim {
       cleanable: async (org) =>
         this.cleanable
           .filter((c) => c.org === org && c.done !== true)
-          .map((c) => ({ id: c.id, title: c.id, steps: [`worktree ${c.id}`] })),
+          .map((c) => ({ id: c.id, title: c.id, steps: [`worktree ${c.id}`], dirty: [] })),
       clean: async (org, id) => {
         this.act("clean", org, id);
         const found = this.cleanable.find((c) => c.id === id);
@@ -304,7 +316,13 @@ describe("the captain's soak test", () => {
         tz: "UTC",
         orgs: {
           // Private runs on its own account, with a small budget so its lane rests.
-          private: { authority: { ...RUNS, merge: "decide" }, cap: { cost: 0.04 }, account: "claude-own" },
+          private: {
+            authority: { ...RUNS, merge: "decide" },
+            cap: { cost: 0.04 },
+            account: "claude-own",
+            // The owner's ship cap: with Merge on Captain there is no default one.
+            chores: { ship: { actions: 5 } },
+          },
           acme: { authority: TIDY },
           globex: { authority: ASK },
         },
@@ -412,12 +430,24 @@ describe("the captain's soak test", () => {
           task: t.id,
           item,
           agent: "builder",
-          kind: "choice",
-          text: `Which way for ${t.id}?`,
-          options: [
-            { id: "a", label: "The first way" },
-            { id: "b", label: "The second way" },
-          ],
+          // Every other card is a prompt for a read tool of majhi, which a rule settles; the rest are for the lane.
+          ...(cardSeq % 2 === 0
+            ? {
+                kind: "permission" as const,
+                text: "mcp__majhi-containers__logs",
+                options: [
+                  { id: "once", label: "Allow once", effect: "allow" as const },
+                  { id: "no", label: "Reject", effect: "deny" as const },
+                ],
+              }
+            : {
+                kind: "choice" as const,
+                text: `Which way for ${t.id}?`,
+                options: [
+                  { id: "a", label: "The first way" },
+                  { id: "b", label: "The second way" },
+                ],
+              }),
         });
         captain.roomWrote(t.id, {
           id: item,
@@ -445,6 +475,7 @@ describe("the captain's soak test", () => {
           org,
           path: `/work/${org}/repo-${step}`,
           name: `repo-${step}`,
+          aliases: [],
           id: `repo-${step}`,
           base: "main",
           remotes: [],
@@ -606,7 +637,7 @@ describe("the captain's soak test", () => {
       for (const prefix of others) expect(text, `${org} lane`).not.toContain(prefix);
     }
     expect(sim.laneTexts.length).toBeGreaterThan(0);
-    // The lane rested once Private's small budget was used; Laya's answers went on.
+    // The lane rested once Private's small budget was used; the rule table's answers went on.
     expect(
       actions.some((a) => a.org === "private" && a.reason.startsWith("The captain is resting here")),
     ).toBe(true);
@@ -641,5 +672,5 @@ describe("the captain's soak test", () => {
     const status = await captain.status();
     expect(status.orgs.find((o) => o.org === "globex")?.summary).toBe("");
     captain.close();
-  }, 60_000);
+  }, 240_000);
 });

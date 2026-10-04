@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { serve } from "@hono/node-server";
+import { prepareStart } from "./backup/boot.ts";
 import { parseEnv, type ServerEnv } from "./env.ts";
 import { errorMessage } from "./errors.ts";
 import { HostLink } from "./host/link.ts";
@@ -20,6 +21,9 @@ if (env.runner.mode === "local") {
     "majhi: MAJHI_RUNNER=local. Agents run next to majhi, with its access to files and git, not in a runner container per run. Use it only for tests and development.",
   );
 }
+
+// A staged restore is swapped in, and a database about to be migrated is backed up, before any file opens.
+await prepareStart(env);
 
 const hostLink = new HostLink();
 const majhi = createMajhi(env, { hostLink });

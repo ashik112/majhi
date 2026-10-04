@@ -1,21 +1,20 @@
 import type { AutonomyStatus, CaptainStatus } from "@majhi/shared";
 import { PRIVATE } from "@majhi/shared";
-import { Ban } from "lucide-react";
 import { type ReactNode, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Lamp } from "@/components/ui/lamp";
+import { Lamp, type LampState } from "@/components/ui/lamp";
 import { PageLink } from "@/components/ui/page-link";
 import { RowsSkeleton } from "@/components/ui/skeleton";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { useExclude } from "@/features/autonomy/desk";
-import { clockTime } from "@/features/autonomy/model";
 import { TaskRef } from "@/features/autonomy/task-ref";
 import { DecisionRow } from "@/features/decisions/decision-row";
+import { useNeedsYou } from "@/features/decisions/needs-you";
 import { cn } from "@/lib/cn";
 import { useDecisions } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
 import { GLASS } from "@/lib/glass";
+import { FindingsBox } from "./findings";
 import { RecentLog } from "./log";
+import { WeekLine } from "./scorecard";
 
 // Each section shows a few whole rows; the rest open in place. The column scrolls as one.
 const SHOWN_DECISIONS = 2;
@@ -27,9 +26,11 @@ function Box({
   count,
   aside,
   label,
+  lamp,
   children,
 }: {
   title: string;
+  lamp?: LampState;
   count?: number | undefined;
   aside?: ReactNode;
   label?: string;
@@ -38,9 +39,10 @@ function Box({
   return (
     <section
       aria-label={label ?? title}
-      className="flex min-w-0 flex-col border-b border-line px-4 py-3 last:border-b-0"
+      className="flex min-w-0 flex-col gap-1 border-b border-line px-3.5 py-2.5 last:border-b-0"
     >
-      <div className="flex min-h-7 items-center gap-2">
+      <div className="flex min-h-6 items-center gap-2">
+        {lamp && <Lamp state={lamp} size={8} />}
         <h2 className="text-base font-semibold text-fg">{title}</h2>
         {count !== undefined && <span className="tnum font-mono text-sm text-fg-faint">{count}</span>}
         {aside && <div className="ml-auto flex min-w-0 items-center gap-2 text-sm">{aside}</div>}
@@ -69,16 +71,18 @@ function More({ hidden, open, onToggle }: { hidden: number; open: boolean; onTog
 function NeedsYou() {
   const query = useDecisions();
   const decisions = query.data?.decisions;
-  const shown = (decisions ?? []).slice(0, SHOWN_DECISIONS);
-  const total = decisions?.length ?? 0;
+  const total = useNeedsYou() ?? 0;
+  const [open, setOpen] = useState(false);
+  const shown = (decisions ?? []).slice(0, open ? 12 : SHOWN_DECISIONS);
   return (
     <Box
       title="Needs you"
+      lamp={total > 0 ? "needs" : "idle"}
       count={decisions === undefined ? undefined : total}
       aside={
-        total > SHOWN_DECISIONS ? (
+        total > 0 ? (
           <PageLink page="decisions" className="text-blue hover:underline">
-            All {total} in Decisions
+            All {total}
           </PageLink>
         ) : undefined
       }
@@ -88,10 +92,7 @@ function NeedsYou() {
       ) : decisions === undefined ? (
         <RowsSkeleton rows={2} height={64} />
       ) : total === 0 ? (
-        <p className="flex items-center gap-2 text-sm text-fg-muted">
-          <Lamp state="idle" size={7} />
-          Nothing needs you right now.
-        </p>
+        <p className="text-sm text-fg-muted">Nothing needs you.</p>
       ) : (
         <div className="-mx-3.5">
           {shown.map((d) => (
@@ -99,52 +100,39 @@ function NeedsYou() {
           ))}
         </div>
       )}
+      <More hidden={Math.min(total, 12) - SHOWN_DECISIONS} open={open} onToggle={() => setOpen(!open)} />
     </Box>
   );
 }
 
-/** A task line: the title first, the workspace, one line of why, and the id small. */
+/** A task line: a lamp, the task id and title, and one short word on the right. */
 function WorkLine({
   title,
   task,
-  workspace,
-  why,
-  status,
+  lamp,
+  note,
+  noteClass,
   aside,
 }: {
   title: string;
   task?: string | undefined;
-  workspace: string | undefined;
-  why: string | undefined;
-  status?: AutonomyStatus["now"][number]["status"];
+  lamp?: LampState;
+  note?: string | undefined;
+  noteClass?: string | undefined;
   aside?: ReactNode;
 }) {
   return (
-    <li className="group flex min-w-0 gap-2 border-t border-line py-1.5 first:border-t-0">
-      <span className="flex min-w-0 flex-1 flex-col gap-px">
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-base text-fg" title={title}>
-            {title}
-          </span>
-          {workspace && (
-            <span
-              className="max-w-[40%] shrink-0 truncate rounded-full border border-line-control px-2 py-px text-xs text-fg-muted"
-              title={workspace}
-            >
-              {workspace}
-            </span>
-          )}
-          {status && <StatusBadge status={status} />}
-        </span>
-        <span className="flex min-w-0 items-baseline gap-2 text-sm text-fg-muted">
-          {task && <TaskRef task={task} />}
-          {why && (
-            <span className="min-w-0 truncate" title={why}>
-              {why}
-            </span>
-          )}
-        </span>
+    <li className="flex min-h-6 min-w-0 items-center gap-2 text-base text-fg-soft">
+      {lamp && <Lamp state={lamp} size={6} />}
+      {task && <TaskRef task={task} />}
+      <span className="min-w-0 flex-1 truncate" title={title}>
+        {title}
       </span>
+      {note && (
+        <span className={cn("max-w-[45%] shrink-0 truncate text-xs text-fg-faint", noteClass)} title={note}>
+          {note}
+        </span>
+      )}
       {aside}
     </li>
   );
@@ -165,7 +153,7 @@ function Running({
   const list = open ? all : all.slice(0, SHOWN_ROWS);
   const title = paused.length > 0 ? `Running ${running.length} · Paused ${paused.length}` : "Running";
   return (
-    <Box title={title} label="Running" count={paused.length > 0 ? undefined : running.length}>
+    <Box title={title} label="Running" lamp="working" count={paused.length > 0 ? undefined : running.length}>
       {all.length === 0 ? (
         <p className="text-sm text-fg-muted">Nothing running.</p>
       ) : (
@@ -175,9 +163,15 @@ function Running({
               key={t.task}
               title={t.title}
               task={t.task}
-              workspace={names(t.org)}
-              why={t.why}
-              status={t.status}
+              lamp={t.status === "paused" ? "paused" : "working"}
+              note={
+                t.status === "paused"
+                  ? (t.pause?.label ?? "Paused")
+                  : t.agents[0]
+                    ? `@${t.agents[0].id}`
+                    : names(t.org)
+              }
+              noteClass={t.status === "paused" ? "text-lamp-paused" : undefined}
             />
           ))}
         </ul>
@@ -187,51 +181,40 @@ function Running({
   );
 }
 
-function Next({
-  autonomy,
-  now,
-  names,
-}: {
-  autonomy: AutonomyStatus;
-  now: number;
-  names: (org: string | undefined) => string | undefined;
-}) {
+function Next({ autonomy }: { autonomy: AutonomyStatus }) {
   const exclude = useExclude();
   const all = autonomy.queue;
   const [open, setOpen] = useState(false);
   const list = open ? all : all.slice(0, SHOWN_ROWS);
   const marked = new Map(autonomy.backlog.map((b) => [b.task, b.noAutonomy]));
   return (
-    <Box title="Next" count={all.length}>
+    <Box title="Next" lamp="idle" count={all.length}>
       {all.length === 0 ? (
         <p className="text-sm text-fg-muted">
-          {autonomy.mode === "off" ? "Nothing is planned while Autonomous is off." : "Nothing planned yet."}
+          {autonomy.mode === "off" ? "Nothing is planned while Auto-pilot is off." : "Nothing planned yet."}
         </p>
       ) : (
         <ol className="flex flex-col">
           {list.map((q) => {
             const task = q.task;
-            const after = q.after !== undefined && Date.parse(q.after) > now ? q.after : undefined;
+            const left = task !== undefined && marked.get(task) === true;
             return (
               <WorkLine
                 key={`${task ?? ""}|${q.title}`}
                 title={q.title}
                 task={task}
-                workspace={names(q.org)}
-                why={after === undefined ? q.why : `Not before ${clockTime(after, now)}. ${q.why}`}
                 aside={
                   task && (
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
+                    <button
+                      type="button"
                       aria-label={`Leave ${q.title} alone`}
-                      title="Leave alone: the captain will not touch this task"
-                      disabled={exclude.busy || marked.get(task) === true}
+                      title="The captain will not touch this task"
+                      disabled={exclude.busy || left}
                       onClick={() => exclude.set(task, true)}
-                      className="shrink-0 self-start opacity-60 group-hover:opacity-100 focus-visible:opacity-100"
+                      className="shrink-0 cursor-pointer text-xs text-fg-faint hover:text-fg disabled:cursor-default disabled:opacity-60"
                     >
-                      <Ban aria-hidden="true" />
-                    </Button>
+                      {left ? "Left alone" : "Leave alone"}
+                    </button>
                   )
                 }
               />
@@ -254,20 +237,23 @@ export function NowColumn({
   now,
   onLog,
   onSummary,
+  onFindings,
 }: {
-  captain: CaptainStatus;
+  captain: CaptainStatus | undefined;
   autonomy: AutonomyStatus | undefined;
   now: number;
   onLog: () => void;
   onSummary: (() => void) | undefined;
+  onFindings: () => void;
 }) {
+  const orgs = captain?.orgs ?? [];
   const names = (org: string | undefined) => {
-    if (captain.orgs.length < 2) return undefined;
-    return captain.orgs.find((o) => o.org === (org ?? PRIVATE))?.name;
+    if (orgs.length < 2) return undefined;
+    return orgs.find((o) => o.org === (org ?? PRIVATE))?.name;
   };
   return (
     // One panel that scrolls as a whole: no box scrolls on its own, so every section is reachable.
-    <div
+    <section
       aria-label="Now"
       className={cn(
         "flex min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain rounded-2xl scroll-fade",
@@ -278,11 +264,12 @@ export function NowColumn({
       {autonomy ? (
         <>
           <Running autonomy={autonomy} names={names} />
-          <Next autonomy={autonomy} now={now} names={names} />
+          <Next autonomy={autonomy} />
         </>
       ) : (
         <RowsSkeleton rows={2} height={88} />
       )}
+      {captain !== undefined && <FindingsBox orgs={orgs} onOpen={onFindings} />}
       <Box
         title="Did recently"
         label="Did recently"
@@ -294,13 +281,14 @@ export function NowColumn({
               </button>
             )}
             <button type="button" onClick={onLog} className="cursor-pointer text-blue hover:underline">
-              See all
+              History
             </button>
           </>
         }
       >
-        <RecentLog orgs={captain.orgs} now={now} />
+        {captain === undefined ? <RowsSkeleton rows={2} height={44} /> : <RecentLog orgs={orgs} now={now} />}
+        <WeekLine />
       </Box>
-    </div>
+    </section>
   );
 }

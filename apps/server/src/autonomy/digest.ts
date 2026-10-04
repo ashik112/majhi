@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   AutonomyAccount,
   AutonomyHold,
@@ -13,6 +14,7 @@ import type {
   UsageWindow,
 } from "@majhi/shared";
 import { capText } from "./spend.ts";
+import { meets, stateWords } from "./waits.ts";
 
 /**
  * The tick message (PRV-74, rule 8): what the captain reads each time majhi wakes it in the autonomy
@@ -64,6 +66,57 @@ export interface DigestInput {
   /** The owner's pick rules, one line each. */
   rules: readonly string[];
   queue: readonly QueueItem[];
+  /** One line per project of the workspace: stack, readiness, when its card was read. */
+  projects?: readonly string[] | undefined;
+  /** Every account's health right now, by id, for the waits in the queue. */
+  accountStatus?: Readonly<Record<string, AutonomyAccount["status"]>> | undefined;
+  /** Open findings of the workspace, one line each, worst first. */
+  findings?: readonly string[] | undefined;
+  /**
+   * Whether the captain decides when work starts here. False (Start is You): the lane files
+   * proposals and does upkeep; it starts nothing.
+   */
+  starts?: boolean | undefined;
+}
+
+/**
+ * What the digest says apart from time, spend and what agents are doing at this moment: the facts a
+ * wake is about. Two digests with the same key tell the captain the same news, so the second wake
+ * is not sent. Sizes, spend, usage windows and `nowDoing` change without anything to decide, so they
+ * stay out.
+ */
+export function factsKey(input: DigestInput): string {
+  return createHash("sha1")
+    .update(JSON.stringify(factsOf(input)))
+    .digest("hex");
+}
+
+/** The facts a wake is about, as plain data: what `factsKey` hashes, and what a diff compares. */
+export type Facts = Record<string, unknown>;
+
+export function factsOf(input: DigestInput): Facts {
+  return {
+    workspace: input.workspace,
+    starts: input.starts,
+    holds: input.holds.map((h) => [h.kind, h.id, h.text, h.until]),
+    accounts: input.accounts.map((a) => [a.id, a.org, a.status, a.blocked?.why]),
+    instructions: input.instructions.map((i) => i.text),
+    tasks: input.tasks.map((t) => [
+      t.task,
+      t.status,
+      t.pause?.label,
+      t.pause?.mayResume,
+      t.agents.map((a) => a.id),
+    ]),
+    cards: input.cards.map((c) => [c.task, c.item]),
+    waiting: input.waiting.map((w) => [w.task, w.item]),
+    backlog: input.backlog.map((b) => [b.id, b.priority, b.due]),
+    leftOut: input.leftOut,
+    rules: input.rules,
+    queue: input.queue.map((q) => [q.title, q.task, q.after, q.waitFor, q.readyAt !== undefined]),
+    projects: input.projects,
+    findings: input.findings,
+  };
 }
 
 const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, normal: 1, low: 2 };
@@ -90,6 +143,8 @@ const BASE = {
   waiting: 6,
   backlog: 15,
   queue: 10,
+  projects: 8,
+  findings: 6,
 };
 
 export function digest(input: DigestInput): string {
@@ -124,7 +179,7 @@ function build(input: DigestInput, scale: number): string {
       "Accounts",
       input.accounts.map(
         (a) =>
-          `${a.id} (${a.org}, ${a.tool}): 5-hour ${left(a.window, input.tz)}, weekly ${left(a.weekly, input.tz)}${a.blocked === undefined ? "" : `. Held: ${a.blocked.why}`}`,
+          `${a.id} (${a.org}, ${a.tool}, ${stateWords(a.status)} now): 5-hour ${left(a.window, input.tz)}, weekly ${left(a.weekly, input.tz)}${a.blocked === undefined ? "" : `. Held: ${a.blocked.why}`}`,
       ),
       max(BASE.accounts),
       "none",
@@ -143,7 +198,13 @@ function build(input: DigestInput, scale: number): string {
       "Your tasks",
       input.tasks.map((t) => {
         const doing = t.agents.flatMap((a) => (a.nowDoing === undefined ? [] : [`@${a.id}: ${a.nowDoing}`]));
-        return `${t.task} [${t.status}] ${t.title}${t.org === undefined ? "" : ` (${t.org})`}${doing.length === 0 ? "" : `. ${doing.join("; ")}`}`;
+        const pause =
+          t.pause === undefined
+            ? ""
+            : t.pause.mayResume
+              ? ` (${t.pause.label}: you may resume it with majhi_tasks_start)`
+              : ` (${t.pause.label}: ${t.pause.stays ?? "leave it paused"})`;
+        return `${t.task} [${t.status}]${pause} ${t.title}${t.org === undefined ? "" : ` (${t.org})`}${doing.length === 0 ? "" : `. ${doing.join("; ")}`}`;
       }),
       max(BASE.tasks),
       "none yet",
@@ -179,15 +240,48 @@ function build(input: DigestInput, scale: number): string {
       "Your queue",
       input.queue.map(
         (q, i) =>
-          `${i + 1}. ${q.title}${q.task === undefined ? "" : ` (${q.task})`}: ${q.why}${q.after === undefined ? "" : `, not before ${time(q.after)}`}`,
+          `${i + 1}. ${q.title}${q.task === undefined ? "" : ` (${q.task})`}: ${q.why}${q.after === undefined ? "" : `, not before ${time(q.after)}`}${waitText(q, input.accountStatus)}`,
       ),
       max(BASE.queue),
       "empty",
     ),
+    ...((input.findings ?? []).length === 0
+      ? []
+      : list(
+          "Open findings of this workspace (majhi_findings_list has the rest)",
+          input.findings ?? [],
+          max(BASE.findings),
+          "none",
+        )),
+    ...((input.projects ?? []).length === 0
+      ? []
+      : list(
+          "Projects of this workspace (majhi_projects_cards has the full card)",
+          input.projects ?? [],
+          max(BASE.projects),
+          "none",
+        )),
     "",
+    ...(input.starts === false
+      ? [
+          "The owner decides when work starts in this workspace. Do not start tasks here. Use this wake for upkeep: look at findings and follow-ups, file proposals (majhi_findings_toTask makes an inbox task for the owner to approve), and check ship and review. majhi leaves anything else for the owner.",
+        ]
+      : []),
     "Decide what to do next, record it with majhi_autonomy_plan, and start what fits. End your turn when nothing more can start.",
   ];
   return lines.join("\n");
+}
+
+/** What a queue item waits for and where that stands now, read live: the item's own words can be old. */
+function waitText(q: QueueItem, status: DigestInput["accountStatus"]): string {
+  const wait = q.waitFor;
+  if (wait === undefined) return "";
+  const now = status?.[wait.account];
+  const need = wait.state === "signed-in" ? "to be signed in" : "to be available";
+  if (meets(wait, now)) {
+    return `. READY: ${wait.account} is ${stateWords(now)} now, so this no longer waits. Start or resume it`;
+  }
+  return `. Waits for ${wait.account} ${need}; it is ${stateWords(now)} now`;
 }
 
 /** A titled list: at most `n` lines, then a count of the rest. */

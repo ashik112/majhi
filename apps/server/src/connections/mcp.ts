@@ -4,6 +4,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { AgentStore } from "../agents/store.ts";
+import { connectionScopes } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, formatIssues } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
@@ -115,7 +116,7 @@ async function list(caller: ToolCaller, deps: ConnectionsMcpDeps): Promise<Resul
     lines.length === 0 ? "This run holds no connections." : `This run holds:\n${lines.join("\n")}`,
   ];
   if (await isRoot(deps, caller.agent)) {
-    const { orgs } = await deps.config.sections();
+    const orgs = connectionScopes(await deps.config.sections());
     const others = Object.entries(orgs).flatMap(([org, entry]) =>
       Object.entries(entry.connections ?? {})
         .filter(([id]) => !uses.some((u) => u.id === id))
@@ -136,7 +137,7 @@ async function attach(
   args: z.infer<typeof AttachInput>,
 ): Promise<Result> {
   if (!(await isRoot(deps, caller.agent))) return fail("Only root agents attach connections.");
-  const { orgs } = await deps.config.sections();
+  const orgs = connectionScopes(await deps.config.sections());
   const found = Object.entries(orgs).find(([, entry]) => entry.connections?.[args.id] !== undefined);
   const connection = found?.[1].connections?.[args.id];
   if (found === undefined || connection === undefined) return fail(`There is no connection ${args.id}.`);
@@ -185,17 +186,21 @@ async function ssh(
   const gate = held?.gate.find((c) => c.id === args.connection && c.type === "ssh");
   if (held === undefined || gate === undefined)
     return fail(`This run holds no ssh connection ${args.connection}.`);
-  const { orgs } = await deps.config.sections();
+  const orgs = connectionScopes(await deps.config.sections());
   const connection = Object.values(orgs).find((o) => o.connections?.[args.connection] !== undefined)
     ?.connections?.[args.connection];
   const alias = connection === undefined ? undefined : textValue(connection, "alias");
   if (alias === undefined) return fail(`${args.connection} has no host.`);
-  if (!(await sshConfigHosts(deps.hostHome)).some((h) => h.alias === alias)) {
+  if (
+    /^[A-Za-z0-9_-]+$/.test(alias) &&
+    !(await sshConfigHosts(deps.hostHome)).some((h) => h.alias === alias)
+  ) {
     return fail(`~/.ssh/config has no Host ${alias}.`);
   }
+  const key = connection === undefined ? undefined : textValue(connection, "key");
   const remote = deps.remote ?? runRemote;
   const run = async () => {
-    const result = await remote(alias, args.command);
+    const result = await remote(alias, args.command, key);
     const output = redactSecrets(result.output, held.secrets);
     const status =
       result.code === 0

@@ -3,8 +3,15 @@ import { dirname, join } from "node:path";
 import type { McpServerSpec } from "@majhi/acp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { cacheEnv } from "../runs/package-cache.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 import { runFilesRoot } from "./run-files.ts";
+
+/** A run's variables without the workspace package-cache paths every run gets (no secrets in them). */
+const noCaches = (env: Record<string, string> | undefined): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(env ?? {}).filter(([k]) => k !== "MAJHI_TOOLS" && !(k in cacheEnv("/x"))),
+  );
 
 const KUBECONFIG = `apiVersion: v1
 kind: Config
@@ -130,7 +137,7 @@ describe("a run's connections", () => {
     })) as { id: string };
     await w.h.majhi.services.runs.idle(task.id);
     const start = w.h.runtime.starts.at(-1);
-    expect(start?.env ?? {}).toEqual({});
+    expect(noCaches(start?.env)).toEqual({});
     const names = (start?.mcpServers ?? []).map((s) => s.name);
     expect(names).not.toContain("acme-newrelic");
     expect(names).not.toContain("globex-prod");

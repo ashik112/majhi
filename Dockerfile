@@ -78,6 +78,33 @@ RUN set -eu; \
 # real projects: build tools for native modules, pnpm, and Playwright's Chromium with its system
 # libraries. The browsers live outside any home, and PLAYWRIGHT_BROWSERS_PATH is one of the few
 # variables passed to agent runs (see packages/acp BaseEnv).
+# The GitHub and GitLab command line tools majhi uses to open and merge merge requests (5.5). Pinned
+# by version and by the SHA-256 of each release archive, per CPU. To update, change the versions and
+# take the sums from `gh_<version>_checksums.txt` (github.com/cli/cli releases) and `checksums.txt`
+# (gitlab.com/gitlab-org/cli releases). The server runs them for merge requests; runs use them through `git` connections.
+FROM debian:bookworm-slim AS host-clis
+ARG TARGETARCH
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+RUN set -eu; \
+  GH_VERSION=2.102.0; GLAB_VERSION=1.120.0; \
+  case "$TARGETARCH" in \
+    amd64) GH_SHA=bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386; \
+           GLAB_SHA=4e6c59de9f7ed2f304bf93aad01ea8f8a69584f0450ce90ad696ef81f69c69aa ;; \
+    arm64) GH_SHA=7862c86c72f43df3a2d93ddde6f473285b4e2af61b494849846827e513ef6484; \
+           GLAB_SHA=c60ebb4cb36f276714847a118845b9b4e69f46a8080c68b21ca63f158722cdea ;; \
+    *) echo "gh and glab are not pinned for $TARGETARCH" >&2; exit 1 ;; \
+  esac; \
+  mkdir /out /dl; cd /dl; \
+  curl -fsSL -o gh.tgz "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${TARGETARCH}.tar.gz"; \
+  echo "${GH_SHA}  gh.tgz" | sha256sum -c -; \
+  tar -xzf gh.tgz -C /out --strip-components=2 "gh_${GH_VERSION}_linux_${TARGETARCH}/bin/gh"; \
+  curl -fsSL -o glab.tgz "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_${TARGETARCH}.tar.gz"; \
+  echo "${GLAB_SHA}  glab.tgz" | sha256sum -c -; \
+  tar -xzf glab.tgz -C /out --strip-components=1 bin/glab; \
+  /out/gh --version; /out/glab --version
+
 FROM base AS runner
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 RUN apt-get update \
@@ -116,38 +143,13 @@ RUN --mount=from=ghcr.io/astral-sh/uv:0.12.21,source=/uv,target=/usr/local/bin/u
   && chmod -R a+rX /opt/serena \
   && /opt/serena/bin/serena --version
 COPY --from=kubectl /kubectl /usr/local/bin/kubectl
+# glab and gh for `git` connections (SPEC 5.14): the run gets the workspace's own sign-in as GITLAB_TOKEN or GH_TOKEN.
+COPY --from=host-clis /out/gh /out/glab /usr/local/bin/
 # /etc/passwd stays read-only, and setuid/setgid bits are stripped from every binary, so an agent
 # process has no path to root.
 RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +
 WORKDIR /tmp
 CMD ["sh", "-c", "echo 'The runner image is started by majhi, one container per agent run.'"]
-
-# The GitHub and GitLab command line tools majhi uses to open and merge merge requests (5.5). Pinned
-# by version and by the SHA-256 of each release archive, per CPU. To update, change the versions and
-# take the sums from `gh_<version>_checksums.txt` (github.com/cli/cli releases) and `checksums.txt`
-# (gitlab.com/gitlab-org/cli releases). Only the server runs them; the runner image does not have them.
-FROM debian:bookworm-slim AS host-clis
-ARG TARGETARCH
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
-RUN set -eu; \
-  GH_VERSION=2.102.0; GLAB_VERSION=1.120.0; \
-  case "$TARGETARCH" in \
-    amd64) GH_SHA=bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386; \
-           GLAB_SHA=4e6c59de9f7ed2f304bf93aad01ea8f8a69584f0450ce90ad696ef81f69c69aa ;; \
-    arm64) GH_SHA=7862c86c72f43df3a2d93ddde6f473285b4e2af61b494849846827e513ef6484; \
-           GLAB_SHA=c60ebb4cb36f276714847a118845b9b4e69f46a8080c68b21ca63f158722cdea ;; \
-    *) echo "gh and glab are not pinned for $TARGETARCH" >&2; exit 1 ;; \
-  esac; \
-  mkdir /out /dl; cd /dl; \
-  curl -fsSL -o gh.tgz "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${TARGETARCH}.tar.gz"; \
-  echo "${GH_SHA}  gh.tgz" | sha256sum -c -; \
-  tar -xzf gh.tgz -C /out --strip-components=2 "gh_${GH_VERSION}_linux_${TARGETARCH}/bin/gh"; \
-  curl -fsSL -o glab.tgz "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_${TARGETARCH}.tar.gz"; \
-  echo "${GLAB_SHA}  glab.tgz" | sha256sum -c -; \
-  tar -xzf glab.tgz -C /out --strip-components=1 bin/glab; \
-  /out/gh --version; /out/glab --version
 
 FROM base AS runtime
 # The server starts runner containers through the Docker socket. Only the CLI, a static binary.

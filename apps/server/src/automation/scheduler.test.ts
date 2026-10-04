@@ -1,10 +1,10 @@
 import type { AutomationAction, PausedReason, ProcessInfo, ScheduleView, TaskStatus } from "@majhi/shared";
 import { beforeEach, describe, expect, it } from "vitest";
+import { Catalog } from "../playbooks/catalog.ts";
 import { createDb } from "../store/db.ts";
 import type { ActionHost } from "./actions.ts";
 import { type Automation, createAutomation } from "./index.ts";
 import { MAX_WAIT_MS, type Timers } from "./scheduler.ts";
-import type { WatchHost } from "./triggers/observe.ts";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -16,6 +16,7 @@ function fakeHost() {
   let created = 0;
   const log = { started: [] as string[], posted: [] as string[], processes: [] as string[] };
   const host: ActionHost = {
+    resumeLimited: async () => [],
     projects: async () => [
       { id: "acme-api", org: "acme", aliases: [] },
       { id: "globex-web", org: "globex", aliases: [] },
@@ -79,9 +80,8 @@ beforeEach(() => {
   const { sqlite } = createDb(":memory:");
   const auto = createAutomation({
     db: sqlite,
+    catalog: new Catalog(),
     host: fake.host,
-    watch: {} as WatchHost,
-    triggersChanged: () => undefined,
     orgIds: async () => new Set(["private", "acme", "globex"]),
     changed: () => undefined,
     now: () => new Date(clock.t),

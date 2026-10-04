@@ -321,7 +321,7 @@ function Limits({
       actions={
         <>
           <Button asChild size="sm" variant="ghost">
-            <PageLink page="usage">Health and usage</PageLink>
+            <PageLink page="usage">Health & usage</PageLink>
           </Button>
           <Button size="sm" onClick={() => refresh.mutate(account.id)} disabled={refresh.isPending}>
             <RefreshCw aria-hidden="true" className={cn(refresh.isPending && "animate-spin")} />

@@ -96,3 +96,12 @@ export function fakeUsage(options: FakeAgentOptions = {}): Command {
   const adapter = fakeAdapter("claude", options);
   return { command: adapter.command, args: [...adapter.args, "usage"] };
 }
+
+export {
+  RESULTS_FILE,
+  ResultSchema,
+  SCRIPT_FILE,
+  type ScriptResult,
+  type ScriptRule,
+  type ScriptStep,
+} from "./captain-script.ts";

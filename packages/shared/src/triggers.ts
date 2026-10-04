@@ -2,6 +2,13 @@ import { z } from "zod";
 import { IdSchema } from "./accounts.ts";
 import { AutomationActionSchema, AutomationRunSchema, OverlapPolicySchema } from "./automation.ts";
 import { TaskIdSchema } from "./tasks.ts";
+import {
+  type WatchCheck,
+  WatchCheckSchema,
+  type WatchDef,
+  WatchDefSchema,
+  WatchFireSchema,
+} from "./watches.ts";
 
 /**
  * Watch triggers: a condition majhi checks now and then, and an action it runs when the condition
@@ -141,15 +148,19 @@ export function describeWatch(spec: WatchSpec): string {
 // ---------------------------------------------------------------------------
 // Triggers
 
-export const TriggerIdSchema = z.string().regex(/^trg-[a-z0-9]{6,20}$/, "Not a trigger id");
+export const TriggerIdSchema = z.string().regex(/^(?:trg|wch)-[a-z0-9]{4,20}$/, "Not a trigger id");
 
 const Seconds = (min: number) => z.number().int().min(min).max(86_400);
 
+/**
+ * A watch with an action, in the shape the old `triggers.*` commands had. Triggers are Watch now: this
+ * is the same thing seen through the old names, and the id is the watch's (`trg-` ids still work).
+ */
 export const TriggerViewSchema = z.object({
   id: TriggerIdSchema,
   org: IdSchema,
   name: z.string(),
-  watch: WatchSpecSchema,
+  watch: WatchCheckSchema,
   /** `watch` in words. */
   watching: z.string(),
   action: AutomationActionSchema,
@@ -161,18 +172,12 @@ export const TriggerViewSchema = z.object({
   settleSeconds: z.number().int(),
   /** Seconds after a firing before the next one. */
   cooldownSeconds: z.number().int(),
-  /** UTC, ISO 8601. Null until the first check after majhi started. */
+  /** UTC, ISO 8601. Null until the first check. */
   lastCheckedAt: z.string().nullable(),
   /** Why the last check could not look, if it could not. Null when it could. */
   checkError: z.string().nullable(),
-  /** A change was seen and waits for the settle time or the cooldown. */
-  pending: z.boolean(),
-  /** The last time it fired. */
-  lastFiredAt: z.string().nullable(),
   /** The last run, with its outcome. */
   lastRun: AutomationRunSchema.nullable(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
 });
 export type TriggerView = z.infer<typeof TriggerViewSchema>;
 
@@ -203,3 +208,93 @@ export const TriggerUpdateInputSchema = z.object({
   cooldownSeconds: Seconds(0).optional(),
 });
 export type TriggerUpdateInput = z.output<typeof TriggerUpdateInputSchema>;
+
+/** What a trigger is as a watch: the check, when it alerts and how often it looks. */
+export function watchCheckOf(spec: WatchSpec): { spec: WatchCheck; condition: WatchDef["condition"] } {
+  switch (spec.kind) {
+    case "task.status":
+      return {
+        spec: { kind: "task", ...(spec.task === undefined ? {} : { task: spec.task }), to: spec.to },
+        condition: { type: "changed" },
+      };
+    case "mr.changed":
+      return {
+        spec: { kind: "mr", ...(spec.task === undefined ? {} : { task: spec.task }), on: "any" },
+        condition: { type: "changed" },
+      };
+    case "branch.changed":
+      return {
+        spec: { kind: "branch", project: spec.project, branch: spec.branch },
+        condition: { type: "changed" },
+      };
+    case "path.changed":
+      return {
+        spec: { kind: "path", project: spec.project, path: spec.path },
+        condition: { type: "changed" },
+      };
+    case "process.exit":
+      return {
+        spec: {
+          kind: "process",
+          task: spec.task,
+          ...(spec.process === undefined ? {} : { process: spec.process }),
+          on: spec.on,
+        },
+        condition: { type: "changed" },
+      };
+    case "usage.over":
+      return {
+        spec: { kind: "usage", source: "spend", metric: spec.metric, period: spec.period },
+        condition: { type: "above", value: spec.limit, forMin: 0 },
+      };
+    case "url.changed":
+      return {
+        spec: { kind: "price", url: spec.url, mode: "text", compare: [] },
+        condition: { type: "changed" },
+      };
+    case "command.changed":
+      return {
+        spec: {
+          kind: "command",
+          task: spec.task,
+          command: spec.command,
+          ...(spec.cwd === undefined ? {} : { cwd: spec.cwd }),
+        },
+        condition: { type: "changed" },
+      };
+  }
+}
+
+/**
+ * A trigger as a watch definition. The action is the point: no incident, no phone, no recovery notice.
+ * Poll, settle and cooldown become minutes (rounded up, a look at most once a minute).
+ */
+export function triggerWatchDef(t: {
+  name: string;
+  watch: WatchSpec;
+  action: z.output<typeof AutomationActionSchema>;
+  overlap: z.output<typeof OverlapPolicySchema>;
+  pollSeconds?: number | null | undefined;
+  settleSeconds?: number | undefined;
+  cooldownSeconds?: number | undefined;
+}): WatchDef {
+  const { spec, condition } = watchCheckOf(t.watch);
+  const minutes = (seconds: number): number => Math.min(1440, Math.ceil(seconds / 60));
+  return WatchDefSchema.parse({
+    name: t.name.slice(0, 100),
+    spec,
+    condition,
+    everyMin: Math.min(
+      10_080,
+      Math.max(1, Math.ceil((t.pollSeconds ?? defaultPollSeconds(t.watch.kind)) / 60)),
+    ),
+    fire: WatchFireSchema.parse({
+      alert: { on: false, phone: false },
+      run: t.action,
+      runOverlap: t.overlap,
+      tellOnRecover: false,
+      settleMin: minutes(t.settleSeconds ?? 0),
+      cooldownMin: minutes(t.cooldownSeconds ?? 0),
+    }),
+  });
+}

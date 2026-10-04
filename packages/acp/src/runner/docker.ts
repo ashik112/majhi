@@ -71,6 +71,13 @@ export const MAJHI_RUN_CONNECTIONS_DIR = "run/connections";
 /** Each connection's own files, `<majhiHome>/connections/<id>`. Only a browser's `profile` folder is ever mounted. */
 const CONNECTIONS_DIR = "connections";
 
+/** Package stores, `<majhiHome>/cache/<org>`. A run mounts only its own workspace's folder, never `cache` itself. */
+export const MAJHI_CACHE_DIR = "cache";
+const CACHE_ORG = /^[a-z0-9][a-z0-9-]{0,62}$/;
+
+/** Command-line tools agents install, `<majhiHome>/tools/<org>`. Same rule as the package store. */
+export const MAJHI_TOOLS_DIR = "tools";
+
 function inside(child: string, parent: string): boolean {
   const rel = relative(parent, child);
   return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
@@ -116,13 +123,21 @@ export function runMounts(req: SpawnRequest, cfg: RunnerConfig): RunMount[] {
   const connectionDirs = majhiHomes.map((h) => resolve(h, CONNECTIONS_DIR));
   const isProfile = (path: string) =>
     basename(path) === "profile" && connectionDirs.includes(dirname(dirname(path)));
+  // One workspace's package store, read-write: a folder right under `cache`, nothing above or beside it.
+  const cacheDirs = majhiHomes.map((h) => resolve(h, MAJHI_CACHE_DIR));
+  const isCache = (path: string, m: RunMount) =>
+    m.readOnly !== true && cacheDirs.includes(dirname(path)) && CACHE_ORG.test(basename(path));
+  const toolsDirs = majhiHomes.map((h) => resolve(h, MAJHI_TOOLS_DIR));
+  const isTools = (path: string, m: RunMount) =>
+    m.readOnly !== true && toolsDirs.includes(dirname(path)) && CACHE_ORG.test(basename(path));
   for (const m of mounts) {
     if (!isAbsolute(m.path)) throw new MountRefused(`A run can only mount absolute paths, not ${m.path}.`);
     for (const path of realForms(m.path)) {
       if (path === "/") throw new MountRefused("A run cannot mount the whole disk.");
       for (const p of protectedPaths) {
         if (inside(p, path)) throw new MountRefused(`A run cannot mount ${path}: it holds ${p}.`);
-        const allowed = isOwnHome(path) || isHooks(path, m) || isRunFolder(path, m) || isProfile(path);
+        const allowed =
+          isOwnHome(path) || isHooks(path, m) || isRunFolder(path, m) || isProfile(path) || isCache(path, m) || isTools(path, m);
         if (inside(path, p) && !(majhiHomes.includes(p) && allowed)) {
           throw new MountRefused(`A run cannot mount ${path}: it is inside ${p}.`);
         }

@@ -173,6 +173,77 @@ describe("planConnections", () => {
     expect(JSON.stringify(plan.uses)).not.toMatch(/0123456789/);
   });
 
+  it("gives each picked DigitalOcean product its own server on the one sign-in", async () => {
+    const plan = await planConnections(
+      [
+        held("acme-do", {
+          type: "mcp",
+          name: "DigitalOcean",
+          fields: {
+            transport: "remote",
+            url: "https://accounts.mcp.digitalocean.com/mcp",
+            protocol: "http",
+            auth: "oauth",
+            products: "doks droplets",
+          },
+        }),
+      ],
+      join(dir, "run"),
+      {
+        secrets: { get: async () => undefined },
+        connectionDir,
+        oauth: async () => ({ token: "do-token-0123456789" }),
+      },
+    );
+    const auth = { Authorization: "Bearer do-token-0123456789" };
+    expect(plan.servers).toEqual([
+      {
+        type: "http",
+        name: "acme-do-droplets",
+        url: "https://droplets.mcp.digitalocean.com/mcp",
+        headers: auth,
+      },
+      { type: "http", name: "acme-do-doks", url: "https://doks.mcp.digitalocean.com/mcp", headers: auth },
+    ]);
+    expect(plan.gate.map((g) => g.server)).toEqual(["acme-do-droplets", "acme-do-doks"]);
+    // doctl reads the same sign-in, and the gate checks its commands.
+    expect(plan.env).toEqual({ DIGITALOCEAN_ACCESS_TOKEN: "do-token-0123456789" });
+    expect(plan.gate.map((g) => g.clis)).toEqual([["doctl"], ["doctl"]]);
+    expect(plan.secrets).toContainEqual({ name: "acme-do.oauth", value: "do-token-0123456789" });
+    expect(plan.uses.map((u) => u.use)).toEqual([
+      "MCP servers acme-do-droplets (Droplets), acme-do-doks (Kubernetes). Variable DIGITALOCEAN_ACCESS_TOKEN holds the sign-in for doctl. Commands that change something ask the owner first.",
+    ]);
+  });
+
+  it("gives a git connection the workspace's fresh sign-in as the CLI's variable, or says why not", async () => {
+    const asked: string[] = [];
+    const plan = await planConnections(
+      [
+        held("acme-gitlab", { type: "git", name: "GitLab", fields: { provider: "gitlab" } }),
+        held("globex-gh", { type: "git", name: "GitHub", fields: { provider: "github" } }, "globex"),
+      ],
+      join(dir, "run"),
+      {
+        secrets: { get: async () => undefined },
+        connectionDir,
+        gitToken: async (org, provider, host) => {
+          asked.push(`${org} ${provider} ${host}`);
+          return org === "acme"
+            ? { token: "glpat-0123456789" }
+            : { problem: "globex is not signed in to github.com." };
+        },
+      },
+    );
+    expect(asked).toEqual(["acme gitlab gitlab.com", "globex github github.com"]);
+    expect(plan.env).toEqual({ GITLAB_TOKEN: "glpat-0123456789", GITLAB_HOST: "gitlab.com" });
+    expect(plan.gate).toEqual([{ id: "acme-gitlab", type: "git", allow: [], clis: ["glab"] }]);
+    expect(plan.secrets).toEqual([{ name: "acme-gitlab.token", value: "glpat-0123456789" }]);
+    expect(plan.problems).toEqual([
+      "globex-gh: globex is not signed in to github.com. The run does not get it.",
+    ]);
+    expect(JSON.stringify(plan.uses)).not.toContain("0123456789");
+  });
+
   it("leaves out what is not set up, and keeps the first of two connections that set a variable", async () => {
     await mkdir(connectionDir("acme-broken"), { recursive: true });
     await writeFile(join(connectionDir("acme-broken"), "kubeconfig"), "not: [yaml");
@@ -195,7 +266,7 @@ describe("planConnections", () => {
     expect(plan.problems).toEqual([
       "acme-broken: The kubeconfig is not a YAML map.",
       "acme-empty is not set up, so the run does not get it.",
-      "REGION is set by acme-a and acme-b; the run gets acme-a's.",
+      "REGION is set by acme-a and acme-b; the run gets acme-a's. Rename one with connections.renameVar.",
     ]);
   });
 });

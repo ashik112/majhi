@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { classifyCommand, classifyRemote, classifyTool, type GateConnection, toolWords } from "./gate.ts";
+import {
+  classifyCommand,
+  classifyRemote,
+  classifyTool,
+  destructive,
+  type GateConnection,
+  toolWords,
+} from "./gate.ts";
 
 const prod: GateConnection = {
   id: "acme-prod",
@@ -73,6 +80,7 @@ describe("classifyCommand: kubectl", () => {
           connection: "acme-prod",
           action: "kubectl rollout restart deployment/api",
           why: "kubectl rollout restart changes the cluster",
+          destructive: false,
           allowed: true,
         },
       ],
@@ -253,5 +261,123 @@ describe("classifyRemote", () => {
       expect(remote(command).kind, command).toBe("write");
     }
     expect(remote("systemctl  restart api")).toMatchObject({ kind: "write", writes: [{ allowed: true }] });
+  });
+});
+
+describe("a git connection's CLI", () => {
+  const held: GateConnection[] = [{ id: "acme-gitlab", type: "git", clis: ["glab"], allow: [] }];
+  it("lets glab reads run and makes changes ask", () => {
+    for (const line of ["glab mr list", "glab mr view 12", "glab ci status", "glab --version"]) {
+      expect(classifyCommand(line, held).kind, line).toBe("read");
+    }
+    for (const line of ["glab mr create --fill", "glab mr merge 12", "glab api projects/1 -X DELETE"]) {
+      expect(classifyCommand(line, held).kind, line).toBe("write");
+    }
+  });
+});
+
+describe("tool names with the verb after the object", () => {
+  const held: GateConnection[] = [{ id: "acme-do", type: "mcp", server: "acme-do-droplets", allow: [] }];
+  it("reads DigitalOcean's list and get tools, and asks for its changes", () => {
+    for (const tool of ["droplet-list", "db-cluster-list", "alert-policy-get", "droplet-snapshot-list"]) {
+      expect(classifyTool("acme-do-droplets", tool, held).kind, tool).toBe("read");
+    }
+    for (const tool of [
+      "droplet-create",
+      "droplet-reboot",
+      "droplet-resize",
+      "get_or_create_alert",
+      "droplet-power-off",
+    ]) {
+      expect(classifyTool("acme-do-droplets", tool, held).kind, tool).toBe("write");
+    }
+  });
+});
+
+describe("destructive writes", () => {
+  it("asks for a DigitalOcean delete tool even when allow holds it, and keeps list a read", () => {
+    const held: GateConnection[] = [
+      { id: "acme-do", type: "mcp", server: "acme-do", allow: ["droplet-delete", "droplet-reboot"] },
+    ];
+    expect(classifyTool("acme-do", "droplet-delete", held)).toEqual({
+      kind: "write",
+      writes: [
+        {
+          connection: "acme-do",
+          action: "droplet-delete",
+          why: "it deletes or destroys something",
+          destructive: true,
+          allowed: false,
+        },
+      ],
+    });
+    expect(classifyTool("acme-do", "droplet-reboot", held)).toMatchObject({
+      writes: [{ destructive: false, allowed: true }],
+    });
+    expect(classifyTool("acme-do", "droplet-list", held)).toEqual({ kind: "read", connections: ["acme-do"] });
+  });
+
+  it("asks for kubectl delete even when allow holds the exact command", () => {
+    const allowed: GateConnection = { ...prod, allow: ["kubectl delete pod api-7d9"] };
+    expect(classifyCommand("kubectl delete pod api-7d9", [allowed])).toMatchObject({
+      kind: "write",
+      writes: [{ action: "kubectl delete pod api-7d9", destructive: true, allowed: false }],
+    });
+  });
+
+  it("still lets an allowed write that destroys nothing run without asking", () => {
+    expect(classifyCommand("kubectl rollout restart deployment/api", held)).toMatchObject({
+      kind: "write",
+      writes: [{ destructive: false, allowed: true }],
+    });
+    const box: GateConnection = {
+      id: "acme-box",
+      type: "ssh",
+      allow: ["systemctl restart api", "rm -rf /srv/cache"],
+    };
+    expect(classifyRemote("systemctl restart api", box)).toMatchObject({ writes: [{ allowed: true }] });
+    expect(classifyRemote("rm -rf /srv/cache", box)).toMatchObject({
+      writes: [{ destructive: true, allowed: false }],
+    });
+  });
+
+  it("names what deletes or destroys", () => {
+    for (const action of [
+      'psql -c "DROP TABLE x"',
+      "psql -c 'truncate table events'",
+      'mysql -e "DELETE FROM users WHERE id = 1"',
+      "kubectl delete pod api-7d9",
+      "helm uninstall api",
+      "gh repo delete acme/api --yes",
+      "glab repo delete acme/api",
+      "aws ec2 terminate-instances --instance-ids i-1",
+      "aws s3 sync . s3://acme-logs --delete",
+      "terraform destroy -auto-approve",
+      "docker system prune -af",
+      "rm -rf /var/lib/acme",
+      "redis-cli FLUSHALL",
+      "git push --force origin main",
+      "git push origin +main",
+      "git reset --hard origin/main",
+      "droplet-delete",
+      "db-cluster-delete",
+      "deleteCluster",
+      "purge_queue",
+      "volume_destroy",
+    ]) {
+      expect(destructive(action), action).toBe(true);
+    }
+    for (const action of [
+      "kubectl rollout restart deployment/api",
+      "kubectl scale deployment/api --replicas=2",
+      "aws s3 cp report.csv s3://acme-logs/remove-later.csv",
+      "systemctl restart api",
+      "git push origin main",
+      "droplet-reboot",
+      "mute_alert",
+      `psql -c "UPDATE users SET name = 'x'"`,
+    ]) {
+      expect(destructive(action), action).toBe(false);
+    }
   });
 });

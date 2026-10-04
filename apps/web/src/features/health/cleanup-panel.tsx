@@ -12,6 +12,7 @@ import { describeError } from "@/lib/errors";
 import { GLASS } from "@/lib/glass";
 import { usePreviewCleanup, useRunCleanup } from "@/lib/ops-queries";
 import { parseDays, stepText, taskTotals } from "./cleanup-model";
+import { FreeSpaceSettings } from "./free-space-settings";
 
 type Preview = CommandOutput<"cleanup.preview">;
 type Report = CommandOutput<"cleanup.run">;
@@ -33,6 +34,7 @@ export function CleanupPanel() {
   const [report, setReport] = useState<Report>();
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [confirming, setConfirming] = useState(false);
+  const [cachesOnly, setCachesOnly] = useState(false);
 
   const field = text ?? (saved === undefined ? "" : String(saved));
   const days = parseDays(field);
@@ -41,29 +43,32 @@ export function CleanupPanel() {
   const chosen = tasks.filter((t) => picked.has(t.id));
   const totals = taskTotals(chosen);
 
-  function onPreview() {
+  function onPreview(onlyCaches = false) {
     if (days === undefined) return;
     setReport(undefined);
-    if (changed) {
+    if (changed && !onlyCaches) {
       save.mutate(
         { cleanup: { after_days: days } },
         { onError: (e) => toast("Could not save the days", { detail: describeError(e), tone: "error" }) },
       );
     }
-    preview.mutate(days, {
-      onSuccess: (out) => {
-        setShown(out);
-        setPicked(
-          new Set(out.tasks.filter((t) => taskTotals([t]).removes > 0 || t.roomItems > 0).map((t) => t.id)),
-        );
+    preview.mutate(
+      { days, cachesOnly: onlyCaches },
+      {
+        onSuccess: (out) => {
+          setShown(out);
+          setPicked(
+            new Set(out.tasks.filter((t) => taskTotals([t]).removes > 0 || t.roomItems > 0).map((t) => t.id)),
+          );
+        },
       },
-    });
+    );
   }
 
   function onConfirm() {
     if (shown === undefined) return;
     run.mutate(
-      { tasks: chosen.map((t) => t.id), days: shown.days },
+      { tasks: chosen.map((t) => t.id), days: shown.days, cachesOnly },
       {
         onSuccess: (out) => {
           setConfirming(false);
@@ -117,10 +122,13 @@ export function CleanupPanel() {
           size="sm"
           variant="primary"
           disabled={days === undefined || preview.isPending}
-          onClick={onPreview}
+          onClick={() => onPreview(false)}
         >
           {preview.isPending && <LoaderCircle aria-hidden="true" className="animate-spin" />}
           Preview
+        </Button>
+        <Button size="sm" disabled={days === undefined || preview.isPending} onClick={() => onPreview(true)}>
+          Preview dependency caches
         </Button>
         {field !== "" && days === undefined && (
           <p role="alert" className="text-sm text-red">
@@ -133,6 +141,8 @@ export function CleanupPanel() {
           </p>
         )}
       </div>
+
+      <FreeSpaceSettings />
 
       {shown !== undefined && (
         <div className="flex flex-col gap-2 border-t border-line px-4 py-3">
@@ -180,9 +190,26 @@ export function CleanupPanel() {
                   variant="primary"
                   size="sm"
                   disabled={chosen.length === 0 || run.isPending}
-                  onClick={() => setConfirming(true)}
+                  onClick={() => {
+                    setCachesOnly(shown.cachesOnly === true);
+                    setConfirming(true);
+                  }}
                 >
-                  Clean up {chosen.length} {chosen.length === 1 ? "task" : "tasks"}
+                  {shown.cachesOnly ? "Free caches for" : "Clean up"} {chosen.length}{" "}
+                  {chosen.length === 1 ? "task" : "tasks"}
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={
+                    run.isPending ||
+                    !chosen.some((t) => t.steps.some((s) => s.kind === "cache" && s.action === "remove"))
+                  }
+                  onClick={() => {
+                    setCachesOnly(true);
+                    setConfirming(true);
+                  }}
+                >
+                  Free dependency caches
                 </Button>
                 <span className="text-sm text-fg-faint">
                   Nothing is forced: worktrees with changes and unmerged branches stay.
@@ -218,16 +245,24 @@ export function CleanupPanel() {
 
       {confirming && (
         <ConfirmDialog
-          title={`Clean up ${chosen.length} ${chosen.length === 1 ? "task" : "tasks"}?`}
-          body={
-            <>
-              This removes {totals.removes}{" "}
-              {totals.removes === 1 ? "worktree or branch" : "worktrees and branches"} and deletes{" "}
-              {totals.roomItems} room items. Each task keeps one note and its memory. It cannot be undone.
-              majhi checks every task again first.
-            </>
+          title={
+            cachesOnly
+              ? "Free dependency caches?"
+              : `Clean up ${chosen.length} ${chosen.length === 1 ? "task" : "tasks"}?`
           }
-          confirmLabel="Clean up"
+          body={
+            cachesOnly ? (
+              "Remove only ignored dependency and tool caches from the selected done tasks. Source changes, branches and room history stay. Dependencies can be installed again when needed."
+            ) : (
+              <>
+                This removes {totals.removes}{" "}
+                {totals.removes === 1 ? "worktree, branch or cache" : "worktrees, branches and caches"} and
+                deletes {totals.roomItems} room items. Each task keeps one note and its memory. It cannot be
+                undone. majhi checks every task again first.
+              </>
+            )
+          }
+          confirmLabel={cachesOnly ? "Free caches" : "Clean up"}
           busy={run.isPending}
           error={run.isError ? describeError(run.error) : undefined}
           onConfirm={onConfirm}

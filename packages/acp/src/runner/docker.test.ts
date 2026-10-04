@@ -209,6 +209,43 @@ describe("runMounts and connection files", () => {
   });
 });
 
+describe("runMounts and package stores", () => {
+  it("mounts one workspace's store read-write, and not the cache folder, a subfolder, a read-only or a linked one", async () => {
+    const store = join(majhiHome, "cache", "acme");
+    await mkdir(join(store, "pnpm-store"), { recursive: true });
+    const mounts = runMounts(request({ mounts: [{ path: store }] }), cfg);
+    expect(mounts).toContainEqual({ path: store });
+    const refused = (extra: Partial<SpawnRequest>) => () => runMounts(request(extra), cfg);
+    for (const m of [
+      { path: join(majhiHome, "cache") },
+      { path: join(store, "pnpm-store") },
+      { path: store, readOnly: true },
+      { path: join(majhiHome, "cache", "Bad_Name") },
+    ]) {
+      expect(refused({ mounts: [m] }), m.path).toThrow(MountRefused);
+    }
+    const link = join(majhiHome, "cache", "globex");
+    await symlink(join(majhiHome, "accounts"), link);
+    expect(refused({ mounts: [{ path: link }] })).toThrow(MountRefused);
+  });
+
+  it("mounts one workspace's tools folder read-write, and not the tools folder, its bin, or a read-only one", async () => {
+    const own = join(majhiHome, "tools", "acme");
+    await mkdir(join(own, "bin"), { recursive: true });
+    const args = dockerRunArgs(request({ mounts: [{ path: own }] }), cfg, "majhi-run-1");
+    expect(args).toContain(`type=bind,source=${own},target=${own}`);
+    const refused = (extra: Partial<SpawnRequest>) => () => runMounts(request(extra), cfg);
+    for (const m of [
+      { path: join(majhiHome, "tools") },
+      { path: join(own, "bin") },
+      { path: own, readOnly: true },
+      { path: join(majhiHome, "tools", "Bad_Name") },
+    ]) {
+      expect(refused({ mounts: [m] }), m.path).toThrow(MountRefused);
+    }
+  });
+});
+
 describe("dockerSpawner", () => {
   it("starts the run through the docker CLI with values in its environment, and removes the container on kill", async () => {
     const log = join(root, "docker.log");

@@ -10,6 +10,8 @@ import {
   type ConnectionType,
   connectionType,
   type FieldKind,
+  serviceByUrl,
+  sshTargetArgs,
   textValue,
 } from "@majhi/shared";
 import { errorCode, errorMessage, UserError } from "../errors.ts";
@@ -19,7 +21,8 @@ import { classifyProbe, runSsh, type SshRunFn } from "../ssh/hosts.ts";
 import { type BrowserServer, browserServer } from "./browser.ts";
 import { cutKubeconfig, KubeconfigError } from "./kubeconfig.ts";
 import { imapLogin, smtpGreeting } from "./mail.ts";
-import { listTools, remoteTransport, SpawnedTransport } from "./mcp-client.ts";
+import { callTool, listTools, remoteTransport, SpawnedTransport } from "./mcp-client.ts";
+import { gitTarget, productsOf } from "./plan.ts";
 import { type ConnectionService, ownerOnlyDir } from "./service.ts";
 
 const KUBECTL_TIMEOUT_MS = 45_000;
@@ -51,6 +54,19 @@ export interface TesterDeps {
    */
   browserCommand?: (server: BrowserServer) => Command;
   now?: () => Date;
+  /** Who the workspace's git sign-in for a host is, for a `git` connection's Test. */
+  gitWhoAmI?: (
+    org: string,
+    provider: "gitlab" | "github",
+    host: string,
+  ) => Promise<{ account: string } | { problem: string }>;
+  /** The Test of a connection signed in through Connect (5.14). */
+  oauth?:
+    | {
+        test(id: string): Promise<ConnectionTestResult>;
+        bearer?(id: string): Promise<{ token: string } | { problem: string }>;
+      }
+    | undefined;
 }
 
 interface Outcome {
@@ -98,7 +114,13 @@ interface RunResult {
  * can open, removed when the Test ends. SSH runs from majhi the way its git does; mail and remote
  * MCP servers are reached from majhi. No secret value ever reaches a result.
  */
+/** How long a product server's tool list is trusted before it is asked again. */
+const PRODUCT_TOOLS_TTL_MS = 10 * 60_000;
+
 export class ConnectionTester {
+  /** Each product server's tool names, by `<connection> <product>`. */
+  private readonly productTools = new Map<string, { at: number; names: Set<string> }>();
+
   constructor(private readonly deps: TesterDeps) {}
 
   async test(id: string): Promise<ConnectionTestResult> {
@@ -106,8 +128,35 @@ export class ConnectionTester {
     const view = await this.deps.connections.get(id);
     const found = await this.deps.connections.find(id);
     if (found === undefined) throw new UserError(`There is no connection ${id}.`, 404);
+    if (
+      this.deps.oauth !== undefined &&
+      ((found.connection.type === "mcp" && textValue(found.connection, "auth") === "oauth") ||
+        found.connection.type === "api" ||
+        found.connection.type === "cli" ||
+        (found.connection.type === "env" && found.connection.fields?.service !== undefined))
+    ) {
+      // Signed in through Connect: the token is majhi's to renew and send, not a header of the form.
+      const result = await this.deps.oauth.test(id);
+      this.deps.connections.recordTest(id, result);
+      return result;
+    }
     let outcome: Outcome;
     let secrets: Values["secrets"] = [];
+    if (found.connection.type === "git") {
+      const { provider, host, cli } = gitTarget(found.connection);
+      const who = (await this.deps.gitWhoAmI?.(found.org, provider, host)) ?? {
+        problem: "majhi cannot check it here.",
+      };
+      const result = {
+        ok: "account" in who,
+        detail: "account" in who ? `${cli} works on ${host} as ${who.account}.` : who.problem,
+        warnings: [],
+        at: (this.deps.now?.() ?? new Date()).toISOString(),
+        durationMs: Date.now() - started,
+      };
+      this.deps.connections.recordTest(id, result);
+      return result;
+    }
     if (view.problems.length > 0) {
       outcome = { ok: false, detail: `${view.problems.join(". ")}.`, warnings: [] };
     } else {
@@ -131,6 +180,103 @@ export class ConnectionTester {
     return result;
   }
 
+  /**
+   * Calls one tool of a remote MCP connection and returns its JSON answer, for the ops watch's monitoring
+   * read. Remote servers only (a local one would start a program on every look). Throws with a sentence.
+   */
+  async callRemoteTool(
+    id: string,
+    tool: string,
+    args: Record<string, unknown>,
+    timeoutMs = MCP_TIMEOUT_MS,
+  ): Promise<unknown> {
+    const found = await this.deps.connections.find(id);
+    if (found === undefined || found.connection.type !== "mcp") throw new Error("not an MCP connection");
+    const headers: Record<string, string> = {};
+    if (textValue(found.connection, "auth") === "oauth") {
+      const bearer = await this.deps.oauth?.bearer?.(id);
+      if (bearer === undefined || "problem" in bearer) throw new Error("the connection is not signed in");
+      if (tool.startsWith("GET "))
+        return readApi(found.connection, tool.slice(4).trim(), args, bearer.token, timeoutMs);
+      headers.Authorization = `Bearer ${bearer.token}`;
+      const protocol = textValue(found.connection, "protocol") === "sse" ? "sse" : "http";
+      const url =
+        (await this.productServer(id, found.connection, tool, headers, protocol)) ??
+        textValue(found.connection, "url") ??
+        "";
+      return callTool(remoteTransport(url, headers, protocol), tool, args, timeoutMs);
+    }
+    const values = await this.resolve(id, found.connection);
+    if ((values.fields.transport ?? "remote") !== "remote") throw new Error("only remote servers are read");
+    for (const e of values.lists.headers ?? []) if (e.value !== undefined) headers[e.name] = e.value;
+    const protocol = values.fields.protocol === "sse" ? "sse" : "http";
+    return callTool(remoteTransport(values.fields.url ?? "", headers, protocol), tool, args, timeoutMs);
+  }
+
+  /**
+   * For a connection with products (DigitalOcean), the product server that has the tool: each
+   * product is its own server, and the connection's own address is only the one it signs in with.
+   * The tool lists are kept a few minutes. Undefined for a connection without products.
+   */
+  private async productServer(
+    id: string,
+    connection: ConnectionConfig,
+    tool: string,
+    headers: Record<string, string>,
+    protocol: "http" | "sse",
+  ): Promise<string | undefined> {
+    const products = productsOf(connection);
+    if (products.length === 0) return undefined;
+    const now = Date.now();
+    for (const product of products) {
+      const key = `${id} ${product.id}`;
+      let known = this.productTools.get(key);
+      if (known === undefined || now - known.at > PRODUCT_TOOLS_TTL_MS) {
+        const names = await listTools(
+          remoteTransport(product.mcpUrl, headers, protocol),
+          MCP_TIMEOUT_MS,
+        ).catch(() => [] as string[]);
+        known = { at: now, names: new Set(names) };
+        this.productTools.set(key, known);
+      }
+      if (known.names.has(tool)) return product.mcpUrl;
+    }
+    throw new Error(
+      `majhi problem: no picked product of ${connection.name} has the tool ${tool}. Pick the product on the connection, or majhi routes it wrong.`,
+    );
+  }
+
+  /**
+   * What the watches need of a connection: its text values and, for a Variables connection, the values of its
+   * variables (secrets read from secrets.age). Held only for one look: the caller never stores or logs them.
+   */
+  async valuesForWatch(id: string): Promise<
+    | {
+        org: string;
+        type: string;
+        name: string;
+        fields: Record<string, string>;
+        vars: Record<string, string>;
+      }
+    | undefined
+  > {
+    const found = await this.deps.connections.find(id);
+    if (found === undefined) return undefined;
+    const { connection } = found;
+    if (connection.type !== "env") {
+      const fields: Record<string, string> = {};
+      for (const [k, v] of Object.entries(connection.fields ?? {}))
+        if (!v.startsWith("secret:") && !v.startsWith("file:")) fields[k] = v;
+      return { org: found.org, type: connection.type, name: connection.name, fields, vars: {} };
+    }
+    const values = await this.resolve(id, connection);
+    const vars: Record<string, string> = {};
+    for (const e of values.lists.vars ?? []) {
+      if (e.value !== undefined && e.kind !== "file") vars[e.name] = e.value;
+    }
+    return { org: found.org, type: connection.type, name: connection.name, fields: values.fields, vars };
+  }
+
   private run(type: ConnectionType, values: Values): Promise<Outcome> {
     switch (type) {
       case "kubectl":
@@ -145,6 +291,11 @@ export class ConnectionTester {
         return values.fields.mode === "mcp" ? this.mcp(values) : this.mail(values);
       case "browser":
         return this.browser(values);
+      case "api":
+      case "cli":
+        return Promise.resolve(fail("This connection is checked through Connect."));
+      case "git":
+        return Promise.resolve(fail("This connection is checked with the workspace's sign-in."));
     }
   }
 
@@ -213,14 +364,19 @@ export class ConnectionTester {
   private async ssh(v: Values): Promise<Outcome> {
     const alias = v.fields.alias ?? "";
     const hosts = await sshConfigHosts(this.deps.hostHome);
-    if (!hosts.some((h) => h.alias === alias)) return fail(`~/.ssh/config has no Host ${alias}.`);
+    // A name without user, address or dot must be a Host of ~/.ssh/config; anything else ssh resolves itself.
+    if (/^[A-Za-z0-9_-]+$/.test(alias) && !hosts.some((h) => h.alias === alias)) {
+      return fail(`~/.ssh/config has no Host ${alias}. Use user@address, like root@203.0.113.10.`);
+    }
     const run = await (this.deps.ssh ?? runSsh)([
       "-o",
       "BatchMode=yes",
       "-o",
       "ConnectTimeout=5",
-      "--",
-      alias,
+      ...sshTargetArgs(
+        alias,
+        v.fields.key === undefined || v.fields.key === "" ? undefined : { pub: v.fields.key },
+      ),
       "true",
     ]);
     if (run.code === 0) return { ok: true, detail: `Signed in to ${alias} and ran a command.`, warnings: [] };
@@ -502,4 +658,51 @@ async function sweep(root: string): Promise<void> {
     const info = await stat(path).catch(() => undefined);
     if (info !== undefined && info.mtimeMs < cutoff) await rm(path, { recursive: true, force: true });
   }
+}
+
+/**
+ * A watch's read of the service's own REST API with the connection's sign-in: `GET <url>`, the arguments
+ * as query values. `{{now}}` and `{{minutesAgo:N}}` become Unix seconds at each look, so a window moves
+ * with the clock. The token goes only to the service's own API hosts.
+ */
+export async function readApi(
+  connection: ConnectionConfig,
+  address: string,
+  args: Record<string, unknown>,
+  token: string,
+  timeoutMs: number,
+  now: () => number = Date.now,
+  fetchFn: typeof fetch = fetch,
+): Promise<unknown> {
+  let url: URL;
+  try {
+    url = new URL(address);
+  } catch {
+    throw new Error("that is not a web address");
+  }
+  const hosts = serviceByUrl(textValue(connection, "url") ?? "")?.apiHosts ?? [];
+  if (url.protocol !== "https:" || !hosts.includes(url.host)) {
+    throw new Error(
+      hosts.length === 0
+        ? `${connection.name}'s sign-in is not used for API reads`
+        : `${connection.name}'s sign-in only goes to ${hosts.join(", ")}`,
+    );
+  }
+  const seconds = Math.floor(now() / 1000);
+  for (const [name, raw] of Object.entries(args)) {
+    const value = String(raw)
+      .replace(/\{\{now\}\}/g, String(seconds))
+      .replace(/\{\{minutesAgo:(\d{1,5})\}\}/g, (_, m: string) => String(seconds - Number(m) * 60));
+    url.searchParams.set(name, value);
+  }
+  const res = await fetchFn(url, {
+    headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+    redirect: "error",
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => undefined);
+    throw new Error(`the API answered ${res.status}`);
+  }
+  return (await res.json()) as unknown;
 }

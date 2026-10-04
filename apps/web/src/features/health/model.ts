@@ -50,16 +50,16 @@ export function checksNeedingYou(checks: readonly CheckRow[] | undefined): numbe
   return (checks ?? []).filter((c) => c.group !== "accounts" && levelOf(c) === "fail").length;
 }
 
-/** "3 need you" text for the Health and usage badge, from accounts and failed checks together. */
+/** "3 to fix" text for the Health and usage badge, from accounts and failed checks together. */
 export function needYouText(count: number): string | undefined {
-  return count > 0 ? `${count} need you` : undefined;
+  return count > 0 ? `${count} to fix` : undefined;
 }
 
-/** The page's status line: "All 22 checks passed", "1 check needs you" or "2 checks need you". */
+/** The page's status line: "All 22 checks passed", "1 check to fix" or "2 checks to fix". */
 export function checksHeadline(checks: readonly CheckRow[]): string {
   const open = checks.filter((c) => levelOf(c) !== "pass").length;
   if (open === 0) return `All ${checks.length} checks passed`;
-  return open === 1 ? "1 check needs you" : `${open} checks need you`;
+  return open === 1 ? "1 check to fix" : `${open} checks to fix`;
 }
 
 /** The checks that are not passing, failures first: always shown open, with their fixes. */

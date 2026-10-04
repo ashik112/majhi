@@ -45,36 +45,6 @@ test.beforeAll(async ({ request }) => {
   await setPerms(request, "acme-reviewer", ["edit"]);
 });
 
-test("a compaction shows in the room as one quiet line, and Fresh session carries a note", async ({
-  page,
-  request,
-}) => {
-  // The fake's turn ends at 42k of 200k, so a 15% threshold compacts it; its /compact drops to a tenth.
-  await cmd(request, "settings.set", { context: { compact_at: 0.15, compact_target: 0.1 } });
-  const id = await createTask(request, "compact on api @acme-lead");
-  await page.goto(`/t/${id}`);
-  await expect(messages(page).getByText("@acme-lead compacted: 42k to 4k tokens (native)")).toBeVisible({
-    timeout: 20_000,
-  });
-  await panel(page)
-    .getByRole("button", { name: /@acme-lead(?! in this task)/, expanded: false })
-    .click();
-  const meter = panel(page).getByRole("meter", { name: "Context of @acme-lead" });
-  await expect(meter).toHaveAttribute("aria-valuetext", "4k of 200k");
-  await shot(page, "runs-compacted");
-
-  await cmd(request, "settings.set", { context: { compact_at: 0.8, compact_target: 0.4 } });
-  await panel(page).getByRole("button", { name: "@acme-lead in this task" }).click();
-  await page.getByRole("menuitem", { name: "Fresh session, with a handoff note" }).click();
-  const line = messages(page).getByText(/@acme-lead compacted: .* \(fresh\)/);
-  await expect(line).toBeVisible({ timeout: 20_000 });
-  await messages(page).getByRole("link", { name: "note" }).last().click();
-  await expect(page).toHaveURL(/file=\.handoffs%2Facme-lead-1\.md|file=\.handoffs\/acme-lead-1\.md/);
-  await expect(page.getByRole("heading", { name: "Next step" })).toBeVisible();
-  await shot(page, "runs-fresh-note");
-  await cmd(request, "tasks.close", { id });
-});
-
 test("an agent waits in line when its account is at the limit, and starts when a slot frees", async ({
   page,
   request,

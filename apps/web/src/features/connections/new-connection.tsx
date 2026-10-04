@@ -1,41 +1,44 @@
 import {
   activeLists,
-  CONNECTION_TYPES,
   type ConnectionType,
   connectionType,
+  GLOBAL_CONNECTIONS,
   type OrgView,
+  PRIVATE,
 } from "@majhi/shared";
-import { X } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ChoiceGroup } from "@/components/ui/choice-group";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { DetailPane } from "@/components/ui/list-detail";
-import { Select, Textarea } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/select";
 import { useConnectionCommand } from "@/lib/connection-queries";
 import { describeError, errorDetails } from "@/lib/errors";
 import { ConnectionFields } from "./connection-fields";
 import { createInput, emptyDraft, entryNameProblem, filledFields } from "./model";
+import { ScopePicker } from "./scope-picker";
 
 /** A new connection: its org, type, name and description, and the text values. Secrets and files come next. */
 export function NewConnection({
   orgs,
   defaultOrg,
+  initialType = "mcp",
   onCreated,
   onClose,
 }: {
+  initialType?: ConnectionType;
   orgs: readonly OrgView[];
   defaultOrg: string | undefined;
   onCreated: (id: string) => void;
   onClose: () => void;
 }) {
   const create = useConnectionCommand("connections.create");
-  const [org, setOrg] = useState(defaultOrg ?? orgs[0]?.id ?? "");
-  const [type, setType] = useState<ConnectionType>("kubectl");
+  const [org, setOrg] = useState(defaultOrg ?? PRIVATE);
+  const type = initialType;
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [draft, setDraft] = useState(() => emptyDraft("kubectl"));
+  const [draft, setDraft] = useState(() => emptyDraft(initialType));
   const def = connectionType(type);
   const lists = activeLists(type, filledFields(draft));
   const badName = lists.some((l) =>
@@ -49,7 +52,10 @@ export function NewConnection({
     });
   };
   return (
-    <DetailPane label="New connection">
+    <DetailPane
+      label="Custom setup"
+      head={<ScopePicker orgs={orgs} value={org} onChange={setOrg} disabled={create.isPending} />}
+    >
       <form
         className="flex max-w-[640px] flex-col gap-4 pt-5"
         onSubmit={(e) => {
@@ -58,47 +64,30 @@ export function NewConnection({
         }}
       >
         <div className="flex items-center gap-3">
-          <h2 className="text-md font-semibold">New connection</h2>
+          <h2 className="text-md font-semibold">{def.label}</h2>
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="sm"
             className="ml-auto"
-            aria-label="Close new connection"
-            title="Close"
+            aria-label="Back to services"
+            disabled={create.isPending}
             onClick={onClose}
           >
-            <X aria-hidden="true" />
+            <ArrowLeft aria-hidden="true" />
+            Back to services
           </Button>
         </div>
-        <ChoiceGroup
-          label="Type"
-          value={type}
-          choices={CONNECTION_TYPES.map((t) => ({ value: t.type, label: t.label }))}
-          onChange={(next) => {
-            setType(next);
-            setDraft(emptyDraft(next));
-          }}
-        />
-        <p className="-mt-2 text-sm text-fg-faint text-pretty">{def.summary}.</p>
+        <p className="text-sm text-fg-faint text-pretty">{def.summary}.</p>
         <div className="grid gap-3 @[560px]:grid-cols-2">
-          <Field label="Workspace">
-            {(p) => (
-              <Select {...p} value={org} onChange={(e) => setOrg(e.target.value)}>
-                {orgs.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </Field>
           <Field label="Name">
             {(p) => (
               <Input
                 {...p}
                 value={name}
                 maxLength={80}
-                placeholder="Acme prod cluster"
+                placeholder={
+                  type === "kubectl" ? "Acme production" : type === "ssh" ? "Acme server" : "Acme service"
+                }
                 onChange={(e) => setName(e.target.value)}
               />
             )}
@@ -112,7 +101,11 @@ export function NewConnection({
               maxLength={2000}
               className="font-sans"
               value={description}
-              placeholder="Read-only viewer on the prod cluster. The api runs in namespace api."
+              placeholder={
+                type === "kubectl"
+                  ? "Read-only access to the production cluster."
+                  : "What this connection lets agents do."
+              }
               onChange={(e) => setDescription(e.target.value)}
             />
           )}
@@ -130,9 +123,13 @@ export function NewConnection({
         )}
         <div className="flex items-center gap-3">
           <Button type="submit" variant="primary" disabled={!ready}>
-            {create.isPending ? "Creating" : "Create connection"}
+            {create.isPending
+              ? "Creating"
+              : org === GLOBAL_CONNECTIONS
+                ? "Add Global connection"
+                : "Add connection"}
           </Button>
-          <span className="text-sm text-fg-faint">Secrets and files are set right after.</span>
+          <span className="text-sm text-fg-faint">Next, add the credentials and test the connection.</span>
         </div>
       </form>
     </DetailPane>

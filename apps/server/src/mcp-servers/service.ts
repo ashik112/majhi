@@ -24,16 +24,14 @@ import type { McpRegistry } from "./registry.ts";
 /** A preview stays valid this long, and is used once. */
 export const MCP_PREVIEW_TTL_MS = 30 * 60_000;
 
-/** The parts of the agent service MCP servers use: the agent files' `connections` lists. */
+/** The part of the agent service MCP servers use. */
 export interface McpAgents {
-  /** Each agent's id, scope (an org id or `root`) and the connections its file lists. */
-  connectionLists(): Promise<{ id: string; scope: string; connections: string[] }[]>;
-  /** Replaces the `connections` list in the agent's file. */
-  setConnections(agent: string, list: string[], command: string, meta: CommandMeta): Promise<void>;
+  /** Each agent's id and scope (an org id or `root`). */
+  scopes(): Promise<{ id: string; scope: string }[]>;
 }
 
 export interface McpServiceDeps {
-  connections: Pick<ConnectionService, "create" | "get" | "find" | "list">;
+  connections: Pick<ConnectionService, "create" | "get" | "find" | "list" | "update">;
   tester: Pick<ConnectionTester, "test">;
   registry: Pick<McpRegistry, "search" | "get">;
   agents: McpAgents;
@@ -58,9 +56,8 @@ const RESERVED_IDS: ReadonlySet<string> = new Set(TOOL_CATALOG.map((t) => t.name
 
 /**
  * MCP servers: found in the registry or described by the owner, shown in a preview, then created as
- * an `mcp` connection and tested. The connection is the only record: enabling a server for an agent
- * adds it to the agent file's `connections` list, and Phase 10's gate and run injection do the rest.
- * Nothing is enabled by installing.
+ * an `mcp` connection and tested. Like every connection, it reaches every agent of its org; turning
+ * it off for one agent puts that agent on the connection's `agents_off`.
  */
 export class McpService {
   private readonly pending = new Map<string, Pending>();
@@ -105,9 +102,13 @@ export class McpService {
   }
 
   async enable(input: McpAgentInput, command: string, meta: CommandMeta): Promise<ConnectionView> {
-    const list = await this.agentList(input);
-    if (list.includes(input.connection)) return this.deps.connections.get(input.connection);
-    await this.deps.agents.setConnections(input.agent, [...list, input.connection], command, meta);
+    const off = await this.offList(input);
+    if (!off.includes(input.agent)) return this.deps.connections.get(input.connection);
+    await this.deps.connections.update(
+      { id: input.connection, agentsOff: off.filter((a) => a !== input.agent) },
+      command,
+      meta,
+    );
     this.log(
       meta,
       "mcp-enable",
@@ -118,25 +119,19 @@ export class McpService {
   }
 
   async disable(input: McpAgentInput, command: string, meta: CommandMeta): Promise<ConnectionView> {
-    const found = await this.deps.connections.find(input.connection);
-    if (found === undefined) throw new UserError(`There is no connection ${input.connection}.`, 404);
-    const agent = (await this.deps.agents.connectionLists()).find((a) => a.id === input.agent);
-    if (agent === undefined)
-      throw new UserError(`There is no agent @${input.agent}, or its file has errors.`, 404);
-    if (agent.connections.includes(input.connection)) {
-      await this.deps.agents.setConnections(
-        input.agent,
-        agent.connections.filter((c) => c !== input.connection),
-        command,
-        meta,
-      );
-      this.log(
-        meta,
-        "mcp-disable",
-        `Turn off ${input.connection} for @${input.agent}`,
-        `${input.connection} for @${input.agent}`,
-      );
-    }
+    const off = await this.offList(input);
+    if (off.includes(input.agent)) return this.deps.connections.get(input.connection);
+    await this.deps.connections.update(
+      { id: input.connection, agentsOff: [...off, input.agent] },
+      command,
+      meta,
+    );
+    this.log(
+      meta,
+      "mcp-disable",
+      `Turn off ${input.connection} for @${input.agent}`,
+      `${input.connection} for @${input.agent}`,
+    );
     return this.deps.connections.get(input.connection);
   }
 
@@ -224,8 +219,8 @@ export class McpService {
     };
   }
 
-  /** The agent file's list, after checking that the connection may be turned on for that agent. */
-  private async agentList(input: McpAgentInput): Promise<string[]> {
+  /** The agents the server is off for, after checking that it can be switched for this agent. */
+  private async offList(input: McpAgentInput): Promise<string[]> {
     const found = await this.deps.connections.find(input.connection);
     if (found === undefined) throw new UserError(`There is no connection ${input.connection}.`, 404);
     if (found.connection.type !== "mcp") {
@@ -233,20 +228,16 @@ export class McpService {
         `${input.connection} is not an MCP server. Other connections are set up on the Connections page.`,
       );
     }
-    return (await this.eligible(input.agent, found.org, input.connection)).connections;
+    await this.eligible(input.agent, found.org, input.connection);
+    return found.connection.agents_off ?? [];
   }
 
-  /** The agent, when a server of `org` may be turned on for it: an agent of that org, not a root agent. */
+  /** The agent, when a server of `org` reaches it: an agent of that org, or a root agent. */
   private async eligible(agentId: string, org: string, connection: string) {
-    const agent = (await this.deps.agents.connectionLists()).find((a) => a.id === agentId);
+    const agent = (await this.deps.agents.scopes()).find((a) => a.id === agentId);
     if (agent === undefined)
       throw new UserError(`There is no agent @${agentId}, or its file has errors.`, 404);
-    if (agent.scope === "root") {
-      throw new UserError(
-        `@${agentId} is a root agent: it gets every connection of a task's org and attaches others with majhi-connections, so it has no switch per server.`,
-      );
-    }
-    if (agent.scope !== org) {
+    if (agent.scope !== "root" && agent.scope !== org) {
       throw new UserError(
         `@${agentId} belongs to org ${agent.scope} and ${connection} to org ${org}. An agent only uses its own org's connections.`,
       );

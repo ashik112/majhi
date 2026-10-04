@@ -2,20 +2,27 @@ import { randomUUID } from "node:crypto";
 import type { McpServerSpec } from "@majhi/acp";
 import {
   type Answer,
+  answerChoices,
+  type Calibration,
   type CommandMeta,
   type DecideRequest,
   type DecideRequestInput,
   DecideRequestSchema,
+  type DecisionLabel,
   type DecisionOutcome,
   type DecisionPatchSchema,
   type DecisionRecord,
   type DecisionResult,
   type DecisionSettings,
+  DecisionSettingsSchema,
+  type EvalReport,
   type Gate,
   gateAnswer,
   type LayaStatus,
+  type LinkKind,
   type ProviderId,
   type Question,
+  type SlotStatus,
 } from "@majhi/shared";
 import type { z } from "zod";
 import { secretName } from "../accounts/homes.ts";
@@ -24,14 +31,22 @@ import type { ConfigService } from "../config/service.ts";
 import { UserError } from "../errors.ts";
 import { difficultyQuestion, isDifficulty } from "../runs/difficulty.ts";
 import type { SecretStore } from "../secrets/store.ts";
-import type { Decisions, RateTaskRequest, TaskRating } from "./api.ts";
-import { runChain } from "./chain.ts";
+import type { DecideUse, Decisions, RateTaskRequest, TaskRating } from "./api.ts";
+import { type CachedDecision, cacheKey, DecisionCache } from "./cache.ts";
+import { baseGate, fitSlot, liveGate, previewGate } from "./calibration.ts";
+import type { CalibrationStore } from "./calibrationStore.ts";
+import { CircuitBreaker, runChain } from "./chain.ts";
+import { bestLabels, type EvalProvider, EvalRunner } from "./evalRunner.ts";
+import type { EvalStore } from "./evalStore.ts";
 import { JevProvider } from "./jev.ts";
+import { type LabelStore, sizeBucket, type TaskOutcome } from "./labels.ts";
 import type { LayaProvider } from "./layaProvider.ts";
 import type { DecisionLog } from "./log.ts";
 import type { DecisionProvider } from "./providers.ts";
 import { readDecisionSettings } from "./settings.ts";
+import { MIN_LABELS, type SlotDef, type SlotRegistry } from "./slots.ts";
 import type { DecideTokens } from "./tokens.ts";
+import { regressionOf } from "./uses/weekly-eval.ts";
 
 export const DECIDE_SERVER_NAME = "majhi-decide";
 export const DECIDE_PATH = "/mcp/decide";
@@ -46,6 +61,13 @@ const NAMES: Record<ProviderId, string> = {
 export interface DecisionServiceDeps {
   config: ConfigService;
   log: DecisionLog;
+  labels: LabelStore;
+  /** The decision slots: what is labeled, evaluated and gated. */
+  slots: SlotRegistry;
+  evals: EvalStore;
+  calibrations: CalibrationStore;
+  /** Overrides how long each provider gets, for tests. */
+  budgets?: Partial<Record<ProviderId, number>>;
   tokens: DecideTokens;
   laya: LayaProvider;
   acp: DecisionProvider;
@@ -57,19 +79,47 @@ export interface DecisionServiceDeps {
   now?: () => Date;
 }
 
-interface Use {
-  use: DecisionRecord["use"];
-  task?: string;
-  agent?: string;
-}
+type Use = DecideUse;
 
 /** The decision provider (SPEC 5.12): the chain, the log, model picking and the `majhi-decide` tool. */
 export class DecisionService implements Decisions {
   private readonly now: () => Date;
   private readonly jev: JevProvider;
+  /** Skips a provider that keeps failing, for a while, so a down Laya costs one slow call and not many. */
+  readonly breaker = new CircuitBreaker();
+  /** Laya answers the same request the same way, so a repeat is answered from here. */
+  readonly cache = new DecisionCache();
+  /** Requests being answered now, so an identical one shares the answer. */
+  private readonly inflight = new Map<string, Promise<CachedDecision | undefined>>();
+  private readonly runner: EvalRunner;
+  /** The bar the eval scores with: refreshed when an eval starts. */
+  private barSettings: DecisionSettings | undefined;
 
   constructor(private readonly deps: DecisionServiceDeps) {
     this.now = deps.now ?? (() => new Date());
+    const laya = deps.laya;
+    const provider: EvalProvider = {
+      id: "laya",
+      version: () => laya.currentVersion(),
+      costPer1000Usd: 0,
+      ask: async (request) => (await laya.decide(request)).answers,
+    };
+    this.runner = new EvalRunner({
+      registry: deps.slots,
+      labels: deps.labels,
+      log: deps.log,
+      results: deps.evals,
+      provider,
+      calibrations: deps.calibrations,
+      gate: (_slot, q, a, cal) =>
+        previewGate(q, a, cal, this.barSettings ?? DecisionSettingsSchema.parse({})),
+      fit: (slot, items, version) =>
+        fitSlot(slot, items, version, {
+          now: this.now,
+          settings: this.barSettings ?? DecisionSettingsSchema.parse({}),
+        }),
+      now: this.now,
+    });
     this.jev = new JevProvider(async () => {
       const ref = (await this.settings()).jev_key;
       return ref === undefined ? undefined : deps.secrets.get(secretName(ref));
@@ -89,41 +139,136 @@ export class DecisionService implements Decisions {
     const request = DecideRequestSchema.parse(input);
     const started = performance.now();
     const settings = await this.settings();
-    const chain = await runChain(settings.order, this.providers(), request);
-    const answers = Object.fromEntries(
-      Object.entries(chain.answers).map(([key, a]) => {
-        const q = request.questions[key];
-        return [key, q === undefined ? a : { ...a, gate: gate(q, a, chain.provider, settings) }];
-      }),
-    );
-    const { sent, version, ...rest } = chain;
-    const result: DecisionResult = {
-      id: `dec_${randomUUID().slice(0, 8)}`,
-      ...rest,
-      answers,
-      durationMs: Math.round(performance.now() - started),
-    };
-    this.deps.log.add({
-      id: result.id,
-      at: this.now().toISOString(),
-      use: use.use,
-      ...(use.task === undefined ? {} : { task: use.task }),
-      ...(use.agent === undefined ? {} : { agent: use.agent }),
-      summary: summarize(request),
-      provider: result.provider,
-      answers: result.answers,
-      estimated: result.estimated,
-      durationMs: result.durationMs,
-      request: {
-        state: sent?.state ?? request.state,
-        questions: request.questions,
-        ...(sent === undefined ? {} : { sent: sent.questions }),
-      },
-      trimmed: result.trimmed,
-      skipped: result.skipped,
-      ...(version === undefined ? {} : { version }),
+    // The rules always close the chain: their answer never counts, so the caller applies its own safe default at once.
+    const wanted = use.order ?? settings.order;
+    const order = wanted.includes("rules") ? [...wanted] : [...wanted, "rules" as const];
+    const first = order[0];
+    if (use.perDay !== undefined && first !== undefined && first !== "rules") {
+      const dayStart = new Date(this.now());
+      dayStart.setUTCHours(0, 0, 0, 0);
+      if (this.deps.log.countSince(use.use, first, dayStart.toISOString()) >= use.perDay)
+        throw new UserError(
+          `The daily budget of ${use.perDay} ${first} answers for ${use.use} is spent.`,
+          409,
+        );
+    }
+    const model = this.deps.laya.currentVersion();
+    const key = cacheKey(request, {
+      model: `${order.join(",")}|${model}`,
+      calibration: this.deps.calibrations.version(),
     });
-    return result;
+    const gated = (answers: Record<string, Answer>, provider: ProviderId) =>
+      Object.fromEntries(
+        Object.entries(answers).map(([name, a]) => {
+          const q = request.questions[name];
+          return [
+            name,
+            q === undefined ? a : { ...a, gate: this.gate(use.use, name, q, a, provider, settings, model) },
+          ];
+        }),
+      );
+    const fromCache = (seen: CachedDecision): DecisionResult => ({
+      id: seen.id,
+      answers: gated(seen.answers, "laya"),
+      provider: "laya",
+      skipped: [],
+      trimmed: seen.trimmed,
+      estimated: false,
+      durationMs: Math.round(performance.now() - started),
+      cached: true,
+    });
+    const cacheable = order[0] === "laya";
+    if (cacheable) {
+      const seen = this.cache.get(key);
+      if (seen !== undefined) return fromCache(seen);
+      // The same request is being answered right now: share that answer instead of asking twice.
+      const flying = this.inflight.get(key);
+      if (flying !== undefined) {
+        const shared = await flying;
+        if (shared !== undefined) return fromCache(shared);
+      }
+    }
+    let settle: (value: CachedDecision | undefined) => void = () => {};
+    const mine = cacheable && !this.inflight.has(key);
+    if (mine)
+      this.inflight.set(key, new Promise<CachedDecision | undefined>((resolve) => (settle = resolve)));
+    try {
+      const chain = await runChain(order, this.providers(), request, {
+        breaker: this.breaker,
+        ...(this.deps.budgets === undefined ? {} : { budgets: this.deps.budgets }),
+      });
+      const answers = gated(chain.answers, chain.provider);
+      const { sent, version, ...rest } = chain;
+      const result: DecisionResult = {
+        id: `dec_${randomUUID().slice(0, 8)}`,
+        ...rest,
+        answers,
+        durationMs: Math.round(performance.now() - started),
+      };
+      const entry: CachedDecision = { id: result.id, answers: chain.answers, trimmed: chain.trimmed };
+      if (chain.provider === "laya" && cacheable) this.cache.set(key, entry);
+      this.deps.log.add({
+        id: result.id,
+        at: this.now().toISOString(),
+        use: use.use,
+        ...(use.task === undefined ? {} : { task: use.task }),
+        ...(use.agent === undefined ? {} : { agent: use.agent }),
+        summary: summarize(request),
+        provider: result.provider,
+        answers: result.answers,
+        estimated: result.estimated,
+        durationMs: result.durationMs,
+        request: {
+          state: sent?.state ?? request.state,
+          questions: request.questions,
+          ...(sent === undefined ? {} : { sent: sent.questions }),
+        },
+        trimmed: result.trimmed,
+        skipped: result.skipped,
+        ...(version === undefined ? {} : { version }),
+      });
+      settle(chain.provider === "laya" ? entry : undefined);
+      return result;
+    } catch (err) {
+      settle(undefined);
+      throw err;
+    } finally {
+      if (mine) this.inflight.delete(key);
+    }
+  }
+
+  /**
+   * Whether an answer counts. The rules provider only guesses, so its answers never do. Laya's answer
+   * to a slot counts only when the slot is live (a passing eval on this checkpoint) and the answer
+   * clears the slot's calibrated bar with every option order agreeing; otherwise it is a shadow.
+   * The stand-in agent and Jev keep the base bar.
+   */
+  private gate(
+    use: Use["use"],
+    name: string,
+    q: Question,
+    a: Answer,
+    provider: ProviderId,
+    settings: DecisionSettings,
+    model: string,
+  ): Gate {
+    if (provider === "rules")
+      return { ...gateAnswer(q, a, settings), accepted: false, reason: "the rules only guess" };
+    if (provider !== "laya") return baseGate(q, a, settings);
+    const slot = this.deps.slots.of(use, name);
+    return liveGate({
+      slot,
+      q,
+      a,
+      cal: this.deps.calibrations.get(slot.id),
+      settings,
+      version: model,
+      labels: this.labelCount(slot),
+    });
+  }
+
+  private labelCount(slot: SlotDef): number {
+    return bestLabels(this.deps.labels.forUse(slot.use).filter((l) => this.deps.slots.has(slot, l))).length;
   }
 
   outcome(id: string, outcome: DecisionOutcome): void {
@@ -144,6 +289,137 @@ export class DecisionService implements Decisions {
     return record;
   }
 
+  /** One decision from the log. */
+  get(id: string): DecisionRecord {
+    const record = this.deps.log.get(id);
+    if (record === undefined) throw new UserError(`There is no decision ${id}.`, 404);
+    return record;
+  }
+
+  /** The owner says what the right answer was. Kept as a label for the evals and calibration. */
+  label(input: {
+    id: string;
+    question?: string | undefined;
+    right: string;
+    note?: string | undefined;
+  }): DecisionLabel {
+    const record = this.get(input.id);
+    const names = Object.keys(record.answers);
+    const question = input.question ?? (names.length === 1 ? names[0] : undefined);
+    if (question === undefined) throw new UserError(`Say which question: ${names.join(", ")}.`);
+    if (!names.includes(question)) throw new UserError(`Decision ${input.id} has no question ${question}.`);
+    const asked = record.request?.questions[question];
+    const options = asked === undefined ? undefined : answerChoices(asked);
+    if (options !== undefined && !options.includes(input.right))
+      throw new UserError(`${input.right} is not one of ${options.join(", ")}.`);
+    this.deps.labels.add({
+      decisionId: input.id,
+      question,
+      label: input.right,
+      source: "owner",
+      note: input.note,
+    });
+    const stored = this.deps.labels
+      .forDecision(input.id)
+      .find((l) => l.question === question && l.source === "owner");
+    if (stored === undefined) throw new Error(`The label for ${input.id} cannot be read.`);
+    return stored;
+  }
+
+  /**
+   * Owner only (the command checks). Runs one slot, or all, on its labeled set and its built-in
+   * fixtures, and stores the reports. A second call for the same slot while one runs shares it.
+   */
+  async runEvals(use: string): Promise<EvalReport[]> {
+    const wanted =
+      use === "all" ? this.deps.slots.all() : [this.deps.slots.byId(use)].filter((s) => s !== undefined);
+    if (wanted.length === 0)
+      throw new UserError(
+        `There is no decision slot ${use}. Slots: ${this.deps.slots
+          .all()
+          .map((s) => s.id)
+          .join(", ")}.`,
+        404,
+      );
+    this.barSettings = await this.settings();
+    const reports: EvalReport[] = [];
+    for (const slot of wanted) {
+      const labeled = bestLabels(
+        this.deps.labels.forUse(slot.use).filter((l) => this.deps.slots.has(slot, l)),
+      ).length;
+      if (labeled > 0) reports.push(await this.runner.run(slot.id, "labels"));
+      if (slot.fixtures !== undefined) reports.push(await this.runner.run(slot.id, "fixtures"));
+    }
+    return reports;
+  }
+
+  /** Every slot with its mode, its labels and its last reports, for Hub setup. */
+  slots(): SlotStatus[] {
+    return this.deps.slots.all().map((slot) => {
+      const calibration = this.deps.calibrations.get(slot.id);
+      const labels = bestLabels(
+        this.deps.labels.forUse(slot.use).filter((l) => this.deps.slots.has(slot, l)),
+      ).length;
+      const labeled = this.deps.evals.latest(slot.id, "labels");
+      const fixtures = this.deps.evals.latest(slot.id, "fixtures");
+      const mode = this.modeOf(slot.id, calibration);
+      // The weekly eval compares the last two runs on the owner's labels, else on the built-in examples.
+      const set = labeled === undefined ? "fixtures" : "labels";
+      const drift = regressionOf(
+        slot,
+        mode === "live",
+        this.deps.evals.history(slot.id, 8).filter((r) => r.set === set),
+      );
+      return {
+        slot: slot.id,
+        title: slot.title,
+        use: slot.use,
+        mode,
+        labels,
+        labelsNeeded: MIN_LABELS,
+        target: slot.target,
+        ...(calibration === undefined ? {} : { calibration }),
+        ...(labeled === undefined ? {} : { labeled }),
+        ...(fixtures === undefined ? {} : { fixtures }),
+        hasFixtures: slot.fixtures !== undefined,
+        ...drift,
+      };
+    });
+  }
+
+  private modeOf(slotId: string, calibration: Calibration | undefined): "shadow" | "live" {
+    if (calibration !== undefined) return calibration.mode;
+    return this.deps.slots.byId(slotId)?.startMode === "live" ? "live" : "shadow";
+  }
+
+  labels(): LabelStore {
+    return this.deps.labels;
+  }
+
+  link(kind: LinkKind, ref: string, decisionId: string, question: string): void {
+    this.deps.labels.link(kind, ref, decisionId, question);
+  }
+
+  /** A stronger provider's answer labels the decision it was unsure about. The owner's own label still wins. */
+  teach(decisionId: string, question: string, label: string, note?: string): void {
+    const use = this.deps.labels.useOf(decisionId);
+    if (use === undefined) return;
+    // Labels are in the slot's classes ("not-keep" for every kind of drop), as its answers are compared.
+    const classed = this.deps.slots.of(use, question).classOf?.(label) ?? label;
+    this.deps.labels.add({ decisionId, question, label: classed, source: "teacher", note });
+  }
+
+  /** The outcome of `ref` is known. The links go: a fact kept once stays kept. */
+  resolve(kind: LinkKind, ref: string, label: string, note?: string): void {
+    this.deps.labels.resolve(kind, ref, { label, note }, true);
+  }
+
+  /** A task reached review: its size decisions get the size it turned out to be. Again at the next review. */
+  taskReviewed(task: string, outcome: TaskOutcome): void {
+    const size = sizeBucket(outcome);
+    this.deps.labels.resolve("task", task, { label: size.label, note: size.note });
+  }
+
   ask(request: DecideRequest): Promise<DecisionResult> {
     return this.decide(request, { use: "owner" });
   }
@@ -159,11 +435,12 @@ export class DecisionService implements Decisions {
     const ids = [...new Set<ProviderId>([...settings.order, "laya", "jev", "acp", "rules"])];
     const providers = await Promise.all(
       ids.map(async (id) => {
-        const reason = id === "laya" ? layaReason(laya) : await all[id].unavailable();
+        const cooling = this.breaker.skipReason(id);
+        const reason = cooling ?? (id === "laya" ? layaReason(laya) : await all[id].unavailable());
         return { id, available: reason === undefined, detail: reason ?? "Ready" };
       }),
     );
-    return { settings, laya, providers };
+    return { settings, laya, providers, cache: this.cache.stats() };
   }
 
   async set(
@@ -204,6 +481,7 @@ export class DecisionService implements Decisions {
       });
       const a = result.answers.difficulty;
       if (a === undefined) return undefined;
+      if (request.task !== undefined) this.link("task", request.task, result.id, "difficulty");
       const level = isDifficulty(a.value) ? a.value : undefined;
       return {
         ...(level === undefined ? {} : { level }),
@@ -235,12 +513,6 @@ export class DecisionService implements Decisions {
   revoke(token: string): void {
     this.deps.tokens.revoke(token);
   }
-}
-
-/** Whether an answer counts. The rules provider only guesses, so its answers never do. */
-function gate(q: Question, a: Answer, provider: ProviderId, settings: DecisionSettings): Gate {
-  const g = gateAnswer(q, a, settings);
-  return provider === "rules" ? { ...g, accepted: false, reason: "the rules only guess" } : g;
 }
 
 function layaReason(laya: LayaStatus): string | undefined {

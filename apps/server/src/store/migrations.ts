@@ -820,6 +820,639 @@ CREATE TABLE decision_recommendations (
     name: "drop captain presence",
     sql: "DROP TABLE captain_presence;",
   },
+  {
+    // One-time recheck of memories the old curator handed to the owner. A memory the chore looked at
+    // has a log key `memory:<id>` and is never looked at again, so what the old rule handed over
+    // ('asked', before the memory fix of 2026-10-04 01:27 +0600) would never be judged by the better
+    // rule. The key is renamed, so the log line stays and the next memory run looks at it once more.
+    id: 124,
+    name: "recheck memories handed to the owner",
+    sql: `
+UPDATE captain_actions
+SET key = key || ':handed-before-recheck'
+WHERE chore = 'memory'
+  AND outcome = 'asked'
+  AND key GLOB 'memory:[0-9]*'
+  AND key NOT LIKE 'memory:%:%'
+  AND at < '2026-10-03T19:27:50.000Z';
+`,
+  },
+  {
+    // Tasks paused when Autonomous was turned off, before `paused_by` existed, read as paused by the
+    // owner and the captain never resumed them. A task of the captain or Autonomous (`autonomy_tasks`)
+    // paused for the owner, with nobody recorded, within two minutes of a mode event that turned
+    // Autonomous off (Stop now writes "Turned off" just after pausing; a graceful stop writes
+    // "Stopping after the current turns" just before), was paused by that switch. A task the owner
+    // paused by hand at another time keeps no `paused_by`.
+    id: 125,
+    name: "paused by autonomy off",
+    sql: `
+UPDATE tasks SET paused_by = 'autonomy-off'
+WHERE status = 'paused'
+  AND paused_reason = 'owner'
+  AND paused_by IS NULL
+  AND id IN (SELECT task FROM autonomy_tasks)
+  AND EXISTS (
+    SELECT 1 FROM autonomy_events e
+    WHERE e.kind = 'mode'
+      AND (e.text LIKE 'Turned off%' OR e.text LIKE 'Stopping after%')
+      AND ABS(julianday(e.at) - julianday(tasks.updated_at)) <= 2.0 / 1440
+  );
+`,
+  },
+  {
+    // Findings (SPEC 5.18): what the captain's playbooks and agents noticed, deduplicated by key.
+    id: 126,
+    name: "findings",
+    sql: `
+CREATE TABLE findings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT NOT NULL,
+  project TEXT,
+  source TEXT NOT NULL,
+  title TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  evidence TEXT NOT NULL DEFAULT '[]',
+  severity TEXT NOT NULL DEFAULT 'info',
+  goal TEXT,
+  playbook TEXT,
+  channel TEXT,
+  dedupe_key TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  task TEXT,
+  decision TEXT,
+  dismissed_reason TEXT,
+  by TEXT NOT NULL,
+  seen INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  last_seen TEXT NOT NULL,
+  UNIQUE (org, dedupe_key)
+);
+CREATE INDEX findings_org_status ON findings (org, status);
+`,
+  },
+  {
+    // The project knowledge card (SPEC 5.18, captain v2): one JSON card per project, rewritten when
+    // the base branch moves. facts_hash tells whether the facts changed, so the model's paragraph is
+    // only rewritten when they did.
+    id: 127,
+    name: "project cards",
+    sql: `
+CREATE TABLE project_cards (
+  project TEXT PRIMARY KEY,
+  card TEXT NOT NULL,
+  facts_hash TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+`,
+  },
+  {
+    // Outcome labels for decisions (SPEC 5.12): the right answer to one question of one decision,
+    // with where it came from. \`decision_links\` holds a decision until its outcome is known (a task
+    // finishes, a woken agent's turn ends, the owner keeps or drops a fact), then the labeler writes
+    // the label and removes the link.
+    id: 128,
+    name: "decision labels and links",
+    sql: `
+CREATE TABLE decision_labels (
+  decision_id TEXT NOT NULL,
+  use TEXT NOT NULL,
+  question TEXT NOT NULL,
+  label TEXT NOT NULL,
+  source TEXT NOT NULL,
+  note TEXT,
+  at TEXT NOT NULL,
+  PRIMARY KEY (decision_id, question, source)
+);
+CREATE INDEX decision_labels_use ON decision_labels (use, question);
+CREATE TABLE decision_links (
+  kind TEXT NOT NULL,
+  ref TEXT NOT NULL,
+  decision_id TEXT NOT NULL,
+  question TEXT NOT NULL,
+  at TEXT NOT NULL,
+  PRIMARY KEY (kind, ref, decision_id, question)
+);
+`,
+  },
+  {
+    // A captain log line can name the decision it came from, so the owner can say it was wrong.
+    id: 129,
+    name: "decision on captain log lines",
+    sql: `ALTER TABLE captain_actions ADD COLUMN decision TEXT;`,
+  },
+  {
+    // Eval runs of the decision provider (SPEC 5.12): one row per run of a slot over the labeled set
+    // or the built-in fixtures, the report as JSON. Kept, so a drift between runs is visible.
+    id: 130,
+    name: "decision eval runs",
+    sql: `
+CREATE TABLE decision_evals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  slot TEXT NOT NULL,
+  set_name TEXT NOT NULL,
+  at TEXT NOT NULL,
+  report TEXT NOT NULL
+);
+CREATE INDEX decision_evals_slot ON decision_evals (slot, set_name, id);
+`,
+  },
+  {
+    // The fitted calibration of each decision slot (SPEC 5.12): the temperature, the bar for the
+    // target precision, and whether the slot acts (live) or only logs (shadow). JSON, one per slot.
+    id: 131,
+    name: "decision calibration per slot",
+    sql: `
+CREATE TABLE decision_calibration (
+  slot TEXT PRIMARY KEY,
+  calibration TEXT NOT NULL
+);
+`,
+  },
+  {
+    // Business memory (SPEC 5.19): a knowledge base with versions and a full-text index, voice profiles,
+    // a light CRM and deadlines. org NULL is the whole business; a workspace id is that workspace.
+    id: 132,
+    name: "business memory",
+    sql: `
+CREATE TABLE kb_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  tags TEXT NOT NULL DEFAULT '[]',
+  sources TEXT NOT NULL DEFAULT '[]',
+  files TEXT NOT NULL DEFAULT '[]',
+  verified INTEGER NOT NULL DEFAULT 0,
+  verified_at TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  by TEXT NOT NULL,
+  embedding BLOB,
+  removed_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX kb_entries_org ON kb_entries (org, kind);
+CREATE TABLE kb_versions (
+  entry INTEGER NOT NULL REFERENCES kb_entries (id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  tags TEXT NOT NULL,
+  sources TEXT NOT NULL,
+  verified INTEGER NOT NULL,
+  change TEXT NOT NULL,
+  by TEXT NOT NULL,
+  at TEXT NOT NULL,
+  PRIMARY KEY (entry, version)
+);
+CREATE VIRTUAL TABLE kb_fts USING fts5 (title, body, tags, tokenize = 'porter unicode61');
+CREATE TABLE voice_profiles (
+  scope TEXT PRIMARY KEY,
+  profile TEXT NOT NULL,
+  proposal TEXT
+);
+CREATE TABLE crm_contacts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT,
+  kind TEXT NOT NULL,
+  relation TEXT NOT NULL,
+  name TEXT NOT NULL,
+  company TEXT NOT NULL DEFAULT '',
+  role TEXT NOT NULL DEFAULT '',
+  links TEXT NOT NULL DEFAULT '[]',
+  emails TEXT NOT NULL DEFAULT '[]',
+  notes TEXT NOT NULL DEFAULT '',
+  tags TEXT NOT NULL DEFAULT '[]',
+  owner_only INTEGER NOT NULL DEFAULT 0,
+  stage TEXT,
+  next_step TEXT NOT NULL DEFAULT '',
+  next_due TEXT,
+  last_touch TEXT,
+  by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX crm_contacts_org ON crm_contacts (org, relation);
+CREATE INDEX crm_contacts_due ON crm_contacts (next_due);
+CREATE TABLE crm_keys (
+  contact INTEGER NOT NULL REFERENCES crm_contacts (id) ON DELETE CASCADE,
+  org TEXT NOT NULL,
+  key TEXT NOT NULL,
+  PRIMARY KEY (contact, key)
+);
+CREATE INDEX crm_keys_lookup ON crm_keys (org, key);
+CREATE TABLE crm_interactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  contact INTEGER NOT NULL REFERENCES crm_contacts (id) ON DELETE CASCADE,
+  at TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  link TEXT,
+  by TEXT NOT NULL
+);
+CREATE INDEX crm_interactions_contact ON crm_interactions (contact, at);
+CREATE TABLE deadlines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  due TEXT NOT NULL,
+  tz TEXT NOT NULL,
+  due_at TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT '',
+  lead_days TEXT NOT NULL DEFAULT '[]',
+  goal TEXT,
+  finding INTEGER,
+  contact INTEGER,
+  status TEXT NOT NULL DEFAULT 'open',
+  by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX deadlines_due ON deadlines (status, due_at);
+`,
+  },
+  {
+    // Playbooks, goals and the outbound gate (SPEC 5.18, captain v2 step 6): what the owner changed per
+    // playbook and workspace, the run history, goals, each channel's mode and the drafts that wait.
+    id: 133,
+    name: "playbooks goals outbound",
+    sql: `
+CREATE TABLE playbook_state (
+  org TEXT NOT NULL,
+  playbook TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT '{}',
+  failures INTEGER NOT NULL DEFAULT 0,
+  backoff_until TEXT,
+  last_run TEXT,
+  PRIMARY KEY (org, playbook)
+);
+CREATE TABLE playbook_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT NOT NULL,
+  playbook TEXT NOT NULL,
+  trigger TEXT NOT NULL,
+  status TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  ended_at TEXT,
+  note TEXT,
+  findings INTEGER NOT NULL DEFAULT 0,
+  tokens INTEGER NOT NULL DEFAULT 0,
+  chat TEXT
+);
+CREATE INDEX playbook_runs_pb ON playbook_runs (org, playbook, id);
+CREATE UNIQUE INDEX playbook_runs_one_open ON playbook_runs (org, playbook) WHERE status = 'running';
+CREATE TABLE goals (
+  id TEXT PRIMARY KEY,
+  org TEXT NOT NULL,
+  title TEXT NOT NULL,
+  metric TEXT,
+  target TEXT,
+  due TEXT,
+  status TEXT NOT NULL,
+  by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX goals_org ON goals (org, status);
+CREATE TABLE outbound_channels (
+  org TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'draft',
+  batch_at TEXT NOT NULL DEFAULT '09:00',
+  auto_by_owner INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (org, channel)
+);
+CREATE TABLE outbound_drafts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  target TEXT NOT NULL,
+  subject TEXT,
+  body TEXT NOT NULL,
+  voice TEXT,
+  playbook TEXT,
+  finding INTEGER,
+  status TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  result TEXT,
+  by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  decided_at TEXT
+);
+CREATE INDEX outbound_drafts_org ON outbound_drafts (org, status);
+`,
+  },
+  {
+    // Sensors (SPEC 5.18, captain v2 step 9): what a sensor remembers between runs, so it asks upstream
+    // only when something may have changed: ETags, lockfile hashes, advisory and release answers, and
+    // the radar's weekly token count. Public answers and counters only, never a secret or a source line.
+    id: 134,
+    name: "sensor cache",
+    sql: `
+CREATE TABLE sensor_cache (
+  key TEXT PRIMARY KEY,
+  etag TEXT,
+  hash TEXT,
+  body TEXT NOT NULL DEFAULT '',
+  at TEXT NOT NULL,
+  fails INTEGER NOT NULL DEFAULT 0,
+  next_at TEXT
+);
+`,
+  },
+  {
+    // The morning brief and the agenda's review budget (SPEC 5.18, captain v2 step 10): one brief per local
+    // day (the primary key is what makes it once per day), and the owner's small agenda settings.
+    id: 135,
+    name: "morning briefs",
+    sql: `
+CREATE TABLE morning_briefs (
+  day TEXT PRIMARY KEY,
+  at TEXT NOT NULL,
+  source TEXT NOT NULL,
+  lines TEXT NOT NULL,
+  facts TEXT NOT NULL,
+  dismissed_at TEXT
+);
+CREATE TABLE agenda_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+`,
+  },
+  {
+    // The secret scan files one finding per project and strength now, not one per file and kind. The
+    // per-file ones fold away at once instead of at the next scan, so the list is not buried meanwhile.
+    id: 136,
+    name: "fold per-file secret findings",
+    sql: `
+UPDATE findings
+SET status = 'dismissed',
+    dismissed_reason = 'Folded into one finding per project',
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE source = 'security'
+  AND dedupe_key LIKE 'secret:%'
+  AND status IN ('open', 'proposed', 'task', 'decision');
+`,
+  },
+  {
+    // The dependency sweep files one finding per project listing its vulnerable packages, not one per
+    // advisory and package. The old ones fold away at once.
+    id: 137,
+    name: "fold per-advisory dependency findings",
+    sql: `
+UPDATE findings
+SET status = 'dismissed',
+    dismissed_reason = 'Folded into one finding per project',
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE source = 'security'
+  AND dedupe_key LIKE 'osv:%'
+  AND status IN ('open', 'proposed', 'task', 'decision');
+`,
+  },
+  {
+    // Outcomes, the scorecard, the trust ladder and the money ceiling (SPEC 5.18, captain v2 step 8).
+    // `outcomes` is one row per captain output (`subject` names it: action:12, start:ACM-3, draft:5,
+    // finding:9, rec:<decision>), joined to its workspace, authority row or channel (`key`), playbook
+    // and task by value, so it outlives a deleted task. `result` is empty until it is judged.
+    // `trust_state` is what the ladder last did per workspace and row; `trust_notices` are the Decisions
+    // items it raises, with what an undo needs in `data`. `money_state` holds the monthly ceiling and
+    // the owner's raise for a month; `org_rates` the optional retainer and hourly rate per workspace.
+    id: 138,
+    name: "outcomes scorecard trust money",
+    sql: `
+CREATE TABLE outcomes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subject TEXT NOT NULL UNIQUE,
+  kind TEXT NOT NULL,
+  org TEXT NOT NULL,
+  key TEXT,
+  playbook TEXT,
+  action INTEGER,
+  task TEXT,
+  at TEXT NOT NULL,
+  result TEXT,
+  settled_at TEXT
+);
+CREATE INDEX outcomes_org_at ON outcomes (org, at);
+CREATE INDEX outcomes_key ON outcomes (org, key, at);
+CREATE INDEX outcomes_playbook ON outcomes (org, playbook, at);
+CREATE TABLE trust_state (
+  org TEXT NOT NULL,
+  key TEXT NOT NULL,
+  since TEXT,
+  snoozed_until TEXT,
+  auto_ok INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (org, key)
+);
+CREATE TABLE trust_notices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT NOT NULL,
+  key TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  text TEXT NOT NULL,
+  evidence TEXT NOT NULL DEFAULT '',
+  state TEXT NOT NULL DEFAULT 'open',
+  data TEXT NOT NULL DEFAULT '{}',
+  at TEXT NOT NULL,
+  answered_at TEXT
+);
+CREATE UNIQUE INDEX trust_notices_open ON trust_notices (org, key, kind) WHERE state = 'open';
+CREATE TABLE scorecard_minutes (
+  kind TEXT PRIMARY KEY,
+  minutes REAL NOT NULL
+);
+CREATE TABLE money_state (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE TABLE org_rates (
+  org TEXT PRIMARY KEY,
+  retainer_usd REAL,
+  hourly_usd REAL
+);
+`,
+  },
+  {
+    id: 139,
+    name: "ops watch",
+    sql: `
+CREATE TABLE ops_services (
+  id TEXT PRIMARY KEY,
+  org TEXT NOT NULL,
+  def TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX ops_services_org ON ops_services(org);
+CREATE TABLE ops_state (
+  service TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  recent TEXT NOT NULL DEFAULT '[]',
+  fails INTEGER NOT NULL DEFAULT 0,
+  last_at TEXT,
+  last_ok INTEGER,
+  last_detail TEXT NOT NULL DEFAULT '',
+  last_ms INTEGER,
+  green_since TEXT,
+  unknown INTEGER NOT NULL DEFAULT 0,
+  warn INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (service, kind)
+);
+CREATE TABLE ops_samples (
+  service TEXT NOT NULL,
+  at TEXT NOT NULL,
+  ok INTEGER NOT NULL,
+  ms INTEGER
+);
+CREATE INDEX ops_samples_at ON ops_samples(service, at);
+CREATE TABLE ops_incidents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT NOT NULL,
+  service TEXT,
+  key TEXT NOT NULL,
+  title TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  status TEXT NOT NULL,
+  finding INTEGER,
+  opened_at TEXT NOT NULL,
+  acked_at TEXT,
+  escalated_at TEXT,
+  resolved_at TEXT,
+  phone_at TEXT,
+  phone_escalated_at TEXT,
+  flaps INTEGER NOT NULL DEFAULT 0,
+  fix TEXT,
+  timeline TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX ops_incidents_key ON ops_incidents(key, status);
+CREATE TABLE ops_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+CREATE TABLE ops_phone_tokens (
+  jti TEXT PRIMARY KEY,
+  decision TEXT NOT NULL,
+  action TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT
+);
+CREATE INDEX ops_phone_tokens_decision ON ops_phone_tokens(decision);
+CREATE TABLE ops_phone_sent (
+  decision TEXT PRIMARY KEY,
+  at TEXT NOT NULL
+);
+`,
+  },
+  {
+    // The checked hand-off (SPEC 5.18, captain v2 step 7). `handoff_deep` is the part of a check that
+    // costs something (tests, build, lint, the brief's lines, the review), kept by task and head
+    // commits so the same head is not run twice. `handoff_history` is one row per head that failed or
+    // passed with what was done about it, and `handoff_state` the failed hand-offs in a row.
+    id: 140,
+    name: "handoff checks",
+    sql: `
+CREATE TABLE handoff_deep (
+  task TEXT NOT NULL,
+  head TEXT NOT NULL,
+  at TEXT NOT NULL,
+  ms INTEGER NOT NULL,
+  steps TEXT NOT NULL,
+  review TEXT NOT NULL,
+  PRIMARY KEY (task, head)
+);
+CREATE TABLE handoff_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task TEXT NOT NULL,
+  head TEXT NOT NULL,
+  at TEXT NOT NULL,
+  verdict TEXT NOT NULL,
+  failures TEXT NOT NULL,
+  action TEXT NOT NULL DEFAULT 'none',
+  result TEXT NOT NULL DEFAULT '',
+  UNIQUE (task, head)
+);
+CREATE INDEX handoff_history_task ON handoff_history (task, id);
+CREATE TABLE handoff_state (
+  task TEXT PRIMARY KEY,
+  strikes INTEGER NOT NULL DEFAULT 0,
+  escalated INTEGER NOT NULL DEFAULT 0
+);
+`,
+  },
+  {
+    // Laya's triage of a new finding (likely real or noise, with the reason) is kept on the finding, as JSON.
+    id: 141,
+    name: "finding triage",
+    sql: `ALTER TABLE findings ADD COLUMN triage TEXT;`,
+  },
+  {
+    // The captain's day lines are read per workspace and day on every Captain page load. (A partial index on
+    // pending room items was left out: a room row whose payload is not JSON would fail json_extract in it.)
+    id: 142,
+    name: "index for the captain's day lines",
+    sql: `
+CREATE INDEX captain_actions_org_day ON captain_actions (org, day);
+`,
+  },
+  {
+    // Playbooks the owner made (by a sentence or by hand): the spec as JSON, read into the catalog at start.
+    id: 143,
+    name: "custom playbooks",
+    sql: `
+CREATE TABLE playbook_custom (
+  id TEXT PRIMARY KEY,
+  spec TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+`,
+  },
+  {
+    // Watch anything (5.18): the watches the owner declares, their state and their history of numbers.
+    id: 144,
+    name: "watch anything",
+    sql: `
+CREATE TABLE watches (
+  id TEXT PRIMARY KEY,
+  org TEXT NOT NULL,
+  def TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT '{}',
+  paused INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX watches_org ON watches(org);
+CREATE TABLE watch_samples (
+  watch TEXT NOT NULL,
+  at TEXT NOT NULL,
+  v REAL,
+  ok INTEGER NOT NULL
+);
+CREATE INDEX watch_samples_at ON watch_samples(watch, at);
+`,
+  },
+  {
+    // Automations are folded into Playbooks and Watch. The old rows stay; `migrated_to` names the
+    // playbook or watch each was copied to (see automation/migrate.ts), so nothing runs twice.
+    id: 145,
+    name: "automations folded into playbooks and watch",
+    sql: `
+ALTER TABLE schedules ADD COLUMN migrated_to TEXT;
+ALTER TABLE triggers ADD COLUMN migrated_to TEXT;
+`,
+  },
+  {
+    // The reviews of a merge request as its host last said (approved, changes requested, who is asked).
+    id: 146,
+    name: "merge request reviews",
+    sql: `
+ALTER TABLE task_repos ADD COLUMN mr_review TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

@@ -9,7 +9,7 @@ import {
   type SessionConfigOption,
 } from "@agentclientprotocol/sdk";
 import { AcpAuthRequired, extractOptions, isAuthRequired, type SessionOptions } from "./acp-session.ts";
-import { buildEnv } from "./env.ts";
+import { buildEnv, withToolsPath } from "./env.ts";
 import { prepareHome } from "./home.ts";
 import { type DebugLog, MessageRuns, normalizeUpdate } from "./normalize.ts";
 import { buildAsk } from "./permission.ts";
@@ -88,7 +88,7 @@ export async function openSession(start: SessionStart, log: DebugLog = () => {})
   // A connection's variables first: majhi's own (PATH, HOME, the account's) always win.
   const tool = getTool(account.tool);
   const capEnv = start.contextCap === undefined ? undefined : tool.capEnv?.(start.contextCap);
-  const env = { ...start.env, ...capEnv, ...buildEnv(account, options.base, start.git) };
+  const env = withToolsPath({ ...start.env, ...capEnv, ...buildEnv(account, options.base, start.git) });
   const adapter = options.adapters?.[account.tool] ?? tool.adapter;
 
   const spawned = await (options.spawner ?? localSpawner)({

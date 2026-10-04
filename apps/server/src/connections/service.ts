@@ -20,12 +20,14 @@ import {
   connectionType,
   type FieldKind,
   formatIssue,
+  GLOBAL_CONNECTIONS,
   type OrgConfig,
+  reservedVariable,
   suggestConnectionId,
   TOOL_CATALOG,
 } from "@majhi/shared";
 import type { AgentStore, StoredAgent } from "../agents/store.ts";
-import type { ConfigSections } from "../config/sections.ts";
+import { type ConfigSections, connectionScopes } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
 import { removeConnectionEntry, writeConnection } from "../config/write.ts";
 import { errorCode, formatIssues, UserError } from "../errors.ts";
@@ -59,8 +61,10 @@ export interface ConnectionDeps {
   uploads: UploadStore;
   agents: AgentStore;
   majhiHome: string;
-  /** Agents whose `connections` list lost an entry: their open sessions must restart. */
+  /** Agents that gained or lost a connection: their open sessions must restart. */
   agentsChanged?: (agents: string[]) => void;
+  /** A connection's fields changed: the sessions that hold it must restart. */
+  fieldsChanged?: (connection: string) => void;
 }
 
 interface Found {
@@ -77,11 +81,19 @@ interface Found {
 export class ConnectionService {
   /** The last Test of each connection since majhi started. */
   private readonly tests = new Map<string, ConnectionTestResult>();
+  private removedHook: ((id: string) => Promise<void>) | undefined;
 
   constructor(private readonly deps: ConnectionDeps) {}
 
+  /** Called after a connection is removed, so Connect can revoke and delete its tokens. */
+  onRemoved(hook: (id: string) => Promise<void>): void {
+    this.removedHook = hook;
+  }
+
   list(org?: string): Promise<ConnectionView[]> {
-    return this.views((o) => org === undefined || o === org);
+    return this.views(
+      (o) => org === undefined || o === org || (org !== GLOBAL_CONNECTIONS && o === GLOBAL_CONNECTIONS),
+    );
   }
 
   async get(id: string): Promise<ConnectionView> {
@@ -112,6 +124,7 @@ export class ConnectionService {
   }
 
   async create(input: ConnectionCreateInput, command: string, meta: CommandMeta): Promise<ConnectionView> {
+    assertGlobalOwner(input.org, meta);
     // An id is also the name of the connection's MCP server, so it never takes one of majhi's own.
     if (input.id !== undefined && RESERVED_IDS.has(input.id)) {
       throw new UserError(`${input.id} is the name of one of majhi's own tools. Pick another id.`);
@@ -121,7 +134,7 @@ export class ConnectionService {
       suggestConnectionId(input.name, new Set([...allIds(await this.sections()), ...RESERVED_IDS]));
     await this.deps.config.change({ command, meta, summary: `added connection ${id}` }, async () => {
       const sections = await this.sections();
-      const entry = sections.orgs[input.org];
+      const entry = connectionScopes(sections)[input.org];
       if (entry === undefined) throw new UserError(`Org "${input.org}" does not exist.`, 404);
       const owner = findConnection(sections, id);
       if (owner !== undefined) {
@@ -148,9 +161,18 @@ export class ConnectionService {
   /** Changes what the input names. A list given replaces the old one; what it drops is deleted. */
   async update(input: ConnectionUpdateInput, command: string, meta: CommandMeta): Promise<ConnectionView> {
     const released: string[] = [];
+    let switched: string[] = [];
     await this.deps.config.change({ command, meta, summary: `edited connection ${input.id}` }, async () => {
       const found = await this.require(input.id);
+      assertGlobalOwner(found.org, meta);
       const next: ConnectionConfig = { ...found.connection };
+      if (input.agentsOff !== undefined) {
+        const before = new Set(next.agents_off ?? []);
+        const after = new Set(input.agentsOff);
+        switched = [...before, ...after].filter((a) => before.has(a) !== after.has(a));
+        if (after.size > 0) next.agents_off = [...after].sort();
+        else delete next.agents_off;
+      }
       if (input.name !== undefined) next.name = input.name;
       if (input.description === "") delete next.description;
       else if (input.description !== undefined) next.description = input.description;
@@ -169,7 +191,37 @@ export class ConnectionService {
       }
       await writeConnection(this.deps.config.file, found.org, found.entry, input.id, checked(next));
     });
+    // A session gains or loses the connection, or its new fields, at its next turn end.
+    if (switched.length > 0) this.deps.agentsChanged?.(switched);
+    if (input.fields !== undefined) this.deps.fieldsChanged?.(input.id);
     await this.release(input.id, released);
+    return this.get(input.id);
+  }
+
+  /** Renames one entry of `vars` or `env`, keeping its kind and its stored value, secret or file. */
+  async renameVar(
+    input: { id: string; list: "vars" | "env"; from: string; to: string },
+    command: string,
+    meta: CommandMeta,
+  ): Promise<ConnectionView> {
+    if (reservedVariable(input.to)) throw new UserError(`${input.to} is kept for majhi and the agent CLIs.`);
+    await this.deps.config.change(
+      { command, meta, summary: `renamed ${input.from} to ${input.to} on connection ${input.id}` },
+      async () => {
+        const found = await this.require(input.id);
+        assertGlobalOwner(found.org, meta);
+        const current = found.connection[input.list] ?? {};
+        const entry = current[input.from];
+        if (entry === undefined) throw new UserError(`${input.id} has no ${input.from}.`, 404);
+        if (current[input.to] !== undefined) throw new UserError(`${input.id} already has ${input.to}.`, 409);
+        const renamed = Object.fromEntries(
+          Object.entries(current).map(([name, e]) => [name === input.from ? input.to : name, e]),
+        );
+        const next: ConnectionConfig = { ...found.connection, [input.list]: renamed };
+        await writeConnection(this.deps.config.file, found.org, found.entry, input.id, checked(next));
+      },
+    );
+    this.deps.fieldsChanged?.(input.id);
     return this.get(input.id);
   }
 
@@ -182,6 +234,7 @@ export class ConnectionService {
     const changed: string[] = [];
     await this.deps.config.change({ command, meta, summary: `removed connection ${id}` }, async () => {
       const found = await this.require(id);
+      assertGlobalOwner(found.org, meta);
       released = storedValues(found.connection);
       await removeConnectionEntry(this.deps.config.file, found.org, id);
       for (const stored of await this.deps.agents.list()) {
@@ -198,6 +251,7 @@ export class ConnectionService {
     await this.release(id, released);
     await rm(this.dir(id), { recursive: true, force: true });
     this.tests.delete(id);
+    await this.removedHook?.(id);
     return { removed: id };
   }
 
@@ -211,6 +265,7 @@ export class ConnectionService {
     const summary = `set ${input.field} of connection ${input.id}`;
     await this.deps.config.change({ command, meta, summary }, async () => {
       const found = await this.require(input.id);
+      assertGlobalOwner(found.org, meta);
       const target = targetOf(found.connection, input.field, input.list);
       if (target.kind !== "secret") throw new UserError(`${target.label} is a ${target.kind}, not a secret.`);
       let ref: string;
@@ -247,6 +302,7 @@ export class ConnectionService {
     const summary = `set ${input.field} of connection ${input.id}`;
     await this.deps.config.change({ command, meta, summary }, async () => {
       const found = await this.require(input.id);
+      assertGlobalOwner(found.org, meta);
       const target = targetOf(found.connection, input.field, input.list);
       if (target.kind !== "file") throw new UserError(`${target.label} is a ${target.kind}, not a file.`);
       const upload = await this.deps.uploads.describe(input.upload);
@@ -272,6 +328,7 @@ export class ConnectionService {
     const summary = `set what connection ${id} may change without asking`;
     await this.deps.config.change({ command, meta, summary }, async () => {
       const found = await this.require(id);
+      assertGlobalOwner(found.org, meta);
       const next: ConnectionConfig = { ...found.connection };
       const actions = [...new Set(allow.map((a) => a.trim()).filter((a) => a !== ""))];
       if (actions.length > 0) next.allow = actions;
@@ -300,7 +357,7 @@ export class ConnectionService {
     const secretNames = new Set(await this.deps.secrets.names().catch(() => [] as string[]));
     const agents = await this.deps.agents.list();
     const out: ConnectionView[] = [];
-    for (const [orgId, entry] of Object.entries(sections.orgs)) {
+    for (const [orgId, entry] of Object.entries(connectionScopes(sections))) {
       if (!org(orgId)) continue;
       for (const [id, connection] of Object.entries(entry.connections ?? {})) {
         if (only !== undefined && id !== only) continue;
@@ -356,7 +413,7 @@ export async function ownerOnlyDir(path: string): Promise<void> {
 }
 
 function findConnection(sections: ConfigSections, id: string): Found | undefined {
-  for (const [org, entry] of Object.entries(sections.orgs)) {
+  for (const [org, entry] of Object.entries(connectionScopes(sections))) {
     const connection = entry.connections?.[id];
     if (connection !== undefined) return { org, entry, connection };
   }
@@ -364,7 +421,7 @@ function findConnection(sections: ConfigSections, id: string): Found | undefined
 }
 
 function allIds(sections: ConfigSections): Set<string> {
-  return new Set(Object.values(sections.orgs).flatMap((o) => Object.keys(o.connections ?? {})));
+  return new Set(Object.values(connectionScopes(sections)).flatMap((o) => Object.keys(o.connections ?? {})));
 }
 
 /** The connection as majhi.yaml may hold it, or the first reason it may not. */
@@ -524,10 +581,22 @@ function viewOf(
     env: list("env"),
     allow: connection.allow ?? [],
     agents: known.agents.flatMap((a) =>
-      a.ok && a.agent.frontmatter.scope === org && a.agent.frontmatter.connections.includes(id) ? [a.id] : [],
+      a.ok &&
+      !(connection.agents_off ?? []).includes(a.id) &&
+      (org === GLOBAL_CONNECTIONS ||
+        a.agent.frontmatter.scope === org ||
+        a.agent.frontmatter.scope === "root")
+        ? [a.id]
+        : [],
     ),
+    agentsOff: connection.agents_off ?? [],
     problems: connectionProblems(connection, stored),
   };
   if (known.lastTest !== undefined) view.lastTest = known.lastTest;
   return view;
+}
+
+function assertGlobalOwner(org: string, meta: CommandMeta): void {
+  if (org === GLOBAL_CONNECTIONS && meta.actor.kind !== "owner")
+    throw new UserError("Only the owner changes Global connections, on the Connections page.", 409);
 }

@@ -6,6 +6,7 @@ import type {
   AutonomyOrgPatch,
   Freeze,
 } from "@majhi/shared";
+import { OWN_WORK_LINE } from "@majhi/shared";
 
 /** The rows of the delegation grid, in the order it shows them. */
 export const AUTHORITY_ROWS_ORDER: readonly AuthorityRow[] = [
@@ -15,15 +16,17 @@ export const AUTHORITY_ROWS_ORDER: readonly AuthorityRow[] = [
   "upkeep",
   "merge",
   "push",
+  "own",
 ];
 
-export const AUTHORITY_ROW_TEXT: Record<AuthorityRow, { label: string; hint: string }> = {
+export const AUTHORITY_ROW_TEXT: Record<AuthorityRow, { label: string; hint: string; detail?: string }> = {
   start: { label: "Start work", hint: "Takes tasks from the backlog" },
   questions: { label: "Answer questions", hint: "When the brief or the code settles them" },
   approvals: { label: "Approvals", hint: "Routine cards your rules allow" },
   upkeep: { label: "Upkeep", hint: "Memory, cleanup, triage, stuck tasks" },
   merge: { label: "Merge", hint: "Into the base branch, after checks pass" },
   push: { label: "Push", hint: "Branches and merge requests" },
+  own: { label: "Own work", hint: "Routine requests of tasks it started", detail: OWN_WORK_LINE },
 };
 
 /** The two quick presets in a workspace's column menu. */
@@ -38,6 +41,7 @@ export const AUTHORITY_PRESETS: readonly { label: string; help: string; rows: Au
       upkeep: "decide",
       merge: "decide",
       push: "ask",
+      own: "decide",
     },
   },
   {
@@ -50,6 +54,7 @@ export const AUTHORITY_PRESETS: readonly { label: string; help: string; rows: Au
       upkeep: "decide",
       merge: "ask",
       push: "ask",
+      own: "ask",
     },
   },
 ];
@@ -123,7 +128,7 @@ export function shortDay(day: string): string {
 
 /**
  * The one sentence under the title that is true right now. Off: what still runs and what waits.
- * On: what runs and what is next. Both end with how many decisions wait for the owner.
+ * On: what runs and what is next. Both end with how many decisions need the owner.
  */
 export function statusSentence(input: {
   mode: AutonomyMode;
@@ -135,8 +140,8 @@ export function statusSentence(input: {
 }): string {
   const waits =
     input.decisions === 0
-      ? "Nothing waits for you."
-      : `${input.decisions} ${input.decisions === 1 ? "decision waits" : "decisions wait"} for you.`;
+      ? "Nothing needs you."
+      : `${input.decisions} ${input.decisions === 1 ? "decision needs" : "decisions need"} you.`;
   switch (input.mode) {
     case "off":
       return `Off: it only answers when you ask${input.upkeep ? ", and keeps memory and cleanup going" : ""}. ${waits}`;

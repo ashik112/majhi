@@ -174,12 +174,40 @@ export function shipWords(ship: Pick<PendingShip, "action" | "into" | "method">)
   return ship.method === "rebase" ? `rebase onto ${ship.into}` : `${ship.method} into ${ship.into}`;
 }
 
+/** What the host says about the reviews of a merge request. */
+export const MrReviewSchema = z.object({
+  /** Enough approvals, or the host counts it approved. */
+  approved: z.boolean(),
+  /** Reviewers whose latest review approves it. */
+  approvals: z.number().int().nonnegative(),
+  /** Approvals still missing, when the host says (GitLab). */
+  approvalsNeeded: z.number().int().nonnegative().optional(),
+  /** A reviewer asked for changes (GitLab: a blocking discussion is unresolved). */
+  changesRequested: z.boolean(),
+  /** Reviewers asked to review who have not yet. Names the host shows. */
+  pending: z.array(z.string()).max(30).default([]),
+});
+export type MrReview = z.infer<typeof MrReviewSchema>;
+
+/** One short line for a card: "approved", "changes requested", "1 of 2 approvals", "waiting on ana". */
+export function reviewLine(review: MrReview | undefined): string | undefined {
+  if (review === undefined) return undefined;
+  if (review.changesRequested) return "changes requested";
+  if (review.approved) return review.approvals > 0 ? `approved by ${review.approvals}` : "approved";
+  if (review.approvalsNeeded !== undefined && review.approvalsNeeded > 0)
+    return `${review.approvals} of ${review.approvals + review.approvalsNeeded} approvals`;
+  if (review.pending.length > 0) return `waiting on ${review.pending.slice(0, 2).join(", ")}`;
+  return undefined;
+}
+
 /** The merge request of one task repo. */
 export const RepoMrSchema = z.object({
   url: z.string(),
   number: z.number().int().positive(),
   state: MrStateSchema,
   ci: CiStateSchema,
+  /** Absent until a poll read the reviews, or when the host does not say. */
+  review: MrReviewSchema.optional(),
 });
 export type RepoMr = z.infer<typeof RepoMrSchema>;
 
@@ -670,10 +698,17 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     by: CaptainBySchema.optional(),
     /**
      * A write to one of the run's connections (5.14): which one, the action and why it counts as a
-     * write. No remembered choice covers it, and Allow counts once.
+     * write. No remembered choice covers it, and Allow counts once. `destructive`: it deletes or
+     * destroys something, so only the owner's own click approves it.
      */
     connection: z
-      .object({ id: z.string().optional(), name: z.string(), action: z.string(), why: z.string() })
+      .object({
+        id: z.string().optional(),
+        name: z.string(),
+        action: z.string(),
+        why: z.string(),
+        destructive: z.boolean().optional(),
+      })
       .optional(),
   }),
   /**
@@ -835,6 +870,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     level: z.enum(["info", "warn", "error"]),
     text: z.string(),
     agent: IdSchema.optional(),
+    /** The decision this line reports, so the owner can say it was wrong (5.12). */
+    decision: z.string().max(40).optional(),
   }),
 ]);
 export type RoomItem = z.infer<typeof RoomItemSchema>;

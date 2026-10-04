@@ -9,10 +9,11 @@ export const opsKeys = {
 } as const;
 
 /** Every doctor check. The sidebar reads it too, so it refreshes on its own every few minutes. */
-export function useHealthChecks() {
+export function useHealthChecks(enabled = true) {
   return useQuery<CommandOutput<"health.run">, ApiRequestError>({
     queryKey: opsKeys.checks,
     queryFn: () => cmd("health.run", {}),
+    enabled,
     staleTime: 60_000,
     refetchInterval: 5 * 60_000,
     refetchIntervalInBackground: false,
@@ -36,15 +37,19 @@ export function useFixCheck() {
 
 /** Done tasks old enough for cleanup, and what a cleanup would do to each. Read again on every press. */
 export function usePreviewCleanup() {
-  return useMutation<CommandOutput<"cleanup.preview">, ApiRequestError, number>({
-    mutationFn: (days) => cmd("cleanup.preview", { days }),
+  return useMutation<CommandOutput<"cleanup.preview">, ApiRequestError, CommandInput<"cleanup.preview">>({
+    mutationFn: (input) => cmd("cleanup.preview", input),
   });
 }
 
 /** Cleans up the chosen tasks. The server checks each one again. */
 export function useRunCleanup() {
   const client = useQueryClient();
-  return useMutation<CommandOutput<"cleanup.run">, ApiRequestError, { tasks: string[]; days: number }>({
+  return useMutation<
+    CommandOutput<"cleanup.run">,
+    ApiRequestError,
+    { tasks: string[]; days: number; cachesOnly?: boolean }
+  >({
     mutationFn: (input) =>
       cmd("cleanup.run", input as CommandInput<"cleanup.run">, {
         reason: "Owner confirmed a cleanup of done tasks",
@@ -54,10 +59,11 @@ export function useRunCleanup() {
 }
 
 /** The running commit against the checkout on disk. Polled once a minute. */
-export function useSystemVersion(refetchMs: number | false = 60_000) {
+export function useSystemVersion(refetchMs: number | false = 60_000, enabled = true) {
   return useQuery<CommandOutput<"system.version">, ApiRequestError>({
     queryKey: opsKeys.version,
     queryFn: () => cmd("system.version", {}),
+    enabled,
     staleTime: 30_000,
     refetchInterval: refetchMs,
     retry: false,

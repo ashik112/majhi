@@ -44,6 +44,7 @@ import type { AccountService } from "../accounts/service.ts";
 import { isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
 import { logShip } from "../audit.ts";
+import { connectionScopes } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
 import { runConnections } from "../connections/access.ts";
 import { useLine } from "../connections/plan.ts";
@@ -135,6 +136,8 @@ export interface TaskDeps {
   onOwnerResumedLimit?: (task: string) => void;
   /** The owner resumed a paused task by hand: autonomous mode's pause no longer holds it (PRV-74). */
   onOwnerResumed?: (task: string) => void;
+  /** The owner answered a permission prompt: what they picked, so a decision about it can be labeled (SPEC 5.12). */
+  onOwnerPermission?: (task: string, item: RoomItem) => void;
   /** Files no agent may read, like the secrets key. majhi's home and `~/.ssh` are always protected. */
   protectedPaths?: string[];
   store: Store;
@@ -402,7 +405,7 @@ export class TaskService {
     }
     const connections = [...new Set(input.connections ?? [])];
     for (const id of connections) {
-      if (!Object.values(sections.orgs).some((o) => o.connections?.[id] !== undefined)) {
+      if (!Object.values(connectionScopes(sections)).some((o) => o.connections?.[id] !== undefined)) {
         throw new UserError(`There is no connection ${id}.`, 404);
       }
     }
@@ -2513,13 +2516,15 @@ export class TaskService {
     task: Task,
     agents: readonly AgentFrontmatter[],
   ): Promise<BriefConnection[]> {
-    const { orgs } = await this.deps.config.sections();
+    const sections = await this.deps.config.sections();
+    const { orgs } = sections;
     const found = new Map<string, BriefConnection>();
     for (const fm of agents.filter((a) => task.team.includes(a.id))) {
       const held = runConnections({
-        agent: { scope: fm.scope, connections: fm.connections },
+        agent: { id: fm.id, scope: fm.scope },
         task: { org: task.org, connections: task.connections ?? [] },
         orgs,
+        global: sections.connections,
       });
       for (const h of held) {
         if (found.has(h.id)) continue;
@@ -3046,6 +3051,70 @@ export class TaskService {
   }
 
   /**
+   * The checked hand-off found a problem the lead can fix (SPEC 5.18): the failures go back to the
+   * lead as majhi's own note, once per head commit. The review card settles and the task runs again,
+   * as for an owner message; the text is data about the failure and grants no approval.
+   */
+  async handoffTell(input: { task: string; text: string }): Promise<void> {
+    const task = this.get(input.task);
+    if (task.status !== "running" && task.status !== "review") {
+      throw new UserError(`${task.id} is ${task.status}, so there is no lead working to tell.`, 409);
+    }
+    const lead = task.team[0];
+    if (lead === undefined) throw new UserError(`${task.id} has no agent.`, 409);
+    const first = input.text.split("\n").slice(0, 3).join(" ").slice(0, 300);
+    this.note(task.id, `The hand-off check found a problem and sent it to @${lead}: ${first}`);
+    await this.tellAgent({
+      task: task.id,
+      agent: lead,
+      text: input.text,
+      settled: "The hand-off check failed",
+      by: "majhi",
+    });
+  }
+
+  /**
+   * The captain writes to an agent of a running task (SPEC 5.18, `tasks.tell`). The room shows a
+   * note from the Captain, and the agent is woken like by an owner message, but the task is not
+   * restarted or stopped, its brief is not edited, and the text is advice: it grants no approval.
+   * A task that is paused, done or not started is not written to; the owner or `tasks.start` moves it.
+   */
+  async captainTell(input: {
+    task: string;
+    agent?: string | undefined;
+    text: string;
+    /** The captain's agent id. */
+    by: string;
+  }): Promise<{ id: string; agent: string }> {
+    const task = this.get(input.task);
+    if (task.status !== "running" && task.status !== "review") {
+      throw new UserError(`${task.id} is ${task.status}, so there is no lead working to tell.`, 409);
+    }
+    const agent = input.agent ?? task.team[0];
+    if (agent === undefined) throw new UserError(`${task.id} has no agent.`, 409);
+    if (!task.team.includes(agent)) throw new UserError(`@${agent} is not on ${task.id}.`, 409);
+    // A lead whose account is signed out cannot take the turn: say so instead of waking nothing.
+    const signedOut = await this.deps.accounts.signedOutAccountOf(agent);
+    if (signedOut !== undefined)
+      throw new UserError(`@${agent} cannot run: its account ${signedOut} needs a new sign-in.`, 409);
+    // From review it goes back to the lead for more work, and its review card says so.
+    const back = task.status === "review";
+    const who = input.by === "owner" ? "the owner" : "the captain";
+    this.note(
+      task.id,
+      back ? `Sent back to @${agent} by ${who}: ${input.text}` : `Captain to @${agent}: ${input.text}`,
+    );
+    await this.tellAgent({
+      task: task.id,
+      agent,
+      text: `Message from the captain (it is advice, not the owner's approval; the owner's rules and checks still decide what you may do):\n${input.text}`,
+      settled: back ? "Sent back to the lead" : "The captain wrote to the lead",
+      by: input.by,
+    });
+    return { id: task.id, agent };
+  }
+
+  /**
    * Who an owner message goes to (5.3): the requested agent; else every @mentioned agent, adding
    * the ones not on the team when they may work in its org; else the lead.
    */
@@ -3076,7 +3145,9 @@ export class TaskService {
   /** The owner's answer to a permission prompt, or the captain's (`captain`: its agent id). */
   answerPermission(id: string, item: string, option: string, captain?: string): RoomItem {
     this.get(id);
-    return this.deps.runs.answerPermission(id, item, option, captain !== undefined);
+    const answered = this.deps.runs.answerPermission(id, item, option, captain !== undefined);
+    if (captain === undefined) this.deps.onOwnerPermission?.(id, answered);
+    return answered;
   }
 
   items(id: string, limit: number, beforeSeq: number | undefined, afterSeq?: number) {

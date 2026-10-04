@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { AgentToolRefSchema } from "./agent-tools.ts";
-import { ConnectionConfigSchema, duplicateConnectionIds } from "./connections.ts";
+import { ConnectionConfigSchema, duplicateConnectionIds, GLOBAL_CONNECTIONS } from "./connections.ts";
 import { EmojiSchema } from "./emoji.ts";
 import { IdSchema, SecretRefSchema } from "./ids.ts";
 import { AttentionEventSchema } from "./notify.ts";
@@ -206,6 +206,12 @@ export type OrgConfig = z.infer<typeof OrgConfigSchema>;
 
 /** `orgs` in majhi.yaml. A connection id is unique across orgs: it names the folder of the connection's files. */
 export const OrgsConfigSchema = z.record(IdSchema, OrgConfigSchema).superRefine((orgs, ctx) => {
+  if (orgs[GLOBAL_CONNECTIONS] !== undefined)
+    ctx.addIssue({
+      code: "custom",
+      path: [GLOBAL_CONNECTIONS],
+      message: "global is reserved for shared connections. Use another workspace id.",
+    });
   for (const { id, orgs: owners } of duplicateConnectionIds(orgs)) {
     ctx.addIssue({
       code: "custom",
@@ -516,6 +522,16 @@ export const EventTopicSchema = z.enum([
   "autonomy",
   /** The captain per workspace (5.18): its status, log and runs. */
   "captain",
+  /** Findings (5.18): `findings.list`. */
+  "findings",
+  /** Playbooks, goals and the outbound gate (5.18): `playbooks.*`, `goals.*`, `outbound.*`. */
+  "playbooks",
+  /** The ops watch (5.18): watched services, incidents and the phone push, `ops.*`. */
+  "ops",
+  /** Business memory (5.19): the knowledge base, voice, contacts and deadlines. */
+  "business",
+  /** The morning brief was made or dismissed, or the review budget changed (5.18): refetch `agenda.today`. */
+  "agenda",
   /** A git sign-in flow changed state: refetch `git.signIn.poll`. Ending one also emits `orgs`. */
   "signins",
   /** A clone job moved (at most every 500 ms while it runs): refetch `projects.cloneStatus`. */

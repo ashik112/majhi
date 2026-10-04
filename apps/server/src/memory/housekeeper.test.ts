@@ -238,6 +238,24 @@ describe("memory.extract", () => {
     expect(h.majhi.services.memory.project.threads({})).toHaveLength(0);
   });
 
+  it("never reads a task with a root agent on another org's account either", async () => {
+    const { must, sessions, task, extract, record } = await world();
+    await must("orgs.create", { id: "globex", name: "Globex", key: "GLX" });
+    await must("accounts.create", { id: "claude-globex", tool: "claude", org: "globex", auth: "login" });
+    // A root agent may work anywhere, but its account belongs to Globex: it does not pay for this task.
+    await must("agents.create", {
+      id: "root-on-globex",
+      frontmatter: { scope: "root", role: "Root", account: "claude-globex", perms: ["edit"] },
+      instructions: "Help.\n",
+    });
+    await must("settings.set", { memory: { housekeeper: "root-on-globex" } });
+    const res = await extract(task.id);
+    expect(res.status).toBe(409);
+    expect(JSON.stringify(res.body)).toContain("belongs to another workspace");
+    expect(sessions).toHaveLength(0);
+    expect(await record(task.id)).toBeNull();
+  });
+
   it("opens threads from what was left, and closes them by a later record, a done follow-up or by hand", async () => {
     const { h, must, replies, task, newTask, extract, threads } = await world();
     const follow = await newTask("add a timeout test to the api", false);

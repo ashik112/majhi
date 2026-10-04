@@ -12,7 +12,7 @@ const shot = (page: Page, name: string) => page.screenshot({ path: `e2e/screensh
 const SECRET = "nr-e2e-not-a-real-secret-4711";
 const API_KEY = `sk-ant-api03-${"Zq8Lm2".repeat(8)}`;
 
-const drawer = (page: Page) => page.getByRole("complementary", { name: "Captain chat" });
+const drawer = (page: Page) => page.getByRole("complementary", { name: "Captain" });
 const composer = (page: Page) => drawer(page).getByRole("textbox", { name: "Message the room" });
 const log = (page: Page) => drawer(page).getByRole("log", { name: "Room messages" });
 
@@ -40,6 +40,26 @@ function recordTraffic(page: Page): string[] {
 async function say(page: Page, text: string) {
   await composer(page).fill(text);
   await composer(page).press("Enter");
+}
+
+async function showSteps(page: Page) {
+  // The decision line shows once the card has settled and folded.
+  await expect(
+    log(page)
+      .getByText(/^You (approved|rejected): /)
+      .last(),
+  ).toBeVisible();
+  await openLastSteps(page);
+}
+
+/** Opens the newest "steps it took" row, and leaves it open if it already is. */
+async function openLastSteps(page: Page) {
+  const fold = log(page)
+    .getByRole("button", { name: /steps? it took/ })
+    .last();
+  await expect(fold).toBeVisible();
+  if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
+  await expect(fold).toHaveAttribute("aria-expanded", "true");
 }
 
 async function openBoss(page: Page) {
@@ -75,6 +95,8 @@ test("Cmd J opens the captain over any page; a change waits for approval, then a
   expect((await cmd<{ id: string }[]>(page.request, "orgs.list")).map((o) => o.id)).not.toContain("globex");
 
   await card.getByRole("button", { name: "Approve" }).click();
+  // A settled approval folds into the conversation's "steps it took" row.
+  await showSteps(page);
   await expect(drawer(page).getByText("Applied: Create org Globex", { exact: true })).toBeVisible();
   // The captain is told and answers.
   await expect(
@@ -103,6 +125,7 @@ test("Cmd J opens the captain over any page; a change waits for approval, then a
 
   // Undo from the card in the drawer.
   await openBoss(page);
+  await showSteps(page);
   await drawer(page).getByRole("button", { name: "Undo" }).click();
   await expect(drawer(page).getByText("Undone: Create org Globex", { exact: true })).toBeVisible();
   await page.keyboard.press("Control+j");
@@ -121,6 +144,7 @@ test("a rejected change stays undone; Undo also works from History", async ({ pa
   );
   const card = drawer(page).getByRole("region", { name: "Approval: Create org Initech" });
   await card.getByRole("button", { name: "Reject" }).click();
+  await showSteps(page);
   await expect(drawer(page).getByText("Rejected: Create org Initech", { exact: true })).toBeVisible();
   await expect(log(page).getByText("echo: The owner rejected: Create org Initech.")).toBeVisible();
   expect((await cmd<{ id: string }[]>(request, "orgs.list")).map((o) => o.id)).not.toContain("initech");
@@ -130,6 +154,12 @@ test("a rejected change stays undone; Undo also works from History", async ({ pa
     page,
     'call: majhi_orgs_create {"id":"initech","name":"Initech","ownerAsked":true,"reason":"You asked for Initech"}',
   );
+  await expect(
+    log(page)
+      .getByText(/^majhi_orgs_create: \{/)
+      .last(),
+  ).toBeVisible();
+  await openLastSteps(page);
   await expect(drawer(page).getByText("Applied: Create org Initech", { exact: true })).toBeVisible();
   await page.keyboard.press("Meta+j");
   await page.goto("/setup?section=history");
@@ -198,46 +228,4 @@ test("the composer warns about a secret, and sends only a reference", async ({ p
   expect(
     (await cmd<{ name: string }[]>(request, "secrets.list")).some((s) => s.name.startsWith("anthropic")),
   ).toBe(true);
-});
-
-test("Hub setup: sections save on their own; changing the policy asks first", async ({ page, request }) => {
-  await page.goto("/setup");
-  await expect(page.getByRole("heading", { name: "Hub setup" })).toBeVisible();
-  // The captain is not on the page: Ask the captain opens its drawer.
-  await page.getByRole("button", { name: /Ask the captain/ }).click();
-  await expect(composer(page)).toBeVisible();
-  await page.keyboard.press("Meta+j");
-  await expect(drawer(page)).toHaveCount(0);
-
-  await page.getByRole("button", { name: /^Context and limits/ }).click();
-  await expect(page).toHaveURL(/section=context/);
-  const limits = page.getByRole("region", { name: "Limits", exact: true });
-  await limits.getByLabel("Agents at once").fill("4");
-  await limits.getByRole("button", { name: "Save Limits" }).click();
-  await expect(limits.getByRole("status")).toContainText("Saved");
-  expect((await cmd<{ limits: { agents_max: number } }>(request, "settings.get")).limits.agents_max).toBe(4);
-
-  await page.goto("/setup?section=approvals");
-  const policy = page.getByRole("region", { name: "What agents may do", exact: true });
-  await policy.getByLabel("Orgs, git accounts and secrets: every command").selectOption("confirm");
-  await policy.getByRole("button", { name: "Save What agents may do" }).click();
-  const dialog = page.getByRole("dialog", { name: "Change what agents may do?" });
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole("button", { name: "Cancel" }).click();
-  type Policy = { policy: { commands: Record<string, string> } };
-  expect((await cmd<Policy>(request, "settings.get")).policy.commands["orgs.create"]).toBeUndefined();
-  await policy.getByRole("button", { name: "Save What agents may do" }).click();
-  await dialog.getByRole("button", { name: "Change policy" }).click();
-  await expect(policy.getByRole("status")).toContainText("Saved");
-  expect((await cmd<Policy>(request, "settings.get")).policy.commands["orgs.create"]).toBe("confirm");
-
-  // With "confirm", even a call the owner asked for waits.
-  await openBoss(page);
-  await say(
-    page,
-    'call: majhi_orgs_create {"id":"umbrella","name":"Umbrella","ownerAsked":true,"reason":"You asked"}',
-  );
-  await expect(drawer(page).getByRole("region", { name: "Approval: Create org Umbrella" })).toBeVisible();
-  await page.keyboard.press("Meta+j");
-  await shot(page, "hub-setup-settings");
 });

@@ -6,7 +6,7 @@ import { TaskIdSchema } from "./tasks.ts";
  * In a preview `action` is what a run would do; in a report it is what was done.
  */
 export const CleanupStepSchema = z.object({
-  kind: z.enum(["worktree", "branch"]),
+  kind: z.enum(["worktree", "branch", "cache"]),
   project: z.string(),
   /** The worktree path, or the branch name. */
   name: z.string(),
@@ -28,6 +28,7 @@ export const CleanupTaskSchema = z.object({
 export type CleanupTask = z.infer<typeof CleanupTaskSchema>;
 
 export const CleanupPreviewSchema = z.object({
+  cachesOnly: z.boolean().optional(),
   days: z.number().int().min(1),
   tasks: z.array(CleanupTaskSchema),
 });
@@ -44,6 +45,8 @@ export const CleanupReportSchema = z.object({
 export type CleanupReport = z.infer<typeof CleanupReportSchema>;
 
 export const CleanupRunInputSchema = z.object({
+  /** Free only ignored dependency/tool caches, preserving worktrees, branches and room history. */
+  cachesOnly: z.boolean().optional(),
   tasks: z.array(TaskIdSchema).min(1).max(500),
   /** Defaults to the `cleanup.after_days` setting. */
   days: z.number().int().min(1).max(3650).optional(),

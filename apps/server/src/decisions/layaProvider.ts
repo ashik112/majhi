@@ -77,6 +77,11 @@ export class LayaProvider implements DecisionProvider {
     return laya.detail ?? `Laya is ${laya.state.replace("-", " ")}`;
   }
 
+  /** The checkpoint that answers now, for cache keys: a new one must not reuse the old one's answers. */
+  currentVersion(): string {
+    return this.host?.status().info?.laya?.version ?? "";
+  }
+
   async decide(request: DecideRequest) {
     if (this.nativeUnavailable() !== undefined && this.docker !== undefined)
       return this.docker.decide(request);

@@ -8,7 +8,7 @@ import type { ConfigService } from "../config/service.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import { runConnections } from "./access.ts";
 import type { GateConnection } from "./gate.ts";
-import { type ConnectionUse, planConnections, type RunPlan } from "./plan.ts";
+import { type ConnectionUse, type PlanDeps, planConnections, type RunPlan } from "./plan.ts";
 import type { HeldSecret } from "./redact.ts";
 import { ownerOnlyDir } from "./service.ts";
 
@@ -45,6 +45,10 @@ export interface RunFilesDeps {
   /** The folder of a connection's own files. */
   connectionDir: (id: string) => string;
   browsersPath?: string | undefined;
+  /** Bearer tokens of connections signed in with OAuth (5.14). */
+  oauth?: PlanDeps["oauth"];
+  /** The workspace's own git sign-in, for `git` connections. */
+  gitToken?: PlanDeps["gitToken"];
 }
 
 /**
@@ -54,14 +58,15 @@ export interface RunFilesDeps {
 export async function prepareRunConnections(
   deps: RunFilesDeps,
   task: Pick<Task, "org" | "connections">,
-  fm: Pick<AgentFrontmatter, "scope" | "connections">,
+  fm: Pick<AgentFrontmatter, "id" | "scope">,
   kind: "session" | "process",
 ): Promise<PreparedRun | undefined> {
   const sections = await deps.config.sections();
   const held = runConnections({
-    agent: { scope: fm.scope, connections: fm.connections },
+    agent: { id: fm.id, scope: fm.scope },
     task: { org: task.org, connections: task.connections ?? [] },
     orgs: sections.orgs,
+    global: sections.connections,
   });
   if (held.length === 0) return undefined;
   const root = runFilesRoot(deps.majhiHome);
@@ -98,9 +103,10 @@ export async function taskSecrets(
 ): Promise<HeldSecret[]> {
   const sections = await deps.config.sections();
   const held = runConnections({
-    agent: { scope: "root", connections: [] },
+    agent: { scope: "root" },
     task: { org: task.org, connections: task.connections ?? [] },
     orgs: sections.orgs,
+    global: sections.connections,
   });
   if (held.length === 0) return [];
   // Nothing is written: only the plan's secret values are read.

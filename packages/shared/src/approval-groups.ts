@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type CommandName, commands, type RiskClass } from "./commands.ts";
+import { type CommandName, commands, isDestructiveCommand, type RiskClass } from "./commands.ts";
 import type { ApprovalMode, PolicySettings } from "./settings.ts";
 
 /**
@@ -40,13 +40,26 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "captain.resume",
   "captain.undo",
   "captain.choreOn",
+  "captain.runChore",
   "captain.answerCap",
   "captain.answerBudget",
   // The decisions inbox answers for the owner: the owner's click only.
   "decisions.answer",
+  "decisions.answerBatch",
   // A restore replaces the whole database: the owner's call.
   "backup.restore",
   "backup.cancelRestore",
+  // Where backups are written is the owner's choice: a synced folder carries them off this computer.
+  "backup.setDestination",
+  // Business memory: the owner verifies, removes, merges and decides; an agent only proposes (5.19).
+  "kb.verify",
+  "kb.remove",
+  "kb.restore",
+  "voice.set",
+  "voice.decide",
+  "crm.merge",
+  "crm.remove",
+  "deadlines.remove",
   // Git sign-in happens in the owner's browser or with a token the owner pastes: the owner's alone.
   "git.oauthApps.set",
   "git.signIn.start",
@@ -92,6 +105,7 @@ export const APPROVAL_GROUP_DEFS: Record<ApprovalGroupId, GroupDef> = {
       "tasks.refreshMrs",
       "team.add",
       "tasks.addAgent",
+      "tasks.tell",
       "tasks.setLead",
       "team.swap",
       "team.set",
@@ -236,6 +250,7 @@ const LABELS: Partial<Record<CommandName, string>> = {
   "tasks.refreshMrs": "Check a task's merge requests",
   "team.add": "Add an agent to a team",
   "tasks.addAgent": "Add an agent to a task",
+  "tasks.tell": "Write to a task's lead as the captain",
   "tasks.setLead": "Hand a task to another lead",
   "team.swap": "Swap an agent in a team",
   "team.set": "Set an agent's model or effort for a task",
@@ -318,6 +333,7 @@ const LABELS: Partial<Record<CommandName, string>> = {
   "cleanup.preview": "Preview a cleanup",
   "health.fix": "Run a health fix",
   "e2e.runNow": "Run background e2e now",
+  "projects.cardRefresh": "Refresh a project card",
   "system.update": "Rebuild and restart majhi",
   "decisions.correct": "Correct a decision",
   "decisions.set": "Change decision settings",
@@ -413,8 +429,56 @@ export function approvalGroups(): ApprovalGroup[] {
 /** The part of the policy the approval page edits. Rules and the destructive toggle are elsewhere. */
 export type PolicyModes = Pick<PolicySettings, "read" | "change" | "destructive" | "outbound" | "commands">;
 
-/** What a command does under these modes: its own setting, else its risk class. */
+/**
+ * What a command does under these modes: its own setting, else its risk class. A destructive command
+ * always waits for the owner's click, whatever the modes say.
+ */
+/**
+ * Commands that change what an agent may do or reach: approvals, autonomy and the captain's own
+ * switches, spend and trust ceilings, agents' permissions and accounts, secrets and sign-ins, and who
+ * gets a connection or server. Full access never covers them: they always follow the owner's policy.
+ */
+export const PERMISSION_COMMANDS: ReadonlySet<string> = new Set([
+  "policy.set",
+  "policy.removeRule",
+  "settings.set",
+  "history.undo",
+  "autonomy.start",
+  "autonomy.pause",
+  "autonomy.stop",
+  "autonomy.configure",
+  "autonomy.exclude",
+  "captain.stop",
+  "captain.resume",
+  "captain.choreOn",
+  "captain.answerCap",
+  "captain.answerBudget",
+  "money.set",
+  "trust.unmute",
+  "trust.setWindow",
+  "scorecard.setMinutes",
+  "agents.create",
+  "agents.update",
+  "agents.edit",
+  "agents.duplicate",
+  "agents.rename",
+  "agents.remove",
+  "secrets.save",
+  "secrets.remove",
+  "secrets.exportKey",
+  "secrets.restoreKey",
+  "orgs.useGitLogin",
+  "orgs.useSavedLogin",
+  "orgs.setGitAccount",
+  "orgs.removeGitAccount",
+  "connections.allow",
+  "connections.setSecret",
+  "mcp.enable",
+  "mcp.disable",
+]);
+
 export function effectiveMode(policy: PolicyModes, command: string, risk: RiskClass): ApprovalMode {
+  if (isDestructiveCommand(command)) return "confirm";
   return policy.commands[command] ?? policy[risk];
 }
 
@@ -429,7 +493,8 @@ export function withCommandMode(
   mode: ApprovalMode,
 ): PolicyModes {
   const { [command]: _old, ...rest } = policy.commands;
-  return { ...policy, commands: mode === policy[risk] ? rest : { ...rest, [command]: mode } };
+  const own = mode !== policy[risk] && !isDestructiveCommand(command);
+  return { ...policy, commands: own ? { ...rest, [command]: mode } : rest };
 }
 
 export const ApprovalPresetIdSchema = z.enum(["hands-off", "careful"]);

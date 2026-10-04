@@ -58,6 +58,8 @@ const save = () => fs.writeFileSync(STATE, JSON.stringify(state));
 const tokenVar = KIND === "gh" ? "GH_TOKEN" : "GITLAB_TOKEN";
 state.calls.push({ bin: KIND, args, stdin, env: Object.fromEntries(["GH_TOKEN", "GITHUB_TOKEN", "GITLAB_TOKEN", "GH_HOST", "GITLAB_HOST"].filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]])) });
 const fail = (msg) => { save(); process.stderr.write(msg + "\n"); process.exit(1); };
+// The review reads (gh api, glab api) are concurrent GETs: the fake has no reviews, and must not write the shared state.
+if (args[0] === "api") { process.stdout.write("HTTP/2.0 404 Not Found\r\n\r\n{}"); process.exit(1); }
 const slug = flag("--repo");
 const need = state.requireToken[slug];
 if (need !== undefined && process.env[tokenVar] !== need) fail("authentication required for " + slug);

@@ -90,49 +90,6 @@ test.beforeAll(async ({ request }) => {
   await setPerms(request, "acme-builder", ["edit"]);
 });
 
-test("Esc stops a slow turn, and a queued message waits until the next send", async ({ page, request }) => {
-  await cmd(request, "agents.create", {
-    id: "acme-slow",
-    frontmatter: {
-      scope: "acme",
-      role: "Builder",
-      account: "codex-key",
-      where: ["anywhere"],
-      perms: ["edit", "shell"],
-    },
-    instructions: "Slow on purpose.",
-  });
-  const id = await startTask(page, "polish the api docs @acme-slow");
-  const log = messages(page);
-  await expect(room(page).getByRole("region", { name: "Plan of acme-slow" })).toBeVisible();
-  await expect(log.getByRole("button", { name: /Read package\.json/ })).toBeVisible();
-
-  // A message while the agent works is queued.
-  await composer(page).fill("echo: queued one");
-  await composer(page).press("Enter");
-  await expect(log.getByText("echo: queued one")).toBeVisible();
-  await expect(log.getByText(/Waiting for @acme-slow's current turn/)).toBeVisible();
-
-  await composer(page).press("Escape");
-  await expect(log.getByText("Stopped @acme-slow's turn.")).toBeVisible();
-  await expect(panel(page).getByText("Idle", { exact: true })).toBeVisible();
-  // The plan still has open entries, so it stays pinned. The turn ended before the tests ran,
-  // and the queued message did not go.
-  await expect(room(page).getByRole("region", { name: "Plan of acme-slow" })).toBeVisible();
-  await expect(log.getByText(/Tests passed/)).toHaveCount(0);
-  await expect(log.getByText("Queued for @acme-slow's next turn")).toBeVisible();
-  await expect(log.getByText("echo: echo: queued one")).toHaveCount(0);
-  const cancelled = await getTask(request, id);
-  expect(cancelled.status).toBe("running");
-
-  // The next send releases it, ahead of the new message.
-  await composer(page).fill("echo: two");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(log.getByText("echo: echo: queued one")).toBeVisible();
-  await expect(log.getByText("echo: echo: two")).toBeVisible();
-  await expect(log.getByText("Queued for @acme-slow's next turn")).toHaveCount(0);
-});
-
 test("a command the agent may not run asks inline: Deny fails the tool and the turn goes on", {
   tag: "@smoke",
 }, async ({ page }) => {

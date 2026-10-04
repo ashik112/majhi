@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readdir } from "node:fs/promises";
+import { join } from "node:path";
 import type {
   Budget,
   BudgetsPatch,
@@ -10,17 +12,19 @@ import type {
   Remount,
   TaskId,
 } from "@majhi/shared";
-import { RESTART_COMMAND, sameImage } from "@majhi/shared";
+import { PRIVATE, RESTART_COMMAND, sameImage } from "@majhi/shared";
 import type { z } from "zod";
 import { openBossChat, openChat } from "../admin/boss.ts";
 import { cardStats } from "../admin/card-stats.ts";
 import { sameRule } from "../admin/policy.ts";
+import { agendaHandlers } from "../agenda/handlers.ts";
 import { scheduleHandlers } from "../automation/handlers.ts";
-import { triggerHandlers } from "../automation/triggers/handlers.ts";
 import { autonomyHandlers } from "../autonomy/handlers.ts";
 import { backupHandlers } from "../backup/handlers.ts";
+import { businessHandlers } from "../business/handlers.ts";
 import { captainHandlers } from "../captain/handlers.ts";
 import type { ConfigService } from "../config/service.ts";
+import { connectHandlers } from "../connect/handlers.ts";
 import { connectionHandlers } from "../connections/handlers.ts";
 import { redactSecrets } from "../connections/redact.ts";
 import { taskSecrets } from "../connections/run-files.ts";
@@ -28,13 +32,18 @@ import { connectionDir } from "../connections/service.ts";
 import type { E2eService } from "../e2e/service.ts";
 import { editorPath } from "../editor/allowed.ts";
 import { UserError } from "../errors.ts";
+import { findingsHandlers } from "../findings/handlers.ts";
 import { isDirectory } from "../fs.ts";
 import { gitConnectHandlers } from "../gitConnect/handlers.ts";
+import { growthHandlers } from "../growth/handlers.ts";
+import { handoffHandlers } from "../handoff/handlers.ts";
 import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import { inboxHandlers } from "../inbox/handlers.ts";
 import { mcpHandlers } from "../mcp-servers/handlers.ts";
 import { hostNameOf } from "../mrs/remote.ts";
+import { TriggerAlias, triggerHandlers } from "../ops/anything/triggers.ts";
+import { opsHandlers } from "../ops/handlers.ts";
 import {
   checkSavedLogin,
   checkToken,
@@ -46,6 +55,8 @@ import {
 } from "../orgs/gitAccount.ts";
 import { type AdoptDeps, useGitLogin } from "../orgs/gitLogin.ts";
 import { CheckCache, gitStatus } from "../orgs/gitStatus.ts";
+import { outcomesHandlers } from "../outcomes/handlers.ts";
+import { playbookHandlers } from "../playbooks/handlers.ts";
 import { attributionOf, orgIdentity } from "../runs/attribution.ts";
 import { commitBy } from "../runs/checkpoint.ts";
 import { readGitMeta } from "../scan/gitMeta.ts";
@@ -157,11 +168,57 @@ export function createHandlers({
   };
   return {
     ...scheduleHandlers(services.automation.schedules),
-    ...triggerHandlers(services.automation.triggers),
+    ...triggerHandlers(new TriggerAlias(services.ops.engine)),
     ...autonomyHandlers(services.autonomy),
     ...captainHandlers(services.captain, services.autonomy),
     ...inboxHandlers(services.inbox),
+    ...agendaHandlers({
+      agenda: services.agenda,
+      findings: services.findings,
+      lanes: services.lanes,
+      store: services.store,
+    }),
+    ...businessHandlers({ ...services.business, lanes: services.lanes, store: services.store }),
+    ...findingsHandlers({ findings: services.findings, lanes: services.lanes, store: services.store }),
+    ...playbookHandlers({
+      findings: services.findings,
+      lanes: services.lanes,
+      store: services.store,
+      playbooks: services.playbooks,
+      goals: services.goals,
+      outbound: services.outbound,
+    }),
+    ...opsHandlers({
+      watch: services.ops.watch,
+      engine: services.ops.engine,
+      phone: services.ops.phone,
+      playbooks: services.playbooks,
+      repo: services.ops.repo,
+      findings: services.findings,
+      lanes: services.lanes,
+      store: services.store,
+    }),
+    ...outcomesHandlers({
+      findings: services.findings,
+      lanes: services.lanes,
+      store: services.store,
+      outcomes: services.outcomes,
+    }),
+    ...handoffHandlers({
+      findings: services.findings,
+      lanes: services.lanes,
+      store: services.store,
+      handoff: services.handoff,
+    }),
+    ...growthHandlers({
+      findings: services.findings,
+      lanes: services.lanes,
+      store: services.store,
+      economics: services.economics,
+      growth: services.growth,
+    }),
     ...backupHandlers(services.backup),
+    ...connectHandlers(services.connect),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
     ...skillHandlers(services.skills),
     ...mcpHandlers(services.mcpServers),
@@ -225,6 +282,13 @@ export function createHandlers({
     },
 
     "ssh.hosts": () => sshConfigHosts(config.paths.hostHome),
+    "ssh.keys": async () => {
+      const names = await readdir(join(config.paths.hostHome, ".ssh")).catch(() => [] as string[]);
+      return names
+        .filter((n) => /^[A-Za-z0-9._-]{1,128}\.pub$/.test(n))
+        .map((n) => `~/.ssh/${n}`)
+        .sort();
+    },
     "git.logins": (input) => services.gitLogins.list(input.refresh === true),
 
     "orgs.useGitLogin": (input, ctx) => useGitLogin(adoptDeps(ctx), input),
@@ -259,7 +323,10 @@ export function createHandlers({
 
     "orgs.useSavedLogin": async (input, ctx) => {
       if (ctx.meta.actor.kind === "agent") {
-        throw new UserError("Only the owner can use this computer's saved login. Ask them to click it.", 409);
+        throw new UserError(
+          "Only the owner can use this computer's saved login, under Git accounts on the Workspaces page.",
+          409,
+        );
       }
       return useSavedLogin(
         {
@@ -452,19 +519,29 @@ export function createHandlers({
     },
 
     "projects.list": () => services.projects.list(),
-    "projects.register": (input, ctx) => services.projects.register(input, ctx.command, ctx.meta),
+    "projects.register": async (input, ctx) => {
+      const view = await services.projects.register(input, ctx.command, ctx.meta);
+      services.cards.onRegistered(input.id);
+      return view;
+    },
+    "projects.cards": async (input) => services.cards.list(input.project),
+    "projects.cardRefresh": (input) => services.cards.refresh(input.project),
     "projects.update": async (input, ctx) => {
       // Protection is the owner's guard on their infra: an agent may turn it on, never off.
       if (input.protected === false && ctx.meta.actor.kind === "agent") {
         const current = (await services.projects.infos()).find((p) => p.id === input.id);
         if (current?.protected === true) {
-          throw new UserError(`Only the owner can turn protection off for ${input.id}.`, 409);
+          throw new UserError(
+            `Only the owner can turn protection off for ${input.id}, on the Projects and links page.`,
+            409,
+          );
         }
       }
       return services.projects.update(input, ctx.command, ctx.meta);
     },
     "projects.remove": async (input, ctx) => {
       await services.projects.remove(input.id, ctx.command, ctx.meta);
+      services.cards.forget(input.id);
       return { removed: input.id };
     },
 
@@ -472,6 +549,31 @@ export function createHandlers({
     "tasks.list": async (input) =>
       services.tasks.list(input.includeDone === true).filter((t) => t.lane !== true),
     "tasks.get": async (input) => services.tasks.get(input.id),
+    "captain.reportBug": async (input, ctx) => {
+      // majhi's own code: the Private project named majhi, or the one whose folder is called majhi.
+      const own = (await services.projects.list()).find(
+        (p) => p.org === PRIVATE && (p.id === "majhi" || /[\\/]majhi$/.test(p.path)),
+      );
+      if (own === undefined) {
+        throw new UserError(
+          "No project in the Private workspace is majhi's own code. Tell the owner the bug instead.",
+          404,
+        );
+      }
+      const text = `majhi bug: ${input.title}\n\n${input.details}`;
+      const captured = await services.secretService.capture(text);
+      const task = await services.tasks.create({
+        text: captured.text,
+        org: PRIVATE,
+        repos: [{ project: own.id }],
+        attachments: [],
+        start: false,
+        from: ctx.meta.task,
+        byOwner: false,
+      });
+      noteSecrets(services, task.id, captured.saved);
+      return { task: task.id };
+    },
     "tasks.create": async (input, ctx) => {
       // A secret in the task text must not reach TASK.md or the agent.
       const captured = await services.secretService.capture(input.text);
@@ -496,6 +598,7 @@ export function createHandlers({
           secrets: services.secrets,
           majhiHome,
           connectionDir: (id) => connectionDir(majhiHome, id),
+          oauth: (id) => services.connect.bearer(id),
         },
         task,
       );
@@ -521,7 +624,7 @@ export function createHandlers({
     "tasks.reopen": (input) => services.tasks.reopen(input.id),
     "tasks.merge": ({ push, pushLocalCommits, createRemoteBranch, ...input }, ctx) => {
       if (input.confirmProtected !== undefined && ctx.meta.actor.kind === "agent") {
-        throw new UserError("Only the owner can ship a protected repo.", 409);
+        throw new UserError("Only the owner can ship a protected repo, from Ship in the task.", 409);
       }
       if ((pushLocalCommits || createRemoteBranch) && ctx.meta.actor.kind === "agent") {
         throw new UserError(
@@ -538,15 +641,9 @@ export function createHandlers({
           })
         : services.tasks.merge({ ...input, by: actorName(ctx.meta.actor) });
     },
-    "tasks.updateTarget": (input, ctx) => {
-      if (ctx.meta.actor.kind === "agent") {
-        throw new UserError(
-          "Only the owner can update a branch in their checkout. Ask them to click Update in Ship.",
-          409,
-        );
-      }
-      return services.mrs.updateTarget({ ...input, by: "owner" });
-    },
+    // A fast-forward only, never forced: an agent asks through the owner's approval policy.
+    "tasks.updateTarget": (input, ctx) =>
+      services.mrs.updateTarget({ ...input, by: actorName(ctx.meta.actor) }),
     "tasks.shipOptions": (input) => services.mrs.shipOptions(input.id),
     "tasks.push": (input, ctx) => services.mrs.push(input.id, input.deleteAfter, actorName(ctx.meta.actor)),
     "tasks.resolveShip": async (input, ctx) => ({
@@ -556,6 +653,12 @@ export function createHandlers({
         agent: ctx.meta.actor.kind === "agent",
       }),
     }),
+    "tasks.tell": (input, ctx) =>
+      services.captainTell.tell(input, {
+        kind: ctx.meta.actor.kind === "agent" ? "agent" : "owner",
+        ...(ctx.meta.actor.kind === "agent" ? { id: ctx.meta.actor.id } : {}),
+        task: ctx.meta.task,
+      }),
     "tasks.cancelShip": async (input) => ({ task: services.pendingShips.cancel(input.id) }),
     "tasks.branches": (input) => services.tasks.branches(input.id),
     "tasks.diff": (input) => services.tasks.diff(input.id),
@@ -858,12 +961,13 @@ export function createHandlers({
     "chats.rename": async (input) => services.tasks.renameChat(input.id, input.title),
     "audit.list": async (input) => services.store.permissions.list(input),
     "cleanup.preview": async (input) =>
-      services.cleanup.preview(input.days ?? (await config.settings()).cleanup.after_days),
+      services.cleanup.preview(input.days ?? (await config.settings()).cleanup.after_days, input.cachesOnly),
     "cleanup.run": async (input, ctx) =>
       services.cleanup.run(
         input.tasks,
         input.days ?? (await config.settings()).cleanup.after_days,
         actorName(ctx.meta.actor),
+        input.cachesOnly,
       ),
     "e2e.status": () => (e2e ? e2e.status() : notBuilt()),
     "e2e.runNow": (input, ctx) => {
@@ -873,12 +977,21 @@ export function createHandlers({
       return e2e ? e2e.runNow(input.project) : notBuilt();
     },
     "health.run": () => (health ? health.run() : notBuilt()),
-    "health.fix": (input) => (health ? health.fix(input.id) : notBuilt()),
+    "health.fix": (input, ctx) =>
+      health ? health.fix(input.id, ctx.meta.actor.kind === "owner" ? "owner" : "agent") : notBuilt(),
     "system.version": () => (system ? system.version() : notBuilt()),
     "system.update": (input) => (system ? system.update(input.when) : notBuilt()),
     "decisions.ask": (input) => services.decisions.ask(input),
     "decisions.recent": async (input) => services.decisions.recent(input.limit, input.offset),
     "decisions.correct": async (input) => services.decisions.correct(input),
+    "decisions.get": async (input) => services.decisions.get(input.id),
+    "decisions.label": async (input) => services.decisions.label(input),
+    "decisions.eval": async (input, ctx) => {
+      if (ctx.meta.actor.kind !== "owner")
+        throw new UserError("Only the owner runs the decision evals.", 409);
+      return services.decisions.runEvals(input.use);
+    },
+    "decisions.slots": async () => services.decisions.slots(),
     "decisions.status": () => services.decisions.status(),
     "decisions.set": (input, ctx) => services.decisions.set(input, ctx.meta, ctx.command),
     "decisions.install": () => services.decisions.install(),

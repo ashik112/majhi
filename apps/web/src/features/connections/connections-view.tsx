@@ -1,49 +1,82 @@
-import { type ConnectionView, connectionType, type OrgView } from "@majhi/shared";
-import { Plus } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import {
+  type ConnectionType,
+  type ConnectionView,
+  type ConnectStatus,
+  connectionType,
+  GLOBAL_CONNECTIONS,
+} from "@majhi/shared";
+import { ArrowLeft, ChevronRight, Plus } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
-import { DetailPane, ListDetail, ListPane, ROW, ROW_SELECTED } from "@/components/ui/list-detail";
-import { OrgBadge } from "@/components/ui/org-badge";
+import { DetailPane } from "@/components/ui/list-detail";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
-import { orgLabel } from "@/features/accounts/model";
+import { McpTab } from "@/features/skills/mcp-tab";
 import { cn } from "@/lib/cn";
+import { useConnectStatus } from "@/lib/connect-queries";
 import { useConnectionCommand, useConnections } from "@/lib/connection-queries";
 import { describeError } from "@/lib/errors";
-import { badgeLetters, plural } from "@/lib/format";
+import { plural } from "@/lib/format";
 import { useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
 import { useNow } from "@/lib/use-now";
 import { useSearchParam } from "@/pages/parts/url-state";
+import { ConnectCatalog } from "./connect-catalog";
 import { ConnectionDetail } from "./connection-detail";
 import { connectionGroups, connectionStatus } from "./model";
 import { NewConnection } from "./new-connection";
+import { scopeName, WorkspaceTag } from "./scope-picker";
+import { ServiceLogo, serviceOf } from "./service-logo";
 
-/** Connections by org on the left, each with its last Test; the picked one on the right. */
+/** Service-first setup, with one destination and one entry point. */
 export function ConnectionsView() {
   const connections = useConnections();
   const orgs = useOrgs();
+  const statuses = useConnectStatus();
   const now = useNow(30_000);
   const toast = useToast();
   const { org: orgFilter } = useOrgFilter();
-  const [picked, setPicked] = useState<string | undefined>();
+  const [picked, setPicked] = useState<string>();
   const [linked, setLinked] = useSearchParam("connection");
-  /** The org a new connection goes to, while the form is open. `""` lets the form pick. */
-  const [adding, setAdding] = useState<string>();
+  const [view, setView] = useSearchParam("tab");
+  const [mode, setMode] = useState<"connected" | "catalog" | "custom">();
+  const mcp = view === "mcp";
+  const [connecting, setConnecting] = useState(false);
+  const [destination, setDestination] = useState<string>();
+  const [customType, setCustomType] = useState<ConnectionType>("mcp");
+  const [query, setQuery] = useState("");
   const test = useConnectionCommand("connections.test");
   const [testing, setTesting] = useState<ReadonlySet<string>>(new Set());
-
   const all = connections.data ?? [];
   const orgList = orgs.data ?? [];
-  const groups = connectionGroups(all, orgList, orgFilter);
-  const first = groups.find((g) => g.items[0])?.items[0];
-  const selected = all.find((c) => c.id === (linked ?? picked)) ?? first;
+  const visible = all.filter((c) =>
+    `${c.name} ${c.description} ${connectionType(c.type).label}`
+      .toLowerCase()
+      .includes(query.trim().toLowerCase()),
+  );
+  const selected = all.find((c) => c.id === (linked ?? picked));
+  const catalog = mode === "catalog" || (mode === undefined && !selected && all.length === 0);
   const select = (id: string) => {
-    setAdding(undefined);
+    setView(undefined);
+    setMode("connected");
     setPicked(id);
-    if (linked !== undefined) setLinked(undefined);
+    setLinked(id);
+  };
+  const browse = (org?: string) => {
+    setView(undefined);
+    setPicked(undefined);
+    setLinked(undefined);
+    setMode("catalog");
+    setDestination(org ?? orgFilter);
+  };
+  const overview = () => {
+    setView(undefined);
+    setPicked(undefined);
+    setLinked(undefined);
+    setMode("connected");
   };
   const runTest = (view: ConnectionView) => {
     setTesting((prev) => new Set(prev).add(view.id));
@@ -61,230 +94,256 @@ export function ConnectionsView() {
       },
     );
   };
-
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
         title="Connections"
-        subtitle={
-          connections.isPending
-            ? "Loading connections"
-            : `${plural(all.length, "connection")}. Clusters, MCP servers, hosts, keys, mailboxes and browsers agents can reach.`
-        }
-      />
+        subtitle="Connect the services your agents work with."
+        className="flex-wrap gap-y-3"
+      >
+        <Button variant="primary" onClick={() => browse()} disabled={connecting}>
+          <Plus aria-hidden="true" />
+          Connect a service
+        </Button>
+      </PageHeader>
       {connections.isError ? (
-        <p role="alert" className="p-8 text-base text-red">
+        <p role="alert" className="p-6 text-base text-red">
           Could not load connections: {describeError(connections.error)}
         </p>
+      ) : connections.isPending || orgs.isPending ? (
+        <DetailPane label="Loading connections">
+          <div aria-busy="true" className="grid gap-3 pt-5 sm:grid-cols-2 lg:grid-cols-3">
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <Skeleton key={i} className="h-32 rounded-lg" />
+            ))}
+          </div>
+        </DetailPane>
+      ) : orgs.isError ? (
+        <p role="alert" className="p-6 text-base text-red">
+          Could not load workspaces: {describeError(orgs.error)}
+        </p>
       ) : (
-        <ListDetail>
-          <ListPane
-            label="Connections"
-            className="min-[1100px]:w-[300px] min-[1320px]:w-[336px]"
-            footer={
-              <Button
-                variant="ghost"
-                aria-pressed={adding !== undefined}
-                className={cn("w-full justify-start", adding !== undefined && ROW_SELECTED)}
-                onClick={() => setAdding(orgFilter ?? "")}
-              >
-                <Plus aria-hidden="true" />
-                New connection
-              </Button>
-            }
-          >
-            {connections.isPending ? (
-              <div aria-busy="true" className="flex flex-col gap-2 p-1">
-                {[0, 1, 2].map((i) => (
-                  <Skeleton key={i} className="h-12 rounded-md" />
-                ))}
+        <>
+          <nav aria-label="Connection views" className="mb-3 flex shrink-0 items-center gap-1">
+            <Button
+              variant="ghost"
+              aria-pressed={!mcp && !catalog && mode !== "custom"}
+              className={cn(!mcp && !catalog && mode !== "custom" && "bg-selected text-fg")}
+              onClick={overview}
+              disabled={connecting}
+            >
+              Connected <span className="font-mono text-xs text-fg-muted">{all.length}</span>
+            </Button>
+            <Button
+              variant="ghost"
+              aria-pressed={!mcp && (catalog || mode === "custom")}
+              className={cn(!mcp && (catalog || mode === "custom") && "bg-selected text-fg")}
+              onClick={() => browse()}
+              disabled={connecting}
+            >
+              Browse services
+            </Button>
+            <Button
+              variant="ghost"
+              aria-pressed={mcp}
+              className={cn(mcp && "bg-selected text-fg")}
+              onClick={() => {
+                setPicked(undefined);
+                setLinked(undefined);
+                setView("mcp");
+              }}
+              disabled={connecting}
+            >
+              MCP servers
+            </Button>
+          </nav>
+          {mcp ? (
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-8 scroll-fade">
+              <div className="mx-auto flex max-w-[960px] flex-col gap-4">
+                <McpTab />
               </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {groups.map((group) => {
-                  const label = orgLabel(group.org, orgList).name;
-                  return (
-                    <ConnectionGroup
-                      key={group.org}
-                      label={label}
-                      org={orgList.find((o) => o.id === group.org)}
-                      count={group.items.length}
-                      creating={adding === group.org}
-                      onAdd={() => setAdding(group.org)}
-                    >
+            </div>
+          ) : mode === "custom" ? (
+            <NewConnection
+              initialType={customType}
+              orgs={orgList}
+              defaultOrg={destination ?? orgFilter}
+              onClose={() => setMode("catalog")}
+              onCreated={select}
+            />
+          ) : catalog ? (
+            <ConnectCatalog
+              orgs={orgList}
+              defaultOrg={destination ?? orgFilter}
+              onOpen={select}
+              onBusyChange={setConnecting}
+              onCustom={(org, type) => {
+                setDestination(org);
+                setCustomType(type);
+                setMode("custom");
+              }}
+            />
+          ) : selected ? (
+            <div className="flex min-h-0 flex-1 flex-col gap-3">
+              <Button variant="ghost" size="sm" className="shrink-0 self-start" onClick={overview}>
+                <ArrowLeft aria-hidden="true" />
+                All connections
+              </Button>
+              <ConnectionDetail
+                key={selected.id}
+                view={selected}
+                orgs={orgList}
+                testing={testing.has(selected.id)}
+                now={now}
+                onTest={() => runTest(selected)}
+                onRemoved={overview}
+              />
+            </div>
+          ) : (
+            <DetailPane
+              label="Connected services"
+              head={
+                <div className="flex flex-wrap items-center gap-3">
+                  <h2 className="text-md font-semibold">{plural(visible.length, "connection")}</h2>
+                  <Input
+                    aria-label="Search connections"
+                    type="search"
+                    value={query}
+                    placeholder="Search connections"
+                    className="ml-auto w-[220px]"
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
+                </div>
+              }
+            >
+              {all.length === 0 ? (
+                <div className="flex max-w-[500px] flex-col items-start gap-3 py-8">
+                  <h3 className="text-md font-semibold">Connect your first service</h3>
+                  <p className="text-base text-fg-muted">
+                    Choose the workspace, then the service, then sign in.
+                  </p>
+                  <Button variant="primary" onClick={() => browse()}>
+                    Browse services
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-6 pt-4">
+                  {connectionGroups(visible, orgList, orgFilter).map((group) => (
+                    <section key={group.org} aria-label={scopeName(group.org, orgList)}>
+                      <div className="flex items-center gap-2 border-b border-line pb-2">
+                        <WorkspaceTag org={group.org} orgs={orgList} className="text-base font-semibold" />
+                        <span className="font-mono text-sm text-fg-faint tabular-nums">
+                          {group.items.length}
+                        </span>
+                        <span className="text-sm text-fg-faint">
+                          {group.org === GLOBAL_CONNECTIONS ? "· every workspace" : ""}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="ml-auto"
+                          onClick={() => browse(group.org)}
+                          aria-label={`Connect a service to ${scopeName(group.org, orgList)}`}
+                        >
+                          <Plus aria-hidden="true" />
+                          Connect
+                        </Button>
+                      </div>
                       {group.items.length === 0 ? (
-                        <p className="px-2 pb-1 text-sm text-fg-faint">No connections yet.</p>
+                        <p className="py-3 text-sm text-fg-faint">
+                          {query.trim() === "" ? "No connections yet." : "None match the search."}
+                        </p>
                       ) : (
-                        <ul aria-label={`Connections of ${label}`} className="flex flex-col gap-px">
+                        <ul
+                          aria-label={`${scopeName(group.org, orgList)} connections`}
+                          className="divide-y divide-line"
+                        >
                           {group.items.map((view) => (
                             <ConnectionRow
                               key={view.id}
                               view={view}
+                              signed={statuses.data?.find((s) => s.connection === view.id)}
                               testing={testing.has(view.id)}
-                              selected={adding === undefined && selected?.id === view.id}
-                              onSelect={() => select(view.id)}
+                              onOpen={() => select(view.id)}
                               onTest={() => runTest(view)}
                             />
                           ))}
                         </ul>
                       )}
-                    </ConnectionGroup>
-                  );
-                })}
-              </div>
-            )}
-          </ListPane>
-
-          {adding !== undefined ? (
-            <NewConnection
-              key={adding}
-              orgs={orgList}
-              defaultOrg={adding === "" ? orgFilter : adding}
-              onClose={() => setAdding(undefined)}
-              onCreated={(id) => select(id)}
-            />
-          ) : selected ? (
-            <ConnectionDetail
-              key={selected.id}
-              view={selected}
-              orgs={orgList}
-              testing={testing.has(selected.id)}
-              now={now}
-              onTest={() => runTest(selected)}
-              onRemoved={() => {
-                setPicked(undefined);
-                setLinked(undefined);
-              }}
-            />
-          ) : connections.isPending ? (
-            <DetailPane label="Loading">
-              <Skeleton className="mt-5 h-40 rounded-lg" />
-            </DetailPane>
-          ) : (
-            <DetailPane label="No connections">
-              <div className="flex max-w-[480px] flex-col items-start gap-3 pt-6">
-                <h2 className="text-md font-semibold">No connections yet</h2>
-                <p className="text-base text-fg-muted text-pretty">
-                  Add a cluster, an MCP server like New Relic, an SSH host, API keys, a mailbox or a browser.
-                  Agents of the workspace can then debug and report with it, and every change they make asks
-                  you first.
-                </p>
-                <Button variant="primary" onClick={() => setAdding(orgFilter ?? "")}>
-                  New connection
-                </Button>
-              </div>
+                    </section>
+                  ))}
+                </div>
+              )}
             </DetailPane>
           )}
-        </ListDetail>
+        </>
       )}
     </div>
   );
 }
 
-function ConnectionGroup({
-  label,
-  org,
-  count,
-  creating,
-  onAdd,
-  children,
-}: {
-  label: string;
-  org: OrgView | undefined;
-  count: number;
-  creating: boolean;
-  onAdd: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <section aria-label={label} className="flex flex-col gap-px">
-      <div className="flex h-8 items-center gap-2 pr-0.5 pl-2">
-        <OrgBadge label={badgeLetters(org?.key ?? label)} color={org?.color} size="xs" />
-        <h2 className="min-w-0 truncate text-sm font-medium text-fg-soft">{label}</h2>
-        <span className="tnum font-mono text-xs text-fg-faint">{count}</span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={`New connection in ${label}`}
-          aria-pressed={creating}
-          title={`New connection in ${label}`}
-          className={cn("ml-auto", creating && "bg-selected text-fg")}
-          onClick={onAdd}
-        >
-          <Plus aria-hidden="true" />
-        </Button>
-      </div>
-      {children}
-    </section>
-  );
-}
-
-/**
- * Two lines: the name with its Test button, then the lamp and word of the last Test, the type and the
- * description. The name is the button that picks it; it covers the row, under the Test button.
- */
+/** One saved connection: its service, account, who gets it, and how its last check went. */
 function ConnectionRow({
   view,
+  signed,
   testing,
-  selected,
-  onSelect,
+  onOpen,
   onTest,
 }: {
   view: ConnectionView;
+  signed: ConnectStatus | undefined;
   testing: boolean;
-  selected: boolean;
-  onSelect: () => void;
+  onOpen: () => void;
   onTest: () => void;
 }) {
   const status = connectionStatus(view, testing);
+  const needsSignIn = signed !== undefined && signed.state !== "connected";
+  const lamp = needsSignIn
+    ? "needs"
+    : signed?.state === "connected" && !testing && view.lastTest?.ok !== false
+      ? "done"
+      : status.lamp;
+  const label = needsSignIn
+    ? "Reconnect"
+    : signed?.state === "connected" && lamp === "done"
+      ? "Connected"
+      : status.label;
   return (
-    <li
-      className={cn(
-        ROW,
-        "min-h-[50px] flex-col justify-center gap-0.5 py-1.5 pr-1.5 pl-2.5 focus-within:bg-raised",
-        selected && ROW_SELECTED,
-      )}
-    >
-      <span className="flex min-w-0 items-center gap-2">
+    <li className="relative flex flex-wrap items-center gap-x-4 gap-y-2 py-3 sm:flex-nowrap">
+      <ServiceLogo service={signed?.service ?? serviceOf(view)} type={view.type} />
+      <div className="min-w-0 flex-1">
         <button
           type="button"
-          aria-current={selected ? "true" : undefined}
-          onClick={onSelect}
-          title={view.description || view.name}
-          className={cn(
-            "min-w-0 cursor-pointer truncate text-left text-sm after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-accent",
-            selected ? "text-fg" : "text-fg-soft",
-          )}
+          onClick={onOpen}
+          className="cursor-pointer text-left text-base font-semibold text-fg after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-accent"
         >
           {view.name}
         </button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="relative z-10 ml-auto h-6 px-2"
-          disabled={testing}
-          onClick={onTest}
-          aria-label={`Test ${view.name}`}
-        >
-          Test
-        </Button>
+        <p className="truncate text-sm text-fg-muted">
+          {signed?.account ?? (view.description || connectionType(view.type).label)}
+        </p>
+      </div>
+      <span
+        className={cn("shrink-0 text-sm", view.agents.length === 0 ? "text-amber" : "text-fg-muted")}
+        title={view.agents.map((a) => `@${a}`).join(", ")}
+      >
+        {view.agents.length === 0 ? "No agents" : plural(view.agents.length, "agent")}
       </span>
-      <span className="flex min-w-0 items-center gap-1.5 text-xs">
-        <Lamp state={status.lamp} size={7} />
-        <span className={cn("shrink-0", LAMP_TEXT[status.lamp])}>{status.label}</span>
-        <span aria-hidden="true" className="text-fg-dim">
-          ·
-        </span>
-        <span className="shrink-0 text-fg-faint">{connectionType(view.type).label}</span>
-        {view.description && (
-          <>
-            <span aria-hidden="true" className="text-fg-dim">
-              ·
-            </span>
-            <span className="min-w-0 truncate text-fg-muted">{view.description}</span>
-          </>
-        )}
+      <span className={cn("flex w-[110px] shrink-0 items-center gap-2 text-sm", LAMP_TEXT[lamp])}>
+        <Lamp state={lamp} size={7} />
+        {label}
       </span>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="relative z-10"
+        disabled={testing}
+        onClick={onTest}
+        aria-label={`Test ${view.name}`}
+      >
+        {testing ? "Testing" : "Test"}
+      </Button>
+      <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-fg-faint" />
     </li>
   );
 }

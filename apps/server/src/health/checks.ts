@@ -3,6 +3,7 @@ import { constants, existsSync } from "node:fs";
 import { access, stat, statfs } from "node:fs/promises";
 import { dirname } from "node:path";
 import { promisify } from "node:util";
+import type { BackupList } from "@majhi/shared";
 import {
   type AccountView,
   type ConfigState,
@@ -25,6 +26,7 @@ import { SERENA_COMMAND } from "../runs/serena.ts";
 import type { KeyExportRecord } from "../secrets/backup.ts";
 import type { SecretsKeyState } from "../secrets/store.ts";
 import type { Services } from "../services.ts";
+import { sizeText } from "../tasks/folder-sweep.ts";
 
 const run = promisify(execFile);
 
@@ -42,6 +44,8 @@ export interface Check {
   detail: string;
   /** A fix majhi can run itself. */
   fix?: { label: string };
+  /** The workspace the thing checked belongs to, when it belongs to one. */
+  org?: string;
 }
 
 const GB = 1_000_000_000;
@@ -87,8 +91,10 @@ export async function collectChecks(ctx: CheckContext): Promise<Check[]> {
     checkSshHosts(ctx.sshHosts, ctx.host, ctx.env.sshAgentOff),
     checkTasksDir(state, home),
     checkDisk(state, home).then((c) => [c]),
+    [checkTaskFolders(ctx.services)],
     checkSecrets(ctx.services),
     checkKeyBackup(ctx),
+    checkBackups(ctx),
     checkTools(ctx),
     checkRunner(ctx),
     checkSerenaTool(ctx),
@@ -131,6 +137,7 @@ async function checkConnections(ctx: CheckContext): Promise<Check[]> {
       id: `connection:${view.id}`,
       group: "connections" as const,
       name: `${view.name} (${view.org})`,
+      org: view.org,
     };
     const result = fresh.get(view.id) ?? view.lastTest;
     if (view.problems.length > 0) {
@@ -423,6 +430,23 @@ async function checkDisk(state: ConfigState, home: string): Promise<Check> {
   }
 }
 
+/** Task folders above this size are a warning, with a fix that frees what done tasks can rebuild. */
+export const TASK_FOLDERS_WARN_BYTES = 20 * GB;
+
+function checkTaskFolders(services: Services): Check {
+  const base = { id: "task-folders", group: "disk", name: "Task folders" } as const;
+  const m = services.folderSweep.snapshot();
+  if (m === undefined) return { ...base, status: "pass", detail: "Measuring the task folders..." };
+  const detail = `${sizeText(m.rootBytes)} in task folders, ${sizeText(m.rebuildableBytes)} of it rebuildable in ${m.tasks} done ${m.tasks === 1 ? "task" : "tasks"}`;
+  if (m.rootBytes <= TASK_FOLDERS_WARN_BYTES) return { ...base, status: "pass", detail };
+  return {
+    ...base,
+    status: "warn",
+    detail: m.rebuildableBytes > 0 ? detail : `${detail}. Nothing in done tasks can be freed.`,
+    ...(m.rebuildableBytes > 0 ? { fix: { label: "Free space now" } } : {}),
+  };
+}
+
 /** Warn under 5 GB, fail under 1 GB. */
 export function diskStatus(freeBytes: number): CheckStatus {
   if (freeBytes < DISK_FAIL_BYTES) return "fail";
@@ -704,4 +728,98 @@ export function accountCheck(
 
 function firstLine(text: string): string {
   return text.split("\n", 1)[0] ?? text;
+}
+
+/** A newest backup older than this is stale: the daily one is overdue. */
+const BACKUP_STALE_MS = 36 * 60 * 60 * 1000;
+/** A check older than this is overdue: majhi checks weekly. */
+const VERIFY_STALE_MS = 10 * 24 * 60 * 60 * 1000;
+
+async function checkBackups(ctx: CheckContext): Promise<Check[]> {
+  const list = await ctx.services.backup.list().catch(() => undefined);
+  return list === undefined ? [] : backupChecks(list, (ctx.now ?? Date.now)());
+}
+
+function ago(iso: string, now: number): string {
+  const hours = Math.max(0, Math.round((now - Date.parse(iso)) / 3_600_000));
+  return hours < 1
+    ? "under an hour ago"
+    : hours < 48
+      ? `${hours} h ago`
+      : `${Math.round(hours / 24)} days ago`;
+}
+
+/** Two checks: is there a recent backup, and did the last test restore work. */
+export function backupChecks(list: BackupList, now: number): Check[] {
+  const fresh = { id: "backups", group: "majhi", name: "Backups" } as const;
+  const verify = { id: "backups-verify", group: "majhi", name: "Backup test restore" } as const;
+  const checks: Check[] = [];
+  if (list.lastError !== undefined && (list.lastAt === undefined || list.lastError.at > list.lastAt)) {
+    checks.push({
+      ...fresh,
+      status: "fail",
+      detail: `The last backup failed: ${list.lastError.detail}`,
+      fix: { label: "Back up now" },
+    });
+  } else if (list.lastAt === undefined) {
+    checks.push({
+      ...fresh,
+      status: "warn",
+      detail: "No backup yet. majhi takes the first one soon after it starts.",
+      fix: { label: "Back up now" },
+    });
+  } else if (now - Date.parse(list.lastAt) > BACKUP_STALE_MS) {
+    checks.push({
+      ...fresh,
+      status: "warn",
+      detail: `The newest backup is from ${ago(list.lastAt, now)}. One is due every day.`,
+      fix: { label: "Back up now" },
+    });
+  } else {
+    checks.push({
+      ...fresh,
+      status: "pass",
+      detail: `Backed up ${ago(list.lastAt, now)}, ${list.backups.length} kept in ${list.destination.path}`,
+    });
+  }
+  if (list.destination.error !== undefined) {
+    checks.push({
+      id: "backups-folder",
+      group: "majhi",
+      name: "Backup folder",
+      status: "fail",
+      detail: list.destination.error,
+    });
+  }
+  if (list.lastAt !== undefined) {
+    if (list.lastVerify === undefined) {
+      checks.push({
+        ...verify,
+        status: "warn",
+        detail: "Not tested yet. majhi restores the newest backup into a temporary folder every week.",
+        fix: { label: "Test now" },
+      });
+    } else if (!list.lastVerify.ok) {
+      checks.push({
+        ...verify,
+        status: "fail",
+        detail: `The test restore failed: ${list.lastVerify.detail}`,
+        fix: { label: "Test now" },
+      });
+    } else if (now - Date.parse(list.lastVerify.at) > VERIFY_STALE_MS) {
+      checks.push({
+        ...verify,
+        status: "warn",
+        detail: `Last tested ${ago(list.lastVerify.at, now)}.`,
+        fix: { label: "Test now" },
+      });
+    } else {
+      checks.push({
+        ...verify,
+        status: "pass",
+        detail: `Tested ${ago(list.lastVerify.at, now)}: ${list.lastVerify.detail}`,
+      });
+    }
+  }
+  return checks;
 }

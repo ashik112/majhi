@@ -1,51 +1,11 @@
-/** The sections of Hub setup, in list order, under their group. The URL keeps one as `?section=`. */
-export const SETUP_GROUPS = [
-  { label: "Setup", sections: ["overview", "roots", "ssh"] },
-  {
-    label: "How majhi works",
-    sections: [
-      "decisions",
-      "memory",
-      "context",
-      "turns",
-      "teams",
-      "approvals",
-      "notifications",
-      "containers",
-    ],
-  },
-  { label: "More", sections: ["editor", "e2e", "appearance", "backups", "history"] },
-] as const;
-
-export type SetupSection = (typeof SETUP_GROUPS)[number]["sections"][number];
-
-export const SETUP_SECTIONS: readonly SetupSection[] = SETUP_GROUPS.flatMap((g) => g.sections);
-
-export const SECTION_TITLE: Record<SetupSection, string> = {
-  overview: "Overview",
-  roots: "Project folders",
-  ssh: "SSH keys",
-  decisions: "Decisions",
-  memory: "Memory",
-  context: "Context and limits",
-  turns: "Turns",
-  teams: "Teams",
-  approvals: "Approvals",
-  notifications: "Notifications",
-  editor: "Editor",
-  e2e: "Background e2e",
-  containers: "Containers",
-  appearance: "Appearance",
-  backups: "Backups",
-  history: "History",
-};
+import type { SetupSection } from "@majhi/shared";
 
 /** One line under the title in the detail head. */
 export const SECTION_ABOUT: Record<SetupSection, string> = {
   overview: "What majhi needs before agents can work, and the one step each part may still need.",
   roots: "The folders majhi scans for git repos. It can only see folders that are mounted.",
   ssh: "The keys majhi's git uses to reach your hosts. Passphrases stay on this computer.",
-  decisions: "Who answers the small typed questions agents ask, like which model fits a task.",
+  decisions: "The small local model that makes cheap, frequent calls, and how well each one is doing.",
   memory: "Who writes each finished task's record, the project briefs and lessons, and how lessons are kept.",
   context: "When agent context is compacted, how many agents run at once, and resuming cut-off runs.",
   turns: "How long one agent turn may run, stay idle or call tools before it continues in a fresh session.",
@@ -57,10 +17,6 @@ export const SECTION_ABOUT: Record<SetupSection, string> = {
   e2e: "When the full e2e suite runs on this computer: off, after each merge into main, or daily.",
   containers: "Previews and test services majhi runs for agents, the images they may use, and their limits.",
   appearance: "Theme and accent. Saved in this browser only.",
-  backups: "A daily snapshot of majhi.db (tasks, rooms, history), kept 7 days, and restore.",
+  backups: "Encrypted backups of your data: daily, before updates, tested weekly, with restore.",
   history: "Every change to majhi.yaml, by you, the captain or a hand edit.",
 };
-
-export function isSetupSection(value: string | undefined): value is SetupSection {
-  return SETUP_SECTIONS.some((s) => s === value);
-}

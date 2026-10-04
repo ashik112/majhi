@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
+import { useNeedsYou } from "@/features/decisions/needs-you";
 import type { Banner, BannerAction } from "@/features/shell/model";
 import { cn } from "@/lib/cn";
 import { setNoticesOpen } from "@/lib/notices";
@@ -44,6 +45,9 @@ export function useRunAttention(): (action: BannerAction) => void {
  */
 export function AttentionBanner({ banner }: { banner: Banner | null }) {
   const run = useRunAttention();
+  // The banner shows the first; the rest is the shared count less that one.
+  const total = useNeedsYou();
+  const more = total === undefined ? (banner?.more ?? 0) : Math.max(0, total - 1);
 
   return (
     <AnimatePresence initial={false}>
@@ -72,7 +76,7 @@ export function AttentionBanner({ banner }: { banner: Banner | null }) {
             />
             <span className="min-w-0 truncate text-base">
               {banner.text}
-              {banner.more > 0 && (
+              {more > 0 && (
                 <>
                   {" "}
                   <button
@@ -80,7 +84,7 @@ export function AttentionBanner({ banner }: { banner: Banner | null }) {
                     onClick={() => setNoticesOpen(true)}
                     className="cursor-pointer opacity-70 underline-offset-2 hover:underline hover:opacity-100"
                   >
-                    And {banner.more} more need you.
+                    And {more} more need you.
                   </button>
                 </>
               )}

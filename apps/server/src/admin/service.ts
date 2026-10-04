@@ -7,24 +7,32 @@ import {
   type CommandName,
   type ConnectionTestResult,
   commands,
+  effectiveMode,
   IdSchema,
   isDestructiveCommand,
   McpInstallResultSchema,
+  PERMISSION_COMMANDS,
   type RoomItem,
   type TaskId,
 } from "@majhi/shared";
 import { z } from "zod";
 import { auditDetail } from "../audit.ts";
 import type { AutonomyVerdict } from "../autonomy/policy.ts";
+import { BUSINESS_TOOL_COMMANDS } from "../business/handlers.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
 import type { ChangeRecord, ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
+import { FINDINGS_TOOL_COMMANDS } from "../findings/handlers.ts";
+import { GROWTH_TOOL_COMMANDS } from "../growth/handlers.ts";
+import { HANDOFF_TOOL_COMMANDS } from "../handoff/handlers.ts";
+import { OUTCOMES_TOOL_COMMANDS } from "../outcomes/handlers.ts";
+import { PLAYBOOK_TOOL_COMMANDS, playbookLimitRefusal } from "../playbooks/handlers.ts";
 import type { RoomService } from "../room/service.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
 import { startingBranches } from "../tasks/brief.ts";
 import type { TaskService } from "../tasks/service.ts";
-import { decide as decideMode, matchRule, modeFor, redact, redactText, sameRule } from "./policy.ts";
+import { decide as decideMode, matchRule, redact, redactOutput, redactText, sameRule } from "./policy.ts";
 import { summarize } from "./summary.ts";
 import type { AdminCaller } from "./tokens.ts";
 import { adminTools, REQUEST_SECRET_TOOL } from "./tools.ts";
@@ -187,10 +195,29 @@ export class AdminService {
       // The captain's own tools in autonomous mode: no policy and no card, like a secret request.
       if (BOSS_TOOLS.has(spec.command)) {
         return (
-          (await this.autonomy?.bossTool(caller, spec.command, input, why)) ??
-          error("Autonomous is off.")
+          (await this.autonomy?.bossTool(caller, spec.command, input, why)) ?? error("Auto-pilot is off.")
         );
       }
+      // Findings stay in the caller's own workspace (the handler scopes them), so no card waits for them.
+      if (
+        FINDINGS_TOOL_COMMANDS.has(spec.command) ||
+        BUSINESS_TOOL_COMMANDS.has(spec.command) ||
+        PLAYBOOK_TOOL_COMMANDS.has(spec.command) ||
+        OUTCOMES_TOOL_COMMANDS.has(spec.command) ||
+        GROWTH_TOOL_COMMANDS.has(spec.command) ||
+        HANDOFF_TOOL_COMMANDS.has(spec.command)
+      ) {
+        const checked = commands[spec.command].input.safeParse(input);
+        if (!checked.success) {
+          const details = checked.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`);
+          return error(`Invalid input for ${spec.command}.\n${details.join("\n")}`);
+        }
+        const done = await this.execute(spec.command, input, metaFor(caller.agent, why, caller.task));
+        return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
+      }
+      // The captain's note to a lead: no card waits for it. The handler checks who and where, and the
+      // limit per task; the autonomy limits (workspace, secrets) hold for the captain first.
+      if (spec.command === "tasks.tell") return await this.tell(caller, input, why);
       const refused = refuseForAgents(spec.command, input);
       if (refused !== undefined) return error(refused);
       return await this.callCommand(caller, spec.command, input, {
@@ -201,6 +228,26 @@ export class AdminService {
     } catch (err) {
       return error(errorMessage(err));
     }
+  }
+
+  /** `tasks.tell` from an agent's tool call. Only the captain in its lane gets as far as the handler. */
+  private async tell(caller: AdminCaller, input: Record<string, unknown>, why: string): Promise<ToolResult> {
+    const checked = commands["tasks.tell"].input.safeParse(input);
+    if (!checked.success) {
+      const details = checked.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`);
+      return error(`Invalid input for tasks.tell.\n${details.join("\n")}`);
+    }
+    const auto = this.autonomy === undefined ? undefined : await this.autonomy.callerKind(caller);
+    if (auto !== "boss" || this.autonomy === undefined) {
+      return error(
+        "tasks.tell is the captain's tool, in its workspace lane. Tell the lead through your own room instead.",
+      );
+    }
+    const refused = await this.autonomy.refusal(caller, "tasks.tell", input, why);
+    if (refused !== undefined) return error(refused);
+    const done = await this.execute("tasks.tell", input, metaFor(caller.agent, why, caller.task));
+    this.autonomy.ran(caller, "tasks.tell", input, why, done);
+    return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
   }
 
   /**
@@ -258,6 +305,13 @@ export class AdminService {
     return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
   }
 
+  /** Whether the owner gave the captain full access in the workspace of the caller's task. */
+  private async fullAccess(caller: AdminCaller): Promise<boolean> {
+    const org = this.deps.store.tasks.get(caller.task)?.org;
+    if (org === undefined) return false;
+    return (await this.deps.config.settings()).autonomy.orgs[org]?.fullAccess === true;
+  }
+
   private async callCommand(
     caller: AdminCaller,
     command: CommandName,
@@ -297,13 +351,22 @@ export class AdminService {
       if (staffed !== undefined && staffed !== input) return this.callCommand(caller, command, staffed, ask);
     }
     const { policy } = await this.deps.config.settings();
-    const mode = ask.confirm === true ? "confirm" : modeFor(policy, command, def.risk);
+    const mode = ask.confirm === true ? "confirm" : effectiveMode(policy, command, def.risk);
     const meta = metaFor(caller.agent, ask.reason, caller.task);
     // An agent's word that the owner asked counts only for low-risk changes, and for nothing in
     // autonomous mode: the owner is away.
     const ownerAsked = auto === undefined && ask.ownerAsked && !this.alwaysAsks(command, checked.data);
+    // Full access in the caller's workspace: the captain's calls run without a card, except a change to
+    // anyone's permissions and anything destructive, which follow the policy as always.
+    const full =
+      auto === "boss" &&
+      ask.confirm !== true &&
+      mode !== "confirm" &&
+      !PERMISSION_COMMANDS.has(command) &&
+      !isDestructiveCommand(command) &&
+      (await this.fullAccess(caller));
     // A saved rule turns a card that would wait into a run. It is looked up only then.
-    const decision = decideMode(mode, ownerAsked);
+    const decision = full ? "run" : decideMode(mode, ownerAsked);
     const rule =
       decision === "run" || ask.confirm === true
         ? undefined
@@ -378,7 +441,7 @@ export class AdminService {
     ask: { reason: string; confirm?: boolean },
   ): Promise<ToolResult> {
     const autonomy = this.autonomy;
-    if (autonomy === undefined) return error("Autonomous is not available.");
+    if (autonomy === undefined) return error("Auto-pilot is not available.");
     const verdict = await autonomy.decide(caller, command, parsed, input, {
       confirm: ask.confirm === true,
       reason: ask.reason,
@@ -656,16 +719,13 @@ export class AdminService {
 
   /**
    * Saves "always allow" for the agent and command of this card, as a config commit. Refused for a
-   * destructive command while `allow_destructive_rules` is off, and for an org rule on a task with
+   * destructive command, which only the owner's click approves, and for an org rule on a task with
    * no org. Runs before the command, so a refusal leaves the card pending.
    */
   private async saveRule(item: ApprovalItem, scope: "task" | "org", change: ChangeRecord): Promise<void> {
     const { policy } = await this.deps.config.settings();
-    if (isDestructiveCommand(item.command) && !policy.allow_destructive_rules) {
-      throw new UserError(
-        "Destructive commands cannot be auto-allowed. Turn on auto-approve for destructive actions in Hub setup first.",
-        409,
-      );
+    if (isDestructiveCommand(item.command)) {
+      throw new UserError("This deletes or removes something. Only you can approve it, each time.", 409);
     }
     let rule: AllowRule = { agent: item.agent, command: item.command, task: item.task };
     if (scope === "org") {
@@ -1003,7 +1063,8 @@ const SENSITIVE_ORG_FIELDS = [
 /**
  * Why an agent may not make this call at all, or undefined. Agents never push: the owner pushes from
  * Ship, or an org policy does. Nor do they throw away uncommitted work: removing a task with
- * uncommitted changes takes the owner's typed confirmation.
+ * uncommitted changes takes the owner's typed confirmation. Nor do they raise a playbook's limits:
+ * no card is posted that would only fail once approved.
  */
 export function refuseForAgents(command: CommandName, input: Record<string, unknown>): string | undefined {
   if (command === "tasks.merge" && input.push !== undefined && input.push !== false) {
@@ -1012,7 +1073,7 @@ export function refuseForAgents(command: CommandName, input: Record<string, unkn
   if (command === "tasks.remove" && (input.force !== undefined || input.confirm !== undefined)) {
     return "Agents cannot remove a task with force. Say in the room what should go; the owner removes it.";
   }
-  return undefined;
+  return playbookLimitRefusal(command, input);
 }
 
 function error(text: string): ToolResult {
@@ -1021,7 +1082,7 @@ function error(text: string): ToolResult {
 
 /** The whole output for the agent, without secrets, cut at a limit. */
 function textOf(output: unknown): string {
-  const text = JSON.stringify(redact(reposFirst(output)), null, 2) ?? "ok";
+  const text = JSON.stringify(redactOutput(reposFirst(output)), null, 2) ?? "ok";
   return text.length > RESULT_MAX ? `${text.slice(0, RESULT_MAX)}\n... (cut)` : text;
 }
 
@@ -1057,6 +1118,6 @@ function lowerFirst(text: string): string {
 
 /** One short line for the card. */
 function lineOf(output: unknown): string {
-  const text = `${branchesOf(output)}${JSON.stringify(redact(output)) ?? "ok"}`;
+  const text = `${branchesOf(output)}${JSON.stringify(redactOutput(output)) ?? "ok"}`;
   return text.length > LINE_MAX ? `${text.slice(0, LINE_MAX - 3)}...` : text;
 }

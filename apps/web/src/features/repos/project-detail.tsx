@@ -29,6 +29,7 @@ import { HOST_LABEL } from "@/lib/hosts";
 import { usePushRoute } from "@/lib/studio-queries";
 import { useUpdateProject } from "@/lib/task-queries";
 import { useSearchParam } from "@/pages/parts/url-state";
+import { ProjectCardSection } from "./project-card";
 import {
   aliasClashes,
   buildRemotes,
@@ -145,6 +146,9 @@ export function ProjectDetail({
           </span>
         </p>
       )}
+      <div className="mt-4">
+        <ProjectCardSection project={project.id} />
+      </div>
       <ProtectionSection project={project} />
       <NamesSection project={project} repo={repo} projects={projects} orgs={orgs} />
       <RemotesSection project={project} repo={repo} />

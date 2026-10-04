@@ -9,6 +9,7 @@ export const NotifyKindSchema = z.enum([
   "stopped",
   "update",
   "autonomy",
+  "brief",
 ]);
 export type NotifyKind = z.infer<typeof NotifyKindSchema>;
 
@@ -16,10 +17,11 @@ export const NOTIFY_KIND_LABEL: Record<NotifyKind, string> = {
   approval: "Approvals",
   question: "Questions",
   secret: "Secret requests",
-  review: "Ready for review",
+  review: "Ready to ship",
   stopped: "Stopped or stuck",
   update: "Update failed",
   autonomy: "The captain and autonomous mode",
+  brief: "The morning brief",
 };
 
 /**
@@ -30,7 +32,7 @@ export const NOTIFY_KIND_LABEL: Record<NotifyKind, string> = {
 export const AttentionEventSchema = z.object({
   type: z.literal("attention"),
   id: z.string(),
-  kind: z.union([NotifyKindSchema, z.enum(["test", "group"])]),
+  kind: z.union([NotifyKindSchema, z.enum(["test", "group", "incident"])]),
   /** Task id, like ACM-12. Absent for a group, a test or an update. */
   task: z.string().optional(),
   title: z.string(),

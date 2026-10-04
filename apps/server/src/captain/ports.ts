@@ -1,4 +1,8 @@
 import type { Authority, CaptainUndo, CommandName, TaskPriority } from "@majhi/shared";
+import type { FollowUpPorts } from "../findings/followups.ts";
+import type { FindingsService } from "../findings/service.ts";
+import type { OwnWorkScope } from "./own-work.ts";
+import type { SecondOpinion } from "./own-work-second.ts";
 
 /**
  * What the upkeep chores read and do in majhi (SPEC 5.18). The real ports are built from majhi's own
@@ -16,11 +20,20 @@ export interface ReviewTask {
 
 /** Why a task in review is not ready to ship, or what it would ship and the checks that passed. */
 export type ShipCheck =
-  | { ready: false; why: string }
+  | {
+      ready: false;
+      why: string;
+      /** Only the owner can clear it (a card waits, a protected repo): a lead is not told. */
+      owner?: boolean;
+      /** It conflicts with its base. Who resolves that follows the workspace's Merge row. */
+      conflict?: boolean;
+    }
   | {
       ready: true;
       /** The checks that passed, one line. */
       evidence: string;
+      /** What the checked hand-off ran, one line, for the log. The card shows it in its own block. */
+      checked?: string;
       /** Each changed repo and the branch it ships to. */
       targets: { project: string; into: string; base: string }[];
     };
@@ -44,7 +57,7 @@ export interface QuestionCard {
   /** The question, one line. */
   text: string;
   /** The options to pick from: an option id and its words. Empty for an ask card with free text. */
-  options: { id: string; label: string }[];
+  options: { id: string; label: string; effect?: "allow" | "deny" }[];
   /** For an ask card: the question's id. */
   question?: string | undefined;
 }
@@ -61,6 +74,8 @@ export interface NewRepo {
   id: string;
   base: string;
   remotes: { name: string; url: string }[];
+  /** Names for the task box, suggested from the repo's folder and package names. */
+  aliases: string[];
   /** Why the captain is not sure where it belongs, so it asks instead. */
   unsure?: string | undefined;
 }
@@ -72,6 +87,8 @@ export interface TriageTask {
   priority?: TaskPriority | undefined;
   due?: string | undefined;
   updatedAt: string;
+  /** Steps the brief lists (`- [ ]` items), when there are any. */
+  checklist?: number | undefined;
 }
 
 export interface CaptainPorts {
@@ -85,6 +102,8 @@ export interface CaptainPorts {
     how: { push: boolean },
     reason: string,
   ): Promise<{ text: string; undo?: CaptainUndo | undefined; undoNote?: string | undefined }>;
+  /** Asks the task's lead to bring main in, resolve the conflicts and merge (tasks.resolveShip), as the captain. */
+  resolveShip(org: string, task: string, reason: string): Promise<void>;
   /** Puts the captain's line on the task's review card: ready to ship, the owner decides. */
   shipReady(org: string, task: string, line: string): Promise<void>;
 
@@ -94,19 +113,32 @@ export interface CaptainPorts {
   decideCard(
     org: string,
     card: ApprovalCard,
-    verdict: { decision: "approved" | "left"; why: string },
+    verdict: { decision: "approved" | "left"; why: string; risky?: boolean | undefined },
   ): Promise<{ ok: boolean; error?: string | undefined; commit?: string | undefined }>;
   /** The table that decides a card, with the workspace's authority rows. */
   cardVerdict(
     org: string,
     card: ApprovalCard,
     authority: Authority,
-  ): Promise<{ decision: "approved" | "left"; why: string }>;
+  ): Promise<{ decision: "approved" | "left"; why: string; risky?: boolean | undefined }>;
 
   // Agents' questions
   questions(org: string): QuestionCard[];
-  /** Laya through the decision provider: an option id when it is sure, else undefined with why. */
-  laya(org: string, card: QuestionCard): Promise<{ option?: string | undefined; why: string }>;
+  /**
+   * Where Own work may approve in this task (SPEC 5.18), or undefined when the captain did not start
+   * it, it is the owner's to keep, or it has no worktree.
+   */
+  ownScope(org: string, task: string): Promise<OwnWorkScope | undefined>;
+  /**
+   * Laya's second opinion on a request the rule table could not place (SPEC 5.12). Absent or
+   * `approve: false`: the request stays the owner's, as it always was.
+   */
+  ownSecondOpinion?(card: QuestionCard, scope: OwnWorkScope): Promise<SecondOpinion>;
+  /**
+   * An agent keeps asking the same thing: the line goes into the task's room for the owner, and the
+   * agent gets one message telling it to stop asking.
+   */
+  flagLoop(org: string, card: QuestionCard, line: string, nudge: string): Promise<void>;
   answer(org: string, card: QuestionCard, option: string, reason: string): Promise<void>;
   /** Why the workspace's lane rests now (its budget, the day budget, its account), or undefined. */
   laneRest(org: string): Promise<string | undefined>;
@@ -118,7 +150,14 @@ export interface CaptainPorts {
   curate(
     org: string,
     fact: PendingFact,
-  ): Promise<{ outcome: "kept" | "dropped" | "merged" | "pending"; event?: number | undefined }>;
+    /** Outcome rules the owner switched off (`mem-keep`, `mem-drop`, `mem-escalate`). */
+    off?: ReadonlySet<string> | undefined,
+  ): Promise<{
+    outcome: "kept" | "dropped" | "merged" | "pending";
+    event?: number | undefined;
+    /** Why, in a short phrase: "a one-off symptom of one task". */
+    reason?: string | undefined;
+  }>;
 
   // Projects
   newRepos(org: string): Promise<NewRepo[]>;
@@ -129,8 +168,15 @@ export interface CaptainPorts {
   setPriority(org: string, task: string, priority: TaskPriority, reason: string): Promise<void>;
 
   // Cleanup
-  cleanable(org: string): Promise<{ id: string; title: string; steps: string[] }[]>;
+  /** Done tasks with something to remove, and the worktrees of them that hold uncommitted changes (never removed). */
+  cleanable(org: string): Promise<{ id: string; title: string; steps: string[]; dirty: string[] }[]>;
   clean(org: string, task: string): Promise<{ removed: string[]; kept: string[] }>;
+  /** What deleting rebuildable folders of done tasks would free in the workspace (code only). */
+  foldersFreeable?(org: string): Promise<{ bytes: number; tasks: number }>;
+  /** Deletes them. Never tracked files, never a task with uncommitted changes or one reopened. */
+  freeFolders?(
+    org: string,
+  ): Promise<{ bytes: number; tasks: { id: string; bytes: number; worktrees: number; folders: number }[] }>;
 
   // Stuck tasks
   /** Running tasks where nobody works and nothing is pending, with when the last turn ended. */
@@ -146,6 +192,10 @@ export interface CaptainPorts {
   handBack(org: string, task: string, agent: string, account: string): void;
   wakeLead(org: string, task: string): void;
   pauseForOwner(org: string, task: string, text: string): Promise<void>;
+
+  // Follow-ups and findings
+  followUps: FollowUpPorts;
+  findings: FindingsService;
 
   // Always
   /** Whether the owner is typing in the task now: the captain waits (SPEC 5.18, Presence). */

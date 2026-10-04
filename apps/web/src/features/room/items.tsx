@@ -16,6 +16,7 @@ import { memo, type ReactNode, useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import { WrongButton } from "@/features/decisions/wrong-button";
 import { TaskRefText } from "@/features/task-drawer/task-ref";
 import { linkifyPaths } from "@/features/viewer/model";
 import { useAgentIndex } from "@/lib/agent-index";
@@ -175,6 +176,7 @@ export function QuietLine({
   tone = "info",
   icon,
   children,
+  action,
 }: {
   quiet: Quiet;
   at?: string | undefined;
@@ -182,6 +184,8 @@ export function QuietLine({
   icon?: ReactNode;
   /** More to show under the line when it is opened, in place of the plain detail text. */
   children?: ReactNode;
+  /** A small control after the line's text, like "Wrong?". */
+  action?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const more = children !== undefined || quiet.detail !== undefined;
@@ -216,6 +220,7 @@ export function QuietLine({
             />
           </button>
         )}
+        {action !== undefined && <span className="shrink-0">{action}</span>}
         {at !== undefined && (
           <span className="ml-auto pl-3">
             <Stamp at={at} hover />
@@ -667,7 +672,13 @@ function Permission({
             <span>
               <span className="text-fg-muted">{item.agent} wants to change </span>
               {item.connection.name}
-              <span className="text-fg-muted">. This is a write: {item.connection.why}.</span>
+              {item.connection.destructive === true ? (
+                <span className="text-red">
+                  . This deletes or destroys something. Only you can approve it.
+                </span>
+              ) : (
+                <span className="text-fg-muted">. This is a write: {item.connection.why}.</span>
+              )}
             </span>
             <code className="font-mono text-sm text-fg-soft">{item.connection.action}</code>
           </span>
@@ -783,6 +794,7 @@ function SystemLine({ item }: { item: Of<"system"> }) {
       at={item.at}
       tone={item.level}
       icon={item.level === "info" ? undefined : SYSTEM_ICON[item.level]}
+      action={item.decision === undefined ? undefined : <WrongButton decision={item.decision} />}
     />
   );
 }

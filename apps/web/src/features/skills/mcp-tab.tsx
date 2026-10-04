@@ -8,7 +8,7 @@ import type {
   McpSearchResult,
   OrgView,
 } from "@majhi/shared";
-import { Download, Plus, Search, X } from "lucide-react";
+import { Download, Link2, Plus, Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,21 +20,15 @@ import { Select, Textarea } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { orgLabel } from "@/features/accounts/model";
+import { WorkspaceTag } from "@/features/connections/scope-picker";
 import { SecretInput } from "@/features/connections/value-controls";
+import { cn } from "@/lib/cn";
 import { useConnectionCommand, useConnections } from "@/lib/connection-queries";
 import { describeError } from "@/lib/errors";
 import { plural } from "@/lib/format";
 import { useMcpSearch, useSkillsCommand } from "@/lib/skills-queries";
 import { useAgents, useOrgs } from "@/lib/studio-queries";
-import {
-  type AgentChoice,
-  AgentToggles,
-  agentChoices,
-  Block,
-  ErrorLine,
-  NameList,
-  SourceLink,
-} from "./parts";
+import { agentChoices, Block, ErrorLine, NameList, SourceLink } from "./parts";
 
 type Mode = "registry" | "url" | "command" | "json";
 type Request = Omit<McpInstallInput, "confirm" | "values">;
@@ -60,7 +54,7 @@ const MODES = [
 /** The MCP servers tab: install box, a card to review before anything is created, the registry, and what is installed. */
 export function McpTab() {
   const connections = useConnections();
-  const agents = agentChoices(useAgents().data);
+  const _agents = agentChoices(useAgents().data);
   const orgs = useOrgs().data ?? [];
   const [org, setOrg] = useState("");
   const [review, setReview] = useState<Review>();
@@ -68,14 +62,50 @@ export function McpTab() {
   const chosen = org !== "" ? org : orgs.length > 1 ? (orgs[0]?.id ?? "") : "";
   const mcp = (connections.data ?? []).filter((c) => c.type === "mcp");
 
+  const [adding, setAdding] = useState(false);
+  const [picked, setPicked] = useState<"installed" | "discover">();
+  const view = picked ?? (!connections.isPending && mcp.length === 0 ? "discover" : "installed");
   const show = (next: Review) => {
     setInstalled(undefined);
+    setAdding(false);
     setReview(next);
   };
 
   return (
     <div className="flex flex-col gap-4">
-      <InstallBox orgs={orgs} org={chosen} onOrg={setOrg} onPreview={show} />
+      <div className="flex flex-wrap items-center gap-3">
+        <Segmented
+          label="MCP servers view"
+          value={view}
+          onChange={setPicked}
+          segments={[
+            { value: "installed", label: "Installed", count: mcp.length },
+            { value: "discover", label: "Discover" },
+          ]}
+        />
+        {orgs.length > 1 && (
+          <span className="flex items-center gap-2 text-sm text-fg-muted">
+            Installs go to
+            <Select
+              aria-label="Workspace new servers go to"
+              className="w-[180px]"
+              value={chosen}
+              onChange={(e) => setOrg(e.target.value)}
+            >
+              {orgs.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </Select>
+          </span>
+        )}
+        <Button className="ml-auto" onClick={() => setAdding(!adding)} aria-expanded={adding}>
+          <Link2 aria-hidden="true" />
+          Add by URL or command
+        </Button>
+      </div>
+      {adding && <InstallBox orgs={orgs} org={chosen} onOrg={setOrg} onPreview={show} />}
       {review && (
         <PreviewCard
           key={review.preview.previewId}
@@ -85,18 +115,22 @@ export function McpTab() {
           onCancel={() => setReview(undefined)}
           onInstalled={(result) => {
             setReview(undefined);
+            setPicked("installed");
             setInstalled(result);
           }}
         />
       )}
       {installed && <JustInstalled result={installed} />}
-      <Browse org={chosen} onPreview={show} />
-      <InstalledServers
-        servers={connections.isPending ? undefined : mcp}
-        error={connections.isError ? describeError(connections.error) : undefined}
-        agents={agents}
-        orgs={orgs}
-      />
+      {view === "discover" ? (
+        <Browse org={chosen} onPreview={show} />
+      ) : (
+        <InstalledServers
+          servers={connections.isPending ? undefined : mcp}
+          error={connections.isError ? describeError(connections.error) : undefined}
+          orgs={orgs}
+          onDiscover={() => setPicked("discover")}
+        />
+      )}
     </div>
   );
 }
@@ -158,8 +192,8 @@ function InstallBox({
 
   return (
     <Block
-      title="Install"
-      note="Add an MCP server from the official registry, a remote URL, a local command or a pasted mcpServers snippet. It becomes a connection of one org, and you see what it holds before it is created."
+      title="Add an MCP server"
+      note="From the registry by name, a remote URL, a local command or a pasted mcpServers snippet. You review it before it is created."
       actions={
         <Segmented
           label="How to install"
@@ -695,7 +729,7 @@ function Browse({ org, onPreview }: { org: string; onPreview: (review: Review) =
   };
   return (
     <Block
-      title="Browse"
+      title="Discover"
       note="Search the official MCP Registry. Each result names its publisher and source repo: read them before you install."
     >
       <form
@@ -764,38 +798,17 @@ function Browse({ org, onPreview }: { org: string; onPreview: (review: Review) =
 function InstalledServers({
   servers,
   error,
-  agents,
   orgs,
+  onDiscover,
 }: {
   servers: readonly ConnectionView[] | undefined;
   error: string | undefined;
-  agents: readonly AgentChoice[];
   orgs: readonly OrgView[];
+  onDiscover: () => void;
 }) {
-  const enable = useSkillsCommand("mcp.enable");
-  const disable = useSkillsCommand("mcp.disable");
   const test = useConnectionCommand("connections.test");
   const toast = useToast();
-  const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const [testing, setTesting] = useState<string>();
-  const key = (connection: string, agent: string) => `${connection}:${agent}`;
-
-  const toggle = (server: ConnectionView, agent: string, next: boolean) => {
-    setPending((prev) => new Set(prev).add(key(server.id, agent)));
-    (next ? enable : disable).mutate(
-      { connection: server.id, agent },
-      {
-        onError: (e) =>
-          toast(`Could not change ${server.name} for @${agent}`, { detail: describeError(e), tone: "error" }),
-        onSettled: () =>
-          setPending((prev) => {
-            const copy = new Set(prev);
-            copy.delete(key(server.id, agent));
-            return copy;
-          }),
-      },
-    );
-  };
   const runTest = (server: ConnectionView) => {
     setTesting(server.id);
     test.mutate(
@@ -809,71 +822,74 @@ function InstalledServers({
 
   return (
     <Block
-      title="Installed"
-      note="MCP servers are mcp connections. Turn each on per agent: it goes to the agent's next run. Only agents of the server's org are offered."
-      actions={
-        <PageLink
-          page="connections"
-          className="text-sm text-fg-muted underline-offset-2 hover:text-fg hover:underline"
-        >
-          Open Connections
-        </PageLink>
-      }
+      title={servers === undefined ? "Installed" : plural(servers.length, "MCP server")}
+      note="Every agent of a server's workspace gets it. Open one to switch it off for an agent."
     >
       {error && <ErrorLine>Could not load MCP servers: {error}</ErrorLine>}
       {servers === undefined && !error && <Skeleton className="h-16 rounded-md" aria-busy="true" />}
-      {servers?.length === 0 && <p className="text-base text-fg-faint">No MCP servers installed yet.</p>}
-      <ul aria-label="Installed MCP servers" className="flex flex-col divide-y divide-line-strong">
+      {servers?.length === 0 && (
+        <div className="flex flex-col items-start gap-2 py-2">
+          <p className="text-base text-fg-muted">No MCP servers yet.</p>
+          <Button variant="primary" onClick={onDiscover}>
+            <Search aria-hidden="true" />
+            Discover MCP servers
+          </Button>
+        </div>
+      )}
+      <ul aria-label="Installed MCP servers" className="flex flex-col divide-y divide-line">
         {servers?.map((server) => {
-          const where = server.fields.url?.value ?? server.fields.command?.value;
-          const own = agents.filter((a) => a.scope === server.org);
+          const tools = server.lastTest?.tools?.length;
           return (
-            <li key={server.id} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-base font-medium text-fg">{server.name}</span>
-                <span className="font-mono text-sm text-fg-faint">{server.id}</span>
-                <Badge>{orgLabel(server.org, orgs).name}</Badge>
-                {server.lastTest ? (
-                  <Badge tone={server.lastTest.ok ? "green" : "red"}>
-                    {server.lastTest.ok ? "Test passed" : "Test failed"}
-                  </Badge>
-                ) : (
-                  <Badge tone="amber">Not tested</Badge>
-                )}
-                <Button
-                  size="sm"
-                  className="ml-auto"
-                  disabled={testing !== undefined}
-                  onClick={() => runTest(server)}
-                  aria-label={`Test ${server.name}`}
+            <li
+              key={server.id}
+              className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3 first:pt-0 last:pb-0"
+            >
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <PageLink
+                  page="connections"
+                  search={{ connection: server.id }}
+                  className="truncate text-base font-semibold text-fg underline-offset-2 hover:underline"
                 >
-                  {testing === server.id ? "Testing" : "Test"}
-                </Button>
+                  {server.name}
+                </PageLink>
+                <span className="truncate text-sm text-fg-muted">
+                  {server.description ||
+                    server.fields.url?.value ||
+                    server.fields.command?.value ||
+                    server.id}
+                </span>
               </div>
-              {server.description && (
-                <p className="text-base text-fg-muted text-pretty">{server.description}</p>
-              )}
-              {where && <p className="font-mono text-sm break-all text-fg-faint">{where}</p>}
-              {server.problems.map((p) => (
-                <p key={p} className="text-sm text-amber text-pretty">
-                  {p}
-                </p>
-              ))}
-              {server.lastTest?.tools && server.lastTest.tools.length > 0 && (
-                <NameList label={`Tools of ${server.name}`} names={server.lastTest.tools} />
-              )}
-              <p className="text-sm text-fg-faint">
-                {server.agents.length > 0
-                  ? `Used by ${server.agents.map((a) => `@${a}`).join(", ")}`
-                  : "Not turned on for any agent"}
-              </p>
-              <AgentToggles
-                agents={own}
-                on={server.agents}
-                noun="server"
-                pending={new Set(own.filter((a) => pending.has(key(server.id, a.id))).map((a) => a.id))}
-                onToggle={(agent, next) => toggle(server, agent, next)}
-              />
+              <WorkspaceTag org={server.org} orgs={orgs} className="text-sm text-fg-muted" />
+              <span className="w-[90px] text-sm text-fg-muted">{plural(server.agents.length, "agent")}</span>
+              <span
+                className={cn(
+                  "w-[110px] text-sm",
+                  server.problems.length > 0 || server.lastTest?.ok === false
+                    ? "text-red"
+                    : server.lastTest
+                      ? "text-fg-muted"
+                      : "text-amber",
+                )}
+              >
+                {server.problems.length > 0
+                  ? "Not set up"
+                  : server.lastTest === undefined
+                    ? "Not tested"
+                    : server.lastTest.ok
+                      ? tools === undefined
+                        ? "Works"
+                        : plural(tools, "tool")
+                      : "Test failed"}
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={testing !== undefined}
+                onClick={() => runTest(server)}
+                aria-label={`Test ${server.name}`}
+              >
+                {testing === server.id ? "Testing" : "Test"}
+              </Button>
             </li>
           );
         })}

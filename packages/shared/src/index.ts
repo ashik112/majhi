@@ -1,6 +1,8 @@
 export * from "./accounts.ts";
+export * from "./agenda.ts";
 export * from "./agent-tools.ts";
 export * from "./api.ts";
+export * from "./app-setup.ts";
 export * from "./approval-groups.ts";
 export * from "./approval-stats.ts";
 export * from "./attribution.ts";
@@ -10,17 +12,31 @@ export * from "./automation.ts";
 export * from "./autonomy.ts";
 export * from "./backup.ts";
 export * from "./budgets.ts";
+export * from "./business.ts";
 export * from "./captain.ts";
+export {
+  type ChoreCap,
+  ChoreCapSchema,
+  type ChoreCaps,
+  ChoreCapsSchema,
+  DAILY_CHORE_CAPS,
+} from "./chores.ts";
 export * from "./cleanup.ts";
+export * from "./cli-tools.ts";
 export * from "./commands.ts";
 export * from "./config.ts";
+export * from "./connect.ts";
 export * from "./connections.ts";
 export * from "./containers.ts";
+export * from "./decision-learning.ts";
 export * from "./decisions.ts";
 export * from "./e2e.ts";
+export * from "./economics.ts";
 export * from "./emoji.ts";
+export * from "./findings.ts";
 export * from "./git-accounts.ts";
 export * from "./git-signin.ts";
+export * from "./handoff.ts";
 export * from "./host.ts";
 export * from "./inbox.ts";
 export * from "./mcp-servers.ts";
@@ -29,13 +45,20 @@ export * from "./memory.ts";
 export * from "./mrs.ts";
 export * from "./notify.ts";
 export * from "./onboarding.ts";
+export * from "./ops.ts";
 export * from "./paths.ts";
+export * from "./plain-text.ts";
+export * from "./playbooks.ts";
 export * from "./processes.ts";
+export * from "./project-card.ts";
 export * from "./project-create.ts";
 export * from "./remote-repos.ts";
 export * from "./rooms.ts";
 export * from "./schedule-time.ts";
+export * from "./scorecard.ts";
+export * from "./screens.ts";
 export * from "./secrets-detect.ts";
+export * from "./services.ts";
 export * from "./settings.ts";
 export * from "./skills.ts";
 export * from "./task-parse.ts";
@@ -44,3 +67,5 @@ export * from "./tiers.ts";
 export * from "./trackers.ts";
 export * from "./triggers.ts";
 export * from "./usage.ts";
+export * from "./watch-formula.ts";
+export * from "./watches.ts";

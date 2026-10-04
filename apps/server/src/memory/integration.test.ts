@@ -238,7 +238,8 @@ describe("Done when", () => {
 
     // Not approved yet: a second task in the repo does not get it.
     const early = await create("update the install steps in api");
-    expect(await taskMd(early.id)).not.toContain("## Memory");
+    // The project card (stack, commands) is there from the start; the lesson is not.
+    expect(await taskMd(early.id)).not.toContain(fact);
 
     const approved = (await must("memory.approve", { id: pending?.id })) as Fact;
     expect(approved).toMatchObject({ status: "active", decided_by: "owner" });

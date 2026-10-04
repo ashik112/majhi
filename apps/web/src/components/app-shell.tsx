@@ -1,29 +1,32 @@
+import { PAGE_PATH } from "@majhi/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { Outlet, useRouterState, useSearch } from "@tanstack/react-router";
 import * as m from "motion/react-m";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { InShellContext } from "@/components/centered-page";
 import { AttentionBanner } from "@/components/shell/banner";
 import { NotifyPrompt } from "@/components/shell/notify-prompt";
 import { ShortcutsDialog } from "@/components/shell/shortcuts-dialog";
 import { Sidebar } from "@/components/shell/sidebar";
 import { AgentDrawer } from "@/features/agent-drawer/agent-drawer";
-import { AutonomyStrip } from "@/features/autonomy/strip";
-import { needsYouCount } from "@/features/board/model";
 import { BossProvider } from "@/features/boss/boss-context";
 import { BossDrawer } from "@/features/boss/boss-drawer";
+import { useNeedsYou } from "@/features/decisions/needs-you";
 import { AppGate } from "@/features/home/app-gate";
 import { NewTaskProvider, useNewTask } from "@/features/new-task/new-task-context";
 import { Palette } from "@/features/search/palette";
+import { isSettingsPath, SettingsFrame } from "@/features/settings/settings-frame";
 import { deriveBanner } from "@/features/shell/model";
 import { useShortcuts } from "@/features/shell/use-shortcuts";
 import { TaskDrawer } from "@/features/task-drawer/task-drawer";
 import { UpdateOverlay } from "@/features/update/update-overlay";
+import { GlobalFileViewer } from "@/features/viewer/global-file-viewer";
 import { useAgentIndex } from "@/lib/agent-index";
 import { usePendingPermission } from "@/lib/attention";
 import { useAttentionBadge } from "@/lib/browser-notify";
+import { prefetchCaptain } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { useAdoptOrgParam } from "@/lib/org-filter";
-import { PAGE_PATH } from "@/lib/pages";
 import { useAccounts } from "@/lib/studio-queries";
 import { useTasks } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
@@ -32,6 +35,7 @@ import { useArrivalNewTask } from "@/onboarding/arrive";
 
 /** Pages that lay out their own panes to fit the viewport. */
 const PINNED: ReadonlySet<string> = new Set([
+  PAGE_PATH.today,
   PAGE_PATH.captain,
   PAGE_PATH.limits,
   PAGE_PATH.decisions,
@@ -82,7 +86,18 @@ function Frame() {
     () => deriveBanner({ tasks: tasks ?? [], agents, accounts: accounts ?? [], permission, now }),
     [tasks, agents, accounts, permission, now],
   );
-  useAttentionBadge(useMemo(() => needsYouCount(tasks ?? [], accounts ?? []), [tasks, accounts]));
+  useAttentionBadge(useNeedsYou() ?? 0);
+  // The Captain page is the one opened most and costs the most to build: warm it once the app has painted.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const warm = () => prefetchCaptain(queryClient);
+    if (typeof requestIdleCallback === "function") {
+      const handle = requestIdleCallback(warm, { timeout: 4000 });
+      return () => cancelIdleCallback(handle);
+    }
+    const timer = window.setTimeout(warm, 1500);
+    return () => window.clearTimeout(timer);
+  }, [queryClient]);
   // The page fades in when the section changes (board, task, a page), not on every task switch.
   const section = useRouterState({
     select: (s) =>
@@ -94,17 +109,18 @@ function Frame() {
   });
   // The board, the task view and the list-and-detail pages fix their own frame and scroll inside it;
   // other pages scroll here.
-  const pinned = section === "/" || PINNED.has(section);
+  // Settings pages sit in one frame with the Settings list; the frame scrolls the page itself.
+  const settings = isSettingsPath(section);
+  const pinned = section === "/" || PINNED.has(section) || settings;
 
   return (
     <div className="flex min-h-0 flex-1 gap-3 p-3">
       <Sidebar />
       <main id="main" tabIndex={-1} className="flex h-full min-w-0 flex-1 flex-col outline-none">
-        <AutonomyStrip />
         <NotifyPrompt />
         <AttentionBanner banner={banner} />
         <m.div
-          key={section}
+          key={settings ? "settings" : section}
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
@@ -116,11 +132,18 @@ function Frame() {
           )}
         >
           <InShellContext.Provider value={true}>
-            <Outlet />
+            {settings ? (
+              <SettingsFrame>
+                <Outlet />
+              </SettingsFrame>
+            ) : (
+              <Outlet />
+            )}
           </InShellContext.Provider>
         </m.div>
       </main>
       <BossDrawer />
+      <GlobalFileViewer />
       {drawerTask !== undefined && <TaskDrawer id={drawerTask} />}
       {peek !== undefined && drawerTask === undefined && <AgentDrawer id={peek} />}
       {helpOpen && <ShortcutsDialog onClose={() => setHelpOpen(false)} />}

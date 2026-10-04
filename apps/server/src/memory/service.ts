@@ -73,10 +73,16 @@ export class MemoryService {
   private readonly now: () => Date;
   private filling = false;
   private curate: Curate | undefined;
+  private ownerChose: ((id: number, action: "approved" | "rejected") => void) | undefined;
   private listener: (() => void) | undefined;
   private waitingListener: ((fact: Fact) => void) | undefined;
   /** Task records, project briefs and open threads, in the same database. */
   readonly project: ProjectMemory;
+
+  /** The open `memory.db`, for the backup service's online copy of it. */
+  get rawDatabase(): import("better-sqlite3").Database {
+    return this.store.database;
+  }
 
   constructor(private readonly deps: MemoryDeps) {
     this.store = deps.store;
@@ -127,6 +133,13 @@ export class MemoryService {
     } catch {
       return undefined;
     }
+  }
+
+  private cardText: ((project: string) => string | undefined) | undefined;
+
+  /** Where a project's compact knowledge card comes from, for TASK.md. Built after the memory, so it is set here. */
+  useCards(text: (project: string) => string | undefined): void {
+    this.cardText = text;
   }
 
   /** Hooks curation into proposals. Built after the decision provider, so it is set here. */
@@ -220,11 +233,20 @@ export class MemoryService {
   // Status
 
   approve(id: number, actor: Actor, reason?: string): Fact {
-    return this.move(id, ["pending", "rejected"], "active", "approved", actor, reason);
+    const fact = this.move(id, ["pending", "rejected"], "active", "approved", actor, reason);
+    if (actor.kind === "owner") this.ownerChose?.(id, "approved");
+    return fact;
   }
 
   reject(id: number, actor: Actor, reason?: string): Fact {
-    return this.move(id, ["pending"], "rejected", "rejected", actor, reason);
+    const fact = this.move(id, ["pending"], "rejected", "rejected", actor, reason);
+    if (actor.kind === "owner") this.ownerChose?.(id, "rejected");
+    return fact;
+  }
+
+  /** Told when the owner approves or rejects a fact, so the decision that judged it can be labeled. */
+  onOwnerChoice(listener: (id: number, action: "approved" | "rejected") => void): void {
+    this.ownerChose = listener;
   }
 
   /**
@@ -508,8 +530,13 @@ export class MemoryService {
       const b = this.project.currentBrief(p);
       return b === undefined ? [] : [{ project: p, body: b.body }];
     });
+    const cards = projects.flatMap((p) => {
+      const text = this.cardText?.(p);
+      return text === undefined ? [] : [{ project: p, text }];
+    });
     const { text, lessons } = renderMemorySection({
       briefs,
+      cards,
       records: records.map((h) => h.record),
       threads,
       lessons: [...ordered.values()],

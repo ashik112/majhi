@@ -190,3 +190,40 @@ describe("the memory chore when memories pile up", () => {
     expect(t.facts.filter((f) => f.status === "pending")).toHaveLength(3 * MEMORY_WAITING);
   });
 });
+
+describe("Review now", () => {
+  it("runs the memory chore past today's cap once, says so, and refuses a second run while one goes", async () => {
+    const t = setup();
+    for (let round = 0; round < 7; round++) {
+      for (let i = 0; i < MEMORY_WAITING; i++) await t.waiting(t.add("org:acme"));
+      await t.captain.settled();
+    }
+    expect(t.runs("acme")).toHaveLength(4);
+    const waiting = t.facts.filter((f) => f.status === "pending").length;
+    expect(waiting).toBe(3 * MEMORY_WAITING);
+
+    t.block();
+    const first = await t.captain.runChore("acme", "memory");
+    expect(first).toMatchObject({ started: true, overCap: true });
+    expect(first.text).toMatch(/goes past it because you asked/);
+    await until(() => t.captain.runner.running("acme", "memory"));
+    const second = await t.captain.runChore("acme", "memory");
+    expect(second).toEqual({ started: false, overCap: false, text: "Memory is already running here." });
+    t.free();
+    await t.captain.settled();
+    expect(t.runs("acme")).toHaveLength(5);
+    expect(t.facts.filter((f) => f.status === "pending")).toEqual([]);
+  });
+
+  it("starts under the cap without saying anything about it, and says why when a workspace is unknown", async () => {
+    const t = setup();
+    t.add("org:acme");
+    expect(await t.captain.runChore("acme", "memory")).toEqual({
+      started: true,
+      overCap: false,
+      text: "Started memory.",
+    });
+    await t.captain.settled();
+    expect((await t.captain.runChore("nowhere", "memory")).started).toBe(false);
+  });
+});

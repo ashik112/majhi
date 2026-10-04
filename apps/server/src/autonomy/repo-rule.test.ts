@@ -36,13 +36,9 @@ describe("repo rule", () => {
     ).toBeUndefined();
   });
 
-  it("treats a task with no plan information as overlapping", () => {
-    expect(blockingWriter(task("ACM-14", "main", []), [task("ACM-12", "main", ["src"])])?.task).toBe(
-      "ACM-12",
-    );
-    expect(blockingWriter(task("ACM-14", "main", ["docs"]), [task("ACM-12", "main", [])])?.task).toBe(
-      "ACM-12",
-    );
+  it("lets a task with no plan information run beside another on the same repo", () => {
+    expect(blockingWriter(task("ACM-14", "main", []), [task("ACM-12", "main", ["src"])])).toBeUndefined();
+    expect(blockingWriter(task("ACM-14", "main", ["docs"]), [task("ACM-12", "main", [])])).toBeUndefined();
   });
 
   it("allows another base branch or another project", () => {

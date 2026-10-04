@@ -91,7 +91,7 @@ export interface AccountProbe {
 }
 
 export { isAuthFailure, looksSignedOut, SignInExpired } from "./auth-failure.ts";
-export { buildEnv, type GitAttribution, type GitIdentity, RUN_GIT_CONFIG } from "./env.ts";
+export { buildEnv, type GitAttribution, type GitIdentity, RUN_GIT_CONFIG, withToolsPath } from "./env.ts";
 export { type ExecResult, exec, killTree } from "./exec.ts";
 export { prepareHome } from "./home.ts";
 export { type LimitFailure, limitFailure, limitLine, parseReset } from "./limit-failure.ts";

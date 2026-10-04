@@ -1,14 +1,16 @@
 /**
- * The repo rule (SPEC 5.18, workspaces never collide): the captain does not start a task that
- * changes a repo and base branch another task is already changing, unless the two touch different
- * top-level areas. Pure: the service gathers the inputs. The owner's own starts never come here.
+ * The repo rule (SPEC 5.18): the captain does not start a task whose plan touches the same
+ * top-level areas of a repo and base branch as a task that is running now. Each task works in its
+ * own worktree and ships into one branch one at a time, so tasks on one repo run side by side unless
+ * both plans name the same areas. With nothing known about either plan, they run. Pure: the service
+ * gathers the inputs. The owner's own starts never come here.
  */
 
 /** One repo a task changes, with the top-level areas it is expected to touch. */
 export interface RepoUse {
   project: string;
   base: string;
-  /** From `areasOf`. Empty when nothing is known about the plan, which counts as overlapping. */
+  /** From `areasOf`. Empty when nothing is known about the plan: it blocks nothing. */
   areas: readonly string[];
 }
 
@@ -28,9 +30,9 @@ export function areasOf(paths: readonly string[]): string[] {
   return [...new Set(paths.map(areaOf))].sort();
 }
 
-function disjoint(a: readonly string[], b: readonly string[]): boolean {
-  if (a.length === 0 || b.length === 0) return false;
-  return !a.some((x) => b.includes(x));
+/** Only plans that name the same area overlap; an unknown plan overlaps nothing. */
+function overlap(a: readonly string[], b: readonly string[]): boolean {
+  return a.some((x) => b.includes(x));
 }
 
 /** The first task in `writers` that blocks `candidate`, with the repo it blocks on. */
@@ -45,7 +47,7 @@ export function blockingWriter(
       const theirs = other.repos.find(
         (r) => r.project === mine.project && (mine.base === "" || r.base === mine.base),
       );
-      if (theirs !== undefined && !disjoint(mine.areas, theirs.areas)) {
+      if (theirs !== undefined && overlap(mine.areas, theirs.areas)) {
         return { task: other.id, project: mine.project, base: theirs.base };
       }
     }
