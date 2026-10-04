@@ -5,7 +5,7 @@ import { judgeReport, summaryLine } from "./answer-check.ts";
 import { classifyOwnWork } from "./own-work.ts";
 import type { SecondOpinion } from "./own-work-second.ts";
 import { permissionVerdict } from "./permission-rules.ts";
-import type { CaptainPorts, PendingFact, QuestionCard, ReviewTask, ShipCheck } from "./ports.ts";
+import type { ApprovalCard, CaptainPorts, PendingFact, QuestionCard, ReviewTask, ShipCheck } from "./ports.ts";
 import { loopLine, nudgeText, questionLoop } from "./question-loop.ts";
 import { branchAllowed, typingWhy } from "./rules.ts";
 import type { ChoreRun } from "./runner.ts";
@@ -186,6 +186,67 @@ export function createChores(
   };
 
   /**
+   * A lead asked to merge, Merge is the owner's and Push is the captain's: the checks run as for any
+   * ship, the branch is pushed and the merge request opened by majhi (never by the container), and the
+   * card is settled with the link. When majhi cannot push, the card stays for the owner with what is
+   * missing and where to fix it, and the captain looks again when that changes.
+   * Returns false when the usual card rules should decide (the task is not ready).
+   */
+  const mergeCardAsMr = async (run: ChoreRun, card: ApprovalCard): Promise<boolean> => {
+    const { org, ws } = run;
+    const id = typeof card.input.id === "string" ? card.input.id : card.task;
+    const check = await ports.shipCheck(org, id, card.item);
+    if (!check.ready) return false;
+    const ready = await ports.mrReady(org, id);
+    const evidence = check.checked === undefined ? check.evidence : `${check.evidence}; ${check.checked}`;
+    if (!ready.ok) {
+      if (ruleOff(run, "cards-left")) return true;
+      const why = `The captain could not open the merge request: ${ready.why}`;
+      await run.act({
+        key: `card:${card.task}:${card.item}:mr-blocked:${ready.why}`,
+        text: `Left for you: ${card.summary}`,
+        reason: why,
+        evidence,
+        task: card.task,
+        do: async () => {
+          await ports.decideCard(org, card, {
+            decision: "left",
+            why,
+            ...(ready.fix === undefined ? {} : { fix: ready.fix }),
+          });
+          return { outcome: "asked", undoNote: "A card for you: nothing to undo" };
+        },
+      });
+      return true;
+    }
+    const reason = `In ${ws.name} the captain decides when work is pushed and you merge, so it opens the merge request on ${ready.host}`;
+    await run.act({
+      key: `card:${card.task}:${card.item}:mr`,
+      text: `Opened a merge request for ${id} on ${ready.host} instead of merging: ${card.summary}`,
+      reason,
+      evidence,
+      task: card.task,
+      irreversible: true,
+      recheck: async () => away(card.task),
+      do: async () => {
+        const out = await ports.openMrs(org, id, reason);
+        if (out.failed !== undefined) throw new Error(out.failed);
+        const links = out.urls.length === 0 ? "" : ` ${out.urls.join(", ")}`;
+        await ports.settleMergeCard(
+          org,
+          card,
+          `Opened MR${links} on ${out.host} instead: the owner merges`,
+        );
+        return {
+          undoNote:
+            "The branch is pushed and the merge request is open: close it on the host to take it back",
+        };
+      },
+    });
+    return true;
+  };
+
+  /**
    * Tasks in review that changed no code: an answer or a report. Where the lead's final report answers
    * the brief the task is marked done, else the lead is asked for changes with the concrete line.
    * Returns the ids it looked at, so the code path leaves them alone.
@@ -360,6 +421,17 @@ export function createChores(
             present,
             card.task,
           );
+          continue;
+        }
+        // Merge is the owner's and Push is the captain's: a lead's merge request is answered with a
+        // merge request on the host, never left as a dead end.
+        if (
+          card.command === "tasks.merge" &&
+          ws.authority.merge !== "decide" &&
+          ws.authority.push === "decide" &&
+          !ruleOff(run, "ship-mr") &&
+          (await mergeCardAsMr(run, card))
+        ) {
           continue;
         }
         const verdict = await ports.cardVerdict(org, card, ws.authority);

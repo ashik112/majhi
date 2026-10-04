@@ -77,6 +77,7 @@ describe("renderTaskMd", () => {
         "- Never push. The owner does that.",
         "- Never open a merge request.",
         "- Never merge. The owner does that.",
+        "- Do not run git push and do not ask to merge. Your container has no sign-in to the host. When the work is done and the checks pass, say so in your final report: majhi pushes and opens the merge request, or merges, by the workspace's rules.",
         "- Your turn ends when you reply, and the task then waits for the owner.",
         "- Run anything slow or long-running (test suites, builds, servers) with the majhi-processes tool. majhi wakes you when a `wait` process ends, so you can end your turn meanwhile. Use `wait: false` for servers and watchers. Do not use your own background shell: nothing wakes you for that.",
         "- For work with more than two steps, keep a short checklist the owner can follow: Claude Code's TodoWrite tool (load it with ToolSearch if it is not listed) or Codex's plan tool. Write it before you start, 3 to 7 plain steps, and mark each step in progress and done as you go. majhi shows it as the task's Plan.",

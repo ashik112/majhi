@@ -138,6 +138,10 @@ if [ "$name" = reference-transaction ]; then
     fi
   fi
 fi
+if [ "$name" = pre-push ] && guarded; then
+  echo "majhi: a run does not push: its container has no sign-in to the host. Do not retry and do not ask to merge. Say in your final report that the work is done and the checks pass: majhi pushes and opens the merge request, or merges, by the workspace's rules." >&2
+  exit 1
+fi
 if [ "$name" = post-checkout ] && [ "$3" = 1 ] && guarded; then
   head=$(git symbolic-ref -q HEAD)
   if [ -n "$head" ] && ! is_own "$head"; then

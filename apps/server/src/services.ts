@@ -1780,6 +1780,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     store.tasks.renameOrg(id, newId);
     events.emit(["tasks"]);
   });
+  orgs.onGitChange = (org) => captain.gitChanged(org);
   const gitConnect = createGitConnect({
     config,
     secrets,

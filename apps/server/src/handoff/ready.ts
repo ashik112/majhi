@@ -26,7 +26,8 @@ export interface ReadyDeps {
 
 const WAITING = ["approval", "ask", "choice", "owner-question", "secret-request", "permission"] as const;
 
-export async function shipReadiness(deps: ReadyDeps, id: string): Promise<ShipCheck> {
+/** `except`: a pending card that does not count as waiting, the lead's own merge card the captain is answering. */
+export async function shipReadiness(deps: ReadyDeps, id: string, except?: string): Promise<ShipCheck> {
   const { store } = deps;
   const task = store.tasks.get(id);
   if (task === undefined || task.status !== "review")
@@ -34,7 +35,7 @@ export async function shipReadiness(deps: ReadyDeps, id: string): Promise<ShipCh
   if (deps.runs.working(id).length > 0)
     return { ready: false, why: "an agent is still working", owner: true };
   deps.room.flush(id);
-  const waiting = WAITING.find((type) => store.room.pendingOfType(id, type).length > 0);
+  const waiting = WAITING.find((type) => store.room.pendingOfType(id, type).some((i) => i.id !== except));
   if (waiting !== undefined)
     return { ready: false, why: `a ${waiting.replace("-", " ")} card waits for you`, owner: true };
   const options = await deps.mrs.shipOptions(id);

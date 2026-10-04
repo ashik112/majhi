@@ -50,6 +50,9 @@ export function outboundRules(perms: readonly string[]): string[] {
       ? "- When the checks pass, merge with the majhi-tasks merge tool: into the base branch, or the branch the owner names. Never merge or move branches with git yourself: your container has the repo's history but not the project's files, so a git merge from here leaves the owner's checkout behind."
       : "- Never merge. The owner does that.",
   );
+  lines.push(
+    "- Do not run git push and do not ask to merge. Your container has no sign-in to the host. When the work is done and the checks pass, say so in your final report: majhi pushes and opens the merge request, or merges, by the workspace's rules.",
+  );
   return lines;
 }
 

@@ -1,9 +1,10 @@
 import { isDestructiveCommand, type RoomItem } from "@majhi/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bot, ChevronRight, KeyRound, ShieldCheck, Undo2 } from "lucide-react";
+import { Bot, ChevronRight, KeyRound, ShieldCheck, Undo2, Wrench } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageLink } from "@/components/ui/page-link";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import {
@@ -97,6 +98,22 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
           <p className="flex items-start gap-1.5 pl-6 text-sm text-amber text-pretty">
             <Bot aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
             <span className="min-w-0">Captain left this for you: {item.autonomy.why}</span>
+          </p>
+        )}
+        {item.autonomy?.decision === "left" && item.autonomy.fix !== undefined && (
+          <p className="pl-6 text-sm">
+            <PageLink
+              page={item.autonomy.fix.page}
+              search={
+                item.autonomy.fix.page === "orgs"
+                  ? { org: item.autonomy.fix.org }
+                  : { project: item.autonomy.fix.project, section: "remotes" }
+              }
+              className="inline-flex items-center gap-1 text-blue underline-offset-2 hover:underline"
+            >
+              <Wrench aria-hidden="true" className="size-3.5" />
+              {item.autonomy.fix.page === "orgs" ? "Connect the git account" : "Fix the remote"}
+            </PageLink>
           </p>
         )}
         <Details input={item.input} command={item.command} onToggle={setOpen} />
