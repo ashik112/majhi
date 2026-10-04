@@ -1,5 +1,16 @@
 # Progress
 
+## Needs you holds only what needs the owner (merged)
+
+- **Runs.** A machine-wide cap on agent runs (`limits.runs_total`, auto from the core count, set on Limits). Extra runs queue, owner first. After a restart runs come back one every 20 seconds. A run near its memory limit gets one note.
+- **Merge cards.** With Merge the owner's and Push the captain's, a lead's merge request becomes an MR opened by majhi on the server; with no git sign-in the card names the host and links the fix, and the captain retries once it is connected. Agents no longer push from containers.
+- **Ship blockers.** The secret scan reads the branch's own changes over the merge base, file by file, skipping lockfiles. Failed hand-off checks retry after a majhi or runner image change or 6 hours, 3 times at most. Hand-off checks get their own CPUs and memory and a per-project time limit. A lead with uncommitted changes is told once.
+- **Permissions.** Tools a rule covers (majhi read-only tools, the task's own containers) are allowed for the task, so they do not ask again; the stuck check ignores repeats that succeeded and tells the agent the error when one keeps failing.
+- **Secrets.** The lane captain fetches a secret through a workspace connection and saves it straight to the store (`majhi_secrets_saveFromScript`), then withdraws the request. Duplicates collapse.
+- **Charts** are back under the workspaces table: spend by hour or day, tasks finished per day, account usage, work flow.
+- **Known:** `autonomy/approvals.test.ts` fails on a temp folder cleanup (ENOTEMPTY), also on earlier commits; the wake-gate shadow test in driver.test.ts is flaky under load.
+- **Owner check:** after deploy, PRV-116's merge card turns into a GitHub MR or names the missing sign-in; Pyzasoft's secret requests are fetched through DigitalOcean.
+
 ## Captain closes the loop on review, secrets and reports (merged)
 
 - **MRs.** When Merge is the owner's and Push the captain's, the ship chore pushes the branch and opens the MR once checks pass, and the card leaves Needs you. The task sits in Open MRs until it is merged on the host.
