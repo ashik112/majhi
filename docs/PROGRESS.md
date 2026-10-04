@@ -1,5 +1,12 @@
 # Progress
 
+## Connections: workspaces, agents, several per service (built, merging)
+
+- **Fixed:** DigitalOcean failed after approval: the token exchange sent its resource with an added trailing slash. GitLab reached no agent: org agents got only connections their own list named, and every list was empty. A refused or redirected check said "could not reach"; it now names the refusal, and GitLab's names the group setting (Settings > General > Permissions and group features > MCP client access).
+- **Changed:** Every agent of a workspace gets its connections; switch one off on the connection page (Agents) or the agent page (Connections). Several connections of one service per workspace, each named. DigitalOcean is one connection with product chips and one sign-in. The list groups by workspace; the catalog head says "Connecting to" and the button names the workspace.
+- **Verified:** Connect, connections, MCP server and shared tests of the touched files pass; web typechecks. Screens checked on the seeded e2e instance at 1440 and 1100 px. Screenshot specs updated, not run.
+- **Owner-only check:** DigitalOcean consent on your account, and whether one sign-in lists tools for every picked product (the Test says per product). GitLab MCP client access on your top-level group.
+
 ## Resource lifecycle correction (merged, applied locally)
 
 - **Reclaimed:** About 3.7 GiB on the local installation: 1.9 GiB of abandoned backup scratch copies and 1.8 GiB from seven ignored dependency/cache directories in finished work. No source worktree, branch, saved service volume or room history was removed.

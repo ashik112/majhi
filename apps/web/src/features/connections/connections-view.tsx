@@ -1,12 +1,17 @@
-import { type ConnectionType, type ConnectionView, connectionType, GLOBAL_CONNECTIONS } from "@majhi/shared";
-import { ArrowLeft, ChevronRight, Globe, Plus } from "lucide-react";
+import {
+  type ConnectionType,
+  type ConnectionView,
+  type ConnectStatus,
+  connectionType,
+  GLOBAL_CONNECTIONS,
+} from "@majhi/shared";
+import { ArrowLeft, ChevronRight, Plus } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
 import { DetailPane } from "@/components/ui/list-detail";
 import { PageHeader } from "@/components/ui/page-header";
-import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
@@ -20,9 +25,9 @@ import { useNow } from "@/lib/use-now";
 import { useSearchParam } from "@/pages/parts/url-state";
 import { ConnectCatalog } from "./connect-catalog";
 import { ConnectionDetail } from "./connection-detail";
-import { connectionStatus } from "./model";
+import { connectionGroups, connectionStatus } from "./model";
 import { NewConnection } from "./new-connection";
-import { scopeName } from "./scope-picker";
+import { scopeName, WorkspaceTag } from "./scope-picker";
 import { ServiceLogo, serviceOf } from "./service-logo";
 
 /** Service-first setup, with one destination and one entry point. */
@@ -40,20 +45,14 @@ export function ConnectionsView() {
   const [destination, setDestination] = useState<string>();
   const [customType, setCustomType] = useState<ConnectionType>("mcp");
   const [query, setQuery] = useState("");
-  const [scopeFilter, setScopeFilter] = useState<string>();
   const test = useConnectionCommand("connections.test");
   const [testing, setTesting] = useState<ReadonlySet<string>>(new Set());
   const all = connections.data ?? [];
   const orgList = orgs.data ?? [];
-  const filter = scopeFilter ?? orgFilter ?? "all";
-  const visible = all.filter(
-    (c) =>
-      (filter === "all" ||
-        c.org === filter ||
-        (filter !== GLOBAL_CONNECTIONS && c.org === GLOBAL_CONNECTIONS)) &&
-      `${c.name} ${c.description} ${connectionType(c.type).label}`
-        .toLowerCase()
-        .includes(query.trim().toLowerCase()),
+  const visible = all.filter((c) =>
+    `${c.name} ${c.description} ${connectionType(c.type).label}`
+      .toLowerCase()
+      .includes(query.trim().toLowerCase()),
   );
   const selected = all.find((c) => c.id === (linked ?? picked));
   const catalog = mode === "catalog" || (mode === undefined && !selected && all.length === 0);
@@ -62,11 +61,11 @@ export function ConnectionsView() {
     setPicked(id);
     setLinked(id);
   };
-  const browse = () => {
+  const browse = (org?: string) => {
     setPicked(undefined);
     setLinked(undefined);
     setMode("catalog");
-    setDestination(orgFilter);
+    setDestination(org ?? orgFilter);
   };
   const overview = () => {
     setPicked(undefined);
@@ -96,7 +95,7 @@ export function ConnectionsView() {
         subtitle="Connect the services your agents work with."
         className="flex-wrap gap-y-3"
       >
-        <Button variant="primary" onClick={browse} disabled={connecting}>
+        <Button variant="primary" onClick={() => browse()} disabled={connecting}>
           <Plus aria-hidden="true" />
           Connect a service
         </Button>
@@ -133,7 +132,7 @@ export function ConnectionsView() {
               variant="ghost"
               aria-pressed={catalog || mode === "custom"}
               className={cn((catalog || mode === "custom") && "bg-selected text-fg")}
-              onClick={browse}
+              onClick={() => browse()}
               disabled={connecting}
             >
               Browse services
@@ -181,123 +180,145 @@ export function ConnectionsView() {
               head={
                 <div className="flex flex-wrap items-center gap-3">
                   <h2 className="text-md font-semibold">{plural(visible.length, "connection")}</h2>
-                  <div className="ml-auto flex flex-wrap gap-2">
-                    <Input
-                      aria-label="Search connections"
-                      type="search"
-                      value={query}
-                      placeholder="Search connections"
-                      className="w-[200px]"
-                      onChange={(event) => setQuery(event.target.value)}
-                    />
-                    <Select
-                      aria-label="Filter connection scope"
-                      className="w-[200px]"
-                      value={filter}
-                      onChange={(event) => setScopeFilter(event.target.value)}
-                    >
-                      <option value="all">All scopes</option>
-                      <option value={GLOBAL_CONNECTIONS}>Global</option>
-                      {orgList.map((org) => (
-                        <option key={org.id} value={org.id}>
-                          {org.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
+                  <Input
+                    aria-label="Search connections"
+                    type="search"
+                    value={query}
+                    placeholder="Search connections"
+                    className="ml-auto w-[220px]"
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
                 </div>
               }
             >
-              {visible.length === 0 ? (
+              {all.length === 0 ? (
                 <div className="flex max-w-[500px] flex-col items-start gap-3 py-8">
-                  <h3 className="text-md font-semibold">
-                    {all.length === 0 ? "Connect your first service" : "No matching connections"}
-                  </h3>
+                  <h3 className="text-md font-semibold">Connect your first service</h3>
                   <p className="text-base text-fg-muted">
-                    {all.length === 0
-                      ? "Choose a service, choose who can use it, then sign in."
-                      : "Try another search or scope, or connect a service."}
+                    Choose the workspace, then the service, then sign in.
                   </p>
-                  <Button variant="primary" onClick={browse}>
+                  <Button variant="primary" onClick={() => browse()}>
                     Browse services
                   </Button>
                 </div>
               ) : (
-                <ul aria-label="Connected services" className="divide-y divide-line pt-2">
-                  {visible.map((view) => {
-                    const signed = statuses.data?.find((s) => s.connection === view.id);
-                    const status = connectionStatus(view, testing.has(view.id));
-                    const needsSignIn = signed !== undefined && signed.state !== "connected";
-                    const lamp = needsSignIn
-                      ? "needs"
-                      : signed?.state === "connected" && !testing.has(view.id) && view.lastTest?.ok !== false
-                        ? "done"
-                        : status.lamp;
-                    const label = needsSignIn
-                      ? "Reconnect"
-                      : signed?.state === "connected" && lamp === "done"
-                        ? "Connected"
-                        : status.label;
-                    return (
-                      <li
-                        key={view.id}
-                        className="relative flex flex-wrap items-center gap-x-4 gap-y-2 py-4 sm:flex-nowrap"
-                      >
-                        <ServiceLogo service={signed?.service ?? serviceOf(view)} type={view.type} />
-                        <div className="min-w-0 flex-1">
-                          <button
-                            type="button"
-                            onClick={() => select(view.id)}
-                            className="cursor-pointer text-left text-base font-semibold text-fg after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-accent"
-                          >
-                            {view.name}
-                          </button>
-                          <p className="truncate text-sm text-fg-muted">
-                            {signed?.account ?? (view.description || connectionType(view.type).label)}
-                          </p>
-                        </div>
-                        <span
-                          className="flex max-w-[200px] items-center gap-1.5 truncate text-sm text-fg-muted"
-                          title={
-                            view.org === GLOBAL_CONNECTIONS
-                              ? "Shared with all workspaces"
-                              : scopeName(view.org, orgList)
-                          }
-                        >
-                          {view.org === GLOBAL_CONNECTIONS && (
-                            <Globe aria-hidden="true" className="size-3.5 shrink-0" />
-                          )}
-                          {scopeName(view.org, orgList)}
+                <div className="flex flex-col gap-6 pt-4">
+                  {connectionGroups(visible, orgList, orgFilter).map((group) => (
+                    <section key={group.org} aria-label={scopeName(group.org, orgList)}>
+                      <div className="flex items-center gap-2 border-b border-line pb-2">
+                        <WorkspaceTag org={group.org} orgs={orgList} className="text-base font-semibold" />
+                        <span className="font-mono text-sm text-fg-faint tabular-nums">
+                          {group.items.length}
                         </span>
-                        <span
-                          className={cn(
-                            "flex w-[100px] shrink-0 items-center gap-2 text-sm",
-                            LAMP_TEXT[lamp],
-                          )}
-                        >
-                          <Lamp state={lamp} size={7} />
-                          {label}
+                        <span className="text-sm text-fg-faint">
+                          {group.org === GLOBAL_CONNECTIONS ? "· every workspace" : ""}
                         </span>
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="relative z-10"
-                          disabled={testing.has(view.id)}
-                          onClick={() => runTest(view)}
-                          aria-label={`Test ${view.name}`}
+                          className="ml-auto"
+                          onClick={() => browse(group.org)}
+                          aria-label={`Connect a service to ${scopeName(group.org, orgList)}`}
                         >
-                          {testing.has(view.id) ? "Testing" : "Test"}
+                          <Plus aria-hidden="true" />
+                          Connect
                         </Button>
-                        <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-fg-faint" />
-                      </li>
-                    );
-                  })}
-                </ul>
+                      </div>
+                      {group.items.length === 0 ? (
+                        <p className="py-3 text-sm text-fg-faint">
+                          {query.trim() === "" ? "No connections yet." : "None match the search."}
+                        </p>
+                      ) : (
+                        <ul
+                          aria-label={`${scopeName(group.org, orgList)} connections`}
+                          className="divide-y divide-line"
+                        >
+                          {group.items.map((view) => (
+                            <ConnectionRow
+                              key={view.id}
+                              view={view}
+                              signed={statuses.data?.find((s) => s.connection === view.id)}
+                              testing={testing.has(view.id)}
+                              onOpen={() => select(view.id)}
+                              onTest={() => runTest(view)}
+                            />
+                          ))}
+                        </ul>
+                      )}
+                    </section>
+                  ))}
+                </div>
               )}
             </DetailPane>
           )}
         </>
       )}
     </div>
+  );
+}
+
+/** One saved connection: its service, account, who gets it, and how its last check went. */
+function ConnectionRow({
+  view,
+  signed,
+  testing,
+  onOpen,
+  onTest,
+}: {
+  view: ConnectionView;
+  signed: ConnectStatus | undefined;
+  testing: boolean;
+  onOpen: () => void;
+  onTest: () => void;
+}) {
+  const status = connectionStatus(view, testing);
+  const needsSignIn = signed !== undefined && signed.state !== "connected";
+  const lamp = needsSignIn
+    ? "needs"
+    : signed?.state === "connected" && !testing && view.lastTest?.ok !== false
+      ? "done"
+      : status.lamp;
+  const label = needsSignIn
+    ? "Reconnect"
+    : signed?.state === "connected" && lamp === "done"
+      ? "Connected"
+      : status.label;
+  return (
+    <li className="relative flex flex-wrap items-center gap-x-4 gap-y-2 py-3 sm:flex-nowrap">
+      <ServiceLogo service={signed?.service ?? serviceOf(view)} type={view.type} />
+      <div className="min-w-0 flex-1">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="cursor-pointer text-left text-base font-semibold text-fg after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-accent"
+        >
+          {view.name}
+        </button>
+        <p className="truncate text-sm text-fg-muted">
+          {signed?.account ?? (view.description || connectionType(view.type).label)}
+        </p>
+      </div>
+      <span
+        className={cn("shrink-0 text-sm", view.agents.length === 0 ? "text-amber" : "text-fg-muted")}
+        title={view.agents.map((a) => `@${a}`).join(", ")}
+      >
+        {view.agents.length === 0 ? "No agents" : plural(view.agents.length, "agent")}
+      </span>
+      <span className={cn("flex w-[110px] shrink-0 items-center gap-2 text-sm", LAMP_TEXT[lamp])}>
+        <Lamp state={lamp} size={7} />
+        {label}
+      </span>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="relative z-10"
+        disabled={testing}
+        onClick={onTest}
+        aria-label={`Test ${view.name}`}
+      >
+        {testing ? "Testing" : "Test"}
+      </Button>
+      <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-fg-faint" />
+    </li>
   );
 }

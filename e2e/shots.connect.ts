@@ -154,7 +154,7 @@ for (const [w, h] of [
       await open(page, w, h, theme);
       await page.getByRole("button", { name: "Connect a service" }).click();
       await page.getByRole("button", { name: /Grafana Cloud/ }).click();
-      await page.getByRole("button", { name: "Connect Grafana Cloud" }).click();
+      await page.getByRole("button", { name: /^Connect Grafana Cloud to /i }).click();
       await expect(page.getByText("Waiting for you in the browser", { exact: true })).toBeVisible();
       await shot(page, "waiting", w, theme);
     });
@@ -168,7 +168,7 @@ for (const [w, h] of [
       await open(page, w, h, theme);
       await page.getByRole("button", { name: "Connect a service" }).click();
       await page.getByRole("button", { name: /Grafana Cloud/ }).click();
-      await page.getByRole("button", { name: "Connect Grafana Cloud" }).click();
+      await page.getByRole("button", { name: /^Connect Grafana Cloud to /i }).click();
       await expect(page.getByRole("link", { name: "Open the page" })).toBeVisible();
       await shot(page, "waiting-link", w, theme);
     });
@@ -192,7 +192,7 @@ for (const [w, h] of [
       await open(page, w, h, theme);
       await page.getByRole("button", { name: "Connect a service" }).click();
       await page.getByRole("button", { name: /Grafana Cloud/ }).click();
-      await page.getByRole("button", { name: "Connect Grafana Cloud" }).click();
+      await page.getByRole("button", { name: /^Connect Grafana Cloud to /i }).click();
       await expect(page.getByText(/^Connected as maria/)).toBeVisible();
       await shot(page, "connected", w, theme);
     });
@@ -209,7 +209,7 @@ for (const [w, h] of [
       await open(page, w, h, theme);
       await page.getByRole("button", { name: "Connect a service" }).click();
       await page.getByRole("button", { name: /Grafana Cloud/ }).click();
-      await page.getByRole("button", { name: "Connect Grafana Cloud" }).click();
+      await page.getByRole("button", { name: /^Connect Grafana Cloud to /i }).click();
       await expect(page.getByRole("button", { name: /^Keep / })).toBeVisible();
       await shot(page, "confirm", w, theme);
     });

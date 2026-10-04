@@ -125,6 +125,10 @@ export const ConnectStartInputSchema = z.object({
   access: ConnectAccessSchema.default("read"),
   /** Set to sign in again for an existing connection. */
   connection: IdSchema.optional(),
+  /** The new connection's name, to tell two of one service apart. Default: the service's name. */
+  name: z.string().trim().min(1).max(80).optional(),
+  /** For a service with products: the ones its agents get. */
+  products: z.array(IdSchema).min(1).max(30).optional(),
 });
 export type ConnectStartInput = z.infer<typeof ConnectStartInputSchema>;
 

@@ -346,7 +346,8 @@ describe("Phase 10, done when", () => {
     const room = JSON.stringify(await items(task.id));
     expect(room).not.toContain("prod-viewer-token-0123456789");
     expect(room).not.toContain(API_KEY);
-  });
+    // A full session with stops and restarts: about 8 s, past the 5 s default.
+  }, 30_000);
 
   it("an org agent gets its own org's connections and nothing of another org's, in its variables or its MCP servers", async () => {
     const { h, must, starts } = await world(0);

@@ -117,6 +117,17 @@ describe("connections commands", () => {
     expect(owner.body.fields.read_tools).toEqual({ kind: "text", set: true, value: "run_nrql" });
   });
 
+  it("lets only the owner switch a connection off or on for an agent", async () => {
+    await h.cmd("connections.create", { org: "acme", id: "acme-nr", type: "mcp", name: "NR" });
+    const agent = await h.cmd("connections.update", { id: "acme-nr", agentsOff: [] }, BOSS);
+    expect(agent.status).toBe(409);
+    expect(agent.body.error).toContain("Only the owner changes the agents");
+    const off = await h.cmd("connections.update", { id: "acme-nr", agentsOff: ["acme-dev"] });
+    expect(off.body.agentsOff).toEqual(["acme-dev"]);
+    const on = await h.cmd("connections.update", { id: "acme-nr", agentsOff: [] });
+    expect(on.body.agentsOff).toEqual([]);
+  });
+
   it("tests a connection, and Health shows the last Test without testing on its own", async () => {
     await h.cmd("connections.create", { org: "acme", id: "acme-box", type: "ssh", name: "Box" });
     expect((await h.cmd("connections.test", { id: "acme-box" })).body).toMatchObject({

@@ -1717,6 +1717,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     agentsChanged: (list) => {
       for (const agent of list) runs.remountAgent(agent);
     },
+    fieldsChanged: (id) => runs.remountConnection(id),
   });
   const connect = new ConnectService({
     grants: new GrantStore(secrets),
@@ -1889,21 +1890,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     tester: connectionTests,
     registry: new McpRegistry(options.mcpFetch ?? fetch),
     agents: {
-      connectionLists: async () =>
+      scopes: async () =>
         (await agents.list()).flatMap((e) =>
-          e.status === "ok"
-            ? [
-                {
-                  id: e.agent.frontmatter.id,
-                  scope: e.agent.frontmatter.scope,
-                  connections: e.agent.frontmatter.connections,
-                },
-              ]
-            : [],
+          e.status === "ok" ? [{ id: e.agent.frontmatter.id, scope: e.agent.frontmatter.scope }] : [],
         ),
-      setConnections: async (agent, list, command, meta) => {
-        await agents.edit(agent, { set: { connections: list } }, command, meta);
-      },
     },
     orgs: async () => Object.keys((await config.sections()).orgs),
     audit: (row) => store.permissions.log(row),

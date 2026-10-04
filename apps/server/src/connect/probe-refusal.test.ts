@@ -16,6 +16,27 @@ describe("probeToken", () => {
     expect(probe).toEqual({ kind: "other", status: 403, reason: "403 Forbidden - MCP is not enabled" });
   });
 
+  it("a redirect is a refusal that names where it went, not unreachable", async () => {
+    const probe = await probeToken(
+      "https://gitlab.example/api/v4/mcp",
+      "t",
+      answer(302, "", { location: "https://gitlab.example/users/sign_in" }),
+    );
+    expect(probe).toEqual({
+      kind: "other",
+      status: 302,
+      reason: "it sent majhi to gitlab.example/users/sign_in",
+    });
+  });
+
+  it("no answer in time is slow, not unreachable", async () => {
+    const hang = (async (_url: string, init: RequestInit) =>
+      new Promise((_, reject) =>
+        init.signal?.addEventListener("abort", () => reject(new DOMException("timed out", "TimeoutError"))),
+      )) as unknown as Fetch;
+    expect(await probeToken("https://gitlab.example/mcp", "t", hang, 20)).toEqual({ kind: "slow" });
+  });
+
   it("a network error is unreachable", async () => {
     const fail = (async () => {
       throw new TypeError("fetch failed");

@@ -46,7 +46,7 @@ async function connect(spec: McpServerSpec | undefined): Promise<Client> {
 }
 
 /**
- * Acme's builder holds the ssh connection acme-box; the root agent ops-root holds every connection
+ * Acme's builder holds the ssh connection acme-box, as every Acme agent does; the root agent ops-root holds every connection
  * of acme and can attach globex's. Turns stay open until the test lets them end.
  */
 async function world() {
@@ -219,17 +219,8 @@ describe("majhi-connections", () => {
 
   it("is not on a session that holds no connection, for an org agent", async () => {
     const { h, servers, prompts } = await world();
-    await h.cmd("agents.update", {
-      id: "acme-builder",
-      frontmatter: {
-        scope: "acme",
-        role: "Builder",
-        account: "claude-acme",
-        perms: ["edit", "shell"],
-        connections: [],
-      },
-      instructions: "Build.\n",
-    });
+    const off = await h.cmd("connections.update", { id: "acme-box", agentsOff: ["acme-builder"] });
+    expect(off.status).toBe(200);
     await h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true });
     await until(() => prompts.length === 1, "first turn");
     expect(named(servers[0])).toBeUndefined();

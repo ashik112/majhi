@@ -21,7 +21,7 @@ type ConnectionCommand =
  * Fields that decide what majhi's gate checks, or which identity a run gets: the CLIs an env
  * connection is for, an MCP server's tool exceptions, a kubeconfig's context. Only the owner changes them.
  */
-const GATE_FIELDS = ["clis", "read_tools", "write_tools", "context"];
+const GATE_FIELDS = ["clis", "read_tools", "write_tools", "context", "products"];
 
 /** Fields that say where a connection's secrets go or what runs with them. */
 const DESTINATION_FIELDS = ["transport", "url", "command", "test", "imap_host", "smtp_host"];
@@ -42,7 +42,7 @@ export function connectionHandlers(
         const given = (keys: readonly string[]) =>
           keys.filter((key) => input.fields !== undefined && key in input.fields);
         // An agent could otherwise loosen the gate that checks its own commands.
-        const gate = given(GATE_FIELDS);
+        const gate = [...given(GATE_FIELDS), ...(input.agentsOff === undefined ? [] : ["agents"])];
         if (gate.length > 0) {
           throw new UserError(
             `Only the owner changes the ${gate.join(", ")} of a connection, on the Connections page.`,

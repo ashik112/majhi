@@ -2,10 +2,8 @@ import {
   type AccountView,
   type AgentEntry,
   AUTO,
-  connectionType,
   EFFORT_TIER_LABEL,
   EffortTierSchema,
-  GLOBAL_CONNECTIONS,
   MODEL_TIER_LABEL,
   ModelTierSchema,
   type OrgView,
@@ -28,8 +26,8 @@ import { Segmented } from "@/components/ui/segmented";
 import { Select, Textarea } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { orgLabel } from "@/features/accounts/model";
+import { AgentConnections } from "@/features/agents/agent-connections";
 import { capFromField } from "@/features/boss/model";
-import { useConnections } from "@/lib/connection-queries";
 import { describeError, errorDetails } from "@/lib/errors";
 import { queryKeys } from "@/lib/queries";
 import { useSkills } from "@/lib/skills-queries";
@@ -42,10 +40,8 @@ import {
   draftFromAgent,
   entryId,
   fallbackCandidates,
-  mergeConnections,
   type OkAgent,
   PERMS,
-  ROOT_SCOPE,
   rolesForScope,
   togglePerm,
   updateInput,
@@ -59,8 +55,6 @@ const SECTIONS = {
   model: ["model", "effort", "models", "tier"],
   perms: ["perms"],
   tools: ["tools"],
-  connections: ["connections"],
-  mcp: ["connections"],
   skills: ["skills"],
   fallback: ["fallback"],
   context: ["contextCap"],
@@ -79,20 +73,8 @@ function pick(draft: AgentDraft, section: SectionId): Partial<AgentDraft> {
   return Object.fromEntries(SECTIONS[section].map((key) => [key, draft[key]]));
 }
 
-function same(a: AgentDraft, b: AgentDraft, section: SectionId, owns: Owns): boolean {
-  const own = (d: AgentDraft) => {
-    const picked = pick(d, section);
-    return section === "connections" || section === "mcp"
-      ? { connections: (picked.connections ?? []).filter(owns[section]).sort() }
-      : picked;
-  };
-  return JSON.stringify(own(a)) === JSON.stringify(own(b));
-}
-
-/** Which connection ids a section shows: MCP servers in one, everything else in the other. */
-interface Owns {
-  connections: (id: string) => boolean;
-  mcp: (id: string) => boolean;
+function same(a: AgentDraft, b: AgentDraft, section: SectionId): boolean {
+  return JSON.stringify(pick(a, section)) === JSON.stringify(pick(b, section));
 }
 
 /**
@@ -112,9 +94,6 @@ export function AgentSettings({
 }) {
   const update = useUpdateAgent();
   const client = useQueryClient();
-  const allConnections = useConnections().data;
-  const mcpIds = new Set((allConnections ?? []).filter((c) => c.type === "mcp").map((c) => c.id));
-  const owns: Owns = { connections: (id) => !mcpIds.has(id), mcp: (id) => mcpIds.has(id) };
   const base = draftFromAgent(entry.agent);
   const [drafts, setDrafts] = useState<Partial<Record<SectionId, AgentDraft>>>({});
   const [saves, setSaves] = useState<Partial<Record<SectionId, SaveState>>>({});
@@ -124,7 +103,7 @@ export function AgentSettings({
   const view = (section: SectionId): AgentDraft => drafts[section] ?? base;
   const dirty = (section: SectionId) => {
     const draft = drafts[section];
-    return draft !== undefined && !same(draft, base, section, owns);
+    return draft !== undefined && !same(draft, base, section);
   };
   const change = (section: SectionId, patch: Partial<AgentDraft>) => {
     setDrafts((prev) => ({ ...prev, [section]: { ...(prev[section] ?? base), ...patch } }));
@@ -139,9 +118,6 @@ export function AgentSettings({
     if (!draft) return;
     setSaves((prev) => ({ ...prev, [section]: { kind: "saving" } }));
     const picked = { ...base, ...pick(draft, section) };
-    if (section === "connections" || section === "mcp") {
-      picked.connections = mergeConnections(base.connections, draft.connections, owns[section]);
-    }
     update.mutate(updateInput(entry.agent, picked), {
       onSuccess: async (result) => {
         setServerWarnings(result.status === "ok" ? result.warnings : undefined);
@@ -205,12 +181,7 @@ export function AgentSettings({
         onChange={(patch) => change("tools", patch)}
         {...sectionProps("tools")}
       />
-      <ConnectionsSection
-        draft={view("connections")}
-        onChange={(patch) => change("connections", patch)}
-        {...sectionProps("connections")}
-      />
-      <McpSection draft={view("mcp")} onChange={(patch) => change("mcp", patch)} {...sectionProps("mcp")} />
+      <AgentConnections agent={entry.agent.frontmatter} orgs={orgs} />
       <SkillsSection
         draft={view("skills")}
         onChange={(patch) => change("skills", patch)}
@@ -553,140 +524,6 @@ function ToolsSection({ agent, draft, onChange, ...section }: SectionProps & { a
           ? `Latest run (${attached.task}) attached: ${attached.tools.length === 0 ? "nothing" : attached.tools.join(", ")}.`
           : "No run has recorded its tools yet."}
       </p>
-    </SettingsSection>
-  );
-}
-
-/**
- * The connections of the agent's org it may use (5.14). A root agent lists none: it gets every
- * connection of the task's org. An org agent never gets another org's connection.
- */
-function ConnectionsSection({ draft, onChange, ...section }: SectionProps) {
-  const connections = useConnections().data;
-  if (draft.scope === ROOT_SCOPE) {
-    return (
-      <DetailSection title="Connections">
-        <p className="text-sm text-fg-muted text-pretty">
-          A root agent gets every Global connection and every connection of the task's workspace, and can
-          attach one of another workspace to a task. Each attach shows in the room.
-        </p>
-      </DetailSection>
-    );
-  }
-  const inOrg = (connections ?? []).filter((c) => c.org === draft.scope);
-  const own = inOrg.filter((c) => c.type !== "mcp");
-  const gone = draft.connections.filter(
-    (id) =>
-      connections !== undefined &&
-      !connections.some((c) => c.id === id && (c.org === draft.scope || c.org === GLOBAL_CONNECTIONS)),
-  );
-  return (
-    <SettingsSection
-      title="Connections"
-      note="What it may reach outside its repos. Only this workspace's connections. MCP servers are in their own section below."
-      {...section}
-    >
-      {(connections ?? []).some((c) => c.org === GLOBAL_CONNECTIONS && c.type !== "mcp") && (
-        <p className="text-sm text-fg-muted">
-          Global connections are available automatically in every workspace.
-        </p>
-      )}
-      {own.length === 0 ? (
-        <p className="text-sm text-fg-muted text-pretty">
-          This workspace has no connections yet.{" "}
-          <PageLink page="connections" className="text-fg underline-offset-2 hover:underline">
-            Add one
-          </PageLink>
-          .
-        </p>
-      ) : (
-        <MultiSelect
-          label="Connections"
-          className="@[560px]:max-w-[calc(50%-6px)]"
-          options={own.map((c) => ({ value: c.id, label: `${c.name} (${connectionType(c.type).label})` }))}
-          value={draft.connections.filter((id) => own.some((c) => c.id === id))}
-          onChange={(next) =>
-            onChange({
-              connections: [...next, ...draft.connections.filter((id) => !own.some((c) => c.id === id))],
-            })
-          }
-          emptyText="None"
-          clearText="None"
-        />
-      )}
-      {gone.length > 0 && (
-        <p className="text-sm text-amber text-pretty">
-          Lists {gone.join(", ")}, which {gone.length === 1 ? "is not a connection" : "are not connections"}{" "}
-          of this workspace. It gets {gone.length === 1 ? "it" : "them"} nowhere.{" "}
-          <button
-            type="button"
-            className="cursor-pointer text-fg underline-offset-2 hover:underline"
-            onClick={() => onChange({ connections: draft.connections.filter((id) => !gone.includes(id)) })}
-          >
-            Remove from the list
-          </button>
-        </p>
-      )}
-    </SettingsSection>
-  );
-}
-
-/** The MCP servers (mcp connections) of the agent's org it may use. They are installed on the Skills & MCP page. */
-function McpSection({ draft, onChange, ...section }: SectionProps) {
-  const connections = useConnections().data;
-  if (draft.scope === ROOT_SCOPE) {
-    return (
-      <DetailSection title="MCP servers">
-        <p className="text-sm text-fg-muted text-pretty">
-          A root agent gets every Global MCP server and every MCP server of the task's workspace.
-        </p>
-      </DetailSection>
-    );
-  }
-  const servers = (connections ?? []).filter((c) => c.org === draft.scope && c.type === "mcp");
-  const toggle = (id: string, on: boolean) =>
-    onChange({
-      connections: on ? [...draft.connections, id] : draft.connections.filter((c) => c !== id),
-    });
-  return (
-    <SettingsSection
-      title="MCP servers"
-      note="Servers it may use in its next run. Only this workspace's MCP servers."
-      {...section}
-    >
-      {(connections ?? []).some((c) => c.org === GLOBAL_CONNECTIONS && c.type === "mcp") && (
-        <p className="text-sm text-fg-muted">
-          Global MCP servers are available automatically in every workspace.
-        </p>
-      )}
-      {servers.length === 0 ? (
-        <p className="text-sm text-fg-muted text-pretty">
-          This workspace has no MCP servers yet.{" "}
-          <PageLink
-            page="skills"
-            search={{ tab: "mcp" }}
-            className="text-fg underline-offset-2 hover:underline"
-          >
-            Install one
-          </PageLink>
-          .
-        </p>
-      ) : (
-        <ul aria-label="MCP servers" className="flex flex-col gap-0.5">
-          {servers.map((server) => (
-            <li key={server.id} className="flex flex-col">
-              <Switch
-                label={server.name}
-                checked={draft.connections.includes(server.id)}
-                onChange={(on) => toggle(server.id, on)}
-              />
-              {server.description && (
-                <p className="pl-[42px] text-sm text-fg-faint text-pretty">{server.description}</p>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
     </SettingsSection>
   );
 }

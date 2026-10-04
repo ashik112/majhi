@@ -1,4 +1,4 @@
-import type { ConnectionView } from "@majhi/shared";
+import { type ConnectionView, serviceByUrl } from "@majhi/shared";
 import { Globe, KeyRound, Mail, Network, Plug, Server } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -86,6 +86,8 @@ export function serviceOf(view: ConnectionView): string | undefined {
   if (explicit) return explicit;
   const address = view.fields.url?.value;
   if (!address) return undefined;
+  const known = serviceByUrl(address)?.id;
+  if (known !== undefined) return known;
   try {
     const host = new URL(address).hostname;
     const hosts: Record<string, string> = {

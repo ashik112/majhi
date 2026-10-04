@@ -9,6 +9,8 @@ import {
   type ConnectionType,
   cliRunEnv,
   cliTool,
+  type ServiceProduct,
+  serviceByUrl,
   textValue,
   words,
 } from "@majhi/shared";
@@ -307,6 +309,21 @@ async function mcpServer(
       plan.secrets.push({ name: `${h.id}.oauth`, value: answer.token });
     }
     const type = textValue(c, "protocol") === "sse" ? "sse" : "http";
+    const products = productsOf(c);
+    if (products.length > 0) {
+      // Each product is its own server on the same sign-in.
+      for (const product of products) {
+        const name = `${h.id}-${product.id}`;
+        plan.servers.push({ type, name, url: product.mcpUrl, headers });
+        gate(h, {
+          server: name,
+          readTools: words(textValue(c, "read_tools")),
+          writeTools: words(textValue(c, "write_tools")),
+        });
+      }
+      use(h, useLine(h));
+      return;
+    }
     plan.servers.push({ type, name: h.id, url, headers });
   }
   gate(h, {
@@ -315,6 +332,14 @@ async function mcpServer(
     writeTools: words(textValue(c, "write_tools")),
   });
   use(h, useLine(h));
+}
+
+/** The products a remote MCP connection turned on, as its service lists them. */
+function productsOf(c: ConnectionConfig): ServiceProduct[] {
+  const picked = words(textValue(c, "products"));
+  if (picked.length === 0) return [];
+  const service = serviceByUrl(textValue(c, "url") ?? "");
+  return (service?.products ?? []).filter((p) => picked.includes(p.id));
 }
 
 /**
@@ -337,8 +362,12 @@ export function useLine(h: HeldConnection, current = false): string {
       return textValue(c, "mode") === "mcp"
         ? `MCP server ${h.id}. Sending mail asks the owner first.`
         : "Variables MAIL_IMAP_HOST, MAIL_IMAP_PORT, MAIL_SMTP_HOST, MAIL_SMTP_PORT, MAIL_USER and MAIL_PASSWORD. Sending mail asks the owner first.";
-    case "mcp":
-      return `MCP server ${h.id}.`;
+    case "mcp": {
+      const products = productsOf(c);
+      return products.length === 0
+        ? `MCP server ${h.id}.`
+        : `MCP servers ${products.map((p) => `${h.id}-${p.id} (${p.name})`).join(", ")}.`;
+    }
     case "browser":
       return `MCP server ${h.id} (${browserServer(textValue(c, "server")).label}), with its own browser profile.`;
     case "api":

@@ -1,4 +1,11 @@
-import { type ConnectionView, connectionType, GLOBAL_CONNECTIONS, type OrgView } from "@majhi/shared";
+import {
+  type ConnectionView,
+  connectionType,
+  GLOBAL_CONNECTIONS,
+  type OrgView,
+  type ServiceProduct,
+  serviceByUrl,
+} from "@majhi/shared";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -9,14 +16,18 @@ import { DetailPane, DetailSection } from "@/components/ui/list-detail";
 import { PageLink } from "@/components/ui/page-link";
 import { SaveSection, type SaveState } from "@/components/ui/save-section";
 import { Textarea } from "@/components/ui/select";
-import { orgLabel } from "@/features/accounts/model";
+import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
 import { useConnectionCommand } from "@/lib/connection-queries";
 import { describeError, errorDetails } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
+import { useAgents } from "@/lib/studio-queries";
 import { ConnectSection, isOauth } from "./connect-section";
 import { ConnectionFields } from "./connection-fields";
 import { type ConnectionDraft, connectionStatus, draftOf, updateInput } from "./model";
+import { ProductPicker } from "./product-picker";
+import { scopeName, WorkspaceTag } from "./scope-picker";
 import { ServiceLogo, serviceOf } from "./service-logo";
 
 /** The picked connection: how its last Test went, then its details, its values and what it may change unasked. */
@@ -36,7 +47,7 @@ export function ConnectionDetail({
   onRemoved: () => void;
 }) {
   const def = connectionType(view.type);
-  const org = orgLabel(view.org, orgs);
+  const service = serviceByUrl(view.fields.url?.value ?? "");
   const [removing, setRemoving] = useState(false);
   const remove = useConnectionCommand("connections.remove");
   return (
@@ -48,12 +59,12 @@ export function ConnectionDetail({
           <div className="flex min-w-0 flex-col gap-0.5">
             <h2 className="truncate text-md leading-6 font-semibold">{view.name}</h2>
             <p className="flex min-w-0 items-center gap-1.5 text-sm text-fg-muted">
-              <span className="shrink-0">{def.label}</span>
+              <WorkspaceTag org={view.org} orgs={orgs} className="font-medium text-fg-soft" />
               <span aria-hidden="true" className="text-fg-dim">
                 ·
               </span>
               <span className="shrink-0">
-                {view.org === GLOBAL_CONNECTIONS ? "Global · Shared with all workspaces" : org.name}
+                {view.org === GLOBAL_CONNECTIONS ? "Shared with every workspace" : def.label}
               </span>
             </p>
           </div>
@@ -81,6 +92,10 @@ export function ConnectionDetail({
     >
       {isOauth(view) && <ConnectSection view={view} now={now} />}
       <StatusSection view={view} testing={testing} now={now} />
+      {service?.products !== undefined && (
+        <ProductsSection key={`products-${view.id}`} view={view} products={service.products} />
+      )}
+      <AgentsSection view={view} orgs={orgs} />
       <DetailsSection key={`details-${view.id}`} view={view} />
       {!isOauth(view) && (
         <ValuesSection key={`values-${view.id}`} view={view} title={`${def.label} settings`} />
@@ -151,32 +166,134 @@ function StatusSection({ view, testing, now }: { view: ConnectionView; testing: 
               {w}
             </p>
           ))}
-        <p className="text-sm text-fg-faint text-pretty">
-          {view.org === GLOBAL_CONNECTIONS ? (
-            "Available to agents in every workspace. Global connections are included automatically."
-          ) : view.agents.length === 0 ? (
-            "No agent of this workspace lists it yet. Root agents get every connection of the task's workspace."
-          ) : (
-            <>
-              Listed by{" "}
-              {view.agents.map((id, i) => (
-                <span key={id}>
-                  {i > 0 && ", "}
-                  <PageLink
-                    page="agents"
-                    search={{ agent: id }}
-                    className="rounded-xs font-mono text-fg-muted underline-offset-2 hover:text-fg hover:underline"
-                  >
-                    @{id}
-                  </PageLink>
-                </span>
-              ))}
-              . Root agents get every connection of the task's org.
-            </>
-          )}
-        </p>
       </div>
     </DetailSection>
+  );
+}
+
+/** Which agents get it: every agent of its workspace and every root agent, each with a switch. */
+function AgentsSection({ view, orgs }: { view: ConnectionView; orgs: readonly OrgView[] }) {
+  const agents = useAgents();
+  const update = useConnectionCommand("connections.update");
+  const toast = useToast();
+  const global = view.org === GLOBAL_CONNECTIONS;
+  const candidates = (agents.data ?? []).flatMap((e) =>
+    e.status === "ok" &&
+    (global || e.agent.frontmatter.scope === view.org || e.agent.frontmatter.scope === "root")
+      ? [e.agent.frontmatter]
+      : [],
+  );
+  const root = candidates.filter((a) => a.scope === "root");
+  const own = candidates.filter((a) => a.scope !== "root");
+  const toggle = (agent: string, on: boolean) =>
+    update.mutate(
+      {
+        id: view.id,
+        agentsOff: on ? view.agentsOff.filter((a) => a !== agent) : [...view.agentsOff, agent],
+      },
+      {
+        onError: (error) =>
+          toast(`Could not change @${agent}`, { detail: describeError(error), tone: "error" }),
+      },
+    );
+  const row = (a: (typeof candidates)[number]) => (
+    <li key={a.id} className="flex min-w-0 items-center gap-3">
+      <Switch
+        label={`@${a.id}`}
+        checked={!view.agentsOff.includes(a.id)}
+        disabled={update.isPending}
+        onChange={(on) => toggle(a.id, on)}
+      />
+      <span className="truncate text-sm text-fg-faint">
+        {a.role}
+        {global && a.scope !== "root" ? ` · ${scopeName(a.scope, orgs)}` : ""}
+      </span>
+    </li>
+  );
+  return (
+    <DetailSection
+      title="Agents"
+      note={
+        global
+          ? "Every agent gets it, in every workspace. Switch one off to keep it from that agent."
+          : `Every agent of ${scopeName(view.org, orgs)} gets it, and root agents in its tasks. Switch one off to keep it from that agent.`
+      }
+    >
+      {agents.isError ? (
+        <p role="alert" className="text-sm text-red">
+          Could not load agents: {describeError(agents.error)}
+        </p>
+      ) : candidates.length === 0 && agents.data !== undefined ? (
+        <p className="text-sm text-amber text-pretty">
+          {scopeName(view.org, orgs)} has no agents yet, so nothing uses this connection.{" "}
+          <PageLink page="agents" className="text-fg underline-offset-2 hover:underline">
+            Add an agent
+          </PageLink>
+          .
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {own.length > 0 && (
+            <ul aria-label="Workspace agents" className="flex flex-col gap-0.5">
+              {own.map(row)}
+            </ul>
+          )}
+          {root.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <p className="text-sm text-fg-muted">Root agents</p>
+              <ul aria-label="Root agents" className="flex flex-col gap-0.5">
+                {root.map(row)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </DetailSection>
+  );
+}
+
+/** The products of a service that has them. A change reaches sessions at their next turn. */
+function ProductsSection({ view, products }: { view: ConnectionView; products: readonly ServiceProduct[] }) {
+  const update = useConnectionCommand("connections.update");
+  const saved = (view.fields.products?.value ?? "").split(/\s+/).filter((p) => p !== "");
+  const [draft, setDraft] = useState<string[]>();
+  const [state, setState] = useState<SaveState>({ kind: "idle" });
+  const shown = draft ?? saved;
+  return (
+    <SaveSection
+      title="Products"
+      note="Each product is its own MCP server on the same sign-in."
+      dirty={draft !== undefined && draft.join(" ") !== saved.join(" ")}
+      state={state}
+      onDiscard={() => {
+        setDraft(undefined);
+        setState({ kind: "idle" });
+      }}
+      onSave={() => {
+        if (draft === undefined) return;
+        setState({ kind: "saving" });
+        update.mutate(
+          { id: view.id, fields: { products: draft.join(" ") } },
+          {
+            onSuccess: () => {
+              setDraft(undefined);
+              setState({ kind: "saved" });
+            },
+            onError: (e) => setState(errorState(e)),
+          },
+        );
+      }}
+    >
+      <ProductPicker
+        compact
+        products={products}
+        value={shown}
+        onChange={(next) => {
+          setDraft(next);
+          setState({ kind: "idle" });
+        }}
+      />
+    </SaveSection>
   );
 }
 
