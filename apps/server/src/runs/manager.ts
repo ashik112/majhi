@@ -689,6 +689,24 @@ export class RunManager {
     for (const run of [...this.runs.values()]) if (run.agent === agent) this.remount(run.task, agent);
   }
 
+  /** True while an open session holds the connection (5.14), so Connect renews its token ahead of time. */
+  holdsConnection(connection: string): boolean {
+    for (const run of this.runs.values()) {
+      if (run.session !== undefined && run.connections?.uses.some((u) => u.id === connection)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * The connection's token was renewed. Every session that holds it restarts the way `remount` does,
+   * so its next turn has the new header.
+   */
+  remountConnection(connection: string): void {
+    for (const run of [...this.runs.values()]) {
+      if (run.connections?.uses.some((u) => u.id === connection)) this.remount(run.task, run.agent);
+    }
+  }
+
   /** What the agent's open session holds of its connections (5.14), or undefined. */
   connectionsOf(task: string, agent: string): RunConnections | undefined {
     return this.runs.get(this.key(task, agent))?.connections;

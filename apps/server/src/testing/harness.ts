@@ -67,6 +67,7 @@ export interface HarnessOptions {
   skillsFetch?: NonNullable<ServiceOptions["skillsFetch"]>;
   /** Replaces `fetch` for the MCP Registry. */
   mcpFetch?: NonNullable<ServiceOptions["mcpFetch"]>;
+  connectCatalog?: NonNullable<ServiceOptions["connectCatalog"]>;
 }
 
 export async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -108,6 +109,7 @@ function build(
     ...(options.skillsCommand === undefined ? {} : { skillsCommand: options.skillsCommand }),
     ...(options.skillsFetch === undefined ? {} : { skillsFetch: options.skillsFetch }),
     ...(options.mcpFetch === undefined ? {} : { mcpFetch: options.mcpFetch }),
+    ...(options.connectCatalog === undefined ? {} : { connectCatalog: options.connectCatalog }),
   });
   const h: Harness = {
     dir,

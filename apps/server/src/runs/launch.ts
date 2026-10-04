@@ -119,7 +119,7 @@ export interface LaunchDeps {
   /** Serena can start in the runner container (5.9 item 6). Undefined when agents do not run in one. */
   serena?: SerenaLaunch | undefined;
   /** Where connections keep their files (5.14). Undefined: runs get no connections. */
-  connectionFiles?: Pick<RunFilesDeps, "connectionDir" | "browsersPath"> | undefined;
+  connectionFiles?: Pick<RunFilesDeps, "connectionDir" | "browsersPath" | "oauth"> | undefined;
   /** The skills store (SPEC 5.2): each run gets read-only copies of its agent's enabled skills. */
   skills?: Pick<SkillStore, "get" | "pathOf"> | undefined;
 }

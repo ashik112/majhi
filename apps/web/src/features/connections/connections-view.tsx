@@ -1,5 +1,5 @@
 import { type ConnectionView, connectionType, type OrgView } from "@majhi/shared";
-import { Plus } from "lucide-react";
+import { Plug, Plus } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
@@ -17,6 +17,7 @@ import { useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
 import { useNow } from "@/lib/use-now";
 import { useSearchParam } from "@/pages/parts/url-state";
+import { ConnectCatalog } from "./connect-catalog";
 import { ConnectionDetail } from "./connection-detail";
 import { connectionGroups, connectionStatus } from "./model";
 import { NewConnection } from "./new-connection";
@@ -32,6 +33,8 @@ export function ConnectionsView() {
   const [linked, setLinked] = useSearchParam("connection");
   /** The org a new connection goes to, while the form is open. `""` lets the form pick. */
   const [adding, setAdding] = useState<string>();
+  /** The Connect catalog is open in the detail pane. */
+  const [connecting, setConnecting] = useState(false);
   const test = useConnectionCommand("connections.test");
   const [testing, setTesting] = useState<ReadonlySet<string>>(new Set());
 
@@ -42,6 +45,7 @@ export function ConnectionsView() {
   const selected = all.find((c) => c.id === (linked ?? picked)) ?? first;
   const select = (id: string) => {
     setAdding(undefined);
+    setConnecting(false);
     setPicked(id);
     if (linked !== undefined) setLinked(undefined);
   };
@@ -82,15 +86,32 @@ export function ConnectionsView() {
             label="Connections"
             className="min-[1100px]:w-[300px] min-[1320px]:w-[336px]"
             footer={
-              <Button
-                variant="ghost"
-                aria-pressed={adding !== undefined}
-                className={cn("w-full justify-start", adding !== undefined && ROW_SELECTED)}
-                onClick={() => setAdding(orgFilter ?? "")}
-              >
-                <Plus aria-hidden="true" />
-                New connection
-              </Button>
+              <div className="flex flex-col gap-px">
+                <Button
+                  variant="ghost"
+                  aria-pressed={connecting}
+                  className={cn("w-full justify-start", connecting && ROW_SELECTED)}
+                  onClick={() => {
+                    setAdding(undefined);
+                    setConnecting(true);
+                  }}
+                >
+                  <Plug aria-hidden="true" />
+                  Connect a service
+                </Button>
+                <Button
+                  variant="ghost"
+                  aria-pressed={adding !== undefined}
+                  className={cn("w-full justify-start", adding !== undefined && ROW_SELECTED)}
+                  onClick={() => {
+                    setConnecting(false);
+                    setAdding(orgFilter ?? "");
+                  }}
+                >
+                  <Plus aria-hidden="true" />
+                  New connection
+                </Button>
+              </div>
             }
           >
             {connections.isPending ? (
@@ -121,7 +142,7 @@ export function ConnectionsView() {
                               key={view.id}
                               view={view}
                               testing={testing.has(view.id)}
-                              selected={adding === undefined && selected?.id === view.id}
+                              selected={adding === undefined && !connecting && selected?.id === view.id}
                               onSelect={() => select(view.id)}
                               onTest={() => runTest(view)}
                             />
@@ -135,7 +156,14 @@ export function ConnectionsView() {
             )}
           </ListPane>
 
-          {adding !== undefined ? (
+          {connecting ? (
+            <ConnectCatalog
+              orgs={orgList}
+              defaultOrg={orgFilter ?? undefined}
+              onOpen={(id) => select(id)}
+              onClose={() => setConnecting(false)}
+            />
+          ) : adding !== undefined ? (
             <NewConnection
               key={adding}
               orgs={orgList}
