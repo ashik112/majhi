@@ -10,8 +10,7 @@ export const PAGE_KEYWORDS: Record<PageName, string> = {
   watch:
     "services uptime incidents down outage status ntfy phone push alerts escalation health certificate dns monitor",
   limits: "budget budgets spend cost daily weekly floors safety money raise",
-  business:
-    "knowledge base facts voice style people crm contacts leads investors clients deadlines hackathon grant launch renewal",
+  deadlines: "dates due hackathon grant launch renewal client calendar",
   decisions: "inbox needs you waiting questions approvals ship recommend answer",
   agents: "team roles models",
   accounts: "sign in claude codex login",

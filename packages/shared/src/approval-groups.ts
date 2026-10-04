@@ -51,14 +51,7 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "backup.cancelRestore",
   // Where backups are written is the owner's choice: a synced folder carries them off this computer.
   "backup.setDestination",
-  // Business memory: the owner verifies, removes, merges and decides; an agent only proposes (5.19).
-  "kb.verify",
-  "kb.remove",
-  "kb.restore",
-  "voice.set",
-  "voice.decide",
-  "crm.merge",
-  "crm.remove",
+  // Deadlines: the owner removes one (5.19).
   "deadlines.remove",
   // Git sign-in happens in the owner's browser or with a token the owner pastes: the owner's alone.
   "git.oauthApps.set",

@@ -1,7 +1,6 @@
 import { type DeadlineUpsertInput, DeadlineUpsertInputSchema } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
-import { CrmService } from "./crm.ts";
 import { DeadlinesService } from "./deadlines.ts";
 import type { BusinessActor } from "./scope.ts";
 import { daysUntil, dueInstant, reminderInstants, stateOf, zonedToUtc } from "./time.ts";
@@ -16,12 +15,10 @@ function setup(now = "2026-10-04T08:00:00.000Z") {
   const store = new Store(":memory:");
   const clock = { at: new Date(now) };
   const orgs = new Set(["acme", "globex", "private"]);
-  const crm = new CrmService({ db: store.raw, now: () => clock.at, orgExists: async (o) => orgs.has(o) });
   const deadlines = new DeadlinesService({
     db: store.raw,
     now: () => clock.at,
     orgExists: async (o) => orgs.has(o),
-    contactVisible: (id, actor) => crm.exists(id, actor),
     findingExists: (id) => id === 7,
   });
   const put = (over: Partial<DeadlineUpsertInput>, actor: BusinessActor = OWNER) =>
@@ -35,7 +32,7 @@ function setup(now = "2026-10-04T08:00:00.000Z") {
       }),
       actor,
     );
-  return { store, crm, deadlines, put, clock };
+  return { store, deadlines, put, clock };
 }
 
 describe("time zones", () => {
@@ -189,30 +186,9 @@ describe("who sees which deadline", () => {
     expect(() => t.deadlines.remove(biz?.id ?? 0, ACME)).toThrow(/Only the owner/);
   });
 
-  it("links a contact only if the actor can see it, and a finding only if it exists", async () => {
+  it("links a finding only if it exists", async () => {
     const t = setup();
-    const contact = await t.crm.upsert({ ...baseContact, org: "globex" }, OWNER);
-    const hidden = await t.crm.upsert({ ...baseContact, name: "Private", ownerOnly: true }, OWNER);
-    await expect(t.put({ contact: contact.contact.id }, ACME)).rejects.toThrow(/does not exist/);
-    await expect(t.put({ contact: hidden.contact.id }, GLOBEX)).rejects.toThrow(/does not exist/);
-    await expect(t.put({ contact: contact.contact.id, org: "globex" })).resolves.toMatchObject({
-      contact: contact.contact.id,
-    });
     await expect(t.put({ finding: 99 })).rejects.toThrow(/does not exist/);
     await expect(t.put({ finding: 7 })).resolves.toMatchObject({ finding: 7 });
   });
 });
-
-const baseContact = {
-  kind: "person" as const,
-  relation: "client" as const,
-  name: "Contact",
-  company: "",
-  role: "",
-  links: [],
-  emails: [],
-  notes: "",
-  tags: [],
-  ownerOnly: false,
-  nextStep: "",
-};

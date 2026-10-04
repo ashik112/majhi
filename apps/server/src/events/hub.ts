@@ -91,9 +91,6 @@ export function topicsFor(command: string): EventTopic[] {
     case "findings":
       // A task made from a finding shows on the board too.
       return ["findings", "tasks"];
-    case "kb":
-    case "voice":
-    case "crm":
     case "deadlines":
       return ["business"];
     case "captain":

@@ -235,8 +235,7 @@ export function DecisionDetailPane({
               )}
               <p className="m-0 whitespace-pre-wrap text-pretty break-words">{detail.draft.body}</p>
               <p className="m-0 text-xs text-fg-faint">
-                {detail.draft.voice === undefined ? "No voice profile used" : `Voice: ${detail.draft.voice}`}
-                {" · "}Nothing is sent until you approve it.
+                Nothing is sent until you approve it.
               </p>
             </div>
           </Block>

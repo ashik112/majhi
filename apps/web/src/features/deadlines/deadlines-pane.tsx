@@ -20,7 +20,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { Select, Textarea } from "@/components/ui/select";
 import { RowsSkeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
-import { useBusinessCommand, useCrmList, useDeadlines } from "@/lib/business-queries";
+import { useDeadlineCommand, useDeadlines } from "@/lib/deadline-queries";
 import { describeError } from "@/lib/errors";
 import type { AppSearch } from "@/router";
 import {
@@ -257,9 +257,8 @@ function DeadlineDetail({
   onDone: () => void;
   onGone: () => void;
 }) {
-  const save = useBusinessCommand("deadlines.upsert");
-  const remove = useBusinessCommand("deadlines.remove");
-  const contacts = useCrmList().data?.contacts ?? [];
+  const save = useDeadlineCommand("deadlines.upsert");
+  const remove = useDeadlineCommand("deadlines.remove");
   const toast = useToast();
   const [confirm, setConfirm] = useState(false);
   if (d === undefined) {
@@ -276,7 +275,6 @@ function DeadlineDetail({
       </DetailPane>
     );
   }
-  const contact = contacts.find((c) => c.id === d.contact);
   const setStatus = (status: Deadline["status"]) =>
     save.mutate(
       {
@@ -291,7 +289,6 @@ function DeadlineDetail({
         leadDays: d.leadDays,
         ...(d.goal === undefined ? {} : { goal: d.goal }),
         ...(d.finding === undefined ? {} : { finding: d.finding }),
-        ...(d.contact === undefined ? {} : { contact: d.contact }),
         status,
       },
       {
@@ -383,12 +380,6 @@ function DeadlineDetail({
             )}
           </>
         )}
-        {contact && (
-          <>
-            <span className="pt-px text-sm text-fg-faint">Contact</span>
-            <span className="text-fg-soft">{contact.name}</span>
-          </>
-        )}
         {d.finding !== undefined && (
           <>
             <span className="pt-px text-sm text-fg-faint">Finding</span>
@@ -441,8 +432,7 @@ function DeadlineForm({
   onCancel: () => void;
   onSaved: (d: Deadline) => void;
 }) {
-  const save = useBusinessCommand("deadlines.upsert");
-  const contacts = useCrmList().data?.contacts ?? [];
+  const save = useDeadlineCommand("deadlines.upsert");
   const toast = useToast();
   const [kind, setKind] = useState<DeadlineKind>(initial?.kind ?? "hackathon");
   const [title, setTitle] = useState(initial?.title ?? "");
@@ -453,7 +443,6 @@ function DeadlineForm({
   const [source, setSource] = useState(initial?.source ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [lead, setLead] = useState<string[]>((initial?.leadDays ?? [14, 7, 1]).map(String));
-  const [contact, setContact] = useState(initial?.contact === undefined ? "" : String(initial.contact));
   const zoneList = useMemo(zones, []);
   const leadDays = lead.map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 365);
   const badLead = lead.some((l) => !/^\d{1,3}$/.test(l));
@@ -475,7 +464,6 @@ function DeadlineForm({
             source,
             notes,
             leadDays,
-            ...(contact === "" ? {} : { contact: Number(contact) }),
             status: initial?.status ?? "open",
           },
           {
@@ -550,18 +538,6 @@ function DeadlineForm({
       </Field>
       <Field label="Source" hint="A link or a note on where you found it.">
         {(p) => <Input {...p} value={source} maxLength={500} onChange={(e) => setSource(e.target.value)} />}
-      </Field>
-      <Field label="Contact">
-        {(p) => (
-          <Select {...p} value={contact} onChange={(e) => setContact(e.target.value)}>
-            <option value="">No one linked</option>
-            {contacts.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
-        )}
       </Field>
       <Field label="Notes">
         {(p) => (

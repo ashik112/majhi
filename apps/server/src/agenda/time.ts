@@ -1,4 +1,4 @@
-import { wallIn, zonedToUtc } from "../business/time.ts";
+import { wallIn, zonedToUtc } from "../deadlines/time.ts";
 import { defaultTimeZone, localDay } from "../usage/ranges.ts";
 
 /** The zone of the owner's day: the settings' zone when it is a real one, else the server's. */

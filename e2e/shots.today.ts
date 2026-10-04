@@ -60,16 +60,6 @@ async function seed(page: Page) {
       dedupeKey: key,
     });
   }
-  for (let i = 0; i < 6; i++) {
-    await cmd(page, "crm.upsert", {
-      name: ["Dana Quinn", "Ben Okafor", "Chen Varga", "Ada Stein", "Eli Marlowe", "Pia Tran"][i],
-      company: "Northwind Traders",
-      relation: "lead",
-      stage: "talking",
-      nextStep: "Send the deck and a pricing sheet",
-      nextDue: day(i - 3),
-    });
-  }
   await cmd(page, "goals.create", {
     title: "99.9% uptime for Acme",
     metric: "uptime",

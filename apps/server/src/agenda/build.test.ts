@@ -15,7 +15,6 @@ function input(over: Partial<AgendaInput> = {}): AgendaInput {
     decisions: [],
     deadlines: [],
     findings: [],
-    steps: [],
     orgName: (o) => (o === "acme" ? "Acme" : undefined),
     ...over,
   };

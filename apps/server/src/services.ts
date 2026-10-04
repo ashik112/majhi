@@ -42,10 +42,6 @@ import { alertLine } from "./budgets/alert-line.ts";
 import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
 import { BudgetAlertRepo } from "./budgets/repo.ts";
-import { CrmService } from "./business/crm.ts";
-import { DeadlinesService } from "./business/deadlines.ts";
-import { KbService } from "./business/kb.ts";
-import { VoiceService } from "./business/voice.ts";
 import { freshCaptainAfterUpdate } from "./captain/fresh-after-update.ts";
 import { Lanes } from "./captain/lanes.ts";
 import { authorityOf, workspaceIds } from "./captain/levels.ts";
@@ -77,6 +73,7 @@ import { AcpProvider } from "./decisions/acp.ts";
 import { builtinRegistry } from "./decisions/builtinSlots.ts";
 import { CalibrationStore } from "./decisions/calibrationStore.ts";
 import { EvalStore } from "./decisions/evalStore.ts";
+import { DeadlinesService } from "./deadlines/deadlines.ts";
 import { LabelStore } from "./decisions/labels.ts";
 import { dockerCli, LayaDocker } from "./decisions/layaDocker.ts";
 import { LayaProvider } from "./decisions/layaProvider.ts";
@@ -251,13 +248,6 @@ export interface ServiceOptions {
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
-export interface BusinessServices {
-  kb: KbService;
-  voice: VoiceService;
-  crm: CrmService;
-  deadlines: DeadlinesService;
-}
-
 export interface Services {
   config: ConfigService;
   runtime: AcpRuntime;
@@ -349,8 +339,8 @@ export interface Services {
   outcomes: OutcomesService;
   /** The checked hand-off: tests, build, lint and a review before "Ready to ship" (5.18). */
   handoff: HandoffService;
-  /** The knowledge base, voice, contacts and deadlines (5.19). */
-  business: BusinessServices;
+  /** Deadlines (5.19). */
+  deadlines: DeadlinesService;
   /** The owner's agenda and the morning brief (5.18). */
   agenda: AgendaService;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
@@ -1378,28 +1368,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const businessChanged = () => events.emit(["business"]);
   const orgExists = async (org: string) => org === PRIVATE || org in (await config.sections()).orgs;
   const businessNow = options.runClock === undefined ? {} : { now: options.runClock };
-  const crm = new CrmService({ db: store.raw, orgExists, changed: businessChanged, ...businessNow });
-  const business: BusinessServices = {
-    kb: new KbService({
-      db: store.raw,
-      embed: (texts) => memory.embed(texts),
-      takeUpload: (id, dir) => uploads.take(id, dir),
-      filesDir: (entry) => join(env.majhiHome, "business", "kb", String(entry)),
-      orgExists,
-      changed: businessChanged,
-      ...businessNow,
-    }),
-    voice: new VoiceService({ db: store.raw, orgExists, changed: businessChanged, ...businessNow }),
-    crm,
-    deadlines: new DeadlinesService({
-      db: store.raw,
-      orgExists,
-      contactVisible: (id, actor) => crm.exists(id, actor),
-      findingExists: (id) => findings.exists(id),
-      changed: businessChanged,
-      ...businessNow,
-    }),
-  };
+  const deadlines = new DeadlinesService({
+    db: store.raw,
+    orgExists,
+    findingExists: (id) => findings.exists(id),
+    changed: businessChanged,
+    ...businessNow,
+  });
   const agendaOwner = { kind: "owner" } as const;
   const agenda = new AgendaService({
     repo: new AgendaRepo(store.raw),
@@ -1408,23 +1383,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return { at: a.summary_at, tz: a.tz };
     },
     decisions: (org) => inbox.list(org),
-    deadlines: (within) => business.deadlines.list({ withinDays: within, limit: 500 }, agendaOwner).deadlines,
+    deadlines: (within) => deadlines.list({ withinDays: within, limit: 500 }, agendaOwner).deadlines,
     findings: () => findings.list({ limit: 500 }, agendaOwner).findings,
     briefHidden: (f) => ruleSwitches.briefHidden(f.org, f.playbook),
-    steps: () =>
-      crm
-        .nextSteps(
-          { until: new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10), limit: 50 },
-          agendaOwner,
-        )
-        .steps.map((s) => ({
-          id: s.contact.id,
-          name: s.contact.name,
-          ...(s.contact.org === undefined ? {} : { org: s.contact.org }),
-          nextStep: s.contact.nextStep,
-          due: s.due,
-          overdue: s.overdue,
-        })),
     goals: () => goals.list({}, agendaOwner),
     running: () =>
       store.tasks
@@ -1444,7 +1405,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ]);
     },
     overnight: (from, to) => autonomy.overnight(from, to),
-    voice: () => business.voice.get(undefined, agendaOwner).effective,
     write: async (prompt) =>
       (
         await housekeeper.ask({ id: "morning-brief" }, prompt, (reply) =>
@@ -2064,7 +2024,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outbound,
     outcomes,
     handoff,
-    business,
+    deadlines,
     agenda,
     captainTell: new CaptainTell({
       tasks,

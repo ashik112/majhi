@@ -24,7 +24,7 @@ export const PAGE_PATH = {
   watch: "/watch",
   limits: "/limits",
   decisions: "/decisions",
-  business: "/knowledge",
+  deadlines: "/deadlines",
 } as const;
 
 export type PageName = keyof typeof PAGE_PATH;
@@ -40,7 +40,7 @@ export const PAGE_LABEL: Record<PageName, string> = {
   watch: "Watch",
   limits: "Limits",
   decisions: "Decisions",
-  business: "Knowledge",
+  deadlines: "Deadlines",
   agents: "Agents",
   accounts: "Accounts",
   connections: "Connections",
@@ -61,7 +61,7 @@ export const SIDEBAR_MAIN = [
   "captain",
   "playbooks",
   "watch",
-  "business",
+  "deadlines",
 ] as const;
 export const SIDEBAR_FOOT = ["agents", "accounts", "usage"] as const;
 export type SidebarMainPage = (typeof SIDEBAR_MAIN)[number];

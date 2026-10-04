@@ -68,7 +68,6 @@ export function useCloseDeadline() {
       leadDays: d.leadDays,
       ...(d.goal === undefined ? {} : { goal: d.goal }),
       ...(d.finding === undefined ? {} : { finding: d.finding }),
-      ...(d.contact === undefined ? {} : { contact: d.contact }),
       status: "done",
     };
     return cmd("deadlines.upsert", input, { reason: "Owner closed a deadline from Today" });

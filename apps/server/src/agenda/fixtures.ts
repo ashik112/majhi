@@ -1,5 +1,5 @@
 import type { Deadline, Finding, OwnerDecision } from "@majhi/shared";
-import { daysUntil, dueInstant, stateOf } from "../business/time.ts";
+import { daysUntil, dueInstant, stateOf } from "../deadlines/time.ts";
 
 /** Sample rows for the agenda tests. Generic names only. */
 

@@ -25,7 +25,6 @@ interface Row {
   lead_days: string;
   goal: string | null;
   finding: number | null;
-  contact: number | null;
   status: string;
   by: string;
   created_at: string;
@@ -36,8 +35,6 @@ export interface DeadlinesDeps {
   db: Database.Database;
   now?: () => Date;
   orgExists: (org: string) => Promise<boolean>;
-  /** Whether the actor may link to this contact. */
-  contactVisible: (id: number, actor: BusinessActor) => boolean;
   findingExists?: (id: number) => boolean;
   changed?: () => void;
 }
@@ -91,7 +88,6 @@ export class DeadlinesService {
       ...(next === undefined ? {} : { nextReminder: next.toISOString() }),
       ...(r.goal === null ? {} : { goal: r.goal }),
       ...(r.finding === null ? {} : { finding: r.finding }),
-      ...(r.contact === null ? {} : { contact: r.contact }),
       status: r.status,
       state: stateOf(r.due, r.tz, now, open),
       daysLeft: daysUntil(r.due, r.tz, now),
@@ -139,9 +135,6 @@ export class DeadlinesService {
     if (existing !== undefined && !canChange(actor, existing.org)) {
       throw new UserError(`Deadline ${existing.id} belongs to another scope.`, 409);
     }
-    if (input.contact !== undefined && !this.deps.contactVisible(input.contact, actor)) {
-      throw missing("Contact", input.contact);
-    }
     if (input.finding !== undefined && this.deps.findingExists?.(input.finding) === false) {
       throw missing("Finding", input.finding);
     }
@@ -152,8 +145,8 @@ export class DeadlinesService {
     if (existing === undefined) {
       const info = this.db
         .prepare(
-          `INSERT INTO deadlines (org, kind, title, due, tz, due_at, source, notes, lead_days, goal, finding, contact, status, by, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO deadlines (org, kind, title, due, tz, due_at, source, notes, lead_days, goal, finding, status, by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           org,
@@ -167,7 +160,6 @@ export class DeadlinesService {
           lead,
           input.goal ?? null,
           input.finding ?? null,
-          input.contact ?? null,
           input.status,
           actorBy(actor),
           at,
@@ -179,7 +171,7 @@ export class DeadlinesService {
     this.db
       .prepare(
         `UPDATE deadlines SET org = ?, kind = ?, title = ?, due = ?, tz = ?, due_at = ?, source = ?, notes = ?, lead_days = ?,
-           goal = ?, finding = ?, contact = ?, status = ?, updated_at = ? WHERE id = ?`,
+           goal = ?, finding = ?, status = ?, updated_at = ? WHERE id = ?`,
       )
       .run(
         org,
@@ -193,7 +185,6 @@ export class DeadlinesService {
         lead,
         input.goal ?? null,
         input.finding ?? null,
-        input.contact ?? null,
         input.status,
         at,
         existing.id,

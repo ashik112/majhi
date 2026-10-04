@@ -17,16 +17,6 @@ import { ageWord, daysBetween, whenWord } from "./time.ts";
 /** Deadlines this many days ahead are on the agenda. */
 export const DEADLINE_DAYS = 14;
 
-/** A crm next step as the agenda reads it. */
-export interface AgendaStep {
-  id: number;
-  name: string;
-  org?: string | undefined;
-  nextStep: string;
-  due: string;
-  overdue: boolean;
-}
-
 export interface AgendaInput {
   now: Date;
   tz: string;
@@ -34,7 +24,6 @@ export interface AgendaInput {
   deadlines: readonly Deadline[];
   /** Findings that are live. Only open ones of high severity (and incidents) make the agenda. */
   findings: readonly Finding[];
-  steps: readonly AgendaStep[];
   /** A workspace's name by id; undefined reads as the id. */
   orgName: (org: string | undefined) => string | undefined;
 }
@@ -87,9 +76,6 @@ const W = {
   within3: 70,
   within7: 40,
   within14: 20,
-  stepOverdue: 55,
-  stepToday: 40,
-  stepLater: 20,
 } as const;
 
 function ageBonus(at: string, now: Date): number {
@@ -202,29 +188,6 @@ function deadlineItem(d: Deadline, input: AgendaInput): AgendaItem | undefined {
   };
 }
 
-function stepItem(s: AgendaStep, input: AgendaInput): AgendaItem {
-  const days = daysBetween(localDay(input.now, input.tz), s.due);
-  const weight = s.overdue || days < 0 ? W.stepOverdue : days === 0 ? W.stepToday : W.stepLater;
-  return {
-    id: `crm:${s.id}`,
-    kind: "crm",
-    ...named(s.org, input.orgName),
-    title: `${s.name}: ${s.nextStep}`.slice(0, 300),
-    why:
-      s.overdue || days < 0
-        ? `Follow-up was due ${s.due}`
-        : days === 0
-          ? "Follow-up is due today"
-          : `Follow-up due ${s.due}`,
-    action: "Open",
-    target: { to: "contact", id: s.id },
-    minutes: 2,
-    weight,
-    at: `${s.due}T00:00:00.000Z`,
-    must: false,
-  };
-}
-
 /** Highest weight first; then the older moment; then the id, so the same input is always the same order. */
 export function compareItems(a: AgendaItem, b: AgendaItem): number {
   if (b.weight !== a.weight) return b.weight - a.weight;
@@ -240,7 +203,6 @@ export function buildItems(input: AgendaInput): AgendaItem[] {
     ...input.decisions.filter((d) => d.kind !== "incident").map((d) => decisionItem(d, input)),
     ...input.findings.flatMap((f) => findingItem(f, input) ?? []),
     ...input.deadlines.flatMap((d) => deadlineItem(d, input) ?? []),
-    ...input.steps.map((s) => stepItem(s, input)),
   ];
   return items.sort(compareItems);
 }

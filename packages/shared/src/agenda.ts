@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DeadlineKindSchema, IsoDaySchema } from "./business.ts";
+import { DeadlineKindSchema, IsoDaySchema } from "./deadlines.ts";
 import { FindingSeveritySchema } from "./findings.ts";
 
 /**
@@ -8,15 +8,7 @@ import { FindingSeveritySchema } from "./findings.ts";
  */
 
 /** What an agenda item is. `decision` covers ships, questions, approvals and sign-ins; `budget` a budget hold. */
-export const AGENDA_KINDS = [
-  "incident",
-  "deadline",
-  "budget",
-  "decision",
-  "finding",
-  "draft",
-  "crm",
-] as const;
+export const AGENDA_KINDS = ["incident", "deadline", "budget", "decision", "finding", "draft"] as const;
 export const AgendaKindSchema = z.enum(AGENDA_KINDS);
 export type AgendaKind = z.infer<typeof AgendaKindSchema>;
 
@@ -27,7 +19,6 @@ export const AGENDA_KIND_LABEL: Record<AgendaKind, string> = {
   decision: "Decision",
   finding: "Finding",
   draft: "Draft",
-  crm: "Follow-up",
 };
 
 /** Where the one action goes. Each opens a place that already exists. */
@@ -35,7 +26,6 @@ export const AgendaTargetSchema = z.discriminatedUnion("to", [
   z.object({ to: z.literal("decision"), id: z.string().min(1).max(300) }),
   z.object({ to: z.literal("finding"), id: z.number().int().positive() }),
   z.object({ to: z.literal("deadline"), id: z.number().int().positive() }),
-  z.object({ to: z.literal("contact"), id: z.number().int().positive() }),
   z.object({ to: z.literal("limits") }),
   z.object({ to: z.literal("playbooks") }),
 ]);
@@ -49,7 +39,7 @@ export const AgendaDoneSchema = z.discriminatedUnion("kind", [
 export type AgendaDone = z.infer<typeof AgendaDoneSchema>;
 
 export const AgendaItemSchema = z.object({
-  /** Stable for the same thing: `decision:<id>`, `finding:12`, `deadline:3`, `crm:7`. */
+  /** Stable for the same thing: `decision:<id>`, `finding:12`, `deadline:3`. */
   id: z.string().min(1).max(320),
   kind: AgendaKindSchema,
   /** The workspace id; absent for the whole business. */

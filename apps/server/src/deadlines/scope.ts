@@ -1,10 +1,8 @@
 import { UserError } from "../errors.ts";
 
 /**
- * Who reads or writes business memory (SPEC 5.19). The owner sees everything. A captain lane and an
+ * Who reads or writes deadlines (SPEC 5.19). The owner sees everything. A captain lane and an
  * agent are tied to one workspace and see that workspace's rows and the business-wide rows (no org).
- * A captain with no lane (the boss outside any workspace) is not restricted but never sees owner-only
- * contacts.
  */
 export type BusinessActor =
   | { kind: "owner" }
@@ -75,24 +73,4 @@ export function targetOrg(actor: BusinessActor, asked: string | undefined): stri
 /** A row the actor may not see is reported as missing, so its existence is not revealed. */
 export function missing(what: string, id: number): UserError {
   return new UserError(`${what} ${id} does not exist.`, 404);
-}
-
-/** Splits text into a JSON array column's string list. */
-export function parseList(raw: string): string[] {
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-/** A list of tags: lower case, trimmed, no repeats. */
-export function cleanTags(tags: readonly string[]): string[] {
-  return [...new Set(tags.map((t) => t.trim().toLowerCase()).filter((t) => t !== ""))];
-}
-
-/** Escapes the LIKE wildcards of a user's words. */
-export function likePattern(text: string): string {
-  return `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 }

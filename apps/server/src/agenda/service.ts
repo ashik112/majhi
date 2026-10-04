@@ -8,11 +8,10 @@ import {
   type Finding,
   type Goal,
   type OwnerDecision,
-  type VoiceProfile,
 } from "@majhi/shared";
 import { addDays, dayStart, localDay } from "../usage/ranges.ts";
 import { minutesWord, oneLine, type Writer, writeBrief } from "./brief.ts";
-import { type AgendaStep, buildItems, DEADLINE_DAYS, inScope, plan } from "./build.ts";
+import { buildItems, DEADLINE_DAYS, inScope, plan } from "./build.ts";
 import type { Overnight } from "./overnight.ts";
 import type { AgendaRepo } from "./repo.ts";
 import { briefDue, daysBetween, ownerZone, whenWord } from "./time.ts";
@@ -36,14 +35,11 @@ export interface AgendaDeps {
   findings: () => Finding[];
   /** A finding the owner does not want counted in the brief (its playbook's "tell me in the brief" is off). */
   briefHidden?: ((f: Finding) => boolean) | undefined;
-  steps: () => AgendaStep[];
   goals: () => Goal[];
   running: () => { id: string; title: string; org?: string | undefined; since?: string | undefined }[];
   /** A workspace's name by id. */
   names: () => Promise<ReadonlyMap<string, string>>;
   overnight: (from: string, to: string) => Promise<Overnight & { spent: number; budget?: number }>;
-  /** The owner's own voice profile, when one is written. */
-  voice: () => VoiceProfile | undefined;
   /** The model that words the brief. Absent or failing: the template. */
   write?: Writer | undefined;
   /** The captain's queue titles, what it plans next. */
@@ -129,12 +125,7 @@ export class AgendaService {
     ).toISOString();
     const to = now.toISOString();
     const facts = await this.facts(day, tz, from, to);
-    const { lines, source } = await writeBrief(
-      facts,
-      this.deps.voice(),
-      this.deps.write,
-      this.deps.modelTimeoutMs,
-    );
+    const { lines, source } = await writeBrief(facts, this.deps.write, this.deps.modelTimeoutMs);
     // The primary key decides: if another process made it first, that one stands and nothing is sent twice.
     if (!this.deps.repo.addBrief(day, to, source, lines, facts)) return this.deps.repo.brief(day);
     this.deps.changed?.();
@@ -203,7 +194,6 @@ export class AgendaService {
         this.deps.findings().filter((f) => f.status === "open"),
         scope,
       ),
-      steps: inScope(this.deps.steps(), scope),
       orgName,
     });
     return plan(items, this.budgetMinutes());
