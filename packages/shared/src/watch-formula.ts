@@ -286,8 +286,10 @@ export function scriptProblem(script: string, network: "on" | "off" = "on"): str
       /\b(?:DROP|TRUNCATE|DELETE\s+FROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET|ALTER\s+TABLE|CREATE\s+(?:TABLE|INDEX|DATABASE))\b/i,
       "it changes a database",
     ],
-    [/>{1,2}\s*(?!\/tmp\/|\/dev\/null|&)[^\s|;&]+/, "it writes a file outside /tmp"],
   ];
+  // File writes are not checked here: the script runs in a container with a read-only root where only
+  // /tmp is writable (dbCheckRunArgs refuses to start one without --read-only), so a write outside /tmp fails
+  // there, and a `>` inside a quoted jq filter is not a write.
   for (const [re, why] of checks) if (re.test(script)) return `A watch only reads: ${why}.`;
   return undefined;
 }

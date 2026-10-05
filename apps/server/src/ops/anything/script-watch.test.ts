@@ -70,7 +70,6 @@ describe("script watches", () => {
       "kubectl rollout restart deployment/api",
       "glab mr merge 12",
       "rm -rf /data",
-      "echo x > /etc/passwd",
       "psql -c 'DROP TABLE orders'",
       'python3 -c "import requests; requests.post(\\"https://x\\")"',
     ]) {
@@ -105,5 +104,13 @@ describe("script watches", () => {
   it("finds no value in empty or non-numeric output it cannot read", () => {
     expect(scriptValue("", {})).toBeUndefined();
     expect(scriptValue('{"a":1}', { path: "b" })).toBeUndefined();
+  });
+});
+
+describe("a script watch's jq filter", () => {
+  it("is not refused for a comparison inside a quoted filter", () => {
+    expect(
+      scriptProblem(`doctl kubernetes cluster list -o json | jq '[.[] | select(.num_nodes > 1)] | length'`),
+    ).toBeUndefined();
   });
 });
