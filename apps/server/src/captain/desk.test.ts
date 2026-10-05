@@ -2,6 +2,7 @@ import type { AccountStatus, AutonomyEvent, AutonomyStatus, Task } from "@majhi/
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { RUNS } from "./authority-fixtures.ts";
+import { seedStatus } from "../testing/status.ts";
 
 /**
  * A day at the captain's desk, in two workspaces (Acme and Globex), with the fake agent runtime so no
@@ -159,7 +160,7 @@ describe("a day at the captain's desk", () => {
     // A Globex task stopped on a sign-in: the captain cannot resume it while the account is signed out,
     // plans around the account instead, and is woken when it works again.
     const g2 = await d.make("Add the VAT field", "globex-web", ["globex-builder"]);
-    d.store.tasks.setStatus(g2, "paused", "signed-out", new Date().toISOString());
+    seedStatus(d.store, g2, "paused", "signed-out", new Date().toISOString());
     d.setGlobexAccount("needs-login");
     const refused = await globex("majhi_tasks_start", { id: g2 });
     expect(refused.isError).toBe(true);
@@ -259,7 +260,7 @@ describe("a day at the captain's desk", () => {
 
     // An account that flips back to signed out: the item is ready, then waiting again, then ready again.
     const g1 = await d.make("Fix the invoice export", "globex-web", ["globex-builder"]);
-    d.store.tasks.setStatus(g1, "paused", "signed-out", new Date().toISOString());
+    seedStatus(d.store, g1, "paused", "signed-out", new Date().toISOString());
     d.setGlobexAccount("needs-login");
     const wait = {
       items: [

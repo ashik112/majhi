@@ -228,6 +228,28 @@ export const captainLoopGuard = sqliteTable("captain_loop_guard", {
   paused: integer("paused").notNull().default(0),
 });
 
+/** The lifecycle audit trail and outbox (migration 156). Written only by `tasks/lifecycle/rows.ts`. */
+export const taskEvents = sqliteTable(
+  "task_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    task: text("task").notNull(),
+    at: text("at").notNull(),
+    event: text("event").notNull(),
+    fromStatus: text("from_status"),
+    toStatus: text("to_status"),
+    fromHold: text("from_hold"),
+    hold: text("hold"),
+    actor: text("actor").notNull(),
+    refused: integer("refused", { mode: "boolean" }).notNull().default(false),
+    code: text("code"),
+    text: text("text"),
+    /** JSON list of the effects still to run (the outbox). NULL once they ran. */
+    pendingEffects: text("pending_effects"),
+  },
+  (t) => [index("task_events_task").on(t.task, t.id)],
+);
+
 /** The tasks autonomous mode runs (PRV-74). The rest of its tables are read in `autonomy/repo.ts`. */
 export const autonomyTasks = sqliteTable("autonomy_tasks", {
   task: text("task").primaryKey(),

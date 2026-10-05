@@ -14,6 +14,7 @@ import {
   DEFAULT_CHAT_TITLES,
   isOwnerChat,
   LOCAL_TASK_PREFIX,
+  lifecycle,
   MODE_LABELS,
   OWNER_HANDLE,
   type ParsedTask,
@@ -39,7 +40,6 @@ import {
   type TaskSummary,
   type TeamOverride,
   type TeamPlan,
-  waitsForOwner,
 } from "@majhi/shared";
 import type { AccountService } from "../accounts/service.ts";
 import { isBossChat } from "../admin/boss.ts";
@@ -118,6 +118,16 @@ import {
 import { OwnerCards } from "./cards.ts";
 import { deleteAfterShip, deleteRefusal } from "./delete-after.ts";
 import { handoverNote } from "./handover.ts";
+import {
+  type ApplyOptions,
+  assertedReading,
+  holdFromRunReason,
+  type Outcome,
+  pausedReasonOf,
+  TaskLifecycle,
+  wasRefused,
+} from "./lifecycle/apply.ts";
+import type { EffectContext } from "./lifecycle/types.ts";
 import { fetchLinks, type LinkOptions } from "./links.ts";
 import { Orchestrator } from "./orchestrator.ts";
 import { type PickedRepo, withPickedRepos } from "./picked-repos.ts";
@@ -241,6 +251,10 @@ export interface CreateInput {
   connections?: string[] | undefined;
 }
 
+/** What the room says when a message cannot restart a task whose merge request is open. */
+const mrNotRestarted = (task: string, agent: string): string =>
+  `${task} has a merge request open, so the message to @${agent} was not delivered and the task did not restart. Close the merge request, then send the task back.`;
+
 /** Creating, starting, stopping and removing tasks, and the owner's messages to a task's agent. */
 export class TaskService {
   private readonly files: FileIndex;
@@ -262,6 +276,8 @@ export class TaskService {
   private readonly lastFacts = new Map<string, { team: string; facts: TeamFacts }>();
   /** The review and paused cards majhi posts in a task's room. */
   readonly cards: OwnerCards;
+  /** The one way a task's status or hold changes. */
+  private readonly lifecycle: TaskLifecycle;
 
   constructor(private readonly deps: TaskDeps) {
     this.files =
@@ -275,6 +291,13 @@ export class TaskService {
       room: deps.room,
       now: this.now,
       captain: () => deps.config.knownBoss(),
+    });
+    this.lifecycle = new TaskLifecycle({
+      rows: deps.store.lifecycle,
+      now: this.now,
+      unmetDeps: (id) => deps.store.tasks.unmetDependencies(id),
+      hasLiveRun: (id) => deps.runs.working(id).length > 0,
+      runner: { run: (id, effect, ctx, states) => this.runEffect(id, effect, ctx, states) },
     });
     this.planner = new TaskPlanner({
       store: deps.store,
@@ -823,29 +846,27 @@ export class TaskService {
   // Start, stop, close, remove
 
   /** Creates the missing worktrees, marks the task running and starts its agent. Safe to repeat. */
-  async start(id: string, by = "owner"): Promise<Task> {
+  async start(id: string, by = "owner", options: { gateReleased?: boolean } = {}): Promise<Task> {
     const task = this.get(id);
-    this.checkStartable(task);
+    await this.checkStartable(task);
     this.starting.add(id);
     try {
-      return await this.startNow(id, task, by);
+      return await this.startNow(id, task, by, options);
     } finally {
       this.starting.delete(id);
       this.startStopped.delete(id);
     }
   }
 
-  private async startNow(id: string, task: Task, by: string): Promise<Task> {
-    const { store } = this.deps;
+  private async startNow(
+    id: string,
+    task: Task,
+    by: string,
+    options: { gateReleased?: boolean },
+  ): Promise<Task> {
     await this.ensureWorktrees(task);
-    store.tasks.setStatus(id, "running", undefined, this.now().toISOString());
-    store.tasks.setStartWhenReady(id, true);
-    if (task.status === "paused") this.cards.settle(id, "paused", "Resumed", by);
-    // The owner resumed a task a budget paused: it is not paused again for the alerts so far.
-    if (task.status === "paused" && task.pausedReason === "limit" && by === "owner") {
-      this.deps.onOwnerResumedLimit?.(id);
-    }
-    if (task.status === "paused" && by === "owner") this.deps.onOwnerResumed?.(id);
+    const lifted = await this.enter(id, by, options);
+    if (lifted && by === "owner") this.deps.onOwnerResumed?.(id);
     await this.containersRunAgain(id);
     await this.recallMemory(task);
     const started = this.get(id);
@@ -867,21 +888,101 @@ export class TaskService {
     return started;
   }
 
+  /** Starts the agents a task begins with: the lead, or the mode's first step. Safe to repeat. */
+  private async startAgents(id: string): Promise<void> {
+    const task = this.get(id);
+    const first = await this.firstAgents(task);
+    first.forEach((agent, i) => {
+      this.deps.runs.startTask(task, agent, { ownBrief: i > 0 });
+    });
+  }
+
+  /** Who a start or a lift is, in the model's words: the owner, the captain (or its engine), or majhi. */
+  private lifterOf(by: string): lifecycle.Lifter {
+    if (by === "owner") return "owner";
+    return this.cards.byCaptain(by) ? "captain" : "majhi";
+  }
+
+  /** The event that lifts `hold` for `by`, or undefined when `by` may not. */
+  private liftEvent(hold: lifecycle.Hold, by: string): lifecycle.LifecycleEvent | undefined {
+    const lifters = lifecycle.liftersOf(hold);
+    const who = this.lifterOf(by);
+    if (who === "owner") return { type: "holdCleared", by: "owner" };
+    // The captain's engine and the limit resume check the world before they lift, so what majhi
+    // may lift, they may lift too (see `assertedReading`).
+    if (who === "captain" && lifters.includes("captain")) return { type: "holdCleared", by: "captain" };
+    if (lifters.includes("majhi"))
+      return {
+        type: "holdCleared",
+        by: "majhi",
+        reading: assertedReading(hold, this.now().toISOString()),
+      };
+    return undefined;
+  }
+
+  /**
+   * `start`'s move through the lifecycle: lift a hold if the task has one, then start it (inbox,
+   * ready) or send it back (review, merge request). The caller runs the agents itself, so the effects
+   * that start them, make worktrees and announce are left to it. True when a hold was lifted.
+   */
+  private async enter(id: string, by: string, options: { gateReleased?: boolean }): Promise<boolean> {
+    const skip = ["runs.start", "ensureWorktrees", "publishTask", "statusChanged"] as const;
+    const ctx = { by, settle: "Resumed" };
+    let state = this.lifecycle.state(id);
+    if (state === undefined) throw new UserError(`Task ${id} does not exist.`, 404);
+    let lifted = false;
+    if (state.hold !== undefined) {
+      const lift = this.liftEvent(state.hold, by);
+      if (lift === undefined) throw new UserError(lifecycle.sentenceOf(state.hold), 409);
+      const out = await this.lifecycle.apply(id, lift, {
+        ctx,
+        skip,
+        ...(options.gateReleased === true
+          ? { holdAs: { cause: "autopilot-off", at: this.now().toISOString(), mode: "now" } as const }
+          : {}),
+      });
+      if (wasRefused(out)) throw new UserError(out.text, 409);
+      lifted = true;
+      state = out.after;
+    }
+    if (lifted && state.status === "running") return true;
+    const who = this.lifterOf(by);
+    const event: lifecycle.LifecycleEvent =
+      state.status === "review" || state.status === "mr"
+        ? { type: "sendBack", by: who }
+        : { type: "start", by: who };
+    const out = await this.lifecycle.apply(id, event, { ctx, skip });
+    if (wasRefused(out)) throw new UserError(out.text, 409);
+    return lifted;
+  }
+
+  /** The lifecycle's one door, for callers outside this service (merge requests). */
+  apply(id: string, event: lifecycle.LifecycleEvent, options?: ApplyOptions): Promise<Outcome> {
+    return this.lifecycle.apply(id, event, options);
+  }
+
+  /** After a restart: runs the effects an event left in the outbox. */
+  drainOutbox(): Promise<number> {
+    return this.lifecycle.drain();
+  }
+
   /**
    * Throws when the task cannot start now: done, no agent, or dependencies not met. With unmet
-   * dependencies the owner's wish is kept: it starts by itself when the last one is met.
+   * dependencies the owner's wish is kept as its own event (`wishStart`): it starts by itself when
+   * the last one is met.
    */
-  private checkStartable(task: Task): void {
+  private async checkStartable(task: Task): Promise<void> {
     const { store } = this.deps;
     const id = task.id;
     if (task.status === "done") throw new UserError(`Task ${id} is done.`, 409);
     const waiting = store.tasks.unmetDependencies(id);
     if (waiting.length > 0) {
-      store.tasks.setStartWhenReady(id, true);
-      if (task.status === "inbox") {
-        store.tasks.setStatus(id, "ready", undefined, this.now().toISOString());
-        this.deps.room.publishTask(this.get(id));
-      }
+      const wished = await this.lifecycle.apply(
+        id,
+        { type: "wishStart" },
+        { ctx: { by: "owner" }, skip: ["publishTask"] },
+      );
+      if (!wasRefused(wished) && task.status === "inbox") this.deps.room.publishTask(this.get(id));
       throw new UserError(`Waiting on ${waiting.join(", ")}. It starts when they are done.`, 409);
     }
     if (task.team.length === 0)
@@ -988,22 +1089,55 @@ export class TaskService {
     by = "owner",
   ): Promise<Task> {
     const task = this.get(id);
-    await this.deps.runs.stop(id);
-    // Before the processes stop: it notes which services ran, to start them again on resume.
-    await this.deps.containers?.taskPaused(id);
-    await this.deps.processes?.stopTask(id);
-    this.deps.terminals?.killKey(taskTerminalKey(id));
-    this.dropPendingShip(id, "you stopped the task");
-    if (task.status === "running" || task.status === "paused" || task.status === "review") {
-      // Who paused it is kept for the labels: by the captain, or when Autonomous was turned off.
-      const pausedBy =
-        by === "autonomy-off" ? "autonomy-off" : this.cards.byCaptain(by) ? "captain" : undefined;
-      this.deps.store.tasks.setStatus(id, "paused", reason, this.now().toISOString(), pausedBy);
+    const ctx: Partial<EffectContext> = { by, why, reason };
+    const inFlight = task.status === "running" || task.status === "paused" || task.status === "review";
+    if (inFlight) {
+      const at = this.now().toISOString();
+      let event: lifecycle.LifecycleEvent;
+      if (by === "autonomy-off") event = { type: "autopilotOff", at, mode: "now" };
+      else if (reason === "owner")
+        event = this.cards.byCaptain(by)
+          ? { type: "captainStop", at, ...(why === undefined ? {} : { why }) }
+          : { type: "ownerStop", at };
+      else if (reason === "loop")
+        event = {
+          type: "holdPlaced",
+          hold: { cause: "loop-guard", at, why: why ?? "It was going in circles." },
+        };
+      else
+        event = { type: "holdPlaced", hold: { cause: "idle", at, why: why ?? "No agent is left to wake." } };
+      // A hold placed from outside carries no stop effects of its own: tear down first, as a stop does.
+      if (event.type === "holdPlaced") await this.teardown(id, ctx);
+      // A task the run gate already paused reads as an owner's stop; turning Auto-pilot off marks it as its own.
+      const out = await this.lifecycle.apply(id, event, {
+        ctx,
+        skip: ["publishTask"],
+        ...(event.type === "autopilotOff"
+          ? { holdAs: { cause: "autopilot-off", at, mode: "now" } as const }
+          : {}),
+      });
+      if (wasRefused(out)) await this.teardown(id, ctx);
+    } else {
+      await this.teardown(id, ctx);
     }
     const stopped = this.get(id);
-    if (task.status === "running" || task.status === "review") this.cards.paused(stopped, reason, why, by);
     this.deps.room.publishTask(stopped);
     return stopped;
+  }
+
+  /** Cancels every turn and stops what runs for the task: the stop effects, for a task the stop does not move. */
+  private async teardown(id: string, ctx: Partial<EffectContext>): Promise<void> {
+    const full: EffectContext = { by: "owner", ...ctx };
+    const states = this.lifecycle.state(id);
+    if (states === undefined) return;
+    for (const effect of [
+      { kind: "runs.stop" },
+      { kind: "containers", op: "stop" },
+      { kind: "processes.stop" },
+      { kind: "terminals.stop" },
+      { kind: "dropPendingShip", why: "you stopped the task" },
+    ] as const)
+      await this.runEffect(id, effect, full, { before: states, after: states });
   }
 
   /**
@@ -1475,8 +1609,11 @@ export class TaskService {
     if (input.start) {
       // The children start one by one as the plan allows: overlap, links and limits are checked first.
       for (const t of made) {
-        this.deps.store.tasks.setStartWhenReady(t.id, true);
-        this.deps.store.tasks.setStatus(t.id, "ready", undefined, this.now().toISOString());
+        await this.lifecycle.apply(
+          t.id,
+          { type: "wishStart" },
+          { ctx: { by: "owner" }, skip: ["publishTask"] },
+        );
         this.deps.room.publishTask(this.get(t.id));
       }
       await this.orchestrator.advance();
@@ -1612,14 +1749,22 @@ export class TaskService {
         409,
       );
     }
-    await this.deps.runs.stop(id);
-    await this.deps.processes?.stopTask(id);
-    await this.deps.containers?.taskEnded(id);
     this.deps.terminals?.killKey(taskTerminalKey(id));
     this.deps.store.tasks.setPendingShip(id, undefined);
-    this.deps.store.tasks.setStatus(id, "done", undefined, this.now().toISOString());
-    this.cards.settle(id, "review", opts.reviewText ?? "Marked done", opts.by ?? "owner");
-    this.cards.settle(id, "paused", "Closed", opts.by ?? "owner");
+    // Stops the runs, processes and services, and settles the review and paused cards.
+    const closedOut = await this.lifecycle.apply(
+      id,
+      { type: "close" },
+      {
+        ctx: {
+          by: opts.by ?? "owner",
+          settle: opts.reviewText ?? "Marked done",
+          settlePaused: "Closed",
+          ending: true,
+        },
+      },
+    );
+    if (wasRefused(closedOut)) throw new UserError(closedOut.text, 409);
     const closed = this.get(id);
     this.deps.room.publishTask(closed);
     await this.statusChanged(id);
@@ -1665,7 +1810,11 @@ export class TaskService {
       this.warn(task.id, `The change was not made: ${why}`);
       throw err;
     }
-    this.deps.store.tasks.setStatus(task.id, "review", undefined, this.now().toISOString());
+    await this.lifecycle.apply(
+      task.id,
+      { type: "changeAndReview" },
+      { ctx: { by: "majhi" }, skip: ["card"] },
+    );
     this.note(task.id, "majhi made this change itself, with no agent. Merge it to keep it.");
     const ready = this.get(task.id);
     this.deps.room.publishTask(ready);
@@ -2042,7 +2191,7 @@ export class TaskService {
     const task = this.get(id);
     if (task.status !== "done") return task;
     const status = task.repos.some((r) => r.worktree !== undefined) ? "review" : "inbox";
-    this.deps.store.tasks.setStatus(id, status, undefined, this.now().toISOString());
+    await this.lifecycle.apply(id, { type: "reopen", to: status }, { ctx: { by: "owner" }, skip: ["card"] });
     if (!isOwnerChat(task)) this.note(id, "Reopened.");
     const reopened = this.get(id);
     if (status === "review") this.cards.review(reopened);
@@ -2432,7 +2581,7 @@ export class TaskService {
     if (task === undefined) return;
     const held = store.tasks.linksTo(id);
     const parent = task.links.find((l) => l.type === "parent")?.task;
-    this.pauseForUnmerged(task, held);
+    await this.pauseForUnmerged(task, held);
     this.orchestrator.childReady(task);
     // Waiting tasks that are free now, and queued ones that a freed slot or account may let in.
     await this.orchestrator.advance();
@@ -2455,7 +2604,7 @@ export class TaskService {
         if (task === undefined) continue;
         const held = store.tasks.linksTo(id);
         const parent = task.links.find((l) => l.type === "parent")?.task;
-        this.pauseForUnmerged(task, held);
+        await this.pauseForUnmerged(task, held);
         if (parent !== undefined) await this.finishParentIfDone(parent);
         await this.plans.settle(task).catch(() => undefined);
         await this.refreshBriefs([id, ...held.map((l) => l.task), ...(parent === undefined ? [] : [parent])]);
@@ -2472,14 +2621,14 @@ export class TaskService {
    * with `merged` do not start on a base without its work: they pause with reason `owner` and say
    * what to do. They stay unmet, and the merge poller keeps watching the open merge requests.
    */
-  private pauseForUnmerged(
+  private async pauseForUnmerged(
     task: Task,
     held: readonly {
       task: string;
       type: TaskLink["type"];
       when?: TaskLink["when"] | undefined;
     }[],
-  ): void {
+  ): Promise<void> {
     const { store } = this.deps;
     if (task.status !== "done") return;
     const open = task.repos.filter((r) => r.mr !== undefined && r.mr.state !== "merged");
@@ -2488,8 +2637,12 @@ export class TaskService {
       if (link.type !== "depends-on" || link.when === "ready") continue;
       const waiting = store.tasks.get(link.task);
       if (waiting?.status !== "inbox" && waiting?.status !== "ready") continue;
-      store.tasks.setStartWhenReady(waiting.id, false);
-      store.tasks.setStatus(waiting.id, "paused", "blocked", this.now().toISOString());
+      await this.lifecycle.apply(
+        waiting.id,
+        { type: "dependencyChanged", change: "closed-unmerged", on: [task.id], at: this.now().toISOString() },
+        // The room line below is what says it; the paused card comes with the readers (step D).
+        { ctx: { by: "majhi" }, skip: ["card", "publishTask"] },
+      );
       this.deps.room.post(waiting.id, `error:${randomUUID()}`, {
         type: "system",
         level: "error",
@@ -2569,8 +2722,11 @@ export class TaskService {
       const waiting = store.tasks.get(l.task);
       if (waiting === undefined) continue;
       if (waiting.status !== "inbox" && waiting.status !== "ready" && waiting.status !== "paused") continue;
-      store.tasks.setStartWhenReady(waiting.id, false);
-      store.tasks.setStatus(waiting.id, "paused", "blocked", this.now().toISOString());
+      await this.lifecycle.apply(
+        waiting.id,
+        { type: "dependencyChanged", change: "removed", on: [removed.id], at: this.now().toISOString() },
+        { ctx: { by: "majhi" }, skip: ["card", "publishTask"] },
+      );
       this.deps.room.post(waiting.id, `error:${randomUUID()}`, {
         type: "system",
         level: "error",
@@ -2833,7 +2989,12 @@ export class TaskService {
       }
       return;
     }
-    this.deps.store.tasks.setStatus(id, "review", undefined, this.now().toISOString());
+    const moved = await this.lifecycle.apply(
+      id,
+      { type: "agentsIdle" },
+      { ctx: { by: "majhi" }, skip: ["card", "publishTask"] },
+    );
+    if (wasRefused(moved)) return;
     await this.parkServices(id as TaskId);
     const reviewed = this.get(id);
     this.cards.review(reviewed);
@@ -2885,9 +3046,13 @@ export class TaskService {
     }
     if (!task.team.includes(p.agent)) return;
     if (task.status !== "running" && task.status !== "review" && task.status !== "paused") return;
-    if (task.status === "paused" && waitsForOwner(task.pausedReason)) return;
+    if (task.status === "paused" && this.waitsForOwner(task.id)) return;
     if (task.status === "review") {
-      this.deps.store.tasks.setStatus(task.id, "running", undefined, this.now().toISOString());
+      await this.lifecycle.apply(
+        task.id,
+        { type: "processEnded" },
+        { ctx: { by: "majhi" }, skip: ["publishTask"] },
+      );
       this.cards.settle(task.id, "review", `${p.id} ended, so @${p.agent} works on`, "majhi");
       this.deps.room.publishTask(this.get(task.id));
       this.deps.events.emit(["tasks"]);
@@ -2912,27 +3077,147 @@ export class TaskService {
     why?: string,
   ): Promise<void> {
     const task = this.deps.store.tasks.get(id);
-    if (task === undefined || (task.status !== "running" && task.status !== "review")) return;
+    if (task === undefined || task.status === "paused") return;
+    const row = this.lifecycle.load(id);
+    if (row === undefined) return;
+    const at = this.now().toISOString();
     // Offline resumes by itself and the lead works on, so its ship still waits. An error does not.
-    if (reason === "error" || reason === "signed-out")
+    // Only a task the model accepts the pause for loses its ship: a refusal changes nothing.
+    const state = this.lifecycle.state(id);
+    if (state !== undefined && (state.status === "running" || state.status === "review")) {
+      if (reason === "error" || reason === "signed-out")
+        this.dropPendingShip(id, "the agent stopped with an error");
+    }
+    await this.lifecycle.apply(
+      id,
+      { type: "runPaused", hold: holdFromRunReason(reason, at, row, why) },
+      { ctx: { by: "majhi", why, reason }, skip: ["dropPendingShip"] },
+    );
+  }
+
+  /**
+   * Restart reconcile: a task left running that nothing could bring back pauses with an error. A
+   * review task, which has no run to lose, pauses the same way.
+   */
+  async lostByRestart(id: string, why: string): Promise<void> {
+    const task = this.deps.store.tasks.get(id);
+    if (task === undefined || task.status === "paused") return;
+    if (task.status === "running") {
       this.dropPendingShip(id, "the agent stopped with an error");
-    this.deps.store.tasks.setStatus(id, "paused", reason, this.now().toISOString());
-    await this.parkServices(id as TaskId);
-    const paused = this.get(id);
-    this.cards.paused(paused, reason, why);
-    this.deps.room.publishTask(paused);
-    await this.statusChanged(id);
+      await this.lifecycle.apply(
+        id,
+        { type: "runLost", at: this.now().toISOString(), autoResume: false },
+        { ctx: { by: "majhi", why, reason: "error" }, skip: ["dropPendingShip"] },
+      );
+      return;
+    }
+    await this.pausedByRuns(id, "error", why);
+  }
+
+  /** The hold is the owner's: majhi never lifts it on its own (the old `waitsForOwner`). */
+  private waitsForOwner(id: string): boolean {
+    const hold = this.lifecycle.state(id)?.hold;
+    return hold !== undefined && hold.cause !== "error" && !lifecycle.liftersOf(hold).includes("majhi");
   }
 
   /** A paused agent resumes by itself: a task majhi paused runs again. Tasks the owner stopped stay stopped. */
   async resumedByRuns(id: string): Promise<void> {
     const task = this.deps.store.tasks.get(id);
-    if (task === undefined || task.status !== "paused" || waitsForOwner(task.pausedReason)) return;
-    this.deps.store.tasks.setStatus(id, "running", undefined, this.now().toISOString());
-    this.cards.settle(id, "paused", "Resumed by itself", "majhi");
+    if (task === undefined || task.status !== "paused") return;
+    const out = await this.lifecycle.apply(
+      id,
+      { type: "runResumed" },
+      {
+        ctx: { by: "majhi", settle: "Resumed by itself" },
+        skip: ["runs.start", "ensureWorktrees", "publishTask"],
+      },
+    );
+    if (wasRefused(out)) return;
     this.deps.room.publishTask(this.get(id));
-    await this.containersRunAgain(id);
     await this.statusChanged(id);
+  }
+
+  /** Runs one effect of a transition. The one place the lifecycle's effects touch the rest of majhi. */
+  private async runEffect(
+    id: string,
+    effect: lifecycle.Effect,
+    ctx: EffectContext,
+    states: { before: lifecycle.TaskState; after: lifecycle.TaskState },
+  ): Promise<void> {
+    const { before, after } = states;
+    switch (effect.kind) {
+      case "card":
+        return this.cardEffect(id, effect.card, ctx, before, after);
+      case "runs.stop":
+        await this.deps.runs.stop(id);
+        return;
+      case "runs.start":
+        await this.startAgents(id);
+        return;
+      case "containers":
+        if (effect.op === "runAgain") await this.containersRunAgain(id);
+        else if (ctx.ending === true) await this.deps.containers?.taskEnded(id);
+        else await this.deps.containers?.taskPaused(id);
+        return;
+      case "processes.stop":
+        await this.deps.processes?.stopTask(id);
+        return;
+      case "terminals.stop":
+        this.deps.terminals?.killKey(taskTerminalKey(id));
+        return;
+      case "parkServices":
+        await this.parkServices(id as TaskId);
+        return;
+      case "dropPendingShip":
+        this.dropPendingShip(id, effect.why);
+        return;
+      case "ensureWorktrees":
+        await this.ensureWorktrees(this.get(id));
+        return;
+      case "startWhenReady":
+        // Written with the state, in the same transaction.
+        return;
+      case "budgets.exempt":
+        this.deps.onOwnerResumedLimit?.(id);
+        return;
+      case "publishTask":
+        this.deps.room.publishTask(this.get(id));
+        return;
+      case "statusChanged":
+        await this.statusChanged(id);
+        return;
+    }
+  }
+
+  /** The cards a transition posts or settles. A paused card only for a task that was not held before. */
+  private cardEffect(
+    id: string,
+    card: "paused" | "settle" | "review" | "mr" | "done",
+    ctx: EffectContext,
+    before: lifecycle.TaskState,
+    after: lifecycle.TaskState,
+  ): void {
+    switch (card) {
+      case "paused": {
+        if (before.hold !== undefined || after.hold === undefined) return;
+        const reason = ctx.reason ?? pausedReasonOf(after.hold);
+        this.cards.paused(this.get(id), reason, ctx.why, ctx.by);
+        return;
+      }
+      case "settle":
+        this.cards.settle(id, "paused", ctx.settle ?? "Resumed", ctx.by);
+        return;
+      case "review":
+        this.cards.review(this.get(id));
+        return;
+      case "mr":
+        this.cards.settle(id, "review", ctx.settle ?? "Opened merge requests", ctx.by);
+        return;
+      case "done":
+        this.cards.settle(id, "review", ctx.settle ?? "Marked done", ctx.by);
+        this.cards.settle(id, "paused", ctx.settlePaused ?? "Closed", ctx.by);
+        return;
+    }
   }
 
   /** The task runs again: its services and preview that stopped with it start again, with one line in the room. */
@@ -3118,6 +3403,11 @@ export class TaskService {
     const task = this.get(input.task);
     if (task.status === "done") throw new UserError(`Task ${task.id} is done.`, 409);
     if (!task.team.includes(input.agent)) throw new UserError(`@${input.agent} is not on this task.`);
+    // Only the owner takes a task with a merge request open back to work. Anyone else leaves a note.
+    if (task.status === "mr" && this.lifterOf(input.by ?? "owner") !== "owner") {
+      this.note(task.id, mrNotRestarted(task.id, input.agent));
+      return;
+    }
     this.cards.settle(task.id, "review", input.settled, input.by ?? "owner");
     if (task.status !== "running") await this.start(task.id);
     const state = this.deps.store.tasks.roomState(task.id);
@@ -3142,6 +3432,10 @@ export class TaskService {
     const lead = task.team[0];
     if (lead === undefined) throw new UserError(`Task ${task.id} has no agent.`, 409);
     this.note(task.id, `Message from scheduler "${input.from}" to @${lead}: ${input.text}`);
+    if (task.status === "mr") {
+      this.note(task.id, mrNotRestarted(task.id, lead));
+      return;
+    }
     this.cards.settle(task.id, "review", `Message from scheduler "${input.from}"`, "majhi");
     // A schedule is not the owner: it resumes no pause of a budget or of autonomous mode by hand.
     if (task.status !== "running") await this.start(task.id, "majhi");

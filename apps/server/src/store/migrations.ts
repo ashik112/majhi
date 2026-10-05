@@ -1532,6 +1532,35 @@ CREATE INDEX audit_agent ON audit (agent);
 `,
   },
   {
+    // The task lifecycle's audit trail (step C, docs/design/task-lifecycle.md sections 4.5 and 12).
+    // `apply()` writes the new state and one row here in the same transaction, a refusal too
+    // (`refused` = 1, nothing else written). `hold` is the cause of the hold after the event,
+    // `from_hold` the one before. `pending_effects` is the outbox: the JSON list of effects that must
+    // not be lost, written in that transaction and cleared once they ran; a restart runs what is left.
+    // 154 is taken by the ops hygiene migration and 155 is left for another branch in flight.
+    id: 156,
+    name: "task lifecycle events",
+    sql: `
+CREATE TABLE task_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  at TEXT NOT NULL,
+  event TEXT NOT NULL,
+  from_status TEXT,
+  to_status TEXT,
+  from_hold TEXT,
+  hold TEXT,
+  actor TEXT NOT NULL,
+  refused INTEGER NOT NULL DEFAULT 0,
+  code TEXT,
+  text TEXT,
+  pending_effects TEXT
+);
+CREATE INDEX task_events_task ON task_events (task, id);
+CREATE INDEX task_events_pending ON task_events (id) WHERE pending_effects IS NOT NULL;
+`,
+  },
+  {
     // Leftovers of removed features (154). The sensors (radar, ci, dependency, eol, opportunity, tracker)
     // no longer exist, so the findings they filed can never be refreshed or closed by anything: the open
     // ones are dismissed once, with the reason. A finding that already has a task, a decision or a

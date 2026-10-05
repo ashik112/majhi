@@ -1,5 +1,16 @@
 # Progress
 
+## Lifecycle C: one apply() for every status write (built, not merged)
+
+Branch `feat/lifecycle-c`. Merge main first (migration 154 is on main from another branch; this one is 156).
+
+- **What changed.** `TaskRepo.setStatus` is gone. Every status change goes through `apply(taskId, event)` in `apps/server/src/tasks/lifecycle/` (`apply.ts`, `rows.ts`, `types.ts`): load the state with `fromStored`, `transition()`, then a refusal writes one `task_events` row and nothing else; otherwise one transaction writes status, `paused_reason`, `paused_by` and `autonomy_tasks.held / held_scope / resumed_at` through `toStored`, the audit row and the outbox, and then the effects run through one runner (`TaskService.runEffect`). Migration 156 adds `task_events` (audit and outbox in one table). `drainOutbox()` runs at start, before the restart reconcile. All 14 writers are routed (tasks, merge requests, runs: `pausedByRuns`, `resumedByRuns`, and the restart reconcile through `runLost`).
+- **What the owner will notice.** Nothing, except: a message to a task with a merge request open from the captain, a hand-off or a schedule leaves a note and does not restart it (the owner's message still sends it back); a scheduled message no longer restarts a task the owner stopped.
+- **Design points to read** (DECISIONS, 2026-10-05, Lifecycle C): two changes to the pure model, found in practice: `sendBack` from `mr` for the owner, and `runResumed` lifts an `error` hold (SPEC 5.7 auto resume). The old pause fields are ambiguous in two places (a gate pause looks like an owner stop, `blocked` is idle or a dependency); each is named and handled until step E.
+- **Census.** `status writes` 15 to 0 (now tracked on `LifecycleRows.commit`), `Task.pausedReason` 41 to 34, `waitsForOwner()` 9 to 6, total outside the lifecycle module 203 to 182. Baseline refreshed, no count rose.
+- **Tests.** `tasks/lifecycle/apply.test.ts` (setStatus not a method, refusal writes only its row, atomic rollback, outbox drains after a crash and drops a stale event, 24 transition rows round-trip with the old columns), `illegal-moves.test.ts` (tell on mr, wish start, logged refusal, scheduler vs owner stop), `store/task-events-migration.test.ts`, transition tests for the two model changes. Task, MR, store, runs, rooms, autonomy, captain, budgets, processes, inbox, notify and automation suites run with `--maxWorkers=3`.
+- **Left.** Creation still inserts the row directly (no event). Raw SQL on `autonomy_tasks` in `autonomy/repo.ts` is not moved to drizzle yet; apply writes those columns with drizzle. Step D (readers, drop `paused`), the tick lock (F). `lostByRestart` for tasks that already have a hold is a no-op as before.
+
 ## Server hot paths (built, not merged)
 
 Branch `perf/hot-paths`. Measured on the audit's seeded rig (2,000 tasks, 750 done), base 72742a34 against this branch, same machine, run back to back. The machine is shared, so read the ratios.

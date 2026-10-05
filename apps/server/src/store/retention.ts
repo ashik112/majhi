@@ -13,6 +13,8 @@ export const RETENTION = {
   batchRows: 500,
   /** The security log. Kept a year. */
   auditDays: 365,
+  /** The task lifecycle's audit trail. Kept a year, with the run history it explains. */
+  taskEventsDays: 365,
   /** Per-turn cost rows. Two years, so a year-on-year spend question still has its data. */
   turnsDays: 730,
   /** The autonomous-mode feed. */
@@ -51,6 +53,8 @@ const DAY_MS = 86_400_000;
 const RULES: readonly TableRule[] = [
   { table: "audit", where: "at < ?", days: RETENTION.auditDays },
   { table: "turns", where: "at < ?", days: RETENTION.turnsDays },
+  // An event with effects left in the outbox is not history yet: the next start runs them.
+  { table: "task_events", where: "pending_effects IS NULL AND at < ?", days: RETENTION.taskEventsDays },
   { table: "autonomy_events", where: "at < ?", days: RETENTION.autonomyEventsDays },
   { table: "outcomes", where: "at < ?", days: RETENTION.outcomesDays },
   { table: "captain_actions", where: "at < ?", days: RETENTION.captainActionsDays },
