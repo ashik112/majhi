@@ -360,8 +360,10 @@ function checkRun(parts: DockerParts, s: Safety): void {
   }
   // Naming an address for the container is how it would reach something of the computer: a forwarder only, and only the one name.
   if (kind !== "hostfwd" && is(flags, "--add-host")) refuse("The docker flag --add-host is not allowed.");
-  if (kind === "hostfwd")
-    return checkHostForward(parts, flags, s, { name, networks, mounts, publishes, pull });
+  if (kind === "hostfwd") {
+    checkHostForward(parts, flags, s, { name, networks, mounts, publishes, pull });
+    return;
+  }
   if (kind === "preview") {
     if (name !== names.previewContainer)
       refuse(`The preview container must be named ${names.previewContainer}.`);
