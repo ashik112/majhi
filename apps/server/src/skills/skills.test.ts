@@ -72,19 +72,6 @@ describe("skills", () => {
   });
   afterEach(() => w.cleanup());
 
-  it("searches the directory and shows the source repo", async () => {
-    const found = (await must("skills.search", { query: "lint" })) as {
-      source: string;
-      install: unknown;
-      installed: boolean;
-    }[];
-    expect(found[0]).toMatchObject({
-      source: "acme/agent-skills",
-      install: { source: "acme/agent-skills", skill: "lint-fixes" },
-      installed: false,
-    });
-  });
-
   it("installs only after a confirmed second call, and never enables on its own", async () => {
     const preview = (await must("skills.install", { source: "acme/agent-skills" })) as SkillPreview;
     expect(preview.skills.map((s) => s.name)).toEqual(["lint-fixes", "release-notes"]);

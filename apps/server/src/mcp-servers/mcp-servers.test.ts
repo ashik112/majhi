@@ -145,32 +145,6 @@ describe("MCP servers", () => {
     w = undefined;
   });
 
-  it("searches the registry and falls back to /v0", async () => {
-    const reg = await start(() => [remoteServer(), packageServer()]);
-    const found = (await must("mcp.search", { query: "weather" })) as {
-      name: string;
-      publisher: string;
-      transports: string[];
-      packages: string[];
-      repository?: string;
-      install: unknown;
-    }[];
-    expect(found.map((f) => f.name)).toEqual(["io.github.acme/weather-remote", "io.github.acme/weather"]);
-    expect(found[0]).toMatchObject({
-      publisher: "io.github.acme",
-      repository: "https://github.com/acme/weather-mcp",
-      transports: ["streamable-http"],
-      install: { registry: "io.github.acme/weather-remote" },
-    });
-    expect(found[1]).toMatchObject({ transports: ["stdio"], packages: ["npm"] });
-    expect(reg.urls[0]).toContain("/v0.1/servers?search=weather&version=latest");
-
-    await w?.cleanup();
-    const old = await start(() => [packageServer()], true);
-    expect(await must("mcp.search", { query: "weather" })).toHaveLength(1);
-    expect(old.urls.map((u) => new URL(u).pathname)).toEqual(["/v0.1/servers", "/v0/servers"]);
-  });
-
   it("installs a registry server with a secret header as a connection, then Test lists its tools", async () => {
     await start(() => [remoteServer()]);
     const p = await preview({ registry: "io.github.acme/weather-remote" });

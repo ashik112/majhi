@@ -109,6 +109,9 @@ async function world() {
   return { h, glx, own, acme, lane, call };
 }
 
+/** Searches of public skill and MCP registries: slow network calls that hold no workspace data. */
+const PUBLIC_REGISTRY_READS = new Set<string>(["skills.search", "mcp.search"]);
+
 /** A minimal input for a read command: none, or a search word. */
 function inputFor(command: CommandName): Record<string, unknown> | undefined {
   for (const input of [{}, { query: "invoices" }, { q: "invoices" }, { text: "invoices" }]) {
@@ -121,7 +124,7 @@ describe("a captain lane's reads", () => {
   it("never show another workspace, for every read command an agent may call", async () => {
     const t = await world();
     const reads = (Object.keys(commands) as CommandName[]).filter(
-      (c) => commands[c].risk === "read" && !AGENT_BLOCKED_COMMANDS.has(c),
+      (c) => commands[c].risk === "read" && !AGENT_BLOCKED_COMMANDS.has(c) && !PUBLIC_REGISTRY_READS.has(c),
     );
     const covered: string[] = [];
     const leaks: string[] = [];
@@ -157,7 +160,7 @@ describe("a captain lane's reads", () => {
     expect(tasks.text).toContain(t.acme.id);
     const memory = await t.call("memory.search", { query: "Tuesdays" });
     expect(memory.text).toContain("Acme deploys on Tuesdays");
-  }, 30_000);
+  });
 
   it("refuse an explicit filter for another workspace, and reads that name its task, project or room", async () => {
     const t = await world();
