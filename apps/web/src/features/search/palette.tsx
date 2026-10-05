@@ -212,7 +212,7 @@ export function Palette({ onClose }: { onClose: () => void }) {
     {
       id: "connections",
       name: "Open connections",
-      keywords: "kubectl kubernetes cluster mcp new relic ssh server env variables keys mail browser",
+      keywords: "kubectl kubernetes cluster new relic ssh server env variables keys mail browser",
       run: () => go(PAGE_PATH.connections),
     },
     {

@@ -13,6 +13,7 @@ describe("the screen map in the captain's prompt", () => {
       expect.arrayContaining([
         "Sidebar > Needs you (/decisions)",
         "Sidebar > Watch (/watch)",
+        "Sidebar foot > Skills & MCP (/skills)",
         "Sidebar foot > Health & usage (/usage)",
         "Settings > Access > Connections (/connections)",
         "Settings > Agents > Memory rules (/setup?section=memory)",
