@@ -210,7 +210,12 @@
 .v2 .cols{display:grid;grid-template-columns:1fr 14px 1fr 14px 1fr;align-items:stretch}
 .v2 .col{padding:12px;display:flex;flex-direction:column;gap:11px;min-width:0}
 .v2 .col .ch{display:flex;align-items:center;gap:8px}
-.v2 .col .ch img{height:44px;width:auto;margin:-4px 0 -6px -2px}
+.v2 .col .ch .mark{height:40px;width:auto;flex:none;margin:-4px 0 -4px -2px}
+.v2 .col .ch .bob{animation:v2bob 3.2s ease-in-out infinite;transform-origin:50% 70%}
+.v2 .col:nth-child(3) .ch .bob{animation-delay:-1.1s}
+.v2 .col:nth-child(5) .ch .bob{animation-delay:-2.2s}
+@keyframes v2bob{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-6px) rotate(-2deg)}}
+@media (prefers-reduced-motion:reduce){.v2 .col .ch .bob{animation:none}}
 .v2 .col .ch b{font-weight:600;font-size:14px}
 .v2 .col .it{display:flex;flex-direction:column;gap:5px;padding-top:9px;border-top:1px solid var(--g-line)}
 .v2 .col .it .v{display:flex;gap:5px;flex-wrap:wrap}
