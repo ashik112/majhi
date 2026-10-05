@@ -27,6 +27,9 @@ describe("neededPerm", () => {
     ["move", undefined, "edit"],
     ["execute", "npm test", "shell"],
     ["execute", "git status", "shell"],
+    ["execute", "git pull origin main", "shell"],
+    ["execute", "git fetch --all --prune", "shell"],
+    ["execute", "cd x && git pull --ff-only", "shell"],
     ["execute", "git push origin main", "push"],
     ["execute", "cd x && git -C y push --force", "push"],
     ["execute", "sh -c 'git push'", "push"],
@@ -56,6 +59,14 @@ describe("decidePermission", () => {
     expect(decide(ask("execute", "npm test"), ["edit"]).action).toBe("ask");
     expect(decide(ask("execute", "git push"), ["shell"]).action).toBe("ask");
     expect(decide(ask("execute", "git push"), ["push"]).action).toBe("allow");
+  });
+
+  it("lets an agent with shell sync from the remote without asking, while a push still asks", () => {
+    for (const line of ["git pull origin main", "git fetch origin", "git -C sub pull --ff-only"]) {
+      expect(decide(ask("execute", line), ["shell"]).action, line).toBe("allow");
+    }
+    expect(decide(ask("execute", "git pull origin main && git push"), ["shell"]).action).toBe("ask");
+    expect(decide(ask("execute", "git push origin main"), ["shell"]).action).toBe("ask");
   });
 
   it("asks for kinds it does not know", () => {

@@ -5,6 +5,28 @@ import { type Harness, harness } from "../testing/harness.ts";
 let h: Harness;
 afterEach(() => h?.cleanup());
 
+describe("update-target approval migration", () => {
+  it("turns a stored confirm for tasks.updateTarget into auto, keeps every other override, and runs once", async () => {
+    h = await harness();
+    const service = h.majhi.services.config;
+    const change = { command: "policy.set", meta: { actor: { kind: "owner" } }, summary: "test" } as const;
+    await service.setSettings(
+      { policy: { commands: { "tasks.updateTarget": "confirm", "tasks.merge": "confirm" } } },
+      change,
+    );
+    expect(await service.migrateUpdateTargetPolicy()).toBe(true);
+    expect((await service.settings()).policy.commands).toEqual({
+      "tasks.updateTarget": "auto",
+      "tasks.merge": "confirm",
+    });
+    expect(await service.migrateUpdateTargetPolicy()).toBe(false);
+    // An owner's own choice other than the old preset value stays.
+    await service.setSettings({ policy: { commands: { "tasks.updateTarget": "when-asked" } } }, change);
+    expect(await service.migrateUpdateTargetPolicy()).toBe(false);
+    expect((await service.settings()).policy.commands).toEqual({ "tasks.updateTarget": "when-asked" });
+  });
+});
+
 describe("settings commands", () => {
   it("saves weekly budgets to majhi.yaml, merges one at a time, removes with null, and refuses bad ones", async () => {
     h = await harness();

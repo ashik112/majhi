@@ -1986,7 +1986,7 @@ export const commands = {
   "tasks.updateTarget": {
     risk: "change",
     summary:
-      "Fetch the MR remote's copy of a target branch and fast-forward the owner's local branch of the same name to it, in the project's checkout. Only when the local branch has no commit the remote lacks; where the branch is checked out, only when no incoming file has uncommitted changes and no untracked path is in the way. Never forced, never a reset, no other branch moves. Refused with the reason otherwise. Agents ask through the owner's approval",
+      "Fetch the MR remote's copy of a target branch and fast-forward the owner's local branch of the same name to it, in the project's checkout. Only when the local branch has no commit the remote lacks; where the branch is checked out, only when no incoming file has uncommitted changes and no untracked path is in the way. Never forced, never a reset, no other branch moves. Refused with the reason otherwise. Agents run it without asking: it only brings in what the remote already has",
     input: z.object({
       id: TaskIdSchema,
       /** The branch to update. Default: each repo's base branch. */

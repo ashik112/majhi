@@ -81,7 +81,8 @@ interface GroupDef {
 export const APPROVAL_GROUP_DEFS: Record<ApprovalGroupId, GroupDef> = {
   bookkeeping: {
     label: "Task bookkeeping",
-    about: "File, split, start, stop, update, link and close tasks, and add or swap team members.",
+    about:
+      "File, split, start, stop, update, link and close tasks, update a local branch from its remote, and add or swap team members.",
     commands: [
       "tasks.create",
       "tasks.split",
@@ -93,6 +94,7 @@ export const APPROVAL_GROUP_DEFS: Record<ApprovalGroupId, GroupDef> = {
       "tasks.close",
       "tasks.reopen",
       "tasks.refreshMrs",
+      "tasks.updateTarget",
       "team.add",
       "tasks.addAgent",
       "tasks.tell",
@@ -172,7 +174,6 @@ export const APPROVAL_GROUP_DEFS: Record<ApprovalGroupId, GroupDef> = {
       "tasks.cancelShip",
       "tasks.setMergeOrder",
       "tasks.markMerged",
-      "tasks.updateTarget",
       "room.cardAction",
     ],
   },

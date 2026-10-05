@@ -418,6 +418,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     () => config.migrateLegacyOrg(),
     (err) => console.error(`Could not rename the Personal org: ${errorMessage(err)}`),
   );
+  background.run(
+    () => config.migrateUpdateTargetPolicy(),
+    (err) => console.error(`Could not update the branch-sync approval setting: ${errorMessage(err)}`),
+  );
   const secrets = new SecretStore(env.majhiHome, env.secretsKeyFile);
   const cache = new AccountCache(env.majhiHome);
   const agentStore = new AgentStore(env.majhiHome);
