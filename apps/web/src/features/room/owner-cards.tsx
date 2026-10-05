@@ -143,6 +143,19 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
   const red = handoff?.current?.verdict === "red" && !checking;
   const notReady = (failed || red) && !checking;
   const progress = checkProgress(handoff, now);
+  // The checks that failed on this head, by name, for the agent's fix request.
+  const failedChecks = (handoff?.current?.steps ?? [])
+    .filter((s) => s.status === "fail" || s.status === "timeout" || s.status === "flaky")
+    .map((s) => `${s.label}: ${s.detail ?? s.status}`);
+  const fix = useMutation({
+    mutationFn: () =>
+      cmd("room.send", {
+        task: task.id,
+        text: `@${lead} The hand-off check failed on your latest commit. ${failedChecks.join("; ")}. Read the failure with the hand-off tool, fix it, commit, and say when it is done.`,
+      }),
+    onError: (error) =>
+      toast("Could not send it to the agent", { detail: describeError(error), tone: "error" }),
+  });
   // Loaded, and no repo changed: there is nothing to ship, whatever the checks said.
   const nothing = options.data !== undefined && !shipping;
   const why = item.why === undefined ? undefined : plainAuthorityText(item.why, workspace);
@@ -172,8 +185,26 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
         line={line}
         actions={
           <>
+            {notReady && lead !== undefined && failedChecks.length > 0 && (
+              <Button
+                size="sm"
+                variant="primary"
+                data-primary-action=""
+                disabled={fix.isPending}
+                onClick={() => fix.mutate()}
+              >
+                Fix with agent
+              </Button>
+            )}
             {shipping && (
-              <Ship task={task} run={run} lead={lead} align="left" variant="primary" primaryAction />
+              <Ship
+                task={task}
+                run={run}
+                lead={lead}
+                align="left"
+                variant={notReady && failedChecks.length > 0 ? "secondary" : "primary"}
+                primaryAction={!(notReady && failedChecks.length > 0)}
+              />
             )}
             <Button
               size="sm"
