@@ -603,6 +603,13 @@ export class RunManager {
     this.deliveries.set(task, next);
   }
 
+  /** Lets a run take what is queued: clears a hold and drives it unless it is paused. */
+  private letRunTake(run: AgentRun): void {
+    run.held = false;
+    this.live.refreshQueued(run);
+    if (run.paused === undefined) void this.drive(run);
+  }
+
   /**
    * Wakes an agent with a message from majhi, like a background process that ended (5.15): sent
    * now when it is idle, else on its next turn. Starts its session if needed.
@@ -610,9 +617,7 @@ export class RunManager {
   notify(task: string, agent: string, text: string): void {
     const run = this.runFor(task, agent);
     run.queue.push({ kind: "notice", text });
-    run.held = false;
-    this.live.refreshQueued(run);
-    if (run.paused === undefined) void this.drive(run);
+    this.letRunTake(run);
   }
 
   /**
@@ -633,9 +638,7 @@ export class RunManager {
     if (run.processEnds.some((e) => sameRun(e, p))) return;
     run.processEnds.push(p);
     if (!run.queue.some((e) => e.kind === "processes")) run.queue.push({ kind: "processes" });
-    run.held = false;
-    this.live.refreshQueued(run);
-    if (run.paused === undefined) void this.drive(run);
+    this.letRunTake(run);
   }
 
   /** The owner changed an agent's model or effort for this task: a live session switches now (5.15). */
@@ -675,9 +678,7 @@ export class RunManager {
     const item = this.deps.room.get(task.id, id);
     if (item === undefined) throw new Error("The handoff was not stored");
     run.queue.push({ kind: "handoff", itemId: id });
-    run.held = false;
-    this.live.refreshQueued(run);
-    if (run.paused === undefined) void this.drive(run);
+    this.letRunTake(run);
     return item;
   }
 
@@ -742,9 +743,7 @@ export class RunManager {
     if (cut && !carried.some((e) => e.kind === "brief")) carried.unshift({ kind: "notice", text: note });
     if (carried.length === 0) return false;
     next.queue = [...carried, ...next.queue];
-    next.held = false;
-    this.live.refreshQueued(next);
-    if (next.paused === undefined) void this.drive(next);
+    this.letRunTake(next);
     return true;
   }
 
