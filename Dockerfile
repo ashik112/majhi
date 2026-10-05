@@ -172,6 +172,17 @@ COPY --from=doctl /out/doctl /usr/local/bin/doctl
 # `docker` for scripts in a run (a repo's hand-off check, tests): a shim that sends the call to majhi,
 # which runs the task's own containers (apps/server/src/containers/task-docker.ts). No Docker, no socket.
 COPY --chmod=0755 docker/docker-shim.mjs /usr/local/bin/docker
+# Every run starts through majhi-netguard (SPEC 6): as root with a few capabilities it closes the
+# container's route to services on the owner's own computer (iptables), then drops to the owner's
+# uid with no capabilities. See docker/netguard.mjs.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends iptables \
+  && rm -rf /var/lib/apt/lists/*
+COPY --chmod=0755 docker/netguard.mjs /usr/local/lib/majhi/netguard.mjs
+COPY --chmod=0755 docker/majhi-netguard /usr/local/bin/majhi-netguard
+# A service on the owner's computer (SPEC 5.14) reaches a task through a forwarder that runs this
+# script from the same image, on the task's network. See docker/portforward.mjs.
+COPY --chmod=0755 docker/portforward.mjs /usr/local/lib/majhi/portforward.mjs
 # /etc/passwd stays read-only, and setuid/setgid bits are stripped from every binary, so an agent
 # process has no path to root.
 RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +

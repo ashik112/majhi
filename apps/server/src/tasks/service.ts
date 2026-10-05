@@ -465,8 +465,14 @@ export class TaskService {
     }
     const connections = [...new Set(input.connections ?? [])];
     for (const id of connections) {
-      if (!Object.values(connectionScopes(sections)).some((o) => o.connections?.[id] !== undefined)) {
-        throw new UserError(`There is no connection ${id}.`, 404);
+      const named = Object.values(connectionScopes(sections)).find((o) => o.connections?.[id] !== undefined);
+      if (named === undefined) throw new UserError(`There is no connection ${id}.`, 404);
+      // A service on this computer is the owner's grant alone: an agent never names one for a task.
+      if (named.connections?.[id]?.type === "host" && input.byOwner !== true) {
+        throw new UserError(
+          `Only the owner lets a task reach ${id}, a service on this computer. Ask the owner to create the task.`,
+          409,
+        );
       }
     }
 

@@ -222,6 +222,12 @@ function explain(err: unknown, image: string): { detail: string; rebuild?: boole
   if (/No such image|Unable to find image|pull access denied/i.test(text)) {
     return { detail: `The runner image ${image} is missing, so agents cannot run.`, rebuild: true };
   }
+  if (text.includes("majhi-netguard")) {
+    return {
+      detail: `The runner image ${image} is older than this majhi and has no network guard, so agents cannot start.`,
+      rebuild: true,
+    };
+  }
   if (/permission denied.*docker\.sock|Cannot connect to the Docker daemon/i.test(text)) {
     return { detail: "majhi cannot reach Docker to start agent runs.", rebuild: true };
   }

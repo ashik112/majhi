@@ -22,6 +22,8 @@ import {
   type FieldKind,
   formatIssue,
   GLOBAL_CONNECTIONS,
+  hostPorts,
+  MAJHI_OWN_PORTS,
   type OrgConfig,
   reservedVariable,
   suggestConnectionId,
@@ -68,6 +70,8 @@ export interface ConnectionDeps {
   fieldsChanged?: (connection: string) => void;
   /** Where a connection stands (the health service), for its view. */
   health?: (connection: string) => ConnectionHealth | undefined;
+  /** The ports majhi itself listens on, which no service on this computer may name (with the default 7070). */
+  ownPorts?: () => readonly number[];
 }
 
 interface Found {
@@ -128,6 +132,9 @@ export class ConnectionService {
 
   async create(input: ConnectionCreateInput, command: string, meta: CommandMeta): Promise<ConnectionView> {
     assertGlobalOwner(input.org, meta);
+    if (input.type === "host") {
+      assertHostService({ org: input.org, ports: input.fields?.ports }, meta, this.reservedPorts());
+    }
     // An id is also the name of the connection's MCP server, so it never takes one of majhi's own.
     if (input.id !== undefined && RESERVED_IDS.has(input.id)) {
       throw new UserError(`${input.id} is the name of one of majhi's own tools. Pick another id.`);
@@ -168,6 +175,9 @@ export class ConnectionService {
     await this.deps.config.change({ command, meta, summary: `edited connection ${input.id}` }, async () => {
       const found = await this.require(input.id);
       assertGlobalOwner(found.org, meta);
+      if (found.connection.type === "host") {
+        assertHostService({ org: found.org, ports: input.fields?.ports }, meta, this.reservedPorts());
+      }
       const next: ConnectionConfig = { ...found.connection };
       if (input.agentsOff !== undefined) {
         const before = new Set(next.agents_off ?? []);
@@ -339,6 +349,10 @@ export class ConnectionService {
       await writeConnection(this.deps.config.file, found.org, found.entry, id, checked(next));
     });
     return this.get(id);
+  }
+
+  private reservedPorts(): readonly number[] {
+    return [...MAJHI_OWN_PORTS, ...(this.deps.ownPorts?.() ?? [])];
   }
 
   private async sections(): Promise<ConfigSections> {
@@ -612,4 +626,28 @@ function viewOf(
 function assertGlobalOwner(org: string, meta: CommandMeta): void {
   if (org === GLOBAL_CONNECTIONS && meta.actor.kind !== "owner")
     throw new UserError("Only the owner changes Global connections, on the Connections page.", 409);
+}
+
+/**
+ * A service on this computer opens a hole in the sandbox (SPEC 5.14), so only the owner adds or
+ * changes one, never an agent or the captain, and only inside one workspace: a Global one would
+ * reach the computer from every workspace. Its ports never include majhi's own.
+ */
+export function assertHostService(
+  input: { org: string; ports: string | null | undefined },
+  meta: CommandMeta,
+  reserved: readonly number[],
+): void {
+  if (meta.actor.kind !== "owner") {
+    throw new UserError(
+      "Only the owner lets agents reach a service on this computer, on the Connections page.",
+      409,
+    );
+  }
+  if (input.org === GLOBAL_CONNECTIONS) {
+    throw new UserError("A service on this computer belongs to one workspace, not to Global.", 409);
+  }
+  if (input.ports === undefined || input.ports === null) return;
+  const own = hostPorts(input.ports).find((p) => reserved.includes(p));
+  if (own !== undefined) throw new UserError(`Port ${own} is majhi's own. No agent may reach it.`, 409);
 }

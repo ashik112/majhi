@@ -9,6 +9,7 @@ import {
   type ConnectionType,
   cliRunEnv,
   cliTool,
+  hostPorts,
   type ServiceProduct,
   serviceByUrl,
   textValue,
@@ -48,7 +49,18 @@ export interface RunPlan {
   profiles: string[];
   /** Connections left out, and why, for the room. */
   problems: string[];
+  /** Services on this computer the run reaches as `<id>.host`: majhi starts their forwarder before the run. */
+  hostServices: HostService[];
 }
+
+/** One service on the owner's computer a run may reach: the connection id gives the name `<id>.host`. */
+export interface HostService {
+  id: string;
+  ports: number[];
+}
+
+/** The name agents reach a service on this computer by, on the task's network. */
+export const hostAlias = (id: string): string => `${id}.host`;
 
 export interface PlanDeps {
   secrets: Pick<SecretStore, "get">;
@@ -61,6 +73,8 @@ export interface PlanDeps {
    * The run gets it as a header at session start; the refresh token never leaves majhi.
    */
   oauth?: ((connection: string) => Promise<{ token: string } | { problem: string }>) | undefined;
+  /** Whether a connection's one state is `connected`. A service on this computer is offered only then. */
+  connected?: ((connection: string) => boolean) | undefined;
   /** The workspace's own git sign-in for a host, renewed when it ends soon (a `git` connection). */
   gitToken?:
     | ((org: string, provider: GitProvider, host: string) => Promise<{ token: string } | { problem: string }>)
@@ -115,6 +129,7 @@ export async function planConnections(
     uses: [],
     profiles: [],
     problems: [],
+    hostServices: [],
   };
   const setBy = new Map<string, string>();
   const setVar = (owner: string, name: string, value: string) => {
@@ -268,6 +283,19 @@ export async function planConnections(
         gate(h);
         use(h, useLine(h));
         break;
+      case "host": {
+        // Plain network access, so nothing for the gate to classify. Offered only while its check passes.
+        const ports = hostPorts(c.fields?.ports);
+        if (ports.length === 0 || deps.connected?.(h.id) !== true) {
+          plan.problems.push(
+            `${h.id} is not connected, so the run does not get it. Check it on the Connections page.`,
+          );
+          break;
+        }
+        plan.hostServices.push({ id: h.id, ports });
+        use(h, useLine(h));
+        break;
+      }
       case "api": {
         // The owner's sign-in for this workspace, as a short-lived token in one variable. The
         // refresh token never leaves majhi.
@@ -469,6 +497,10 @@ export function useLine(h: HeldConnection, current = false): string {
     case "cli": {
       const tool = cliTool(textValue(c, "tool") ?? "");
       return `${tool?.binary ?? "The tool"} is signed in for this workspace only${textValue(c, "account") === undefined ? "" : ` as ${textValue(c, "account")}`}. Commands that change something ask the owner first.`;
+    }
+    case "host": {
+      const ports = hostPorts(c.fields?.ports);
+      return `${hostAlias(h.id)}: ports ${ports.join(", ")}. Reach it at ${hostAlias(h.id)}:${ports[0] ?? "<port>"}. Nothing else on the owner's computer is reachable.`;
     }
     case "ssh":
       return `Run a command on it with the majhi-connections ssh tool (connection ${h.id}). Commands that change something wait for the owner.`;

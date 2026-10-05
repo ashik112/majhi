@@ -186,6 +186,15 @@ const CLI_OWNED = new Set([
   "DOCKER_TLS_VERIFY",
 ]);
 
+/** The entry of every run (docker/majhi-netguard in the runner image). */
+export const NETGUARD = "majhi-netguard";
+
+/**
+ * What the entry needs while it works, dropped before the agent starts: iptables rules, and the
+ * switch to the owner's uid with an empty capability set.
+ */
+export const NETGUARD_CAPS = ["NET_ADMIN", "SETUID", "SETGID", "SETPCAP"];
+
 /** The `docker run` arguments for one run. Environment values are passed by name only. */
 export function dockerRunArgs(
   req: SpawnRequest,
@@ -209,6 +218,7 @@ export function dockerRunArgs(
     ...(req.task === undefined ? [] : (cfg.taskNetworks?.(req.task) ?? []).flatMap((n) => ["--network", n])),
     "--cap-drop",
     "ALL",
+    ...NETGUARD_CAPS.flatMap((c) => ["--cap-add", c]),
     "--security-opt",
     "no-new-privileges",
     "--pids-limit",
@@ -220,7 +230,6 @@ export function dockerRunArgs(
     // A lower weight than the default 1024 when the machine is busy (hand-off checks).
     ...(req.limits?.cpuShares === undefined ? [] : ["--cpu-shares", req.limits.cpuShares]),
   ];
-  if (cfg.user) args.push("--user", cfg.user);
   args.push("--workdir", req.scratch ? "/tmp" : req.cwd);
   for (const m of runMounts(req, cfg)) {
     const p = resolve(m.path);
@@ -231,7 +240,9 @@ export function dockerRunArgs(
     // The CLI needs its own PATH and HOME, so these go by value. They are never secrets.
     args.push("--env", CLI_OWNED.has(key) ? `${key}=${req.env[key]}` : key);
   }
-  args.push(cfg.image, req.command.command, ...req.command.args);
+  // The run starts as root only inside majhi-netguard, which closes the route to the owner's own
+  // computer and drops to the owner's uid with no capabilities before the agent starts.
+  args.push(cfg.image, NETGUARD, cfg.user ?? "0:0", req.command.command, ...req.command.args);
   return args;
 }
 

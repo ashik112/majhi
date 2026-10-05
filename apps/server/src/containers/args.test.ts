@@ -11,6 +11,8 @@ import {
   type DockerParts,
   dockerArgv,
   envByName,
+  hostForwardRunArgs,
+  hostNetworkCreateArgs,
   type Limits,
   networkCreateArgs,
   previewRunArgs,
@@ -417,5 +419,96 @@ describe("environment values stay off the command line", () => {
     expect(moved.parts.flags).toContain("PATH=/custom");
     // The check runs on the call as built, before the values move.
     expect(() => assertSafe(parts, safety)).not.toThrow();
+  });
+});
+
+describe("the forwarder of a service on the owner's computer", () => {
+  const image = "majhi-runner:dev";
+  const from = "192.168.171.0/24";
+  const forward = () => hostForwardRunArgs(safety, limits, { id: "kilby", ports: [8000, 5432], from, image });
+  const pairs = (parts: DockerParts, flag: string) =>
+    parts.flags.flatMap((f, i) => (parts.flags[i - 1] === flag ? [f] : []));
+
+  it("listens on the declared ports only and joins the task's network and its own, nothing else", () => {
+    const parts = forward();
+    expect(parts.command).toEqual([
+      "node",
+      "/usr/local/lib/majhi/portforward.mjs",
+      "--from",
+      from,
+      "8000",
+      "5432",
+    ]);
+    expect(pairs(parts, "--network")).toEqual(["name=majhi-acm-1,alias=kilby.host", "majhi-acm-1-host"]);
+    expect(pairs(parts, "--publish")).toEqual([]);
+    expect(pairs(parts, "--mount")).toEqual([]);
+    expect(pairs(parts, "--env")).toEqual([]);
+    expect(pairs(parts, "--cap-add")).toEqual(["NET_BIND_SERVICE"]);
+    expect(pairs(parts, "--add-host")).toEqual(["host.docker.internal:host-gateway"]);
+    // The runner network is the one a forwarder never joins: a runner of another task could reach it there.
+    expect(dockerArgv(parts)).not.toContain("majhi-runners");
+  });
+
+  it("is refused when it names majhi's own port or one that is not a port", () => {
+    const named = (ports: number[], s: Safety = safety) =>
+      hostForwardRunArgs(s, limits, { id: "kilby", ports, from: "192.168.171.0/24", image });
+    expect(() => named([7070])).toThrow(ContainerRefused);
+    expect(() => named([8000, 0])).toThrow(ContainerRefused);
+    expect(() => named([65536])).toThrow(ContainerRefused);
+    expect(() => named([9191], { ...safety, ownPorts: [9191] })).toThrow(ContainerRefused);
+  });
+
+  it("is refused once any flag is widened: another network, a published port, a mount or a wider command", () => {
+    const base = forward();
+    const tampered = (extra: string[], command = base.command): DockerParts => ({
+      ...base,
+      flags: [...base.flags, ...extra],
+      command,
+    });
+    expect(() => assertSafe(base, safety)).not.toThrow();
+    expect(() => assertSafe(tampered(["--network", "majhi-runners"]), safety)).toThrow(ContainerRefused);
+    expect(() => assertSafe(tampered(["--publish", "127.0.0.1::8000"]), safety)).toThrow(ContainerRefused);
+    expect(() => assertSafe(tampered(["--mount", "type=volume,target=/data"]), safety)).toThrow(
+      ContainerRefused,
+    );
+    expect(() => assertSafe(tampered(["--cap-add", "NET_ADMIN"]), safety)).toThrow(ContainerRefused);
+    expect(() => assertSafe(tampered(["--add-host", "db.internal:10.0.0.5"]), safety)).toThrow(
+      ContainerRefused,
+    );
+    expect(() => assertSafe(tampered([], ["sh", "-c", "nc host.docker.internal 22"]), safety)).toThrow(
+      ContainerRefused,
+    );
+    expect(() => assertSafe(tampered([], [...base.command, "7070"]), safety)).toThrow(ContainerRefused);
+  });
+
+  it("answers only the task's own subnet, never everyone", () => {
+    const from = (cidr: string) =>
+      hostForwardRunArgs(safety, limits, { id: "kilby", ports: [8000], from: cidr, image });
+    expect(() => from("192.168.171.0/24")).not.toThrow();
+    for (const wide of [
+      "0.0.0.0/0",
+      "0.0.0.0/4",
+      "",
+      "192.168.171.0",
+      "192.168.171.0/24/1",
+      "a.b.c.d/24",
+      "192.168.171.256/24",
+    ]) {
+      expect(() => from(wide), wide).toThrow(ContainerRefused);
+    }
+    const base = forward();
+    expect(() =>
+      assertSafe({ ...base, command: base.command.filter((a) => a !== "--from") }, safety),
+    ).toThrow(ContainerRefused);
+  });
+
+  it("has its own network, the one with a route out, and only a forwarder may use it", () => {
+    const made = hostNetworkCreateArgs(safety);
+    expect(() => assertSafe(made, safety)).not.toThrow();
+    expect(() => assertSafe({ ...made, flags: ["--internal", ...made.flags] }, safety)).toThrow(
+      ContainerRefused,
+    );
+    // Any other name still needs --internal.
+    expect(() => assertSafe({ ...made, image: "majhi-elsewhere" }, safety)).toThrow(ContainerRefused);
   });
 });

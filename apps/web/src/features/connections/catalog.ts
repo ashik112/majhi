@@ -106,6 +106,11 @@ const OWN_TYPES: readonly { type: ConnectionType; name: string; summary: string 
   { type: "env", name: "API keys and values", summary: "Named values for any tool or API." },
   { type: "mcp", name: "MCP server by command", summary: "A local command, or a server with headers." },
   { type: "git", name: "Git host CLI", summary: "glab or gh signed in for this workspace." },
+  {
+    type: "host",
+    name: "Service on this computer",
+    summary: "Let agents reach a local stack, port by port. Nothing else.",
+  },
 ];
 
 /** Every card the dialog can show, with the other ways folded under the service they belong to. */

@@ -142,7 +142,13 @@ export function connectionHandlers(
     "connections.types": async () => [...CONNECTION_TYPES],
     "connections.list": (input) => connections.list(input.org),
     "connections.get": (input) => connections.get(input.id),
-    "connections.create": (input, ctx) => connections.create(input, ctx.command, ctx.meta),
+    "connections.create": async (input, ctx) => {
+      const created = await connections.create(input, ctx.command, ctx.meta);
+      // A service on this computer is connected only after a real check passes, so saving checks it.
+      if (created.type !== "host") return created;
+      await tester.test(created.id);
+      return connections.get(created.id);
+    },
     "connections.update": async (input, ctx) => {
       if (ctx.meta.actor.kind === "agent") {
         const given = (keys: readonly string[]) =>
@@ -168,7 +174,10 @@ export function connectionHandlers(
           );
         }
       }
-      return connections.update(input, ctx.command, ctx.meta);
+      const updated = await connections.update(input, ctx.command, ctx.meta);
+      if (updated.type !== "host" || input.fields === undefined) return updated;
+      await tester.test(updated.id);
+      return connections.get(updated.id);
     },
     "connections.remove": async (input, ctx) => {
       const found = await connections.find(input.id);

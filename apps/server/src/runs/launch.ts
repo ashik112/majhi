@@ -123,7 +123,12 @@ export interface LaunchDeps {
   /** Serena can start in the runner container (5.9 item 6). Undefined when agents do not run in one. */
   serena?: SerenaLaunch | undefined;
   /** Where connections keep their files (5.14). Undefined: runs get no connections. */
-  connectionFiles?: Pick<RunFilesDeps, "connectionDir" | "browsersPath" | "oauth" | "gitToken"> | undefined;
+  connectionFiles?:
+    | Pick<
+        RunFilesDeps,
+        "connectionDir" | "browsersPath" | "oauth" | "gitToken" | "connected" | "hostServices"
+      >
+    | undefined;
   /** The skills store (SPEC 5.2): each run gets read-only copies of its agent's enabled skills. */
   skills?: Pick<SkillStore, "get" | "pathOf" | "effectiveFor"> | undefined;
   /**
@@ -147,6 +152,8 @@ export interface Launched {
   tools: string[];
   /** Things the room should hear about this start, such as a tool left out. */
   notices: string[];
+  /** Lines for the room that say what the run gained, one per connection id, posted once. */
+  notes: { id: string; text: string }[];
   /** Fixed model and effort asked for (undefined for `auto` and for the ACP default). */
   model?: string | undefined;
   effort?: string | undefined;
@@ -292,6 +299,7 @@ export async function launch(
     roomTokens: roomTokens.length === 0 ? undefined : roomTokens,
     tools: mcpServers.map((m) => m.name),
     notices,
+    notes: held?.notes ?? [],
     model,
     effort,
     ...(held === undefined

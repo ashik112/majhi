@@ -1,0 +1,11 @@
+#!/bin/sh
+# Entry of every runner container: usage `majhi-netguard <uid>:<gid> <command> [args...]`.
+# Closes the container's route to the computer it runs on (netguard.mjs), then drops to the owner's
+# uid with an empty capability set and no way back (setpriv), and starts the run. It fails closed:
+# a rule that cannot be set means the run does not start. Programs are called by path: the run's
+# own PATH is not this script's to trust.
+set -e
+who="$1"
+shift
+/usr/local/bin/node /usr/local/lib/majhi/netguard.mjs
+exec /usr/bin/setpriv --reuid "${who%%:*}" --regid "${who##*:}" --clear-groups --bounding-set -all --inh-caps -all --no-new-privs -- "$@"

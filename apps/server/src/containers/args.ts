@@ -6,7 +6,10 @@ import {
   type ContainerKind,
   ContainerNameSchema,
   ContainerPathSchema,
+  hostPortsIssue,
+  IdSchema,
   ImageRefSchema,
+  MAJHI_OWN_PORTS,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import { containerNames } from "./names.ts";
@@ -100,6 +103,8 @@ export interface Safety extends HostPaths {
   runnerNetwork: string;
   /** The task folder. Builds read only from inside it. */
   taskFolder: string;
+  /** Ports majhi itself listens on, besides its default: no forwarder may name one. */
+  ownPorts?: readonly number[] | undefined;
 }
 
 export interface Limits {
@@ -266,6 +271,7 @@ const RUN_FLAGS: FlagTable = {
   "--pull": true,
   "--read-only": false,
   "--tmpfs": true,
+  "--add-host": true,
 };
 
 const PUBLISH = /^127\.0\.0\.1::([1-9][0-9]{0,4})$/;
@@ -274,6 +280,10 @@ const NAMED_MOUNT = /^type=volume,source=([^,]+),target=([^,]+)$/;
 const DBCHECK_NAME = /^majhi-dbcheck-[a-z0-9]{8,16}$/;
 const DBCHECK_TMPFS = "/tmp:rw,noexec,nosuid,size=16m";
 const SERVICE_NETWORK = /^name=([^,]+),alias=([^,]+)$/;
+/** The only name a forwarder resolves the computer by: Docker Desktop and OrbStack know it, and Linux gets it from this flag. */
+export const HOST_TARGET = "host.docker.internal";
+/** Where a forwarder runs from: the script in the runner image (docker/portforward.mjs). */
+export const HOST_FORWARD_SCRIPT = "/usr/local/lib/majhi/portforward.mjs";
 
 /** Where a script run sees the programs majhi installed and checked for its workspace. */
 export const TOOLS_TARGET = "/majhi-tools";
@@ -297,8 +307,11 @@ function checkRun(parts: DockerParts, s: Safety): void {
   // Every container: no capabilities but the few, no new privileges, limits, removal and labels.
   if (!is(flags, "--rm")) refuse("A container must run with --rm.");
   if (one(flags, "--cap-drop") !== "ALL") refuse("A container must drop all capabilities.");
+  // A forwarder adds only NET_BIND_SERVICE, which checkHostForward checks; every other container, the usual few.
+  const forwarder = all(flags, "--label").includes("majhi.container=hostfwd");
   for (const cap of all(flags, "--cap-add")) {
-    if (!CAPS.includes(cap)) refuse(`The capability ${shown(cap)} is not allowed.`);
+    if (!CAPS.includes(cap) && !(forwarder && cap === "NET_BIND_SERVICE"))
+      refuse(`The capability ${shown(cap)} is not allowed.`);
   }
   const options = all(flags, "--security-opt");
   if (options.length !== 1 || options[0] !== "no-new-privileges") {
@@ -308,7 +321,7 @@ function checkRun(parts: DockerParts, s: Safety): void {
   if (!/^[1-9][0-9]{0,2}$/.test(pids) || Number(pids) > PIDS_LIMIT)
     refuse(`The process limit ${pids} is not allowed.`);
   checkLimits(flags);
-  const kind = checkLabels(flags, s, ["preview", "service", "dbcheck"]);
+  const kind = checkLabels(flags, s, ["preview", "service", "dbcheck", "hostfwd"]);
   const name = one(flags, "--name");
   checkKeyValues(all(flags, "--env"), 32, 4_000, "environment variables");
   if (parts.command.length > 32 || parts.command.some((a) => a.length > 2_000 || a.includes("\u0000"))) {
@@ -345,6 +358,10 @@ function checkRun(parts: DockerParts, s: Safety): void {
     }
     return;
   }
+  // Naming an address for the container is how it would reach something of the computer: a forwarder only, and only the one name.
+  if (kind !== "hostfwd" && is(flags, "--add-host")) refuse("The docker flag --add-host is not allowed.");
+  if (kind === "hostfwd")
+    return checkHostForward(parts, flags, s, { name, networks, mounts, publishes, pull });
   if (kind === "preview") {
     if (name !== names.previewContainer)
       refuse(`The preview container must be named ${names.previewContainer}.`);
@@ -405,6 +422,80 @@ function checkRun(parts: DockerParts, s: Safety): void {
       );
     }
   }
+}
+
+/**
+ * A forwarder of a service on the owner's computer (SPEC 5.14): the one container majhi starts that
+ * can reach the computer. It joins the task's network under `<id>.host` and its own network that no
+ * runner joins, listens on the declared ports only, forwards each to the same port of the computer,
+ * and has no capability but binding low ports, no mount and no published port.
+ */
+function checkHostForward(
+  parts: DockerParts,
+  flags: Flag[],
+  s: Safety,
+  found: {
+    name: string;
+    networks: string[];
+    mounts: string[];
+    publishes: string[];
+    pull: string | undefined;
+  },
+): void {
+  const names = containerNames(s.task);
+  const prefix = `majhi-${names.key}-host-`;
+  const id = found.name.startsWith(prefix) ? found.name.slice(prefix.length) : "";
+  if (!matches(IdSchema, id)) refuse(`A forwarder is named ${prefix}<connection>.`);
+  if (found.pull !== "never") refuse("A forwarder must run with --pull never.");
+  if (found.mounts.length > 0 || found.publishes.length > 0)
+    refuse("A forwarder has no mount and publishes no port.");
+  if (!is(flags, "--read-only")) refuse("A forwarder runs with a read-only root.");
+  if (all(flags, "--cap-add").some((cap) => cap !== "NET_BIND_SERVICE"))
+    refuse("A forwarder may add only NET_BIND_SERVICE.");
+  if (all(flags, "--env").length > 0) refuse("A forwarder takes no environment.");
+  // The task's network under its alias, then the forwarder's own: nothing else, so no runner can reach it by address.
+  const [joined, own, ...more] = found.networks;
+  const task = SERVICE_NETWORK.exec(joined ?? "");
+  if (
+    task === null ||
+    task[1] !== names.network ||
+    task[2] !== `${id}.host` ||
+    own !== names.hostNetwork ||
+    more.length > 0
+  ) {
+    refuse(
+      `A forwarder joins ${names.network} as ${id}.host and ${names.hostNetwork}, and no other network.`,
+    );
+  }
+  if (all(flags, "--add-host").some((h) => h !== `${HOST_TARGET}:host-gateway`))
+    refuse(`A forwarder may only name ${HOST_TARGET}.`);
+  // The command is the script, the task network's subnet it accepts connections from, and the ports: nothing else.
+  const [node, script, fromFlag, from, ...ports] = parts.command;
+  if (node !== "node" || script !== HOST_FORWARD_SCRIPT || fromFlag !== "--from")
+    refuse("A forwarder runs only majhi's forwarding script.");
+  if (!isIpv4Cidr(from ?? "")) refuse("A forwarder accepts connections from the task network's subnet.");
+  const reserved = [...MAJHI_OWN_PORTS, ...(s.ownPorts ?? [])];
+  const issue = hostPortsIssue("A forwarder's ports", ports.join(" "));
+  if (issue !== undefined || ports.some((p) => reserved.includes(Number(p)))) {
+    refuse(issue ?? "A forwarder may not name a port majhi listens on.");
+  }
+  if (ports.some((p) => String(Number(p)) !== p)) refuse("A forwarder's ports are plain numbers.");
+  if (!matches(ImageRefSchema, parts.image ?? "")) refuse("A forwarder runs majhi's runner image.");
+}
+
+/** An IPv4 subnet like `192.168.171.0/24`: four octets and a prefix of 8 to 32. */
+export function isIpv4Cidr(text: string): boolean {
+  const [address = "", bits = "", ...rest] = text.split("/");
+  const octets = address.split(".");
+  const prefix = Number(bits);
+  const whole = (v: string, max: number) => v !== "" && String(Number(v)) === v && Number(v) <= max;
+  return (
+    rest.length === 0 &&
+    octets.length === 4 &&
+    octets.every((o) => whole(o, 255)) &&
+    whole(bits, 32) &&
+    prefix >= 8
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -501,6 +592,13 @@ const NETWORK_FLAGS: FlagTable = { "--internal": false, "--driver": true, "--lab
 
 function checkNetworkCreate(parts: DockerParts, s: Safety): void {
   const flags = parseFlags(parts.flags, NETWORK_FLAGS);
+  // A forwarder's own network is the one network with a route out, and only forwarders join it.
+  if (parts.image === containerNames(s.task).hostNetwork) {
+    if (is(flags, "--internal") || one(flags, "--driver") !== "bridge" || parts.command.length > 0)
+      refuse("The forwarder network is a plain bridge.");
+    checkLabels(flags, s, ["network"]);
+    return;
+  }
   // Internal: no route out, so a service cannot reach the internet or the host.
   if (!is(flags, "--internal")) refuse("The task network must be --internal.");
   if (one(flags, "--driver") !== "bridge") refuse("The task network must use the bridge driver.");
@@ -545,7 +643,7 @@ export function assertSafe(parts: DockerParts, s: Safety): void {
 // Builders
 
 const labelFlags = (
-  kind: ContainerKind | "dbcheck" | "image" | "network" | "volume",
+  kind: ContainerKind | "dbcheck" | "hostfwd" | "image" | "network" | "volume",
   task: string,
 ): string[] => ["--label", `majhi.container=${kind}`, "--label", `majhi.task=${task}`];
 
@@ -556,7 +654,7 @@ function safe(parts: DockerParts, s: Safety): DockerParts {
 
 /** The flags every container has. */
 function containerFlags(
-  kind: "preview" | "service" | "dbcheck",
+  kind: "preview" | "service" | "dbcheck" | "hostfwd",
   name: string,
   limits: Limits,
   s: Safety,
@@ -708,6 +806,72 @@ export function serviceRunArgs(s: Safety, limits: Limits, spec: ServiceRunSpec):
       ],
       image: spec.image,
       command: spec.command ?? [],
+    },
+    s,
+  );
+}
+
+export interface HostForwardSpec {
+  /** The connection id: the forwarder is `<id>.host` on the task's network. */
+  id: string;
+  ports: readonly number[];
+  /**
+   * The task network's subnet, like `192.168.171.0/24`. The forwarder answers only peers inside it: on some
+   * runtimes (OrbStack) a container reaches another network's addresses, and another task's runner must not use this one.
+   */
+  from: string;
+  /** The runner image, which holds the forwarding script. */
+  image: string;
+}
+
+/** The forwarder of a service on the owner's computer. See `checkHostForward`. */
+export function hostForwardRunArgs(s: Safety, limits: Limits, spec: HostForwardSpec): DockerParts {
+  const names = containerNames(s.task);
+  return safe(
+    {
+      verb: ["run"],
+      flags: [
+        "--rm",
+        "--name",
+        names.hostForward(spec.id),
+        ...labelFlags("hostfwd", s.task),
+        "--cap-drop",
+        "ALL",
+        "--cap-add",
+        "NET_BIND_SERVICE",
+        "--security-opt",
+        "no-new-privileges",
+        "--pids-limit",
+        "64",
+        "--memory",
+        "64m",
+        "--cpus",
+        String(Math.min(limits.cpus, 0.5)),
+        "--read-only",
+        "--pull",
+        "never",
+        "--network",
+        `name=${names.network},alias=${spec.id}.host`,
+        "--network",
+        names.hostNetwork,
+        "--add-host",
+        `${HOST_TARGET}:host-gateway`,
+      ],
+      image: spec.image,
+      command: ["node", HOST_FORWARD_SCRIPT, "--from", spec.from, ...spec.ports.map(String)],
+    },
+    s,
+  );
+}
+
+/** The forwarder's own network: a plain bridge with a route out. Only forwarders join it. */
+export function hostNetworkCreateArgs(s: Safety): DockerParts {
+  return safe(
+    {
+      verb: ["network", "create"],
+      flags: ["--driver", "bridge", ...labelFlags("network", s.task)],
+      image: containerNames(s.task).hostNetwork,
+      command: [],
     },
     s,
   );
