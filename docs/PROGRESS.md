@@ -7,6 +7,13 @@ Branch `fix/task-remove-timeout`.
 - **Cause.** `removeWorktree` ran `git worktree remove`, which deletes the whole checkout inside a 30 second git call. A worktree with node_modules or build output took longer, so removal failed with "git worktree timed out".
 - **Fix.** majhi checks for uncommitted changes itself (same refusal without force), deletes the folder with no time limit, then drops the worktree entry. The Remove dialog button reads "Removing..." while it works; errors already show inline.
 - **Verified.** Typecheck, `worktrees.test.ts` (dirty guard, lock kept on refusal). No browser check: copy change only.
+## Captain resumes after a sign-in: checked, no bug (not merged)
+
+Branch `fix/captain-resume-after-signin`.
+
+- **Question.** Does the captain fail to resume a task paused on a sign-in once the account is healthy again?
+- **Answer.** No. The deleted desk test failed because of its own setup: three tasks were already running, so `majhi_tasks_start` returned "No free agent slot: 3 of 3 in use", the intended machine slot limit. The sign-in refusal and the resume after the account is healthy work.
+- **Change.** A focused test, `autonomy/resume-signin.test.ts`: refused while the account is signed out, starts once it is healthy.
 
 ## Home says what is running and what the checks found (built, not merged)
 
