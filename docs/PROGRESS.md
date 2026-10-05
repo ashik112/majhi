@@ -1,5 +1,25 @@
 # Progress
 
+## Faster test suite (built, not merged)
+
+Branch `perf/test-speed`. No test was deleted, skipped or weakened.
+
+- **Numbers.** Same command both times: `vitest run --maxWorkers=4 --testTimeout=60000`, on a shared Mac under load from other agents (load average 15 to 21), so read them as a ratio. Full suite wall time: **9:28 before, 7:18 after** (4045 tests pass, 0 fail; 3992 before, the difference is 28 new tests here plus main's). Sum of per-file time: 1798 s before, 1335 s after. The 2 minute target was **not** reached under this load; a run on a quiet machine is still to be measured.
+- **Per-file runs, one file alone (`--maxWorkers=1`), before to after:** settings.test 8 s to 4 s, send-back.test 12 s to 7 s, captain/done-when 18 s to 12 s, rooms/team 45 s to 16 s, tasks/shipped 26 s to 18 s, memory/housekeeper 19 s to 7 s, rooms/idle-watch 35 s to 16 s.
+- **Slowest 15 files, before (s):** mrs/flow 125, runs/attribution 62, rooms/team 57, mrs/multi-repo-ship 55, rooms/idle-watch 44, tasks/shipped 36, tasks/picked-repos 35, budgets/limit 35, rooms/mcp 34, captain/tell-ship 29, handoff/script 28, tasks/orchestrate 25, gitConnect/integration 24, notify/notify 24, host/checkScript 24.
+- **Slowest 15 files, after (s):** mrs/flow 99, runs/attribution 65, mrs/multi-repo-ship 44, host/checkScript 42, host/hostScript 35, rooms/idle-watch 29, rooms/team 29, tasks/shipped 28, captain/lane-reads 26, budgets/limit 23, handoff/script 23, backup/backup 23, captain/tell-ship 20, tasks/census-guard 19, captain/done-when 18. (The after run was under heavier load than the before run.)
+- **Transform time.** `fsModuleCache: true` in `vitest.config.ts` (vitest 5.0.2). On a two file run transform went from 44% of 5.6 s to 16% of 3.2 s, and transformed modules now persist between runs and worker processes (`node_modules/.vitest-cache`). The full run used the JSON reporter, so its transform line was not captured.
+- **Git processes, `captain/done-when`:** 1225 before, 929 after (this includes building the templates, which a normal run does once for all files). `mrs/flow`: 7084 before, 3772 after, counted with a PATH shim.
+- **What changed.**
+  - The sample world (org, account, agent, repo, project, config history) is built once per run and copied for each test (`testing/template.ts`, `testing/global-setup.ts`, `taskWorld`). The build fails if any file other than the listed repo config names the template's own folder. Sample repos made by `addRepo` are templates too. Each world still starts the project's card in the background, as registering the project did, because tests wait for it.
+  - Config changes use 3 git processes instead of 6 (`ConfigHistory.hasChanges` is one `status`; `commit` is `add` and `commit`, and only a failed commit looks at the index). `commit` now returns whether it committed, not the hash; nothing used the hash.
+  - Product git, a real speed win for the server too: `git/repo-config.ts` reads the repo's own config files and skips the `git config --get-regexp` that ran before nearly every git command, unless the config sets a key that could run a command, includes another file, or cannot be read in full (then git is asked, as before). `git/refs.ts` answers "does this branch exist" from the loose ref file or `packed-refs` instead of `git show-ref`, and leaves reftable, odd names and unreadable cases to git. Both have tests that compare against real git, including planted filters and worktrees.
+  - `host/testing/scripts.ts` looks each tool up once per process.
+- **Measured, no change.** Pool and isolation: 18 shared test files take 0.8 to 1.0 s under forks, threads or no isolation, so startup is not the cost; left alone. Polling helpers already poll every 5 to 10 ms with long deadlines, so no wait change was needed.
+- **Where the time still goes.** Process spawns (git, shell hooks). Under load one git call costs 30 to 45 ms. Largest left: `runs/attribution` runs majhi's real hook scripts on every ref update (that is what it tests); `git remote` and `git remote get-url` (about 10% of git calls in `mrs/flow`); `git status` in ship checks; each test's own `accounts.create` and `agents.create` commands (each is a config commit); the per-world card scan; host script tests that start shells.
+- **Watch.** One run (the counted one, before the card fix) had a single `orgs.create` config commit fail in `connections/mcp.test.ts` under load; it did not repeat in 6 parallel reruns or in the final full run. If it comes back, look at concurrent git in the config home.
+- **How to try it.** `pnpm vitest run <file>`; the templates live in a temp folder made and removed by the run.
+
 ## Disk hygiene: caches after 1 day, old images removed after each update (built, not merged)
 
 Branch `feat/disk-hygiene`.
