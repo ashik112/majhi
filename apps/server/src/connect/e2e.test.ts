@@ -161,5 +161,4 @@ describe("a connected service reaches only its own workspace's agent sessions", 
     const kept = (await must("connect.status", { org: "acme" })) as unknown[];
     expect(kept).toHaveLength(1);
   });
-
 });

@@ -70,6 +70,4 @@ describe("audit org and detail", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
-
 });
-

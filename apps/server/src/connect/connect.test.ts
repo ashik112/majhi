@@ -373,7 +373,6 @@ describe("tokens: fresh, single flight, saved before use", () => {
     // A revoked grant hands out no token.
     expect("problem" in (await r.connect.bearer("fakesvc"))).toBe(true);
   });
-
 });
 
 describe("accounts and access", () => {
@@ -446,7 +445,6 @@ describe("accounts and access", () => {
     expect(await r.grants.get("fakesvc")).toBeUndefined();
     expect(r.connections.size).toBe(0);
   });
-
 });
 
 describe("secrets stay out of logs, views and errors", () => {

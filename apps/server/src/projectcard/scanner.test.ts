@@ -77,5 +77,4 @@ describe("scanner abuse", () => {
     // Never turned into a command the card tells agents to run.
     expect(Object.values(facts.commands).join(" ")).not.toContain("curl");
   });
-
 });

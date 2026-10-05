@@ -29,5 +29,4 @@ describe("one bad row does not fail a read", () => {
     ]);
     store.close();
   });
-
 });

@@ -43,7 +43,6 @@ describe("the hot lookup indexes migration", () => {
         .map((r) => (r as { id: string }).id),
     ).toEqual(["a5"]);
   });
-
 });
 
 describe("the SQLite baseline", () => {
@@ -64,5 +63,4 @@ describe("the SQLite baseline", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-
 });

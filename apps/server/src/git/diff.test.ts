@@ -58,5 +58,4 @@ describe("repoDiff", () => {
     expect(diff.files).toHaveLength(MAX_DIFF_FILES);
     expect(diff.omitted).toBe(extra);
   });
-
 });

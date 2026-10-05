@@ -87,7 +87,6 @@ describe("what git says about a finished task's branch", () => {
     expect(after.stat).not.toContain("other.ts");
     expect(after.repo.head).toMatch(/^[0-9a-f]{7,}$/);
   });
-
 });
 
 describe("whether a finished task's branch is in its base now", () => {

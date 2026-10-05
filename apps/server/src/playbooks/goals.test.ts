@@ -33,5 +33,4 @@ describe("goals", () => {
     expect(() => goals.update({ id: theirs.id, title: "x" }, ACME)).toThrow();
     expect(goals.list({}, ACME).map((g) => g.id)).not.toContain(theirs.id);
   });
-
 });

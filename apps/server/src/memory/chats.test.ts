@@ -116,7 +116,6 @@ describe("memory from chats", () => {
     await s.make().sweep();
     expect(s.store.chats.get("C-1").extractedAt).toBeUndefined();
   });
-
 });
 
 describe("chat memory scopes", () => {
@@ -185,7 +184,6 @@ describe("chat memory scopes", () => {
       "org:globex",
     ]);
   });
-
 });
 
 describe("chat titles", () => {

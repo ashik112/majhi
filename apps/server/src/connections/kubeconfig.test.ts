@@ -67,5 +67,4 @@ describe("mergeKubeconfigs", () => {
       { name: "acme-staging", user: { token: STAGING_TOKEN } },
     ]);
   });
-
 });

@@ -126,7 +126,6 @@ describe("runs and permissions", () => {
       ["s2", "server-restart"],
     ]);
   });
-
 });
 
 describe("start commit on task repos", () => {
@@ -216,4 +215,3 @@ describe("merge request state on task repos", () => {
     }
   });
 });
-

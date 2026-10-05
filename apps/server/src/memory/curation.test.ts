@@ -189,7 +189,6 @@ describe("contradictions", () => {
     expect(fact.status).toBe("pending");
     expect(t.memory.get(old.id)?.status).toBe("active");
   });
-
 });
 
 describe("candidates from the Housekeeper", () => {

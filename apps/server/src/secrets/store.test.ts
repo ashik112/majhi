@@ -77,5 +77,4 @@ describe("SecretStore", () => {
     await writeFile(restored, await decrypter.decrypt(armor.decode(exported), "text"));
     expect(await new SecretStore(join(dir, "home"), restored).get("a")).toBe("value-aaaa");
   });
-
 });

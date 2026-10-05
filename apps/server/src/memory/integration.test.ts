@@ -181,15 +181,17 @@ describe("majhi-memory", () => {
     expect(webMd).not.toContain("health.ts");
     expect(webMd).not.toContain("acme api");
     expect(webMd).not.toContain("old health check route");
-    expect(text(await globex.callTool({ name: "records", arguments: { query: "health check route" } }))).not.toContain(
-      "health.ts",
-    );
+    expect(
+      text(await globex.callTool({ name: "records", arguments: { query: "health check route" } })),
+    ).not.toContain("health.ts");
     expect(
       failed(await globex.callTool({ name: "records", arguments: { query: "health", project: "acme-api" } })),
     ).toBe(true);
     expect(failed(await globex.callTool({ name: "brief", arguments: { project: "acme-api" } }))).toBe(true);
     expect(failed(await globex.callTool({ name: "threads", arguments: { project: "acme-api" } }))).toBe(true);
-    expect(text(await globex.callTool({ name: "threads", arguments: {} }))).not.toContain("old health check route");
+    expect(text(await globex.callTool({ name: "threads", arguments: {} }))).not.toContain(
+      "old health check route",
+    );
 
     // Acme's own task and agent get them.
     const apiMd = await taskMd(api.id);
@@ -204,5 +206,4 @@ describe("majhi-memory", () => {
     );
     expect(text(await acme.callTool({ name: "threads", arguments: {} }))).toContain("old health check route");
   });
-
 });

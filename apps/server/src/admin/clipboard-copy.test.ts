@@ -109,9 +109,9 @@ describe("the captain copying to the owner's clipboard", () => {
     expect((await t.call({ file, line: 1, ownerAsked: false })).isError).toBe(true);
     expect((await t.call({ file: import.meta.filename, line: 1 })).isError).toBe(true);
     expect((await t.call({ secret: "missing" })).isError).toBe(true);
-    expect(
-      (await t.call({ file, line: 1 }, { task: t.chat as TaskId, agent: "acme-builder" })).isError,
-    ).toBe(true);
+    expect((await t.call({ file, line: 1 }, { task: t.chat as TaskId, agent: "acme-builder" })).isError).toBe(
+      true,
+    );
     expect(t.copied).toEqual([]);
     const off = await lane(false);
     expect((await off.call({ file: join(off.dir, ".env"), line: 1 })).isError).toBe(true);

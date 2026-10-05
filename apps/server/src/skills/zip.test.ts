@@ -68,5 +68,4 @@ describe("copying a skill folder", () => {
     await expect(copyFolder(src, join(dir, "to"))).rejects.toThrow();
     await expect(describeFolder(src)).rejects.toThrow();
   });
-
 });

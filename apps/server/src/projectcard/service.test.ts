@@ -2,13 +2,7 @@ import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import type { RepoFiles } from "./files.ts";
 import { CardRepo } from "./repo.ts";
-import {
-  type CardProject,
-  compactCard,
-  MODEL_PASSES_PER_DAY,
-  ProjectCards,
-  plainUrl,
-} from "./service.ts";
+import { type CardProject, compactCard, MODEL_PASSES_PER_DAY, ProjectCards, plainUrl } from "./service.ts";
 
 /** A repo as a map of files; counts how many times it was scanned. */
 class FakeRepo implements RepoFiles {
@@ -126,7 +120,6 @@ The Acme orders API, version ${i} of the text.
     }
     expect(t.summaries.filter((id) => id === "acme-api").length).toBe(MODEL_PASSES_PER_DAY);
   });
-
 });
 
 describe("card text for agents", () => {

@@ -359,7 +359,6 @@ describe("GitLab device grant", () => {
     });
     expectNoSecrets(s);
   });
-
 });
 
 describe("CLI sign-in through the host helper", () => {
@@ -433,7 +432,6 @@ describe("CLI sign-in through the host helper", () => {
     ).rejects.toThrow("The sign-in was refused on GitHub. Nothing was saved.");
     expectNoSecrets(s, [err]);
   });
-
 });
 
 describe("Pasted tokens", () => {
@@ -504,5 +502,4 @@ describe("git.signOut", () => {
     expect(s.dropped).toEqual(["secret:t", "secret:g"]);
     expectNoSecrets(s);
   });
-
 });

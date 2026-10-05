@@ -17,5 +17,4 @@ describe("local days", () => {
     const { start, end } = dayBounds("2026-03-08", "2026-03-08", "America/New_York");
     expect(Date.parse(end) - Date.parse(start)).toBe(23 * 3_600_000);
   });
-
 });

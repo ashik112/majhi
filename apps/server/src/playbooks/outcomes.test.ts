@@ -142,5 +142,4 @@ describe("outcome rules of the other chores", () => {
     expect(cleaned).toEqual([]);
     expect(quiet).toEqual([]);
   });
-
 });

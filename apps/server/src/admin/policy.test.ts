@@ -1,9 +1,4 @@
-import {
-  type AllowRule,
-  effectiveMode,
-  isDestructiveCommand,
-  PolicySettingsSchema,
-} from "@majhi/shared";
+import { type AllowRule, effectiveMode, isDestructiveCommand, PolicySettingsSchema } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { decide, matchRule, redact, redactText } from "./policy.ts";
 

@@ -148,7 +148,7 @@ describe("skills", () => {
       await symlink(join(w.h.dir, "secret.txt"), join(folder("linked"), "notes.md"));
       const res = await run("skills.install", { source: folder("linked") });
       expect(res.status).toBe(400);
-  
+
       await write(join(w.h.dir, "elsewhere", "far"), "far", "Out of bounds");
       const far = await run("skills.install", { source: join(w.h.dir, "elsewhere", "far") });
       expect(far.status).toBe(400);

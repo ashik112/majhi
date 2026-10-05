@@ -64,5 +64,4 @@ describe("SignInFlows", () => {
     expect(flows.get(other.id)?.status.state).toBe("pending");
     expect(flows.get(again.id)?.status.state).toBe("pending");
   });
-
 });

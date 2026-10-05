@@ -68,5 +68,4 @@ describe("a git host sign-in is a connection", () => {
     expect(one).toBe(two);
     expect(r.checks).toHaveLength(1);
   });
-
 });

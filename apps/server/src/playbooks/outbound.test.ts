@@ -96,7 +96,6 @@ describe("the owner's decision", () => {
     await expect(t.gate.decide(draft.id, "send")).rejects.toThrow();
     expect(t.send).not.toHaveBeenCalled();
   });
-
 });
 
 describe("Auto", () => {

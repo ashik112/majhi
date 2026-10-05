@@ -1,10 +1,4 @@
-import type {
-  MemoryExtractOutput,
-  ProjectBrief,
-  TaskRecord,
-  Thread,
-  UsageSummary,
-} from "@majhi/shared";
+import type { MemoryExtractOutput, ProjectBrief, TaskRecord, Thread, UsageSummary } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import type { FakeSession } from "../testing/fakeSession.ts";
 import { taskWorld, type World } from "../testing/world.ts";
@@ -275,7 +269,6 @@ describe("memory.extract", () => {
     replies.push(reply({ brief: { "acme-api": { "Current state": "The probe uses the new route." } } }));
     expect((await extract(third.id)).body).toMatchObject({ briefs: [] });
   });
-
 });
 
 describe("when a task is done", () => {
@@ -317,5 +310,4 @@ describe("when a task is done", () => {
     expect(closed.status).toBe("done");
     await h.majhi.services.extraction.idle();
   });
-
 });

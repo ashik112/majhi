@@ -213,5 +213,4 @@ describe("the Google setup steps check themselves", () => {
       fixUrl: "https://console.cloud.google.com/auth/audience",
     });
   });
-
 });

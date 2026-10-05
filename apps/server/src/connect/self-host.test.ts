@@ -36,5 +36,4 @@ describe("assertHostAllowed", () => {
       ).rejects.toThrow(/metadata/);
     }
   });
-
 });

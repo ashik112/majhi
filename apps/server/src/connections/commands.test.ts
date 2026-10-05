@@ -124,5 +124,4 @@ describe("connections commands", () => {
     const on = await h.cmd("connections.update", { id: "acme-nr", agentsOff: [] });
     expect(on.body.agentsOff).toEqual([]);
   });
-
 });

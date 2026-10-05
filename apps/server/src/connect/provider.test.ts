@@ -256,7 +256,6 @@ describe("a provider's own OAuth with PKCE and a loopback redirect", () => {
     expect("problem" in refused).toBe(true);
     expect((await connect.status())[0]?.state).toBe("needs-reconnect");
   });
-
 });
 
 describe("a provider that needs the owner's client secret", () => {
@@ -277,7 +276,6 @@ describe("a provider that needs the owner's client secret", () => {
     await connect.disconnect(id, OWNER);
     expect(r.provider.revoked.some((x) => x.clientSecret === "sekret-client-value-0001")).toBe(true);
   });
-
 });
 
 describe("the device grant", () => {
@@ -295,5 +293,4 @@ describe("the device grant", () => {
     for (const secret of r.provider.secretsSeen()) expect(everything).not.toContain(secret);
     expect(everything).not.toContain("WDJB-MJHT");
   });
-
 });

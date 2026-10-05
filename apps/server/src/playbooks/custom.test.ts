@@ -30,5 +30,4 @@ describe("parsePlan", () => {
     const r = parsePlan(reply({ cadence: { kind: "every", minutes: 5 } }));
     expect(r.ok && r.value.spec.cadence).toEqual({ kind: "every", minutes: 60 });
   });
-
 });

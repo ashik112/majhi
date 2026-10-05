@@ -56,7 +56,6 @@ describe("renderOverride", () => {
     const sources = volumes.flatMap((v) => (typeof v === "object" && v.read_only ? [v.source] : []));
     expect(sources.every((s) => s.endsWith(".pub"))).toBe(true);
   });
-
 });
 
 describe("renderOverride: the SSH agent", () => {
@@ -83,4 +82,3 @@ describe("renderOverride: the SSH agent", () => {
     }
   });
 });
-

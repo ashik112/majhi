@@ -119,5 +119,4 @@ describe("memory escalation", () => {
       expect(t.teach).toEqual([]);
     }
   });
-
 });

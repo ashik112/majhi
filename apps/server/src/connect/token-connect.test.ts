@@ -205,7 +205,6 @@ describe("a pasted token connects only when a real call with it passes", () => {
     await r.health.check(id);
     expect(r.health.get(id)?.state).toBe("connected");
   });
-
 });
 
 describe("checkToken", () => {
@@ -254,5 +253,4 @@ describe("checkToken", () => {
       failure: { reason: "unexpected", status: 302 },
     });
   });
-
 });

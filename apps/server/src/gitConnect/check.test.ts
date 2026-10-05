@@ -132,5 +132,4 @@ describe("a self-hosted host: signing in validates the address first", () => {
     ).rejects.toThrow(/metadata/);
     expect(s.hosts.requests).toEqual([]);
   });
-
 });

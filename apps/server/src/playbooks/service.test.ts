@@ -194,7 +194,6 @@ describe("single flight", () => {
     expect(ran).toBe(1);
     expect(t.service.runs("acme", "t-rules", 10).map((r) => r.status)).toEqual(["nothing"]);
   });
-
 });
 
 describe("a playbook that is off", () => {
@@ -210,7 +209,6 @@ describe("a playbook that is off", () => {
     expect(t.runs.rules).toBe(0);
     expect(t.tells).toEqual([]);
   });
-
 });
 
 describe("Autonomous off", () => {
@@ -285,7 +283,6 @@ describe("quiet hours and the clock", () => {
     await t.service.settled();
     expect(t.runs.rules).toBe(2);
   });
-
 });
 
 describe("a failed run backs off", () => {
@@ -334,7 +331,6 @@ describe("a failed run backs off", () => {
     await t.service.settled();
     expect(t.service.runs("acme", "t-rules", 5)).toHaveLength(4);
   });
-
 });
 
 describe("a captain playbook", () => {
@@ -411,5 +407,4 @@ describe("a captain playbook", () => {
     ).rejects.toThrow();
     expect(t.service.runs("acme", "t-captain", 5)[0]?.status).toBe("running");
   });
-
 });

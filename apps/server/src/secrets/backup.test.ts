@@ -34,5 +34,4 @@ describe("KeyExports", () => {
     expect(record).not.toContain("correct horse");
     expect(record).not.toContain("AGE-SECRET-KEY");
   });
-
 });

@@ -58,7 +58,6 @@ describe("project briefs", () => {
     // Another project's brief is its own.
     expect(m.brief("globex-web").versions).toEqual([]);
   });
-
 });
 
 describe("scope isolation", () => {

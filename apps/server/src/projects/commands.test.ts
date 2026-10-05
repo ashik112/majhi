@@ -49,7 +49,9 @@ describe("project remotes and links", () => {
     await withWeb();
     const two = await update({ remotes: { a: { mr: true }, b: { mr: true } } });
     expect(two.status).toBe(400);
-    expect((await update({ links: [{ to: "nope", type: "depends-on" }] })).status).toBeGreaterThanOrEqual(400);
+    expect((await update({ links: [{ to: "nope", type: "depends-on" }] })).status).toBeGreaterThanOrEqual(
+      400,
+    );
     expect((await update({ links: [{ to: "acme-web", type: "depends-on" }] })).status).toBeGreaterThanOrEqual(
       400,
     );

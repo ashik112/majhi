@@ -224,5 +224,4 @@ describe("an MCP server added by address", () => {
     ).rejects.toBeInstanceOf(UserError);
     expect(calls).not.toContain("auth.acme.test");
   });
-
 });

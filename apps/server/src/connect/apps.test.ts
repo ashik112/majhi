@@ -58,7 +58,6 @@ describe("the sheets", () => {
       expect(scopesAt(entry, "readwrite").every((s) => s.level !== "send")).toBe(true);
     }
   });
-
 });
 
 describe("saving an app", () => {
@@ -264,5 +263,4 @@ describe("saving an app", () => {
       ),
     ).rejects.toThrow(/17 to 20 digits/);
   });
-
 });

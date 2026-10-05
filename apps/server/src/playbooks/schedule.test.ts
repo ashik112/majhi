@@ -72,5 +72,4 @@ describe("quiet hours", () => {
     expect(inQuiet(quiet, at("2026-10-04T02:00:00Z"), "UTC")).toBe(true);
     expect(inQuiet(quiet, at("2026-10-04T14:00:00Z"), NY)).toBe(false);
   });
-
 });
