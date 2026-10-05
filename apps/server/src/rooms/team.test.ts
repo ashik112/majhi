@@ -92,13 +92,7 @@ async function systemTexts(task: string): Promise<string[]> {
 async function until(check: () => boolean | Promise<boolean>, what: string): Promise<void> {
   const deadline = Date.now() + 15_000;
   while (!(await check())) {
-    if (Date.now() > deadline) {
-      const all = await w.h.cmd("room.items", { task: "ACM-1", limit: 500 });
-      console.log("DEBUG items", JSON.stringify((all.body.items as RoomItem[]).map((i) => ({ type: i.type, ...(i as any) })).map((i) => ({ type: i.type, text: (i as any).text, from: (i as any).from, to: (i as any).to, agent: (i as any).agent, status: (i as any).status })), null, 0));
-      console.log("DEBUG task", JSON.stringify((await w.h.cmd("tasks.get", { id: "ACM-1" })).body));
-      console.log("DEBUG working", JSON.stringify(w.h.majhi.services.runs.working("ACM-1")));
-      throw new Error(`Timed out waiting for ${what}`);
-    }
+    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}`);
     await new Promise((r) => setTimeout(r, 5));
   }
 }
