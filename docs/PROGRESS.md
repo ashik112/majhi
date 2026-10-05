@@ -1,5 +1,40 @@
 # Progress
 
+## Overnight 2026-10-05: summary for the owner (deployed, ff22e3dd)
+
+Live majhi runs ff22e3dd. A backup was taken before the update. All server, web, host and shared tests pass (3,951), typecheck is clean, and a final browser smoke test on an isolated server passed. Since yesterday afternoon: 29 merges, 28,268 lines removed and 14,293 added.
+
+### Do these yourself (only you can)
+1. **Rotate the DigitalOcean token.** Agents could read connection tokens from process command lines; that is fixed. Sign the DigitalOcean connection out and in again under Connections, then revoke the old token at cloud.digitalocean.com (API, Tokens).
+2. **Clear old token text.** Token values may sit in agent transcripts and in the room history of PRV-127. Delete those rooms or transcripts.
+3. **Re-pause watches you paused on purpose.** Watches now store who paused them and why. A watch paused before tonight has no recorded reason, so it resumes by itself once it reads fine. If you paused one deliberately, pause it again.
+
+### What you will notice
+- **Counts agree everywhere.** Home, the columns, the bell and the sidebar show one number from the server. "Working" means an agent is actually working; waiting on you is under Needs you. A parent waiting on its subtasks is not a decision.
+- **No dead buttons.** A finished task with nothing to merge shows Mark done and Ask for changes, not Merge. Failed answers say what failed.
+- **Same permission buttons everywhere:** Allow once, Allow for this task, Deny, with the command shown. Questions answered from Needs you have a 5 s Undo.
+- **Room.** Esc stops a turn wherever focus is, even while the agent is still starting. The two-question card keeps Send in view. Cleaner header, Changes shown once.
+- **Captain.** Cmd J puts the cursor in the message box. It no longer sends finished code tasks back for a "short report" and spends no turn on work it may not ship.
+- **New task.** The button stays on screen, Cmd+Enter submits, mixed-workspace repos are blocked up front, each repo has a "starts from" branch field, and one press makes one task.
+- **Online pill** turns offline within about a second of the server dying.
+- **Faster.** The board makes about 1 request a second instead of 15 while agents run, and moves 7 KB/s instead of about 1 MB/s. One task change re-renders one card. Boot no longer stalls. Web assets are compressed and cached.
+- **Tools.** The captain can install a command-line tool it needs (for example doctl) through majhi with a verified checksum, so secret fetches and script watches can use it.
+- **Less noise.** Findings resolve themselves when their condition is gone. Findings from removed features are closed. `~/.majhi/e2e` (about 1 GB) was removed.
+
+### Under the hood
+- Every task status change goes through one `apply()` with an audit row (`task_events`) and an outbox in the same transaction. Illegal moves are refused (a note on a merge-request task no longer restarts it).
+- Counts and slot gates read live runs, so a restart cannot leave ghost "running" tasks blocking work. A restart reconciles each task once.
+- Secrets are off process command lines. Hand-off secret blocks name the file, line and rule.
+- Git: optional locks off, one majhi write per worktree, a write waits out another process's index lock instead of failing.
+- Database: prepared statements, batched reads, new indexes, daily batched retention (audit 1 year, costs 2 years; finished rooms keep messages and cards), one bad row no longer fails a whole list.
+- Tests: suite health fixed (root config per package, no keychain writes, stale expectations).
+
+### Still open
+- The first task create with a repo right after a restart took about 30 s on the test server. Not traced yet.
+- The "restore folders by hand" card is handled by an instruction to agents, not by a structural guard.
+- Follow-up findings about removed trackers and the old e2e runner close when their memory threads close, or dismiss them.
+- Next stage of the task model: step D (readers and one owner-facing text table), E (a `hold` column, old columns dropped after a backup), F (one scheduler tick with fairness). See docs/design/task-lifecycle.md sections 9 and 12.
+
 ## Esc anywhere in a room, one task per Cmd+Enter, Watch header spacing (built, not merged)
 
 Branch `fix/esc-focus-create-once`.
