@@ -1,5 +1,14 @@
 # Progress
 
+## Agents can update their task branch from the base (built, not merged)
+
+Branch `feat/tasks-sync-base`.
+
+- **Changed.** New command `tasks.syncBase` ("Update task branch from base"), in the Task bookkeeping group so it runs without asking. Agents and the captain may call it. majhi fetches the base from the MR remote with its own access, then fast-forwards the task branch, rebases it if it was never pushed, or merges if it was (never a force push). Per repo: current, fast-forwarded, rebased, merged or refused with a reason. Refused with nothing changed when the worktree is dirty, an agent is mid-turn, or it conflicts. The tool summary tells agents to use it instead of `git pull` or `git fetch`.
+- **Owner will notice.** Agents call this instead of failing on `git fetch`. A short note appears in the task room when a branch moved. No UI button (no obvious spot).
+- **Verified.** Typecheck clean. `git/sync-branch.test.ts` (real temp repos, no network): no-op, fast-forward, rebase of an unpushed branch, merge of a pushed one, dirty worktree untouched, conflict leaves branch and worktree as before.
+- **Left.** An "Update from base" button on the task page. A remote that needs the computer's saved login (https) is refused with a reason, as for `tasks.updateTarget`.
+
 ## Syncing from the remote needs no approval (built, not merged)
 
 Branch `fix/agents-sync-remote`.

@@ -16,6 +16,7 @@ import {
   type ShipFix,
   type ShipOption,
   type ShipOptions,
+  type SyncBaseResult,
   type Task,
   type TaskRepo,
   waitsForOwner,
@@ -27,9 +28,10 @@ import type { EventHub } from "../events/hub.ts";
 import { type FastForwardOutcome, fastForwardBranch } from "../git/fast-forward.ts";
 import { FETCH_TIMEOUT_MS, git, gitOk, localBranchExists, refIsThere, uncommitted } from "../git/git.ts";
 import type { GitLoginService } from "../git/logins.ts";
-import { isSshAuthFailure, removeWorktree } from "../git/worktrees.ts";
+import { isSshAuthFailure, removeWorktree, syncBranch } from "../git/worktrees.ts";
 import type { ProjectInfo, ProjectService } from "../projects/service.ts";
 import type { RoomService } from "../room/service.ts";
+import { DEFAULT_IDENTITY } from "../runs/checkpoint.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
 import { inferBranchType, readRepoStyle, titleFor, typeOfBranch } from "../tasks/branch-naming.ts";
@@ -1209,6 +1211,80 @@ export class MrService {
       }
       return { results };
     });
+  }
+
+  /**
+   * Brings the MR remote's latest base branch into the task branch of each repo, for agents that
+   * cannot fetch. majhi fetches with its own access; the task worktree then fast-forwards, rebases
+   * (never pushed) or merges (pushed). Per repo; a refusal changes nothing.
+   */
+  async syncBase(input: {
+    id: string;
+    project?: string | undefined;
+    by: string;
+  }): Promise<{ results: SyncBaseResult[] }> {
+    const task = this.deps.tasks.get(input.id);
+    const repos = task.repos.filter((r) => input.project === undefined || r.project === input.project);
+    if (repos.length === 0) {
+      throw new UserError(
+        input.project === undefined ? `${task.id} has no repos.` : `${task.id} has no repo ${input.project}.`,
+        404,
+      );
+    }
+    return this.exclusive(input.id, async () => {
+      const identity =
+        (await this.deps.config.sections()).orgs[task.org ?? "private"]?.identity ?? DEFAULT_IDENTITY;
+      const results: SyncBaseResult[] = [];
+      for (const repo of repos) {
+        const result = await this.syncRepo(task.id, repo, identity);
+        results.push({ project: repo.project, ...result });
+        const detail =
+          result.status === "refused" ? `refused: ${result.reason ?? ""}` : `${result.status} ${repo.base}`;
+        this.audit(input.id, "update", input.by, result.status !== "refused", detail, repo.project);
+        if (result.status === "rebased" || result.status === "merged" || result.status === "fast-forwarded") {
+          this.note(
+            task.id,
+            `${repo.project}: ${result.status} with the latest ${repo.base} from the remote.`,
+          );
+        }
+      }
+      return { results };
+    });
+  }
+
+  private async syncRepo(
+    task: string,
+    repo: TaskRepo,
+    identity: { name: string; email: string },
+  ): Promise<Omit<SyncBaseResult, "project">> {
+    const refused = (reason: string) => ({ status: "refused" as const, reason });
+    if (repo.worktree === undefined) return refused("it has no worktree yet");
+    if (this.deps.working(task)) return refused("an agent is working in it; wait for its turn to end");
+    try {
+      const target = await this.pushTarget(repo);
+      if (target.viaHost) {
+        return refused(
+          `${repo.project} fetches with this computer's saved login, which majhi cannot read from here`,
+        );
+      }
+      if (!(await this.fetchTracking(repo.source, target, repo.base))) {
+        return refused(`${target.remote} has no branch ${repo.base}`);
+      }
+      const pushed =
+        repo.pushedAt !== undefined ||
+        repo.mr !== undefined ||
+        (await refIsThere(repo.source, `refs/remotes/${target.remote}/${repo.branch}`));
+      const out = await syncBranch({
+        worktree: repo.worktree,
+        branch: repo.branch,
+        upstream: `refs/remotes/${target.remote}/${repo.base}`,
+        pushed,
+        identity,
+      });
+      return out.status === "refused" ? { status: "refused", reason: out.reason } : out;
+    } catch (err) {
+      return refused(errorMessage(err));
+    }
   }
 
   // ---------------------------------------------------------------------------

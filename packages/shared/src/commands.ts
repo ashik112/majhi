@@ -455,6 +455,18 @@ const TaskReposSchema = z
     "The projects this task will change, each with an optional base branch. Only these get a branch and a worktree. Naming a project in the text attaches nothing, and every registered project is readable without being listed here: list only the repos the task must change",
   );
 
+/** What bringing the base into the task branch did in one repo of a task. */
+export const SyncBaseResultSchema = z.object({
+  project: IdSchema,
+  status: z.enum(["current", "fast-forwarded", "rebased", "merged", "refused"]),
+  /** Why nothing was changed, when refused. */
+  reason: z.string().optional(),
+  /** The task branch tip before and after. */
+  from: z.string().optional(),
+  to: z.string().optional(),
+});
+export type SyncBaseResult = z.infer<typeof SyncBaseResultSchema>;
+
 /** What a local merge or a push did in one repo of a task. */
 const MergeResultSchema = z.object({
   project: IdSchema,
@@ -1997,6 +2009,17 @@ export const commands = {
       project: IdSchema.optional(),
     }),
     output: z.object({ results: z.array(MergeResultSchema) }),
+  },
+  "tasks.syncBase": {
+    risk: "change",
+    summary:
+      "Bring the base branch's latest commits from the remote into this task's branch. Use this instead of git pull or git fetch, which cannot reach the remote from the container. Fetches with majhi's own git access, then fast-forwards the task branch, or rebases it when it was never pushed, or merges when it was (never a force push). Per repo it says current, fast-forwarded, rebased, merged or refused with the reason. Refused, with nothing changed, when the worktree has uncommitted changes, an agent is mid-turn in it, or the change conflicts",
+    input: z.object({
+      id: TaskIdSchema,
+      /** Only this repo of the task. Default: every repo. */
+      project: IdSchema.optional(),
+    }),
+    output: z.object({ results: z.array(SyncBaseResultSchema) }),
   },
   "tasks.branches": {
     risk: "read",
