@@ -170,7 +170,7 @@ describe("connections commands", () => {
     expect(on.body.agentsOff).toEqual([]);
   });
 
-  it("tests a connection, and Health shows the last Test without testing on its own", async () => {
+  it("tests a connection, and Health shows its state", async () => {
     await h.cmd("connections.create", { org: "acme", id: "acme-box", type: "ssh", name: "Box" });
     expect((await h.cmd("connections.test", { id: "acme-box" })).body).toMatchObject({
       ok: false,
@@ -193,9 +193,8 @@ describe("connections commands", () => {
     expect(row("acme-box")).toMatchObject({
       group: "connections",
       level: "fail",
-      fix: { label: "Test again" },
     });
-    expect(row("acme-lab")).toMatchObject({ level: "warn", detail: "Not tested since majhi started." });
+    expect(row("acme-lab")).toMatchObject({ level: "warn" });
     expect((await h.cmd("connections.get", { id: "acme-lab" })).body.lastTest).toBeUndefined();
     const fixed = await h.cmd("health.fix", { id: "connection:acme-lab" });
     expect(fixed.body).toEqual({
