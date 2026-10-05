@@ -203,6 +203,8 @@ export function dockerRunArgs(
     req.limits?.memory ?? cfg.memory ?? "4g",
     "--cpus",
     req.limits?.cpus ?? cfg.cpus ?? "1",
+    // A lower weight than the default 1024 when the machine is busy (hand-off checks).
+    ...(req.limits?.cpuShares === undefined ? [] : ["--cpu-shares", req.limits.cpuShares]),
   ];
   if (cfg.user) args.push("--user", cfg.user);
   args.push("--workdir", req.scratch ? "/tmp" : req.cwd);

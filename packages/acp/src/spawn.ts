@@ -25,7 +25,7 @@ export interface SpawnRequest {
    */
   task?: string;
   /** Resource caps for this run only, in place of the runner's own (a hand-off check is short and runs alone). */
-  limits?: { cpus?: string; memory?: string };
+  limits?: { cpus?: string; memory?: string; cpuShares?: string };
 }
 
 export interface RunMount {
