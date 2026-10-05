@@ -27,6 +27,8 @@ export interface HandoffWiring {
   spawner: Spawner;
   base: BaseEnv;
   repoMounts: (task: Task) => Promise<RunMount[]>;
+  /** The workspace's shared package store for a check: see `ExecDeps.packages`. */
+  packages?: ExecDeps["packages"];
   /** The check's `docker` shim: see `ExecDeps.dockerShim`. */
   dockerShim?: ExecDeps["dockerShim"];
   /** The workspace's Merge row is Captain: only then does the captain have a lead resolve a conflict. */
@@ -118,6 +120,7 @@ export function createHandoff(w: HandoffWiring): HandoffService {
         base: w.base,
         task: (id) => w.store.tasks.get(id),
         repoMounts: w.repoMounts,
+        packages: w.packages,
         dockerShim: w.dockerShim,
       }),
     review: async (task, prompt) => {

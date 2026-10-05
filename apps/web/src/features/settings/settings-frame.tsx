@@ -27,7 +27,6 @@ import {
   Repeat,
   ScrollText,
   ShieldCheck,
-  Sparkles,
   Users,
   Wallet,
 } from "lucide-react";
@@ -61,7 +60,6 @@ const SECTION_ICON: Record<SetupSection, LucideIcon> = {
 const PAGE_ICON: Record<SettingsPage, LucideIcon> = {
   connections: Plug,
   projects: FolderGit2,
-  skills: Sparkles,
   memory: Brain,
   limits: Wallet,
   audit: ScrollText,

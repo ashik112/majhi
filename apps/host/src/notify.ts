@@ -1,5 +1,5 @@
 import type { Logger } from "./log.ts";
-import type { Notifier } from "./platform/types.ts";
+import type { Notifier, NotifyOutcome } from "./platform/types.ts";
 
 export interface NotifyParams {
   title: string;
@@ -34,7 +34,7 @@ export function showNotification(
   notifier: Notifier,
   baseUrl: string,
   params: NotifyParams,
-): Promise<{ clickable: boolean }> {
+): Promise<NotifyOutcome> {
   return notifier.show({
     title: plainLine(params.title, 120),
     message: plainLine(params.message),
@@ -46,14 +46,18 @@ export function showNotification(
 /**
  * The notifier the helper uses: the OS's, or with MAJHI_HOST_NOTIFY=off one that only logs. A
  * helper next to a test server shows nothing on the owner's desktop (its tasks are test data) and
- * never downloads terminal-notifier.
+ * never builds or downloads a notifier.
  */
 export function desktopNotifier(enabled: boolean, notifier: Notifier, log: Logger): Notifier {
   if (enabled) return notifier;
   return {
     show: async (request) => {
       log(`notify (off): ${request.title}: ${request.message}`);
-      return { clickable: false };
+      return { kind: "shown", clickable: false };
     },
+    // Opening Settings is the owner's own click, so it still works with notifications off.
+    ...(notifier.openSettings === undefined
+      ? {}
+      : { openSettings: () => notifier.openSettings?.() ?? Promise.resolve(false) }),
   };
 }

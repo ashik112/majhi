@@ -7,7 +7,6 @@ import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
-import { McpTab } from "@/features/skills/mcp-tab";
 import { cn } from "@/lib/cn";
 import { useConnectionCommand, useConnections } from "@/lib/connection-queries";
 import { describeError } from "@/lib/errors";
@@ -39,7 +38,6 @@ export function ConnectionsView() {
   const toast = useToast();
   const { org: orgFilter } = useOrgFilter();
   const [linked, setLinked] = useSearchParam("connection");
-  const [tab, setTab] = useSearchParam("tab");
   const [adding, setAdding] = useState(false);
   const [query, setQuery] = useState("");
   const check = useConnectionCommand("connections.test");
@@ -55,7 +53,6 @@ export function ConnectionsView() {
       .includes(query.trim().toLowerCase()),
   );
   const selected = all.find((c) => c.id === linked);
-  const mcp = tab === "mcp";
   const working = all.filter((c) => c.health?.state === "connected").length;
   const attention = needsOwner(all);
 
@@ -97,34 +94,7 @@ export function ConnectionsView() {
           Add connection
         </Button>
       </PageHeader>
-      <nav aria-label="Connection views" className="mb-3 flex shrink-0 items-center gap-1">
-        <Button
-          variant="ghost"
-          aria-pressed={!mcp}
-          className={cn(!mcp && "bg-selected text-fg")}
-          onClick={() => setTab(undefined)}
-        >
-          Connections <span className="font-mono text-xs text-fg-muted">{all.length}</span>
-        </Button>
-        <Button
-          variant="ghost"
-          aria-pressed={mcp}
-          className={cn(mcp && "bg-selected text-fg")}
-          onClick={() => {
-            setLinked(undefined);
-            setTab("mcp");
-          }}
-        >
-          MCP servers
-        </Button>
-      </nav>
-      {mcp ? (
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-8 scroll-fade">
-          <div className="mx-auto flex max-w-[960px] flex-col gap-4">
-            <McpTab />
-          </div>
-        </div>
-      ) : connections.isError ? (
+      {connections.isError ? (
         <p role="alert" className="p-6 text-base text-red">
           Could not load connections: {describeError(connections.error)}
         </p>
@@ -192,7 +162,7 @@ export function ConnectionsView() {
           </div>
         </section>
       )}
-      {selected !== undefined && !mcp && (
+      {selected !== undefined && (
         <ConnectionPanel
           key={selected.id}
           view={selected}

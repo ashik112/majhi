@@ -410,6 +410,15 @@ export const HostJobSchema = z.discriminatedUnion("method", [
       sound: z.boolean(),
     }),
   }),
+  /**
+   * macOS: open System Settings at Notifications, where the owner turns on Allow notifications for
+   * majhi. `opened` is false where there is no such pane.
+   */
+  z.object({
+    id: z.string(),
+    method: z.literal("notify.openSettings"),
+    params: z.object({}),
+  }),
   /** Which accounts `gh`, `glab` and the SSH keys are logged in as, per git host. Reads no token. */
   z.object({
     id: z.string(),
@@ -597,8 +606,13 @@ export const HostResultSchemas = {
   }),
   "machine.read": MachineHostSchema,
   "editor.open": z.object({ opened: z.literal(true) }),
-  /** `clickable`: a click on the notification opens majhi. */
-  notify: z.object({ shown: z.literal(true), clickable: z.boolean() }),
+  /**
+   * `clickable`: a click on the notification opens majhi. `blocked`: macOS has notifications off for
+   * majhi, so nothing was shown (`shown` is false); only the owner can turn them on. Any other failure
+   * is an error reply.
+   */
+  notify: z.object({ shown: z.boolean(), clickable: z.boolean(), blocked: z.literal(true).optional() }),
+  "notify.openSettings": z.object({ opened: z.boolean() }),
   "git.logins": GitLoginsResultSchema,
   "git.token": z.object({ token: z.string().min(1) }),
   "git.push": z.object({ pushed: z.literal(true) }),

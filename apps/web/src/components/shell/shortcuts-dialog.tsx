@@ -12,6 +12,7 @@ const GROUPS: readonly ShortcutGroup[] = [
   "Board",
   "Decisions",
   "Today",
+  "Skills & MCP",
   "Go to",
 ];
 

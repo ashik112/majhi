@@ -116,9 +116,10 @@ describe("removeOwnLeftovers", () => {
     const all = lines.join("\n");
     expect(all).not.toContain("acme");
     expect(all).not.toContain("acm-1:");
-    expect(all).not.toMatch(
-      /builder prune|system prune|volume prune|container prune|image prune -f$|prune -a|--all/,
-    );
+    expect(all).not.toMatch(/system prune|volume prune|container prune|image prune -f$|prune -a|--all/);
+    // The build cache is only ever capped, never cleared.
+    const builderPrunes = all.split("\n").filter((l) => l.includes("builder prune"));
+    expect(builderPrunes.every((l) => l.includes("--max-used-space 15gb"))).toBe(true);
     expect(said.at(-1)).toContain("majhi-server:previous (2.1GB)");
     expect(said.at(-1)).toContain("majhi-preview-acm-2:latest (700MB)");
     expect(said.at(-1)).toContain("freed");

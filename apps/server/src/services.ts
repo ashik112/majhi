@@ -133,6 +133,7 @@ import { createMrHosts, type MrHostOptions } from "./mrs/hosts/index.ts";
 import { MrPoller } from "./mrs/poller.ts";
 import { MrService } from "./mrs/service.ts";
 import type { Subject } from "./notify/attention.ts";
+import { MacNotifyAccess } from "./notify/mac-access.ts";
 import { Notifier } from "./notify/service.ts";
 import { Unavailable } from "./ops/anything/checks.ts";
 import type { WatchEngine } from "./ops/anything/engine.ts";
@@ -192,6 +193,7 @@ import type { LinkOptions } from "./tasks/links.ts";
 import { PendingShips } from "./tasks/pending-ship.ts";
 import { TaskService } from "./tasks/service.ts";
 import { TerminalManager, type TerminalTimers } from "./terminal/manager.ts";
+import { packageCache } from "./runs/package-cache.ts";
 import { openTaskTerminal } from "./terminal/task-terminal.ts";
 import { ToolInstaller } from "./tools/installer.ts";
 import { UploadStore } from "./uploads/store.ts";
@@ -1042,6 +1044,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     }
     return out;
   };
+  const hostLink = options.hostLink;
+  /** Whether the Mac lets majhi's notifier show anything; one decision while it does not. */
+  const macNotify =
+    hostLink === undefined
+      ? undefined
+      : new MacNotifyAccess({
+          notify: (notice) => hostLink.call("notify", notice),
+          openSettings: () => hostLink.call("notify.openSettings", {}),
+        });
   const notifier = new Notifier({
     subject: subjectOf,
     // The captain answers it by itself when Autonomous is on and the workspace lets it decide: an
@@ -1069,13 +1080,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       }
     },
     events,
-    ...(options.hostLink === undefined
-      ? {}
-      : {
-          desktop: async (notice) => {
-            await options.hostLink?.call("notify", notice);
-          },
-        }),
+    ...(macNotify === undefined ? {} : { desktop: (notice) => macNotify.send(notice) }),
   });
   room.onWrite((task, item) => notifier.observe(task, item));
   room.onWrite((task, item) => captain.roomWrote(task, item));
@@ -1322,8 +1327,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       },
       answerTrust: (id, option) => outcomesService?.answerNotice(id, option) ?? Promise.resolve(),
       answerCeiling: (month, option) => outcomesService?.answerCeiling(month, option) ?? Promise.resolve(),
+      answerNotifyAccess: (option) => macNotify?.answer(option) ?? Promise.resolve(),
     },
-    extras: () => outcomesService?.decisions() ?? [],
+    extras: () => [...(outcomesService?.decisions() ?? []), ...(macNotify?.decision() ?? [])],
     answered: (decision, option) => outcomesService?.answered(decision, option),
   });
   const lanes = new Lanes({
@@ -1524,6 +1530,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     spawner: sessionOptions.spawner ?? localSpawner,
     base: sessionOptions.base,
     repoMounts: (task) => repoMounts(task),
+    packages: (task) => packageCache(env.majhiHome, task).catch(() => undefined),
     // A hand-off check that starts containers (a repo's own test of its deploy files) reaches the task's through majhi.
     dockerShim: (task) => {
       const shim = roomAccess.attachDocker({ task, agent: store.tasks.get(task)?.team[0] ?? "handoff" });
@@ -2338,6 +2345,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
             },
             base: sessionOptions.base,
             repoMounts,
+            packages: (t) => packageCache(env.majhiHome, t).catch(() => undefined),
             tty: runner.runner === undefined ? undefined : dockerTty(runner.runner.config),
           },
           task,

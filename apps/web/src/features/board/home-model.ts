@@ -488,6 +488,8 @@ function linkAction(decision: OwnerDecision): BannerAction {
       return { kind: "page", to: "/playbooks" };
     case "watch":
       return { kind: "page", to: "/watch" };
+    case "setup":
+      return { kind: "page", to: "/setup", search: { section: link.section } };
   }
 }
 

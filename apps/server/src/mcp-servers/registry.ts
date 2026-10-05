@@ -3,7 +3,10 @@ import { UserError } from "../errors.ts";
 
 /** The official MCP Registry. `GET /v0.1/servers?search=<q>&version=latest`, with `/v0` as the fallback. */
 export const MCP_REGISTRY = "https://registry.modelcontextprotocol.io";
-const TIMEOUT_MS = 10_000;
+/** The public registry is sometimes slow on a cold path (tens of seconds); its answer is still good. */
+const TIMEOUT_MS = 60_000;
+/** A registry answer is reused this long, so a second search or install is instant. */
+const CACHE_MS = 60 * 60_000;
 
 /** What the registry's `server.json` says about a value: a variable, a header, an argument. */
 const ValueSchema = z.object({
@@ -122,7 +125,21 @@ export class McpRegistry {
   }
 
   /** The JSON of a path, or undefined when the registry has nothing there or cannot be reached. */
-  private async json(path: string): Promise<unknown> {
+  private readonly cache = new Map<string, { at: number; body: Promise<unknown> }>();
+
+  /** One request per path at a time, and a good answer kept for an hour. A failed one is not kept. */
+  private json(path: string): Promise<unknown> {
+    const hit = this.cache.get(path);
+    if (hit !== undefined && Date.now() - hit.at < CACHE_MS) return hit.body;
+    const body = this.fetchJson(path);
+    this.cache.set(path, { at: Date.now(), body });
+    void body.then((b) => {
+      if (b === undefined) this.cache.delete(path);
+    });
+    return body;
+  }
+
+  private async fetchJson(path: string): Promise<unknown> {
     try {
       const res = await this.fetchFn(`${this.base}${path}`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
       return res.ok ? await res.json() : undefined;

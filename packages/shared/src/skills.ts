@@ -50,8 +50,12 @@ export const SkillSchema = z.object({
   /** SHA-256 over the file paths and contents, so a changed skill shows as changed. */
   hash: z.string(),
   installedAt: z.string(),
-  /** The agents whose file lists it, from the agent files. */
+  /** The agents that have it: the ones whose file lists it, and every agent when `defaultOn` (minus `optOut`). */
   agents: z.array(IdSchema),
+  /** On for every agent, including agents created later, unless the agent opted out. */
+  defaultOn: z.boolean(),
+  /** Agents that turned it off while `defaultOn`. */
+  optOut: z.array(IdSchema),
 });
 export type Skill = z.infer<typeof SkillSchema>;
 
@@ -130,4 +134,5 @@ export const SkillSearchResultSchema = z.object({
 });
 export type SkillSearchResult = z.infer<typeof SkillSearchResultSchema>;
 
+export const SkillNameInputSchema = z.object({ name: SkillNameSchema });
 export const SkillAgentInputSchema = z.object({ name: SkillNameSchema, agent: IdSchema });

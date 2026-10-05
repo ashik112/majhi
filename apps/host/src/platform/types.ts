@@ -3,7 +3,7 @@
  * names at start. Nothing else in the helper reads `process.platform` or names an OS program.
  * Implementations run programs only through `deps.run`, so a test fakes an OS by faking its programs.
  *
- * macOS: launchd, the Keychain, Docker's host-services SSH socket, terminal-notifier or osascript,
+ * macOS: launchd, the Keychain, Docker's host-services SSH socket, majhi's notifier app or terminal-notifier,
  * `open`. Linux: systemd user units, a Secret Service keyring through `secret-tool`, the session's
  * SSH agent, `notify-send`, `xdg-open`. WSL2: Linux, plus Docker Desktop, the browser, the editor
  * and toasts on the Windows side, reached through WSL interop.
@@ -140,14 +140,30 @@ export interface NotifyRequest {
   sound: boolean;
 }
 
+/**
+ * What a desktop notification came to. `blocked`: the OS has notifications off for majhi's notifier
+ * (macOS exit code 3), which only the owner can turn on. `unavailable`: no notifier is installed
+ * yet. `failed`: it ran and did not show one.
+ */
+export type NotifyOutcome =
+  | { kind: "shown"; clickable: boolean }
+  | { kind: "blocked" }
+  | { kind: "unavailable" }
+  | { kind: "failed"; error: string };
+
 export interface Notifier {
   /**
-   * Shows a desktop notification. `clickable` is true when a click opens `url`. Throws in plain
-   * words when nothing was shown; the server then keeps the notice in the app only. macOS:
-   * terminal-notifier (clickable), which the helper installs itself, else osascript. Linux: `notify-send`. WSL2: a Windows toast
-   * through `powershell.exe` (clickable).
+   * Shows a desktop notification. `clickable` is true when a click opens `url`. macOS: majhi's own
+   * notifier app (clickable), else terminal-notifier, never osascript (its notifications come from
+   * Script Editor); the outcome says why nothing showed. Linux: `notify-send`. WSL2: a Windows
+   * toast through `powershell.exe` (clickable). Linux and WSL2 throw in plain words when nothing was
+   * shown; the server then keeps the notice in the app only.
    */
-  show(request: NotifyRequest): Promise<{ clickable: boolean }>;
+  show(request: NotifyRequest): Promise<NotifyOutcome>;
+  /** macOS: builds or installs the notifier now, so the first notification is not lost. */
+  prepare?(): Promise<void>;
+  /** macOS: opens System Settings at Notifications. */
+  openSettings?(): Promise<boolean>;
 }
 
 export interface EditorPlatform {
