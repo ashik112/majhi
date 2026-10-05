@@ -1,7 +1,7 @@
 import type { Diagram } from "@majhi/shared";
 
 /** Every box on the canvas is this size, so a longer label is cut, never wrapped, and layouts need no text measuring. */
-export const BOX_W = 208;
+export const BOX_W = 190;
 export const BOX_H = 68;
 
 export interface Point {

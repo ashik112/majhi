@@ -238,7 +238,7 @@ function Controls() {
         size="icon-sm"
         aria-label="Fit the diagram"
         title="Fit the diagram"
-        onClick={() => void flow.fitView({ duration: 200, padding: 0.12 })}
+        onClick={() => void flow.fitView({ duration: 200, padding: 0.04, minZoom: 0.6, maxZoom: 1 })}
       >
         <Maximize2 />
       </Button>
@@ -254,7 +254,9 @@ function Refit({ shape, box }: { shape: Positioned; box: RefObject<HTMLDivElemen
   const flow = useReactFlow();
   // biome-ignore lint/correctness/useExhaustiveDependencies: `shape` is the trigger; the flow handle is stable.
   useEffect(() => {
-    const frame = requestAnimationFrame(() => void flow.fitView({ duration: 200, padding: 0.12 }));
+    const frame = requestAnimationFrame(
+      () => void flow.fitView({ duration: 200, padding: 0.04, minZoom: 0.6, maxZoom: 1 }),
+    );
     return () => cancelAnimationFrame(frame);
   }, [shape]);
   useEffect(() => {
@@ -263,7 +265,10 @@ function Refit({ shape, box }: { shape: Positioned; box: RefObject<HTMLDivElemen
     let timer: number | undefined;
     const watch = new ResizeObserver(() => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => void flow.fitView({ duration: 0, padding: 0.12 }), 80);
+      timer = window.setTimeout(
+        () => void flow.fitView({ duration: 0, padding: 0.04, minZoom: 0.6, maxZoom: 1 }),
+        80,
+      );
     });
     watch.observe(el);
     return () => {
@@ -386,10 +391,11 @@ export function DiagramCanvas({
           nodesConnectable={false}
           edgesFocusable
           elementsSelectable={false}
-          minZoom={0.2}
-          maxZoom={1.8}
+          minZoom={0.3}
+          maxZoom={1.6}
           fitView
-          fitViewOptions={{ padding: 0.12 }}
+          fitViewOptions={{ padding: 0.04, minZoom: 0.6, maxZoom: 1 }}
+          proOptions={{ hideAttribution: true }}
           onNodeClick={(_, n) => {
             if (n.type === "box") onSelect?.({ kind: "node", id: n.id });
           }}
