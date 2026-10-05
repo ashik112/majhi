@@ -113,6 +113,9 @@ const attempt = (run: Promise<unknown>): Promise<boolean> =>
  * Removes the images and builders listed above and reports them in plain words, with sizes. Every
  * removal is best effort: a failed one is skipped and never fails an update that already runs.
  */
+/** The most the Docker build cache may hold after an update; older layers above it are trimmed. */
+export const BUILD_CACHE_CAP = "15gb";
+
 export async function removeOwnLeftovers(
   step: Step,
   majhiHome: string,
@@ -202,6 +205,20 @@ export async function removeOwnLeftovers(
     gone.push(
       `${dangling.length} dangling ${dangling.length === 1 ? "image" : "images"} (${sizeText(bytes)})`,
     );
+  }
+
+  // The build cache is capped, not cleared: the newest layers keep updates fast, and only the least
+  // recently used ones above the cap go. Never `--all`, never a full prune (the owner's rule).
+  if (
+    await attempt(
+      step(
+        "cap the build cache",
+        ["builder", "prune", "-f", "--max-used-space", BUILD_CACHE_CAP],
+        STEP_TIMEOUT_MS,
+      ),
+    )
+  ) {
+    gone.push(`build cache trimmed to at most ${BUILD_CACHE_CAP.toUpperCase()}`);
   }
 
   await say(
