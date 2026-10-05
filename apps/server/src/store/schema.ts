@@ -152,6 +152,8 @@ export const runs = sqliteTable(
     effort: text("effort"),
     /** The MCP servers this run attached, a JSON array of names. Null for runs made before it was recorded. */
     tools: text("tools"),
+    /** The skills this run had at launch, a JSON array of names. Null for runs made before it was recorded. */
+    skills: text("skills"),
     /** 1 while a turn runs, and after a turn was cut (crash, shutdown, offline) until it continues. */
     inFlight: integer("in_flight").notNull().default(0),
     /** The last checkpoint number this run committed, 0 for none. */
@@ -162,6 +164,20 @@ export const runs = sqliteTable(
     decisionId: text("decision_id"),
   },
   (t) => [index("runs_task_agent").on(t.task, t.agent)],
+);
+
+/** Each time an agent used a skill, once per tool call. */
+export const skillUses = sqliteTable(
+  "skill_uses",
+  {
+    run: integer("run")
+      .notNull()
+      .references(() => runs.id, { onDelete: "cascade" }),
+    toolCallId: text("tool_call_id").notNull(),
+    skill: text("skill").notNull(),
+    at: text("at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.run, t.toolCallId] }), index("skill_uses_skill_at").on(t.skill, t.at)],
 );
 
 export const taskCounters = sqliteTable("task_counters", {

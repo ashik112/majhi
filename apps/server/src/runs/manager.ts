@@ -73,6 +73,7 @@ import { PermissionFlow } from "./permission-flow.ts";
 import { pickForSession } from "./pick.ts";
 import { briefBlocks, ownerBlocks } from "./prompt.ts";
 import { currentModelName, switchAfterRefusal } from "./refusal.ts";
+import { skillUsed } from "../skills/use.ts";
 import { AgentRun, type PauseReason, type QueueEntry } from "./run.ts";
 import type { SerenaLaunch } from "./serena.ts";
 import { type AccountProbe, classifyStartFailure, type StartFailure } from "./start-failure.ts";
@@ -154,6 +155,8 @@ export interface RunDeps {
   };
   /** Called when the set of working agents of some task changed, so the task list can refresh. */
   onTasksChanged: (task: string, rows: boolean) => void;
+  /** A run started with its skills, or an agent used one: the skills lists and run views refresh. */
+  onSkillsChanged?: () => void;
   /**
    * An agent ended a turn by itself (stop reason end_turn) with this final message. The room
    * routes its @mentions (5.3) before the task can count as idle, so this is awaited. `refused`:
@@ -2047,6 +2050,11 @@ export class RunManager {
         at: this.now().toISOString(),
       });
       deps.store.runs.setTools(run.runId, opened.tools);
+      deps.store.runs.setSkills(
+        run.runId,
+        (opened.skills?.items ?? []).map((s) => s.name),
+      );
+      deps.onSkillsChanged?.();
       for (const line of opened.notices) this.live.system(run, "warn", line);
       run.mapper = new ItemMapper(
         run.agent,
@@ -2193,6 +2201,18 @@ export class RunManager {
     return n;
   }
 
+  /** Records a tool call that used one of the run's skills. Returns the skill's name, for the room row. */
+  private noteSkillUse(run: AgentRun, event: Extract<SessionEvent, { type: "tool" }>): string | undefined {
+    const skills = run.skills;
+    if (skills === undefined || run.runId === undefined) return undefined;
+    const skill = skillUsed(event, { names: skills.items.map((s) => s.name), dir: skills.dir });
+    if (skill === undefined) return undefined;
+    const at = this.now().toISOString();
+    if (this.deps.store.runs.recordSkillUse(run.runId, event.toolCallId, skill, at))
+      this.deps.onSkillsChanged?.();
+    return skill;
+  }
+
   private onEvent(run: AgentRun, event: SessionEvent): void {
     run.lastEventAt = this.now().getTime();
     // "Thinking for 2m" in the room panel needs to know the agent is still sending.
@@ -2211,9 +2231,10 @@ export class RunManager {
         if (internal === undefined) run.mapper?.apply(event);
         break;
       case "plan":
-      case "tool":
+      case "tool": {
         if (internal !== undefined) break;
-        run.mapper?.apply(event);
+        const skill = event.type === "tool" ? this.noteSkillUse(run, event) : undefined;
+        run.mapper?.apply(event, skill);
         this.setLive(run, { nowDoing: run.mapper?.nowDoing() });
         if (event.type === "tool" && run.prompting && !run.turnTools.has(event.toolCallId)) {
           run.turnTools.add(event.toolCallId);
@@ -2221,6 +2242,7 @@ export class RunManager {
           if (this.deps.overCap !== undefined) void this.checkCap(run);
         }
         break;
+      }
       case "usage":
         if (event.cost !== undefined && event.cost.currency.toUpperCase() === "USD")
           run.costNow = event.cost.amount;

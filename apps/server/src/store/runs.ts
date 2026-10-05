@@ -1,7 +1,18 @@
 import type { AuditBy, AuditDecision, AuditEntry, AuditList, AuditListInput } from "@majhi/shared";
-import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, max, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, max, type SQL, sql } from "drizzle-orm";
 import type { Db } from "./db.ts";
-import { audit, runs, taskAllowances, tasks } from "./schema.ts";
+import { audit, runs, skillUses, taskAllowances, tasks } from "./schema.ts";
+
+/** A JSON array of names as stored on a run; undefined when none was recorded or it is not an array of strings. */
+function namesOf(json: string | null): string[] | undefined {
+  if (json === null) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(json);
+    return Array.isArray(parsed) ? parsed.filter((n): n is string => typeof n === "string") : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export interface RunRow {
   id: number;
@@ -52,6 +63,69 @@ export class RunRepo {
       .set({ tools: JSON.stringify(tools) })
       .where(eq(runs.id, id))
       .run();
+  }
+
+  /** The skills a run had at launch. */
+  setSkills(id: number, skills: readonly string[]): void {
+    this.db
+      .update(runs)
+      .set({ skills: JSON.stringify(skills) })
+      .where(eq(runs.id, id))
+      .run();
+  }
+
+  /** An agent used a skill in this tool call. True the first time, false for a later report of the same call. */
+  recordSkillUse(run: number, toolCallId: string, skill: string, at: string): boolean {
+    return (
+      this.db.insert(skillUses).values({ run, toolCallId, skill, at }).onConflictDoNothing().run().changes > 0
+    );
+  }
+
+  /** Per skill: when it was last used and how many uses are at or after `since`. One query for every skill. */
+  skillUsage(since: string): Map<string, { lastUsedAt: string; uses: number }> {
+    const rows = this.db
+      .select({
+        skill: skillUses.skill,
+        lastUsedAt: max(skillUses.at),
+        uses: sql<number>`coalesce(sum(${skillUses.at} >= ${since}), 0)`,
+      })
+      .from(skillUses)
+      .groupBy(skillUses.skill)
+      .all();
+    return new Map(
+      rows.flatMap((r) =>
+        r.lastUsedAt === null ? [] : [[r.skill, { lastUsedAt: r.lastUsedAt, uses: r.uses }]],
+      ),
+    );
+  }
+
+  /** Each agent's newest run in the task with the skills it had, and the distinct skills it used. */
+  skillRuns(task: string): { agent: string; startedAt: string; had: string[]; used: string[] }[] {
+    const latest = new Map<string, typeof runs.$inferSelect>();
+    for (const r of this.db.select().from(runs).where(eq(runs.task, task)).orderBy(runs.id).all()) {
+      latest.set(r.agent, r);
+    }
+    const ids = [...latest.values()].map((r) => r.id);
+    const uses =
+      ids.length === 0
+        ? []
+        : this.db
+            .selectDistinct({ run: skillUses.run, skill: skillUses.skill })
+            .from(skillUses)
+            .where(inArray(skillUses.run, ids))
+            .all();
+    return [...latest.values()].flatMap((r) => {
+      const had = namesOf(r.skills);
+      if (had === undefined) return [];
+      return [
+        {
+          agent: r.agent,
+          startedAt: r.startedAt,
+          had,
+          used: uses.filter((u) => u.run === r.id).map((u) => u.skill),
+        },
+      ];
+    });
   }
 
   /** What the agent's newest run with a record attached, with the task and time it started. */

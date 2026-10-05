@@ -44,7 +44,8 @@ export class ItemMapper {
     return this.lastMessage === undefined ? "" : (this.text.get(this.lastMessage) ?? "");
   }
 
-  apply(event: SessionEvent): void {
+  /** `skill`: the installed skill a tool call used, as the manager found it. */
+  apply(event: SessionEvent, skill?: string): void {
     switch (event.type) {
       case "text":
         this.stream("agent", "t", event.messageId, event.text);
@@ -56,7 +57,7 @@ export class ItemMapper {
         this.addMedia(event);
         return;
       case "tool":
-        this.tool(event);
+        this.tool(event, skill);
         return;
       case "plan":
         this.plan = event.entries;
@@ -119,8 +120,9 @@ export class ItemMapper {
     );
   }
 
-  private tool(event: Extract<SessionEvent, { type: "tool" }>): void {
+  private tool(event: Extract<SessionEvent, { type: "tool" }>, skill: string | undefined): void {
     const before = this.tools.get(event.toolCallId);
+    const used = skill ?? before?.skill;
     const next: ToolPayload = {
       type: "tool",
       agent: this.agent,
@@ -130,6 +132,7 @@ export class ItemMapper {
       status: event.status ?? before?.status ?? "pending",
       locations: event.locations ?? before?.locations ?? [],
       content: event.content === undefined ? (before?.content ?? []) : event.content.map(trimContent),
+      ...(used === undefined ? {} : { skill: used }),
     };
     this.tools.set(event.toolCallId, next);
     this.sink.post(this.toolItemId(event.toolCallId), next);

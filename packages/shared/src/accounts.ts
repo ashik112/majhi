@@ -540,6 +540,8 @@ export const EventTopicSchema = z.enum([
   "orgs",
   "accounts",
   "agents",
+  /** An agent used a skill, or a run started with its skills: refetch `skills.list` and `skills.runs`. */
+  "skills",
   "projects",
   "tasks",
   "secrets",

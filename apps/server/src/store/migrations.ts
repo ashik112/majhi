@@ -1617,6 +1617,24 @@ INSERT INTO read_marks (id, read_at, updated_at)
    GROUP BY task;
 `,
   },
+  {
+    // Which skills a run had at launch (names, a JSON array like `tools`; NULL for runs made before it
+    // was recorded) and each time an agent used one. A use is keyed by its tool call, so the several
+    // reports of one call count once. The index serves "last used" and "uses in 30 days" per skill.
+    id: 159,
+    name: "skills of runs and skill uses",
+    sql: `
+ALTER TABLE runs ADD COLUMN skills TEXT;
+CREATE TABLE skill_uses (
+  run INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  tool_call_id TEXT NOT NULL,
+  skill TEXT NOT NULL,
+  at TEXT NOT NULL,
+  PRIMARY KEY (run, tool_call_id)
+);
+CREATE INDEX skill_uses_skill_at ON skill_uses (skill, at);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */
