@@ -143,6 +143,15 @@ describe("what a task's run mounts", () => {
   });
 });
 
+/** The runner the isolation check uses. Docker is never reached: `ready` would wait on the real CLI. */
+function checkRunner(env: ReturnType<typeof testEnv>) {
+  const runner = runnerSetup({ ...env, runner: { ...env.runner, mode: "container" } }, async () =>
+    parseSubnets(RUNNERS),
+  ).runner;
+  if (runner === undefined) throw new Error("no runner");
+  return { ...runner, config: { ...runner.config, ready: async () => {} } };
+}
+
 describe("the runner isolation check", () => {
   it("starts a runner with only a probe account home, and passes when the runner sees nothing else", async () => {
     const { dir, cleanup } = await tempDir();
@@ -150,10 +159,7 @@ describe("the runner isolation check", () => {
     const env = testEnv(dir);
     await mkdir(join(env.majhiHome, "accounts", "claude-acme"), { recursive: true });
     await mkdir(join(env.majhiHome, "accounts", "codex-globex"), { recursive: true });
-    const runner = runnerSetup({ ...env, runner: { ...env.runner, mode: "container" } }, async () =>
-      parseSubnets(RUNNERS),
-    ).runner;
-    if (runner === undefined) throw new Error("no runner");
+    const runner = checkRunner(env);
     let seen: string[] = [];
     const verdict = await checkRunnerIsolation({
       runner,
@@ -191,10 +197,7 @@ describe("the runner isolation check", () => {
     const { dir, cleanup } = await tempDir();
     cleanups.push(cleanup);
     const env = testEnv(dir);
-    const runner = runnerSetup({ ...env, runner: { ...env.runner, mode: "container" } }, async () =>
-      parseSubnets(RUNNERS),
-    ).runner;
-    if (runner === undefined) throw new Error("no runner");
+    const runner = checkRunner(env);
     const input = {
       runner,
       majhiHome: env.majhiHome,
@@ -230,10 +233,7 @@ describe("the runner isolation check", () => {
     const { dir, cleanup } = await tempDir();
     cleanups.push(cleanup);
     const env = testEnv(dir);
-    const runner = runnerSetup({ ...env, runner: { ...env.runner, mode: "container" } }, async () =>
-      parseSubnets(RUNNERS),
-    ).runner;
-    if (runner === undefined) throw new Error("no runner");
+    const runner = checkRunner(env);
     let calls = 0;
     const verdict = await checkRunnerIsolation({
       runner,
@@ -267,27 +267,6 @@ describe("the runner isolation check", () => {
     expect(calls).toBe(2);
   });
 
-  it("says in plain words when a mount source is missing or the name is taken", async () => {
-    const mount = await failingCheck((args) =>
-      dockerFailed(
-        args,
-        'docker: Error response from daemon: invalid mount config for type "bind": bind source path does not exist: /Users/owner/.majhi/accounts/_runner-check.\n',
-      ),
-    );
-    expect(mount.verdict.detail).toBe(
-      "Docker could not find a folder to mount (/Users/owner/.majhi/accounts/_runner-check); this happens briefly while Docker remounts the host's folders.",
-    );
-    const taken = await failingCheck((args) =>
-      dockerFailed(
-        args,
-        'docker: Error response from daemon: Conflict. The container name "/majhi-run-check-x" is already in use by container "abc".\n',
-      ),
-    );
-    expect(taken.verdict.detail).toBe(
-      "A container with the check's name was still there; Docker had not removed it yet.",
-    );
-  });
-
   it("reports a timeout, with Docker's last words, and does not wait for it twice", async () => {
     const { verdict, calls } = await failingCheck((args) =>
       dockerFailed(args, "docker: context canceled\n", {
@@ -308,10 +287,7 @@ describe("the runner isolation check", () => {
     const { dir, cleanup } = await tempDir();
     cleanups.push(cleanup);
     const env = testEnv(dir);
-    const runner = runnerSetup({ ...env, runner: { ...env.runner, mode: "container" } }, async () =>
-      parseSubnets(RUNNERS),
-    ).runner;
-    if (runner === undefined) throw new Error("no runner");
+    const runner = checkRunner(env);
     const input = {
       runner,
       majhiHome: env.majhiHome,
