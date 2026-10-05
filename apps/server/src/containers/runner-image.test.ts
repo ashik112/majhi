@@ -14,7 +14,7 @@ describe("the runner image has doctl for script fetches and watches", () => {
     expect(build).toMatch(/DOCTL_VERSION=\d+\.\d+\.\d+;/);
     expect(build).toMatch(/amd64\) DOCTL_SHA=[0-9a-f]{64} ;;/);
     expect(build).toMatch(/arm64\) DOCTL_SHA=[0-9a-f]{64} ;;/);
-    expect(build).toContain('echo "${DOCTL_SHA}  doctl.tgz" | sha256sum -c -');
+    expect(build).toMatch(/echo "\$\{DOCTL_SHA\} {2}doctl\.tgz" \| sha256sum -c -/);
   });
 
   it("puts doctl on the runner's PATH, not in the server's runtime image", () => {

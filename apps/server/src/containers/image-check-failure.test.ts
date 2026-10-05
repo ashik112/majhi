@@ -10,7 +10,9 @@ describe("a failed script's line", () => {
   });
 
   it("names the missing program when a script exits 127, and keeps the old line when nothing was said", () => {
-    expect(exitMessage(127, "sh: 2: doctl: not found\n")).toBe("the program exited 127: sh: 2: doctl: not found");
+    expect(exitMessage(127, "sh: 2: doctl: not found\n")).toBe(
+      "the program exited 127: sh: 2: doctl: not found",
+    );
     expect(exitMessage(127, "")).toBe("majhi problem: the client program is missing from the image.");
     expect(exitMessage(22, "curl: (22) The requested URL returned error: 401\n")).toBe(
       "the program exited 22: curl: (22) The requested URL returned error: 401",

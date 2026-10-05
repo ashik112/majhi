@@ -1,9 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { redactText } from "../admin/policy.ts";
+import { verifiedBin } from "../tools/installer.ts";
 import { DBCHECK_TASK, dbCheckRunArgs, type HostPaths, type Safety } from "./args.ts";
 import type { ContainerDocker } from "./service.ts";
-import { verifiedBin } from "../tools/installer.ts";
 
 const MAX_OUT = 64 * 1024;
 export const MAJHI_DOCKER =

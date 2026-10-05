@@ -234,7 +234,8 @@ function sendsData(script: string): boolean {
     if (!HTTP_CLIENTS.has(program)) continue;
     const flags = words.slice(at + 1).filter((w) => w.startsWith("-"));
     // `curl -G -d a=b` and `--data-urlencode` put the data in the query of a GET: a read, like a URL with `?a=b`.
-    const getsQuery = program === "curl" && flags.some((w) => w === "--get" || /^-[A-Za-z]*G[A-Za-z]*$/.test(w));
+    const getsQuery =
+      program === "curl" && flags.some((w) => w === "--get" || /^-[A-Za-z]*G[A-Za-z]*$/.test(w));
     const isData = (w: string): boolean => {
       const name = w.startsWith("--") ? (w.split("=")[0] ?? w) : w;
       if (getsQuery && (w.startsWith("-d") || /^--data(?:-[\w-]+)?$/.test(name))) return false;
