@@ -72,8 +72,9 @@ export function gitSteps(kind: MrHost, host: string, token: string): Step[] {
         account: (r) => str(r.body, "nickname") ?? str(r.body, "display_name") ?? str(r.body, "username"),
       },
       {
-        did: "Listed one repository",
-        url: "https://api.bitbucket.org/2.0/repositories?role=member&pagelen=1",
+        // The cross-workspace /2.0/repositories list is gone (CHANGE-2770); workspaces is what stays.
+        did: "Listed one workspace",
+        url: "https://api.bitbucket.org/2.0/user/workspaces?pagelen=1",
         headers,
       },
     ];
