@@ -1,16 +1,15 @@
 import type { Playbook } from "@majhi/shared";
+import { PASS_BOUND } from "../../captain/rules.ts";
 
 /**
  * The upkeep pack: the captain's standing chores as playbooks (SPEC 5.18, Upkeep). Each is carried out
- * by its chore, under the same guards, caps and log as before. The steps say what the chore does.
+ * by its chore, under the same guards, pass bound and log as before. The steps say what the chore does.
  * Cadence: the daily ones run once a day, the others when their event happens and once an hour for what
  * a restart missed.
  */
 
 const HOURLY = { kind: "every", minutes: 60 } as const;
 const DAILY = { kind: "daily", at: "00:00" } as const;
-/** The token cap of one chore run (RUN_CAPS in captain/rules.ts). */
-const RUN_TOKENS = 60_000;
 
 type Data = Omit<Playbook, "pack" | "enabledByDefault" | "scope" | "channels" | "settings" | "needs">;
 
@@ -33,7 +32,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     steps:
       "For each task in review: check it is committed, merges cleanly, has no card waiting and no secret in the diff. Where Merge is Captain, merge it and push by the Push row. Where it is You, ask with one ready-to-ship card.",
     outputs: ["decision", "log"],
-    cost: { tier: "rules", tokens: RUN_TOKENS },
+    cost: { tier: "rules", tokens: PASS_BOUND.tokens },
     turnOn: "Ships finished work by the Merge and Push rows in Delegation.",
     outcomes: [
       { id: "ship-merge", text: "Checks pass and Merge is Captain: merge it, tell me in the brief" },
@@ -61,7 +60,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     steps:
       "Read each pending card. Approve what the Approvals rules allow. Leave anything on the never list, and anything unclear, for the owner.",
     outputs: ["decision", "log"],
-    cost: { tier: "laya", tokens: RUN_TOKENS },
+    cost: { tier: "laya", tokens: PASS_BOUND.tokens },
     turnOn: "Answers routine approval cards where Approvals is Captain.",
     outcomes: [
       { id: "cards-approve", text: "A routine card: approve it" },
@@ -77,14 +76,13 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     trigger: { cadence: HOURLY, events: ["An agent asks"] },
     inputs: ["Pending questions and permission prompts"],
     steps:
-      "Settle a permission prompt by the rule table. Answer a question only when the brief, memory or the code settles it; otherwise leave it. An agent that asks the same thing again and again is left for the owner.",
+      "Settle a permission prompt by the rule table. Answer a question only when the brief, memory or the code settles it; otherwise leave it.",
     outputs: ["decision", "log"],
-    cost: { tier: "small", tokens: RUN_TOKENS },
+    cost: { tier: "small", tokens: PASS_BOUND.tokens },
     turnOn: "Answers agents' questions where Questions is Captain.",
     outcomes: [
       { id: "q-answer", text: "Sure of the answer: answer it" },
       { id: "q-ask", text: "Not sure: ask me" },
-      { id: "q-loop", text: "The same agent keeps asking: tell me it may be stuck" },
     ],
     runner: { kind: "chore", chore: "questions" },
   }),
@@ -97,7 +95,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     steps:
       "Keep a durable, non-obvious fact. Drop a one-off symptom, generic advice or what the docs already say. Merge a copy into the fact it repeats. Leave a contradiction for the owner.",
     outputs: ["log"],
-    cost: { tier: "laya", tokens: RUN_TOKENS },
+    cost: { tier: "laya", tokens: PASS_BOUND.tokens },
     turnOn: "Reviews waiting memories once a day. It also runs while Auto-pilot is off.",
     outcomes: [
       { id: "mem-keep", text: "A good lesson: keep it" },
@@ -115,7 +113,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     steps:
       "Register a new repo with its base branch and remotes. Ask when unsure. Never touch a protected repo.",
     outputs: ["log"],
-    cost: { tier: "rules", tokens: RUN_TOKENS },
+    cost: { tier: "rules", tokens: PASS_BOUND.tokens },
     turnOn: "Registers new repos where Upkeep is Captain.",
     outcomes: [
       { id: "proj-register", text: "A new repo in the workspace folder: register it" },
@@ -133,7 +131,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     steps:
       "Raise the priority of a task due soon. Mark tasks with the same title as duplicates. Suggest closing a task nobody touched for 30 days. Never close one.",
     outputs: ["log"],
-    cost: { tier: "rules", tokens: RUN_TOKENS },
+    cost: { tier: "rules", tokens: PASS_BOUND.tokens },
     turnOn: "Triages open tasks once a day where Upkeep is Captain.",
     outcomes: [
       { id: "triage-priority", text: "Due soon: set high priority" },
@@ -152,7 +150,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     steps:
       "Remove what a done task left behind once it is merged or kept elsewhere. Never remove uncommitted work.",
     outputs: ["log"],
-    cost: { tier: "rules", tokens: RUN_TOKENS },
+    cost: { tier: "rules", tokens: PASS_BOUND.tokens },
     turnOn: "Cleans up done tasks once a day. It also runs while Auto-pilot is off.",
     outcomes: [
       { id: "cleanup-caches", text: "A done task's rebuildable caches: remove them" },
@@ -160,24 +158,6 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
       { id: "cleanup-ask", text: "Uncommitted changes: ask me, never remove" },
     ],
     runner: { kind: "chore", chore: "cleanup" },
-  }),
-  upkeep({
-    id: "upkeep-stuck",
-    name: "Stuck tasks",
-    purpose: "Wake a lead once when nobody works and nothing is pending, then tell you.",
-    trigger: { cadence: HOURLY, events: ["A running task goes quiet"] },
-    inputs: ["Running tasks with no agent working"],
-    steps:
-      "Move a step off an account that needs a sign-in to a teammate. Wake the lead of a quiet task once. If it stays quiet, pause the task and tell the owner.",
-    outputs: ["log"],
-    cost: { tier: "rules", tokens: RUN_TOKENS },
-    turnOn: "Watches running tasks that go quiet where Upkeep is Captain.",
-    outcomes: [
-      { id: "stuck-signin", text: "An account needs a sign-in: move the step to a teammate" },
-      { id: "stuck-wake", text: "A stuck run: wake the lead once" },
-      { id: "stuck-tell", text: "Still stuck: pause it and tell me" },
-    ],
-    runner: { kind: "chore", chore: "stuck" },
   }),
   upkeep({
     id: "upkeep-followups",
@@ -188,7 +168,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     steps:
       "Close a follow-up whose task is done or that a later task did. Merge a repeat of an older one. Report the rest as findings and propose a task for concrete work.",
     outputs: ["finding", "task", "log"],
-    cost: { tier: "laya", tokens: RUN_TOKENS },
+    cost: { tier: "laya", tokens: PASS_BOUND.tokens },
     turnOn: "Reads the open follow-ups of memory once a day where Upkeep is Captain.",
     outcomes: [
       { id: "fu-close", text: "A follow-up already done: close it" },
@@ -207,7 +187,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     steps:
       "Read what the workspace's projects use. Search the registry and the directory for each. Propose the top few as findings with the reason. Never propose one you proposed before and the owner turned down. With full access, install a skill (never enabled for any agent) and say so.",
     outputs: ["finding", "log"],
-    cost: { tier: "rules", tokens: RUN_TOKENS },
+    cost: { tier: "rules", tokens: PASS_BOUND.tokens },
     turnOn: "Looks for useful MCP servers and skills once a day where Upkeep is Captain.",
     outcomes: [
       { id: "disc-propose", text: "A tool that fits a project: propose it in Needs you" },
@@ -232,12 +212,15 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     steps:
       "Re-test a failing connection. File what is stale as a finding with a proposal to close it. Leave a worktree with uncommitted changes for the owner. Send one summary line.",
     outputs: ["finding", "log"],
-    cost: { tier: "rules", tokens: RUN_TOKENS },
+    cost: { tier: "rules", tokens: PASS_BOUND.tokens },
     turnOn: "Tidies majhi once a day where Upkeep is Captain. Destructive steps wait for you.",
     outcomes: [
       { id: "tidy-retest", text: "A failing connection: test it again" },
       { id: "tidy-propose", text: "Something stale: propose closing it" },
-      { id: "tidy-secrets", text: "A secret request unanswered for 3 days and no longer needed: withdraw it" },
+      {
+        id: "tidy-secrets",
+        text: "A duplicate or abandoned secret request: withdraw it. The rest: try a connection first",
+      },
       { id: "tidy-dirty", text: "A worktree with uncommitted changes: ask me, never remove" },
     ],
     runner: { kind: "chore", chore: "tidy" },
@@ -251,7 +234,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     steps:
       "Run every check. Run the fix of a failed check that has one. File what stays failed as a bug on majhi, or ask the owner when it needs a sign-in or a form.",
     outputs: ["log"],
-    cost: { tier: "rules", tokens: RUN_TOKENS },
+    cost: { tier: "rules", tokens: PASS_BOUND.tokens },
     turnOn: "Runs the health checks twice a day where Upkeep is Captain.",
     outcomes: [
       { id: "health-fix", text: "A failed check with a fix: run the fix" },
@@ -269,7 +252,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     steps:
       "Check that a backup is recent and verified, disk is free, no budget is near its cap, and agents are not stuck waiting for a slot. File each finding once. With full access, raise the slots of an account by one, up to 4, when it has room.",
     outputs: ["finding", "log"],
-    cost: { tier: "rules", tokens: RUN_TOKENS },
+    cost: { tier: "rules", tokens: PASS_BOUND.tokens },
     turnOn: "Checks what you may not think about once a day where Upkeep is Captain.",
     outcomes: [
       { id: "check-finding", text: "Something is off: file a finding" },

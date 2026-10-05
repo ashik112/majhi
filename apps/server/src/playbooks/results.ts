@@ -15,7 +15,6 @@ const VERBS: Record<CaptainChore, { done: (n: number) => string; asked: (n: numb
   projects: { done: (n) => `updated ${n}`, asked: (n) => `asked you about ${n}` },
   triage: { done: (n) => `triaged ${n}`, asked: (n) => `${n} for you` },
   cleanup: { done: (n) => `cleaned up ${n}`, asked: (n) => `${n} for you` },
-  stuck: { done: (n) => `woke ${n}`, asked: (n) => `${n} for you` },
   followups: { done: (n) => `followed up on ${n}`, asked: (n) => `${n} for you` },
   discover: { done: (n) => `installed ${n}`, asked: (n) => `proposed ${n}` },
   tidy: { done: (n) => `tidied ${n}`, asked: (n) => `${n} for you` },

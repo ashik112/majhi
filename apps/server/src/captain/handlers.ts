@@ -14,7 +14,6 @@ type CaptainCommand =
   | "captain.choreOn"
   | "captain.runChore"
   | "captain.asks"
-  | "captain.answerCap"
   | "captain.answerBudget";
 
 /** The stop switch, Undo and the chores' switches are the owner's: the captain never reaches them. */
@@ -59,16 +58,10 @@ export function captainHandlers(
       ownerOnly(ctx);
       return captain.runChore(input.org, input.chore);
     },
-    "captain.asks": async () => ({ ...(await captain.asks()), budgets: await autonomy.budgetAsks() }),
-    "captain.answerCap": async (input, ctx) => {
-      ownerOnly(ctx);
-      const asks = await captain.answerCap(input.org, input.chore, input.answer);
-      return { ...asks, budgets: await autonomy.budgetAsks() };
-    },
+    "captain.asks": async () => ({ budgets: await autonomy.budgetAsks() }),
     "captain.answerBudget": async (input, ctx) => {
       ownerOnly(ctx);
-      const budgets = await autonomy.answerBudget(input.scope, input.answer);
-      return { ...(await captain.asks()), budgets };
+      return { budgets: await autonomy.answerBudget(input.scope, input.answer) };
     },
   };
 }

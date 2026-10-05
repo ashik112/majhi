@@ -26,6 +26,9 @@ export const WatchStateSchema = z.object({
   link: z.object({ label: z.string(), url: z.string() }).optional(),
   /** A custom watch's last reported state. */
   reportedOk: z.boolean().optional(),
+  /** Who paused the watch and why. A watch paused before this existed has none: it reads as `unrecorded`. */
+  pausedBy: z.enum(["owner", "agent"]).optional(),
+  pausedNote: z.string().max(200).optional(),
   quietUntil: z.string().optional(),
   quietKind: z.enum(["snooze", "maintenance"]).optional(),
   /** The incident the fix bookkeeping is for. One attempt per incident. */

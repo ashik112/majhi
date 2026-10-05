@@ -24,6 +24,7 @@ import { cn } from "@/lib/cn";
 import { badgeLetters, formatAgo } from "@/lib/format";
 import { useOrgs } from "@/lib/studio-queries";
 import { actionOf, openLabel, primaryOption, rowTitle, secretCardOf, workspaceOf } from "./model";
+import { useHeldOption } from "./use-send-decision";
 
 const ICON: Record<OwnerDecisionKind, ReactNode> = {
   ship: <GitMerge aria-hidden="true" />,
@@ -31,7 +32,6 @@ const ICON: Record<OwnerDecisionKind, ReactNode> = {
   approval: <ShieldCheck aria-hidden="true" />,
   secret: <KeyRound aria-hidden="true" />,
   budget: <CircleDollarSign aria-hidden="true" />,
-  cap: <CircleDollarSign aria-hidden="true" />,
   paused: <CirclePause aria-hidden="true" />,
   "sign-in": <LogIn aria-hidden="true" />,
   draft: <Mail aria-hidden="true" />,
@@ -79,7 +79,6 @@ function DecisionCard({
   isHeld,
   now,
   busy,
-  working,
   onSelect,
   onPick,
   onAnswer,
@@ -90,12 +89,12 @@ function DecisionCard({
   isHeld: boolean;
   now: number;
   busy: boolean;
-  working: string | undefined;
   onSelect: (id: string) => void;
   onPick: (id: string, range: boolean) => void;
   onAnswer: (d: OwnerDecision, option: string, text?: string) => void;
 }) {
   const run = useRunAttention();
+  const working = useHeldOption(d.id);
   const workspace = workspaceOf(d);
   const suggestion = d.suggestion;
   const main = primaryOption(d, undefined);
@@ -143,6 +142,9 @@ function DecisionCard({
           <span className={cn("text-base text-fg text-pretty break-words", on && "font-medium")}>
             {rowTitle(d)}
           </span>
+          {d.blocked !== undefined && (
+            <span className="text-sm text-caution text-pretty break-words">{d.blocked}</span>
+          )}
           {suggestion !== undefined && suggestion.by === "captain" && suggestion.reason !== "" && (
             <span className="line-clamp-1 font-mono text-xs text-green">{suggestion.reason}</span>
           )}
@@ -160,18 +162,18 @@ function DecisionCard({
                   key={o.id}
                   size="sm"
                   variant={o.id === main?.id && !typed ? "primary" : "secondary"}
-                  disabled={busy}
+                  disabled={busy || working !== undefined}
                   aria-pressed={typed ? replyOpen : undefined}
                   className="h-auto min-h-7 max-w-full py-1 whitespace-normal"
                   onClick={() => (typed ? setReplyOpen(!replyOpen) : onAnswer(d, o.id))}
                 >
-                  {working === o.id ? "Working..." : o.label}
+                  {working === o.id ? "Sending..." : o.label}
                 </Button>
               );
             })}
             {d.options.length === 0 && (
               <Button size="sm" variant="primary" onClick={() => run(actionOf(d.link))}>
-                {openLabel(d.link)}
+                {d.kind === "question" ? "Answer in the task" : openLabel(d.link)}
               </Button>
             )}
           </div>
@@ -229,7 +231,6 @@ export function DecisionList({
   picked,
   held,
   busy,
-  working,
   onSelect,
   onPick,
   onAnswer,
@@ -243,8 +244,6 @@ export function DecisionList({
   /** Decisions in a batch that waits out its undo time. */
   held: ReadonlySet<string>;
   busy: boolean;
-  /** The option being sent right now. */
-  working: string | undefined;
   onSelect: (id: string) => void;
   /** The checkbox: `range` when shift was held. */
   onPick: (id: string, range: boolean) => void;
@@ -288,7 +287,6 @@ export function DecisionList({
               isHeld={isHeld}
               now={now}
               busy={busy}
-              working={working}
               onSelect={onSelect}
               onPick={onPick}
               onAnswer={onAnswer}

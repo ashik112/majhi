@@ -17,10 +17,6 @@ export function actionOf(target: AgendaTarget): BannerAction {
       return { kind: "page", to: "/decisions", search: { id: target.id } };
     case "finding":
       return { kind: "page", to: "/captain", search: { id: String(target.id), tab: "findings" } };
-    case "deadline":
-      return { kind: "page", to: "/knowledge", search: { id: String(target.id), tab: "deadlines" } };
-    case "contact":
-      return { kind: "page", to: "/knowledge", search: { id: String(target.id), tab: "people" } };
     case "limits":
       return { kind: "page", to: "/limits" };
     case "playbooks":
@@ -39,10 +35,6 @@ export function lampOf(item: Pick<AgendaItem, "kind" | "must">): LampState {
       return "needs";
     case "budget":
       return "paused";
-    case "deadline":
-      return item.must ? "needs" : "idle";
-    case "crm":
-      return "idle";
   }
 }
 
@@ -57,7 +49,6 @@ export function minutesText(min: number): string {
 /** What `e` does with an item, in words, or undefined when the owner cannot finish it from Today. */
 export function doneWord(item: Pick<AgendaItem, "done">): string | undefined {
   if (item.done?.kind === "dismiss-finding") return "Dismiss";
-  if (item.done?.kind === "close-deadline") return "Mark done";
   return undefined;
 }
 

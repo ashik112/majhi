@@ -156,7 +156,11 @@ export function opsHandlers(deps: OpsHandlerDeps): Pick<CommandHandlers, OpsComm
     "watch.checkNow": async (input) => engine.checkNow(input.id),
     "watch.pause": async (input, ctx) => {
       await agentMayChange(ctx, input.id);
-      return engine.pause(input.id, input.paused);
+      const agent = ctx.meta.actor.kind === "agent";
+      if (agent && input.paused && (input.note === undefined || input.note === "")) {
+        throw new UserError("Say why in note: a paused watch shows its reason to the owner.", 400);
+      }
+      return engine.pause(input.id, input.paused, agent ? "agent" : "owner", input.note);
     },
     "watch.snooze": async (input, ctx) => {
       await agentMayChange(ctx, input.id);

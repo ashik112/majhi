@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PRIVATE } from "./accounts.ts";
 import { DraftSchema } from "./playbooks.ts";
 import { TaskIdSchema } from "./tasks.ts";
 
@@ -13,7 +14,6 @@ export const OwnerDecisionKindSchema = z.enum([
   "approval",
   "ship",
   "budget",
-  "cap",
   "paused",
   "sign-in",
   "secret",
@@ -60,7 +60,7 @@ export const DecisionLinkSchema = z.discriminatedUnion("kind", [
 export type DecisionLink = z.infer<typeof DecisionLinkSchema>;
 
 export const OwnerDecisionSchema = z.object({
-  /** Stable while the decision waits: `room:<task>:<item>`, `cap:<org>:<chore>:<day>`, `budget:<scope>:<day>`, `signin:<account>`. */
+  /** Stable while the decision waits: `room:<task>:<item>`, `budget:<scope>:<day>`, `signin:<account>`. */
   id: z.string().min(1).max(300),
   kind: OwnerDecisionKindSchema,
   /** The workspace (org id). Absent for what belongs to none, like a sign-in or the autonomous budget. */
@@ -73,6 +73,11 @@ export const OwnerDecisionSchema = z.object({
   title: z.string().min(1).max(300),
   /** What it is in a sentence the owner can act on ("@acme-builder finished 'Fix the invoice total' and it is ready to ship"). */
   sentence: z.string().max(500).optional(),
+  /**
+   * One line when the server already knows the main action cannot succeed (nothing to merge, checks
+   * failed). The card says it instead of offering a button that would fail.
+   */
+  blocked: z.string().max(300).optional(),
   /** The answers a click gives, primary first. Empty when the answer needs the task open. */
   options: z.array(DecisionOptionSchema),
   suggestion: DecisionSuggestionSchema.optional(),
@@ -122,10 +127,75 @@ export const DecisionDetailSchema = z.object({
   draft: DraftSchema.optional(),
   /** Options that cannot be taken now, with the reason (Merge when nothing is committed). */
   blocked: z.record(z.string(), z.string()).optional(),
+  /** What a permission or approval asks to run, whole: the command, the tool call. */
+  command: z.string().max(8000).optional(),
+  /** Who asks, so the pane can say "@agent in ACM-3". */
+  agent: z.string().optional(),
 });
 export type DecisionDetail = z.infer<typeof DecisionDetailSchema>;
 
-export const DecisionListSchema = z.object({ decisions: z.array(OwnerDecisionSchema) });
+/** What one workspace (or all of them) has waiting and working. */
+export const WorkCountsSchema = z.object({
+  needsYou: z.number().int().nonnegative(),
+  working: z.number().int().nonnegative(),
+});
+export type WorkCounts = z.infer<typeof WorkCountsSchema>;
+
+/**
+ * The one count every screen shows (Home header and columns, the bell, the sidebar, the banner),
+ * computed on the server from the decisions it lists and the agents that are working now. `orgs` is
+ * keyed by workspace id; a task of none counts under Private.
+ */
+export const BoardCountsSchema = WorkCountsSchema.extend({
+  /** The tasks an agent is working on right now, so a column lists exactly what is counted. */
+  workingTasks: z.array(z.string()),
+  orgs: z.record(z.string(), WorkCountsSchema),
+});
+export type BoardCounts = z.infer<typeof BoardCountsSchema>;
+
+/** The workspace a decision belongs to: its org, Private for a task of none, nothing for an account or the day's budget. */
+function decisionWorkspace(d: Pick<OwnerDecision, "org" | "task">): string | undefined {
+  return d.org ?? (d.task === undefined ? undefined : PRIVATE);
+}
+
+/**
+ * Counts what waits and what works. A task is working only when an agent is working on it right
+ * now and nothing waits for the owner in it: an agent that waits on an answer is waiting, not working.
+ */
+export function boardCounts(
+  decisions: readonly Pick<OwnerDecision, "org" | "task">[],
+  working: readonly { task: string; org?: string | undefined }[],
+): BoardCounts {
+  const orgs: Record<string, WorkCounts> = {};
+  const of = (org: string): WorkCounts => {
+    orgs[org] ??= { needsYou: 0, working: 0 };
+    return orgs[org];
+  };
+  const asking = new Set(decisions.flatMap((d) => (d.task === undefined ? [] : [d.task])));
+  for (const d of decisions) {
+    const org = decisionWorkspace(d);
+    if (org !== undefined) of(org).needsYou += 1;
+  }
+  const workingTasks: string[] = [];
+  for (const w of working) {
+    if (asking.has(w.task) || workingTasks.includes(w.task)) continue;
+    workingTasks.push(w.task);
+    of(w.org ?? PRIVATE).working += 1;
+  }
+  return { needsYou: decisions.length, working: workingTasks.length, workingTasks, orgs };
+}
+
+/** The order of the list: incidents, then ship and budget, then the rest, oldest first within each. */
+export function compareDecisions(a: Pick<OwnerDecision, "kind" | "at">, b: Pick<OwnerDecision, "kind" | "at">): number {
+  const rank = (d: Pick<OwnerDecision, "kind">) =>
+    d.kind === "incident" ? -1 : d.kind === "ship" || d.kind === "budget" ? 0 : 1;
+  return rank(a) - rank(b) || a.at.localeCompare(b.at);
+}
+
+export const DecisionListSchema = z.object({
+  decisions: z.array(OwnerDecisionSchema),
+  counts: BoardCountsSchema,
+});
 export type DecisionList = z.infer<typeof DecisionListSchema>;
 
 /** `decisions.answer`: `option` is one of the decision's option ids. `text` replaces it on an ask card's free-text answer. */
@@ -150,10 +220,9 @@ export type DecisionRecommendInput = z.infer<typeof DecisionRecommendInputSchema
  */
 export const DECISION_KIND_LABEL: Record<OwnerDecisionKind, string> = {
   question: "Question",
-  approval: "Access",
+  approval: "Permission",
   ship: "Ship",
   budget: "Money",
-  cap: "Money",
   paused: "Paused",
   "sign-in": "Access",
   secret: "Access",
@@ -166,9 +235,6 @@ export const DECISION_KIND_LABEL: Record<OwnerDecisionKind, string> = {
 export function roomDecisionId(task: string, item: string): string {
   return `room:${task}:${item}`;
 }
-export function capDecisionId(org: string, chore: string, day: string): string {
-  return `cap:${org}:${chore}:${day}`;
-}
 export function budgetDecisionId(scope: string, day: string): string {
   return `budget:${scope}:${day}`;
 }
@@ -178,7 +244,6 @@ export function signInDecisionId(account: string): string {
 
 export type ParsedDecisionId =
   | { kind: "room"; task: string; item: string }
-  | { kind: "cap"; org: string; chore: string; day: string }
   | { kind: "budget"; scope: string; day: string }
   | { kind: "signin"; account: string }
   | { kind: "draft"; id: number }
@@ -192,9 +257,6 @@ export function parseDecisionId(id: string): ParsedDecisionId | undefined {
   const [head, ...rest] = id.split(":");
   if (head === "room" && rest.length >= 2 && rest[0] !== "" && rest[1] !== "") {
     return { kind: "room", task: rest[0] as string, item: rest.slice(1).join(":") };
-  }
-  if (head === "cap" && rest.length === 3 && rest.every((p) => p !== "")) {
-    return { kind: "cap", org: rest[0] as string, chore: rest[1] as string, day: rest[2] as string };
   }
   if (head === "budget" && rest.length === 2 && rest.every((p) => p !== "")) {
     return { kind: "budget", scope: rest[0] as string, day: rest[1] as string };
@@ -253,6 +315,7 @@ export const DecisionBatchResultSchema = z.object({
   failed: z.array(z.object({ id: z.string(), error: z.string() })),
   /** What still waits. */
   decisions: z.array(OwnerDecisionSchema),
+  counts: BoardCountsSchema,
 });
 export type DecisionBatchResult = z.infer<typeof DecisionBatchResultSchema>;
 
@@ -286,8 +349,8 @@ export function batchPick(
 /** The action in two or three words: "allow once", "merge", "keep the budget". */
 function batchLabel(kind: OwnerDecisionKind, option: DecisionOption): string {
   if (kind === "approval" && option.effect === "leave") return "reject";
-  if ((kind === "budget" || kind === "cap") && option.effect === "leave") return "keep the budget";
-  if ((kind === "budget" || kind === "cap") && option.effect === "approve") return "raise";
+  if (kind === "budget" && option.effect === "leave") return "keep the budget";
+  if (kind === "budget" && option.effect === "approve") return "raise";
   return option.label.toLowerCase();
 }
 

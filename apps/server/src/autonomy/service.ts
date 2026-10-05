@@ -38,6 +38,7 @@ import {
   type QueueItem,
   type RoomItem,
   type Spend,
+  TASKS_AT_ONCE,
   type Task,
   type TaskId,
   ToolIdSchema,
@@ -55,14 +56,7 @@ import { forceOrg, narrow, readRefusal, type ScopeWorld } from "../captain/lane-
 import type { Lanes } from "../captain/lanes.ts";
 import { askedWhy, authorityOf, workspaceIds } from "../captain/levels.ts";
 import { classifyOwnWork, scopeOfTask } from "../captain/own-work.ts";
-import { permissionVerdict } from "../captain/permission-rules.ts";
-import {
-  loopLine,
-  NEAR_SAME_MS,
-  nudgeText,
-  type PastAnswer,
-  questionLoop,
-} from "../captain/question-loop.ts";
+import { answerFor, coveredForTask, permissionVerdict } from "../captain/permission-rules.ts";
 import { restWhy, typingWhy } from "../captain/rules.ts";
 import type { ConfigSections } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
@@ -96,7 +90,7 @@ import { authorityProblem, leftOutWhy, type OrgNames, orgName, pickLines } from 
 import { type AutonomyVerdict, decideAutonomously, startsWork } from "./policy.ts";
 import { AutonomyRepo, type HeldReason, STOPPED_NOW } from "./repo.ts";
 import { pathsOf, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
-import { finishedByDay, hourlySpend, machineOf } from "./report.ts";
+import { finishedByDay, flowByDay, hourlySpend, machineOf, spendByDay } from "./report.ts";
 import { mayResume, pausedLabel, type ResumeEnv, resumeRefusal } from "./resume.ts";
 import { type SizeOf, type SizeRater, sizeProblem, TaskSizes } from "./sizes.ts";
 import {
@@ -162,6 +156,8 @@ export interface AutonomyDeps {
    * a turn that is running is never stopped by it (SPEC 5.18, one cost ceiling).
    */
   ceilingHeld?: () => string | undefined;
+  /** Whether the task waits on a background process an agent started: live work with no agent in a turn. */
+  processWaiting?: (task: string) => boolean;
   /** The last reading of the owner's computer and majhi's containers (the machine sensor). */
   machine?: () => MachineReading | undefined;
   now?: () => Date;
@@ -201,6 +197,9 @@ export interface ToolResult {
   isError: boolean;
 }
 
+/** How long one small `autonomy.status` answer serves every page that asks. */
+const LIGHT_STATUS_MS = 2000;
+
 /**
  * Autonomous mode (PRV-74): its state machine (off, on, paused, stopping), the tasks it runs, the
  * run gate, spend and holds, the self-approval of cards within limits, the hard limits, the feed and
@@ -212,6 +211,8 @@ export class AutonomyService {
   readonly sizes: TaskSizes;
   /** Sizes are being rated in the background for the page. */
   private filling = false;
+  /** The small status, kept for `LIGHT_STATUS_MS`; any feed event drops it. */
+  private light: { at: number; answer: Promise<AutonomyStatus> } | undefined;
   private holds: AutonomyHold[];
   private holdsQueue: Promise<unknown> = Promise.resolve();
   private finishing = false;
@@ -400,13 +401,6 @@ export class AutonomyService {
     if (this.deps.store.room.tasksWaitingOnOwner().has(task)) return "waits on the owner";
     const waits = this.repo.state().queue.some((q) => q.task === task && q.waitFor !== undefined);
     return waits ? "waits for an account" : undefined;
-  }
-
-  /** Whether a workspace has backlog, an open finding or a decision waiting: a reason for the hourly check. */
-  async pendingWork(org: string, findings: number): Promise<boolean> {
-    if (this.backlog(org).length > 0 || findings > 0) return true;
-    const decisions = (await this.deps.decisions?.().catch(() => [])) ?? [];
-    return decisions.some((d) => (d.org ?? PRIVATE) === org);
   }
 
   // ---------------------------------------------------------------------------
@@ -818,7 +812,7 @@ export class AutonomyService {
   /** The "Machine" line of the digest, or undefined when no sensor runs. */
   machineLine(): string | undefined {
     const reading = this.deps.machine?.();
-    return this.deps.machine === undefined ? undefined : machineLine(reading);
+    return this.deps.machine === undefined ? undefined : machineLine(reading, this.deps.runs.runUse());
   }
 
   private readonly calmWake = new CalmWake();
@@ -918,7 +912,7 @@ export class AutonomyService {
     if (!paused && resumed === 0) return;
     if (paused) {
       try {
-        await this.deps.tasks.start(id, "autonomy");
+        await this.deps.tasks.start(id, "autonomy", { gateReleased: true });
       } catch (err) {
         this.event({
           kind: "task",
@@ -937,10 +931,44 @@ export class AutonomyService {
     this.event({ kind: "task", text: `${id} resumed: ${why}`, task: id, ...orgOf(task) });
   }
 
+  /**
+   * The workspace's limit on tasks the captain works on at once (`tasksAtOnce`, default 1): the line
+   * when it is reached, or undefined. Counts the workspace's running tasks that have a live run, not
+   * chats or the lanes. A task whose status says running with no run (a restart cut it) holds no slot.
+   */
+  private async workspaceFull(org: string, except?: string): Promise<string | undefined> {
+    const settings = (await this.deps.config.settings()).autonomy;
+    const limit = settings.orgs[org]?.tasksAtOnce ?? TASKS_AT_ONCE;
+    const running = this.deps.store.tasks
+      .list(false)
+      .filter(
+        (t) =>
+          t.status === "running" &&
+          this.isLive(t.id) &&
+          t.kind !== "chat" &&
+          t.id !== except &&
+          (t.org ?? PRIVATE) === org &&
+          this.deps.lanes.orgOf(t.id) === undefined,
+      );
+    if (running.length < limit) return undefined;
+    const names = running.map((t) => t.id).join(", ");
+    return `This workspace works on ${limit} ${limit === 1 ? "task" : "tasks"} at once and ${names} ${running.length === 1 ? "is" : "are"} running.`;
+  }
+
+  /**
+   * The task has a live run: queued for a slot, starting, working, waiting on a card, held to go on by
+   * itself, or waiting on a background process. The run manager's state, not the stored status.
+   */
+  private isLive(task: string): boolean {
+    return this.deps.runs.busy(task) || this.deps.processWaiting?.(task) === true;
+  }
+
   /** Why the task's agents would only wait for a slot now, or undefined when there is room. */
-  private async noRoomFor(task: Pick<Task, "team">): Promise<string | undefined> {
+  private async noRoomFor(task: Pick<Task, "team" | "id" | "org">): Promise<string | undefined> {
     const busy = this.machineBusy();
     if (busy !== undefined) return `${upperFirst(busy)}.`;
+    const full = await this.workspaceFull(task.org ?? PRIVATE, task.id);
+    if (full !== undefined) return full;
     const accounts = await this.teamAccountIds(task);
     return noRoomLine(await this.deps.runs.capacity(accounts), accounts);
   }
@@ -1518,14 +1546,17 @@ export class AutonomyService {
           ];
     const capacity = await this.deps.runs.capacity([...named, ...candidates]);
     const lines = candidates.map((a) => noRoomLine(capacity, [a]));
+    const atOnce = await this.workspaceFull(world.org, str(input.id));
     const full =
       busy !== undefined
         ? `${upperFirst(busy)}.`
-        : candidates.length === 0
-          ? noRoomLine(capacity, named)
-          : lines.every((l) => l !== undefined)
-            ? lines[0]
-            : undefined;
+        : atOnce !== undefined
+          ? atOnce
+          : candidates.length === 0
+            ? noRoomLine(capacity, named)
+            : lines.every((l) => l !== undefined)
+              ? lines[0]
+              : undefined;
     const then =
       command === "tasks.start"
         ? `${str(input.id) ?? "The task"} waits.`
@@ -1595,7 +1626,7 @@ export class AutonomyService {
     const out: RepoRuleTask[] = [];
     for (const s of this.deps.store.tasks.list(false)) {
       // Only work that is changing code now: a task in review waits for the owner and holds nothing.
-      if (s.status !== "running" || skip.includes(s.id)) continue;
+      if (s.status !== "running" || !this.isLive(s.id) || skip.includes(s.id)) continue;
       const task = this.deps.store.tasks.get(s.id);
       if (task === undefined) continue;
       out.push(await this.repoUses(task));
@@ -2050,8 +2081,10 @@ export class AutonomyService {
     ]);
     const { pick } = settings.autonomy;
     const names = orgNames(sections);
-    return this.backlog(org).map((item) => {
-      const size = this.sizes.known(item.task) ?? { note: "Not rated yet" };
+    const items = this.backlog(org);
+    const known = this.sizes.knownMany(items.map((i) => i.task));
+    return items.map((item) => {
+      const size = known.get(item.id) ?? { note: "Not rated yet" };
       const authority = authorityOf(settings.autonomy, item.org ?? PRIVATE);
       return { item, size, leftOut: leftOutWhy(pick, item.task, size, names, authority) };
     });
@@ -2267,10 +2300,7 @@ export class AutonomyService {
     if (waiting !== undefined) {
       return fail(`${waiting}. The captain tries again when you send or leave.`);
     }
-    // An agent that asks the same thing again and again is stuck: no answer feeds it.
-    const stuck = await this.questionLoopLine(input.task, item);
-    if (stuck !== undefined) return fail(`${stuck}. It is left for the owner. Do not answer it.`);
-    const option = input.option;
+    let option = input.option;
     // The rule table binds the captain too: an empty prompt is the owner's, and a dangerous one is rejected.
     if (item.type === "permission") {
       const rule = permissionVerdict(item.title);
@@ -2294,6 +2324,12 @@ export class AutonomyService {
       if (rule.decision === "deny" && kind !== "reject_once" && kind !== "reject_always") {
         return fail(`Refused: ${rule.why}. Reject it or leave it to the owner.`);
       }
+      // Allow for this task is for a tool a rule covers; any other tool is a judgment call, once.
+      if (kind === "allow_always" && !coveredForTask(item.title)) {
+        return fail("Refused: Allow for this task is only for a tool a rule covers. Use Allow once.");
+      }
+      // A rule covers the tool for the whole task: the next call must not ask again.
+      if (option !== undefined) option = answerFor(item.title, item.options, option);
     }
     let answered: RoomItem;
     try {
@@ -2342,44 +2378,6 @@ export class AutonomyService {
       ...this.orgOfTask(input.task),
     });
     return ok({ item: answered });
-  }
-
-  /** Loops already flagged, so the agent hears of one only once and the room gets one line. */
-  private readonly flaggedLoops = new Set<string>();
-
-  /**
-   * The line "@agent keeps asking in TASK (...)" when this card is the same question again, or the
-   * third in five minutes, from the same agent in the same task as the captain answered before. The
-   * first time, the line goes into the room and the agent gets one message. Undefined: not a loop.
-   */
-  private async questionLoopLine(task: string, item: RoomItem): Promise<string | undefined> {
-    const found = this.deps.store.tasks.get(task);
-    const agent = "agent" in item && typeof item.agent === "string" ? item.agent : found?.team[0];
-    const text = plainQuestion(item);
-    if (agent === undefined || text === undefined) return undefined;
-    const since = new Date(this.now().getTime() - NEAR_SAME_MS).toISOString();
-    const past: PastAnswer[] = [];
-    for (const e of this.repo.events({ limit: 50, decisions: false, task }).slice().reverse()) {
-      if (e.kind !== "answer" || e.item === undefined || e.at < since) continue;
-      const before = this.deps.room.get(task, e.item);
-      const asked = before === undefined ? undefined : plainQuestion(before);
-      const by = before !== undefined && "agent" in before ? before.agent : found?.team[0];
-      if (asked !== undefined && by === agent) past.push({ at: e.at, question: asked });
-    }
-    const loop = questionLoop(past, text, this.now());
-    if (loop === undefined) return undefined;
-    const line = loopLine(agent, task, loop);
-    const key = `${task}:${agent}:${loop.since}`;
-    if (!this.flaggedLoops.has(key)) {
-      this.flaggedLoops.add(key);
-      this.deps.room.post(task as TaskId, `autonomy:${randomUUID()}`, {
-        type: "system",
-        level: "warn",
-        text: `${line}. The captain left its question for the owner.`,
-      });
-      this.deps.runs.notify(task, agent, nudgeText(task, loop));
-    }
-    return line;
   }
 
   // ---------------------------------------------------------------------------
@@ -2551,7 +2549,24 @@ export class AutonomyService {
     return out;
   }
 
-  async status(): Promise<AutonomyStatus> {
+  /**
+   * The page's state. `detail` false is the small one every page reads (mode, lanes, counts, spend,
+   * settings): the lists of tasks, the backlog and the waiting cards stay empty.
+   */
+  status(detail = true): Promise<AutonomyStatus> {
+    if (detail) return this.build(true);
+    // Every page asks at once on load and again on each event: one answer serves them for a moment.
+    const now = Date.now();
+    if (this.light !== undefined && now - this.light.at < LIGHT_STATUS_MS) return this.light.answer;
+    const answer = this.build(false);
+    this.light = { at: now, answer };
+    answer.catch(() => {
+      if (this.light?.answer === answer) this.light = undefined;
+    });
+    return answer;
+  }
+
+  private async build(detail: boolean): Promise<AutonomyStatus> {
     const state = this.repo.state();
     const m = await this.measure();
     const holds = state.mode === "off" ? [] : await this.refreshHolds(m);
@@ -2579,14 +2594,17 @@ export class AutonomyService {
             },
           }),
       lanes,
-      now: await this.withPauses(this.nowList()),
+      now: detail ? await this.withPauses(this.nowList()) : [],
+      running: this.nowList()
+        .filter((n) => n.status === "running")
+        .map((n) => n.task),
       queue: after.queue,
-      backlog: this.backlogView(rated),
+      backlog: detail ? this.backlogView(rated) : [],
       ...(after.queuedAt === undefined ? {} : { queuedAt: after.queuedAt }),
       holds,
       spend: m.spend,
       accounts: m.accounts,
-      waiting: this.waiting(),
+      waiting: detail ? this.waiting() : [],
       settings: m.settings,
       raised: m.raised,
       ...(summary === undefined ? {} : { summary }),
@@ -2617,6 +2635,7 @@ export class AutonomyService {
     const now = this.now();
     const window = dayWindow(now, tz);
     const first = dayStart(addDays(window.day, 1 - days), tz).toISOString();
+    const events = this.repo.eventsBetween(first, window.end);
     return {
       tz,
       today: window.day,
@@ -2625,7 +2644,14 @@ export class AutonomyService {
         window.start,
         now,
       ),
-      days: finishedByDay(this.repo.eventsBetween(first, window.end), window.day, days, tz),
+      days: finishedByDay(events, window.day, days, tz),
+      spend: spendByDay(
+        this.repo.spendTurnsByOrg(first, window.end, this.spendChats()),
+        window.day,
+        days,
+        tz,
+      ),
+      flow: flowByDay(events, window.day, days, tz),
       stuck: stuckTasks({
         now,
         tasks: this.openTasks().map((t) => ({
@@ -2635,10 +2661,6 @@ export class AutonomyService {
           status: t.status,
           updatedAt: t.updatedAt,
         })),
-        events: this.repo.eventsBetween(
-          new Date(now.getTime() - 24 * 3_600_000).toISOString(),
-          now.toISOString(),
-        ),
         waiting: this.waiting(),
       }),
       ...machineOf(this.deps.machine?.()),
@@ -2762,6 +2784,7 @@ export class AutonomyService {
       text: redactText(e.text),
       ...(e.reason === undefined ? {} : { reason: redactText(e.reason) }),
     });
+    this.light = undefined;
     this.deps.events.emit(["autonomy"]);
     return seq;
   }
@@ -2937,21 +2960,5 @@ function withChanged(spend: AutonomySpend, changed: readonly string[]): Autonomy
   };
 }
 
-/** The words an agent asked, without ids, so the same question compares equal. */
 /** A backlog task with its size and why the pick rules leave it out, if they do. */
 type Rated = { item: BacklogTask & { task: Task }; size: SizeOf; leftOut: string | undefined };
-
-function plainQuestion(item: RoomItem): string | undefined {
-  switch (item.type) {
-    case "choice":
-      return item.question;
-    case "ask":
-      return item.questions.map((q) => q.question).join(" / ");
-    case "owner-question":
-      return item.text ?? item.choices.join(" / ");
-    case "permission":
-      return item.title;
-    default:
-      return undefined;
-  }
-}

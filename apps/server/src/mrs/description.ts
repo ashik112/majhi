@@ -30,11 +30,6 @@ export function briefSummary(title: string, brief: string): string {
   return `${(at > SUMMARY_MAX / 2 ? cut.slice(0, at) : cut).trimEnd()}...`;
 }
 
-/** The MR title: the task id and title, so the host list shows which task a MR belongs to. */
-export function mrTitle(taskId: string, title: string): string {
-  return `${taskId}: ${title}`.slice(0, 200);
-}
-
 export function renderMrDescription(input: DescriptionInput): string {
   const out: string[] = [`Task ${input.taskId}: ${input.title}`];
   const summary = briefSummary(input.title, input.brief);

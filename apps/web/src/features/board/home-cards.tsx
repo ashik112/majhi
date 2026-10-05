@@ -1,24 +1,25 @@
 import { DECISION_KIND_LABEL, type OwnerDecision, type TaskSummary } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { useRunAttention } from "@/components/shell/banner";
 import { Button } from "@/components/ui/button";
 import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
 import { useToast } from "@/components/ui/toast";
 import { actionOf, openLabel, secretCardOf, workspaceOf } from "@/features/decisions/model";
+import { useHeldOption, useSendDecision } from "@/features/decisions/use-send-decision";
 import { SecretAnswer } from "@/features/room/secret-answer";
 import { useAgentIndex } from "@/lib/agent-index";
 import { useCaptainUndo } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
-import { useAnswerDecision, useDecisionDetail } from "@/lib/decision-queries";
+import { useDecisionDetail } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
 import { useAccounts, useOrgs } from "@/lib/studio-queries";
-import { useTasks } from "@/lib/task-queries";
+import { useTaskRow } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
 import { limitNote } from "../shell/limit-note";
 import { openDue } from "../tasks/schedule";
 import { DueChip, PriorityChip } from "../tasks/schedule-chips";
-import { cardLine, plainTitle, waitingText } from "./model";
+import { cardLine, plainTitle, queuedText } from "./model";
 
 const FRAME = {
   needs:
@@ -118,21 +119,17 @@ function StatusLine({ lamp, children }: { lamp: LampState; children: ReactNode }
 }
 
 /** A decision with its answers as buttons; the main one is filled. */
-export function DecisionCard({ decision }: { decision: OwnerDecision }) {
+export const DecisionCard = memo(function DecisionCard({ decision }: { decision: OwnerDecision }) {
   const run = useRunAttention();
-  const toast = useToast();
-  const answer = useAnswerDecision();
+  const { send: sendDecision, busy } = useSendDecision();
+  const held = useHeldOption(decision.id);
   const ship = decision.kind === "ship";
   const detail = useDecisionDetail(ship ? decision.id : undefined).data;
-  const task = useTasks().data?.find((t) => t.id === decision.task);
+  const task = useTaskRow(decision.task);
   const typed = decision.options.some((o) => o.text === true);
   const options = decision.options.filter((o) => o.text !== true && (!ship || o.primary === true));
   const open = () => run(actionOf(decision.link));
-  const send = (option: string) =>
-    answer.mutate(
-      { id: decision.id, option },
-      { onError: (error) => toast("Could not answer it", { detail: describeError(error), tone: "error" }) },
-    );
+  const send = (option: string) => sendDecision(decision, option);
   const title = ship && decision.taskTitle !== undefined ? decision.taskTitle : decision.title;
   const secret = secretCardOf(decision);
   const showOpen = (options.length === 0 && secret === undefined) || ship || typed;
@@ -141,7 +138,9 @@ export function DecisionCard({ decision }: { decision: OwnerDecision }) {
       <Meta
         org={workspaceOf(decision)}
         id={decision.task}
-        right={ship ? "Ready to ship" : DECISION_KIND_LABEL[decision.kind]}
+        right={
+          ship ? (decision.blocked === undefined ? "Ready to ship" : "Finished") : DECISION_KIND_LABEL[decision.kind]
+        }
       />
       <TaskMeta task={task} />
       <button
@@ -158,6 +157,9 @@ export function DecisionCard({ decision }: { decision: OwnerDecision }) {
       {decision.sentence && !ship && (
         <span className="line-clamp-3 text-sm text-fg-soft text-pretty break-words">{decision.sentence}</span>
       )}
+      {decision.blocked !== undefined && (
+        <span className="text-sm text-caution text-pretty break-words">{decision.blocked}</span>
+      )}
       {detail?.checks && (
         <span className="font-mono text-xs text-green text-pretty break-words">✓ {detail.checks}</span>
       )}
@@ -170,25 +172,25 @@ export function DecisionCard({ decision }: { decision: OwnerDecision }) {
             key={option.id}
             size="sm"
             variant={option.primary === true ? "primary" : "secondary"}
-            disabled={answer.isPending}
+            disabled={busy || held !== undefined}
             className="h-auto min-h-7 max-w-full py-1 text-left whitespace-normal"
             onClick={() => send(option.id)}
           >
-            {option.label}
+            {held === option.id ? "Sending..." : option.label}
           </Button>
         ))}
         {showOpen && (
           <Button size="sm" variant={options.length === 0 ? "primary" : "secondary"} onClick={open}>
-            {ship ? "Look first" : openLabel(decision.link)}
+            {ship ? "Look first" : decision.kind === "question" && options.length === 0 ? "Answer in the task" : openLabel(decision.link)}
           </Button>
         )}
       </div>
     </Frame>
   );
-}
+});
 
 /** A task that runs or is paused: the live line, the lead and its age. */
-export function WorkingCard({ task, ago }: { task: TaskSummary; ago: string }) {
+export const WorkingCard = memo(function WorkingCard({ task, ago }: { task: TaskSummary; ago: string }) {
   const agents = useAgentIndex();
   const accounts = useAccounts().data;
   const line = cardLine(task);
@@ -223,15 +225,10 @@ export function WorkingCard({ task, ago }: { task: TaskSummary; ago: string }) {
       </span>
     </Frame>
   );
-}
+});
 
-export function QueuedCard({ task }: { task: TaskSummary }) {
-  const text =
-    task.waitingOn.length > 0
-      ? waitingText(task.waitingOn)
-      : task.status === "ready"
-        ? "Starts when a slot frees"
-        : "In the inbox";
+export const QueuedCard = memo(function QueuedCard({ task }: { task: TaskSummary }) {
+  const text = queuedText(task);
   return (
     <Frame tone="none">
       <Meta org={task.org} id={task.id} />
@@ -240,9 +237,9 @@ export function QueuedCard({ task }: { task: TaskSummary }) {
       <span className="text-sm text-fg-faint">{text}</span>
     </Frame>
   );
-}
+});
 
-export function DoneCard({
+export const DoneCard = memo(function DoneCard({
   task,
   time,
   undoId,
@@ -286,4 +283,4 @@ export function DoneCard({
       </span>
     </Frame>
   );
-}
+});

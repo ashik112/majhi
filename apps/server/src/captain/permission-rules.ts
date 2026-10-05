@@ -6,6 +6,8 @@
  * arguments. The table reads that text only.
  */
 
+import { mcpToolOf } from "../runs/permissions.ts";
+
 export type PermissionVerdict =
   /** majhi's own read-only tool: allow once. */
   | { decision: "allow"; why: string }
@@ -53,4 +55,31 @@ export function permissionVerdict(title: string): PermissionVerdict {
   }
   if (READ_TOOL.test(text)) return { decision: "allow", why: "it is a read-only tool of majhi" };
   return { decision: "unsettled" };
+}
+
+/** majhi's container tools: they act on this task's own previews and services only. */
+const TASK_CONTAINER_TOOL = /^(preview_build|preview_run|preview_stop|service_start|service_stop|list|logs)$/;
+
+/**
+ * Whether a rule covers this tool for the whole task, so one "Allow for this task" settles every later
+ * call: majhi's read-only tools, and the tools of the task's own previews and services. Anything else
+ * is a judgment call and stays an Allow once.
+ */
+export function coveredForTask(title: string): boolean {
+  if (READ_TOOL.test(title.trim())) return true;
+  const tool = mcpToolOf(title);
+  return tool?.server === "majhi-containers" && TASK_CONTAINER_TOOL.test(tool.tool);
+}
+
+/**
+ * The option the captain's yes becomes: for a tool a rule covers, "Allow for this task" instead of the
+ * one-shot Allow once, so repeated legitimate calls do not ask again. Else the option as given.
+ */
+export function answerFor(
+  title: string,
+  options: readonly { id: string; kind: string }[],
+  chosen: string,
+): string {
+  if (options.find((o) => o.id === chosen)?.kind !== "allow_once" || !coveredForTask(title)) return chosen;
+  return options.find((o) => o.kind === "allow_always")?.id ?? chosen;
 }

@@ -12,7 +12,7 @@ import { type DiffFacts, parseReview, tokensOf } from "./analysis.ts";
 import { type ExecDeps, execInTask } from "./exec.ts";
 import { shipReadiness } from "./ready.ts";
 import { HandoffRepo } from "./repo.ts";
-import { type HandoffOptions, type HandoffPorts, HandoffService } from "./service.ts";
+import { type HandoffLimits, type HandoffOptions, type HandoffPorts, HandoffService } from "./service.ts";
 
 export interface HandoffWiring {
   db: Database.Database;
@@ -39,6 +39,10 @@ export interface HandoffWiring {
   changed: (task: string) => void;
   now?: (() => Date) | undefined;
   options?: HandoffOptions | undefined;
+  /** What a check runs in, for retrying a failure after an update: majhi's commit and the runner image. */
+  environment?: (() => string) | undefined;
+  /** The caps and timeouts of a project's checks, from settings. */
+  limits?: ((project: string) => Promise<HandoffLimits>) | undefined;
   /** Tests replace the command runner. */
   exec?: HandoffPorts["exec"] | undefined;
 }
@@ -99,6 +103,8 @@ export function createHandoff(w: HandoffWiring): HandoffService {
         commits: diffs.flatMap((d) => d.commits.map((c) => c.subject)),
       };
     },
+    ...(w.environment === undefined ? {} : { environment: w.environment }),
+    ...(w.limits === undefined ? {} : { limits: w.limits }),
     exec:
       w.exec ??
       execInTask({

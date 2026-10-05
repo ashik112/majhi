@@ -21,9 +21,16 @@ export interface ChangeBase {
  * The local base can lag far behind the remote's, so it is never the only candidate.
  * `tip` is a ref or sha in `cwd`. Throws when no base shares history with the tip.
  */
-export async function changeBase(cwd: string, repo: Repo, tip: string): Promise<ChangeBase> {
+export async function changeBase(
+  cwd: string,
+  repo: Repo,
+  tip: string,
+  /** `mergeBase`: ignore the recorded start and measure from where the branch meets its base now, which is what a merge request carries. */
+  options: { mergeBase?: boolean } = {},
+): Promise<ChangeBase> {
   const refs = await baseCandidates(cwd, repo.base);
   if (
+    options.mergeBase !== true &&
     repo.startCommit !== undefined &&
     (await gitOk(cwd, ["merge-base", "--is-ancestor", repo.startCommit, tip]))
   ) {

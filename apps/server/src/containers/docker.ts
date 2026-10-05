@@ -9,6 +9,7 @@ import {
   ContainerRefused,
   type DockerParts,
   dockerArgv,
+  envByName,
   type HostPaths,
   type Safety,
 } from "./args.ts";
@@ -189,8 +190,10 @@ export class DockerCli {
     const name = verb === "run" ? parts.flags[at + 1] : undefined;
     await mkdir(this.configDir, { recursive: true });
     if (name !== undefined) await this.removals.get(name);
-    const child = spawn(this.docker, dockerArgv(parts), {
-      env: this.env,
+    // The values of `--env NAME=value` go in the CLI's environment, not on its command line.
+    const byName = envByName(parts);
+    const child = spawn(this.docker, dockerArgv(byName.parts), {
+      env: { ...byName.env, ...this.env },
       detached: true,
       stdio: ["pipe", "pipe", "pipe"],
     });

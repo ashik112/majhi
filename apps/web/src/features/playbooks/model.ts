@@ -88,7 +88,7 @@ export function cadenceFrom(choice: string, prev: Cadence): Cadence {
   return choice === "events" ? { kind: "events" } : { kind: "manual" };
 }
 
-/** The kinds the page filters by: Upkeep, Code health (the engineering and ops packs) and Business (business and growth). */
+/** The kinds the page filters by: Upkeep, Code health (the engineering and ops packs) and Business. */
 export type Kind = "upkeep" | "code" | "business";
 export const KINDS: readonly Kind[] = ["upkeep", "code", "business"];
 export const KIND_LABEL: Record<Kind, string> = {
@@ -130,9 +130,6 @@ export function shortWhen(iso: string, now: number): string {
   const hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
   return today ? hm : `${d.toLocaleDateString([], { weekday: "short" })} ${hm}`;
 }
-
-/** The daily limits the menu offers, besides "No cap". */
-export const LIMIT_CHOICES: readonly number[] = [1, 3, 5, 10, 20, 40, 100];
 
 export const RUN_LAMP: Record<PlaybookRun["status"], LampState> = {
   running: "working",

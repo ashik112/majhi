@@ -10,6 +10,7 @@ import type {
   CommandOutput,
   commands,
   Remount,
+  RoomItem,
   TaskId,
 } from "@majhi/shared";
 import { PRIVATE, RESTART_COMMAND, sameImage } from "@majhi/shared";
@@ -21,21 +22,19 @@ import { agendaHandlers } from "../agenda/handlers.ts";
 import { scheduleHandlers } from "../automation/handlers.ts";
 import { autonomyHandlers } from "../autonomy/handlers.ts";
 import { backupHandlers } from "../backup/handlers.ts";
-import { businessHandlers } from "../business/handlers.ts";
 import { captainHandlers } from "../captain/handlers.ts";
+import { answerOnce } from "../captain/keys.ts";
 import type { ConfigService } from "../config/service.ts";
 import { connectHandlers } from "../connect/handlers.ts";
 import { connectionHandlers } from "../connections/handlers.ts";
 import { redactSecrets } from "../connections/redact.ts";
 import { taskSecrets } from "../connections/run-files.ts";
 import { connectionDir } from "../connections/service.ts";
-import type { E2eService } from "../e2e/service.ts";
 import { editorPath } from "../editor/allowed.ts";
 import { UserError } from "../errors.ts";
 import { findingsHandlers } from "../findings/handlers.ts";
 import { isDirectory } from "../fs.ts";
 import { gitConnectHandlers } from "../gitConnect/handlers.ts";
-import { growthHandlers } from "../growth/handlers.ts";
 import { handoffHandlers } from "../handoff/handlers.ts";
 import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
@@ -66,12 +65,12 @@ import { sshConfigHosts } from "../scan/sshConfig.ts";
 import { restoreKey } from "../secrets/restore.ts";
 import type { Services } from "../services.ts";
 import { skillHandlers } from "../skills/handlers.ts";
+import { toolsHandlers } from "../tools/handlers.ts";
 import type { SshHostProbe } from "../ssh/hosts.ts";
 import type { SystemService } from "../system/service.ts";
 import { actorName } from "../tasks/cards.ts";
 import { changeTaskBranch } from "../tasks/change-branch.ts";
 import { readReport } from "../tasks/report.ts";
-import { trackerHandlers } from "../trackers/handlers.ts";
 
 /** Loading keys and asking the Keychain or keyring can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
@@ -107,11 +106,12 @@ export interface HandlerDeps {
   sshHosts?: SshHostProbe;
   /** `health.run` and `health.fix`. Without it they answer 501. */
   health?: HealthService;
-  /** `e2e.status` and `e2e.runNow`. Without it they answer 501. */
-  e2e?: E2eService;
   /** `system.version` and `system.update`. Without it they answer 501. */
   system?: SystemService;
 }
+
+/** How long a `tasks.create` request id is remembered. */
+const CREATE_DEDUPE_MS = 5 * 60_000;
 
 export function createHandlers({
   config,
@@ -120,7 +120,6 @@ export function createHandlers({
   services,
   sshHosts,
   health,
-  e2e,
   system,
 }: HandlerDeps): CommandHandlers {
   const { orgs, accounts, agents } = services;
@@ -143,6 +142,8 @@ export function createHandlers({
     },
   });
   const gitChecks = new CheckCache();
+  /** `tasks.create` calls by their request id, kept a few minutes: the same id returns the first task. */
+  const recentCreates = new Map<string, { at: number; made: ReturnType<typeof services.tasks.create> }>();
   const readSaved = async (host: string, account: string) =>
     (await hostLink.call("git.credential", { host, username: account }, GIT_TOKEN_TIMEOUT_MS)).secret;
   /** Host names of the remotes of an org's projects, with ~/.ssh/config aliases resolved. */
@@ -178,7 +179,6 @@ export function createHandlers({
       lanes: services.lanes,
       store: services.store,
     }),
-    ...businessHandlers({ ...services.business, lanes: services.lanes, store: services.store }),
     ...findingsHandlers({ findings: services.findings, lanes: services.lanes, store: services.store }),
     ...playbookHandlers({
       findings: services.findings,
@@ -210,20 +210,18 @@ export function createHandlers({
       store: services.store,
       handoff: services.handoff,
     }),
-    ...growthHandlers({
-      findings: services.findings,
-      lanes: services.lanes,
-      store: services.store,
-      economics: services.economics,
-      growth: services.growth,
-    }),
     ...backupHandlers(services.backup),
     ...connectHandlers(services.connect),
     ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
     ...skillHandlers(services.skills),
+    ...toolsHandlers({
+      tools: services.tools,
+      findings: services.findings,
+      lanes: services.lanes,
+      store: services.store,
+    }),
     ...mcpHandlers(services.mcpServers),
     ...gitConnectHandlers({ config, scanner, hostLink, services }),
-    ...trackerHandlers(services.trackers),
 
     "config.get": async () => (await config.load()).state,
 
@@ -548,6 +546,13 @@ export function createHandlers({
     // The captain's workspace threads are not tasks to the owner: they never show in a list.
     "tasks.list": async (input) =>
       services.tasks.list(input.includeDone === true).filter((t) => t.lane !== true),
+    "tasks.changed": async (input) => {
+      const tasks = services.tasks.list(true, input.ids).filter((t) => t.lane !== true);
+      if (input.decisions !== true) return { tasks, counts: await services.inbox.workCounts() };
+      const named = new Set(input.ids);
+      const { decisions, counts } = await services.inbox.view();
+      return { tasks, counts, decisions: decisions.filter((d) => d.task !== undefined && named.has(d.task)) };
+    },
     "tasks.get": async (input) => services.tasks.get(input.id),
     "captain.reportBug": async (input, ctx) => {
       // majhi's own code: the Private project named majhi, or the one whose folder is called majhi.
@@ -574,17 +579,30 @@ export function createHandlers({
       noteSecrets(services, task.id, captured.saved);
       return { task: task.id };
     },
-    "tasks.create": async (input, ctx) => {
-      // A secret in the task text must not reach TASK.md or the agent.
-      const captured = await services.secretService.capture(input.text);
-      const task = await services.tasks.create({
-        ...input,
-        text: captured.text,
-        from: ctx.meta.task,
-        byOwner: ctx.meta.actor.kind === "owner",
-      });
-      noteSecrets(services, task.id, captured.saved);
-      return task;
+    "tasks.create": ({ requestId, ...input }, ctx) => {
+      const now = Date.now();
+      for (const [key, seen] of recentCreates) if (now - seen.at > CREATE_DEDUPE_MS) recentCreates.delete(key);
+      const key = requestId === undefined ? undefined : `${ctx.meta.actor.kind}:${requestId}`;
+      const earlier = key === undefined ? undefined : recentCreates.get(key);
+      if (earlier !== undefined) return earlier.made;
+      const made = (async () => {
+        // A secret in the task text must not reach TASK.md or the agent.
+        const captured = await services.secretService.capture(input.text);
+        const task = await services.tasks.create({
+          ...input,
+          text: captured.text,
+          from: ctx.meta.task,
+          byOwner: ctx.meta.actor.kind === "owner",
+        });
+        noteSecrets(services, task.id, captured.saved);
+        return task;
+      })();
+      if (key !== undefined) {
+        recentCreates.set(key, { at: now, made });
+        // A failed create can be tried again with the same id.
+        made.catch(() => recentCreates.delete(key));
+      }
+      return made;
     },
     "tasks.report": async (input) => {
       const task = services.tasks.get(input.id);
@@ -827,20 +845,21 @@ export function createHandlers({
     "tasks.link": (input) => services.tasks.link(input),
     "tasks.unlink": (input) => services.tasks.unlink(input),
     "room.fresh": async (input) => ({ item: await services.tasks.fresh(input.task, input.agent) }),
-    "room.approve": async (input, ctx) => ({
-      item: await services.admin.decide(
-        input.task,
-        input.item,
-        input.decision,
-        input.always === undefined
-          ? undefined
-          : {
-              scope: input.always.scope,
-              change: { command: ctx.command, meta: ctx.meta, summary: "saved an always-allow rule" },
-            },
-        { by: ctx.meta.actor.kind === "agent" ? "captain" : "owner", reason: input.reason },
+    "room.approve": (input, ctx) =>
+      answerCard(services, ctx, input, () =>
+        services.admin.decide(
+          input.task,
+          input.item,
+          input.decision,
+          input.always === undefined
+            ? undefined
+            : {
+                scope: input.always.scope,
+                change: { command: ctx.command, meta: ctx.meta, summary: "saved an always-allow rule" },
+              },
+          { by: ctx.meta.actor.kind === "agent" ? "captain" : "owner", reason: input.reason },
+        ),
       ),
-    }),
     "room.secret": async (input) => ({
       item: await services.admin.answerSecret(input.task, input.item, input.value),
     }),
@@ -850,12 +869,12 @@ export function createHandlers({
         by: actorName(ctx.meta.actor),
         agent: ctx.meta.actor.kind === "agent",
       }),
-    "room.answerQuestion": async (input) => ({
-      item: await services.tasks.answerQuestion(input.task, input.item, input.choice),
-    }),
-    "room.answerAsk": async (input) => ({
-      item: await services.tasks.answerAsk(input.task, input.item, input.answers),
-    }),
+    "room.answerQuestion": (input, ctx) =>
+      answerCard(services, ctx, input, () =>
+        services.tasks.answerQuestion(input.task, input.item, input.choice),
+      ),
+    "room.answerAsk": (input, ctx) =>
+      answerCard(services, ctx, input, () => services.tasks.answerAsk(input.task, input.item, input.answers)),
     "secrets.list": () => services.secretService.list(),
     "secrets.save": (input) => services.secretService.save(input),
     "secrets.remove": async (input) => {
@@ -905,7 +924,6 @@ export function createHandlers({
         ...(input.rooms === undefined ? {} : { rooms: input.rooms }),
         ...(input.memory === undefined ? {} : { memory: input.memory }),
         ...(input.editor === undefined ? {} : { editor: input.editor }),
-        ...(input.e2e === undefined ? {} : { e2e: input.e2e }),
         ...(input.cleanup === undefined ? {} : { cleanup: input.cleanup }),
         ...(input.notifications === undefined ? {} : { notifications: input.notifications }),
         ...(input.containers === undefined ? {} : { containers: input.containers }),
@@ -970,13 +988,6 @@ export function createHandlers({
         actorName(ctx.meta.actor),
         input.cachesOnly,
       ),
-    "e2e.status": () => (e2e ? e2e.status() : notBuilt()),
-    "e2e.runNow": (input, ctx) => {
-      // The suite takes the owner's CPU for up to 90 minutes: only they start it by hand.
-      if (ctx.meta.actor.kind !== "owner")
-        throw new UserError("Only the owner starts a background e2e run.", 409);
-      return e2e ? e2e.runNow(input.project) : notBuilt();
-    },
     "health.run": () => (health ? health.run() : notBuilt()),
     "health.fix": (input, ctx) =>
       health ? health.fix(input.id, ctx.meta.actor.kind === "owner" ? "owner" : "agent") : notBuilt(),
@@ -1057,6 +1068,27 @@ export function createHandlers({
 }
 
 /** Tells the room which secrets were saved from the owner's text. */
+/**
+ * An answer to a card. The owner's click goes straight through. The captain's answer is keyed by the
+ * card (G1): a second answer to the same card changes nothing and says `refused`, not an error.
+ */
+async function answerCard(
+  services: Services,
+  ctx: CommandContext,
+  card: { task: string; item: string },
+  answer: () => Promise<RoomItem>,
+): Promise<CommandOutput<"room.answerAsk">> {
+  if (ctx.meta.actor.kind !== "agent") return { item: await answer() };
+  let given: RoomItem | undefined;
+  const result = await answerOnce(services.captain.repo, new Date(), card, async () => {
+    given = await answer();
+  });
+  if (result.answered && given !== undefined) return { item: given };
+  const item = services.room.get(card.task, card.item);
+  if (item === undefined) throw new UserError(`There is no card ${card.item} in ${card.task}.`, 404);
+  return { item, refused: !result.answered && result.why === "in-flight" ? "in-flight" : "already-answered" };
+}
+
 function noteSecrets(services: Services, task: string, saved: readonly string[]): void {
   for (const ref of saved) {
     services.room.post(task as TaskId, `secret-note:${randomUUID()}`, {

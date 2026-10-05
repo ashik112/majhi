@@ -135,11 +135,12 @@ describe("background processes and the task", () => {
   it("stopping a task that waits on a process pauses it without passing through review", async () => {
     const { h } = await startWith("sleep 30", true);
     expect(await status(h)).toBe("running");
-    const setStatus = vi.spyOn(h.majhi.services.store.tasks, "setStatus");
     expect((await h.cmd("tasks.stop", { id: "ACM-1" })).status).toBe(200);
     // Anything still in flight from the process's end.
     await new Promise((r) => setTimeout(r, 50));
-    expect(setStatus.mock.calls.map((c) => c[1])).toEqual(["paused"]);
+    const trail = h.majhi.services.store.lifecycle.events("ACM-1").reverse();
+    expect(trail.map((e) => e.event)).toEqual(["start", "ownerStop"]);
+    expect(trail.every((e) => e.toStatus !== "review")).toBe(true);
     const task = (await h.cmd("tasks.get", { id: "ACM-1" })).body as {
       status: string;
       pausedReason?: string;

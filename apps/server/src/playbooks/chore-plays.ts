@@ -41,8 +41,6 @@ export interface ChorePlaybooks {
   due(org: string, chore: CaptainChore, ws: Pick<Workspace, "tz">, last: LastRuns): string | undefined;
   /** Outcome rules the owner switched off in the workspace, by id. */
   rulesOff(org: string): string[];
-  /** The owner's daily limit for the chore: a number, null for no cap, undefined for majhi's default. */
-  limit(org: string, chore: CaptainChore): number | null | undefined;
   /** A run of the chore ended having done `did` things: the playbook's "Or do this" follows. */
   afterRun(org: string, chore: CaptainChore, did: number): void;
 }
@@ -59,10 +57,6 @@ export class DefaultChorePlays implements ChorePlaybooks {
 
   rulesOff(_org: string): string[] {
     return [];
-  }
-
-  limit(_org: string, _chore: CaptainChore): number | null | undefined {
-    return undefined;
   }
 
   afterRun(_org: string, _chore: CaptainChore, _did: number): void {}

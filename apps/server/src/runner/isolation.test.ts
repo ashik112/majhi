@@ -96,9 +96,9 @@ describe("what a task's run mounts", () => {
       // Other checkouts' worktree entries, but the run's own.
       { path: join(gitDir, "worktrees"), readOnly: true },
       { path: join(gitDir, "worktrees", "acme-api") },
-      // Branches, remote-tracking refs and tags, but majhi's task branches.
+      // Branches, remote-tracking refs and tags, but majhi's task branches (`feat/acm-1-...`: the kind names the folder).
       { path: join(gitDir, "refs", "heads"), readOnly: true },
-      { path: join(gitDir, "refs", "heads", "task") },
+      { path: join(gitDir, "refs", "heads", "feat") },
       { path: join(gitDir, "refs", "remotes"), readOnly: true },
       { path: join(gitDir, "refs", "tags"), readOnly: true },
       // majhi's own hooks (they keep the run on its branches), the one folder of its home a run may read.
@@ -130,7 +130,7 @@ describe("what a task's run mounts", () => {
       join(gitDir, "worktrees"),
       join(gitDir, "worktrees", "acme-api"),
       join(gitDir, "refs", "heads"),
-      join(gitDir, "refs", "heads", "task"),
+      join(gitDir, "refs", "heads", "feat"),
       join(gitDir, "refs", "remotes"),
       join(gitDir, "refs", "tags"),
       join(w.h.env.majhiHome, "git-hooks"),

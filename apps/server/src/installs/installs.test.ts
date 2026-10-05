@@ -169,9 +169,12 @@ describe("install by message", () => {
     };
     expect(approved.item.state).toBe("applied");
     expect(approved.item.result).toContain("Installed weather-remote, on for @acme-builder");
-    expect(await agentFile()).toContain("connections: [weather-remote]");
-    // The install and the enable each leave a row.
-    expect(kinds(task, "mcp-")).toEqual(["mcp-install", "mcp-enable"]);
+    // A server reaches every agent of its org unless it is off for one, so nothing is written to the
+    // agent's file and the enable is a no-op that leaves no row of its own.
+    expect(await agentFile()).not.toContain("weather-remote");
+    const installed = (await must("connections.get", { id: "weather-remote" })) as { agentsOff: string[] };
+    expect(installed.agentsOff).not.toContain("acme-builder");
+    expect(kinds(task, "mcp-")).toEqual(["mcp-install"]);
 
     // The key is asked for with a secret request tied to the connection, never in chat.
     const request = (await items(task)).find((i) => i.type === "secret-request") as Extract<

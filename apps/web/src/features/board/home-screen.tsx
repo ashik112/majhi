@@ -1,5 +1,7 @@
+import { PRIVATE } from "@majhi/shared";
 import { Plus, X } from "lucide-react";
-import { type ReactNode, useMemo } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { Fragment, type ReactNode, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,7 +10,7 @@ import { markSeen, useUnseenSummary } from "@/features/autonomy/summary-seen";
 import { SpendToday, useAutonomousSwitch } from "@/features/autonomy/switch";
 import { summaryLine } from "@/features/captain/summary";
 import { workspaceOf } from "@/features/decisions/model";
-import { useNeedsYou } from "@/features/decisions/needs-you";
+import { useNeedsYou, useWorking } from "@/features/decisions/needs-you";
 import { useCaptainLog } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { useDecisions } from "@/lib/decision-queries";
@@ -17,10 +19,10 @@ import { useOrgFilter } from "@/lib/org-filter";
 import { useTasks } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
 import { useNewTask } from "../new-task/new-task-context";
-import { inOrg } from "../shell/model";
+import { isOpen } from "../shell/model";
 import { shortAgo } from "../tasks/schedule";
 import { DecisionCard, DoneCard, QueuedCard, WorkingCard } from "./home-cards";
-import { columnOf } from "./model";
+import { rankNext } from "./model";
 
 function localMidnight(now: number): number {
   const d = new Date(now);
@@ -41,19 +43,22 @@ export function BoardScreen() {
   const log = useCaptainLog(org);
 
   const view = useMemo(() => {
-    const own = (tasks.data ?? []).filter((t) => inOrg(t, org));
+    const own = (tasks.data ?? []).filter((t) => org === undefined || (t.org ?? PRIVATE) === org);
     const midnight = localMidnight(now);
+    // The columns list exactly what the server counts: needs you is its decisions, working is the
+    // tasks an agent works on now. Everything else that is open and quiet waits in Up next.
+    const needs = (decisions.data?.decisions ?? []).filter((d) => org === undefined || workspaceOf(d) === org);
+    const asking = new Set(needs.flatMap((d) => (d.task === undefined ? [] : [d.task])));
+    const live = new Set(decisions.data?.counts.workingTasks ?? []);
     const working = own
-      .filter((t) => ["working", "mr"].includes(columnOf(t)) || t.status === "paused")
+      .filter((t) => live.has(t.id))
       .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    const pausedIds = new Set(working.filter((t) => t.status === "paused").map((t) => t.id));
-    const needs = (decisions.data?.decisions ?? []).filter((d) => {
-      if (org !== undefined && workspaceOf(d) !== org) return false;
-      return !(d.kind === "paused" && d.task !== undefined && pausedIds.has(d.task));
-    });
     const next = own
-      .filter((t) => columnOf(t) === "inbox")
-      .toSorted((a, b) => (a.status === "ready" ? 0 : 1) - (b.status === "ready" ? 0 : 1));
+      .filter((t) => isOpen(t) && t.chat !== true && !live.has(t.id) && !asking.has(t.id))
+      .toSorted(
+        (a, b) =>
+          rankNext(a) - rankNext(b) || b.updatedAt.localeCompare(a.updatedAt),
+      );
     const done = own
       .filter((t) => t.status === "done" && Date.parse(t.updatedAt) >= midnight)
       .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -74,7 +79,7 @@ export function BoardScreen() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <TopBar working={view.working.filter((t) => t.status !== "paused").length} done={view.done.length} />
+      <TopBar done={view.done.length} />
       <Away now={now} />
       {tasks.isError ? (
         <p role="alert" className={cn("rounded-2xl p-6 text-base text-red", GLASS)}>
@@ -82,35 +87,48 @@ export function BoardScreen() {
         </p>
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-[repeat(4,minmax(200px,1fr))] gap-3 overflow-x-auto">
-          <Column label="Needs you" lamp="needs" count={view.needs.length} loading={loading}>
-            {view.needs.map((d) => (
-              <DecisionCard key={d.id} decision={d} />
-            ))}
-          </Column>
-          <Column label="Working" lamp="working" count={view.working.length} loading={loading}>
-            {view.working.map((t) => (
-              <WorkingCard key={t.id} task={t} ago={shortAgo(t.updatedAt, now)} />
-            ))}
-          </Column>
-          <Column label="Up next" lamp="idle" count={view.next.length} loading={loading}>
-            {view.next.map((t) => (
-              <QueuedCard key={t.id} task={t} />
-            ))}
-          </Column>
-          <Column label="Done today" lamp="done" count={view.done.length} loading={loading}>
-            {view.done.map((t) => (
-              <DoneCard key={t.id} task={t} time={clock(t.updatedAt)} undoId={undoOf.get(t.id)} />
-            ))}
-          </Column>
+          <Column
+            label="Needs you"
+            lamp="needs"
+            items={view.needs}
+            keyOf={(d) => d.id}
+            loading={loading}
+            render={(d) => <DecisionCard decision={d} />}
+          />
+          <Column
+            label="Working"
+            lamp="working"
+            items={view.working}
+            keyOf={(t) => t.id}
+            loading={loading}
+            render={(t) => <WorkingCard task={t} ago={shortAgo(t.updatedAt, now)} />}
+          />
+          <Column
+            label="Up next"
+            lamp="idle"
+            items={view.next}
+            keyOf={(t) => t.id}
+            loading={loading}
+            render={(t) => <QueuedCard task={t} />}
+          />
+          <Column
+            label="Done today"
+            lamp="done"
+            items={view.done}
+            keyOf={(t) => t.id}
+            loading={loading}
+            render={(t) => <DoneCard task={t} time={clock(t.updatedAt)} undoId={undoOf.get(t.id)} />}
+          />
         </div>
       )}
     </div>
   );
 }
 
-function TopBar({ working, done }: { working: number; done: number }) {
+function TopBar({ done }: { done: number }) {
   const { org } = useOrgFilter();
   const needs = useNeedsYou(org);
+  const working = useWorking(org) ?? 0;
   const newTask = useNewTask();
   const { status, unavailable, mode, toggle, dialogs } = useAutonomousSwitch();
   const lamp = MODE_LAMP[mode];
@@ -183,19 +201,29 @@ function Away({ now }: { now: number }) {
   );
 }
 
-function Column({
+/** A column with more cards than this draws only the ones in view (and a few around them). */
+const WINDOW_FROM = 30;
+const CARD_ESTIMATE = 112;
+const CARD_GAP = 8;
+
+function Column<T>({
   label,
   lamp,
-  count,
+  items,
+  keyOf,
+  render,
   loading,
-  children,
 }: {
   label: string;
   lamp: LampState;
-  count: number;
+  items: readonly T[];
+  keyOf: (item: T) => string;
+  render: (item: T) => ReactNode;
   loading: boolean;
-  children: ReactNode;
 }) {
+  const count = items.length;
+  // The element the cards scroll in, kept in state so the windowed list measures it once it exists.
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   return (
     <section
       aria-label={label}
@@ -206,9 +234,61 @@ function Column({
         <h2 className="text-base leading-[18px] font-semibold">{label}</h2>
         <span className="tnum font-mono text-sm text-fg-muted">{count}</span>
       </div>
-      <div className="scroll-fade -mx-1 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain px-1 pt-2.5 pb-6">
-        {loading ? <Skeleton className="h-[96px] w-full rounded-xl" /> : children}
+      <div
+        ref={setScroller}
+        className="scroll-fade -mx-1 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain px-1 pt-2.5 pb-6"
+      >
+        {loading ? (
+          <Skeleton className="h-[96px] w-full rounded-xl" />
+        ) : count > WINDOW_FROM ? (
+          <WindowedCards items={items} keyOf={keyOf} render={render} scroller={scroller} />
+        ) : (
+          items.map((item) => <Fragment key={keyOf(item)}>{render(item)}</Fragment>)
+        )}
       </div>
     </section>
+  );
+}
+
+/** The cards of a long column: only those in view are in the page, so a few hundred cost no more than a few. */
+function WindowedCards<T>({
+  items,
+  keyOf,
+  render,
+  scroller,
+}: {
+  items: readonly T[];
+  keyOf: (item: T) => string;
+  render: (item: T) => ReactNode;
+  scroller: HTMLElement | null;
+}) {
+  const virtual = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => scroller,
+    estimateSize: () => CARD_ESTIMATE + CARD_GAP,
+    overscan: 6,
+    getItemKey: (i) => {
+      const item = items[i];
+      return item === undefined ? i : keyOf(item);
+    },
+  });
+  return (
+    <div className="relative w-full shrink-0" style={{ height: virtual.getTotalSize() }}>
+      {virtual.getVirtualItems().map((row) => {
+        const item = items[row.index];
+        if (item === undefined) return null;
+        return (
+          <div
+            key={row.key}
+            ref={virtual.measureElement}
+            data-index={row.index}
+            className="absolute inset-x-0 top-0 pb-2"
+            style={{ transform: `translateY(${row.start}px)` }}
+          >
+            {render(item)}
+          </div>
+        );
+      })}
+    </div>
   );
 }

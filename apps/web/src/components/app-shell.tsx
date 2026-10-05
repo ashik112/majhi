@@ -5,6 +5,7 @@ import * as m from "motion/react-m";
 import { useEffect, useMemo } from "react";
 import { InShellContext } from "@/components/centered-page";
 import { AttentionBanner } from "@/components/shell/banner";
+import { CaptainTicker } from "@/components/shell/captain-ticker";
 import { NotifyPrompt } from "@/components/shell/notify-prompt";
 import { ShortcutsDialog } from "@/components/shell/shortcuts-dialog";
 import { Sidebar } from "@/components/shell/sidebar";
@@ -21,15 +22,12 @@ import { useShortcuts } from "@/features/shell/use-shortcuts";
 import { TaskDrawer } from "@/features/task-drawer/task-drawer";
 import { UpdateOverlay } from "@/features/update/update-overlay";
 import { GlobalFileViewer } from "@/features/viewer/global-file-viewer";
-import { useAgentIndex } from "@/lib/agent-index";
 import { usePendingPermission } from "@/lib/attention";
+import { useDecisions } from "@/lib/decision-queries";
 import { useAttentionBadge } from "@/lib/browser-notify";
 import { prefetchCaptain } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { useAdoptOrgParam } from "@/lib/org-filter";
-import { useAccounts } from "@/lib/studio-queries";
-import { useTasks } from "@/lib/task-queries";
-import { useNow } from "@/lib/use-now";
 import { useServerEvents } from "@/lib/use-server-events";
 import { useArrivalNewTask } from "@/onboarding/arrive";
 
@@ -76,16 +74,10 @@ function Frame() {
   const { helpOpen, setHelpOpen, paletteOpen, setPaletteOpen } = useShortcuts(newTask.open);
   useArrivalNewTask(newTask.open);
   useAdoptOrgParam();
-  const tasks = useTasks().data;
-  const accounts = useAccounts().data;
-  const agents = useAgentIndex();
+  const decisions = useDecisions().data?.decisions;
   const permission = usePendingPermission();
   const { task: drawerTask, peek } = useSearch({ from: "__root__" });
-  const now = useNow(60_000);
-  const banner = useMemo(
-    () => deriveBanner({ tasks: tasks ?? [], agents, accounts: accounts ?? [], permission, now }),
-    [tasks, agents, accounts, permission, now],
-  );
+  const banner = useMemo(() => deriveBanner({ decisions, permission }), [decisions, permission]);
   useAttentionBadge(useNeedsYou() ?? 0);
   // The Captain page is the one opened most and costs the most to build: warm it once the app has painted.
   const queryClient = useQueryClient();
@@ -119,6 +111,7 @@ function Frame() {
       <main id="main" tabIndex={-1} className="flex h-full min-w-0 flex-1 flex-col outline-none">
         <NotifyPrompt />
         <AttentionBanner banner={banner} />
+        <CaptainTicker />
         <m.div
           key={settings ? "settings" : section}
           initial={{ opacity: 0, y: 4 }}

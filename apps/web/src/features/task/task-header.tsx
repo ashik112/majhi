@@ -18,7 +18,6 @@ import { Brief } from "./brief";
 import { TaskAction } from "./task-action";
 import { TaskLinks } from "./task-links";
 import { TaskMenu } from "./task-menu";
-import { TrackerChip } from "./tracker-chip";
 
 /**
  * One line with the back link, key, status, project, org and the main action; the title; the brief;
@@ -29,9 +28,12 @@ export function TaskHeader({
   yourTurn,
   brief,
   tabs,
+  cardAsks,
 }: {
   task: Task;
   yourTurn: boolean;
+  /** The room's dock holds a card with the primary button, so the header's stays quiet. */
+  cardAsks: boolean;
   /** What the owner wrote beyond the title. */
   brief: string;
   tabs: ReactNode;
@@ -54,34 +56,36 @@ export function TaskHeader({
         >
           <ArrowLeft aria-hidden="true" className="size-3.5" />
         </Link>
-        <span className="font-mono text-fg-muted">{task.id}</span>
+        <span className="shrink-0 font-mono whitespace-nowrap text-fg-muted">{task.id}</span>
         <StatusBadge
           status={task.status}
           pausedReason={task.pausedReason}
           pausedBy={task.pausedBy}
           yourTurn={yourTurn}
+          className="shrink-0"
         />
 
         {repos.length > 0 ? (
           <span
             title={`Project: ${repos.join(", ")}`}
-            className="flex min-w-0 items-center gap-1 font-mono text-xs text-fg-soft"
+            className="flex min-w-[4.5rem] shrink-[3] items-center gap-1 font-mono text-xs text-fg-soft"
           >
             <FolderGit2 aria-hidden="true" className="size-3.5 shrink-0 text-fg-faint" />
             <span className="truncate">{repos.join(" + ")}</span>
           </span>
         ) : (
-          <span className="text-xs text-fg-faint">{task.kind === "chat" ? "chat" : "no project"}</span>
+          <span className="shrink-0 text-xs whitespace-nowrap text-fg-faint">
+            {task.kind === "chat" ? "chat" : "no project"}
+          </span>
         )}
-        <span className="flex min-w-0 items-center gap-1.5 text-xs text-fg-muted">
+        <span className="flex max-w-[14rem] min-w-[3.25rem] shrink items-center gap-1.5 overflow-hidden text-xs text-fg-muted">
           <OrgBadge label={badgeLetters(org?.key ?? prefix)} color={org?.color} size="sm" />
           <span className="truncate">{org?.name ?? "No workspace"}</span>
         </span>
-        <TrackerChip task={task.id} />
         {task.kind !== "chat" && <ScheduleButton task={task} />}
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <TaskCost taskId={task.id} />
-          <TaskAction task={task} yourTurn={yourTurn} />
+          <TaskAction task={task} yourTurn={yourTurn} cardAsks={cardAsks} />
           <TaskMenu task={task} />
         </div>
       </div>

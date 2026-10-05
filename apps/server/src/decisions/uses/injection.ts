@@ -11,7 +11,7 @@ import { askOpinion, clipText, type LayaDecisions } from "./common.ts";
  *    warning and a flag the owner can dismiss, never a missed protection that was there before.
  *
  * A flagged text gets an extra warning fence (`warnFence`), shows a small flag to the owner, and is never
- * used to pick anything: triage, the wake gate and Own work all skip a flagged text, so it cannot talk
+ * used to pick anything: triage and Own work skip a flagged text, so it cannot talk
  * a model into choosing a tool, an action or a verdict.
  */
 

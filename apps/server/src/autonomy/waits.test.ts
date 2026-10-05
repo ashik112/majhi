@@ -137,7 +137,7 @@ describe("majhi watching the account for the captain", () => {
       call("majhi_autonomy_plan", {
         items: [{ title: "Restart the export", task: id, why: "Waits for the account", waitFor }],
       });
-    const queue = async () => ((await h.cmd("autonomy.status")).body as AutonomyStatus).queue;
+    const queue = async () => ((await h.cmd("autonomy.status", { detail: true })).body as AutonomyStatus).queue;
     const sweep = () => autonomy.sweepNow();
 
     // The account works: the captain's belief that it does not is refused, nothing is saved.

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { git, tempDir } from "../testing/fixtures.ts";
 import { taskWorld, type World } from "../testing/world.ts";
+import { seedStatus } from "../testing/status.ts";
 
 /** Ship's pushes against a local bare remote: never forced, and refused with the fix when they cannot work. */
 
@@ -15,7 +16,7 @@ afterEach(async () => {
 });
 
 const cmd = (name: string, body?: unknown) => w.h.cmd(name, body);
-const branch = "task/acm-1-fix-api";
+const branch = "fix/acm-1-fix-api";
 const tip = (repo: string, ref: string) => git(repo, "rev-parse", ref).then((s) => s.trim());
 const present = (path: string) =>
   stat(path).then(
@@ -212,7 +213,7 @@ describe("Ship", () => {
   it("keeps Ship open on a done task until its work is pushed, without reopening it", async () => {
     await reviewed();
     const { store } = w.h.majhi.services;
-    store.tasks.setStatus("ACM-1", "done", undefined, new Date().toISOString());
+    seedStatus(store, "ACM-1", "done", undefined, new Date().toISOString());
     let options = (await cmd("tasks.shipOptions", { id: "ACM-1" })).body;
     expect(options).toMatchObject({ merge: { ok: true }, mergePush: { ok: true }, push: { ok: true } });
 

@@ -43,7 +43,7 @@ function sheetOf(tab: string | undefined): Open | undefined {
 export function CaptainView() {
   const query = useCaptainStatus();
   const status = query.data;
-  const autonomy = useAutonomyStatus().data;
+  const autonomy = useAutonomyStatus(true).data;
   const now = useNow(30_000);
   const search: AppSearch = useSearch({ strict: false });
   const navigate = useNavigate();

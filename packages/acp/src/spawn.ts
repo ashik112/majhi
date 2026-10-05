@@ -24,6 +24,8 @@ export interface SpawnRequest {
    * (`majhi.task`) and joins the task's own networks, where its service containers run.
    */
   task?: string;
+  /** Resource caps for this run only, in place of the runner's own (a hand-off check is short and runs alone). */
+  limits?: { cpus?: string; memory?: string };
 }
 
 export interface RunMount {

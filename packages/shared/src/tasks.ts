@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { IdSchema, MrHostSchema, OrgIdSchema, SecretRefSchema } from "./accounts.ts";
+import {
+  BranchPatternSchema,
+  BranchTypeSchema,
+  IdSchema,
+  MrHostSchema,
+  OrgIdSchema,
+  SecretRefSchema,
+} from "./accounts.ts";
 import { ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./rooms.ts";
 import { CommitsPatchSchema } from "./settings.ts";
@@ -52,6 +59,8 @@ export const ProjectConfigSchema = z.looseObject({
   links: z.array(ProjectLinkSchema).optional(),
   /** Overrides the org's and majhi's `commits.attribution` for this project (5.7). */
   commits: CommitsPatchSchema.optional(),
+  /** How new task branches are named here. Overrides the org's, and what the repo's branches show. */
+  branch_pattern: BranchPatternSchema.optional(),
   /**
    * Infra or otherwise sensitive (gitops, terraform, deploy). majhi never adds it to a task by
    * itself, agents get it read-only unless the owner allows writes for a task, and it ships only
@@ -127,6 +136,13 @@ export type PausedReason = z.infer<typeof PausedReasonSchema>;
  * Who paused a task, when it was not the owner by hand: the captain, or Autonomous being turned off.
  * Absent on older rows and on pauses by majhi itself (limits, going offline).
  */
+/** Where the owner fixes what blocks a Ship action: a project's remotes, or an org's settings. */
+export const ShipFixSchema = z.discriminatedUnion("page", [
+  z.object({ page: z.literal("projects"), project: IdSchema }),
+  z.object({ page: z.literal("orgs"), org: IdSchema }),
+]);
+export type ShipFix = z.infer<typeof ShipFixSchema>;
+
 export const PausedBySchema = z.enum(["captain", "autonomy-off"]);
 export type PausedBy = z.infer<typeof PausedBySchema>;
 
@@ -740,6 +756,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
         why: z.string(),
         /** `captain`: the captain's upkeep decided it (5.18), not autonomous mode. */
         by: z.literal("captain").optional(),
+        /** Where the owner fixes what the captain lacked (a sign-in or token). The card links there and the captain retries once it is fixed. */
+        fix: ShipFixSchema.optional(),
       })
       .optional(),
     /** Set when it ran with no owner click: the policy or a rule let it. Older cards lack it. */
@@ -958,6 +976,11 @@ export const RoomServerMessageSchema = z.discriminatedUnion("type", [
     processes: z.array(ProcessInfoSchema).default([]),
   }),
   z.object({ type: z.literal("item"), item: RoomItemSchema }),
+  /**
+   * More text for a streamed agent message or thought the socket already holds: `append` goes on
+   * the end of the item `id`, which must be `offset` characters long now. Anything else is ignored.
+   */
+  z.object({ type: z.literal("delta"), id: z.string(), offset: z.number().int().nonnegative(), append: z.string() }),
   z.object({ type: z.literal("agent"), agent: AgentLiveSchema }),
   z.object({ type: z.literal("task"), task: TaskSchema }),
   /** Every process of the task, sent when any changed (output at most every 500 ms). */

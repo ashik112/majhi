@@ -1,4 +1,4 @@
-import { type EventTopic, type ServerEvent, ServerEventSchema } from "@majhi/shared";
+import { type EventTopic, type ServerEvent, ServerEventSchema, seqGap } from "@majhi/shared";
 import { queryKeys } from "./queries";
 
 /** The query keys to refetch when a topic changes. Onboarding progress reads accounts, agents, orgs, projects, sign-ins and clones. */
@@ -37,8 +37,6 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
       return [queryKeys.autonomy, queryKeys.decisions, queryKeys.agenda];
     case "captain":
       return [queryKeys.captain, queryKeys.decisions, queryKeys.agenda];
-    case "business":
-      return [queryKeys.business, queryKeys.agenda];
     case "agenda":
       return [queryKeys.agenda];
     case "findings":
@@ -58,6 +56,57 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
     case "clones":
       return [queryKeys.clones, queryKeys.onboarding];
   }
+}
+
+/** What one event asks the board to read: query keys to refetch, and tasks to read by id. */
+export interface EventPlan {
+  /** Whole query groups to refetch (the lists the event may have changed). */
+  keys: readonly (readonly string[])[];
+  /** Tasks the server named: read just these, patch the task list, and recount. */
+  tasks: readonly string[];
+  /** The named tasks that changed in a way that may change what waits for the owner: their decisions are read again. */
+  waits: readonly string[];
+}
+
+/**
+ * What an event changes. A `tasks` event that names its tasks reads only those tasks. A change of
+ * the row alone (`rows`: work starting or stopping, a message, a title) changes nothing else; any other change to a named task may change what waits for the
+ * owner, so that task's decisions and the agenda are read again. An event that names no task reads the lists.
+ */
+export function planEvent(event: ServerEvent): EventPlan {
+  const keys = new Map<string, readonly string[]>();
+  const add = (list: readonly (readonly string[])[]) => {
+    for (const key of list) keys.set(key.join("/"), key);
+  };
+  const tasks: string[] = [];
+  const waits: string[] = [];
+  if (event.type === "attention") {
+    // The item is new: the lists that count it must show it at once.
+    add(topicQueryKeys("tasks"));
+    return { keys: [...keys.values()], tasks, waits };
+  }
+  for (const topic of event.topics) {
+    if (topic === "tasks" && event.tasks !== undefined) {
+      tasks.push(...event.tasks);
+      if (event.rows !== true) {
+        waits.push(...event.tasks);
+        add([queryKeys.agenda]);
+      }
+    } else add(topicQueryKeys(topic));
+  }
+  return { keys: [...keys.values()], tasks, waits };
+}
+
+/**
+ * What a tab does with one frame of the feed: the number it saw, whether a frame was lost before it
+ * (then everything is read again, once), and the plan for the event itself.
+ */
+export function feedStep(
+  last: number | undefined,
+  event: ServerEvent,
+): { seq: number | undefined; full: boolean; plan: EventPlan } {
+  const full = seqGap(last, event.seq);
+  return { seq: event.seq ?? last, full, plan: planEvent(event) };
 }
 
 /** Every topic, for a refetch after the feed was down and events may have been missed. */
@@ -81,7 +130,6 @@ export const ALL_TOPICS: readonly EventTopic[] = [
   "findings",
   "playbooks",
   "ops",
-  "business",
   "agenda",
   "signins",
   "clones",
@@ -111,4 +159,15 @@ export function reconnectDelay(attempt: number): number {
 /** The feed URL for a page location, `ws` or `wss` to match the page. */
 export function wsUrl(path: string, loc: { protocol: string; host: string }): string {
   return `${loc.protocol === "https:" ? "wss" : "ws"}://${loc.host}${path}`;
+}
+
+/**
+ * Closes a socket without the browser's "closed before the connection is established" warning:
+ * one still connecting closes as soon as it opens, and nothing it says then is handled.
+ */
+export function closeSocket(ws: WebSocket): void {
+  ws.onmessage = null;
+  ws.onerror = null;
+  if (ws.readyState === WebSocket.CONNECTING) ws.onopen = () => ws.close();
+  else ws.close();
 }

@@ -4,25 +4,21 @@ import {
   type Brief,
   type BriefFacts,
   BUSINESS,
-  type Deadline,
   type Finding,
   type Goal,
   type OwnerDecision,
-  type VoiceProfile,
 } from "@majhi/shared";
-import { addDays, dayStart, localDay } from "../usage/ranges.ts";
+import { dayStart, localDay } from "../usage/ranges.ts";
 import { minutesWord, oneLine, type Writer, writeBrief } from "./brief.ts";
-import { type AgendaStep, buildItems, DEADLINE_DAYS, inScope, plan } from "./build.ts";
+import { buildItems, inScope, plan } from "./build.ts";
 import type { Overnight } from "./overnight.ts";
 import type { AgendaRepo } from "./repo.ts";
-import { briefDue, daysBetween, ownerZone, whenWord } from "./time.ts";
+import { briefDue, ownerZone } from "./time.ts";
 
 /** The longest the overnight span reaches back: a server that was off for days still briefs about one night. */
 const SPAN_MAX_MS = 36 * 3_600_000;
 /** `agenda.today` waits this long for a brief that is being made before it answers without one. */
 const WAIT_MS = 1_500;
-/** The week the Plan section shows. */
-const WEEK_DAYS = 7;
 const RUNNING_MAX = 12;
 
 export interface AgendaDeps {
@@ -30,20 +26,15 @@ export interface AgendaDeps {
   /** The brief hour (`HH:MM`) and zone: the autonomy settings' `summary_at` and `tz`. */
   clock: () => Promise<{ at: string; tz?: string | undefined }>;
   decisions: (org?: string) => Promise<OwnerDecision[]>;
-  /** Open deadlines due within this many days, overdue ones included. */
-  deadlines: (withinDays: number) => Deadline[];
   /** Every finding, newest first (the agenda picks the live ones; the brief counts new and fixed). */
   findings: () => Finding[];
   /** A finding the owner does not want counted in the brief (its playbook's "tell me in the brief" is off). */
   briefHidden?: ((f: Finding) => boolean) | undefined;
-  steps: () => AgendaStep[];
   goals: () => Goal[];
   running: () => { id: string; title: string; org?: string | undefined; since?: string | undefined }[];
   /** A workspace's name by id. */
   names: () => Promise<ReadonlyMap<string, string>>;
   overnight: (from: string, to: string) => Promise<Overnight & { spent: number; budget?: number }>;
-  /** The owner's own voice profile, when one is written. */
-  voice: () => VoiceProfile | undefined;
   /** The model that words the brief. Absent or failing: the template. */
   write?: Writer | undefined;
   /** The captain's queue titles, what it plans next. */
@@ -129,12 +120,7 @@ export class AgendaService {
     ).toISOString();
     const to = now.toISOString();
     const facts = await this.facts(day, tz, from, to);
-    const { lines, source } = await writeBrief(
-      facts,
-      this.deps.voice(),
-      this.deps.write,
-      this.deps.modelTimeoutMs,
-    );
+    const { lines, source } = await writeBrief(facts, this.deps.write, this.deps.modelTimeoutMs);
     // The primary key decides: if another process made it first, that one stands and nothing is sent twice.
     if (!this.deps.repo.addBrief(day, to, source, lines, facts)) return this.deps.repo.brief(day);
     this.deps.changed?.();
@@ -155,8 +141,6 @@ export class AgendaService {
       const t = new Date(iso).getTime();
       return t >= fromMs && t < toMs;
     };
-    const dates = this.deps.deadlines(DEADLINE_DAYS).slice(0, 3);
-    const now = this.now();
     const scorecard = this.deps.scorecard?.();
     return {
       day,
@@ -178,10 +162,6 @@ export class AgendaService {
         minutes: all.reduce((n, i) => n + i.minutes, 0),
         top: today.slice(0, 3).map((i) => oneLine(i.title, 80)),
       },
-      deadlines: dates.map((d) => ({
-        title: oneLine(d.title, 80),
-        when: whenWord(new Date(d.dueAt), now, tz),
-      })),
       next: this.deps.next(3).map((t) => oneLine(t, 80)),
       empty: all.length === 0,
     };
@@ -198,12 +178,10 @@ export class AgendaService {
       now: this.now(),
       tz,
       decisions,
-      deadlines: inScope(this.deps.deadlines(DEADLINE_DAYS), scope),
       findings: inScope(
         this.deps.findings().filter((f) => f.status === "open"),
         scope,
       ),
-      steps: inScope(this.deps.steps(), scope),
       orgName,
     });
     return plan(items, this.budgetMinutes());
@@ -251,15 +229,10 @@ export class AgendaService {
       }));
     const startOfDay = dayStart(when.day, when.tz).toISOString();
     const spend = await this.deps.overnight(startOfDay, now.toISOString());
-    const weekEnd = addDays(when.day, WEEK_DAYS - 1);
-    const dates = inScope(this.deps.deadlines(WEEK_DAYS + 1), scope)
-      .filter((d) => localDay(new Date(d.dueAt), when.tz) <= weekEnd)
-      .slice(0, 12);
     const goals = this.deps
       .goals()
       .filter((g) => g.status === "active" || g.status === "proposed")
       .filter((g) => scope === undefined || g.org === scope || g.org === BUSINESS);
-    const dated = this.deps.deadlines(3650);
     return {
       day: when.day,
       tz: when.tz,
@@ -288,16 +261,6 @@ export class AgendaService {
         ...(spend.budget === undefined ? {} : { budget: spend.budget }),
       },
       plan: {
-        deadlines: dates.map((d) => ({
-          id: d.id,
-          title: d.title,
-          kind: d.kind,
-          ...(d.org === undefined ? {} : { org: d.org }),
-          ...(orgName(d.org) === undefined ? {} : { orgName: orgName(d.org) as string }),
-          when: whenWord(new Date(d.dueAt), now, when.tz),
-          dueAt: d.dueAt,
-          daysLeft: daysBetween(when.day, localDay(new Date(d.dueAt), when.tz)),
-        })),
         goals: goals.slice(0, 8).map((g) => ({
           id: g.id,
           title: g.title,
@@ -306,9 +269,7 @@ export class AgendaService {
           ...(g.target === undefined ? {} : { target: g.target }),
           ...(g.due === undefined ? {} : { due: g.due }),
           status: g.status,
-          linked:
-            findings.filter((f) => f.goal === g.id && f.status === "open").length +
-            dated.filter((d) => d.goal === g.id).length,
+          linked: findings.filter((f) => f.goal === g.id && f.status === "open").length,
         })),
         captainNext: this.deps.next(5),
       },

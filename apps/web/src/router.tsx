@@ -12,9 +12,6 @@ import { AppShell } from "@/components/app-shell";
 import { Problem } from "@/components/problem";
 import { Button } from "@/components/ui/button";
 import { BoardScreen } from "@/features/board/home-screen";
-import { ChatsScreen } from "@/features/chats/chats-screen";
-import { EditRootsRoute } from "@/features/roots/edit-roots-route";
-import { TaskScreen } from "@/features/task/task-screen";
 
 /** Search params every page may carry: the org filter, and the agent or account a link points at. */
 export interface AppSearch {
@@ -133,16 +130,20 @@ const boardRoute = createRoute({
 const chatsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.chats,
-  component: ChatsScreen,
+  component: lazyRouteComponent(() => import("@/features/chats/chats-screen"), "ChatsScreen"),
 });
 const chatRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/chats/$taskId",
-  component: ChatsScreen,
+  component: lazyRouteComponent(() => import("@/features/chats/chats-screen"), "ChatsScreen"),
 });
-const taskRoute = createRoute({ getParentRoute: () => rootRoute, path: "/t/$taskId", component: TaskScreen });
+const taskRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/t/$taskId",
+  component: lazyRouteComponent(() => import("@/features/task/task-screen"), "TaskScreen"),
+});
 
-// Pages load on demand, so the main chunk holds only the shell, the board and the room.
+// Pages, the task screen and chats load on demand, so the main chunk holds only the shell and the board.
 const captainRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.captain,
@@ -227,11 +228,6 @@ const decisionsRoute = createRoute({
   path: PAGE_PATH.decisions,
   component: lazyRouteComponent(() => import("@/pages/decisions-page"), "DecisionsPage"),
 });
-const businessRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: PAGE_PATH.business,
-  component: lazyRouteComponent(() => import("@/pages/business-page"), "BusinessPage"),
-});
 const setupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.setup,
@@ -251,17 +247,9 @@ const orgsRoute = createRoute({
 const editRootsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/roots",
-  component: EditRootsRoute,
+  component: lazyRouteComponent(() => import("@/features/roots/edit-roots-route"), "EditRootsRoute"),
 });
 
-// The Knowledge page was called Business at first.
-const oldBusinessRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/business",
-  beforeLoad: ({ search }) => {
-    throw redirect({ to: PAGE_PATH.business, search });
-  },
-});
 // Old addresses from the three-column design.
 const reposRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -309,8 +297,6 @@ export const router = createRouter({
     limitsRoute,
     todayRoute,
     decisionsRoute,
-    businessRoute,
-    oldBusinessRoute,
     setupRoute,
     projectsRoute,
     orgsRoute,

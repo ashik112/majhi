@@ -12,7 +12,6 @@ import {
   TurnsPatchSchema,
 } from "./settings.ts";
 import { RoleSchema, TierPatchSchema, TiersPatchSchema } from "./tiers.ts";
-import { TrackerConfigSchema } from "./trackers.ts";
 
 /**
  * Accounts, orgs, tools and agents (SPEC 2, 3.3, 4.4, 5.1, 5.2, 5.8).
@@ -151,6 +150,38 @@ export const DismissedLoginSchema = z.strictObject({
 });
 export type DismissedLogin = z.infer<typeof DismissedLoginSchema>;
 
+/** The conventional types a task branch can start with: `feat/acm-1-add-login`. */
+export const BRANCH_TYPES = [
+  "feat",
+  "fix",
+  "chore",
+  "docs",
+  "refactor",
+  "test",
+  "perf",
+  "ci",
+  "build",
+] as const;
+export const BranchTypeSchema = z.enum(BRANCH_TYPES);
+export type BranchType = z.infer<typeof BranchTypeSchema>;
+
+/**
+ * How a repo names task branches, like `{type}/{id}-{slug}`. `{type}` is the branch type, `{id}` the
+ * task id in lowercase (`{ID}`: uppercase), `{slug}` the title. It needs a `/` (a run may write only
+ * the folder its own branch is in) and an id.
+ */
+export const BranchPatternSchema = z
+  .string()
+  .trim()
+  .max(80)
+  .regex(/^[A-Za-z0-9{}._/-]+$/, "Use letters, digits, {type}, {id}, {slug}, and / . _ -")
+  .refine(
+    (p) => p.includes("/") && !p.startsWith("/") && !p.endsWith("/"),
+    "Put a / between a folder and the name",
+  )
+  .refine((p) => /\{id\}|\{ID\}/.test(p), "Include {id}, so each task gets its own branch")
+  .refine((p) => !p.includes("..") && !p.includes("//"), "No .. or // in a branch name");
+
 export const OrgConfigSchema = z.looseObject({
   name: z.string().trim().min(1),
   /** Hex color used for the org's dot and badges. */
@@ -179,6 +210,8 @@ export const OrgConfigSchema = z.looseObject({
   resume: ResumePatchSchema.optional(),
   /** Overrides whether this org's commits name the agent and the task (5.7). */
   commits: CommitsPatchSchema.optional(),
+  /** How new task branches are named in this org's repos. Default: what the repo's own branches show, else `{type}/{id}-{slug}`. */
+  branch_pattern: BranchPatternSchema.optional(),
   /** Overrides the loop guard for this org's tasks (5.3). */
   rooms: RoomPatchSchema.pick({ max_agent_turns: true }).optional(),
   /** Overrides majhi's turn limits for this org's agents, field by field (PRV-96). */
@@ -199,8 +232,8 @@ export const OrgConfigSchema = z.looseObject({
   dismissed_logins: z.array(DismissedLoginSchema).optional(),
   /** The clusters, MCP servers, hosts and accounts this org's agents may reach (5.14), by id. */
   connections: z.record(IdSchema, ConnectionConfigSchema).optional(),
-  /** The org's tracker (5.11), when it has one. */
-  tracker: TrackerConfigSchema.optional(),
+  /** Removed in D2, kept so old config loads. */
+  tracker: z.unknown().optional(),
 });
 export type OrgConfig = z.infer<typeof OrgConfigSchema>;
 
@@ -489,8 +522,6 @@ export const OrgViewSchema = z.object({
   /** Secret references (never values) for the MR hosts, when set. */
   mrTokens: OrgConfigSchema.shape.mr_tokens,
   gitAccounts: OrgConfigSchema.shape.git_accounts,
-  /** The org's tracker, with secret references only. */
-  tracker: OrgConfigSchema.shape.tracker,
   accountCount: z.number().int().nonnegative(),
   agentCount: z.number().int().nonnegative(),
 });
@@ -528,8 +559,6 @@ export const EventTopicSchema = z.enum([
   "playbooks",
   /** The ops watch (5.18): watched services, incidents and the phone push, `ops.*`. */
   "ops",
-  /** Business memory (5.19): the knowledge base, voice, contacts and deadlines. */
-  "business",
   /** The morning brief was made or dismissed, or the review budget changed (5.18): refetch `agenda.today`. */
   "agenda",
   /** A git sign-in flow changed state: refetch `git.signIn.poll`. Ending one also emits `orgs`. */
@@ -538,9 +567,25 @@ export const EventTopicSchema = z.enum([
   "clones",
 ]);
 export type EventTopic = z.infer<typeof EventTopicSchema>;
+/**
+ * Every frame on `/api/events` carries `seq`, a counter per connection that starts at 1 and goes up by
+ * one per frame the server meant to send (a frame it dropped still takes its number). A tab that sees a
+ * gap missed something and reads everything again (`seqGap`).
+ *
+ * A `changed` event may say more than the topics: `tasks` lists the tasks that changed, so the board
+ * reads just those; `rows` says only their rows changed (agents started or stopped, a message touched
+ * them, a title): nothing that waits for the owner is different. Without `tasks`, any task may have
+ * changed and the lists are read again.
+ */
 export const ServerEventSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("changed"), topics: z.array(EventTopicSchema).min(1) }),
-  AttentionEventSchema,
+  z.object({
+    type: z.literal("changed"),
+    topics: z.array(EventTopicSchema).min(1),
+    seq: z.number().int().positive().optional(),
+    tasks: z.array(z.string().min(1)).max(100).optional(),
+    rows: z.literal(true).optional(),
+  }),
+  AttentionEventSchema.extend({ seq: z.number().int().positive().optional() }),
 ]);
 export type ServerEvent = z.infer<typeof ServerEventSchema>;
 

@@ -25,11 +25,24 @@ export function useProjects(enabled = true) {
 const withoutQuietChats = (list: TaskSummary[]) => list.filter((t) => t.chat !== true || needsOwner(t));
 const onlyChats = (list: TaskSummary[]) => list.filter((t) => t.chat === true);
 
+/**
+ * The one read of the task list. The feed keeps it current (it patches the tasks an event names, and
+ * reads it again after a lost frame), so it never goes stale on its own.
+ */
+const SAFETY_REFETCH_MS = 60_000;
+const taskListQuery = {
+  queryKey: [...queryKeys.tasks, "list"],
+  queryFn: () => cmd("tasks.list", { includeDone: true }),
+  staleTime: Number.POSITIVE_INFINITY,
+  // A slow safety net, not the way the board stays current: an unchanged answer costs no render.
+  refetchInterval: SAFETY_REFETCH_MS,
+  refetchIntervalInBackground: false,
+} as const;
+
 /** Every task, done ones included: the list collapses the done group itself. Chats show only when they need you. */
 export function useTasks(enabled = true) {
   return useQuery<TaskSummary[], ApiRequestError, TaskSummary[]>({
-    queryKey: [...queryKeys.tasks, "list"],
-    queryFn: () => cmd("tasks.list", { includeDone: true }),
+    ...taskListQuery,
     select: withoutQuietChats,
     enabled,
   });
@@ -38,11 +51,31 @@ export function useTasks(enabled = true) {
 /** The chats with agents, newest first, done ones included. */
 export function useChats(enabled = true) {
   return useQuery<TaskSummary[], ApiRequestError, TaskSummary[]>({
-    queryKey: [...queryKeys.tasks, "list"],
-    queryFn: () => cmd("tasks.list", { includeDone: true }),
+    ...taskListQuery,
     select: onlyChats,
     enabled,
   });
+}
+
+const byIdCache = new WeakMap<readonly TaskSummary[], Map<string, TaskSummary>>();
+function indexOf(list: TaskSummary[]): Map<string, TaskSummary> {
+  let index = byIdCache.get(list);
+  if (index === undefined) {
+    index = new Map(list.map((t) => [t.id, t]));
+    byIdCache.set(list, index);
+  }
+  return index;
+}
+
+/**
+ * One task's row from the list, for a card that shows a bit of it. The row is the same object until that
+ * task changes, so the card renders again only for its own task.
+ */
+export function useTaskRow(id: string | undefined): TaskSummary | undefined {
+  return useQuery<TaskSummary[], ApiRequestError, TaskSummary | undefined>({
+    ...taskListQuery,
+    select: (list) => (id === undefined ? undefined : indexOf(list).get(id)),
+  }).data;
 }
 
 const idsOf = (list: TaskSummary[]) =>
@@ -57,8 +90,7 @@ const idsOf = (list: TaskSummary[]) =>
  */
 export function useTaskIds(): ReadonlySet<string> {
   const key = useQuery<TaskSummary[], ApiRequestError, string>({
-    queryKey: [...queryKeys.tasks, "list"],
-    queryFn: () => cmd("tasks.list", { includeDone: true }),
+    ...taskListQuery,
     select: idsOf,
   }).data;
   return useMemo(() => new Set(key ? key.split(" ") : []), [key]);
@@ -96,10 +128,29 @@ export function prefetchTask(client: QueryClient, id: string): void {
   });
 }
 
-/** Writes a task the room socket just sent into the cache, so the header and list follow at once. */
+/** The list is read again at most once per this long while the room socket keeps sending tasks. */
+const LIST_REFRESH_MS = 1000;
+let listRefresh: number | undefined;
+let listDirty = false;
+
+/** Writes a task the room socket just sent into the cache, so the header and the list follow at once. A burst is read once more at its end. */
 export function setTaskInCache(client: QueryClient, task: Task): void {
   client.setQueryData([...queryKeys.tasks, "one", task.id], task);
-  void client.invalidateQueries({ queryKey: [...queryKeys.tasks, "list"] });
+  if (listRefresh !== undefined) {
+    listDirty = true;
+    return;
+  }
+  const refresh = () => {
+    void client.invalidateQueries({ queryKey: [...queryKeys.tasks, "list"] });
+    listRefresh = window.setTimeout(() => {
+      listRefresh = undefined;
+      if (listDirty) {
+        listDirty = false;
+        refresh();
+      }
+    }, LIST_REFRESH_MS);
+  };
+  refresh();
 }
 
 // Writes --------------------------------------------------------------------
@@ -114,7 +165,8 @@ export function useCreateTask() {
     mutationFn: (input) => cmd("tasks.create", input),
     onSuccess: (task) => {
       client.setQueryData([...queryKeys.tasks, "one", task.id], task);
-      return refreshTasks(client);
+      // Not returned: the caller closes the dialog and opens the room now, not after the list refetch.
+      void refreshTasks(client);
     },
   });
 }
@@ -124,6 +176,7 @@ type TaskAction = "tasks.start" | "tasks.stop" | "tasks.reopen";
 function useTaskAction(name: TaskAction) {
   const client = useQueryClient();
   return useMutation<Task, ApiRequestError, string>({
+    mutationKey: [name],
     mutationFn: (id) => cmd(name, { id }),
     onSuccess: (task) => {
       client.setQueryData([...queryKeys.tasks, "one", task.id], task);

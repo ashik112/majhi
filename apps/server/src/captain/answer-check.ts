@@ -9,6 +9,29 @@ const MIN_REPORT_CHARS = 120;
 const ASKS_BACK =
   /\b(should i|shall i|do you want|would you like|let me know|which (one|option|approach)|please (confirm|clarify|advise)|i need (your|you to)|need your (input|decision|go-ahead)|waiting (for|on) (you|your)|open questions?:?\s+(?!none\b|no\b|nothing\b)\w+|blocked (on|by))\b/i;
 
+export type AnswerGate = { open: true } | { open: false; row: "upkeep" | "questions"; why: string };
+
+/**
+ * Whether the workspace lets the captain close an answer task or send its lead back. Checked before
+ * any turn is spent. The refusal names the row, so a caller never reads the text.
+ */
+export function answerGate(authority: { upkeep: string; questions: string }): AnswerGate {
+  if (authority.upkeep === "decide" || authority.questions === "decide") return { open: true };
+  return { open: false, row: "upkeep", why: "the workspace has Upkeep and Questions on Ask me" };
+}
+
+/**
+ * An investigation or an answer: a task with no repo to change. Read from the task's structure
+ * (its kind, its read mounts, its repos), never from its text. A code task with repos is not one.
+ */
+export function isAnswerTask(task: {
+  kind: string;
+  repos: readonly unknown[];
+  readMounts?: readonly unknown[] | undefined;
+}): boolean {
+  return task.kind !== "code" || task.repos.length === 0 || (task.readMounts?.length ?? 0) > 0;
+}
+
 export type AnswerVerdict = { complete: true } | { complete: false; why: string };
 
 function clip(text: string, max: number): string {

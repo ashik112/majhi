@@ -10,8 +10,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { ListDetail, ListPane } from "@/components/ui/list-detail";
 import { Select } from "@/components/ui/select";
 import { RowsSkeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/components/ui/toast";
-import { lastAnsweredAt, useAnswerDecision, useDecisionDetail, useDecisions } from "@/lib/decision-queries";
+import { lastAnsweredAt, useDecisionDetail, useDecisions } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
@@ -37,6 +36,7 @@ import {
 } from "./model";
 import { useNeedsYou } from "./needs-you";
 import { useBatch } from "./use-batch";
+import { useHeldOption, useSendDecision } from "./use-send-decision";
 
 function ageWord(ms: number): string {
   const hours = Math.floor(ms / 3_600_000);
@@ -67,8 +67,7 @@ export function DecisionsView() {
   const search: AppSearch = useSearch({ strict: false });
   const navigate = useNavigate();
   const run = useRunAttention();
-  const toast = useToast();
-  const answer = useAnswerDecision();
+  const { send: sendDecision, busy } = useSendDecision();
   const now = useNow(60_000);
   const narrow = useMedia("(max-width: 999px)");
   const all = query.data?.decisions;
@@ -105,7 +104,7 @@ export function DecisionsView() {
   const detail = useDecisionDetail(selectedId);
   const [replyOpen, setReplyOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
-  const [working, setWorking] = useState<string | undefined>();
+  const working = useHeldOption(selectedId ?? "");
   // A new selection starts with a closed, empty reply box.
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset per selection
   useEffect(() => {
@@ -114,22 +113,15 @@ export function DecisionsView() {
   }, [selectedId]);
 
   const sendFor = (done: OwnerDecision, option: string, text?: string) => {
-    if (answer.isPending) return;
+    if (busy) return;
     const queue = shown.map((d) => d.id);
-    const label = done.options.find((o) => o.id === option)?.label ?? option;
-    setWorking(option);
-    answer.mutate(
-      { id: done.id, option, ...(text === undefined ? {} : { text }) },
-      {
-        onSuccess: (left) => {
-          toast(`${label}: ${rowTitle(done)}`);
-          const keep = new Set(applyFilters(left.decisions, { org, kind }).map((d) => d.id));
-          select(afterAnswer(queue, done.id, [...keep]));
-        },
-        onError: (error) => toast("Could not answer it", { detail: describeError(error), tone: "error" }),
-        onSettled: () => setWorking(undefined),
+    sendDecision(done, option, {
+      text,
+      onDone: (left) => {
+        const keep = new Set(applyFilters(left.decisions, { org, kind }).map((d) => d.id));
+        select(afterAnswer(queue, done.id, [...keep]));
       },
-    );
+    });
   };
 
   const send = (option: string, text?: string) => {
@@ -281,8 +273,7 @@ export function DecisionsView() {
             picked={batch.picked}
             held={batch.held}
             onSelect={(id) => select(id)}
-            busy={answer.isPending}
-            working={working}
+            busy={busy}
             onPick={batch.toggle}
             onAnswer={sendFor}
           />
@@ -297,7 +288,7 @@ export function DecisionsView() {
           detail={detail.data}
           detailError={detail.isError ? describeError(detail.error) : undefined}
           now={now}
-          busy={answer.isPending}
+          busy={busy || working !== undefined}
           working={working}
           replyOpen={replyOpen}
           replyText={replyText}

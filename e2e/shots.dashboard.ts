@@ -46,7 +46,7 @@ const TITLES = [
 ];
 
 function spaces(v: Volume) {
-  return v === "heavy" ? WORKSPACES : v === "normal" ? WORKSPACES.slice(0, 3) : WORKSPACES.slice(0, 2);
+  return v === "heavy" ? WORKSPACES : v === "normal" ? WORKSPACES.slice(0, 4) : WORKSPACES.slice(0, 2);
 }
 
 function tasks(v: Volume): TaskSummary[] {
@@ -119,8 +119,29 @@ function report(v: Volume): AutonomyReport {
       tokens: 100_000,
     })),
     days: Array.from({ length: 14 }, (_, i) => ({
-      day: `2026-09-${String(21 + i).padStart(2, "0")}`,
-      orgs: v === "quiet" ? [] : [{ org: "acme", count: 1 + ((i * 5) % (v === "heavy" ? 9 : 4)) }],
+      day: new Date(Date.UTC(2026, 8, 21 + i)).toISOString().slice(0, 10),
+      orgs:
+        v === "quiet"
+          ? []
+          : spaces(v)
+              .slice(0, 4)
+              .map((w, k) => ({ org: w.id, count: ((i * 5 + k * 3) % (v === "heavy" ? 9 : 4)) + (k === 0 ? 1 : 0) }))
+              .filter((o) => o.count > 0),
+    })),
+    spend: Array.from({ length: 14 }, (_, i) => ({
+      day: new Date(Date.UTC(2026, 8, 21 + i)).toISOString().slice(0, 10),
+      orgs:
+        v === "quiet"
+          ? []
+          : spaces(v)
+              .slice(0, 4)
+              .map((w, k) => ({ org: w.id, cost: Math.round((3 + ((i * 7 + k * 5) % 11) * 2.1) * 100) / 100 })),
+    })),
+    flow: Array.from({ length: 14 }, (_, i) => ({
+      day: new Date(Date.UTC(2026, 8, 21 + i)).toISOString().slice(0, 10),
+      started: v === "quiet" ? 0 : 2 + ((i * 3) % 6),
+      finished: v === "quiet" ? 0 : 1 + ((i * 5) % 5),
+      paused: v === "quiet" ? 0 : (i * 2) % 3,
     })),
     stuck:
       v === "quiet"
@@ -130,9 +151,9 @@ function report(v: Volume): AutonomyReport {
               task: "GLO-103",
               title: TITLES[0] as string,
               org: "globex",
-              kind: "loop",
+              kind: "idle",
               since: iso(310),
-              text: "Same step 6 times: Woke the builder to retry the export test",
+              text: "Running with no progress",
             },
             {
               task: "NOR-105",
@@ -140,8 +161,7 @@ function report(v: Volume): AutonomyReport {
               org: "northwind",
               kind: "waiting",
               since: iso(260),
-              text: "Push to origin needs your approval",
-              item: "i1",
+              text: "In review, not shipped",
             },
             {
               task: "ACM-101",
@@ -157,9 +177,9 @@ function report(v: Volume): AutonomyReport {
                     task: "UMB-109",
                     title: TITLES[3] as string,
                     org: "umbrella",
-                    kind: "failures" as const,
+                    kind: "idle" as const,
                     since: iso(150),
-                    text: "4 failed or refused calls in a day",
+                    text: "Running with no progress",
                   },
                   {
                     task: "HOO-112",
@@ -332,6 +352,7 @@ async function noPageScroll(page: Page) {
 for (const [w, h, theme] of [
   [1440, 900, "dark"],
   [1100, 800, "light"],
+  [2000, 1350, "dark"],
 ] as const) {
   for (const v of ["heavy", "normal", "quiet"] as const) {
     test(`dashboard ${v} ${w} ${theme}`, async ({ page }) => {

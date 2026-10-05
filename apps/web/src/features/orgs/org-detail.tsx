@@ -23,7 +23,6 @@ import { useConfig } from "@/lib/queries";
 import { useNow } from "@/lib/use-now";
 import { GitAccounts } from "./git-accounts";
 import { OrgSettings } from "./org-settings";
-import { TrackerSettings } from "./tracker-settings";
 
 const ROW = "flex min-h-9 min-w-0 items-center gap-3 border-t border-line py-1.5 first:border-t-0";
 
@@ -213,8 +212,6 @@ export function OrgDetail({
       </DetailSection>
 
       <GitAccounts key={`git-${org.id}`} org={org} />
-
-      <TrackerSettings key={`tracker-${org.id}`} org={org} projects={projects} />
 
       <OrgSettings key={org.id} org={org} onRenamed={onRenamed} />
     </DetailPane>

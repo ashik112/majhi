@@ -48,10 +48,11 @@ describe("a run's mounts of a task repo's git folder", () => {
   });
 
   it("keep a branch the owner named writable, and the refs of the owner's own terminal", async () => {
+    // A branch majhi created under the owner's name: its own folder stays writable, the rest is guarded.
     const named = await taskOn("feature/login");
-    expect((await repoMounts(named.task, { guardRefs: true })).map((m) => m.path)).not.toContain(
-      join(named.git, "refs", "heads"),
-    );
+    const mounts = await repoMounts(named.task, { guardRefs: true });
+    expect(mounts).toContainEqual({ path: join(named.git, "refs", "heads", "feature") });
+    expect(mounts).toContainEqual({ path: join(named.git, "refs", "heads"), readOnly: true });
     await cleanup();
     ({ dir, cleanup } = await tempDir());
     const own = await taskOn("task/acm-7-work");
