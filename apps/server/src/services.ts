@@ -556,6 +556,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const usageRecorder = new UsageRecorder({
     repo: usageRepo,
     store,
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
     prices: () => readPrices(config.file),
     onRecorded: () => events.emit(["usage"]),
     afterRecord: async (turn) => {
