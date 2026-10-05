@@ -25,6 +25,7 @@ export function beatOf(row: Row): Beat {
     case "owner":
       return ownerNotice(row.item) === undefined ? "message" : "line";
     case "agent":
+    case "diagram":
       return "message";
     case "tool":
     case "thought":
