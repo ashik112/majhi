@@ -16,7 +16,6 @@ function agent(
     perms: [],
     tools: [],
     connections: [],
-    skills: [],
     origin: "owner",
     ...extra,
   };

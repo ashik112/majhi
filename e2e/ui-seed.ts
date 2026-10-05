@@ -158,7 +158,6 @@ function agent(
     perms: ["edit", "shell"],
     tools: [],
     connections: [],
-    skills: [],
     origin: "setup",
     ...extra,
   };

@@ -49,6 +49,26 @@ export class AgentService {
     return this.entries(stored, sections);
   }
 
+  /** The `skills` lists old agent files still hold, for `skills/migrate.ts`. */
+  async legacySkills(): Promise<{ id: string; skills: string[] }[]> {
+    return (await this.store.list()).flatMap((e) =>
+      e.ok && e.legacySkills.length > 0 ? [{ id: e.id, skills: e.legacySkills }] : [],
+    );
+  }
+
+  /** Rewrites these agents' files without the old `skills` list, in one config commit. */
+  async dropLegacySkills(ids: string[], command: string, meta: CommandMeta): Promise<void> {
+    await this.config.change(
+      { command, meta, summary: "moved agent skills into the skills lock" },
+      async () => {
+        for (const id of ids) {
+          const found = await this.store.get(id);
+          if (found?.ok) await this.store.write(found.agent);
+        }
+      },
+    );
+  }
+
   async create(id: string, draft: Draft, command: string, meta: CommandMeta): Promise<AgentEntry> {
     if (await this.store.get(id)) throw new UserError(`Agent "${id}" already exists.`, 409);
     await this.write(id, draft, command, meta, `created agent ${id}`);
@@ -209,11 +229,7 @@ export class AgentService {
       const before = stored?.ok ? stored.agent.frontmatter : undefined;
       await this.store.write(agent);
       const after = agent.frontmatter;
-      if (
-        before !== undefined &&
-        (before.skills.join("\n") !== after.skills.join("\n") ||
-          before.connections.join("\n") !== after.connections.join("\n"))
-      ) {
+      if (before !== undefined && before.connections.join("\n") !== after.connections.join("\n")) {
         this.links?.toolsChanged?.(id);
       }
     });

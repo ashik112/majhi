@@ -182,6 +182,7 @@ import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
 import { SkillsCli } from "./skills/cli.ts";
 import { skillGitEnv } from "./skills/git-env.ts";
+import { migrateAgentSkills } from "./skills/migrate.ts";
 import { SkillRegistry } from "./skills/registry.ts";
 import { SkillService } from "./skills/service.ts";
 import { SkillStore } from "./skills/store.ts";
@@ -1410,6 +1411,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
   });
   const autonomy = new AutonomyService({
+    skills: skillStore,
     machine: () => machine.get(),
     lanes,
     processWaiting: (task) => processes.waiting(task).length > 0,
@@ -1932,19 +1934,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     agents: {
       skillLists: async () =>
         (await agents.list()).flatMap((e) =>
-          e.status === "ok"
-            ? [
-                {
-                  id: e.agent.frontmatter.id,
-                  scope: e.agent.frontmatter.scope,
-                  skills: e.agent.frontmatter.skills,
-                },
-              ]
-            : [],
+          e.status === "ok" ? [{ id: e.agent.frontmatter.id, scope: e.agent.frontmatter.scope }] : [],
         ),
-      setSkills: async (agent, list, command, meta) => {
-        await agents.edit(agent, { set: { skills: list } }, command, meta);
-      },
     },
     uploads,
     changed: (ids) => {
@@ -1958,6 +1949,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     hostHome: env.hostHome,
   });
+  // Agent files used to list their skills: move the lists into the skills lock once.
+  background.run(() => migrateAgentSkills({ agents, store: skillStore }, { actor: { kind: "owner" } }));
   const connectionTests = new ConnectionTester({
     oauth: connect,
     gitCheck: async (org, provider, host, privateNetwork) => {

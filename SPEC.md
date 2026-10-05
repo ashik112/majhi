@@ -288,7 +288,6 @@ where: [globex]          # or [anywhere]
 perms: [edit, shell, push]
 tools: [serena, majhi-memory, majhi-room]
 connections: [globex-k8s-prod, globex-newrelic]   # org connections this agent may use
-skills: [nextjs-app-router, write-tests]
 fallback: globex-builder
 context: { compact_at: 0.8, cap: 150000 }   # optional, overrides the org default (see 5.13)
 origin: setup            # setup | owner
@@ -366,8 +365,8 @@ projects:
 - **Skills** use the open Agent Skills format: a folder with a `SKILL.md` whose YAML frontmatter has `name` and `description`.
   - **Store.** Installed once into `~/.majhi/skills/<name>/`, with `skills-lock.json` beside them recording source, ref or commit, content hash and install time.
   - **Install.** The Vercel `skills` CLI, pinned in the runner image, runs non-interactively in a runner with a throwaway home: `skills add <source> -y --copy --agent claude-code codex [--skill <name>]`, telemetry off. Sources: `owner/repo`, repo or `tree/.../skills/<name>` URLs, other git URLs, a SKILL.md or archive URL, a folder inside a workspace root or the tasks folder, or an uploaded zip (extracted with path containment). Private repos use the org's git login. Installing is two steps: a preview (name, description, files, source) and a confirm of exactly what was previewed. Installing never enables.
-  - **Per agent.** The agent file's `skills` list. Each run gets read-only copies of only its agent's enabled skills in a folder of its own, removed when the session ends, and the session's first prompt names each skill with its SKILL.md path. Changing an agent's skills restarts its open sessions when their turn ends, so the next turn has them.
-  - **Browse** searches the skills.sh directory and shows each result's source repo. Update previews the change first; remove takes the skill off every agent that lists it. Every install, update, enable, disable and remove gets an audit row.
+  - **Per agent.** One place decides who has a skill: the rules in `skills-lock.json` (all agents, one workspace, or one agent's own opt-in or opt-out; the agent's own choice wins). Agent files hold no skills list. The Skills page and the Agent page edit the same rules. Each run gets read-only copies of only its agent's enabled skills in a folder of its own, removed when the session ends, and the session's first prompt names each skill with its SKILL.md path. Changing an agent's skills restarts its open sessions when their turn ends, so the next turn has them.
+  - **Browse** searches the skills.sh directory and shows each result's source repo. Update previews the change first; remove drops the skill and every rule about it. Every install, update, enable, disable and remove gets an audit row.
 - **MCP servers** are `mcp` connections (5.14), installed from the same page: the official MCP Registry (`/v0.1/servers`, falling back to `/v0`), a remote URL (Streamable HTTP or SSE, with headers), a local command, or a pasted `mcpServers` snippet. A registry package is always pinned to a version. Fields marked secret are set through the write-only secret flow, required ones must be filled before saving, and Test runs right after and shows the tool list. Per agent, a workspace server is turned on in the agent's `connections`, inside its own org only. Global servers are included automatically.
 - **By message.** In a room, the owner's "@agent install this skill <link>" or "@agent add this MCP server <name or link>" gets one approval card (what, source, which agent). Approving installs it and turns it on for that agent; secrets an MCP server needs are asked for with secret requests, never in chat. The same `skills.*` and `mcp.*` commands serve the page, the room and the captain.
 

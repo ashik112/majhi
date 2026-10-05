@@ -46,7 +46,6 @@ function agent(id: string, role: Fm["role"], account: string): Fm {
     perms: ["edit", "shell"],
     tools: [],
     connections: [],
-    skills: [],
     origin: "owner",
   };
 }
