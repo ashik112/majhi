@@ -1,5 +1,30 @@
 # Progress
 
+## UI sync: typed feed events, patched lists, cheaper decisions, windowed board (built, not merged)
+
+Branch `perf/ui-sync`. Measured on the audit's seeded rig (2,000 tasks, 200k room items, 50k events), one board tab at 1440x900, 10 fake-agent runs (about 49 turns/min), same machine, base 2c013560 plus the hot-paths merge against this branch. Renders counted with the React commit hook on an unminified build.
+
+| Measure | Before | After |
+|---|---|---|
+| Requests per second, board tab, 10 runs | 15.4 | 0.9 |
+| Bytes per second | 993 KB/s | 7 KB/s |
+| Request latency in the browser | 2.5 to 3.3 s | 2 to 20 ms |
+| Card renders per commit (`Frame`) | 1,274 | 3 |
+| DOM nodes on the board | 22,393 | 1,080 |
+| Main thread busy | 5.6% | 2.4% |
+| `tasks.list` payload | 577 KB | 499 KB |
+| `decisions.list` | 242 KB, 16 ms | 242 KB, 8 ms warm (the per-row task reads are three queries total) |
+
+- **What changed.**
+  - The events socket stamps every frame with `seq` (per connection, 1, 2, 3 ...; a frame dropped for a tab with over 1 MB unsent still takes its number). A tab that sees a gap reads everything once; so does a reconnect. A `changed` event can name its tasks (`tasks`) and say only their rows changed (`rows`). The hub has `emitTask(id, rows?)`; run start/stop, messages, titles, handoff checks, merge looks and most task state changes in `TaskService` now name their task. Owner commands and a few rare paths still send the bare `tasks` topic.
+  - New command `tasks.changed {ids, decisions?}`: the list rows of those tasks plus the counts, and with `decisions` what waits in them. The web (`lib/task-sync.ts`) reads named tasks in one request per 2 s window, patches the task list and the decisions list (counts, and the named tasks' decisions in the server's order), and reads again only the open detail of those tasks' cards. `staleTime: Infinity` for the task list and decisions list; a 60 s refetch is the safety net. `cmd()` hands back the previous parsed object when the answer text is identical (no JSON parse, no zod, no new identity).
+  - `decisions.list`: subjects of all rows read in three queries (was three per row), first looks at review tasks (each reads the repos) run at most three at once, the list waits 1.5 s for first looks and the rest answer when they finish (the touched task's decisions are re-read through the feed), `counts` kept. Renewals stay behind the answer.
+  - Board: cards are memoised, a card reads its own row (`useTaskRow`, same object until that task changes), one shared clock replaces a timer per card, a column of more than 30 cards draws only the ones in view (`@tanstack/react-virtual`, already used by Needs you).
+  - `tasks.list` rows lose `mode` and the repos' `branch` (the board shows neither).
+- **What the owner will notice.** A busy board no longer lags. A card's change shows within about 2 s during a burst, at once when quiet. Long columns scroll the same.
+- **How verified.** Typecheck clean. Tests: `packages/shared/src/event-seq.test.ts` (seq monotonic per connection, gaps), `apps/web/src/lib/events-model.test.ts` (a gap makes the client read everything once; what each event reads), `task-sync.test.ts` (list and decisions patches keep identity and order), `events/hub.test.ts`, inbox tests (look concurrency capped at 3, recount). Census guard green. Browser on an isolated server with 10 runs: board, Needs you and a running task room at 1440 and 1100, no console errors or failed requests (`scratchpad/perf-ui-sync/*.png`).
+- **Left.** `decisions.list` is still 242 KB at 505 decisions: every field is shown by the board or Needs you, so it was not cut; it is now read only on a real change or every 60 s. The sidebar still re-renders on every room message (`NavRow`). The 10-run rig has agents that pause on an error again and again (`pausedByRuns`, about 6 a second), which is the main source of `tasks:ids` events; worth a look on its own.
+
 ## Captain soak test fixed (branch fix/captain-soak)
 
 - **What changed.** The usage recorder now takes the run clock (`runClock`), so turns are stamped with the simulated time and the day and workspace budgets measure them. The soak test's findings stub gains `settle`, which the upkeep pass calls on every sweep since findings settle by key.

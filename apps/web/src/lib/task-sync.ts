@@ -4,7 +4,7 @@ import { cmd } from "./api";
 import { queryKeys } from "./queries";
 
 /** Tasks the feed named are read at most once per this long: the first change at once, a burst after it in one read. */
-const WINDOW_MS = 1500;
+const WINDOW_MS = 2000;
 /** More named tasks than this are not worth reading one by one: the list is read again. */
 const MAX_NAMED = 100;
 

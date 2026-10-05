@@ -94,8 +94,8 @@ export interface InboxDeps {
   shipBlock?: (task: string) => Promise<{ why: string; empty: boolean } | undefined>;
   /** The tasks an agent is working on right now (not queued, not waiting on an answer). */
   working?: () => readonly string[];
-  /** A look at a review task's merge found something new: screens read the list again. */
-  changed?: () => void;
+  /** A look at a review task's merge found something new: screens read that task's decisions again. */
+  changed?: (task: string) => void;
   diff?: (task: string) => Promise<RepoDiff[]>;
   shipOptions?: (task: string) => Promise<ShipOptions>;
   now?: () => Date;
@@ -217,7 +217,7 @@ export class InboxService {
         const block = await this.look(task);
         this.renewing.delete(task);
         this.shipLooks.set(task, { at: (this.deps.now?.() ?? new Date()).getTime(), block });
-        if (was?.why !== block?.why || was?.empty !== block?.empty) this.deps.changed?.();
+        if (was?.why !== block?.why || was?.empty !== block?.empty) this.deps.changed?.(task);
         resolve();
       });
       this.pumpLooks();

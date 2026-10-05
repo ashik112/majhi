@@ -1227,7 +1227,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     incidents: () => opsWatch?.unacked() ?? [],
     items: () => store.room.waitingDecisions(),
     working: () => runs.workingTasks(),
-    changed: () => events.emit(["tasks"]),
+    changed: (task) => events.emitTask(task),
     // The same live look the captain's ship chore takes: a card never offers a merge that fails.
     shipBlock: async (task) => {
       const check = await shipReadiness({ store, room, runs, mrs }, task);
