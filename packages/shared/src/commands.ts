@@ -175,6 +175,7 @@ import {
   DecisionRecommendInputSchema,
   OwnerDecisionSchema,
 } from "./inbox.ts";
+import { BlockerSchema } from "./lifecycle/blocker.ts";
 import {
   McpAgentInputSchema,
   McpInstallInputSchema,
@@ -345,7 +346,6 @@ import {
   TaskSchema,
   TaskSummarySchema,
 } from "./tasks.ts";
-import { BlockerSchema } from "./lifecycle/blocker.ts";
 import {
   InstalledToolSchema,
   ToolInstallInputSchema,
