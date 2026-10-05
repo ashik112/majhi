@@ -578,6 +578,8 @@ function readLine(item: RoomItem): string | undefined {
       return item.text.trim() === "" ? undefined : `@${item.agent}: ${item.text}`;
     case "handoff":
       return `@${item.from} handed to @${item.to}`;
+    case "diagram":
+      return `@${item.agent} drew a diagram: ${item.spec.title}`;
     case "team-plan":
       return `@${item.agent} recorded plan v${item.version}: ${item.steps.map((s, i) => `${i + 1}. ${s.who} ${s.what}`).join(" ")} Why: ${item.why}`;
     case "system":

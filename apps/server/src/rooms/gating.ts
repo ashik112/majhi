@@ -39,6 +39,8 @@ export interface GateContext {
   teamSize: number;
   /** The agent is the first of a lead-mode task that is not a chat. */
   soloLead: boolean;
+  /** A chat with an agent or a captain thread: it gets the room server for its drawing tools (`show_diagram`, `show_map`). */
+  chat?: boolean;
   /** majhi can run containers (PRV-53). */
   containersOn: boolean;
   /** Serena can start in this session's runner; undefined when it cannot (no runner container). */
@@ -75,7 +77,7 @@ export function turnedOff(tools: readonly string[]): Set<string> {
  * - `majhi-admin`: the captain, and a root agent that lists it.
  * - `majhi-decide`: only when the agent lists it (0 calls in five days of use, and its schema sits in every session's context).
  * - `majhi-processes`, `majhi-memory`: every session.
- * - `majhi-room`: a team of two or more, a lone lead of a lead-mode task, or listed.
+ * - `majhi-room`: a team of two or more, a lone lead of a lead-mode task, a chat (drawing tools only), or listed.
  * - `majhi-tasks`: leads and root agents, and every agent of an ops task (not the captain), or listed.
  * - `majhi-containers`: every session, when majhi can run containers.
  * - `serena`: builders of a task with worktrees, when it can start; or listed, with worktrees.
@@ -89,7 +91,7 @@ export function gateTools(agent: GateAgent, ctx: GateContext): GatedTool[] {
   const defaults: Record<GatedTool, boolean> = {
     [ADMIN_TOOL_ID]: getsAdminTools(agent, ctx.boss),
     [DECIDE_SERVER_NAME]: listed(DECIDE_SERVER_NAME),
-    [ROOM_SERVER_NAME]: ctx.teamSize > 1 || ctx.soloLead || listed(ROOM_SERVER_NAME),
+    [ROOM_SERVER_NAME]: ctx.teamSize > 1 || ctx.soloLead || ctx.chat === true || listed(ROOM_SERVER_NAME),
     [TASKS_SERVER_NAME]: agent.id !== ctx.boss && (lead || ctx.opsTask === true || listed(TASKS_SERVER_NAME)),
     [PROCESSES_SERVER_NAME]: true,
     [MEMORY_SERVER_NAME]: true,

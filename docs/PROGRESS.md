@@ -1,5 +1,36 @@
 # Progress
 
+## Project map and chat diagrams (built, not merged)
+
+Branch `feat/project-map`. SPEC 5.21.
+
+**Design note.** One `Diagram` model (`packages/shared/src/diagram.ts`, `v: 1`) is what the one canvas draws. The stored workspace map is that model with more fields (a box says its kind, project and where it runs; a line carries proof, a source and a state), so a chat diagram and the map share the schema, the layouts and the renderer. Everything that varies is a registry, so growth is one file and one line:
+
+- **A layout** (flow, top-down, tree, radial, sequence, timeline, state): `features/diagram/layouts/<name>.ts` exporting a pure `(diagram) => Positioned`, its id in `DIAGRAM_LAYOUTS` (shared), one line in `layouts/index.ts`. `Record<DiagramLayout, Layout>` makes the compiler refuse a missing one.
+- **A kind of line, a tone:** one entry in `features/diagram/presets.ts`. **A map box kind:** `MAP_NODE_KINDS` and `features/map/model.ts`.
+- **A map source (a parser):** `apps/server/src/map/config/scan-<thing>.ts` (reads the already parsed `Loaded`, adds boxes and lines with proof), a field in `Loaded` that `facts.ts` loads, one line in `PROJECT_SOURCES` (`config/sources.ts`). **A pass** that costs tokens says `model` in `map/passes.ts`; the estimate and the config-only fallback follow it.
+- **Cost, speed:** config files are read once per checkout and cached by size and time (`LoadCache`); a project whose chosen files are unchanged is not sent to the model again; the history pass is one SQL query; the update runs in the background with `map` events; the graph library, dagre and the canvas are one lazy chunk (`scene`), preloaded when the Map page opens and loaded by no other page; room diagrams draw only once scrolled into view; layout is memoized by structure (labels and decorations never relayout).
+
+**What changed.**
+
+- **Map page** (`/map`, sidebar below Playbooks, follows the workspace picker): the approved mockup with DESIGN.md's colors (queues violet, selection by tint and ring), four views, freshness and merges since, Update map with its estimate, live progress, canvas, panel for a box or a line (proof with Open in editor, Looks right, Remove line, New task here, Open project).
+- **Update** is one action, `map.update { org }` (owner and captain; agents read-only), plus `map.get`, `map.estimate`, `map.confirmEdge`, `map.removeEdge`. Passes and what each reads: SPEC 5.21.
+- **Auto-pilot**: the `map` upkeep chore (one playbook "Project map"): runs the same update when merges since are above zero and the map is over a day old, within the workspace budget; once a day by key; never with Auto-pilot off.
+- **Agents**: TASK.md "How the projects connect" (at most 8 lines). `show_diagram` and `show_map` in `majhi-room` (a chat gets only these two): typed JSON, 40 boxes, 80 lines, 60 characters, text is data. The `diagram` room item renders inline (320 px, lazy, zoom, fit, click a box for its sub line, Open full size) in task rooms, chats, the captain thread and the chat dock. No separate `majhi-map` read tool: `map.get` is already a command every agent can call of its own workspace, and `show_map` draws it.
+- Housekeeper gained `resolve(org)` (the agent and account that would answer, or the error `ask` would give), used for the estimate.
+
+**How verified.** `pnpm -r typecheck` clean. Tests (crucial only): `map/config.test.ts` (parsers to lines with file and line on four Acme fixtures, secrets never in proof, git remote and local path libraries, Kubernetes env, broken files, symlink out of the checkout), `map/service.test.ts` (workspace isolation, merges since, removed lines never re-added by config or model, model proposals land as new with the real line, guesses dropped, model down, cost cap, one update at a time, estimate), `map/handlers.test.ts` (who may read and change, prompt data block cannot be closed from a file), `captain/map-chore.test.ts` (once a day when stale, not when fresh or updated within 24 hours, not when the budget is used up, never with Auto-pilot off), `rooms/diagram.test.ts` (schema limits, groups that loop, show_map isolation and depth). Browser, on an isolated e2e server (temp home, port 7195, `scratchpad/project-map/`): empty state, Update map, the graph, click a box and a line, Looks right (NEW tag leaves), Remove line (stays gone), the four views, zoom and fit, New task here (project preselected), Open project, 1440 and 1100 wide, no console errors; a fake agent posted all seven layouts and a steps flow in a chat, a task room and the captain thread; they render, zoom, show the sub line on click and open full size; the chat dock shows them too. Fake agent got a `fake-reply:` directive (test-only) so the code pass answers exact JSON.
+
+**Numbers.** `map.get` for 50 boxes and 120 lines: p50 0.2 ms, p95 0.6 ms in the service, 34 KB. Layout of 50 boxes and 120 lines: 18 ms cold, 0.1 ms cached. Map page, in-app, first visit including the lazy chunk: about 130 ms to the first box; later visits about 45 ms. An update of the four fixtures with the fake model: under a second. Estimated cost for the fixtures: $0.007.
+
+**Left.**
+- Wide diagrams in a room are small inline (they fit the width); Open full size reads them. A very dense graph can still put two line labels on top of each other.
+- No Web Worker for layout (see DECISIONS: measured, not needed).
+- The captain's chat cuts a very long message, so three big diagram calls in one owner message can lose the last one (an e2e artefact, not the tool).
+- Dependencies inside a monorepo (workspace packages of one project) are not boxes; only registered projects are.
+- The code pass cache of "what the model read" is kept in memory, so a restart reads once more.
+- Estimate price is the cheapest row of the Housekeeper tool's family when no `housekeeper_model` is set; the account may offer a dearer cheapest model.
+
 ## Network gaps: default-deny private destinations, guarded previews, live attach (built, not merged)
 
 Branch `fix/network-gaps`.

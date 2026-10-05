@@ -22,6 +22,7 @@ export const PAGE_PATH = {
   captain: "/captain",
   playbooks: "/playbooks",
   watch: "/watch",
+  map: "/map",
   limits: "/limits",
   decisions: "/decisions",
 } as const;
@@ -37,6 +38,7 @@ export const PAGE_LABEL: Record<PageName, string> = {
   captain: "Captain",
   playbooks: "Playbooks",
   watch: "Watch",
+  map: "Map",
   limits: "Limits",
   decisions: "Decisions",
   agents: "Agents",
@@ -52,7 +54,7 @@ export const PAGE_LABEL: Record<PageName, string> = {
 };
 
 /** The sidebar's rows: the daily work at the top, the team and health at the foot, then Settings. */
-export const SIDEBAR_MAIN = ["board", "decisions", "chats", "captain", "playbooks", "watch"] as const;
+export const SIDEBAR_MAIN = ["board", "decisions", "chats", "captain", "playbooks", "map", "watch"] as const;
 export const SIDEBAR_FOOT = ["agents", "skills", "accounts", "usage"] as const;
 export type SidebarMainPage = (typeof SIDEBAR_MAIN)[number];
 export type SidebarFootPage = (typeof SIDEBAR_FOOT)[number];

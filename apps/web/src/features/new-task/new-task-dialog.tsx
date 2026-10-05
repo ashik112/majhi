@@ -67,7 +67,7 @@ function kindFits(kind: TaskKind, projects: number): boolean {
 const FIELD =
   "w-full rounded-[10px] border border-line-control bg-field text-fg transition-[border-color] duration-150 hover:border-line-hover focus-visible:border-accent focus-visible:outline-none";
 
-export function NewTaskDialog({ onClose }: { onClose: () => void }) {
+export function NewTaskDialog({ onClose, project }: { onClose: () => void; project?: string }) {
   const { org: filterOrg } = useOrgFilter();
   const orgs = useOrgs().data ?? [];
   const projects = useProjects();
@@ -104,8 +104,8 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (seeded.current || !projects.data) return;
     seeded.current = true;
-    setPicked(initialProjects(projects.data, filterOrg));
-  }, [projects.data, filterOrg]);
+    setPicked(project === undefined ? initialProjects(projects.data, filterOrg) : [project]);
+  }, [projects.data, filterOrg, project]);
 
   // The dialog opens after this effect (Modal shows it), so focus waits a frame.
   useEffect(() => {

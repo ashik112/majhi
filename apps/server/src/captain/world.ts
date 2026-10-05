@@ -20,6 +20,7 @@ import type { FindingsService } from "../findings/service.ts";
 import { defaultBranch, git } from "../git/git.ts";
 import { shipReadiness } from "../handoff/ready.ts";
 import type { HandoffService } from "../handoff/service.ts";
+import type { MapService } from "../map/service.ts";
 import type { MemoryService } from "../memory/service.ts";
 import { repoFacts } from "../memory/task-git.ts";
 import { HOST_LABEL, type MrService } from "../mrs/service.ts";
@@ -63,6 +64,8 @@ export interface WorldDeps {
   decisions: DecisionService;
   memory: MemoryService;
   findings: FindingsService;
+  /** The project map: the map chore asks if it is stale and runs the one update. */
+  map: MapService;
   curate: (fact: Fact, off?: ReadonlySet<string>) => Promise<{ reason?: string }>;
   scanner: RepoScanner;
   cleanup: CleanupService;
@@ -507,6 +510,18 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       machineBusy: deps.machineBusy,
       wake: (org, line) => deps.autonomy.news(line, org),
     }),
+    map: {
+      stale: (org) => deps.map.stale(org),
+      update: async (org) => {
+        const view = await deps.map.update(org);
+        const r = view.report;
+        const lines =
+          r === undefined || r.fresh === 0
+            ? "no new lines"
+            : `${r.fresh} new ${r.fresh === 1 ? "line" : "lines"} to check`;
+        return { summary: `${lines}${r === undefined ? "" : `, $${r.cost.toFixed(2)}`}` };
+      },
+    },
     followUps: {
       openThreads: (org) =>
         deps.memory.project

@@ -27,6 +27,7 @@ import { formatAgo } from "@/lib/format";
 import { useNow } from "@/lib/use-now";
 import { ApprovalCard, SecretRequestCard } from "./approval-card";
 import { PendingAsk } from "./ask-card";
+import { DiagramItem } from "./diagram-item";
 import { DockBar } from "./dock-bar";
 import { Markdown } from "./markdown";
 import { MediaView, TaskFileLink, type TaskFiles } from "./media";
@@ -296,6 +297,8 @@ function ItemBody({
       return <HandoffLine item={item} />;
     case "team-plan":
       return <TeamPlanLine item={item} />;
+    case "diagram":
+      return <DiagramItem spec={item.spec} agent={item.agent} />;
     case "review":
       return <ReviewCard item={item} owner={owner} />;
     case "paused":

@@ -184,6 +184,7 @@ import {
   OwnerDecisionSchema,
 } from "./inbox.ts";
 import { BlockerSchema } from "./lifecycle/blocker.ts";
+import { MapEdgeInputSchema, MapEstimateSchema, MapOrgInputSchema, MapViewSchema } from "./map.ts";
 import {
   McpAgentInputSchema,
   McpInstallInputSchema,
@@ -1257,6 +1258,40 @@ export const commands = {
       "Dismiss the morning brief of a day on Today. The owner, or the captain through the owner's approval",
     input: AgendaDismissInputSchema,
     output: z.object({ day: z.string() }),
+  },
+  // The project map (5.21) --------------------------------------------------------
+  "map.get": {
+    risk: "read",
+    summary:
+      "How a workspace's projects connect: projects, libraries, databases, queues and outside services as boxes, and the lines between them with their proof (file and line), when it was updated and how many merges since. An agent reads its own workspace only",
+    input: MapOrgInputSchema,
+    output: MapViewSchema,
+  },
+  "map.estimate": {
+    risk: "read",
+    summary:
+      "What the next map update would read and cost: projects, files for the code pass, tokens and an estimate in dollars from the price table, and the cap one update never passes",
+    input: MapOrgInputSchema,
+    output: MapEstimateSchema,
+  },
+  "map.update": {
+    risk: "change",
+    summary:
+      "Update the workspace's project map: read each project's config files and majhi's own task history with no model, then let the cheapest model read a bounded set of code files for links the config misses (these land as new for the owner to check). The one action for the whole update; it runs in the background and the page follows its progress. The owner and the captain, never another agent",
+    input: MapOrgInputSchema,
+    output: MapViewSchema,
+  },
+  "map.confirmEdge": {
+    risk: "change",
+    summary: "Mark a new line on the map as right. The owner and the captain",
+    input: MapEdgeInputSchema,
+    output: MapViewSchema,
+  },
+  "map.removeEdge": {
+    risk: "change",
+    summary: "Remove a line from the map. No later update adds it again. The owner and the captain",
+    input: MapEdgeInputSchema,
+    output: MapViewSchema,
   },
   // The chat dock -----------------------------------------------------------------
   "conversations.list": {

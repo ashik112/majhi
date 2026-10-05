@@ -3,6 +3,7 @@ import { runFollowUps } from "../findings/followups.ts";
 import { sizeText } from "../tasks/folder-sweep.ts";
 import { answerGate, judgeReport, summaryLine } from "./answer-check.ts";
 import { shipState } from "./keys.ts";
+import { createMapChore } from "./map-chore.ts";
 import { classifyOwnWork } from "./own-work.ts";
 import { permissionVerdict } from "./permission-rules.ts";
 import type {
@@ -320,6 +321,7 @@ export function createChores(
 
   return {
     ...createUpkeepChores(ports),
+    ...createMapChore(ports, now),
     async ship(run) {
       const { org, ws } = run;
       const answered = await answerChecks(run);

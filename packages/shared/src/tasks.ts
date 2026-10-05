@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BranchPatternSchema, IdSchema, MrHostSchema, OrgIdSchema, SecretRefSchema } from "./accounts.ts";
+import { DiagramSpecSchema } from "./diagram.ts";
 import { ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./rooms.ts";
 import { CommitsPatchSchema } from "./settings.ts";
@@ -895,6 +896,12 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     steps: TeamPlanSchema.shape.steps,
     why: z.string(),
     how: z.array(PlanHowSchema),
+  }),
+  /** A diagram an agent drew for the owner (`show_diagram`, `show_map`), drawn inline by the Map page's canvas. */
+  RoomItemBase.extend({
+    type: z.literal("diagram"),
+    agent: IdSchema,
+    spec: DiagramSpecSchema,
   }),
   RoomItemBase.extend({
     type: z.literal("system"),
