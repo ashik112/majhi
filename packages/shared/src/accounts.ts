@@ -563,7 +563,7 @@ export const EventTopicSchema = z.enum([
   "ops",
   /** The morning brief was made or dismissed, or the review budget changed (5.18): refetch `agenda.today`. */
   "agenda",
-  /** A workspace's project map changed or an update moved (5.20): refetch `map.get`. */
+  /** A workspace's project map changed or an update moved (5.21): refetch `map.get`. */
   "map",
   /** A git sign-in flow changed state: refetch `git.signIn.poll`. Ending one also emits `orgs`. */
   "signins",

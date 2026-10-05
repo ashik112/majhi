@@ -24,6 +24,7 @@ export const radial: Layout = (d: Diagram) => {
   const centre =
     d.focus ?? d.nodes.toSorted((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0))[0]?.id ?? "";
   const ring = new Map<string, number>([[centre, 0]]);
+  const parent = new Map<string, string>();
   let frontier = [centre];
   for (let depth = 1; frontier.length > 0; depth++) {
     const found: string[] = [];
@@ -31,6 +32,7 @@ export const radial: Layout = (d: Diagram) => {
       for (const other of next.get(id) ?? []) {
         if (!ring.has(other)) {
           ring.set(other, depth);
+          parent.set(other, id);
           found.push(other);
         }
       }
@@ -43,22 +45,40 @@ export const radial: Layout = (d: Diagram) => {
   const nodes = new Map<string, Box>();
   const rings = new Map<number, string[]>();
   for (const n of d.nodes) rings.set(ring.get(n.id) ?? 0, [...(rings.get(ring.get(n.id) ?? 0) ?? []), n.id]);
-  for (const [depth, ids] of rings) {
+  const angles = new Map<string, number>();
+  for (const depth of [...rings.keys()].toSorted((a, b) => a - b)) {
+    const ids = rings.get(depth) ?? [];
     if (depth === 0) {
       for (const id of ids) nodes.set(id, { x: -BOX_W / 2, y: -BOX_H / 2, w: BOX_W, h: BOX_H });
       continue;
     }
     // Wide enough that the boxes of a crowded ring do not touch.
     const radius = Math.max(depth * RING, (ids.length * SLOT) / (2 * Math.PI));
-    ids.forEach((id, i) => {
-      const angle = -Math.PI / 2 + (2 * Math.PI * i) / ids.length + (depth % 2) * (Math.PI / ids.length);
+    if (depth === 1 || depth === outer) {
+      ids.forEach((id, i) => {
+        angles.set(id, -Math.PI / 2 + (2 * Math.PI * i) / ids.length);
+      });
+    } else {
+      // Children stand around their parent's direction.
+      const byParent = new Map<string, string[]>();
+      for (const id of ids)
+        byParent.set(parent.get(id) ?? "", [...(byParent.get(parent.get(id) ?? "") ?? []), id]);
+      for (const [p, kin] of byParent) {
+        const base = angles.get(p) ?? 0;
+        kin.forEach((id, j) => {
+          angles.set(id, base + (j - (kin.length - 1) / 2) * 0.42);
+        });
+      }
+    }
+    for (const id of ids) {
+      const angle = angles.get(id) ?? 0;
       nodes.set(id, {
         x: Math.cos(angle) * radius * 1.35 - BOX_W / 2,
         y: Math.sin(angle) * radius - BOX_H / 2,
         w: BOX_W,
         h: BOX_H,
       });
-    });
+    }
   }
   return { nodes, groups: new Map(), edges: routeEdges(d, nodes), rules: [] };
 };

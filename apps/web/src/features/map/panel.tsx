@@ -34,7 +34,7 @@ export function MapPanel({
     <aside
       aria-label="Map details"
       className={cn(
-        "flex w-[330px] shrink-0 flex-col gap-4 overflow-y-auto overscroll-contain rounded-2xl p-4 scroll-fade",
+        "flex w-[300px] shrink-0 flex-col gap-4 min-[1320px]:w-[330px] overflow-y-auto overscroll-contain rounded-2xl p-4 scroll-fade",
         GLASS,
       )}
     >
@@ -172,7 +172,7 @@ function NodePanel({
                 className={ROW}
               >
                 <Lamp state={TASK_LAMP[t.status as keyof typeof TASK_LAMP] ?? "idle"} size={7} />
-                <span className="font-mono text-sm text-fg-muted">{t.id}</span>
+                <span className="shrink-0 font-mono text-sm whitespace-nowrap text-fg-muted">{t.id}</span>
                 <span className="truncate">{t.title}</span>
               </button>
             ))

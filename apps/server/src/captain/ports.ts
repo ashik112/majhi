@@ -237,7 +237,7 @@ export interface CaptainPorts {
   /** The self-upkeep chores: discover, tidy, health and the checklist. Absent: they do nothing. */
   upkeep?: UpkeepPorts;
 
-  /** The project map (5.20): whether it is out of date, and the one update. Absent: the map chore does nothing. */
+  /** The project map (5.21): whether it is out of date, and the one update. Absent: the map chore does nothing. */
   map?: MapPorts;
 
   // Always

@@ -190,7 +190,7 @@ function connectionLines(connections: readonly BriefConnection[], ops: boolean):
   ];
 }
 
-/** The workspace's project map cut to the repos of this task (SPEC 5.20). */
+/** The workspace's project map cut to the repos of this task (SPEC 5.21). */
 function mapLines(map: readonly string[]): string[] {
   return [
     "## How the projects connect",

@@ -110,7 +110,7 @@ export interface UpkeepPorts {
   setAccountSlots(limit: number): Promise<void>;
 }
 
-/** The project map as the map chore sees it (5.20). The real port is the map service's own `stale` and `update`. */
+/** The project map as the map chore sees it (5.21). The real port is the map service's own `stale` and `update`. */
 export interface MapPorts {
   /** Out of date: the workspace has projects and tasks merged since the last update. */
   stale(org: string): Promise<{ stale: boolean; merges: number; updatedAt?: string | undefined }>;

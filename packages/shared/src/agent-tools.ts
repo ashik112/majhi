@@ -31,8 +31,8 @@ export const TOOL_CATALOG = [
   },
   {
     name: "majhi-room",
-    summary: "Read the room, post, mention a teammate, ask the owner",
-    rule: "On in a team of two or more, and for a lone lead; add it to any other agent",
+    summary: "Read the room, post, mention a teammate, ask the owner, draw a diagram for the owner",
+    rule: "On in a team of two or more, and for a lone lead; in a chat only the drawing tools; add it to any other agent",
   },
   {
     name: "majhi-tasks",

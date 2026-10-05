@@ -11,7 +11,7 @@ import {
 } from "./diagram.ts";
 
 /**
- * The project map (SPEC 5.20): one stored graph per workspace of how its projects connect. A config pass
+ * The project map (SPEC 5.21): one stored graph per workspace of how its projects connect. A config pass
  * and a history pass fill it from files and majhi's own records with no model; a code pass reads a
  * bounded set of files with the cheapest model and proposes lines that land as `new` for the owner to check.
  */

@@ -16,10 +16,17 @@ export const timeline: Layout = (d: Diagram) => {
     nodes.set(n.id, { x: i * (GAP / 1.4), y: above ? -LIFT - BOX_H : LIFT, w: BOX_W, h: BOX_H });
   });
   const end = Math.max(0, d.nodes.length - 1) * (GAP / 1.4) + BOX_W;
+  // A short stem from each event to the axis, so the order reads along the line.
+  const stems = d.nodes.flatMap((n) => {
+    const b = nodes.get(n.id);
+    if (b === undefined) return [];
+    const x = b.x + b.w / 2;
+    return [{ from: { x, y: b.y < 0 ? b.y + b.h : b.y }, to: { x, y: 0 } }];
+  });
   return {
     nodes,
     groups: new Map(),
     edges: routeEdges(d, nodes),
-    rules: [{ from: { x: -20, y: 0 }, to: { x: end + 20, y: 0 } }],
+    rules: [{ from: { x: -20, y: 0 }, to: { x: end + 20, y: 0 } }, ...stems],
   };
 };

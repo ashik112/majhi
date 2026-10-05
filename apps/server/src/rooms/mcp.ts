@@ -442,13 +442,19 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
         : ROOM_TOOLS.filter((t) => t.name !== "record_plan");
   server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: listed(offered(), false) }));
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<Result> => {
-    const tool = ROOM_TOOLS.find((t) => t.name === request.params.name);
+    const tool = offered().find((t) => t.name === request.params.name);
     if (tool === undefined) return fail(`There is no tool ${request.params.name}.`);
     const parsed = tool.input.safeParse(request.params.arguments ?? {});
     if (!parsed.success) return fail(`Invalid arguments:\n${formatIssues(parsed.error).join("\n")}`);
     const args = parsed.data as Record<string, unknown>;
     try {
       switch (tool.name) {
+        case "show_diagram":
+          return ok(drawDiagram(deps.room, caller, parsed.data as DiagramSpec));
+        case "show_map": {
+          const { org, map } = deps.maps.forTask(caller.task);
+          return ok(drawMap(deps.room, caller, org, map, args as { around?: string; depth: 1 | 2 }));
+        }
         case "read_recent":
           if (typeof args.item === "string") return ok(deps.coordinator.readItem(caller.task, args.item));
           return ok(

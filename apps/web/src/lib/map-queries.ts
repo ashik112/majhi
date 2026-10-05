@@ -4,7 +4,7 @@ import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
 
 /**
- * The project map (SPEC 5.20). `map.get` is the page's one read; the `map` topic refetches it as an
+ * The project map (SPEC 5.21). `map.get` is the page's one read; the `map` topic refetches it as an
  * update moves, and a minute poll keeps "merges since" and the open tasks honest.
  */
 export function useMap(org: string | undefined) {

@@ -383,7 +383,7 @@ export interface Services {
   homeChecks: HomeChecks;
   /** The owner's agenda and the morning brief (5.18). */
   agenda: AgendaService;
-  /** The project map of each workspace (5.20). */
+  /** The project map of each workspace (5.21). */
   map: MapService;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
   captainTell: CaptainTell;
@@ -916,7 +916,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     majhiHome: env.majhiHome,
     usage: usageRecorder,
   });
-  // The project map (5.20). Its code pass is a Housekeeper question per project: the smallest model, no tools.
+  // The project map (5.21). Its code pass is a Housekeeper question per project: the smallest model, no tools.
   const map = new MapService({
     repo: new MapRepo(store.raw),
     projects: async () =>

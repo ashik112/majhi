@@ -1259,7 +1259,7 @@ export const commands = {
     input: AgendaDismissInputSchema,
     output: z.object({ day: z.string() }),
   },
-  // The project map (5.20) --------------------------------------------------------
+  // The project map (5.21) --------------------------------------------------------
   "map.get": {
     risk: "read",
     summary:
@@ -1277,7 +1277,7 @@ export const commands = {
   "map.update": {
     risk: "change",
     summary:
-      "Update the workspace's project map: read each project's config files and majhi's own task history with no model, then let the cheapest model read a bounded set of code files for links the config misses (these land as new for the owner to check). The one action for the whole update. The owner and the captain, never another agent",
+      "Update the workspace's project map: read each project's config files and majhi's own task history with no model, then let the cheapest model read a bounded set of code files for links the config misses (these land as new for the owner to check). The one action for the whole update; it runs in the background and the page follows its progress. The owner and the captain, never another agent",
     input: MapOrgInputSchema,
     output: MapViewSchema,
   },

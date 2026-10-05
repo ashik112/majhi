@@ -1,10 +1,10 @@
 import { type Diagram, type DiagramNode, type MapEdge, type MapNode, PRIVATE } from "@majhi/shared";
 import { Loader, RefreshCw, Waypoints } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Problem } from "@/components/problem";
 import { Button } from "@/components/ui/button";
 import type { EdgeDecor, NodeDecor, Selection } from "@/features/diagram/diagram-canvas";
-import { LazyScene } from "@/features/diagram/lazy-scene";
+import { LazyScene, preloadScene } from "@/features/diagram/lazy-scene";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { GLASS } from "@/lib/glass";
@@ -31,6 +31,7 @@ const LEGEND = ["http", "queue", "data", "lib"] as const;
 
 /** The Map page: the workspace the sidebar picked, or a list to pick from. */
 export function MapScreen() {
+  useEffect(preloadScene, []);
   const { org, setOrg } = useOrgFilter();
   const orgs = useOrgs().data ?? [];
   const names = useMemo(

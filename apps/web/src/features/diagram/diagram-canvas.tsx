@@ -15,7 +15,7 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import { Maximize2, Minus, Plus } from "lucide-react";
-import { memo, type ReactNode, useEffect, useMemo } from "react";
+import { memo, type ReactNode, type RefObject, useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Lamp, type LampState } from "@/components/ui/lamp";
 import { ROW_SELECTED } from "@/components/ui/list-detail";
@@ -79,7 +79,7 @@ interface LineData extends Record<string, unknown> {
 }
 
 type BoxNode = Node<BoxData, "box">;
-type GroupNode = Node<GroupData, "group">;
+type GroupNode = Node<GroupData, "frame">;
 type RuleNode = Node<RuleData, "rule">;
 type LineEdge = Edge<LineData, "line">;
 
@@ -210,7 +210,8 @@ const LineView = memo(function LineView({ data, markerEnd, markerStart }: EdgePr
   );
 });
 
-const nodeTypes = { box: BoxView, group: GroupView, rule: RuleView };
+// "frame", not "group": xyflow styles a node type named group on its own.
+const nodeTypes = { box: BoxView, frame: GroupView, rule: RuleView };
 const edgeTypes = { line: LineView };
 
 function Controls() {
@@ -245,14 +246,31 @@ function Controls() {
   );
 }
 
-/** Fits the diagram to the canvas when what is drawn changes shape. */
-function Refit({ shape }: { shape: Positioned }) {
+/**
+ * Fits the diagram to the canvas when what is drawn changes shape, and again when the canvas itself changes
+ * size (a dialog opens at zero size and grows, a panel is resized).
+ */
+function Refit({ shape, box }: { shape: Positioned; box: RefObject<HTMLDivElement | null> }) {
   const flow = useReactFlow();
   // biome-ignore lint/correctness/useExhaustiveDependencies: `shape` is the trigger; the flow handle is stable.
   useEffect(() => {
     const frame = requestAnimationFrame(() => void flow.fitView({ duration: 200, padding: 0.12 }));
     return () => cancelAnimationFrame(frame);
   }, [shape]);
+  useEffect(() => {
+    const el = box.current;
+    if (el === null || typeof ResizeObserver === "undefined") return;
+    let timer: number | undefined;
+    const watch = new ResizeObserver(() => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void flow.fitView({ duration: 0, padding: 0.12 }), 80);
+    });
+    watch.observe(el);
+    return () => {
+      window.clearTimeout(timer);
+      watch.disconnect();
+    };
+  }, [box, flow]);
   return null;
 }
 
@@ -285,7 +303,7 @@ export function DiagramCanvas({
     for (const [id, box] of positioned.groups) {
       out.push({
         id,
-        type: "group",
+        type: "frame",
         position: { x: box.x, y: box.y },
         data: { label: labels.get(id) ?? id, w: box.w, h: box.h },
         selectable: false,
@@ -355,8 +373,9 @@ export function DiagramCanvas({
     return out;
   }, [diagram, positioned, edge, selection]);
 
+  const box = useRef<HTMLDivElement>(null);
   return (
-    <div className={cn("relative h-full w-full", className)}>
+    <div ref={box} className={cn("relative h-full w-full", className)}>
       <ReactFlowProvider>
         <ReactFlow
           nodes={flowNodes}
@@ -378,7 +397,7 @@ export function DiagramCanvas({
           onPaneClick={() => onSelect?.(undefined)}
           className="!bg-transparent"
         >
-          <Refit shape={positioned} />
+          <Refit shape={positioned} box={box} />
           <Controls />
         </ReactFlow>
       </ReactFlowProvider>

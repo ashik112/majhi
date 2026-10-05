@@ -171,7 +171,7 @@ export interface MergeGatePort {
 
 export interface TaskDeps {
   mergeGate: MergeGatePort;
-  /** The lines of the project map that touch a task's repos, for TASK.md (5.20). Absent: none. */
+  /** The lines of the project map that touch a task's repos, for TASK.md (5.21). Absent: none. */
   mapNotes?: (task: Task) => string[];
   /** The owner resumed a task that a budget paused: budget alerts so far no longer hold it. */
   onOwnerResumedLimit?: (task: string) => void;

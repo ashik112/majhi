@@ -3,7 +3,7 @@ import type { CaptainPorts } from "./ports.ts";
 import type { ChoreRun } from "./runner.ts";
 
 /**
- * Keeps each workspace's project map current while Auto-pilot is on (SPEC 5.20). One chore, one action:
+ * Keeps each workspace's project map current while Auto-pilot is on (SPEC 5.21). One chore, one action:
  * it runs the same `map.update` the owner's button runs, when work merged since the map was updated,
  * at most once in 24 hours, and only while the workspace's budget has room. A map nothing has changed
  * since costs nothing: the check is two reads, no model. While Auto-pilot is off the chore never runs

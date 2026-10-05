@@ -92,7 +92,7 @@ function oneLine(text: string, max: number): string {
 }
 
 /**
- * The project map of each workspace (SPEC 5.20). One stored map per workspace; one action updates it.
+ * The project map of each workspace (SPEC 5.21). One stored map per workspace; one action updates it.
  * Everything here is scoped by `org`: a workspace's projects, tasks and map never mix with another's.
  */
 export class MapService {
