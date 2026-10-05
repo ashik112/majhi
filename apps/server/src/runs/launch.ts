@@ -1,4 +1,4 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import {
   type AgentSession,
@@ -551,6 +551,10 @@ export async function guardMounts(
   for (const dir of [own, join(refs, "remotes"), join(refs, "tags")]) {
     await mkdir(dir, { recursive: true });
   }
+  // `git pack-refs --prune` (run by `git gc --auto` on the host) removes empty ref folders, and the
+  // run's writable mount would go with `refs/heads/task`. Git skips dot-files when it reads loose
+  // refs and prunes only empty folders, so this file keeps the folder alive.
+  await writeFile(join(refs, "heads", "task", ".keep"), "");
   return [
     { path: join(refs, "heads"), readOnly: true },
     { path: own },
