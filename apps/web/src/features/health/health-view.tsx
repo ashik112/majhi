@@ -35,7 +35,6 @@ export function HealthView() {
   const navigate = useNavigate();
   const check = useCheckAll(accounts.data ?? []);
   // Wide screens fit every panel; narrower ones stack them in one column that scrolls.
-  const wide = useMedia("(min-width: 1280px)");
 
   const all = accounts.data ?? [];
   const rows = orgFilter === undefined ? all : all.filter((a) => a.org === orgFilter);
@@ -77,14 +76,14 @@ export function HealthView() {
 
       <div
         className={cn(
-          "flex min-h-0 flex-1 flex-col gap-3",
-          wide ? "overflow-hidden" : "overflow-y-auto overscroll-contain pb-6 scroll-fade",
+          // The checks, money and cleanup panels stack above the usage grid: the page scrolls inside the shell.
+          "flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain pb-6 scroll-fade",
         )}
       >
         <ChecksPanel onSignIn={(id) => void navigate({ to: PAGE_PATH.accounts, search: { account: id } })} />
         <MoneyPanel />
         <CleanupPanel />
-        <div className="flex flex-col gap-3 min-[1280px]:grid min-[1280px]:min-h-0 min-[1280px]:flex-1 min-[1280px]:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+        <div className="flex flex-col gap-3 min-[1280px]:grid min-[1280px]:min-h-[560px] min-[1280px]:shrink-0 min-[1280px]:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
           <div className="flex min-h-0 flex-col gap-3">
             <AccountsUsage
               accounts={rows}
