@@ -32,15 +32,38 @@ import {
   actionsOf,
   buildEntries,
   buildHome,
+  buildTree,
   type Entry,
   focusable,
   headerKey,
   jumpSection,
+  type Relation,
   type RowEntry,
+  relationsOf,
   type SectionId,
   stepFocus,
+  type TreeInfo,
 } from "./home-model";
 import { EntryView, type OrgTag, type RowHandlers, rowDomId } from "./home-rows";
+
+type HomeView = "list" | "tree";
+const VIEW_KEY = "majhi.home.view";
+
+function readView(): HomeView {
+  try {
+    return localStorage.getItem(VIEW_KEY) === "tree" ? "tree" : "list";
+  } catch {
+    return "list";
+  }
+}
+
+function writeView(view: HomeView): void {
+  try {
+    localStorage.setItem(VIEW_KEY, view);
+  } catch {
+    // Storage can be blocked; the view then lasts until the page reloads.
+  }
+}
 
 /** A list longer than this draws only the rows in view (and a few around them). */
 const WINDOW_FROM = 60;
@@ -77,6 +100,8 @@ export function BoardScreen() {
   const [all, setAll] = useState<ReadonlySet<SectionId>>(new Set());
   const [focusKey, setFocusKey] = useState<string | undefined>();
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [view, setViewState] = useState<HomeView>(readView);
+  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
   const filterRef = useRef<HTMLInputElement>(null);
 
   const workingTasks = decisions.data?.counts.workingTasks;
@@ -92,27 +117,52 @@ export function BoardScreen() {
     return byTask;
   }, [captainActions]);
 
-  const { sections, totals } = useMemo(
-    () =>
-      buildHome({
-        tasks: tasks.data ?? [],
-        decisions: decisions.data?.decisions ?? [],
-        working,
-        blockers,
-        mrs: facts.mrs,
-        mrExtra: facts.mrExtra,
-        doing: facts.doing,
-        checks: facts.checks,
-        background: facts.background,
-        captain: captainActions ?? [],
-        undoOf,
-        org,
-        query,
-        now,
-      }),
-    [tasks.data, decisions.data, working, blockers, facts, captainActions, undoOf, org, query, now],
+  const homeInput = useMemo(
+    () => ({
+      tasks: tasks.data ?? [],
+      decisions: decisions.data?.decisions ?? [],
+      working,
+      blockers,
+      mrs: facts.mrs,
+      mrExtra: facts.mrExtra,
+      doing: facts.doing,
+      checks: facts.checks,
+      background: facts.background,
+      captain: captainActions ?? [],
+      undoOf,
+      now,
+    }),
+    [tasks.data, decisions.data, working, blockers, facts, captainActions, undoOf, now],
   );
-  const entries = useMemo(() => buildEntries(sections, { opened, all }), [sections, opened, all]);
+  const { sections, totals } = useMemo(
+    () => buildHome({ ...homeInput, org, query }),
+    [homeInput, org, query],
+  );
+  const taskById = useMemo(() => new Map((tasks.data ?? []).map((t) => [t.id, t])), [tasks.data]);
+  const tree = view === "tree";
+  // The tree keeps a parent that fails the filters, for context: it needs every row, filtered or not.
+  const treeRows = useMemo(
+    () =>
+      tree
+        ? buildTree(
+            buildHome({ ...homeInput, org: undefined, query: "" }).sections,
+            sections,
+            taskById,
+            folded,
+          )
+        : undefined,
+    [tree, homeInput, sections, taskById, folded],
+  );
+  const entries: readonly Entry[] = useMemo(
+    () => treeRows?.entries ?? buildEntries(sections, { opened, all }),
+    [treeRows, sections, opened, all],
+  );
+  const treeInfo: ReadonlyMap<string, TreeInfo> | undefined = treeRows?.info;
+  const relations = useMemo(() => relationsOf(entries, taskById), [entries, taskById]);
+  const setView = useCallback((next: HomeView) => {
+    setViewState(next);
+    writeView(next);
+  }, []);
   const entryByKey = useMemo(() => new Map(entries.map((e) => [e.key, e])), [entries]);
   const focusKeys = useMemo(() => entries.filter(focusable).map((e) => e.key), [entries]);
 
@@ -189,9 +239,16 @@ export function BoardScreen() {
     });
   }, []);
   const moreOf = useCallback((section: SectionId) => setAll((prev) => new Set(prev).add(section)), []);
+  const foldTask = useCallback((task: string) => {
+    setFolded((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(task)) next.add(task);
+      return next;
+    });
+  }, []);
 
-  const live = useRef({ entries, entryByKey, focusKeys, focusKey, selected });
-  live.current = { entries, entryByKey, focusKeys, focusKey, selected };
+  const live = useRef({ entries, entryByKey, focusKeys, focusKey, selected, relations, treeInfo });
+  live.current = { entries, entryByKey, focusKeys, focusKey, selected, relations, treeInfo };
 
   const runAction = useCallback(
     (key: string, index: number) => {
@@ -217,8 +274,9 @@ export function BoardScreen() {
       onOpen: openRow,
       onToggle: toggleSection,
       onMore: moreOf,
+      onFold: foldTask,
     }),
-    [runAction, openRow, toggleSection, moreOf],
+    [runAction, openRow, toggleSection, moreOf, foldTask],
   );
 
   // Runs the same numbered action on every selected row, in list order.
@@ -271,7 +329,7 @@ export function BoardScreen() {
       else if (key === "/") {
         event.preventDefault();
         filterRef.current?.focus();
-      } else if (key === "t") {
+      } else if (key === "t" && state.treeInfo === undefined) {
         event.preventDefault();
         setOpened((prev) => new Set(prev).add("triage"));
         setFocusKey(headerKey("triage"));
@@ -285,6 +343,14 @@ export function BoardScreen() {
             if (current.collapsible) toggleSection(current.section);
           } else if (current.type === "more") moreOf(current.section);
           else if (isRow(current)) openRow(current.key);
+        } else if ((key === "ArrowLeft" || key === "ArrowRight") && state.treeInfo !== undefined) {
+          // In the tree, left folds the subtasks of the row and right unfolds them.
+          const where = state.treeInfo.get(current.key);
+          const task = state.relations.get(current.key)?.task;
+          if (where?.hasChildren && task !== undefined && where.open === (key === "ArrowLeft")) {
+            event.preventDefault();
+            foldTask(task);
+          }
         } else if (/^[1-3]$/.test(key) && isRow(current)) {
           event.preventDefault();
           if (state.selected.size > 0 && state.selected.has(current.key)) applyToSelected(Number(key) - 1);
@@ -301,7 +367,7 @@ export function BoardScreen() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [runAction, openRow, toggleSection, moreOf, applyToSelected]);
+  }, [runAction, openRow, toggleSection, moreOf, foldTask, applyToSelected]);
 
   // The first row of a section: the strip and the chips send the keys there.
   const jumpTo = useCallback((section: SectionId) => {
@@ -332,6 +398,8 @@ export function BoardScreen() {
         query={query}
         setQuery={setQuery}
         filterRef={filterRef}
+        view={view}
+        setView={setView}
       />
       <Away now={now} />
       {tasks.isError ? (
@@ -377,6 +445,8 @@ export function BoardScreen() {
               now={now}
               orgLabel={orgLabel}
               orgName={orgName}
+              relations={relations}
+              treeInfo={treeInfo}
               handlers={handlers}
             />
           )}
@@ -385,9 +455,9 @@ export function BoardScreen() {
             <Hint keys="Enter">open</Hint>
             <Hint keys="1 2 3">act</Hint>
             <Hint keys="x">select</Hint>
-            <Hint keys="t">unsorted</Hint>
+            {!tree && <Hint keys="t">unsorted</Hint>}
             <Hint keys="/">filter</Hint>
-            <Hint keys="J K">section</Hint>
+            {!tree && <Hint keys="J K">section</Hint>}
           </p>
         </section>
       )}
@@ -439,6 +509,8 @@ function TopBar({
   query,
   setQuery,
   filterRef,
+  view,
+  setView,
 }: {
   orgs: readonly OrgView[];
   org: string | undefined;
@@ -447,6 +519,8 @@ function TopBar({
   query: string;
   setQuery: (query: string) => void;
   filterRef: React.RefObject<HTMLInputElement | null>;
+  view: HomeView;
+  setView: (view: HomeView) => void;
 }) {
   const newTask = useNewTask();
   const { unavailable, mode, toggle, dialogs } = useAutonomousSwitch();
@@ -489,6 +563,24 @@ function TopBar({
           );
         })}
       </nav>
+      <fieldset aria-label="View" className="m-0 flex min-w-0 shrink-0 items-center gap-1 border-0 p-0">
+        {(["list", "tree"] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            aria-pressed={view === v}
+            title={v === "list" ? "Rows by who holds the ball" : "Subtasks under their parent task"}
+            onClick={(event) => {
+              setView(v);
+              // The row keys (Enter, 1 to 3) skip a focused button: hand them back to the list.
+              event.currentTarget.blur();
+            }}
+            className={chip(view === v)}
+          >
+            {v === "list" ? "List" : "Tree"}
+          </button>
+        ))}
+      </fieldset>
       <label className="ml-auto flex h-7 min-w-0 shrink items-center gap-1.5 rounded-md border border-line-strong bg-field px-2 text-sm text-fg-muted focus-within:border-line-hover">
         <Search aria-hidden="true" className="size-3.5 shrink-0" />
         <input
@@ -616,6 +708,8 @@ function List({
   now,
   orgLabel,
   orgName,
+  relations,
+  treeInfo,
   handlers,
 }: {
   entries: readonly Entry[];
@@ -627,6 +721,8 @@ function List({
   now: number;
   orgLabel: (entry: Entry) => OrgTag | undefined;
   orgName: (id: string) => string;
+  relations: ReadonlyMap<string, Relation>;
+  treeInfo: ReadonlyMap<string, TreeInfo> | undefined;
   handlers: RowHandlers;
 }) {
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
@@ -659,6 +755,8 @@ function List({
       now={now}
       orgLabel={orgLabel}
       orgName={orgName}
+      relations={relations}
+      treeInfo={treeInfo}
       handlers={handlers}
     />
   );

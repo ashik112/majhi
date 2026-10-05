@@ -13,7 +13,7 @@ import {
 import { primaryOption, rowTitle, workspaceOf } from "../decisions/model";
 import type { BannerAction } from "../shell/model";
 import { type CheckState, checkState } from "./check-state";
-import { plainTitle, waitsOnSubtasks } from "./model";
+import { compareTaskIds, partOf, plainTitle, waitsOnSubtasks } from "./model";
 
 type Blocker = lifecycle.Blocker;
 
@@ -774,4 +774,137 @@ export function jumpSection(
     if (first !== undefined && first.key !== current) return first.key;
   }
   return marks.find((e) => e.section === target)?.key;
+}
+
+// Relations: how a row connects to other tasks ---------------------------------
+
+/** The task a row stands for and how it connects: the task it is part of, and its own subtasks. */
+export interface Relation {
+  task: string;
+  parent: string | undefined;
+  /** Subtasks: how many are done, of how many. Total 0 for a task without. */
+  done: number;
+  total: number;
+}
+
+/** The task of a row, if it has one (a decision for the workspace and a captain action may have none). */
+export function taskIdOf(entry: RowEntry): string | undefined {
+  switch (entry.type) {
+    case "needs":
+      return entry.item.decision.task;
+    case "captain":
+      return entry.item.task;
+    default:
+      return entry.item.task.id;
+  }
+}
+
+/** The relation of every row that has a task, by row key. */
+export function relationsOf(
+  entries: readonly Entry[],
+  tasks: ReadonlyMap<string, TaskSummary>,
+): Map<string, Relation> {
+  const out = new Map<string, Relation>();
+  for (const entry of entries) {
+    if (entry.type === "header" || entry.type === "more") continue;
+    const id = taskIdOf(entry);
+    const task = id === undefined ? undefined : tasks.get(id);
+    if (id === undefined || task === undefined) continue;
+    const parent = partOf(task);
+    out.set(entry.key, {
+      task: id,
+      parent: parent === id ? undefined : parent,
+      done: task.children?.done ?? 0,
+      total: task.children?.total ?? 0,
+    });
+  }
+  return out;
+}
+
+// The tree: the same rows, nested under their parent task -------------------------
+
+/** Where a row stands in the tree. */
+export interface TreeInfo {
+  depth: number;
+  hasChildren: boolean;
+  /** Its children are shown. */
+  open: boolean;
+  /** Shown for context only: it fails the filters, a row below it passes. */
+  dim: boolean;
+}
+
+/** The rows that stand for tasks, in the order of the sections. Background work repeats a task; the captain's log is not one. */
+function taskRows(sections: HomeSections): RowEntry[] {
+  return SECTION_ORDER.filter((s) => s !== "captain").flatMap((s) =>
+    rowsOf(sections, s).filter((r) => r.type !== "background"),
+  );
+}
+
+/**
+ * Home as a tree. `all` holds every row with no filter, `shown` the rows that pass the filters. A
+ * task goes under its parent task when that is a row too, at any depth; the rest stand at the top
+ * in the order of the sections. A row that fails the filters stays, dimmed, while one below it
+ * passes. A second decision of one task goes under it. Children follow their ids.
+ */
+export function buildTree(
+  all: HomeSections,
+  shown: HomeSections,
+  tasks: ReadonlyMap<string, TaskSummary>,
+  collapsed: ReadonlySet<string>,
+): { entries: RowEntry[]; info: Map<string, TreeInfo> } {
+  const rows = taskRows(all);
+  const passes = new Set(taskRows(shown).map((r) => r.key));
+  const first = new Map<string, RowEntry>();
+  for (const row of rows) {
+    const id = taskIdOf(row);
+    if (id !== undefined && !first.has(id)) first.set(id, row);
+  }
+  const parentOf = (row: RowEntry): RowEntry | undefined => {
+    const id = taskIdOf(row);
+    if (id === undefined) return undefined;
+    const own = first.get(id);
+    if (own !== row) return own;
+    const task = tasks.get(id);
+    const parent = task === undefined ? undefined : partOf(task);
+    return parent === undefined || parent === id ? undefined : first.get(parent);
+  };
+  const kids = new Map<string, RowEntry[]>();
+  const roots: RowEntry[] = [];
+  for (const row of rows) {
+    const parent = parentOf(row);
+    if (parent === undefined) roots.push(row);
+    else kids.set(parent.key, [...(kids.get(parent.key) ?? []), row]);
+  }
+  const byId = (a: RowEntry, b: RowEntry) => compareTaskIds(taskIdOf(a) ?? "", taskIdOf(b) ?? "");
+
+  /** Whether the row or a row below it passes the filters. `trail` stops a loop of parents. */
+  const keep = (row: RowEntry, trail: ReadonlySet<string>): boolean =>
+    passes.has(row.key) ||
+    (kids.get(row.key) ?? []).some((k) => !trail.has(k.key) && keep(k, new Set(trail).add(row.key)));
+
+  const entries: RowEntry[] = [];
+  const info = new Map<string, TreeInfo>();
+  const seen = new Set<string>();
+  const walk = (row: RowEntry, depth: number) => {
+    if (seen.has(row.key) || !keep(row, new Set([row.key]))) return;
+    seen.add(row.key);
+    const children = (kids.get(row.key) ?? [])
+      .toSorted(byId)
+      .filter((k) => !seen.has(k.key) && keep(k, new Set([row.key, k.key])));
+    const id = taskIdOf(row);
+    const open = id === undefined || !collapsed.has(id);
+    entries.push(row);
+    info.set(row.key, { depth, hasChildren: children.length > 0, open, dim: !passes.has(row.key) });
+    if (open) for (const child of children) walk(child, depth + 1);
+  };
+  // A loop of parents has no root: its rows stand at the top rather than vanish.
+  const reached = new Set<string>();
+  const flood = (row: RowEntry) => {
+    if (reached.has(row.key)) return;
+    reached.add(row.key);
+    for (const k of kids.get(row.key) ?? []) flood(k);
+  };
+  for (const root of roots) flood(root);
+  for (const row of [...roots, ...rows.filter((r) => !reached.has(r.key))]) walk(row, 0);
+  return { entries, info };
 }

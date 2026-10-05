@@ -1,5 +1,14 @@
 # Progress
 
+## Home tree view (built, not merged)
+
+Branch `fix/home-tree`.
+
+- **Changed.** Home has a List / Tree toggle in the top bar, remembered in this browser (`majhi.home.view`). Tree nests tasks under their parent task at any depth, with a fold chevron and "1 of 3 done" on parents; the rows are the same row components as the list (lamp, ID, title, workspace, state, actions). Sections are replaced by the tree (roots keep the order of who holds the ball, children follow their ids). The workspace and text filters still apply: a parent that fails them stays, dimmed, while a child passes. Left and Right fold and unfold the focused row. In the list, a child shows "↳ PRV-12" and a parent "3 subtasks" after its title (truncated first). One builder, `buildTree` in `home-model.ts`; the dead column-based `buildTree` and `visibleRows` in `model.ts` are gone.
+- **Owner will notice.** A Tree button next to the list, and which task belongs to which.
+- **Verified.** Typecheck. Browser on an isolated e2e server (temp home, port 7191) at 1440 and 1100 wide: toggle and memory, nesting to three levels, fold and unfold by click and by arrows, j and k, Enter and title click open the task, x selects, key 1 and the primary button start tasks, text filter keeps greyed ancestors, workspace filter, back to List shows the parent links. No console errors or failed requests.
+- **Left.** The captain's log and background-work rows are not tasks, so the tree leaves them out (the list still shows them). A parent finished before today is not a row, so its children stand at the top. The old tree had no "blocked by" lines, so none were added; a waiting row still says what it waits on.
+
 ## Skill use is recorded and shown (built, not merged)
 
 Branch `feat/skill-usage`.
