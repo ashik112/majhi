@@ -1,5 +1,14 @@
 # Progress
 
+## Less web traffic (built, not merged)
+
+Branch `perf/web-traffic`.
+
+- **What changed.** Home reads no decision detail: a row shows what `decisions.list` carries (the diff stat and checks line on ship rows is gone). A detail is read only for the selected decision, under its own key (id and a version made from the list fields), so a list refetch never reads details again. `captain.log` takes `after`: a tab holding the log reads only newer lines and merges them, and reads it all again only when the catch-up filled its page. The `/health` poll runs every 30 s while the events socket is open and every 1.5 s only while it is down; the build-watch poll stops once the socket hello named the build. The server's 30 s ops tick tells the tabs only when it changed something (it used to refetch ops, decisions and findings every 30 s). The Captain drawer's code loads when it opens, and the idle prefetch of the Captain page is gone (hover still warms it), so room-pane, captain-page and decision-list no longer load on Home.
+- **What the owner will notice.** Fewer requests while Home is open; ship rows on Home no longer show "+n -n" or the checks line (open the decision for them).
+- **How verified.** Isolated e2e server with the new `team-api-volume` seed and running fake agents; 20 s idle on Home, Needs you and Captain, before and after. Unit tests for the topic to query-key mapping and the log merge.
+- **Left.** Under churn (a task created every 5 s) `tasks.list` and `decisions.list` are still read in full 3 times per 20 s: some server events (`services.ts` emits `tasks` without naming tasks) trigger full list reads. The Captain page still reads `autonomy.status` (28 KB) on each autonomy event.
+
 ## Home as one list by who holds the ball (built, not merged)
 
 Branch `feat/home-flow`.
