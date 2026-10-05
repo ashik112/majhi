@@ -942,7 +942,7 @@ describe("invariants over every reachable state", () => {
     return { states: [...seen.values()], refusals };
   };
 
-  const { states, refusals } = explore();
+  const { states } = explore();
 
   it("explores a real space", () => {
     expect(states.length).toBeGreaterThan(100);
