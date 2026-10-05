@@ -9,6 +9,10 @@ export interface Runner {
   config: RunnerConfig;
   /** Removes this majhi's runner containers that no live run holds. */
   prune(): Promise<string[]>;
+  /** Names of the run containers this majhi's live runs hold. */
+  live(): string[];
+  /** Removes run containers no live run holds, left by a restart or crash. Returns their names. */
+  sweep(): Promise<string[]>;
 }
 
 /**
@@ -46,6 +50,12 @@ export function runnerSetup(
   const spawner = dockerSpawner(config);
   return {
     sessionOptions: { ...env.runtime, spawner },
-    runner: { network, config, prune: () => spawner.prune() },
+    runner: {
+      network,
+      config,
+      prune: () => spawner.prune(),
+      live: () => spawner.live(),
+      sweep: () => spawner.sweep(),
+    },
   };
 }

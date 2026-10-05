@@ -10,6 +10,7 @@ import {
   MAJHI_HOOKS_DIR,
   MAJHI_RUN_CONNECTIONS_DIR,
   MountRefused,
+  orphanRuns,
   type RunnerConfig,
   removeStaleRunners,
   runMounts,
@@ -421,6 +422,49 @@ describe("runner containers converge to one per live run", () => {
     await docker.add("acme-db", { "majhi.service": "1" });
     await removeStaleRunners({ docker: docker.cli, cliEnv: cfg.cliEnv });
     expect(Object.keys(await docker.containers())).toEqual(["acme-db"]);
+  });
+
+  it("tries again while docker is not answering at start, then removes the stale containers", async () => {
+    const docker = await statefulDocker();
+    await docker.add("majhi-run-a", { "majhi.runner": "1" });
+    // A docker that fails its first `ps`, as a daemon still coming back does.
+    const flaky = join(root, "flaky");
+    const marker = join(root, "failed-once");
+    await writeFile(
+      flaky,
+      `#!/bin/sh\nif [ "$1" = ps ] && [ ! -e ${marker} ]; then touch ${marker}; exit 1; fi\nexec ${docker.cli} "$@"\n`,
+    );
+    await chmod(flaky, 0o755);
+    await removeStaleRunners({ docker: flaky, cliEnv: cfg.cliEnv }, { waitMs: 1 });
+    expect(await docker.containers()).toEqual({});
+  });
+
+  it("sweeps run containers no live run holds, from any majhi, and leaves checks and terminals", async () => {
+    const docker = await statefulDocker();
+    const spawner = dockerSpawner({ ...cfg, docker: docker.cli });
+    const run = await spawner(request());
+    await waitFor(async () => Object.keys(await docker.containers()).length === 1);
+    const [liveName] = spawner.live();
+    if (liveName === undefined) throw new Error("no live run");
+    const label = { "majhi.runner": "1" };
+    await docker.add("majhi-run-49db9e274b73", { ...label, [SPAWNER_LABEL]: "0123456789ab" });
+    await docker.add("majhi-run-aa19b83fc471", label);
+    await docker.add("majhi-run-check-m1abc", label);
+    await docker.add("majhi-term-0123456789ab", label);
+
+    expect((await spawner.sweep()).sort()).toEqual(["majhi-run-49db9e274b73", "majhi-run-aa19b83fc471"]);
+    expect(Object.keys(await docker.containers()).sort()).toEqual(
+      [liveName, "majhi-run-check-m1abc", "majhi-term-0123456789ab"].sort(),
+    );
+    run.kill();
+    await waitFor(async () => !(liveName in (await docker.containers())));
+  });
+
+  it("names orphans by the run container pattern only", () => {
+    expect(
+      orphanRuns(["majhi-run-49db9e274b73", "majhi-run-serena-m1", "majhi-preview-x", "other"], []),
+    ).toEqual(["majhi-run-49db9e274b73"]);
+    expect(orphanRuns(["majhi-run-49db9e274b73"], ["majhi-run-49db9e274b73"])).toEqual([]);
   });
 });
 

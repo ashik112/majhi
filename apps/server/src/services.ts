@@ -3,7 +3,7 @@ import { lookup } from "node:dns/promises";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type Command, dockerTty, localSpawner } from "@majhi/acp";
+import { type Command, dockerTty, localSpawner, orphanRuns } from "@majhi/acp";
 import {
   BUILT_IN_CONNECT_APPS,
   DEFAULT_GIT_HOST,
@@ -1367,6 +1367,18 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       });
     }
   };
+  /**
+   * Run containers a restart or crash left behind keep their CPU while majhi counts no run, and the
+   * load keeps every start refused. The reading names them; the runner removes them.
+   */
+  const sweepOrphans = async (): Promise<void> => {
+    if (runner.runner === undefined) return;
+    const names = (machine.get()?.containers ?? []).map((c) => c.name);
+    if (orphanRuns(names, runner.runner.live()).length === 0) return;
+    const removed = await runner.runner.sweep();
+    if (removed.length > 0)
+      console.warn(`Removed ${removed.length} run container(s) no run held: ${removed.join(", ")}`);
+  };
   const machine = new MachineSensor({
     host: async () =>
       options.hostLink?.isConnected() === true
@@ -1376,6 +1388,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onChange: () => {
       autonomy.machineRead();
       void noteHotMemory().catch(() => undefined);
+      void sweepOrphans().catch(() => undefined);
     },
   });
   const autonomy = new AutonomyService({
