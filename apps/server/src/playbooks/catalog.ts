@@ -53,7 +53,4 @@ export class Catalog {
   }
 }
 
-export const BUILTIN: readonly Playbook[] = [
-  ...UPKEEP_PLAYBOOKS,
-  ...OPS_PLAYBOOKS,
-];
+export const BUILTIN: readonly Playbook[] = [...UPKEEP_PLAYBOOKS, ...OPS_PLAYBOOKS];

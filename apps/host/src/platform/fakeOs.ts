@@ -18,6 +18,8 @@ export interface FakeOsOptions {
   home?: string;
   majhiHome?: string;
   path?: string;
+  /** Replaces the table-based `exists`, for a test that really writes files. */
+  exists?: (path: string) => Promise<boolean>;
   /** What a download gives. Without it the fake OS downloads nothing. */
   download?: Download;
 }
@@ -123,7 +125,7 @@ export function fakeOs(options: FakeOsOptions = {}) {
         .filter((dir) => dir !== "")
         .map((dir) => join(dir, name))
         .find((candidate) => programs.has(candidate)),
-    exists: async (file) => files.has(file) || programs.has(file),
+    exists: options.exists ?? (async (file) => files.has(file) || programs.has(file)),
     log: (message) => {
       logs.push(message);
     },

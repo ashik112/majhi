@@ -1,6 +1,6 @@
 import type { TaskRepo, UnshippedRepo } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
-import { git, gitOk, localBranchExists } from "../git/git.ts";
+import { git, gitOk, localBranchExists, refIsThere } from "../git/git.ts";
 
 /** Past this many changed files the squash check is skipped: the branch counts by its commits. */
 const MAX_SQUASH_FILES = 500;
@@ -90,7 +90,7 @@ async function baseRefs(cwd: string, base: string): Promise<string[]> {
   const remotes = (await git(cwd, ["remote"])).split("\n").filter((r) => r.trim() !== "");
   const refs = [`refs/heads/${base}`, ...remotes.map((r) => `refs/remotes/${r.trim()}/${base}`)];
   const found: string[] = [];
-  for (const ref of refs) if (await gitOk(cwd, ["show-ref", "--verify", "--quiet", ref])) found.push(ref);
+  for (const ref of refs) if (await refIsThere(cwd, ref)) found.push(ref);
   return found;
 }
 

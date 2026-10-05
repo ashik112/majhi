@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
-import { ASK, RUNS, TIDY } from "./authority-fixtures.ts";
+import { ASK, RUNS } from "./authority-fixtures.ts";
 
 let w: BossWorld | undefined;
 afterEach(async () => {

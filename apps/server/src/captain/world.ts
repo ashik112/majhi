@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
-  ABSTAIN,
   type CommandName,
   commands,
   type Fact,
+  mergeVerdictLine,
   OpenMrsResultSchema,
   PRIVATE,
   type RoomItem,
@@ -231,6 +231,9 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         const first = [...checked.failures, ...checked.held][0] ?? "the check did not pass";
         return { ready: false, why: `the hand-off check failed: ${first.split("\n")[0]}` };
       }
+      // The merge rule itself: the same verdict `tasks.merge` will read, so the chore never tries what it refuses.
+      const rule = await deps.tasks.mergeChecks(id);
+      if (rule.verdict.kind !== "ok") return { ready: false, why: mergeVerdictLine(rule.verdict) };
       return { ...base, checked: checked.summary.replace(/^Checked: /, "") };
     },
 
@@ -675,6 +678,27 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
           .filter((s) => s.action === "skip")
           .map((s) => `${s.kind} ${s.name} (${s.reason ?? "kept"})`),
       };
+    },
+
+    async freeCaches(org, dry) {
+      const { cleanup } = await deps.config.settings();
+      const days = cleanup.caches_after_days;
+      const preview = await deps.cleanup.preview(cleanup.after_days, true, days);
+      const ids = preview.tasks.filter((t) => orgOfTask(t.id) === org).map((t) => t.id);
+      if (ids.length === 0) return [];
+      if (dry) {
+        return preview.tasks
+          .filter((t) => ids.includes(t.id))
+          .map((t) => ({
+            id: t.id,
+            removed: t.steps.filter((s) => s.action === "remove").map((s) => s.name),
+          }))
+          .filter((t) => t.removed.length > 0);
+      }
+      const report = await deps.cleanup.run(ids, cleanup.after_days, "captain", true, days);
+      return report.tasks
+        .map((t) => ({ id: t.id, removed: t.steps.filter((s) => s.action === "remove").map((s) => s.name) }))
+        .filter((t) => t.removed.length > 0);
     },
 
     async foldersFreeable(org) {

@@ -78,7 +78,17 @@ describe("docker through majhi", () => {
     const one = env["ACM-1"] ?? {};
     expect(one.MAJHI_DOCKER_URL).toMatch(/\/mcp\/docker$/);
     const cwd = w.taskDir("ACM-1");
-    const ran = await docker_(one, cwd, "run", "--rm", "--name", "voice-nginx", "nginx:1.27-alpine", "nginx", "-t");
+    const ran = await docker_(
+      one,
+      cwd,
+      "run",
+      "--rm",
+      "--name",
+      "voice-nginx",
+      "nginx:1.27-alpine",
+      "nginx",
+      "-t",
+    );
     expect(ran).toEqual({ code: 0, stdout: "ran nginx:1.27-alpine\n", stderr: "" });
     const call = docker.taskCalls.find((c) => c[0] === "run") ?? [];
     expect(call).toEqual(expect.arrayContaining(["--name", "majhi-acm-1-c-voice-nginx", "majhi.task=ACM-1"]));

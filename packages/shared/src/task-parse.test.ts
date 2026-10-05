@@ -112,7 +112,9 @@ describe("orgs", () => {
   });
 
   it("orders the orgs by first mention", () => {
-    expect(parseTaskText("app then api", ctx).warnings).toEqual(["Repos from more than one workspace: beta, acme"]);
+    expect(parseTaskText("app then api", ctx).warnings).toEqual([
+      "Repos from more than one workspace: beta, acme",
+    ]);
   });
 });
 

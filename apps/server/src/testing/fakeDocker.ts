@@ -97,7 +97,9 @@ export class FakeDocker implements ContainerDocker {
           return ok(`${id}\n`);
         }
         if (!args.includes("--rm")) this.containers.set(name, { name, id, labels, child: undefined });
-        return ok(`ran ${args.find((a, i) => i > 0 && !a.startsWith("-") && !args[i - 1]?.startsWith("--")) ?? ""}\n`);
+        return ok(
+          `ran ${args.find((a, i) => i > 0 && !a.startsWith("-") && !args[i - 1]?.startsWith("--")) ?? ""}\n`,
+        );
       }
       case "buildx":
         this.images.add(at("--tag"));

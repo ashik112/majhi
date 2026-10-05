@@ -5,7 +5,6 @@ import { type ContainersSettings, ContainersSettingsSchema, type Task } from "@m
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ProcessManager } from "../processes/manager.ts";
 import { FakeDocker } from "../testing/fakeDocker.ts";
-import { assertSafe, type DockerParts, dockerArgv, type Safety } from "./args.ts";
 import { type ContainerDocker, ContainerService } from "./service.ts";
 
 let dir: string;

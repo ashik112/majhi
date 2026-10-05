@@ -132,7 +132,13 @@ function NumberField({
 /** Context budget, agent limits, resume and commits: four sections, each saved on its own. */
 export function ContextSection({ settings }: { settings: Settings }) {
   const context = useSettingsDraft(settings, ["contextCap", "compactAt", "compactTarget", "maxTurns"]);
-  const limits = useSettingsDraft(settings, ["agentsMax", "runsTotal", "perAccount", "perTask", "idleTimeout"]);
+  const limits = useSettingsDraft(settings, [
+    "agentsMax",
+    "runsTotal",
+    "perAccount",
+    "perTask",
+    "idleTimeout",
+  ]);
   const resume = useSettingsDraft(settings, ["resumeAuto", "resumeHandoff"]);
   const commits = useSettingsDraft(settings, ["commitsAttribution"]);
   return (

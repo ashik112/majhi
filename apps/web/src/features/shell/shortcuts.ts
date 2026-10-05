@@ -9,7 +9,15 @@ export interface Press {
   shift?: boolean;
 }
 
-export type ShortcutGroup = "Anywhere" | "Go to" | "Task" | "Board" | "Decisions" | "Today" | "Message box";
+export type ShortcutGroup =
+  | "Anywhere"
+  | "Go to"
+  | "Task"
+  | "Board"
+  | "Decisions"
+  | "Today"
+  | "Skills & MCP"
+  | "Message box";
 
 /**
  * One row of the shortcut table. The table is the single source: the handlers match key presses
@@ -75,7 +83,7 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   go("u", PAGE_PATH.accounts, "Go to accounts"),
   go("n", PAGE_PATH.connections, "Go to connections"),
   go("h", PAGE_PATH.usage, "Go to health and usage"),
-  go("k", PAGE_PATH.skills, "Go to skills"),
+  go("k", PAGE_PATH.skills, "Go to skills and MCP servers"),
   go("m", PAGE_PATH.memory, "Go to memory"),
   go("t", PAGE_PATH.playbooks, "Go to playbooks (timers)"),
   go("s", PAGE_PATH.setup, "Go to hub setup"),
@@ -114,7 +122,17 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   },
   { id: "queue", keys: ["Enter"], what: "Send, or queue for the next turn", group: "Message box" },
   { id: "newline", keys: ["Shift", "Enter"], what: "New line", group: "Message box" },
-  { id: "board-move", keys: ["j", "k", "h", "l"], what: "Move between cards (arrows too)", group: "Board" },
+  { id: "board-move", keys: ["j", "k"], what: "Move through the rows of Home (arrows too)", group: "Board" },
+  {
+    id: "board-section",
+    keys: ["Shift", "J", "K"],
+    what: "Jump to the next or previous section",
+    group: "Board",
+  },
+  { id: "board-act", keys: ["1", "2", "3"], what: "Run the row's numbered action", group: "Board" },
+  { id: "board-select", keys: ["x"], what: "Select a row; 1 then runs on all selected", group: "Board" },
+  { id: "board-triage", keys: ["t"], what: "Open To triage", group: "Board" },
+  { id: "board-filter", keys: ["/"], what: "Filter the rows", group: "Board" },
   {
     id: "decisions-move",
     keys: ["j", "k"],
@@ -139,7 +157,11 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   { id: "today-move", keys: ["j", "k"], what: "Next or previous item (arrows too)", group: "Today" },
   { id: "today-open", keys: ["Enter"], what: "Take the item's action", group: "Today" },
   { id: "today-done", keys: ["e"], what: "Dismiss a finding or close a date", group: "Today" },
-  { id: "board-open", keys: ["Enter"], what: "Open the card you are on", group: "Board" },
+  { id: "skills-move", keys: ["j", "k"], what: "Next or previous row (arrows too)", group: "Skills & MCP" },
+  { id: "skills-open", keys: ["Enter"], what: "Open the row's detail", group: "Skills & MCP" },
+  { id: "skills-search", keys: ["/"], what: "Search skills and MCP servers", group: "Skills & MCP" },
+  { id: "skills-add", keys: ["a"], what: "Add a skill or MCP server", group: "Skills & MCP" },
+  { id: "board-open", keys: ["Enter"], what: "Open the row, or a section", group: "Board" },
 ];
 
 /** The table row with this id. */

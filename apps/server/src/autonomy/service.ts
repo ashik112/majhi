@@ -33,6 +33,7 @@ import {
   detectSecrets,
   type GitLoginsResult,
   isCaptainLane,
+  lifecycle,
   type MachineReading,
   PRIVATE,
   type QueueItem,
@@ -62,7 +63,7 @@ import type { ConfigSections } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
-import { busyReason, machineLine, upperFirst } from "../machine/busy.ts";
+import { busyKind, busyReason, machineLine, upperFirst } from "../machine/busy.ts";
 import { CalmWake } from "../machine/calm-wake.ts";
 import type { RoomService } from "../room/service.ts";
 import { noRoomLine } from "../runs/limits.ts";
@@ -76,7 +77,13 @@ import { StaffingSource, type StaffRequest } from "../tasks/staffing-source.ts";
 import { addDays, dayStart, defaultTimeZone, localDay } from "../usage/ranges.ts";
 import { askableHolds, askName, buildAsk, DAY_SCOPE, waitText, withRaises } from "./budget-asks.ts";
 import { describePatch, mergePatch, toFile } from "./configure.ts";
-import { type AnswerableCard, answerableText, type BacklogTask, backlogOrder } from "./digest.ts";
+import {
+  type AnswerableCard,
+  answerableText,
+  type BacklogTask,
+  backlogOrder,
+  type StartGate,
+} from "./digest.ts";
 import {
   callOrg,
   connectionOwner,
@@ -222,7 +229,8 @@ export class AutonomyService {
   /** Wakes the captain with ticks, and hears every mode change. */
   private driver: DriverHooks | undefined;
   /** Tasks a resume left held because no agent slot was free; the minute sweep tries them again. */
-  private readonly roomWait = new Set<string>();
+  /** Tasks a resume left for want of room, with the line said last: the same line is not said again. */
+  private readonly roomWait = new Map<string, string>();
   /** The numbers of the last measure, for the words on a held task's card. */
   private lastMeasure: Measure | undefined;
 
@@ -397,6 +405,7 @@ export class AutonomyService {
     const found = this.deps.store.tasks.get(task);
     const row = this.repo.tasks().find((r) => r.task === task);
     if (row?.held !== undefined) return "held by a cap or the owner";
+    if (this.roomWait.has(task)) return "waits for a start gate";
     if (holdCovering(this.holds, found?.org ?? PRIVATE, []) !== undefined) return "held by a cap";
     if (this.deps.store.room.tasksWaitingOnOwner().has(task)) return "waits on the owner";
     const waits = this.repo.state().queue.some((q) => q.task === task && q.waitFor !== undefined);
@@ -543,14 +552,16 @@ export class AutonomyService {
     // Held at every boundary while the runs stop; the event comes once, for `off`.
     this.repo.setMode("stopping", this.now().toISOString(), "owner", undefined);
     // The captain first, in every lane, so it calls no more tools while its tasks stop.
-    for (const chat of this.laneChats()) await this.deps.tasks.cancel(chat, undefined).catch(() => undefined);
-    const stopped: string[] = [];
-    for (const task of this.openTasks()) {
-      // A task in review can still have a turn in flight.
-      if (!this.stoppable(task) && !this.deps.runs.inTurn(task.id)) continue;
-      const done = await this.deps.tasks.stop(task.id, "owner", why, OFF_BY).catch(() => undefined);
-      if (done?.status === "paused") stopped.push(task.id);
-    }
+    await Promise.all(
+      this.laneChats().map((chat) => this.deps.tasks.cancel(chat, undefined).catch(() => undefined)),
+    );
+    // All at once: each stop waits on its containers and processes, so one after another took minutes.
+    // A task in review can still have a turn in flight.
+    const targets = this.openTasks().filter((task) => this.stoppable(task) || this.deps.runs.inTurn(task.id));
+    const results = await Promise.all(
+      targets.map((task) => this.deps.tasks.stop(task.id, "owner", why, OFF_BY).catch(() => undefined)),
+    );
+    const stopped = results.flatMap((done) => (done?.status === "paused" ? [done.id] : []));
     this.repo.releaseAll();
     // Remembered, so turning on again can resume exactly these.
     for (const id of stopped) this.repo.hold(id, "owner", STOPPED_NOW);
@@ -566,12 +577,12 @@ export class AutonomyService {
     this.finishing = true;
     try {
       // Nothing is in a turn: tasks that would wake again (a process, a handoff) stop for the owner.
-      const stopped: string[] = [];
-      for (const task of this.openTasks()) {
-        if (!this.stoppable(task)) continue;
-        const done = await this.deps.tasks.stop(task.id, "owner", OFF_WHY, OFF_BY).catch(() => undefined);
-        if (done?.status === "paused") stopped.push(task.id);
-      }
+      const results = await Promise.all(
+        this.openTasks()
+          .filter((task) => this.stoppable(task))
+          .map((task) => this.deps.tasks.stop(task.id, "owner", OFF_WHY, OFF_BY).catch(() => undefined)),
+      );
+      const stopped = results.flatMap((done) => (done?.status === "paused" ? [done.id] : []));
       this.repo.releaseAll();
       if (this.repo.state().mode !== "stopping") return;
       // Remembered like a stop at once, so turning on again can resume exactly these.
@@ -892,14 +903,15 @@ export class AutonomyService {
    */
   private async resumeTask(id: string, why: string): Promise<void> {
     const found = this.deps.store.tasks.get(id);
+    const said = this.roomWait.get(id);
     this.roomWait.delete(id);
     if (found !== undefined && found.status !== "done") {
       const noRoom = await this.noRoomFor(found);
       const full =
         noRoom === undefined ? await this.repoRuleFor(found, `${id} waits.`) : `${noRoom} ${id} waits.`;
       if (full !== undefined) {
-        this.roomWait.add(id);
-        this.event({ kind: "task", text: full, task: id, ...orgOf(found) });
+        this.roomWait.set(id, full);
+        if (said !== full) this.event({ kind: "task", text: full, task: id, ...orgOf(found) });
         return;
       }
     }
@@ -937,6 +949,10 @@ export class AutonomyService {
    * chats or the lanes. A task whose status says running with no run (a restart cut it) holds no slot.
    */
   private async workspaceFull(org: string, except?: string): Promise<string | undefined> {
+    return (await this.workspaceGate(org, except))?.text;
+  }
+
+  private async workspaceGate(org: string, except?: string): Promise<StartGate | undefined> {
     const settings = (await this.deps.config.settings()).autonomy;
     const limit = settings.orgs[org]?.tasksAtOnce ?? TASKS_AT_ONCE;
     const running = this.deps.store.tasks
@@ -952,7 +968,14 @@ export class AutonomyService {
       );
     if (running.length < limit) return undefined;
     const names = running.map((t) => t.id).join(", ");
-    return `This workspace works on ${limit} ${limit === 1 ? "task" : "tasks"} at once and ${names} ${running.length === 1 ? "is" : "are"} running.`;
+    return {
+      kind: "workspace",
+      text: `This workspace works on ${limit} ${limit === 1 ? "task" : "tasks"} at once and ${names} ${running.length === 1 ? "is" : "are"} running.`,
+      key: `${limit}:${running
+        .map((t) => t.id)
+        .sort()
+        .join(",")}`,
+    };
   }
 
   /**
@@ -965,12 +988,130 @@ export class AutonomyService {
 
   /** Why the task's agents would only wait for a slot now, or undefined when there is room. */
   private async noRoomFor(task: Pick<Task, "team" | "id" | "org">): Promise<string | undefined> {
+    return (await this.startGate(task))?.text;
+  }
+
+  /** The gate that holds a start of the task now, typed, or undefined when there is room. */
+  private async startGate(task: Pick<Task, "team" | "id" | "org">): Promise<StartGate | undefined> {
     const busy = this.machineBusy();
-    if (busy !== undefined) return `${upperFirst(busy)}.`;
-    const full = await this.workspaceFull(task.org ?? PRIVATE, task.id);
+    if (busy !== undefined) return { kind: "machine", text: `${upperFirst(busy)}.`, key: "machine" };
+    const full = await this.workspaceGate(task.org ?? PRIVATE, task.id);
     if (full !== undefined) return full;
     const accounts = await this.teamAccountIds(task);
-    return noRoomLine(await this.deps.runs.capacity(accounts), accounts);
+    const line = noRoomLine(await this.deps.runs.capacity(accounts), accounts);
+    return line === undefined ? undefined : { kind: "accounts", text: line, key: line };
+  }
+
+  /** The gate that holds each of the tasks, by id; a task with room is left out. */
+  async startGates(ids: readonly string[]): Promise<Record<string, StartGate>> {
+    const gates: Record<string, StartGate> = {};
+    for (const id of ids) {
+      const task = this.deps.store.tasks.get(id);
+      if (task === undefined) continue;
+      const gate = await this.startGate(task);
+      if (gate !== undefined) gates[id] = gate;
+    }
+    return gates;
+  }
+
+  /**
+   * Why each ready or inbox task is not running, as typed facts (`lifecycle.blockerOf`): the start
+   * checks read once for all of them. Chats and the captain's lanes are not tasks to the owner.
+   */
+  async blockers(): Promise<{ task: string; blocker: lifecycle.Blocker | null }[]> {
+    const waiting = this.deps.store.tasks
+      .list(false)
+      .filter(
+        (t) =>
+          (t.status === "ready" || t.status === "inbox") &&
+          t.kind !== "chat" &&
+          this.deps.lanes.orgOf(t.id) === undefined,
+      );
+    if (waiting.length === 0) return [];
+    const accountOf = new Map(
+      (await this.deps.agents.list()).flatMap((s) =>
+        s.ok ? [[s.id, s.agent.frontmatter.account] as const] : [],
+      ),
+    );
+    const accountsOf = (team: readonly string[]) => [...new Set(team.flatMap((a) => accountOf.get(a) ?? []))];
+    const ids = [...new Set(waiting.flatMap((t) => accountsOf(t.team)))];
+    const [capacity, views, settings] = await Promise.all([
+      this.deps.runs.capacity(ids),
+      this.deps.accounts.list().catch(() => [] as AccountView[]),
+      this.deps.config.settings(),
+    ]);
+    const room = (r: { inUse: number; limit: number; free: number }) => ({
+      inUse: r.inUse,
+      limit: r.limit,
+      free: r.free,
+    });
+    const trouble = new Map<string, "signed-out" | "limit">();
+    for (const v of views) {
+      if (v.status === "needs-login") trouble.set(v.id, "signed-out");
+      else if (v.status === "at-limit") trouble.set(v.id, "limit");
+    }
+    const running = this.deps.store.tasks
+      .list(false)
+      .filter(
+        (t) =>
+          t.status === "running" &&
+          t.kind !== "chat" &&
+          this.isLive(t.id) &&
+          this.deps.lanes.orgOf(t.id) === undefined,
+      );
+    const atOnce = new Map<string, { running: string[]; max: number }>();
+    for (const org of new Set(waiting.map((t) => t.org ?? PRIVATE))) {
+      atOnce.set(org, {
+        running: running.filter((t) => (t.org ?? PRIVATE) === org).map((t) => t.id),
+        max: settings.autonomy.orgs[org]?.tasksAtOnce ?? TASKS_AT_ONCE,
+      });
+    }
+    const on = this.repo.state().mode === "on";
+    const budgets: Extract<lifecycle.Blocker, { gate: "budget" }>[] = [];
+    if (on) {
+      for (const h of this.holds) {
+        const until = h.until === undefined ? {} : { until: h.until };
+        if (h.kind === "day-cap") budgets.push({ gate: "budget", scope: "all", period: "day", ...until });
+        else if (h.id !== undefined)
+          budgets.push({
+            gate: "budget",
+            scope: h.kind === "org-cap" ? "org" : "reserve",
+            scopeId: h.id,
+            period: "day",
+            ...until,
+          });
+      }
+      if (this.deps.ceilingHeld?.() !== undefined)
+        budgets.push({ gate: "budget", scope: "all", period: "month" });
+    }
+    const world: lifecycle.BlockerWorld = {
+      autopilot: on ? "on" : "off",
+      machine: busyKind(this.deps.machine?.()?.host),
+      slots: {
+        agents: room(capacity.agents),
+        accounts: new Map(capacity.accounts.map((a) => [a.account, room(a)])),
+      },
+      atOnce,
+      accountTrouble: trouble,
+      budgets,
+    };
+    return waiting.map((t) => {
+      const blocker = lifecycle.blockerOf(
+        {
+          id: t.id,
+          status: t.status,
+          kind: t.kind,
+          org: t.org ?? PRIVATE,
+          priority: t.priority,
+          due: t.due,
+          repos: t.repos.length,
+          waitingOn: t.waitingOn,
+          accounts: accountsOf(t.team),
+        },
+        world,
+      );
+      return { task: t.id, blocker: blocker ?? null };
+    });
   }
 
   /** Whether each account a queue item waits for has no free slot now: a full slot is a reason to wait. */
@@ -1019,7 +1160,7 @@ export class AutonomyService {
       this.roomWait.clear();
       return;
     }
-    for (const id of [...this.roomWait]) {
+    for (const id of [...this.roomWait.keys()]) {
       const org = this.deps.store.tasks.get(id)?.org ?? PRIVATE;
       if (capHoldFor(this.holds, org) !== undefined) continue;
       await this.resumeTask(id, "an agent slot is free");

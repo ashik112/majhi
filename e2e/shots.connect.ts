@@ -36,6 +36,7 @@ function view(id: string, name: string, over: Partial<ConnectionView> = {}): Con
     env: {},
     allow: [],
     agents: [],
+    agentsOff: [],
     problems: [],
     lastTest: {
       ok: true,

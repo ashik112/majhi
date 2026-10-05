@@ -19,6 +19,7 @@ import {
 } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { ApiRequestError, cmd, getHealth } from "./api";
+import { healthEveryMs, useFeedOpen } from "./feed-status";
 
 export const queryKeys = {
   config: ["config"],
@@ -122,20 +123,22 @@ export function useSetWorkspaces(onSaved?: (result: WorkspacesUpdateResult) => v
 }
 
 /** How often `/health` is asked, and how long one answer may take. A server that is gone shows within about 3 s. */
-const HEALTH_EVERY_MS = 1500;
 const HEALTH_TIMEOUT_MS = 1500;
 
 /**
- * Polls `/health` every 1.5 s for the online pill. One failed answer is asked again at once
+ * Keeps the online pill. The events socket opening and closing is the first signal (the feed asks
+ * `/health` once on each); `/health` is polled every 1.5 s only while the socket is down, and every 30 s
+ * while it is up. One failed answer is asked again at once
  * before the pill says offline, so a busy server does not flicker it. When the server comes back
  * after being unreachable (for example after `make up`), every other query is refetched.
  */
 export function useHealth() {
   const client = useQueryClient();
+  const feedOpen = useFeedOpen();
   const query = useQuery({
     queryKey: queryKeys.health,
     queryFn: ({ signal }) => getHealth(AbortSignal.any([signal, AbortSignal.timeout(HEALTH_TIMEOUT_MS)])),
-    refetchInterval: HEALTH_EVERY_MS,
+    refetchInterval: healthEveryMs(feedOpen),
     refetchIntervalInBackground: false,
     retry: 1,
     retryDelay: 200,

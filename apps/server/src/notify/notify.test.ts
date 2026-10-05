@@ -1,10 +1,10 @@
 import { type AttentionEvent, NotificationsSettingsSchema, type ServerEvent } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventHub } from "../events/hub.ts";
+import { seedStatus } from "../testing/status.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 import { inQuietHours } from "./attention.ts";
 import { CAPTAIN_GRACE_MS, COLLECT_MS, type DesktopNotice, Notifier, SETTLE_MS } from "./service.ts";
-import { seedStatus } from "../testing/status.ts";
 
 let w: World;
 let notifier: Notifier;

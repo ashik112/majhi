@@ -116,22 +116,36 @@ export class ConfigHistory {
     return true;
   }
 
-  /** Stages `files` and commits them. Returns the new commit, or undefined when nothing changed. */
-  async commit(request: CommitRequest): Promise<string | undefined> {
+  /** Whether any of `files` has changes git has not committed: edited, added or removed. One git process. */
+  async hasChanges(files: readonly string[]): Promise<boolean> {
+    const present = files.filter((f) => existsSync(join(this.dir, f)));
+    if (present.length === 0) return false;
+    const { stdout } = await this.git(["status", "--porcelain", "--", ...present]);
+    return stdout.trim() !== "";
+  }
+
+  /**
+   * Stages `files` and commits them. False when nothing changed. Two git processes: a commit with
+   * nothing staged fails with exit 1, and only then is the index looked at to tell that from a real error.
+   */
+  async commit(request: CommitRequest): Promise<boolean> {
     const files = request.files.filter((f) => existsSync(join(this.dir, f)));
-    if (files.length === 0) return undefined;
+    if (files.length === 0) return false;
     await this.git(["add", "--", ...files]);
-    if (!(await this.hasStagedChanges())) return undefined;
-    await this.git([
-      "commit",
-      "--quiet",
-      "--no-verify",
-      `--author=${authorOf(request.actor)}`,
-      "-m",
-      withTrailers(request.message, request.trailers),
-    ]);
-    const { stdout } = await this.git(["rev-parse", "HEAD"]);
-    return stdout.trim();
+    try {
+      await this.git([
+        "commit",
+        "--quiet",
+        "--no-verify",
+        `--author=${authorOf(request.actor)}`,
+        "-m",
+        withTrailers(request.message, request.trailers),
+      ]);
+      return true;
+    } catch (err) {
+      if (exitCode(err) === 1 && !(await this.hasStagedChanges())) return false;
+      throw err;
+    }
   }
 
   /**

@@ -65,12 +65,12 @@ import { sshConfigHosts } from "../scan/sshConfig.ts";
 import { restoreKey } from "../secrets/restore.ts";
 import type { Services } from "../services.ts";
 import { skillHandlers } from "../skills/handlers.ts";
-import { toolsHandlers } from "../tools/handlers.ts";
 import type { SshHostProbe } from "../ssh/hosts.ts";
 import type { SystemService } from "../system/service.ts";
 import { actorName } from "../tasks/cards.ts";
 import { changeTaskBranch } from "../tasks/change-branch.ts";
 import { readReport } from "../tasks/report.ts";
+import { toolsHandlers } from "../tools/handlers.ts";
 
 /** Loading keys and asking the Keychain or keyring can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
@@ -553,6 +553,16 @@ export function createHandlers({
       const { decisions, counts } = await services.inbox.view();
       return { tasks, counts, decisions: decisions.filter((d) => d.task !== undefined && named.has(d.task)) };
     },
+    "tasks.blockers": async () => services.autonomy.blockers(),
+    "tasks.homeFacts": async () => ({
+      mrs: services.store.tasks.openMrs(),
+      doing: services.room.workingNow().map(({ task, live }) => ({
+        task,
+        agent: live.agent,
+        ...(live.nowDoing === undefined ? {} : { text: live.nowDoing }),
+        ...(live.turnAt === undefined ? {} : { since: live.turnAt }),
+      })),
+    }),
     "tasks.get": async (input) => services.tasks.get(input.id),
     "captain.reportBug": async (input, ctx) => {
       // majhi's own code: the Private project named majhi, or the one whose folder is called majhi.
@@ -581,7 +591,8 @@ export function createHandlers({
     },
     "tasks.create": ({ requestId, ...input }, ctx) => {
       const now = Date.now();
-      for (const [key, seen] of recentCreates) if (now - seen.at > CREATE_DEDUPE_MS) recentCreates.delete(key);
+      for (const [key, seen] of recentCreates)
+        if (now - seen.at > CREATE_DEDUPE_MS) recentCreates.delete(key);
       const key = requestId === undefined ? undefined : `${ctx.meta.actor.kind}:${requestId}`;
       const earlier = key === undefined ? undefined : recentCreates.get(key);
       if (earlier !== undefined) return earlier.made;
@@ -643,6 +654,10 @@ export function createHandlers({
     "tasks.merge": ({ push, pushLocalCommits, createRemoteBranch, ...input }, ctx) => {
       if (input.confirmProtected !== undefined && ctx.meta.actor.kind === "agent") {
         throw new UserError("Only the owner can ship a protected repo, from Ship in the task.", 409);
+      }
+      // The captain and agents can never merge past the checks: only the owner's own call may.
+      if (input.confirmChecks !== undefined && ctx.meta.actor.kind !== "owner") {
+        throw new UserError("Only the owner can merge past a failed check.", 409);
       }
       if ((pushLocalCommits || createRemoteBranch) && ctx.meta.actor.kind === "agent") {
         throw new UserError(
@@ -863,12 +878,16 @@ export function createHandlers({
     "room.secret": async (input) => ({
       item: await services.admin.answerSecret(input.task, input.item, input.value),
     }),
-    "room.cardAction": (input, ctx) =>
-      services.cardActions.act({
+    "room.cardAction": (input, ctx) => {
+      if (input.confirmChecks !== undefined && ctx.meta.actor.kind !== "owner") {
+        throw new UserError("Only the owner can merge past a failed check.", 409);
+      }
+      return services.cardActions.act({
         ...input,
         by: actorName(ctx.meta.actor),
         agent: ctx.meta.actor.kind === "agent",
-      }),
+      });
+    },
     "room.answerQuestion": (input, ctx) =>
       answerCard(services, ctx, input, () =>
         services.tasks.answerQuestion(input.task, input.item, input.choice),

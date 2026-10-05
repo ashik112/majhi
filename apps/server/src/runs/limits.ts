@@ -347,7 +347,8 @@ export class Slots {
         : limit === "task"
           ? holders.filter((h) => h.task === req.task)
           : holders;
-    const max = limit === "account" ? limits.per_account : limit === "task" ? limits.per_task : globalCap(limits);
+    const max =
+      limit === "account" ? limits.per_account : limit === "task" ? limits.per_task : globalCap(limits);
     return { limit, max, account: req.account, holders: counted };
   }
 

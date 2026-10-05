@@ -33,7 +33,8 @@ export function patchTaskList(
 }
 
 /** The decision id of a room card is `room:<task>:<item>`: its task is the second part. */
-const taskOfDecision = (id: unknown): string | undefined => (typeof id === "string" ? id.split(":")[1] : undefined);
+const taskOfDecision = (id: unknown): string | undefined =>
+  typeof id === "string" ? id.split(":")[1] : undefined;
 
 /**
  * Puts what waits in the named tasks into the decisions list: their old decisions go, the ones the server
@@ -48,12 +49,12 @@ export function patchDecisions(
   return [...kept, ...fresh].toSorted(compareDecisions);
 }
 
-/** The details of these tasks' cards are read again; the details of every other card stay (each one runs the diff). */
+/** The detail of the selected card is read again when its task changed; every other card's detail stays (each one runs the diff). */
 function readDetails(client: QueryClient, tasks: ReadonlySet<string>): void {
   void client.invalidateQueries({
-    queryKey: [...queryKeys.decisions, "detail"],
+    queryKey: ["decision-detail"],
     predicate: (query) => {
-      const task = taskOfDecision(query.queryKey[2]);
+      const task = taskOfDecision(query.queryKey[1]);
       return task !== undefined && tasks.has(task);
     },
   });
@@ -63,7 +64,10 @@ function readDetails(client: QueryClient, tasks: ReadonlySet<string>): void {
  * Reads the tasks an event named, together with the counts, in one request, and patches the task list
  * and the counts of the decisions list from the answer. Reads are batched per window.
  */
-export function taskSync(client: QueryClient): { touch: (ids: readonly string[], waits: readonly string[]) => void; stop: () => void } {
+export function taskSync(client: QueryClient): {
+  touch: (ids: readonly string[], waits: readonly string[]) => void;
+  stop: () => void;
+} {
   const pending = new Set<string>();
   const pendingWaits = new Set<string>();
   let last = Number.NEGATIVE_INFINITY;
@@ -91,11 +95,16 @@ export function taskSync(client: QueryClient): { touch: (ids: readonly string[],
       client.setQueryData<DecisionList>(queryKeys.decisions, (old) => {
         if (old === undefined) return old;
         const decisions =
-          answer.decisions === undefined ? old.decisions : patchDecisions(old.decisions, new Set(ids), answer.decisions);
+          answer.decisions === undefined
+            ? old.decisions
+            : patchDecisions(old.decisions, new Set(ids), answer.decisions);
         return { decisions, counts: answer.counts };
       });
       // An open task page reads its own task again; one nobody looks at is only marked stale.
       for (const id of ids) void client.invalidateQueries({ queryKey: [...queryKeys.tasks, "one", id] });
+      // What waits to start and the open merge requests move with the tasks; both reads are small.
+      void client.invalidateQueries({ queryKey: [...queryKeys.tasks, "blockers"] });
+      void client.invalidateQueries({ queryKey: [...queryKeys.tasks, "home-facts"] });
       if (waits.size > 0) readDetails(client, waits);
     } catch {
       refetchLists();

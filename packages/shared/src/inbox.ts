@@ -21,6 +21,7 @@ export const OwnerDecisionKindSchema = z.enum([
   "batch",
   "incident",
   "trust",
+  "notifications",
 ]);
 export type OwnerDecisionKind = z.infer<typeof OwnerDecisionKindSchema>;
 
@@ -56,6 +57,8 @@ export const DecisionLinkSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("account"), id: z.string().min(1) }),
   z.object({ kind: z.literal("playbooks") }),
   z.object({ kind: z.literal("watch") }),
+  /** A section of Hub setup, like `notifications`. */
+  z.object({ kind: z.literal("setup"), section: z.string().min(1).max(40) }),
 ]);
 export type DecisionLink = z.infer<typeof DecisionLinkSchema>;
 
@@ -186,7 +189,10 @@ export function boardCounts(
 }
 
 /** The order of the list: incidents, then ship and budget, then the rest, oldest first within each. */
-export function compareDecisions(a: Pick<OwnerDecision, "kind" | "at">, b: Pick<OwnerDecision, "kind" | "at">): number {
+export function compareDecisions(
+  a: Pick<OwnerDecision, "kind" | "at">,
+  b: Pick<OwnerDecision, "kind" | "at">,
+): number {
   const rank = (d: Pick<OwnerDecision, "kind">) =>
     d.kind === "incident" ? -1 : d.kind === "ship" || d.kind === "budget" ? 0 : 1;
   return rank(a) - rank(b) || a.at.localeCompare(b.at);
@@ -230,6 +236,8 @@ export const DECISION_KIND_LABEL: Record<OwnerDecisionKind, string> = {
   batch: "Batch",
   incident: "Incident",
   trust: "Trust",
+  // The Mac's own switch for majhi's notifications: access the owner gives, like a sign-in.
+  notifications: "Access",
 };
 
 export function roomDecisionId(task: string, item: string): string {
@@ -241,6 +249,8 @@ export function budgetDecisionId(scope: string, day: string): string {
 export function signInDecisionId(account: string): string {
   return `signin:${account}`;
 }
+/** The one decision that says the Mac has notifications off for majhi. */
+export const NOTIFY_ACCESS_DECISION_ID = "notify:mac";
 
 export type ParsedDecisionId =
   | { kind: "room"; task: string; item: string }
@@ -250,7 +260,8 @@ export type ParsedDecisionId =
   | { kind: "batch"; org: string; channel: string }
   | { kind: "incident"; id: number }
   | { kind: "trust"; id: number }
-  | { kind: "ceiling"; month: string };
+  | { kind: "ceiling"; month: string }
+  | { kind: "notify" };
 
 /** The parts of a decision id, or undefined when it is none of ours. Ids are short and hold no secrets. */
 export function parseDecisionId(id: string): ParsedDecisionId | undefined {
@@ -276,6 +287,7 @@ export function parseDecisionId(id: string): ParsedDecisionId | undefined {
   if (head === "trust" && rest.length === 1 && /^[1-9]\d*$/.test(rest[0] ?? "")) {
     return { kind: "trust", id: Number(rest[0]) };
   }
+  if (id === NOTIFY_ACCESS_DECISION_ID) return { kind: "notify" };
   if (head === "ceiling" && rest.length === 1 && /^\d{4}-\d{2}$/.test(rest[0] ?? "")) {
     return { kind: "ceiling", month: rest[0] as string };
   }

@@ -1,4 +1,4 @@
-import { FETCH_TIMEOUT_MS, GitError, git, gitOk } from "../git/git.ts";
+import { FETCH_TIMEOUT_MS, GitError, git, gitOk, refIsThere } from "../git/git.ts";
 import { isSshAuthFailure } from "../git/worktrees.ts";
 
 /** Pushing takes longer than the default git timeout. */
@@ -137,9 +137,7 @@ export async function commitsAhead(
   remote: string,
   branch: string,
 ): Promise<number> {
-  const baseRef = (await gitOk(repo, ["show-ref", "--verify", "--quiet", `refs/remotes/${remote}/${base}`]))
-    ? `${remote}/${base}`
-    : base;
+  const baseRef = (await refIsThere(repo, `refs/remotes/${remote}/${base}`)) ? `${remote}/${base}` : base;
   const out = await git(repo, ["rev-list", "--count", `${baseRef}..refs/heads/${branch}`]);
   return Number(out.trim()) || 0;
 }

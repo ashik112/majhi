@@ -3,7 +3,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { currentPermission, showAttention } from "./browser-notify";
-import { ALL_TOPICS, closeSocket, feedStep, parseServerEvent, reconnectDelay, topicQueryKeys, wsUrl } from "./events-model";
+import { setHelloBuild } from "./build-watch";
+import {
+  ALL_TOPICS,
+  closeSocket,
+  feedStep,
+  parseServerEvent,
+  reconnectDelay,
+  topicQueryKeys,
+  wsUrl,
+} from "./events-model";
+import { setFeedOpen } from "./feed-status";
 import { queryKeys } from "./queries";
 import { taskSync } from "./task-sync";
 import { throttledInvalidator } from "./throttled-invalidate";
@@ -60,6 +70,7 @@ export function useServerEvents(): void {
       // The feed is the first to know the server went away or came back: check the pill now.
       const checkHealth = () => void client.refetchQueries({ queryKey: queryKeys.health });
       ws.onopen = () => {
+        setFeedOpen(true);
         attempt = 0;
         lastSeq = undefined;
         checkHealth();
@@ -70,6 +81,10 @@ export function useServerEvents(): void {
       ws.onmessage = (message) => {
         const event = parseServerEvent(message.data);
         if (event === null) return;
+        if (event.type === "hello") {
+          setHelloBuild(event.build);
+          return;
+        }
         if (event.type === "attention") showAttention(event, (path) => router.history.push(path));
         const step = feedStep(lastSeq, event);
         lastSeq = step.seq;
@@ -82,6 +97,7 @@ export function useServerEvents(): void {
       };
       ws.onclose = () => {
         if (stopped) return;
+        setFeedOpen(false);
         checkHealth();
         timer = window.setTimeout(connect, reconnectDelay(attempt));
         attempt += 1;

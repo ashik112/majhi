@@ -1,11 +1,4 @@
-import {
-  type AccountView,
-  type OrgView,
-  type OwnerDecision,
-  PAGE_PATH,
-  type PagePath,
-  type TaskSummary,
-} from "@majhi/shared";
+import type { AccountView, OrgView, OwnerDecision, PagePath, TaskSummary } from "@majhi/shared";
 import type { AgentInfo } from "../../lib/agent-index";
 import { badgeLetters, formatAgo } from "../../lib/format";
 import { actionOf, openLabel } from "../decisions/model";
@@ -125,7 +118,7 @@ export type BannerAction =
   /** `item`: the room item to scroll to. */
   | { kind: "task"; id: string; item?: string }
   | { kind: "chat"; id: string }
-  | { kind: "page"; to: PagePath; search?: { account?: string; id?: string; tab?: string } }
+  | { kind: "page"; to: PagePath; search?: { account?: string; id?: string; tab?: string; section?: string } }
   | { kind: "element"; id: string };
 
 /** The one thing that needs the owner most, as the banner above the page shows it. */

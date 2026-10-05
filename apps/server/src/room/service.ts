@@ -185,7 +185,12 @@ export class RoomService {
       return;
     }
     if (text.length > before.sent.length) {
-      this.send(task, { type: "delta", id, offset: before.sent.length, append: text.slice(before.sent.length) });
+      this.send(task, {
+        type: "delta",
+        id,
+        offset: before.sent.length,
+        append: text.slice(before.sent.length),
+      });
       before.sent = text;
       before.payload = clean;
       before.dirty = true;
@@ -253,6 +258,15 @@ export class RoomService {
 
   getLive(task: string, agent: string): AgentLive | undefined {
     return this.live.get(task)?.get(agent);
+  }
+
+  /** Every agent that is in a turn now, with the task it works in. */
+  workingNow(): { task: TaskId; live: AgentLive }[] {
+    const out: { task: TaskId; live: AgentLive }[] = [];
+    for (const [task, agents] of this.live) {
+      for (const live of agents.values()) if (live.status === "working") out.push({ task, live });
+    }
+    return out;
   }
 
   /** Agents of the task that have live state. */

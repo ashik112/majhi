@@ -75,7 +75,11 @@ exit $code
     await shim(150);
     await writeFile(join(repo, "b.txt"), "b\n");
     await writeFile(join(repo, "c.txt"), "c\n");
-    await Promise.all([git(repo, ["add", "b.txt"]), git(repo, ["add", "c.txt"]), git(repo, ["add", "a.txt"])]);
+    await Promise.all([
+      git(repo, ["add", "b.txt"]),
+      git(repo, ["add", "c.txt"]),
+      git(repo, ["add", "a.txt"]),
+    ]);
     const events = (await readFile(log, "utf8"))
       .split("\n")
       .filter((l) => /^(start|end) add/.test(l))
