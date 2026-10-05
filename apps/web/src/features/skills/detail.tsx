@@ -23,6 +23,7 @@ import { describeError } from "@/lib/errors";
 import { plural } from "@/lib/format";
 import { useSkillsCommand } from "@/lib/skills-queries";
 import { groupAgents, type Item } from "./catalog";
+import { groupName } from "./group-name";
 import { type AgentChoice, ErrorLine, NameList, SourceLink } from "./parts";
 
 function Section({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
@@ -37,10 +38,6 @@ function Section({ title, aside, children }: { title: string; aside?: ReactNode;
   );
 }
 
-function groupName(scope: string, orgs: readonly OrgView[]): string {
-  return scope === "root" ? "Root agents" : scopeName(scope, orgs);
-}
-
 /** One switch per agent, workspace by workspace. */
 function AgentGroups({
   agents,
@@ -49,6 +46,8 @@ function AgentGroups({
   orgs,
   noun,
   onToggle,
+  onToggleGroup,
+  groupPending,
 }: {
   agents: readonly AgentChoice[];
   on: readonly string[];
@@ -56,6 +55,9 @@ function AgentGroups({
   orgs: readonly OrgView[];
   noun: string;
   onToggle: (agent: string, next: boolean) => void;
+  /** Turn every agent of a workspace on or off, and agents made later in it. */
+  onToggleGroup?: ((scope: string, next: boolean) => void) | undefined;
+  groupPending?: boolean | undefined;
 }) {
   if (agents.length === 0) return <p className="text-sm text-fg-faint">No agent can use this yet.</p>;
   return (
@@ -68,6 +70,22 @@ function AgentGroups({
             <span className="tnum font-mono text-fg-faint">
               {group.agents.filter((a) => on.includes(a.id)).length} of {group.agents.length}
             </span>
+            {onToggleGroup !== undefined && (
+              <span className="ml-auto">
+                <Switch
+                  label={`All agents in ${groupName(group.scope, orgs)}`}
+                  hideLabel
+                  title={`All agents in ${groupName(group.scope, orgs)}`}
+                  checked={group.agents.every((a) => on.includes(a.id))}
+                  mixed={
+                    group.agents.some((a) => on.includes(a.id)) &&
+                    !group.agents.every((a) => on.includes(a.id))
+                  }
+                  disabled={groupPending === true}
+                  onChange={(next) => onToggleGroup(group.scope, next)}
+                />
+              </span>
+            )}
           </div>
           <ul aria-label={`Agents of ${groupName(group.scope, orgs)} using this ${noun}`}>
             {group.agents.map((agent) => (
@@ -125,10 +143,22 @@ export function SkillDetail({
   const enable = useSkillsCommand("skills.enable");
   const disable = useSkillsCommand("skills.disable");
   const enableAll = useSkillsCommand("skills.enableAll");
+  const setMany = useSkillsCommand("skills.setMany");
   const update = useSkillsCommand("skills.update");
   const remove = useSkillsCommand("skills.remove");
   const toast = useToast();
   const { pending, run } = useTogglePending();
+  const toggleGroup = (scope: string, next: boolean) =>
+    setMany.mutate(
+      { skills: [skill.name], target: { kind: "workspace", org: scope }, on: next },
+      {
+        onError: (e) =>
+          toast(`Could not change ${skill.name} for ${groupName(scope, orgs)}`, {
+            detail: describeError(e),
+            tone: "error",
+          }),
+      },
+    );
   const [removing, setRemoving] = useState(false);
 
   const toggle = (agent: string, next: boolean) =>
@@ -243,6 +273,8 @@ export function SkillDetail({
           orgs={orgs}
           noun="skill"
           onToggle={toggle}
+          onToggleGroup={toggleGroup}
+          groupPending={setMany.isPending}
         />
       </Section>
       {removing && (

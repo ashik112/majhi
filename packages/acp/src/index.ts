@@ -121,7 +121,14 @@ export {
   type StdioServerSpec,
   startSession,
 } from "./session.ts";
-export { localSpawner, type RunMount, type Spawned, type Spawner, type SpawnRequest } from "./spawn.ts";
+export {
+  localSpawner,
+  type RunMount,
+  SKILLS_OVERLAY_DIR,
+  type Spawned,
+  type Spawner,
+  type SpawnRequest,
+} from "./spawn.ts";
 export { mapClaudeUsage } from "./tools/claude.ts";
 export { mapCodexRateLimits } from "./tools/codex.ts";
 export { getTool, toolInfos, tools } from "./tools/index.ts";

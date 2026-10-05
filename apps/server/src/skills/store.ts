@@ -22,8 +22,12 @@ const LockEntrySchema = z.object({
   defaultOn: z.boolean().optional(),
   /** Agents that turned a default-on skill off. */
   optOut: z.array(z.string()).optional(),
+  /** Agents the owner turned the skill on for in bulk, without touching their files. */
+  optIn: z.array(z.string()).optional(),
+  /** Workspace rules (an agent's `scope`): they cover agents created later too. */
+  orgs: z.record(z.string(), z.enum(["on", "off"])).optional(),
 });
-type LockEntry = z.infer<typeof LockEntrySchema>;
+export type LockEntry = z.infer<typeof LockEntrySchema>;
 
 const LockSchema = z.object({ version: z.literal(1), skills: z.record(z.string(), LockEntrySchema) });
 
@@ -41,6 +45,32 @@ export interface StoredSkill {
   /** One rule for every agent, including agents created later: on unless the agent is in `optOut`. */
   defaultOn: boolean;
   optOut: string[];
+  optIn: string[];
+  orgs: Record<string, "on" | "off">;
+}
+
+/** What decides whether a skill is on for an agent. */
+export interface SkillRule {
+  defaultOn: boolean;
+  optOut: readonly string[];
+  optIn: readonly string[];
+  orgs: Readonly<Record<string, "on" | "off">>;
+}
+
+/**
+ * The one rule. The agent's own choice first: an opt-out is off, an opt-in or a listing in its file
+ * is on. Then its workspace's rule, then the all-agents rule.
+ */
+export function skillOnFor(
+  rule: SkillRule,
+  name: string,
+  agent: { id: string; scope: string; skills: readonly string[] },
+): boolean {
+  if (rule.optOut.includes(agent.id)) return false;
+  if (rule.optIn.includes(agent.id) || agent.skills.includes(name)) return true;
+  const org = rule.orgs[agent.scope];
+  if (org !== undefined) return org === "on";
+  return rule.defaultOn;
 }
 
 /**
@@ -106,6 +136,8 @@ export class SkillStore {
           // A new skill is on for every agent; replacing one keeps what the owner chose for it.
           defaultOn: previous === undefined ? true : (previous.defaultOn ?? false),
           ...(previous?.optOut === undefined ? {} : { optOut: previous.optOut }),
+          ...(previous?.optIn === undefined ? {} : { optIn: previous.optIn }),
+          ...(previous?.orgs === undefined ? {} : { orgs: previous.orgs }),
           source: source.source,
           sourceType: source.sourceType,
           ...(source.ref === undefined ? {} : { ref: source.ref }),
@@ -125,7 +157,11 @@ export class SkillStore {
 
   /** Turns the all-agents rule on or off. Turning it on clears the opt-outs: every agent gets the skill. */
   setDefault(name: string, on: boolean): Promise<void> {
-    return this.change(name, (entry) => ({ ...entry, defaultOn: on, ...(on ? { optOut: [] } : {}) }));
+    // One rule for everyone: the per-workspace and bulk choices give way to it.
+    return this.change(name, (entry) => {
+      const { orgs: _orgs, optIn: _optIn, ...rest } = entry;
+      return { ...rest, defaultOn: on, ...(on ? { optOut: [] } : {}) };
+    });
   }
 
   /** Records that one agent turned a default-on skill off (`out`) or back on. */
@@ -136,14 +172,37 @@ export class SkillStore {
     });
   }
 
-  /** The skills an agent has: the ones its file lists, plus every default-on skill it has not opted out of. */
-  async effectiveFor(agent: string, listed: readonly string[]): Promise<string[]> {
+  /** The skills an agent has: the ones its file lists, plus what the rules give it (see `skillOnFor`). */
+  async effectiveFor(agent: string, listed: readonly string[], scope = ""): Promise<string[]> {
     const lock = await this.readLock();
-    const out = new Set(listed);
-    for (const [name, entry] of Object.entries(lock.skills)) {
-      if (entry.defaultOn === true && !(entry.optOut ?? []).includes(agent)) out.add(name);
+    const who = { id: agent, scope, skills: listed };
+    const out = new Set<string>();
+    for (const name of new Set([...listed, ...Object.keys(lock.skills)])) {
+      const entry = lock.skills[name];
+      const rule: SkillRule = {
+        defaultOn: entry?.defaultOn ?? false,
+        optOut: entry?.optOut ?? [],
+        optIn: entry?.optIn ?? [],
+        orgs: entry?.orgs ?? {},
+      };
+      if (skillOnFor(rule, name, who)) out.add(name);
     }
     return [...out];
+  }
+
+  /** Edits several entries and writes the lock once. An unknown name is an error before anything is written. */
+  changeMany(names: readonly string[], edit: (entry: LockEntry, name: string) => LockEntry): Promise<void> {
+    return this.serial(async () => {
+      const lock = await this.readLock();
+      for (const name of names) {
+        if (lock.skills[name] === undefined) throw new UserError(`There is no installed skill ${name}.`, 404);
+      }
+      for (const name of names) {
+        const entry = lock.skills[name];
+        if (entry !== undefined) lock.skills[name] = edit(entry, name);
+      }
+      await this.writeLock(lock);
+    });
   }
 
   private change(name: string, edit: (entry: LockEntry) => LockEntry): Promise<void> {
@@ -186,6 +245,8 @@ export class SkillStore {
         installedAt: entry.installedAt,
         defaultOn: entry.defaultOn ?? false,
         optOut: entry.optOut ?? [],
+        optIn: entry.optIn ?? [],
+        orgs: entry.orgs ?? {},
       };
     } catch {
       // A folder that went missing or broke by hand: the lock entry stays, the skill is not listed.

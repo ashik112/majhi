@@ -9,6 +9,7 @@ import {
   type SkillInstallResult,
   type SkillPreview,
   type SkillSearchResult,
+  type SkillSetManyInput,
   type SkillSource,
 } from "@majhi/shared";
 import { auditActor, auditDetail } from "../audit.ts";
@@ -19,7 +20,7 @@ import type { SkillsCli, Stage } from "./cli.ts";
 import { copyFolder, describeFolder, isInside } from "./files.ts";
 import { readSkillMeta } from "./frontmatter.ts";
 import type { SkillRegistry } from "./registry.ts";
-import type { SkillStore, StoredSkill } from "./store.ts";
+import { type SkillStore, type StoredSkill, skillOnFor } from "./store.ts";
 import { extractZip } from "./zip.ts";
 
 /** A preview stays valid this long, and is used once. */
@@ -28,7 +29,7 @@ export const PREVIEW_TTL_MS = 30 * 60_000;
 /** The parts of the agent service skills use: the agent files' `skills` lists. */
 export interface SkillAgents {
   /** Each agent's id and the skills its file lists. Agents with a broken file are left out. */
-  skillLists(): Promise<{ id: string; skills: string[] }[]>;
+  skillLists(): Promise<{ id: string; scope: string; skills: string[] }[]>;
   /** Replaces the `skills` list in the agent's file. */
   setSkills(agent: string, skills: string[], command: string, meta: CommandMeta): Promise<void>;
 }
@@ -47,6 +48,8 @@ export interface SkillServiceDeps {
   roots: () => Promise<string[]>;
   hostHome: string;
   now?: () => Date;
+  /** Agents whose skills changed in the lock only: their open sessions restart so the next turn has the change. */
+  changed?: (agents: string[]) => void;
 }
 
 interface Pending {
@@ -191,15 +194,80 @@ export class SkillService {
   async enableAll(name: string, meta: CommandMeta): Promise<Skill> {
     await this.get(name);
     await this.deps.store.setDefault(name, true);
+    this.deps.changed?.((await this.deps.agents.skillLists()).map((l) => l.id));
     this.log(meta, "skill-enable", `Enable ${name} for all agents`, `${name} for all agents`);
     return this.get(name);
+  }
+
+  /**
+   * Several skills on or off for a target in one lock write. A workspace rule covers agents made
+   * later; agents already there get an opt-out (off) or lose theirs (on), so the choice shows per agent.
+   */
+  async setMany(input: SkillSetManyInput, meta: CommandMeta): Promise<Skill[]> {
+    const lists = await this.deps.agents.skillLists();
+    const { target, on } = input;
+    const names = [...new Set(input.skills)];
+    const ids = (() => {
+      if (target.kind === "all") return lists.map((l) => l.id);
+      if (target.kind === "workspace") return lists.filter((l) => l.scope === target.org).map((l) => l.id);
+      const unknown = target.agents.filter((a) => !lists.some((l) => l.id === a));
+      if (unknown.length > 0)
+        throw new UserError(`There is no agent @${unknown[0]}, or its file has errors.`, 404);
+      return target.agents;
+    })();
+    const without = (list: readonly string[], drop: readonly string[]) =>
+      list.filter((a) => !drop.includes(a));
+    const union = (list: readonly string[], add: readonly string[]) => [...new Set([...list, ...add])].sort();
+    await this.deps.store.changeMany(names, (entry, name) => {
+      const optOut = entry.optOut ?? [];
+      const optIn = entry.optIn ?? [];
+      const { orgs: _orgs, optIn: _in, ...rest } = entry;
+      const orgs = { ...entry.orgs };
+      if (target.kind === "all") {
+        // Everyone follows one rule again. Off also covers agents whose file lists the skill.
+        const listing = lists.filter((l) => l.skills.includes(name)).map((l) => l.id);
+        return { ...rest, defaultOn: on, optOut: on ? [] : listing.sort() };
+      }
+      if (target.kind === "workspace") {
+        orgs[target.org] = on ? "on" : "off";
+        return {
+          ...rest,
+          optOut: on ? without(optOut, ids) : union(optOut, ids),
+          optIn: without(optIn, ids),
+          orgs,
+        };
+      }
+      return {
+        ...rest,
+        orgs: entry.orgs ?? {},
+        optOut: on ? without(optOut, ids) : union(optOut, ids),
+        optIn: on ? union(optIn, ids) : without(optIn, ids),
+      };
+    });
+    this.deps.changed?.(ids);
+    const where =
+      target.kind === "all"
+        ? "all agents"
+        : target.kind === "workspace"
+          ? `workspace ${target.org}`
+          : ids.join(", ");
+    this.log(
+      meta,
+      on ? "skill-enable" : "skill-disable",
+      `${on ? "Enable" : "Disable"} ${names.length} skill${names.length === 1 ? "" : "s"} for ${where}`,
+      `${names.join(", ")} for ${where}`,
+    );
+    return this.listed(names);
   }
 
   async enable(name: string, agent: string, command: string, meta: CommandMeta): Promise<Skill> {
     await this.get(name);
     const list = await this.agentList(agent);
     const stored = await this.deps.store.get(name);
-    if (stored?.optOut.includes(agent)) await this.deps.store.setOptOut(name, agent, false);
+    if (stored?.optOut.includes(agent)) {
+      await this.deps.store.setOptOut(name, agent, false);
+      this.deps.changed?.([agent]);
+    }
     if (!list.includes(name)) {
       await this.deps.agents.setSkills(agent, [...list, name], command, meta);
       this.log(meta, "skill-enable", `Enable ${name} for @${agent}`, `${name} for ${agent}`);
@@ -208,11 +276,16 @@ export class SkillService {
   }
 
   async disable(name: string, agent: string, command: string, meta: CommandMeta): Promise<Skill> {
-    const list = await this.agentList(agent);
+    const lists = await this.deps.agents.skillLists();
+    const who = lists.find((l) => l.id === agent);
+    if (who === undefined) throw new UserError(`There is no agent @${agent}, or its file has errors.`, 404);
+    const list = who.skills;
     const stored = await this.deps.store.get(name);
-    if (stored?.defaultOn === true && !stored.optOut.includes(agent)) {
+    const byRule = stored !== undefined && skillOnFor(stored, name, { ...who, skills: [] });
+    if (stored !== undefined && byRule && !stored.optOut.includes(agent)) {
       // The opt-out is what keeps a default-on skill off this agent, now and after a restart.
       await this.deps.store.setOptOut(name, agent, true);
+      this.deps.changed?.([agent]);
       if (!list.includes(name)) {
         this.log(meta, "skill-disable", `Disable ${name} for @${agent}`, `${name} for ${agent}`);
       }
@@ -432,7 +505,7 @@ export class SkillService {
   }
 }
 
-function toSkill(s: StoredSkill, lists: { id: string; skills: string[] }[]): Skill {
+function toSkill(s: StoredSkill, lists: { id: string; scope: string; skills: string[] }[]): Skill {
   return {
     name: s.name,
     description: s.description,
@@ -444,10 +517,9 @@ function toSkill(s: StoredSkill, lists: { id: string; skills: string[] }[]): Ski
     hash: s.hash,
     installedAt: s.installedAt,
     defaultOn: s.defaultOn,
-    agents: lists
-      .filter((l) => l.skills.includes(s.name) || (s.defaultOn && !s.optOut.includes(l.id)))
-      .map((l) => l.id),
+    agents: lists.filter((l) => skillOnFor(s, s.name, l)).map((l) => l.id),
     optOut: s.optOut,
+    orgs: s.orgs,
   };
 }
 

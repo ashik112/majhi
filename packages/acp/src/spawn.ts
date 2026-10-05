@@ -31,7 +31,15 @@ export interface SpawnRequest {
 export interface RunMount {
   path: string;
   readOnly?: boolean;
+  /**
+   * Where the run sees `path`, when that is not the same path. Only `<cwd>/.claude/skills` is allowed,
+   * read-only: a run's own skills, shown to Claude Code without touching a shared config home.
+   */
+  target?: string;
 }
+
+/** Where a run's cwd shows its skills to Claude Code (the Agent Skills project folder). */
+export const SKILLS_OVERLAY_DIR = ".claude/skills";
 
 export interface Spawned {
   child: ChildProcessWithoutNullStreams;

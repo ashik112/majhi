@@ -739,6 +739,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     decisions,
     connectionFiles,
     skills: skillStore,
+    containerRunner: env.runner.mode === "container",
     ...(env.runner.mode === "container" ? { serena: { command: SERENA_COMMAND } } : {}),
     onTasksChanged: (task, rows) => events.emitTask(task, rows ? true : undefined),
     // Bound below: the task service and the resume coordinator are built after the run manager.
@@ -1900,13 +1901,24 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     agents: {
       skillLists: async () =>
         (await agents.list()).flatMap((e) =>
-          e.status === "ok" ? [{ id: e.agent.frontmatter.id, skills: e.agent.frontmatter.skills }] : [],
+          e.status === "ok"
+            ? [
+                {
+                  id: e.agent.frontmatter.id,
+                  scope: e.agent.frontmatter.scope,
+                  skills: e.agent.frontmatter.skills,
+                },
+              ]
+            : [],
         ),
       setSkills: async (agent, list, command, meta) => {
         await agents.edit(agent, { set: { skills: list } }, command, meta);
       },
     },
     uploads,
+    changed: (ids) => {
+      for (const id of ids) runs.remountAgent(id);
+    },
     audit: (row) => store.permissions.log(row),
     roots: async () => {
       const loaded = await config.load();

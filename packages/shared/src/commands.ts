@@ -333,6 +333,7 @@ import {
   SkillNameSchema,
   SkillSchema,
   SkillSearchResultSchema,
+  SkillSetManyInputSchema,
   SkillUpdateInputSchema,
 } from "./skills.ts";
 import {
@@ -2734,6 +2735,13 @@ export const commands = {
       "Turn a skill off for one agent: takes it off the agent file's skills list and records an opt-out when the skill is on for all agents",
     input: SkillAgentInputSchema,
     output: SkillSchema,
+  },
+  "skills.setMany": {
+    risk: "change",
+    summary:
+      "Turn several installed skills on or off in one change, for every agent, for every agent of one workspace (agents created later in it follow), or for the listed agents",
+    input: SkillSetManyInputSchema,
+    output: z.array(SkillSchema),
   },
   "skills.remove": {
     risk: "destructive",

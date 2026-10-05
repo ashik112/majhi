@@ -2,10 +2,13 @@ import { mkdir, readdir, readFile, stat, symlink, writeFile } from "node:fs/prom
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Skill, SkillInstallResult, SkillPreview } from "@majhi/shared";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runFilesRoot } from "../connections/run-files.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 import { makeZip } from "../testing/zip.ts";
+import { skillsServer } from "./mcp.ts";
 import { cleanSource } from "./service.ts";
 
 const FAKE_CLI = {
@@ -186,16 +189,143 @@ describe("skills", () => {
     expect(join(dir, "..")).toBe(runFilesRoot(w.h.env.majhiHome));
     expect(await readdir(dir)).toEqual(["lint-fixes"]);
     expect(await readFile(join(dir, "lint-fixes", "SKILL.md"), "utf8")).toContain("Fix lint errors");
-    // The prompt names the skill, its description and the path of its SKILL.md.
+    // The prompt holds one short line, no list and no skill text. The agent looks a skill up with majhi-skills.
     const prompt = JSON.stringify(w.h.runtime.sessions[0]?.prompts[0]);
-    expect(prompt).toContain("lint-fixes: Fix lint errors the Acme way");
-    expect(prompt).toContain(join(dir, "lint-fixes", "SKILL.md"));
-    expect(prompt).not.toContain("release-notes");
+    expect(prompt).toContain("The owner turned on 1 skill for you");
+    expect(prompt).not.toContain("lint-fixes");
+    expect(prompt).not.toContain("Fix lint errors");
+    expect(start?.mcpServers?.map((m) => m.name)).toContain("majhi-skills");
 
     // The copy goes with the session.
     await must("tasks.stop", { id: task.id });
     for (let i = 0; i < 50 && (await exists(dir)); i++) await new Promise((r) => setTimeout(r, 20));
     expect(await exists(dir)).toBe(false);
+  });
+
+  it("a started run gets default-on skills (mount and note), a resumed run too, an opted-out skill not", async () => {
+    await installAll({ source: "acme/agent-skills" });
+    const task = (await must("tasks.create", {
+      text: "tidy the api, repo api",
+      repos: [{ project: "acme-api" }],
+      start: true,
+    })) as { id: string };
+    await w.h.majhi.services.runs.idle(task.id);
+    const mountOf = () => w.h.runtime.starts.at(-1)?.mounts?.find((m) => m.path.includes("/skills-"));
+    const first = mountOf();
+    expect(first?.readOnly).toBe(true);
+    expect((await readdir(first?.path ?? "")).sort()).toEqual(["lint-fixes", "release-notes"]);
+    const prompt = JSON.stringify(w.h.runtime.sessions.at(-1)?.prompts[0]);
+    expect(prompt).toContain("The owner turned on 2 skills for you");
+    // No list and no skill text in the prompt.
+    expect(prompt).not.toContain("lint-fixes");
+    expect(prompt).not.toContain('SKILL.md"');
+    expect(prompt.length).toBeLessThan(900);
+
+    // majhi-skills finds what is on and nothing else.
+    const find = async (query: string) => {
+      const mine = w.h.majhi.services.runs.skillsOf(task.id, "acme-builder");
+      const [near, far] = InMemoryTransport.createLinkedPair();
+      const server = skillsServer(
+        { task: task.id, agent: "acme-builder" },
+        { forRun: async () => (mine === undefined ? undefined : { dir: mine.dir, skills: mine.items }) },
+      );
+      await server.connect(far);
+      const client = new Client({ name: "test", version: "1" });
+      await client.connect(near);
+      const res = (await client.callTool({ name: "find", arguments: { query } })) as {
+        content: { text: string }[];
+      };
+      await client.close();
+      return res.content[0]?.text ?? "";
+    };
+    expect(await find("fix lint errors")).toContain(join(first?.path ?? "", "lint-fixes", "SKILL.md"));
+    expect(await find("release notes")).toContain("release-notes");
+
+    // Opt one out, then send another message: the restarted (resumed) session has only the other.
+    await must("skills.disable", { name: "release-notes", agent: "acme-builder" });
+    await must("room.send", { task: task.id, text: "next step please" });
+    await w.h.majhi.services.runs.idle(task.id);
+    const second = mountOf();
+    expect(second?.path).not.toBe(first?.path);
+    expect(await readdir(second?.path ?? "")).toEqual(["lint-fixes"]);
+    expect(JSON.stringify(w.h.runtime.sessions.at(-1)?.prompts)).toContain(
+      "The owner turned on 1 skill for you",
+    );
+    expect(await find("release notes")).toBe("No skill matches. Try other words, or go on without one.");
+    expect(await find("lint")).toContain("lint-fixes");
+  });
+
+  it("a workspace switch opts out exactly that workspace's agents, covers later agents, and one change writes once", async () => {
+    await installAll({ source: "acme/agent-skills" });
+    for (const [id, scope] of [
+      ["globex-dev", "root"],
+      ["acme-late", "acme"],
+    ] as const) {
+      await must("agents.create", {
+        id,
+        frontmatter: { scope, role: "Reviewer", account: "claude-acme" },
+        instructions: "Help.",
+      });
+    }
+    const on = async (name: string) =>
+      ((await must("skills.list", {})) as Skill[]).find((s) => s.name === name)?.agents.sort() ?? [];
+    const everyone = ["acme-builder", "acme-late", "globex-dev"];
+    expect(await on("lint-fixes")).toEqual(everyone);
+
+    const file = join(store(), "skills-lock.json");
+    const writes = async () => (await readFile(file, "utf8")).length;
+    void writes;
+    const before = await stat(file);
+    await must("skills.setMany", {
+      skills: ["lint-fixes", "release-notes"],
+      target: { kind: "workspace", org: "acme" },
+      on: false,
+    });
+    const after = await stat(file);
+    expect(after.mtimeMs).toBeGreaterThanOrEqual(before.mtimeMs);
+    // Exactly the acme agents lost both skills; the other workspace kept them.
+    expect(await on("lint-fixes")).toEqual(["globex-dev"]);
+    expect(await on("release-notes")).toEqual(["globex-dev"]);
+    // An agent made later in that workspace follows the workspace rule.
+    await must("agents.create", {
+      id: "acme-newest",
+      frontmatter: { scope: "acme", role: "Reviewer", account: "claude-acme" },
+      instructions: "Help.",
+    });
+    expect(await on("lint-fixes")).toEqual(["globex-dev"]);
+    const { skillStore } = w.h.majhi.services;
+    expect(await skillStore.effectiveFor("acme-newest", [], "acme")).toEqual([]);
+    expect(await skillStore.effectiveFor("globex-dev", [], "root")).toEqual(["lint-fixes", "release-notes"]);
+
+    // On again clears those opt-outs and the rule.
+    await must("skills.setMany", {
+      skills: ["lint-fixes", "release-notes"],
+      target: { kind: "workspace", org: "acme" },
+      on: true,
+    });
+    expect(await on("lint-fixes")).toEqual([...everyone, "acme-newest"].sort());
+    const lock = JSON.parse(await readFile(file, "utf8")).skills["lint-fixes"];
+    expect(lock.optOut).toEqual([]);
+
+    // Agents target: only those agents; the lock holds the choice, not the agent files.
+    await must("skills.setMany", {
+      skills: ["lint-fixes"],
+      target: { kind: "agents", agents: ["acme-late", "globex-dev"] },
+      on: false,
+    });
+    expect(await on("lint-fixes")).toEqual(["acme-builder", "acme-newest"]);
+    // All agents off covers an agent whose file lists the skill, then on restores everyone.
+    await must("skills.enable", { name: "lint-fixes", agent: "acme-late" });
+    await must("skills.setMany", { skills: ["lint-fixes"], target: { kind: "all" }, on: false });
+    expect(await on("lint-fixes")).toEqual([]);
+    await must("skills.setMany", { skills: ["lint-fixes"], target: { kind: "all" }, on: true });
+    expect(await on("lint-fixes")).toEqual([...everyone, "acme-newest"].sort());
+    // An unknown skill changes nothing.
+    expect(
+      (await run("skills.setMany", { skills: ["nope", "lint-fixes"], target: { kind: "all" }, on: false }))
+        .status,
+    ).toBe(404);
+    expect(await on("lint-fixes")).toEqual([...everyone, "acme-newest"].sort());
   });
 
   it("restarts the agent's open session when a skill is turned on, so the next turn has it", async () => {
@@ -218,7 +348,7 @@ describe("skills", () => {
     const mount = start?.mounts?.find((m) => m.path.includes("/skills-"));
     expect(mount?.readOnly).toBe(true);
     const prompts = w.h.runtime.sessions.at(-1)?.prompts ?? [];
-    expect(JSON.stringify(prompts)).toContain("lint-fixes: Fix lint errors the Acme way");
+    expect(JSON.stringify(prompts)).toContain("The owner turned on 1 skill for you");
   });
 
   it("gives a run with no skills no folder and no note", async () => {

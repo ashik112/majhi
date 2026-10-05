@@ -17,10 +17,21 @@ export const DOCKER_PATH = "/mcp/docker";
 export const MEMORY_SERVER_NAME = "majhi-memory";
 export const MEMORY_PATH = "/mcp/memory";
 
+export const SKILLS_SERVER_NAME = "majhi-skills";
+export const SKILLS_PATH = "/mcp/skills";
+
 export const CONNECTIONS_SERVER_NAME = "majhi-connections";
 export const CONNECTIONS_PATH = "/mcp/connections";
 
-export type ToolServer = "room" | "tasks" | "processes" | "memory" | "containers" | "connections" | "docker";
+export type ToolServer =
+  | "room"
+  | "tasks"
+  | "processes"
+  | "memory"
+  | "containers"
+  | "connections"
+  | "skills"
+  | "docker";
 
 /** The servers RoomAccess issues, in the order a session lists them. */
 const SERVERS: readonly { key: ToolServer; name: string; path: string }[] = [
@@ -30,6 +41,7 @@ const SERVERS: readonly { key: ToolServer; name: string; path: string }[] = [
   { key: "containers", name: CONTAINERS_SERVER_NAME, path: CONTAINERS_PATH },
   { key: "memory", name: MEMORY_SERVER_NAME, path: MEMORY_PATH },
   { key: "connections", name: CONNECTIONS_SERVER_NAME, path: CONNECTIONS_PATH },
+  { key: "skills", name: SKILLS_SERVER_NAME, path: SKILLS_PATH },
 ];
 
 /** Who a token belongs to: one agent session in one task. */
@@ -73,6 +85,7 @@ export class RoomAccess {
   readonly memory = new ToolTokens();
   readonly containers = new ToolTokens();
   readonly connections = new ToolTokens();
+  readonly skills = new ToolTokens();
   /** Tokens of the `docker` shim: one per run, one per hand-off check. They only reach the caller's own task. */
   readonly docker = new ToolTokens();
 

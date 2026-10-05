@@ -5,6 +5,7 @@ import {
   buildEnv,
   type RunMount,
   type RuntimeOptions,
+  SKILLS_OVERLAY_DIR,
   type StdioServerSpec,
   withToolsPath,
 } from "@majhi/acp";
@@ -125,6 +126,11 @@ export interface LaunchDeps {
   connectionFiles?: Pick<RunFilesDeps, "connectionDir" | "browsersPath" | "oauth" | "gitToken"> | undefined;
   /** The skills store (SPEC 5.2): each run gets read-only copies of its agent's enabled skills. */
   skills?: Pick<SkillStore, "get" | "pathOf" | "effectiveFor"> | undefined;
+  /**
+   * Runs happen in runner containers, where Claude Code lists a mounted `.claude/skills` itself. Without
+   * it a run gets a one-line note and `majhi-skills` to look skills up.
+   */
+  containerRunner?: boolean | undefined;
 }
 
 export interface Launched {
@@ -147,7 +153,7 @@ export interface Launched {
   /** What the run holds of its connections, with its own folder of their files. */
   connections?: RunConnections | undefined;
   /** The run's folder of its agent's skills, removed when the session ends, and the prompt text naming them. */
-  skills?: { dir: string; note: string } | undefined;
+  skills?: { dir: string; note: string; items: { name: string; description: string }[] } | undefined;
 }
 
 /**
@@ -177,12 +183,15 @@ export async function launch(
   const held = await heldConnections(deps, task, fm, "session");
   const packages = await packageCache(deps.majhiHome, task).catch(() => undefined);
   const tools = await toolsFolder(deps.majhiHome, task).catch(() => undefined);
+  // Claude Code lists a mounted `.claude/skills` itself, so a runner container needs no prompt text for it.
+  const nativeSkills = deps.containerRunner === true && agent.account.tool === "claude";
   const skills =
     deps.skills === undefined
       ? undefined
       : await prepareRunSkills(
           { store: deps.skills, majhiHome: deps.majhiHome },
-          await deps.skills.effectiveFor(fm.id, fm.skills),
+          await deps.skills.effectiveFor(fm.id, fm.skills, fm.scope),
+          nativeSkills ? { overlayTarget: join(task.folder, SKILLS_OVERLAY_DIR) } : {},
         ).catch(async (err) => {
           if (held !== undefined) await removeRunFiles(held.dir);
           throw err;
@@ -196,6 +205,7 @@ export async function launch(
     serena: deps.serena !== undefined,
     hasWorktrees: worktrees.length > 0,
     holdsConnections: held !== undefined,
+    skillsFind: !nativeSkills && skills !== undefined && skills.dir !== "",
   });
   const on = (name: string) => gated.includes(name as GatedTool);
   const admin = on(ADMIN_SERVER_NAME) ? deps.admin?.attach(caller, fm, boss) : undefined;
@@ -287,7 +297,9 @@ export async function launch(
     ...(held === undefined
       ? {}
       : { connections: { dir: held.dir, gate: held.gate, secrets: held.secrets, uses: held.uses } }),
-    ...(skills === undefined || skills.dir === "" ? {} : { skills: { dir: skills.dir, note: skills.note } }),
+    ...(skills === undefined || skills.dir === ""
+      ? {}
+      : { skills: { dir: skills.dir, note: skills.note, items: skills.items } }),
   };
 }
 

@@ -55,6 +55,11 @@ export const TOOL_CATALOG = [
     rule: "On for every session that holds a connection, and for root agents",
   },
   {
+    name: "majhi-skills",
+    summary: "Look up the skills turned on for the run, only when the work needs one",
+    rule: "On for a session whose CLI does not list skills itself (not Claude Code in a runner) and that has skills",
+  },
+  {
     name: "majhi-admin",
     summary: "Every majhi command, with the owner's approval policy",
     rule: "The captain, and root agents that list it. The captain keeps it",

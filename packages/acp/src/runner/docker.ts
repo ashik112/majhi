@@ -3,7 +3,13 @@ import { randomBytes } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { killTree } from "../exec.ts";
-import type { RunMount, Spawned, Spawner, SpawnRequest } from "../spawn.ts";
+import {
+  type RunMount,
+  SKILLS_OVERLAY_DIR,
+  type Spawned,
+  type Spawner,
+  type SpawnRequest,
+} from "../spawn.ts";
 
 /**
  * Runner isolation (SPEC 4.2, 6, Phase 2c). Each agent session runs in its own container from the
@@ -134,6 +140,14 @@ export function runMounts(req: SpawnRequest, cfg: RunnerConfig): RunMount[] {
     m.readOnly !== true && toolsDirs.includes(dirname(path)) && CACHE_ORG.test(basename(path));
   for (const m of mounts) {
     if (!isAbsolute(m.path)) throw new MountRefused(`A run can only mount absolute paths, not ${m.path}.`);
+    if (
+      m.target !== undefined &&
+      (m.readOnly !== true || resolve(m.target) !== resolve(req.cwd, SKILLS_OVERLAY_DIR))
+    ) {
+      throw new MountRefused(
+        `A run can only show a read-only mount at ${SKILLS_OVERLAY_DIR} of its folder, not ${m.target}.`,
+      );
+    }
     for (const path of realForms(m.path)) {
       if (path === "/") throw new MountRefused("A run cannot mount the whole disk.");
       for (const p of protectedPaths) {
@@ -154,7 +168,7 @@ export function runMounts(req: SpawnRequest, cfg: RunnerConfig): RunMount[] {
   // Same path twice (a repo inside the task folder) is one mount.
   const seen = new Set<string>();
   return mounts.filter((m) => {
-    const key = `${resolve(m.path)}:${m.readOnly === true}`;
+    const key = `${resolve(m.path)}:${m.readOnly === true}:${m.target ?? ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -210,7 +224,8 @@ export function dockerRunArgs(
   args.push("--workdir", req.scratch ? "/tmp" : req.cwd);
   for (const m of runMounts(req, cfg)) {
     const p = resolve(m.path);
-    args.push("--mount", `type=bind,source=${p},target=${p}${m.readOnly ? ",readonly" : ""}`);
+    const target = m.target === undefined ? p : resolve(m.target);
+    args.push("--mount", `type=bind,source=${p},target=${target}${m.readOnly ? ",readonly" : ""}`);
   }
   for (const key of Object.keys(req.env).sort()) {
     // The CLI needs its own PATH and HOME, so these go by value. They are never secrets.

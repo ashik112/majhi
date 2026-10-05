@@ -48,6 +48,7 @@ type SkillCommand =
   | "skills.enable"
   | "skills.enableAll"
   | "skills.disable"
+  | "skills.setMany"
   | "skills.remove"
   | "mcp.install"
   | "mcp.enable"
