@@ -4,6 +4,8 @@ import {
   BOSS_CHAT_BRIEF,
   CAPTAIN_LANE_BRIEF,
   CHAT_BRIEF,
+  type CiState,
+  CiStateSchema,
   type CoordinationMode,
   CoordinationModeSchema,
   DaySchema,
@@ -447,6 +449,35 @@ export class TaskRepo {
       (other) => statuses.get(other),
       (other) => unmerged.has(other),
     );
+  }
+
+  /** The open merge requests of every task, for the Shipping rows of Home. One query. */
+  openMrs(): { task: string; project: string; number: number; url: string; ci: CiState }[] {
+    return this.db
+      .select({
+        task: taskRepos.task,
+        project: taskRepos.project,
+        number: taskRepos.mrNumber,
+        url: taskRepos.mrUrl,
+        ci: taskRepos.ciState,
+      })
+      .from(taskRepos)
+      .where(eq(taskRepos.mrState, "open"))
+      .orderBy(asc(taskRepos.task), asc(taskRepos.pos))
+      .all()
+      .flatMap((r) =>
+        r.number === null || r.url === null
+          ? []
+          : [
+              {
+                task: r.task,
+                project: r.project,
+                number: r.number,
+                url: r.url,
+                ci: CiStateSchema.catch("none").parse(r.ci),
+              },
+            ],
+      );
   }
 
   /** Tasks with a merge request that is not merged: open, or closed without merging. */
@@ -972,7 +1003,11 @@ function subjectStatements(db: Db) {
       .groupBy(taskRepos.task)
       .prepare(),
     openIn: db
-      .select({ parent: taskLinks.other, n: sql<number>`count(*)`, newest: sql<string | null>`max(${tasks.createdAt})` })
+      .select({
+        parent: taskLinks.other,
+        n: sql<number>`count(*)`,
+        newest: sql<string | null>`max(${tasks.createdAt})`,
+      })
       .from(taskLinks)
       .innerJoin(tasks, eq(tasks.id, taskLinks.task))
       .where(and(eq(taskLinks.type, "parent"), inArray(taskLinks.other, IDS), ne(tasks.status, "done")))

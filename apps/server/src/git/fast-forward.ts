@@ -1,4 +1,4 @@
-import { git, gitOk } from "./git.ts";
+import { git, gitOk, refIsThere } from "./git.ts";
 import { checkedOutAt } from "./merge.ts";
 
 export type FastForwardOutcome = { ok: true; moved: boolean; detail: string } | { ok: false; reason: string };
@@ -34,7 +34,7 @@ export async function fastForwardBranch(req: {
 }): Promise<FastForwardOutcome> {
   const { source, branch, to, remote } = req;
   const ref = `refs/heads/${branch}`;
-  if (!(await gitOk(source, ["show-ref", "--verify", "--quiet", ref]))) {
+  if (!(await refIsThere(source, ref))) {
     return { ok: false, reason: `There is no local branch ${branch} to update.` };
   }
   const old = (await git(source, ["rev-parse", ref])).trim();

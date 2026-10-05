@@ -2,7 +2,7 @@ import { z } from "zod";
 import { AuthoritySchema } from "./authority.ts";
 import { AutonomyModeSchema, SpendSchema } from "./autonomy.ts";
 import { IdSchema } from "./ids.ts";
-import { AutonomyOrgSchema, BudgetSchema, type CaptainLevelSchema } from "./settings.ts";
+import { AutonomyOrgSchema, BudgetSchema } from "./settings.ts";
 import { TaskIdSchema, TaskPrioritySchema } from "./tasks.ts";
 
 /**
@@ -173,6 +173,8 @@ export type CaptainStatus = z.infer<typeof CaptainStatusSchema>;
 export const CaptainLogInputSchema = z.object({
   org: z.string().optional(),
   before: z.number().int().positive().optional(),
+  /** Only lines newer than this id, and only the few newest runs: what a tab that holds the log reads to catch up. */
+  after: z.number().int().nonnegative().optional(),
   limit: z.number().int().min(1).max(200).default(50),
 });
 export const CaptainLogResultSchema = z.object({

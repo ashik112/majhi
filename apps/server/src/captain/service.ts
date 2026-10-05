@@ -2,15 +2,12 @@ import {
   type AutonomyMode,
   type AutonomySettings,
   type CaptainChore,
-  CaptainChoreSchema,
   type CaptainOrg,
   type CaptainRunChoreResult,
   type CaptainRunnableChore,
   type CaptainStatus,
   CHORE_LABEL,
   type CommandMeta,
-  type CommandName,
-  commands,
   type Fact,
   PRIVATE,
   type RoomItem,
@@ -432,7 +429,7 @@ export class CaptainService {
       const ws = this.workspaceOf(org, settings.autonomy, sections.orgs[org]?.name);
       if (org === PRIVATE) day = ws.day;
       const authority = authorityOf(settings.autonomy, org);
-      const forYou = await this.deps.ownerCards?.(org) ?? 0;
+      const forYou = (await this.deps.ownerCards?.(org)) ?? 0;
       const line = summaryOf(this.repo.dayActions(org, ws.day), forYou);
       const spend = { used: spends.of(org) };
       const lane = this.deps.lanes.chat(org);
@@ -473,10 +470,16 @@ export class CaptainService {
     };
   }
 
-  log(q: { org?: string | undefined; before?: number | undefined; limit: number }) {
+  log(q: {
+    org?: string | undefined;
+    before?: number | undefined;
+    after?: number | undefined;
+    limit: number;
+  }) {
     return {
       actions: this.repo.actions(q).map(publicAction),
-      runs: this.repo.runs({ org: q.org, limit: Math.min(q.limit, 50) }),
+      // A catch-up read (`after`) carries only the newest runs: the tab merges them by id.
+      runs: this.repo.runs({ org: q.org, limit: q.after === undefined ? Math.min(q.limit, 50) : 5 }),
     };
   }
 

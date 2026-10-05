@@ -1,5 +1,107 @@
 # Progress
 
+## Faster test suite (built, not merged)
+
+Branch `perf/test-speed`. No test was deleted, skipped or weakened.
+
+- **Numbers.** Same command both times: `vitest run --maxWorkers=4 --testTimeout=60000`, on a shared Mac under load from other agents (load average 15 to 21), so read them as a ratio. Full suite wall time: **9:28 before, 7:18 after** (4045 tests pass, 0 fail; 3992 before, the difference is 28 new tests here plus main's). Sum of per-file time: 1798 s before, 1335 s after. The 2 minute target was **not** reached under this load; a run on a quiet machine is still to be measured.
+- **Per-file runs, one file alone (`--maxWorkers=1`), before to after:** settings.test 8 s to 4 s, send-back.test 12 s to 7 s, captain/done-when 18 s to 12 s, rooms/team 45 s to 16 s, tasks/shipped 26 s to 18 s, memory/housekeeper 19 s to 7 s, rooms/idle-watch 35 s to 16 s.
+- **Slowest 15 files, before (s):** mrs/flow 125, runs/attribution 62, rooms/team 57, mrs/multi-repo-ship 55, rooms/idle-watch 44, tasks/shipped 36, tasks/picked-repos 35, budgets/limit 35, rooms/mcp 34, captain/tell-ship 29, handoff/script 28, tasks/orchestrate 25, gitConnect/integration 24, notify/notify 24, host/checkScript 24.
+- **Slowest 15 files, after (s):** mrs/flow 99, runs/attribution 65, mrs/multi-repo-ship 44, host/checkScript 42, host/hostScript 35, rooms/idle-watch 29, rooms/team 29, tasks/shipped 28, captain/lane-reads 26, budgets/limit 23, handoff/script 23, backup/backup 23, captain/tell-ship 20, tasks/census-guard 19, captain/done-when 18. (The after run was under heavier load than the before run.)
+- **Transform time.** `fsModuleCache: true` in `vitest.config.ts` (vitest 5.0.2). On a two file run transform went from 44% of 5.6 s to 16% of 3.2 s, and transformed modules now persist between runs and worker processes (`node_modules/.vitest-cache`). The full run used the JSON reporter, so its transform line was not captured.
+- **Git processes, `captain/done-when`:** 1225 before, 929 after (this includes building the templates, which a normal run does once for all files). `mrs/flow`: 7084 before, 3772 after, counted with a PATH shim.
+- **What changed.**
+  - The sample world (org, account, agent, repo, project, config history) is built once per run and copied for each test (`testing/template.ts`, `testing/global-setup.ts`, `taskWorld`). The build fails if any file other than the listed repo config names the template's own folder. Sample repos made by `addRepo` are templates too. Each world still starts the project's card in the background, as registering the project did, because tests wait for it.
+  - Config changes use 3 git processes instead of 6 (`ConfigHistory.hasChanges` is one `status`; `commit` is `add` and `commit`, and only a failed commit looks at the index). `commit` now returns whether it committed, not the hash; nothing used the hash.
+  - Product git, a real speed win for the server too: `git/repo-config.ts` reads the repo's own config files and skips the `git config --get-regexp` that ran before nearly every git command, unless the config sets a key that could run a command, includes another file, or cannot be read in full (then git is asked, as before). `git/refs.ts` answers "does this branch exist" from the loose ref file or `packed-refs` instead of `git show-ref`, and leaves reftable, odd names and unreadable cases to git. Both have tests that compare against real git, including planted filters and worktrees.
+  - `host/testing/scripts.ts` looks each tool up once per process.
+- **Measured, no change.** Pool and isolation: 18 shared test files take 0.8 to 1.0 s under forks, threads or no isolation, so startup is not the cost; left alone. Polling helpers already poll every 5 to 10 ms with long deadlines, so no wait change was needed.
+- **Where the time still goes.** Process spawns (git, shell hooks). Under load one git call costs 30 to 45 ms. Largest left: `runs/attribution` runs majhi's real hook scripts on every ref update (that is what it tests); `git remote` and `git remote get-url` (about 10% of git calls in `mrs/flow`); `git status` in ship checks; each test's own `accounts.create` and `agents.create` commands (each is a config commit); the per-world card scan; host script tests that start shells.
+- **Watch.** One run (the counted one, before the card fix) had a single `orgs.create` config commit fail in `connections/mcp.test.ts` under load; it did not repeat in 6 parallel reruns or in the final full run. If it comes back, look at concurrent git in the config home.
+- **How to try it.** `pnpm vitest run <file>`; the templates live in a temp folder made and removed by the run.
+## Mac notifications show as majhi, and say so when macOS has them off (built, not merged)
+
+Branch `fix/mac-notifications`.
+
+- **Cause.** The first terminal-notifier post asked macOS for permission under the helper's 10 second timeout. The helper ended the process while the question was on screen, and macOS counted that as a No for good (`tccutil reset UserNotification` does not undo it here). From then on terminal-notifier exited 3, and majhi fell back to osascript, which macOS shows as Script Editor, with a click that opens Script Editor.
+- **Fix.** No osascript on macOS. The notifier result is typed from the exit code: `shown`, `blocked` (exit 3), `unavailable`, `failed`. Blocked raises one Needs you item, "Mac notifications are off for majhi", with "Open Notification settings" and "Check again" (the item clears when a test notification shows). It also reaches the banner and the Home list through the existing decision list (kind `notifications`, label Access).
+- **Shows as majhi.** The helper builds its own small app (`majhi.app`, bundle id `dev.majhi.alerts`, the majhi icon, ad hoc signed, verified) with `swiftc` at start. It falls back to terminal-notifier where there are no Command Line Tools. The permission question is asked once, at helper start, by a process that is never ended early. See DECISIONS, 2026-10-05.
+- **What the owner will notice.** After the helper restarts, macOS asks once to allow notifications for "majhi". Say Yes. If it was already turned off, majhi shows the item above instead of a Script Editor banner.
+- **Verified.** Typecheck 0. Tests: `apps/host/src/macNotifier.test.ts` (exit 3 is blocked and nothing runs osascript, from the code not the text, any other code is failed, build and verify, a bad signature or a program that does not start installs nothing, the question is asked without the short timeout, terminal-notifier fallback with its pinned hash), `apps/server/src/notify/mac-access.test.ts` (one item however many alerts are blocked, cleared after a shown test, raised again if blocked again). Real build on this Mac: compile, icon, ad hoc signature and `status` all pass, and usernoted accepts the bundle and shows its permission question. Browser: the new item on Home and Needs you at 1440x900 and 1100x800 (the server list was stubbed to add the item, since the e2e helper has notifications off).
+- **Left.** Pressing Allow on the macOS question and a click on a real notification were not exercised (they need the owner). The item stays until a notification shows, even if the owner turns Mac notifications off in setup.
+
+## Disk hygiene: caches after 1 day, old images removed after each update (built, not merged)
+
+Branch `feat/disk-hygiene`.
+
+- **Caches after 1 day.** New setting `cleanup.caches_after_days` (default 1). The captain's cleanup chore now runs a caches-only pass (`CleanupService.run(..., cachesOnly, cachesAfterDays)`, port `freeCaches`) for tasks done longer than that. It frees only ignored dependency and tool caches. Source, branches and room history stay. It skips a task that was reopened, was closed more recently, or has uncommitted changes in its worktree, and it re-checks each task when it runs. The 30-day full cleanup keeps `cleanup.after_days`. The owner's explicit "Preview dependency caches" button still works at once, as before. Settings row: "Free dependency caches of finished tasks after N days", above Free space in the Cleanup panel.
+- **Old images after each update.** After the new majhi is healthy the helper (`apps/host/src/diskHygiene.ts`) removes `majhi-server:previous` (and Laya's), preview images `majhi-preview-<task>` of tasks that are done or gone with their buildx builders and builder state volumes, and dangling images that carry a majhi label (`majhi.container=image` or the new `majhi.owned=build` that compose puts on the images it builds). Rollback only uses the previous tag inside the same update run, so none is kept afterwards. The server writes `open-tasks.json` just before the update; without it every preview is kept. What was removed, with sizes, is a line in the update notice.
+- **Removed on purpose.** The old clean-up ran an unfiltered `docker image prune -f` (it also removed other projects' dangling images) and trimmed the build cache with `builder prune`. Both are gone: the owner forbids touching the build cache and other projects' images.
+- **Verified.** Typecheck 0. Tests: `tasks/cleanup.test.ts` (2 days freed, 12 hours kept, reopened kept, uncommitted kept, source and history stay), `host/diskHygiene.test.ts` (filters select only majhi items, other project's image and volume never selected, open task's preview kept, no build cache prune in any docker args), `host/update.test.ts`.
+- **Left.** Volume sizes are not shown (docker does not list them cheaply). The first update after this one still leaves old unlabelled dangling images; they go the next time they are labelled builds.
+## Skills & MCP page, and skills on for every agent by default
+
+Branch `feat/skills-mcp-page`.
+
+- **What changed.** Skills and MCP servers are one sidebar page, "Skills & MCP" (`/skills`, `g k`), under Agents. Skills left the Settings list; MCP servers left Connections. Old links redirect: `/setup?section=skills` to `/skills`, `/setup?section=mcp...` and `/connections?tab=mcp` to `/skills?tab=mcp`. Screens map, palette, shortcuts table and `?` help are updated.
+- **The page.** One-line rows (mark, name and description, workspace, avatars with "N of M", lamp with the one-line reason, one button for the row's state: Enable for all, Fix, Sign in, Test, Retry). Problems sort first. A row opens a right-side detail (full description, source and version, files, last error with the fix, per-agent switches grouped by workspace, Update, Test, Remove). One Add dialog searches the directory or registry, takes a pasted link or command, and shows the preview before installing; the new row is highlighted. Keys: j/k, Enter, `/`, `a`. The install and review cards are the existing ones, moved into the dialog.
+- **Default on.** A skill's lock entry has `defaultOn` and `optOut`. A new skill is on for every agent, including agents created later, because the run reads `effectiveFor(agent, listed)` at launch instead of anyone writing the skill into agent files. `skills.disable` records an opt-out; `skills.enable` clears it; `skills.enableAll` (new, "Enable for all agents" in the page) turns the rule on and clears opt-outs. Skills installed before this read as off until the owner applies Enable for all. Updating a skill keeps its flags. Skills are global (one store), so "all agents" means every agent; there is no workspace-scoped skill to narrow it.
+- **Verified.** Typecheck clean; `skills.test.ts` (new test: install enables for all, an agent created later has it, an opt-out sticks, enable-all clears it), `admin/screens.test.ts`, census guard. Browser, isolated e2e server, 1440 and 1100, 16 skills, 10 MCP servers, 4 workspaces, failing, unconfigured and needs-sign-in servers, plus the empty state; no console errors or failed requests. PNGs in the branch report.
+- **Left.** An open agent session does not restart when a default-on skill lands (it does when the agent file changes); the next run has it. The install progress path through a real source was not driven in the browser (no network in e2e); the dialog opens and its cards are the previous ones.
+
+## Nothing merges unless the checks are green for the exact commit (built, not merged)
+
+Branch `feat/merge-needs-green`.
+
+- **Cause.** The merge decision answer (`decisions.answer` merge, `inbox/service.ts`) and the review card buttons (`room.cardAction`) call `tasks.merge` as the owner with no look at the hand-off. `TaskService.merge` itself checked only conflicts and uncommitted files. The captain's ship chore (`shipCheck`) did wait for the hand-off, but the other paths never asked. The owner's merge also ran no secret scan; only the ship readiness did.
+- **The rule, in one place.** `MergeGate.checks` (`handoff/merge-gate.ts`) reads the task's head commits and the hand-off result recorded for that head, and `decideMerge` returns a typed `MergeVerdict` (`ok`, `running`, `failed` with the check, `stale`). `TaskService.merge` is the only function that merges a task branch, and it calls the gate before anything is touched. So the owner, the captain, decision answers, the ship chore, push after merge, a ship that waited for its lead and any agent tool all go through it. The gate is a required dependency of `TaskService`. Refusals are `MergeRefused` (typed, 409), and `tasks.shipOptions` returns `checks: { verdict, head }`.
+- **Overrides.** Only the owner, with `confirmChecks: "<head>"` on `tasks.merge` or `room.cardAction`, and only for a failed test, build or lint check. Agents and the captain are refused up front (`refuseForAgents`, the command handlers and the card action). A wrong head is refused. The override is written to the audit trail (`merge-override`) and a room note. The secret scan is a hard block with no override, and now applies to every merge path, not only the ship readiness.
+- **No checks set up** (no test, build or lint command on the project card): merges as before, and the Ship panel says "No checks set up for this project."
+- **UI.** The Ship panel shows the verdict line. A stale or never-run verdict shows "Run checks"; a failed one shows "Fix with agent" (sends the failure to the lead) and "Merge anyway (checks failed: test)"; running shows a disabled "Checks running" and polls. The Needs you list blocks Merge with the verdict sentence and sends the owner to the task.
+- **Also.** A done task can now be checked (its review-state checks do not apply), so its unshipped work can still be merged. The ship chore's `shipCheck` also reads the gate verdict.
+- **Verified.** Typecheck clean. Tests: `handoff/merge-gate.test.ts` (running, failed test, stale, green, agent and captain refused and cannot confirm, wrong sha, owner override recorded, no-checks project), plus handoff, captain ship, mrs, inbox, admin and tasks suites. Browser on an isolated e2e server at 1440x900 and 1100x800: failed, stale, run checks, merge anyway; no console errors or failed requests.
+- **Left.** MRs merged on the host by CI (`mrs.merge`, `tasks.mergeMrs`) follow the host's own CI, not this rule: they do not merge a task branch locally. Typecheck is not a separate hand-off step, so it is not in the verdict.
+## Less web traffic (built, not merged)
+
+Branch `perf/web-traffic`.
+
+- **What changed.** Home reads no decision detail: a row shows what `decisions.list` carries (the diff stat and checks line on ship rows is gone). A detail is read only for the selected decision, under its own key (id and a version made from the list fields), so a list refetch never reads details again. `captain.log` takes `after`: a tab holding the log reads only newer lines and merges them, and reads it all again only when the catch-up filled its page. The `/health` poll runs every 30 s while the events socket is open and every 1.5 s only while it is down; the build-watch poll stops once the socket hello named the build. The server's 30 s ops tick tells the tabs only when it changed something (it used to refetch ops, decisions and findings every 30 s). The Captain drawer's code loads when it opens, and the idle prefetch of the Captain page is gone (hover still warms it), so room-pane, captain-page and decision-list no longer load on Home.
+- **What the owner will notice.** Fewer requests while Home is open; ship rows on Home no longer show "+n -n" or the checks line (open the decision for them).
+- **How verified.** Isolated e2e server with the new `team-api-volume` seed and running fake agents; 20 s idle on Home, Needs you and Captain, before and after. Unit tests for the topic to query-key mapping and the log merge.
+- **Left.** Under churn (a task created every 5 s) `tasks.list` and `decisions.list` are still read in full 3 times per 20 s: some server events (`services.ts` emits `tasks` without naming tasks) trigger full list reads. The Captain page still reads `autonomy.status` (28 KB) on each autonomy event.
+
+## Home as one list by who holds the ball (built, not merged)
+
+Branch `feat/home-flow`.
+
+- **What changed.** Home is no longer four columns. It is one list of one-line rows in sections: Needs you, Running now, Shipping, Up next, To triage, Captain handled, Done today. Empty sections are not drawn; an all-quiet Home says so and offers New task. Every row has a primary verb button that fixes its reason (Answer, Review, Resume, Watch, Fix with agent, Merge, Start now, Sign in, Raise limit, Verify, Undo).
+- **Up next reasons.** New `lifecycle.blockerOf` in `packages/shared/src/lifecycle/blocker.ts` returns a typed reason for a ready or inbox task (dependency, account signed out or at limit, machine busy, no free slot, tasks at once, budget hold, not triaged, nobody started it), in the order of the lifecycle design section 5. Read through the new command `tasks.blockers`. `tasks.homeFacts` gives open merge requests with CI state and what working agents do now.
+- **Keys.** j/k and arrows move through all rows, Shift+J/K jump sections, Enter opens, 1 to 3 run the row's numbered actions, x selects (then 1 runs on all selected), / filters, t opens To triage. `g` then a letter still goes to pages; Cmd J, Cmd K and Esc are untouched.
+- **What the owner will notice.** Needs you is exactly `decisions.list`, so it matches the bell. At 1100px the detail and the other numbered actions drop to a second line of the focused row; the wait and the main button stay at the right.
+- **Not sourced.** Per-row cost, step progress, the CI failure reason (shows "CI failed"), and why a paused task paused when no decision exists (shows "Paused, no agent is working on it").
+- **Also fixed.** `guardMounts` wrote `refs/heads/task/.keep`, which fails for any branch not under `task/`, so tasks could not start. It now writes into the branch's own folder (separate commit).
+- **Verified.** Typecheck clean. Tests: `blocker.test.ts`, `home-model.test.ts`. Browser on isolated e2e servers at 1440x900 and 1100x800 with about 50 tasks and live fake agents, an empty home, and a 200-task seed; keyboard flow checked; no console errors or failed requests.
+## fix/autopilot-load: Auto-pilot made majhi slow (not merged)
+
+Three causes of "slow with Auto-pilot on, captain chats do not load".
+
+- **Stale tab after an update.** The web build writes a build id into index.html (a hash of the hashed file names). The server reports it on `/health` (`build`) and in a `hello` first frame of `/api/events`. A tab on another build reloads itself at once when no text box holds unsent text. Otherwise it shows "majhi was updated. Reload to use the new version." with a Reload button, and reloads by itself once the text is sent. At most one self-reload a minute per server build, so a stale cache cannot loop. The rule is `reloadDecision` in `packages/shared/src/build-id.ts` (test: same build, different build, unsent text, no id).
+- **Hand-off checks starved the Mac.** Default CPUs per check are `max(2, floor(cores/6))`, and at most `clamp(floor(cores/3 / cpus), 1, 2)` checks run at once. On 10 cores that is one check of 2 CPUs, not two of 5. Hand-off containers run with `--cpu-shares 256`, so agent runs and the server win any contention. `containers.handoff_cpus` still overrides. See DECISIONS.
+- **Captain retried what the gates refuse.** The wake digest now says which gate holds each backlog task and each resumable paused task ("ACM-3 waits: This workspace works on 1 task at once and ACM-2 is running."), with a line telling the captain not to start them. Gates (`StartGate`: machine busy, workspace at tasks-at-once, no free agent slot) are typed, read live, and part of the facts key. A refusal only writes events and never wakes the captain, so the same gate in the same state is the same fact: no new wake until it changes. A refused resume says its line once, not every minute. A task that waits for room no longer raises the "running, but no agent is working" alarm.
+
+**Measured** on the in-process world (real services, fake agent, `bossWorld`; Acme with one running task, tasks-at-once 1, three waiting tasks, a captain that tries every task its digest does not mark as waiting, a news wake every 25 s for 150 s, scaled to 10 minutes):
+
+| | captain turns / 10 min | refused starts / 10 min |
+|---|---|---|
+| before | 16 | 32 |
+| after | 16 | 0 |
+
+Turns stay equal here because the test sends the wakes itself. What changes is that no turn is spent on a start the gates refuse. I found no path where a refusal wakes the captain: refusals write `decision` events, and the facts key does not read events. The paid retries were the captain choosing to try gated tasks on wakes it got for other reasons, which the digest now prevents.
+
+**How verified.** Typecheck clean. Tests: `autonomy/driver.test.ts` (digest names the gate; a refusal by the same gate does not wake again; one wake when the gate clears), `handoff/limits.test.ts`, `packages/shared/src/build-id.test.ts`. Browser (isolated e2e server, 1440x900 and 1100x800): with unsent text and a different server build the bar shows and the tab reloads once the text is gone; with nothing unsent it reloads once. No console errors. Shots: `scratchpad/fix-autopilot-load/bar-1440.png`, `bar-1100.png`.
+
+**Left.** The repo rule (two tasks on one repo) is not a typed gate yet, so the digest does not name it. `autonomy/live-state.test.ts` (2 tests) and `autonomy/slots.test.ts` (1 test) fail the same way on main in this checkout: the test world's git lacks `refs/heads/task` (`ENOENT ... .git/refs/heads/task/.keep`), so the first started task pauses with an error and no gate holds. Not caused by this branch.
+
 ## Overnight 2026-10-05: summary for the owner (deployed, ff22e3dd)
 
 Live majhi runs ff22e3dd. A backup was taken before the update. All server, web, host and shared tests pass (3,951), typecheck is clean, and a final browser smoke test on an isolated server passed. Since yesterday afternoon: 29 merges, 28,268 lines removed and 14,293 added.
@@ -399,35 +501,53 @@ Next stage after the list: the task model (one hold per task, one transition tab
 - **Tests.** `features/decisions/model.test.ts` (the count), `lib/naming.test.ts` (retired words in `apps/web/src`), `events/watcher.test.ts` (`boss.chat` emits nothing), `packages/shared/src/plain-text.test.ts`. Shots and rules in `e2e/shots.captain.ts` (`cohesion`).
 - **Left:** Decisions "Merge" is still the action name where the room offers a Ship menu (Merge is one of its entries). The Board column and cards still say "Your turn" and "Finished" from their own lamps. `autonomy.status` takes about 0.6 s and `captain.status` about 0.35 s on the live data; both run on the single server thread and are in the captain and autonomy code, which this pass did not touch.
 
-## Phase 7: Resilience and health (PRV-22, in progress)
+## Phase 7: Resilience and health (PRV-22, built)
 
-Built on `task/prv-22-phase-7-resilience-and-health`, with `main` merged (Phases 6 and 11 in). Phase 2b already gives checkpoints, offline pause and resume (probe plus network-looking errors), wake, restart and crash resume, and context-window recovery (`isContextError`, `max_tokens`, `max_turn_requests` go to the note built by majhi). The usage reads, the Usage page meters and the health checks exist since Phases 1 and 2c. What Phase 7 adds:
+Branch `task/prv-22-phase-7-resilience-and-health`. The server and web halves reached `main` at `ac821e18` (merge `6968e842`); the branch then adds the e2e test, the account readout on the new Home top bar, limit notes that take the reset from a run's limit error, and the decisions. Phase 2b already gave checkpoints, offline pause and resume (a probe plus network-looking errors), wake, restart and crash resume, and context-window recovery. Phases 1 and 2c gave the usage reads, the Usage page meters and the health checks.
 
-### Plan, in order
+### What works
 
-1. **Limit error shapes per CLI** (`packages/acp/src/limit-failure.ts`, shapes in each tool's registry entry). Claude Code and Codex, login and API key: usage limits, rate limits (429) and quota or credit errors, with the reset time when the text gives one ("resets 3pm (Europe/Berlin)", "try again at 3:40 PM", "try again in 2 hours 13 minutes", an epoch after `|`). Checked on errors and on a short last message of a failed turn, never on prose. A context-window error and an overload are not limits.
-2. **Account at limit.** A run's limit error marks its account (`AccountView.limit`: since, until, resetKnown, detail). The account is `at-limit` until then. Without a reset in the error: the full usage window's reset, else 15 minutes.
-3. **Fallback handoff.** When the agent's `fallback` exists, its account is not at limit and is signed in, and `resume.handoff` allows it (majhi, org; default on): the fallback takes the agent's place in the team, gets majhi's handoff note and the pending prompt, and continues from the checkpoint. One room line says so. The same applies before a turn when the account is already at limit, and to a start that fails on a limit.
-4. **Pause and auto-resume at reset.** Otherwise the run pauses with reason `limit`, the prompt queued again. Other agents on the account pause at their next turn boundary. The budget lift sweep (every 60 s) resumes them once the account's `until` passes, when `resume.auto` allows; otherwise the room says the limit reset and the owner resumes.
-5. **Context-window errors**: check the shapes of both CLIs against `isContextError`, add tests.
-6. **Usage and health in the top bar and Studio.** The board's top bar shows the busiest account's window, with its reset and a link to Usage; at-limit accounts show until when, in Usage and Accounts. Orgs form: the handoff switch next to auto-resume.
+- **Limit detection per CLI.** `packages/acp/src/limit-failure.ts`, with the shapes in each tool's registry entry (`limitShapes`). Claude Code and Codex, sign-in and API key: usage limits, rate limits (429) and credit or quota errors, with the reset when the message names one (an epoch after `|`, "resets 3pm (Europe/Berlin)", "try again at 3:40 PM", "try again in 2 hours 13 minutes"). Errors count, and so does a turn whose whole text is one short limit line (the CLI's result handed back as text); an agent's prose about rate limits does not. Context-window errors and overloads are not limits.
+- **The account at its limit.** A limit error marks the account (`AccountView.limit`: since, until, resetKnown, detail), `at-limit` until `until`: the error's reset, else the reset of a full usage window, else 15 minutes (shown as "about").
+- **Fallback handoff.** When the agent's fallback (Agents, "When usage runs out or the run breaks", "Hand the run to") may work in the org, is not on the team, its account is signed in, not at a limit and not held by a budget, and `resume.handoff` is on (Hub setup, Resume; per org in the Orgs form; default on): the fallback takes the agent's place in the team, starts from majhi's handoff note (TASK.md, the last checkpoint, the room since, the diff) with the queued messages, and the room says "@acme-lead hit its usage limit (resets 4:24 PM). @acme-builder continues from the checkpoint." The same happens before a turn when the account is already at its limit, and when a start fails on a limit.
+- **Pause and resume at the reset.** Otherwise the run pauses with reason `limit`, its prompt queued again. Other agents on the account hand off or pause at their next turn boundary. The 60 second lift sweep resumes them once the reset passes; with `resume.auto` off the room says once that the limit reset and the task waits for the owner.
+- **Context-window errors.** `isContextError` is checked against both CLIs' wordings; recovery through majhi's note is Phase 2b's.
+- **Usage and health in the UI.** Home's top bar ends with the fullest account of the workspace ("claude-acme-1 82%", amber from 80%, "claude-acme-1 at limit" in the limit lamp's colour, every account's windows and resets in its tooltip, a link to Health and usage; hidden under 1200 px). Health and usage rows and the account details say "At limit until 4:24 PM" with the CLI's message as the tooltip. The sidebar's Agents now and the paused cards say "At limit, back 16:24", from the limit error's reset first.
 
-### How it is tested
+### How to try it
 
-- Unit: every limit shape per CLI and auth type, reset parsing, negatives (context errors, overload, auth errors, prose).
-- Integration with the fake agent (a new `limit:<message>` prompt): hand off to a fallback, pause without one, fallback also at limit, policy off, resume at reset with a fake clock, auto-resume off, a second agent on the account pausing.
-- E2E: a simulated limit hands off to the fallback; network drop and return (`phase2b-runs.spec.ts`) still pass.
+1. Give an agent a fallback on another account: Agents, the agent, "Hand the run to".
+2. Run a task with it. When its account runs out mid-run, the room says who took over, the fallback sits in its place in the room, and the account shows at its limit until the reset on Home's top bar and in Health and usage.
+3. Without a fallback, or with the handoff off for the org, the task pauses as "at its limit" and continues by itself at the reset.
+4. With the fake adapters: write `Claude AI usage limit reached|<epoch>` into `<majhi home>/accounts/<account>/fake-limit`, and every prompt of that account fails with it (`e2e/phase7-limits.spec.ts`).
 
-### Server half of steps 1 to 4 (built, web not yet)
+### Done when
 
-- **Where:** detection in `packages/acp/src/limit-failure.ts`; the account mark in `accounts/` (`markLimit`, `limitOf`, `expireLimits`); the handoff and pause in `runs/manager.ts` (`handOffOrPause`, `takeOverFor`, `pauseForAccount`), with the words in `runs/limit.ts`; the swap in `tasks/service.ts` (`takeOver`); the lift at the reset in `budgets/limit-action.ts` (`liftLimits`). `resume.handoff` is in the org view and patch.
-- **Tests:** `limit-failure.test.ts`, `accounts/limit.test.ts`, `runs/limit.test.ts` (fake agent `limit:` and `limit-text:` directives, fake clock), `budgets/limit.test.ts`.
-- **Known limits:**
-  - The fallback keeps the agent's repos override only: a model or effort set for the agent may not exist on the fallback's account.
-  - A fallback already on the team does not take over; the run pauses for the reset instead.
-  - Only queued owner and handoff items follow the handoff. The fallback's queue is in memory, so a restart before its first prompt can drop other entries.
-  - After a restart, a paused task with no run in memory is lifted whether a budget or an account limit paused it, and `resume.auto` does not gate that lift.
-  - `resetKnown` is false when the reset comes from the usage window or the 15 minute guess.
+- Unplugging the network mid-run pauses the task, and plugging it back resumes it from the checkpoint with no lost work: `e2e/phase2b-runs.spec.ts`, "offline pauses the running task, and it resumes on its own when the connection is back" (built in Phase 2b).
+- A simulated limit error hands off to the fallback: `e2e/phase7-limits.spec.ts`, an account at its limit mid-run hands the task to the fallback with a handoff note, and Home's top bar shows the account at its limit.
+
+### Verified
+
+On the branch with `main` merged at `a99f71c0`, 4 Oct:
+
+- `pnpm -r typecheck` and `tsc -p e2e` pass. The e2e check needed `agentsOff` in the two Connect screenshot fixtures, which `main` lacked.
+- Biome passes on the changed files.
+- Phase 7 unit tests: 73 of 73 pass. They cover `limit-failure`, the fake agent, `config/settings`, `accounts/limit`, `budgets/limit`, `runs/context`, `runs/limit` and `runs/start-failure`. The settings test also needed `main`'s new cleanup and container defaults.
+- Done when, in the browser with the fake adapters: 3 of 3 pass. The specs are `e2e/phase7-limits.spec.ts` and `e2e/phase2b-runs.spec.ts`: the limit handoff, offline pause and resume, and waiting in line at the account limit.
+- The whole unit and e2e suites were not run from the task (CLAUDE.md test rule: they run once, at the end of a phase).
+
+### Left and known issues
+
+- A fallback already on the team does not take over; the run pauses for the reset instead.
+- The fallback keeps only the agent's repos override: a model or effort set for the agent may not exist on the fallback's account.
+- The agent that hit its limit does not come back by itself after the reset; the fallback keeps the task.
+- Only queued owner and handoff messages follow the handoff, and the fallback's queue lives in memory, so a restart before its first prompt can drop other queued entries.
+- After a majhi restart, a task paused at a limit lifts at the reset whatever `resume.auto` says: the stored pause does not say whether a budget or an account limit set it.
+- API-key accounts have no usage windows, so a rate limit without "try again in" is held for the 15 minute guess.
+
+### Owner-only checks
+
+- A real signed-in Claude Code and Codex account, and an API key, reaching their limits: the shapes come from the CLIs' published wording, not from a live account at its limit.
 
 ## Captain step 6b: staffing and lead handover (built)
 

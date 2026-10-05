@@ -166,15 +166,16 @@ import {
   UpdateStatusSchema,
 } from "./host.ts";
 import {
+  BoardCountsSchema,
   DecisionAnswerInputSchema,
   DecisionBatchInputSchema,
   DecisionBatchResultSchema,
   DecisionDetailSchema,
-  BoardCountsSchema,
   DecisionListSchema,
-  OwnerDecisionSchema,
   DecisionRecommendInputSchema,
+  OwnerDecisionSchema,
 } from "./inbox.ts";
+import { BlockerSchema } from "./lifecycle/blocker.ts";
 import {
   McpAgentInputSchema,
   McpInstallInputSchema,
@@ -211,6 +212,7 @@ import {
   TaskRecordSchema,
   ThreadSchema,
 } from "./memory.ts";
+import { MergeChecksSchema } from "./merge-checks.ts";
 import {
   MarkMergedResultSchema,
   MergeMrsResultSchema,
@@ -321,6 +323,7 @@ import {
   SkillAgentInputSchema,
   SkillInstallInputSchema,
   SkillInstallResultSchema,
+  SkillNameInputSchema,
   SkillNameSchema,
   SkillSchema,
   SkillSearchResultSchema,
@@ -331,6 +334,7 @@ import {
   CardActionSchema,
   ChangeBranchInputSchema,
   ChangeBranchResultSchema,
+  CiStateSchema,
   MergeMethodSchema,
   ProjectConfigSchema,
   ProjectViewSchema,
@@ -344,6 +348,13 @@ import {
   TaskSchema,
   TaskSummarySchema,
 } from "./tasks.ts";
+import {
+  InstalledToolSchema,
+  ToolInstallInputSchema,
+  ToolRemoveInputSchema,
+  ToolsListInputSchema,
+  ToolsListSchema,
+} from "./tools.ts";
 import {
   TriggerCreateInputSchema,
   TriggerIdSchema,
@@ -365,13 +376,6 @@ import {
   UsageRangeSchema,
   UsageSummarySchema,
 } from "./usage.ts";
-import {
-  InstalledToolSchema,
-  ToolInstallInputSchema,
-  ToolRemoveInputSchema,
-  ToolsListInputSchema,
-  ToolsListSchema,
-} from "./tools.ts";
 import {
   WatchIdInputSchema,
   WatchOverviewInputSchema,
@@ -501,6 +505,8 @@ export const ShipOptionsSchema = z.object({
   mr: ShipOptionSchema,
   /** Mark the task done. `unshipped` lists the repos whose commits would stay behind on their branch. */
   done: ShipOptionSchema.extend({ unshipped: z.array(UnshippedRepoSchema).optional() }),
+  /** The merge rule for the task's head now: a merge goes through only when this is `ok`. */
+  checks: MergeChecksSchema.optional(),
 });
 export type ShipOptions = z.infer<typeof ShipOptionsSchema>;
 const ById = z.object({ id: IdSchema });
@@ -1585,6 +1591,39 @@ export const commands = {
       decisions: z.array(OwnerDecisionSchema).optional(),
     }),
   },
+  "tasks.blockers": {
+    risk: "read",
+    summary:
+      "Why each ready or inbox task is not running, as a typed reason (dependency, account signed out or at its limit, machine busy, no free slot, workspace at its tasks-at-once limit, budget hold, not triaged, or nobody started it), in the order the checks run. A task with no entry, or a null blocker, is not waiting to start. Read it before starting work: it says which check holds a task back",
+    input: Empty,
+    output: z.array(z.object({ task: TaskIdSchema, blocker: BlockerSchema.nullable() })),
+  },
+  "tasks.homeFacts": {
+    risk: "read",
+    summary:
+      "What Home shows beyond the task list, in one read: the open merge requests with their CI state, and what each agent that is in a turn now is doing",
+    input: Empty,
+    output: z.object({
+      mrs: z.array(
+        z.object({
+          task: TaskIdSchema,
+          project: IdSchema,
+          number: z.number().int().positive(),
+          url: z.string(),
+          ci: CiStateSchema,
+        }),
+      ),
+      doing: z.array(
+        z.object({
+          task: TaskIdSchema,
+          agent: IdSchema,
+          text: z.string().optional(),
+          /** When the turn started (UTC ISO). */
+          since: z.string().optional(),
+        }),
+      ),
+    }),
+  },
   "tasks.get": {
     risk: "read",
     summary: "Show one task",
@@ -1907,6 +1946,8 @@ export const commands = {
       createRemoteBranch: z.boolean().default(false),
       /** Owner only. A protected repo ships only alone (project set to it) with its name typed here. */
       confirmProtected: z.string().optional(),
+      /** Owner only. Merge past a failed check: the head this merge sends, as `tasks.shipOptions` says it. Never for the secret scan. */
+      confirmChecks: z.string().optional(),
       /** Default `merge`: fast-forward when it can, else a merge commit. */
       method: MergeMethodSchema.optional(),
       /** After a clean merge (and push), remove the worktree and delete the local branch majhi created. */
@@ -2348,6 +2389,8 @@ export const commands = {
       createRemoteBranch: z.boolean().optional(),
       /** For done: the owner confirmed closing with work not shipped. */
       unshipped: UnshippedChoiceSchema.optional(),
+      /** For merge and mergePush: the owner merges past a failed check by sending the head from the ship options. */
+      confirmChecks: z.string().optional(),
     }),
     output: z.object({
       item: RoomItemSchema,
@@ -2607,7 +2650,7 @@ export const commands = {
   "skills.install": {
     risk: "change",
     summary:
-      "Install skills from a source (owner/repo, a repo or tree URL, a git URL, a SKILL.md or archive URL, a folder) or an uploaded zip. The first call only fetches and returns a preview (name, description, files, source) with a previewId; nothing is installed. Show the owner the preview, and after they agree call again with confirm set to the previewId. An installed skill is not enabled for any agent: use skills.enable",
+      "Install skills from a source (owner/repo, a repo or tree URL, a git URL, a SKILL.md or archive URL, a folder) or an uploaded zip. The first call only fetches and returns a preview (name, description, files, source) with a previewId; nothing is installed. Show the owner the preview, and after they agree call again with confirm set to the previewId. A new skill is on for every agent; skills.disable turns it off for one",
     input: SkillInstallInputSchema,
     output: SkillInstallResultSchema,
   },
@@ -2641,13 +2684,21 @@ export const commands = {
   "skills.enable": {
     risk: "change",
     summary:
-      "Turn an installed skill on for one agent: adds it to the agent file's skills list. Its next run gets the skill",
+      "Turn an installed skill on for one agent: adds it to the agent file's skills list and clears the agent's opt-out. Its next run gets the skill",
     input: SkillAgentInputSchema,
+    output: SkillSchema,
+  },
+  "skills.enableAll": {
+    risk: "change",
+    summary:
+      "Turn an installed skill on for every agent, now and for agents created later. Agents that opted out get it back",
+    input: SkillNameInputSchema,
     output: SkillSchema,
   },
   "skills.disable": {
     risk: "change",
-    summary: "Turn a skill off for one agent: takes it off the agent file's skills list",
+    summary:
+      "Turn a skill off for one agent: takes it off the agent file's skills list and records an opt-out when the skill is on for all agents",
     input: SkillAgentInputSchema,
     output: SkillSchema,
   },

@@ -11,6 +11,7 @@ import { topicsFor } from "./events/hub.ts";
 import { HealthService } from "./health/service.ts";
 import { HostLink } from "./host/link.ts";
 import { createApp } from "./http/app.ts";
+import { readBuildId } from "./http/build-id.ts";
 import { eventLoopLag, LIMITS, SelfChecks, startSelfWatch } from "./ops/self.ts";
 import { RepoScanner } from "./scan/scanner.ts";
 import { createServices, type ServiceOptions, type Services } from "./services.ts";
@@ -69,6 +70,8 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     majhiHome: env.majhiHome,
     working: () => services.runs.turnsInFlight(),
     beforeUpdate: () => services.backup.before("before-update"),
+    openTasks: () =>
+      [...services.store.tasks.statuses()].flatMap(([id, status]) => (status === "done" ? [] : [id])),
   });
   // An "Update when they finish" from before a restart goes on waiting.
   void system.restore().catch(() => undefined);
@@ -86,10 +89,12 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
   );
   services.admin.bind(dispatch);
   services.bindCaptain(dispatch);
+  const build = readBuildId(env.webDist);
   const app = createApp({
     version: env.version,
     commit: env.commit,
     webDist: env.webDist,
+    build,
     dispatch,
     host: { link: hostLink, majhiHome: env.majhiHome },
     uploads: services.uploads,
@@ -211,6 +216,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       stopSelfWatch = startSelfWatch(services.ops.watch, selfChecks);
       sockets = attachSockets(server, {
         events: services.events,
+        build,
         terminals: services.terminals,
         rooms: {
           snapshot: (id) => services.tasks.snapshot(id),

@@ -38,6 +38,7 @@ const GROUP: Record<OwnerDecisionKind, KindFilter> = {
   batch: "access",
   incident: "incident",
   trust: "trust",
+  notifications: "access",
 };
 
 export function kindFilterOf(decision: Pick<OwnerDecision, "kind">): KindFilter {
@@ -146,6 +147,8 @@ export function actionOf(link: DecisionLink): BannerAction {
       return { kind: "page", to: "/playbooks" };
     case "watch":
       return { kind: "page", to: "/watch" };
+    case "setup":
+      return { kind: "page", to: "/setup", search: { section: link.section } };
   }
 }
 
@@ -165,6 +168,8 @@ export function openLabel(link: DecisionLink): string {
       return "Open Playbooks";
     case "watch":
       return "Open Watch";
+    case "setup":
+      return "Open settings";
   }
 }
 

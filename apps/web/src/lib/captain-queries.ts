@@ -1,6 +1,7 @@
 import type { CaptainStatus, CommandInput, CommandOutput } from "@majhi/shared";
 import { type QueryClient, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ApiRequestError, cmd } from "./api";
+import { type CaptainLog, LOG_LIMIT, mergeLog, replaceAction } from "./captain-log";
 import { queryKeys } from "./queries";
 
 const statusKey = [...queryKeys.captain, "status"] as const;
@@ -32,11 +33,29 @@ export function prefetchCaptain(client: QueryClient, fresh = 30_000): void {
   });
 }
 
-/** The captain's log, newest first, for one workspace or all. */
+/**
+ * The captain's log, newest first, for one workspace or all. It is read in full once; every later
+ * read asks only for the lines newer than the newest one held (`after`) and merges them in, and
+ * reads the whole log again only when that read filled its page (a gap).
+ */
 export function useCaptainLog(org: string | undefined) {
-  return useQuery<CommandOutput<"captain.log">, ApiRequestError>({
-    queryKey: [...queryKeys.captain, "log", org ?? "all"],
-    queryFn: () => cmd("captain.log", { limit: 100, ...(org === undefined ? {} : { org }) }),
+  const client = useQueryClient();
+  const key = [...queryKeys.captain, "log", org ?? "all"];
+  return useQuery<CaptainLog, ApiRequestError>({
+    queryKey: key,
+    queryFn: async () => {
+      const scope = org === undefined ? {} : { org };
+      const held = client.getQueryData<CaptainLog>(key);
+      const newest = held?.actions[0]?.id;
+      if (held !== undefined && newest !== undefined) {
+        const merged = mergeLog(
+          held,
+          await cmd("captain.log", { limit: LOG_LIMIT, after: newest, ...scope }),
+        );
+        if (merged !== null) return merged;
+      }
+      return cmd("captain.log", { limit: LOG_LIMIT, ...scope });
+    },
   });
 }
 
@@ -96,12 +115,17 @@ export function useCaptainUndo() {
   const client = useQueryClient();
   return useMutation<CommandOutput<"captain.undo">, ApiRequestError, { id: number }>({
     mutationFn: ({ id }) => cmd("captain.undo", { id }, { reason: "Owner undid the captain's action" }),
-    onSuccess: () =>
-      Promise.all([
+    onSuccess: (result) => {
+      // The catch-up read only brings new lines, so the undone line is replaced here.
+      client.setQueriesData<CaptainLog>({ queryKey: [...queryKeys.captain, "log"] }, (held) =>
+        held === undefined ? held : replaceAction(held, result.action),
+      );
+      return Promise.all([
         client.invalidateQueries({ queryKey: queryKeys.captain }),
         client.invalidateQueries({ queryKey: queryKeys.tasks }),
         client.invalidateQueries({ queryKey: queryKeys.config }),
-      ]),
+      ]);
+    },
   });
 }
 

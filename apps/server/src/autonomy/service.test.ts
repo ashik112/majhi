@@ -1,6 +1,6 @@
 import type { AutonomyStatus, Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { ASK, RUNS, TIDY } from "../captain/authority-fixtures.ts";
+import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import type { FakeSession } from "../testing/fakeSession.ts";
 import type { Harness } from "../testing/harness.ts";
@@ -224,7 +224,10 @@ describe("autonomous mode's state machine", () => {
     const t = await world();
     const id = await t.startWorking();
     extra = t.h.restart();
-    expect((await extra.cmd("autonomy.status", { detail: true })).body).toMatchObject({ mode: "on", now: [{ task: id }] });
+    expect((await extra.cmd("autonomy.status", { detail: true })).body).toMatchObject({
+      mode: "on",
+      now: [{ task: id }],
+    });
     await extra.majhi.close();
 
     expect((await t.h.cmd("autonomy.stop", { how: "graceful" })).body.mode).toBe("stopping");

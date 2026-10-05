@@ -1,6 +1,6 @@
 import type { Task } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ASK, RUNS, TIDY } from "../captain/authority-fixtures.ts";
+import { RUNS } from "../captain/authority-fixtures.ts";
 import { capacityOf } from "../runs/limits.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 

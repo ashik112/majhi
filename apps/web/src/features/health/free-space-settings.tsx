@@ -75,3 +75,49 @@ export function FreeSpaceSettings() {
     </div>
   );
 }
+
+/** After how many days the captain frees the dependency caches of a finished task. */
+export function CachesAfterDaysRow() {
+  const settings = useSettings();
+  const save = useSaveSettings();
+  const toast = useToast();
+  const saved = settings.data?.cleanup.caches_after_days;
+  const [text, setText] = useState<string>();
+  const field = text ?? (saved === undefined ? "" : String(saved));
+  const next = parseWhole(field, 1, 3650);
+
+  return (
+    <div className="flex min-h-12 flex-wrap items-center gap-x-4 gap-y-2 border-t border-line px-4 py-2 text-sm text-fg-soft">
+      <label htmlFor="caches-days">Free dependency caches of finished tasks after</label>
+      <Input
+        id="caches-days"
+        inputMode="numeric"
+        value={field}
+        aria-invalid={next === undefined ? true : undefined}
+        onChange={(event) => setText(event.target.value)}
+        className="h-8 w-16 text-center"
+      />
+      <span>days</span>
+      {next !== undefined && next !== saved && (
+        <Button
+          size="sm"
+          disabled={save.isPending}
+          onClick={() =>
+            save.mutate(
+              { cleanup: { caches_after_days: next } },
+              {
+                onSuccess: () => {
+                  setText(undefined);
+                  toast("Saved");
+                },
+                onError: (e) => toast("Could not save", { detail: describeError(e), tone: "error" }),
+              },
+            )
+          }
+        >
+          Save
+        </Button>
+      )}
+    </div>
+  );
+}

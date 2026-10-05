@@ -94,6 +94,7 @@ import type { Fetch } from "./gitConnect/http.ts";
 import { whoAmI } from "./gitConnect/oauth.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
 import { DEFAULT_HANDOFF_MEMORY, defaultHandoffCpus } from "./handoff/limits.ts";
+import { MergeGate } from "./handoff/merge-gate.ts";
 import { shipReadiness } from "./handoff/ready.ts";
 import type { HandoffService } from "./handoff/service.ts";
 import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
@@ -124,6 +125,7 @@ import { createMrHosts, type MrHostOptions } from "./mrs/hosts/index.ts";
 import { MrPoller } from "./mrs/poller.ts";
 import { MrService } from "./mrs/service.ts";
 import type { Subject } from "./notify/attention.ts";
+import { MacNotifyAccess } from "./notify/mac-access.ts";
 import { Notifier } from "./notify/service.ts";
 import { Unavailable } from "./ops/anything/checks.ts";
 import type { WatchEngine } from "./ops/anything/engine.ts";
@@ -891,7 +893,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   let handoffService: HandoffService | undefined;
   // Bound below, once the captain's tables are read: the loop guard counts the captain's answers.
   let loopGuard: LoopGuard | undefined;
+  // The merge rule: every merge of a task branch asks this, read from the hand-off bound below.
+  const mergeGate = new MergeGate({
+    handoff: () => handoffService,
+    configured: (project) => {
+      const commands = cards.get(project)?.commands ?? {};
+      return [commands.test, commands.build, commands.lint].some((c) => c !== undefined && c.trim() !== "");
+    },
+  });
   const tasks = new TaskService({
+    mergeGate,
     protectedPaths: [env.secretsKeyFile],
     onCaptainAnswer: (task) => void loopGuard?.answered(task).catch(() => undefined),
     onOwnerResumedLimit: (task) => budgets.exempt(task),
@@ -1005,6 +1016,15 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     }
     return out;
   };
+  const hostLink = options.hostLink;
+  /** Whether the Mac lets majhi's notifier show anything; one decision while it does not. */
+  const macNotify =
+    hostLink === undefined
+      ? undefined
+      : new MacNotifyAccess({
+          notify: (notice) => hostLink.call("notify", notice),
+          openSettings: () => hostLink.call("notify.openSettings", {}),
+        });
   const notifier = new Notifier({
     subject: subjectOf,
     // The captain answers it by itself when Autonomous is on and the workspace lets it decide: an
@@ -1032,13 +1052,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       }
     },
     events,
-    ...(options.hostLink === undefined
-      ? {}
-      : {
-          desktop: async (notice) => {
-            await options.hostLink?.call("notify", notice);
-          },
-        }),
+    ...(macNotify === undefined ? {} : { desktop: (notice) => macNotify.send(notice) }),
   });
   room.onWrite((task, item) => notifier.observe(task, item));
   room.onWrite((task, item) => captain.roomWrote(task, item));
@@ -1285,8 +1299,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       },
       answerTrust: (id, option) => outcomesService?.answerNotice(id, option) ?? Promise.resolve(),
       answerCeiling: (month, option) => outcomesService?.answerCeiling(month, option) ?? Promise.resolve(),
+      answerNotifyAccess: (option) => macNotify?.answer(option) ?? Promise.resolve(),
     },
-    extras: () => outcomesService?.decisions() ?? [],
+    extras: () => [...(outcomesService?.decisions() ?? []), ...(macNotify?.decision() ?? [])],
     answered: (decision, option) => outcomesService?.answered(decision, option),
   });
   const lanes = new Lanes({

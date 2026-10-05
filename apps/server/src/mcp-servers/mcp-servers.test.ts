@@ -1,7 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ConnectionTestResult, McpInstallResult, McpPreview } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";

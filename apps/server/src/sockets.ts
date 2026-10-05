@@ -38,7 +38,7 @@ export interface RoomFeed {
  */
 export function attachSockets(
   server: UpgradeSource,
-  deps: { events: EventHub; terminals: TerminalManager; rooms: RoomFeed },
+  deps: { events: EventHub; build?: string | undefined; terminals: TerminalManager; rooms: RoomFeed },
 ): { close: () => void } {
   const wss = new WebSocketServer({ noServer: true });
 
@@ -48,7 +48,7 @@ export function attachSockets(
     const path = new URL(req.url ?? "/", "http://localhost").pathname;
 
     if (path === "/api/events") {
-      wss.handleUpgrade(req, socket, head, (ws) => serveEvents(ws, deps.events));
+      wss.handleUpgrade(req, socket, head, (ws) => serveEvents(ws, deps.events, deps.build));
       return;
     }
     const match = TERMINAL_PATH.exec(path);
@@ -76,8 +76,12 @@ export function attachSockets(
   };
 }
 
-function serveEvents(ws: WebSocket, events: EventHub): void {
+function serveEvents(ws: WebSocket, events: EventHub, build: string | undefined): void {
   const seq = new EventSeq();
+  // The first frame: which web build this server serves, so a tab from before an update reloads.
+  ws.send(
+    JSON.stringify(ServerEventSchema.parse({ type: "hello", ...(build === undefined ? {} : { build }) })),
+  );
   const stop = events.subscribe((event) => {
     if (ws.readyState !== ws.OPEN) return;
     // A frame dropped for a slow tab still takes its number, so the tab sees the gap and reads again.

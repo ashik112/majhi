@@ -495,9 +495,18 @@ export class CaptainRepo {
     return row === undefined ? undefined : actionOf(row);
   }
 
-  actions(q: { org?: string | undefined; before?: number | undefined; limit: number }): StoredAction[] {
+  actions(q: {
+    org?: string | undefined;
+    before?: number | undefined;
+    after?: number | undefined;
+    limit: number;
+  }): StoredAction[] {
     const where: string[] = [];
     const params: (string | number)[] = [];
+    if (q.after !== undefined) {
+      where.push("id > ?");
+      params.push(q.after);
+    }
     if (q.org !== undefined) {
       where.push("org = ?");
       params.push(q.org);

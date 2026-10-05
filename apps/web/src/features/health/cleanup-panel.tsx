@@ -12,7 +12,7 @@ import { describeError } from "@/lib/errors";
 import { GLASS } from "@/lib/glass";
 import { usePreviewCleanup, useRunCleanup } from "@/lib/ops-queries";
 import { parseDays, stepText, taskTotals } from "./cleanup-model";
-import { FreeSpaceSettings } from "./free-space-settings";
+import { CachesAfterDaysRow, FreeSpaceSettings } from "./free-space-settings";
 
 type Preview = CommandOutput<"cleanup.preview">;
 type Report = CommandOutput<"cleanup.run">;
@@ -142,6 +142,7 @@ export function CleanupPanel() {
         )}
       </div>
 
+      <CachesAfterDaysRow />
       <FreeSpaceSettings />
 
       {shown !== undefined && (

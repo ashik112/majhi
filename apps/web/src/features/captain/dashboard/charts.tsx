@@ -60,15 +60,7 @@ function Swatch({ color, label }: { color: string; label: string }) {
   );
 }
 
-function Cell({
-  title,
-  aside,
-  children,
-}: {
-  title: string;
-  aside?: ReactNode;
-  children: ReactNode;
-}) {
+function Cell({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
   return (
     <div className="flex min-h-0 min-w-0 flex-col gap-1">
       <div className="flex min-h-5 shrink-0 items-center gap-2">
@@ -137,7 +129,12 @@ function Spend({
         y={cap}
         stroke="var(--c-red)"
         strokeDasharray="4 3"
-        label={{ value: `Cap ${axisMoney(cap)}`, position: "insideTopLeft", fill: "var(--c-red)", fontSize: 11 }}
+        label={{
+          value: `Cap ${axisMoney(cap)}`,
+          position: "insideTopLeft",
+          fill: "var(--c-red)",
+          fontSize: 11,
+        }}
       />
     );
   return (
@@ -172,7 +169,10 @@ function Spend({
             />
             <Tooltip
               {...TOOLTIP}
-              formatter={(value, name) => [formatMoney(Number(value)), name === "cost" ? "This hour" : "Total today"]}
+              formatter={(value, name) => [
+                formatMoney(Number(value)),
+                name === "cost" ? "This hour" : "Total today",
+              ]}
             />
             <Bar dataKey="cost" name="cost" fill="var(--c-blue)" fillOpacity={0.7} radius={[3, 3, 0, 0]} />
             <Line
@@ -217,7 +217,10 @@ function Finished({ report, orgs }: { report: AutonomyReport; orgs: readonly Org
   const { rows, orgs: ids } = useMemo(() => stackRows(report.days), [report.days]);
   const total = report.days.reduce((n, d) => n + d.orgs.reduce((m, o) => m + o.count, 0), 0);
   return (
-    <Cell title="Tasks finished per day" aside={<span className="font-mono text-fg-soft">{total} in 14 d</span>}>
+    <Cell
+      title="Tasks finished per day"
+      aside={<span className="font-mono text-fg-soft">{total} in 14 d</span>}
+    >
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={rows} margin={MARGIN}>
           <CartesianGrid stroke={GRID} vertical={false} />
@@ -253,7 +256,10 @@ function Flow({ report }: { report: AutonomyReport }) {
           <YAxis tick={AXIS} tickLine={false} axisLine={false} width={28} allowDecimals={false} />
           <Tooltip
             {...TOOLTIP}
-            formatter={(value, name) => [String(value), FLOW.find((f) => f.key === name)?.label ?? String(name)]}
+            formatter={(value, name) => [
+              String(value),
+              FLOW.find((f) => f.key === name)?.label ?? String(name),
+            ]}
           />
           {FLOW.map((f) => (
             <Bar key={f.key} dataKey={f.key} fill={f.color} maxBarSize={10} radius={[2, 2, 0, 0]} />
@@ -313,7 +319,9 @@ function Accounts({
                 )}
               >
                 {a.weekly === undefined ? "–" : `${Math.round(a.weekly)}%`}
-                {a.resetsAt !== undefined && <span className="text-fg-faint"> {atTime(a.resetsAt, nowMs, tz)}</span>}
+                {a.resetsAt !== undefined && (
+                  <span className="text-fg-faint"> {atTime(a.resetsAt, nowMs, tz)}</span>
+                )}
               </span>
             </li>
           ))}

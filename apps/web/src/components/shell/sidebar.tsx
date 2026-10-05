@@ -21,6 +21,7 @@ import {
   MessagesSquare,
   Radar,
   Settings,
+  Sparkles,
   Users,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -34,6 +35,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { useUnseenSummary } from "@/features/autonomy/summary-seen";
 import { cardLine, plainTitle } from "@/features/board/model";
 import { useBoss } from "@/features/boss/boss-context";
+import { preloadBossDrawer } from "@/features/boss/boss-drawer-lazy";
 import { useNeedsYou } from "@/features/decisions/needs-you";
 import { checksNeedingYou } from "@/features/health/model";
 import { isSettingsPath } from "@/features/settings/settings-frame";
@@ -193,6 +195,7 @@ function FootNav() {
         : (accounts?.length ?? 0) > 0
           ? { text: String(accounts?.length ?? 0) }
           : undefined,
+    skills: undefined,
     usage: toFix > 0 ? { text: `${toFix} to fix`, tone: "check" } : undefined,
   };
   return (
@@ -240,7 +243,12 @@ const MAIN_ICON: Record<Exclude<SidebarMainPage, "captain" | "watch">, LucideIco
   chats: MessagesSquare,
   playbooks: BookOpen,
 };
-const FOOT_ICON: Record<SidebarFootPage, LucideIcon> = { agents: Users, accounts: KeyRound, usage: Activity };
+const FOOT_ICON: Record<SidebarFootPage, LucideIcon> = {
+  agents: Users,
+  skills: Sparkles,
+  accounts: KeyRound,
+  usage: Activity,
+};
 
 function NavRow({
   page,
@@ -322,7 +330,10 @@ function CaptainRow() {
   const now = useNow(60_000);
   const summary = useUnseenSummary(now);
   const client = useQueryClient();
-  const warm = () => prefetchCaptain(client);
+  const warm = () => {
+    prefetchCaptain(client);
+    preloadBossDrawer();
+  };
   return (
     <div className="flex h-8 shrink-0 items-center gap-1">
       <Link

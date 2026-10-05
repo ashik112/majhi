@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { MemoryWatch } from "./memwatch.ts";
 
 const GB = 1024 ** 3;
-const box = (name: string, used: number) => ({ name, cpuPct: 50, memBytes: used * GB, memLimitBytes: 4 * GB });
+const box = (name: string, used: number) => ({
+  name,
+  cpuPct: 50,
+  memBytes: used * GB,
+  memLimitBytes: 4 * GB,
+});
 
 describe("MemoryWatch", () => {
   it("reports a run at its limit once, after it stays there, and again after it recovers", () => {

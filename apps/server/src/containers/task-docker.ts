@@ -7,10 +7,10 @@ import {
   assertReadable,
   atMostOne,
   CAPS,
+  ContainerRefused,
   checkKeyValues,
   checkLabels,
   checkLimits,
-  ContainerRefused,
   type Flag,
   type FlagTable,
   is,
@@ -52,7 +52,7 @@ const LOCAL_IMAGE = /^([a-z0-9][a-z0-9_./-]{0,60})(?::([A-Za-z0-9_][A-Za-z0-9_.-
 const CONTAINER_ID = /^[0-9a-f]{12,64}$/;
 const BUILT_TAG = /^[a-z0-9][a-z0-9_.-]{0,60}:[A-Za-z0-9_][A-Za-z0-9_.-]{0,40}$/;
 /** A mount source goes into a comma separated `--mount` value. */
-const BAD_SOURCE = /[,"'\u0000\n\r]/;
+const BAD_SOURCE = { test: (v: string) => [",", '"', "'", "\u0000", "\n", "\r"].some((c) => v.includes(c)) };
 const MAX_MOUNTS = 16;
 const MAX_COMMAND = 64;
 
@@ -73,9 +73,7 @@ export interface TaskDockerContext {
 /** The image is not on the owner's list and the task did not build it. The caller may ask the owner. */
 export class ImageNotAllowed extends ContainerRefused {
   constructor(readonly image: string) {
-    super(
-      `${image} is not an image this task built or the owner allowed.`,
-    );
+    super(`${image} is not an image this task built or the owner allowed.`);
   }
 }
 
@@ -114,8 +112,7 @@ const flag = (to: string, takes = false): UserFlag => ({ to, takes });
 /** `-it`, `-e A=1`, `-eA=1`, `--env A=1`, `--env=A=1`. Stops at the first word that is not a flag, or at `--`. */
 function parseUser(argv: readonly string[], table: UserTable): Parsed {
   const flags: Parsed["flags"] = [];
-  const unknown = (name: string): never =>
-    refuse(`The docker flag ${shown(name)} is not allowed in a task.`);
+  const unknown = (name: string): never => refuse(`The docker flag ${shown(name)} is not allowed in a task.`);
   let i = 0;
   while (i < argv.length) {
     const token = argv[i] ?? "";
@@ -242,14 +239,17 @@ function mountOf(spec: string, ctx: TaskDockerContext): Mount {
   const mode = opts ?? "rw";
   if (mode !== "ro" && mode !== "rw") return refuse(`The volume option ${shown(mode)} is not allowed.`);
   const readonly = mode === "ro" ? ",readonly" : "";
-  if (!matches(ContainerPathSchema, target ?? "")) return refuse(`The mount path ${shown(target ?? "")} is not allowed.`);
+  if (!matches(ContainerPathSchema, target ?? ""))
+    return refuse(`The mount path ${shown(target ?? "")} is not allowed.`);
   if (source === undefined) return { arg: `type=volume,target=${target}${readonly}` };
   if (source.startsWith("/") || source.startsWith(".")) {
     if (BAD_SOURCE.test(source)) return refuse(`The mount source ${shown(source)} is not allowed.`);
     return { arg: `type=bind,source=${resolve(ctx.cwd, source)},target=${target}${readonly}` };
   }
   if (!matches(ContainerNameSchema, source)) {
-    return refuse(`The volume ${shown(source)} is not allowed. Use a folder of the task or a name like data.`);
+    return refuse(
+      `The volume ${shown(source)} is not allowed. Use a folder of the task or a name like data.`,
+    );
   }
   return { arg: `type=volume,source=${names.volume(source)},target=${target}${readonly}`, volume: source };
 }
@@ -422,7 +422,8 @@ function translateOther(verb: string, argv: readonly string[], ctx: TaskDockerCo
     case "exec": {
       const p = parseUser(argv, EXEC_USER);
       const [container, ...command] = p.rest;
-      if (container === undefined || command.length === 0) return refuse("docker exec needs a container and a command.");
+      if (container === undefined || command.length === 0)
+        return refuse("docker exec needs a container and a command.");
       if (command.length > MAX_COMMAND) return refuse("The command is too long.");
       const workdir = single(p, "workdir");
       const args = [
@@ -536,7 +537,10 @@ export function translateTaskDocker(argv: readonly string[], ctx: TaskDockerCont
         : translateTaskDocker(rest[0] === "ls" ? ["ps", ...rest.slice(1)] : rest, ctx);
     case "version":
     case "info":
-      return { kind: "text", stdout: "majhi runs the containers of this task. Docker commands go to majhi.\n" };
+      return {
+        kind: "text",
+        stdout: "majhi runs the containers of this task. Docker commands go to majhi.\n",
+      };
     case "pull":
       return { kind: "text", stdout: "docker run pulls the image when it starts.\n" };
     case "compose":
@@ -633,12 +637,15 @@ function checkMount(spec: string, s: Safety): void {
     const [, source = "", target = ""] = named;
     const volume = source.startsWith(names.volumePrefix) ? source.slice(names.volumePrefix.length) : "";
     if (!matches(ContainerNameSchema, volume) || !MOUNT_TARGET(target)) {
-      refuse(`The mount ${shown(spec)} is not allowed. A container mounts only volumes named ${names.volumePrefix}<name>.`);
+      refuse(
+        `The mount ${shown(spec)} is not allowed. A container mounts only volumes named ${names.volumePrefix}<name>.`,
+      );
     }
     return;
   }
   const anonymous = /^type=volume,target=([^,]+)(,readonly)?$/.exec(spec);
-  if (anonymous === null || !MOUNT_TARGET(anonymous[1] ?? "")) refuse(`The mount ${shown(spec)} is not allowed.`);
+  if (anonymous === null || !MOUNT_TARGET(anonymous[1] ?? ""))
+    refuse(`The mount ${shown(spec)} is not allowed.`);
 }
 
 function checkOwnContainer(name: string, s: Safety): void {
@@ -665,7 +672,8 @@ function checkRun(args: readonly string[], s: Safety, allowedImages: readonly st
     refuse("A container must run with --security-opt no-new-privileges, and nothing else.");
   }
   const pids = one(flags, "--pids-limit");
-  if (!/^[1-9][0-9]{0,2}$/.test(pids) || Number(pids) > PIDS_LIMIT) refuse(`The process limit ${pids} is not allowed.`);
+  if (!/^[1-9][0-9]{0,2}$/.test(pids) || Number(pids) > PIDS_LIMIT)
+    refuse(`The process limit ${pids} is not allowed.`);
   checkLimits(flags);
   if (one(flags, "--network") !== `name=${names.network},alias=${userName}`) {
     refuse(`A container joins ${names.network} as ${userName}, and no other network.`);
@@ -675,7 +683,8 @@ function checkRun(args: readonly string[], s: Safety, allowedImages: readonly st
   for (const mount of mounts) checkMount(mount, s);
   checkKeyValues(all(flags, "--env"), 32, 4_000, "environment variables");
   const workdir = atMostOne(flags, "--workdir");
-  if (workdir !== undefined && !matches(ContainerPathSchema, workdir)) refuse(`The folder ${shown(workdir)} is not allowed.`);
+  if (workdir !== undefined && !matches(ContainerPathSchema, workdir))
+    refuse(`The folder ${shown(workdir)} is not allowed.`);
   const entrypoint = atMostOne(flags, "--entrypoint");
   if (entrypoint !== undefined && (entrypoint.length > 2_000 || entrypoint.includes("\u0000"))) {
     refuse("The entrypoint is too long or holds NUL.");
@@ -742,7 +751,10 @@ function checkPs(args: readonly string[], s: Safety): void {
       }
     } else if (f.startsWith("name=")) {
       const value = f.slice("name=".length);
-      if (!value.startsWith(names.containerPrefix) || !/^[a-z0-9_.-]*$/.test(value.slice(names.containerPrefix.length))) {
+      if (
+        !value.startsWith(names.containerPrefix) ||
+        !/^[a-z0-9_.-]*$/.test(value.slice(names.containerPrefix.length))
+      ) {
         refuse(`The ps filter ${shown(f)} is not allowed.`);
       }
     } else if (!/^status=(running|exited|created|paused)$/.test(f)) {
@@ -760,16 +772,22 @@ export function assertTaskArgv(args: readonly string[], s: Safety, allowedImages
   assertNoHostPaths(args, s);
   switch (args[0]) {
     case "run":
-      return checkRun(args, s, allowedImages);
+      checkRun(args, s, allowedImages);
+      return;
     case "buildx":
-      if (args[1] !== "build") return refuse("Only docker buildx build is available in a task.");
-      return checkBuild(args, s);
+      if (args[1] !== "build") {
+        refuse("Only docker buildx build is available in a task.");
+        return;
+      }
+      checkBuild(args, s);
+      return;
     case "exec": {
       const { flags, rest } = split(args.slice(1), EXEC_FLAGS);
       const parsed = parseFlags(flags, EXEC_FLAGS);
       checkKeyValues(all(parsed, "--env"), 32, 4_000, "environment variables");
       const workdir = atMostOne(parsed, "--workdir");
-      if (workdir !== undefined && !matches(ContainerPathSchema, workdir)) refuse(`The folder ${shown(workdir)} is not allowed.`);
+      if (workdir !== undefined && !matches(ContainerPathSchema, workdir))
+        refuse(`The folder ${shown(workdir)} is not allowed.`);
       if (rest.length < 2) refuse("docker exec needs a container and a command.");
       checkOwnContainer(rest[0] ?? "", s);
       return;
@@ -782,28 +800,35 @@ export function assertTaskArgv(args: readonly string[], s: Safety, allowedImages
       const since = atMostOne(parsed, "--since");
       if (since !== undefined && !SINCE.test(since)) refuse("The --since value is not allowed.");
       if (rest.length !== 1) refuse("docker logs reads one container.");
-      return checkOwnContainer(rest[0] ?? "", s);
+      checkOwnContainer(rest[0] ?? "", s);
+      return;
     }
     case "ps":
-      return checkPs(args, s);
+      checkPs(args, s);
+      return;
     case "rm":
-      return checkOperands(args, s, RM_FLAGS);
+      checkOperands(args, s, RM_FLAGS);
+      return;
     case "stop": {
       const { flags } = split(args.slice(1), STOP_FLAGS);
       const time = atMostOne(parseFlags(flags, STOP_FLAGS), "--time");
       if (time !== undefined && !/^[0-9]{1,3}$/.test(time)) refuse("The --time value is not allowed.");
-      return checkOperands(args, s, STOP_FLAGS);
+      checkOperands(args, s, STOP_FLAGS);
+      return;
     }
     case "start":
     case "wait":
-      return checkOperands(args, s, NO_FLAGS_TABLE);
+      checkOperands(args, s, NO_FLAGS_TABLE);
+      return;
     case "inspect": {
       const { flags } = split(args.slice(1), INSPECT_FLAGS);
       checkFormat(parseFlags(flags, INSPECT_FLAGS));
-      return checkOperands(args, s, INSPECT_FLAGS);
+      checkOperands(args, s, INSPECT_FLAGS);
+      return;
     }
     default:
-      return refuse(`The docker command ${shown(args[0] ?? "")} is not allowed in a task.`);
+      refuse(`The docker command ${shown(args[0] ?? "")} is not allowed in a task.`);
+      return;
   }
 }
 

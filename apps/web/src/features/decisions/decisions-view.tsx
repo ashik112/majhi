@@ -31,7 +31,6 @@ import {
   kindCounts,
   lastAnswerText,
   primaryOption,
-  rowTitle,
   workspaceCounts,
 } from "./model";
 import { useNeedsYou } from "./needs-you";

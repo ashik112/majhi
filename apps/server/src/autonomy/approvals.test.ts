@@ -1,7 +1,7 @@
 import type { AutonomyEvent, RoomItem, TaskId } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { WAITING_TEXT } from "../admin/service.ts";
-import { ASK, RUNS, TIDY } from "../captain/authority-fixtures.ts";
+import { ASK, RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { UsageRepo } from "../usage/repo.ts";
 
@@ -140,7 +140,9 @@ describe("autonomous mode deciding the cards that would wait", () => {
     expect((await t.cards(id)).find((c) => c.command === "tasks.create")?.autonomy?.decision).toBe(
       "approved",
     );
-    const now = (await t.h.cmd("autonomy.status", { detail: true })).body.now.map((n: { task: string }) => n.task);
+    const now = (await t.h.cmd("autonomy.status", { detail: true })).body.now.map(
+      (n: { task: string }) => n.task,
+    );
     expect(now).toEqual(expect.arrayContaining([id, child]));
   });
 });

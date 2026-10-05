@@ -63,7 +63,7 @@ describe("host jobs", () => {
     layaStatus: () => ({ state: "not-installed" }),
     layaInstall: () => ({ state: "installing" }),
     layaDecide: async () => ({ answers: {}, loadMs: 0, predictMs: 1 }),
-    notify: async () => ({ clickable: false }),
+    notify: async () => ({ kind: "shown", clickable: false }),
     sshUnlock: async () => {
       throw new Error("That passphrase did not unlock ~/.ssh/id_work.");
     },

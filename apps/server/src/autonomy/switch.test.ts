@@ -1,6 +1,6 @@
 import type { CaptainStatus } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { ASK, RUNS, TIDY } from "../captain/authority-fixtures.ts";
+import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 
 let w: BossWorld | undefined;

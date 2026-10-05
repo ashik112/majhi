@@ -5,7 +5,7 @@ import { Lamp } from "@/components/ui/lamp";
 import { SecretAnswer } from "@/features/room/secret-answer";
 import { formatAgo } from "@/lib/format";
 import { useNow } from "@/lib/use-now";
-import { WorkspaceName } from "./decision-list";
+import { WorkspaceName } from "./decision-bits";
 import { actionOf, openLabel, secretCardOf, workspaceOf } from "./model";
 import { useHeldOption, useSendDecision } from "./use-send-decision";
 
