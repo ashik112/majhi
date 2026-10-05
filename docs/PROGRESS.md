@@ -1,5 +1,13 @@
 # Progress
 
+## Removing a task no longer times out (built, not merged)
+
+Branch `fix/task-remove-timeout`.
+
+- **Cause.** `removeWorktree` ran `git worktree remove`, which deletes the whole checkout inside a 30 second git call. A worktree with node_modules or build output took longer, so removal failed with "git worktree timed out".
+- **Fix.** majhi checks for uncommitted changes itself (same refusal without force), deletes the folder with no time limit, then drops the worktree entry. The Remove dialog button reads "Removing..." while it works; errors already show inline.
+- **Verified.** Typecheck, `worktrees.test.ts` (dirty guard, lock kept on refusal). No browser check: copy change only.
+
 ## Home says what is running and what the checks found (built, not merged)
 
 Branch `fix/home-state`.

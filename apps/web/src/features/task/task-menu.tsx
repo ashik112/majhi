@@ -150,7 +150,7 @@ function RemoveDialog({ task, onDone }: { task: Task; onDone: () => void }) {
     <ConfirmDialog
       title={`Remove ${task.id}`}
       body={body}
-      confirmLabel={refusal === null ? "Remove task" : "Remove with changes"}
+      confirmLabel={remove.isPending ? "Removing..." : refusal === null ? "Remove task" : "Remove with changes"}
       busy={remove.isPending}
       confirmDisabled={refusal !== null && !confirmed}
       error={remove.error ? [remove.error.message, ...remove.error.details].join(" ") : undefined}

@@ -123,7 +123,9 @@ async function fetchWithKeys(
 
 async function tryFetch(source: string, remote: string, ref: string): Promise<string | undefined> {
   try {
-    await git(source, ["fetch", "--quiet", remote, ref], { timeoutMs: FETCH_TIMEOUT_MS });
+    await git(source, ["fetch", "--quiet", remote, ref], {
+      timeoutMs: FETCH_TIMEOUT_MS,
+    });
     return undefined;
   } catch (err) {
     return err instanceof GitError ? err.message : String(err);
@@ -255,7 +257,10 @@ export async function dirtyWorktrees(
           () => false,
           (err: unknown) => errorCode(err) === "ENOENT",
         );
-        return { path, changes: missing ? [] : ["Could not inspect this worktree safely"] };
+        return {
+          path,
+          changes: missing ? [] : ["Could not inspect this worktree safely"],
+        };
       }
     }),
   );
@@ -273,24 +278,30 @@ export function removeWorktree(source: string, path: string, force: boolean): Pr
       const own = await entryFor(source, path).catch(() => undefined);
       const reason =
         own === undefined ? undefined : await readFile(join(own, "locked"), "utf8").catch(() => undefined);
-      if (reason !== undefined) await git(source, ["worktree", "unlock", path]).catch(() => undefined);
-      const args = ["worktree", "remove", ...(force ? ["--force"] : []), path];
-      try {
-        await git(source, args);
-      } catch (err) {
-        const missing = await stat(path).then(
-          () => false,
-          () => true,
-        );
-        if (!missing && !force) {
-          if (reason !== undefined) await lock(source, path, reason.trim()).catch(() => undefined);
-          throw new WorktreeProblem(err instanceof Error ? err.message : String(err));
+      // `git worktree remove` deletes the folder inside a 30 second git call, which a checkout with
+      // node_modules or build output does not finish. majhi checks for uncommitted work itself,
+      // deletes the folder with no time limit, then drops the entry.
+      if (!force) {
+        const changes = await uncommitted(path).catch(async (err: unknown) => {
+          const missing = await stat(path).then(
+            () => false,
+            () => true,
+          );
+          // A folder that is gone has nothing to lose; one we cannot inspect is never deleted.
+          if (missing) return [];
+          throw new WorktreeProblem(
+            `Could not inspect ${path} safely: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
+        if (changes.length > 0) {
+          throw new WorktreeProblem(`Uncommitted changes in ${path}: ${changes.slice(0, 3).join(", ")}`);
         }
       }
+      if (reason !== undefined) await git(source, ["worktree", "unlock", path]).catch(() => undefined);
+      await rm(path, { recursive: true, force: true });
       // Only this worktree's own entry. A `git worktree prune` would also drop the entry of a live
       // task whose folder is out of reach for a moment, and its checkout stops being a git repo.
-      const left = await entryFor(source, path).catch(() => undefined);
-      if (left !== undefined) await rm(left, { recursive: true, force: true });
+      if (own !== undefined) await rm(own, { recursive: true, force: true });
     }
     await rm(path, { recursive: true, force: true });
   });
@@ -337,12 +348,18 @@ export function repairWorktree(source: string, path: string, branch: string): Pr
     if (!(await isGitRepo(source))) return { status: "skipped", reason: `${source} is not a git repo` };
     const entries = join(await commonDir(source), "worktrees");
     if (!(await samePath(dirname(link), entries)))
-      return { status: "skipped", reason: `its .git file points outside ${source}` };
+      return {
+        status: "skipped",
+        reason: `its .git file points outside ${source}`,
+      };
     if (!(await localBranchExists(source, branch)))
       return { status: "skipped", reason: `its branch ${branch} is missing` };
     const elsewhere = await checkedOutAt(source, branch);
     if (elsewhere !== undefined && !(await samePath(elsewhere, path)))
-      return { status: "skipped", reason: `its branch ${branch} is checked out at ${elsewhere}` };
+      return {
+        status: "skipped",
+        reason: `its branch ${branch} is checked out at ${elsewhere}`,
+      };
 
     // The old name when it is free, so the folder's `.git` file stays as it was.
     const entry = await freeEntry(entries, basename(link));
