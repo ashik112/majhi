@@ -37,6 +37,8 @@ const isEvent = (kind: WatchSort): boolean => EVENT_KINDS.includes(kind);
 interface Draft {
   name: string;
   kind: WatchSort;
+  /** The saved spec of a watch whose kind this form has no fields for (a script): kept as it was on save. */
+  kept?: WatchDef["spec"];
   url: string;
   keyword: string;
   jsonPath: string;
@@ -170,6 +172,7 @@ function draftOf(def: WatchDef): Draft {
   }
   if (c.type === "contains" || c.type === "notContains") d.text = c.text;
   const s = def.spec;
+  if (s.kind === "script") d.kept = s;
   switch (s.kind) {
     case "website":
       d.url = s.url;
@@ -355,6 +358,13 @@ function specOf(d: Draft): unknown {
       };
     case "custom":
       return { kind: "custom", instruction: d.instruction.trim() };
+    case "script":
+      // The form has no fields for a script: the saved one goes back unchanged.
+      return d.kept?.kind === "script" ? d.kept : undefined;
+    default: {
+      const missing: never = d.kind;
+      return missing;
+    }
   }
 }
 
