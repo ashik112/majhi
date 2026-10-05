@@ -17,10 +17,20 @@ import { EXTRA_SERVICES } from "./services-extra.ts";
  * - `device`: the device authorization grant.
  * - `cli-login`: the service's own command line sign-in, in a folder of the workspace.
  * - `api-key`: a key, entered once in a secure input.
+ * - `token`: a token the owner makes on a page majhi opens, pasted once and checked with a call.
+ * - `git-host`: GitHub, GitLab or Bitbucket through majhi's host sign-in, at the public host or a self-hosted one.
  * `api-key` is used for the services whose app gives tokens instead of a sign-in majhi can run
  * (Slack, Discord): the guided setup ends with a secure input.
  */
-export const ServiceKindSchema = z.enum(["mcp-oauth", "oauth-loopback", "device", "cli-login", "api-key"]);
+export const ServiceKindSchema = z.enum([
+  "mcp-oauth",
+  "oauth-loopback",
+  "device",
+  "cli-login",
+  "api-key",
+  "token",
+  "git-host",
+]);
 export type ServiceKind = z.infer<typeof ServiceKindSchema>;
 
 export const SERVICE_KIND_LABEL: Record<ServiceKind, string> = {
@@ -29,6 +39,8 @@ export const SERVICE_KIND_LABEL: Record<ServiceKind, string> = {
   device: "Sign in with a code",
   "cli-login": "Sign in with its command line",
   "api-key": "Access key",
+  token: "Paste a token",
+  "git-host": "Sign in to the host",
 };
 
 /** What a permission lets majhi's agents do, in plain words. */
@@ -105,6 +117,45 @@ export const ServiceProductSchema = z.object({
 });
 export type ServiceProduct = z.infer<typeof ServiceProductSchema>;
 
+/**
+ * How a pasted token is made and checked (`token` services). The check is a real call with the
+ * token: its HTTP status decides, and the answer must name who the token belongs to.
+ */
+export const TokenMethodSchema = z.object({
+  /** The variable agents get the token in. */
+  variable: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),
+  /** The page that makes the token, with scopes ticked where the service allows it. */
+  page: z.object({ label: z.string().min(1).max(80), url: z.url() }),
+  steps: z.array(z.string().min(1).max(240)).min(1).max(8),
+  /** Scope names to tick when the page does not tick them itself. */
+  scopes: z.array(z.string().min(1).max(100)).max(12).default([]),
+  /** How the token goes in the request: `Bearer`, or the bare token in `Authorization`. */
+  auth: z.enum(["bearer", "raw"]).default("bearer"),
+  check: z.object({
+    url: z.url(),
+    method: z.enum(["GET", "POST"]).default("GET"),
+    body: z.string().optional(),
+    /** Who the token belongs to, in the answer. A missing one makes the check fail as unexpected. */
+    labelPaths: z.array(z.array(z.string())).min(1),
+    /** What a pass of this call says, in the past tense: "Asked Linear who the key belongs to". */
+    did: z.string().min(1).max(120),
+  }),
+  /** The hosts the token may be sent to. Anything else is refused. */
+  hosts: z.array(z.string().min(1).max(100)).min(1).max(3),
+});
+export type TokenMethod = z.infer<typeof TokenMethodSchema>;
+
+/** A service that also runs at a host the owner enters: GitHub Enterprise, GitLab self-managed, Bitbucket Server. */
+export const ServiceHostSchema = z.object({
+  /** The public host. */
+  default: z.string().min(1).max(100),
+  label: z.string().min(1).max(60),
+  placeholder: z.string().min(1).max(100),
+  /** What a host other than the public one is called. */
+  selfHosted: z.string().min(1).max(60),
+});
+export type ServiceHost = z.infer<typeof ServiceHostSchema>;
+
 export const ServiceEntrySchema = z.object({
   id: IdSchema,
   name: z.string().min(1).max(60),
@@ -132,6 +183,17 @@ export const ServiceEntrySchema = z.object({
   cli: CliToolIdSchema.optional(),
   /** The packs of the captain's business engine this service is for, in the owner's words. */
   packs: z.array(z.string().max(40)).max(6).default([]),
+  /** `git-host`: which host kind its sign-in is. */
+  gitKind: z.enum(["github", "gitlab", "bitbucket"]).optional(),
+  /** The service also runs at a host the owner enters. */
+  host: ServiceHostSchema.optional(),
+  /** `token`: how the token is made and checked. */
+  token: TokenMethodSchema.optional(),
+  /**
+   * This entry is another way to connect the service with this id. The page shows it under "Other
+   * ways" on that service's card instead of as a card of its own.
+   */
+  alt: IdSchema.optional(),
   /** What majhi can connect today. A service that is not ready shows what comes next. */
   ready: z.boolean(),
   /**
@@ -159,7 +221,10 @@ export type ServiceEntry = z.infer<typeof ServiceEntrySchema>;
 const CHECKED =
   "Checked 2026-10-04: the address answers 401 with protected resource metadata, and sign-in accepts dynamic registration.";
 
-const TOOLS_TEST = (what: string) => ({ kind: "mcp-tools" as const, sentence: what });
+const CHECKED_2 =
+  "Checked 2026-10-05: the address answers 401 with protected resource metadata, and sign-in accepts dynamic registration.";
+
+const TOOLS_TEST =(what: string) => ({ kind: "mcp-tools" as const, sentence: what });
 
 /** Remote MCP services with OAuth, from the integration research and a live check of each address. */
 export const SERVICE_CATALOG: readonly ServiceEntry[] = z.array(ServiceEntrySchema).parse([
@@ -252,6 +317,7 @@ export const SERVICE_CATALOG: readonly ServiceEntry[] = z.array(ServiceEntrySche
   {
     id: "cloudflare-observability",
     name: "Cloudflare Observability",
+    alt: "cloudflare",
     kind: "mcp-oauth",
     summary: "Workers logs and analytics",
     mcpUrl: "https://observability.mcp.cloudflare.com/mcp",
@@ -373,7 +439,8 @@ export const SERVICE_CATALOG: readonly ServiceEntry[] = z.array(ServiceEntrySche
   },
   {
     id: "gitlab",
-    name: "GitLab",
+    name: "GitLab MCP (beta)",
+    alt: "gitlab-git",
     kind: "mcp-oauth",
     summary: "Projects, merge requests and pipelines",
     mcpUrl: "https://gitlab.com/api/v4/mcp",
@@ -436,6 +503,129 @@ export const SERVICE_CATALOG: readonly ServiceEntry[] = z.array(ServiceEntrySche
     ],
     test: TOOLS_TEST("Lists the tools of each product."),
     docs: "https://docs.digitalocean.com/reference/mcp/configure-mcp/",
+  },
+  {
+    id: "cloudflare",
+    name: "Cloudflare",
+    kind: "mcp-oauth",
+    summary: "Workers, DNS, R2, logs and the rest of the Cloudflare API",
+    mcpUrl: "https://mcp.cloudflare.com/mcp",
+    ready: true,
+    verified: true,
+    verifiedNote: `${CHECKED_2} Takes dynamic registration and client metadata documents.`,
+    scopes: [
+      {
+        id: "read",
+        access: "read",
+        sentence: "Read your accounts, zones, Workers and settings.",
+        oauth: ["user:read", "account:read"],
+      },
+    ],
+    test: TOOLS_TEST("Lists Cloudflare's tools."),
+    docs: "https://developers.cloudflare.com/agents/model-context-protocol/mcp-servers-for-cloudflare/",
+    note: "One server for the whole API. It replaces the wrangler login, whose check cannot tell signed in from signed out.",
+  },
+  {
+    id: "neon",
+    name: "Neon",
+    kind: "mcp-oauth",
+    summary: "Postgres projects, branches and queries",
+    mcpUrl: "https://mcp.neon.tech/mcp",
+    ready: true,
+    verified: true,
+    verifiedNote: CHECKED_2,
+    scopes: [
+      { id: "read", access: "read", sentence: "Read projects, branches and run read queries." },
+      { id: "write", access: "write", sentence: "Create branches and run schema changes. Each asks you first." },
+    ],
+    test: TOOLS_TEST("Lists Neon's tools."),
+    docs: "https://neon.com/docs/ai/neon-mcp-server",
+  },
+  {
+    id: "paypal",
+    name: "PayPal",
+    kind: "mcp-oauth",
+    summary: "Orders, invoices and transactions",
+    mcpUrl: "https://mcp.paypal.com/mcp",
+    ready: true,
+    verified: true,
+    verifiedNote: CHECKED_2,
+    scopes: [
+      { id: "read", access: "read", sentence: "Read orders, invoices, disputes and transactions." },
+      {
+        id: "write",
+        access: "write",
+        sentence: "Create invoices and orders. Moving money always asks you.",
+      },
+    ],
+    test: TOOLS_TEST("Lists PayPal's tools."),
+    docs: "https://developer.paypal.com/tools/mcp-server/",
+  },
+  {
+    id: "intercom",
+    name: "Intercom",
+    kind: "mcp-oauth",
+    summary: "Conversations, contacts and help articles",
+    mcpUrl: "https://mcp.intercom.com/mcp",
+    ready: true,
+    verified: true,
+    verifiedNote:
+      "Checked 2026-10-05: the address answers 401, and its authorization server (at the same host) accepts dynamic registration. It publishes no protected resource metadata, so sign-in discovery uses the server's own metadata.",
+    scopes: [
+      { id: "read", access: "read", sentence: "Read conversations, contacts and articles." },
+      { id: "write", access: "write", sentence: "Reply to conversations and edit contacts." },
+    ],
+    test: TOOLS_TEST("Lists Intercom's tools."),
+    docs: "https://developers.intercom.com/docs/guides/mcp",
+    note: "Intercom's MCP server is for US workspaces.",
+  },
+  {
+    id: "canva",
+    name: "Canva",
+    kind: "mcp-oauth",
+    summary: "Designs, folders and brand templates",
+    mcpUrl: "https://mcp.canva.com/mcp",
+    ready: true,
+    verified: true,
+    verifiedNote: `${CHECKED_2} Takes dynamic registration and client metadata documents.`,
+    scopes: [
+      { id: "read", access: "read", sentence: "Read designs, folders and brand templates." },
+      { id: "write", access: "write", sentence: "Create and edit designs." },
+    ],
+    test: TOOLS_TEST("Lists Canva's tools."),
+    docs: "https://www.canva.dev/docs/connect/canva-mcp-server-setup/",
+  },
+  {
+    id: "webflow",
+    name: "Webflow",
+    kind: "mcp-oauth",
+    summary: "Sites, pages and CMS content",
+    mcpUrl: "https://mcp.webflow.com/mcp",
+    ready: true,
+    verified: true,
+    verifiedNote: CHECKED_2,
+    scopes: [
+      { id: "read", access: "read", sentence: "Read sites, pages and CMS items you pick." },
+      { id: "write", access: "write", sentence: "Edit pages and CMS items. Publishing asks you first." },
+    ],
+    test: TOOLS_TEST("Lists Webflow's tools."),
+    docs: "https://developers.webflow.com/mcp/reference/overview",
+  },
+  {
+    id: "zapier",
+    name: "Zapier",
+    kind: "mcp-oauth",
+    summary: "The actions of your Zapier account",
+    mcpUrl: "https://mcp.zapier.com/api/mcp/mcp",
+    ready: true,
+    verified: true,
+    verifiedNote: CHECKED_2,
+    scopes: [
+      { id: "default", access: "write", sentence: "Run the Zapier actions you allow on Zapier's own page." },
+    ],
+    test: TOOLS_TEST("Lists Zapier's tools."),
+    docs: "https://docs.zapier.com/mcp/home",
+    note: "Zapier counts each tool call as tasks of your plan. Its own page picks which actions are on.",
   },
   ...EXTRA_SERVICES,
 ]);

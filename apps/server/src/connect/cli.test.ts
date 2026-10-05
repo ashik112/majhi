@@ -137,7 +137,7 @@ describe("a command-line tool's sign-in", () => {
     r = await rig();
     r.host.online = false;
     await expect(
-      r.connect.start({ org: "acme", service: "wrangler", access: "read" }, OWNER),
+      r.connect.start({ org: "acme", service: "vercel-cli", access: "read" }, OWNER),
     ).rejects.toThrow(/helper has to be running/);
     expect(r.host.logins).toHaveLength(0);
   });
@@ -149,7 +149,7 @@ describe("a command-line tool's sign-in", () => {
       await new Promise((res) => setTimeout(res, 30));
       return { state: "done", identity: "ops@acme.example" };
     };
-    const view = await r.connect.start({ org: "acme", service: "wrangler", access: "read" }, OWNER);
+    const view = await r.connect.start({ org: "acme", service: "vercel-cli", access: "read" }, OWNER);
     await until(() => r.connect.flow(view.flow).code === "ABCD-EFGH");
     expect(r.connect.flow(view.flow).message).toContain("ABCD-EFGH");
     await until(() => r.connect.flow(view.flow).state === "connected");
@@ -158,7 +158,7 @@ describe("a command-line tool's sign-in", () => {
     expect(done.code).toBeUndefined();
     const made = r.connections.get(done.connection ?? "");
     expect(made?.connection.type).toBe("cli");
-    expect(made?.connection.fields).toMatchObject({ tool: "wrangler", account: "ops@acme.example" });
+    expect(made?.connection.fields).toMatchObject({ tool: "vercel", account: "ops@acme.example" });
     expect(r.opened).toContain("https://example.test/device");
     const status = (await r.connect.status("acme"))[0];
     expect(status).toMatchObject({ state: "connected", account: "ops@acme.example", revocable: true });
@@ -178,24 +178,24 @@ describe("a command-line tool's sign-in", () => {
   it("shows only a safe sentence when the tool's login fails", async () => {
     r = await rig();
     r.host.next = async () => {
-      throw new Error("The Cloudflare (wrangler) sign-in ran out of time. Nothing was saved.");
+      throw new Error("The Cloudflare (vercel) sign-in ran out of time. Nothing was saved.");
     };
-    const view = await r.connect.start({ org: "acme", service: "wrangler", access: "read" }, OWNER);
+    const view = await r.connect.start({ org: "acme", service: "vercel-cli", access: "read" }, OWNER);
     await until(() => r.connect.flow(view.flow).state === "failed");
     expect(r.connect.flow(view.flow).message).toBe(
-      "The Cloudflare (wrangler) sign-in ran out of time. Nothing was saved.",
+      "The Cloudflare (vercel) sign-in ran out of time. Nothing was saved.",
     );
     expect(r.connections.size).toBe(0);
   });
 
   it("refuses a reconnect as another account and leaves the connection as it was", async () => {
     r = await rig();
-    const first = await r.connect.start({ org: "acme", service: "wrangler", access: "read" }, OWNER);
+    const first = await r.connect.start({ org: "acme", service: "vercel-cli", access: "read" }, OWNER);
     await until(() => r.connect.flow(first.flow).state === "connected");
     const id = r.connect.flow(first.flow).connection ?? "";
     r.host.next = async () => ({ state: "other-account", identity: "intruder@other.example" });
     const again = await r.connect.start(
-      { org: "acme", service: "wrangler", access: "read", connection: id },
+      { org: "acme", service: "vercel-cli", access: "read", connection: id },
       OWNER,
     );
     await until(() => r.connect.flow(again.flow).state === "failed");
@@ -227,11 +227,11 @@ describe("a command-line tool's sign-in", () => {
 
   it("Test asks the tool who is signed in, and marks a connection that is not", async () => {
     r = await rig();
-    const view = await r.connect.start({ org: "acme", service: "wrangler", access: "read" }, OWNER);
+    const view = await r.connect.start({ org: "acme", service: "vercel-cli", access: "read" }, OWNER);
     await until(() => r.connect.flow(view.flow).state === "connected");
     const id = r.connect.flow(view.flow).connection ?? "";
     expect((await r.connect.test(id)).ok).toBe(true);
-    r.host.checkResult = { ok: false, detail: "wrangler is not signed in." };
+    r.host.checkResult = { ok: false, detail: "vercel is not signed in." };
     const bad = await r.connect.test(id);
     expect(bad.ok).toBe(false);
     expect((await r.connect.status("acme"))[0]?.state).toBe("needs-reconnect");
@@ -239,12 +239,12 @@ describe("a command-line tool's sign-in", () => {
 
   it("disconnect signs the tool out in that connection's folder and removes the connection", async () => {
     r = await rig();
-    const view = await r.connect.start({ org: "acme", service: "wrangler", access: "read" }, OWNER);
+    const view = await r.connect.start({ org: "acme", service: "vercel-cli", access: "read" }, OWNER);
     await until(() => r.connect.flow(view.flow).state === "connected");
     const id = r.connect.flow(view.flow).connection ?? "";
     const out = await r.connect.disconnect(id, OWNER);
     expect(out.revoked).toBe(true);
-    expect(r.host.logouts).toEqual([{ tool: "wrangler", connection: id }]);
+    expect(r.host.logouts).toEqual([{ tool: "vercel", connection: id }]);
     expect(r.connections.size).toBe(0);
   });
 
@@ -252,11 +252,11 @@ describe("a command-line tool's sign-in", () => {
     r = await rig();
     r.host.next = async (p) => ({
       state: "done",
-      identity: p.connection.startsWith("wrangler-") ? "dev@globex.example" : "ops@acme.example",
+      identity: p.connection.startsWith("vercel-cli-") ? "dev@globex.example" : "ops@acme.example",
     });
-    const a = await r.connect.start({ org: "acme", service: "wrangler", access: "read" }, OWNER);
+    const a = await r.connect.start({ org: "acme", service: "vercel-cli", access: "read" }, OWNER);
     await until(() => r.connect.flow(a.flow).state === "connected");
-    const b = await r.connect.start({ org: "globex", service: "wrangler", access: "read" }, OWNER);
+    const b = await r.connect.start({ org: "globex", service: "vercel-cli", access: "read" }, OWNER);
     await until(() => r.connect.flow(b.flow).state === "connected");
     const idA = r.connect.flow(a.flow).connection ?? "";
     const idB = r.connect.flow(b.flow).connection ?? "";
@@ -279,8 +279,8 @@ describe("what a run of one workspace gets of a tool's sign-in", () => {
     fields: { tool, account },
   });
   const orgs = {
-    acme: { connections: { wrangler: cli("wrangler", "ops@acme.example"), aws: cli("aws", "acme-prod") } },
-    globex: { connections: { "wrangler-2": cli("wrangler", "dev@globex.example") } },
+    acme: { connections: { vercel: cli("vercel", "ops@acme.example"), aws: cli("aws", "acme-prod") } },
+    globex: { connections: { "vercel-2": cli("vercel", "dev@globex.example") } },
   };
   const deps = (oauth = async () => ({ problem: "none" })) => ({
     secrets: { get: async () => undefined },
@@ -298,20 +298,20 @@ describe("what a run of one workspace gets of a tool's sign-in", () => {
     const text = JSON.stringify(plan);
     expect(plan.profiles.sort()).toEqual([
       `${home}/connections/aws/profile`,
-      `${home}/connections/wrangler/profile`,
+      `${home}/connections/vercel/profile`,
     ]);
-    expect(plan.env.XDG_CONFIG_HOME).toBe(`${home}/connections/wrangler/profile/xdg/config`);
+    expect(plan.env.XDG_DATA_HOME).toBe(`${home}/connections/vercel/profile/xdg/data`);
     expect(plan.env.AWS_CONFIG_FILE).toBe(`${home}/connections/aws/profile/aws/config`);
     // Nothing of workspace B, and nothing that moves the agent's own home.
-    expect(text).not.toContain("wrangler-2");
+    expect(text).not.toContain("vercel-2");
     expect(plan.env.HOME).toBeUndefined();
     expect(Object.keys(plan.env).sort()).toEqual([
       "AWS_CONFIG_FILE",
       "AWS_SHARED_CREDENTIALS_FILE",
-      "XDG_CONFIG_HOME",
+      "XDG_DATA_HOME",
     ]);
     // Its changes ask first.
-    expect(plan.gate.find((g) => g.id === "wrangler")?.clis).toEqual(["wrangler"]);
+    expect(plan.gate.find((g) => g.id === "vercel")?.clis).toEqual(["vercel"]);
   });
 
   it("gives a run in workspace B B's folder and never A's", async () => {
@@ -320,10 +320,10 @@ describe("what a run of one workspace gets of a tool's sign-in", () => {
       task: { org: "globex", connections: [] },
       orgs,
     });
-    expect(held.map((h) => h.id)).toEqual(["wrangler-2"]);
+    expect(held.map((h) => h.id)).toEqual(["vercel-2"]);
     const plan = await planConnections(held, "/run", deps());
-    expect(plan.profiles).toEqual([`${home}/connections/wrangler-2/profile`]);
-    expect(JSON.stringify(plan)).not.toContain("connections/wrangler/");
+    expect(plan.profiles).toEqual([`${home}/connections/vercel-2/profile`]);
+    expect(JSON.stringify(plan)).not.toContain("connections/vercel/");
     expect(JSON.stringify(plan)).not.toContain("connections/aws");
   });
 
@@ -337,9 +337,9 @@ describe("what a run of one workspace gets of a tool's sign-in", () => {
     ).toEqual([]);
   });
 
-  it("two tools that want the same variable keep the first and say so", async () => {
+  it("two sign-ins that want the same variable keep the first and say so", async () => {
     const both = {
-      acme: { connections: { wrangler: cli("wrangler", "a"), stripe: cli("stripe", "b") } },
+      acme: { connections: { stripe: cli("stripe", "a"), "stripe-b": cli("stripe", "b") } },
     };
     const held = runConnections({
       agent: { id: "acme-dev", scope: "acme" },

@@ -341,6 +341,8 @@ export const CliCheckResultSchema = z.object({
   identity: z.string().max(200).optional(),
   /** One safe sentence, never the tool's own output. */
   detail: z.string().max(300),
+  /** Why it is not ok, read from the command's exit code: 127 or no program, no exit code, or any other code. */
+  failure: z.enum(["tool-missing", "not-signed-in", "timeout"]).optional(),
 });
 export type CliCheckResult = z.infer<typeof CliCheckResultSchema>;
 

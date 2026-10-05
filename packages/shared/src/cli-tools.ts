@@ -7,11 +7,12 @@ import { z } from "zod";
  * mount it, with the variables below pointing inside it. majhi's own environment never reaches a
  * login or a run.
  *
- * The command lines come from each tool's documentation (docs/briefs and the integration research),
- * not from a run against a real install. They are data here so a change is one edit.
+ * Each check command was run with an empty profile to see its exit code (vercel 1, aws 253, doctl 1,
+ * gh 1 or 4 when signed out); the sign-in commands come from each tool's documentation. They are
+ * data here so a change is one edit.
  */
 
-export const CliToolIdSchema = z.enum(["wrangler", "vercel", "stripe", "aws", "gcloud", "sentry"]);
+export const CliToolIdSchema = z.enum(["vercel", "stripe", "aws", "gcloud", "az"]);
 export type CliToolId = z.infer<typeof CliToolIdSchema>;
 
 export interface CliToolDef {
@@ -22,8 +23,16 @@ export interface CliToolDef {
   summary: string;
   /** The tool's own login. */
   login: readonly string[];
-  /** A read-only command that tells who is signed in. Exit 0 means the sign-in works. */
+  /**
+   * A read-only command that makes a real call with the sign-in. Its exit code decides: 0 means the
+   * sign-in works, 127 means the tool is missing, anything else means it is not signed in. A command
+   * that exits 0 when nobody is signed in (`stripe config --list`, `wrangler whoami`) does not belong here.
+   */
   check: readonly string[];
+  /** Prints who is signed in, for the account label. Never decides anything. Default: the check's own output. */
+  whoami?: readonly string[];
+  /** The check's output names the account (`vercel whoami`). Without this and `whoami`, no account is shown. */
+  identityFromCheck?: boolean;
   /** Ends the sign-in at the service where the tool can. */
   logout: readonly string[];
   /** The tool waits for Enter before it opens the browser. */
@@ -46,30 +55,17 @@ const xdg = (profile: string) => ({
 
 const TOOLS: readonly CliToolDef[] = [
   {
-    id: "wrangler",
-    name: "Cloudflare (wrangler)",
-    binary: "wrangler",
-    summary: "Workers, Pages and the account's settings",
-    login: ["login"],
-    check: ["whoami"],
-    logout: ["logout"],
-    enter: false,
-    access: "Whatever your Cloudflare account can do. Deploys and changes ask you first.",
-    note: "Opens a browser page on this computer. Command line taken from the documentation.",
-    docs: "https://developers.cloudflare.com/workers/wrangler/commands/general/",
-    vars: (p) => ({ XDG_CONFIG_HOME: xdg(p).XDG_CONFIG_HOME }),
-  },
-  {
     id: "vercel",
     name: "Vercel CLI",
     binary: "vercel",
     summary: "Projects, deployments and environment variables",
     login: ["login"],
     check: ["whoami"],
+    identityFromCheck: true,
     logout: ["logout"],
     enter: false,
     access: "Whatever your Vercel account can do. Deploys and changes ask you first.",
-    note: "Device code: majhi shows the code and the page. Command line taken from the documentation.",
+    note: "Device code: majhi shows the code and the page. A signed-out check exits 1.",
     docs: "https://vercel.com/docs/cli",
     vars: (p) => ({ XDG_DATA_HOME: xdg(p).XDG_DATA_HOME }),
   },
@@ -79,11 +75,11 @@ const TOOLS: readonly CliToolDef[] = [
     binary: "stripe",
     summary: "Payments, events and a restricted key valid for 90 days",
     login: ["login"],
-    check: ["config", "--list"],
+    check: ["balance", "retrieve"],
     logout: ["logout", "--all"],
     enter: true,
     access: "A restricted key for your Stripe account. Anything that moves money asks you first.",
-    note: "Pairing code in the browser. The key lasts 90 days, then sign in again.",
+    note: "Pairing code in the browser. The check reads the balance with the key. The key lasts 90 days, then sign in again.",
     docs: "https://docs.stripe.com/stripe-cli/keys",
     vars: (p) => ({ XDG_CONFIG_HOME: xdg(p).XDG_CONFIG_HOME }),
   },
@@ -97,7 +93,7 @@ const TOOLS: readonly CliToolDef[] = [
     logout: ["logout"],
     enter: false,
     access: "Whatever the signed-in AWS identity can do. Prefer a read-only role. Changes ask you first.",
-    note: "Needs AWS CLI 2.32 or later. Sessions last up to 12 hours. Runs see the config files; the single sign-on cache stays on this computer.",
+    note: "Needs AWS CLI 2.32 or later. Sessions last up to 12 hours. A signed-out check exits 253. Runs see the config files; the single sign-on cache stays on this computer.",
     docs: "https://docs.aws.amazon.com/sdkref/latest/guide/access-login.html",
     vars: (p) => ({
       AWS_CONFIG_FILE: `${p}/aws/config`,
@@ -110,7 +106,9 @@ const TOOLS: readonly CliToolDef[] = [
     binary: "gcloud",
     summary: "Your Google Cloud projects through gcloud",
     login: ["auth", "login"],
-    check: ["auth", "list", "--filter=status:ACTIVE", "--format=value(account)"],
+    // `auth list` exits 0 with nothing signed in, so the check lists one project instead.
+    check: ["projects", "list", "--limit=1", "--format=value(projectId)"],
+    whoami: ["auth", "list", "--filter=status:ACTIVE", "--format=value(account)"],
     logout: ["auth", "revoke", "--all"],
     enter: false,
     access: "Whatever the signed-in account can do. Prefer a viewer role. Changes ask you first.",
@@ -119,21 +117,20 @@ const TOOLS: readonly CliToolDef[] = [
     vars: (p) => ({ CLOUDSDK_CONFIG: `${p}/gcloud` }),
   },
   {
-    id: "sentry",
-    name: "Sentry CLI",
-    binary: "sentry",
-    summary: "Errors, releases and source maps",
-    login: ["auth", "login"],
-    check: ["auth", "status"],
-    logout: ["auth", "logout"],
+    id: "az",
+    name: "Azure",
+    binary: "az",
+    summary: "Your Azure subscriptions through the az CLI",
+    login: ["login", "--use-device-code"],
+    // Asks Azure for a token, which makes a real call, and prints only when it ends.
+    check: ["account", "get-access-token", "--query", "expiresOn", "--output", "tsv"],
+    whoami: ["account", "show", "--query", "user.name", "--output", "tsv"],
+    logout: ["logout"],
     enter: false,
-    access: "Whatever your Sentry account can do. Changes ask you first.",
-    note: "Device code. The new Sentry CLI's command line was not confirmed against an install.",
-    docs: "https://docs.sentry.io/cli/",
-    vars: (p) => ({
-      XDG_CONFIG_HOME: xdg(p).XDG_CONFIG_HOME,
-      XDG_DATA_HOME: xdg(p).XDG_DATA_HOME,
-    }),
+    access: "Whatever the signed-in Azure identity can do. Prefer a reader role. Changes ask you first.",
+    note: "Device code: majhi shows the code and the page.",
+    docs: "https://learn.microsoft.com/en-us/cli/azure/authenticate-azure-cli-interactively",
+    vars: (p) => ({ AZURE_CONFIG_DIR: `${p}/azure` }),
   },
 ];
 
@@ -174,5 +171,6 @@ export function cliProfileFolders(profile: string): string[] {
     `${profile}/xdg/cache`,
     `${profile}/aws`,
     `${profile}/gcloud`,
+    `${profile}/azure`,
   ];
 }
