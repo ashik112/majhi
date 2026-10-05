@@ -50,6 +50,8 @@ export interface DecisionActions {
   answerTrust?(id: number, option: string): Promise<unknown>;
   /** The monthly ceiling: raise it for the month or keep it. */
   answerCeiling?(month: string, option: string): Promise<unknown>;
+  /** The Mac has notifications off for majhi: `settings` opens the pane, `check` sends a test. */
+  answerNotifyAccess?(option: string): Promise<unknown>;
 }
 
 export interface RecommendationStore {
@@ -382,6 +384,7 @@ export class InboxService {
       }
     } else if (parsed.kind === "trust") await actions.answerTrust?.(parsed.id, input.option);
     else if (parsed.kind === "ceiling") await actions.answerCeiling?.(parsed.month, input.option);
+    else if (parsed.kind === "notify") await actions.answerNotifyAccess?.(input.option);
     else if (parsed.kind === "draft") {
       await actions.decideDraft(parsed.id, input.option === "send" ? "send" : "discard");
     } else if (parsed.kind === "batch") {

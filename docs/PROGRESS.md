@@ -1,5 +1,16 @@
 # Progress
 
+## Mac notifications show as majhi, and say so when macOS has them off (built, not merged)
+
+Branch `fix/mac-notifications`.
+
+- **Cause.** The first terminal-notifier post asked macOS for permission under the helper's 10 second timeout. The helper ended the process while the question was on screen, and macOS counted that as a No for good (`tccutil reset UserNotification` does not undo it here). From then on terminal-notifier exited 3, and majhi fell back to osascript, which macOS shows as Script Editor, with a click that opens Script Editor.
+- **Fix.** No osascript on macOS. The notifier result is typed from the exit code: `shown`, `blocked` (exit 3), `unavailable`, `failed`. Blocked raises one Needs you item, "Mac notifications are off for majhi", with "Open Notification settings" and "Check again" (the item clears when a test notification shows). It also reaches the banner and the Home list through the existing decision list (kind `notifications`, label Access).
+- **Shows as majhi.** The helper builds its own small app (`majhi.app`, bundle id `dev.majhi.alerts`, the majhi icon, ad hoc signed, verified) with `swiftc` at start. It falls back to terminal-notifier where there are no Command Line Tools. The permission question is asked once, at helper start, by a process that is never ended early. See DECISIONS, 2026-10-05.
+- **What the owner will notice.** After the helper restarts, macOS asks once to allow notifications for "majhi". Say Yes. If it was already turned off, majhi shows the item above instead of a Script Editor banner.
+- **Verified.** Typecheck 0. Tests: `apps/host/src/macNotifier.test.ts` (exit 3 is blocked and nothing runs osascript, from the code not the text, any other code is failed, build and verify, a bad signature or a program that does not start installs nothing, the question is asked without the short timeout, terminal-notifier fallback with its pinned hash), `apps/server/src/notify/mac-access.test.ts` (one item however many alerts are blocked, cleared after a shown test, raised again if blocked again). Real build on this Mac: compile, icon, ad hoc signature and `status` all pass, and usernoted accepts the bundle and shows its permission question. Browser: the new item on Home and Needs you at 1440x900 and 1100x800 (the server list was stubbed to add the item, since the e2e helper has notifications off).
+- **Left.** Pressing Allow on the macOS question and a click on a real notification were not exercised (they need the owner). The item stays until a notification shows, even if the owner turns Mac notifications off in setup.
+
 ## Disk hygiene: caches after 1 day, old images removed after each update (built, not merged)
 
 Branch `feat/disk-hygiene`.

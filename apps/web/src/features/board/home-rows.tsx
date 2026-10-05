@@ -80,6 +80,7 @@ const VERB_BY_KIND: Record<OwnerDecisionKind, string> = {
   batch: "Review",
   incident: "Incident",
   trust: "Trust",
+  notifications: "Turn on",
 };
 
 /**
