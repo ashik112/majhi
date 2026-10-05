@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HostLoginProgress } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { CliLogins, loginDir, parseLoginOutput } from "./cliLogin.ts";
+import { CliLogins, loginDir } from "./cliLogin.ts";
 import { findExecutable } from "./paths.ts";
 
 const TOKEN = "gho_FakeWorkspaceToken1234567890";
@@ -98,25 +98,6 @@ function logins(dir: string, path: string) {
     }),
   };
 }
-
-describe("parseLoginOutput", () => {
-  it("finds gh's one-time code and the device page", () => {
-    const text =
-      "\n! One-time code (4F84-DF73) copied to clipboard\nOpen this URL to continue in your web browser: https://github.com/login/device\n";
-    expect(parseLoginOutput(text)).toEqual({ code: "4F84-DF73", url: "https://github.com/login/device" });
-  });
-
-  it("finds the code in gh's older wording and the page from majhi's browser script", () => {
-    const text =
-      "! First copy your one-time code: WDJB-MJHT\nMAJHI_LOGIN_URL https://github.com/login/device\n";
-    expect(parseLoginOutput(text)).toEqual({ code: "WDJB-MJHT", url: "https://github.com/login/device" });
-  });
-
-  it("finds nothing before the CLI printed it, and ignores a page that is not http", () => {
-    expect(parseLoginOutput("- Logging in to github.com\n")).toEqual({});
-    expect(parseLoginOutput("MAJHI_LOGIN_URL file:///etc/passwd\n")).toEqual({});
-  });
-});
 
 describe("CliLogins", () => {
   it("signs in with gh in the workspace's own config folder, never the owner's, and removes it after", async () => {

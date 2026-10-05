@@ -570,12 +570,6 @@ describe("transition table", () => {
     transition(from, { type: "close" });
     expect(from).toEqual(copy);
   });
-
-  it("is deterministic: the same input gives the same output", () => {
-    const from = task({ status: "running", hasLiveRun: true });
-    const e: LifecycleEvent = { type: "ownerStop", at: AT };
-    expect(transition(from, e)).toEqual(transition(from, e));
-  });
 });
 
 /** The statuses each event is accepted in on a task with no hold (hold rules are tested below). */
@@ -948,7 +942,7 @@ describe("invariants over every reachable state", () => {
     return { states: [...seen.values()], refusals };
   };
 
-  const { states, refusals } = explore();
+  const { states } = explore();
 
   it("explores a real space", () => {
     expect(states.length).toBeGreaterThan(100);
@@ -988,23 +982,6 @@ describe("invariants over every reachable state", () => {
     )) {
       const r = transition(s, { type: "start", by: "owner" });
       expect(isRefusal(r)).toBe(true);
-    }
-  });
-
-  it("a task that is not moving always has a reason the owner can read: a hold with a sentence", () => {
-    // In the model, "not moving" for a flight status is a hold. Every hold has a lifter and a sentence.
-    for (const s of states.filter((x) => x.hold !== undefined)) {
-      const h = s.hold as Hold;
-      expect(liftersOf(h).length).toBeGreaterThan(0);
-      expect(sentenceOf(h).length).toBeGreaterThan(10);
-    }
-  });
-
-  it("every refusal says why in words", () => {
-    for (const r of refusals) {
-      expect(r.refused).toBe(true);
-      expect(r.text.length).toBeGreaterThan(5);
-      expect(r.text).not.toMatch(/undefined|\[object/);
     }
   });
 

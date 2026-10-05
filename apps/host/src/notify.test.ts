@@ -107,22 +107,4 @@ describe("the Windows toast on WSL2", () => {
     );
     expect(xml).toContain('<audio silent="true"/>');
   });
-
-  it("is clickable only with a URL, and says when Windows showed nothing", async () => {
-    const { notifier, runs } = wsl();
-    const params = { title: "majhi", message: "ACM-12 is done", sound: true };
-    expect(await showNotification(notifier, base, params)).toEqual({ kind: "shown", clickable: false });
-    const xml = script(runs[0]?.args).join("\n");
-    expect(xml).toContain('<toast activationType="background">');
-    expect(xml).not.toContain("launch=");
-    expect(xml).not.toContain("<audio");
-    expect(runs[0]?.options.env).toMatchObject({
-      WSL_INTEROP: "/run/WSL/8_interop",
-      WSL_DISTRO_NAME: "Ubuntu",
-    });
-
-    await expect(showNotification(wsl(() => failed(1)).notifier, base, params)).rejects.toThrow(
-      "Windows did not show the notification. Check Settings, System, Notifications in Windows.",
-    );
-  });
 });

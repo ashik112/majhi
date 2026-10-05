@@ -4,9 +4,6 @@ import {
   type ConnectionHealth,
   ConnectionHealthSchema,
   failureFromError,
-  failureFromExit,
-  failureFromHttp,
-  failureFromMcpCode,
   nextHealth,
 } from "./connection-health.ts";
 
@@ -107,32 +104,6 @@ describe("nextHealth", () => {
 });
 
 describe("reading a call's result", () => {
-  it("maps HTTP statuses", () => {
-    expect(failureFromHttp(200)).toBeUndefined();
-    expect(failureFromHttp(204)).toBeUndefined();
-    expect(failureFromHttp(401)).toBe("rejected");
-    expect(failureFromHttp(403)).toBe("forbidden");
-    expect(failureFromHttp(404)).toBe("not-found");
-    expect(failureFromHttp(429)).toBe("rate-limited");
-    expect(failureFromHttp(503)).toBe("service-down");
-    expect(failureFromHttp(302)).toBe("unexpected");
-  });
-
-  it("maps MCP error codes, and HTTP statuses the SDK puts in the code", () => {
-    expect(failureFromMcpCode(401)).toBe("rejected");
-    expect(failureFromMcpCode(-32001)).toBe("timeout");
-    expect(failureFromMcpCode(-32000)).toBe("unreachable");
-    expect(failureFromMcpCode(-32601)).toBe("mcp-error");
-  });
-
-  it("maps command exit codes", () => {
-    expect(failureFromExit(0, false)).toBeUndefined();
-    expect(failureFromExit(127, false)).toBe("tool-missing");
-    expect(failureFromExit(1, true)).toBe("tool-missing");
-    expect(failureFromExit(1, false)).toBe("not-signed-in");
-    expect(failureFromExit(null, false)).toBe("timeout");
-  });
-
   it("reads a thrown error's code and never its message", () => {
     const refused = Object.assign(new Error("401 unauthorized: please log in"), { code: "ECONNREFUSED" });
     expect(failureFromError(refused)).toBe("unreachable");

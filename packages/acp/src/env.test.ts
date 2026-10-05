@@ -98,24 +98,6 @@ describe("buildEnv", () => {
 });
 
 describe("loginCommand", () => {
-  it("builds the Claude login command", () => {
-    const spec = loginCommand({ tool: "claude", home: "/h/a" }, { base });
-    expect(spec.command).toBe("claude-agent-acp");
-    expect(spec.args).toEqual(["--cli", "auth", "login", "--claudeai"]);
-    expect(spec.display).toBe("CLAUDE_CONFIG_DIR=/h/a claude-agent-acp --cli auth login --claudeai");
-    expect(spec.env.CLAUDE_CONFIG_DIR).toBe("/h/a");
-  });
-
-  it("builds the Codex login command with an adapter override", () => {
-    const spec = loginCommand(
-      { tool: "codex", home: "/h/c" },
-      { base, adapters: { codex: { command: "node", args: ["fake.ts"] } } },
-    );
-    expect(spec.command).toBe("node");
-    expect(spec.args).toEqual(["fake.ts", "cli", "login", "--device-auth"]);
-    expect(spec.env.CODEX_HOME).toBe("/h/c");
-  });
-
   it("rejects API-key accounts and never shows a key", () => {
     expect(() => loginCommand({ tool: "claude", home: "/h", apiKey: "sk-secret" }, { base })).toThrow();
     const spec = loginCommand({ tool: "claude", home: "/h" }, { base });

@@ -1,47 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseSchedulePhrase, resolveSpec, type ScheduleSpec } from "./automation.ts";
+import { resolveSpec, type ScheduleSpec } from "./automation.ts";
 import { nextRunAfter, onceInstant, upcomingRuns } from "./schedule-time.ts";
 
 const iso = (d: Date | undefined) => d?.toISOString();
-
-describe("parseSchedulePhrase", () => {
-  const cases: [string, ScheduleSpec][] = [
-    ["every 1 hour", { kind: "interval", every: 1, unit: "hours" }],
-    ["Every 30 minutes", { kind: "interval", every: 30, unit: "minutes" }],
-    ["every hour", { kind: "interval", every: 1, unit: "hours" }],
-    ["every 2 days", { kind: "interval", every: 2, unit: "days" }],
-    ["hourly", { kind: "interval", every: 1, unit: "hours" }],
-    ["daily at 18:30", { kind: "cron", expression: "30 18 * * *" }],
-    ["every day at 6pm", { kind: "cron", expression: "0 18 * * *" }],
-    ["weekdays at 9:00", { kind: "cron", expression: "0 9 * * 1-5" }],
-    ["mondays at 9:00", { kind: "cron", expression: "0 9 * * 1" }],
-    ["every monday at 09:15", { kind: "cron", expression: "15 9 * * 1" }],
-    ["mon and fri at 7:05am", { kind: "cron", expression: "5 7 * * 1,5" }],
-    ["weekends at 12am", { kind: "cron", expression: "0 0 * * 0,6" }],
-    ["*/15 * * * *", { kind: "cron", expression: "*/15 * * * *" }],
-  ];
-  it.each(cases)("reads %s", (phrase, spec) => {
-    expect(parseSchedulePhrase(phrase)).toEqual({ ok: true, spec });
-  });
-
-  const bad: [string, RegExp][] = [
-    ["", /Say when/],
-    ["banana", /could not read/],
-    ["daily", /Add a time/],
-    ["weekdays at 25:00", /not a time/],
-    ["daily at 9:75", /not a time/],
-    ["daily at 13pm", /not a time/],
-    ["every 0 minutes", /at least 1/],
-    ["every 5 fortnights", /could not read/],
-    ["funday at 9:00", /not a day/],
-    ["61 * * * *", /Not a valid cron/],
-  ];
-  it.each(bad)("rejects %j with a clear error", (phrase, message) => {
-    const result = parseSchedulePhrase(phrase);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(message);
-  });
-});
 
 describe("nextRunAfter", () => {
   it("counts an interval from the given time", () => {

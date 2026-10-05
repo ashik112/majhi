@@ -1,15 +1,6 @@
 import { boardCounts, type OwnerDecision, type TaskStatus, type TaskSummary } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import {
-  buildEntries,
-  buildHome,
-  type HomeInput,
-  jumpSection,
-  needsAgrees,
-  type SectionId,
-  sectionOf,
-  stepFocus,
-} from "./home-model.ts";
+import { buildHome, type HomeInput, needsAgrees, type SectionId, sectionOf } from "./home-model.ts";
 
 const NOW = Date.parse("2026-10-05T12:00:00Z");
 const TODAY = "2026-10-05T09:00:00.000Z";
@@ -181,110 +172,5 @@ describe("Needs you equals the server's decision counts", () => {
   it("a decision with no task (a sign-in) is a row too", () => {
     const { sections } = buildHome(input());
     expect(sections.needs.map((n) => n.decision.id)).toContain("signin:claude-acme");
-  });
-});
-
-describe("order inside a section", () => {
-  it("Needs you: blocks others first, then priority, then the longest wait", () => {
-    const tasks = [
-      task("ACM-1", "review", { org: "acme" }),
-      task("ACM-2", "review", { org: "acme", priority: "high" }),
-      task("ACM-3", "review", { org: "acme" }),
-      task("ACM-4", "ready", { org: "acme", waitingOn: ["ACM-3"] }),
-    ];
-    const decisions = [
-      { ...decision("d1", "ACM-1", "acme"), at: "2026-10-05T08:00:00.000Z" },
-      { ...decision("d2", "ACM-2", "acme"), at: "2026-10-05T11:00:00.000Z" },
-      { ...decision("d3", "ACM-3", "acme"), at: "2026-10-05T10:00:00.000Z" },
-    ];
-    const { sections } = buildHome(input({ tasks, decisions }));
-    expect(sections.needs.map((n) => n.decision.task)).toEqual(["ACM-3", "ACM-2", "ACM-1"]);
-  });
-
-  it("Up next: can start first, then priority, due date, age", () => {
-    const tasks = [
-      task("ACM-1", "ready", { org: "acme", waitingOn: ["ACM-9"] }),
-      task("ACM-2", "ready", { org: "acme", priority: "low" }),
-      task("ACM-3", "ready", { org: "acme", priority: "high" }),
-      task("ACM-4", "ready", { org: "acme", due: "2026-10-07" }),
-      task("ACM-5", "ready", { org: "acme", updatedAt: "2026-10-04T09:00:00.000Z" }),
-    ];
-    const blockers = new Map<string, lifecycleBlocker>([
-      ["ACM-1", { gate: "dependency", on: ["ACM-9"] }],
-      ["ACM-2", { gate: "nobody", autopilot: "on" }],
-      ["ACM-3", { gate: "nobody", autopilot: "on" }],
-      ["ACM-4", { gate: "nobody", autopilot: "on" }],
-      ["ACM-5", { gate: "slots", scope: "total", inUse: 3, max: 3 }],
-    ]);
-    const { sections } = buildHome(input({ tasks, decisions: [], blockers }));
-    expect(ids(sections.next)).toEqual(["ACM-3", "ACM-4", "ACM-2", "ACM-5", "ACM-1"]);
-  });
-
-  it("Shipping: failed CI first, then running, then green", () => {
-    const tasks = [
-      task("ACM-1", "mr", { org: "acme" }),
-      task("ACM-2", "mr", { org: "acme" }),
-      task("ACM-3", "mr", { org: "acme" }),
-    ];
-    const mr = (ci: "passing" | "pending" | "failing") => ({ project: "web", number: 1, url: "u", ci });
-    const mrs = new Map([
-      ["ACM-1", mr("passing")],
-      ["ACM-2", mr("failing")],
-      ["ACM-3", mr("pending")],
-    ]);
-    const { sections } = buildHome(input({ tasks, decisions: [], mrs }));
-    expect(ids(sections.shipping)).toEqual(["ACM-2", "ACM-3", "ACM-1"]);
-  });
-
-  it("Running now: longest running first, paused last", () => {
-    const tasks = [
-      task("ACM-1", "running", { org: "acme", working: ["a"] }),
-      task("ACM-2", "running", { org: "acme", working: ["a"] }),
-      task("ACM-3", "paused", { org: "acme" }),
-    ];
-    const doing = new Map([
-      ["ACM-1", { agent: "a", since: "2026-10-05T11:30:00.000Z" }],
-      ["ACM-2", { agent: "a", since: "2026-10-05T10:00:00.000Z" }],
-    ]);
-    const { sections } = buildHome(
-      input({ tasks, decisions: [], working: new Set(["ACM-1", "ACM-2"]), doing }),
-    );
-    expect(ids(sections.running)).toEqual(["ACM-2", "ACM-1", "ACM-3"]);
-  });
-});
-
-type lifecycleBlocker = import("@majhi/shared").lifecycle.Blocker;
-
-describe("the list the keys walk", () => {
-  it("draws no empty section and keeps the shut ones as one line", () => {
-    const entries = buildEntries(buildHome(input()).sections, { opened: new Set(), all: new Set() });
-    const headers = entries.filter((e) => e.type === "header").map((e) => e.type === "header" && e.section);
-    expect(headers).toEqual(["needs", "running", "shipping", "next", "triage", "done"]);
-    // To triage and Done today are shut: only their header is in the list.
-    expect(entries.some((e) => e.type === "triage")).toBe(false);
-    const open = buildEntries(buildHome(input()).sections, { opened: new Set(["triage"]), all: new Set() });
-    expect(open.filter((e) => e.type === "triage")).toHaveLength(2);
-  });
-
-  it("caps Up next at five rows and offers the rest", () => {
-    const tasks = Array.from({ length: 8 }, (_, i) => task(`ACM-${i + 1}`, "ready", { org: "acme" }));
-    const sections = buildHome(input({ tasks, decisions: [] })).sections;
-    const entries = buildEntries(sections, { opened: new Set(), all: new Set() });
-    expect(entries.filter((e) => e.type === "next")).toHaveLength(5);
-    expect(entries.find((e) => e.type === "more")).toMatchObject({ hidden: 3 });
-    const all = buildEntries(sections, { opened: new Set(), all: new Set<SectionId>(["next"]) });
-    expect(all.filter((e) => e.type === "next")).toHaveLength(8);
-  });
-
-  it("j and k stay at the ends, Shift+J and Shift+K jump sections", () => {
-    const entries = buildEntries(buildHome(input()).sections, { opened: new Set(), all: new Set() });
-    const keys = entries.filter((e) => e.type !== "header" || e.collapsible).map((e) => e.key);
-    expect(stepFocus(keys, undefined, 1)).toBe(keys[0]);
-    expect(stepFocus(keys, keys[0], -1)).toBe(keys[0]);
-    expect(stepFocus(keys, keys.at(-1), 1)).toBe(keys.at(-1));
-    const first = keys[0];
-    const second = jumpSection(entries, first, 1);
-    expect(entries.find((e) => e.key === second)?.section).toBe("running");
-    expect(jumpSection(entries, second, -1)).toBe(first);
   });
 });

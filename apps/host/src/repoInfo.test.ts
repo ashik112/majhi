@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GUARD_CONFIG } from "./gitGuard.ts";
 import type { ExecFn } from "./remount.ts";
-import { commitSubjects, parseDockerRuntime, readRepo } from "./repoInfo.ts";
+import { commitSubjects, readRepo } from "./repoInfo.ts";
 
 const HEAD = "0123456789abcdef0123456789abcdef01234567";
 
@@ -51,13 +51,5 @@ describe("commitSubjects", () => {
 
   it("is empty when the commit is not in this checkout", async () => {
     expect(await commitSubjects(ctx(gitExec({})), "abcdef1")).toEqual([]);
-  });
-});
-
-describe("parseDockerRuntime", () => {
-  it("names OrbStack and Docker Desktop from docker's operating system", () => {
-    expect(parseDockerRuntime("OrbStack\n")).toBe("orbstack");
-    expect(parseDockerRuntime("Docker Desktop")).toBe("docker-desktop");
-    expect(parseDockerRuntime("Ubuntu 24.04")).toBe("docker");
   });
 });

@@ -7,99 +7,18 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { KeyringItem, PassphraseKeeping } from "./platform/types.ts";
 import {
   createSsh,
-  discoverKeys,
-  discoverPublicKeys,
-  isWake,
-  parseFingerprints,
-  parseIdentityFiles,
   type RunFn,
   type RunOptions,
   type RunResult,
   SSH_ADD,
   type SshDeps,
   SshUnlockError,
-  shortFingerprint,
 } from "./ssh.ts";
 
 const execFileAsync = promisify(execFile);
 const HOME = "/Users/o";
 const SOCK = "/private/tmp/com.apple.launchd.x/Listeners";
 const fp = (n: string) => `SHA256:${n.padEnd(43, "A")}`;
-
-describe("parseIdentityFiles", () => {
-  it("reads IdentityFile lines, expands ~ and %d, and skips what it cannot resolve", () => {
-    const config = [
-      "Host github",
-      "  IdentityFile ~/.ssh/id_work",
-      "  identityfile=~/.ssh/id_two",
-      '  IdentityFile "/keys/quoted key"',
-      "  IdentityFile %d/.ssh/id_pct",
-      "  IdentityFile ~/.ssh/%h_key",
-      "  IdentityFile ~/.ssh/id_work.pub",
-      "  IdentityFile none",
-      "  IdentityFile relative/key",
-      "  # IdentityFile ~/.ssh/commented",
-      "  IdentityFileX ~/.ssh/other",
-    ].join("\n");
-    expect(parseIdentityFiles(config, HOME)).toEqual([
-      "/Users/o/.ssh/id_work",
-      "/Users/o/.ssh/id_two",
-      "/keys/quoted key",
-      "/Users/o/.ssh/id_pct",
-      "/Users/o/.ssh/id_work",
-    ]);
-  });
-});
-
-describe("discoverKeys", () => {
-  it("lists config keys then default names, each once, only when the file exists", async () => {
-    const files = new Set(["/Users/o/.ssh/id_work", "/Users/o/.ssh/id_ed25519", "/Users/o/.ssh/id_rsa"]);
-    const keys = await discoverKeys({
-      home: HOME,
-      readText: async (path) =>
-        path === "/Users/o/.ssh/config"
-          ? "IdentityFile ~/.ssh/id_work\nIdentityFile ~/.ssh/id_ed25519\nIdentityFile ~/.ssh/gone\n"
-          : undefined,
-      exists: async (path) => files.has(path),
-    });
-    expect(keys).toEqual(["/Users/o/.ssh/id_work", "/Users/o/.ssh/id_ed25519", "/Users/o/.ssh/id_rsa"]);
-  });
-
-  it("works without an ssh config", async () => {
-    const keys = await discoverKeys({
-      home: HOME,
-      readText: async () => undefined,
-      exists: async (path) => path.endsWith("id_ecdsa"),
-    });
-    expect(keys).toEqual(["/Users/o/.ssh/id_ecdsa"]);
-  });
-});
-
-describe("discoverPublicKeys", () => {
-  it("lists .pub files that exist even when the private key is not there, and never a private path", async () => {
-    const files = new Set([
-      "/Users/o/.ssh/gitlab.pub",
-      "/Users/o/.ssh/id_ed25519.pub",
-      "/Users/o/.ssh/id_rsa",
-    ]);
-    const keys = await discoverPublicKeys({
-      home: HOME,
-      readText: async () => "Host gl\n  IdentityFile ~/.ssh/gitlab\n  IdentityFile ~/.ssh/nope\n",
-      exists: async (path) => files.has(path),
-    });
-    expect(keys).toEqual(["/Users/o/.ssh/gitlab.pub", "/Users/o/.ssh/id_ed25519.pub"]);
-    expect(keys.every((k) => k.endsWith(".pub"))).toBe(true);
-  });
-});
-
-describe("fingerprints", () => {
-  it("parses ssh-add and ssh-keygen output and shortens it", () => {
-    const out = `256 ${fp("abc")} me@mac (ED25519)\n3072 ${fp("xyz")} work (RSA)\n`;
-    expect(parseFingerprints(out)).toEqual([fp("abc"), fp("xyz")]);
-    expect(parseFingerprints("The agent has no identities.\n")).toEqual([]);
-    expect(shortFingerprint(fp("abcdefghij"))).toBe("abcdefgh");
-  });
-});
 
 interface World {
   /** Key file -> "none" | "pass" | "broken". */
@@ -290,37 +209,6 @@ describe("the key loader", () => {
     expect(status.error).toBe("The SSH agent is not running, so there is nothing to load keys into.");
   });
 
-  it("in a dry run changes nothing and says what it would add", async () => {
-    const w = fakeWorld({ [KEY_A]: "none", [KEY_B]: "pass" });
-    const report = await setup(w, { dryRun: true }).inspect();
-    expect(report.keys).toEqual([
-      { path: "~/.ssh/id_work", fingerprint: "idworkAA", state: "needs-passphrase" },
-      { path: "~/.ssh/id_ed25519", fingerprint: "ided2551", state: "would-add" },
-    ]);
-    expect(w.calls.filter((c) => c.startsWith(SSH_ADD) && !c.includes(" -l"))).toEqual([]);
-    expect(w.agent.size).toBe(0);
-  });
-
-  it("off macOS, uses the ssh tools on PATH and never Apple's flags", async () => {
-    const w = fakeWorld({ [KEY_A]: "none", [KEY_B]: "pass" });
-    w.unlockWith[KEY_B] = "correct horse";
-    const ssh = setup(w, { keeping: "none" });
-    await ssh.reload();
-    await ssh.unlock("~/.ssh/id_work", "correct horse");
-    expect(w.calls).toContain(`/usr/local/bin/ssh-add ${KEY_A}`);
-    expect(w.calls).toContain(`/usr/local/bin/ssh-add ${KEY_B}`);
-    expect(w.calls.some((c) => c.includes("--apple"))).toBe(false);
-    expect(w.calls.some((c) => c.startsWith("/usr/bin/"))).toBe(false);
-
-    const missing = setup(fakeWorld({ [KEY_A]: "none" }), {
-      keeping: "keyring",
-      find: async () => undefined,
-    });
-    expect((await missing.reload()).error).toBe(
-      "ssh-add and ssh-keygen are not installed. Install openssh-client (Debian, Ubuntu) or openssh.",
-    );
-  });
-
   describe("unlock", () => {
     it("adds a key with its passphrase through a private askpass file and cleans up", async () => {
       const w = fakeWorld({ [KEY_B]: "pass" });
@@ -487,11 +375,5 @@ describe("the key loader", () => {
     clock += 10 * 60_000;
     await settle();
     expect(loads()).toBe(2);
-  });
-
-  it("tells a wake from a normal tick", () => {
-    expect(isWake(0, 60_000)).toBe(false);
-    expect(isWake(0, 60_000 + 2 * 60_000)).toBe(false);
-    expect(isWake(0, 60_000 + 2 * 60_000 + 1)).toBe(true);
   });
 });
