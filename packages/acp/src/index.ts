@@ -104,6 +104,7 @@ export {
   MAJHI_HOOKS_DIR,
   MAJHI_RUN_CONNECTIONS_DIR,
   MountRefused,
+  orphanRuns,
   type RunnerConfig,
   type RunnerSpawner,
   removeStaleRunners,

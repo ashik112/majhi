@@ -231,31 +231,52 @@ function cliEnvOf(cfg: Pick<RunnerConfig, "cliEnv">): Record<string, string> {
   return { ...cfg.cliEnv, DOCKER_CONFIG: cfg.cliEnv.DOCKER_CONFIG ?? "/tmp/majhi-docker" };
 }
 
-/** `docker rm -f`, quietly: the container may be gone already. */
+/** How long one docker call of the cleanup may take before it is given up on. */
+const CLEANUP_TIMEOUT_MS = 20_000;
+
+/** `docker rm -f`, quietly: the container may be gone already. A hung CLI is killed, not waited for. */
 function removeContainers(cfg: Pick<RunnerConfig, "docker" | "cliEnv">, names: string[]): Promise<void> {
   return new Promise((done) => {
     if (names.length === 0) return done();
-    const rm = spawn(cfg.docker ?? "docker", ["rm", "-f", ...names], { env: cliEnvOf(cfg), stdio: "ignore" });
+    const rm = spawn(cfg.docker ?? "docker", ["rm", "-f", ...names], {
+      env: cliEnvOf(cfg),
+      stdio: "ignore",
+      timeout: CLEANUP_TIMEOUT_MS,
+    });
     rm.on("error", () => done());
     rm.on("close", () => done());
   });
 }
 
-/** Names of runner containers, running or not, with every label in `labels`. */
+/**
+ * Names of runner containers, running or not, with every label in `labels`. Rejects when docker
+ * cannot be read (daemon down or restarting, a hung CLI), so a caller can tell that from "none".
+ */
 function listRunners(cfg: Pick<RunnerConfig, "docker" | "cliEnv">, labels: string[]): Promise<string[]> {
-  return new Promise((done) => {
+  return new Promise((done, fail) => {
     const filters = ["majhi.runner=1", ...labels].flatMap((l) => ["--filter", `label=${l}`]);
     const ps = spawn(cfg.docker ?? "docker", ["ps", "-a", ...filters, "--format", "{{.Names}}"], {
       env: cliEnvOf(cfg),
       stdio: ["ignore", "pipe", "ignore"],
+      timeout: CLEANUP_TIMEOUT_MS,
     });
     let out = "";
     ps.stdout.on("data", (d: Buffer) => {
       out += d.toString();
     });
-    ps.on("error", () => done([]));
-    ps.on("close", () => done(out.split(/\s+/).filter(Boolean)));
+    ps.on("error", fail);
+    ps.on("close", (code) =>
+      code === 0 ? done(out.split(/\s+/).filter(Boolean)) : fail(new Error(`docker ps exited with ${code}`)),
+    );
   });
+}
+
+/** A container a spawner of majhi started for a run: `majhi-run-` and 12 hex digits. Checks and terminals have other names. */
+const RUN_CONTAINER = /^majhi-run-[0-9a-f]{12}$/;
+
+/** The names `sweep` would remove: run containers that none of `live` holds. */
+export function orphanRuns(names: readonly string[], live: readonly string[]): string[] {
+  return names.filter((n) => RUN_CONTAINER.test(n) && !live.includes(n));
 }
 
 /** A spawner of runner containers that knows which of them still belong to a live run. */
@@ -267,6 +288,12 @@ export interface RunnerSpawner extends Spawner {
    * or that the daemon created after a kill. Returns their names.
    */
   prune(): Promise<string[]>;
+  /**
+   * Removes run containers that no live run holds, whichever majhi started them: the ones a
+   * restart or crash left behind, which keep burning CPU while majhi counts no run. Checks and
+   * terminals are left alone. Returns their names; docker being unreadable returns none.
+   */
+  sweep(): Promise<string[]>;
 }
 
 /**
@@ -310,9 +337,15 @@ export function dockerSpawner(cfg: RunnerConfig): RunnerSpawner {
   return Object.assign(spawner, {
     live: () => [...live],
     async prune(): Promise<string[]> {
-      const stale = (await listRunners(cfg, [`${SPAWNER_LABEL}=${id}`])).filter((n) => !live.has(n));
+      const listed = await listRunners(cfg, [`${SPAWNER_LABEL}=${id}`]).catch(() => []);
+      const stale = listed.filter((n) => !live.has(n));
       await removeContainers(cfg, stale);
       return stale;
+    },
+    async sweep(): Promise<string[]> {
+      const orphans = orphanRuns(await listRunners(cfg, []).catch(() => []), [...live]);
+      await removeContainers(cfg, orphans);
+      return orphans;
     },
   });
 }
@@ -352,8 +385,25 @@ export function dockerTty(cfg: RunnerConfig): (req: SpawnRequest) => Promise<Tty
 
 /**
  * Removes runner containers a previous majhi left behind (a crash, a restart). At start majhi
- * runs nothing yet, so every runner container is stale.
+ * runs nothing yet, so every runner container is stale. Docker may not answer yet while the
+ * machine or the daemon is coming back, so an unreadable docker is tried again a few times
+ * before giving up (the sweep of the machine sensor then catches what is left).
  */
-export async function removeStaleRunners(cfg: Pick<RunnerConfig, "docker" | "cliEnv">): Promise<void> {
-  await removeContainers(cfg, await listRunners(cfg, []));
+export async function removeStaleRunners(
+  cfg: Pick<RunnerConfig, "docker" | "cliEnv">,
+  retry: { attempts?: number; waitMs?: number } = {},
+): Promise<void> {
+  const attempts = retry.attempts ?? 4;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      await removeContainers(cfg, await listRunners(cfg, []));
+      return;
+    } catch (err) {
+      if (i === attempts) {
+        console.error(`Could not remove runner containers left by a previous majhi: ${String(err)}`);
+        return;
+      }
+      await new Promise((r) => setTimeout(r, (retry.waitMs ?? 3_000) * i));
+    }
+  }
 }
