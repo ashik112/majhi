@@ -131,6 +131,34 @@ export class TaskRepo {
   }
 
   /**
+   * `subjectInfo` and `openSubtasks` of many tasks in three queries however many ids there are. A task
+   * that does not exist is left out.
+   */
+  subjectsMany(ids: readonly string[]): Map<string, TaskSubjectInfo & { open: number; newest?: string }> {
+    const out = new Map<string, TaskSubjectInfo & { open: number; newest?: string }>();
+    if (ids.length === 0) return out;
+    this.subjectQueries ??= subjectStatements(this.db);
+    const params = { ids: JSON.stringify(ids) };
+    const repos = new Map(this.subjectQueries.reposIn.all(params).map((r) => [r.task, r.n]));
+    const open = new Map(this.subjectQueries.openIn.all(params).map((r) => [r.parent, r]));
+    for (const row of this.subjectQueries.rowsIn.all(params)) {
+      const kids = open.get(row.id);
+      out.set(row.id, {
+        id: row.id,
+        title: row.title,
+        kind: TaskSchema.shape.kind.parse(row.kind),
+        brief: row.brief,
+        ...(row.org === null ? {} : { org: row.org }),
+        status: TaskSchema.shape.status.parse(row.status),
+        repos: repos.get(row.id) ?? 0,
+        open: kids?.n ?? 0,
+        ...(kids?.newest == null ? {} : { newest: kids.newest }),
+      });
+    }
+    return out;
+  }
+
+  /**
    * The subtasks of a parent that are not done, and when the newest one was made. A parent with open
    * subtasks waits on them, not on the owner.
    */
@@ -279,14 +307,19 @@ export class TaskRepo {
   }
 
   /** Newest first. Two queries however many tasks there are. `working` is filled by the caller. */
-  list(includeDone: boolean): Omit<TaskSummary, "working">[] {
-    const rows = includeDone ? this.q.listAll.all() : this.q.listOpen.all();
+  list(includeDone: boolean, only?: readonly string[]): Omit<TaskSummary, "working">[] {
+    const rows =
+      only !== undefined
+        ? this.q.rowsIn.all({ ids: JSON.stringify(only) }).filter((r) => includeDone || r.status !== "done")
+        : includeDone
+          ? this.q.listAll.all()
+          : this.q.listOpen.all();
     // `pos` orders a task's repos; sorting here saves SQLite a temp sort of every repo row on each call.
     const repos = this.q.repoSummaries.all().sort((a, b) => a.pos - b.pos);
-    const byTask = new Map<string, { project: string; branch: string }[]>();
+    const byTask = new Map<string, { project: string }[]>();
     for (const r of repos) {
       const list = byTask.get(r.task) ?? [];
-      list.push({ project: r.project, branch: r.branch });
+      list.push({ project: r.project });
       byTask.set(r.task, list);
     }
     const linkRows = this.allLinks();
@@ -319,7 +352,6 @@ export class TaskRepo {
           kind: TaskSchema.shape.kind.parse(row.kind),
           status: TaskSchema.shape.status.parse(row.status),
           team: TeamSchema.parse(JSON.parse(row.team)),
-          mode: CoordinationModeSchema.catch("lead").parse(row.mode),
           updatedAt: row.updatedAt,
           repos: byTask.get(row.id) ?? [],
           links: own.map(toLink),
@@ -882,7 +914,6 @@ function taskStatements(db: Db) {
       .select({
         task: taskRepos.task,
         project: taskRepos.project,
-        branch: taskRepos.branch,
         pos: taskRepos.pos,
       })
       .from(taskRepos)
@@ -941,6 +972,31 @@ function subjectStatements(db: Db) {
       .select({ n: sql<number>`count(*)` })
       .from(taskRepos)
       .where(eq(taskRepos.task, sql.placeholder("id")))
+      .prepare(),
+    rowsIn: db
+      .select({
+        id: tasks.id,
+        title: tasks.title,
+        kind: tasks.kind,
+        brief: tasks.brief,
+        org: tasks.org,
+        status: tasks.status,
+      })
+      .from(tasks)
+      .where(inArray(tasks.id, IDS))
+      .prepare(),
+    reposIn: db
+      .select({ task: taskRepos.task, n: sql<number>`count(*)` })
+      .from(taskRepos)
+      .where(inArray(taskRepos.task, IDS))
+      .groupBy(taskRepos.task)
+      .prepare(),
+    openIn: db
+      .select({ parent: taskLinks.other, n: sql<number>`count(*)`, newest: sql<string | null>`max(${tasks.createdAt})` })
+      .from(taskLinks)
+      .innerJoin(tasks, eq(tasks.id, taskLinks.task))
+      .where(and(eq(taskLinks.type, "parent"), inArray(taskLinks.other, IDS), ne(tasks.status, "done")))
+      .groupBy(taskLinks.other)
       .prepare(),
   };
 }

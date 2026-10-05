@@ -534,6 +534,13 @@ export function createHandlers({
     // The captain's workspace threads are not tasks to the owner: they never show in a list.
     "tasks.list": async (input) =>
       services.tasks.list(input.includeDone === true).filter((t) => t.lane !== true),
+    "tasks.changed": async (input) => {
+      const tasks = services.tasks.list(true, input.ids).filter((t) => t.lane !== true);
+      if (input.decisions !== true) return { tasks, counts: await services.inbox.workCounts() };
+      const named = new Set(input.ids);
+      const { decisions, counts } = await services.inbox.view();
+      return { tasks, counts, decisions: decisions.filter((d) => d.task !== undefined && named.has(d.task)) };
+    },
     "tasks.get": async (input) => services.tasks.get(input.id),
     "captain.reportBug": async (input, ctx) => {
       // majhi's own code: the Private project named majhi, or the one whose folder is called majhi.

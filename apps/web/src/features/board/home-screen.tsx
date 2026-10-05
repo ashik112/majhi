@@ -1,6 +1,7 @@
 import { PRIVATE } from "@majhi/shared";
 import { Plus, X } from "lucide-react";
-import { type ReactNode, useMemo } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { Fragment, type ReactNode, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -86,26 +87,38 @@ export function BoardScreen() {
         </p>
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-[repeat(4,minmax(200px,1fr))] gap-3 overflow-x-auto">
-          <Column label="Needs you" lamp="needs" count={view.needs.length} loading={loading}>
-            {view.needs.map((d) => (
-              <DecisionCard key={d.id} decision={d} />
-            ))}
-          </Column>
-          <Column label="Working" lamp="working" count={view.working.length} loading={loading}>
-            {view.working.map((t) => (
-              <WorkingCard key={t.id} task={t} ago={shortAgo(t.updatedAt, now)} />
-            ))}
-          </Column>
-          <Column label="Up next" lamp="idle" count={view.next.length} loading={loading}>
-            {view.next.map((t) => (
-              <QueuedCard key={t.id} task={t} />
-            ))}
-          </Column>
-          <Column label="Done today" lamp="done" count={view.done.length} loading={loading}>
-            {view.done.map((t) => (
-              <DoneCard key={t.id} task={t} time={clock(t.updatedAt)} undoId={undoOf.get(t.id)} />
-            ))}
-          </Column>
+          <Column
+            label="Needs you"
+            lamp="needs"
+            items={view.needs}
+            keyOf={(d) => d.id}
+            loading={loading}
+            render={(d) => <DecisionCard decision={d} />}
+          />
+          <Column
+            label="Working"
+            lamp="working"
+            items={view.working}
+            keyOf={(t) => t.id}
+            loading={loading}
+            render={(t) => <WorkingCard task={t} ago={shortAgo(t.updatedAt, now)} />}
+          />
+          <Column
+            label="Up next"
+            lamp="idle"
+            items={view.next}
+            keyOf={(t) => t.id}
+            loading={loading}
+            render={(t) => <QueuedCard task={t} />}
+          />
+          <Column
+            label="Done today"
+            lamp="done"
+            items={view.done}
+            keyOf={(t) => t.id}
+            loading={loading}
+            render={(t) => <DoneCard task={t} time={clock(t.updatedAt)} undoId={undoOf.get(t.id)} />}
+          />
         </div>
       )}
     </div>
@@ -188,19 +201,29 @@ function Away({ now }: { now: number }) {
   );
 }
 
-function Column({
+/** A column with more cards than this draws only the ones in view (and a few around them). */
+const WINDOW_FROM = 30;
+const CARD_ESTIMATE = 112;
+const CARD_GAP = 8;
+
+function Column<T>({
   label,
   lamp,
-  count,
+  items,
+  keyOf,
+  render,
   loading,
-  children,
 }: {
   label: string;
   lamp: LampState;
-  count: number;
+  items: readonly T[];
+  keyOf: (item: T) => string;
+  render: (item: T) => ReactNode;
   loading: boolean;
-  children: ReactNode;
 }) {
+  const count = items.length;
+  // The element the cards scroll in, kept in state so the windowed list measures it once it exists.
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   return (
     <section
       aria-label={label}
@@ -211,9 +234,61 @@ function Column({
         <h2 className="text-base leading-[18px] font-semibold">{label}</h2>
         <span className="tnum font-mono text-sm text-fg-muted">{count}</span>
       </div>
-      <div className="scroll-fade -mx-1 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain px-1 pt-2.5 pb-6">
-        {loading ? <Skeleton className="h-[96px] w-full rounded-xl" /> : children}
+      <div
+        ref={setScroller}
+        className="scroll-fade -mx-1 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain px-1 pt-2.5 pb-6"
+      >
+        {loading ? (
+          <Skeleton className="h-[96px] w-full rounded-xl" />
+        ) : count > WINDOW_FROM ? (
+          <WindowedCards items={items} keyOf={keyOf} render={render} scroller={scroller} />
+        ) : (
+          items.map((item) => <Fragment key={keyOf(item)}>{render(item)}</Fragment>)
+        )}
       </div>
     </section>
+  );
+}
+
+/** The cards of a long column: only those in view are in the page, so a few hundred cost no more than a few. */
+function WindowedCards<T>({
+  items,
+  keyOf,
+  render,
+  scroller,
+}: {
+  items: readonly T[];
+  keyOf: (item: T) => string;
+  render: (item: T) => ReactNode;
+  scroller: HTMLElement | null;
+}) {
+  const virtual = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => scroller,
+    estimateSize: () => CARD_ESTIMATE + CARD_GAP,
+    overscan: 6,
+    getItemKey: (i) => {
+      const item = items[i];
+      return item === undefined ? i : keyOf(item);
+    },
+  });
+  return (
+    <div className="relative w-full shrink-0" style={{ height: virtual.getTotalSize() }}>
+      {virtual.getVirtualItems().map((row) => {
+        const item = items[row.index];
+        if (item === undefined) return null;
+        return (
+          <div
+            key={row.key}
+            ref={virtual.measureElement}
+            data-index={row.index}
+            className="absolute inset-x-0 top-0 pb-2"
+            style={{ transform: `translateY(${row.start}px)` }}
+          >
+            {render(item)}
+          </div>
+        );
+      })}
+    </div>
   );
 }

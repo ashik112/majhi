@@ -170,7 +170,9 @@ import {
   DecisionBatchInputSchema,
   DecisionBatchResultSchema,
   DecisionDetailSchema,
+  BoardCountsSchema,
   DecisionListSchema,
+  OwnerDecisionSchema,
   DecisionRecommendInputSchema,
 } from "./inbox.ts";
 import {
@@ -1564,6 +1566,17 @@ export const commands = {
     summary: "List tasks, newest first",
     input: z.object({ includeDone: z.boolean().optional() }),
     output: z.array(TaskSummarySchema),
+  },
+  "tasks.changed": {
+    risk: "read",
+    summary:
+      "For a screen that heard some tasks changed (at most 100 ids): their list rows, in the order asked, and the counts of what waits and what works. With `decisions`, also what waits in those tasks now. Ids that do not exist are left out. Cheap: it reads only those tasks",
+    input: z.object({ ids: z.array(TaskIdSchema).min(1).max(100), decisions: z.boolean().optional() }),
+    output: z.object({
+      tasks: z.array(TaskSummarySchema),
+      counts: BoardCountsSchema,
+      decisions: z.array(OwnerDecisionSchema).optional(),
+    }),
   },
   "tasks.get": {
     risk: "read",

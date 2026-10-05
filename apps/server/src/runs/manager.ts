@@ -151,7 +151,7 @@ export interface RunDeps {
     readAfterEnd(p: ProcessInfo): boolean;
   };
   /** Called when the set of working agents of some task changed, so the task list can refresh. */
-  onTasksChanged: () => void;
+  onTasksChanged: (task: string, rows: boolean) => void;
   /**
    * An agent ended a turn by itself (stop reason end_turn) with this final message. The room
    * routes its @mentions (5.3) before the task can count as idle, so this is awaited. `refused`:
@@ -1622,7 +1622,7 @@ export class RunManager {
     }
     run.refusalSwitched = true;
     this.live.system(run, "warn", `@${run.agent} was blocked by ${by}. Continuing on ${next} for this task.`);
-    this.deps.onTasksChanged();
+    this.deps.onTasksChanged(run.task, false);
     run.queue.unshift({ kind: "continue" });
     this.live.refreshQueued(run);
     return true;

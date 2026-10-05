@@ -25,6 +25,7 @@ export * from "./decision-learning.ts";
 export * from "./decisions.ts";
 export * from "./emoji.ts";
 export * from "./findings.ts";
+export * from "./event-seq.ts";
 export * from "./git-accounts.ts";
 export * from "./git-signin.ts";
 export * from "./handoff.ts";

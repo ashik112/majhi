@@ -62,6 +62,11 @@ export interface InboxDeps {
   /** Pending room items that may be decisions, of every open task. */
   items: () => RoomItem[];
   subject: (task: string) => Subject | undefined;
+  /**
+   * Many subjects at once (done and missing tasks left out). A list reads this first, so naming a task per
+   * row costs three queries, not three per row.
+   */
+  subjects?: (tasks: readonly string[]) => ReadonlyMap<string, Subject>;
   budgets: () => Promise<DecisionSources["budgets"]>;
   signedOut: () => Promise<DecisionSources["signedOut"]>;
   recommendations: RecommendationStore;
@@ -102,6 +107,10 @@ const BATCH_KEEP_MAX = 200;
 
 /** What the server found about a review task's merge is kept this long. */
 const SHIP_BLOCK_KEEP_MS = 15_000;
+/** At most this many merge looks (each reads the repos) are in flight at once. */
+const SHIP_LOOKS_AT_ONCE = 3;
+/** A list waits this long for first looks; the rest answer from the queue, and screens read again when they differ. */
+const SHIP_FIRST_LOOK_WAIT_MS = 1_500;
 
 /** Recommendations of decisions that are gone are kept this long, then forgotten. */
 const NO_NAMES: Readonly<Record<string, string>> = {};
@@ -120,8 +129,12 @@ export class InboxService {
     string,
     { at: number; block: { why: string; empty: boolean } | undefined }
   >();
-  /** Tasks whose look is being renewed now. */
+  /** Tasks whose look is queued or running now. */
   private readonly renewing = new Set<string>();
+  private readonly lookQueue: (() => Promise<void>)[] = [];
+  private lookRunning = 0;
+  /** What waited at the last build, so a change in who is working recounts without building everything again. */
+  private lastDecisions: readonly OwnerDecision[] | undefined;
 
   constructor(private readonly deps: InboxDeps) {}
 
@@ -134,6 +147,14 @@ export class InboxService {
   async view(org?: string): Promise<{ decisions: OwnerDecision[]; counts: BoardCounts }> {
     const all = await this.build();
     return { decisions: org === undefined ? all : all.filter((d) => d.org === org), counts: this.counts(all) };
+  }
+
+  /**
+   * The counts alone. A change in who is working does not change what waits, so this recounts the last
+   * look at what waits with the agents working now. The first call builds the look.
+   */
+  async workCounts(): Promise<BoardCounts> {
+    return this.counts(this.lastDecisions ?? (await this.build()));
   }
 
   private counts(all: readonly OwnerDecision[]): BoardCounts {
@@ -149,40 +170,70 @@ export class InboxService {
   }
 
   /** Review tasks that cannot merge, from a live look kept a few seconds. */
-  private async shipBlocks(items: readonly RoomItem[]): Promise<Map<string, { why: string; empty: boolean }>> {
+  private async shipBlocks(
+    items: readonly RoomItem[],
+    subject: (task: string) => Subject | undefined,
+  ): Promise<Map<string, { why: string; empty: boolean }>> {
     const { deps } = this;
     const out = new Map<string, { why: string; empty: boolean }>();
     if (deps.shipBlock === undefined) return out;
     const now = (deps.now?.() ?? new Date()).getTime();
     const tasks = new Set(
       items.flatMap((i) =>
-        i.type === "review" && i.state === "pending" && deps.subject(i.task)?.status === "review"
+        i.type === "review" && i.state === "pending" && subject(i.task)?.status === "review"
           ? [i.task]
           : [],
       ),
     );
     for (const task of this.shipLooks.keys()) if (!tasks.has(task)) this.shipLooks.delete(task);
-    await Promise.all(
-      [...tasks].map(async (task) => {
-        let look = this.shipLooks.get(task);
-        if (look === undefined) {
-          // The first look is waited for: a card must not offer Merge for a moment and then take it back.
-          look = { at: now, block: await this.look(task) };
-          this.shipLooks.set(task, look);
-        } else if (now - look.at > SHIP_BLOCK_KEEP_MS && !this.renewing.has(task)) {
-          // An old look still answers; a new one is read behind it, and screens hear when it differs.
-          this.renewing.add(task);
-          const was = look.block;
-          void this.look(task).then((block) => {
-            this.renewing.delete(task);
-            this.shipLooks.set(task, { at: (deps.now?.() ?? new Date()).getTime(), block });
-            if (was?.why !== block?.why || was?.empty !== block?.empty) deps.changed?.();
-          });
-        }
+    const first: Promise<void>[] = [];
+    for (const task of tasks) {
+      const look = this.shipLooks.get(task);
+      if (look === undefined) {
+        // A card should not offer Merge for a moment and then take it back, so first looks are waited for,
+        // but only a moment: a long queue of them (a big backlog) answers as they finish.
+        if (!this.renewing.has(task)) first.push(this.queueLook(task, undefined));
+      } else {
+        // An old look still answers; a new one is read behind it, and screens hear when it differs.
+        if (now - look.at > SHIP_BLOCK_KEEP_MS && !this.renewing.has(task)) void this.queueLook(task, look.block);
         if (look.block !== undefined) out.set(task, look.block);
-      }),
-    );
+      }
+    }
+    if (first.length > 0) {
+      await Promise.race([Promise.all(first), new Promise((r) => setTimeout(r, SHIP_FIRST_LOOK_WAIT_MS))]);
+      for (const task of tasks) {
+        const block = this.shipLooks.get(task)?.block;
+        if (block !== undefined) out.set(task, block);
+      }
+    }
     return out;
+  }
+
+  /** Looks at a merge when one of the few slots is free. Resolves when the look is stored. */
+  private queueLook(task: string, was: { why: string; empty: boolean } | undefined): Promise<void> {
+    this.renewing.add(task);
+    return new Promise((resolve) => {
+      this.lookQueue.push(async () => {
+        const block = await this.look(task);
+        this.renewing.delete(task);
+        this.shipLooks.set(task, { at: (this.deps.now?.() ?? new Date()).getTime(), block });
+        if (was?.why !== block?.why || was?.empty !== block?.empty) this.deps.changed?.();
+        resolve();
+      });
+      this.pumpLooks();
+    });
+  }
+
+  private pumpLooks(): void {
+    while (this.lookRunning < SHIP_LOOKS_AT_ONCE) {
+      const next = this.lookQueue.shift();
+      if (next === undefined) return;
+      this.lookRunning += 1;
+      void next().finally(() => {
+        this.lookRunning -= 1;
+        this.pumpLooks();
+      });
+    }
   }
 
   private look(task: string): Promise<{ why: string; empty: boolean } | undefined> {
@@ -197,10 +248,13 @@ export class InboxService {
       deps.orgNames?.() ?? NO_NAMES,
     ]);
     const items = deps.items();
+    // One batched read names every task a row mentions; a task it did not cover falls back to the single read.
+    const known = deps.subjects?.([...new Set(items.map((i) => i.task))]);
+    const subject = (task: string) => (known?.has(task) ? known.get(task) : deps.subject(task));
     const all = buildDecisions({
       items,
-      shipBlocked: await this.shipBlocks(items),
-      subject: deps.subject,
+      shipBlocked: await this.shipBlocks(items, subject),
+      subject,
       budgets,
       signedOut,
       recommendations: deps.recommendations.all(),
@@ -212,6 +266,7 @@ export class InboxService {
     });
     const now = (deps.now?.() ?? new Date()).getTime();
     deps.recommendations.prune(new Set(all.map((d) => d.id)), new Date(now - KEEP_MS).toISOString());
+    this.lastDecisions = all;
     return all;
   }
 

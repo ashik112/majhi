@@ -567,9 +567,25 @@ export const EventTopicSchema = z.enum([
   "clones",
 ]);
 export type EventTopic = z.infer<typeof EventTopicSchema>;
+/**
+ * Every frame on `/api/events` carries `seq`, a counter per connection that starts at 1 and goes up by
+ * one per frame the server meant to send (a frame it dropped still takes its number). A tab that sees a
+ * gap missed something and reads everything again (`seqGap`).
+ *
+ * A `changed` event may say more than the topics: `tasks` lists the tasks that changed, so the board
+ * reads just those; `rows` says only their rows changed (agents started or stopped, a message touched
+ * them, a title): nothing that waits for the owner is different. Without `tasks`, any task may have
+ * changed and the lists are read again.
+ */
 export const ServerEventSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("changed"), topics: z.array(EventTopicSchema).min(1) }),
-  AttentionEventSchema,
+  z.object({
+    type: z.literal("changed"),
+    topics: z.array(EventTopicSchema).min(1),
+    seq: z.number().int().positive().optional(),
+    tasks: z.array(z.string().min(1)).max(100).optional(),
+    rows: z.literal(true).optional(),
+  }),
+  AttentionEventSchema.extend({ seq: z.number().int().positive().optional() }),
 ]);
 export type ServerEvent = z.infer<typeof ServerEventSchema>;
 

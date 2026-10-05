@@ -25,7 +25,8 @@ export type ContextMethod = Extract<RoomItem, { type: "context" }>["method"];
 export class RunLive {
   constructor(
     private readonly room: RoomService,
-    private readonly onTasksChanged: () => void,
+    /** `rows`: only the list row changed (who is working). */
+    private readonly onTasksChanged: (task: string, rows: boolean) => void,
   ) {}
 
   set(run: AgentRun, patch: LivePatch): void {
@@ -37,7 +38,7 @@ export class RunLive {
     if (JSON.stringify(next) === JSON.stringify(run.live)) return;
     run.live = next;
     this.room.setLive(run.task, next);
-    if (wasWorking !== WORKING.has(next.status)) this.onTasksChanged();
+    if (wasWorking !== WORKING.has(next.status)) this.onTasksChanged(run.task, true);
   }
 
   /** The owner's messages waiting for the agent's next turn. majhi's own entries do not count. */

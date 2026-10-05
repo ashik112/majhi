@@ -311,8 +311,9 @@ export class TaskService {
     });
   }
 
-  list(includeDone: boolean): TaskSummary[] {
-    const rows = this.deps.store.tasks.list(includeDone);
+  /** `only`: just these tasks, in the order the list gives (a screen that heard they changed). */
+  list(includeDone: boolean, only?: readonly string[]): TaskSummary[] {
+    const rows = this.deps.store.tasks.list(includeDone, only);
     const waiting = this.deps.store.room.tasksWaitingOnOwner();
     return rows.map((t) => ({
       ...t,
@@ -1043,7 +1044,7 @@ export class TaskService {
     this.deps.store.tasks.setText(task.id, title, brief, this.now().toISOString());
     await this.refreshBriefs([task.id]);
     this.deps.room.publishTask(this.get(task.id));
-    this.deps.events.emit(["tasks"]);
+    this.deps.events.emitTask(task.id, true);
     return this.get(task.id);
   }
 
@@ -1404,7 +1405,7 @@ export class TaskService {
     await this.refreshBriefs([id]);
     const task = this.get(id);
     this.deps.room.publishTask(task);
-    this.deps.events.emit(["tasks"]);
+    this.deps.events.emitTask(id);
     return task;
   }
 
@@ -1420,7 +1421,7 @@ export class TaskService {
       text,
     });
     await this.stop(id, reason);
-    this.deps.events.emit(["tasks"]);
+    this.deps.events.emitTask(id);
   }
 
   /**
@@ -1970,7 +1971,7 @@ export class TaskService {
     }
     const current = this.get(task.id);
     this.deps.room.publishTask(current);
-    this.deps.events.emit(["tasks"]);
+    this.deps.events.emitTask(task.id);
     return out;
   }
 
@@ -2022,7 +2023,7 @@ export class TaskService {
     this.deps.store.chats.markOwnerTitled(id);
     const renamed = this.get(id);
     this.deps.room.publishTask(renamed);
-    this.deps.events.emit(["tasks"]);
+    this.deps.events.emitTask(id, true);
     return renamed;
   }
 
@@ -2033,7 +2034,7 @@ export class TaskService {
       return false;
     this.deps.store.tasks.setText(id, title, task.brief, this.now().toISOString());
     this.deps.room.publishTask(this.get(id));
-    this.deps.events.emit(["tasks"]);
+    this.deps.events.emitTask(id, true);
     return true;
   }
 
@@ -2047,7 +2048,7 @@ export class TaskService {
     const reopened = this.get(id);
     if (status === "review") this.cards.review(reopened);
     this.deps.room.publishTask(reopened);
-    this.deps.events.emit(["tasks"]);
+    this.deps.events.emitTask(id);
     return reopened;
   }
 
@@ -2439,7 +2440,7 @@ export class TaskService {
     if (parent !== undefined) await this.finishParentIfDone(parent);
     await this.plans.settle(task).catch(() => undefined);
     await this.refreshBriefs([id, ...held.map((l) => l.task), ...(parent === undefined ? [] : [parent])]);
-    this.deps.events.emit(["tasks"]);
+    this.deps.events.emit(["tasks"], { tasks: [id, ...held.map((l) => l.task), ...(parent === undefined ? [] : [parent])] });
   }
 
   /**
@@ -2464,7 +2465,7 @@ export class TaskService {
       }
     }
     await this.orchestrator.advance();
-    if (ids.length > 0) this.deps.events.emit(["tasks"]);
+    if (ids.length > 0) this.deps.events.emit(["tasks"], { tasks: ids });
   }
 
   /**
@@ -2584,7 +2585,7 @@ export class TaskService {
       await this.finishParentIfDone(parent);
     }
     await this.refreshBriefs(touched);
-    this.deps.events.emit(["tasks"]);
+    this.deps.events.emit(["tasks"], { tasks: touched });
   }
 
   private async linksChanged(ids: readonly string[]): Promise<void> {
@@ -2593,7 +2594,7 @@ export class TaskService {
       if (task !== undefined) this.deps.room.publishTask(task);
     }
     await this.refreshBriefs(ids);
-    this.deps.events.emit(["tasks"]);
+    this.deps.events.emit(["tasks"], { tasks: ids });
   }
 
   /** Fresh team facts, remembered for the task's team. Undefined when they do not apply. */
@@ -2749,7 +2750,7 @@ export class TaskService {
     if (pending === undefined) return undefined;
     this.note(id as TaskId, `majhi will not ${shipWords(pending)}: ${why}.`);
     this.deps.room.publishTask(this.get(id));
-    this.deps.events.emit(["tasks"]);
+    this.deps.events.emitTask(id);
     return pending;
   }
 
@@ -2838,7 +2839,7 @@ export class TaskService {
     const reviewed = this.get(id);
     this.cards.review(reviewed);
     this.deps.room.publishTask(reviewed);
-    this.deps.events.emit(["tasks"]);
+    this.deps.events.emitTask(id);
     await this.statusChanged(id);
     await this.deps
       .onReview?.(id)
@@ -2890,7 +2891,7 @@ export class TaskService {
       this.deps.store.tasks.setStatus(task.id, "running", undefined, this.now().toISOString());
       this.cards.settle(task.id, "review", `${p.id} ended, so @${p.agent} works on`, "majhi");
       this.deps.room.publishTask(this.get(task.id));
-      this.deps.events.emit(["tasks"]);
+      this.deps.events.emitTask(task.id);
       await this.containersRunAgain(task.id);
       await this.statusChanged(task.id);
     }
@@ -3057,7 +3058,7 @@ export class TaskService {
       mode: input.mode,
     });
     this.deps.store.tasks.touch(task.id, this.now().toISOString());
-    this.deps.events.emit(["tasks"]);
+    this.deps.events.emitTask(task.id, true);
     const id = task.id;
     for (const [m, account] of signedOut)
       this.warn(
@@ -3099,7 +3100,7 @@ export class TaskService {
     // A task that was never started, or was stopped, starts with the message.
     if (task.status !== "running") await this.start(id);
     await this.deps.runs.deliver(task.id, agent, itemId, input.mode, also);
-    this.deps.events.emit(["tasks"]);
+    this.deps.events.emitTask(task.id);
   }
 
   /**
@@ -3129,7 +3130,7 @@ export class TaskService {
       });
     this.deps.runs.notify(task.id, input.agent, input.text);
     this.deps.store.tasks.touch(task.id, this.now().toISOString());
-    this.deps.events.emit(["tasks"]);
+    this.deps.events.emitTask(task.id, true);
   }
 
   /**
@@ -3147,7 +3148,7 @@ export class TaskService {
     if (task.status !== "running") await this.start(task.id, "majhi");
     this.deps.runs.notify(task.id, lead, `Scheduled message from "${input.from}": ${input.text}`);
     this.deps.store.tasks.touch(task.id, this.now().toISOString());
-    this.deps.events.emit(["tasks"]);
+    this.deps.events.emitTask(task.id, true);
   }
 
   /**
