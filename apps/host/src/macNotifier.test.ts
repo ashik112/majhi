@@ -33,7 +33,10 @@ afterEach(async () => {
 });
 
 function mac(options: Parameters<typeof fakeOs>[0] = {}) {
-  const os = fakeOs({ home: "/Users/owner", majhiHome, exists: isFile, ...options });
+  // The fake programs count as installed, so the test does not depend on the machine running it being a Mac.
+  const exists = (path: string) =>
+    options.programs?.[path] !== undefined ? Promise.resolve(true) : isFile(path);
+  const os = fakeOs({ home: "/Users/owner", majhiHome, exists, ...options });
   return { os, notifier: macosPlatform(os.deps, { notifierRelease: pinned }).notifier };
 }
 
