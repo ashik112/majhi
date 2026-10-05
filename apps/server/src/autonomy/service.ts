@@ -2118,7 +2118,7 @@ export class AutonomyService {
       );
       this.event({ kind: "guide", text: `New standing instruction: ${input.text}` });
     } else {
-      this.event({ kind: "guide", text: `The owner said: ${input.text}` });
+      this.event({ kind: "guide", text: `The owner said: ${input.text === "" ? "(a file)" : input.text}` });
     }
     await this.deps.tasks.send({
       task: chat.id,
