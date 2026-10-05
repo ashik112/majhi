@@ -277,3 +277,19 @@ describe("listing", () => {
     expect(live.open).toBe(299);
   });
 });
+
+describe("settle", () => {
+  it("resolves the open findings of a key family whose condition is gone, and reopens one that returns", async () => {
+    const t = setup();
+    const a = await t.report({ source: "setup", title: "ACM-1 dirty", dedupeKey: "tidy:dirty:ACM-1" });
+    const b = await t.report({ source: "setup", title: "ACM-2 dirty", dedupeKey: "tidy:dirty:ACM-2" });
+    const other = await t.report({ source: "setup", title: "Other", dedupeKey: "health:x" });
+    expect(t.findings.settle("acme", "setup", "tidy:dirty:", new Set(["tidy:dirty:ACM-2"]))).toBe(1);
+    expect(t.findings.get(a.finding.id).status).toBe("fixed");
+    expect(t.findings.get(b.finding.id).status).toBe("open");
+    expect(t.findings.get(other.finding.id).status).toBe("open");
+    expect(t.findings.settle("acme", "setup", "tidy:dirty:", new Set(["tidy:dirty:ACM-2"]))).toBe(0);
+    const back = await t.report({ source: "setup", title: "ACM-1 dirty", dedupeKey: "tidy:dirty:ACM-1" });
+    expect(back).toMatchObject({ result: "reopened", finding: { id: a.finding.id, status: "open" } });
+  });
+});

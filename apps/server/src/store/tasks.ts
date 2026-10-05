@@ -12,8 +12,6 @@ import {
   isOwnerChat,
   type MrReview,
   MrReviewSchema,
-  type PausedBy,
-  type PausedReason,
   type PendingShip,
   PendingShipSchema,
   type ReadMount,
@@ -500,26 +498,6 @@ export class TaskRepo {
 
   setStartWhenReady(id: string, value: boolean): void {
     this.db.update(tasks).set({ startWhenReady: value }).where(eq(tasks.id, id)).run();
-  }
-
-  /** `pausedBy` is kept only while the task is paused; any other change clears it. */
-  setStatus(
-    id: string,
-    status: TaskStatus,
-    pausedReason: PausedReason | undefined,
-    at: string,
-    pausedBy?: PausedBy,
-  ): void {
-    this.db
-      .update(tasks)
-      .set({
-        status,
-        pausedReason: pausedReason ?? null,
-        pausedBy: status === "paused" ? (pausedBy ?? null) : null,
-        updatedAt: at,
-      })
-      .where(eq(tasks.id, id))
-      .run();
   }
 
   /** The owner's priority and deadline (PRV-74). Null clears one; undefined leaves it. */

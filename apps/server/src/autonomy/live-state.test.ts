@@ -2,6 +2,7 @@ import type { CaptainStatus, Task, TaskId } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
+import { seedStatus } from "../testing/status.ts";
 
 /**
  * Counts come from live state (task-lifecycle 4.6): a task whose status says running but that has no
@@ -53,7 +54,7 @@ async function on() {
     ).id;
   /** What a restart leaves behind: status running, no run. */
   const strand = (id: string) =>
-    services.store.tasks.setStatus(id, "running", undefined, new Date().toISOString());
+    seedStatus(services.store, id, "running", undefined, new Date().toISOString());
   const task = (id: string) => services.store.tasks.get(id);
   return { h, services, call, make, makeChat, strand, task };
 }

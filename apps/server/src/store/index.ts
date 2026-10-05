@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type Database from "better-sqlite3";
+import { LifecycleRows } from "../tasks/lifecycle/rows.ts";
 import { UsageEvents } from "../usage/events.ts";
 import { ChatStateRepo } from "./chat-state.ts";
 import { createDb, type SqliteBaseline } from "./db.ts";
@@ -18,6 +19,8 @@ export const DB_FILE_NAME = "majhi.db";
 /** `<majhi home>/majhi.db`: tasks, room items, runs and permission decisions. */
 export class Store {
   readonly tasks: TaskRepo;
+  /** The task lifecycle's rows: status, hold, audit trail and outbox. Written only by `tasks/lifecycle/apply.ts`. */
+  readonly lifecycle: LifecycleRows;
   readonly room: RoomRepo;
   readonly runs: RunRepo;
   readonly permissions: PermissionRepo;
@@ -34,6 +37,7 @@ export class Store {
     this.sqlite = sqlite;
     this.baseline = baseline;
     this.tasks = new TaskRepo(db);
+    this.lifecycle = new LifecycleRows(db);
     this.room = new RoomRepo(db);
     this.runs = new RunRepo(db);
     this.permissions = new PermissionRepo(db);

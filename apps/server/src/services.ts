@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { lookup } from "node:dns/promises";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -65,6 +66,7 @@ import { sweepRunFiles } from "./connections/run-files.ts";
 import { ConnectionService, connectionDir } from "./connections/service.ts";
 import { ConnectionTester } from "./connections/tester.ts";
 import { DockerCli } from "./containers/docker.ts";
+import { TOOLS_TARGET } from "./containers/args.ts";
 import { ImageCheckFailed, runImageCheck } from "./containers/image-check.ts";
 import { type ContainerDocker, ContainerService } from "./containers/service.ts";
 import { AcpProvider } from "./decisions/acp.ts";
@@ -167,6 +169,7 @@ import { KeyExports } from "./secrets/backup.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
 import { SkillsCli } from "./skills/cli.ts";
+import { ToolInstaller } from "./tools/installer.ts";
 import { skillGitEnv } from "./skills/git-env.ts";
 import { SkillRegistry } from "./skills/registry.ts";
 import { SkillService } from "./skills/service.ts";
@@ -268,6 +271,8 @@ export interface Services {
   skills: SkillService;
   /** The skills store, for runs to copy from. */
   skillStore: SkillStore;
+  /** Command-line tools installed into a workspace's tools folder, checked against the vendor's checksum. */
+  tools: ToolInstaller;
   /** MCP servers: install as connections and the per-agent switches (5.2). */
   mcpServers: McpService;
   /** "@agent install this skill <link>" in a room (Phase 6): one approval card, then install and enable. */
@@ -551,6 +556,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const usageRecorder = new UsageRecorder({
     repo: usageRepo,
     store,
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
     prices: () => readPrices(config.file),
     onRecorded: () => events.emit(["usage"]),
     afterRecord: async (turn) => {
@@ -1709,7 +1715,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   if (options.hostLink !== undefined) machine.start();
   options.hostLink?.onWake(() => background.run(() => resilience.wake()));
   background.run(
-    () => resilience.startup(),
+    async () => {
+      // Effects a crash left in the lifecycle outbox run first, so the reconcile sees their result.
+      await tasks.drainOutbox();
+      await resilience.startup();
+    },
     (err) => console.error(`Could not resume interrupted work: ${errorMessage(err)}`),
   );
   const secretService = new SecretService(secrets, config);
@@ -1866,15 +1876,22 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ? { browserCommand: (server: BrowserServer) => ({ command: server.command, args: [] }) }
       : {}),
   });
+  const tools = new ToolInstaller({
+    majhiHome: env.majhiHome,
+    fetch: (url, init) => fetch(url, init),
+    lookup: async (host) => (await lookup(host, { all: true })).map((a) => a.address),
+  });
   /** Runs a read-only script in a throwaway runner with a workspace's connections. Watches and the captain's secret fetches use it. */
   const runScript = async ({
     org,
     script,
     connections: ids,
+    network,
   }: {
     org: string;
     script: string;
     connections: readonly string[];
+    network?: "on" | "off" | undefined;
   }): Promise<string> => {
     // The named connections of this workspace (or Global), as a run of an agent there would get them.
     const sections = await config.sections();
@@ -1904,7 +1921,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return await runImageCheck(
         containerDocker,
         { majhiHome: env.majhiHome, hostHome: env.hostHome, protectedPaths: [env.secretsKeyFile] },
-        { image: env.runner.image, command: ["sh", "-c", script], env: vars },
+        {
+          // The workspace's checked programs (doctl, kubectl, whatever was installed) come first on PATH.
+          image: env.runner.image,
+          command: ["sh", "-c", `PATH="${TOOLS_TARGET}:$PATH"; export PATH\n${script}`],
+          env: vars,
+          toolsOrg: org,
+          offline: network === "off",
+        },
         60_000,
       );
     } catch (err) {
@@ -2048,6 +2072,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     connect,
     skills: skills,
     skillStore,
+    tools,
     mcpServers,
     installRequests,
     connectionTests,

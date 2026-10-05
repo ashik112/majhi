@@ -1,5 +1,22 @@
 # Progress
 
+## Captain soak test fixed (branch fix/captain-soak)
+
+- **What changed.** The usage recorder now takes the run clock (`runClock`), so turns are stamped with the simulated time and the day and workspace budgets measure them. The soak test's findings stub gains `settle`, which the upkeep pass calls on every sweep since findings settle by key.
+- **What the owner will notice.** Nothing.
+- **How verified.** `soak.test.ts` passes; captain and autonomy folders pass; typecheck clean.
+
+## Lifecycle C: one apply() for every status write (built, not merged)
+
+Branch `feat/lifecycle-c`. Merge main first (migration 154 is on main from another branch; this one is 156).
+
+- **What changed.** `TaskRepo.setStatus` is gone. Every status change goes through `apply(taskId, event)` in `apps/server/src/tasks/lifecycle/` (`apply.ts`, `rows.ts`, `types.ts`): load the state with `fromStored`, `transition()`, then a refusal writes one `task_events` row and nothing else; otherwise one transaction writes status, `paused_reason`, `paused_by` and `autonomy_tasks.held / held_scope / resumed_at` through `toStored`, the audit row and the outbox, and then the effects run through one runner (`TaskService.runEffect`). Migration 156 adds `task_events` (audit and outbox in one table). `drainOutbox()` runs at start, before the restart reconcile. All 14 writers are routed (tasks, merge requests, runs: `pausedByRuns`, `resumedByRuns`, and the restart reconcile through `runLost`).
+- **What the owner will notice.** Nothing, except: a message to a task with a merge request open from the captain, a hand-off or a schedule leaves a note and does not restart it (the owner's message still sends it back); a scheduled message no longer restarts a task the owner stopped.
+- **Design points to read** (DECISIONS, 2026-10-05, Lifecycle C): two changes to the pure model, found in practice: `sendBack` from `mr` for the owner, and `runResumed` lifts an `error` hold (SPEC 5.7 auto resume). The old pause fields are ambiguous in two places (a gate pause looks like an owner stop, `blocked` is idle or a dependency); each is named and handled until step E.
+- **Census.** `status writes` 15 to 0 (now tracked on `LifecycleRows.commit`), `Task.pausedReason` 41 to 34, `waitsForOwner()` 9 to 6, total outside the lifecycle module 203 to 182. Baseline refreshed, no count rose.
+- **Tests.** `tasks/lifecycle/apply.test.ts` (setStatus not a method, refusal writes only its row, atomic rollback, outbox drains after a crash and drops a stale event, 24 transition rows round-trip with the old columns), `illegal-moves.test.ts` (tell on mr, wish start, logged refusal, scheduler vs owner stop), `store/task-events-migration.test.ts`, transition tests for the two model changes. Task, MR, store, runs, rooms, autonomy, captain, budgets, processes, inbox, notify and automation suites run with `--maxWorkers=3`.
+- **Left.** Creation still inserts the row directly (no event). Raw SQL on `autonomy_tasks` in `autonomy/repo.ts` is not moved to drizzle yet; apply writes those columns with drizzle. Step D (readers, drop `paused`), the tick lock (F). `lostByRestart` for tasks that already have a hold is a no-op as before.
+
 ## Server hot paths (built, not merged)
 
 Branch `perf/hot-paths`. Measured on the audit's seeded rig (2,000 tasks, 750 done), base 72742a34 against this branch, same machine, run back to back. The machine is shared, so read the ratios.
@@ -27,6 +44,24 @@ What changed
 How verified: typecheck clean; tests for streaming (`room/streaming.test.ts`: linear bytes, mid-message reconnect), static headers (`http/app.test.ts`), live-state, resume, autonomy suite, census guard. `autonomy/approvals.test.ts` "counts an agent of an autonomous task" fails the same way on the base (ENOTEMPTY on temp dir cleanup). Browser: isolated server on the `team` seed at 1440x900 and 1100x800, home, task room (lazy screen and markdown render, reply and link shown), captain, chats: no console errors or failed requests; assets arrive as br with immutable cache.
 
 Left: the shared-schemas chunk (386 kB, zod) stays in the first load because `cmd()` parses every answer with the command's schema; moving that out needs a decision on parsing. `e2e/phase2a-room.spec.ts` fails on the stale "Board" heading, unrelated.
+## Ops hygiene (built, not merged)
+
+Branch `fix/ops-hygiene`.
+
+What changed.
+- **Tools the captain can install.** The old path was only a prompt line: download a binary into `$MAJHI_TOOLS/bin` inside a run. Secret fetches and script watches run in a separate throwaway container that never mounted that folder, so `doctl` was never on their PATH. New commands `toolbox.list`, `toolbox.install`, `toolbox.remove` (MCP: `majhi_toolbox_*`). majhi downloads the vendor's release itself (https, public hosts, 300 MB cap, redirects checked), keeps it only when its SHA-256 matches the one given or the one in the vendor's checksums file, unpacks a tar.gz or zip safely, and writes it to two places: `tool-installs/<org>/bin` (checked copy, never mounted into runs) and `tools/<org>/bin` (what runs already put on PATH). Script and secret-fetch containers now mount only the checked folder, read-only, and have it first on PATH. `{arch}` and `{machine}` in a URL match the runner's CPU. The runner Dockerfile is unchanged.
+- **Build-a-URL scripts are no longer refused as "sends data".** A script declares `network: "off"` (script watches and `majhi_secrets_saveFromScript`) and then runs with `--network none`, so nothing can be sent and the text guard does not apply. With network on, the "sends data" rule now reads the script's commands: a data flag counts only for an HTTP client (`curl`, `wget`, ...). `tr -d` and `psql -d` no longer trip it.
+- **Findings.** `tidy:dirty:<task>` findings resolve by themselves when the worktree is clean or gone (`FindingsService.settle`, by key prefix, never text). Follow-up findings resolve when their memory thread closes. Migration 154 dismisses open findings of removed sources (radar, ci, dependency, eol, opportunity, tracker) once and deletes the `tracker-comment` channel rows, drafts and trust state. The channel is gone from `OUTBOUND_CHANNELS`.
+- **Watches.** A paused watch carries who paused it and why (owner, agent with its note, or unrecorded) and shows it in the detail. An agent must give a note when it pauses. A pause nobody chose (agent, or from before this) is checked once per interval and the watch resumes once it reads fine. Only the owner's pause stays.
+- **Startup cleanup.** `removeLeftoverFolders` removes `e2e` and `business/kb` under the majhi home at startup from an explicit list, never follows a link, and logs each removal.
+- **Skills.** A skill that fails to install fails once with its reason, becomes a finding under the same key, and is not tried again.
+- **Manual work.** The task rules and the captain's prompt now say never to ask the owner for manual file, folder or command work. The restore-folders card came from agents having no way to see git-ignored folders in a worktree and no rule against handing the step to the owner. majhi writes nothing into the owner's checkout, so it does not restore them itself.
+
+What the owner will notice. Fewer findings, a reason on every paused watch, secret fetches that can use installed tools.
+
+Verified. Tests for findings settle, the migration, the cleanup allowlist, watch pause reasons and auto-resume, the skill no-retry, the toolbox installer, the script classifier and the container mount guard. Typecheck clean.
+
+Left. `psql` is not a single release binary, so it is not a toolbox install; database watches use the bundled drivers. Follow-up findings about removed features (tracker tests, the e2e runner) are text only: they resolve when their memory threads close, and are not matched by wording. The `business` playbook scope is still used by the Laya check and stays.
 
 ## Server data layer performance (built, not merged)
 

@@ -912,7 +912,7 @@ export class AutonomyService {
     if (!paused && resumed === 0) return;
     if (paused) {
       try {
-        await this.deps.tasks.start(id, "autonomy");
+        await this.deps.tasks.start(id, "autonomy", { gateReleased: true });
       } catch (err) {
         this.event({
           kind: "task",

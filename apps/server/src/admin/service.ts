@@ -626,7 +626,7 @@ export class AdminService {
     if ((await this.deps.secrets.get(name)) !== undefined) {
       return error(`secret:${name} exists already. Use it, or pick another name.`);
     }
-    const guard = scriptProblem(input.script);
+    const guard = scriptProblem(input.script, input.network);
     if (guard !== undefined) return error(guard.replace("A watch only reads", "A fetch only reads"));
     for (const id of input.connections) {
       if (!(await script.holds(lane.org, id))) {
@@ -637,7 +637,12 @@ export class AdminService {
     }
     let out: string;
     try {
-      out = await script.run({ org: lane.org, script: input.script, connections: input.connections });
+      out = await script.run({
+        org: lane.org,
+        script: input.script,
+        connections: input.connections,
+        network: input.network,
+      });
     } catch (err) {
       return error(`The script failed: ${redactText(errorMessage(err)).slice(0, 300)}`);
     }
