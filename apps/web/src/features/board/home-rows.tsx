@@ -1,6 +1,6 @@
 import { DECISION_KIND_LABEL, type OwnerDecisionKind } from "@majhi/shared";
-import { Check, ChevronRight } from "lucide-react";
-import { memo, type ReactNode } from "react";
+import { ChevronRight } from "lucide-react";
+import { memo, type ReactNode, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
@@ -8,7 +8,6 @@ import { OrgBadge } from "@/components/ui/org-badge";
 import { rowTitle } from "@/features/decisions/model";
 import { useHeldOption } from "@/features/decisions/use-send-decision";
 import { cn } from "@/lib/cn";
-import { useDecisionDetail } from "@/lib/decision-queries";
 import { openDue, shortAgo } from "../tasks/schedule";
 import { DueChip, PriorityChip } from "../tasks/schedule-chips";
 import {
@@ -221,28 +220,20 @@ const NeedsRow = memo(function NeedsRow({
 }: { item: NeedsItem; org: OrgTag | undefined } & RowProps) {
   const d = item.decision;
   const ship = d.kind === "ship";
-  const detail = useDecisionDetail(ship ? d.id : undefined).data;
   const held = useHeldOption(d.id);
-  const actions = actionsOf({ type: "needs", key: entryKey, section: "needs", item }, () => detail?.blocked);
-  const stats = detail?.diff;
+  // The list says when the main action cannot succeed; Home never reads a decision's detail.
+  const blocked = useMemo(
+    () =>
+      d.blocked === undefined ? undefined : Object.fromEntries(d.options.map((o) => [o.id, d.blocked ?? ""])),
+    [d.blocked, d.options],
+  );
+  const actions = actionsOf({ type: "needs", key: entryKey, section: "needs", item }, () => blocked);
   const text: ReactNode = ship ? (
-    <>
-      {stats !== undefined && (
-        <span className="font-mono text-xs">
-          +{stats.additions} −{stats.deletions}{" "}
-        </span>
-      )}
-      {d.blocked !== undefined ? (
-        <span className="text-caution">{d.blocked}</span>
-      ) : detail?.checks !== undefined ? (
-        <span className="inline-flex items-center gap-1 text-green">
-          <Check aria-hidden="true" className="size-3" />
-          {detail.checks}
-        </span>
-      ) : (
-        (d.sentence ?? "Ready to ship")
-      )}
-    </>
+    d.blocked !== undefined ? (
+      <span className="text-caution">{d.blocked}</span>
+    ) : (
+      (d.sentence ?? "Ready to ship")
+    )
   ) : d.kind === "question" || d.kind === "approval" ? (
     rowTitle(d)
   ) : (

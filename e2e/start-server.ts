@@ -86,6 +86,11 @@ if (seed === "ui" || seed === "perf") (await import("./ui-seed.ts")).seedUiHome(
 if (seed === "perf") (await import("./perf-seed.ts")).seedPerf();
 if (seed === "roots" || seed === "team" || seed === "team-api")
   await (await import("./home-seed.ts")).seedHome(seed);
+// The team home with perf volume on top (tasks, decisions, captain log), for traffic measurements with real agents.
+if (seed === "team-api-volume") {
+  await (await import("./home-seed.ts")).seedHome("team-api");
+  (await import("./perf-seed.ts")).seedPerf();
+}
 
 // Fake adapters start signed out, so the login flow is real. Three models and three efforts
 // make the editor's lists worth choosing from.
