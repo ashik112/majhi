@@ -9,6 +9,7 @@ import {
   type MergePolicy,
   type MrHost,
   type OpenMrsResult,
+  type ProjectFetchResult,
   type ProjectLink,
   type RefreshMrsResult,
   type RemoteConfig,
@@ -903,7 +904,7 @@ export class MrService {
   }
 
   /** Where a repo's branches are pushed: the MR remote, through the project's SSH alias. */
-  private async pushTarget(repo: TaskRepo): Promise<PushTarget> {
+  private async pushTarget(repo: Pick<TaskRepo, "project" | "source">): Promise<PushTarget> {
     const project = await this.deps.projects.get(repo.project).catch(() => undefined);
     if (project === undefined)
       throw new UserError(
@@ -1227,8 +1228,9 @@ export class MrService {
     const task = this.deps.tasks.get(input.id);
     const repos = task.repos.filter((r) => input.project === undefined || r.project === input.project);
     if (repos.length === 0) {
+      const which = input.project === undefined ? "repos" : `repo ${input.project}`;
       throw new UserError(
-        input.project === undefined ? `${task.id} has no repos.` : `${task.id} has no repo ${input.project}.`,
+        `${task.id} has no ${which}. To refresh a project's base without a task branch, use projects.fetch.`,
         404,
       );
     }
@@ -1288,6 +1290,52 @@ export class MrService {
     } catch (err) {
       return refused(errorMessage(err));
     }
+  }
+
+  /**
+   * Fetches a project's branch from its MR remote into the project's own checkout, for callers with
+   * no task branch (a chat or read-only task, the captain) whose read-only mount cannot fetch. The
+   * remote-tracking ref always moves to the remote's; the local branch only fast-forwards, under the
+   * same rules as `updateTarget`. Waits behind ships into the same branch.
+   */
+  async fetchProject(input: { project: string; branch?: string | undefined }): Promise<ProjectFetchResult> {
+    const project = await this.deps.projects.get(input.project).catch(() => undefined);
+    if (project === undefined) throw new UserError(`${input.project} is not a registered project.`, 404);
+    if (!project.exists)
+      throw new UserError(`${project.id} has no checkout at ${project.path}. Fix its path in Projects.`, 409);
+    const branch = input.branch ?? project.base;
+    if (branch === undefined)
+      throw new UserError(`${project.id} has no base branch. Say which branch to fetch.`, 409);
+    return this.ships.run([ShipQueue.key(project.id, branch)], async () => {
+      const target = await this.pushTarget({ project: project.id, source: project.path });
+      if (target.viaHost) {
+        throw new UserError(
+          `${project.id} fetches with this computer's saved login, which majhi cannot read from here.`,
+          409,
+        );
+      }
+      const tracking = `refs/remotes/${target.remote}/${branch}`;
+      const from = (await refIsThere(project.path, tracking))
+        ? (await git(project.path, ["rev-parse", tracking])).trim()
+        : undefined;
+      if (!(await this.fetchTracking(project.path, target, branch)))
+        throw new UserError(`${target.remote} has no branch ${branch}.`, 404);
+      const to = (await git(project.path, ["rev-parse", tracking])).trim();
+      const outcome = await fastForwardBranch({
+        source: project.path,
+        branch,
+        to: tracking,
+        remote: target.remote,
+      });
+      return {
+        project: project.id,
+        remote: target.remote,
+        branch,
+        ...(from === undefined ? {} : { from }),
+        to,
+        local: outcome.ok ? { ok: true, detail: outcome.detail } : { ok: false, detail: outcome.reason },
+      };
+    });
   }
 
   // ---------------------------------------------------------------------------

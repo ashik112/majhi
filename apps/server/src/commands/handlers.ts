@@ -542,6 +542,21 @@ export function createHandlers({
       }
       return services.projects.update(input, ctx.command, ctx.meta);
     },
+    "projects.fetch": async (input, ctx) => {
+      // An org agent fetches only its own org's projects; a root agent (the captain) and the owner any.
+      if (ctx.meta.actor.kind === "agent") {
+        const stored = await services.agentStore.get(ctx.meta.actor.id);
+        const scope = stored?.ok === true ? stored.agent.frontmatter.scope : undefined;
+        const project = (await services.projects.infos()).find((p) => p.id === input.project);
+        if (scope !== "root" && project !== undefined && project.org !== scope) {
+          throw new UserError(
+            `${input.project} is in another org: you can only fetch your own org's projects.`,
+            409,
+          );
+        }
+      }
+      return services.mrs.fetchProject(input);
+    },
     "projects.remove": async (input, ctx) => {
       await services.projects.remove(input.id, ctx.command, ctx.meta);
       services.cards.forget(input.id);

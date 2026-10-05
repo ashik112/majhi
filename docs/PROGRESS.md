@@ -1,5 +1,14 @@
 # Progress
 
+## Fetch a project's base with no task (built, not merged)
+
+Branch `fix/prv-137-majhi-bug-no-way-to-fetch-sync-a-project`.
+
+- **Changed.** New command `projects.fetch` ("Fetch a project from its remote"), in the Task bookkeeping group. majhi fetches the project's branch (default: its base) from the MR remote with its own access, so `origin/<branch>` in the project's checkout is current, then fast-forwards the local branch only when that is safe. Needs no task or worktree, so chat and read-only tasks and the captain can refresh a project before reading it. An org agent may fetch only its own org's projects. `tasks.syncBase` on a task without that repo now points to it.
+- **Owner will notice.** Agents in a chat task stop asking for a code task just to get a fresh base. A local base with its own commits is left alone; the result says how many commits it has that the remote lacks.
+- **Verified.** Typecheck. `mrs/project-fetch.test.ts` (real temp repos, no network): fetch and fast-forward with no task, tracking ref moves while a local branch with its own commits stays, another org's agent refused with nothing fetched, the owner allowed.
+- **Left.** A "Fetch" button on the Projects page. A remote that needs the computer's saved login (https) is refused with a reason, as for `tasks.syncBase`.
+
 ## Agents can update their task branch from the base (built, not merged)
 
 Branch `feat/tasks-sync-base`.

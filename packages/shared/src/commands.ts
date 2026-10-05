@@ -467,6 +467,19 @@ export const SyncBaseResultSchema = z.object({
 });
 export type SyncBaseResult = z.infer<typeof SyncBaseResultSchema>;
 
+/** What fetching a project's branch from its MR remote did, in the project's own checkout. */
+export const ProjectFetchResultSchema = z.object({
+  project: IdSchema,
+  remote: z.string(),
+  branch: z.string(),
+  /** The remote-tracking ref's commit before the fetch (none when it was missing) and after. */
+  from: z.string().optional(),
+  to: z.string(),
+  /** Whether the local branch of the same name is up to date now, and what happened to it. */
+  local: z.object({ ok: z.boolean(), detail: z.string() }),
+});
+export type ProjectFetchResult = z.infer<typeof ProjectFetchResultSchema>;
+
 /** What a local merge or a push did in one repo of a task. */
 const MergeResultSchema = z.object({
   project: IdSchema,
@@ -1552,6 +1565,17 @@ export const commands = {
         handoff: ProjectConfigSchema.shape.handoff.nullable().optional(),
       }),
     output: ProjectViewSchema,
+  },
+  "projects.fetch": {
+    risk: "change",
+    summary:
+      "Fetch a registered project's branch (default: its base) from its MR remote into the project's own checkout, with majhi's git access, so its remote-tracking ref (like origin/main) is current. Then fast-forward the local branch of the same name, only when it has no commit the remote lacks and no uncommitted or untracked file is in the way; otherwise the local branch stays and the reason says why. Needs no task and no worktree: use it from a chat or read-only task, or when git fetch fails on a read-only mount. An org agent fetches only its own org's projects. To bring the base into a task's branch, use tasks.syncBase",
+    input: z.object({
+      project: IdSchema,
+      /** The branch to fetch. Default: the project's base. */
+      branch: LocalBranchSchema.optional(),
+    }),
+    output: ProjectFetchResultSchema,
   },
   "projects.remove": {
     risk: "change",
