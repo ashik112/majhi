@@ -328,6 +328,7 @@ export function Timeline({
                   item={row.item}
                   ctx={ctx}
                   {...rowProps(row.item)}
+                  repeat={row.repeat}
                   className={gap}
                   inLog
                 />

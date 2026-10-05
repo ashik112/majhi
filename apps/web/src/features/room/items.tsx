@@ -77,6 +77,7 @@ export const RoomItemView = memo(function RoomItemView({
   owner,
   className,
   inLog = false,
+  repeat = 1,
 }: {
   item: RoomItem;
   ctx: ItemContext;
@@ -90,6 +91,8 @@ export const RoomItemView = memo(function RoomItemView({
   inLog?: boolean;
   /** The space above it, from the row before. */
   className?: string | undefined;
+  /** How many identical lines in a row this one stands for. */
+  repeat?: number;
 }) {
   if (item.type === "plan" && ctx.pinned.has(item.id)) return null;
   return (
@@ -100,7 +103,14 @@ export const RoomItemView = memo(function RoomItemView({
         className,
       )}
     >
-      <ItemBody item={item} ctx={ctx} liveModel={liveModel} waitingOn={waitingOn} owner={owner} />
+      <ItemBody
+        item={item}
+        ctx={ctx}
+        liveModel={liveModel}
+        waitingOn={waitingOn}
+        owner={owner}
+        repeat={repeat}
+      />
     </li>
   );
 });
@@ -248,9 +258,11 @@ function ItemBody({
   liveModel,
   waitingOn,
   owner,
+  repeat,
 }: {
   item: RoomItem;
   ctx: ItemContext;
+  repeat: number;
   liveModel: string | undefined;
   waitingOn: AgentLive | undefined;
   owner: OwnerContext | undefined;
@@ -277,9 +289,9 @@ function ItemBody({
     case "choice":
       return <ChoiceCard item={item} />;
     case "system":
-      return <SystemLine item={item} />;
+      return <SystemLine item={item} repeat={repeat} />;
     case "context":
-      return <ContextLine item={item} />;
+      return <ContextLine item={item} repeat={repeat} />;
     case "handoff":
       return <HandoffLine item={item} />;
     case "team-plan":
@@ -362,11 +374,16 @@ function TeamPlanLine({ item }: { item: Of<"team-plan"> }) {
 }
 
 /** A compaction, as one quiet line, with the handoff note when there is one. */
-function ContextLine({ item }: { item: Of<"context"> }) {
+/** "text x12" for a line that repeated. */
+function withCount(text: string, repeat: number): string {
+  return repeat > 1 ? `${text} x${repeat}` : text;
+}
+
+function ContextLine({ item, repeat }: { item: Of<"context">; repeat: number }) {
   return (
     <div className="flex items-center gap-2">
       <div className="min-w-0">
-        <QuietLine quiet={{ short: contextLine(item) }} at={item.at} />
+        <QuietLine quiet={{ short: withCount(contextLine(item), repeat) }} at={item.at} />
       </div>
       {item.note && <TaskFileLink path={item.note} kind="markdown" label="note" />}
     </div>
@@ -787,10 +804,10 @@ const SYSTEM_ICON = {
 };
 
 /** A warning or an error from majhi. Plain notes come grouped as a NotesRow instead. */
-function SystemLine({ item }: { item: Of<"system"> }) {
+function SystemLine({ item, repeat }: { item: Of<"system">; repeat: number }) {
   return (
     <QuietLine
-      quiet={{ short: item.text }}
+      quiet={{ short: withCount(item.text, repeat) }}
       at={item.at}
       tone={item.level}
       icon={item.level === "info" ? undefined : SYSTEM_ICON[item.level]}
