@@ -27,6 +27,7 @@ import {
 import { useMemo, useState } from "react";
 import { AppearanceButton } from "@/components/shell/appearance";
 import { Bell } from "@/components/shell/bell";
+import { useCaptainTitle } from "@/components/shell/captain-ticker";
 import { WorkspaceSwitcher } from "@/components/shell/workspace-switcher";
 import { Lamp, type LampState } from "@/components/ui/lamp";
 import { ROW_SELECTED } from "@/components/ui/list-detail";
@@ -329,6 +330,7 @@ function CaptainRow() {
   const active = pathname.startsWith(PAGE_PATH.captain);
   const now = useNow(60_000);
   const summary = useUnseenSummary(now);
+  const captainLine = useCaptainTitle();
   const client = useQueryClient();
   const warm = () => {
     prefetchCaptain(client);
@@ -341,6 +343,7 @@ function CaptainRow() {
         search={{}}
         onPointerEnter={warm}
         onFocus={warm}
+        title={captainLine}
         aria-description={summary === undefined ? undefined : "A new daily summary is ready"}
         aria-current={active ? "page" : undefined}
         className={cn(

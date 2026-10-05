@@ -79,11 +79,24 @@ function Frame() {
   const permission = usePendingPermission();
   const { task: drawerTask, peek } = useSearch({ from: "__root__" });
   const onHome = useRouterState({ select: (s) => s.location.pathname === "/" });
+  // On `/t/<id>` the page is that task: the banner and the captain's line leave it alone.
+  const openTask = useRouterState({
+    select: (s) => {
+      const [, first, id] = s.location.pathname.split("/");
+      return first === "t" ? id : undefined;
+    },
+  });
   const { org } = useOrgFilter();
   // Home draws every decision as a row: its banner only says what is not on the screen.
   const banner = useMemo(
-    () => deriveBanner({ decisions, permission, onScreen: onHome ? homeRowIds(decisions, org) : undefined }),
-    [decisions, permission, onHome, org],
+    () =>
+      deriveBanner({
+        decisions,
+        permission,
+        onScreen: onHome ? homeRowIds(decisions, org) : undefined,
+        openTask,
+      }),
+    [decisions, permission, onHome, org, openTask],
   );
   useAttentionBadge(useNeedsYou() ?? 0);
   // The Captain drawer's code is read when it opens (the sidebar warms it when the pointer reaches its button).
@@ -110,7 +123,7 @@ function Frame() {
         <StaleBuildBar />
         <NotifyPrompt />
         <AttentionBanner banner={banner} />
-        <CaptainTicker />
+        {openTask === undefined && <CaptainTicker />}
         <m.div
           key={settings ? "settings" : section}
           initial={{ opacity: 0, y: 4 }}

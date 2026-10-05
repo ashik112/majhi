@@ -1,23 +1,21 @@
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { SearchX } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChangesView } from "@/features/changes/changes-view";
 import { hasMemoryTab, TaskMemory } from "@/features/memory/task-memory";
 import { dockItems } from "@/features/room/dock";
-import { permissionDomId } from "@/features/room/items";
 import { isWorking } from "@/features/room/model";
 import { RoomPane } from "@/features/room/room-pane";
 import { useRoom } from "@/features/room/use-room";
-import { setPendingPermission } from "@/lib/attention";
 import { useLaneRedirect } from "@/lib/lane-link";
 import { useFacts, useTaskRecord } from "@/lib/memory-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useReport, useTask } from "@/lib/task-queries";
 import type { AppSearch } from "@/router";
 import { ContextTab } from "./context-tab";
-import { briefBody, firstPendingPermission } from "./model";
+import { briefBody } from "./model";
 import { ReportTab } from "./report-tab";
 import { RoomPanel } from "./room-panel";
 import { TaskHeader } from "./task-header";
@@ -63,17 +61,6 @@ function TaskView({ taskId }: { taskId: string }) {
   useEffect(() => {
     if (item !== undefined) setTab("room");
   }, [item]);
-
-  // The shell's banner points at a prompt waiting in this room.
-  const pending = useMemo(() => firstPendingPermission(room.state.items), [room.state.items]);
-  useEffect(() => {
-    setPendingPermission(
-      pending
-        ? { task: taskId, agent: pending.agent, elementId: permissionDomId(pending.itemId) }
-        : undefined,
-    );
-    return () => setPendingPermission(undefined);
-  }, [pending, taskId]);
 
   if (task.isError) {
     return (
