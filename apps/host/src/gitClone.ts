@@ -220,6 +220,8 @@ export async function gitLsRemote(
     const args = [...auth.config, "ls-remote", UPLOAD_PACK, "--symref", "--", params.url];
     const run = await deps.run("git", args, {
       env: auth.env,
+      // Not in the helper's folder: ls-remote reads the repo config of where it runs, and that may be a broken checkout.
+      cwd: deps.majhiHome,
       timeoutMs: LS_REMOTE_TIMEOUT_MS,
     });
     if (run.code !== 0) throw new Error(failureReason(run.stderr, params.url, run.code));
