@@ -1,5 +1,17 @@
 # Progress
 
+## Landing page v2: live coded panels under the painted hero (built, not merged)
+
+Branch `feat/landing-v2`. Only `site/` changed.
+
+- **Hero untouched.** The hero markup, CSS, JS and art are byte-for-byte the ones on `main`; a pixel diff of the first 872 px at 1440x900 against `main` is empty. Everything after it is new.
+- **Sections below the hero** (`site/index.html`, `site/v2.css`, `site/v2.js`): a live majhi Home window with a stats strip, How it works (4 clickable steps that swap a panel), one boat per client, bring your own accounts, Auto-pilot night timeline, approvals and budget, what breaks, what else, works with, FAQ, install.
+- **Panels are HTML, CSS and a little JS**, drawn in majhi's light UI (lamps, task rows, Needs you bar, Ship menu, usage bars) with sample names only. They start when they scroll into view, loop, and stop off screen. With reduced motion they show their final state.
+- **Same page as the hero:** Baloo Da 2 lettering with ink strokes, Hind Siliguri text, hard offset shadows, bunting dividers, the painted palette on pale grounds, and the hero art reused (huts, lotus, boat, peacock, sun, haystack).
+- **Removed:** all old screenshots. `og.jpg` is a frame of the hero.
+- **Checked:** 1440x900 and 390x844, no console errors, no horizontal scroll, reduced motion.
+- **Facts checked against SPEC.md, README.md and LICENSE:** PolyForm Noncommercial (source public, commercial use needs a license, so the FAQ does not say "open source" without that), Docker plus git and Node 20, macOS, Linux and WSL2, Claude Code and Codex, GitHub, GitLab and Bitbucket, MCP servers, backup agent on another account at a limit, pause and resume offline and after sleep, pushes wait for the owner.
+
 ## Skill use is recorded and shown (built, not merged)
 
 Branch `feat/skill-usage`.
