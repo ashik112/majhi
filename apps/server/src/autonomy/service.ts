@@ -552,14 +552,16 @@ export class AutonomyService {
     // Held at every boundary while the runs stop; the event comes once, for `off`.
     this.repo.setMode("stopping", this.now().toISOString(), "owner", undefined);
     // The captain first, in every lane, so it calls no more tools while its tasks stop.
-    for (const chat of this.laneChats()) await this.deps.tasks.cancel(chat, undefined).catch(() => undefined);
-    const stopped: string[] = [];
-    for (const task of this.openTasks()) {
-      // A task in review can still have a turn in flight.
-      if (!this.stoppable(task) && !this.deps.runs.inTurn(task.id)) continue;
-      const done = await this.deps.tasks.stop(task.id, "owner", why, OFF_BY).catch(() => undefined);
-      if (done?.status === "paused") stopped.push(task.id);
-    }
+    await Promise.all(
+      this.laneChats().map((chat) => this.deps.tasks.cancel(chat, undefined).catch(() => undefined)),
+    );
+    // All at once: each stop waits on its containers and processes, so one after another took minutes.
+    // A task in review can still have a turn in flight.
+    const targets = this.openTasks().filter((task) => this.stoppable(task) || this.deps.runs.inTurn(task.id));
+    const results = await Promise.all(
+      targets.map((task) => this.deps.tasks.stop(task.id, "owner", why, OFF_BY).catch(() => undefined)),
+    );
+    const stopped = results.flatMap((done) => (done?.status === "paused" ? [done.id] : []));
     this.repo.releaseAll();
     // Remembered, so turning on again can resume exactly these.
     for (const id of stopped) this.repo.hold(id, "owner", STOPPED_NOW);
@@ -575,12 +577,12 @@ export class AutonomyService {
     this.finishing = true;
     try {
       // Nothing is in a turn: tasks that would wake again (a process, a handoff) stop for the owner.
-      const stopped: string[] = [];
-      for (const task of this.openTasks()) {
-        if (!this.stoppable(task)) continue;
-        const done = await this.deps.tasks.stop(task.id, "owner", OFF_WHY, OFF_BY).catch(() => undefined);
-        if (done?.status === "paused") stopped.push(task.id);
-      }
+      const results = await Promise.all(
+        this.openTasks()
+          .filter((task) => this.stoppable(task))
+          .map((task) => this.deps.tasks.stop(task.id, "owner", OFF_WHY, OFF_BY).catch(() => undefined)),
+      );
+      const stopped = results.flatMap((done) => (done?.status === "paused" ? [done.id] : []));
       this.repo.releaseAll();
       if (this.repo.state().mode !== "stopping") return;
       // Remembered like a stop at once, so turning on again can resume exactly these.
