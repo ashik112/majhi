@@ -16,6 +16,7 @@ import { useSettings } from "@/lib/boss-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { formatAgo, formatTokens, plural } from "@/lib/format";
+import { useSkills } from "@/lib/skills-queries";
 import { useAgents, useOrgs } from "@/lib/studio-queries";
 import { useTaskReceipt } from "@/lib/usage-queries";
 import { useNow } from "@/lib/use-now";
@@ -425,9 +426,13 @@ function InContext({
               className="m-0 flex list-none flex-wrap gap-x-3 gap-y-0.5 p-0"
             >
               {skills.map((s) => (
-                <li key={`${s.agent}-${s.skill}`} className="flex items-baseline gap-1">
+                <li key={s.skill} className="flex items-baseline gap-1">
                   <span>{s.skill}</span>
-                  <span className="font-mono text-xs text-fg-faint">@{s.agent}</span>
+                  {s.agents.length < task.team.length && (
+                    <span className="font-mono text-xs text-fg-faint">
+                      {s.agents.map((a) => `@${a}`).join(" ")}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
@@ -438,13 +443,13 @@ function InContext({
   );
 }
 
+/** The skills any team member has, each with the members that have it. */
 function useTeamSkills(team: readonly string[]) {
-  const entries = useAgents().data ?? [];
-  return entries.flatMap((e) =>
-    e.status === "ok" && team.includes(e.agent.frontmatter.id)
-      ? e.agent.frontmatter.skills.map((skill) => ({ skill, agent: e.agent.frontmatter.id }))
-      : [],
-  );
+  const installed = useSkills().data ?? [];
+  return installed.flatMap((s) => {
+    const agents = s.agents.filter((a) => team.includes(a));
+    return agents.length === 0 ? [] : [{ skill: s.name, agents }];
+  });
 }
 
 /** Opens a file of the task folder in the viewer over the task. */

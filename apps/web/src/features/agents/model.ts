@@ -162,8 +162,6 @@ export interface AgentDraft {
   tools: string[];
   /** Connection ids of the agent's org it may use (5.14). Root agents get every connection of the task's org. */
   connections: string[];
-  /** Names of installed skills the agent uses (SPEC 5.2). */
-  skills: string[];
   fallback: string | undefined;
   /** The agent's own context cap in thousands of tokens, `0` for no cap, `""` for the org's or majhi's. */
   contextCap: string;
@@ -184,7 +182,6 @@ export function draftFromAgent(agent: OkAgent["agent"]): AgentDraft {
     perms: f.perms,
     tools: f.tools,
     connections: f.connections,
-    skills: f.skills,
     fallback: f.fallback,
     contextCap: capToField(f.context?.cap),
     instructions: agent.instructions,
@@ -212,7 +209,6 @@ export function updateInput(original: OkAgent["agent"], draft: AgentDraft) {
     perms: draft.perms,
     tools: draft.tools,
     connections: draft.connections,
-    skills: draft.skills,
   };
   if (draft.model) frontmatter.model = draft.model;
   if (draft.effort) frontmatter.effort = draft.effort;
@@ -277,7 +273,6 @@ export function newAgentFrontmatter(
     perms: ["edit", "shell"],
     tools: [],
     connections: [],
-    skills: [],
     origin: "owner",
   };
 }
