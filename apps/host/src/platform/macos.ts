@@ -5,8 +5,8 @@
  */
 import { join } from "node:path";
 import type { EditorApp } from "@majhi/shared";
-import { macNotifier } from "./macNotifier.ts";
 import { clipboardCopy, MAC_CLIPBOARD } from "./clipboard.ts";
+import { macNotifier } from "./macNotifier.ts";
 import { openUrl } from "./openUrl.ts";
 import { type NotifierRelease, TERMINAL_NOTIFIER } from "./terminalNotifier.ts";
 import type { DockerHelpReason, Keyring, KeyringItem, Platform, PlatformDeps } from "./types.ts";

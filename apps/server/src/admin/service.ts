@@ -35,6 +35,13 @@ import type { Store } from "../store/index.ts";
 import { startingBranches } from "../tasks/brief.ts";
 import type { TaskService } from "../tasks/service.ts";
 import {
+  CLIPBOARD_COPY_TOOL,
+  type ClipboardCopier,
+  ClipboardCopyInputSchema,
+  pickValue,
+  readInRoots,
+} from "./clipboard-copy.ts";
+import {
   fetchedValue,
   SAVE_FROM_SCRIPT_TOOL,
   SaveFromScriptInputSchema,
@@ -42,13 +49,6 @@ import {
   WITHDRAW_SECRET_TOOL,
   WithdrawSecretInputSchema,
 } from "./fetch-secret.ts";
-import {
-  CLIPBOARD_COPY_TOOL,
-  ClipboardCopyInputSchema,
-  type ClipboardCopier,
-  pickValue,
-  readInRoots,
-} from "./clipboard-copy.ts";
 import { decide as decideMode, matchRule, redact, redactOutput, redactText, sameRule } from "./policy.ts";
 import { summarize } from "./summary.ts";
 import type { AdminCaller } from "./tokens.ts";
