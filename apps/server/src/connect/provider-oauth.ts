@@ -63,6 +63,7 @@ const TokenBodySchema = z.object({
   access_token: z.string().min(1).optional(),
   token_type: z.string().optional(),
   expires_in: z.union([z.number(), z.string()]).optional(),
+  refresh_token_expires_in: z.union([z.number(), z.string()]).optional(),
   refresh_token: z.string().min(1).optional(),
   scope: ScopeSchema.optional(),
   id_token: z.string().optional(),
@@ -124,6 +125,8 @@ function toTokens(body: z.infer<typeof TokenBodySchema>, now: () => Date): Token
   const scope =
     raw === undefined ? undefined : (Array.isArray(raw) ? raw : raw.split(/[\s,]+/)).filter((s) => s !== "");
   const seconds = body.expires_in === undefined ? Number.NaN : Number(body.expires_in);
+  const refreshSeconds =
+    body.refresh_token_expires_in === undefined ? Number.NaN : Number(body.refresh_token_expires_in);
   return {
     accessToken: access,
     refreshToken: body.refresh_token,
@@ -133,6 +136,7 @@ function toTokens(body: z.infer<typeof TokenBodySchema>, now: () => Date): Token
         : undefined,
     scope,
     idToken: body.id_token,
+    ...(Number.isFinite(refreshSeconds) && refreshSeconds > 0 ? { refreshExpiresIn: refreshSeconds } : {}),
   };
 }
 
@@ -311,8 +315,53 @@ const at = (value: unknown, path: readonly string[]): string | undefined => {
 export type ApiProbe =
   | { kind: "ok"; identity: Identity }
   | { kind: "invalid" }
-  | { kind: "forbidden" }
+  /**
+   * A 403. `disabled` is set when the answer says the API is switched off for the owner's project
+   * (Google's SERVICE_DISABLED), with the page that turns it on when the answer gives one.
+   */
+  | { kind: "forbidden"; disabled?: { url?: string | undefined } }
   | { kind: "unreachable" };
+
+/** Pages Google's activation links may point at. Anything else is not shown as a link. */
+const ACTIVATION_HOSTS: ReadonlySet<string> = new Set([
+  "console.developers.google.com",
+  "console.cloud.google.com",
+]);
+
+/**
+ * Reads Google's 403 for "this API is not turned on in your project". The decision reads structured
+ * fields (`error.details[].reason`, `error.errors[].reason`), never the message.
+ */
+export function apiDisabled(body: unknown): { url?: string | undefined } | undefined {
+  const error = (body as { error?: unknown } | undefined)?.error;
+  if (typeof error !== "object" || error === null) return undefined;
+  const details = (error as { details?: unknown }).details;
+  const errors = (error as { errors?: unknown }).errors;
+  let off = false;
+  let url: string | undefined;
+  for (const d of Array.isArray(details) ? details : []) {
+    if (typeof d !== "object" || d === null) continue;
+    if ((d as { reason?: unknown }).reason === "SERVICE_DISABLED") off = true;
+    const meta = (d as { metadata?: unknown }).metadata;
+    const link =
+      typeof meta === "object" && meta !== null
+        ? (meta as { activationUrl?: unknown }).activationUrl
+        : undefined;
+    if (typeof link === "string") {
+      try {
+        const parsed = new URL(link);
+        if (parsed.protocol === "https:" && ACTIVATION_HOSTS.has(parsed.host)) url = parsed.toString();
+      } catch {
+        // Not a link.
+      }
+    }
+  }
+  for (const e of Array.isArray(errors) ? errors : []) {
+    if (typeof e === "object" && e !== null && (e as { reason?: unknown }).reason === "accessNotConfigured")
+      off = true;
+  }
+  return off ? { url } : undefined;
+}
 
 /** The provider's identity call with the token: who, and whether the token works. */
 export async function probeProvider(
@@ -338,8 +387,9 @@ export async function probeProvider(
       return { kind: "invalid" };
     }
     if (res.status === 403) {
-      await res.body?.cancel().catch(() => undefined);
-      return { kind: "forbidden" };
+      const body: unknown = await res.json().catch(() => undefined);
+      const disabled = apiDisabled(body);
+      return disabled === undefined ? { kind: "forbidden" } : { kind: "forbidden", disabled };
     }
     if (!res.ok) {
       await res.body?.cancel().catch(() => undefined);

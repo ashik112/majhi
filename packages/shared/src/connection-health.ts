@@ -287,6 +287,10 @@ export function failureFromError(err: unknown): FailureReason {
     }
     const name = (cur as { name?: unknown }).name;
     if (name === "TimeoutError" || name === "AbortError") return "timeout";
+    // The MCP SDK's own class for "this server wants a sign-in".
+    if (name === "UnauthorizedError" || (cur as object).constructor?.name === "UnauthorizedError") {
+      return "rejected";
+    }
     cur = (cur as { cause?: unknown }).cause;
   }
   return "unreachable";

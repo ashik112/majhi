@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import { LifecycleRows } from "../tasks/lifecycle/rows.ts";
 import { UsageEvents } from "../usage/events.ts";
 import { ChatStateRepo } from "./chat-state.ts";
+import { ConnectionHealthRepo } from "./connection-health.ts";
 import { createDb, type SqliteBaseline } from "./db.ts";
 import { PlanRepo } from "./plans.ts";
 import { RoomRepo } from "./room.ts";
@@ -26,6 +27,7 @@ export class Store {
   readonly permissions: PermissionRepo;
   readonly plans: PlanRepo;
   readonly chats: ChatStateRepo;
+  readonly connectionHealth: ConnectionHealthRepo;
   /** What majhi put into contexts, for the token receipts. */
   readonly usageEvents: UsageEvents;
   /** The SQLite version and pragmas the connection runs with. */
@@ -43,6 +45,7 @@ export class Store {
     this.permissions = new PermissionRepo(db);
     this.plans = new PlanRepo(db);
     this.chats = new ChatStateRepo(sqlite);
+    this.connectionHealth = new ConnectionHealthRepo(sqlite);
     this.usageEvents = new UsageEvents(sqlite);
   }
 

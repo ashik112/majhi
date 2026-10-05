@@ -23,6 +23,8 @@ export interface FakeProviderOptions {
   noRefresh?: boolean;
   /** The account the identity call reports. */
   account?: string;
+  /** Say, as Google does for an app in Testing, that the refresh token ends in this many seconds. */
+  refreshExpiresIn?: number;
 }
 
 interface Code {
@@ -61,6 +63,11 @@ export class FakeProvider {
   lastTokenBody: URLSearchParams | undefined;
   /** Answer refresh with this error. */
   failRefresh: string | undefined;
+  /**
+   * Answer the identity call as Google does for an API that is off in the owner's project: a 403 with
+   * SERVICE_DISABLED and the page that turns it on.
+   */
+  apiDisabled: { activationUrl?: string } | undefined;
   /** Register this challenge instead of the one the authorize URL carried (a swapped challenge). */
   swapChallenge: string | undefined;
   private gate: Promise<void> | undefined;
@@ -141,6 +148,9 @@ export class FakeProvider {
       expires_in: this.options.accessTtl ?? 3600,
       scope,
     };
+    if (this.options.refreshExpiresIn !== undefined) {
+      out.refresh_token_expires_in = this.options.refreshExpiresIn;
+    }
     if (this.options.noRefresh !== true) {
       const refresh = `rt_${randomBytes(12).toString("hex")}`;
       this.issued.push(refresh);
@@ -156,6 +166,25 @@ export class FakeProvider {
       const token = /^Bearer (.+)$/.exec(req.headers.authorization ?? "")?.[1] ?? "";
       const held = this.access.get(token);
       if (held === undefined || !held.valid) return send(res, 401, { error: "invalid_token" });
+      if (this.apiDisabled !== undefined) {
+        return send(res, 403, {
+          error: {
+            code: 403,
+            message: "Gmail API has not been used in project 123 before or it is disabled.",
+            status: "PERMISSION_DENIED",
+            details: [
+              {
+                "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                reason: "SERVICE_DISABLED",
+                metadata:
+                  this.apiDisabled.activationUrl === undefined
+                    ? {}
+                    : { activationUrl: this.apiDisabled.activationUrl },
+              },
+            ],
+          },
+        });
+      }
       return send(res, 200, { email: held.account, sub: held.account });
     }
     const body = await readBody(req);

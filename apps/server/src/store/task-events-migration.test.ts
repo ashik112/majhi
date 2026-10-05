@@ -11,7 +11,7 @@ describe("the task events migration", () => {
       db,
       MIGRATIONS.filter((m) => m.id < 156),
     );
-    expect(migrate(db)).toEqual([156]);
+    expect(migrate(db)[0]).toBe(156);
     expect(migrate(db)).toEqual([]);
     const cols = (db.prepare("PRAGMA table_info(task_events)").all() as { name: string }[]).map(
       (c) => c.name,

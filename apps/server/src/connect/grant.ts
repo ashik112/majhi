@@ -43,6 +43,13 @@ export const GrantSchema = z.object({
   /** What the owner chose on the consent step. */
   access: ConnectAccessSchema.default("read"),
   account: z.object({ id: z.string().optional(), label: z.string().optional() }),
+  /**
+   * The provider said the refresh token ends within days (Google's `refresh_token_expires_in` for an
+   * app in Testing). The sign-in works today and stops next week, so a check of it fails.
+   */
+  testing: z.boolean().optional(),
+  /** The owner confirmed that this server is on their own network, so majhi may reach its private address. */
+  privateNetwork: z.boolean().optional(),
   connectedAt: z.string(),
   updatedAt: z.string(),
 });

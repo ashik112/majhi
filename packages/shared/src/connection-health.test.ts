@@ -12,7 +12,11 @@ import {
 
 const T1 = "2026-10-05T10:00:00.000Z";
 const T2 = "2026-10-05T14:00:00.000Z";
-const pass: CheckOutcome = { ok: true, checked: ["Asked GitHub who the token belongs to"], account: "acme-dev" };
+const pass: CheckOutcome = {
+  ok: true,
+  checked: ["Asked GitHub who the token belongs to"],
+  account: "acme-dev",
+};
 const fail = (reason: "rejected" | "unreachable" = "rejected", status?: number): CheckOutcome => ({
   ok: false,
   failure: { reason, ...(status === undefined ? {} : { status }) },
@@ -91,10 +95,7 @@ describe("nextHealth", () => {
   });
 
   it("start moves any state to connecting", () => {
-    for (const prev of [
-      connected(),
-      nextHealth(connected(), { type: "result", at: T2, outcome: fail() }),
-    ]) {
+    for (const prev of [connected(), nextHealth(connected(), { type: "result", at: T2, outcome: fail() })]) {
       expect(nextHealth(prev, { type: "start", at: T2 })).toEqual({ state: "connecting", since: T2 });
     }
   });

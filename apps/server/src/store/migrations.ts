@@ -1580,6 +1580,20 @@ DELETE FROM trust_state WHERE key = 'outbound:tracker-comment';
 DELETE FROM trust_notices WHERE key = 'outbound:tracker-comment';
 `,
   },
+  {
+    // One typed state per connection (SPEC 5.14): connecting, connected (verified, with when and what
+    // was checked), failed or needs-attention. Stored as JSON of ConnectionHealthSchema. A connection
+    // with no row is checked once at startup, and its row is made from the result.
+    id: 157,
+    name: "connection health",
+    sql: `
+CREATE TABLE connection_health (
+  connection TEXT PRIMARY KEY,
+  health TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */
