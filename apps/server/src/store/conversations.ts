@@ -1,4 +1,11 @@
-import { CAPTAIN_LANE_BRIEF, type Conversation, ConversationSchema } from "@majhi/shared";
+import {
+  AUTONOMY_CHAT_BRIEF,
+  BOSS_CHAT_BRIEF,
+  CAPTAIN_LANE_BRIEF,
+  CHAT_BRIEF,
+  type Conversation,
+  ConversationSchema,
+} from "@majhi/shared";
 import { sql } from "drizzle-orm";
 import type { Db } from "./db.ts";
 
@@ -6,6 +13,13 @@ import type { Db } from "./db.ts";
 const LINE_CHARS = 160;
 /** The list never holds more than this many conversations. */
 const LIST_LIMIT = 200;
+
+/**
+ * What the dock lists: every task room, and each workspace's captain thread. The owner's own chats
+ * (the Chats page, the Cmd J chat, the old autonomy chat) are chats, not task rooms. Mirrors
+ * `isOwnerChat` minus the captain lane, which is a thread of the dock.
+ */
+const LISTED = sql`NOT (t.kind = 'chat' AND t.brief IN (${CHAT_BRIEF}, ${BOSS_CHAT_BRIEF}, ${AUTONOMY_CHAT_BRIEF}))`;
 
 interface Row {
   id: string;
@@ -60,7 +74,7 @@ export class ConversationsRepo {
     return (
       this.db.get<{ one: number }>(sql`
         SELECT 1 AS one FROM tasks t
-         WHERE t.id = ${id} AND (t.kind != 'chat' OR t.brief = ${CAPTAIN_LANE_BRIEF})`) !== undefined
+         WHERE t.id = ${id} AND ${LISTED}`) !== undefined
     );
   }
 
@@ -80,7 +94,7 @@ export class ConversationsRepo {
         (SELECT substr(json_extract(r.payload, '$.text'), 1, 600) FROM room_items r
           WHERE r.task = t.id AND r.type = 'owner' ORDER BY r.at DESC LIMIT 1) AS owner_text
       FROM tasks t LEFT JOIN read_marks m ON m.id = t.id
-      WHERE (t.kind != 'chat' OR t.brief = ${CAPTAIN_LANE_BRIEF})
+      WHERE ${LISTED}
         AND (t.status != 'done' OR EXISTS (
           SELECT 1 FROM room_items r
            WHERE r.task = t.id AND r.type = 'agent' AND r.at > coalesce(m.read_at, '')))

@@ -68,17 +68,20 @@ describe("the chat dock's unread count", () => {
     task(db, "ACM-1", { org: "acme" });
     task(db, "lane-acme", { kind: "chat", brief: CAPTAIN_LANE_BRIEF, org: "acme" });
     task(db, "chat-1", { kind: "chat", brief: CHAT_BRIEF });
+    task(db, "LOCAL-1", { kind: "chat", brief: "Draft the Northwind notes" });
     task(db, "ACM-2");
     task(db, "ACM-3", { status: "done" });
     task(db, "ACM-4", { status: "done" });
     say(db, "ACM-1", 1, "agent");
     say(db, "lane-acme", 2, "agent");
     say(db, "chat-1", 3, "agent");
+    say(db, "LOCAL-1", 6, "agent");
     say(db, "ACM-3", 4, "agent");
     say(db, "ACM-4", 5, "agent");
     store.conversations.markRead("ACM-4", "2027-01-01T00:05:00.000Z");
     const list = store.conversations.list();
     expect(list.map((c) => [c.id, c.kind, c.org])).toEqual([
+      ["LOCAL-1", "task", undefined],
       ["ACM-3", "task", undefined],
       ["lane-acme", "captain", "acme"],
       ["ACM-1", "task", "acme"],
