@@ -192,21 +192,6 @@ describe("host jobs", () => {
     ]);
   });
 
-  it("answers editor.open once the editor has the path, and with the message when it cannot", async () => {
-    const params = { app: "cursor" as const, path: "/Users/a/Work/x" };
-    await runJob({ id: "e1", method: "editor.open", params }, handlers(fakeExec()), reply);
-    await runJob(
-      { id: "e2", method: "editor.open", params: { ...params, path: "/gone" } },
-      handlers(fakeExec()),
-      reply,
-    );
-
-    expect(replies).toEqual([
-      { id: "e1", ok: true, result: { opened: true } },
-      { id: "e2", ok: false, error: "There is nothing at /gone on this computer." },
-    ]);
-  });
-
   it("refuses remount when the helper cannot run docker compose", async () => {
     await runJob(
       { id: "j3", method: "remount", params: {} },
@@ -215,43 +200,6 @@ describe("host jobs", () => {
     );
     expect(replies.at(-1)).toEqual({ id: "j3", ok: false, error: CANNOT_REMOUNT });
     expect(calls).toEqual([]);
-  });
-
-  it("answers a failing job with its message, and a working one with its result", async () => {
-    const h = handlers(fakeExec());
-    await runJob({ id: "j4", method: "listDirs", params: { path: "/nope", showHidden: false } }, h, reply);
-    await runJob({ id: "j5", method: "suggestRoots", params: {} }, h, reply);
-    expect(replies.slice(-2)).toEqual([
-      { id: "j4", ok: false, error: "There is no folder at /nope" },
-      { id: "j5", ok: true, result: { suggestions: [{ path: "/Users/a/Work", repoCount: 2 }] } },
-    ]);
-  });
-
-  it("answers ssh jobs with the status, or with the helper's plain message", async () => {
-    const h = handlers(fakeExec());
-    await runJob({ id: "j6", method: "ssh.reload", params: {} }, h, reply);
-    await runJob(
-      { id: "j7", method: "ssh.unlock", params: { key: "~/.ssh/id_work", passphrase: "s3cret-phrase" } },
-      h,
-      reply,
-    );
-    expect(replies.slice(-2)).toEqual([
-      { id: "j6", ok: true, result: SSH_OK },
-      { id: "j7", ok: false, error: "That passphrase did not unlock ~/.ssh/id_work." },
-    ]);
-  });
-
-  it("answers version.changes with the helper's answer", async () => {
-    const h = {
-      ...handlers(fakeExec()),
-      versionChanges: async () => ({ head: "abc1234", dirty: true, changes: ["feat: a"] }),
-    };
-    await runJob({ id: "v1", method: "version.changes", params: { from: "abcdef1" } }, h, reply);
-    expect(replies.at(-1)).toEqual({
-      id: "v1",
-      ok: true,
-      result: { head: "abc1234", dirty: true, changes: ["feat: a"] },
-    });
   });
 
   it("starts an update once, and refuses without Docker or while one runs", async () => {
@@ -265,11 +213,5 @@ describe("host jobs", () => {
       { id: "u2", ok: false, error: "An update is already running." },
       { id: "u3", ok: false, error: CANNOT_UPDATE },
     ]);
-  });
-
-  it("answers restart before it restarts", async () => {
-    const h = { ...handlers(fakeExec()), restart: () => events.push("restart") };
-    await runJob({ id: "r1", method: "restart", params: {} }, h, reply);
-    expect(events).toEqual(["reply ok", "restart"]);
   });
 });

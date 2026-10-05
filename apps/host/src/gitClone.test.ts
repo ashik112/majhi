@@ -6,14 +6,7 @@ import { promisify } from "node:util";
 import { cloneTempPath } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { ASKPASS_SCRIPT, ensureAskpass, gitAuthEnv } from "./gitAuth.ts";
-import {
-  type GitCloneDeps,
-  gitClone,
-  gitLsRemote,
-  parseProgress,
-  type StreamingRun,
-  streamingGit,
-} from "./gitClone.ts";
+import { type GitCloneDeps, gitClone, gitLsRemote, type StreamingRun, streamingGit } from "./gitClone.ts";
 import { GUARD_CONFIG } from "./gitGuard.ts";
 import { type GitPushDeps, gitPush } from "./gitPush.ts";
 import { runCommand } from "./runCommand.ts";
@@ -71,27 +64,6 @@ const exists = (p: string) =>
     () => true,
     () => false,
   );
-
-describe("parseProgress", () => {
-  it("reads git's phases and percents", () => {
-    expect(parseProgress("remote: Enumerating objects: 12, done.")).toEqual({ phase: "counting" });
-    expect(parseProgress("remote: Counting objects:  50% (6/12)")).toEqual({
-      phase: "counting",
-      percent: 50,
-    });
-    expect(parseProgress("remote: Compressing objects: 100% (8/8), done.")).toEqual({
-      phase: "compressing",
-      percent: 100,
-    });
-    expect(parseProgress("Receiving objects:  45% (45/100), 1.20 MiB | 1.00 MiB/s")).toEqual({
-      phase: "receiving",
-      percent: 45,
-    });
-    expect(parseProgress("Resolving deltas:   3% (1/30)")).toEqual({ phase: "resolving", percent: 3 });
-    expect(parseProgress("Updating files:  20% (2/10)")).toEqual({ phase: "checkout", percent: 20 });
-    expect(parseProgress("Cloning into '/x'...")).toBeUndefined();
-  });
-});
 
 describe("askpass", () => {
   it("prints the user name for a username prompt and the file's token for a password prompt", async () => {

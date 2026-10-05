@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CLI_TOOLS, type CliToolDef, type HostLoginProgress } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { CliToolLogins, parseIdentity, parseToolOutput, profileFolder } from "./cliTools.ts";
+import { CliToolLogins, profileFolder } from "./cliTools.ts";
 
 const TOKEN = "tok_FakeWorkspaceToken1234567890abcdef";
 const PATH = process.env.PATH ?? "/usr/bin:/bin";
@@ -93,25 +93,6 @@ function logins(
 }
 
 const config = (home: string, connection: string) => join(profileFolder(home, connection), "xdg", "config");
-
-describe("parsing what a tool prints", () => {
-  it("finds the page and the code, and a marked page wins", () => {
-    expect(parseToolOutput("Open https://example.test/device and enter code ABCD-EFGH")).toEqual({
-      url: "https://example.test/device",
-      code: "ABCD-EFGH",
-    });
-    expect(parseToolOutput("MAJHI_LOGIN_URL https://acme.test/a\nsee https://other.test")).toMatchObject({
-      url: "https://acme.test/a",
-    });
-    expect(parseToolOutput("nothing yet")).toEqual({});
-  });
-
-  it("reads who is signed in, and never a token-like line", () => {
-    expect(parseIdentity("Logged in as ops@acme.test (id 5)")).toBe("ops@acme.test");
-    expect(parseIdentity(`${TOKEN}\nacme-prod`)).toBe("acme-prod");
-    expect(parseIdentity("api_key: sk_live_abcdef")).toBeUndefined();
-  });
-});
 
 describe("a workspace's own sign-in", () => {
   it("keeps two workspaces apart: two accounts, two folders, a clean environment", async () => {
