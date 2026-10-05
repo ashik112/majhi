@@ -80,6 +80,7 @@ export function planEvent(event: ServerEvent): EventPlan {
   };
   const tasks: string[] = [];
   const waits: string[] = [];
+  if (event.type === "hello") return { keys: [], tasks, waits };
   if (event.type === "attention") {
     // The item is new: the lists that count it must show it at once.
     add(topicQueryKeys("tasks"));

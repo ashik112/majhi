@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -37,6 +38,29 @@ function emojibase(): Plugin {
   };
 }
 
+/**
+ * Writes the build id into index.html: a hash of the hashed names of every emitted file, so it changes
+ * exactly when the bundle does. The server reads it back (`readBuildId`) and reports it on `/health` and
+ * in the events hello, and a tab compares it with its own (`<meta name="majhi-build">`).
+ */
+function buildId(): Plugin {
+  return {
+    name: "majhi-build-id",
+    apply: "build",
+    transformIndexHtml: {
+      order: "post",
+      handler(html, ctx) {
+        const names = Object.keys(ctx.bundle ?? {})
+          .filter((n) => n !== "index.html")
+          .sort()
+          .join("\n");
+        const id = createHash("sha1").update(names).digest("hex").slice(0, 12);
+        return html.replace("<head>", `<head>\n    <meta name="majhi-build" content="${id}" />`);
+      },
+    },
+  };
+}
+
 /** Text files of the build get a `.br` and a `.gz` next to them; majhi serves the one the browser accepts. */
 function precompress(): Plugin {
   const TEXT = /\.(js|mjs|css|html|svg|json|txt|map)$/;
@@ -63,7 +87,7 @@ function precompress(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), emojibase(), precompress()],
+  plugins: [react(), tailwindcss(), emojibase(), buildId(), precompress()],
   resolve: {
     alias: { "@": decodeURIComponent(new URL("./src", import.meta.url).pathname) },
   },

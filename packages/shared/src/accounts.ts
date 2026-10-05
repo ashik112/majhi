@@ -586,6 +586,8 @@ export const ServerEventSchema = z.discriminatedUnion("type", [
     rows: z.literal(true).optional(),
   }),
   AttentionEventSchema.extend({ seq: z.number().int().positive().optional() }),
+  /** The first frame of a connection: which build of the web bundle this server serves. It takes no number. */
+  z.object({ type: z.literal("hello"), build: z.string().optional(), seq: z.undefined().optional() }),
 ]);
 export type ServerEvent = z.infer<typeof ServerEventSchema>;
 
