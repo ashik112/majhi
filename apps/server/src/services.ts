@@ -185,6 +185,7 @@ import type { LinkOptions } from "./tasks/links.ts";
 import { PendingShips } from "./tasks/pending-ship.ts";
 import { TaskService } from "./tasks/service.ts";
 import { TerminalManager, type TerminalTimers } from "./terminal/manager.ts";
+import { packageCache } from "./runs/package-cache.ts";
 import { openTaskTerminal } from "./terminal/task-terminal.ts";
 import { ToolInstaller } from "./tools/installer.ts";
 import { UploadStore } from "./uploads/store.ts";
@@ -1515,6 +1516,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     spawner: sessionOptions.spawner ?? localSpawner,
     base: sessionOptions.base,
     repoMounts: (task) => repoMounts(task),
+    packages: (task) => packageCache(env.majhiHome, task).catch(() => undefined),
     // A hand-off check that starts containers (a repo's own test of its deploy files) reaches the task's through majhi.
     dockerShim: (task) => {
       const shim = roomAccess.attachDocker({ task, agent: store.tasks.get(task)?.team[0] ?? "handoff" });
@@ -2222,6 +2224,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
             },
             base: sessionOptions.base,
             repoMounts,
+            packages: (t) => packageCache(env.majhiHome, t).catch(() => undefined),
             tty: runner.runner === undefined ? undefined : dockerTty(runner.runner.config),
           },
           task,

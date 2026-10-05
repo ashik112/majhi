@@ -120,18 +120,52 @@ export async function scanRepoDiff(repo: {
     .catch(() => undefined);
 }
 
+/** Package folders majhi manages (its shared store is outside the worktree): never the agent's work when untracked. */
+const MANAGED_FOLDERS: ReadonlySet<string> = new Set([".pnpm-store", "node_modules"]);
+
+/**
+ * The files of `git status --porcelain=v1 -z` that count as uncommitted work. Ignored files are not
+ * work, and neither is an untracked package store or `node_modules`. Modified or staged tracked files
+ * and untracked source files count.
+ */
+export function uncommittedFromStatus(raw: string): { files: string[]; untrackedDirs: string[] } {
+  const entries = raw.split("\0");
+  const files: string[] = [];
+  const untrackedDirs: string[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i] ?? "";
+    if (entry.length <= 3) continue;
+    const status = entry.slice(0, 2);
+    const path = entry.slice(3);
+    // A rename lists its old path as the next entry.
+    if (entry[0] === "R" || entry[0] === "C") i++;
+    if (status === "!!") continue;
+    if (status === "??" && path.split("/").some((part) => MANAGED_FOLDERS.has(part))) continue;
+    // git lists a folder of only untracked files as one entry: it may hold nothing but a store.
+    if (status === "??" && path.endsWith("/")) untrackedDirs.push(path);
+    else files.push(path);
+  }
+  return { files, untrackedDirs };
+}
+
 /** The files a worktree changed and did not commit, new ones included. Undefined when git cannot say. */
-async function uncommittedFiles(worktree: string): Promise<string[] | undefined> {
+export async function uncommittedFiles(worktree: string): Promise<string[] | undefined> {
   try {
-    const out = await git(worktree, ["-c", "core.quotePath=false", "status", "--porcelain", "-z"]);
-    const entries = out.split("\0");
-    const files: string[] = [];
-    for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i] ?? "";
-      if (entry.length <= 3) continue;
-      files.push(entry.slice(3));
-      // A rename lists its old path as the next entry.
-      if (entry[0] === "R" || entry[0] === "C") i++;
+    const out = await git(worktree, ["-c", "core.quotePath=false", "status", "--porcelain=v1", "-z"]);
+    const { files, untrackedDirs } = uncommittedFromStatus(out);
+    for (const dir of untrackedDirs) {
+      const listed = await git(worktree, [
+        "-c",
+        "core.quotePath=false",
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "-z",
+        "--",
+        dir,
+        ...[...MANAGED_FOLDERS].map((name) => `:(exclude,glob)**/${name}/**`),
+      ]);
+      files.push(...listed.split("\0").filter((p) => p !== ""));
     }
     return files;
   } catch {
