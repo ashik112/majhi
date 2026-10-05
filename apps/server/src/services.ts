@@ -65,6 +65,7 @@ import { ConnectService } from "./connect/service.ts";
 import { type BrowserServer, RUNNER_BROWSERS_PATH } from "./connections/browser.ts";
 import { GitLink } from "./connections/git-link.ts";
 import { ConnectionHealthService } from "./connections/health.ts";
+import { probePort } from "./connections/host-probe.ts";
 import { listTools, remoteTransport } from "./connections/mcp-client.ts";
 import { type GitProvider, type PlanDeps, planConnections } from "./connections/plan.ts";
 import { redactSecrets } from "./connections/redact.ts";
@@ -637,6 +638,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     () => containers.available(),
   );
   // Where runs find their connections' files (5.14). In a runner, the image keeps the browsers.
+  // The ports majhi itself listens on: no service on this computer may name one (5.14).
+  const ownPorts = (): number[] => [
+    env.port,
+    ...(env.laya === undefined ? [] : [new URL(env.laya.url).port].map(Number).filter((p) => p > 0)),
+  ];
   // Bearer tokens of connections signed in through Connect (5.14); bound once that service exists.
   const oauth: { bearer?: (id: string) => Promise<{ token: string } | { problem: string }> } = {};
   // A workspace signed in to a git host: bound once the git link exists.
@@ -655,6 +661,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     oauth: async (id: string) => oauth.bearer?.(id) ?? { problem: "Sign-in is not ready." },
     gitToken: async (org: string, provider: GitProvider, host: string) =>
       gitSignIn.token?.(org, provider, host) ?? { problem: "Sign-in is not ready." },
+    // A service on this computer is offered to a run only while its check passes (5.14).
+    connected: (id: string) => connectionHealth.get(id)?.state === "connected",
+    hostServices: (task: string, services: { id: string; ports: number[] }[]) =>
+      containers.hostForward(task, services),
     browsersPath:
       sessionOptions.base.PLAYWRIGHT_BROWSERS_PATH ??
       (env.runner.mode === "container" ? RUNNER_BROWSERS_PATH : undefined),
@@ -718,6 +728,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     openTasks: () => [...store.tasks.statuses()].flatMap(([id, status]) => (status === "done" ? [] : [id])),
     settings: async () => (await config.settings()).containers,
     runnerNetwork: env.runner.network,
+    runnerImage: env.runner.image,
+    ownPorts,
     paths: { majhiHome: env.majhiHome, hostHome: env.hostHome, protectedPaths: [env.secretsKeyFile] },
     changed: () => events.emit(["containers"]),
   });
@@ -1864,6 +1876,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     attention: reportAttention,
   });
   const connections = new ConnectionService({
+    ownPorts,
     health: (id) => connectionHealth.get(id),
     config,
     secrets,
@@ -1874,8 +1887,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     agentsChanged: (list) => {
       for (const agent of list) runs.remountAgent(agent);
     },
-    fieldsChanged: (id) => runs.remountConnection(id),
+    fieldsChanged: (id) => {
+      // A service on this computer changed ports: its old forwarders end now, sessions start new ones.
+      background.run(() => containers.hostForwardStop(id));
+      runs.remountConnection(id);
+    },
   });
+  connections.onRemoved((id) => containers.hostForwardStop(id));
   const connect = new ConnectService({
     grants: new GrantStore(secrets),
     apps: new AppClientStore(secrets),
@@ -1960,6 +1978,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   // Agent files used to list their skills: move the lists into the skills lock once.
   background.run(() => migrateAgentSkills({ agents, store: skillStore }, { actor: { kind: "owner" } }));
   const connectionTests = new ConnectionTester({
+    // From where the forwarders run: Docker's name for this computer when majhi is in Docker, else this machine.
+    hostProbe: (port) => probePort(existsSync("/.dockerenv") ? "host.docker.internal" : "127.0.0.1", port),
     oauth: connect,
     gitCheck: async (org, provider, host, privateNetwork) => {
       const fetchFn = options.gitFetch ?? fetch;

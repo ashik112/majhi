@@ -29,6 +29,7 @@ export const ConnectionTypeSchema = z.enum([
   "api",
   "cli",
   "git",
+  "host",
 ]);
 export type ConnectionType = z.infer<typeof ConnectionTypeSchema>;
 
@@ -63,7 +64,7 @@ export const ConnectionFieldSchema = z.object({
   /** The field counts only while these other fields hold these values. */
   when: WhenSchema.optional(),
   /** How a text value must look: a URL, a port, a host name or alias, or words separated by spaces. */
-  format: z.enum(["url", "port", "host", "ssh", "words"]).optional(),
+  format: z.enum(["url", "port", "ports", "host", "ssh", "words"]).optional(),
   placeholder: z.string().optional(),
   /** The page offers the Host aliases of ~/.ssh/config. */
   pick: z.enum(["ssh-alias", "ssh-key"]).optional(),
@@ -548,6 +549,24 @@ export const CONNECTION_TYPES: readonly ConnectionTypeDef[] = [
     ],
     lists: [],
   },
+  {
+    type: "host",
+    label: "Service on this computer",
+    summary:
+      "A service running on your own computer, like a local stack. This workspace's agents reach only the ports you list, as <name>.host",
+    fields: [
+      {
+        key: "ports",
+        label: "Ports",
+        kind: "text",
+        required: true,
+        format: "ports",
+        placeholder: "8000, 5432",
+        help: "The ports on this computer that agents may reach, 1 to 65535, separated by commas. Nothing else on this computer is reachable.",
+      },
+    ],
+    lists: [],
+  },
 ];
 
 /** Types only Connect makes (5.14): the new-connection form does not offer them. */
@@ -700,7 +719,9 @@ function storageIssues(conn: {
       storedValueIssue(field.kind, value) ??
       (field.choices !== undefined && !field.choices.some((c) => c.value === value)
         ? `Use one of ${field.choices.map((c) => c.value).join(", ")}`
-        : undefined);
+        : undefined) ??
+      // A service on this computer is a hole in the sandbox: a stored list is checked as strictly as a typed one.
+      (field.format === "ports" && field.kind === "text" ? hostPortsIssue(field.label, value) : undefined);
     if (issue !== undefined) issues.push({ path: ["fields", key], message: issue });
   }
   for (const key of CONNECTION_LISTS) {
@@ -845,6 +866,45 @@ export function sshTargetArgs(target: string, key?: { pub: string } | undefined)
   return [...keyArgs, ...(m?.[2] === undefined ? [] : ["-p", m[2]]), "--", host];
 }
 
+/** The most ports one service on this computer may list. */
+export const HOST_PORTS_MAX = 16;
+
+/**
+ * Ports no service on this computer may name: majhi's own default port. The server also refuses the
+ * port it really listens on (`ConnectionService`), which can differ from the default.
+ */
+export const MAJHI_OWN_PORTS: readonly number[] = [7070];
+
+/** The ports of a `ports` value, in the order given. Anything that is not a whole port 1 to 65535 is left out. */
+export function hostPorts(value: string | undefined): number[] {
+  const out: number[] = [];
+  for (const word of words(value)) {
+    const port = Number(word);
+    if (
+      Number.isInteger(port) &&
+      port >= 1 &&
+      port <= 65535 &&
+      String(port) === word &&
+      !out.includes(port)
+    ) {
+      out.push(port);
+    }
+  }
+  return out;
+}
+
+/** Why a list of ports is not one, or undefined: every word a whole port, none majhi's own, not too many. */
+export function hostPortsIssue(label: string, value: string): string | undefined {
+  const given = words(value);
+  if (given.length === 0) return `${label} needs at least one port`;
+  const bad = given.find((w) => hostPorts(w).length !== 1);
+  if (bad !== undefined) return `${bad} is not a port. ${label} are numbers from 1 to 65535, like 8000, 5432`;
+  if (given.length > HOST_PORTS_MAX) return `${label} take at most ${HOST_PORTS_MAX} ports`;
+  const own = hostPorts(value).find((p) => MAJHI_OWN_PORTS.includes(p));
+  if (own !== undefined) return `Port ${own} is majhi's own. No agent may reach it`;
+  return undefined;
+}
+
 /** Why a text value does not fit its field's format, or undefined. */
 export function formatIssue(
   field: Pick<ConnectionField, "format" | "label" | "pick">,
@@ -856,6 +916,7 @@ export function formatIssue(
       ? undefined
       : `${field.label} is a port, 1 to 65535`;
   }
+  if (field.format === "ports") return hostPortsIssue(field.label, value);
   if (field.format === "url") {
     return WEB_URL.safeParse(value).success
       ? undefined

@@ -13,6 +13,7 @@ import {
   type FieldKind,
   failureFromError,
   failureFromExit,
+  hostPorts,
   serviceByUrl,
   sshTargetArgs,
   textValue,
@@ -23,6 +24,7 @@ import { sshConfigHosts } from "../scan/sshConfig.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import { classifyProbe, runSsh, type SshRunFn } from "../ssh/hosts.ts";
 import { type BrowserServer, browserServer } from "./browser.ts";
+import { type PortAnswer, probePort } from "./host-probe.ts";
 import { cutKubeconfig, KubeconfigError } from "./kubeconfig.ts";
 import { imapLogin, smtpGreeting } from "./mail.ts";
 import { callTool, listTools, remoteTransport, SpawnedTransport } from "./mcp-client.ts";
@@ -68,6 +70,11 @@ export interface TesterDeps {
     host: string,
     privateNetwork: boolean,
   ) => Promise<GitCheck | { problem: "signed-out" }>;
+  /**
+   * Where the owner's computer answers from here: `host.docker.internal` when majhi runs in Docker (the same
+   * address its forwarders use), else this machine. A test gives its own probe.
+   */
+  hostProbe?: ((port: number) => Promise<PortAnswer>) | undefined;
   /** Told how every check ended, so the connection's one state follows it. */
   health?: { observe(id: string, result: ConnectionTestResult): void } | undefined;
   /** The Test of a connection signed in through Connect (5.14). */
@@ -372,7 +379,33 @@ export class ConnectionTester {
         return Promise.resolve(
           fail("This connection is checked with the workspace's sign-in.", { reason: "no-credential" }),
         );
+      case "host":
+        return this.host(values);
     }
+  }
+
+  /** Opens a TCP connection to each listed port of the owner's computer: connected only when every one answers. */
+  private async host(v: Values): Promise<Outcome> {
+    const ports = hostPorts(v.fields.ports);
+    if (ports.length === 0) {
+      return fail("No port is listed.", { reason: "setup-needed", fix: "List at least one port." });
+    }
+    const probe = this.deps.hostProbe ?? ((port: number) => probePort("127.0.0.1", port));
+    for (const port of ports) {
+      const answer = await probe(port);
+      if (answer === "open") continue;
+      const reason = answer === "timeout" ? "timeout" : "unreachable";
+      return fail(`Nothing answers on port ${port} of this computer.`, {
+        reason,
+        fix: `Start the service that listens on port ${port}, then check again.`,
+      });
+    }
+    return {
+      ok: true,
+      detail: `Port${ports.length === 1 ? "" : "s"} ${ports.join(", ")} of this computer answer.`,
+      warnings: [],
+      checked: ports.map((p) => `Opened a connection to port ${p} of this computer`),
+    };
   }
 
   /** `kubectl auth can-i --list` against a copy that holds only the context, and two checks for writes. */

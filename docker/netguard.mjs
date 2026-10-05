@@ -60,7 +60,11 @@ export function routeGateways(table) {
     if (hex === undefined || hex.length !== 8 || hex === "00000000") continue;
     const n = Number.parseInt(hex, 16);
     if (!Number.isInteger(n)) continue;
-    out.push(dotted(((n & 255) * 2 ** 24 + ((n >>> 8) & 255) * 2 ** 16 + ((n >>> 16) & 255) * 2 ** 8 + (n >>> 24)) >>> 0));
+    out.push(
+      dotted(
+        ((n & 255) * 2 ** 24 + ((n >>> 8) & 255) * 2 ** 16 + ((n >>> 16) & 255) * 2 ** 8 + (n >>> 24)) >>> 0,
+      ),
+    );
   }
   return out;
 }

@@ -18,6 +18,10 @@ export interface ContainerNames {
   network: string;
   /** A service container. Also its network alias is `name`. */
   service(name: string): string;
+  /** The forwarder container of a service on the owner's computer (SPEC 5.14), by connection id. */
+  hostForward(id: string): string;
+  /** The network that gives that forwarder its route to the computer: only forwarders join it, never a runner. */
+  hostNetwork: string;
   /** A named volume majhi creates for the task. */
   volume(name: string): string;
   /** Prefix of every volume of the task. */
@@ -36,6 +40,8 @@ export function containerNames(task: string): ContainerNames {
     previewContainer: `majhi-preview-${key}`,
     network: `majhi-${key}`,
     service: (name) => `majhi-${key}-${name}`,
+    hostForward: (id) => `majhi-${key}-host-${id}`,
+    hostNetwork: `majhi-${key}-host`,
     volume: (name) => `majhi-${key}-data-${name}`,
     volumePrefix: `majhi-${key}-data-`,
   };

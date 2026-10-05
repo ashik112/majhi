@@ -8,7 +8,14 @@ import type { ConfigService } from "../config/service.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import { runConnections } from "./access.ts";
 import type { GateConnection } from "./gate.ts";
-import { type ConnectionUse, type PlanDeps, planConnections, type RunPlan } from "./plan.ts";
+import {
+  type ConnectionUse,
+  type HostService,
+  hostAlias,
+  type PlanDeps,
+  planConnections,
+  type RunPlan,
+} from "./plan.ts";
 import type { HeldSecret } from "./redact.ts";
 import { ownerOnlyDir } from "./service.ts";
 
@@ -36,6 +43,8 @@ export interface PreparedRun extends RunConnections {
   servers: RunPlan["servers"];
   mounts: RunMount[];
   problems: string[];
+  /** One line per service on this computer the run reaches, for the room. */
+  notes: { id: string; text: string }[];
 }
 
 export interface RunFilesDeps {
@@ -49,6 +58,13 @@ export interface RunFilesDeps {
   oauth?: PlanDeps["oauth"];
   /** The workspace's own git sign-in, for `git` connections. */
   gitToken?: PlanDeps["gitToken"];
+  /** Whether a connection's one state is connected (5.14). */
+  connected?: PlanDeps["connected"];
+  /**
+   * Starts the forwarder of the services on this computer a run reaches, on the task's own network,
+   * before the run starts. Rejects with a plain message when it cannot.
+   */
+  hostServices?: ((task: string, services: HostService[]) => Promise<void>) | undefined;
 }
 
 /**
@@ -57,7 +73,7 @@ export interface RunFilesDeps {
  */
 export async function prepareRunConnections(
   deps: RunFilesDeps,
-  task: Pick<Task, "org" | "connections">,
+  task: Pick<Task, "id" | "org" | "connections">,
   fm: Pick<AgentFrontmatter, "id" | "scope">,
   kind: "session" | "process",
 ): Promise<PreparedRun | undefined> {
@@ -77,20 +93,57 @@ export async function prepareRunConnections(
     const plan = await planConnections(held, dir, deps);
     for (const file of plan.files) await writeFile(join(dir, file.name), file.data, { mode: 0o600 });
     for (const profile of plan.profiles) await ownerOnlyDir(profile);
+    const reach = await startHostServices(deps, task.id, plan);
     return {
       dir,
       gate: plan.gate,
       secrets: plan.secrets,
-      uses: plan.uses,
+      uses: plan.uses.filter((u) => !reach.failed.includes(u.id)),
       env: plan.env,
       servers: plan.servers,
       mounts: [{ path: dir, readOnly: true }, ...plan.profiles.map((path) => ({ path }))],
-      problems: plan.problems,
+      problems: [...plan.problems, ...reach.problems],
+      notes: reach.notes,
     };
   } catch (err) {
     await removeRunFiles(dir);
     throw err;
   }
+}
+
+/**
+ * Starts the forwarder of each service on this computer the run reaches. One that cannot start is
+ * left out of the run, with the reason for the room.
+ */
+async function startHostServices(
+  deps: Pick<RunFilesDeps, "hostServices">,
+  task: string,
+  plan: Pick<RunPlan, "hostServices">,
+): Promise<{ failed: string[]; problems: string[]; notes: { id: string; text: string }[] }> {
+  const out = {
+    failed: [] as string[],
+    problems: [] as string[],
+    notes: [] as { id: string; text: string }[],
+  };
+  if (plan.hostServices.length === 0) return out;
+  try {
+    if (deps.hostServices === undefined) throw new Error("agents here do not run in containers");
+    await deps.hostServices(task, plan.hostServices);
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err);
+    for (const s of plan.hostServices) {
+      out.failed.push(s.id);
+      out.problems.push(`${hostAlias(s.id)} could not start, so the run does not get it: ${why}`);
+    }
+    return out;
+  }
+  for (const s of plan.hostServices) {
+    out.notes.push({
+      id: s.id,
+      text: `${hostAlias(s.id)} is reachable from this task: ports ${s.ports.join(", ")}. Nothing else on this computer is.`,
+    });
+  }
+  return out;
 }
 
 /**

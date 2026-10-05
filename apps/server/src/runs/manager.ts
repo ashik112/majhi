@@ -2056,6 +2056,13 @@ export class RunManager {
       );
       deps.onSkillsChanged?.();
       for (const line of opened.notices) this.live.system(run, "warn", line);
+      for (const note of opened.notes) {
+        deps.room.post(run.task, `host-service:${note.id}`, {
+          type: "system",
+          level: "info",
+          text: note.text,
+        });
+      }
       run.mapper = new ItemMapper(
         run.agent,
         run.runId,

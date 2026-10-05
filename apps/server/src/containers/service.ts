@@ -21,6 +21,8 @@ import {
   builderCreateArgs,
   ContainerRefused,
   type HostPaths,
+  hostForwardRunArgs,
+  hostNetworkCreateArgs,
   type Limits,
   networkCreateArgs,
   previewRunArgs,
@@ -55,6 +57,10 @@ export interface ContainerServiceDeps {
   settings: () => Promise<ContainersSettings>;
   /** The network runners are on. A preview joins it. */
   runnerNetwork: string;
+  /** The runner image: a forwarder of a service on the owner's computer runs its script. */
+  runnerImage?: string | undefined;
+  /** The ports majhi listens on, which no forwarder may name (with its default 7070). */
+  ownPorts?: () => readonly number[];
   paths: HostPaths;
   /** Tells the Hub that the list of containers changed. */
   changed?: () => void;
@@ -93,6 +99,8 @@ export class ContainerService {
   private readonly docker: ContainerDocker | undefined;
   /** Tasks whose network exists. */
   private readonly networks = new Set<string>();
+  /** The ports each running forwarder was started with, by container name. */
+  private readonly forwarded = new Map<string, string>();
   /** Looking up the host port of a preview, by container name. */
   private readonly lookups = new Map<string, Promise<void>>();
   /** One start at a time per task, so the limit and the names are checked on the truth. */
@@ -334,6 +342,72 @@ export class ContainerService {
         return { status: "started" as const, container: this.infoOf(info) as ContainerInfo };
       });
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Services on the owner's computer
+
+  /**
+   * Starts, on the task's own network, the forwarder of each service on the owner's computer the
+   * task reaches (SPEC 5.14): a container named `<id>.host` there that forwards only the declared
+   * ports to the same ports of the computer. A forwarder that already runs with the same ports stays;
+   * one with other ports is replaced. Nothing else of the computer is reachable through it.
+   */
+  async hostForward(
+    task: string,
+    services: readonly { id: string; ports: readonly number[] }[],
+  ): Promise<void> {
+    const docker = this.need();
+    const image = this.deps.runnerImage;
+    if (image === undefined) throw new UserError("majhi does not know the runner image.", 501);
+    const t = this.task(task);
+    const settings = await this.deps.settings();
+    await this.starting;
+    await this.locked(task, async () => {
+      const safety = this.safety(t);
+      const limits = limitsOf(settings);
+      const names = containerNames(task);
+      for (const service of services) {
+        const alias = `${service.id}.host`;
+        const wanted = service.ports.join(",");
+        const existing = this.running(task, "service", alias);
+        if (existing !== undefined && this.forwarded.get(names.hostForward(service.id)) === wanted) continue;
+        // Checked before any network exists.
+        const parts = hostForwardRunArgs(safety, limits, { id: service.id, ports: service.ports, image });
+        if (existing !== undefined) await this.deps.processes.stop(task, existing.id, "task");
+        await this.ensureNetwork(docker, safety);
+        await this.ensureHostNetwork(docker, safety);
+        await this.deps.processes.start({
+          task,
+          agent: "majhi",
+          name: `host service ${alias}`,
+          command: `docker run ${names.hostForward(service.id)}`,
+          cwd: t.folder,
+          wait: false,
+          managed: {
+            container: { kind: "service", name: alias, image, url: `${alias}:${service.ports[0] ?? ""}` },
+            spawn: () => docker.attached(parts, safety, { cwd: t.folder }),
+          },
+        });
+        this.forwarded.set(names.hostForward(service.id), wanted);
+      }
+      this.deps.changed?.();
+    });
+  }
+
+  /**
+   * The owner removed or changed a service on this computer: its forwarders stop in every task, so
+   * the old access ends at once. A session that still holds it starts a forwarder again with the
+   * new ports when it restarts.
+   */
+  async hostForwardStop(id: string): Promise<void> {
+    const alias = `${id}.host`;
+    for (const p of this.deps.processes.listAll()) {
+      if (p.status !== "running" || p.container?.kind !== "service" || p.container.name !== alias) continue;
+      await this.deps.processes.stop(p.task, p.id, "task");
+      this.forwarded.delete(containerNames(p.task).hostForward(id));
+    }
+    this.deps.changed?.();
   }
 
   // ---------------------------------------------------------------------------
@@ -691,6 +765,9 @@ export class ContainerService {
       if (ids.length > 0) await docker.exec(["rm", "-f", "-v", ...ids]);
     });
     await this.quietly(() => this.removeNetwork(docker, names.network));
+    await this.quietly(() => this.removeNetwork(docker, names.hostNetwork));
+    for (const name of this.forwarded.keys())
+      if (name.startsWith(`majhi-${names.key}-host-`)) this.forwarded.delete(name);
     // A paused task leaves nothing running: the builder stops, and the next build starts it again.
     await this.stopBuilder(docker, names.builder);
     this.networks.delete(task);
@@ -872,6 +949,7 @@ export class ContainerService {
       hostHome: this.deps.paths.hostHome,
       protectedPaths: this.deps.paths.protectedPaths,
       taskFolder: task.folder,
+      ownPorts: this.deps.ownPorts?.() ?? [],
     };
   }
 
@@ -1009,6 +1087,16 @@ export class ContainerService {
         // A preview that is not running, or a runner that just ended.
         if (!/No such container|is not running|already exists/i.test(errorMessage(err))) throw err;
       }
+    }
+  }
+
+  /** The forwarders' own network, made once per task. Only forwarders join it. */
+  private async ensureHostNetwork(docker: ContainerDocker, safety: Safety): Promise<void> {
+    const name = containerNames(safety.task).hostNetwork;
+    try {
+      await docker.exec(["network", "inspect", name]);
+    } catch {
+      await docker.create(hostNetworkCreateArgs(safety), safety);
     }
   }
 

@@ -119,7 +119,7 @@ async function list(caller: ToolCaller, deps: ConnectionsMcpDeps): Promise<Resul
     const orgs = connectionScopes(await deps.config.sections());
     const others = Object.entries(orgs).flatMap(([org, entry]) =>
       Object.entries(entry.connections ?? {})
-        .filter(([id]) => !uses.some((u) => u.id === id))
+        .filter(([id, c]) => c.type !== "host" && !uses.some((u) => u.id === id))
         .map(
           ([id, c]) =>
             `- ${c.name} (${id}, ${connectionType(c.type).label}, org ${org})${c.description ? `: ${c.description}` : ""}`,
@@ -142,6 +142,10 @@ async function attach(
   const connection = found?.[1].connections?.[args.id];
   if (found === undefined || connection === undefined) return fail(`There is no connection ${args.id}.`);
   const [org] = found;
+  // A service on this computer is the owner's grant alone: an agent never attaches one to itself.
+  if (connection.type === "host") {
+    return fail(`${args.id} is a service on the owner's computer. Only the owner lets a task reach it.`);
+  }
   const task = deps.store.tasks.get(caller.task);
   if (task === undefined) return fail(`Task ${caller.task} does not exist.`);
   const held =

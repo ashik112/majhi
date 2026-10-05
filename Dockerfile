@@ -180,6 +180,9 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 COPY --chmod=0755 docker/netguard.mjs /usr/local/lib/majhi/netguard.mjs
 COPY --chmod=0755 docker/majhi-netguard /usr/local/bin/majhi-netguard
+# A service on the owner's computer (SPEC 5.14) reaches a task through a forwarder that runs this
+# script from the same image, on the task's network. See docker/portforward.mjs.
+COPY --chmod=0755 docker/portforward.mjs /usr/local/lib/majhi/portforward.mjs
 # /etc/passwd stays read-only, and setuid/setgid bits are stripped from every binary, so an agent
 # process has no path to root.
 RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +

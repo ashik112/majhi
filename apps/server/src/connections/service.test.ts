@@ -114,6 +114,41 @@ describe("ConnectionService storage", () => {
     expect(await yaml()).toBe(before);
   });
 
+  it("lets only the owner add or change a service on this computer, never with majhi's own port", async () => {
+    const agent: CommandMeta = { actor: { kind: "agent", id: "captain" } };
+    const input = {
+      org: "acme",
+      id: "kilby",
+      type: "host" as const,
+      name: "Kilby",
+      fields: { ports: "8000, 5432" },
+    };
+    await expect(service.create(input, "connections.create", agent)).rejects.toThrow("Only the owner");
+    await expect(
+      service.create({ ...input, fields: { ports: "8000, 7070" } }, "connections.create", OWNER),
+    ).rejects.toThrow();
+    await expect(
+      service.create({ ...input, fields: { ports: "70000" } }, "connections.create", OWNER),
+    ).rejects.toThrow();
+    await expect(
+      service.create({ ...input, org: GLOBAL_CONNECTIONS }, "connections.create", OWNER),
+    ).rejects.toThrow("not to Global");
+    expect(parse(await yaml()).orgs.acme.connections).toBeUndefined();
+    await service.create(input, "connections.create", OWNER);
+    const before = await yaml();
+    // An agent can neither widen the ports nor touch the connection at all.
+    await expect(
+      service.update({ id: "kilby", fields: { ports: "8000, 5432, 22" } }, "connections.update", agent),
+    ).rejects.toThrow("Only the owner");
+    await expect(
+      service.update({ id: "kilby", agentsOff: ["acme-dev"] }, "connections.update", agent),
+    ).rejects.toThrow("Only the owner");
+    await expect(
+      service.update({ id: "kilby", fields: { ports: "7070" } }, "connections.update", OWNER),
+    ).rejects.toThrow();
+    expect(await yaml()).toBe(before);
+  });
+
   it("rejects duplicate ids across Global and workspace connections, including hand edits", async () => {
     await service.create(
       { org: GLOBAL_CONNECTIONS, id: "shared-api", type: "env", name: "Shared API" },
