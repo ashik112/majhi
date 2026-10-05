@@ -2,11 +2,9 @@ import type { RoomItem } from "@majhi/shared";
 import { ArrowDown } from "lucide-react";
 import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Lamp } from "@/components/ui/lamp";
 import { cn } from "@/lib/cn";
 import { GLASS } from "@/lib/glass";
 import { dockItems, waitsForOwner } from "./dock";
-import { DockCaption, dockCaption } from "./dock-caption";
 import { type ItemContext, NotesRow, OWNER_CARD_TYPES, PinnedPlan, RoomItemView, rowDomId } from "./items";
 import { RoomTaskContext } from "./media";
 import type { RoomState } from "./model";
@@ -368,24 +366,14 @@ export function Timeline({
           <section
             aria-label="Needs you"
             className={cn(
-              "mt-2 flex max-h-[60%] shrink-0 flex-col gap-2 overflow-hidden rounded-xl p-2.5",
+              "mt-2 flex max-h-[60%] shrink-0 flex-col overflow-y-auto rounded-xl px-3 py-0.5",
               GLASS,
               "border-lamp-needs/30",
             )}
           >
-            <span className="flex items-center gap-2 px-0.5 text-sm font-medium text-lamp-needs">
-              <Lamp state="needs" size={7} />
-              Needs you
-              {waiting.length > 1 && <span className="tnum font-mono text-xs">{waiting.length}</span>}
-            </span>
-            <ol className="m-0 flex min-h-0 flex-col gap-2.5 overflow-y-auto p-0">
+            <ol className="m-0 flex min-h-0 flex-col divide-y divide-line p-0">
               {waiting.map((item: RoomItem) => (
-                <li key={item.id} className="list-none">
-                  <DockCaption parts={dockCaption(item, lead)} />
-                  <ol className="m-0 p-0">
-                    <RoomItemView item={item} ctx={ctx} {...rowProps(item)} />
-                  </ol>
-                </li>
+                <RoomItemView key={item.id} item={item} ctx={ctx} {...rowProps(item)} />
               ))}
             </ol>
           </section>

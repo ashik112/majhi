@@ -422,31 +422,33 @@ export function Composer({
           </div>
         </div>
       </div>
-      {/* Lined up with the text in the box: border, padding, the attach button, the gap and the text's inset.
+      {/* Only while the box has focus and is empty, so it takes no room otherwise. Lined up with the text in the box: border, padding, the attach button, the gap and the text's inset.
           Stacked, the text starts at the box's edge. */}
-      <p className="flex h-[18px] items-center gap-3 overflow-hidden pl-2 text-xs whitespace-nowrap text-fg-faint @[40rem]:pl-[47px]">
-        <span>
-          <Kbd>Enter</Kbd> {busy ? "queues" : "sends"}
-        </span>
-        <span>
-          <Kbd>Shift Enter</Kbd> new line
-        </span>
-        {busy ? (
+      {focused && text === "" && (
+        <p className="flex h-[18px] items-center gap-3 overflow-hidden pl-2 text-xs whitespace-nowrap text-fg-faint @[40rem]:pl-[47px]">
           <span>
-            <Kbd>Esc</Kbd> stops
+            <Kbd>Enter</Kbd> {busy ? "queues" : "sends"}
           </span>
-        ) : (
-          // Only where there is room for them on one line.
-          <>
-            <span className="hidden @[34rem]:inline">
-              <Kbd>@</Kbd> mention
+          <span>
+            <Kbd>Shift Enter</Kbd> new line
+          </span>
+          {busy ? (
+            <span>
+              <Kbd>Esc</Kbd> stops
             </span>
-            <span className="hidden @[34rem]:inline">
-              <Kbd>/</Kbd> commands
-            </span>
-          </>
-        )}
-      </p>
+          ) : (
+            // Only where there is room for them on one line.
+            <>
+              <span className="hidden @[34rem]:inline">
+                <Kbd>@</Kbd> mention
+              </span>
+              <span className="hidden @[34rem]:inline">
+                <Kbd>/</Kbd> commands
+              </span>
+            </>
+          )}
+        </p>
+      )}
     </div>
   );
 }
