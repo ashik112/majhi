@@ -194,13 +194,19 @@ function needsOrder(a: NeedsItem, b: NeedsItem, priority: (id: string | undefine
 /** Rows of Running now: longest running first (the turn's start, else the last change), paused ones last. */
 function runningOrder(a: RunningItem, b: RunningItem): number {
   const since = (r: RunningItem) => r.doing?.since ?? r.task.updatedAt;
-  return Number(a.paused) - Number(b.paused) || since(a).localeCompare(since(b)) || a.task.id.localeCompare(b.task.id);
+  return (
+    Number(a.paused) - Number(b.paused) ||
+    since(a).localeCompare(since(b)) ||
+    a.task.id.localeCompare(b.task.id)
+  );
 }
 
 const CI_RANK: Record<CiState, number> = { failing: 0, pending: 1, none: 2, passing: 3 };
 function shippingOrder(a: ShippingItem, b: ShippingItem): number {
   const ci = (s: ShippingItem) => CI_RANK[s.mr?.ci ?? "none"];
-  return ci(a) - ci(b) || a.task.updatedAt.localeCompare(b.task.updatedAt) || a.task.id.localeCompare(b.task.id);
+  return (
+    ci(a) - ci(b) || a.task.updatedAt.localeCompare(b.task.updatedAt) || a.task.id.localeCompare(b.task.id)
+  );
 }
 
 /** How ready a queued task is to start: nothing in the way, then a wait that ends by itself, then one the owner must fix. */
@@ -252,7 +258,7 @@ const CAPTAIN_WINDOW_MS = 24 * 3_600_000;
 
 function matches(query: string, ...fields: (string | undefined)[]): boolean {
   const q = query.trim().toLowerCase();
-  return q === "" || fields.some((f) => f !== undefined && f.toLowerCase().includes(q));
+  return q === "" || fields.some((f) => f?.toLowerCase().includes(q) === true);
 }
 
 export function decisionTitle(d: OwnerDecision): string {
@@ -274,7 +280,9 @@ export function buildHome(input: HomeInput): { sections: HomeSections; totals: H
     decision,
     blocks: decision.task === undefined ? 0 : (blocks.get(decision.task) ?? 0),
   }));
-  needs.sort((a, b) => needsOrder(a, b, (id) => priorityRank(id === undefined ? undefined : byId.get(id)?.priority)));
+  needs.sort((a, b) =>
+    needsOrder(a, b, (id) => priorityRank(id === undefined ? undefined : byId.get(id)?.priority)),
+  );
 
   const running: RunningItem[] = [];
   const shipping: ShippingItem[] = [];
@@ -307,7 +315,9 @@ export function buildHome(input: HomeInput): { sections: HomeSections; totals: H
   running.sort(runningOrder);
   shipping.sort(shippingOrder);
   next.sort(queuedOrder);
-  triage.sort((a, b) => a.task.updatedAt.localeCompare(b.task.updatedAt) || a.task.id.localeCompare(b.task.id));
+  triage.sort(
+    (a, b) => a.task.updatedAt.localeCompare(b.task.updatedAt) || a.task.id.localeCompare(b.task.id),
+  );
   done.sort((a, b) => newestFirst(a.task, b.task));
 
   const captain = input.captain
@@ -332,7 +342,9 @@ export function buildHome(input: HomeInput): { sections: HomeSections; totals: H
   };
 
   const sections: HomeSections = {
-    needs: needs.filter((n) => matches(query, n.decision.task, decisionTitle(n.decision), n.decision.sentence)),
+    needs: needs.filter((n) =>
+      matches(query, n.decision.task, decisionTitle(n.decision), n.decision.sentence),
+    ),
     running: running.filter((r) => matches(query, r.task.id, r.task.title)),
     shipping: shipping.filter((s) => matches(query, s.task.id, s.task.title)),
     next: next.filter((q) => matches(query, q.task.id, q.task.title)),
@@ -344,7 +356,11 @@ export function buildHome(input: HomeInput): { sections: HomeSections; totals: H
 }
 
 /** True when counts of `decisions.list` and the Needs you section agree, for the workspace filter. */
-export function needsAgrees(sections: Pick<HomeSections, "needs">, counts: BoardCounts, org: string | undefined): boolean {
+export function needsAgrees(
+  sections: Pick<HomeSections, "needs">,
+  counts: BoardCounts,
+  org: string | undefined,
+): boolean {
   const expected = org === undefined ? counts.needsYou : (counts.orgs[org]?.needsYou ?? 0);
   return sections.needs.length === expected;
 }
@@ -390,7 +406,9 @@ export function blockerText(blocker: Blocker | null | undefined, orgName: (id: s
         ? `${blocker.account} is signed out`
         : `${blocker.account} is at its usage limit`;
     case "machine":
-      return blocker.why === "memory" ? "Starts when the computer has memory free" : "Starts when the computer is less busy";
+      return blocker.why === "memory"
+        ? "Starts when the computer has memory free"
+        : "Starts when the computer is less busy";
     case "slots":
       return blocker.scope === "account"
         ? `Starts when a slot frees on ${blocker.account} (${blocker.inUse} of ${blocker.max})`
@@ -400,12 +418,15 @@ export function blockerText(blocker: Blocker | null | undefined, orgName: (id: s
     case "budget":
       if (blocker.period === "month") return "The monthly ceiling is reached";
       if (blocker.scope === "org") return `${orgName(blocker.scopeId ?? "")} reached its budget for today`;
-      if (blocker.scope === "reserve") return `${blocker.scopeId ?? "The account"} is kept in reserve for you`;
+      if (blocker.scope === "reserve")
+        return `${blocker.scopeId ?? "The account"} is kept in reserve for you`;
       return "Today's budget is used up";
     case "untriaged":
       return blocker.missing.includes("repo") ? "No priority or repo yet" : "No priority yet";
     case "nobody":
-      return blocker.autopilot === "on" ? "Next in line, the captain picks it up" : "Not started, Auto-pilot is off";
+      return blocker.autopilot === "on"
+        ? "Next in line, the captain picks it up"
+        : "Not started, Auto-pilot is off";
   }
 }
 
@@ -434,7 +455,10 @@ const open = (task: string, label: string): ActionSpec => ({
 const MAX_ACTIONS = 3;
 
 /** Answers of a decision as buttons, then its Open. The primary option leads. */
-export function needsActions(decision: OwnerDecision, blocked: Readonly<Record<string, string>> | undefined): ActionSpec[] {
+export function needsActions(
+  decision: OwnerDecision,
+  blocked: Readonly<Record<string, string>> | undefined,
+): ActionSpec[] {
   const ship = decision.kind === "ship";
   const lead = primaryOption(decision, blocked);
   const options = decision.options
@@ -502,12 +526,17 @@ export function queuedActions(item: QueuedItem): ActionSpec[] {
         start,
       ];
     case "budget":
-      return [{ kind: "go", action: { kind: "page", to: "/limits" }, label: "Raise limit" }, open(id, "Open")];
+      return [
+        { kind: "go", action: { kind: "page", to: "/limits" }, label: "Raise limit" },
+        open(id, "Open"),
+      ];
     case "untriaged":
       return [{ kind: "start", task: id, label: "Start" }, open(id, "Open")];
     default:
       // Running, paused or finished with no one to ask: a start has nothing to do, the task is the place to look.
-      return item.task.status === "ready" || item.task.status === "inbox" ? [start, open(id, "Open")] : [open(id, "Open")];
+      return item.task.status === "ready" || item.task.status === "inbox"
+        ? [start, open(id, "Open")]
+        : [open(id, "Open")];
   }
 }
 
@@ -534,7 +563,15 @@ export interface ListView {
 }
 
 export type Entry =
-  | { type: "header"; key: string; section: SectionId; count: number; collapsible: boolean; open: boolean; extra?: string }
+  | {
+      type: "header";
+      key: string;
+      section: SectionId;
+      count: number;
+      collapsible: boolean;
+      open: boolean;
+      extra?: string;
+    }
   | { type: "needs"; key: string; section: "needs"; item: NeedsItem }
   | { type: "running"; key: string; section: "running"; item: RunningItem }
   | { type: "shipping"; key: string; section: "shipping"; item: ShippingItem }
@@ -625,7 +662,11 @@ export function actionsOf(
 }
 
 /** The key after (or before) `current` among the focusable entries, staying at the ends. */
-export function stepFocus(keys: readonly string[], current: string | undefined, by: 1 | -1): string | undefined {
+export function stepFocus(
+  keys: readonly string[],
+  current: string | undefined,
+  by: 1 | -1,
+): string | undefined {
   if (keys.length === 0) return undefined;
   const at = current === undefined ? -1 : keys.indexOf(current);
   if (at === -1) return by === 1 ? keys[0] : keys.at(-1);

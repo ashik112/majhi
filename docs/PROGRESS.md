@@ -431,35 +431,53 @@ Next stage after the list: the task model (one hold per task, one transition tab
 - **Tests.** `features/decisions/model.test.ts` (the count), `lib/naming.test.ts` (retired words in `apps/web/src`), `events/watcher.test.ts` (`boss.chat` emits nothing), `packages/shared/src/plain-text.test.ts`. Shots and rules in `e2e/shots.captain.ts` (`cohesion`).
 - **Left:** Decisions "Merge" is still the action name where the room offers a Ship menu (Merge is one of its entries). The Board column and cards still say "Your turn" and "Finished" from their own lamps. `autonomy.status` takes about 0.6 s and `captain.status` about 0.35 s on the live data; both run on the single server thread and are in the captain and autonomy code, which this pass did not touch.
 
-## Phase 7: Resilience and health (PRV-22, in progress)
+## Phase 7: Resilience and health (PRV-22, built)
 
-Built on `task/prv-22-phase-7-resilience-and-health`, with `main` merged (Phases 6 and 11 in). Phase 2b already gives checkpoints, offline pause and resume (probe plus network-looking errors), wake, restart and crash resume, and context-window recovery (`isContextError`, `max_tokens`, `max_turn_requests` go to the note built by majhi). The usage reads, the Usage page meters and the health checks exist since Phases 1 and 2c. What Phase 7 adds:
+Branch `task/prv-22-phase-7-resilience-and-health`. The server and web halves reached `main` at `ac821e18` (merge `6968e842`); the branch then adds the e2e test, the account readout on the new Home top bar, limit notes that take the reset from a run's limit error, and the decisions. Phase 2b already gave checkpoints, offline pause and resume (a probe plus network-looking errors), wake, restart and crash resume, and context-window recovery. Phases 1 and 2c gave the usage reads, the Usage page meters and the health checks.
 
-### Plan, in order
+### What works
 
-1. **Limit error shapes per CLI** (`packages/acp/src/limit-failure.ts`, shapes in each tool's registry entry). Claude Code and Codex, login and API key: usage limits, rate limits (429) and quota or credit errors, with the reset time when the text gives one ("resets 3pm (Europe/Berlin)", "try again at 3:40 PM", "try again in 2 hours 13 minutes", an epoch after `|`). Checked on errors and on a short last message of a failed turn, never on prose. A context-window error and an overload are not limits.
-2. **Account at limit.** A run's limit error marks its account (`AccountView.limit`: since, until, resetKnown, detail). The account is `at-limit` until then. Without a reset in the error: the full usage window's reset, else 15 minutes.
-3. **Fallback handoff.** When the agent's `fallback` exists, its account is not at limit and is signed in, and `resume.handoff` allows it (majhi, org; default on): the fallback takes the agent's place in the team, gets majhi's handoff note and the pending prompt, and continues from the checkpoint. One room line says so. The same applies before a turn when the account is already at limit, and to a start that fails on a limit.
-4. **Pause and auto-resume at reset.** Otherwise the run pauses with reason `limit`, the prompt queued again. Other agents on the account pause at their next turn boundary. The budget lift sweep (every 60 s) resumes them once the account's `until` passes, when `resume.auto` allows; otherwise the room says the limit reset and the owner resumes.
-5. **Context-window errors**: check the shapes of both CLIs against `isContextError`, add tests.
-6. **Usage and health in the top bar and Studio.** The board's top bar shows the busiest account's window, with its reset and a link to Usage; at-limit accounts show until when, in Usage and Accounts. Orgs form: the handoff switch next to auto-resume.
+- **Limit detection per CLI.** `packages/acp/src/limit-failure.ts`, with the shapes in each tool's registry entry (`limitShapes`). Claude Code and Codex, sign-in and API key: usage limits, rate limits (429) and credit or quota errors, with the reset when the message names one (an epoch after `|`, "resets 3pm (Europe/Berlin)", "try again at 3:40 PM", "try again in 2 hours 13 minutes"). Errors count, and so does a turn whose whole text is one short limit line (the CLI's result handed back as text); an agent's prose about rate limits does not. Context-window errors and overloads are not limits.
+- **The account at its limit.** A limit error marks the account (`AccountView.limit`: since, until, resetKnown, detail), `at-limit` until `until`: the error's reset, else the reset of a full usage window, else 15 minutes (shown as "about").
+- **Fallback handoff.** When the agent's fallback (Agents, "When usage runs out or the run breaks", "Hand the run to") may work in the org, is not on the team, its account is signed in, not at a limit and not held by a budget, and `resume.handoff` is on (Hub setup, Resume; per org in the Orgs form; default on): the fallback takes the agent's place in the team, starts from majhi's handoff note (TASK.md, the last checkpoint, the room since, the diff) with the queued messages, and the room says "@acme-lead hit its usage limit (resets 4:24 PM). @acme-builder continues from the checkpoint." The same happens before a turn when the account is already at its limit, and when a start fails on a limit.
+- **Pause and resume at the reset.** Otherwise the run pauses with reason `limit`, its prompt queued again. Other agents on the account hand off or pause at their next turn boundary. The 60 second lift sweep resumes them once the reset passes; with `resume.auto` off the room says once that the limit reset and the task waits for the owner.
+- **Context-window errors.** `isContextError` is checked against both CLIs' wordings; recovery through majhi's note is Phase 2b's.
+- **Usage and health in the UI.** Home's top bar ends with the fullest account of the workspace ("claude-acme-1 82%", amber from 80%, "claude-acme-1 at limit" in the limit lamp's colour, every account's windows and resets in its tooltip, a link to Health and usage; hidden under 1200 px). Health and usage rows and the account details say "At limit until 4:24 PM" with the CLI's message as the tooltip. The sidebar's Agents now and the paused cards say "At limit, back 16:24", from the limit error's reset first.
 
-### How it is tested
+### How to try it
 
-- Unit: every limit shape per CLI and auth type, reset parsing, negatives (context errors, overload, auth errors, prose).
-- Integration with the fake agent (a new `limit:<message>` prompt): hand off to a fallback, pause without one, fallback also at limit, policy off, resume at reset with a fake clock, auto-resume off, a second agent on the account pausing.
-- E2E: a simulated limit hands off to the fallback; network drop and return (`phase2b-runs.spec.ts`) still pass.
+1. Give an agent a fallback on another account: Agents, the agent, "Hand the run to".
+2. Run a task with it. When its account runs out mid-run, the room says who took over, the fallback sits in its place in the room, and the account shows at its limit until the reset on Home's top bar and in Health and usage.
+3. Without a fallback, or with the handoff off for the org, the task pauses as "at its limit" and continues by itself at the reset.
+4. With the fake adapters: write `Claude AI usage limit reached|<epoch>` into `<majhi home>/accounts/<account>/fake-limit`, and every prompt of that account fails with it (`e2e/phase7-limits.spec.ts`).
 
-### Server half of steps 1 to 4 (built, web not yet)
+### Done when
 
-- **Where:** detection in `packages/acp/src/limit-failure.ts`; the account mark in `accounts/` (`markLimit`, `limitOf`, `expireLimits`); the handoff and pause in `runs/manager.ts` (`handOffOrPause`, `takeOverFor`, `pauseForAccount`), with the words in `runs/limit.ts`; the swap in `tasks/service.ts` (`takeOver`); the lift at the reset in `budgets/limit-action.ts` (`liftLimits`). `resume.handoff` is in the org view and patch.
-- **Tests:** `limit-failure.test.ts`, `accounts/limit.test.ts`, `runs/limit.test.ts` (fake agent `limit:` and `limit-text:` directives, fake clock), `budgets/limit.test.ts`.
-- **Known limits:**
-  - The fallback keeps the agent's repos override only: a model or effort set for the agent may not exist on the fallback's account.
-  - A fallback already on the team does not take over; the run pauses for the reset instead.
-  - Only queued owner and handoff items follow the handoff. The fallback's queue is in memory, so a restart before its first prompt can drop other entries.
-  - After a restart, a paused task with no run in memory is lifted whether a budget or an account limit paused it, and `resume.auto` does not gate that lift.
-  - `resetKnown` is false when the reset comes from the usage window or the 15 minute guess.
+- Unplugging the network mid-run pauses the task, and plugging it back resumes it from the checkpoint with no lost work: `e2e/phase2b-runs.spec.ts`, "offline pauses the running task, and it resumes on its own when the connection is back" (built in Phase 2b).
+- A simulated limit error hands off to the fallback: `e2e/phase7-limits.spec.ts`, an account at its limit mid-run hands the task to the fallback with a handoff note, and Home's top bar shows the account at its limit.
+
+### Verified
+
+On the branch with `main` merged at `a99f71c0`, 4 Oct:
+
+- `pnpm -r typecheck` and `tsc -p e2e` pass. The e2e check needed `agentsOff` in the two Connect screenshot fixtures, which `main` lacked.
+- Biome passes on the changed files.
+- Phase 7 unit tests: 73 of 73 pass. They cover `limit-failure`, the fake agent, `config/settings`, `accounts/limit`, `budgets/limit`, `runs/context`, `runs/limit` and `runs/start-failure`. The settings test also needed `main`'s new cleanup and container defaults.
+- Done when, in the browser with the fake adapters: 3 of 3 pass. The specs are `e2e/phase7-limits.spec.ts` and `e2e/phase2b-runs.spec.ts`: the limit handoff, offline pause and resume, and waiting in line at the account limit.
+- The whole unit and e2e suites were not run from the task (CLAUDE.md test rule: they run once, at the end of a phase).
+
+### Left and known issues
+
+- A fallback already on the team does not take over; the run pauses for the reset instead.
+- The fallback keeps only the agent's repos override: a model or effort set for the agent may not exist on the fallback's account.
+- The agent that hit its limit does not come back by itself after the reset; the fallback keeps the task.
+- Only queued owner and handoff messages follow the handoff, and the fallback's queue lives in memory, so a restart before its first prompt can drop other queued entries.
+- After a majhi restart, a task paused at a limit lifts at the reset whatever `resume.auto` says: the stored pause does not say whether a budget or an account limit set it.
+- API-key accounts have no usage windows, so a rate limit without "try again in" is held for the 15 minute guess.
+
+### Owner-only checks
+
+- A real signed-in Claude Code and Codex account, and an API key, reaching their limits: the shapes come from the CLIs' published wording, not from a live account at its limit.
 
 ## Captain step 6b: staffing and lead handover (built)
 

@@ -6,8 +6,8 @@ import {
   type HomeInput,
   jumpSection,
   needsAgrees,
-  sectionOf,
   type SectionId,
+  sectionOf,
   stepFocus,
 } from "./home-model.ts";
 
@@ -219,7 +219,11 @@ describe("order inside a section", () => {
   });
 
   it("Shipping: failed CI first, then running, then green", () => {
-    const tasks = [task("ACM-1", "mr", { org: "acme" }), task("ACM-2", "mr", { org: "acme" }), task("ACM-3", "mr", { org: "acme" })];
+    const tasks = [
+      task("ACM-1", "mr", { org: "acme" }),
+      task("ACM-2", "mr", { org: "acme" }),
+      task("ACM-3", "mr", { org: "acme" }),
+    ];
     const mr = (ci: "passing" | "pending" | "failing") => ({ project: "web", number: 1, url: "u", ci });
     const mrs = new Map([
       ["ACM-1", mr("passing")],
@@ -240,7 +244,9 @@ describe("order inside a section", () => {
       ["ACM-1", { agent: "a", since: "2026-10-05T11:30:00.000Z" }],
       ["ACM-2", { agent: "a", since: "2026-10-05T10:00:00.000Z" }],
     ]);
-    const { sections } = buildHome(input({ tasks, decisions: [], working: new Set(["ACM-1", "ACM-2"]), doing }));
+    const { sections } = buildHome(
+      input({ tasks, decisions: [], working: new Set(["ACM-1", "ACM-2"]), doing }),
+    );
     expect(ids(sections.running)).toEqual(["ACM-2", "ACM-1", "ACM-3"]);
   });
 });

@@ -129,5 +129,8 @@ export function createHandoff(w: HandoffWiring): HandoffService {
     changed: w.changed,
     ...(w.now === undefined ? {} : { now: w.now }),
   };
-  return new HandoffService(ports, new HandoffRepo(w.db), { parallel: defaultHandoffParallel(), ...w.options });
+  return new HandoffService(ports, new HandoffRepo(w.db), {
+    parallel: defaultHandoffParallel(),
+    ...w.options,
+  });
 }

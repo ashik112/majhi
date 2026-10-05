@@ -140,7 +140,9 @@ describe("autonomous mode deciding the cards that would wait", () => {
     expect((await t.cards(id)).find((c) => c.command === "tasks.create")?.autonomy?.decision).toBe(
       "approved",
     );
-    const now = (await t.h.cmd("autonomy.status", { detail: true })).body.now.map((n: { task: string }) => n.task);
+    const now = (await t.h.cmd("autonomy.status", { detail: true })).body.now.map(
+      (n: { task: string }) => n.task,
+    );
     expect(now).toEqual(expect.arrayContaining([id, child]));
   });
 });

@@ -15,8 +15,8 @@ import {
   type ActionSpec,
   actionsOf,
   blockerText,
-  decisionTitle,
   type DoneItem,
+  decisionTitle,
   type Entry,
   type NeedsItem,
   type QueuedItem,
@@ -121,6 +121,7 @@ function Row({
 }) {
   const [first, ...others] = actions;
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: the row only takes the keys' place on a press; its buttons do the work
     <div
       id={rowDomId(entryKey)}
       data-home-row={entryKey}
@@ -155,7 +156,11 @@ function Row({
       >
         {title}
       </button>
-      {org !== undefined ? <OrgChip org={org} /> : <span className="w-[18px] shrink-0 min-[1280px]:w-[104px]" />}
+      {org !== undefined ? (
+        <OrgChip org={org} />
+      ) : (
+        <span className="w-[18px] shrink-0 min-[1280px]:w-[104px]" />
+      )}
       <span
         className={cn(
           "flex min-w-0 flex-[3] items-center gap-2",
@@ -249,7 +254,9 @@ const NeedsRow = memo(function NeedsRow({
       {...rest}
       entryKey={entryKey}
       lamp={d.kind === "paused" ? "paused" : "needs"}
-      chip={d.kind === "question" ? VERB_BY_KIND.question : (VERB_BY_KIND[d.kind] ?? DECISION_KIND_LABEL[d.kind])}
+      chip={
+        d.kind === "question" ? VERB_BY_KIND.question : (VERB_BY_KIND[d.kind] ?? DECISION_KIND_LABEL[d.kind])
+      }
       chipTone="needs"
       id={d.task}
       title={title}
@@ -300,7 +307,12 @@ const RunningRow = memo(function RunningRow({
 
 // Shipping ------------------------------------------------------------------
 
-const CI_WORDS = { failing: "CI failed", pending: "CI running", passing: "CI passed", none: "No CI" } as const;
+const CI_WORDS = {
+  failing: "CI failed",
+  pending: "CI running",
+  passing: "CI passed",
+  none: "No CI",
+} as const;
 
 const ShippingRow = memo(function ShippingRow({
   item,
@@ -310,7 +322,8 @@ const ShippingRow = memo(function ShippingRow({
 }: { item: ShippingItem; org: OrgTag | undefined } & RowProps) {
   const { task, mr, extra } = item;
   const ci = mr?.ci;
-  const lamp: LampState = ci === "failing" ? "needs" : ci === "pending" ? "working" : ci === "passing" ? "done" : "idle";
+  const lamp: LampState =
+    ci === "failing" ? "needs" : ci === "pending" ? "working" : ci === "passing" ? "done" : "idle";
   const who =
     ci === "failing"
       ? ""
@@ -351,7 +364,12 @@ const QueuedRow = memo(function QueuedRow({
   type,
   orgName,
   ...rest
-}: { item: QueuedItem; org: OrgTag | undefined; type: "next" | "triage"; orgName: (id: string) => string } & RowProps) {
+}: {
+  item: QueuedItem;
+  org: OrgTag | undefined;
+  type: "next" | "triage";
+  orgName: (id: string) => string;
+} & RowProps) {
   const { task, blocker } = item;
   const due = openDue(task, rest.now);
   const priority = task.priority !== undefined && task.priority !== "normal" ? task.priority : undefined;
@@ -368,7 +386,13 @@ const QueuedRow = memo(function QueuedRow({
       {...rest}
       entryKey={entryKey}
       lamp="idle"
-      chip={task.status === "review" ? "finished" : task.status === "ready" || task.status === "inbox" ? queuedChip(blocker) : "idle"}
+      chip={
+        task.status === "review"
+          ? "finished"
+          : task.status === "ready" || task.status === "inbox"
+            ? queuedChip(blocker)
+            : "idle"
+      }
       id={task.id}
       title={plainTitle(task.title)}
       org={org}
@@ -380,7 +404,11 @@ const QueuedRow = memo(function QueuedRow({
         </span>
       }
       wait={shortAgo(task.updatedAt, rest.now)}
-      actions={actionsOf(type === "next" ? { type, key: entryKey, section: type, item } : { type, key: entryKey, section: type, item })}
+      actions={actionsOf(
+        type === "next"
+          ? { type, key: entryKey, section: type, item }
+          : { type, key: entryKey, section: type, item },
+      )}
     />
   );
 });
@@ -425,7 +453,11 @@ const DoneRow = memo(function DoneRow({
       title={plainTitle(item.task.title)}
       org={org}
       detail={item.undoId === undefined ? "" : "Merged by the captain"}
-      wait={new Date(item.task.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}
+      wait={new Date(item.task.updatedAt).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      })}
       actions={actionsOf({ type: "done", key: entryKey, section: "done", item })}
     />
   );
@@ -469,7 +501,9 @@ export const SectionHeader = memo(function SectionHeader({
       <span className="tnum font-mono text-xs text-fg-muted">{entry.count}</span>
       {entry.extra !== undefined && <span className="text-xs text-fg-faint">{entry.extra}</span>}
       {entry.open && (
-        <span className="ml-auto truncate text-xs text-fg-faint max-[1279px]:hidden">sort: {SECTION_SORT[entry.section]}</span>
+        <span className="ml-auto truncate text-xs text-fg-faint max-[1279px]:hidden">
+          sort: {SECTION_SORT[entry.section]}
+        </span>
       )}
     </>
   );
@@ -548,7 +582,14 @@ export function EntryView({
 }) {
   const focused = entry.key === focusKey;
   if (entry.type === "header")
-    return <SectionHeader entry={entry} focused={focused} onToggle={handlers.onToggle} onFocus={handlers.onFocus} />;
+    return (
+      <SectionHeader
+        entry={entry}
+        focused={focused}
+        onToggle={handlers.onToggle}
+        onFocus={handlers.onFocus}
+      />
+    );
   if (entry.type === "more")
     return <MoreRow entry={entry} focused={focused} onMore={handlers.onMore} onFocus={handlers.onFocus} />;
   const common = {

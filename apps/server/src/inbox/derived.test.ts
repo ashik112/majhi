@@ -121,7 +121,11 @@ describe("cards derive from the task's state now, so none goes stale", () => {
 
   it("permission buttons use the one shared set of words", () => {
     const [card] = build([permission("ACM-1")], [subject("ACM-1", "running")]);
-    expect(card?.options.map((o) => o.label).toSorted()).toEqual(["Allow for this task", "Allow once", "Deny"]);
+    expect(card?.options.map((o) => o.label).toSorted()).toEqual([
+      "Allow for this task",
+      "Allow once",
+      "Deny",
+    ]);
   });
 });
 

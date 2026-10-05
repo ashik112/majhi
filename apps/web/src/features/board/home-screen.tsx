@@ -6,25 +6,33 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
+import { OrgBadge } from "@/components/ui/org-badge";
+import { PageLink } from "@/components/ui/page-link";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  busiestAccount,
+  busiestText,
+  USAGE_FULL_PCT,
+  USAGE_HIGH_PCT,
+  usageTitle,
+} from "@/features/accounts/model";
 import { MODE_LAMP } from "@/features/autonomy/model";
 import { markSeen, useUnseenSummary } from "@/features/autonomy/summary-seen";
 import { SpendToday, useAutonomousSwitch } from "@/features/autonomy/switch";
 import { summaryLine } from "@/features/captain/summary";
 import { workspaceOf } from "@/features/decisions/model";
 import { useCaptainLog } from "@/lib/captain-queries";
-import { OrgBadge } from "@/components/ui/org-badge";
-import { badgeLetters } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { useDecisions } from "@/lib/decision-queries";
+import { badgeLetters } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { blockersKey, useBlockers, useHomeFacts } from "@/lib/home-queries";
 import { useOrgFilter } from "@/lib/org-filter";
-import { useOrgs } from "@/lib/studio-queries";
+import { useAccounts, useOrgs } from "@/lib/studio-queries";
 import { useTasks } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
-import { CHORD_MS } from "../shell/shortcuts";
 import { useNewTask } from "../new-task/new-task-context";
+import { CHORD_MS } from "../shell/shortcuts";
 import { useHomeActions } from "./home-actions";
 import {
   actionsOf,
@@ -113,7 +121,13 @@ export function BoardScreen() {
   const orgNames = useMemo(() => new Map((orgs ?? []).map((o) => [o.id, o.name])), [orgs]);
   const orgName = useCallback((id: string) => orgNames.get(id) ?? id, [orgNames]);
   const orgTags = useMemo(
-    () => new Map((orgs ?? []).map((o): [string, OrgTag] => [o.id, { name: o.name, letters: badgeLetters(o.key), color: o.color }])),
+    () =>
+      new Map(
+        (orgs ?? []).map((o): [string, OrgTag] => [
+          o.id,
+          { name: o.name, letters: badgeLetters(o.key), color: o.color },
+        ]),
+      ),
     [orgs],
   );
   const tagOf = useCallback(
@@ -144,6 +158,7 @@ export function BoardScreen() {
 
   // The mode switch changes what a waiting task says ("Auto-pilot is off"): read the reasons again.
   const { mode } = useAutonomousSwitch();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the mode is the trigger, not an input
   useEffect(() => {
     void client.invalidateQueries({ queryKey: blockersKey });
   }, [mode, client]);
@@ -197,7 +212,13 @@ export function BoardScreen() {
   );
 
   const handlers: RowHandlers = useMemo(
-    () => ({ onFocus: setFocusKey, onAct: runAction, onOpen: openRow, onToggle: toggleSection, onMore: moreOf }),
+    () => ({
+      onFocus: setFocusKey,
+      onAct: runAction,
+      onOpen: openRow,
+      onToggle: toggleSection,
+      onMore: moreOf,
+    }),
     [runAction, openRow, toggleSection, moreOf],
   );
 
@@ -217,9 +238,14 @@ export function BoardScreen() {
   const goAt = useRef(0);
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented || event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.defaultPrevented || event.isComposing || event.metaKey || event.ctrlKey || event.altKey)
+        return;
       const target = event.target;
-      if (target instanceof HTMLElement && target.closest('dialog, [role="menu"], [role="listbox"], [data-captain-drawer]')) return;
+      if (
+        target instanceof HTMLElement &&
+        target.closest('dialog, [role="menu"], [role="listbox"], [data-captain-drawer]')
+      )
+        return;
       if (typing(target)) return;
       // `g` then a letter goes to a page: the second key is not ours.
       const afterG = Date.now() - goAt.current < CHORD_MS;
@@ -279,15 +305,12 @@ export function BoardScreen() {
   }, [runAction, openRow, toggleSection, moreOf, applyToSelected]);
 
   // The first row of a section: the strip and the chips send the keys there.
-  const jumpTo = useCallback(
-    (section: SectionId) => {
-      if (section === "triage" || section === "captain" || section === "done")
-        setOpened((prev) => new Set(prev).add(section));
-      const first = live.current.entries.find((e) => e.section === section && focusable(e));
-      setFocusKey(first?.key ?? headerKey(section));
-    },
-    [],
-  );
+  const jumpTo = useCallback((section: SectionId) => {
+    if (section === "triage" || section === "captain" || section === "done")
+      setOpened((prev) => new Set(prev).add(section));
+    const first = live.current.entries.find((e) => e.section === section && focusable(e));
+    setFocusKey(first?.key ?? headerKey(section));
+  }, []);
 
   const loading = tasks.isPending || decisions.isPending;
   const quiet =
@@ -318,7 +341,7 @@ export function BoardScreen() {
         </p>
       ) : (
         <section aria-label="Home" className={cn("flex min-h-0 flex-1 flex-col rounded-2xl", GLASS)}>
-          <Strip totals={totals} onJump={jumpTo} />
+          <Strip totals={totals} org={org} onJump={jumpTo} />
           {batch.count > 0 && (
             <div className="flex h-9 shrink-0 items-center gap-3 border-b border-line bg-accent-wash px-3 text-sm">
               <span className="font-medium">{batch.count} selected</span>
@@ -440,7 +463,12 @@ function TopBar({
     <header className={cn("flex h-11 shrink-0 items-center gap-3 rounded-xl px-4", GLASS)}>
       <h1 className="text-[15px] leading-5 font-semibold tracking-[-0.01em]">Home</h1>
       <nav aria-label="Workspace" className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-        <button type="button" aria-pressed={org === undefined} onClick={() => setOrg(undefined)} className={chip(org === undefined)}>
+        <button
+          type="button"
+          aria-pressed={org === undefined}
+          onClick={() => setOrg(undefined)}
+          className={chip(org === undefined)}
+        >
           all
         </button>
         {orgs.map((o) => {
@@ -481,7 +509,12 @@ function TopBar({
         {query === "" ? (
           <Kbd className="h-4 min-w-4 text-[10px] max-[1279px]:hidden">/</Kbd>
         ) : (
-          <button type="button" aria-label="Clear filter" onClick={() => setQuery("")} className="cursor-pointer">
+          <button
+            type="button"
+            aria-label="Clear filter"
+            onClick={() => setQuery("")}
+            className="cursor-pointer"
+          >
             <X aria-hidden="true" className="size-3.5" />
           </button>
         )}
@@ -495,7 +528,9 @@ function TopBar({
         variant="ghost"
         size="sm"
         title="Search and run any command"
-        onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }))}
+        onClick={() =>
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }))
+        }
         className="max-[1279px]:hidden"
       >
         <Kbd>⌘K</Kbd>
@@ -512,9 +547,11 @@ function TopBar({
 /** One line of counts: each is a jump to its section. */
 function Strip({
   totals,
+  org,
   onJump,
 }: {
   totals: ReturnType<typeof buildHome>["totals"];
+  org: string | undefined;
   onJump: (section: SectionId) => void;
 }) {
   const { status } = useAutonomousSwitch();
@@ -528,7 +565,9 @@ function Strip({
         disabled={n === 0}
         className="tnum flex shrink-0 cursor-pointer items-baseline gap-1.5 hover:text-fg disabled:cursor-default"
       >
-        <b className={cn("font-mono text-md font-medium", n > 0 && tone ? LAMP_TEXT[tone] : "text-fg")}>{n}</b>
+        <b className={cn("font-mono text-md font-medium", n > 0 && tone ? LAMP_TEXT[tone] : "text-fg")}>
+          {n}
+        </b>
         {label}
       </button>
     );
@@ -541,7 +580,10 @@ function Strip({
       {segment("next", totals.next, "up next")}
       {segment("triage", totals.triage, "to triage")}
       {segment("captain", totals.captain, "captain handled")}
-      {status && <SpendToday status={status} className="ml-auto text-sm text-fg-muted max-[1199px]:hidden" />}
+      <span className="ml-auto flex min-w-0 items-baseline gap-4">
+        {status && <SpendToday status={status} className="text-sm text-fg-muted max-[1199px]:hidden" />}
+        <AccountReadout org={org} />
+      </span>
     </p>
   );
 }
@@ -642,6 +684,38 @@ function List({
         entries.map((entry) => <Fragment key={entry.key}>{draw(entry)}</Fragment>)
       )}
     </div>
+  );
+}
+
+/**
+ * The account of this workspace (every account without a filter) whose 5-hour or weekly window is
+ * fullest, amber from 80% and in the limit color at its limit. Its tooltip lists every window and
+ * reset; it opens Health and usage.
+ */
+function AccountReadout({ org }: { org: string | undefined }) {
+  const accounts = useAccounts().data;
+  const now = useNow(60_000);
+  const busiest = accounts && busiestAccount(accounts, org);
+  if (!accounts || !busiest) return null;
+  const text = busiestText(busiest);
+  const full = busiest.limit !== undefined || busiest.pct >= USAGE_FULL_PCT;
+  return (
+    <PageLink
+      page="usage"
+      title={usageTitle(accounts, org, now)}
+      className="tnum min-w-0 truncate rounded-xs text-sm text-fg-muted hover:text-fg"
+    >
+      <span className="font-mono text-sm text-fg">{text.head}</span>{" "}
+      <b
+        className={cn(
+          "ml-0.5 font-mono text-md font-medium",
+          full ? LAMP_TEXT.paused : busiest.pct >= USAGE_HIGH_PCT ? "text-amber" : "text-fg",
+        )}
+      >
+        {text.value}
+      </b>
+      {text.rest}
+    </PageLink>
   );
 }
 

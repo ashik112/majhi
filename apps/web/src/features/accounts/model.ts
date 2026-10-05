@@ -239,11 +239,8 @@ export function statusText(
 /** The account whose window is fullest, for the board's top bar. */
 export interface BusiestAccount {
   id: string;
-  /** The fullest window's share, 100 while a run's limit error holds the account. */
+  /** The fuller of the 5-hour and weekly windows, 100 while a run's limit error holds the account. */
   pct: number;
-  /** "5h" or "Week". */
-  window: "5h" | "Week";
-  resetsAt?: string;
   /** Set while a run's limit error holds the account. */
   limit?: AccountLimit;
   estimated: boolean;
@@ -261,20 +258,13 @@ export function busiestAccount(
   for (const account of accounts) {
     if (org !== undefined && account.org !== org) continue;
     const usage = account.usage;
-    const windows: { window: "5h" | "Week"; usedPct: number; resetsAt?: string | undefined }[] = [];
-    if (usage?.window) windows.push({ window: "5h", ...usage.window });
-    if (usage?.weekly) windows.push({ window: "Week", ...usage.weekly });
-    let fullest = windows[0];
-    for (const w of windows) if (fullest !== undefined && w.usedPct > fullest.usedPct) fullest = w;
-    if (fullest === undefined && account.limit === undefined) continue;
-    const pct = account.limit ? 100 : (fullest?.usedPct ?? 0);
+    const windows = [usage?.window, usage?.weekly].flatMap((w) => (w === undefined ? [] : [w.usedPct]));
+    if (windows.length === 0 && account.limit === undefined) continue;
+    const pct = account.limit ? 100 : Math.max(...windows);
     if (best !== undefined && pct <= best.pct) continue;
-    const resetsAt = account.limit?.until ?? fullest?.resetsAt;
     best = {
       id: account.id,
       pct,
-      window: fullest?.window ?? "5h",
-      ...(resetsAt === undefined ? {} : { resetsAt }),
       ...(account.limit === undefined ? {} : { limit: account.limit }),
       estimated: usage?.estimated === true,
     };
@@ -283,24 +273,13 @@ export function busiestAccount(
 }
 
 /**
- * The top bar readout: "acme-claude 82% · resets 3:40 PM", or "acme-claude at limit until 3:40 PM".
- * `value` is the part that is lit.
+ * The top bar readout: "acme-claude 82%", or "acme-claude at limit". The reset times are in its
+ * tooltip (`usageTitle`): with them the readout no longer fits a 1440px top bar. `value` is the part
+ * that is lit.
  */
-export function busiestText(
-  b: BusiestAccount,
-  now: number,
-  locale?: string,
-): { head: string; value: string; rest: string } {
-  if (b.limit) {
-    const about = b.limit.resetKnown ? "" : "about ";
-    return {
-      head: b.id,
-      value: "at limit",
-      rest: ` until ${about}${resetLabel(b.limit.until, now, locale)}`,
-    };
-  }
-  const reset = b.resetsAt ? ` · resets ${resetLabel(b.resetsAt, now, locale)}` : "";
-  return { head: b.id, value: formatPct(b.pct), rest: `${reset}${b.estimated ? " est." : ""}` };
+export function busiestText(b: BusiestAccount): { head: string; value: string; rest: string } {
+  if (b.limit) return { head: b.id, value: "at limit", rest: "" };
+  return { head: b.id, value: formatPct(b.pct), rest: b.estimated ? " est." : "" };
 }
 
 /** One line per account for the readout's tooltip: "acme-claude: 5h 82% · 3:40 PM, Week 31% · Thu". */

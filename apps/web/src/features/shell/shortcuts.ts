@@ -115,7 +115,12 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   { id: "queue", keys: ["Enter"], what: "Send, or queue for the next turn", group: "Message box" },
   { id: "newline", keys: ["Shift", "Enter"], what: "New line", group: "Message box" },
   { id: "board-move", keys: ["j", "k"], what: "Move through the rows of Home (arrows too)", group: "Board" },
-  { id: "board-section", keys: ["Shift", "J", "K"], what: "Jump to the next or previous section", group: "Board" },
+  {
+    id: "board-section",
+    keys: ["Shift", "J", "K"],
+    what: "Jump to the next or previous section",
+    group: "Board",
+  },
   { id: "board-act", keys: ["1", "2", "3"], what: "Run the row's numbered action", group: "Board" },
   { id: "board-select", keys: ["x"], what: "Select a row; 1 then runs on all selected", group: "Board" },
   { id: "board-triage", keys: ["t"], what: "Open To triage", group: "Board" },

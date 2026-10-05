@@ -146,7 +146,10 @@ export class InboxService {
   /** The decisions and the one set of counts every screen shows, from the same look. */
   async view(org?: string): Promise<{ decisions: OwnerDecision[]; counts: BoardCounts }> {
     const all = await this.build();
-    return { decisions: org === undefined ? all : all.filter((d) => d.org === org), counts: this.counts(all) };
+    return {
+      decisions: org === undefined ? all : all.filter((d) => d.org === org),
+      counts: this.counts(all),
+    };
   }
 
   /**
@@ -162,7 +165,9 @@ export class InboxService {
     const working = (deps.working?.() ?? []).flatMap((task) => {
       const subject = deps.subject(task);
       // Chats are not on the board: only tasks count as working.
-      return subject === undefined || subject.chat || (subject.status !== undefined && subject.status !== "running")
+      return subject === undefined ||
+        subject.chat ||
+        (subject.status !== undefined && subject.status !== "running")
         ? []
         : [{ task, org: subject.org }];
     });
@@ -180,9 +185,7 @@ export class InboxService {
     const now = (deps.now?.() ?? new Date()).getTime();
     const tasks = new Set(
       items.flatMap((i) =>
-        i.type === "review" && i.state === "pending" && subject(i.task)?.status === "review"
-          ? [i.task]
-          : [],
+        i.type === "review" && i.state === "pending" && subject(i.task)?.status === "review" ? [i.task] : [],
       ),
     );
     for (const task of this.shipLooks.keys()) if (!tasks.has(task)) this.shipLooks.delete(task);
@@ -195,7 +198,8 @@ export class InboxService {
         if (!this.renewing.has(task)) first.push(this.queueLook(task, undefined));
       } else {
         // An old look still answers; a new one is read behind it, and screens hear when it differs.
-        if (now - look.at > SHIP_BLOCK_KEEP_MS && !this.renewing.has(task)) void this.queueLook(task, look.block);
+        if (now - look.at > SHIP_BLOCK_KEEP_MS && !this.renewing.has(task))
+          void this.queueLook(task, look.block);
         if (look.block !== undefined) out.set(task, look.block);
       }
     }
@@ -462,7 +466,8 @@ export class InboxService {
       out.agent = item.agent;
     }
     if (item?.type === "approval") {
-      out.command = item.reason === undefined || item.reason === "" ? item.summary : `${item.summary}\n${item.reason}`;
+      out.command =
+        item.reason === undefined || item.reason === "" ? item.summary : `${item.summary}\n${item.reason}`;
       out.agent = item.agent;
     }
     if (item?.type === "ask") {

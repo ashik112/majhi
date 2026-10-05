@@ -9,7 +9,8 @@ import { describeError } from "@/lib/errors";
 import type { ActionSpec, RowEntry } from "./home-model";
 
 /** What an agent is told when the owner presses "Fix with agent" on a failed check. */
-const FIX_CI_TEXT = "The checks of your merge request failed. Open the failing checks, fix what broke and push.";
+const FIX_CI_TEXT =
+  "The checks of your merge request failed. Open the failing checks, fix what broke and push.";
 
 /**
  * Runs the numbered actions of a Home row. One stable function: the rows are memoised, and a fresh
@@ -29,7 +30,8 @@ export function useHomeActions(): {
 
   const act = useCallback((entry: RowEntry, spec: ActionSpec) => {
     const { run: go, send: answer, undo: revert, toast: say } = latest.current;
-    const fail = (title: string) => (error: unknown) => say(title, { detail: describeError(error), tone: "error" });
+    const fail = (title: string) => (error: unknown) =>
+      say(title, { detail: describeError(error), tone: "error" });
     switch (spec.kind) {
       case "go":
         go(spec.action);
@@ -38,10 +40,16 @@ export function useHomeActions(): {
         if (entry.type === "needs") answer(entry.item.decision, spec.option);
         return;
       case "start":
-        cmd("tasks.start", { id: spec.task }).then((task) => say(`Started ${task.id}`), fail(`Could not start ${spec.task}`));
+        cmd("tasks.start", { id: spec.task }).then(
+          (task) => say(`Started ${task.id}`),
+          fail(`Could not start ${spec.task}`),
+        );
         return;
       case "stop":
-        cmd("tasks.stop", { id: spec.task }).then((task) => say(`Stopped ${task.id}`), fail(`Could not stop ${spec.task}`));
+        cmd("tasks.stop", { id: spec.task }).then(
+          (task) => say(`Stopped ${task.id}`),
+          fail(`Could not stop ${spec.task}`),
+        );
         return;
       case "merge":
         cmd("tasks.mergeMrs", { id: spec.task }).then(

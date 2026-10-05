@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { buildColumns } from "@/features/board/model";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useTasks } from "@/lib/task-queries";
-import { CHORD_MS, askToStop, resolveShortcut } from "./shortcuts";
+import { askToStop, CHORD_MS, resolveShortcut } from "./shortcuts";
 
 /**
  * Keys belong to the captain drawer while it is open and focus is in it, or nowhere yet (it is
@@ -17,7 +17,9 @@ function inCaptainDrawer(target: HTMLElement): boolean {
 
 function typingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  return inCaptainDrawer(target) || target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
+  return (
+    inCaptainDrawer(target) || target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)
+  );
 }
 
 function insideOverlay(target: EventTarget | null): boolean {

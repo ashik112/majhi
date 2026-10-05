@@ -2589,7 +2589,9 @@ export class TaskService {
     if (parent !== undefined) await this.finishParentIfDone(parent);
     await this.plans.settle(task).catch(() => undefined);
     await this.refreshBriefs([id, ...held.map((l) => l.task), ...(parent === undefined ? [] : [parent])]);
-    this.deps.events.emit(["tasks"], { tasks: [id, ...held.map((l) => l.task), ...(parent === undefined ? [] : [parent])] });
+    this.deps.events.emit(["tasks"], {
+      tasks: [id, ...held.map((l) => l.task), ...(parent === undefined ? [] : [parent])],
+    });
   }
 
   /**

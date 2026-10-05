@@ -20,14 +20,7 @@ export const MEMORY_PATH = "/mcp/memory";
 export const CONNECTIONS_SERVER_NAME = "majhi-connections";
 export const CONNECTIONS_PATH = "/mcp/connections";
 
-export type ToolServer =
-  | "room"
-  | "tasks"
-  | "processes"
-  | "memory"
-  | "containers"
-  | "connections"
-  | "docker";
+export type ToolServer = "room" | "tasks" | "processes" | "memory" | "containers" | "connections" | "docker";
 
 /** The servers RoomAccess issues, in the order a session lists them. */
 const SERVERS: readonly { key: ToolServer; name: string; path: string }[] = [

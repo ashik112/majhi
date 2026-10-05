@@ -253,9 +253,7 @@ export function DecisionDetailPane({
                 <p className="m-0 font-medium text-fg">{detail.draft.subject}</p>
               )}
               <p className="m-0 whitespace-pre-wrap text-pretty break-words">{detail.draft.body}</p>
-              <p className="m-0 text-xs text-fg-faint">
-                Nothing is sent until you approve it.
-              </p>
+              <p className="m-0 text-xs text-fg-faint">Nothing is sent until you approve it.</p>
             </div>
           </Block>
         )}

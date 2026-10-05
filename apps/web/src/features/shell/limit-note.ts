@@ -15,14 +15,22 @@ export interface LimitNote {
   full: boolean;
 }
 
-/** What to say about an account's usage window: at its limit with the reset time, or close to it. */
+/**
+ * What to say about an account's usage window: at its limit with the reset time, or close to it.
+ * A run's limit error (`account.limit`) knows the reset better than the last usage read; "about"
+ * when majhi guessed it.
+ */
 export function limitNote(account: AccountView | undefined, now: number): LimitNote | undefined {
   if (!account) return undefined;
   const windows = [account.usage?.window, account.usage?.weekly].filter((w) => w !== undefined);
   const worst = windows.toSorted((a, b) => b.usedPct - a.usedPct)[0];
   if (accountAtLimit(account)) {
-    const resets = worst?.resetsAt;
-    return { text: resets ? `At limit, back ${resetClock(resets, now)}` : "At limit", full: true };
+    const resets = account.limit?.until ?? worst?.resetsAt;
+    const about = account.limit !== undefined && !account.limit.resetKnown ? "about " : "";
+    return {
+      text: resets ? `At limit, back ${about}${resetClock(resets, now)}` : "At limit",
+      full: true,
+    };
   }
   if (worst && worst.usedPct >= 80) {
     const label = worst === account.usage?.weekly ? "weekly" : "5h";

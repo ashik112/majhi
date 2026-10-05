@@ -77,7 +77,13 @@ import { StaffingSource, type StaffRequest } from "../tasks/staffing-source.ts";
 import { addDays, dayStart, defaultTimeZone, localDay } from "../usage/ranges.ts";
 import { askableHolds, askName, buildAsk, DAY_SCOPE, waitText, withRaises } from "./budget-asks.ts";
 import { describePatch, mergePatch, toFile } from "./configure.ts";
-import { type AnswerableCard, answerableText, type BacklogTask, backlogOrder, type StartGate } from "./digest.ts";
+import {
+  type AnswerableCard,
+  answerableText,
+  type BacklogTask,
+  backlogOrder,
+  type StartGate,
+} from "./digest.ts";
 import {
   callOrg,
   connectionOwner,
@@ -963,7 +969,10 @@ export class AutonomyService {
     return {
       kind: "workspace",
       text: `This workspace works on ${limit} ${limit === 1 ? "task" : "tasks"} at once and ${names} ${running.length === 1 ? "is" : "are"} running.`,
-      key: `${limit}:${running.map((t) => t.id).sort().join(",")}`,
+      key: `${limit}:${running
+        .map((t) => t.id)
+        .sort()
+        .join(",")}`,
     };
   }
 
@@ -1070,7 +1079,8 @@ export class AutonomyService {
             ...until,
           });
       }
-      if (this.deps.ceilingHeld?.() !== undefined) budgets.push({ gate: "budget", scope: "all", period: "month" });
+      if (this.deps.ceilingHeld?.() !== undefined)
+        budgets.push({ gate: "budget", scope: "all", period: "month" });
     }
     const world: lifecycle.BlockerWorld = {
       autopilot: on ? "on" : "off",

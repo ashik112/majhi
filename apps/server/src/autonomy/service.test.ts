@@ -224,7 +224,10 @@ describe("autonomous mode's state machine", () => {
     const t = await world();
     const id = await t.startWorking();
     extra = t.h.restart();
-    expect((await extra.cmd("autonomy.status", { detail: true })).body).toMatchObject({ mode: "on", now: [{ task: id }] });
+    expect((await extra.cmd("autonomy.status", { detail: true })).body).toMatchObject({
+      mode: "on",
+      now: [{ task: id }],
+    });
     await extra.majhi.close();
 
     expect((await t.h.cmd("autonomy.stop", { how: "graceful" })).body.mode).toBe("stopping");

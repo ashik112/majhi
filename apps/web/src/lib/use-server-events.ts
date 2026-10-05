@@ -2,9 +2,17 @@ import { BROWSER_TAB_REPORT_MS, type EventsClientMessage } from "@majhi/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { setHelloBuild } from "./build-watch";
 import { currentPermission, showAttention } from "./browser-notify";
-import { ALL_TOPICS, closeSocket, feedStep, parseServerEvent, reconnectDelay, topicQueryKeys, wsUrl } from "./events-model";
+import { setHelloBuild } from "./build-watch";
+import {
+  ALL_TOPICS,
+  closeSocket,
+  feedStep,
+  parseServerEvent,
+  reconnectDelay,
+  topicQueryKeys,
+  wsUrl,
+} from "./events-model";
 import { queryKeys } from "./queries";
 import { taskSync } from "./task-sync";
 import { throttledInvalidator } from "./throttled-invalidate";

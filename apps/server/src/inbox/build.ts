@@ -2,17 +2,17 @@ import {
   type BudgetAsk,
   batchDecisionId,
   budgetDecisionId,
+  compareDecisions,
   type DecisionOption,
   type DecisionSuggestion,
-  compareDecisions,
   draftDecisionId,
   incidentDecisionId,
   OUTBOUND_CHANNEL_LABEL,
   type OutboundChannel,
-  permissionOptionLabel,
   type Draft as OutboundDraft,
   type OwnerDecision,
   type OwnerDecisionKind,
+  permissionOptionLabel,
   plainAuthorityText,
   type RoomItem,
   roomDecisionId,
@@ -193,7 +193,11 @@ function draftOf(
     }
     case "approval":
       // A split the agent asked for is carried out once its subtasks exist: the card has nothing left to ask.
-      if (item.command === "tasks.split" && subject.newestSubtask !== undefined && subject.newestSubtask >= item.at)
+      if (
+        item.command === "tasks.split" &&
+        subject.newestSubtask !== undefined &&
+        subject.newestSubtask >= item.at
+      )
         return undefined;
       return item.state === "pending" && acting
         ? {
@@ -349,7 +353,11 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
   for (const item of src.items) {
     const subject = src.subject(item.task);
     if (subject === undefined) continue;
-    const draft = draftOf(item, subject, item.type === "review" ? src.shipBlocked?.get(item.task) : undefined);
+    const draft = draftOf(
+      item,
+      subject,
+      item.type === "review" ? src.shipBlocked?.get(item.task) : undefined,
+    );
     if (draft === undefined) continue;
     const id = decisionIdOf(item);
     const workspace = subject.org === undefined ? undefined : src.orgName?.(subject.org);

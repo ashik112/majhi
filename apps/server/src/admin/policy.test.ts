@@ -145,7 +145,11 @@ describe("matchRule", () => {
 describe("what the captain sees of a command's answer", () => {
   it("keeps a reading's value and still hides tokens and passwords", async () => {
     const { redactOutput } = await import("./policy.ts");
-    expect(redactOutput({ ok: true, value: "42", number: 42 })).toEqual({ ok: true, value: "42", number: 42 });
+    expect(redactOutput({ ok: true, value: "42", number: 42 })).toEqual({
+      ok: true,
+      value: "42",
+      number: 42,
+    });
     expect(redactOutput({ token: "abc123secret", password: "hunter22", value: "55%" })).toEqual({
       token: "[redacted]",
       password: "[redacted]",

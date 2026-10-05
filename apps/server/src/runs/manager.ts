@@ -388,7 +388,11 @@ export class RunManager {
     for (const r of this.runs.values()) {
       const status = r.live.status;
       const idleish = status === "queued" || status === "waiting";
-      if (status === "starting" || status === "working" || (r.turning && !r.closing && !r.settling && !idleish)) {
+      if (
+        status === "starting" ||
+        status === "working" ||
+        (r.turning && !r.closing && !r.settling && !idleish)
+      ) {
         out.add(r.task);
       }
     }

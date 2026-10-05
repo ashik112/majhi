@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { BLOCKER_ORDER, type Blocker, type BlockerTask, type BlockerWorld, BlockerSchema, blockerOf, isUntriaged } from "./blocker.ts";
+import {
+  BLOCKER_ORDER,
+  type Blocker,
+  BlockerSchema,
+  type BlockerTask,
+  type BlockerWorld,
+  blockerOf,
+  isUntriaged,
+} from "./blocker.ts";
 
 const room = (inUse: number, limit: number) => ({ inUse, limit, free: Math.max(0, limit - inUse) });
 
@@ -53,7 +61,9 @@ describe("blockerOf, one test per reason", () => {
   });
 
   it("slots: the account's slots first, then the machine-wide ones", () => {
-    const account = world({ slots: { agents: room(1, 5), accounts: new Map([["claude-acme", room(3, 3)]]) } });
+    const account = world({
+      slots: { agents: room(1, 5), accounts: new Map([["claude-acme", room(3, 3)]]) },
+    });
     expect(blockerOf(task(), account)).toEqual({
       gate: "slots",
       scope: "account",
@@ -67,7 +77,12 @@ describe("blockerOf, one test per reason", () => {
 
   it("tasks-at-once: the workspace is at its limit and names who runs", () => {
     const full = world({ atOnce: new Map([["acme", { running: ["ACM-2"], max: 1 }]]) });
-    expect(blockerOf(task(), full)).toEqual({ gate: "tasks-at-once", org: "acme", running: ["ACM-2"], max: 1 });
+    expect(blockerOf(task(), full)).toEqual({
+      gate: "tasks-at-once",
+      org: "acme",
+      running: ["ACM-2"],
+      max: 1,
+    });
   });
 
   it("tasks-at-once: another workspace's limit does not hold it", () => {
@@ -147,7 +162,16 @@ describe("blockerOf, when several apply", () => {
     seen.push(next() as string);
     w = { ...w, budgets: [] };
     seen.push(next() as string);
-    expect(seen).toEqual(["untriaged", "dependency", "account", "machine", "slots", "tasks-at-once", "budget", "nobody"]);
+    expect(seen).toEqual([
+      "untriaged",
+      "dependency",
+      "account",
+      "machine",
+      "slots",
+      "tasks-at-once",
+      "budget",
+      "nobody",
+    ]);
     expect(seen).toEqual([...BLOCKER_ORDER]);
   });
 
