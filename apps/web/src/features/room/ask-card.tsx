@@ -1,8 +1,9 @@
 import type { RoomItem } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
-import { Check, PencilLine, ShieldQuestion } from "lucide-react";
+import { Check, PencilLine } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Lamp } from "@/components/ui/lamp";
 import { useToast } from "@/components/ui/toast";
 import { type ApiRequestError, cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -82,17 +83,16 @@ export function PendingAsk({ item }: { item: Ask }) {
   };
 
   return (
-    <section
-      aria-label="Question"
-      className="flex w-full max-w-[700px] flex-col gap-3 rounded-lg border border-blue-line bg-blue-wash px-3.5 py-3"
-    >
+    <section aria-label="Question" className="flex w-full min-w-0 flex-col gap-3 py-2">
       {item.questions.map((q, n) => (
         <div key={q.id} className={cn("flex flex-col gap-2", n > 0 && "border-t border-line pt-3")}>
-          <p className="sticky top-0 z-10 -mx-3.5 -mt-1 flex items-start gap-2 px-3.5 pt-1 pb-1 text-base text-fg [background:linear-gradient(var(--c-blue-wash),var(--c-blue-wash)),var(--c-glass-strong)]">
-            <ShieldQuestion aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-blue" />
+          <p className="flex items-start gap-2 text-base text-fg">
+            <span className="mt-[7px] shrink-0">
+              <Lamp state="needs" size={8} />
+            </span>
             <span className="min-w-0 break-words">{q.question}</span>
           </p>
-          <fieldset className="flex min-w-0 flex-col gap-1.5 pl-6" aria-label={q.question}>
+          <fieldset className="flex min-w-0 flex-col gap-1.5 pl-4" aria-label={q.question}>
             {q.options.map((option) => {
               const view = optionView(q, option);
               const on = !typing[q.id] && answers[q.id] === option.id;
@@ -168,7 +168,7 @@ export function PendingAsk({ item }: { item: Ask }) {
       {single && sending !== undefined && (
         <p
           ref={status}
-          className="sticky bottom-0 z-10 -mx-3.5 -mb-3 flex items-center gap-2 rounded-b-lg px-3.5 pt-1.5 pb-3 pl-[34px] text-sm text-fg-muted [background:linear-gradient(var(--c-blue-wash),var(--c-blue-wash)),var(--c-glass-strong)]"
+          className="sticky bottom-0 z-10 -mx-3 flex items-center gap-2 bg-glass-strong px-3 py-1.5 pl-7 text-sm text-fg-muted"
         >
           <span className="min-w-0 flex-1 truncate">
             {send.isPending ? "Sending" : "Sending in 5 seconds"}: {sending.label}
@@ -182,7 +182,7 @@ export function PendingAsk({ item }: { item: Ask }) {
       )}
       {!single && (
         // Sticks to the bottom of the dock, so Send stays in view however many options scroll past.
-        <div className="sticky bottom-0 z-10 -mx-3.5 -mb-3 flex items-center gap-3 rounded-b-lg px-3.5 pt-2 pb-3 pl-[34px] [background:linear-gradient(var(--c-blue-wash),var(--c-blue-wash)),var(--c-glass-strong)]">
+        <div className="sticky bottom-0 z-10 -mx-3 flex items-center gap-3 bg-glass-strong px-3 py-2 pl-7">
           <Button
             size="sm"
             variant="primary"

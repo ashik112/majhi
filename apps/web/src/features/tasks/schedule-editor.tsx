@@ -1,5 +1,5 @@
 import { type TaskPriority, TaskPrioritySchema } from "@majhi/shared";
-import { CalendarDays, ChevronDown, EllipsisVertical } from "lucide-react";
+import { EllipsisVertical } from "lucide-react";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAnchoredPanel } from "@/components/ui/anchored";
@@ -12,7 +12,6 @@ import { GLASS_STRONG } from "@/lib/glass";
 import { useUpdateTask } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
 import { daysUntil, dueInfo, duePicks, PRIORITY_LABEL, shortDay } from "./schedule";
-import { DueChip, PriorityChip } from "./schedule-chips";
 
 /** What the editors need of a task: a full task and a board row both have it. */
 export interface Scheduled {
@@ -47,7 +46,7 @@ function plausibleDay(day: string, now: number): boolean {
  * The floating panel that sets a task's priority and due date. Every choice saves at once; the date
  * field saves as soon as it holds a whole date.
  */
-function SchedulePanel({
+export function SchedulePanel({
   task,
   open,
   close,
@@ -168,54 +167,6 @@ function SchedulePanel({
       </div>
     </div>,
     container,
-  );
-}
-
-/**
- * The task header's one control for priority and due date: it shows both and opens the panel that
- * sets them.
- */
-export function ScheduleButton({ task }: { task: Scheduled }) {
-  const [open, setOpen] = useState(false);
-  const anchor = useRef<HTMLSpanElement>(null);
-  const now = useNow(60_000);
-  const close = useCallback(() => setOpen(false), []);
-  const priority = task.priority ?? "normal";
-  const due = task.due === undefined ? undefined : dueInfo(task.due, now);
-  const empty = priority === "normal" && due === undefined;
-  return (
-    <span ref={anchor} className="flex shrink-0">
-      <button
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-label={`Priority and due date: ${PRIORITY_LABEL[priority]} priority, ${due?.text ?? "no due date"}`}
-        title="Set priority and due date"
-        onClick={() => setOpen((v) => !v)}
-        className={cn(
-          "flex h-6 cursor-pointer items-center gap-1 rounded-md border border-line-control px-1 text-xs text-fg-muted transition-[border-color,background-color] duration-150 hover:border-line-hover hover:bg-raised",
-          open && "border-line-hover bg-raised",
-        )}
-      >
-        {empty ? (
-          <span className="flex items-center gap-1 px-0.5">
-            <CalendarDays aria-hidden="true" className="size-3 text-fg-faint" />
-            Priority and due
-          </span>
-        ) : (
-          <>
-            {priority !== "normal" && <PriorityChip priority={priority} className="border-0" />}
-            {due ? (
-              <DueChip due={due} className="border-0" />
-            ) : (
-              <span className="px-0.5 text-fg-faint">No due date</span>
-            )}
-          </>
-        )}
-        <ChevronDown aria-hidden="true" className="size-3 text-fg-faint" />
-      </button>
-      <SchedulePanel task={task} open={open} close={close} anchor={anchor} />
-    </span>
   );
 }
 

@@ -14,7 +14,6 @@ import {
 import { EMOJI_FONT } from "@/components/agent-avatar";
 import { AttachmentChips, DropHint } from "@/components/ui/attachment-chips";
 import { Button } from "@/components/ui/button";
-import { Kbd } from "@/components/ui/kbd";
 import { useToast } from "@/components/ui/toast";
 import { looksLikeSecret, SECRET_WARNING } from "@/features/boss/model";
 import { type AgentInfo, useAgentIndex } from "@/lib/agent-index";
@@ -377,7 +376,15 @@ export function Composer({
             aria-autocomplete={popupOpen ? "list" : undefined}
             aria-controls={popupOpen ? listId : undefined}
             aria-activedescendant={popupOpen ? `${listId}-${activeIndex}` : undefined}
-            placeholder={task?.kind === "chat" && addressed ? `Message @${addressed}` : "Talk to the room"}
+            placeholder={
+              focused
+                ? busy
+                  ? "Enter queues, Shift Enter new line, Esc stops"
+                  : "Enter sends, Shift Enter new line, @ mention, / commands"
+                : task?.kind === "chat" && addressed
+                  ? `Message @${addressed}`
+                  : "Talk to the room"
+            }
             spellCheck={false}
             onChange={(event) => {
               setText(event.target.value);
@@ -422,31 +429,6 @@ export function Composer({
           </div>
         </div>
       </div>
-      {/* Lined up with the text in the box: border, padding, the attach button, the gap and the text's inset.
-          Stacked, the text starts at the box's edge. */}
-      <p className="flex h-[18px] items-center gap-3 overflow-hidden pl-2 text-xs whitespace-nowrap text-fg-faint @[40rem]:pl-[47px]">
-        <span>
-          <Kbd>Enter</Kbd> {busy ? "queues" : "sends"}
-        </span>
-        <span>
-          <Kbd>Shift Enter</Kbd> new line
-        </span>
-        {busy ? (
-          <span>
-            <Kbd>Esc</Kbd> stops
-          </span>
-        ) : (
-          // Only where there is room for them on one line.
-          <>
-            <span className="hidden @[34rem]:inline">
-              <Kbd>@</Kbd> mention
-            </span>
-            <span className="hidden @[34rem]:inline">
-              <Kbd>/</Kbd> commands
-            </span>
-          </>
-        )}
-      </p>
     </div>
   );
 }

@@ -8,8 +8,8 @@ import { cn } from "@/lib/cn";
 import { useUpdateTask } from "@/lib/task-queries";
 
 /**
- * What the owner wrote under the title, as markdown, folded to two lines. File paths in it open in
- * the viewer, from the task's project. Show all unfolds it; Edit turns it into a text box.
+ * What the owner wrote under the title, as markdown, folded to one line. File paths in it open in
+ * the viewer, from the task's project. More unfolds it; Edit turns it into a text box.
  */
 export function Brief({ text, task }: { text: string; task: Task }) {
   const [open, setOpen] = useState(false);
@@ -25,7 +25,7 @@ export function Brief({ text, task }: { text: string; task: Task }) {
     [task.id, task.folder, task.repos],
   );
 
-  // Show all only when the folded text is really cut.
+  // More only when the folded text is really cut.
   // biome-ignore lint/correctness/useExhaustiveDependencies: measure again when the text changes
   useLayoutEffect(() => {
     const el = body.current;
@@ -75,24 +75,27 @@ export function Brief({ text, task }: { text: string; task: Task }) {
   }
 
   return (
-    <section aria-label="Task brief" className="flex min-w-0 items-end gap-3">
+    <section
+      aria-label="Task brief"
+      className={cn("flex min-w-0 gap-x-3 gap-y-1", open ? "flex-col items-start" : "items-center")}
+    >
       <div
         ref={body}
         className={cn(
           "min-w-0 max-w-[96ch] text-fg-muted [&_.md]:text-base [&_.md]:leading-5",
-          open ? "max-h-[40vh] overflow-y-auto" : "max-h-10 overflow-hidden",
-          !open && folds && "[mask-image:linear-gradient(to_bottom,black_60%,transparent_115%)]",
+          open ? "max-h-[40vh] overflow-y-auto" : "max-h-5 overflow-hidden",
+          !open && folds && "[mask-image:linear-gradient(to_right,black_85%,transparent)]",
         )}
       >
         <Markdown text={source} task={files} />
       </div>
-      <div className="flex shrink-0 items-center gap-0.5 pb-px">
+      <div className={cn("flex shrink-0 items-center gap-1", open ? "-ml-1.5" : "")}>
         {(folds || open) && (
           <button
             type="button"
             aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
-            className="h-6 cursor-pointer rounded-sm px-1.5 text-sm text-fg-muted hover:bg-raised hover:text-fg"
+            className="h-6 cursor-pointer rounded-sm px-1.5 text-sm text-blue hover:underline focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2"
           >
             {open ? "Show less" : "Show all"}
           </button>
@@ -103,7 +106,7 @@ export function Brief({ text, task }: { text: string; task: Task }) {
             setValue(text);
             setEditing(true);
           }}
-          className="h-6 cursor-pointer rounded-sm px-1.5 text-sm text-fg-muted hover:bg-raised hover:text-fg"
+          className="h-6 cursor-pointer rounded-sm px-1.5 text-sm text-blue hover:underline focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2"
         >
           Edit
         </button>

@@ -169,22 +169,32 @@ export function homeRowIds(
 
 /**
  * The banner, from the decisions the server lists and nothing else, so it cannot name something the
- * Needs you page does not. The prompt waiting in the task the owner has open points at itself.
+ * Needs you page does not. On a task's page it leaves out that task's own decisions. The prompt waiting
+ * in the chat the owner has open points at itself.
  */
 export function deriveBanner(input: {
   decisions: readonly OwnerDecision[] | undefined;
   permission: PendingPermission | undefined;
   /** Decisions the page already draws as rows: the banner never repeats them. */
   onScreen?: ReadonlySet<string> | undefined;
+  /** The task page the owner has open: what is about that task is already in front of them. */
+  openTask?: string | undefined;
+  /** Decisions the owner closed the banner for, this session. */
+  dismissed?: ReadonlySet<string> | undefined;
 }): Banner | null {
-  const all = (input.decisions ?? []).filter((d) => input.onScreen?.has(d.id) !== true);
+  const all = (input.decisions ?? []).filter(
+    (d) =>
+      input.onScreen?.has(d.id) !== true &&
+      input.dismissed?.has(d.id) !== true &&
+      (input.openTask === undefined || d.task !== input.openTask),
+  );
   const first = all.toSorted((a, b) => bannerRank(a) - bannerRank(b))[0];
   if (first === undefined) return null;
   const more = all.length - 1;
   const here = input.permission;
   if (first.kind === "approval" && here !== undefined && first.task === here.task) {
     return {
-      key: `permission:${here.task}`,
+      key: first.id,
       tone: "amber",
       lamp: "needs",
       text: `@${here.agent} is waiting for your answer in ${here.task}.`,

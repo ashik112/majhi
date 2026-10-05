@@ -19,7 +19,7 @@ type Picking = "parent" | "depends-on" | null;
 type Unlinking = { task: string; type: "parent" | "depends-on"; target: string; label: string };
 
 const chip =
-  "flex h-6 min-w-0 items-center gap-1 rounded-md border border-line-control px-1.5 text-xs hover:border-line-hover";
+  "flex h-6 min-w-0 items-center gap-1 rounded-md border whitespace-nowrap border-line-control px-1.5 text-xs hover:border-line-hover";
 
 /** One line of small chips: what the task is part of, what it waits for, its subtasks, and "Link". */
 export function TaskLinks({ task }: { task: Task }) {
@@ -123,7 +123,7 @@ export function TaskLinks({ task }: { task: Task }) {
                   : `${rel.children.length}`}
               </span>
               {rel.progress && rel.progress.total > 0 && (
-                <span className="w-10">
+                <span className="hidden w-10 @[40rem]:block">
                   <UsageBar pct={(rel.progress.done / rel.progress.total) * 100} tone="green" height={3} />
                 </span>
               )}
@@ -152,7 +152,7 @@ export function TaskLinks({ task }: { task: Task }) {
             className="flex h-6 cursor-pointer items-center gap-1 rounded-sm text-fg-faint hover:text-fg"
           >
             <Plus aria-hidden="true" className="size-3" />
-            Link
+            <span className="hidden @[40rem]:inline">Link</span>
           </button>
         )}
       />
