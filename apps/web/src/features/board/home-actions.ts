@@ -63,6 +63,15 @@ export function useHomeActions(): {
           fail(`Could not merge ${spec.task}`),
         );
         return;
+      case "recheck":
+        cmd(
+          "handoff.check",
+          { task: spec.task, force: true },
+          { reason: "Owner asked for the check again" },
+        ).then(() => say(`Checking ${spec.task} again`), fail(`Could not check ${spec.task}`));
+        return;
+      case "wait":
+        return;
       case "fix-ci":
         cmd("room.send", { task: spec.task, text: FIX_CI_TEXT, attachments: [], mode: "queue" }).then(
           () => say(`Asked the agent to fix ${spec.task}`),
@@ -96,6 +105,7 @@ export function useHomeActions(): {
         );
         return;
       case "running":
+      case "background":
       case "shipping":
       case "next":
       case "triage":

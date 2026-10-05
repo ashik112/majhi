@@ -131,7 +131,7 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   },
   { id: "board-act", keys: ["1", "2", "3"], what: "Run the row's numbered action", group: "Board" },
   { id: "board-select", keys: ["x"], what: "Select a row; 1 then runs on all selected", group: "Board" },
-  { id: "board-triage", keys: ["t"], what: "Open To triage", group: "Board" },
+  { id: "board-triage", keys: ["t"], what: "Open Unsorted ideas", group: "Board" },
   { id: "board-filter", keys: ["/"], what: "Filter the rows", group: "Board" },
   {
     id: "decisions-move",

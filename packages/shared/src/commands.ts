@@ -159,6 +159,7 @@ import {
 } from "./git-signin.ts";
 import { HandoffCheckInputSchema, HandoffGetInputSchema, HandoffStateSchema } from "./handoff.ts";
 import { HealthRunOutputSchema } from "./health-run.ts";
+import { HomeBackgroundSchema, HomeCheckSchema } from "./home-facts.ts";
 import {
   DirListingSchema,
   EDITOR_PATH_MAX,
@@ -1610,7 +1611,7 @@ export const commands = {
   "tasks.homeFacts": {
     risk: "read",
     summary:
-      "What Home shows beyond the task list, in one read: the open merge requests with their CI state, and what each agent that is in a turn now is doing",
+      "What Home shows beyond the task list, in one read: the open merge requests with their CI state, what each agent that is in a turn now is doing, the merge gate verdict and hand-off state of every task in review, and the background work that runs without an agent turn (checks, processes, builds, previews)",
     input: Empty,
     output: z.object({
       mrs: z.array(
@@ -1631,6 +1632,10 @@ export const commands = {
           since: z.string().optional(),
         }),
       ),
+      /** The merge gate's verdict and the hand-off's state of every task in review. */
+      checks: z.array(HomeCheckSchema),
+      /** What runs without an agent turn: hand-off checks, background processes, builds, previews, services. */
+      background: z.array(HomeBackgroundSchema),
     }),
   },
   "tasks.get": {

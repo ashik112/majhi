@@ -243,6 +243,8 @@ export interface BusiestAccount {
   pct: number;
   /** Set while a run's limit error holds the account. */
   limit?: AccountLimit;
+  /** Which window is the fuller one. */
+  window: "5h" | "weekly";
   estimated: boolean;
 }
 
@@ -262,9 +264,12 @@ export function busiestAccount(
     if (windows.length === 0 && account.limit === undefined) continue;
     const pct = account.limit ? 100 : Math.max(...windows);
     if (best !== undefined && pct <= best.pct) continue;
+    const fiveHour = usage?.window?.usedPct ?? -1;
+    const weekly = usage?.weekly?.usedPct ?? -1;
     best = {
       id: account.id,
       pct,
+      window: fiveHour >= weekly ? "5h" : "weekly",
       ...(account.limit === undefined ? {} : { limit: account.limit }),
       estimated: usage?.estimated === true,
     };
@@ -280,6 +285,23 @@ export function busiestAccount(
 export function busiestText(b: BusiestAccount): { head: string; value: string; rest: string } {
   if (b.limit) return { head: b.id, value: "at limit", rest: "" };
   return { head: b.id, value: formatPct(b.pct), rest: b.estimated ? " est." : "" };
+}
+
+/**
+ * What the Home readout says about the busiest account, in plain words, or undefined while it is at
+ * or below 80%: "claude-private-idz-pm 91% of its 5h window", "acme-claude is at its limit".
+ */
+export function accountReadout(
+  b: BusiestAccount | undefined,
+): { head: string; value: string; rest: string } | undefined {
+  if (b === undefined) return undefined;
+  if (b.limit) return { head: b.id, value: "at its limit", rest: "" };
+  if (b.pct <= USAGE_HIGH_PCT) return undefined;
+  return {
+    head: b.id,
+    value: formatPct(b.pct),
+    rest: ` of its ${b.window === "5h" ? "5h" : "weekly"} window${b.estimated ? " (est.)" : ""}`,
+  };
 }
 
 /** One line per account for the readout's tooltip: "acme-claude: 5h 82% · 3:40 PM, Week 31% · Thu". */

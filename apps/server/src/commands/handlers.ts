@@ -559,15 +559,29 @@ export function createHandlers({
       return { tasks, counts, decisions: decisions.filter((d) => d.task !== undefined && named.has(d.task)) };
     },
     "tasks.blockers": async () => services.autonomy.blockers(),
-    "tasks.homeFacts": async () => ({
-      mrs: services.store.tasks.openMrs(),
-      doing: services.room.workingNow().map(({ task, live }) => ({
-        task,
-        agent: live.agent,
-        ...(live.nowDoing === undefined ? {} : { text: live.nowDoing }),
-        ...(live.turnAt === undefined ? {} : { since: live.turnAt }),
-      })),
-    }),
+    "tasks.homeFacts": async () => {
+      const { checks, background } = await services.homeChecks.facts();
+      for (const p of services.processes.listAll()) {
+        if (p.status !== "running") continue;
+        background.push({
+          task: p.task,
+          kind: p.container === undefined ? "process" : p.container.kind,
+          label: (p.container?.name ?? p.name).slice(0, 80),
+          since: p.startedAt,
+        });
+      }
+      return {
+        mrs: services.store.tasks.openMrs(),
+        doing: services.room.workingNow().map(({ task, live }) => ({
+          task,
+          agent: live.agent,
+          ...(live.nowDoing === undefined ? {} : { text: live.nowDoing }),
+          ...(live.turnAt === undefined ? {} : { since: live.turnAt }),
+        })),
+        checks,
+        background,
+      };
+    },
     "tasks.get": async (input) => services.tasks.get(input.id),
     "captain.reportBug": async (input, ctx) => {
       // majhi's own code: the Private project named majhi, or the one whose folder is called majhi.
