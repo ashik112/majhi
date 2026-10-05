@@ -49,6 +49,13 @@ export interface RunnerConfig {
    * run on. Needs Docker Engine 25 (API 1.44), which accepts `--network` more than once.
    */
   taskNetworks?: ((task: string) => string[]) | undefined;
+  /**
+   * The IPv4 subnets of those task networks, like `192.168.171.0/24`: the only private addresses
+   * besides majhi's own server that a run may reach (netguard).
+   */
+  taskSubnets?: ((task: string) => string[]) | undefined;
+  /** Where majhi answers on the runner network: the one private address and port a run may reach. */
+  server?: (() => { host: string; port: number } | undefined) | undefined;
 }
 
 /** Folders that no run may see, whatever the config says. */
@@ -195,6 +202,20 @@ export const NETGUARD = "majhi-netguard";
  */
 export const NETGUARD_CAPS = ["NET_ADMIN", "SETUID", "SETGID", "SETPCAP"];
 
+/**
+ * What the entry (majhi-netguard) is told besides the owner's uid: the task's own network subnets,
+ * majhi's server and port. Everything else private stays refused.
+ */
+export function guardArgs(
+  subnets: readonly string[],
+  server: { host: string; port: number } | undefined,
+): string[] {
+  return [
+    ...subnets.flatMap((s) => ["--allow", s]),
+    ...(server === undefined ? [] : ["--server", `${server.host}:${server.port}`]),
+  ];
+}
+
 /** The `docker run` arguments for one run. Environment values are passed by name only. */
 export function dockerRunArgs(
   req: SpawnRequest,
@@ -241,8 +262,18 @@ export function dockerRunArgs(
     args.push("--env", CLI_OWNED.has(key) ? `${key}=${req.env[key]}` : key);
   }
   // The run starts as root only inside majhi-netguard, which closes the route to the owner's own
-  // computer and drops to the owner's uid with no capabilities before the agent starts.
-  args.push(cfg.image, NETGUARD, cfg.user ?? "0:0", req.command.command, ...req.command.args);
+  // computer and every private network but the task's own, and drops to the owner's uid with no
+  // capabilities before the agent starts.
+  const subnets = req.task === undefined ? [] : (cfg.taskSubnets?.(req.task) ?? []);
+  args.push(
+    cfg.image,
+    NETGUARD,
+    cfg.user ?? "0:0",
+    ...guardArgs(subnets, cfg.server?.()),
+    "--",
+    req.command.command,
+    ...req.command.args,
+  );
   return args;
 }
 

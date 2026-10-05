@@ -25,6 +25,8 @@ export function runnerSetup(
   inspect: Inspect | undefined,
   /** The networks a run of a task joins besides the runner network. Bound late by the caller. */
   taskNetworks?: (task: string) => string[],
+  /** The task networks' subnets, and where the server answers on the runner network, for netguard. */
+  guard: Pick<RunnerConfig, "taskSubnets" | "server"> = {},
 ): { sessionOptions: RuntimeOptions; runner: Runner | undefined } {
   const r = env.runner;
   if (r.mode !== "container") return { sessionOptions: env.runtime, runner: undefined };
@@ -41,6 +43,7 @@ export function runnerSetup(
     majhiHome: env.majhiHome,
     protectedPaths: [env.secretsKeyFile],
     taskNetworks,
+    ...guard,
     ready: async () => {
       await cleaned;
       await network.ensure();

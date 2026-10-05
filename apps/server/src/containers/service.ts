@@ -13,6 +13,7 @@ import type {
   TaskDockerRequest,
   TaskDockerResult,
 } from "@majhi/shared";
+import type { Spawned } from "@majhi/acp";
 import { sameImage } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import type { ProcessManager } from "../processes/manager.ts";
@@ -23,8 +24,10 @@ import {
   type HostPaths,
   hostForwardRunArgs,
   hostNetworkCreateArgs,
+  isIpv4Cidr,
   type Limits,
   networkCreateArgs,
+  previewHoldRunArgs,
   previewRunArgs,
   type Safety,
   serviceRunArgs,
@@ -45,7 +48,7 @@ import {
 export const NOT_IN_DOCKER = "Containers need majhi running in Docker.";
 
 /** The docker calls the service makes. A test gives it a fake. */
-export type ContainerDocker = Pick<DockerCli, "exec" | "connect" | "create" | "attached" | "task">;
+export type ContainerDocker = Pick<DockerCli, "exec" | "connect" | "guard" | "create" | "attached" | "task">;
 
 export interface ContainerServiceDeps {
   /** Absent when majhi does not run in Docker: every call then says so. */
@@ -59,6 +62,8 @@ export interface ContainerServiceDeps {
   runnerNetwork: string;
   /** The runner image: a forwarder of a service on the owner's computer runs its script. */
   runnerImage?: string | undefined;
+  /** Where majhi answers on the runner network: the one private address a guarded container may reach. */
+  guardServer?: () => { host: string; port: number } | undefined;
   /** The ports majhi listens on, which no forwarder may name (with its default 7070). */
   ownPorts?: () => readonly number[];
   paths: HostPaths;
@@ -86,6 +91,35 @@ export interface Restarted {
 }
 
 const PORT_POLL_MS = 400;
+/** How long a holder gets to set its network guard before the preview is given up on. */
+const GUARD_READY_MS = 30_000;
+
+/** Resolves when a holder says its guard is set (netguard `--hold`); rejects when it ends first or is too slow. */
+function guardReady(holder: Spawned): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let said = "";
+    const done = (err?: Error) => {
+      clearTimeout(timer);
+      holder.child.stdout.off("data", onOut);
+      holder.child.stderr.off("data", onErr);
+      holder.child.off("close", onClose);
+      if (err === undefined) resolve();
+      else reject(err);
+    };
+    const onOut = (d: Buffer) => {
+      if (d.toString().includes("majhi-netguard ready")) done();
+    };
+    const onErr = (d: Buffer) => {
+      said = (said + d.toString()).slice(-400);
+    };
+    const onClose = () =>
+      done(new UserError(`The preview's network guard did not start.${said === "" ? "" : ` ${said.trim()}`}`));
+    const timer = setTimeout(() => done(new UserError("The preview's network guard did not start in time.")), GUARD_READY_MS);
+    holder.child.stdout.on("data", onOut);
+    holder.child.stderr.on("data", onErr);
+    holder.child.on("close", onClose);
+  });
+}
 /** The runner containers of a task are found by these labels. */
 const RUNNER_LABEL = "label=majhi.runner=1";
 
@@ -99,6 +133,8 @@ export class ContainerService {
   private readonly docker: ContainerDocker | undefined;
   /** Tasks whose network exists. */
   private readonly networks = new Set<string>();
+  /** The IPv4 subnets of each task's network, once it exists. */
+  private readonly subnets = new Map<string, string[]>();
   /** The ports each running forwarder was started with, by container name. */
   private readonly forwarded = new Map<string, string>();
   /** Looking up the host port of a preview, by container name. */
@@ -132,6 +168,11 @@ export class ContainerService {
   /** The networks a run of this task joins when it starts: the task's own, once it has services. */
   taskNetworks(task: string): string[] {
     return this.networks.has(task) ? [containerNames(task).network] : [];
+  }
+
+  /** The subnets of the task's network: the one private address range its runners and preview may reach. */
+  taskSubnets(task: string): string[] {
+    return this.subnets.get(task) ?? [];
   }
 
   // ---------------------------------------------------------------------------
@@ -214,12 +255,19 @@ export class ContainerService {
       if (old !== undefined) await this.deps.processes.stop(task, old.id, "agent");
       return this.withContainerSlot(task, settings, async () => {
         const safety = this.safety(t);
-        const parts = previewRunArgs(safety, limitsOf(settings), {
+        const image = this.deps.runnerImage;
+        if (image === undefined) throw new UserError("majhi does not know the runner image.", 501);
+        const limits = limitsOf(settings);
+        // The holder owns the network and the port and holds the guard; the preview runs inside its network.
+        const holdParts = previewHoldRunArgs(safety, limits, {
           port: input.port,
+          image,
+          taskSubnets: this.networks.has(task) ? this.taskSubnets(task) : undefined,
+        });
+        const parts = previewRunArgs(safety, limits, {
           env: input.env,
           command: input.command,
           scratch: input.scratch,
-          taskNetwork: this.networks.has(task),
         });
         const url = `http://${names.previewContainer}:${input.port}`;
         const container: ProcessContainer = {
@@ -238,7 +286,15 @@ export class ContainerService {
           managed: {
             container,
             spawn: async (ctx) => {
+              const holder = await docker.attached(holdParts, safety, { cwd: t.folder });
+              try {
+                await guardReady(holder);
+              } catch (err) {
+                holder.kill();
+                throw err;
+              }
               const spawned = await docker.attached(parts, safety, { cwd: t.folder });
+              spawned.child.once("close", () => holder.kill());
               const lookup = this.lookupHostPort(
                 docker,
                 names.previewContainer,
@@ -248,7 +304,13 @@ export class ContainerService {
                 if (hostPort !== undefined) ctx.update({ hostUrl: `http://127.0.0.1:${hostPort}` });
               });
               this.lookups.set(names.previewContainer, lookup);
-              return spawned;
+              return {
+                ...spawned,
+                kill: () => {
+                  spawned.kill();
+                  holder.kill();
+                },
+              };
             },
           },
         });
@@ -779,6 +841,18 @@ export class ContainerService {
       ]);
       if (ids.length > 0) await docker.exec(["rm", "-f", "-v", ...ids]);
     });
+    // A runner of the task that is still up must not keep a range the next network may be given.
+    await this.quietly(async () => {
+      const runners = await this.lines(docker, [
+        "ps",
+        "-q",
+        "--filter",
+        RUNNER_LABEL,
+        "--filter",
+        `label=majhi.task=${task}`,
+      ]);
+      for (const id of runners) await docker.guard(id, [], this.deps.guardServer?.());
+    });
     await this.quietly(() => this.removeNetwork(docker, names.network));
     await this.quietly(() => this.removeNetwork(docker, names.hostNetwork));
     for (const name of this.forwarded.keys())
@@ -786,6 +860,7 @@ export class ContainerService {
     // A paused task leaves nothing running: the builder stops, and the next build starts it again.
     await this.stopBuilder(docker, names.builder);
     this.networks.delete(task);
+    this.subnets.delete(task);
     this.deps.changed?.();
   }
 
@@ -900,6 +975,7 @@ export class ContainerService {
         await this.quietly(() => docker.exec(["image", "rm", "-f", name]));
     });
     this.networks.clear();
+    this.subnets.clear();
     this.deps.changed?.();
   }
 
@@ -1087,6 +1163,18 @@ export class ContainerService {
       await docker.create(networkCreateArgs(safety), safety);
     }
     this.networks.add(task);
+    const subnets = (
+      await this.lines(docker, [
+        "network",
+        "inspect",
+        "--format",
+        "{{range .IPAM.Config}}{{.Subnet}} {{end}}",
+        names.network,
+      ])
+    )[0]
+      ?.split(" ")
+      .filter((cidr) => isIpv4Cidr(cidr));
+    this.subnets.set(task, subnets ?? []);
     const runners = await this.lines(docker, [
       "ps",
       "-q",
@@ -1096,12 +1184,18 @@ export class ContainerService {
       `label=majhi.task=${task}`,
     ]);
     for (const id of [...runners, names.previewContainer]) {
+      const isPreview = id === names.previewContainer;
       try {
         await docker.connect(names.network, id);
       } catch (err) {
         // A preview that is not running, or a runner that just ended.
         if (!/No such container|is not running|already exists/i.test(errorMessage(err))) throw err;
+        continue;
       }
+      // It started before this network: its guard learns the one private range it may now reach.
+      await this.quietly(() =>
+        docker.guard(id, this.taskSubnets(task), isPreview ? undefined : this.deps.guardServer?.()),
+      );
     }
   }
 

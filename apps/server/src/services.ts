@@ -505,7 +505,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     renameCommands: (agent, newId) => room.renameCommands(agent, newId),
     toolsChanged: (agent) => runs.remountAgent(agent),
   });
-  const runner = runnerSetup(env, options.runnerInspect, (task) => containers.taskNetworks(task));
+  const runner = runnerSetup(env, options.runnerInspect, (task) => containers.taskNetworks(task), {
+    taskSubnets: (task) => containers.taskSubnets(task),
+    // Runners reach majhi by its name on their network, on the port it listens on (main.ts sets the MCP address).
+    server: () => ({ host: env.runner.mcpHost, port: Number(new URL(adminTokens.mcpUrl).port) || env.port }),
+  });
   const sessionOptions = runner.sessionOptions;
   const usageRepo = new UsageRepo(store.raw);
   const budgets = new BudgetMonitor({
@@ -729,6 +733,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     settings: async () => (await config.settings()).containers,
     runnerNetwork: env.runner.network,
     runnerImage: env.runner.image,
+    guardServer: () => ({ host: env.runner.mcpHost, port: Number(new URL(adminTokens.mcpUrl).port) || env.port }),
     ownPorts,
     paths: { majhiHome: env.majhiHome, hostHome: env.hostHome, protectedPaths: [env.secretsKeyFile] },
     changed: () => events.emit(["containers"]),
