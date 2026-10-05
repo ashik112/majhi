@@ -92,7 +92,9 @@ export class GitLabHost implements MrHostClient {
     const http = splitHttp(res.stdout);
     if (http.status === 304 && known !== undefined) return known.value;
     if (res.code !== 0 || http.status < 200 || http.status >= 300) {
-      throw new MrHostError(`glab api failed: ${scrub(firstLines(res.stderr || res.stdout), t.token)}`);
+      throw new MrHostError(
+        `glab api failed: ${scrub(firstLines([res.stderr, res.stdout].filter((s) => s.trim() !== "").join("\n")), t.token)}`,
+      );
     }
     const value: unknown = JSON.parse(http.body);
     this.etags.set(key, http.etag, value);
@@ -106,7 +108,7 @@ export class GitLabHost implements MrHostClient {
   }
 
   private run(t: MrTarget, args: string[], input?: string) {
-    const env: Record<string, string> = { NO_PROMPT: "1", NO_COLOR: "1" };
+    const env: Record<string, string> = { GLAB_NO_PROMPT: "1", NO_COLOR: "1" };
     if (t.token !== undefined) env.GITLAB_TOKEN = t.token;
     if (t.hostName !== undefined && t.hostName !== "gitlab.com") env.GITLAB_HOST = t.hostName;
     return this.exec(this.bin, args, { env, input });
@@ -116,7 +118,7 @@ export class GitLabHost implements MrHostClient {
     const res = await this.run(t, args, input);
     if (res.code !== 0) {
       throw new MrHostError(
-        `glab ${args.slice(0, 2).join(" ")} failed: ${scrub(firstLines(res.stderr || res.stdout), t.token)}`,
+        `glab ${args.slice(0, 2).join(" ")} failed: ${scrub(firstLines([res.stderr, res.stdout].filter((s) => s.trim() !== "").join("\n")), t.token)}`,
       );
     }
     return res.stdout;
