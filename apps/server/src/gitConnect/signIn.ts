@@ -587,7 +587,12 @@ export class SignInService {
           if (old.token !== undefined) await this.deps.dropSecret(old.token).catch(() => undefined);
         }
       }
-      this.flows.done(flow.id, { account, alsoUsedBy: others, replaced });
+      this.flows.done(flow.id, {
+        account,
+        alsoUsedBy: others,
+        replaced,
+        via: flow.secret.kind === "paste" ? "token" : "browser",
+      });
     } catch (err) {
       this.flows.failed(flow.id, safeReason(err, "majhi could not save the sign-in."));
     }

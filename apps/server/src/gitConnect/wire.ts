@@ -81,7 +81,9 @@ export interface GitConnectWiring {
   /** Refuses a self-hosted host majhi must not send a token to. Undefined: every host is allowed. */
   checkHost?: ((host: string, options: { allowPrivate: boolean }) => Promise<void>) | undefined;
   /** A workspace signed in to a host (any way): its connection is made and checked. Never carries a token. */
-  onSignedIn?: ((done: { org: string; kind: MrHost; host: string }) => void) | undefined;
+  onSignedIn?:
+    | ((done: { org: string; kind: MrHost; host: string; via?: "browser" | "token" | undefined }) => void)
+    | undefined;
 }
 
 /** The tokens reader, made early so Ship and MRs read refreshed tokens. */
@@ -133,7 +135,9 @@ export function createGitConnect(w: GitConnectWiring): GitConnect {
     ...(w.checkHost === undefined ? {} : { checkHost: w.checkHost }),
     changed: (flow, ended) => {
       w.events.emit(ended ? ["signins", "orgs", "config", "secrets"] : ["signins"]);
-      if (flow.state === "done") w.onSignedIn?.({ org: flow.org, kind: flow.kind, host: flow.host });
+      if (flow.state === "done") {
+        w.onSignedIn?.({ org: flow.org, kind: flow.kind, host: flow.host, via: flow.via });
+      }
     },
   });
   const aliases = async (): Promise<ReadonlyMap<string, string>> => {

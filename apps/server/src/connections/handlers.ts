@@ -110,6 +110,7 @@ export function connectionHandlers(
             kind,
             host: host ?? DEFAULT_GIT_HOST[kind],
             privateNetwork: input.allowPrivate === true,
+            via: "token",
           },
           ctx.meta,
         );

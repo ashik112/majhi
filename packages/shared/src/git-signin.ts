@@ -413,6 +413,8 @@ export const SignInStatusSchema = z.discriminatedUnion("state", [
     alsoUsedBy: z.array(IdSchema),
     /** The account this workspace used on this host before, when it was another one. */
     replaced: z.string().optional(),
+    /** How it signed in: the host's own page (through its CLI or a device code), or a pasted token. */
+    via: z.enum(["browser", "token"]).optional(),
   }),
   /**
    * The host accepted the sign-in, but `account` is already used by other workspaces. Nothing is

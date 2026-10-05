@@ -40,6 +40,11 @@ export interface GitLinkDeps {
   orgs: () => Promise<Record<string, OrgConfig>>;
   /** Which git service a host is, by its name (github, gitlab, bitbucket in it), or none. */
   kindOf: (host: string) => MrHost | undefined;
+  /** How an existing account signed in, read from what is stored. Undefined: unknown. */
+  viaOf?: (
+    org: string,
+    account: { host: string; token?: string | undefined; oauth?: string | undefined },
+  ) => Promise<"browser" | "token" | undefined>;
   /** The check, which decides the connection's state. */
   check: (id: string) => Promise<unknown>;
   health: { start(id: string): unknown };
@@ -51,6 +56,8 @@ export interface GitHostRef {
   host: string;
   /** The owner confirmed that a self-hosted host is on their own network. */
   privateNetwork?: boolean | undefined;
+  /** How the workspace signed in: the host's own page, or a pasted token. Unknown for an account from before. */
+  via?: "browser" | "token" | undefined;
 }
 
 export class GitLink {
@@ -85,6 +92,7 @@ export class GitLink {
         description: `${name}, signed in for this workspace.`,
         fields: {
           provider: ref.kind,
+          ...(ref.via === undefined ? {} : { signed_in_by: ref.via }),
           ...(selfHosted ? { host: ref.host } : {}),
           ...(ref.privateNetwork === true ? { private_network: "yes" } : {}),
         },
@@ -126,7 +134,8 @@ export class GitLink {
         if (account.token === undefined) continue;
         const kind = this.deps.kindOf(account.host);
         if (kind === undefined) continue;
-        await this.ensure({ org, kind, host: account.host }).catch(() => undefined);
+        const via = await this.deps.viaOf?.(org, account).catch(() => undefined);
+        await this.ensure({ org, kind, host: account.host, via }).catch(() => undefined);
       }
     }
   }

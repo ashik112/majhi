@@ -161,13 +161,19 @@ export class SignInFlows {
 
   done(
     id: string,
-    details: { account: string; alsoUsedBy: string[]; replaced?: string | undefined },
+    details: {
+      account: string;
+      alsoUsedBy: string[];
+      replaced?: string | undefined;
+      via?: "browser" | "token" | undefined;
+    },
   ): boolean {
     return this.end(id, {
       state: "done",
       account: details.account,
       alsoUsedBy: details.alsoUsedBy,
       ...(details.replaced === undefined ? {} : { replaced: details.replaced }),
+      ...(details.via === undefined ? {} : { via: details.via }),
     });
   }
 
@@ -195,7 +201,7 @@ export class SignInFlows {
   private end(
     id: string,
     outcome:
-      | { state: "done"; account: string; alsoUsedBy: string[]; replaced?: string }
+      | { state: "done"; account: string; alsoUsedBy: string[]; replaced?: string; via?: "browser" | "token" }
       | { state: "denied" | "expired" | "cancelled" }
       | { state: "failed"; reason: string; failure?: ConnectionFailure },
   ): boolean {

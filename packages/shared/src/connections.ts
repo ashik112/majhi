@@ -525,6 +525,18 @@ export const CONNECTION_TYPES: readonly ConnectionTypeDef[] = [
         ],
       },
       {
+        key: "signed_in_by",
+        label: "Signed in by",
+        kind: "text",
+        required: false,
+        managed: true,
+        help: "How the workspace signed in to the host: its own page, or a pasted token.",
+        choices: [
+          { value: "browser", label: "The host's own page" },
+          { value: "token", label: "A pasted token" },
+        ],
+      },
+      {
         key: "host",
         label: "Host",
         kind: "text",

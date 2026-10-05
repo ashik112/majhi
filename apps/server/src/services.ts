@@ -627,7 +627,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   // Bearer tokens of connections signed in through Connect (5.14); bound once that service exists.
   const oauth: { bearer?: (id: string) => Promise<{ token: string } | { problem: string }> } = {};
   // A workspace signed in to a git host: bound once the git link exists.
-  const gitLinkRef: { signedIn?: (done: { org: string; kind: MrHost; host: string }) => void } = {};
+  const gitLinkRef: {
+    signedIn?: (done: {
+      org: string;
+      kind: MrHost;
+      host: string;
+      via?: "browser" | "token" | undefined;
+    }) => void;
+  } = {};
   // The workspaces' own git sign-ins, for `git` connections; bound once the git tokens exist.
   const gitSignIn: { token?: NonNullable<PlanDeps["gitToken"]> } = {};
   const connectionFiles = {
@@ -1968,6 +1975,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     kindOf: (host) => {
       const kind = classifyHost(host);
       return kind === "other" ? undefined : mrKindOf(kind);
+    },
+    // A grant means the host's own page signed in (GitLab); a GitHub token that `gh` made starts with gho_.
+    viaOf: async (_org, account) => {
+      if (account.oauth !== undefined) return "browser";
+      if (account.token === undefined) return undefined;
+      const value = await secrets.get(account.token.replace(/^secret:/, ""));
+      return value?.startsWith("gho_") === true ? "browser" : "token";
     },
     check: (id) => connectionTests.test(id),
     health: connectionHealth,
