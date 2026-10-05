@@ -707,7 +707,13 @@ export function createHandlers({
     // A fast-forward only, never forced: an agent asks through the owner's approval policy.
     "tasks.updateTarget": (input, ctx) =>
       services.mrs.updateTarget({ ...input, by: actorName(ctx.meta.actor) }),
-    "tasks.syncBase": (input, ctx) => services.mrs.syncBase({ ...input, by: actorName(ctx.meta.actor) }),
+    "tasks.syncBase": (input, ctx) =>
+      services.mrs.syncBase({
+        ...input,
+        by: actorName(ctx.meta.actor),
+        // The task's own agent asks mid-turn; the clean-worktree check still guards its files.
+        fromOwnTask: ctx.meta.actor.kind === "agent" && ctx.meta.task === input.id,
+      }),
     "tasks.shipOptions": (input) => services.mrs.shipOptions(input.id),
     "tasks.push": (input, ctx) => services.mrs.push(input.id, input.deleteAfter, actorName(ctx.meta.actor)),
     "tasks.resolveShip": async (input, ctx) => ({

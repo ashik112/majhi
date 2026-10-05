@@ -1222,6 +1222,7 @@ export class MrService {
     id: string;
     project?: string | undefined;
     by: string;
+    fromOwnTask?: boolean;
   }): Promise<{ results: SyncBaseResult[] }> {
     const task = this.deps.tasks.get(input.id);
     const repos = task.repos.filter((r) => input.project === undefined || r.project === input.project);
@@ -1236,7 +1237,7 @@ export class MrService {
         (await this.deps.config.sections()).orgs[task.org ?? "private"]?.identity ?? DEFAULT_IDENTITY;
       const results: SyncBaseResult[] = [];
       for (const repo of repos) {
-        const result = await this.syncRepo(task.id, repo, identity);
+        const result = await this.syncRepo(task.id, repo, identity, input.fromOwnTask === true);
         results.push({ project: repo.project, ...result });
         const detail =
           result.status === "refused" ? `refused: ${result.reason ?? ""}` : `${result.status} ${repo.base}`;
@@ -1256,10 +1257,12 @@ export class MrService {
     task: string,
     repo: TaskRepo,
     identity: { name: string; email: string },
+    fromOwnTask: boolean,
   ): Promise<Omit<SyncBaseResult, "project">> {
     const refused = (reason: string) => ({ status: "refused" as const, reason });
     if (repo.worktree === undefined) return refused("it has no worktree yet");
-    if (this.deps.working(task)) return refused("an agent is working in it; wait for its turn to end");
+    if (!fromOwnTask && this.deps.working(task))
+      return refused("an agent is working in it; wait for its turn to end");
     try {
       const target = await this.pushTarget(repo);
       if (target.viaHost) {
