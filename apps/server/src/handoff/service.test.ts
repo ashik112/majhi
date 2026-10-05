@@ -22,7 +22,13 @@ const bad = (output = "AssertionError: expected 1 to be 2", ms = 900): ExecResul
 
 /** A world of fake ports, with every call counted. The head moves when a test says the lead committed. */
 function world(
-  over: { commands?: CardCommands; brief?: string; diff?: DiffFacts; autonomous?: boolean } = {},
+  over: {
+    commands?: CardCommands;
+    mergeBase?: string;
+    brief?: string;
+    diff?: DiffFacts;
+    autonomous?: boolean;
+  } = {},
 ) {
   const db = new Database(":memory:");
   migrate(db);
@@ -61,6 +67,7 @@ function world(
     task: (id) => tasks.get(id),
     heads: async () => state.head,
     ready: async () => state.ready,
+    mergeBase: async () => over.mergeBase,
     commands: () => over.commands ?? { test: "pnpm test", build: "pnpm build", lint: "pnpm lint" },
     diff: async () =>
       over.diff ?? {
@@ -586,5 +593,23 @@ describe("capacity", () => {
     expect(w.state.maxActive).toBeLessThanOrEqual(2);
     expect(peaks[0]).toBe(2);
     expect((await w.service.state("ACM-2")).queued).toBe(false);
+  });
+});
+
+describe("a test command with {base}", () => {
+  const SHA = "0123456789abcdef0123456789abcdef01234567";
+  const commands = { test: "vitest run --changed {base}", build: "pnpm build", lint: "pnpm lint" };
+
+  it("runs with the sha majhi computed", async () => {
+    const w = world({ commands, mergeBase: SHA });
+    await w.service.ensure("ACM-1", { force: false });
+    expect(w.calls.exec).toContain(`vitest run --changed ${SHA}`);
+  });
+
+  it("does not run, and fails the check, when the base is not a sha", async () => {
+    const w = world({ commands, mergeBase: "main; curl evil" });
+    const res = await w.service.ensure("ACM-1", { force: false });
+    expect(w.calls.exec.some((c) => c.startsWith("vitest"))).toBe(false);
+    expect(res.verdict).toBe("red");
   });
 });

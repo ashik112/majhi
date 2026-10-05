@@ -24,6 +24,7 @@ import {
   reviewPrompt,
   TRIVIAL_LINES,
 } from "./analysis.ts";
+import { substituteBase, usesBase } from "./commands.ts";
 import type { DeepRow, HandoffRepo } from "./repo.ts";
 
 /**
@@ -82,8 +83,10 @@ export interface HandoffPorts {
   heads(id: string): Promise<string>;
   /** Committed, merges cleanly, no card waits, no secret in the diff: the cheap checks, live. */
   ready(id: string): Promise<ReadyResult>;
-  /** The test, build and lint commands of a project's card. */
-  commands(project: string): CardCommands;
+  /** The test, build and lint commands the check runs for a project: its own override, else its card's. */
+  commands(project: string): CardCommands | Promise<CardCommands>;
+  /** The merge-base commit of a task's branch and its target in one project, as majhi computed it. */
+  mergeBase?(task: string, project: string): Promise<string | undefined>;
   diff(id: string): Promise<DiffFacts>;
   /** Runs one shell line in a task's worktree, in its runner, with a timeout. */
   exec(
@@ -384,7 +387,11 @@ export class HandoffService {
         ? step("tests", { status: "skipped", detail: "not run: the build failed" })
         : await this.command(task, "tests");
     const diff = await this.ports.diff(task.id).catch(() => undefined);
-    const hasTests = task.repos.some((r) => this.ports.commands(r.project).test !== undefined);
+    const hasTests = (
+      await Promise.all(
+        task.repos.map(async (r) => (await this.ports.commands(r.project)).test !== undefined),
+      )
+    ).some(Boolean);
     const lines = diff === undefined ? [] : acceptanceLines(task.brief);
     const items = diff === undefined ? [] : matchAcceptance(lines, diff);
     const unmatched = items.filter((i) => !i.ok);
@@ -432,12 +439,25 @@ export class HandoffService {
   /** One kind of command over the task's repos. Tests that fail run once more: pass on retry is flaky. */
   private async command(task: HandoffTask, kind: "tests" | "build" | "lint"): Promise<HandoffStep> {
     const key = kind === "tests" ? "test" : kind;
-    const runs = task.repos.flatMap((r) => {
-      const command = this.ports.commands(r.project)[key];
-      return command === undefined || command.trim() === "" || r.worktree === undefined
-        ? []
-        : [{ project: r.project, cwd: r.worktree, command }];
-    });
+    const runs: { project: string; cwd: string; command: string }[] = [];
+    for (const r of task.repos) {
+      const command = (await this.ports.commands(r.project))[key];
+      if (command === undefined || command.trim() === "" || r.worktree === undefined) continue;
+      let line = command;
+      if (usesBase(command)) {
+        const base = await this.ports.mergeBase?.(task.id, r.project).catch(() => undefined);
+        const filled = substituteBase(command, base);
+        if ("error" in filled) {
+          return step(kind, {
+            status: "fail",
+            detail: `${command} could not run in ${r.project}: ${filled.error}`,
+            owner: true,
+          });
+        }
+        line = filled.command;
+      }
+      runs.push({ project: r.project, cwd: r.worktree, command: line });
+    }
     if (runs.length === 0) {
       return step(kind, {
         status: "none",

@@ -1522,7 +1522,7 @@ export const commands = {
   "projects.update": {
     risk: "change",
     summary:
-      "Change a project's org, aliases or base branch, and (when given) its remotes, links to other projects, agent attribution in commits and whether it is protected (only the owner turns protection off). null removes remotes, links or the attribution override",
+      "Change a project's org, aliases or base branch, and (when given) its remotes, links to other projects, hand-off check commands (test, build, lint, typecheck; test may use {base} for the task's merge-base commit), agent attribution in commits and whether it is protected (only the owner turns protection off). null removes remotes, links or the attribution override",
     input: z
       .object({ id: IdSchema })
       .extend(ProjectConfigSchema.pick({ org: true, aliases: true, base: true, protected: true }).shape)
@@ -1533,6 +1533,8 @@ export const commands = {
         commits: ProjectConfigSchema.shape.commits.nullable().optional(),
         /** How new task branches are named, like {type}/{id}-{slug}. null clears it. */
         branch_pattern: ProjectConfigSchema.shape.branch_pattern.nullable().optional(),
+        /** Hand-off check commands that win over the project card's; test may use {base}. null clears them. */
+        handoff: ProjectConfigSchema.shape.handoff.nullable().optional(),
       }),
     output: ProjectViewSchema,
   },
