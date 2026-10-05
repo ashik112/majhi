@@ -274,6 +274,13 @@ export class AutonomyDriver {
     const workspace = status.lanes.find((l) => l.org === org)?.name ?? org;
     // Sizes not known yet are rated first, so the size rule and the digest can use them.
     const pick = await autonomy.pickable(fill ? SIZE_FILL_MS : 0, org);
+    // The gate that holds each task the captain might start, so it sees it before it tries.
+    const startable = [
+      ...pick.backlog.map((b) => b.id),
+      ...status.now.filter((t) => inOrg(t.org) && t.pause?.mayResume === true).map((t) => t.task),
+    ];
+    const gates =
+      authorityOf(status.settings, org).start === "decide" ? await autonomy.startGates(startable) : {};
     const tasksOf = new Map(status.now.map((t) => [t.task, t.org]));
     const input: DigestInput = {
       workspace,
@@ -292,6 +299,7 @@ export class AutonomyDriver {
       ),
       backlog: pick.backlog,
       leftOut: pick.leftOut,
+      gates,
       rules: pick.rules,
       queue: status.queue.filter((q) => inOrg(q.org)),
       projects: this.deps.projectLines?.(org) ?? [],
