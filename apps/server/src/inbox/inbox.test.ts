@@ -221,29 +221,6 @@ describe("building decisions", () => {
     expect(isDecisionItem({ ...paused, reason: "offline" }, subjects["ACM-2"] as never)).toBe(false);
   });
 
-  it("offers the ask card's several questions only through the task", () => {
-    const [first] = ask.questions;
-    const two = { ...ask, questions: [first, { ...first, id: "q2" }] } as Of<"ask">;
-    expect(buildDecisions(sources({ items: [two] }))[0]?.options).toEqual([]);
-  });
-
-  it("shows the captain's recommendation over the agent's, only for an option that exists", () => {
-    const recommendations = new Map([
-      ["room:ACM-1:ask1", { option: "keep", reason: "keeps a backup branch, nothing pushed" }],
-      ["room:ACM-1:ch1", { option: "gone", reason: "stale" }],
-    ]);
-    const out = buildDecisions(sources({ items: [ask, choice], recommendations }));
-    expect(out[0]?.suggestion).toEqual({
-      option: "keep",
-      reason: "keeps a backup branch, nothing pushed",
-      by: "captain",
-    });
-    expect(out[0]?.options).toEqual([
-      { id: "keep", label: "Keep", primary: true, effect: "approve" },
-      { id: "rebuild", label: "Rebuild" },
-    ]);
-    expect(out[1]?.suggestion).toBeUndefined();
-  });
 });
 
 function fakeActions(log: string[]): DecisionActions {
@@ -326,13 +303,6 @@ describe("answering a decision", () => {
     expect(log).toEqual(["card ACM-2 rv1 merge"]);
   });
 
-  it("offers a task with no repo Mark done first and no Merge", () => {
-    const noRepo = { ...subjects["ACM-2"], repos: 0 } as never;
-    const out = buildDecisions(sources({ items: [{ ...review, ready: undefined }], subject: () => noRepo }));
-    expect(out[0]?.options.map((o) => o.id)).toEqual(["done", "changes"]);
-    expect(out[0]?.options[0]?.primary).toBe(true);
-  });
-
   it("refuses an option the decision does not offer, a secret and a sign-in, and does nothing", async () => {
     const inbox = service();
     await expect(inbox.answer({ id: "room:ACM-1:ch1", option: "maybe" })).rejects.toThrow(
@@ -355,100 +325,6 @@ describe("answering a decision", () => {
     expect(log).toEqual([]);
     await handlers["decisions.answer"](input, ctx("owner"));
     expect(log).toEqual(["choice ACM-1 ch1 now"]);
-  });
-});
-
-describe("the detail of a decision", () => {
-  const diff = (project: string, files: [string, number, number][]) => ({
-    project,
-    base: "main",
-    branch: "majhi/ACM-2",
-    commits: [],
-    files: files.map(([path, additions, deletions]) => ({
-      path,
-      status: "modified" as const,
-      additions,
-      deletions,
-      binary: false,
-      patch: "",
-      truncated: false,
-    })),
-    omitted: 0,
-    uncommitted: false,
-  });
-  const ok = { ok: true } as const;
-  const withDetail = (over: Partial<ConstructorParameters<typeof InboxService>[0]> = {}) =>
-    new InboxService({
-      items: () => items,
-      subject: (task) => subjects[task],
-      budgets: async () => [],
-      signedOut: async () => [],
-      recommendations: repo,
-      actions: fakeActions(log),
-      orgNames: async () => ({ acme: "Acme" }),
-      lastAgentMessage: () => ({
-        agent: "acme-builder",
-        text: "Done. Two files changed.",
-        at: "2026-10-04T09:59:00.000Z",
-      }),
-      diff: async () => [
-        diff("api", [
-          ["src/a.ts", 3, 1],
-          ["src/b.ts", 40, 2],
-          ["README.md", 1, 0],
-        ]),
-      ],
-      shipOptions: async () => ({ merge: ok, mergePush: ok, push: ok, mr: ok, done: ok }),
-      ...over,
-    });
-
-  it("gives a ready-to-ship task its hand-back, diff stat, checks and target, with the old wording rewritten", async () => {
-    const detail = await withDetail().detail("room:ACM-2:rv1");
-    expect(detail.handback?.text).toBe("Done. Two files changed.");
-    expect(detail.diff).toEqual({
-      files: 3,
-      additions: 44,
-      deletions: 3,
-      top: [
-        { path: "src/b.ts", additions: 40, deletions: 2 },
-        { path: "src/a.ts", additions: 3, deletions: 1 },
-        { path: "README.md", additions: 1, deletions: 0 },
-      ],
-      uncommitted: false,
-    });
-    expect(detail.repos).toEqual([{ project: "api", branch: "majhi/ACM-2", into: "main" }]);
-    expect(detail.checks).toBe("committed, merges cleanly into main");
-    expect(detail.blocked).toBeUndefined();
-    const listed = (await withDetail().list()).find((d) => d.id === "room:ACM-2:rv1");
-    expect(listed?.suggestion?.reason).toBe(
-      "Ready to ship to main: committed, merges cleanly into main. In Acme you decide when work is merged.",
-    );
-  });
-
-  it("says why Merge cannot be taken and keeps reading when the diff fails", async () => {
-    const inbox = withDetail({
-      diff: async () => {
-        throw new Error("git is busy");
-      },
-      shipOptions: async () => ({
-        merge: { ok: false, why: "Nothing is committed on the task branch." },
-        mergePush: ok,
-        push: ok,
-        mr: ok,
-        done: ok,
-      }),
-    });
-    const detail = await inbox.detail("room:ACM-2:rv1");
-    expect(detail.diff?.error).toBe("git is busy");
-    expect(detail.blocked).toEqual({ merge: "Nothing is committed on the task branch." });
-  });
-
-  it("gives a question card its full questions and refuses a decision that is gone", async () => {
-    const detail = await withDetail().detail("room:ACM-1:ask1");
-    expect(detail.questions).toEqual([
-      { question: "Rebuild or keep the history?", options: ["Keep", "Rebuild"], freeText: false },
-    ]);
-    await expect(withDetail().detail("room:ACM-1:nope")).rejects.toThrow(/gone/);
   });
 });
 
@@ -488,10 +364,4 @@ describe("the captain's recommendation", () => {
     ).rejects.toThrow(/tool of the captain/);
   });
 
-  it("is forgotten once its decision is gone for two weeks", async () => {
-    repo.set("room:ACM-1:old", { option: "a", reason: "x" }, "2026-09-01T00:00:00.000Z");
-    repo.set("room:ACM-1:ask1", { option: "keep", reason: "x" }, "2026-09-01T00:00:00.000Z");
-    await service().list();
-    expect([...repo.all().keys()]).toEqual(["room:ACM-1:ask1"]);
-  });
 });

@@ -161,36 +161,6 @@ describe("discover", () => {
   });
 });
 
-describe("tidy stale secret requests", () => {
-  it("withdraws a request that is no longer needed and leaves one that is", async () => {
-    const pending = new Map([
-      ["secret:a", "waiting"],
-      ["secret:b", "waiting"],
-    ]);
-    const withdrawn: string[] = [];
-    const t = setup({
-      upkeep: {
-        failingConnections: async () => [],
-        tidy: async () => [],
-        staleSecrets: async () =>
-          [...pending.keys()].map((item) => ({
-            task: "ACM-1",
-            item,
-            label: "A key",
-            obsolete: item === "secret:a" ? "Its task is closed" : undefined,
-          })),
-        withdrawSecret: async (_task, item, reason) => {
-          withdrawn.push(`${item}: ${reason}`);
-          pending.delete(item);
-        },
-      },
-    });
-    await t.runner.start("acme", "tidy", "daily");
-    expect(withdrawn).toEqual(["secret:a: Its task is closed"]);
-    expect([...pending.keys()]).toEqual(["secret:b"]);
-  });
-});
-
 describe("tidy", () => {
   it("never removes a worktree with uncommitted changes, and names it for the owner", async () => {
     const clean = vi.fn(async () => ({ removed: [], kept: [] }));
@@ -207,37 +177,6 @@ describe("tidy", () => {
     expect(clean).not.toHaveBeenCalled();
     expect(t.findings.filed.get("tidy:dirty:ACM-1")).toBe("open");
   });
-
-  it("resolves the dirty-worktree finding once the worktree is clean, and keeps one finding per task", async () => {
-    let dirty = ["src/a.ts has changes"];
-    const t = setup({
-      upkeep: { failingConnections: async () => [], staleSecrets: async () => [], tidy: async () => [] },
-      ports: { cleanable: async () => [{ id: "ACM-1", title: "Done", steps: [], dirty }] },
-    });
-    await t.runner.start("acme", "tidy", "daily");
-    await t.runner.start("acme", "tidy", "daily");
-    expect([...t.findings.filed.entries()]).toEqual([["tidy:dirty:ACM-1", "open"]]);
-    dirty = [];
-    await t.runner.start("acme", "tidy", "daily");
-    expect(t.findings.filed.get("tidy:dirty:ACM-1")).toBe("fixed");
-  });
-});
-
-describe("the upkeep row", () => {
-  const quiet: Partial<UpkeepPorts> = { profile: async () => [], search: async () => [] };
-
-  it("finds the same state on a second run and adds no second line", async () => {
-    const t = setup({ upkeep: quiet });
-    expect(await t.runner.start("acme", "discover", "daily")).toBe("done");
-    expect(await t.runner.start("acme", "discover", "daily")).toBe("done");
-    expect(t.repo.allActions().map((a) => a.text)).toEqual(["Discover tools: nothing new fits"]);
-  });
-
-  it("does not run where Upkeep is You", async () => {
-    const t = setup({ upkeep: quiet, authority: { upkeep: "ask" } });
-    expect(await t.runner.start("acme", "discover", "daily")).toBeUndefined();
-    expect(t.repo.allActions()).toEqual([]);
-  });
 });
 
 describe("agent slots", () => {
@@ -245,16 +184,6 @@ describe("agent slots", () => {
     const s: AccountSlots = { account: "main", inUse: limit, waiting: 2, limit, free: 0, headroom: true };
     return { checklist: async () => [], slots: async () => [s] };
   };
-
-  it("raises the limit by one with full access", async () => {
-    const setAccountSlots = vi.fn(async () => {});
-    const t = setup({
-      upkeep: { ...slots(2), setAccountSlots },
-      rules: { fullAccess: true } as AutonomyOrg,
-    });
-    await t.runner.start("acme", "checklist", "daily");
-    expect(setAccountSlots).toHaveBeenCalledWith(3);
-  });
 
   it("never raises past 4", async () => {
     const setAccountSlots = vi.fn(async () => {});

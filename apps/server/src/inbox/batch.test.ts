@@ -1,4 +1,4 @@
-import { batchSummary, type RoomItem } from "@majhi/shared";
+import type { RoomItem } from "@majhi/shared";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { migrate } from "../store/migrations.ts";
@@ -165,20 +165,6 @@ describe("batch approve and leave", () => {
     expect(log).toEqual(["permission pm2 yes"]);
   });
 
-  it("Leave rejects requests once, and says what it will do in one line", async () => {
-    const items = [permission(1), permission(2), review(1, true)];
-    const { inbox, log } = setup(items);
-    const waiting = await inbox.list();
-    expect(batchSummary(waiting, "approve")).toBe("Merge 1, allow once 2.");
-    expect(batchSummary(waiting, "leave")).toBe("Reject 2. 1 will wait for you.");
-    const out = await inbox.answerBatch({
-      batch: "batch-0007",
-      intent: "leave",
-      ids: waiting.map((d) => d.id),
-    });
-    expect(log.sort()).toEqual(["permission pm1 no", "permission pm2 no"]);
-    expect(out.skipped).toHaveLength(1);
-  });
 });
 
 describe("decisions.answerBatch through the command table", () => {

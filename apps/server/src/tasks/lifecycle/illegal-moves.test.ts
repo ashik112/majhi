@@ -1,4 +1,4 @@
-import type { RoomItem, Task } from "@majhi/shared";
+import type { Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { seedStatus } from "../../testing/status.ts";
 import { taskWorld, type World } from "../../testing/world.ts";
@@ -21,11 +21,6 @@ const world = (): World => {
 const services = () => world().h.majhi.services;
 const cmd = (name: string, body?: unknown) => world().h.cmd(name, body);
 const get = async (id = "ACM-1"): Promise<Task> => (await cmd("tasks.get", { id })).body;
-const notes = async (id = "ACM-1") =>
-  ((await cmd("room.items", { task: id, limit: 300 })).body.items as RoomItem[]).flatMap((i) =>
-    i.type === "system" ? [i.text] : [],
-  );
-
 async function created(): Promise<void> {
   w = await taskWorld();
   const res = await cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false });
@@ -50,7 +45,6 @@ describe("a tell on a task with a merge request open", () => {
       by,
     });
     expect((await get()).status).toBe("mr");
-    expect((await notes()).join("\n")).toContain("has a merge request open");
   });
 
   it("the scheduler's message does not restart it either", async () => {

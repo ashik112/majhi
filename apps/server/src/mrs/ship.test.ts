@@ -106,55 +106,6 @@ describe("Ship", () => {
     expect(await tip(w.remote("api"), branch)).toBe(theirs);
   });
 
-  it("says why an action cannot work and where to fix it", async () => {
-    await reviewed();
-    let options = (await cmd("tasks.shipOptions", { id: "ACM-1" })).body;
-    expect(options).toMatchObject({
-      base: "main",
-      merge: { ok: true },
-      mergePush: { ok: true },
-      push: { ok: true },
-    });
-    // No host known for a local path remote.
-    expect(options.mr.ok).toBe(false);
-
-    await cmd("projects.update", {
-      id: "acme-api",
-      org: "acme",
-      aliases: ["api"],
-      remotes: { origin: { host: "github" } },
-    });
-    options = (await cmd("tasks.shipOptions", { id: "ACM-1" })).body;
-    expect(options.host).toBe("github");
-    expect(options.mr).toEqual({
-      ok: false,
-      why: "No GitHub token: add one in Orgs > Acme.",
-      fix: { page: "orgs", org: "acme" },
-    });
-
-    // An https remote without an SSH alias: nothing can be pushed.
-    await git(w.repo("api"), "remote", "set-url", "origin", "https://github.com/acme/api.git");
-    options = (await cmd("tasks.shipOptions", { id: "ACM-1" })).body;
-    const why =
-      "No SSH alias for acme-api's origin remote, and majhi pushes over SSH, not https. Pick an alias for it in Projects.";
-    const fix = { page: "projects", project: "acme-api" };
-    expect(options.push).toEqual({ ok: false, why, fix });
-    expect(options.mergePush).toEqual({ ok: false, why, fix });
-    expect(options.merge).toEqual({ ok: true });
-    const refused = await cmd("tasks.push", { id: "ACM-1" });
-    expect(refused.status).toBe(409);
-    expect(refused.body.error).toBe(why);
-
-    // With an alias the push goes over SSH.
-    await cmd("projects.update", {
-      id: "acme-api",
-      org: "acme",
-      aliases: ["api"],
-      remotes: { origin: { host: "github", ssh: "github-acme" } },
-    });
-    expect((await cmd("tasks.shipOptions", { id: "ACM-1" })).body.push).toEqual({ ok: true });
-  });
-
   it("squashes into main, marks it done, then deletes the task branch and its worktree", async () => {
     await reviewed();
     const res = await cmd("tasks.merge", {

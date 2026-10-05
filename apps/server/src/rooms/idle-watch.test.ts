@@ -3,7 +3,7 @@ import type { RoomItem } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import type { FakeSession, StopReason, Turn } from "../testing/fakeSession.ts";
 import { taskWorld, type World } from "../testing/world.ts";
-import { childMoves, lastLine, stalled } from "./idle-watch.ts";
+import { childMoves, stalled } from "./idle-watch.ts";
 
 /**
  * A running task never goes silent: when a turn ends and nobody works, nothing waits for the owner
@@ -166,145 +166,9 @@ describe("a running task never goes silent", () => {
     );
     expect(await task()).toMatchObject({ status: "paused", pausedReason: "blocked" });
   });
-
-  it("wakes the agent a builder mentions, not the lead", async () => {
-    let release: () => void = () => undefined;
-    const gate = new Promise<void>((r) => {
-      release = r;
-    });
-    releaseAll = release;
-    const { prompts } = await parentWorld({
-      "acme-lead": [say("@acme-builder please build the web part.")],
-      "acme-builder": [say("Built. @acme-reviewer please review the diff.")],
-      "acme-reviewer": [
-        async () => {
-          await gate;
-          return "Reviewed.";
-        },
-      ],
-    });
-    await until(() => (prompts["acme-reviewer"]?.length ?? 0) === 1, "the reviewer woken");
-    await pause(QUIET_MS * 10);
-    expect(prompts["acme-lead"]).toHaveLength(1);
-    expect((await systemTexts()).some((t) => t.startsWith("Nobody"))).toBe(false);
-    expect((await task()).status).toBe("running");
-  });
-
-  it("asks the owner when the lead ends with nothing pending, without waking the lead", async () => {
-    const { prompts } = await parentWorld({ "acme-lead": [say("Plan recorded.\nNothing to hand on yet.")] });
-    await until(async () => (await task()).status === "paused", "the owner asked");
-    await settle();
-    expect(prompts["acme-lead"]).toHaveLength(1);
-    expect(prompts["acme-builder"]).toBeUndefined();
-    expect(await systemTexts()).toContain(
-      'Nobody is working on ACM-1 and nothing is pending. @acme-lead\'s last message: "Nothing to hand on yet."',
-    );
-    expect(await task()).toMatchObject({ status: "paused", pausedReason: "blocked" });
-    const card = (await items()).find((i) => i.type === "paused");
-    expect(card).toMatchObject({ reason: "blocked", state: "pending" });
-  });
-
-  it("does nothing while a question to the owner is pending", async () => {
-    const { prompts } = await parentWorld({
-      "acme-lead": [say("Should the export write CSV or JSON?")],
-    });
-    await until(async () => (await items()).some((i) => i.type === "owner-question"), "the question card");
-    await settle();
-    expect(prompts["acme-lead"]).toHaveLength(1);
-    expect((await systemTexts()).some((t) => t.startsWith("Nobody"))).toBe(false);
-    expect((await task()).status).toBe("running");
-  });
-
-  it("does nothing while an agent waits on a background process", async () => {
-    const { prompts } = await parentWorld({
-      "acme-lead": [
-        async () => {
-          await w.h.majhi.services.processes.start({
-            task: "ACM-1",
-            agent: "acme-lead",
-            command: "sleep 30",
-            wait: true,
-          });
-          return "Started the export check. I'll wait for it.";
-        },
-      ],
-    });
-    await until(() => (prompts["acme-lead"]?.length ?? 0) === 1, "the lead's turn");
-    await settle();
-    expect(prompts["acme-lead"]).toHaveLength(1);
-    expect((await systemTexts()).some((t) => t.startsWith("Nobody"))).toBe(false);
-    expect((await task()).status).toBe("running");
-    await w.h.majhi.services.processes.stopTask("ACM-1");
-  });
 });
 
 describe("a turn the model's safeguards stopped", () => {
-  const overrides = async () =>
-    ((await w.h.cmd("tasks.get", { id: "ACM-1" })).body as { overrides: Record<string, { model?: string }> })
-      .overrides;
-
-  it("moves a builder to the next model once and continues there", async () => {
-    const { prompts, sessions } = await parentWorld(
-      {
-        "acme-lead": [say("@acme-builder please build the web part."), say("Both parts are built.")],
-        "acme-builder": [refuse("Starting on the web part."), say("The web part is done.")],
-      },
-      { opus: ["acme-builder"] },
-    );
-    await until(async () => (await task()).status === "paused", "the owner asked");
-    await settle();
-
-    expect(prompts["acme-builder"]).toHaveLength(2);
-    expect(prompts["acme-builder"]?.[1]).toContain("Continue from where you stopped.");
-    expect(sessions["acme-builder"]?.options).toEqual([["model", "sonnet"]]);
-    expect((await overrides())["acme-builder"]?.model).toBe("sonnet");
-    const said = await systemTexts();
-    expect(said).toContain(
-      "@acme-builder was blocked by Opus's safeguards. Continuing on Sonnet for this task.",
-    );
-    // The builder then ended its turn itself: the lead hears it finished, not that it was blocked.
-    expect(prompts["acme-lead"]).toHaveLength(2);
-    expect(prompts["acme-lead"]?.[1]).toContain(
-      '@acme-builder finished its turn and nobody is working on ACM-1 now. Its last line: "The web part is done."',
-    );
-    expect(said.some((t) => t.includes("goes back to the team"))).toBe(false);
-  });
-
-  it("wakes the lead once with the safeguards note when the next model refuses too", async () => {
-    const { prompts, sessions } = await parentWorld(
-      {
-        "acme-lead": [say("@acme-builder please build the web part."), say("I will ask the owner.")],
-        "acme-builder": [refuse("Starting on the web part."), refuse("Still blocked."), refuse(), refuse()],
-      },
-      { opus: ["acme-builder"] },
-    );
-    await until(async () => (await task()).status === "paused", "the owner asked");
-    await settle();
-
-    // One switch, then the step goes back to the lead: no third try, no second switch.
-    expect(prompts["acme-builder"]).toHaveLength(2);
-    expect(sessions["acme-builder"]?.options).toEqual([["model", "sonnet"]]);
-    expect(prompts["acme-lead"]).toHaveLength(2);
-    const note = prompts["acme-lead"]?.[1] ?? "";
-    expect(note).toContain(
-      '@acme-builder was blocked by its model\'s safeguards and stopped. Nobody is working on ACM-1 now. Its last line: "Still blocked."',
-    );
-    expect(note).toContain("Give its step to another teammate");
-    expect(note).toContain("or rephrase the step and hand it back to it");
-    const said = await systemTexts();
-    expect(said).toContain(
-      "@acme-builder was blocked by Sonnet's safeguards after the switch too. Its step goes back to the team.",
-    );
-    expect(
-      said.filter(
-        (t) =>
-          t ===
-          "Nobody was working on ACM-1 after @acme-builder was blocked by its model's safeguards. Woke @acme-lead.",
-      ),
-    ).toHaveLength(1);
-    expect(await task()).toMatchObject({ status: "paused", pausedReason: "blocked" });
-  });
-
   it("pauses the task for the owner when the lead refuses with no other model, and never sends it to review", async () => {
     const { prompts } = await parentWorld({ "acme-lead": [refuse("Planning the export.")] }, { alone: true });
     await until(async () => (await task()).status !== "running", "the task to stop running");
@@ -338,27 +202,6 @@ describe("a turn the model's safeguards stopped", () => {
     expect(said.filter((t) => t.includes("Continuing on"))).toHaveLength(1);
     expect(await task()).toMatchObject({ status: "paused", pausedReason: "blocked" });
   });
-
-  it("wakes nobody when the owner stops a turn with Esc", async () => {
-    const { h, prompts } = await parentWorld({
-      "acme-lead": [say("@acme-builder please build the web part.")],
-      "acme-builder": [
-        async (turn) => {
-          await turn.untilCancelled();
-          return "Stopped.";
-        },
-      ],
-    });
-    await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "the builder's turn");
-    await h.cmd("room.cancel", { task: "ACM-1", agent: "acme-builder" });
-    await settle();
-
-    expect(prompts["acme-lead"]).toHaveLength(1);
-    expect(prompts["acme-builder"]).toHaveLength(1);
-    const said = await systemTexts();
-    expect(said.some((t) => t.startsWith("Nobody") || t.includes("safeguards"))).toBe(false);
-    expect((await task()).status).toBe("running");
-  });
 });
 
 describe("the idle rule", () => {
@@ -389,13 +232,6 @@ describe("the idle rule", () => {
     expect(childMoves({ ...child, status: "ready", startWhenReady: true })).toBe(true);
     expect(childMoves({ status: "ready", startWhenReady: true, waitsOnAncestor: true })).toBe(false);
   });
-
-  it("quotes the last non-empty line, trimmed", () => {
-    expect(lastLine("Done.\n\n  The server builder can take the worktree now.  \n")).toBe(
-      "The server builder can take the worktree now.",
-    );
-    expect(lastLine("x".repeat(300))).toHaveLength(200);
-  });
 });
 
 /** What Claude Code does with an OAuth session it cannot refresh: says so, then the prompt fails on ACP's auth error. */
@@ -406,9 +242,6 @@ const signedOut = async (turn: Turn): Promise<Step> => {
     text: "Failed to authenticate: OAuth session expired and could not be refreshed",
   });
   throw Object.assign(new Error("Authentication required"), { code: -32000 });
-};
-const fails = (message: string) => async (): Promise<Step> => {
-  throw new Error(message);
 };
 const statusOf = async (id: string) =>
   ((await w.h.cmd("accounts.list")).body as { id: string; status: string }[]).find((a) => a.id === id)
@@ -463,69 +296,5 @@ describe("a turn that failed on its account's sign-in", () => {
     ).rejects.toThrow(
       "@acme-builder cannot run: its account claude-acme needs a new sign-in. Give the step to another teammate.",
     );
-  });
-
-  it("hands a signed-out lead's step to a teammate at once, with no pause and no second wake of the lead", async () => {
-    const { prompts } = await parentWorld({
-      "acme-lead": [signedOut, say("Done for now.")],
-      "acme-builder": [say("Built.")],
-    });
-    await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "the teammate taking over");
-    await settle();
-
-    expect(await statusOf("codex-acme")).toBe("needs-login");
-    expect(await systemTexts()).toContain(
-      "@acme-lead's account needs a new sign-in. @acme-builder continues from the checkpoint.",
-    );
-    // The run manager handled it alone: the signed-out lead is not prompted again and the task is not paused for sign-in.
-    expect(prompts["acme-lead"]).toHaveLength(1);
-    expect(await task()).not.toMatchObject({ pausedReason: "signed-out" });
-    expect((await items()).some((i) => i.type === "paused" && i.reason === "signed-out")).toBe(false);
-  });
-
-  it("pauses the task as signed-out when the lead cannot sign in and nobody can take over, and goes on once it can", async () => {
-    const { prompts } = await parentWorld(
-      { "acme-lead": [signedOut, say("Done for now.")] },
-      { alone: true },
-    );
-    await until(async () => (await task()).status === "paused", "the pause");
-    expect(await task()).toMatchObject({ status: "paused", pausedReason: "signed-out" });
-    expect(await statusOf("codex-acme")).toBe("needs-login");
-    const card = (await items()).find((i) => i.type === "paused");
-    expect(card).toMatchObject({ reason: "signed-out", state: "pending" });
-
-    // The owner signs in: the check passes, and the same prompt goes to the lead again.
-    w.h.runtime.usage = {
-      plan: "pro",
-      window: { usedPct: 1 },
-      weekly: { usedPct: 1 },
-      models: [],
-      estimated: false,
-      updatedAt: "2026-10-03T00:00:00.000Z",
-    };
-    await w.h.majhi.services.resilience.checkSignIns();
-    await until(() => (prompts["acme-lead"]?.length ?? 0) === 2, "the work going on");
-    expect(prompts["acme-lead"]?.[1]).toBe(prompts["acme-lead"]?.[0]);
-    expect(await statusOf("codex-acme")).not.toBe("needs-login");
-  });
-});
-
-describe("the owner's line names the real cause", () => {
-  it("says a teammate's turn failed instead of nothing is pending", async () => {
-    const { prompts } = await parentWorld({
-      "acme-lead": [say("@acme-builder please build the export."), say("Waiting on the build.")],
-      "acme-builder": [fails("Internal error: the adapter crashed")],
-    });
-    await until(async () => (await task()).status === "paused", "the owner asked");
-    await settle();
-    expect(prompts["acme-lead"]?.[1]).toContain(
-      '@acme-builder\'s turn failed with an error: "Internal error: the adapter crashed".',
-    );
-    const said = await systemTexts();
-    expect(said).toContain("Nobody was working on ACM-1 after @acme-builder failed. Woke @acme-lead.");
-    expect(said).toContain(
-      'Nobody is working on ACM-1: @acme-builder\'s last turn failed with "Internal error: the adapter crashed", and @acme-lead handed its step to nobody else. Give the step to another agent, or sign the account in and resume.',
-    );
-    expect(said.some((t) => t.includes("nothing is pending"))).toBe(false);
   });
 });

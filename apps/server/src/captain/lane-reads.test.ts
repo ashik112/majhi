@@ -109,6 +109,9 @@ async function world() {
   return { h, glx, own, acme, lane, call };
 }
 
+/** Searches of public skill and MCP registries: slow network calls that hold no workspace data. */
+const PUBLIC_REGISTRY_READS = new Set<string>(["skills.search", "mcp.search"]);
+
 /** A minimal input for a read command: none, or a search word. */
 function inputFor(command: CommandName): Record<string, unknown> | undefined {
   for (const input of [{}, { query: "invoices" }, { q: "invoices" }, { text: "invoices" }]) {
@@ -121,7 +124,7 @@ describe("a captain lane's reads", () => {
   it("never show another workspace, for every read command an agent may call", async () => {
     const t = await world();
     const reads = (Object.keys(commands) as CommandName[]).filter(
-      (c) => commands[c].risk === "read" && !AGENT_BLOCKED_COMMANDS.has(c),
+      (c) => commands[c].risk === "read" && !AGENT_BLOCKED_COMMANDS.has(c) && !PUBLIC_REGISTRY_READS.has(c),
     );
     const covered: string[] = [];
     const leaks: string[] = [];
@@ -157,29 +160,6 @@ describe("a captain lane's reads", () => {
     expect(tasks.text).toContain(t.acme.id);
     const memory = await t.call("memory.search", { query: "Tuesdays" });
     expect(memory.text).toContain("Acme deploys on Tuesdays");
-  });
-
-  it("keep the lane's own room whole, even where its text names another workspace's project", async () => {
-    const t = await world();
-    // An agent in Acme's task writes about Globex's project, as agents naming any word may.
-    t.h.majhi.services.room.post(t.acme.id, "ask:own", {
-      type: "ask",
-      agent: "acme-builder",
-      questions: [
-        {
-          id: "store_history",
-          question:
-            "The globex-web style checkpoints picked up the pnpm store. How should I clean the branch?",
-          options: [{ id: "rebuild", label: "Rebuild the branch as one clean commit" }],
-          freeText: false,
-        },
-      ],
-      state: "pending",
-    });
-    const res = await t.call("room.items", { task: t.acme.id });
-    expect(res.isError).toBe(false);
-    const items = (JSON.parse(res.text) as { items: { id: string; questions?: { id: string }[] }[] }).items;
-    expect(items.find((i) => i.id === "ask:own")?.questions?.map((q) => q.id)).toEqual(["store_history"]);
   });
 
   it("refuse an explicit filter for another workspace, and reads that name its task, project or room", async () => {

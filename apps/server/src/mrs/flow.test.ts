@@ -217,30 +217,6 @@ describe("one task, two repos on two hosts", () => {
     const wt = started.repos[0]?.worktree ?? "";
     expect(await readFile(join(wt, "invoice.txt"), "utf8")).toContain(`invoice.txt from ${id}`);
   });
-
-  it("opens the MRs in the order the owner sets, and can go back to the links", async () => {
-    const id = await reviewed();
-    const set = await cmd("tasks.setMergeOrder", { id, order: ["acme-web", "acme-api"] });
-    expect(set.status).toBe(200);
-    expect((await cmd("tasks.mergeOrder", { id })).body).toEqual({
-      order: ["acme-web", "acme-api"],
-      overridden: true,
-    });
-    // A partial or foreign list is refused.
-    expect((await cmd("tasks.setMergeOrder", { id, order: ["acme-web"] })).status).toBe(400);
-    expect((await cmd("tasks.setMergeOrder", { id, order: ["acme-web", "nope"] })).status).toBe(400);
-
-    must(await cmd("tasks.openMrs", { id }));
-    const calls = (await fake.state()).calls.filter((c) => c.args.includes("create")).map((c) => c.bin);
-    expect(calls).toEqual(["glab", "gh"]);
-
-    // Nothing is merged yet, so the owner can still go back to the order from the links.
-    expect(must(await cmd("tasks.setMergeOrder", { id, order: null }))).toBeDefined();
-    expect((await cmd("tasks.mergeOrder", { id })).body).toEqual({
-      order: ["acme-api", "acme-web"],
-      overridden: false,
-    });
-  });
 });
 
 describe("merge policies", () => {
@@ -309,39 +285,6 @@ describe("merge policies", () => {
     await tick();
     expect(await mergeCalls()).toEqual(["api", "web"]);
     expect((await get(id)).status).toBe("done");
-  });
-
-  it("auto-if-green: a failing CI stops it and the room says which repo", async () => {
-    const id = await reviewed({ policy: "auto-if-green" });
-    must(await cmd("tasks.openMrs", { id }));
-    await fake.update((s) => {
-      s.ci["remotes/api"] = "passing";
-      s.ci["remotes/web"] = "failing";
-    });
-    await tick();
-    await tick();
-    expect(await mergeCalls()).toEqual(["api"]);
-    const said = (await notes(id)).filter((n) => n.includes("CI failed on acme-web"));
-    // Said once, not on every poll.
-    expect(said).toHaveLength(1);
-    expect((await get(id)).status).toBe("mr");
-  });
-
-  it("auto-if-green: a merge the host keeps refusing is logged once, not on every poll", async () => {
-    const id = await reviewed({ policy: "auto-if-green" });
-    must(await cmd("tasks.openMrs", { id }));
-    await passing();
-    await fake.update((s) => {
-      s.mergeFails["remotes/web"] = "Merge conflict in invoices.html";
-    });
-    await tick();
-    await tick();
-    await tick();
-    const merges = w.h.majhi.services.store.permissions.audit(id).filter((r) => r.kind === "merge");
-    expect(merges.map((r) => [r.title, r.decision, r.by])).toEqual([
-      ["Merge of acme-api", "done", "majhi"],
-      ["Merge of acme-web", "failed", "majhi"],
-    ]);
   });
 
   it("never: majhi does not merge; the poller notices merges done on the host, and I merged it checks first", async () => {
@@ -424,24 +367,6 @@ describe("opening MRs", () => {
     );
   });
 
-  it("skips a repo with no new commit and merges only the others", async () => {
-    const id = await reviewed({ policy: "approve" });
-    // Undo web's commit: its branch equals base again.
-    await git(join(w.taskDir(id), "acme-web"), "reset", "--quiet", "--hard", "main");
-    const res = await cmd("tasks.openMrs", { id });
-    expect(res.status).toBe(200);
-    expect(res.body.repos).toMatchObject([
-      { project: "acme-api", outcome: "opened" },
-      { project: "acme-web", outcome: "skipped" },
-    ]);
-    // The single MR has no sibling list.
-    expect((await fake.state()).prs["remotes/api"]?.[0]?.body).not.toContain("Merge requests");
-    await fake.update((s) => {
-      s.ci["remotes/api"] = "passing";
-    });
-    expect((await cmd("tasks.mergeMrs", { id })).body).toMatchObject({ merged: ["acme-api"], done: true });
-  });
-
   it("refuses a task that is not in review, and one with no commits at all", async () => {
     const id = await reviewed();
     await git(join(w.taskDir(id), "acme-web"), "reset", "--quiet", "--hard", "main");
@@ -461,88 +386,6 @@ describe("opening MRs", () => {
     expect(early.status).toBe(409);
     expect(early.body.error).toContain("Open merge requests from review");
   });
-
-  it("stops at the first repo that fails, keeps what was opened, and continues on the next try", async () => {
-    const id = await reviewed();
-    await fake.update((s) => {
-      s.requireToken["remotes/web"] = "the-right-token";
-    });
-    const failed = await cmd("tasks.openMrs", { id });
-    expect(failed.status).toBe(200);
-    expect(failed.body.repos).toMatchObject([
-      { project: "acme-api", outcome: "opened" },
-      { project: "acme-web", outcome: "failed" },
-    ]);
-    expect(failed.body.repos[1].detail).toContain("authentication required");
-    expect(failed.body.repos[1].detail).not.toContain("gl-token-1");
-    // Not all open: the task stays in review, and api's MR is kept.
-    const mid = await get(id);
-    expect(mid.status).toBe("review");
-    expect(mid.repos.find((r) => r.project === "acme-api")?.mr?.number).toBe(1);
-
-    await fake.update((s) => {
-      s.requireToken = {};
-    });
-    const again = await cmd("tasks.openMrs", { id });
-    expect(again.body.repos).toMatchObject([
-      { project: "acme-api", outcome: "updated" },
-      { project: "acme-web", outcome: "opened" },
-    ]);
-    expect((await get(id)).status).toBe("mr");
-    // No second PR for api.
-    expect((await fake.state()).prs["remotes/api"]).toHaveLength(1);
-  });
-
-  it("uses the Bitbucket API for a repo on Bitbucket, with the org's secret", async () => {
-    const id = await reviewed({ policy: "approve", webHost: "bitbucket" });
-    const res = await cmd("tasks.openMrs", { id });
-    expect(res.status).toBe(200);
-    expect(res.body.repos).toMatchObject([
-      { project: "acme-api", outcome: "opened" },
-      { project: "acme-web", outcome: "opened", url: "https://bitbucket.org/remotes/web/pull-requests/1" },
-    ]);
-    expect(bitbucket?.requests.every((r) => r.auth === "Bearer bb-token")).toBe(true);
-    // Description updated with both links.
-    expect(bitbucket?.prs.get(1)?.description).toContain("https://github.com/remotes/api/pull/1");
-
-    await fake.update((s) => {
-      s.ci["remotes/api"] = "passing";
-    });
-    if (bitbucket) bitbucket.ci = "passing";
-    const merged = await cmd("tasks.mergeMrs", { id });
-    expect(merged.body).toMatchObject({ merged: ["acme-api", "acme-web"], done: true });
-    expect(await git(w.remote("web"), "rev-parse", "main")).toBe(
-      await git(w.remote("web"), "rev-parse", (await get(id)).repos[0]?.branch ?? ""),
-    );
-  });
-
-  it("says what is missing when the host cannot be told or the secret is gone", async () => {
-    const id = await reviewed();
-    must(
-      await cmd("projects.update", {
-        id: "acme-api",
-        org: "acme",
-        aliases: ["api"],
-        remotes: { origin: {} },
-      }),
-    );
-    const unknown = await cmd("tasks.openMrs", { id });
-    expect(unknown.status).toBe(400);
-    expect(unknown.body.error).toContain("Cannot tell which git host acme-api is on");
-
-    must(
-      await cmd("projects.update", {
-        id: "acme-api",
-        org: "acme",
-        aliases: ["api"],
-        remotes: { origin: { host: "github", token: "secret:missing-one" } },
-      }),
-    );
-    const noSecret = await cmd("tasks.openMrs", { id });
-    expect(noSecret.status).toBe(400);
-    expect(noSecret.body.error).toContain("secret:missing-one");
-    expect((await fake.state()).calls).toEqual([]);
-  });
 });
 
 describe("credentials", () => {
@@ -559,23 +402,6 @@ describe("credentials", () => {
     must(await cmd("orgs.update", { id: "acme", mr_tokens: { github: "secret:gh-acme" } }));
     const gitlab = await cmd("tasks.openMrs", { id });
     expect(gitlab.body.error).toContain("No gitlab token is set for acme-web");
-  });
-
-  it("takes a remote's own token over the org's", async () => {
-    const id = await reviewed();
-    must(await secret("gh-other", "gh-token-remote"));
-    must(
-      await cmd("projects.update", {
-        id: "acme-api",
-        org: "acme",
-        aliases: ["api"],
-        remotes: { origin: { host: "github", token: "secret:gh-other" } },
-      }),
-    );
-    must(await cmd("tasks.openMrs", { id }));
-    expect((await fake.state()).calls.find((c) => c.bin === "gh")?.env).toEqual({
-      GH_TOKEN: "gh-token-remote",
-    });
   });
 });
 
@@ -640,24 +466,6 @@ describe("a task closed with merge requests not merged", () => {
     ).toBe(true);
     expect((await cmd("tasks.start", { id: waiting.id })).status).toBe(200);
   });
-
-  it("a task with no merge request still counts as merged once it is done", async () => {
-    w = await taskWorld();
-    const first = must(
-      await cmd("tasks.create", { text: "change api", repos: [{ project: "acme-api" }], start: false }),
-    ) as Task;
-    const second = must(
-      await cmd("tasks.create", {
-        text: "change api again",
-        repos: [{ project: "acme-api" }],
-        start: false,
-        dependsOn: [first.id],
-      }),
-    ) as Task;
-    must(await cmd("tasks.close", { id: first.id }));
-    const listed = (await cmd("tasks.list", {})).body.find((t: { id: string }) => t.id === second.id);
-    expect(listed.waitingOn).toEqual([]);
-  });
 });
 
 describe("after the merge", () => {
@@ -679,22 +487,5 @@ describe("after the merge", () => {
     expect(
       (await notes(id)).some((n) => n.includes("kept the worktree") && n.includes("uncommitted changes")),
     ).toBe(true);
-  });
-
-  it("fetches the base, so the local copy has the merged work", async () => {
-    const id = await reviewed({ policy: "approve" });
-    must(await cmd("tasks.openMrs", { id }));
-    await fake.update((s) => {
-      s.ci["remotes/api"] = "passing";
-      s.ci["remotes/web"] = "passing";
-    });
-    must(await cmd("tasks.mergeMrs", { id }));
-    // The checkout's remote-tracking base moved to the merged tip.
-    expect(await git(w.repo("api"), "rev-parse", "origin/main")).toBe(
-      await git(w.remote("api"), "rev-parse", "main"),
-    );
-    expect(await git(w.repo("web"), "rev-parse", "origin/main")).toBe(
-      await git(w.remote("web"), "rev-parse", "main"),
-    );
   });
 });

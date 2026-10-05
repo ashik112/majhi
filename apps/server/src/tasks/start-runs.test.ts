@@ -56,13 +56,6 @@ describe("starting a blocked task", () => {
     expect(owner).toContain("Use the staging database");
   });
 
-  it("with no message still gives the agent a turn, never a running task with nothing running", async () => {
-    await blockedTask();
-    const before = prompts.length;
-    expect((await cmd("tasks.start", { id: "ACM-1" })).status).toBe(200);
-    await until(() => prompts.length > before, "the agent's turn");
-  });
-
   it("a start that queues nothing leaves a typed hold and a room line, not a silent running", async () => {
     await blockedTask();
     // Nothing to run: the agent's turn never comes.

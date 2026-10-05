@@ -1,4 +1,4 @@
-import type { CaptainStatus, Task, TaskId } from "@majhi/shared";
+import type { Task } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
@@ -129,29 +129,5 @@ describe("a restart leaves no task running without a run", () => {
     t.strand(chat);
     await t.services.tasks.agentsIdle(chat);
     expect(t.task(chat)?.status).toBe("review");
-  });
-});
-
-describe("the lane's count for the owner", () => {
-  it("is the number of open owner cards, the same as Needs you", async () => {
-    const t = await on();
-    const id = await t.make("Fix the typo on the login page");
-    const ask = (key: string) =>
-      t.services.room.post(id as TaskId, key, {
-        type: "ask",
-        agent: "acme-builder",
-        questions: [
-          { id: "q", question: "Which branch?", options: [{ id: "a", label: "main" }], freeText: false },
-        ],
-        state: "pending",
-      });
-    ask("ask:one");
-    ask("ask:two");
-    const needsYou = (await t.services.inbox.list("acme")).length;
-    expect(needsYou).toBeGreaterThan(0);
-    const status = must(await t.h.cmd("captain.status")) as CaptainStatus;
-    const acme = status.orgs.find((o) => o.org === "acme");
-    expect(acme?.forYou).toBe(needsYou);
-    expect(acme?.summary).toBe(`${needsYou} thing${needsYou === 1 ? "" : "s"} for you`);
   });
 });

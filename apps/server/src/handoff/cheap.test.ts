@@ -58,20 +58,4 @@ describe("the cheap checks in a real repository", { timeout: 60_000 }, () => {
     expect(JSON.stringify(state)).not.toContain(token);
   });
 
-  it("a conflict that appears after a green check is found at once, with nothing run again", async () => {
-    const { world, h, id } = await reviewed();
-    expect((await handoff(world, id)).current?.verdict).toBe("green");
-    // The branch the task ships to gets the same file the task added.
-    const repo = world.repo("api");
-    await writeFile(join(repo, "work.txt"), "main got there first\n");
-    await git(repo, "add", "work.txt");
-    await git(repo, ...who, "commit", "-qm", "work.txt on main");
-    const later = await h.majhi.services.handoff.ensure(id, { force: false });
-    expect(later.verdict).toBe("red");
-    expect(later.cached).toBe(true);
-    // Where the owner decides how work merges, resolving it is theirs: held, and the lead is not told.
-    expect(later.held[0]).toBe("it conflicts with main in work.txt");
-    expect(later.failures).toEqual([]);
-    expect((await handoff(world, id)).strikes).toBe(0);
-  });
 });

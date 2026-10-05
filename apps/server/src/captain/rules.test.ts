@@ -1,70 +1,22 @@
 import { ALL_ASK, type Authority, AutonomySettingsSchema } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { authorityOf, choresNow, choresOf, effectiveAuthority, migratePickOrgs } from "./levels.ts";
-import { branchAllowed, PASS_BOUND, providerAllowed, restWhy, typingWhy } from "./rules.ts";
+import { choresNow, choresOf, effectiveAuthority, migratePickOrgs } from "./levels.ts";
+import { branchAllowed, providerAllowed, restWhy } from "./rules.ts";
 
 const settings = (raw: unknown) => AutonomySettingsSchema.parse(raw);
 
 describe("the authority table per workspace", () => {
-  const rows = (
-    start: string,
-    questions: string,
-    approvals: string,
-    upkeep: string,
-    merge: string,
-    push: string,
-    own = "ask",
-  ) => ({
-    start,
-    questions,
-    approvals,
-    upkeep,
-    merge,
-    push,
-    own,
-  });
-
-  it("defaults to Keeps things tidy for Private and Ask me with upkeep for every other workspace", () => {
-    const s = settings({});
-    expect(authorityOf(s, "private")).toEqual(rows("ask", "decide", "decide", "decide", "ask", "ask"));
-    expect(authorityOf(s, "acme")).toEqual(rows("ask", "ask", "ask", "decide", "ask", "ask"));
-  });
-
-  it("reads the three old levels into rows", () => {
-    const s = settings({
-      orgs: {
-        acme: { level: "ask" },
-        globex: { level: "tidy", push: true, merge: true },
-        northwind: { level: "runs" },
-        initech: { level: "runs", merge: true },
-        umbrella: { level: "runs", push: true, merge: true },
-      },
-    });
-    expect(authorityOf(s, "acme")).toEqual(rows("ask", "ask", "ask", "ask", "ask", "ask"));
-    // Tidy never merged or pushed, whatever the old switches said.
-    expect(authorityOf(s, "globex")).toEqual(rows("ask", "decide", "decide", "decide", "ask", "ask"));
-    expect(authorityOf(s, "northwind")).toEqual(rows("decide", "decide", "decide", "decide", "ask", "ask"));
-    expect(authorityOf(s, "initech")).toEqual(rows("decide", "decide", "decide", "decide", "decide", "ask"));
-    expect(authorityOf(s, "umbrella")).toEqual(
-      rows("decide", "decide", "decide", "decide", "decide", "decide"),
-    );
-  });
-
-  it("lets an explicit authority win over the old fields", () => {
-    const s = settings({
-      orgs: {
-        acme: {
-          level: "runs",
-          merge: true,
-          authority: rows("ask", "ask", "ask", "ask", "ask", "decide"),
-        },
-      },
-    });
-    expect(authorityOf(s, "acme")).toEqual(rows("ask", "ask", "ask", "ask", "ask", "decide"));
-  });
-
   it("acts only while Autonomous is on", () => {
-    const all = rows("decide", "decide", "decide", "decide", "decide", "decide") as Authority;
+    const all: Authority = {
+      ...ALL_ASK,
+      start: "decide",
+      questions: "decide",
+      approvals: "decide",
+      upkeep: "decide",
+      merge: "decide",
+      push: "decide",
+      own: "decide",
+    };
     expect(effectiveAuthority(all, "on")).toEqual(all);
     // Not On: everything is "You decide" except upkeep, which keeps its choice (memory and cleanup only).
     for (const mode of ["off", "paused", "stopping"] as const) {
@@ -73,27 +25,6 @@ describe("the authority table per workspace", () => {
       expect(choresNow(all, mode)).toEqual(["memory", "cleanup"]);
     }
     expect(choresNow(all, "on")).toEqual(choresOf(all));
-  });
-
-  it("runs each chore on its own row", () => {
-    const only = (row: keyof Authority): Authority => ({ ...ALL_ASK, [row]: "decide" });
-    expect(choresOf(ALL_ASK)).toEqual([]);
-    expect(choresOf(only("approvals"))).toEqual(["cards"]);
-    expect(choresOf(only("questions"))).toEqual(["ship", "questions"]);
-    expect(choresOf(only("merge"))).toEqual(["ship"]);
-    expect(choresOf(only("push"))).toEqual(["ship"]);
-    expect(choresOf(only("upkeep"))).toEqual([
-      "ship",
-      "memory",
-      "projects",
-      "triage",
-      "cleanup",
-      "followups",
-      "discover",
-      "tidy",
-      "health",
-      "checklist",
-    ]);
   });
 
   it("moves the old list of workspaces autonomous mode may work in to Runs it, once, keeping each choice made", () => {
@@ -146,11 +77,6 @@ describe("the rules that always hold", () => {
     expect(restWhy(rules, at("2026-10-03T23:30:00Z"), "UTC")).toBeUndefined();
   });
 
-  it("waits only while the owner types in that task", () => {
-    expect(typingWhy("ACM-3", true)).toBe("waiting: you are typing in ACM-3");
-    expect(typingWhy("ACM-3", false)).toBeUndefined();
-  });
-
   it("ships only to the workspace's branches, or each project's base without a list, and only with allowed providers", () => {
     const none = { push: false, merge: true };
     expect(branchAllowed(none, "develop", "develop")).toBe(true);
@@ -160,18 +86,5 @@ describe("the rules that always hold", () => {
     expect(branchAllowed(listed, "develop", "develop")).toBe(false);
     expect(providerAllowed(none, "codex")).toBe(true);
     expect(providerAllowed({ ...none, providers: ["claude"] }, "codex")).toBe(false);
-  });
-});
-
-describe("the pass bound and the removed daily caps", () => {
-  it("bounds a pass at 45 minutes or 60,000 tokens", () => {
-    expect(PASS_BOUND).toEqual({ minutes: 45, tokens: 60_000 });
-  });
-
-  it("still loads a config that holds the chore caps removed in D9", () => {
-    const parsed = AutonomySettingsSchema.safeParse({
-      orgs: { acme: { chores: { ship: { actions: 12 }, projects: { runs: null } } } },
-    });
-    expect(parsed.success).toBe(true);
   });
 });

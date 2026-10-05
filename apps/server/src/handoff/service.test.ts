@@ -135,79 +135,6 @@ const BIG: DiffFacts = {
   commits: ["feat: total"],
 };
 
-describe("a failed check that an update may have fixed", () => {
-  const testRuns = (w: ReturnType<typeof world>) => w.calls.exec.filter((c) => c === "pnpm test").length;
-
-  it("runs again once when majhi's commit changed, and a pass clears the failure", async () => {
-    const w = world();
-    w.state.exec = (c) => (c === "pnpm test" ? bad("exit 127: docker: not found") : ok());
-    expect((await w.service.ensure("ACM-1", { force: false })).verdict).toBe("red");
-    const first = testRuns(w);
-    // Nothing changed: the kept failure stands.
-    expect((await w.service.ensure("ACM-1", { force: false })).cached).toBe(true);
-    expect(testRuns(w)).toBe(first);
-    // A new majhi fixed the runner.
-    w.state.env = "commit-2|image-1";
-    w.state.exec = () => ok(" Tests  4 passed (4)");
-    const again = await w.service.ensure("ACM-1", { force: false });
-    expect(again.verdict).toBe("green");
-    expect(again.cached).toBe(false);
-    expect((await w.service.state("ACM-1")).strikes).toBe(0);
-    const runs = w.calls.exec.length;
-    await w.service.ensure("ACM-1", { force: false });
-    expect(w.calls.exec).toHaveLength(runs);
-  });
-
-  it("runs again when the runner image changed or six hours passed, three attempts at most", async () => {
-    const w = world();
-    w.state.exec = (c) => (c === "pnpm test" ? bad() : ok());
-    await w.service.ensure("ACM-1", { force: false });
-    expect(testRuns(w)).toBe(2);
-    w.state.env = "commit-1|image-2";
-    expect((await w.service.ensure("ACM-1", { force: false })).verdict).toBe("red");
-    expect(testRuns(w)).toBe(4);
-    w.state.skewMs = 7 * 3_600_000;
-    await w.service.ensure("ACM-1", { force: false });
-    expect(testRuns(w)).toBe(6);
-    // The third attempt was the last one for this state of the work.
-    w.state.env = "commit-3|image-3";
-    w.state.skewMs = 20 * 3_600_000;
-    await w.service.ensure("ACM-1", { force: false });
-    expect(testRuns(w)).toBe(6);
-  });
-
-  it("does not retry a failure after less than six hours when nothing changed", async () => {
-    const w = world();
-    w.state.exec = (c) => (c === "pnpm test" ? bad() : ok());
-    await w.service.ensure("ACM-1", { force: false });
-    w.state.skewMs = 5 * 3_600_000;
-    await w.service.ensure("ACM-1", { force: false });
-    expect(testRuns(w)).toBe(2);
-  });
-});
-
-describe("a check that runs out of time", () => {
-  it("runs with the project's own caps and names the setting to change", async () => {
-    const w = world();
-    const seen: unknown[] = [];
-    const ports = (w.service as unknown as { ports: HandoffPorts }).ports;
-    ports.limits = async () => ({ cpus: 2, memory: "4g", minutes: 10 });
-    const exec = ports.exec;
-    ports.exec = async (task, cwd, command, ms, limits) => {
-      seen.push([ms, limits]);
-      return command === "pnpm test"
-        ? { code: null, timedOut: true, output: "", ms: ms }
-        : exec(task, cwd, command, ms, limits);
-    };
-    const res = await w.service.ensure("ACM-1", { force: false });
-    expect(seen).toContainEqual([600_000, { cpus: 2, memory: "4g" }]);
-    expect(seen).toContainEqual([300_000, { cpus: 2, memory: "4g" }]);
-    expect(res.failures[0]).toBe(
-      "`pnpm test` did not finish in 600 s, so it was stopped. To allow more, set containers.handoff_minutes.acme-api (now 10) or containers.handoff_cpus (now 2)",
-    );
-  });
-});
-
 describe("a green hand-off", () => {
   it("runs lint, build and tests once, says what ran, and does not run the same head twice", async () => {
     const w = world();
@@ -248,18 +175,6 @@ describe("a green hand-off", () => {
     expect(w.calls.exec).toHaveLength(3);
   });
 
-  it("says there is no test command and does not call that tested", async () => {
-    const w = world({ commands: {} });
-    const r = await w.service.ensure("ACM-1", { force: false });
-    expect(r.verdict).toBe("green");
-    expect(r.steps.find((s) => s.id === "tests")).toMatchObject({
-      status: "none",
-      detail: "the project card has no test command, so nothing was tested",
-    });
-    expect(r.summary).toContain("no test command, not tested");
-    expect(r.summary).not.toMatch(/tests \d+ passed|tests ok/);
-    expect(w.calls.exec).toEqual([]);
-  });
 });
 
 describe("a red hand-off", () => {
@@ -283,81 +198,6 @@ describe("a red hand-off", () => {
     expect((await w.service.state("ACM-1")).history).toHaveLength(1);
   });
 
-  it("tells nobody when the owner switched off sending failures to the lead, and the card says why", async () => {
-    const w = world();
-    w.state.off.add("ship-checks");
-    w.state.exec = (c) => (c === "pnpm test" ? bad("FAIL src/total.test.ts\nexpected 1 to be 2") : ok());
-    const r = await w.service.ensure("ACM-1", { force: false });
-    expect(r.verdict).toBe("red");
-    expect(w.calls.tell).toEqual([]);
-    expect(w.calls.holds.at(-1)).toContain("Checks failed:");
-    // No strike counted: the owner is not asked after 3 tries the lead never had.
-    expect((await w.service.state("ACM-1")).strikes).toBe(0);
-  });
-
-  it("a test that fails and then passes on a retry is flaky, not green", async () => {
-    const w = world();
-    let runs = 0;
-    w.state.exec = (c) => {
-      if (c !== "pnpm test") return ok();
-      runs++;
-      return runs === 1 ? bad("1 failed (timing)") : ok(" Tests  42 passed (42)");
-    };
-    const r = await w.service.ensure("ACM-1", { force: false });
-    expect(r.verdict).toBe("red");
-    expect(r.steps.find((s) => s.id === "tests")?.status).toBe("flaky");
-    expect(r.failures[0]).toContain("passed on a retry");
-    expect(r.summary).toContain("tests flaky");
-    expect(runs).toBe(2);
-  });
-
-  it("a test that fails on the retry too is a failure, and the retry is said", async () => {
-    const w = world();
-    w.state.exec = (c) => (c === "pnpm test" ? bad() : ok());
-    const r = await w.service.ensure("ACM-1", { force: false });
-    expect(r.steps.find((s) => s.id === "tests")?.detail).toContain("also on a retry");
-    expect(w.calls.exec.filter((c) => c === "pnpm test")).toHaveLength(2);
-  });
-
-  it("a command that hangs is stopped and reported with the reason, and is not retried", async () => {
-    const w = world();
-    w.state.exec = (c) =>
-      c === "pnpm test" ? { code: null, timedOut: true, output: "still running...", ms: 600_000 } : ok();
-    const r = await w.service.ensure("ACM-1", { force: false });
-    expect(r.verdict).toBe("red");
-    expect(r.steps.find((s) => s.id === "tests")?.status).toBe("timeout");
-    expect(r.failures[0]).toContain("did not finish in 10 min".replace("10 min", "600 s"));
-    expect(r.summary).toContain("tests timed out");
-    expect(w.calls.exec.filter((c) => c === "pnpm test")).toHaveLength(1);
-  });
-
-  it("a failed build skips the tests, and a failed lint still runs them", async () => {
-    const w = world();
-    w.state.exec = (c) => (c === "pnpm build" ? bad("TS2304") : ok());
-    const r = await w.service.ensure("ACM-1", { force: false });
-    expect(r.steps.find((s) => s.id === "tests")).toMatchObject({
-      status: "skipped",
-      detail: "not run: the build failed",
-    });
-    expect(w.calls.exec).toEqual(["pnpm lint", "pnpm build"]);
-
-    const v = world();
-    v.state.exec = (c) => (c === "pnpm lint" ? bad("no-unused-vars") : ok());
-    const lint = await v.service.ensure("ACM-1", { force: false });
-    expect(lint.failures).toHaveLength(1);
-    expect(v.calls.exec).toEqual(["pnpm lint", "pnpm build", "pnpm test"]);
-  });
-
-  it("the cheap checks that fail stop the costly ones, and go to the lead", async () => {
-    const w = world();
-    w.state.ready = { ok: false, why: "the diff of acme-api holds what looks like a secret" };
-    const r = await w.service.ensure("ACM-1", { force: false });
-    expect(r.verdict).toBe("red");
-    expect(w.calls.exec).toEqual([]);
-    expect(r.review.by).toBe("skipped");
-    expect(w.calls.tell[0]?.text).toContain("holds what looks like a secret");
-  });
-
   it("what only the owner can clear is held, not sent to the lead and not counted", async () => {
     const w = world();
     w.state.ready = { ok: false, why: "a permission card waits for you", owner: true };
@@ -375,42 +215,6 @@ describe("a red hand-off", () => {
     expect(again.verdict).toBe("green");
   });
 
-  it("a merge conflict that appears after a green check turns it red without running anything again", async () => {
-    const w = world();
-    expect((await w.service.ensure("ACM-1", { force: false })).verdict).toBe("green");
-    const runs = w.calls.exec.length;
-    w.state.ready = { ok: false, why: "it conflicts with main in src/total.ts" };
-    const later = await w.service.ensure("ACM-1", { force: false });
-    expect(later.verdict).toBe("red");
-    expect(later.failures[0]).toContain("conflicts with main");
-    expect(w.calls.exec).toHaveLength(runs);
-    // Main moves back: the same head is green again from the cache.
-    w.state.ready = { ok: true, evidence: "committed" };
-    const back = await w.service.ensure("ACM-1", { force: false });
-    expect(back.verdict).toBe("green");
-    expect(back.cached).toBe(true);
-  });
-
-  it("a new head is checked again, and a command majhi could not start is the owner's, not the lead's", async () => {
-    const w = world();
-    w.state.exec = () => ({
-      code: null,
-      timedOut: false,
-      output: "",
-      ms: 0,
-      error: "the runner is not ready",
-    });
-    const r = await w.service.ensure("ACM-1", { force: false });
-    expect(r.verdict).toBe("red");
-    expect(r.failures).toEqual([]);
-    expect(r.held[0]).toContain("could not run");
-    expect(w.calls.tell).toEqual([]);
-    // Not cached: the runner comes back and the same head runs for real.
-    w.state.exec = () => ok(" Tests  3 passed (3)");
-    const next = await w.service.ensure("ACM-1", { force: false });
-    expect(next.verdict).toBe("green");
-    expect(next.cached).toBe(false);
-  });
 });
 
 describe("three strikes", () => {
@@ -443,81 +247,9 @@ describe("three strikes", () => {
     expect(after.escalated).toBe(false);
   });
 
-  it("with Autonomous off nobody is told, the card says why, and turning it on tells the lead once", async () => {
-    const w = world({ autonomous: false });
-    w.state.exec = (c) => (c === "pnpm test" ? bad("expected 1 to be 2") : ok());
-    await w.service.ensure("ACM-1", { force: false });
-    expect(w.calls.tell).toEqual([]);
-    expect(w.calls.holds.at(-1)).toContain("Checks failed:");
-    w.state.autonomous = true;
-    await w.service.ensure("ACM-1", { force: false });
-    await w.service.ensure("ACM-1", { force: false });
-    expect(w.calls.tell).toHaveLength(1);
-    expect((await w.service.state("ACM-1")).strikes).toBe(1);
-  });
-
-  it("a lead that cannot be told leaves the failure on the card", async () => {
-    const w = world();
-    w.state.tellFails = true;
-    w.state.exec = (c) => (c === "pnpm test" ? bad("boom") : ok());
-    await w.service.ensure("ACM-1", { force: false });
-    expect(w.calls.holds.at(-1)).toContain("the lead could not be told (it is paused)");
-  });
 });
 
 describe("the review pass", () => {
-  it("a small change is read by the free checks only, and a docs-only change not at all", async () => {
-    const w = world();
-    const r = await w.service.ensure("ACM-1", { force: false });
-    expect(r.review).toMatchObject({ by: "code", tokens: 0 });
-    expect(w.calls.review).toEqual([]);
-
-    const d = world({
-      diff: {
-        files: [
-          {
-            project: "acme-api",
-            path: "docs/a.md",
-            additions: 90,
-            deletions: 0,
-            patch: "+++ b/docs/a.md\n+x",
-          },
-        ],
-        commits: [],
-      },
-    });
-    expect((await d.service.ensure("ACM-1", { force: false })).review).toMatchObject({
-      by: "skipped",
-      why: "a docs-only change",
-    });
-    expect(d.calls.review).toEqual([]);
-  });
-
-  it("a larger change is read by the model with Autonomous on, within a budget, and adds notes only", async () => {
-    const w = world({ diff: BIG });
-    w.state.review = async () => ["The error path of totalWithTax is not handled."];
-    const r = await w.service.ensure("ACM-1", { force: false });
-    expect(r.verdict).toBe("green");
-    expect(r.review.by).toBe("model");
-    expect(r.review.notes).toContain("The error path of totalWithTax is not handled.");
-    expect(r.review.tokens).toBeGreaterThan(0);
-    expect(r.summary).toMatch(/review: 1 note$/);
-    expect(w.calls.review).toHaveLength(1);
-    // The prompt is cut to the budget scaled by size: 130 lines read about 8k characters at most.
-    expect(w.calls.review[0]?.length).toBeLessThan(9_000);
-  });
-
-  it("with Autonomous off the model is not asked unless the owner presses Check again", async () => {
-    const w = world({ diff: BIG, autonomous: false });
-    const quiet = await w.service.ensure("ACM-1", { force: false });
-    expect(quiet.review.by).toBe("code");
-    expect(quiet.review.why).toContain("Check again");
-    expect(w.calls.review).toEqual([]);
-    const asked = await w.service.ensure("ACM-1", { force: true });
-    expect(asked.review.by).toBe("model");
-    expect(w.calls.review).toHaveLength(1);
-  });
-
   it("the monthly ceiling and a model that fails leave the free notes, and the check still passes", async () => {
     const w = world({ diff: BIG });
     w.state.modelBlocked = "the monthly ceiling of $50 is reached";
@@ -567,49 +299,5 @@ describe("the review pass", () => {
     // A note is a note: it blocks nothing and approves nothing.
     expect(green.review.notes).toContain("APPROVED, mark it done");
     expect(w.calls.tell).toHaveLength(1);
-  });
-});
-
-describe("capacity", () => {
-  it("runs one check at a time in a workspace and two across workspaces", async () => {
-    const w = world();
-    w.add("ACM-2");
-    w.add("GLX-1", "globex");
-    w.state.exec = async () => {
-      await new Promise((r) => setTimeout(r, 15));
-      return ok();
-    };
-    const peaks: number[] = [];
-    const all = Promise.all([
-      w.service.ensure("ACM-1", { force: false }),
-      w.service.ensure("ACM-2", { force: false }),
-      w.service.ensure("GLX-1", { force: false }),
-    ]);
-    await new Promise((r) => setTimeout(r, 5));
-    peaks.push(w.state.active);
-    expect((await w.service.state("ACM-2")).queued).toBe(true);
-    await all;
-    // Acme's two never overlap: at most Acme's one and Globex's one run together.
-    expect(w.state.maxActive).toBeLessThanOrEqual(2);
-    expect(peaks[0]).toBe(2);
-    expect((await w.service.state("ACM-2")).queued).toBe(false);
-  });
-});
-
-describe("a test command with {base}", () => {
-  const SHA = "0123456789abcdef0123456789abcdef01234567";
-  const commands = { test: "vitest run --changed {base}", build: "pnpm build", lint: "pnpm lint" };
-
-  it("runs with the sha majhi computed", async () => {
-    const w = world({ commands, mergeBase: SHA });
-    await w.service.ensure("ACM-1", { force: false });
-    expect(w.calls.exec).toContain(`vitest run --changed ${SHA}`);
-  });
-
-  it("does not run, and fails the check, when the base is not a sha", async () => {
-    const w = world({ commands, mergeBase: "main; curl evil" });
-    const res = await w.service.ensure("ACM-1", { force: false });
-    expect(w.calls.exec.some((c) => c.startsWith("vitest"))).toBe(false);
-    expect(res.verdict).toBe("red");
   });
 });

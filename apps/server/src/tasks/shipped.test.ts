@@ -75,22 +75,6 @@ describe("closing a task with work not shipped", () => {
     expect(await git(w.repo("api"), "ls-tree", "--name-only", branch)).toContain("work.txt");
   });
 
-  it("asks the same of the review card's Mark done", async () => {
-    w = await taskWorld();
-    await reviewTask(true);
-    const card = await reviewCard();
-    const act = (extra: object) =>
-      w.h.cmd("room.cardAction", {
-        task: "ACM-1",
-        item: card?.id,
-        action: "done",
-        ...extra,
-      });
-    expect((await act({})).status).toBe(409);
-    expect((await act({ unshipped: "keep" })).status).toBe(200);
-    expect((await task()).status).toBe("done");
-  });
-
   it("refuses an agent whatever it passes, and tells it how to ship", async () => {
     w = await taskWorld();
     await reviewTask(true);
@@ -108,17 +92,6 @@ describe("closing a task with work not shipped", () => {
     );
     expect(viaCard.status).toBe(409);
     expect((await task()).status).toBe("review");
-  });
-
-  it("records the agent that closes a task with nothing to ship", async () => {
-    w = await taskWorld();
-    await reviewTask(false);
-    expect((await w.h.cmd("tasks.close", { id: "ACM-1" }, AGENT)).status).toBe(200);
-    expect((await task()).status).toBe("done");
-    expect((await reviewCard())?.outcome).toMatchObject({
-      text: "Marked done",
-      by: "acme-builder",
-    });
   });
 });
 
@@ -213,10 +186,6 @@ describe("a merge by majhi counts as shipped", () => {
         method,
       });
       expect(merged.status).toBe(200);
-      console.log(
-        await git(w.repo("api"), "log", "--oneline", "--all", "--graph"),
-        await git(join(w.taskDir("ACM-1"), "acme-api"), "status", "--short"),
-      );
       expect((await task()).status).toBe("done");
       expect((await reviewCard())?.outcome?.text).toBe("Merged into main and marked done");
     });

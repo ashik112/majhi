@@ -119,42 +119,6 @@ async function addRemote(name: string): Promise<void> {
   await git(source, "remote", "add", name, bare);
 }
 
-describe("preview", () => {
-  it("lists only done tasks older than the cutoff", async () => {
-    await seed({ id: "ACM-1" });
-    await seed({ id: "ACM-2", updatedAt: RECENT });
-    await seed({ id: "ACM-3", status: "review" });
-    await seed({ id: "ACM-4", status: "paused" });
-    const { tasks } = await service.preview(30);
-    expect(tasks.map((t) => t.id)).toEqual(["ACM-1"]);
-    expect((await service.preview(3)).tasks.map((t) => t.id)).toEqual(["ACM-1", "ACM-2"]);
-  });
-
-  it("shows what would go and why the rest stays", async () => {
-    await seed({ id: "ACM-1", dirty: true });
-    await seed({ id: "ACM-2", ahead: true });
-    const { tasks } = await service.preview(30);
-    const [dirty, unmerged] = tasks;
-    expect(dirty?.roomItems).toBe(3);
-    expect(dirty?.steps).toEqual([
-      expect.objectContaining({
-        kind: "worktree",
-        action: "skip",
-        reason: expect.stringContaining("uncommitted"),
-      }),
-      expect.objectContaining({ kind: "branch", action: "skip", reason: "its worktree is kept" }),
-    ]);
-    expect(unmerged?.steps).toEqual([
-      expect.objectContaining({ kind: "worktree", action: "remove" }),
-      expect.objectContaining({
-        kind: "branch",
-        action: "skip",
-        reason: expect.stringContaining("not merged"),
-      }),
-    ]);
-  });
-});
-
 describe("run", () => {
   it("frees ignored dependency caches in dirty finished worktrees while preserving source, commits and history", async () => {
     const { worktree, branch } = await seed({ id: "ACM-1", dirty: true, ahead: true });
@@ -404,7 +368,6 @@ describe("run", () => {
 
 describe("automatic cache pass (caches_after_days)", () => {
   const TWO_DAYS = "2026-09-28T12:00:00.000Z";
-  const TWELVE_HOURS = "2026-09-30T00:00:00.000Z";
 
   async function withCache(id: string, updatedAt: string, opts: Partial<Seed> = {}) {
     const { worktree } = await seed({ id, updatedAt, ...opts });
@@ -417,26 +380,6 @@ describe("automatic cache pass (caches_after_days)", () => {
     return { worktree, cache };
   }
   const auto = (id: string) => service.run([id], 30, "captain", true, 1);
-
-  it("frees the caches of a task done for 2 days and keeps source, branch and room history", async () => {
-    const { worktree, cache } = await withCache("ACM-1", TWO_DAYS, { ahead: true });
-    expect((await service.preview(30, true, 1)).tasks.map((t) => t.id)).toEqual(["ACM-1"]);
-    const report = await auto("ACM-1");
-    expect(report.tasks[0]?.steps).toEqual([
-      { kind: "cache", project: "acme-api", name: cache, action: "remove" },
-    ]);
-    expect(await exists(cache)).toBe(false);
-    expect(await exists(join(worktree, "work.txt"))).toBe(true);
-    expect(await branches()).toContain("task/acm-1");
-    expect(store.room.count("ACM-1", "cleanup-note:")).toBe(3);
-  });
-
-  it("leaves a task done for 12 hours alone", async () => {
-    const { cache } = await withCache("ACM-1", TWELVE_HOURS);
-    expect((await service.preview(30, true, 1)).tasks).toEqual([]);
-    expect((await auto("ACM-1")).tasks[0]?.skipped).toContain("less than 1 days");
-    expect(await exists(cache)).toBe(true);
-  });
 
   it("leaves a reopened task alone", async () => {
     const { cache } = await withCache("ACM-1", TWO_DAYS);

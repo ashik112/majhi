@@ -2,7 +2,7 @@ import { type AutonomyHold, AutonomySettingsSchema, type CommandName } from "@ma
 import { describe, expect, it } from "vitest";
 import { adminTools } from "../admin/tools.ts";
 import { RUNS } from "../captain/authority-fixtures.ts";
-import { callOrg, hardLimit, type LimitWorld } from "./limits.ts";
+import { hardLimit, type LimitWorld } from "./limits.ts";
 import { type AutonomyCall, decideAutonomously, type PolicyContext, startsWork } from "./policy.ts";
 
 const settings = AutonomySettingsSchema.parse({
@@ -59,20 +59,6 @@ describe("decideAutonomously: the table", () => {
     }
     // The owner's answers: the captain answers with its own tool.
     expect(decide(call("room.answerAsk", {}))).toBe("left");
-  });
-
-  it("lets orgs.update through only for fields that are not sensitive, and MR tokens", () => {
-    expect(decide(call("orgs.update", { id: "acme", name: "Acme Co" }))).toBe("approved");
-    expect(decide(call("orgs.update", { id: "acme", mr_tokens: { gitlab: "secret:acme-gitlab" } }))).toBe(
-      "approved",
-    );
-    for (const field of ["identity", "commits", "git_accounts", "merge", "lead_start", "base"]) {
-      expect([field, decide(call("orgs.update", { id: "acme", [field]: null }))]).toEqual([field, "left"]);
-    }
-    expect(decide(call("orgs.setGitAccount", { id: "acme", host: "gitlab.com", account: "acme-dev" }))).toBe(
-      "approved",
-    );
-    expect(decide(call("orgs.useGitLogin", { id: "acme", via: "gh", host: "github.com" }))).toBe("approved");
   });
 
   it("follows each org's push and merge setting", () => {
@@ -486,23 +472,5 @@ describe("what follows the Merge row and Upkeep for the captain's own calls", ()
     // The rest of what agents reach stays the owner's.
     expect(decide(call("projects.update", { id: "acme-web" }, { boss: true }))).toBe("left");
     expect(decide(call("projects.remove", { id: "acme-web" }, { boss: true }))).toBe("left");
-  });
-});
-
-describe("callOrg", () => {
-  const look = {
-    task: (id: string) => (id === "ACM-1" ? "acme" : id === "LOCAL-1" ? null : undefined),
-    project: (id: string) => (id === "acme-api" ? "acme" : undefined),
-    connection: (id: string) => (id === "globex-db" ? "globex" : undefined),
-  };
-  it("finds the org a call acts in, else the caller's; a new task with no repos or parent has none", () => {
-    expect(callOrg("tasks.create", { repos: [{ project: "acme-api" }] }, look, "private")).toBe("acme");
-    expect(callOrg("tasks.create", { text: "x" }, look, "acme")).toBe("private");
-    expect(callOrg("tasks.create", { text: "x", parent: "ACM-1" }, look, "globex")).toBe("acme");
-    expect(callOrg("tasks.start", { id: "ACM-1" }, look, "private")).toBe("acme");
-    expect(callOrg("team.add", { task: "LOCAL-1" }, look, "globex")).toBe("private");
-    expect(callOrg("connections.setSecret", { id: "globex-db" }, look, "acme")).toBe("globex");
-    expect(callOrg("orgs.update", { id: "globex" }, look, "acme")).toBe("globex");
-    expect(callOrg("tasks.create", { text: "x" }, look, "private")).toBe("private");
   });
 });

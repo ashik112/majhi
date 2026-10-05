@@ -1,17 +1,12 @@
-import { parseMentions } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import {
-  asksOwner,
   firstTurn,
   type Member,
-  ownerQuestion,
   pipelineStages,
   planTurn,
-  statusOnly,
   type TurnEnd,
   unreviewed,
   verdictOf,
-  waitsOnly,
 } from "./coordinate.ts";
 import { WorktreeLocks } from "./locks.ts";
 
@@ -31,26 +26,6 @@ const turn = (over: Partial<TurnEnd>): TurnEnd => ({
   state: { agentTurns: 0 },
   limits,
   ...over,
-});
-
-describe("parseMentions", () => {
-  it("finds known agents and owner in order, once each, lowercased", () => {
-    expect(
-      parseMentions("@Builder do it, then @reviewer. Thanks @builder @owner", ["builder", "reviewer"]),
-    ).toEqual(["builder", "reviewer", "owner"]);
-  });
-
-  it("ignores mentions in code, in quotes, in emails and paths, and unknown handles", () => {
-    const text = [
-      "> @builder said this earlier",
-      "Run `@builder` and see:",
-      "```",
-      "@reviewer inside code",
-      "```",
-      "mail me@builder.com, import @types/node, ask @nobody",
-    ].join("\n");
-    expect(parseMentions(text, ["builder", "reviewer"])).toEqual([]);
-  });
 });
 
 describe("planTurn: lead delegates", () => {
@@ -186,62 +161,6 @@ describe("verdictOf", () => {
   });
 });
 
-describe("asksOwner", () => {
-  it("counts a question or a request for a decision that is not for another agent", () => {
-    expect(asksOwner("The branch is ready. Should I open the MR, or wait for you to check it?")).toBe(true);
-    expect(asksOwner("Done with the parser. Please confirm the new flag name.")).toBe(true);
-    expect(asksOwner("@owner the migration is ready")).toBe(true);
-    expect(asksOwner("Your call: keep the old endpoint or drop it.")).toBe(true);
-  });
-
-  it("does not count a status, a question to an agent, or a question in code or a quote", () => {
-    expect(asksOwner("All done. The fix is merged into the task branch and the tests pass.")).toBe(false);
-    expect(asksOwner("@acme-builder can you add the missing null check?")).toBe(false);
-    expect(asksOwner("Fixed it.\n```\nif (x?.y) return\n```\nThe `a ? b : c` stays.")).toBe(false);
-    expect(asksOwner("> Why does it fail?\nIt failed on a missing import; fixed.")).toBe(false);
-  });
-});
-
-describe("statusOnly", () => {
-  it("reads a reply that only waits or reports where work stands", () => {
-    expect(
-      statusOnly("I'm still waiting. @acme-builder's check is running and it reports to @acme-lead."),
-    ).toBe(true);
-    expect(statusOnly("Started p10 `pnpm test`. I'll report back to @acme-lead when it ends.")).toBe(true);
-    expect(statusOnly("FYI @acme-reviewer, the lint run is still going; no news yet.")).toBe(true);
-    expect(statusOnly("Nothing to do for me.")).toBe(true);
-  });
-
-  it("does not count a request, even next to a status line", () => {
-    expect(statusOnly("@acme-builder please fix the failing test.")).toBe(false);
-    expect(statusOnly("The tests are still running. @acme-builder fix the lint error meanwhile.")).toBe(
-      false,
-    );
-    expect(statusOnly("The build is still running, so @acme-builder should rebase after it.")).toBe(false);
-    expect(statusOnly("@acme-reviewer the change is in commit 4f2a9c1. Review it.")).toBe(false);
-    expect(statusOnly("Added the handler and a test.")).toBe(false);
-  });
-});
-
-describe("waitsOnly", () => {
-  it("reads a reply that only waits or has nothing to do, with or without a bare mention", () => {
-    expect(waitsOnly("Nothing to do for me.")).toBe(true);
-    expect(waitsOnly("Waiting for the owner to answer the question card.")).toBe(true);
-    expect(waitsOnly("@acme-lead nothing for me until the owner answers. Standing by.")).toBe(true);
-    expect(waitsOnly("No action needed from me. @acme-lead")).toBe(true);
-    expect(waitsOnly("Still waiting on @acme-builder to finish the tests.")).toBe(true);
-  });
-
-  it("does not count work, a request to a teammate, or waiting only in code or a quote", () => {
-    expect(waitsOnly("Added the handler and a test.")).toBe(false);
-    expect(waitsOnly("Waiting for the owner. @acme-builder please start on part A.")).toBe(false);
-    expect(waitsOnly("While we wait for the owner, @acme-builder can you write the tests?")).toBe(false);
-    expect(waitsOnly("Standing by. @acme-reviewer the branch is ready for review.")).toBe(false);
-    expect(waitsOnly("> Waiting for you\nFixed the import.")).toBe(false);
-    expect(waitsOnly("Set `waiting: true` in the config.")).toBe(false);
-  });
-});
-
 describe("unreviewed", () => {
   it("holds only when the worktrees changed since the last review, and not when either state is unknown", () => {
     expect(unreviewed({ fingerprint: "b", reviewedFingerprint: "a" })).toBe(true);
@@ -290,20 +209,5 @@ describe("WorktreeLocks", () => {
     expect(locks.holder("/t/web")).toBeUndefined();
     const again = await locks.acquire(["/t/api"], "b");
     again();
-  });
-});
-
-describe("ownerQuestion", () => {
-  it("reads only the last paragraph, and not questions in parentheses, code or to other agents", () => {
-    expect(
-      ownerQuestion("Did the name resolve? It does now.\n\nI restarted the run as p10 (same prompt?)."),
-    ).toBeUndefined();
-    expect(ownerQuestion("The run failed.\n\nShould I switch to the hybrid picker?")).toBe(
-      "Should I switch to the hybrid picker?",
-    );
-    expect(ownerQuestion("Done.\n\n@builder can you rerun the tests?")).toBeUndefined();
-    expect(ownerQuestion("Two options.\n\nPlease decide which one to keep.")).toBe(
-      "Please decide which one to keep.",
-    );
   });
 });

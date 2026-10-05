@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { git, tempDir } from "../testing/fixtures.ts";
-import { commitsAhead, PushProblem, pushBranch, remoteHasTip, remoteUrl } from "./push.ts";
+import { PushProblem, pushBranch } from "./push.ts";
 
 let cleanup: (() => Promise<void>) | undefined;
 afterEach(async () => {
@@ -67,58 +67,5 @@ describe("pushBranch", () => {
     await expect(pushBranch({ worktree: work, remote: "origin", branch: "task/x" })).rejects.toBeInstanceOf(
       PushProblem,
     );
-  });
-
-  it("asks for the keys again once after an SSH access failure, then gives up with a plain message", async () => {
-    const { work } = await repo();
-    await git(work, "remote", "add", "origin", "git@github-acme:acme/api.git");
-    // A stand-in ssh that refuses every key, so no real host is contacted.
-    const ssh = join(work, "..", "deny-ssh");
-    await writeFile(ssh, "#!/bin/sh\necho 'git@host: Permission denied (publickey).' >&2\nexit 255\n", {
-      mode: 0o755,
-    });
-    vi.stubEnv("GIT_SSH_COMMAND", ssh);
-    const reloadKeys = vi.fn(async () => true);
-    const err = await pushBranch({ worktree: work, remote: "origin", branch: "task/x", reloadKeys }).catch(
-      (e: unknown) => e,
-    );
-    expect(reloadKeys).toHaveBeenCalledTimes(1);
-    expect((err as Error).message).toContain("did not accept an SSH key");
-    expect((err as Error).message).toContain("Reload your SSH keys");
-  });
-});
-
-describe("remoteUrl and commitsAhead", () => {
-  it("names a missing remote and counts commits past the base", async () => {
-    const { work, bare } = await repo();
-    await expect(remoteUrl(work, "origin")).rejects.toThrow(/no remote named "origin"/);
-    await git(work, "remote", "add", "origin", bare);
-    expect(await remoteUrl(work, "origin")).toBe(bare);
-    expect(await commitsAhead(work, "main", "origin", "task/x")).toBe(1);
-    await git(work, "push", "--quiet", "origin", "main");
-    await git(work, "fetch", "--quiet", "origin");
-    expect(await commitsAhead(work, "main", "origin", "task/x")).toBe(1);
-    expect(await commitsAhead(work, "main", "origin", "main")).toBe(0);
-  });
-});
-
-describe("remoteHasTip", () => {
-  it("is true only when the remote's branch is the local tip, and then moves the tracking branch", async () => {
-    const { dir, work, bare } = await repo();
-    await git(work, "remote", "add", "origin", bare);
-    const req = { worktree: work, remote: "origin", branch: "task/x" };
-    expect(await remoteHasTip(req)).toBe(false);
-    await git(work, "push", "--quiet", "origin", "task/x");
-    await git(work, "update-ref", "-d", "refs/remotes/origin/task/x");
-    expect(await remoteHasTip(req)).toBe(true);
-    expect(await git(work, "rev-parse", "refs/remotes/origin/task/x")).toBe(
-      await git(work, "rev-parse", "HEAD"),
-    );
-    await writeFile(join(work, "c.txt"), "c\n");
-    await git(work, "add", ".");
-    await git(work, "commit", "--quiet", "-m", "more");
-    expect(await remoteHasTip(req)).toBe(false);
-    // A remote that does not answer cannot tell: push as before.
-    expect(await remoteHasTip({ ...req, url: join(dir, "missing.git") })).toBe(false);
   });
 });

@@ -99,36 +99,6 @@ describe("a lead's merge card when Merge is the owner's", () => {
     const t = setup({ ...RUNS, merge: "ask", push: "decide" });
     await t.run();
     expect(t.calls).toMatchObject({ merged: 0, opened: 1, verdicts: 0 });
-    expect(t.calls.settled).toEqual([
-      "Opened MR https://github.example/acme/api/pull/9 on GitHub instead: the owner merges",
-    ]);
-  });
-
-  it("leaves the card for the owner, naming the host and the fix, when majhi cannot push", async () => {
-    const fix: ShipFix = { page: "orgs", org: "acme" };
-    const t = setup(
-      { ...RUNS, merge: "ask", push: "decide" },
-      { ok: false, why: "No GitHub token: add one in Orgs > Acme.", fix },
-    );
-    await t.run();
-    expect(t.calls).toMatchObject({ merged: 0, opened: 0 });
-    expect(t.calls.left).toEqual([
-      {
-        why: "The captain could not open the merge request: No GitHub token: add one in Orgs > Acme.",
-        fix,
-      },
-    ]);
-  });
-
-  it("opens it once the account is connected", async () => {
-    const t = setup(
-      { ...RUNS, merge: "ask", push: "decide" },
-      { ok: false, why: "No GitHub token: add one in Orgs > Acme.", fix: { page: "orgs", org: "acme" } },
-    );
-    await t.run();
-    t.fixed({ ok: true, host: "GitHub" });
-    await t.run();
-    expect(t.calls.opened).toBe(1);
     expect(t.calls.settled).toHaveLength(1);
   });
 

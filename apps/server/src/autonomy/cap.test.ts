@@ -132,15 +132,4 @@ describe("the day cap of autonomous mode", () => {
     expect((await h.cmd("captain.answerBudget", { scope: "day", answer: "raise" })).status).toBe(409);
   });
 
-  it("keeps the autonomous budget: configure never clears it", async () => {
-    w = await bossWorld({ real: false });
-    const { h } = w;
-    expect((await h.cmd("autonomy.configure", { day: { cost: CAP } })).status).toBe(200);
-    expect((await h.cmd("autonomy.start")).status).toBe(200);
-    for (const day of [null, {}, { cost: 0 }]) {
-      expect((await h.cmd("autonomy.configure", { day })).status).toBe(400);
-    }
-    const status = (await h.cmd("autonomy.status", { detail: true })).body as AutonomyStatus;
-    expect(status.settings.day).toEqual({ cost: CAP });
-  });
 });

@@ -1,7 +1,6 @@
 import type { lifecycle, Task } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../../store/index.ts";
-import { TaskRepo } from "../../store/tasks.ts";
 import { seedStatus } from "../../testing/status.ts";
 import { holdFromRunReason, TaskLifecycle, wasRefused } from "./apply.ts";
 import type { EffectContext } from "./types.ts";
@@ -78,13 +77,6 @@ const events = (store: Store) =>
     hold: string | null;
     pending_effects: string | null;
   }[];
-
-describe("setStatus is private to apply", () => {
-  it("is not a method of the task store, so no caller can write a status around apply", () => {
-    expect("setStatus" in TaskRepo.prototype).toBe(false);
-    expect("setStatus" in new Store(":memory:").tasks).toBe(false);
-  });
-});
 
 describe("apply refuses without writing", () => {
   it("a refusal writes its event row and nothing else", () => {

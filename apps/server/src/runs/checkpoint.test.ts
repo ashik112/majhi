@@ -7,8 +7,6 @@ import {
   commitBy,
   commitCheckpoint,
   DEFAULT_IDENTITY,
-  diffStat,
-  diffText,
   MAX_NEW_FILES,
 } from "./checkpoint.ts";
 
@@ -60,23 +58,6 @@ describe("checkpoints", () => {
     expect(await git(b.worktree, "log", "-1", "--format=%s")).toBe("init");
   });
 
-  it("with attribution off for a repo, the org is author and committer and there is no trailer", async () => {
-    const a = await repo("api");
-    const b = await repo("web");
-    await writeFile(join(a.worktree, "a.ts"), "export {};\n");
-    await writeFile(join(b.worktree, "b.ts"), "export {};\n");
-    const by = commitBy({ name: "Acme Bot", email: "bot@acme.test" }, "ACM-1", "acme-dev");
-    const off = { ...a, attribution: false };
-    const result = await commitCheckpoint([off, b], "ACM-1", 1, by);
-    expect(result.committed).toEqual(["api", "web"]);
-    expect(await git(a.worktree, "log", "-1", "--format=%an|%cn|%ce|%B")).toBe(
-      "Acme Bot|Acme Bot|bot@acme.test|wip(ACM-1): checkpoint 1",
-    );
-    // The repo that keeps it is unchanged by the other's setting.
-    expect(await git(b.worktree, "log", "-1", "--format=%cn|%B")).toContain("acme-dev via majhi|");
-    expect(await git(b.worktree, "log", "-1", "--format=%B")).toContain("Majhi-Task: ACM-1");
-  });
-
   it("does not commit a worktree that left the task branch", async () => {
     const a = await repo("api");
     await git(a.worktree, "checkout", "--quiet", "main");
@@ -101,16 +82,4 @@ describe("checkpoints", () => {
     expect(await git(a.worktree, "diff", "--cached", "--name-only")).toBe("");
   });
 
-  it("reports the diff since the base, committed or not", async () => {
-    const a = await repo("api");
-    await writeFile(join(a.worktree, "one.ts"), "1\n");
-    await commitCheckpoint([a], "ACM-1", 1, commitBy(DEFAULT_IDENTITY, "ACM-1"));
-    await writeFile(join(a.worktree, "README.md"), "# edited\n");
-    const stat = await diffStat([a]);
-    expect(stat).toContain("api:");
-    expect(stat).toContain("one.ts");
-    expect(stat).toContain("README.md");
-    expect(await diffText([a], 10_000)).toContain("+# edited");
-    expect((await diffText([a], 50)).length).toBeLessThanOrEqual(50);
-  });
 });

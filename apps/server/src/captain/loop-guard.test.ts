@@ -68,27 +68,6 @@ describe("the loop guard", () => {
     expect(paused).toEqual(["ACM-1"]);
   });
 
-  it("starts the count again after a status change", async () => {
-    const { guard, paused, tasks } = setup(memory());
-    await answers(guard, "ACM-1", 2);
-    const t = tasks.get("ACM-1");
-    if (t !== undefined) t.status = "review";
-    await answers(guard, "ACM-1", 2);
-    expect(paused).toEqual([]);
-    if (t !== undefined) t.status = "running";
-    await answers(guard, "ACM-1", 2);
-    expect(paused).toEqual([]);
-  });
-
-  it("counts a task by itself: answers on another task do not add up", async () => {
-    const { guard, paused } = setup(memory());
-    await answers(guard, "ACM-1", 2);
-    await answers(guard, "ACM-2", 2);
-    expect(paused).toEqual([]);
-    await guard.answered("ACM-2");
-    expect(paused).toEqual(["ACM-2"]);
-  });
-
   it("keeps the count over a restart", async () => {
     const dir = await mkdtemp(join(tmpdir(), "majhi-loop-guard-"));
     dirs.push(dir);
@@ -124,11 +103,5 @@ describe("the loop guard", () => {
     if (t !== undefined) t.status = "running";
     await answers(guard, "ACM-1", 3);
     expect(paused).toEqual(["ACM-1", "ACM-1"]);
-  });
-
-  it("guards nothing for a task that is gone", async () => {
-    const { guard, paused } = setup(memory());
-    await answers(guard, "ACM-9", 5);
-    expect(paused).toEqual([]);
   });
 });

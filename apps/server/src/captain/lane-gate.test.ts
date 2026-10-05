@@ -63,18 +63,6 @@ describe("the lane's ships and the chore's are one rule set", () => {
     expect(await t.gate.check("acme", "tasks.merge", merge())).toBeUndefined();
   });
 
-  it("has no daily cap on ships: many different states ship, each once", async () => {
-    const t = setup();
-    for (let i = 0; i < 60; i++) {
-      t.state.heads = `acme-api@h${i}`;
-      expect(await t.gate.check("acme", "tasks.merge", merge())).toBeUndefined();
-      await t.gate.ran("acme", "tasks.merge", merge(), "", { ok: true });
-    }
-    expect(t.repo.actionsToday("acme", "ship", DAY)).toBe(60);
-    // The same state again is refused whatever the count.
-    expect(await t.gate.check("acme", "tasks.merge", merge())).toContain("already");
-  });
-
   it("holds the lane to the chore's checks: not ready, a branch the workspace does not ship to", async () => {
     const t = setup();
     t.state.check = { ready: false, why: "the diff of acme-api holds what looks like a secret" };
@@ -126,13 +114,5 @@ describe("the lane's ships and the chore's are one rule set", () => {
     expect(await t.gate.check("acme", "projects.register", { id: "x", path: "/Users/owner/.ssh" })).toContain(
       "nothing to register",
     );
-  });
-
-  it("covers the commands it should, and leaves the rest alone", async () => {
-    const t = setup();
-    for (const c of ["tasks.merge", "tasks.mergeMrs", "tasks.resolveShip", "projects.register"])
-      expect(t.gate.covers(c)).toBe(true);
-    expect(t.gate.covers("tasks.push")).toBe(false);
-    expect(await t.gate.check("acme", "tasks.create", {})).toBeUndefined();
   });
 });

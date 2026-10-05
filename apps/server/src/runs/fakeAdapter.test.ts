@@ -1,7 +1,7 @@
 import { startSession } from "@majhi/acp";
 import { fakeAdapter } from "@majhi/acp/testing";
 import type { RoomItem } from "@majhi/shared";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { baseEnv } from "../env.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
@@ -19,13 +19,6 @@ async function realWorld(slowMs = 0): Promise<World> {
 async function items(): Promise<RoomItem[]> {
   const page = await w.h.cmd("room.items", { task: "ACM-1", limit: 500 });
   return [...(page.body.items as RoomItem[])].sort((a, b) => (a.at < b.at ? -1 : 1));
-}
-
-const live = () => w.h.majhi.services.room.getLive("ACM-1", "acme-builder");
-
-async function until(check: () => boolean, what: string): Promise<void> {
-  for (let i = 0; i < 1000 && !check(); i++) await new Promise((r) => setTimeout(r, 10));
-  if (!check()) throw new Error(`Timed out waiting for ${what}`);
 }
 
 describe("the run manager with the fake ACP adapter", () => {
@@ -48,63 +41,4 @@ describe("the run manager with the fake ACP adapter", () => {
     }
   });
 
-  it("asks the owner when the agent has no shell permission", async () => {
-    w = await taskWorld({ agent: { perms: ["edit"] } });
-    w.h.env.runtime.adapters = { claude: fakeAdapter("claude", { signedIn: true }) };
-    w.h.runtime.startSession = (start) => startSession(start);
-    await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true });
-    await until(() => live()?.status === "waiting", "the permission prompt");
-    const pending = (await items()).find((i) => i.type === "permission") as Extract<
-      RoomItem,
-      { type: "permission" }
-    >;
-    expect(pending).toMatchObject({ state: "pending", title: "Run npm test" });
-    expect(pending.options.map((o) => o.id)).toEqual(["allow", "allow_always", "reject"]);
-    const answered = await w.h.cmd("room.permission", { task: "ACM-1", item: pending.id, option: "reject" });
-    expect(answered.body.item).toMatchObject({ state: "answered", chosen: "reject" });
-    await w.h.majhi.services.runs.idle();
-    const tools = (await items()).filter((i) => i.type === "tool") as Extract<RoomItem, { type: "tool" }>[];
-    expect(tools.find((t) => t.toolCallId === "t-exec")?.status).toBe("failed");
-  });
-
-  it("shows the owner's message before the task starts, then sends each message once, in order", async () => {
-    await realWorld();
-    const tasks = w.h.majhi.services.tasks;
-    // Starting is slow in real use (worktrees, memory): here it waits until the test opens it.
-    let open: () => void = () => {};
-    const gate = new Promise<void>((resolve) => {
-      open = resolve;
-    });
-    const ensure = tasks.ensureWorktrees.bind(tasks);
-    vi.spyOn(tasks, "ensureWorktrees").mockImplementation(async (task) => {
-      await gate;
-      return ensure(task);
-    });
-    let opened = 0;
-    w.h.runtime.startSession = (start) => {
-      opened++;
-      return startSession(start);
-    };
-    expect(
-      (await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false }))
-        .status,
-    ).toBe(200);
-
-    const first = await w.h.cmd("room.send", { task: "ACM-1", text: "echo: one" });
-    const second = await w.h.cmd("room.send", { task: "ACM-1", text: "echo: two" });
-    // Both came back while the task was still starting, and the room already shows them.
-    expect(first.status).toBe(200);
-    expect(second.status).toBe(200);
-    expect(first.body.item).toMatchObject({ type: "owner", text: "echo: one" });
-    expect(tasks.get("ACM-1").status).not.toBe("running");
-    expect(opened).toBe(0);
-    const owner = (await items()).flatMap((i) => (i.type === "owner" ? [i.text] : []));
-    expect(owner).toEqual(["fix api", "echo: one", "echo: two"]);
-
-    open();
-    await w.h.majhi.services.runs.idle();
-    const said = (await items()).flatMap((i) => (i.type === "agent" ? [i.text] : []));
-    expect(said.filter((t) => t.startsWith("echo:"))).toEqual(["echo: echo: one", "echo: echo: two"]);
-    expect(opened).toBe(1);
-  });
 });

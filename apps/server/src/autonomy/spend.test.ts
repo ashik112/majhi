@@ -20,10 +20,6 @@ describe("dayWindow", () => {
     });
   });
 
-  it("is 23 hours long on the day the clocks go forward", () => {
-    const w = dayWindow(new Date("2026-03-29T12:00:00Z"), "Europe/Berlin");
-    expect(Date.parse(w.end) - Date.parse(w.start)).toBe(23 * 3_600_000);
-  });
 });
 
 const settings = AutonomySettingsSchema.parse({

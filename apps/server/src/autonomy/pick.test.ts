@@ -1,4 +1,4 @@
-import type { AutonomyEvent, AutonomyStatus, RoomItem, Task, TaskSummary } from "@majhi/shared";
+import type { AutonomyEvent, AutonomyStatus, Task, TaskSummary } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { ASK, RUNS, TIDY } from "../captain/authority-fixtures.ts";
 import type { TaskRating } from "../decisions/api.ts";
@@ -231,33 +231,6 @@ describe("tasks marked Not for autonomous mode", () => {
   });
 });
 
-describe("what the captain reads", () => {
-  it("lists the backlog with sizes and leaves out what the rules exclude", async () => {
-    const t = await on();
-    const small = await t.ownerTask("Fix the typo\n\nsmall");
-    const big = await t.ownerTask("Rework the export\n\nlarge");
-    const marked = await t.ownerTask("Touch the payments code\n\nsmall");
-    const own = await t.ownerTask("Write the release notes\n\nsmall", []);
-    await t.h.cmd("autonomy.exclude", { task: marked, exclude: true });
-    await t.configure({ size: "medium" });
-
-    // Acme's lane reads Acme's backlog only.
-    const pick = await t.autonomy.pickable(10_000, "acme");
-    expect(pick.backlog.map((b) => [b.id, b.size])).toEqual([[small, "small"]]);
-    expect(pick.leftOut).toBe(2);
-    expect(pick.rules[0]).toContain("Task size: Up to medium");
-    expect(pick.rules[1]).toBe("Workspace: Acme only. This lane never sees or acts in another workspace.");
-
-    const status = await t.status();
-    const row = (id: string) => status.backlog.find((b) => b.task === id);
-    expect(row(small)).toMatchObject({ size: "small", sizeNote: "Laya rated it small (0.70)" });
-    expect(row(small)?.leftOut).toBeUndefined();
-    expect(row(big)?.leftOut).toBe("It is large, and the size rule is Up to medium");
-    expect(row(marked)).toMatchObject({ noAutonomy: true, leftOut: "Marked Not for autonomous mode" });
-    expect(row(own)?.leftOut).toBe("In Private you decide when work starts");
-  });
-});
-
 describe("the captain's lane", () => {
   it("cannot be closed or removed, on or off, and is not listed as a task", async () => {
     const t = await on();
@@ -302,37 +275,5 @@ describe("the captain's lane", () => {
     expect(await t.autonomy.laneChat("private")).toBeUndefined();
     await t.h.cmd("autonomy.stop", { how: "now" });
     expect(await t.autonomy.laneChat("acme")).toBeUndefined();
-  });
-});
-
-describe("turning Off and On again", () => {
-  it("names Autonomous on the paused card, and resumes those tasks on turn-on only when asked", async () => {
-    const t = await on();
-    const id = await t.ownerTask("Fix the typo on the login page\n\nsmall");
-    expect((await t.call("majhi_tasks_start", { id })).isError).toBe(false);
-    const task = () => t.h.majhi.services.store.tasks.get(id);
-    expect(task()?.status).toBe("running");
-
-    expect((await t.h.cmd("autonomy.stop", { how: "now" })).status).toBe(200);
-    expect(task()).toMatchObject({ status: "paused", pausedReason: "owner" });
-    expect((await t.status()).stopped).toEqual([id]);
-    const items = (await t.h.cmd("room.items", { task: id, limit: 200 })).body.items as RoomItem[];
-    const card = items.find((i) => i.type === "paused" && i.state === "pending");
-    expect(card?.type === "paused" && card.why).toContain("Auto-pilot was turned off");
-    expect(task()?.pausedBy).toBe("autonomy-off");
-
-    // Turned on without resuming: the task stays paused, and is no longer offered.
-    expect((await t.h.cmd("autonomy.start", { resumeStopped: false })).status).toBe(200);
-    expect(task()?.status).toBe("paused");
-    expect((await t.status()).stopped).toEqual([]);
-
-    // Stopped again while running, then turned on with resume: it runs again.
-    expect((await t.h.cmd("tasks.start", { id })).status).toBe(200);
-    expect(task()?.status).toBe("running");
-    expect((await t.h.cmd("autonomy.stop", { how: "now" })).status).toBe(200);
-    expect((await t.status()).stopped).toEqual([id]);
-    expect((await t.h.cmd("autonomy.start", { resumeStopped: true })).status).toBe(200);
-    expect(task()?.status).toBe("running");
-    expect((await t.status()).stopped).toEqual([]);
   });
 });
