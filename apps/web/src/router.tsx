@@ -34,6 +34,8 @@ export interface AppSearch {
   peek?: string;
   /** How the board shows tasks. The board is the default. */
   view?: "tree";
+  /** On Skills: the skill whose detail opens. */
+  skill?: string;
   /** On Memory: the project shown (or `global`), and its tab. */
   project?: string;
   tab?: string;
@@ -69,6 +71,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const peek = text(search.peek);
   const item = text(search.item);
   const view = search.view === "tree" ? "tree" : undefined;
+  const skill = text(search.skill);
   const project = text(search.project);
   const tab = text(search.tab);
   const thread = text(search.thread);
@@ -93,6 +96,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
     ...(task ? { task } : {}),
     ...(peek ? { peek } : {}),
     ...(item ? { item } : {}),
+    ...(skill ? { skill } : {}),
     ...(project ? { project } : {}),
     ...(tab ? { tab } : {}),
     ...(thread ? { thread } : {}),
