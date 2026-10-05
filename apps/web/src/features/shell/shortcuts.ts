@@ -96,7 +96,14 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
     press: { key: "a" },
     scope: "task",
   },
-  { id: "stop", keys: ["Esc"], what: "Stop the agent in an open task", group: "Task" },
+  {
+    id: "stop",
+    keys: ["Esc"],
+    what: "Stop the agent in an open task",
+    group: "Task",
+    press: { key: "Escape" },
+    scope: "task",
+  },
   {
     id: "send",
     keys: ["Mod", "Enter"],
@@ -151,6 +158,32 @@ export const GO_KEYS: Record<string, GoTarget> = Object.fromEntries(
 export function chordOf(path: GoTarget): string | undefined {
   const def = SHORTCUT_TABLE.find((s) => s.go === path);
   return def === undefined ? undefined : def.keys.join(" ");
+}
+
+/** The window event the shortcut layer sends on Esc in a task; the open room stops its turn on it. */
+export const STOP_TURN_EVENT = "majhi:stop-turn";
+
+/** How long an Esc waits for a room that is still opening or starting up. */
+const STOP_WAIT_MS = 4000;
+let stopAskedAt = 0;
+
+/** Esc was pressed in a task. Sends it to the open room; with no room yet, it waits for one. */
+export function askToStop(): void {
+  const event = new CustomEvent<{ taken: boolean }>(STOP_TURN_EVENT, { detail: { taken: false } });
+  window.dispatchEvent(event);
+  if (!event.detail.taken) stopAskedAt = Date.now();
+}
+
+/** The room's side of `askToStop`: true once, when an Esc is waiting for a turn that has now started. */
+export function takeWaitingStop(): boolean {
+  const waiting = Date.now() - stopAskedAt < STOP_WAIT_MS;
+  stopAskedAt = 0;
+  return waiting;
+}
+
+/** The room has the Esc: it stops the turn now, or holds it until a turn starts. */
+export function holdStop(): void {
+  stopAskedAt = Date.now();
 }
 
 /** How long after `g` the second key still counts. */

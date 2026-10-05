@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { buildColumns } from "@/features/board/model";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useTasks } from "@/lib/task-queries";
-import { CHORD_MS, resolveShortcut } from "./shortcuts";
+import { CHORD_MS, askToStop, resolveShortcut } from "./shortcuts";
 
 /**
  * Keys belong to the captain drawer while it is open and focus is in it, or nowhere yet (it is
@@ -22,6 +22,15 @@ function typingTarget(target: EventTarget | null): boolean {
 
 function insideOverlay(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && target.closest('dialog, [role="menu"], [role="listbox"]') !== null;
+}
+
+/** Something open that should take Esc itself: a dialog, menu, popover or the captain drawer. */
+function escTaken(): boolean {
+  return (
+    document.querySelector(
+      'dialog[open], [role="dialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper], [data-captain-drawer]',
+    ) !== null
+  );
 }
 
 /** The ids of the open tasks in board order: the order `]` and `[` walk. */
@@ -110,6 +119,12 @@ export function useShortcuts(onNewTask: () => void): {
           void navigate({ to: "/t/$taskId", params: { taskId: to }, search: orgSearch(filter) });
           break;
         }
+        case "stop":
+          // Focus on the body, a button or the room itself: Esc still stops the turn. The address is
+          // read directly: right after a room opens, the route params have not rendered yet.
+          if ((current === undefined && !window.location.pathname.startsWith("/t/")) || escTaken()) break;
+          askToStop();
+          break;
         case "approve":
           if (current === undefined) break;
           event.preventDefault();

@@ -1647,6 +1647,11 @@ export const commands = {
        * for a task without one. An org agent can only name its own org's.
        */
       connections: z.array(IdSchema).max(50).optional(),
+      /**
+       * A client-made id for this one create. The same id sent again within a few minutes returns the
+       * first task instead of making another, so a double press or a retry cannot duplicate it.
+       */
+      requestId: z.string().min(8).max(80).optional(),
     }),
     output: TaskSchema,
   },
