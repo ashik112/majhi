@@ -101,7 +101,13 @@ export function NewConnection({
                 value={name}
                 maxLength={80}
                 placeholder={
-                  type === "kubectl" ? "Acme production" : type === "ssh" ? "Acme server" : "Acme service"
+                  type === "kubectl"
+                    ? "Acme production"
+                    : type === "ssh"
+                      ? "Acme server"
+                      : type === "host"
+                        ? "Acme local stack"
+                        : "Acme service"
                 }
                 onChange={(e) => setName(e.target.value)}
               />
@@ -144,7 +150,11 @@ export function NewConnection({
                 ? "Add Global connection"
                 : "Add connection"}
           </Button>
-          <span className="text-sm text-fg-faint">Next, add the credentials and test the connection.</span>
+          <span className="text-sm text-fg-faint">
+            {type === "host"
+              ? "majhi opens each port when you add it. Agents get it only if every port answers."
+              : "Next, add the credentials and test the connection."}
+          </span>
         </div>
       </form>
     </Frame>

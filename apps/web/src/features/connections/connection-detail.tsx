@@ -4,6 +4,7 @@ import {
   connectionType,
   FAILURE_LINE,
   GLOBAL_CONNECTIONS,
+  hostPorts,
   type OrgView,
   type ServiceProduct,
   scopesAt,
@@ -99,7 +100,7 @@ export function ConnectionPanel({
       }
     >
       <StatusBlock view={view} orgs={orgs} checking={checking} now={now} onCheck={onCheck} />
-      <UsageSection view={view} />
+      <UsageSection view={view} orgs={orgs} />
       <SharingSection view={view} orgs={orgs} />
       {service?.products !== undefined && (
         <ProductsSection key={`products-${view.id}`} view={view} products={service.products} />
@@ -387,7 +388,7 @@ function TokenReplace({ view }: { view: ConnectionView }) {
 }
 
 /** What agents can do with it, in plain words, and which agents have it. */
-function UsageSection({ view }: { view: ConnectionView }) {
+function UsageSection({ view, orgs }: { view: ConnectionView; orgs: readonly OrgView[] }) {
   const re = useReconnect(view);
   const entry = serviceById(view.fields.service?.value ?? "") ?? serviceByUrl(view.fields.url?.value ?? "");
   const lines =
@@ -397,6 +398,7 @@ function UsageSection({ view }: { view: ConnectionView }) {
         ? []
         : scopesAt(entry, "readwrite").map((s) => ({ access: s.access, sentence: s.sentence }));
   const sign = re.mine;
+  if (view.type === "host") return <HostUsage view={view} orgs={orgs} />;
   return (
     <DetailSection title="What agents can do" className="border-t border-line">
       <div className="flex min-w-0 flex-col gap-3">
@@ -420,6 +422,29 @@ function UsageSection({ view }: { view: ConnectionView }) {
               {sign.renews ? ", renewed by majhi" : ""}.
             </>
           )}
+        </p>
+      </div>
+    </DetailSection>
+  );
+}
+
+/** A service on this computer: what the workspace's agents reach, in plain words. Only the owner changes it. */
+function HostUsage({ view, orgs }: { view: ConnectionView; orgs: readonly OrgView[] }) {
+  const ports = hostPorts(view.fields.ports?.value);
+  const workspace = orgs.find((o) => o.id === view.org)?.name ?? view.org;
+  return (
+    <DetailSection title="What agents can do" className="border-t border-line">
+      <div className="flex min-w-0 flex-col gap-3">
+        <p className="text-base text-fg-muted text-pretty">
+          Let {workspace}'s agents reach {view.name} on this computer: ports {ports.join(", ")}. Nothing else
+          on this computer is reachable.
+        </p>
+        <p className="text-sm text-fg-faint text-pretty">
+          Agents use the name{" "}
+          <span className="font-mono text-fg-muted">
+            {view.id}.host:{ports[0] ?? ""}
+          </span>
+          . Only you can add or change this. It is on only while the check passes.
         </p>
       </div>
     </DetailSection>

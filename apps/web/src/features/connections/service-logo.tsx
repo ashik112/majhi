@@ -1,5 +1,5 @@
 import { type ConnectionView, serviceByUrl } from "@majhi/shared";
-import { Globe, KeyRound, Mail, Network, Plug, Server } from "lucide-react";
+import { Globe, KeyRound, Laptop, Mail, Network, Plug, Server } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 const LOGOS: Readonly<Record<string, string>> = {
@@ -65,7 +65,9 @@ export function ServiceLogo({
             ? Mail
             : type === "browser"
               ? Globe
-              : Plug;
+              : type === "host"
+                ? Laptop
+                : Plug;
   return (
     <span
       aria-hidden="true"
