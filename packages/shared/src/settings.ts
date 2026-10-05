@@ -144,6 +144,8 @@ export const RoomPatchSchema = z.strictObject(roomFields).partial();
 const cleanupFields = {
   /** Tasks done for longer than this many days are offered for cleanup. */
   after_days: z.number().int().min(1).max(3650),
+  /** Ignored dependency and tool caches of tasks done for longer than this many days are freed by the captain. */
+  caches_after_days: z.number().int().min(1).max(3650),
   /** Dependency folders and build output of tasks done for longer than this many hours are deleted. */
   free_after_hours: z.number().int().min(1).max(8760),
   /** The whole worktree of a clean, merged or pushed task done this many days is removed. 0 is off. */
@@ -151,6 +153,7 @@ const cleanupFields = {
 };
 export const CleanupSettingsSchema = z.strictObject({
   after_days: cleanupFields.after_days.default(30),
+  caches_after_days: cleanupFields.caches_after_days.default(1),
   free_after_hours: cleanupFields.free_after_hours.default(24),
   worktree_after_days: cleanupFields.worktree_after_days.default(7),
 });

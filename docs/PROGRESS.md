@@ -1,5 +1,15 @@
 # Progress
 
+## Disk hygiene: caches after 1 day, old images removed after each update (built, not merged)
+
+Branch `feat/disk-hygiene`.
+
+- **Caches after 1 day.** New setting `cleanup.caches_after_days` (default 1). The captain's cleanup chore now runs a caches-only pass (`CleanupService.run(..., cachesOnly, cachesAfterDays)`, port `freeCaches`) for tasks done longer than that. It frees only ignored dependency and tool caches. Source, branches and room history stay. It skips a task that was reopened, was closed more recently, or has uncommitted changes in its worktree, and it re-checks each task when it runs. The 30-day full cleanup keeps `cleanup.after_days`. The owner's explicit "Preview dependency caches" button still works at once, as before. Settings row: "Free dependency caches of finished tasks after N days", above Free space in the Cleanup panel.
+- **Old images after each update.** After the new majhi is healthy the helper (`apps/host/src/diskHygiene.ts`) removes `majhi-server:previous` (and Laya's), preview images `majhi-preview-<task>` of tasks that are done or gone with their buildx builders and builder state volumes, and dangling images that carry a majhi label (`majhi.container=image` or the new `majhi.owned=build` that compose puts on the images it builds). Rollback only uses the previous tag inside the same update run, so none is kept afterwards. The server writes `open-tasks.json` just before the update; without it every preview is kept. What was removed, with sizes, is a line in the update notice.
+- **Removed on purpose.** The old clean-up ran an unfiltered `docker image prune -f` (it also removed other projects' dangling images) and trimmed the build cache with `builder prune`. Both are gone: the owner forbids touching the build cache and other projects' images.
+- **Verified.** Typecheck 0. Tests: `tasks/cleanup.test.ts` (2 days freed, 12 hours kept, reopened kept, uncommitted kept, source and history stay), `host/diskHygiene.test.ts` (filters select only majhi items, other project's image and volume never selected, open task's preview kept, no build cache prune in any docker args), `host/update.test.ts`.
+- **Left.** Volume sizes are not shown (docker does not list them cheaply). The first update after this one still leaves old unlabelled dangling images; they go the next time they are labelled builds.
+
 ## Nothing merges unless the checks are green for the exact commit (built, not merged)
 
 Branch `feat/merge-needs-green`.

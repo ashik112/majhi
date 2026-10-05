@@ -26,7 +26,7 @@ describe("mergeSettings", () => {
       },
       memory: { auto_threshold: 0.4, review_all: false, chat_idle_minutes: 30 },
       editor: { app: "vscode" },
-      cleanup: { after_days: 30, free_after_hours: 24, worktree_after_days: 7 },
+      cleanup: { after_days: 30, caches_after_days: 1, free_after_hours: 24, worktree_after_days: 7 },
       notifications: { mac: true, browser: true, sound: false, muted: [] },
       containers: {
         images: [],

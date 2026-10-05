@@ -5,6 +5,8 @@ services:
     build:
       context: .
       target: runtime
+      labels:
+        majhi.owned: build
       # Bakes a passwd entry for the owner's uid into the image (see Dockerfile).
       args:
         HOST_UID: ${HOST_UID:-1000}
@@ -59,6 +61,8 @@ services:
     build:
       context: .
       target: runner
+      labels:
+        majhi.owned: build
       args:
         HOST_UID: ${HOST_UID:-1000}
         HOST_GID: ${HOST_GID:-1000}
@@ -75,6 +79,8 @@ services:
     build:
       context: .
       dockerfile: docker/laya.Dockerfile
+      labels:
+        majhi.owned: build
       # `make up` sets both when it finds an NVIDIA GPU. The override then gives the container the GPU.
       args:
         TORCH_INDEX: ${MAJHI_LAYA_TORCH_INDEX:-https://download.pytorch.org/whl/cpu}

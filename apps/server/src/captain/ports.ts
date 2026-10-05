@@ -218,6 +218,11 @@ export interface CaptainPorts {
   /** Done tasks with something to remove, and the worktrees of them that hold uncommitted changes (never removed). */
   cleanable(org: string): Promise<{ id: string; title: string; steps: string[]; dirty: string[] }[]>;
   clean(org: string, task: string): Promise<{ removed: string[]; kept: string[] }>;
+  /**
+   * With `dry`, lists what would be freed. Otherwise frees the ignored dependency caches of tasks done for longer than `cleanup.caches_after_days`
+   * (source, branches and room history stay). Never a reopened task or a worktree with uncommitted changes.
+   */
+  freeCaches?(org: string, dry: boolean): Promise<{ id: string; removed: string[] }[]>;
   /** What deleting rebuildable folders of done tasks would free in the workspace (code only). */
   foldersFreeable?(org: string): Promise<{ bytes: number; tasks: number }>;
   /** Deletes them. Never tracked files, never a task with uncommitted changes or one reopened. */

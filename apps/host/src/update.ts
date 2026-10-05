@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { UPDATE_STATUS_FILE, type UpdateStatus } from "@majhi/shared";
+import { removeOwnLeftovers } from "./diskHygiene.ts";
 import { errorMessage } from "./errors.ts";
 import type { KeyBackup } from "./keyBackup.ts";
 import type { Logger } from "./log.ts";
@@ -137,7 +138,12 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
       throw new Error(`${errorMessage(err)}${reason === undefined ? "" : `\n${reason}`}`);
     }
 
-    await cleanAfterUpdate(step, say);
+    await cleanAfterUpdate(
+      step,
+      say,
+      majhiHome,
+      images.map(([, keep]) => keep),
+    );
     await say("Installing the new host helper");
     const replaced = await installBundle(options, env);
     status.state = "done";
@@ -276,35 +282,18 @@ async function keepPrevious(step: Step, image: string, keep: string): Promise<st
 }
 
 /**
- * Build cache an update keeps, so the next build stays fast without the cache growing for ever. The
- * runner's layers alone (Chromium for Playwright and the browser servers, the agent CLIs, apt) are
- * about 6 GB; below that every update evicts them and rebuilds the runner from scratch.
- */
-export const KEEP_BUILD_CACHE = "16gb";
-
-/**
- * Every update builds new images; the ones they replace and the build cache would otherwise stay on
- * the Docker disk for good (tens of GB after a few days of updates). The running images and the
- * `previous` tags are in use, so pruning never touches them. Best effort: a failed clean-up never
+ * After a successful update and health check: removes majhi's own old images (see diskHygiene.ts).
+ * It never prunes the build cache or anything unlabelled. Best effort: a failed clean-up never
  * fails an update that already runs.
  */
-export async function cleanAfterUpdate(step: Step, say: (text: string) => Promise<void>): Promise<void> {
-  await say("Removing the images and build cache the update replaced");
-  await step("remove replaced images", ["image", "prune", "-f"], KEY_TIMEOUT_MS).catch(() => undefined);
-  // `--max-used-space` is Docker 28+; older Docker calls it `--keep-storage`.
-  await step(
-    "trim the build cache",
-    ["builder", "prune", "-f", "--max-used-space", KEEP_BUILD_CACHE],
-    BUILD_TIMEOUT_MS,
-  )
-    .catch(() =>
-      step(
-        "trim the build cache",
-        ["builder", "prune", "-f", "--keep-storage", KEEP_BUILD_CACHE],
-        BUILD_TIMEOUT_MS,
-      ),
-    )
-    .catch(() => undefined);
+export async function cleanAfterUpdate(
+  step: Step,
+  say: (text: string) => Promise<void>,
+  majhiHome: string,
+  tags: readonly string[],
+): Promise<void> {
+  await say("Removing the old majhi images");
+  await removeOwnLeftovers(step, majhiHome, say, tags).catch(() => undefined);
 }
 
 /** Puts the previous images and mounts back and starts majhi on them. */
