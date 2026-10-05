@@ -411,7 +411,7 @@ export class RunManager {
    * when it was sent before. A paused or cut run continues from where it stopped. Returns at
    * once: the run streams into the room.
    */
-  startTask(task: Task, agent: string, options: { ownBrief?: boolean } = {}): void {
+  startTask(task: Task, agent: string, options: { ownBrief?: boolean; wake?: boolean } = {}): void {
     const run = this.runFor(task.id, agent);
     this.queueBrief(task, agent, options);
     // Paused by a failed start: the brief is still queued, so it goes on with no "continue" prompt. Starting retries.
@@ -433,9 +433,20 @@ export class RunManager {
       );
     }
     run.held = false;
+    // The brief was sent long ago and nothing is queued (a task the owner was needed on, whose run
+    // is gone): without a prompt the task would say running while no agent works. `wake` is false
+    // when the caller queues the owner's message itself, so the agent gets that and no extra turn.
+    if (options.wake !== false && run.queue.length === 0 && !run.turning && !isBossChat(task))
+      run.queue.unshift({ kind: "resume" });
     this.live.refreshQueued(run);
     // Nothing queued: an empty loop would hand the task back for review before the owner's message lands.
     if (run.queue.length > 0) void this.drive(run);
+  }
+
+  /** The agent has something to do or is doing it: a turn, a queued prompt, a pause that resumes. */
+  hasWork(task: string, agent: string): boolean {
+    const run = this.runs.get(this.key(task, agent));
+    return run !== undefined && (run.turning || run.queue.length > 0);
   }
 
   /**
@@ -947,6 +958,11 @@ export class RunManager {
         this.resumeRun(run, "its turn stalled while the computer slept");
       }),
     );
+  }
+
+  /** Resolves when the owner messages sent to the task so far were handed to their agents. */
+  async idleDeliveries(task: string): Promise<void> {
+    await this.deliveries.get(task);
   }
 
   /** Resolves when no agent of the task (or of any task) is running a turn. For tests and shutdown. */
