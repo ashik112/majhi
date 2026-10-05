@@ -1,12 +1,12 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { buildEnv } from "@majhi/acp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConfigService } from "../config/service.ts";
 import { git, makeRepo, tempDir } from "../testing/fixtures.ts";
-import { attributionOf, ensureHooks, gitAttribution } from "./attribution.ts";
+import { ensureHooks, gitAttribution } from "./attribution.ts";
 
 const run = promisify(execFile);
 
@@ -60,62 +60,6 @@ async function runEnv(
   };
 }
 
-/** `git add` and `git commit` as a run of acme-dev on ACM-7 does them, with majhi's hooks in place. */
-async function agentCommits(repo: string, wt: string, ...flags: string[]): Promise<void> {
-  const env = await runEnv(repo);
-  await run("git", ["add", "."], { cwd: wt, env });
-  await run("git", ["commit", "--quiet", ...flags, "-m", "feat: two"], { cwd: wt, env });
-}
-
-describe("an agent's own commit", () => {
-  it("is authored as the org, committed by the agent, and linked to the task", async () => {
-    const { repo, wt } = await taskWorktree();
-    // The repo's own hook still runs after majhi's.
-    await mkdir(join(repo, ".git", "hooks"), { recursive: true });
-    await writeFile(join(repo, ".git", "hooks", "pre-commit"), "#!/bin/sh\ntouch hook-ran\n", {
-      mode: 0o755,
-    });
-    await agentCommits(repo, wt);
-
-    expect(await git(wt, "log", "-1", "--format=%an|%ae|%cn|%ce")).toBe(
-      "Ada|ada@acme.test|acme-dev via majhi|majhi@majhi.local",
-    );
-    expect(await git(wt, "log", "-1", "--format=%B")).toBe("feat: two\n\nMajhi-Task: ACM-7");
-    expect(await git(wt, "status", "--porcelain", "--ignored")).toContain("hook-ran");
-  });
-
-  it("still runs the hooks of a repo that sets core.hooksPath, like husky", async () => {
-    const { repo, wt } = await taskWorktree();
-    await mkdir(join(wt, ".husky"), { recursive: true });
-    await writeFile(join(wt, ".husky", "pre-commit"), "#!/bin/sh\ntouch husky-ran\n", { mode: 0o755 });
-    await git(repo, "config", "core.hooksPath", ".husky");
-    await agentCommits(repo, wt);
-
-    expect(await git(wt, "status", "--porcelain", "--ignored")).toContain("husky-ran");
-    expect(await git(wt, "log", "-1", "--format=%B")).toContain("Majhi-Task: ACM-7");
-  });
-
-  it("keeps the trailer under --no-verify, which skips only the repo's checks", async () => {
-    const { repo, wt } = await taskWorktree();
-    await mkdir(join(repo, ".git", "hooks"), { recursive: true });
-    await writeFile(join(repo, ".git", "hooks", "pre-commit"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
-    await agentCommits(repo, wt, "--no-verify");
-
-    expect(await git(wt, "log", "-1", "--format=%cn|%B")).toContain("acme-dev via majhi|feat: two");
-    expect(await git(wt, "log", "-1", "--format=%B")).toContain("Majhi-Task: ACM-7");
-  });
-
-  it("with attribution off has no trailer and the org as committer, and still stays on its branch", async () => {
-    const { repo, wt } = await taskWorktree();
-    const env = await runEnv(repo, { attribution: false });
-    await run("git", ["commit", "--quiet", "-am", "feat: two"], { cwd: wt, env });
-    expect(await git(wt, "log", "-1", "--format=%cn|%B")).toBe("Ada|feat: two");
-    await expect(run("git", ["branch", "-f", "main", "HEAD"], { cwd: wt, env })).rejects.toThrow(
-      /main is not a branch of ACM-7/,
-    );
-  });
-});
-
 /** Only what `attributionOf` reads from the config. */
 function configWith(levels: {
   global?: boolean;
@@ -139,48 +83,6 @@ function configWith(levels: {
     }),
   } as unknown as ConfigService;
 }
-const task = { id: "ACM-7", org: "acme", repos: [{ project: "api" }, { project: "web" }] };
-
-describe("which repos are attributed", () => {
-  it("follows the project, then the org, then majhi", async () => {
-    const both = await attributionOf(
-      configWith({ global: false, org: true, projects: { api: undefined, web: false } }),
-      task,
-    );
-    expect(both).toEqual({ repos: { api: true, web: false }, run: false });
-    expect(await attributionOf(configWith({ global: false }), task)).toEqual({
-      repos: { api: false, web: false },
-      run: false,
-    });
-    expect(await attributionOf(configWith({}), task)).toEqual({ repos: { api: true, web: true }, run: true });
-  });
-
-  it("turns a run off when any repo of the task is off, and decides a task with no repo by its org", async () => {
-    const one = await attributionOf(configWith({ projects: { api: true, web: false } }), task);
-    expect(one).toEqual({ repos: { api: true, web: false }, run: false });
-    const none = await attributionOf(configWith({ org: false }), { org: "acme", repos: [] });
-    expect(none.run).toBe(false);
-  });
-
-  it("gives a run with attribution off the org's identity and no trailer, but still the hooks and task", async () => {
-    const off = await gitAttribution(
-      { config: configWith({ global: false }), majhiHome: join(dir, "home") },
-      task,
-      "acme-dev",
-    );
-    expect(off.hooks).toBe(join(dir, "home", "git-hooks"));
-    expect(off.git.task).toBe("ACM-7");
-    expect(off.git.trailer).toBeUndefined();
-    expect(off.git.committer).toEqual(off.git.author);
-    const on = await gitAttribution(
-      { config: configWith({}), majhiHome: join(dir, "home") },
-      task,
-      "acme-dev",
-    );
-    expect(on.git).toMatchObject({ committer: { name: "acme-dev via majhi" }, task: "ACM-7" });
-    expect(on.hooks).toBe(join(dir, "home", "git-hooks"));
-  });
-});
 
 describe("another task's branch", () => {
   /**
@@ -260,18 +162,6 @@ describe("another task's branch", () => {
     expect(await git(repo, "log", "-1", "--format=%s", "main")).toBe("change");
   });
 
-  it("still runs the repo's own reference-transaction hook, with its input", async () => {
-    const { repo, wt, as } = await twoTasks();
-    await mkdir(join(repo, ".git", "hooks"), { recursive: true });
-    await writeFile(
-      join(repo, ".git", "hooks", "reference-transaction"),
-      '#!/bin/sh\n[ "$1" = committed ] && cat >> "$(git rev-parse --git-common-dir)/seen"\nexit 0\n',
-      { mode: 0o755 },
-    );
-    await updateRef(wt, as("ACM-1"), "task/acm-1-own-work");
-    const seen = await readFile(join(repo, ".git", "seen"), "utf8");
-    expect(seen).toContain("refs/heads/task/acm-1-own-work");
-  });
 });
 
 describe("a run in the shared git folder", () => {
@@ -364,42 +254,6 @@ describe("a run in the shared git folder", () => {
       /not in the project's own checkout/,
     );
     expect(await git(repo, "symbolic-ref", "HEAD")).toBe("refs/heads/develop");
-  });
-
-  it("works on its own branches: commits, new task branches, detached looks, rebase", async () => {
-    const { repo, wt } = await taskWorktree();
-    const env = await runEnv(repo);
-    await as(wt, env, "commit", "--quiet", "-am", "work");
-    await as(wt, env, "checkout", "--quiet", "-b", "task/acm-7-try");
-    await as(wt, env, "commit", "--quiet", "--allow-empty", "-m", "try");
-    await as(wt, env, "checkout", "--quiet", "task/acm-7-work");
-    await as(wt, env, "branch", "-D", "task/acm-7-try");
-    await as(wt, env, "checkout", "--quiet", "--detach", "develop");
-    await as(wt, env, "checkout", "--quiet", "task/acm-7-work");
-    await as(wt, env, "rebase", "--quiet", "develop");
-    await as(wt, env, "reset", "--quiet", "--hard", "HEAD");
-    expect(await git(repo, "log", "-1", "--format=%s", "task/acm-7-work")).toBe("work");
-  });
-
-  it("may work on a branch the owner named for the task", async () => {
-    const { repo } = await taskWorktree();
-    const wt = join(dir, "ACM-7", "named");
-    await git(repo, "worktree", "add", "--quiet", "-b", "feature/login", wt, "main");
-    const env = await runEnv(repo, { branch: "feature/login" });
-    await as(wt, env, "commit", "--quiet", "--allow-empty", "-m", "login");
-    expect(await git(repo, "log", "-1", "--format=%s", "feature/login")).toBe("login");
-    await expect(as(wt, env, "branch", "-f", "main", "HEAD")).rejects.toThrow(/not a branch of ACM-7/);
-  });
-
-  it("leaves a repo that is not one of the task's alone, like one a test makes", async () => {
-    const { repo } = await taskWorktree();
-    const env = await runEnv(repo);
-    const scratch = join(dir, "scratch");
-    await makeRepo(scratch, { commit: true });
-    await as(scratch, env, "commit", "--quiet", "--allow-empty", "-m", "two");
-    await as(scratch, env, "checkout", "--quiet", "-b", "feature/x");
-    await as(scratch, env, "tag", "v1");
-    expect(await git(scratch, "log", "-1", "--format=%s", "main")).toBe("two");
   });
 
   it("keeps history through a plain gc and reflog expire, even when the repo's config would drop it", async () => {

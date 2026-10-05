@@ -39,11 +39,6 @@ function connect(url: string, headers: Record<string, string> = {}) {
   return { ws, messages, opened };
 }
 
-async function _until(check: () => boolean): Promise<void> {
-  for (let i = 0; i < 400 && !check(); i++) await new Promise((r) => setTimeout(r, 5));
-  expect(check()).toBe(true);
-}
-
 describe("room socket", () => {
   it("refuses unknown tasks, other origins and other paths", async () => {
     w = await taskWorld();

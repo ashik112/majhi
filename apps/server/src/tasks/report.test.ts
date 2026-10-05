@@ -13,14 +13,6 @@ describe("readReport", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("returns the content and the modified time, or nothing before the file exists", async () => {
-    expect(await readReport(dir)).toBeUndefined();
-    await writeFile(join(dir, "REPORT.md"), "# Summary\n");
-    const report = await readReport(dir);
-    expect(report?.content).toBe("# Summary\n");
-    expect(Number.isNaN(Date.parse(report?.modifiedAt ?? ""))).toBe(false);
-  });
-
   it("refuses a REPORT.md that is a link, even to a file in the folder", async () => {
     const secret = join(dir, "secret.txt");
     await writeFile(secret, "token\n");

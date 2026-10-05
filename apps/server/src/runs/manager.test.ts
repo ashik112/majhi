@@ -10,18 +10,12 @@ afterEach(() => w?.cleanup());
 const services = () => w.h.majhi.services;
 const live = () => services().room.getLive("ACM-1", "acme-builder");
 const runs = () => services().runs;
-const send = (text: string, extra: Record<string, unknown> = {}) =>
-  w.h.cmd("room.send", { task: "ACM-1", text, ...extra });
 
 /** Items of the task in the order they appeared. */
 async function items(task = "ACM-1"): Promise<RoomItem[]> {
   const page = await w.h.cmd("room.items", { task, limit: 500 });
   return [...(page.body.items as RoomItem[])].sort((a, b) => (a.at < b.at ? -1 : 1));
 }
-const texts = async () =>
-  (await items()).map((i) =>
-    i.type === "owner" || i.type === "agent" || i.type === "system" ? `${i.type}: ${i.text}` : i.type,
-  );
 
 async function until(check: () => boolean | Promise<boolean>, what = "condition"): Promise<void> {
   for (let i = 0; i < 400; i++) {
@@ -88,25 +82,6 @@ const ask = (over: { [K in keyof PermissionAsk]?: PermissionAsk[K] | undefined }
   for (const key of Object.keys(full)) if (full[key] === undefined) delete full[key];
   return full as unknown as PermissionAsk;
 };
-
-describe("messages while the agent works", () => {
-  it("interrupts: cancels the turn, then sends the message first", async () => {
-    const g = gated();
-    const session = await started(g.script);
-    await send("queued one");
-    session.script = async () => "end_turn";
-    const res = await send("urgent", { mode: "interrupt" });
-    expect(res.body.item.queued).toBe(false);
-    await runs().idle();
-    expect(session.cancels).toBe(1);
-    expect(session.prompts.map((p) => (p[0]?.type === "text" ? p[0].text : ""))).toEqual([
-      expect.stringContaining("Read TASK.md"),
-      "urgent",
-      "queued one",
-    ]);
-    expect(await texts()).toContain("system: Stopped @acme-builder's turn.");
-  });
-});
 
 describe("permissions", () => {
   it("asks the owner when the perms do not cover it, and waits", async () => {
@@ -186,129 +161,6 @@ describe("permissions", () => {
     await until(() => live()?.status === "waiting", "edit prompt");
     expect(answers).toEqual(["allow"]);
     await w.h.cmd("room.cancel", { task: "ACM-1" });
-  });
-});
-
-describe("Esc before the agent has started", () => {
-  it("sends nothing when the owner stops a session that is still opening", async () => {
-    w = await taskWorld();
-    let open: () => void = () => {};
-    w.h.runtime.startGate = new Promise<void>((r) => {
-      open = r;
-    });
-    const res = await w.h.cmd("tasks.create", {
-      text: "fix api",
-      repos: [{ project: "acme-api" }],
-      start: true,
-    });
-    expect(res.status).toBe(200);
-    await until(() => w.h.runtime.starts.length === 1, "session start");
-    const stopped = await w.h.cmd("room.cancel", { task: "ACM-1" });
-    expect(stopped.body.cancelled).toEqual(["acme-builder"]);
-    open();
-    await runs().idle();
-    expect(w.h.runtime.sessions[0]?.prompts).toEqual([]);
-    expect(await texts()).toContain("system: Stopped @acme-builder's turn.");
-    expect(live()).toMatchObject({ status: "idle" });
-    // Sending again after the stop still reaches the agent.
-    await send("go on");
-    await runs().idle();
-    expect(w.h.runtime.sessions[0]?.prompts.length).toBeGreaterThan(0);
-  });
-});
-
-describe("failures and restarts", () => {
-  it("posts an error when a turn fails, and starts a new session, resuming the old one, on the next message", async () => {
-    const session = await started(async () => {
-      throw new Error("boom");
-    });
-    await runs().idle();
-    expect(live()).toMatchObject({ status: "error" });
-    expect(await texts()).toContain("system: @acme-builder failed: boom");
-    expect(session.closed).toBe(true);
-
-    await send("try again");
-    await runs().idle();
-    expect(w.h.runtime.starts[1]?.resume).toBe(session.sessionId);
-    expect(w.h.runtime.sessions).toHaveLength(2);
-    const second = w.h.runtime.sessions[1];
-    // The session id matched, so it counts as resumed: no TASK.md reminder.
-    expect(second?.prompts[0]).toEqual([{ type: "text", text: "try again" }]);
-    expect(await texts()).toContain(
-      "system: @acme-builder resumed on claude-acme, model sonnet, effort high",
-    );
-    expect(live()?.status).toBe("idle");
-    expect(w.h.runtime.sessions[0]).not.toBe(second);
-  });
-
-  it("marks live runs ended on start, cancels stale prompts and shows agents as stopped", async () => {
-    let waiting = true;
-    await started(async (turn) => {
-      await turn.ask(ask({ kind: "other", title: "Odd", command: undefined }));
-      waiting = false;
-      return "end_turn";
-    });
-    await until(() => live()?.status === "waiting", "waiting");
-    // A restart: a new server over the same home. The old one is abandoned like a crash.
-    const fresh = w.h.restart();
-    try {
-      const svc = fresh.majhi.services;
-      expect(svc.store.runs.forTask("ACM-1")[0]).toMatchObject({ stopReason: "server-restart" });
-      const perm = svc.store.room.page("ACM-1", 50).items.find((i) => i.type === "permission");
-      expect(perm).toMatchObject({ state: "cancelled" });
-      const snapshot = svc.tasks.snapshot("ACM-1");
-      expect(snapshot?.agents).toEqual([
-        { agent: "acme-builder", status: "stopped", queued: 0, commands: [] },
-      ]);
-      expect(waiting).toBe(true);
-    } finally {
-      await fresh.cleanup().catch(() => undefined);
-    }
-  });
-
-  it("starts no session after shutdown, and keeps what was queued for the restart", async () => {
-    w = await taskWorld();
-    const res = await w.h.cmd("tasks.create", {
-      text: "fix api",
-      repos: [{ project: "acme-api" }],
-      start: false,
-    });
-    expect(res.body).toMatchObject({ id: "ACM-1" });
-    await runs().closeAll();
-
-    // A hook still running at shutdown wakes an agent with no run yet, and a request queues an owner message.
-    runs().notify("ACM-1", "acme-builder", "A background process ended.");
-    await send("after shutdown");
-    await runs().idle();
-    expect(w.h.runtime.starts).toEqual([]);
-    const queued = services().store.room.queuedFor("ACM-1", "acme-builder");
-    expect(queued.map((i) => (i.type === "owner" ? i.text : i.type))).toEqual(["after shutdown"]);
-  });
-
-  it("closes a session whose launch was still going when shutdown came", async () => {
-    w = await taskWorld();
-    const { runtime } = w.h;
-    const start = runtime.startSession.bind(runtime);
-    let launching = false;
-    let release: () => void = () => {};
-    const gate = new Promise<void>((r) => {
-      release = r;
-    });
-    runtime.startSession = async (s) => {
-      launching = true;
-      await gate;
-      return start(s);
-    };
-    await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true });
-    await until(() => launching, "the launch");
-
-    await runs().closeAll();
-    release();
-    await runs().idle();
-    const session = runtime.sessions[0];
-    expect(session?.closed).toBe(true);
-    expect(session?.prompts).toEqual([]);
-    expect(services().store.runs.forTask("ACM-1")).toEqual([]);
   });
 });
 

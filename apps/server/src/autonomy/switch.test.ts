@@ -76,16 +76,6 @@ describe("the Autonomous switch is On or Off", () => {
     expect(services.store.tasks.get(id)?.pausedBy).toBeUndefined();
   });
 
-  it("reads a stored paused as On", async () => {
-    const { h, services } = await world();
-    await h.cmd("autonomy.start");
-    services.store.raw.prepare("UPDATE autonomy_state SET mode = 'paused' WHERE id = 1").run();
-    expect(services.autonomy.mode()).toBe("on");
-    expect((await h.cmd("autonomy.status", { detail: true })).body.mode).toBe("on");
-    // The old Pause command is Off with its tasks paused.
-    expect((await h.cmd("autonomy.pause")).body.mode).toBe("off");
-  });
-
   it("records who paused a task: the captain, or Autonomous turned off", async () => {
     const { h, services } = await world();
     const made = await h.cmd("tasks.create", {

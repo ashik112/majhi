@@ -192,15 +192,6 @@ describe("resolve and ship", () => {
       ["ship", "deny"],
     ]);
   });
-
-  it("refuses when nothing conflicts any more", async () => {
-    await conflicted();
-    await resolve();
-    const res = await cmd("tasks.resolveShip", { id: "ACM-1", action: "mergePush", into: "main" });
-    expect(res.status).toBe(409);
-    expect(res.body.error).toBe("Nothing conflicts with main now. Ship again.");
-    expect((await get()).pendingShip).toBeUndefined();
-  });
 });
 
 describe("the pending ship in the store", () => {

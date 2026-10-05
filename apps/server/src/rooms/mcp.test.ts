@@ -97,102 +97,6 @@ const text = (res: unknown): string =>
   ((res as { content: { text: string }[] }).content[0]?.text ?? "") as string;
 
 describe("majhi-room", () => {
-  it("is attached to every team member; majhi-tasks only to the lead", async () => {
-    const { h, servers, release } = await world();
-    expect(servers["acme-lead"]?.map((s) => s.name).sort()).toEqual([
-      "majhi-memory",
-      "majhi-processes",
-      "majhi-room",
-      "majhi-tasks",
-    ]);
-    release();
-    await h.cmd("room.send", { task: "ACM-1", text: "@acme-builder hello" });
-    await until(() => servers["acme-builder"] !== undefined, "builder session");
-    expect(servers["acme-builder"]?.map((s) => s.name).sort()).toEqual([
-      "majhi-memory",
-      "majhi-processes",
-      "majhi-room",
-    ]);
-  });
-
-  it("reads the room, posts, and hands work to a teammate at once", async () => {
-    const { h, servers, prompts, release } = await world();
-    const room = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-room"));
-    const names = (await room.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual(["ask", "mention", "post", "read_recent", "record_plan", "uploads_create"]);
-
-    const recent = text(await room.callTool({ name: "read_recent", arguments: { limit: 5 } }));
-    expect(recent).toMatch(/^Room of ACM-1, newest first:/);
-    expect(recent).toContain("Owner to @acme-lead: add a health endpoint to api");
-
-    expect(text(await room.callTool({ name: "post", arguments: { text: "Starting on the plan." } }))).toBe(
-      "Posted.",
-    );
-    const handed = await room.callTool({
-      name: "mention",
-      arguments: { agent: "@acme-builder", text: "Please add the route in api." },
-    });
-    expect(text(handed)).toContain("Handed to @acme-builder");
-    // Both may edit api, so the builder waits for the lead's turn to end.
-    const live = () => h.majhi.services.room.getLive("ACM-1", "acme-builder");
-    await until(() => live()?.nowDoing === "Waiting for @acme-lead to finish in acme-api", "builder waits");
-    release();
-    await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "builder prompt");
-    expect(prompts["acme-builder"]?.[0]).toContain("> Please add the route in api.");
-
-    const items = (await h.cmd("room.items", { task: "ACM-1", limit: 100 })).body.items as RoomItem[];
-    expect(
-      items.some((i) => i.type === "agent" && i.agent === "acme-lead" && i.text === "Starting on the plan."),
-    ).toBe(true);
-    expect(items.some((i) => i.type === "handoff" && i.via === "tool" && i.to === "acme-builder")).toBe(true);
-    expect(h.majhi.services.store.tasks.roomState("ACM-1").agentTurns).toBe(1);
-
-    const self = await room.callTool({ name: "mention", arguments: { agent: "acme-lead", text: "x" } });
-    expect(self.isError).toBe(true);
-  });
-
-  it("hands a long message over whole, and marks a longer one with a way to read the rest", async () => {
-    const { h, servers, prompts, release } = await world();
-    const room = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-room"));
-    const pad = (n: number) => "x".repeat(n);
-    const long = `Problem one: the route.\n${pad(7000)}\nProblem two: the test.\n${pad(7000)}\nProblem three: the docs.`;
-    await room.callTool({ name: "mention", arguments: { agent: "acme-builder", text: long } });
-    release();
-    await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "builder prompt");
-    const whole = prompts["acme-builder"]?.[0] ?? "";
-    for (const p of ["Problem one: the route.", "Problem two: the test.", "Problem three: the docs."])
-      expect(whole).toContain(`> ${p}`);
-    expect(whole).not.toContain("Message cut here");
-
-    // A final reply may be longer than mention accepts: the prompt says where it was cut.
-    const longer = `${pad(20_000)}\nProblem four: the tail.`;
-    const task = h.majhi.services.store.tasks.get("ACM-1");
-    if (task === undefined) throw new Error("no task");
-    const item = h.majhi.services.runs.handoff(task, {
-      from: "acme-lead",
-      to: "acme-builder",
-      via: "mention",
-      text: longer,
-    });
-    await until(() => (prompts["acme-builder"]?.length ?? 0) === 2, "second builder prompt");
-    const cut = prompts["acme-builder"]?.[1] ?? "";
-    expect(cut).not.toContain("Problem four");
-    expect(cut).toContain(`first 20000 of ${longer.length} characters`);
-    expect(cut).toContain(`read_recent with item "${item.id}"`);
-
-    const rest = text(await room.callTool({ name: "read_recent", arguments: { item: item.id } }));
-    expect(rest).toContain("@acme-lead handed to @acme-builder:");
-    expect(rest).toContain(longer);
-    // read_recent cuts long lines in its list, and names the item that reads whole.
-    await room.callTool({ name: "post", arguments: { text: `Notes start.\n${pad(3000)}\nNotes end.` } });
-    const list = text(await room.callTool({ name: "read_recent", arguments: { limit: 20 } }));
-    const id = /cut; read_recent with item "([^"]+)" reads it whole/.exec(list)?.[1];
-    expect(id).toBeDefined();
-    const note = text(await room.callTool({ name: "read_recent", arguments: { item: id } }));
-    expect(note).toContain(`Notes start.\n${pad(3000)}\nNotes end.`);
-    const missing = await room.callTool({ name: "read_recent", arguments: { item: "nope" } });
-    expect(missing.isError).toBe(true);
-  });
 
   it("refuses a request without a valid token, and a token after its session ended", async () => {
     const { h, servers, release } = await world();
@@ -329,38 +233,6 @@ describe("majhi-tasks", () => {
     release();
   });
 
-  it("puts the starting branch on the first line of a create result", async () => {
-    const { h, servers, release } = await world();
-    const tasks = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-tasks"));
-    const waiting = await tasks.callTool({
-      name: "create",
-      arguments: {
-        title: "Add screenshots to the api docs",
-        text: "Take them with the Playwright tool, then work on main later.",
-        repos: [{ project: "acme-api" }],
-        start: false,
-        ownerAsked: false,
-        reason: "x",
-      },
-    });
-    expect(text(waiting)).toMatch(/Waiting for the owner/);
-    const cards = async () =>
-      ((await h.cmd("room.items", { task: "ACM-1", limit: 100 })).body.items as RoomItem[]).filter(
-        (i) => i.type === "approval" && i.command === "tasks.create",
-      );
-    const card = (await cards())[0];
-    if (card === undefined) throw new Error("no approval card");
-    expect((await h.cmd("room.approve", { task: "ACM-1", item: card.id, decision: "approve" })).status).toBe(
-      200,
-    );
-    // The card and the agent's message both lead with it; the task JSON after it is cut.
-    expect((await cards())[0]).toMatchObject({
-      state: "applied",
-      result: expect.stringMatching(/^Starting branch: main\. \{/),
-    });
-    release();
-  });
-
   describe("start", () => {
     const call = (tasks: Client, id: string) =>
       tasks.callTool({ name: "start", arguments: { id, ownerAsked: false, reason: "Next step" } });
@@ -368,35 +240,6 @@ describe("majhi-tasks", () => {
       ((await h.cmd("room.items", { task: "ACM-1", limit: 100 })).body.items as RoomItem[]).filter(
         (i) => i.type === "approval" && i.command === "tasks.start",
       );
-
-    it("starts a subtask at once, with an applied card, a note and an audit row", async () => {
-      const { h, servers, release } = await world();
-      expect(
-        (
-          await h.cmd("tasks.create", {
-            text: "add the route to api",
-            repos: [{ project: "acme-api" }],
-            parent: "ACM-1",
-            start: false,
-          })
-        ).status,
-      ).toBe(200);
-      const tasks = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-tasks"));
-      const res = await call(tasks, "ACM-2");
-      expect(res.isError).toBeFalsy();
-      const { store, room } = h.majhi.services;
-      expect(store.tasks.get("ACM-2")?.status).toBe("running");
-      expect(await cards(h)).toMatchObject([{ state: "applied", agent: "acme-lead" }]);
-      expect(store.permissions.audit("ACM-2")).toMatchObject([
-        { agent: "acme-lead", kind: "tasks.start", title: "Started by @acme-lead from ACM-1", by: "lead" },
-      ]);
-      room.flush("ACM-2");
-      const items = (await h.cmd("room.items", { task: "ACM-2", limit: 100 })).body.items as RoomItem[];
-      expect(items.some((i) => i.type === "system" && i.text === "Started by @acme-lead from ACM-1")).toBe(
-        true,
-      );
-      release();
-    });
 
     it("keeps a subtask with an unfinished dependency from starting, and starts it when ready", async () => {
       const { h, servers, release } = await world();

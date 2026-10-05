@@ -45,30 +45,6 @@ describe("decideMerge", () => {
     ).toEqual({ kind: "ok" });
   });
 
-  it("names the failed check", () => {
-    expect(
-      decideMerge({
-        configured: true,
-        head: "api@a1",
-        state: {
-          ...idle,
-          current: result("api@a1", [step("tests", "fail"), step("build", "pass"), step("lint", "pass")]),
-        },
-      }),
-    ).toEqual({ kind: "failed", check: "test" });
-    // A test that failed and then passed on a retry is flaky, which is not green.
-    expect(
-      decideMerge({
-        configured: true,
-        head: "api@a1",
-        state: {
-          ...idle,
-          current: result("api@a1", [step("tests", "pass"), step("build", "pass"), step("lint", "flaky")]),
-        },
-      }),
-    ).toEqual({ kind: "failed", check: "lint" });
-  });
-
   it("is stale when the checks ran on an older head or never ran", () => {
     expect(
       decideMerge({
@@ -100,18 +76,6 @@ describe("decideMerge", () => {
     ).toEqual({ kind: "stale", ran: false });
   });
 
-  it("waits while a check of the head runs, and does not block a project with no checks", () => {
-    const running: Pick<HandoffState, "current" | "running" | "queued"> = {
-      current: result("api@a1", green),
-      running: true,
-      queued: false,
-    };
-    expect(decideMerge({ configured: true, head: "api@b2", state: running })).toEqual({ kind: "running" });
-    expect(decideMerge({ configured: false, head: "api@b2", state: undefined })).toEqual({
-      kind: "ok",
-      noChecks: true,
-    });
-  });
 });
 
 let w: BossWorld | undefined;

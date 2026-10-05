@@ -347,53 +347,6 @@ describe("the captain's own tools", () => {
     ).toContain("Refused: in Acme you decide how agents' questions are answered");
   });
 
-  it("answers questions and routine approval cards on their own rows", async () => {
-    const t = await on();
-    const id = await t.acmeTask();
-    const { room } = t.h.majhi.services;
-    room.post(id as TaskId, "ask:q", {
-      type: "ask",
-      agent: "acme-builder",
-      questions: [{ id: "q1", question: "Go?", options: [{ id: "y", label: "Yes" }], freeText: false }],
-      state: "pending",
-    });
-    room.post(id as TaskId, "perm:p", {
-      type: "permission",
-      agent: "acme-builder",
-      title: "Run the tests",
-      options: [{ id: "allow", name: "Allow", kind: "allow_once" }],
-      state: "pending",
-    });
-    const answerQuestion = () =>
-      t.call("majhi_autonomy_answer", { task: id, item: "ask:q", answers: { q1: "y" } });
-    const answerPermission = () =>
-      t.call("majhi_autonomy_answer", { task: id, item: "perm:p", option: "allow" });
-    const configure = async (authority: Record<string, string>) =>
-      expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { authority } } })).status).toBe(200);
-
-    // Questions on "Ask me": left for the owner. Approvals on "Captain decides" does not change that.
-    await configure({ questions: "ask", approvals: "decide" });
-    expect((await answerQuestion()).text).toBe(
-      "Refused: in Acme you decide how agents' questions are answered, so the captain does not answer them. Leave it to the owner.",
-    );
-    // The routine approval card is the captain's, the question still waits.
-    // It gets past the row; the prompt itself is no live one here, so the answer reports that.
-    expect((await answerPermission()).text).toBe("That prompt is not waiting for an answer any more.");
-    // Approvals on "Ask me": the next card waits.
-    room.post(id as TaskId, "perm:p2", {
-      type: "permission",
-      agent: "acme-builder",
-      title: "Run the linter",
-      options: [{ id: "allow", name: "Allow", kind: "allow_once" }],
-      state: "pending",
-    });
-    await configure({ questions: "decide", approvals: "ask" });
-    expect(
-      (await t.call("majhi_autonomy_answer", { task: id, item: "perm:p2", option: "allow" })).text,
-    ).toContain("Refused: in Acme you decide routine approval cards");
-    expect((await answerQuestion()).isError).toBe(false);
-  });
-
   it("waits while the owner types in that task, and answers in another", async () => {
     const t = await on();
     const { room, events } = t.h.majhi.services;

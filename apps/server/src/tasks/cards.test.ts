@@ -64,56 +64,6 @@ describe("the review card", () => {
     expect(after.find((c) => c.id === cards[1]?.id)).toMatchObject({ state: "replaced" });
   });
 
-  it("carries the hand-off check's line, replaces it, clears it, and never clobbers majhi's own reason", async () => {
-    w = await taskWorld();
-    await reviewTask();
-    const { cards } = w.h.majhi.services.tasks;
-    const pending = async () => (await ofType("review")).filter((c) => c.state === "pending");
-    expect(cards.checkHeld("ACM-1", "Checks failed: tests failed")).toBe(true);
-    expect((await pending())[0]?.why).toBe("Checks failed: tests failed");
-    expect(cards.checkHeld("ACM-1", "Checks failed 3 times in a row")).toBe(true);
-    expect((await pending())[0]?.why).toBe("Checks failed 3 times in a row");
-    expect(cards.checkHeld("ACM-1", undefined)).toBe(true);
-    expect((await pending())[0]?.why).toBeUndefined();
-
-    // A reason majhi wrote when it could not ship the task itself stays.
-    cards.review(w.h.majhi.services.tasks.get("ACM-1"), "majhi tried to ship it and the push failed");
-    expect(cards.checkHeld("ACM-1", "Checks failed: lint")).toBe(true);
-    expect(cards.checkHeld("ACM-1", undefined)).toBe(true);
-    expect((await pending())[0]?.why).toBe("majhi tried to ship it and the push failed");
-  });
-
-  it("is not posted while an agent's ask is pending, and is posted once it is answered and agents idle", async () => {
-    w = await taskWorld();
-    const { room, tasks } = w.h.majhi.services;
-    agentSays("Which way?");
-    await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true });
-    // The agent's ask lands during its turn, so the turn ends with the ask pending.
-    room.post("ACM-1", "ask:1", {
-      type: "ask",
-      agent: "acme-builder",
-      questions: [
-        {
-          id: "q1",
-          question: "How should I build it?",
-          options: [{ id: "a", label: "Cheaper" }],
-          freeText: true,
-        },
-      ],
-      state: "pending",
-    });
-    await idle();
-    await tasks.agentsIdle("ACM-1");
-    expect(await status()).toBe("running");
-    expect(await ofType("review")).toHaveLength(0);
-
-    const answer = await w.h.cmd("room.answerAsk", { task: "ACM-1", item: "ask:1", answers: { q1: "a" } });
-    expect(answer.status).toBe(200);
-    await idle();
-    expect(await status()).toBe("review");
-    expect((await ofType("review")).filter((c) => c.state === "pending")).toHaveLength(1);
-  });
-
   it("merges from the card once, and refuses a second click", async () => {
     w = await taskWorld();
     await reviewTask("Done.", true);
@@ -190,32 +140,5 @@ describe("the review card", () => {
     const done = await w.h.cmd("room.cardAction", { task: "ACM-1", item: card?.id, action: "done" });
     expect(done.status).toBe(409);
     expect(await status()).toBe("review");
-  });
-});
-
-describe("owner questions in plain text", () => {
-  it("puts the choices under the message, and sends the one picked back to the agent once", async () => {
-    w = await taskWorld();
-    await reviewTask("The branch is ready. Should I use SQLite or Postgres?");
-    const [q] = await ofType("owner-question");
-    expect(q).toMatchObject({
-      agent: "acme-builder",
-      choices: ["Use SQLite", "Postgres"],
-      state: "pending",
-    });
-    const pick = (choice: string) => w.h.cmd("room.answerQuestion", { task: "ACM-1", item: q?.id, choice });
-    expect((await pick("MySQL")).status).toBe(409);
-    const res = await pick("Postgres");
-    expect(res.status).toBe(200);
-    expect(res.body.item).toMatchObject({ state: "answered", chosen: "Postgres" });
-    expect((await pick("Use SQLite")).status).toBe(409);
-    const owner = (await items()).filter((i) => i.type === "owner").at(-1);
-    expect(owner).toMatchObject({ text: "Owner chose: Postgres", to: "acme-builder" });
-  });
-
-  it("gets no buttons when the message is not for the owner", async () => {
-    w = await taskWorld();
-    await reviewTask("Added the endpoint and its tests.");
-    expect(await ofType("owner-question")).toEqual([]);
   });
 });

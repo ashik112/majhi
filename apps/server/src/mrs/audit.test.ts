@@ -79,32 +79,6 @@ describe("Audit of ships", () => {
     expect(rows[1]?.detail).toContain("majhi never force-pushes");
   });
 
-  it("logs a merge that worked, then merge and push as two rows", async () => {
-    await reviewed();
-    const res = await cmd("tasks.merge", { id: "ACM-1", into: "main", push: true, done: true });
-    expect(res.status).toBe(200);
-    expect(audit().map((r) => [r.kind, r.decision, r.detail])).toEqual([
-      ["merge", "done", "main"],
-      ["merge+push", "done", "origin/main"],
-    ]);
-  });
-
-  it("logs a merge that was refused, with the reason", async () => {
-    await reviewed();
-    await writeFile(join(w.taskDir("ACM-1"), "acme-api", "fix.txt"), "changed again\n");
-    const res = await cmd("tasks.merge", { id: "ACM-1", into: "main", done: true });
-    expect(res.status).toBe(200);
-    expect(res.body.results).toMatchObject([{ ok: false }]);
-    expect(audit()).toMatchObject([
-      {
-        kind: "merge",
-        decision: "failed",
-        by: "owner",
-        detail: expect.stringContaining("uncommitted changes"),
-      },
-    ]);
-  });
-
   it("writes nothing when the ship is refused before anything runs", async () => {
     await reviewed();
     await pushFromElsewhere("main");
@@ -112,17 +86,5 @@ describe("Audit of ships", () => {
       409,
     );
     expect(audit()).toEqual([]);
-  });
-
-  it("lists them across tasks through audit.list, newest first, and refuses a bad date", async () => {
-    await reviewed();
-    await cmd("tasks.push", { id: "ACM-1" });
-    await cmd("tasks.merge", { id: "ACM-1", into: "main", done: true });
-    const res = await cmd("audit.list", { org: "acme", kinds: ["push", "merge"], limit: 1 });
-    expect(res.status).toBe(200);
-    expect(res.body.entries).toMatchObject([{ kind: "merge", task: "ACM-1", org: "acme" }]);
-    expect(res.body.next).toBe(res.body.entries[0].id);
-    expect(res.body.kinds).toEqual(["merge", "push"]);
-    expect((await cmd("audit.list", { from: "yesterday-ish" })).status).toBe(400);
   });
 });

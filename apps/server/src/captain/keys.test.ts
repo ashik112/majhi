@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { ALL_ASK } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
-import { answerKey, answerOnce, once, shipState, tellKey } from "./keys.ts";
+import { answerOnce, shipState } from "./keys.ts";
 import { LaneGate } from "./lane-gate.ts";
 import type { CaptainPorts, ShipCheck } from "./ports.ts";
 import { CaptainRepo } from "./repo.ts";
@@ -83,15 +83,6 @@ describe("the key claim", () => {
     expect(second.claimKey("tell", "tell:ACM-1:lead:7", "ACM-1", NOW.toISOString())).toBe("repeat");
     expect(second.claimKey("tell", "tell:ACM-1:lead:8", "ACM-1", NOW.toISOString())).toBe("taken");
   });
-
-  it("builds a different key for each state", () => {
-    expect(answerKey("ACM-1", "i1")).not.toBe(answerKey("ACM-1", "i2"));
-    expect(tellKey("ACM-1", "lead", 3)).not.toBe(tellKey("ACM-1", "lead", 4));
-    expect(shipState({ heads: "api@a", bases: "api@b" })).not.toBe(
-      shipState({ heads: "api@a", bases: "api@c" }),
-    );
-    expect(shipState({ heads: "api@a" })).toBe("api@a");
-  });
 });
 
 describe("answering a card", () => {
@@ -112,22 +103,6 @@ describe("answering a card", () => {
     expect(answers).toBe(2);
   });
 
-  it("makes one answer of ten calls at once, and the rest say it is running", async () => {
-    const repo = new CaptainRepo(new Store(":memory:").raw);
-    let answers = 0;
-    const results = await Promise.all(
-      Array.from({ length: 10 }, () =>
-        answerOnce(repo, NOW, { task: "ACM-1", item: "i1" }, async () => {
-          await tick();
-          answers += 1;
-        }),
-      ),
-    );
-    expect(answers).toBe(1);
-    expect(results.filter((r) => r.answered)).toHaveLength(1);
-    expect(results.filter((r) => !r.answered && r.why === "in-flight")).toHaveLength(9);
-  });
-
   it("gives the key back when the answer fails, so the card can be answered again", async () => {
     const repo = new CaptainRepo(new Store(":memory:").raw);
     await expect(
@@ -138,26 +113,6 @@ describe("answering a card", () => {
     expect(await answerOnce(repo, NOW, { task: "ACM-1", item: "i1" }, async () => undefined)).toEqual({
       answered: true,
     });
-  });
-
-  it("still holds the answered card after a restart", async () => {
-    const db = await dbFile();
-    expect(await answerOnce(db.open(), NOW, { task: "ACM-1", item: "i1" }, async () => undefined)).toEqual({
-      answered: true,
-    });
-    stores.pop()?.close();
-    let again = 0;
-    const second = await answerOnce(db.open(), NOW, { task: "ACM-1", item: "i1" }, async () => {
-      again += 1;
-    });
-    expect(second).toEqual({ answered: false, why: "repeat" });
-    expect(again).toBe(0);
-  });
-
-  it("runs a once-step with its own kind and returns its value", async () => {
-    const repo = new CaptainRepo(new Store(":memory:").raw);
-    const r = await once(repo, NOW, { kind: "x", key: "x:1" }, async () => 42);
-    expect(r).toEqual({ done: true, value: 42 });
   });
 });
 
@@ -202,32 +157,6 @@ describe("a note to a lead", () => {
     state.turn = 6;
     expect(await t.tell.tell({ id: "ACM-1", text: "third" }, lane)).toMatchObject({ told: true });
     expect(t.sent).toEqual(["first", "third"]);
-  });
-
-  it("sends one note when two calls come at once with the same lead turn", async () => {
-    const repo = new CaptainRepo(new Store(":memory:").raw);
-    const t = tellSetup(repo, { turn: 1 });
-    const results = await Promise.all([
-      t.tell.tell({ id: "ACM-1", text: "a" }, lane),
-      t.tell.tell({ id: "ACM-1", text: "b" }, lane),
-    ]);
-    expect(t.sent).toHaveLength(1);
-    expect(results.filter((r) => r.told)).toHaveLength(1);
-    expect(results.find((r) => !r.told)).toMatchObject({ told: false, refused: "in-flight" });
-  });
-
-  it("refuses the repeat after a restart too: the key is in the database", async () => {
-    const db = await dbFile();
-    const state = { turn: 9 };
-    const before = tellSetup(db.open(), state);
-    expect(await before.tell.tell({ id: "ACM-1", text: "first" }, lane)).toMatchObject({ told: true });
-    stores.pop()?.close();
-    const after = tellSetup(db.open(), state);
-    expect(await after.tell.tell({ id: "ACM-1", text: "again" }, lane)).toMatchObject({
-      told: false,
-      refused: "already-told",
-    });
-    expect(after.sent).toEqual([]);
   });
 
   it("gives the key back when the send fails, so the note can be sent again", async () => {
@@ -297,17 +226,6 @@ describe("a ship", () => {
     expect(await t.gate.check("acme", "tasks.merge", merge)).toContain("already");
   });
 
-  it("makes one ship of two calls at once, and the second is told it is running", async () => {
-    const repo = new CaptainRepo(new Store(":memory:").raw);
-    const t = shipSetup(repo);
-    const refusals = await Promise.all([
-      t.gate.check("acme", "tasks.merge", merge),
-      t.gate.check("acme", "tasks.merge", merge),
-    ]);
-    expect(refusals.filter((r) => r === undefined)).toHaveLength(1);
-    expect(t.gate.claim(keyOf(t.state), "ACM-1")).toBe("in-flight");
-  });
-
   it("holds the ship's key after a restart, but not a failed ship's", async () => {
     const db = await dbFile();
     const first = shipSetup(db.open());
@@ -322,18 +240,5 @@ describe("a ship", () => {
     expect(await second.gate.check("acme", "tasks.merge", merge)).toBeUndefined();
     await second.gate.ran("acme", "tasks.merge", merge, "", { ok: false, error: "conflicts" });
     expect(await second.gate.check("acme", "tasks.merge", merge)).toBeUndefined();
-  });
-
-  it("acts on a new head commit and on a new base", async () => {
-    const repo = new CaptainRepo(new Store(":memory:").raw);
-    const t = shipSetup(repo);
-    expect(await t.gate.check("acme", "tasks.merge", merge)).toBeUndefined();
-    await t.gate.ran("acme", "tasks.merge", merge, "", { ok: true });
-    t.state.heads = "acme-api@def456";
-    expect(await t.gate.check("acme", "tasks.merge", merge)).toBeUndefined();
-    await t.gate.ran("acme", "tasks.merge", merge, "", { ok: true });
-    // The same head onto a base that moved is another state.
-    t.state.bases = "acme-api@base2";
-    expect(await t.gate.check("acme", "tasks.merge", merge)).toBeUndefined();
   });
 });

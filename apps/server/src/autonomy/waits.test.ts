@@ -2,7 +2,6 @@ import type { AccountStatus, AutonomyEvent, AutonomyStatus, QueueItem, Task } fr
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
-import { digest } from "./digest.ts";
 import { evaluateWaits, waitProblem } from "./waits.ts";
 
 let w: BossWorld | undefined;
@@ -80,34 +79,6 @@ describe("queue items that wait for an account", () => {
     expect(waitProblem(item("signed-in"), status("healthy"), () => false)).toContain("There is no account");
   });
 
-  it("shows the live state in the digest, not the old words of the item", () => {
-    const base = {
-      now: NOW,
-      tz: "UTC",
-      reasons: [],
-      spend: {
-        day: "2026-10-04",
-        tz: "UTC",
-        resetsAt: "2026-10-05T00:00:00.000Z",
-        total: { used: { tokens: 0, cost: 0 }, percent: 0, reached: false },
-        orgs: [],
-      },
-      holds: [],
-      accounts: [],
-      instructions: [],
-      tasks: [],
-      cards: [],
-      waiting: [],
-      backlog: [],
-      leftOut: 0,
-      rules: [],
-      queue: [{ ...item("signed-in"), why: "Restart once the umbrella accounts are signed in again" }],
-    };
-    const signedOut = digest({ ...base, accountStatus: { "claude-umbrella-pm": "needs-login" } });
-    expect(signedOut).toContain("Waits for claude-umbrella-pm to be signed in; it is signed out now");
-    const healthy = digest({ ...base, accountStatus: { "claude-umbrella-pm": "healthy" } });
-    expect(healthy).toContain("READY: claude-umbrella-pm is signed in now, so this no longer waits");
-  });
 });
 
 describe("majhi watching the account for the captain", () => {

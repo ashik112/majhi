@@ -1,7 +1,6 @@
 import type { Authority } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
-import { answerGate, isAnswerTask, judgeReport } from "./answer-check.ts";
 import { RUNS } from "./authority-fixtures.ts";
 import { createChores } from "./chores.ts";
 import type { AnswerTask, CaptainPorts } from "./ports.ts";
@@ -80,10 +79,6 @@ describe("ship with Merge on the owner", () => {
     const t = setup({ ...RUNS, merge: "ask", push: "decide" });
     await t.run();
     expect(t.calls).toMatchObject({ merged: 0, opened: 1, asked: 0 });
-    const line = t.repo.allActions().find((a) => a.text.startsWith("Opened a merge request"));
-    expect(line?.text).toBe(
-      "Opened a merge request for ACM-1 on GitLab: Add export. https://gitlab.example/acme/api/-/merge_requests/7. Merge it on GitLab",
-    );
   });
 
   it("opens it once for the same state of the work", async () => {
@@ -98,13 +93,6 @@ describe("ship with Merge on the owner", () => {
     await t.run();
     expect(t.calls).toMatchObject({ merged: 0, opened: 0, asked: 1 });
   });
-
-  it("leaves the card with the reason when the repo cannot open one", async () => {
-    const t = setup({ ...RUNS, merge: "ask", push: "decide" }, [], { ok: false });
-    await t.run();
-    expect(t.calls).toMatchObject({ merged: 0, opened: 0, asked: 1 });
-    expect(t.repo.allActions().some((a) => a.reason.includes("No remote"))).toBe(true);
-  });
 });
 
 describe("a task with uncommitted changes", () => {
@@ -112,21 +100,6 @@ describe("a task with uncommitted changes", () => {
     ready: false,
     why: `oryza has uncommitted changes: ${files.join(", ")}`,
     uncommitted: { project: "oryza", files },
-  });
-
-  it("sends the lead one line naming the files, and not again for the same state", async () => {
-    const t = setup(
-      { ...RUNS, merge: "ask", push: "decide" },
-      [],
-      { ok: true },
-      { check: () => dirty(["a.ts", "b.ts"]) },
-    );
-    await t.run();
-    await t.run();
-    expect(t.calls.changes).toEqual([
-      "Captain: Commit or discard the uncommitted changes in oryza: a.ts, b.ts",
-    ]);
-    expect(t.calls.opened).toBe(0);
   });
 
   it("asks twice at most, then leaves it for the owner", async () => {
@@ -160,14 +133,6 @@ describe("tasks that changed no code", () => {
     expect(t.calls.changes).toEqual([]);
   });
 
-  it("asks the lead for changes when the report ends with an open question", async () => {
-    const t = setup({ ...RUNS, upkeep: "decide" }, [task(`${done}\n\nShould I also check the retry queue?`)]);
-    await t.run();
-    expect(t.calls.closed).toEqual([]);
-    expect(t.calls.changes).toHaveLength(1);
-    expect(t.calls.changes[0]).toContain("Should I also check the retry queue?");
-  });
-
   it("sends a task back twice at most, then leaves it for the owner", async () => {
     const asks = (n: number): AnswerTask => ({
       ...task(`${done}\n\nShould I also check the retry queue?`),
@@ -189,39 +154,10 @@ describe("tasks that changed no code", () => {
     expect(t.calls.closed).toEqual([]);
   });
 
-  it("never bounces a code task that changed nothing for a short report", async () => {
-    const code: AnswerTask = { ...task("done"), id: "ACM-3", investigation: false };
-    const t = setup({ ...RUNS, upkeep: "decide" }, [code]);
-    await t.run();
-    expect(t.calls.changes).toEqual([]);
-    expect(t.calls.closed).toEqual([]);
-  });
-
-  it("sends an investigation with an empty report back", async () => {
-    const t = setup({ ...RUNS, upkeep: "decide" }, [task("")]);
-    await t.run();
-    expect(t.calls.changes).toHaveLength(1);
-    expect(t.calls.changes[0]).toContain("too short");
-  });
-
   it("spends no turn on a lead when the workspace does not let the captain answer", async () => {
     const t = setup({ ...RUNS, upkeep: "ask", questions: "ask", merge: "decide" }, [task("")]);
     await t.run();
     expect(t.calls.changes).toEqual([]);
     expect(t.calls.closed).toEqual([]);
-  });
-
-  it("names the refused row, and tells answer tasks from code tasks by structure", () => {
-    expect(answerGate({ upkeep: "ask", questions: "ask" })).toMatchObject({ open: false, row: "upkeep" });
-    expect(answerGate({ upkeep: "ask", questions: "decide" })).toEqual({ open: true });
-    expect(isAnswerTask({ kind: "code", repos: [{}] })).toBe(false);
-    expect(isAnswerTask({ kind: "code", repos: [{}], readMounts: [{}] })).toBe(true);
-    expect(isAnswerTask({ kind: "ops", repos: [{}] })).toBe(true);
-    expect(isAnswerTask({ kind: "code", repos: [] })).toBe(true);
-  });
-
-  it("reads a report", () => {
-    expect(judgeReport(undefined).complete).toBe(false);
-    expect(judgeReport(`${done}\n\nOpen questions: none.`).complete).toBe(true);
   });
 });

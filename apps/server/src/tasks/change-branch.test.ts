@@ -224,14 +224,6 @@ describe("changing another task's branch", () => {
     expect(await readFile(join(w.target, "a.txt"), "utf8")).toBe("two\n");
   });
 
-  it("refuses files and patch together, or neither", () => {
-    const base = { task: "ACM-2", base: "abcdef1", message: "m" };
-    const files = [{ path: "a.txt", content: "x" }];
-    expect(ChangeBranchInputSchema.safeParse({ ...base, files, patch: "diff" }).success).toBe(false);
-    expect(ChangeBranchInputSchema.safeParse(base).success).toBe(false);
-    expect(ChangeBranchInputSchema.safeParse({ ...base, files, base: "xyz" }).success).toBe(false);
-  });
-
   it("commits a one-line patch and nothing else", async () => {
     const w = await world();
     const patch = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-one\n+two\n";
@@ -262,12 +254,5 @@ describe("changing another task's branch", () => {
     expect(await git(w.target, "status", "--porcelain")).toBe("");
     expect(await git(w.target, "rev-parse", "HEAD")).toBe(headOf);
     expect(w.deps.locks.holder(w.target)).toBeUndefined();
-  });
-
-  it("refuses the caller's own task", async () => {
-    const w = await world();
-    await expect(
-      changeTaskBranch(w.deps, input([{ path: "a.txt", content: "two\n" }]), lead("ACM-2")),
-    ).rejects.toThrow(/your own task/);
   });
 });

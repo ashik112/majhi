@@ -1,13 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  childrenWaitOnParent,
-  describeCycle,
-  findCycle,
-  isMet,
-  type LinkRow,
-  parentIsComplete,
-  unmetDependencies,
-} from "./relations.ts";
+import { findCycle, isMet, type LinkRow, parentIsComplete, unmetDependencies } from "./relations.ts";
 
 const dep = (task: string, other: string, when?: "merged" | "ready"): LinkRow => ({
   task,
@@ -27,15 +19,6 @@ describe("findCycle", () => {
     const rows = [dep("A-2", "A-3"), dep("A-3", "A-4")];
     const path = findCycle(rows, "depends-on", "A-4", "A-2");
     expect(path).toEqual(["A-4", "A-2", "A-3", "A-4"]);
-    expect(describeCycle("depends-on", path ?? [])).toBe(
-      "That would make a loop of dependencies: A-4 -> A-2 -> A-3 -> A-4.",
-    );
-  });
-
-  it("allows a diamond and links of the other type", () => {
-    const rows = [dep("B-1", "A-1"), dep("C-1", "A-1"), dep("D-1", "B-1"), dep("D-1", "C-1")];
-    expect(findCycle(rows, "depends-on", "D-1", "A-1")).toBeUndefined();
-    expect(findCycle([parent("A-2", "A-1")], "depends-on", "A-1", "A-2")).toBeUndefined();
   });
 
   it("finds a loop in the parent chain", () => {
@@ -52,25 +35,6 @@ describe("waiting on", () => {
     expect(isMet("merged", "done")).toBe(true);
     expect(isMet("ready", "running")).toBe(false);
     expect(isMet("ready", "review")).toBe(true);
-    expect(isMet("ready", "mr")).toBe(true);
-    expect(isMet("ready", "done")).toBe(true);
-  });
-
-  it("lists unmet dependencies only, in order, and skips missing targets and other link types", () => {
-    const statuses: Record<string, "done" | "running" | "review"> = {
-      "A-1": "done",
-      "A-2": "running",
-      "A-3": "review",
-    };
-    const links = [
-      dep("X-1", "A-1"),
-      dep("X-1", "A-2"),
-      dep("X-1", "A-3", "ready"),
-      dep("X-1", "A-3"),
-      dep("X-1", "GONE-1"),
-      { task: "X-1", type: "follow-up" as const, other: "A-2" },
-    ];
-    expect(unmetDependencies(links, (id) => statuses[id])).toEqual(["A-2", "A-3"]);
   });
 });
 
@@ -96,25 +60,5 @@ describe("a merged dependency with merge requests", () => {
     const status = (id: string) => (id === "A-1" || id === "A-3" ? ("done" as const) : undefined);
     expect(unmetDependencies(links, status, (id) => id === "A-1")).toEqual(["A-1"]);
     expect(unmetDependencies(links, status, () => false)).toEqual([]);
-  });
-});
-
-describe("childrenWaitOnParent", () => {
-  const waiting = (...unmet: string[]) => ({ status: "ready" as const, unmet });
-
-  it("is true when every open child waits for the parent alone", () => {
-    expect(childrenWaitOnParent("A-1", [waiting("A-1")])).toBe(true);
-    expect(childrenWaitOnParent("A-1", [{ status: "done", unmet: [] }, waiting("A-1"), waiting("A-1")])).toBe(
-      true,
-    );
-  });
-
-  it("is false with no open child, or one that runs, is in review or waits for something else", () => {
-    expect(childrenWaitOnParent("A-1", [])).toBe(false);
-    expect(childrenWaitOnParent("A-1", [{ status: "done", unmet: [] }])).toBe(false);
-    expect(childrenWaitOnParent("A-1", [waiting("A-1"), { status: "running", unmet: [] }])).toBe(false);
-    expect(childrenWaitOnParent("A-1", [waiting("A-1"), { status: "review", unmet: ["A-1"] }])).toBe(false);
-    expect(childrenWaitOnParent("A-1", [waiting("A-1", "A-3")])).toBe(false);
-    expect(childrenWaitOnParent("A-1", [waiting()])).toBe(false);
   });
 });

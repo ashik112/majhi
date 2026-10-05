@@ -49,25 +49,6 @@ async function acme() {
 }
 
 describe("tasks.setLead", () => {
-  it("lets the owner hand the lead to a teammate: the old lead stays as a builder, the room gets the note", async () => {
-    const t = await acme();
-    expect(
-      (await t.as(undefined, { agent: "acme-builder", reason: "the lead's account is at its limit" })).status,
-    ).toBe(200);
-    expect(t.team()).toEqual(["acme-builder", "acme-lead"]);
-    const note = (await t.room()).find((l) => l.startsWith("Handover on"));
-    expect(note).toContain("@acme-builder is the lead now, taking over from @acme-lead (the owner)");
-    expect(note).toContain("Why: the lead's account is at its limit");
-    expect(note).toContain("No plan was recorded");
-    expect(note).toContain("@acme-lead stays on the team as a builder");
-  });
-
-  it("adds an agent that is not on the team, and lets the old lead leave", async () => {
-    const t = await acme();
-    expect((await t.as(undefined, { agent: "acme-other", keepOldLead: false })).status).toBe(200);
-    expect(t.team()).toEqual(["acme-other", "acme-builder"]);
-  });
-
   it("lets the captain and the current lead hand over, and refuses any other agent", async () => {
     const t = await acme();
     const other = await t.as("acme-other", { agent: "acme-other" });

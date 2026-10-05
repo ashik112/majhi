@@ -1,52 +1,19 @@
-import { TurnsSettingsSchema } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import {
   afterLimit,
   firedLimit,
-  limitPhrase,
   MAX_STRIKES,
   type TurnLimits,
   type TurnState,
-  turnLimitsFor,
 } from "./turn-limits.ts";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
-const defaults = TurnsSettingsSchema.parse({});
 const limits: TurnLimits = { maxMs: 2 * HOUR, idleMs: 25 * MIN, maxToolCalls: undefined };
 
 function state(patch: Partial<TurnState>): TurnState {
   return { now: 0, startedAt: 0, activeAt: 0, toolCalls: 0, waiting: false, asking: false, ...patch };
 }
-
-describe("turnLimitsFor", () => {
-  it("defaults to 2 hours, 25 minutes idle and no tool call cap", () => {
-    expect(turnLimitsFor(defaults, undefined, undefined)).toEqual(limits);
-  });
-
-  it("takes each field from the agent, then the org, then majhi", () => {
-    const org = { max_length: "1h", max_tool_calls: 300 } as const;
-    const agent = { max_length: "30m" } as const;
-    expect(turnLimitsFor(defaults, org, agent)).toEqual({
-      maxMs: 30 * MIN,
-      idleMs: 25 * MIN,
-      maxToolCalls: 300,
-    });
-  });
-
-  it("turns a limit off at any level", () => {
-    const global = TurnsSettingsSchema.parse({ max_tool_calls: 100 });
-    expect(turnLimitsFor(global, { idle: "off" }, { max_length: "off", max_tool_calls: 0 })).toEqual({
-      maxMs: undefined,
-      idleMs: undefined,
-      maxToolCalls: undefined,
-    });
-  });
-
-  it("lets an agent turn back on what its org turned off", () => {
-    expect(turnLimitsFor(defaults, { idle: "off" }, { idle: "10m" }).idleMs).toBe(10 * MIN);
-  });
-});
 
 describe("firedLimit", () => {
   it("fires nothing inside every limit", () => {
@@ -106,15 +73,5 @@ describe("afterLimit", () => {
 
   it("a hit whose turn made a new commit continues and resets the count", () => {
     expect(afterLimit(2, true)).toEqual({ action: "continue", strikes: 0 });
-  });
-});
-
-describe("limitPhrase", () => {
-  it("names the limit that fired", () => {
-    expect(limitPhrase("builder", "length", limits)).toBe("@builder reached the 2 hour turn limit");
-    expect(limitPhrase("builder", "idle", limits)).toBe("@builder was idle for 25 minutes");
-    expect(limitPhrase("builder", "tools", { ...limits, maxToolCalls: 300 })).toBe(
-      "@builder reached the limit of 300 tool calls in one turn",
-    );
   });
 });

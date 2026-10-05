@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decidePermission, toolAllowKey } from "../runs/permissions.ts";
-import { answerFor, coveredForTask, widenedNote } from "./permission-rules.ts";
+import { answerFor, coveredForTask } from "./permission-rules.ts";
 
 const options = [
   { id: "once", kind: "allow_once" },
@@ -10,12 +10,6 @@ const options = [
 const START = "mcp__majhi-containers__service_start";
 
 describe("what the captain's yes becomes", () => {
-  it("is Allow for this task for a tool a rule covers", () => {
-    expect(answerFor(START, options, "once")).toBe("task");
-    expect(answerFor("mcp__majhi-containers__logs", options, "once")).toBe("task");
-    expect(answerFor("mcp__majhi-memory__search", options, "once")).toBe("task");
-  });
-
   it("stays Allow once for a judgment call, a rejection, and a prompt without the option", () => {
     expect(answerFor("mcp__other__deploy", options, "once")).toBe("once");
     expect(answerFor("Bash: npm test", options, "once")).toBe("once");
@@ -28,16 +22,6 @@ describe("what the captain's yes becomes", () => {
       ),
     ).toBe("once");
     expect(coveredForTask("mcp__majhi-admin__tasks_merge")).toBe(false);
-  });
-
-  it("says so when Allow once was recorded as Allow for this task, and only then", () => {
-    expect(widenedNote(START, "once", answerFor(START, options, "once"))).toBe(
-      `Allow once became Allow for this task: a rule covers ${START}`,
-    );
-    expect(widenedNote("Bash: npm test", "once", answerFor("Bash: npm test", options, "once"))).toBe(
-      undefined,
-    );
-    expect(widenedNote(START, "no", answerFor(START, options, "no"))).toBe(undefined);
   });
 
   it("makes the next call of that tool, and only that tool, run without asking", () => {

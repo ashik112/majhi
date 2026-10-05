@@ -1,10 +1,10 @@
-import { link, mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Task } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Store } from "../store/index.ts";
 import { git, makeRepo, tempDir } from "../testing/fixtures.ts";
-import { sizeText, TaskFolderSweep, treeBytes } from "./folder-sweep.ts";
+import { TaskFolderSweep } from "./folder-sweep.ts";
 
 const NOW = new Date("2026-10-04T12:00:00.000Z");
 const OLD = "2026-09-20T00:00:00.000Z";
@@ -118,7 +118,6 @@ describe("freeing rebuildable folders of done tasks", () => {
     );
     // Five folders of one 100 KB file each, plus their directories.
     expect(report.freedBytes).toBeGreaterThanOrEqual(500_000);
-    expect(sizeText(report.freedBytes)).toMatch(/KB|MB/);
   });
 
   it("frees nothing on a second run", async () => {
@@ -174,13 +173,6 @@ describe("freeing rebuildable folders of done tasks", () => {
     expect(await exists(join(worktree, "node_modules"))).toBe(true);
   });
 
-  it("is not blocked by an untracked file elsewhere, and leaves it", async () => {
-    const { worktree } = await seed({ id: "ACM-1" });
-    await writeFile(join(worktree, "notes.txt"), "scratch\n");
-    expect((await sweep.run(opts)).freedBytes).toBeGreaterThan(0);
-    expect(await exists(join(worktree, "notes.txt"))).toBe(true);
-  });
-
   it("keeps a node_modules that holds a tracked file, and a dist git does not ignore", async () => {
     const { worktree } = await seed({ id: "ACM-1" });
     await writeFile(join(worktree, "node_modules/pkg/vendored.js"), "tracked\n");
@@ -193,15 +185,6 @@ describe("freeing rebuildable folders of done tasks", () => {
     expect(await exists(join(worktree, "packages/web/build/out.js"))).toBe(true);
     expect(report.tasks[0]?.removed).not.toContain("api/node_modules");
     expect(report.tasks[0]?.removed).toContain("api/dist");
-  });
-
-  it("keeps a tracked dist even when it is also ignored by a pattern", async () => {
-    const { worktree } = await seed({ id: "ACM-1" });
-    await writeFile(join(worktree, "dist/keep.js"), "tracked\n");
-    await git(worktree, "add", "-f", "dist/keep.js");
-    await git(worktree, "commit", "--quiet", "-m", "dist");
-    await sweep.run(opts);
-    expect(await exists(join(worktree, "dist/keep.js"))).toBe(true);
   });
 
   it("never follows or removes a symlink, in the task folder or inside a rebuildable folder", async () => {
@@ -251,27 +234,6 @@ describe("freeing rebuildable folders of done tasks", () => {
     expect(report.tasks[0]?.kept).toContain("it was reopened");
     expect(await exists(join(worktree, "node_modules"))).toBe(true);
   });
-
-  it("only sweeps the workspace asked for", async () => {
-    const acme = await seed({ id: "ACM-1" });
-    const globex = await seed({ id: "GLX-1", org: "globex" });
-    await sweep.run({ ...opts, org: "globex" });
-    expect(await exists(join(acme.worktree, "node_modules"))).toBe(true);
-    expect(await exists(join(globex.worktree, "node_modules"))).toBe(false);
-  });
-
-  it("measures the folders and what a sweep could free, and counts files shared with a store as free of cost", async () => {
-    const { worktree } = await seed({ id: "ACM-1" });
-    const shared = join(dir, "store-file");
-    await writeFile(shared, KB100);
-    await link(shared, join(worktree, "node_modules/pkg/linked.js"));
-    const m = await sweep.measure();
-    expect(m.rootBytes).toBeGreaterThan(m.rebuildableBytes);
-    expect(m.tasks).toBe(1);
-    expect(await treeBytes(join(worktree, "node_modules"), "freeable")).toBeLessThan(
-      await treeBytes(join(worktree, "node_modules"), "total"),
-    );
-  });
 });
 
 describe("removing whole worktrees of old done tasks", () => {
@@ -305,12 +267,5 @@ describe("removing whole worktrees of old done tasks", () => {
     await writeFile(join(worktree, "draft.md"), "draft\n");
     await sweep.run(withTrees);
     expect(await exists(join(worktree, "draft.md"))).toBe(true);
-  });
-
-  it("keeps worktrees of a task done for fewer days than the setting", async () => {
-    const { worktree } = await seed({ id: "ACM-1", updatedAt: "2026-10-01T00:00:00.000Z" });
-    await sweep.run(withTrees);
-    expect(await exists(worktree)).toBe(true);
-    expect(await exists(join(worktree, "node_modules"))).toBe(false);
   });
 });

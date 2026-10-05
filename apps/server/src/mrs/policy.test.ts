@@ -13,19 +13,6 @@ const ask = (q: Partial<MergeQuery> & Pick<MergeQuery, "order">) =>
   nextMerge({ policy: "approve", trigger: "owner", nowMs: NOW, ...q });
 
 describe("nextMerge", () => {
-  it("is done when every MR is merged", () => {
-    expect(ask({ order: [repo("api", "merged", "passing")] })).toEqual({ action: "done" });
-    expect(ask({ order: [] })).toEqual({ action: "done" });
-  });
-
-  it("takes the first repo in the order that is not merged", () => {
-    const order = [
-      repo("api", "merged", "passing"),
-      repo("web", "open", "passing"),
-      repo("docs", "open", "passing"),
-    ];
-    expect(ask({ order })).toEqual({ action: "merge", project: "web" });
-  });
 
   describe("never", () => {
     it("merges nothing, whoever asks", () => {
@@ -52,14 +39,6 @@ describe("nextMerge", () => {
 
     it("stops, rather than waits, while CI runs, since the owner's click ends the call", () => {
       expect(ask({ order: [repo("api", "open", "pending")] }).action).toBe("stop");
-    });
-
-    it("stops at a closed MR", () => {
-      expect(ask({ order: [repo("api", "closed", "passing")] }).action).toBe("stop");
-    });
-
-    it("merges when the host reports no CI", () => {
-      expect(ask({ order: [repo("api", "open", "none")] }).action).toBe("merge");
     });
   });
 

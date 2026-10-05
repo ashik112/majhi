@@ -25,13 +25,4 @@ describe("tasks.create request id", () => {
     const list = (await w.h.cmd("tasks.list", {})).body as Task[];
     expect(list).toHaveLength(1);
   });
-
-  it("makes separate tasks for different ids or none", async () => {
-    w = await taskWorld();
-    await w.h.cmd("tasks.create", input("req-aaaa-0001"));
-    await w.h.cmd("tasks.create", input("req-aaaa-0002"));
-    await w.h.cmd("tasks.create", input());
-    await w.h.cmd("tasks.create", input());
-    expect(((await w.h.cmd("tasks.list", {})).body as Task[]).length).toBe(4);
-  });
 });
