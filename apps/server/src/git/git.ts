@@ -3,6 +3,8 @@ import { access, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { KeyedQueue } from "./keyed-queue.ts";
+import { refExists } from "./refs.ts";
+import { repoConfigIsPlain } from "./repo-config.ts";
 
 const run = promisify(execFile);
 
@@ -340,9 +342,10 @@ async function gitOnce(
     const at = commandAt(args);
     const command = args[at] ?? "";
     const base = { ...gitEnv(process.env), ...options.env };
-    const off = NO_LOOKUP.has(command)
-      ? { settings: [], env: {}, options: [] }
-      : await repoCommands(cwd, base, command);
+    const off =
+      NO_LOOKUP.has(command) || (await repoConfigIsPlain(cwd, base))
+        ? { settings: [], env: {}, options: [] }
+        : await repoCommands(cwd, base, command);
     const extra = DIFF_COMMANDS.has(command) ? ["--no-ext-diff", "--no-textconv"] : off.options;
     const argv = [...args.slice(0, at + 1), ...extra, ...args.slice(at + 1)];
     const { stdout } = await run("git", argv, {
@@ -429,12 +432,17 @@ export async function defaultBranch(repo: string): Promise<string | undefined> {
   }
 }
 
+/** `git show-ref --verify --quiet`, answered from the ref files when they can say, else by git. */
+export async function refIsThere(repo: string, ref: string): Promise<boolean> {
+  return (await refExists(repo, ref)) ?? gitOk(repo, ["show-ref", "--verify", "--quiet", ref]);
+}
+
 export function localBranchExists(repo: string, name: string): Promise<boolean> {
-  return gitOk(repo, ["show-ref", "--verify", "--quiet", `refs/heads/${name}`]);
+  return refIsThere(repo, `refs/heads/${name}`);
 }
 
 export function remoteBranchExists(repo: string, remote: string, name: string): Promise<boolean> {
-  return gitOk(repo, ["show-ref", "--verify", "--quiet", `refs/remotes/${remote}/${name}`]);
+  return refIsThere(repo, `refs/remotes/${remote}/${name}`);
 }
 
 /** Lines of `git status --porcelain`: what is changed or untracked. Empty when clean. */
