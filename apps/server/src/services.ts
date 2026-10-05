@@ -1539,6 +1539,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         : { env: shim.env, release: () => roomAccess.revoke([shim.entry]) };
     },
     environment: () => `${env.commit}|${env.runner.image}`,
+    handoffCommands: async (project) => (await config.sections()).projects[project]?.handoff,
     limits: async (project) => {
       const c = (await config.settings()).containers;
       return {

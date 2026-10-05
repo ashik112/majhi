@@ -56,6 +56,7 @@ function useSectionSave(project: ProjectView) {
     remotes?: ProjectView["remotes"] | null;
     links?: ProjectView["links"] | null;
     commits?: ProjectView["commits"] | null;
+    handoff?: ProjectView["handoff"] | null;
   }) => {
     setState({ kind: "saving" });
     const base = patch.base ?? project.base ?? "";
@@ -68,6 +69,7 @@ function useSectionSave(project: ProjectView) {
         ...(patch.remotes !== undefined ? { remotes: patch.remotes } : {}),
         ...(patch.links !== undefined ? { links: patch.links } : {}),
         ...(patch.commits !== undefined ? { commits: patch.commits } : {}),
+        ...(patch.handoff !== undefined ? { handoff: patch.handoff } : {}),
       },
       {
         onSuccess: () => setState({ kind: "saved" }),
@@ -151,6 +153,7 @@ export function ProjectDetail({
       </div>
       <ProtectionSection project={project} />
       <NamesSection project={project} repo={repo} projects={projects} orgs={orgs} />
+      <HandoffSection project={project} />
       <RemotesSection project={project} repo={repo} />
       <LinksSection project={project} projects={projects} />
     </DetailPane>
@@ -333,6 +336,67 @@ function NamesSection({
             />
           )}
         </Field>
+      </div>
+    </SaveSection>
+  );
+}
+
+const HANDOFF_ROWS = [
+  { key: "test", label: "Test", placeholder: "pnpm exec vitest run --changed {base}" },
+  { key: "build", label: "Build", placeholder: "pnpm build" },
+  { key: "lint", label: "Lint", placeholder: "pnpm lint" },
+  { key: "typecheck", label: "Typecheck", placeholder: "pnpm typecheck" },
+] as const;
+
+/** The commands the check before ship runs, when they differ from what the project card read. */
+function HandoffSection({ project }: { project: ProjectView }) {
+  const initial = {
+    test: project.handoff?.test ?? "",
+    build: project.handoff?.build ?? "",
+    lint: project.handoff?.lint ?? "",
+    typecheck: project.handoff?.typecheck ?? "",
+  };
+  const [draft, setDraft] = useState(initial);
+  const { state, setState, save } = useSectionSave(project);
+  const dirty = HANDOFF_ROWS.some((r) => draft[r.key].trim() !== initial[r.key]);
+  return (
+    <SaveSection
+      title="Check before ship"
+      dirty={dirty}
+      state={state}
+      onDiscard={() => {
+        setDraft(initial);
+        setState(IDLE);
+      }}
+      onSave={() => {
+        const lines = Object.fromEntries(
+          HANDOFF_ROWS.flatMap((r) => (draft[r.key].trim() === "" ? [] : [[r.key, draft[r.key].trim()]])),
+        );
+        save({ handoff: Object.keys(lines).length === 0 ? null : lines });
+      }}
+    >
+      <p className="mb-3 text-sm text-fg-soft text-pretty">
+        Blank rows use the commands on the project card. In Test,{" "}
+        <span className="font-mono">{"{base}"}</span> becomes the commit the task branched from, so the check
+        can run only the tests the task touched.
+      </p>
+      <div className="grid gap-3">
+        {HANDOFF_ROWS.map((r) => (
+          <Field key={r.key} label={r.label}>
+            {(props) => (
+              <Input
+                {...props}
+                value={draft[r.key]}
+                onChange={(e) => {
+                  if (state.kind !== "saving") setState(IDLE);
+                  setDraft((d) => ({ ...d, [r.key]: e.target.value }));
+                }}
+                placeholder={r.placeholder}
+                className="font-mono"
+              />
+            )}
+          </Field>
+        ))}
       </div>
     </SaveSection>
   );

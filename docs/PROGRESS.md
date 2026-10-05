@@ -1,5 +1,14 @@
 # Progress
 
+## Hand-off check tests only the change (not merged)
+
+Branch `feat/handoff-changed-tests`.
+
+- **What changed.** A project in majhi.yaml can carry `handoff: { test, build, lint, typecheck }`. Set lines win over the project card's, command by command. In a test line, `{base}` becomes the merge-base commit of the task branch and its target. majhi computes the sha itself and refuses anything but 40 lowercase hex characters; task text never reaches the shell. A failed substitution fails the step and says why. `projects.update` takes `handoff` (null clears it). The project page has a "Check before ship" section, one row per command.
+- **What the owner will notice.** With `pnpm exec vitest run --changed {base} --passWithNoTests` as the majhi project's test line, the check runs only the tests that import the changed files (vitest follows the import graph; a change to a file that services.ts reaches still runs about a quarter of the suite, a leaf file runs its own test).
+- **Verified.** `handoff/commands.test.ts`, `handoff/service.test.ts`; typecheck clean. In a scratch worktree, `vitest --changed <sha>` ran 1 of 426 files for a leaf change and none for no change.
+- **Left.** The check has no typecheck step yet; the field is stored for when it does.
+
 ## Start runs the agent (fix, not merged)
 
 Branch `fix/start-runs-nothing`.

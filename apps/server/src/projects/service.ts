@@ -2,6 +2,7 @@ import { isAbsolute, relative } from "node:path";
 import type {
   CommandMeta,
   CommitsPatch,
+  HandoffCommands,
   ProjectConfig,
   ProjectLink,
   ProjectView,
@@ -43,6 +44,8 @@ export interface UpdateInput {
   protected?: boolean | undefined;
   /** Absent: keep. null: remove. */
   branch_pattern?: string | null | undefined;
+  /** Absent: keep. null: remove. */
+  handoff?: HandoffCommands | null | undefined;
 }
 
 /** A registered project with everything a task needs from it. */
@@ -63,6 +66,8 @@ export interface ProjectInfo {
   protected: boolean;
   /** How new task branches are named: the project's `branch_pattern`, else the org's. */
   branchPattern: string | undefined;
+  /** The project's own hand-off check commands, when set. */
+  handoff: HandoffCommands | undefined;
 }
 
 /** Projects in majhi.yaml: registering, changing, and resolving each one's base branch. */
@@ -112,6 +117,7 @@ export class ProjectService {
           commits: project.commits,
           protected: project.protected === true,
           branchPattern: project.branch_pattern ?? sections.orgs[project.org]?.branch_pattern,
+          handoff: project.handoff,
         };
         return info;
       }),
@@ -194,6 +200,10 @@ export class ProjectService {
     }
     if (input.branch_pattern === null) delete project.branch_pattern;
     else if (input.branch_pattern !== undefined) project.branch_pattern = input.branch_pattern;
+    if (input.handoff !== undefined) {
+      if (input.handoff === null || Object.keys(input.handoff).length === 0) delete project.handoff;
+      else project.handoff = input.handoff;
+    }
     if (input.protected === true) project.protected = true;
     else if (input.protected === false) delete project.protected;
     await this.config.change({ command, meta, summary: `updated project ${input.id}` }, () =>
@@ -246,6 +256,7 @@ function toView(p: ProjectInfo): ProjectView {
   };
   if (p.base !== undefined) view.base = p.base;
   if (p.commits !== undefined) view.commits = p.commits;
+  if (p.handoff !== undefined) view.handoff = p.handoff;
   if (Object.keys(p.remotes).length > 0) view.mrRemote = mrRemoteName(p.remotes);
   return view;
 }

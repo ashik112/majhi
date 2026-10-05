@@ -37,6 +37,19 @@ export const ProjectLinkSchema = z.object({
 });
 export type ProjectLink = z.infer<typeof ProjectLinkSchema>;
 
+/**
+ * The shell lines the hand-off check runs for a project instead of the ones its card read from the
+ * repo. `test` may hold `{base}`: majhi swaps in the merge-base commit of the task branch and its
+ * target (a sha it computed), so a project can test only what the task changed.
+ */
+export const HandoffCommandsSchema = z.object({
+  test: z.string().trim().min(1).optional(),
+  build: z.string().trim().min(1).optional(),
+  lint: z.string().trim().min(1).optional(),
+  typecheck: z.string().trim().min(1).optional(),
+});
+export type HandoffCommands = z.infer<typeof HandoffCommandsSchema>;
+
 export const ProjectConfigSchema = z.looseObject({
   /** An org id from `orgs`, or `private`. */
   org: OrgIdSchema,
@@ -60,6 +73,8 @@ export const ProjectConfigSchema = z.looseObject({
    * alone, when the owner types its name.
    */
   protected: z.boolean().optional(),
+  /** Hand-off check commands that win over the project card's. */
+  handoff: HandoffCommandsSchema.optional(),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 
@@ -81,6 +96,8 @@ export const ProjectViewSchema = z.object({
   commits: CommitsPatchSchema.optional(),
   /** See ProjectConfig.protected. */
   protected: z.boolean().default(false),
+  /** This project's own hand-off check commands, when set. */
+  handoff: HandoffCommandsSchema.optional(),
   /** Not protected, but looks like infra by its name or files: the UI offers to protect it. */
   looksLikeInfra: z.boolean().optional(),
 });

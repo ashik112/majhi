@@ -1,7 +1,8 @@
 import type { BaseEnv, RunMount, Spawner } from "@majhi/acp";
-import { PRIVATE, type Task } from "@majhi/shared";
+import { type HandoffCommands, PRIVATE, type Task } from "@majhi/shared";
 import type Database from "better-sqlite3";
 import { git } from "../git/git.ts";
+import { changeBase } from "../git/since-start.ts";
 import type { Housekeeper } from "../memory/housekeeper.ts";
 import type { MrService } from "../mrs/service.ts";
 import type { ProjectCards } from "../projectcard/service.ts";
@@ -9,6 +10,7 @@ import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
 import { type DiffFacts, parseReview, tokensOf } from "./analysis.ts";
+import { effectiveCommands } from "./commands.ts";
 import { type ExecDeps, execInTask } from "./exec.ts";
 import { defaultHandoffParallel } from "./limits.ts";
 import { shipReadiness } from "./ready.ts";
@@ -37,6 +39,8 @@ export interface HandoffWiring {
   autonomous: () => boolean;
   /** The owner switched an outcome rule off in a workspace. Bound late: the playbooks come after the hand-off. */
   ruleOff?: ((org: string, rule: string) => boolean) | undefined;
+  /** A project's own hand-off commands from majhi.yaml, when set. They win over its card's. */
+  handoffCommands?: ((project: string) => Promise<HandoffCommands | undefined>) | undefined;
   /** The monthly ceiling is reached, in words, or undefined. Bound late. */
   ceilingHeld: () => string | undefined;
   changed: (task: string) => void;
@@ -95,7 +99,18 @@ export function createHandoff(w: HandoffWiring): HandoffService {
       const owner = r.owner === true || (r.conflict === true && !(await w.mergeDecides(org)));
       return { ok: false, why: r.why, ...(owner ? { owner: true } : {}) };
     },
-    commands: (project) => w.projectCards.get(project)?.commands ?? {},
+    commands: async (project) =>
+      effectiveCommands(w.projectCards.get(project)?.commands, await w.handoffCommands?.(project)),
+    mergeBase: async (id, project) => {
+      const t = w.store.tasks.get(id);
+      const r = t?.repos.find((x) => x.project === project);
+      if (r === undefined) return undefined;
+      const cwd = r.worktree ?? r.source;
+      const from = await changeBase(cwd, r, `refs/heads/${r.branch}`, { mergeBase: true }).catch(
+        () => undefined,
+      );
+      return from?.commit;
+    },
     diff: async (id): Promise<DiffFacts> => {
       const diffs = await w.tasks.diff(id);
       return {
