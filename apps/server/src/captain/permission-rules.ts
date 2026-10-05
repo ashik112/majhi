@@ -83,3 +83,12 @@ export function answerFor(
   if (options.find((o) => o.id === chosen)?.kind !== "allow_once" || !coveredForTask(title)) return chosen;
   return options.find((o) => o.kind === "allow_always")?.id ?? chosen;
 }
+
+/**
+ * The line that says the captain's Allow once was recorded as Allow for this task, so the captain and
+ * the room see why the card shows another option. Undefined when the option stayed as chosen.
+ */
+export function widenedNote(title: string, chosen: string, recorded: string): string | undefined {
+  if (recorded === chosen) return undefined;
+  return `Allow once became Allow for this task: a rule covers ${title.trim()}`;
+}

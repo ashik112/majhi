@@ -815,6 +815,7 @@ function laneQuestion(workspace: string, card: QuestionCard): string {
     "Options:",
     options,
     "If the brief, memory or the code settles it, answer with majhi_autonomy_answer (task, item and the option id) and a one-line reason. If it is a real choice for the owner, leave it and log why with majhi_autonomy_note. Then end your turn.",
+    "For a tool a rule covers (majhi's read-only tools, the task's own previews and services), majhi records Allow once as Allow for this task, and the result's note says so. That is intended.",
   ].join("\n");
 }
 
