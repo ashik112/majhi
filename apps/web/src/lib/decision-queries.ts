@@ -4,6 +4,7 @@ import type {
   DecisionBatchResult,
   DecisionDetail,
   DecisionList,
+  OwnerDecision,
 } from "@majhi/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiRequestError, cmd } from "./api";
@@ -27,21 +28,35 @@ export function useDecisions() {
   return useQuery<DecisionList, ApiRequestError>(decisionListQuery);
 }
 
+/** A decision's detail lives outside the list's key, so a refetch of the list never refetches details. */
+const DETAIL_KEY = "decision-detail";
+
 /**
- * `decisions.detail`: the hand-back, diff stat, checks and target of the selected decision. Kept under
- * the list's key, so the same topics refetch it. It is read only while the list still holds the
- * decision: an item that just left is not asked for again. One that leaves between the two reads
- * answers 404, which is an empty detail, not an error.
+ * What changes when a decision does: the list carries no version, so it is made from the fields the
+ * list sends. A different string is a different decision to read again; the same string reuses the cache.
+ */
+export function decisionVersion(d: OwnerDecision): string {
+  return [d.at, d.blocked ?? "", d.sentence ?? "", d.options.map((o) => o.id).join(",")].join("|");
+}
+
+/**
+ * `decisions.detail`: the hand-back, diff stat, checks and target of the selected decision. Read only
+ * for the one decision the owner has selected, keyed by its id and version, so it is read once and
+ * again only when that decision changes. It is read only while the list still holds the decision: an
+ * item that just left is not asked for again. One that leaves between the two reads answers 404,
+ * which is an empty detail, not an error.
  */
 export function useDecisionDetail(id: string | undefined) {
-  // A boolean: a card that asks renders again only when its decision enters or leaves the list.
-  const listed =
-    useQuery<DecisionList, ApiRequestError, boolean>({
-      ...decisionListQuery,
-      select: (list) => id !== undefined && list.decisions.some((d) => d.id === id),
-    }).data === true;
+  // The version string: a card that asks renders again only when its decision changes or leaves.
+  const version = useQuery<DecisionList, ApiRequestError, string | undefined>({
+    ...decisionListQuery,
+    select: (list) => {
+      const found = id === undefined ? undefined : list.decisions.find((d) => d.id === id);
+      return found === undefined ? undefined : decisionVersion(found);
+    },
+  }).data;
   return useQuery<DecisionDetail, ApiRequestError>({
-    queryKey: [...queryKeys.decisions, "detail", id],
+    queryKey: [DETAIL_KEY, id, version],
     queryFn: async () => {
       try {
         return await cmd("decisions.detail", { id: id ?? "" });
@@ -50,7 +65,9 @@ export function useDecisionDetail(id: string | undefined) {
         throw error;
       }
     },
-    enabled: id !== undefined && listed,
+    enabled: id !== undefined && version !== undefined,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
     retry: false,
   });
 }
@@ -81,7 +98,7 @@ export function useAnswerDecision() {
     mutationFn: (input) => cmd("decisions.answer", input, { reason: "Owner answered a decision" }),
     onSuccess: (left, input) => {
       rememberAnswer();
-      client.removeQueries({ queryKey: [...queryKeys.decisions, "detail", input.id] });
+      client.removeQueries({ queryKey: [DETAIL_KEY, input.id] });
       client.setQueryData(queryKeys.decisions, left);
       return Promise.all([
         client.invalidateQueries({ queryKey: queryKeys.tasks }),
@@ -97,7 +114,7 @@ export function useAfterBatch() {
   const client = useQueryClient();
   return (result: DecisionBatchResult) => {
     if (result.done.length > 0) rememberAnswer();
-    for (const id of result.done) client.removeQueries({ queryKey: [...queryKeys.decisions, "detail", id] });
+    for (const id of result.done) client.removeQueries({ queryKey: [DETAIL_KEY, id] });
     client.setQueryData(queryKeys.decisions, { decisions: result.decisions, counts: result.counts });
     return Promise.all([
       client.invalidateQueries({ queryKey: queryKeys.tasks }),

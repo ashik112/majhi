@@ -13,6 +13,7 @@ import {
   topicQueryKeys,
   wsUrl,
 } from "./events-model";
+import { setFeedOpen } from "./feed-status";
 import { queryKeys } from "./queries";
 import { taskSync } from "./task-sync";
 import { throttledInvalidator } from "./throttled-invalidate";
@@ -69,6 +70,7 @@ export function useServerEvents(): void {
       // The feed is the first to know the server went away or came back: check the pill now.
       const checkHealth = () => void client.refetchQueries({ queryKey: queryKeys.health });
       ws.onopen = () => {
+        setFeedOpen(true);
         attempt = 0;
         lastSeq = undefined;
         checkHealth();
@@ -95,6 +97,7 @@ export function useServerEvents(): void {
       };
       ws.onclose = () => {
         if (stopped) return;
+        setFeedOpen(false);
         checkHealth();
         timer = window.setTimeout(connect, reconnectDelay(attempt));
         attempt += 1;

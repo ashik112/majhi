@@ -10,7 +10,7 @@ import { Markdown } from "@/features/room/markdown";
 import { cn } from "@/lib/cn";
 import { formatAgo, MOD_KEY, plural } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
-import { KindIcon, kindWord, WorkspaceName } from "./decision-list";
+import { KindIcon, kindWord, WorkspaceName } from "./decision-bits";
 import { openLabel, primaryOption, workspaceOf } from "./model";
 
 /** A labelled block of the detail body, divided from the next by a hairline. */

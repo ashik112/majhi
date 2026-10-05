@@ -65,6 +65,8 @@ export function useStaleBuild(): { decision: ReloadDecision; reload: () => void 
   const health = useQuery<Health>({
     queryKey: ["build-watch"],
     queryFn: ({ signal }) => getHealth(signal),
+    // The hello names the build on every connect, and a new build restarts the server: ask only until it has.
+    enabled: hello === undefined,
     refetchInterval: BUILD_POLL_MS,
     refetchIntervalInBackground: false,
     retry: false,
