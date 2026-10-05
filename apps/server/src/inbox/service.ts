@@ -1,5 +1,7 @@
 import {
+  type BoardCounts,
   batchPick,
+  boardCounts,
   type CardAction,
   type DecisionAnswerInput,
   type DecisionBatchInput,
@@ -7,6 +9,7 @@ import {
   type DecisionDetail,
   type DecisionRecommendInput,
   type Draft,
+  mergeVerdictLine,
   type OutboundChannel,
   type OwnerDecision,
   PRIVATE,
@@ -35,7 +38,6 @@ export interface DecisionActions {
   ): Promise<{ results?: readonly { project: string; ok: boolean; detail: string }[] | undefined }>;
   /** The owner's words to the task's lead: the task goes back to running. */
   askChanges(task: string, text: string, lead: string | undefined): Promise<unknown>;
-  answerCap(org: string, chore: string, answer: "raise" | "leave"): Promise<unknown>;
   answerBudget(scope: string, answer: "raise" | "leave"): Promise<unknown>;
   /** The outbound gate: approve (send) or discard one draft, or a whole batch. */
   decideDraft(id: number, decision: "send" | "discard"): Promise<unknown>;
@@ -48,6 +50,8 @@ export interface DecisionActions {
   answerTrust?(id: number, option: string): Promise<unknown>;
   /** The monthly ceiling: raise it for the month or keep it. */
   answerCeiling?(month: string, option: string): Promise<unknown>;
+  /** The Mac has notifications off for majhi: `settings` opens the pane, `check` sends a test. */
+  answerNotifyAccess?(option: string): Promise<unknown>;
 }
 
 export interface RecommendationStore {
@@ -61,7 +65,11 @@ export interface InboxDeps {
   /** Pending room items that may be decisions, of every open task. */
   items: () => RoomItem[];
   subject: (task: string) => Subject | undefined;
-  caps: () => Promise<DecisionSources["caps"]>;
+  /**
+   * Many subjects at once (done and missing tasks left out). A list reads this first, so naming a task per
+   * row costs three queries, not three per row.
+   */
+  subjects?: (tasks: readonly string[]) => ReadonlyMap<string, Subject>;
   budgets: () => Promise<DecisionSources["budgets"]>;
   signedOut: () => Promise<DecisionSources["signedOut"]>;
   recommendations: RecommendationStore;
@@ -82,6 +90,15 @@ export interface InboxDeps {
   orgNames?: () => Promise<Readonly<Record<string, string>>>;
   /** The agent's last message in the task. */
   lastAgentMessage?: (task: string) => { agent: string; text: string; at: string } | undefined;
+  /**
+   * Whether a task in review cannot merge now (nothing to merge, a conflict, uncommitted work). Read live;
+   * the inbox keeps the answer a few seconds. Absent or undefined: the card stands as it is.
+   */
+  shipBlock?: (task: string) => Promise<{ why: string; empty: boolean } | undefined>;
+  /** The tasks an agent is working on right now (not queued, not waiting on an answer). */
+  working?: () => readonly string[];
+  /** A look at a review task's merge found something new: screens read that task's decisions again. */
+  changed?: (task: string) => void;
   diff?: (task: string) => Promise<RepoDiff[]>;
   shipOptions?: (task: string) => Promise<ShipOptions>;
   now?: () => Date;
@@ -90,6 +107,13 @@ export interface InboxDeps {
 /** A batch's result is kept this long, so a second send of the same click gets the same answer. */
 const BATCH_KEEP_MS = 10 * 60_000;
 const BATCH_KEEP_MAX = 200;
+
+/** What the server found about a review task's merge is kept this long. */
+const SHIP_BLOCK_KEEP_MS = 15_000;
+/** At most this many merge looks (each reads the repos) are in flight at once. */
+const SHIP_LOOKS_AT_ONCE = 3;
+/** A list waits this long for first looks; the rest answer from the queue, and screens read again when they differ. */
+const SHIP_FIRST_LOOK_WAIT_MS = 1_500;
 
 /** Recommendations of decisions that are gone are kept this long, then forgotten. */
 const NO_NAMES: Readonly<Record<string, string>> = {};
@@ -103,20 +127,141 @@ export class InboxService {
   /** Batches by the client's key: the work in flight or done, so a double send changes nothing. */
   private readonly batches = new Map<string, { at: number; run: Promise<DecisionBatchResult> }>();
 
+  /** Per task: what the last look at its merge found, and when. */
+  private readonly shipLooks = new Map<
+    string,
+    { at: number; block: { why: string; empty: boolean } | undefined }
+  >();
+  /** Tasks whose look is queued or running now. */
+  private readonly renewing = new Set<string>();
+  private readonly lookQueue: (() => Promise<void>)[] = [];
+  private lookRunning = 0;
+  /** What waited at the last build, so a change in who is working recounts without building everything again. */
+  private lastDecisions: readonly OwnerDecision[] | undefined;
+
   constructor(private readonly deps: InboxDeps) {}
 
   async list(org?: string): Promise<OwnerDecision[]> {
+    const all = await this.build();
+    return org === undefined ? all : all.filter((d) => d.org === org);
+  }
+
+  /** The decisions and the one set of counts every screen shows, from the same look. */
+  async view(org?: string): Promise<{ decisions: OwnerDecision[]; counts: BoardCounts }> {
+    const all = await this.build();
+    return {
+      decisions: org === undefined ? all : all.filter((d) => d.org === org),
+      counts: this.counts(all),
+    };
+  }
+
+  /**
+   * The counts alone. A change in who is working does not change what waits, so this recounts the last
+   * look at what waits with the agents working now. The first call builds the look.
+   */
+  async workCounts(): Promise<BoardCounts> {
+    return this.counts(this.lastDecisions ?? (await this.build()));
+  }
+
+  private counts(all: readonly OwnerDecision[]): BoardCounts {
     const { deps } = this;
-    const [caps, budgets, signedOut, names] = await Promise.all([
-      deps.caps(),
+    const working = (deps.working?.() ?? []).flatMap((task) => {
+      const subject = deps.subject(task);
+      // Chats are not on the board: only tasks count as working.
+      return subject === undefined ||
+        subject.chat ||
+        (subject.status !== undefined && subject.status !== "running")
+        ? []
+        : [{ task, org: subject.org }];
+    });
+    return boardCounts(all, working);
+  }
+
+  /** Review tasks that cannot merge, from a live look kept a few seconds. */
+  private async shipBlocks(
+    items: readonly RoomItem[],
+    subject: (task: string) => Subject | undefined,
+  ): Promise<Map<string, { why: string; empty: boolean }>> {
+    const { deps } = this;
+    const out = new Map<string, { why: string; empty: boolean }>();
+    if (deps.shipBlock === undefined) return out;
+    const now = (deps.now?.() ?? new Date()).getTime();
+    const tasks = new Set(
+      items.flatMap((i) =>
+        i.type === "review" && i.state === "pending" && subject(i.task)?.status === "review" ? [i.task] : [],
+      ),
+    );
+    for (const task of this.shipLooks.keys()) if (!tasks.has(task)) this.shipLooks.delete(task);
+    const first: Promise<void>[] = [];
+    for (const task of tasks) {
+      const look = this.shipLooks.get(task);
+      if (look === undefined) {
+        // A card should not offer Merge for a moment and then take it back, so first looks are waited for,
+        // but only a moment: a long queue of them (a big backlog) answers as they finish.
+        if (!this.renewing.has(task)) first.push(this.queueLook(task, undefined));
+      } else {
+        // An old look still answers; a new one is read behind it, and screens hear when it differs.
+        if (now - look.at > SHIP_BLOCK_KEEP_MS && !this.renewing.has(task))
+          void this.queueLook(task, look.block);
+        if (look.block !== undefined) out.set(task, look.block);
+      }
+    }
+    if (first.length > 0) {
+      await Promise.race([Promise.all(first), new Promise((r) => setTimeout(r, SHIP_FIRST_LOOK_WAIT_MS))]);
+      for (const task of tasks) {
+        const block = this.shipLooks.get(task)?.block;
+        if (block !== undefined) out.set(task, block);
+      }
+    }
+    return out;
+  }
+
+  /** Looks at a merge when one of the few slots is free. Resolves when the look is stored. */
+  private queueLook(task: string, was: { why: string; empty: boolean } | undefined): Promise<void> {
+    this.renewing.add(task);
+    return new Promise((resolve) => {
+      this.lookQueue.push(async () => {
+        const block = await this.look(task);
+        this.renewing.delete(task);
+        this.shipLooks.set(task, { at: (this.deps.now?.() ?? new Date()).getTime(), block });
+        if (was?.why !== block?.why || was?.empty !== block?.empty) this.deps.changed?.(task);
+        resolve();
+      });
+      this.pumpLooks();
+    });
+  }
+
+  private pumpLooks(): void {
+    while (this.lookRunning < SHIP_LOOKS_AT_ONCE) {
+      const next = this.lookQueue.shift();
+      if (next === undefined) return;
+      this.lookRunning += 1;
+      void next().finally(() => {
+        this.lookRunning -= 1;
+        this.pumpLooks();
+      });
+    }
+  }
+
+  private look(task: string): Promise<{ why: string; empty: boolean } | undefined> {
+    return (this.deps.shipBlock?.(task) ?? Promise.resolve(undefined)).catch(() => undefined);
+  }
+
+  private async build(): Promise<OwnerDecision[]> {
+    const { deps } = this;
+    const [budgets, signedOut, names] = await Promise.all([
       deps.budgets(),
       deps.signedOut(),
       deps.orgNames?.() ?? NO_NAMES,
     ]);
+    const items = deps.items();
+    // One batched read names every task a row mentions; a task it did not cover falls back to the single read.
+    const known = deps.subjects?.([...new Set(items.map((i) => i.task))]);
+    const subject = (task: string) => (known?.has(task) ? known.get(task) : deps.subject(task));
     const all = buildDecisions({
-      items: deps.items(),
-      subject: deps.subject,
-      caps,
+      items,
+      shipBlocked: await this.shipBlocks(items, subject),
+      subject,
       budgets,
       signedOut,
       recommendations: deps.recommendations.all(),
@@ -128,7 +273,8 @@ export class InboxService {
     });
     const now = (deps.now?.() ?? new Date()).getTime();
     deps.recommendations.prune(new Set(all.map((d) => d.id)), new Date(now - KEEP_MS).toISOString());
-    return org === undefined ? all : all.filter((d) => d.org === org);
+    this.lastDecisions = all;
+    return all;
   }
 
   /** The decisions left after the answer, so a screen can show them without asking again. */
@@ -138,6 +284,12 @@ export class InboxService {
     await this.apply(decision, input, () => this.deps.items());
     this.noteAnswer(decision, input.option);
     return this.list();
+  }
+
+  /** `answer`, with the counts of what waits after it. */
+  async answerView(input: DecisionAnswerInput): Promise<{ decisions: OwnerDecision[]; counts: BoardCounts }> {
+    await this.answer(input);
+    return this.view();
   }
 
   /**
@@ -167,6 +319,7 @@ export class InboxService {
       skipped: [],
       failed: [],
       decisions: [],
+      counts: boardCounts([], []),
     };
     const waiting = new Map((await this.list()).map((d) => [d.id, d]));
     // One look at the room cards for the whole batch: each answer re-checks its own card.
@@ -190,7 +343,9 @@ export class InboxService {
         result.failed.push({ id, error: err instanceof Error ? err.message : "It failed" });
       }
     }
-    result.decisions = await this.list();
+    const left = await this.view();
+    result.decisions = left.decisions;
+    result.counts = left.counts;
     return result;
   }
 
@@ -219,8 +374,7 @@ export class InboxService {
     const parsed = parseDecisionId(input.id);
     if (parsed === undefined) throw new UserError("That is not a decision id.", 400);
     const { actions } = this.deps;
-    if (parsed.kind === "cap") await actions.answerCap(parsed.org, parsed.chore, raiseOrLeave(input.option));
-    else if (parsed.kind === "budget") await actions.answerBudget(parsed.scope, raiseOrLeave(input.option));
+    if (parsed.kind === "budget") await actions.answerBudget(parsed.scope, raiseOrLeave(input.option));
     else if (parsed.kind === "signin") throw new UserError("Sign in from Accounts.", 400);
     else if (parsed.kind === "incident") {
       if (input.option === "ack") await actions.ackIncident?.(parsed.id);
@@ -230,6 +384,7 @@ export class InboxService {
       }
     } else if (parsed.kind === "trust") await actions.answerTrust?.(parsed.id, input.option);
     else if (parsed.kind === "ceiling") await actions.answerCeiling?.(parsed.month, input.option);
+    else if (parsed.kind === "notify") await actions.answerNotifyAccess?.(input.option);
     else if (parsed.kind === "draft") {
       await actions.decideDraft(parsed.id, input.option === "send" ? "send" : "discard");
     } else if (parsed.kind === "batch") {
@@ -310,6 +465,15 @@ export class InboxService {
     const item = deps.items().find((i) => i.task === parsed.task && i.id === parsed.item);
     const handback = deps.lastAgentMessage?.(parsed.task);
     if (handback !== undefined) out.handback = handback;
+    if (item?.type === "permission") {
+      out.command = item.connection?.action ?? item.title;
+      out.agent = item.agent;
+    }
+    if (item?.type === "approval") {
+      out.command =
+        item.reason === undefined || item.reason === "" ? item.summary : `${item.summary}\n${item.reason}`;
+      out.agent = item.agent;
+    }
     if (item?.type === "ask") {
       out.questions = item.questions.map((q) => ({
         question: q.question,
@@ -372,6 +536,10 @@ export class InboxService {
     }
     const offers = (id: string) => decision.options.some((o) => o.id === id);
     if (offers("merge") && !ship.merge.ok) blocked.merge = ship.merge.why ?? "It cannot merge now.";
+    // The merge rule: no Merge from a list while the checks are not green for this commit. The task's Ship panel has the buttons.
+    else if (offers("merge") && ship.checks !== undefined && ship.checks.verdict.kind !== "ok") {
+      blocked.merge = `${mergeVerdictLine(ship.checks.verdict)} Open the task to run the checks or fix them.`;
+    }
     if (offers("done")) {
       const left = ship.done.unshipped ?? [];
       if (!ship.done.ok) blocked.done = ship.done.why ?? "It cannot be marked done now.";

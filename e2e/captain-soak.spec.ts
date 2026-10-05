@@ -3,8 +3,7 @@ import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 
 /**
- * The captain's soak test (SPEC 5.18, "No runaway, no loops") runs with every suite, so the
- * background e2e after each merge into main (PRV-72) runs it too. It lives with the server's tests
+ * The captain's soak test (SPEC 5.18, "No runaway, no loops") runs with every suite. It lives with the server's tests
  * (`apps/server/src/captain/soak.test.ts`), where it drives the real services and the fake agent.
  */
 test("the captain's soak test passes", async () => {

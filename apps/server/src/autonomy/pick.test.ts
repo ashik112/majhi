@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ASK, RUNS, TIDY } from "../captain/authority-fixtures.ts";
 import type { TaskRating } from "../decisions/api.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
+import { seedStatus } from "../testing/status.ts";
 
 let w: BossWorld | undefined;
 afterEach(async () => {
@@ -51,7 +52,7 @@ async function on() {
     expect(res.status).toBe(200);
     return res.body as AutonomyStatus;
   };
-  const status = async (): Promise<AutonomyStatus> => (await h.cmd("autonomy.status")).body;
+  const status = async (): Promise<AutonomyStatus> => (await h.cmd("autonomy.status", { detail: true })).body;
   const refused = async (): Promise<AutonomyEvent[]> =>
     ((await h.cmd("autonomy.events", { limit: 100 })).body.events as AutonomyEvent[]).filter(
       (e) => e.kind === "refused",
@@ -291,7 +292,7 @@ describe("the captain's lane", () => {
     const events = (await t.h.cmd("autonomy.events", { limit: 20 })).body.events as AutonomyEvent[];
     expect(events[0]?.text).toBe(`The captain works in Acme in its lane ${chat}`);
     // A closed lane is reopened, not replaced.
-    t.h.majhi.services.store.tasks.setStatus(chat ?? "", "done", undefined, new Date().toISOString());
+    seedStatus(t.h.majhi.services.store, chat ?? "", "done", undefined, new Date().toISOString());
     expect(await t.autonomy.laneChat("acme")).toBe(chat);
     expect(t.h.majhi.services.store.tasks.get(chat ?? "")?.status).not.toBe("done");
     // A workspace where the captain neither starts work nor does upkeep gets no lane; one where it

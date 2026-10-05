@@ -28,11 +28,11 @@ function captainTool(ctx: CommandContext): never {
 /** The `decisions.*` commands of the owner's inbox (SPEC 5.18). */
 export function inboxHandlers(decisions: InboxService): Pick<CommandHandlers, DecisionCommand> {
   return {
-    "decisions.list": async (input) => ({ decisions: await decisions.list(input.org) }),
+    "decisions.list": async (input) => decisions.view(input.org),
     "decisions.detail": async (input) => decisions.detail(input.id),
     "decisions.answer": async (input, ctx) => {
       ownerOnly(ctx);
-      return { decisions: await decisions.answer(input) };
+      return decisions.answerView(input);
     },
     "decisions.answerBatch": async (input, ctx) => {
       ownerOnly(ctx);

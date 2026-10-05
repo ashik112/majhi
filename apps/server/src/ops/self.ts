@@ -53,7 +53,6 @@ export const LIMITS = {
   dbGrowthFailBytes: 1 * GB,
   queueStuckMin: 30,
   worktreesFailBytes: 60 * GB,
-  e2eFailBytes: 10 * GB,
 } as const;
 
 export interface HealthLike {

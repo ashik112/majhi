@@ -24,6 +24,8 @@ export interface AppDeps {
   version: string;
   /** Git commit the image was built from. `/health` reports it so a browser can tell a new server from the old one. */
   commit?: string;
+  /** Id of the web bundle served from `webDist`. `/health` reports it so an open tab can tell it is out of date. */
+  build?: string | undefined;
   /** Built web app. When it has no index.html, `/` explains that instead. */
   webDist: string;
   dispatch: Dispatch;
@@ -68,7 +70,12 @@ export function createApp(deps: AppDeps): Hono {
   }
 
   app.get("/health", (c) =>
-    c.json({ status: "ok", version: deps.version, commit: deps.commit ?? "dev" } satisfies Health),
+    c.json({
+      status: "ok",
+      version: deps.version,
+      commit: deps.commit ?? "dev",
+      ...(deps.build === undefined ? {} : { build: deps.build }),
+    } satisfies Health),
   );
 
   app.post("/api/cmd/:name", async (c) => {
@@ -110,8 +117,17 @@ export function createApp(deps: AppDeps): Hono {
 
   const index = join(deps.webDist, "index.html");
   if (existsSync(index)) {
-    const serveIndex = serveStatic({ path: index });
-    app.get("*", serveStatic({ root: deps.webDist }));
+    // The build leaves .br and .gz next to the text files; hashed files never change, the page does.
+    const serveIndex = serveStatic({ path: index, precompressed: true });
+    app.get("*", async (c, next) => {
+      await next();
+      if (c.res.status !== 200) return;
+      c.res.headers.set(
+        "Cache-Control",
+        c.req.path.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache",
+      );
+    });
+    app.get("*", serveStatic({ root: deps.webDist, precompressed: true }));
     // Client-side routes get the app. Missing files, like `/assets/old.js`, stay 404.
     app.get("*", (c, next) => (/\.[a-z0-9]+$/i.test(c.req.path) ? next() : serveIndex(c, next)));
   } else {

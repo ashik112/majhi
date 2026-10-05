@@ -60,7 +60,7 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
   );
 }
 
-const GRID = "grid grid-cols-[20px_minmax(0,1fr)_84px_minmax(0,150px)_96px] items-center gap-2.5";
+const GRID = "grid grid-cols-[20px_minmax(88px,1fr)_76px_minmax(0,112px)_96px] items-center gap-2.5";
 
 function RowLine({
   row,

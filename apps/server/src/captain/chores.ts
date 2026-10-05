@@ -1,12 +1,18 @@
 import type { CaptainChore } from "@majhi/shared";
 import { runFollowUps } from "../findings/followups.ts";
 import { sizeText } from "../tasks/folder-sweep.ts";
-import { judgeReport, summaryLine } from "./answer-check.ts";
+import { answerGate, judgeReport, summaryLine } from "./answer-check.ts";
+import { shipState } from "./keys.ts";
 import { classifyOwnWork } from "./own-work.ts";
-import type { SecondOpinion } from "./own-work-second.ts";
 import { permissionVerdict } from "./permission-rules.ts";
-import type { ApprovalCard, CaptainPorts, PendingFact, QuestionCard, ReviewTask, ShipCheck } from "./ports.ts";
-import { loopLine, nudgeText, questionLoop } from "./question-loop.ts";
+import type {
+  ApprovalCard,
+  CaptainPorts,
+  PendingFact,
+  QuestionCard,
+  ReviewTask,
+  ShipCheck,
+} from "./ports.ts";
 import { branchAllowed, typingWhy } from "./rules.ts";
 import type { ChoreRun } from "./runner.ts";
 import { createUpkeepChores } from "./upkeep.ts";
@@ -57,18 +63,7 @@ export function createChores(
     const { org, ws } = run;
     const scope = await ports.ownScope(org, card.task);
     if (scope === undefined) return false;
-    let verdict = classifyOwnWork(card.text, scope);
-    // The unknown middle only: Laya may say routine, never over a refusal. Down or unsure: the owner, as before.
-    let second: SecondOpinion | undefined;
-    if (verdict.decision === "owner" && verdict.middle === true && ports.ownSecondOpinion !== undefined) {
-      second = await ports.ownSecondOpinion(card, scope).catch(() => undefined);
-      if (second?.approve === true) {
-        verdict = {
-          decision: "approve",
-          why: `a second opinion from Laya called it routine inside the task`,
-        };
-      }
-    }
+    const verdict = classifyOwnWork(card.text, scope);
     const key = `own:${card.task}:${card.item}`;
     const allow = card.options.find((o) => o.effect === "allow");
     if (verdict.decision === "approve" && allow !== undefined) {
@@ -77,12 +72,13 @@ export function createChores(
         key,
         text: `Approved in ${card.task}: ${clip(card.text, 80)}`,
         reason: `Own work: in ${ws.name} the captain approves what it started, and ${verdict.why}`,
-        evidence: `@${card.agent} asked: ${card.text}${second?.approve === true ? ` (${second.why})` : ""}`,
+        evidence: `@${card.agent} asked: ${card.text}`,
         task: card.task,
         irreversible: true,
         recheck: async () => away(card.task),
         do: async () => {
-          await ports.answer(org, card, allow.id, `Own work: ${verdict.why}`);
+          const done = await ports.answer(org, card, allow.id, `Own work: ${verdict.why}`);
+          if (!done.answered) return { repeat: true };
           return { undoNote: "An answer an agent already read cannot be taken back" };
         },
       });
@@ -93,11 +89,10 @@ export function createChores(
     }
     if (ruleOff(run, "q-ask")) return true;
     const base = verdict.decision === "approve" ? "the prompt has no Allow once option" : verdict.why;
-    const why = second === undefined || second.why === "" ? base : `${base}; second opinion: ${second.why}`;
     await run.act({
       key,
       text: `Left a request in ${card.task} for you: ${clip(card.text, 80)}`,
-      reason: `Own work does not cover it: ${why}`,
+      reason: `Own work does not cover it: ${base}`,
       evidence: `@${card.agent} asked: ${card.text}`,
       task: card.task,
       do: async () => ({ outcome: "asked", undoNote: "Nothing was answered" }),
@@ -146,8 +141,9 @@ export function createChores(
     const ready = await ports.mrReady(org, t.id);
     if (!ready.ok) {
       if (ruleOff(run, "ship-ask")) return;
+      // Its own key per reason: an older "asked you to ship" for the same head must not hide why.
       await run.act({
-        key: `ship:ready:${t.id}:${t.heads}`,
+        key: `ship:mr-blocked:${t.id}:${t.heads}:${ready.why}`,
         text: `Asked you to ship ${t.id}: ${t.title}`,
         reason: `No merge request opened: ${ready.why}`,
         evidence,
@@ -167,7 +163,7 @@ export function createChores(
     }
     const reason = `In ${ws.name} the captain decides when work is pushed and you merge, so it opens the merge request on ${ready.host}`;
     await run.act({
-      key: `ship:mr:${t.id}:${t.heads}`,
+      key: `ship:mr:${t.id}:${shipState(t)}`,
       text: `Opened a merge request for ${t.id} on ${ready.host}: ${t.title}`,
       reason,
       evidence,
@@ -234,11 +230,7 @@ export function createChores(
         const out = await ports.openMrs(org, id, reason);
         if (out.failed !== undefined) throw new Error(out.failed);
         const links = out.urls.length === 0 ? "" : ` ${out.urls.join(", ")}`;
-        await ports.settleMergeCard(
-          org,
-          card,
-          `Opened MR${links} on ${out.host} instead: the owner merges`,
-        );
+        await ports.settleMergeCard(org, card, `Opened MR${links} on ${out.host} instead: the owner merges`);
         return {
           undoNote:
             "The branch is pushed and the merge request is open: close it on the host to take it back",
@@ -256,9 +248,16 @@ export function createChores(
   const answerChecks = async (run: ChoreRun): Promise<Set<string>> => {
     const { org, ws } = run;
     const seen = new Set<string>();
-    if (ws.authority.upkeep !== "decide" && ws.authority.questions !== "decide") return seen;
+    if (!answerGate(ws.authority).open) return seen;
+    // The workspace's rules, read again right before a turn is spent on a lead.
+    const gateNow = () => {
+      const gate = answerGate(run.ws.authority);
+      return gate.open ? undefined : gate.why;
+    };
     for (const t of await ports.answerTasks(org)) {
       run.check();
+      // A code task that changed nothing has no report to judge: the ship path says why it cannot ship.
+      if (!t.investigation) continue;
       seen.add(t.id);
       const present = away(t.id);
       if (present !== undefined) {
@@ -276,7 +275,7 @@ export function createChores(
           reason: `It changed no code and the lead's report answers the brief. In ${ws.name} the captain decides upkeep`,
           evidence: clip(t.report.text, 300),
           task: t.id,
-          recheck: async () => away(t.id),
+          recheck: async () => away(t.id) ?? gateNow(),
           do: async () => {
             await ports.closeAnswer(org, t.id, `The report answers the brief: ${line}`);
             return { undoNote: "Reopen it from the task" };
@@ -309,7 +308,7 @@ export function createChores(
         text: `Asked the lead of ${t.id} for changes: ${t.title}`,
         reason: why,
         task: t.id,
-        recheck: async () => away(t.id),
+        recheck: async () => away(t.id) ?? gateNow(),
         do: async () => {
           await ports.askChanges(org, t.id, `Captain: ${why}`);
           return { undoNote: "A message to the lead: nothing to undo" };
@@ -338,7 +337,7 @@ export function createChores(
           if (check.conflict === true && ws.authority.merge === "decide" && !ruleOff(run, "ship-conflict")) {
             const reason = `${check.why}. In ${ws.name} the captain decides when work is merged`;
             await run.act({
-              key: `ship:resolve:${t.id}:${t.heads}`,
+              key: `ship:resolve:${t.id}:${shipState(t)}`,
               text: `Asked the lead of ${t.id} to resolve the conflicts with main: ${t.title}`,
               reason,
               task: t.id,
@@ -422,7 +421,7 @@ export function createChores(
         const push = ws.authority.push === "decide";
         const reason = `In ${ws.name} the captain decides when work is merged${push ? " and pushed" : ""}`;
         await run.act({
-          key: `ship:${t.id}:${t.heads}`,
+          key: `ship:${t.id}:${shipState(t)}`,
           text: `Shipped ${t.id} to ${into}: ${t.title}`,
           reason,
           evidence: check.checked === undefined ? check.evidence : `${check.evidence}; ${check.checked}`,
@@ -493,6 +492,7 @@ export function createChores(
           recheck: async () => away(card.task),
           do: async () => {
             const done = await ports.decideCard(org, card, verdict);
+            if (done.repeat === true) return { repeat: true };
             if (!done.ok) throw new Error(done.error ?? "the command failed");
             return done.commit === undefined
               ? { undoNote: "It changed no config, so there is nothing to revert" }
@@ -536,35 +536,6 @@ export function createChores(
           });
           continue;
         }
-        // An agent that asks the same thing again and again is stuck: no answer feeds it.
-        // A permission whose call then went through is normal use, so its outcome is read first.
-        const past = run
-          .answeredRecently(card.task, card.agent)
-          .map((p) => ({
-            ...p,
-            outcome: p.item === undefined ? undefined : ports.callOutcome?.(card.task, p.item),
-          }));
-        const loop = questionLoop(past, card.text, now());
-        if (loop !== undefined) {
-          if (ruleOff(run, "q-loop")) continue;
-          // The same loop has one key, so the cards that follow it add no second line and no second message.
-          const line = loopLine(card.agent, card.task, loop);
-          await run.act({
-            key: `question-loop:${card.task}:${card.agent}:${loop.since}`,
-            text: line,
-            reason: "Answering the same question again does not help it",
-            evidence: card.text,
-            task: card.task,
-            do: async () => {
-              await ports.flagLoop(org, card, line, nudgeText(card.task, loop));
-              return {
-                outcome: "asked",
-                undoNote: "A line for you and one message to the agent: nothing to undo",
-              };
-            },
-          });
-          continue;
-        }
         // A permission prompt is settled by the rule table or not at all: no model decides it.
         if (card.kind === "permission") {
           const verdict = permissionVerdict(card.text);
@@ -592,7 +563,8 @@ export function createChores(
                 irreversible: true,
                 recheck: async () => away(card.task),
                 do: async () => {
-                  await ports.answer(org, card, pick.id, `By rule: ${verdict.why}`);
+                  const done = await ports.answer(org, card, pick.id, `By rule: ${verdict.why}`);
+                  if (!done.answered) return { repeat: true };
                   return { undoNote: "An answer an agent already read cannot be taken back" };
                 },
               });
@@ -781,6 +753,26 @@ export function createChores(
       }
       // Code only: dependency folders and build output of done tasks. A second run finds nothing.
       if (ruleOff(run, "cleanup-caches")) return;
+      const freeable = await ports.freeCaches?.(org, true);
+      if (freeable !== undefined && freeable.length > 0) {
+        run.check();
+        await run.act({
+          key: `caches:${org}:${now().toISOString()}`,
+          text: `Frees dependency caches of ${freeable.length} done ${freeable.length === 1 ? "task" : "tasks"}`,
+          reason:
+            "Done tasks keep their source, branches and history. Caches come back with the next install",
+          do: async () => {
+            const freed = (await ports.freeCaches?.(org, false)) ?? [];
+            return {
+              text: `Freed dependency caches of ${freed.length} done ${freed.length === 1 ? "task" : "tasks"}: ${freed
+                .slice(0, 5)
+                .map((t) => t.id)
+                .join(", ")}${freed.length > 5 ? ", ..." : ""}`,
+              undoNote: "Deleted caches come back with the next install or build",
+            };
+          },
+        });
+      }
       const found = await ports.foldersFreeable?.(org);
       if (found === undefined || found.bytes <= 0) return;
       run.check();
@@ -809,92 +801,6 @@ export function createChores(
         findings: ports.findings,
         askLane: (org, text) => ports.askLane(org, text),
       });
-    },
-
-    async stuck(run) {
-      const { org } = run;
-      // An account that needs a new sign-in holds the task up: the step goes to a teammate whose
-      // account works, in every task of the workspace, autonomous or not.
-      const signIns = new Set<string>();
-      for (const s of await ports.signInStalls(org)) {
-        run.check();
-        if (ruleOff(run, "stuck-signin")) break;
-        if (away(s.id) !== undefined) continue;
-        signIns.add(s.id);
-        const key = `stuck:signin:${s.id}:${s.agent}:${s.since}`;
-        const to = s.to;
-        if (to === undefined) {
-          run.note(
-            key,
-            `${s.id} waits for a sign-in`,
-            `@${s.agent}'s account ${s.account} needs a new sign-in, and no teammate's account works`,
-            s.id,
-          );
-          continue;
-        }
-        if (s.agent === s.lead) {
-          const reason = `@${s.agent} cannot run until ${s.account} is signed in again, and @${to}'s account works`;
-          await run.act({
-            key,
-            text: `Moved ${s.id} from @${s.agent} to @${to}: ${s.account} needs a new sign-in`,
-            reason,
-            task: s.id,
-            recheck: async () => away(s.id),
-            do: async () => {
-              await ports.moveLead(org, s.id, to, reason);
-              return {
-                undoNote: `Move ${s.id} back to @${s.agent} on its page once ${s.account} is signed in`,
-              };
-            },
-          });
-          continue;
-        }
-        await run.act({
-          key,
-          text: `Woke @${s.lead} in ${s.id} to give @${s.agent}'s step to a teammate`,
-          reason: `${s.account} needs a new sign-in, so @${s.agent} cannot run`,
-          task: s.id,
-          do: async () => {
-            ports.handBack(org, s.id, s.agent, s.account);
-            return { undoNote: "A message to the lead: nothing to undo" };
-          },
-        });
-      }
-      for (const s of ports.stalled(org)) {
-        run.check();
-        if (signIns.has(s.id)) continue;
-        const present = away(s.id);
-        if (present !== undefined) continue;
-        const wake = `stuck:wake:${s.id}:${s.quietSince}`;
-        if (!run.done(wake) && !ruleOff(run, "stuck-wake")) {
-          await run.act({
-            key: wake,
-            text: `Woke @${s.lead} in ${s.id}: nobody was working and nothing was pending`,
-            reason: "A running task went quiet",
-            task: s.id,
-            do: async () => {
-              ports.wakeLead(org, s.id);
-              return { undoNote: "A message to the lead: nothing to undo" };
-            },
-          });
-          continue;
-        }
-        if (ruleOff(run, "stuck-tell")) continue;
-        await run.act({
-          key: `stuck:owner:${s.id}:${s.quietSince}`,
-          text: `Paused ${s.id} for you: still quiet after the captain woke @${s.lead}`,
-          reason: "The captain wakes the lead once, then tells the owner",
-          task: s.id,
-          do: async () => {
-            await ports.pauseForOwner(
-              org,
-              s.id,
-              `Nobody is working on ${s.id} and nothing is pending, even after the captain woke @${s.lead}.`,
-            );
-            return { outcome: "asked", undoNote: "Resume the task to undo the pause" };
-          },
-        });
-      }
     },
   };
 }

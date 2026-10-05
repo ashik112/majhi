@@ -1,9 +1,8 @@
 import type { Authority, CaptainUndo, CommandName, ShipFix, TaskPriority } from "@majhi/shared";
 import type { FollowUpPorts } from "../findings/followups.ts";
 import type { FindingsService } from "../findings/service.ts";
-import type { CallOutcome } from "./call-outcome.ts";
+import type { AnswerResult } from "./keys.ts";
 import type { OwnWorkScope } from "./own-work.ts";
-import type { SecondOpinion } from "./own-work-second.ts";
 import type { UpkeepPorts } from "./upkeep-ports.ts";
 
 /**
@@ -18,12 +17,16 @@ export interface ReviewTask {
   title: string;
   /** The task's head commits, one per repo: a ship-ready card is posted once per state of the work. */
   heads: string;
+  /** The tip of the branch each repo goes onto, one per repo. A ship is keyed by the heads and these. */
+  bases?: string | undefined;
 }
 
 /** A task in review with no code change: its lead's last message is the answer. */
 export interface AnswerTask {
   id: string;
   title: string;
+  /** An investigation or an answer. A code task that changed nothing is not one: it is left for the owner. */
+  investigation: boolean;
   lead?: string | undefined;
   /** The lead's last message, its final report. Absent when it never wrote one. */
   report?: { text: string; at: string } | undefined;
@@ -38,6 +41,12 @@ export type ShipCheck =
       owner?: boolean;
       /** It conflicts with its base. Who resolves that follows the workspace's Merge row. */
       conflict?: boolean;
+      /**
+       * Merge would fail now: `empty` when nothing is ahead of the base, `failing` for a conflict,
+       * uncommitted work, a secret in the diff or a merge git refuses. The owner's card says so
+       * instead of offering Merge.
+       */
+      unmergeable?: "empty" | "failing";
       /** Work left uncommitted in a repo: the lead is asked to commit or discard it. */
       uncommitted?: { project: string; files: string[] };
     }
@@ -155,7 +164,13 @@ export interface CaptainPorts {
       risky?: boolean | undefined;
       fix?: ShipFix | undefined;
     },
-  ): Promise<{ ok: boolean; error?: string | undefined; commit?: string | undefined }>;
+  ): Promise<{
+    ok: boolean;
+    error?: string | undefined;
+    commit?: string | undefined;
+    /** The card was answered before (or is being answered): nothing ran now. */
+    repeat?: true | undefined;
+  }>;
   /** The table that decides a card, with the workspace's authority rows. */
   cardVerdict(
     org: string,
@@ -170,19 +185,8 @@ export interface CaptainPorts {
    * it, it is the owner's to keep, or it has no worktree.
    */
   ownScope(org: string, task: string): Promise<OwnWorkScope | undefined>;
-  /**
-   * Laya's second opinion on a request the rule table could not place (SPEC 5.12). Absent or
-   * `approve: false`: the request stays the owner's, as it always was.
-   */
-  ownSecondOpinion?(card: QuestionCard, scope: OwnWorkScope): Promise<SecondOpinion>;
-  /**
-   * An agent keeps asking the same thing: the line goes into the task's room for the owner, and the
-   * agent gets one message telling it to stop asking.
-   */
-  /** How the call behind a permission card the captain answered ended; unknown for anything else. */
-  callOutcome?(task: string, item: string): CallOutcome | undefined;
-  flagLoop(org: string, card: QuestionCard, line: string, nudge: string): Promise<void>;
-  answer(org: string, card: QuestionCard, option: string, reason: string): Promise<void>;
+  /** One answer per card: a second answer to the same card changes nothing and says so. */
+  answer(org: string, card: QuestionCard, option: string, reason: string): Promise<AnswerResult>;
   /** Why the workspace's lane rests now (its budget, the day budget, its account), or undefined. */
   laneRest(org: string): Promise<string | undefined>;
   /** A short turn of the captain in the workspace's lane. False with why when the lane rests. */
@@ -214,27 +218,17 @@ export interface CaptainPorts {
   /** Done tasks with something to remove, and the worktrees of them that hold uncommitted changes (never removed). */
   cleanable(org: string): Promise<{ id: string; title: string; steps: string[]; dirty: string[] }[]>;
   clean(org: string, task: string): Promise<{ removed: string[]; kept: string[] }>;
+  /**
+   * With `dry`, lists what would be freed. Otherwise frees the ignored dependency caches of tasks done for longer than `cleanup.caches_after_days`
+   * (source, branches and room history stay). Never a reopened task or a worktree with uncommitted changes.
+   */
+  freeCaches?(org: string, dry: boolean): Promise<{ id: string; removed: string[] }[]>;
   /** What deleting rebuildable folders of done tasks would free in the workspace (code only). */
   foldersFreeable?(org: string): Promise<{ bytes: number; tasks: number }>;
   /** Deletes them. Never tracked files, never a task with uncommitted changes or one reopened. */
   freeFolders?(
     org: string,
   ): Promise<{ bytes: number; tasks: { id: string; bytes: number; worktrees: number; folders: number }[] }>;
-
-  // Stuck tasks
-  /** Running tasks where nobody works and nothing is pending, with when the last turn ended. */
-  stalled(org: string): { id: string; lead: string; quietSince: string }[];
-  /**
-   * Tasks held up by an account that needs a new sign-in: the lead cannot run (the task runs quiet,
-   * or paused as signed-out), or a teammate's step failed on its sign-in and nobody works.
-   */
-  signInStalls(org: string): Promise<SignInStall[]>;
-  /** Gives the lead's place to `to`, a teammate whose account works, and starts the task again. */
-  moveLead(org: string, task: string, to: string, reason: string): Promise<void>;
-  /** Wakes the lead to give the step of `agent`, whose account needs a sign-in, to a teammate. */
-  handBack(org: string, task: string, agent: string, account: string): void;
-  wakeLead(org: string, task: string): void;
-  pauseForOwner(org: string, task: string, text: string): Promise<void>;
 
   // Follow-ups and findings
   followUps: FollowUpPorts;
@@ -246,17 +240,4 @@ export interface CaptainPorts {
   // Always
   /** Whether the owner is typing in the task now: the captain waits (SPEC 5.18, Presence). */
   typing(task: string): boolean;
-}
-
-/** A task an account that needs a new sign-in holds up. */
-export interface SignInStall {
-  id: string;
-  lead: string;
-  /** The agent that cannot run: the lead, or the teammate whose step failed. */
-  agent: string;
-  account: string;
-  /** The first teammate, in team order, whose account works. Undefined when none does. */
-  to?: string | undefined;
-  /** When the account was found signed out, so a later sign-out is a new matter. */
-  since: string;
 }

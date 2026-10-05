@@ -10,7 +10,16 @@ import { Ship, useDirectShip } from "./ship";
 import { CloseUnshippedDialog, unshippedCount } from "./unshipped";
 
 /** The task's one main action in the header. What it does is in the tooltip; a pause reason shows beside it. */
-export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }) {
+export function TaskAction({
+  task,
+  yourTurn,
+  cardAsks = false,
+}: {
+  task: Task;
+  yourTurn: boolean;
+  /** A card in the room's dock asks for the same decision and holds the primary button. */
+  cardAsks?: boolean;
+}) {
   const start = useStartTask();
   const stop = useStopTask();
   const close = useCloseTask();
@@ -50,7 +59,7 @@ export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }
       )}
       {copy.kind === "resume" && (
         <Button
-          variant="primary"
+          variant={cardAsks ? "secondary" : "primary"}
           size="sm"
           title={copy.text}
           disabled={start.isPending}
@@ -68,7 +77,7 @@ export function TaskAction({ task, yourTurn }: { task: Task; yourTurn: boolean }
       )}
       {copy.kind === "done" && (
         <Button
-          variant="primary"
+          variant={cardAsks ? "secondary" : "primary"}
           size="sm"
           title={unshipped.length > 0 ? `${unshippedCount(unshipped)}. ${copy.text}` : copy.text}
           disabled={close.isPending}

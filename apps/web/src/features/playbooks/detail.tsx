@@ -24,7 +24,7 @@ import {
 } from "@/lib/playbook-queries";
 import { CadenceFields } from "./cadence-fields";
 import { ClockForm } from "./clock-form";
-import { KIND_LABEL, kindOf, LIMIT_CHOICES, shortWhen } from "./model";
+import { KIND_LABEL, kindOf, shortWhen } from "./model";
 
 /** One setting: its label on the left, its control on the right. */
 function Row({
@@ -366,10 +366,6 @@ export function PlaybookDetail({
       { onError: (e) => toast("Could not save it", { detail: describeError(e), tone: "error" }) },
     );
   };
-  const limitUnit = pb.runner.kind === "chore" && view.dailyLimit !== undefined ? "a day" : "";
-  const choices = [
-    ...new Set([...(view.dailyLimit == null ? [] : [view.dailyLimit]), ...LIMIT_CHOICES]),
-  ].sort((a, b) => a - b);
   const head = (
     <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
       {onBack && (
@@ -505,35 +501,7 @@ export function PlaybookDetail({
             <QuietRow key={JSON.stringify(view.quiet ?? null)} view={view} />
           </Row>
         )}
-        {clock !== undefined ? null : view.dailyLimit !== undefined ? (
-          <Row label="Daily limit">
-            <Select
-              aria-label="Daily limit"
-              className="w-[200px]"
-              value={view.dailyLimit ?? ""}
-              onChange={(e) =>
-                update.mutate(
-                  {
-                    org: view.org,
-                    id: pb.id,
-                    dailyLimit: e.target.value === "" ? null : Number(e.target.value),
-                  },
-                  {
-                    onError: (err) =>
-                      toast("Could not save it", { detail: describeError(err), tone: "error" }),
-                  },
-                )
-              }
-            >
-              <option value="">No cap</option>
-              {choices.map((n) => (
-                <option key={n} value={n}>
-                  {n} {limitUnit}
-                </option>
-              ))}
-            </Select>
-          </Row>
-        ) : (
+        {clock !== undefined ? null : (
           <Row label="Budget per run">
             <p className="m-0 pt-[7px] text-base text-fg-soft">
               {pb.cost.tokens === 0 ? "No model" : `${formatTokens(pb.cost.tokens)} tokens`}

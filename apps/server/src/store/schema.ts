@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 /**
@@ -117,6 +118,11 @@ export const roomItems = sqliteTable(
     /** JSON of the item without `id`, `task`, `seq`, `at`. */
     payload: text("payload").notNull(),
     at: text("at").notNull(),
+    /** 1 while the item's `state` is pending, read from the payload (virtual column, migration 153). */
+    pending: integer("pending").generatedAlwaysAs(
+      sql`CASE WHEN json_valid(payload) THEN coalesce(json_extract(payload, '$.state') = 'pending', 0) ELSE 0 END`,
+      { mode: "virtual" },
+    ),
   },
   (t) => [primaryKey({ columns: [t.task, t.id] }), uniqueIndex("room_items_seq").on(t.task, t.seq)],
 );
@@ -198,6 +204,50 @@ export const taskPlans = sqliteTable(
     outcome: text("outcome"),
   },
   (t) => [index("task_plans_task_version").on(t.task, t.version), index("task_plans_org_at").on(t.org, t.at)],
+);
+
+/** The captain's action keys (migration 151): one row per state a ship, an answer or a tell acted on. */
+export const captainKeys = sqliteTable(
+  "captain_keys",
+  {
+    key: text("key").primaryKey(),
+    kind: text("kind").notNull(),
+    task: text("task"),
+    at: text("at").notNull(),
+    /** 0 while the action runs, 1 once it ran. */
+    settled: integer("settled").notNull().default(0),
+  },
+  (t) => [index("captain_keys_task").on(t.task)],
+);
+
+/** The loop guard's count of captain answers per task since its last progress (migration 152). */
+export const captainLoopGuard = sqliteTable("captain_loop_guard", {
+  task: text("task").primaryKey(),
+  mark: text("mark").notNull(),
+  answers: integer("answers").notNull(),
+  paused: integer("paused").notNull().default(0),
+});
+
+/** The lifecycle audit trail and outbox (migration 156). Written only by `tasks/lifecycle/rows.ts`. */
+export const taskEvents = sqliteTable(
+  "task_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    task: text("task").notNull(),
+    at: text("at").notNull(),
+    event: text("event").notNull(),
+    fromStatus: text("from_status"),
+    toStatus: text("to_status"),
+    fromHold: text("from_hold"),
+    hold: text("hold"),
+    actor: text("actor").notNull(),
+    refused: integer("refused", { mode: "boolean" }).notNull().default(false),
+    code: text("code"),
+    text: text("text"),
+    /** JSON list of the effects still to run (the outbox). NULL once they ran. */
+    pendingEffects: text("pending_effects"),
+  },
+  (t) => [index("task_events_task").on(t.task, t.id)],
 );
 
 /** The tasks autonomous mode runs (PRV-74). The rest of its tables are read in `autonomy/repo.ts`. */

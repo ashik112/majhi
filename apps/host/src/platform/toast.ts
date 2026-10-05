@@ -76,7 +76,7 @@ export function toastNotifier(deps: ToastDeps): Notifier {
           env: await deps.env(),
           timeoutMs: TOAST_TIMEOUT_MS,
         });
-        if (result.code === 0) return { clickable: request.url !== undefined };
+        if (result.code === 0) return { kind: "shown", clickable: request.url !== undefined };
       }
       throw new Error(NOT_SHOWN);
     },

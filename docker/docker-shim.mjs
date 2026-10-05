@@ -36,6 +36,8 @@ try {
   if (out.stderr) process.stderr.write(out.stderr);
   process.exitCode = Number.isInteger(out.code) ? out.code : 1;
 } catch (err) {
-  process.stderr.write(`docker: could not reach majhi (${err instanceof Error ? err.message : String(err)}).\n`);
+  process.stderr.write(
+    `docker: could not reach majhi (${err instanceof Error ? err.message : String(err)}).\n`,
+  );
   process.exit(1);
 }

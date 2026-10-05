@@ -1,18 +1,5 @@
-import { DECISION_KIND_LABEL, type OwnerDecision, type OwnerDecisionKind } from "@majhi/shared";
+import type { OwnerDecision } from "@majhi/shared";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import {
-  BellRing,
-  CircleDollarSign,
-  CirclePause,
-  GitMerge,
-  KeyRound,
-  LogIn,
-  Mail,
-  Mails,
-  MessageCircleQuestion,
-  Scale,
-  ShieldCheck,
-} from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { useRunAttention } from "@/components/shell/banner";
 import { Button } from "@/components/ui/button";
@@ -23,51 +10,9 @@ import { SecretAnswer } from "@/features/room/secret-answer";
 import { cn } from "@/lib/cn";
 import { badgeLetters, formatAgo } from "@/lib/format";
 import { useOrgs } from "@/lib/studio-queries";
+import { KindIcon, kindWord, WorkspaceName } from "./decision-bits";
 import { actionOf, openLabel, primaryOption, rowTitle, secretCardOf, workspaceOf } from "./model";
-
-const ICON: Record<OwnerDecisionKind, ReactNode> = {
-  ship: <GitMerge aria-hidden="true" />,
-  question: <MessageCircleQuestion aria-hidden="true" />,
-  approval: <ShieldCheck aria-hidden="true" />,
-  secret: <KeyRound aria-hidden="true" />,
-  budget: <CircleDollarSign aria-hidden="true" />,
-  cap: <CircleDollarSign aria-hidden="true" />,
-  paused: <CirclePause aria-hidden="true" />,
-  "sign-in": <LogIn aria-hidden="true" />,
-  draft: <Mail aria-hidden="true" />,
-  batch: <Mails aria-hidden="true" />,
-  incident: <BellRing aria-hidden="true" />,
-  trust: <Scale aria-hidden="true" />,
-};
-
-export function KindIcon({ kind, className }: { kind: OwnerDecisionKind; className?: string }) {
-  return (
-    <span
-      className={cn(
-        "flex size-4 shrink-0 items-center justify-center text-fg-muted [&_svg]:size-4",
-        className,
-      )}
-    >
-      {ICON[kind]}
-    </span>
-  );
-}
-
-/** What a decision is, in the queue: the shared word for its kind. */
-export function kindWord(decision: OwnerDecision): string {
-  return DECISION_KIND_LABEL[decision.kind];
-}
-
-/** The workspace's tile and name. The name is cut when the line is short. */
-export function WorkspaceName({ id, className }: { id: string; className?: string }) {
-  const org = useOrgs().data?.find((o) => o.id === id);
-  return (
-    <span className={cn("flex min-w-0 items-center gap-1.5", className)}>
-      <OrgBadge label={badgeLetters(org?.key ?? id)} color={org?.color} size="xs" />
-      <span className="min-w-0 truncate">{org?.name ?? id}</span>
-    </span>
-  );
-}
+import { useHeldOption } from "./use-send-decision";
 
 const ROW_ESTIMATE = 150;
 
@@ -79,7 +24,6 @@ function DecisionCard({
   isHeld,
   now,
   busy,
-  working,
   onSelect,
   onPick,
   onAnswer,
@@ -90,12 +34,12 @@ function DecisionCard({
   isHeld: boolean;
   now: number;
   busy: boolean;
-  working: string | undefined;
   onSelect: (id: string) => void;
   onPick: (id: string, range: boolean) => void;
   onAnswer: (d: OwnerDecision, option: string, text?: string) => void;
 }) {
   const run = useRunAttention();
+  const working = useHeldOption(d.id);
   const workspace = workspaceOf(d);
   const suggestion = d.suggestion;
   const main = primaryOption(d, undefined);
@@ -143,6 +87,9 @@ function DecisionCard({
           <span className={cn("text-base text-fg text-pretty break-words", on && "font-medium")}>
             {rowTitle(d)}
           </span>
+          {d.blocked !== undefined && (
+            <span className="text-sm text-caution text-pretty break-words">{d.blocked}</span>
+          )}
           {suggestion !== undefined && suggestion.by === "captain" && suggestion.reason !== "" && (
             <span className="line-clamp-1 font-mono text-xs text-green">{suggestion.reason}</span>
           )}
@@ -160,18 +107,18 @@ function DecisionCard({
                   key={o.id}
                   size="sm"
                   variant={o.id === main?.id && !typed ? "primary" : "secondary"}
-                  disabled={busy}
+                  disabled={busy || working !== undefined}
                   aria-pressed={typed ? replyOpen : undefined}
                   className="h-auto min-h-7 max-w-full py-1 whitespace-normal"
                   onClick={() => (typed ? setReplyOpen(!replyOpen) : onAnswer(d, o.id))}
                 >
-                  {working === o.id ? "Working..." : o.label}
+                  {working === o.id ? "Sending..." : o.label}
                 </Button>
               );
             })}
             {d.options.length === 0 && (
               <Button size="sm" variant="primary" onClick={() => run(actionOf(d.link))}>
-                {openLabel(d.link)}
+                {d.kind === "question" ? "Answer in the task" : openLabel(d.link)}
               </Button>
             )}
           </div>
@@ -229,7 +176,6 @@ export function DecisionList({
   picked,
   held,
   busy,
-  working,
   onSelect,
   onPick,
   onAnswer,
@@ -243,8 +189,6 @@ export function DecisionList({
   /** Decisions in a batch that waits out its undo time. */
   held: ReadonlySet<string>;
   busy: boolean;
-  /** The option being sent right now. */
-  working: string | undefined;
   onSelect: (id: string) => void;
   /** The checkbox: `range` when shift was held. */
   onPick: (id: string, range: boolean) => void;
@@ -288,7 +232,6 @@ export function DecisionList({
               isHeld={isHeld}
               now={now}
               busy={busy}
-              working={working}
               onSelect={onSelect}
               onPick={onPick}
               onAnswer={onAnswer}

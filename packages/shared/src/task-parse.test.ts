@@ -108,11 +108,13 @@ describe("orgs", () => {
   it("warns and leaves org unset when repos span orgs", () => {
     const p = parseTaskText("api and app", ctx);
     expect(p.org).toBeUndefined();
-    expect(p.warnings).toEqual(["Repos from more than one org: acme, beta"]);
+    expect(p.warnings).toEqual(["Repos from more than one workspace: acme, beta"]);
   });
 
   it("orders the orgs by first mention", () => {
-    expect(parseTaskText("app then api", ctx).warnings).toEqual(["Repos from more than one org: beta, acme"]);
+    expect(parseTaskText("app then api", ctx).warnings).toEqual([
+      "Repos from more than one workspace: beta, acme",
+    ]);
   });
 });
 

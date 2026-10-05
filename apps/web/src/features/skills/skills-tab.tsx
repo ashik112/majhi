@@ -1,117 +1,21 @@
 import type { OrgView, Skill, SkillInstallResult, SkillPreview, SkillSearchResult } from "@majhi/shared";
-import { Download, Link2, RefreshCw, Search, Trash2, Upload } from "lucide-react";
+import { Download, Search, Upload } from "lucide-react";
 import { type DragEvent, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
-import { Segmented } from "@/components/ui/segmented";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { plural } from "@/lib/format";
-import { useSkillSearch, useSkills, useSkillsCommand, useSkillZipPreview } from "@/lib/skills-queries";
-import { useAgents, useOrgs } from "@/lib/studio-queries";
-import {
-  type AgentChoice,
-  AgentToggles,
-  agentChoices,
-  Block,
-  ErrorLine,
-  NameList,
-  SourceLink,
-} from "./parts";
+import { useSkillSearch, useSkillsCommand, useSkillZipPreview } from "@/lib/skills-queries";
+import { Block, ErrorLine, NameList, SourceLink } from "./parts";
 
 /** What the card on top shows: a preview, and whether committing it installs or updates. */
-interface Review {
+export interface Review {
   kind: "install" | "update";
   preview: SkillPreview;
-}
-
-/**
- * Skills: what is installed, or Discover to find more. Adding from a link is a small action at the
- * top, and anything found opens a review card before it is installed.
- */
-export function SkillsTab() {
-  const skills = useSkills();
-  const agents = agentChoices(useAgents().data);
-  const orgs = useOrgs().data ?? [];
-  const [review, setReview] = useState<Review>();
-  const [done, setDone] = useState<string>();
-  const [adding, setAdding] = useState(false);
-  const [picked, setPicked] = useState<"installed" | "discover">();
-  const count = skills.data?.length ?? 0;
-  const view = picked ?? (skills.data !== undefined && count === 0 ? "discover" : "installed");
-  const preview = (next: Review) => {
-    setDone(undefined);
-    setReview(next);
-  };
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <Segmented
-          label="Skills view"
-          value={view}
-          onChange={setPicked}
-          segments={[
-            { value: "installed", label: "Installed", count },
-            { value: "discover", label: "Discover" },
-          ]}
-        />
-        <Button className="ml-auto" onClick={() => setAdding(!adding)} aria-expanded={adding}>
-          <Link2 aria-hidden="true" />
-          Add from link
-        </Button>
-      </div>
-      {adding && (
-        <InstallBox
-          orgs={orgs}
-          onPreview={(p) => {
-            setAdding(false);
-            preview({ kind: "install", preview: p });
-          }}
-        />
-      )}
-      {review && (
-        <PreviewCard
-          key={review.preview.previewId}
-          review={review}
-          onCancel={() => setReview(undefined)}
-          onDone={(names, kind) => {
-            setReview(undefined);
-            setPicked("installed");
-            setDone(
-              kind === "update"
-                ? `Updated ${names.join(", ")}.`
-                : `Installed ${names.join(", ")}. Turn it on for the agents that need it.`,
-            );
-          }}
-        />
-      )}
-      {done && (
-        <p
-          role="status"
-          className="rounded-md border border-green-line bg-green-wash px-3 py-2 text-base text-green text-pretty"
-        >
-          {done}
-        </p>
-      )}
-      {view === "discover" ? (
-        <Browse installed={skills.data ?? []} onPreview={(p) => preview({ kind: "install", preview: p })} />
-      ) : (
-        <Installed
-          skills={skills.data}
-          error={skills.isError ? describeError(skills.error) : undefined}
-          agents={agents}
-          onDiscover={() => setPicked("discover")}
-          onUpdatePreview={(p) => preview({ kind: "update", preview: p })}
-        />
-      )}
-    </div>
-  );
 }
 
 function InstallBox({ orgs, onPreview }: { orgs: readonly OrgView[]; onPreview: (p: SkillPreview) => void }) {
@@ -395,139 +299,4 @@ function Browse({
   );
 }
 
-function Installed({
-  skills,
-  error,
-  agents,
-  onDiscover,
-  onUpdatePreview,
-}: {
-  skills: readonly Skill[] | undefined;
-  error: string | undefined;
-  agents: readonly AgentChoice[];
-  onDiscover: () => void;
-  onUpdatePreview: (p: SkillPreview) => void;
-}) {
-  const enable = useSkillsCommand("skills.enable");
-  const disable = useSkillsCommand("skills.disable");
-  const update = useSkillsCommand("skills.update");
-  const remove = useSkillsCommand("skills.remove");
-  const toast = useToast();
-  const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
-  const [updating, setUpdating] = useState<string>();
-  const [removing, setRemoving] = useState<Skill>();
-  const key = (name: string, agent: string) => `${name}:${agent}`;
-
-  const toggle = (skill: Skill, agent: string, next: boolean) => {
-    setPending((prev) => new Set(prev).add(key(skill.name, agent)));
-    (next ? enable : disable).mutate(
-      { name: skill.name, agent },
-      {
-        onError: (e) =>
-          toast(`Could not change ${skill.name} for @${agent}`, { detail: describeError(e), tone: "error" }),
-        onSettled: () =>
-          setPending((prev) => {
-            const copy = new Set(prev);
-            copy.delete(key(skill.name, agent));
-            return copy;
-          }),
-      },
-    );
-  };
-  const refresh = (skill: Skill) => {
-    setUpdating(skill.name);
-    update.mutate(
-      { name: skill.name },
-      {
-        onSuccess: (r) => {
-          if (r.status === "preview") onUpdatePreview(r);
-          else toast(`${skill.name} is already the newest copy.`);
-        },
-        onError: (e) => toast(`Could not check ${skill.name}`, { detail: describeError(e), tone: "error" }),
-        onSettled: () => setUpdating(undefined),
-      },
-    );
-  };
-
-  return (
-    <Block
-      title={skills === undefined ? "Installed" : plural(skills.length, "skill")}
-      note="An agent gets only the skills turned on for it, from its next run."
-    >
-      {error && <ErrorLine>Could not load skills: {error}</ErrorLine>}
-      {skills === undefined && !error && <Skeleton className="h-16 rounded-md" aria-busy="true" />}
-      {skills?.length === 0 && (
-        <div className="flex flex-col items-start gap-2 py-2">
-          <p className="text-base text-fg-muted">No skills yet.</p>
-          <Button variant="primary" onClick={onDiscover}>
-            <Search aria-hidden="true" />
-            Discover skills
-          </Button>
-        </div>
-      )}
-      <ul aria-label="Installed skills" className="flex flex-col divide-y divide-line-strong">
-        {skills?.map((skill) => (
-          <li key={skill.name} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-base font-medium text-fg">{skill.name}</span>
-              <Badge>{skill.sourceType}</Badge>
-              <span className="text-sm text-fg-faint">{plural(skill.files.length, "file")}</span>
-              <div className="ml-auto flex gap-1.5">
-                <Button
-                  size="sm"
-                  disabled={updating !== undefined}
-                  onClick={() => refresh(skill)}
-                  aria-label={`Update ${skill.name}`}
-                >
-                  <RefreshCw aria-hidden="true" />
-                  {updating === skill.name ? "Checking" : "Update"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setRemoving(skill)}
-                  aria-label={`Remove ${skill.name}`}
-                >
-                  <Trash2 aria-hidden="true" />
-                  Remove
-                </Button>
-              </div>
-            </div>
-            <p className="text-base text-fg-muted text-pretty">{skill.description}</p>
-            <p className="text-sm text-fg-faint">
-              From <SourceLink source={skill.source} />
-              {skill.commit && ` at ${skill.commit.slice(0, 7)}`}
-            </p>
-            <AgentToggles
-              agents={agents}
-              on={skill.agents}
-              noun="skill"
-              pending={new Set(agents.filter((a) => pending.has(key(skill.name, a.id))).map((a) => a.id))}
-              onToggle={(agent, next) => toggle(skill, agent, next)}
-            />
-          </li>
-        ))}
-      </ul>
-      {removing && (
-        <ConfirmDialog
-          title={`Remove ${removing.name}?`}
-          body={
-            removing.agents.length === 0
-              ? "No agent uses it. The files are deleted from ~/.majhi/skills."
-              : `It is deleted from ~/.majhi/skills, and ${removing.agents.map((a) => `@${a}`).join(", ")} lose${removing.agents.length === 1 ? "s" : ""} it.`
-          }
-          confirmLabel="Remove"
-          busy={remove.isPending}
-          error={remove.error ? describeError(remove.error) : undefined}
-          onCancel={() => {
-            remove.reset();
-            setRemoving(undefined);
-          }}
-          onConfirm={() =>
-            remove.mutate({ name: removing.name }, { onSuccess: () => setRemoving(undefined) })
-          }
-        />
-      )}
-    </Block>
-  );
-}
+export { Browse as SkillBrowse, InstallBox as SkillInstallBox, PreviewCard as SkillPreviewCard };

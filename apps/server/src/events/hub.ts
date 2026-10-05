@@ -4,6 +4,9 @@ import { OwnerTyping } from "./typing.ts";
 
 type Listener = (event: ServerEvent) => void;
 
+/** An event names at most this many tasks (the schema allows 100). */
+const MAX_NAMED = 100;
+
 /** Fan-out of change events to every open `/api/events` socket. */
 export class EventHub {
   private readonly listeners = new Set<Listener>();
@@ -22,12 +25,27 @@ export class EventHub {
     for (const listener of this.listeners) listener(event);
   }
 
-  emit(topics: readonly EventTopic[]): void {
+  /**
+   * Tells every tab what changed. `scope.tasks` names the tasks that changed (the board reads just those);
+   * `scope.rows` says only their list rows changed, nothing that waits for the owner. Without a scope, any task may have changed.
+   */
+  emit(topics: readonly EventTopic[], scope?: { tasks?: readonly string[]; rows?: true }): void {
     const unique = [...new Set(topics)];
     const [first, ...rest] = unique;
     if (first === undefined) return;
     const event: ServerEvent = { type: "changed", topics: [first, ...rest] };
+    const named = scope?.tasks === undefined ? [] : [...new Set(scope.tasks)];
+    // Too many to name: say nothing, and every tab reads the lists.
+    if (named.length > 0 && named.length <= MAX_NAMED) {
+      event.tasks = named;
+      if (scope?.rows === true) event.rows = true;
+    }
     for (const listener of this.listeners) listener(event);
+  }
+
+  /** One task changed. `rows`: only its list row (who works on it, a touch, a title), nothing that waits for the owner. */
+  emitTask(task: string, rows?: true): void {
+    this.emit(["tasks"], rows === true ? { tasks: [task], rows } : { tasks: [task] });
   }
 }
 
@@ -67,9 +85,6 @@ export function topicsFor(command: string): EventTopic[] {
     case "connect":
       // A connect attempt changes a connection and its grant; a finding may be filed.
       return ["connections", "config", "findings"];
-    case "trackers":
-      // A pull or a push makes or links tasks; the org page shows the last pull.
-      return ["tasks", "orgs"];
     case "usage":
       return ["usage", "config"];
     case "memory":
@@ -94,11 +109,6 @@ export function topicsFor(command: string): EventTopic[] {
     case "findings":
       // A task made from a finding shows on the board too.
       return ["findings", "tasks"];
-    case "kb":
-    case "voice":
-    case "crm":
-    case "deadlines":
-      return ["business"];
     case "captain":
       // The stop switch also stops autonomous mode; Undo reverts config, tasks or memory.
       return ["captain", "autonomy", "config", "tasks", "memory"];

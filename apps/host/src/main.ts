@@ -15,7 +15,6 @@ import { type LinkOptions, pollLoop, sendProgress, sendReply } from "./client.ts
 import { CliLogins } from "./cliLogin.ts";
 import { CliToolLogins } from "./cliTools.ts";
 import { parseHostConfig } from "./config.ts";
-import { createE2eRunner } from "./e2e.ts";
 import { createEditorOpener, pathKind } from "./editor.ts";
 import { errorMessage } from "./errors.ts";
 import { ensureAskpass, gitAuthEnv } from "./gitAuth.ts";
@@ -87,6 +86,8 @@ async function main(): Promise<void> {
   });
   const real = createPlatform(os, deps);
   const platform = { ...real, notifier: desktopNotifier(config.notify, real.notifier, log) };
+  // On macOS this builds majhi's own notifier now, so the first notification shows as majhi.
+  void platform.notifier.prepare?.().catch((err: unknown) => log(`notify: ${errorMessage(err)}`));
   const path = deps.path;
   const gitBin = await deps.find("git");
   const gitContext: GitContext | undefined =
@@ -202,15 +203,6 @@ async function main(): Promise<void> {
     kind: pathKind,
     isExecutable: async (file) => (await findExecutable(basename(file), dirname(file))) !== undefined,
   });
-  const e2eRun = createE2eRunner({
-    run: deps.run,
-    majhiHome: config.majhiHome,
-    home: config.home,
-    path,
-    platform: nodePlatform,
-    find: findExecutable,
-    log,
-  });
   const laya = createLaya({
     majhiHome: config.majhiHome,
     home: config.home,
@@ -323,7 +315,6 @@ async function main(): Promise<void> {
     },
     sshReload: () => ssh.reload(),
     editorOpen,
-    e2eRun,
     machineRead: () => readMachine({ os, exec, home: config.home, env: { ...process.env, PATH: path } }),
     versionChanges: async (params: { from: string }) => {
       if (gitContext === undefined) throw new Error("This helper has no majhi checkout to read.");
@@ -357,6 +348,7 @@ async function main(): Promise<void> {
     gitCredential: (params: { host: string; username: string }) => gitCredential(gitPushDeps, params),
     notify: (params: { title: string; message: string; path?: string | undefined; sound: boolean }) =>
       showNotification(platform.notifier, config.url, params),
+    notifyOpenSettings: () => platform.notifier.openSettings?.() ?? Promise.resolve(false),
     layaStatus: () => laya.status(),
     layaInstall: () => laya.install(),
     layaDecide: (params: { state: string; questions: Record<string, LayaQuestion> }) => laya.decide(params),

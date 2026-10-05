@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import type { Dirent } from "node:fs";
 import { lstat, readdir, realpath, rm, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { promisify } from "node:util";
 import type { Task } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import { git, gitOk, uncommitted } from "../git/git.ts";
@@ -86,8 +88,54 @@ interface Plan {
   kept: string[];
 }
 
-/** Size on disk of a tree, without following symlinks. `shared` counts hard-linked files too, once. */
+const run = promisify(execFile);
+
+/** How long a tree's measured size is reused: worktrees hold hundreds of thousands of files. */
+const TREE_CACHE_MS = 30 * 60_000;
+const treeCache = new Map<string, { at: number; bytes: number }>();
+
+/** Forgets every cached tree size: a sweep just deleted files. */
+export function forgetTreeSizes(): void {
+  treeCache.clear();
+}
+
+/**
+ * Size on disk of a tree, without following symlinks. `total` counts hard-linked files once;
+ * `freeable` leaves them out (deleting the tree would not free them). Measured by the system's `du`
+ * and `find` in a child process on Linux (the server's container), so a walk of a large worktree never
+ * holds the server's event loop; elsewhere, or when they fail, by walking it here. Reused for 30 minutes.
+ */
 export async function treeBytes(path: string, mode: "freeable" | "total" = "freeable"): Promise<number> {
+  const key = `${mode}:${path}`;
+  const hit = treeCache.get(key);
+  if (hit !== undefined && Date.now() - hit.at < TREE_CACHE_MS) return hit.bytes;
+  const bytes =
+    (process.platform === "linux" ? await systemBytes(path, mode) : undefined) ??
+    (await walkBytes(path, mode));
+  treeCache.set(key, { at: Date.now(), bytes });
+  return bytes;
+}
+
+/** GNU `du` (hard links once) or `find` (single-link files and folders only), summed by the child. */
+async function systemBytes(path: string, mode: "freeable" | "total"): Promise<number | undefined> {
+  const script =
+    mode === "total"
+      ? "du -sk --one-file-system -- \"$1\" 2>/dev/null | awk '{print $1 * 1024}'"
+      : 'find "$1" -xdev \\( -type d -o \\( -type f -links 1 \\) \\) -printf "%b\\n" 2>/dev/null | awk \'{s += $1} END {print s * 512}\'';
+  try {
+    const { stdout } = await run("sh", ["-c", script, "sh", path], {
+      maxBuffer: 1 << 20,
+      timeout: 10 * 60_000,
+    });
+    const n = Number(stdout.trim());
+    return Number.isFinite(n) && stdout.trim() !== "" ? n : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The walk in this process: used off Linux and as the fallback. */
+async function walkBytes(path: string, mode: "freeable" | "total"): Promise<number> {
   const seen = new Set<string>();
   let total = 0;
   const walk = async (p: string): Promise<void> => {
@@ -195,6 +243,7 @@ export class TaskFolderSweep {
   /** Forgets the last measurement: a sweep just changed the folders. */
   forget(): void {
     this.last = undefined;
+    forgetTreeSizes();
   }
 
   /** The size of the task folders and, within done tasks, of what a sweep could free. */

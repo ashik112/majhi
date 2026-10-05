@@ -32,6 +32,8 @@ export class CardActions {
     targets?: Readonly<Record<string, string>> | undefined;
     pushLocalCommits?: boolean | undefined;
     createRemoteBranch?: boolean | undefined;
+    /** The owner merges past a failed check. Never honoured for an agent. */
+    confirmChecks?: string | undefined;
     method?: MergeMethod | undefined;
     deleteAfter?: boolean | undefined;
     /** For done: the owner confirmed closing with work not shipped. */
@@ -57,6 +59,8 @@ export class CardActions {
     targets?: Readonly<Record<string, string>> | undefined;
     pushLocalCommits?: boolean | undefined;
     createRemoteBranch?: boolean | undefined;
+    /** The owner merges past a failed check. Never honoured for an agent. */
+    confirmChecks?: string | undefined;
     method?: MergeMethod | undefined;
     deleteAfter?: boolean | undefined;
     /** For done: the owner confirmed closing with work not shipped. */
@@ -101,6 +105,7 @@ export class CardActions {
           by: input.by,
           method: input.method,
           deleteAfter: input.deleteAfter,
+          confirmChecks: input.agent ? undefined : input.confirmChecks,
         });
         return { item: current(), results: out.results };
       }
@@ -117,6 +122,7 @@ export class CardActions {
           targets: input.targets,
           pushLocalCommits: input.pushLocalCommits,
           createRemoteBranch: input.createRemoteBranch,
+          confirmChecks: input.agent ? undefined : input.confirmChecks,
           done: true,
           by: input.by,
           method: input.method,

@@ -171,7 +171,7 @@ export function TurnOnDialog({ status, onClose }: { status: AutonomyStatus; onCl
  */
 export function OffDialog({ status, onClose }: { status: AutonomyStatus; onClose: () => void }) {
   const actions = useAutonomyActions();
-  const working = status.now.filter((n) => n.status === "running").map((n) => n.task);
+  const working = status.running;
   const stopping = status.mode === "stopping";
 
   return (

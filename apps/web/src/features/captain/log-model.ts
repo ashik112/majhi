@@ -34,7 +34,6 @@ const CHORE_KIND: Record<CaptainAction["chore"], LogKind> = {
   projects: "upkeep",
   triage: "upkeep",
   cleanup: "upkeep",
-  stuck: "upkeep",
   followups: "upkeep",
   discover: "upkeep",
   tidy: "upkeep",

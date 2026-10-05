@@ -14,20 +14,18 @@ import {
   PERMISSION_COMMANDS,
   PRIVATE,
   type RoomItem,
-  scriptProblem,
   type ShipFix,
+  scriptProblem,
   type TaskId,
 } from "@majhi/shared";
 import { z } from "zod";
 import { auditDetail } from "../audit.ts";
 import type { AutonomyVerdict } from "../autonomy/policy.ts";
-import { BUSINESS_TOOL_COMMANDS } from "../business/handlers.ts";
 import { authorityOf, keptRowOf } from "../captain/levels.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
 import type { ChangeRecord, ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import { FINDINGS_TOOL_COMMANDS } from "../findings/handlers.ts";
-import { GROWTH_TOOL_COMMANDS } from "../growth/handlers.ts";
 import { HANDOFF_TOOL_COMMANDS } from "../handoff/handlers.ts";
 import { OUTCOMES_TOOL_COMMANDS } from "../outcomes/handlers.ts";
 import { PLAYBOOK_TOOL_COMMANDS, playbookLimitRefusal } from "../playbooks/handlers.ts";
@@ -227,10 +225,8 @@ export class AdminService {
       // Findings stay in the caller's own workspace (the handler scopes them), so no card waits for them.
       if (
         FINDINGS_TOOL_COMMANDS.has(spec.command) ||
-        BUSINESS_TOOL_COMMANDS.has(spec.command) ||
         PLAYBOOK_TOOL_COMMANDS.has(spec.command) ||
         OUTCOMES_TOOL_COMMANDS.has(spec.command) ||
-        GROWTH_TOOL_COMMANDS.has(spec.command) ||
         HANDOFF_TOOL_COMMANDS.has(spec.command)
       ) {
         const checked = commands[spec.command].input.safeParse(input);
@@ -272,7 +268,10 @@ export class AdminService {
     const refused = await this.autonomy.refusal(caller, "tasks.tell", input, why);
     if (refused !== undefined) return error(refused);
     const done = await this.execute("tasks.tell", input, metaFor(caller.agent, why, caller.task));
-    this.autonomy.ran(caller, "tasks.tell", input, why, done);
+    // A note that was not sent (a repeat) is no decision: nothing is logged as sent.
+    if (!(done.ok && NotTold.safeParse(done.output).success)) {
+      this.autonomy.ran(caller, "tasks.tell", input, why, done);
+    }
     return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
   }
 
@@ -627,7 +626,7 @@ export class AdminService {
     if ((await this.deps.secrets.get(name)) !== undefined) {
       return error(`secret:${name} exists already. Use it, or pick another name.`);
     }
-    const guard = scriptProblem(input.script);
+    const guard = scriptProblem(input.script, input.network);
     if (guard !== undefined) return error(guard.replace("A watch only reads", "A fetch only reads"));
     for (const id of input.connections) {
       if (!(await script.holds(lane.org, id))) {
@@ -638,7 +637,12 @@ export class AdminService {
     }
     let out: string;
     try {
-      out = await script.run({ org: lane.org, script: input.script, connections: input.connections });
+      out = await script.run({
+        org: lane.org,
+        script: input.script,
+        connections: input.connections,
+        network: input.network,
+      });
     } catch (err) {
       return error(`The script failed: ${redactText(errorMessage(err)).slice(0, 300)}`);
     }
@@ -1261,6 +1265,9 @@ export function refuseForAgents(command: CommandName, input: Record<string, unkn
   if (command === "tasks.merge" && input.push !== undefined && input.push !== false) {
     return "Agents never push. Merge without push; the owner pushes from Ship.";
   }
+  if (command === "tasks.merge" && input.confirmChecks !== undefined) {
+    return "Agents cannot merge past a failed check. Fix the check and merge again.";
+  }
   if (command === "tasks.remove" && (input.force !== undefined || input.confirm !== undefined)) {
     return "Agents cannot remove a task with force. Say in the room what should go; the owner removes it.";
   }
@@ -1276,6 +1283,9 @@ function textOf(output: unknown): string {
   const text = JSON.stringify(redactOutput(reposFirst(output)), null, 2) ?? "ok";
   return text.length > RESULT_MAX ? `${text.slice(0, RESULT_MAX)}\n... (cut)` : text;
 }
+
+/** The output of `tasks.tell` when nothing was sent. */
+const NotTold = z.object({ told: z.literal(false) });
 
 /** A result that is one task with repos (tasks.create, tasks.update). */
 const TaskWithRepos = z.object({

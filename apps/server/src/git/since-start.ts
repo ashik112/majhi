@@ -1,4 +1,4 @@
-import { git, gitOk } from "./git.ts";
+import { git, gitOk, refIsThere } from "./git.ts";
 
 type Repo = {
   source: string;
@@ -59,10 +59,9 @@ async function baseCandidates(cwd: string, base: string): Promise<{ name: string
     .map((r) => r.trim())
     .filter((r) => r !== "");
   const out: { name: string; label: string }[] = [];
-  if (await gitOk(cwd, ["show-ref", "--verify", "--quiet", `refs/heads/${base}`]))
-    out.push({ name: `refs/heads/${base}`, label: base });
+  if (await refIsThere(cwd, `refs/heads/${base}`)) out.push({ name: `refs/heads/${base}`, label: base });
   for (const r of remotes) {
-    if (await gitOk(cwd, ["show-ref", "--verify", "--quiet", `refs/remotes/${r}/${base}`]))
+    if (await refIsThere(cwd, `refs/remotes/${r}/${base}`))
       out.push({ name: `refs/remotes/${r}/${base}`, label: `${r}/${base}` });
   }
   return out;

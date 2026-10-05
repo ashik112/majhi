@@ -15,7 +15,6 @@ import {
   Container,
   Cpu,
   DatabaseBackup,
-  FlaskConical,
   FolderGit2,
   FolderTree,
   Gauge,
@@ -28,7 +27,6 @@ import {
   Repeat,
   ScrollText,
   ShieldCheck,
-  Sparkles,
   Users,
   Wallet,
 } from "lucide-react";
@@ -56,14 +54,12 @@ const SECTION_ICON: Record<SetupSection, LucideIcon> = {
   approvals: ShieldCheck,
   decisions: Cpu,
   containers: Container,
-  e2e: FlaskConical,
   backups: DatabaseBackup,
   history: History,
 };
 const PAGE_ICON: Record<SettingsPage, LucideIcon> = {
   connections: Plug,
   projects: FolderGit2,
-  skills: Sparkles,
   memory: Brain,
   limits: Wallet,
   audit: ScrollText,

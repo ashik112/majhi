@@ -687,28 +687,35 @@ export class OpsWatch {
   /** Every 30 seconds or so: the second alert, a phone push that failed the first time, what the captain did. */
   async tick(): Promise<void> {
     const { escalateMin } = this.settings();
+    // Only a tick that changed something tells the tabs: an idle one must not make them refetch every 30 s.
+    let touched = false;
     for (const inc of this.deps.repo.open()) {
       let next = inc;
       try {
         next = await this.syncActions(next);
+        if (next !== inc) touched = true;
         if (next.severity === "high" && next.ackedAt === undefined) {
           const waited = this.now().getTime() - Date.parse(next.openedAt);
           const subject = await this.subjectOfIncident(next);
           if (next.escalatedAt === undefined && waited >= escalateMin * 60_000) {
             next = { ...next, escalatedAt: this.at() };
+            touched = true;
             this.deps.repo.saveIncident(next);
             await this.alert(next, subject, true);
           } else if (next.phoneAt === undefined && next.escalatedAt === undefined) {
             // The phone was down at the start, or set up since: try again.
             const sent = await this.deps.phone.pushIncident(next, false).catch(() => ({ sent: false }));
-            if (sent.sent)
+            if (sent.sent) {
+              touched = true;
               this.deps.repo.saveIncident({
                 ...(this.deps.repo.incident(next.id) ?? next),
                 phoneAt: this.at(),
               });
+            }
           } else if (next.escalatedAt !== undefined && next.phoneEscalatedAt === undefined) {
             const sent = await this.deps.phone.pushIncident(next, true).catch(() => ({ sent: false }));
             if (sent.sent) {
+              touched = true;
               this.deps.repo.saveIncident({
                 ...(this.deps.repo.incident(next.id) ?? next),
                 phoneEscalatedAt: this.at(),
@@ -720,8 +727,8 @@ export class OpsWatch {
         // One incident's trouble never stops the others.
       }
     }
-    await this.deps.phone.sweepDecisions().catch(() => 0);
-    this.deps.changed();
+    if ((await this.deps.phone.sweepDecisions().catch(() => 0)) > 0) touched = true;
+    if (touched) this.deps.changed();
   }
 
   private async subjectOfIncident(inc: StoredIncident): Promise<Subject> {

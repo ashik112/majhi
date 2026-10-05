@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 
 /** A key is refetched at most this often. A burst of events becomes one refetch now and one at the end. */
-const WINDOW_MS = 300;
+const WINDOW_MS = 250;
 
 /**
  * Refetches the queries under a key when the server says they changed, but not more than once per

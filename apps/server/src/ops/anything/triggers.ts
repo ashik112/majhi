@@ -96,8 +96,15 @@ export class TriggerAlias {
     return view(await this.engine.save({ id, org: now.org, def }));
   }
 
-  async pause(id: string, paused: boolean): Promise<TriggerView> {
-    return view(await this.engine.pause(idOf(id), paused));
+  async pause(id: string, paused: boolean, by: "owner" | "agent" = "owner"): Promise<TriggerView> {
+    return view(
+      await this.engine.pause(
+        idOf(id),
+        paused,
+        by,
+        by === "agent" ? "paused through triggers.pause" : undefined,
+      ),
+    );
   }
 
   runNow(id: string): Promise<AutomationRun> {
@@ -130,7 +137,8 @@ export function triggerHandlers(triggers: TriggerAlias): Pick<CommandHandlers, T
     "triggers.runs": async (input) => triggers.runs(input.id, input.limit),
     "triggers.create": (input) => triggers.create(input),
     "triggers.update": (input) => triggers.update(input),
-    "triggers.pause": (input) => triggers.pause(input.id, true),
+    "triggers.pause": (input, ctx) =>
+      triggers.pause(input.id, true, ctx.meta.actor.kind === "agent" ? "agent" : "owner"),
     "triggers.resume": (input) => triggers.pause(input.id, false),
     "triggers.runNow": (input) => triggers.runNow(input.id),
     "triggers.delete": (input) => triggers.delete(input.id),

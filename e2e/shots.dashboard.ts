@@ -125,7 +125,10 @@ function report(v: Volume): AutonomyReport {
           ? []
           : spaces(v)
               .slice(0, 4)
-              .map((w, k) => ({ org: w.id, count: ((i * 5 + k * 3) % (v === "heavy" ? 9 : 4)) + (k === 0 ? 1 : 0) }))
+              .map((w, k) => ({
+                org: w.id,
+                count: ((i * 5 + k * 3) % (v === "heavy" ? 9 : 4)) + (k === 0 ? 1 : 0),
+              }))
               .filter((o) => o.count > 0),
     })),
     spend: Array.from({ length: 14 }, (_, i) => ({
@@ -135,7 +138,10 @@ function report(v: Volume): AutonomyReport {
           ? []
           : spaces(v)
               .slice(0, 4)
-              .map((w, k) => ({ org: w.id, cost: Math.round((3 + ((i * 7 + k * 5) % 11) * 2.1) * 100) / 100 })),
+              .map((w, k) => ({
+                org: w.id,
+                cost: Math.round((3 + ((i * 7 + k * 5) % 11) * 2.1) * 100) / 100,
+              })),
     })),
     flow: Array.from({ length: 14 }, (_, i) => ({
       day: new Date(Date.UTC(2026, 8, 21 + i)).toISOString().slice(0, 10),
@@ -151,9 +157,9 @@ function report(v: Volume): AutonomyReport {
               task: "GLO-103",
               title: TITLES[0] as string,
               org: "globex",
-              kind: "loop",
+              kind: "idle",
               since: iso(310),
-              text: "Same step 6 times: Woke the builder to retry the export test",
+              text: "Running with no progress",
             },
             {
               task: "NOR-105",
@@ -161,8 +167,7 @@ function report(v: Volume): AutonomyReport {
               org: "northwind",
               kind: "waiting",
               since: iso(260),
-              text: "Push to origin needs your approval",
-              item: "i1",
+              text: "In review, not shipped",
             },
             {
               task: "ACM-101",
@@ -178,9 +183,9 @@ function report(v: Volume): AutonomyReport {
                     task: "UMB-109",
                     title: TITLES[3] as string,
                     org: "umbrella",
-                    kind: "failures" as const,
+                    kind: "idle" as const,
                     since: iso(150),
-                    text: "4 failed or refused calls in a day",
+                    text: "Running with no progress",
                   },
                   {
                     task: "HOO-112",

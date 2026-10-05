@@ -10,6 +10,7 @@ import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
 import { type DiffFacts, parseReview, tokensOf } from "./analysis.ts";
 import { type ExecDeps, execInTask } from "./exec.ts";
+import { defaultHandoffParallel } from "./limits.ts";
 import { shipReadiness } from "./ready.ts";
 import { HandoffRepo } from "./repo.ts";
 import { type HandoffLimits, type HandoffOptions, type HandoffPorts, HandoffService } from "./service.ts";
@@ -80,6 +81,11 @@ export function createHandoff(w: HandoffWiring): HandoffService {
       return t === undefined ? "" : taskHeads(t);
     },
     ready: async (id) => {
+      // A done task can still be merged (its work was never shipped): its tests and build must run
+      // for the merge rule, and the review-state checks below do not apply to it.
+      if (w.store.tasks.get(id)?.status === "done") {
+        return { ok: true, evidence: "the task is done: the review-state checks do not apply" };
+      }
       const r = await shipReadiness(w, id);
       if (r.ready) return { ok: true, evidence: r.evidence };
       // Resolving a conflict follows the Merge row: where the owner decides, it is the owner's.
@@ -128,5 +134,8 @@ export function createHandoff(w: HandoffWiring): HandoffService {
     changed: w.changed,
     ...(w.now === undefined ? {} : { now: w.now }),
   };
-  return new HandoffService(ports, new HandoffRepo(w.db), w.options);
+  return new HandoffService(ports, new HandoffRepo(w.db), {
+    parallel: defaultHandoffParallel(),
+    ...w.options,
+  });
 }

@@ -1,6 +1,6 @@
 import type { Task } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ASK, RUNS, TIDY } from "../captain/authority-fixtures.ts";
+import { RUNS } from "../captain/authority-fixtures.ts";
 import { capacityOf } from "../runs/limits.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 
@@ -110,6 +110,8 @@ describe("the captain's plan and a full account slot", () => {
 describe("the captain and the repo rule", () => {
   it("keeps a second task naming the same file in the backlog, allows different files and areas, and never blocks the owner", async () => {
     const t = await on();
+    // The repo rule on its own: the workspace may work on several tasks at once here.
+    expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { tasksAtOnce: 5 } } })).status).toBe(200);
     const running = await t.ownerTask("Rework login in src/auth/login.ts");
     expect((await t.h.cmd("tasks.start", { id: running })).status).toBe(200);
     const same = await t.ownerTask("Add a guard in src/auth/login.ts");
@@ -144,5 +146,31 @@ describe("the captain and the repo rule", () => {
     // The owner's own start is never blocked.
     expect((await t.h.cmd("tasks.start", { id: same })).status).toBe(200);
     expect(t.status(same)).toBe("running");
+  });
+});
+
+describe("one task at a time per workspace", () => {
+  it("keeps the captain's second start in the backlog while one runs, lets the owner raise it, and never holds the owner", async () => {
+    const t = await on();
+    const first = await t.ownerTask("Fix the typo on the login page");
+    const second = await t.ownerTask("Update the README");
+    expect((await t.call("majhi_tasks_start", { id: first })).isError).toBe(false);
+    expect(t.status(first)).toBe("running");
+
+    const no = await t.call("majhi_tasks_start", { id: second });
+    expect(no.isError).toBe(true);
+    expect(no.text).toContain(`This workspace works on 1 task at once and ${first} is running.`);
+    expect(t.status(second)).toBe("inbox");
+
+    // The owner's own start is never held by it.
+    expect((await t.h.cmd("tasks.start", { id: second })).status).toBe(200);
+    expect(t.status(second)).toBe("running");
+    expect((await t.h.cmd("tasks.stop", { id: second })).status).toBe(200);
+
+    // Two at once when the owner says so.
+    const third = await t.ownerTask("Add a CSV export");
+    expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { tasksAtOnce: 2 } } })).status).toBe(200);
+    expect((await t.call("majhi_tasks_start", { id: third })).isError).toBe(false);
+    expect(t.status(third)).toBe("running");
   });
 });

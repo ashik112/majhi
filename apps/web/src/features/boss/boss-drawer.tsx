@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Conversation } from "@/features/captain/conversation";
@@ -19,13 +19,16 @@ export function BossDrawer() {
   // Focus moves into the drawer when it opens (the message box of the tab, else the tab itself), and
   // back to what had it when it closes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the field exists only after the tab loaded
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
     const before = document.activeElement;
-    const timer = window.setTimeout(() => {
+    const focusIn = () => {
       const field = panel.current?.querySelector<HTMLElement>("textarea");
-      (field ?? panel.current?.querySelector<HTMLElement>('[aria-pressed="true"]'))?.focus();
-    }, 0);
+      (field ?? panel.current)?.focus();
+    };
+    // At once, so the first keystrokes land in the drawer, then again once its box has loaded.
+    focusIn();
+    const timer = window.setTimeout(focusIn, 0);
     return () => {
       window.clearTimeout(timer);
       if (before instanceof HTMLElement && before.isConnected) before.focus();
@@ -48,11 +51,13 @@ export function BossDrawer() {
     <aside
       ref={panel}
       aria-label="Captain"
+      data-captain-drawer=""
+      tabIndex={-1}
       onKeyDown={(event) => {
         if (event.key === "Escape" && !event.defaultPrevented) hide();
       }}
       className={cn(
-        "fixed top-3 right-3 bottom-3 z-40 flex w-[min(480px,calc(100vw-24px))] animate-fade-in flex-col gap-3 rounded-2xl p-4",
+        "fixed top-3 right-3 outline-none bottom-3 z-40 flex w-[min(480px,calc(100vw-24px))] animate-fade-in flex-col gap-3 rounded-2xl p-4",
         GLASS_STRONG,
       )}
     >

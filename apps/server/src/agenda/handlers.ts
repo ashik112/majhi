@@ -1,4 +1,3 @@
-import { pageRef } from "@majhi/shared";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
 import { type FindingsHandlerDeps, findingActor } from "../findings/handlers.ts";
@@ -25,7 +24,7 @@ export function agendaHandlers(deps: AgendaHandlerDeps): Pick<CommandHandlers, A
     const actor = await findingActor(deps, ctx);
     if (actor.kind === "agent") {
       throw new UserError(
-        `${ctx.command} is the owner's day across every workspace, so only the captain reads it. Read your workspace's findings and deadlines instead.`,
+        `${ctx.command} is the owner's day across every workspace, so only the captain reads it. Read your workspace's findings instead.`,
         409,
       );
     }

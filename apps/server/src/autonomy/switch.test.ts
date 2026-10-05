@@ -1,6 +1,6 @@
 import type { CaptainStatus } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { ASK, RUNS, TIDY } from "../captain/authority-fixtures.ts";
+import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 
 let w: BossWorld | undefined;
@@ -68,7 +68,7 @@ describe("the Autonomous switch is On or Off", () => {
     expect(services.store.tasks.get(id)).toMatchObject({ status: "paused", pausedBy: "autonomy-off" });
     // The captain is never stopped: it still has its lane.
     expect(services.captain.stopped()).toBe(false);
-    expect((await h.cmd("autonomy.status")).body.stopped).toEqual([id]);
+    expect((await h.cmd("autonomy.status", { detail: true })).body.stopped).toEqual([id]);
 
     const resumed = (await h.cmd("captain.resume")).body as CaptainStatus;
     expect(resumed.autonomy).toBe("on");
@@ -81,7 +81,7 @@ describe("the Autonomous switch is On or Off", () => {
     await h.cmd("autonomy.start");
     services.store.raw.prepare("UPDATE autonomy_state SET mode = 'paused' WHERE id = 1").run();
     expect(services.autonomy.mode()).toBe("on");
-    expect((await h.cmd("autonomy.status")).body.mode).toBe("on");
+    expect((await h.cmd("autonomy.status", { detail: true })).body.mode).toBe("on");
     // The old Pause command is Off with its tasks paused.
     expect((await h.cmd("autonomy.pause")).body.mode).toBe("off");
   });

@@ -48,7 +48,7 @@ export interface Holder extends SlotRequest {
   lastUsed: number;
 }
 
-type Limit = "global" | "account" | "task";
+export type Limit = "global" | "account" | "task";
 
 function over(req: SlotRequest, holders: readonly Holder[], limits: Limits): Limit[] {
   const out: Limit[] = [];
@@ -283,6 +283,8 @@ export class Slots {
   private readonly turns: Turns = { workspace: new Map(), account: new Map() };
   private turn = 0;
   private readonly now: () => number;
+  /** The limits at the last look at the line, for saying what holds a start back. */
+  private lastLimits: Limits | undefined;
 
   constructor(private readonly deps: SlotDeps) {
     this.now = deps.now ?? Date.now;
@@ -326,6 +328,30 @@ export class Slots {
     return { holders: [...this.holders.values()], waiting: this.waiting.map((w) => w.req) };
   }
 
+  /**
+   * Which limit holds a waiting start back and who holds the slots that count toward it, or undefined
+   * when no limit is in its way (it waits behind earlier starts). The most specific limit is named
+   * first: the account's, then the task's, then the machine's.
+   */
+  blockedBy(key: string): { limit: Limit; max: number; account: string; holders: Holder[] } | undefined {
+    const req = this.waiting.find((w) => w.req.key === key)?.req;
+    const limits = this.lastLimits;
+    if (req === undefined || limits === undefined) return undefined;
+    const holders = [...this.holders.values()];
+    const hit = over(req, holders, limits);
+    const limit = (["account", "task", "global"] as const).find((l) => hit.includes(l));
+    if (limit === undefined) return undefined;
+    const counted =
+      limit === "account"
+        ? holders.filter((h) => h.account === req.account)
+        : limit === "task"
+          ? holders.filter((h) => h.task === req.task)
+          : holders;
+    const max =
+      limit === "account" ? limits.per_account : limit === "task" ? limits.per_task : globalCap(limits);
+    return { limit, max, account: req.account, holders: counted };
+  }
+
   /** 1-based place in line, or undefined when not waiting. */
   position(key: string): number | undefined {
     const i = this.line().findIndex((w) => w.req.key === key);
@@ -352,6 +378,7 @@ export class Slots {
   private async pumpOnce(): Promise<void> {
     if (this.waiting.length === 0) return;
     const limits = await this.deps.limits();
+    this.lastLimits = limits;
     let plan = planGrants(
       this.line().map((w) => w.req),
       [...this.holders.values()],

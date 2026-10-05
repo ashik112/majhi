@@ -1,6 +1,12 @@
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type CommandOutput, UPDATE_STATUS_FILE, type UpdateStatus, UpdateStatusSchema } from "@majhi/shared";
+import {
+  type CommandOutput,
+  OPEN_TASKS_FILE,
+  UPDATE_STATUS_FILE,
+  type UpdateStatus,
+  UpdateStatusSchema,
+} from "@majhi/shared";
 import { z } from "zod";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import { isUpdateReady } from "./version.ts";
@@ -17,6 +23,8 @@ export interface SystemDeps {
    * goes on, because a stuck backup must not leave the owner on an old version.
    */
   beforeUpdate?: () => Promise<unknown>;
+  /** Ids of tasks that are not done. The helper keeps their preview images after the update. */
+  openTasks?: () => string[];
   /** How often a waiting update looks again. Default 2 s. */
   waitPollMs?: number;
 }
@@ -155,6 +163,12 @@ export class SystemService {
           `The backup before the update failed: ${err instanceof Error ? err.message : String(err)}`,
         );
       });
+      if (this.deps.openTasks !== undefined) {
+        await writeFile(
+          join(this.deps.majhiHome, OPEN_TASKS_FILE),
+          `${JSON.stringify({ tasks: this.deps.openTasks() })}\n`,
+        ).catch(() => undefined);
+      }
       await hostLink.call("update", {});
       return { state: "restarting" };
     } catch (err) {

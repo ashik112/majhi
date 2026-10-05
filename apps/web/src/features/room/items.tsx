@@ -1,4 +1,4 @@
-import type { AgentLive, RoomItem } from "@majhi/shared";
+import { type AgentLive, permissionOptionLabel, type RoomItem } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
 import {
   Brain,
@@ -30,7 +30,7 @@ import { PendingAsk } from "./ask-card";
 import { DOCK_ACTIONS } from "./dock";
 import { Markdown } from "./markdown";
 import { MediaView, TaskFileLink, type TaskFiles } from "./media";
-import { contextLine, permissionOptionLabel, permissionSummary, toolLabel } from "./model";
+import { contextLine, permissionSummary, toolLabel } from "./model";
 import { type OwnerContext, PausedCard, QuestionActions, ReviewCard } from "./owner-cards";
 import { ownerNotice, type Quiet, valueParts } from "./system-lines";
 import { ToolRow } from "./tool-row";

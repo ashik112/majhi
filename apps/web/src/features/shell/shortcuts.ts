@@ -9,7 +9,15 @@ export interface Press {
   shift?: boolean;
 }
 
-export type ShortcutGroup = "Anywhere" | "Go to" | "Task" | "Board" | "Decisions" | "Today" | "Message box";
+export type ShortcutGroup =
+  | "Anywhere"
+  | "Go to"
+  | "Task"
+  | "Board"
+  | "Decisions"
+  | "Today"
+  | "Skills & MCP"
+  | "Message box";
 
 /**
  * One row of the shortcut table. The table is the single source: the handlers match key presses
@@ -75,11 +83,10 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   go("u", PAGE_PATH.accounts, "Go to accounts"),
   go("n", PAGE_PATH.connections, "Go to connections"),
   go("h", PAGE_PATH.usage, "Go to health and usage"),
-  go("k", PAGE_PATH.skills, "Go to skills"),
+  go("k", PAGE_PATH.skills, "Go to skills and MCP servers"),
   go("m", PAGE_PATH.memory, "Go to memory"),
   go("t", PAGE_PATH.playbooks, "Go to playbooks (timers)"),
   go("s", PAGE_PATH.setup, "Go to hub setup"),
-  go("i", PAGE_PATH.business, "Go to Knowledge (facts, people, deadlines, voice)"),
   go("p", PAGE_PATH.projects, "Go to projects and links"),
   go("o", PAGE_PATH.orgs, "Go to workspaces"),
   go("l", PAGE_PATH.audit, "Go to the audit log"),
@@ -97,7 +104,14 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
     press: { key: "a" },
     scope: "task",
   },
-  { id: "stop", keys: ["Esc"], what: "Stop the agent in an open task", group: "Task" },
+  {
+    id: "stop",
+    keys: ["Esc"],
+    what: "Stop the agent in an open task",
+    group: "Task",
+    press: { key: "Escape" },
+    scope: "task",
+  },
   {
     id: "send",
     keys: ["Mod", "Enter"],
@@ -108,7 +122,17 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   },
   { id: "queue", keys: ["Enter"], what: "Send, or queue for the next turn", group: "Message box" },
   { id: "newline", keys: ["Shift", "Enter"], what: "New line", group: "Message box" },
-  { id: "board-move", keys: ["j", "k", "h", "l"], what: "Move between cards (arrows too)", group: "Board" },
+  { id: "board-move", keys: ["j", "k"], what: "Move through the rows of Home (arrows too)", group: "Board" },
+  {
+    id: "board-section",
+    keys: ["Shift", "J", "K"],
+    what: "Jump to the next or previous section",
+    group: "Board",
+  },
+  { id: "board-act", keys: ["1", "2", "3"], what: "Run the row's numbered action", group: "Board" },
+  { id: "board-select", keys: ["x"], what: "Select a row; 1 then runs on all selected", group: "Board" },
+  { id: "board-triage", keys: ["t"], what: "Open To triage", group: "Board" },
+  { id: "board-filter", keys: ["/"], what: "Filter the rows", group: "Board" },
   {
     id: "decisions-move",
     keys: ["j", "k"],
@@ -133,7 +157,11 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   { id: "today-move", keys: ["j", "k"], what: "Next or previous item (arrows too)", group: "Today" },
   { id: "today-open", keys: ["Enter"], what: "Take the item's action", group: "Today" },
   { id: "today-done", keys: ["e"], what: "Dismiss a finding or close a date", group: "Today" },
-  { id: "board-open", keys: ["Enter"], what: "Open the card you are on", group: "Board" },
+  { id: "skills-move", keys: ["j", "k"], what: "Next or previous row (arrows too)", group: "Skills & MCP" },
+  { id: "skills-open", keys: ["Enter"], what: "Open the row's detail", group: "Skills & MCP" },
+  { id: "skills-search", keys: ["/"], what: "Search skills and MCP servers", group: "Skills & MCP" },
+  { id: "skills-add", keys: ["a"], what: "Add a skill or MCP server", group: "Skills & MCP" },
+  { id: "board-open", keys: ["Enter"], what: "Open the row, or a section", group: "Board" },
 ];
 
 /** The table row with this id. */
@@ -152,6 +180,32 @@ export const GO_KEYS: Record<string, GoTarget> = Object.fromEntries(
 export function chordOf(path: GoTarget): string | undefined {
   const def = SHORTCUT_TABLE.find((s) => s.go === path);
   return def === undefined ? undefined : def.keys.join(" ");
+}
+
+/** The window event the shortcut layer sends on Esc in a task; the open room stops its turn on it. */
+export const STOP_TURN_EVENT = "majhi:stop-turn";
+
+/** How long an Esc waits for a room that is still opening or starting up. */
+const STOP_WAIT_MS = 4000;
+let stopAskedAt = 0;
+
+/** Esc was pressed in a task. Sends it to the open room; with no room yet, it waits for one. */
+export function askToStop(): void {
+  const event = new CustomEvent<{ taken: boolean }>(STOP_TURN_EVENT, { detail: { taken: false } });
+  window.dispatchEvent(event);
+  if (!event.detail.taken) stopAskedAt = Date.now();
+}
+
+/** The room's side of `askToStop`: true once, when an Esc is waiting for a turn that has now started. */
+export function takeWaitingStop(): boolean {
+  const waiting = Date.now() - stopAskedAt < STOP_WAIT_MS;
+  stopAskedAt = 0;
+  return waiting;
+}
+
+/** The room has the Esc: it stops the turn now, or holds it until a turn starts. */
+export function holdStop(): void {
+  stopAskedAt = Date.now();
 }
 
 /** How long after `g` the second key still counts. */

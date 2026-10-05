@@ -45,9 +45,6 @@ describe("host jobs", () => {
     },
     suggestRoots: async () => [{ path: "/Users/a/Work", repoCount: 2 }],
     sshReload: async () => SSH_OK,
-    e2eRun: async () => {
-      throw new Error("An e2e run is already in progress on this computer.");
-    },
     secretsKeySave: async () => {
       throw new Error(
         "The key at /Users/a/.config/majhi/secrets.key is not the key majhi uses, so it was not saved.",
@@ -66,7 +63,7 @@ describe("host jobs", () => {
     layaStatus: () => ({ state: "not-installed" }),
     layaInstall: () => ({ state: "installing" }),
     layaDecide: async () => ({ answers: {}, loadMs: 0, predictMs: 1 }),
-    notify: async () => ({ clickable: false }),
+    notify: async () => ({ kind: "shown", clickable: false }),
     sshUnlock: async () => {
       throw new Error("That passphrase did not unlock ~/.ssh/id_work.");
     },

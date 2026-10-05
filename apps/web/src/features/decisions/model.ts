@@ -1,9 +1,11 @@
 import {
+  type BoardCounts,
   DECISION_KIND_LABEL,
   type DecisionLink,
   type OwnerDecision,
   type OwnerDecisionKind,
   PRIVATE,
+  type WorkCounts,
 } from "@majhi/shared";
 import type { BannerAction } from "../shell/model";
 
@@ -15,7 +17,8 @@ import type { BannerAction } from "../shell/model";
 export const KIND_FILTERS = [
   { id: "ship", label: DECISION_KIND_LABEL.ship },
   { id: "question", label: DECISION_KIND_LABEL.question },
-  { id: "access", label: DECISION_KIND_LABEL.approval },
+  { id: "permission", label: DECISION_KIND_LABEL.approval },
+  { id: "access", label: DECISION_KIND_LABEL.secret },
   { id: "money", label: DECISION_KIND_LABEL.budget },
   { id: "paused", label: DECISION_KIND_LABEL.paused },
   { id: "incident", label: DECISION_KIND_LABEL.incident },
@@ -26,16 +29,16 @@ export type KindFilter = (typeof KIND_FILTERS)[number]["id"];
 const GROUP: Record<OwnerDecisionKind, KindFilter> = {
   ship: "ship",
   question: "question",
-  approval: "access",
+  approval: "permission",
   secret: "access",
   "sign-in": "access",
   budget: "money",
-  cap: "money",
   paused: "paused",
   draft: "access",
   batch: "access",
   incident: "incident",
   trust: "trust",
+  notifications: "access",
 };
 
 export function kindFilterOf(decision: Pick<OwnerDecision, "kind">): KindFilter {
@@ -144,6 +147,8 @@ export function actionOf(link: DecisionLink): BannerAction {
       return { kind: "page", to: "/playbooks" };
     case "watch":
       return { kind: "page", to: "/watch" };
+    case "setup":
+      return { kind: "page", to: "/setup", search: { section: link.section } };
   }
 }
 
@@ -163,6 +168,8 @@ export function openLabel(link: DecisionLink): string {
       return "Open Playbooks";
     case "watch":
       return "Open Watch";
+    case "setup":
+      return "Open settings";
   }
 }
 
@@ -191,16 +198,14 @@ export function primaryOption(
 }
 
 /**
- * How many decisions wait for the owner: all of them, or one workspace's. The one definition of "needs
- * you"; `useNeedsYou` feeds it the inbox. Unknown (undefined), not zero, until the list has loaded.
+ * What waits and what works, all workspaces or one. The server counts them (`decisions.list`), so
+ * the Home header, its columns, the bell, the sidebar and the banner cannot disagree. Unknown
+ * (undefined), not zero, until the list has loaded.
  */
-export function needsYouCount(
-  decisions: readonly Pick<OwnerDecision, "org" | "task">[] | undefined,
-  org?: string,
-): number | undefined {
-  if (decisions === undefined) return undefined;
-  if (org === undefined) return decisions.length;
-  return decisions.filter((d) => workspaceOf(d) === org).length;
+export function workCountsOf(counts: BoardCounts | undefined, org?: string): WorkCounts | undefined {
+  if (counts === undefined) return undefined;
+  if (org === undefined) return counts;
+  return counts.orgs[org] ?? { needsYou: 0, working: 0 };
 }
 
 /** The ids from one row to another in the queue, both included, whichever comes first. */

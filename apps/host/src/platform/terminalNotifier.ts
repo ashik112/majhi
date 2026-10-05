@@ -65,7 +65,7 @@ async function install(
     const hash = createHash("sha256").update(bytes).digest("hex");
     if (hash !== release.sha256) {
       deps.log(
-        `notify: the terminal-notifier ${release.version} download did not match its pinned SHA-256 (got ${hash}); it was discarded and notifications stay on osascript`,
+        `notify: the terminal-notifier ${release.version} download did not match its pinned SHA-256 (got ${hash}); it was discarded and no notification is shown`,
       );
       return { kind: "mismatch" };
     }
@@ -79,7 +79,7 @@ async function install(
       timeoutMs: UNPACK_TIMEOUT_MS,
     });
     if (done.code !== 0 || !(await isFile(join(unpacked, PROGRAM)))) {
-      deps.log("notify: could not unpack terminal-notifier; notifications stay on osascript");
+      deps.log("notify: could not unpack terminal-notifier; no notification is shown");
       return { kind: "failed" };
     }
     const target = installDir(deps.majhiHome);
@@ -99,7 +99,7 @@ async function install(
 /**
  * Returns a function giving the terminal-notifier to use: majhi's own copy, else one on PATH. When
  * there is none and `deps.download` is set, it starts the install in the background and gives
- * undefined, so this notification goes through osascript and a later one uses the new copy. A
+ * undefined, so this notification is not shown and a later one uses the new copy. A
  * checksum mismatch stops tries until the helper restarts; other failures retry after an hour.
  */
 export function terminalNotifier(

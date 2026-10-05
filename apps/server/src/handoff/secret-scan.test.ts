@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { changeBase } from "../git/since-start.ts";
 import { makeRepo, tempDir, git as testGit } from "../testing/fixtures.ts";
-import { scanForSecrets, skippedByPattern } from "./secret-scan.ts";
+import { describeHit, scanForSecrets, skippedByPattern } from "./secret-scan.ts";
 
 /** The pre-ship secret scan against real git: big diffs are scanned in full, never refused for size. */
 
@@ -52,15 +52,49 @@ describe("the secret scan of a branch", () => {
     for (let i = 0; i < 40; i++) files[`src/f${String(i).padStart(2, "0")}.ts`] = lines(200);
     files["src/f39.ts"] = `${lines(200)}const token = "${token}";\n`;
     await commitFiles(files);
-    expect(await scanForSecrets(repo, "main", "task/acm-1")).toEqual({ kind: "secret", path: "src/f39.ts" });
+    const scan = await scanForSecrets(repo, "main", "task/acm-1");
+    expect(scan.kind === "secret" && describeHit(scan.hit)).toBe(
+      "src/f39.ts line 201, rule github, value ghp_[hidden, 44 chars]",
+    );
   });
 
   it("catches a secret in a file whose name has spaces and in a nested folder", async () => {
     await commitFiles({ "config/my app/.env.local": `API_TOKEN=${token}\n` });
-    expect(await scanForSecrets(repo, "main", "task/acm-1")).toEqual({
-      kind: "secret",
-      path: "config/my app/.env.local",
+    const scan = await scanForSecrets(repo, "main", "task/acm-1");
+    expect(scan).toMatchObject({ kind: "secret", hit: { path: "config/my app/.env.local", line: 1 } });
+  });
+
+  it("names the file, line and rule, and masks the value, so a block is never unexplained", async () => {
+    await commitFiles({
+      "src/app.ts": `export const a = 1;\nexport const b = 2;\nconst gh = "${token}";\n`,
     });
+    const scan = await scanForSecrets(repo, "main", "task/acm-1");
+    if (scan.kind !== "secret") throw new Error("expected a secret");
+    expect(scan.hit).toEqual({
+      path: "src/app.ts",
+      line: 3,
+      rule: "github",
+      masked: "ghp_[hidden, 44 chars]",
+      more: 0,
+    });
+    const text = describeHit(scan.hit);
+    expect(text).toBe("src/app.ts line 3, rule github, value ghp_[hidden, 44 chars]");
+    expect(text).not.toContain(token.slice(4));
+  });
+
+  it("reads only what the branch adds: a secret removed or left in old lines is not a block", async () => {
+    await commitFiles({ "src/old.ts": `const gh = "${token}";\n` });
+    await testGit(repo, "checkout", "--quiet", "-b", "task/acm-2");
+    await commitFiles({ "src/new.ts": "export const x = 1;\n" });
+    expect((await scanForSecrets(repo, "task/acm-1", "task/acm-2")).kind).toBe("clean");
+  });
+
+  it("counts the line from the hunk, not from the start of the added text", async () => {
+    await commitFiles({ "src/a.ts": `${lines(10)}` });
+    await testGit(repo, "checkout", "--quiet", "-b", "task/acm-3");
+    await commitFiles({ "src/a.ts": `${lines(10)}// token ${token}\n` });
+    const scan = await scanForSecrets(repo, "task/acm-1", "task/acm-3");
+    expect(scan).toMatchObject({ kind: "secret", hit: { path: "src/a.ts", line: 11 } });
   });
 
   it("stops only past its ceiling and names the biggest files", async () => {

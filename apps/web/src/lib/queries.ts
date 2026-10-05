@@ -19,6 +19,7 @@ import {
 } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { ApiRequestError, cmd, getHealth } from "./api";
+import { healthEveryMs, useFeedOpen } from "./feed-status";
 
 export const queryKeys = {
   config: ["config"],
@@ -67,8 +68,6 @@ export const queryKeys = {
   ops: ["ops"],
   /** `agenda.today`: the brief, the agenda, Watch and Plan. */
   agenda: ["agenda"],
-  /** Every `kb.*`, `voice.*`, `crm.*` and `deadlines.*` read. */
-  business: ["business"],
   /** `decisions.list`: the owner's inbox. Every topic that changes what waits for them refetches it. */
   decisions: ["decisions"],
   /** `git.signIn.poll` for each flow. */
@@ -123,18 +122,28 @@ export function useSetWorkspaces(onSaved?: (result: WorkspacesUpdateResult) => v
   });
 }
 
+/** How often `/health` is asked, and how long one answer may take. A server that is gone shows within about 3 s. */
+const HEALTH_TIMEOUT_MS = 1500;
+
 /**
- * Polls `/health` every 10 s for the online pill. When the server comes back after being
- * unreachable (for example after `make up`), every other query is refetched.
+ * Keeps the online pill. The events socket opening and closing is the first signal (the feed asks
+ * `/health` once on each); `/health` is polled every 1.5 s only while the socket is down, and every 30 s
+ * while it is up. One failed answer is asked again at once
+ * before the pill says offline, so a busy server does not flicker it. When the server comes back
+ * after being unreachable (for example after `make up`), every other query is refetched.
  */
 export function useHealth() {
   const client = useQueryClient();
+  const feedOpen = useFeedOpen();
   const query = useQuery({
     queryKey: queryKeys.health,
-    queryFn: ({ signal }) => getHealth(signal),
-    refetchInterval: 10_000,
+    queryFn: ({ signal }) => getHealth(AbortSignal.any([signal, AbortSignal.timeout(HEALTH_TIMEOUT_MS)])),
+    refetchInterval: healthEveryMs(feedOpen),
     refetchIntervalInBackground: false,
-    retry: false,
+    retry: 1,
+    retryDelay: 200,
+    // The browser's own online flag must not pause the check that tells whether majhi answers.
+    networkMode: "always",
   });
 
   const online = query.isSuccess;
@@ -148,6 +157,15 @@ export function useHealth() {
   }, [online, query.isError, client]);
 
   return { ...query, online };
+}
+
+/** True while the last health check failed: majhi cannot be reached, so nothing sent now would arrive. */
+export function useServerOffline(): boolean {
+  return useQuery({
+    queryKey: queryKeys.health,
+    queryFn: ({ signal }) => getHealth(signal),
+    enabled: false,
+  }).isError;
 }
 
 /** Whether the host helper is connected. Polled every 10 s, like the online pill. */

@@ -7,9 +7,9 @@ import type { HostLink } from "../host/link.ts";
 import type { MrHostOptions } from "../mrs/hosts/index.ts";
 import type { Probe } from "../runs/network.ts";
 import type { LinkOptions } from "../tasks/links.ts";
-import type { TrackerAdapter, TrackerAdapterInit } from "../trackers/types.ts";
-import { git } from "./fixtures.ts";
-import { type Harness, type HarnessOptions, harness } from "./harness.ts";
+import { git, tempDir } from "./fixtures.ts";
+import { type Harness, type HarnessOptions, harness, harnessOver } from "./harness.ts";
+import { copyTemplate } from "./template.ts";
 
 export interface World {
   h: Harness;
@@ -39,8 +39,6 @@ export interface WorldOptions {
   idleWatchMs?: number;
   /** Replaces `fetch` for git sign-in and the git hosts' APIs. */
   gitFetch?: typeof fetch;
-  trackerFetch?: typeof fetch;
-  trackerAdapter?: (init: TrackerAdapterInit) => TrackerAdapter;
   skillsCommand?: HarnessOptions["skillsCommand"];
   skillsFetch?: HarnessOptions["skillsFetch"];
   mcpFetch?: HarnessOptions["mcpFetch"];
@@ -57,7 +55,27 @@ export interface WorldOptions {
 export async function taskWorld(options: WorldOptions = {}): Promise<World> {
   vi.stubEnv("GIT_CONFIG_GLOBAL", "/dev/null");
   vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
-  const h = await harness({
+  // The setup (org, account, agent, repo, project) is the same for every test with the same agent
+  // options, so it is built once per run and copied (`template.ts`).
+  const setup = {
+    ...(options.agent === undefined ? {} : { agent: options.agent }),
+    ...(options.noAgent === undefined ? {} : { noAgent: options.noAgent }),
+  };
+  const { dir, cleanup } = await tempDir();
+  await copyTemplate(JSON.stringify(setup), dir, async () => {
+    const built = await freshWorld(setup);
+    await built.h.majhi.close();
+    return { dir: built.h.dir, patch: [join("Work", "api", ".git", "config")] };
+  });
+  const h = harnessOver(dir, cleanup, harnessOptionsOf(options));
+  // Registering the project writes its card in the background, and some tests wait for it. The template
+  // has none (its paths would be the template's), so each world starts it, as registering did.
+  h.majhi.services.cards.onRegistered("acme-api");
+  return worldOver(h);
+}
+
+function harnessOptionsOf(options: WorldOptions): HarnessOptions {
+  return {
     ...(options.links === undefined ? {} : { links: options.links }),
     ...(options.hostLink === undefined ? {} : { hostLink: options.hostLink }),
     ...(options.probe === undefined ? {} : { probe: options.probe }),
@@ -67,34 +85,28 @@ export async function taskWorld(options: WorldOptions = {}): Promise<World> {
     ...(options.connectionsRemote === undefined ? {} : { connectionsRemote: options.connectionsRemote }),
     ...(options.idleWatchMs === undefined ? {} : { idleWatchMs: options.idleWatchMs }),
     ...(options.gitFetch === undefined ? {} : { gitFetch: options.gitFetch }),
-    ...(options.trackerFetch === undefined ? {} : { trackerFetch: options.trackerFetch }),
-    ...(options.trackerAdapter === undefined ? {} : { trackerAdapter: options.trackerAdapter }),
     ...(options.skillsCommand === undefined ? {} : { skillsCommand: options.skillsCommand }),
     ...(options.skillsFetch === undefined ? {} : { skillsFetch: options.skillsFetch }),
     ...(options.mcpFetch === undefined ? {} : { mcpFetch: options.mcpFetch }),
     ...(options.connectCatalog === undefined ? {} : { connectCatalog: options.connectCatalog }),
     ...(options.opsProbes === undefined ? {} : { opsProbes: options.opsProbes }),
     ...(options.ntfyFetch === undefined ? {} : { ntfyFetch: options.ntfyFetch }),
-  });
+  };
+}
+
+function worldOver(h: Harness): World {
   const world: World = {
     h,
     repo: (name) => join(h.dir, "Work", name),
     remote: (name) => join(h.dir, "remotes", `${name}.git`),
     async addRepo(name) {
-      const path = world.repo(name);
-      const remote = world.remote(name);
-      await mkdir(remote, { recursive: true });
-      await git(remote, "init", "--bare", "--quiet", "--initial-branch=main");
-      await mkdir(path, { recursive: true });
-      await git(path, "init", "--quiet", "--initial-branch=main");
-      await writeFile(join(path, "README.md"), `# ${name}\n`);
-      await git(path, "add", ".");
-      await git(path, "commit", "--quiet", "-m", "init");
-      await git(path, "remote", "add", "origin", remote);
-      await git(path, "branch", "develop");
-      await git(path, "push", "--quiet", "origin", "main", "develop");
-      await git(path, "remote", "set-head", "origin", "main");
-      return path;
+      // The same repo every time for a name, so it is made once per run and copied.
+      await copyTemplate(`repo:${name}`, h.dir, async () => {
+        const { dir } = await tempDir();
+        await makeSampleRepo(dir, name);
+        return { dir, patch: [join("Work", name, ".git", "config")] };
+      });
+      return world.repo(name);
     },
     taskDir: (id) => join(h.dir, "Work", ".majhi", id),
     cleanup: async () => {
@@ -104,6 +116,16 @@ export async function taskWorld(options: WorldOptions = {}): Promise<World> {
       await h.cleanup();
     },
   };
+  return world;
+}
+
+/** The setup itself, run for real: what a template is a copy of. */
+async function freshWorld(options: Pick<WorldOptions, "agent" | "noAgent">): Promise<World> {
+  const h = await harness();
+  const world = worldOver(h);
+  // Registering a project starts its card in the background (a scan of the repo, and gaps written to the
+  // findings). Not here: the card names this folder, so each world made from the template starts its own.
+  h.majhi.services.cards.onRegistered = () => undefined;
   must(await h.cmd("orgs.create", { id: "acme", name: "Acme", key: "ACM" }));
   must(await h.cmd("accounts.create", { id: "claude-acme", tool: "claude", org: "acme", auth: "login" }));
   if (options.noAgent !== true) {
@@ -128,6 +150,23 @@ export async function taskWorld(options: WorldOptions = {}): Promise<World> {
     await h.cmd("projects.register", { id: "acme-api", org: "acme", path: "~/Work/api", aliases: ["api"] }),
   );
   return world;
+}
+
+/** `<home>/Work/<name>` with `main` and `develop`, and its bare remote `<home>/remotes/<name>.git`. */
+async function makeSampleRepo(home: string, name: string): Promise<void> {
+  const path = join(home, "Work", name);
+  const remote = join(home, "remotes", `${name}.git`);
+  await mkdir(remote, { recursive: true });
+  await git(remote, "init", "--bare", "--quiet", "--initial-branch=main");
+  await mkdir(path, { recursive: true });
+  await git(path, "init", "--quiet", "--initial-branch=main");
+  await writeFile(join(path, "README.md"), `# ${name}\n`);
+  await git(path, "add", ".");
+  await git(path, "commit", "--quiet", "-m", "init");
+  await git(path, "remote", "add", "origin", remote);
+  await git(path, "branch", "develop");
+  await git(path, "push", "--quiet", "origin", "main", "develop");
+  await git(path, "remote", "set-head", "origin", "main");
 }
 
 function must(res: { status: number; body: unknown }): void {

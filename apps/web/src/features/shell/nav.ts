@@ -2,7 +2,7 @@ import type { PageName } from "@majhi/shared";
 
 /** More words that find a page in the palette. */
 export const PAGE_KEYWORDS: Record<PageName, string> = {
-  today: "brief morning agenda day plan deadlines review time watch what needs me",
+  today: "brief morning agenda day plan review time watch what needs me",
   board: "tasks home columns",
   chats: "conversations talk",
   captain: "boss chief of staff autonomous autopilot away rules log summary upkeep workspaces authority",
@@ -10,14 +10,12 @@ export const PAGE_KEYWORDS: Record<PageName, string> = {
   watch:
     "services uptime incidents down outage status ntfy phone push alerts escalation health certificate dns monitor",
   limits: "budget budgets spend cost daily weekly floors safety money raise",
-  business:
-    "knowledge base facts voice style people crm contacts leads investors clients deadlines hackathon grant launch renewal",
   decisions: "inbox needs you waiting questions approvals ship recommend answer",
   agents: "team roles models",
   accounts: "sign in claude codex login",
-  connections: "kubectl kubernetes mcp ssh env keys",
+  connections: "kubectl kubernetes ssh env keys",
   projects: "repos links branches",
-  skills: "install",
+  skills: "skills mcp servers tools install instructions",
   memory: "lessons facts briefs",
   orgs: "orgs organisations clients teams",
   setup: "settings preferences roots folders notifications",
@@ -33,7 +31,6 @@ export const PAGE_KEYWORDS: Record<PageName, string> = {
 export const SETTINGS_PAGES: readonly PageName[] = [
   "connections",
   "projects",
-  "skills",
   "memory",
   "limits",
   "setup",

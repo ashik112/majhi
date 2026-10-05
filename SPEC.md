@@ -235,7 +235,7 @@ The host helper per OS:
 | Agent socket in the server (4.5) | `/run/host-services/ssh-auth.sock`, from OrbStack or Docker Desktop | `~/.majhi/run/ssh-agent.sock`, which the helper serves and forwards to the agent above | Same |
 | Key passphrases | Apple's `ssh-add --apple-use-keychain`, reloaded with `--apple-load-keychain` | Kept in the keyring and given to `ssh-add` through a throwaway askpass at each check; with no keyring, kept nowhere | Same |
 | Docker | OrbStack or Docker Desktop, started with `open -a` | Docker Engine run as root, a system service the helper cannot start: its notification says `sudo systemctl enable --now docker` | Docker Desktop with WSL integration, started through `powershell.exe`; `docker` is looked for again once it runs |
-| Notifications | terminal-notifier, which majhi installs (clickable), else osascript | `notify-send` (not clickable) | A Windows toast through `powershell.exe` (clickable) |
+| Notifications | majhi's own notifier app, built on the Mac (named majhi, clickable), else terminal-notifier, which majhi installs. Never osascript | `notify-send` (not clickable) | A Windows toast through `powershell.exe` (clickable) |
 | Open a URL | `open` | `xdg-open` | `wslview`, else `explorer.exe` |
 | Open in editor | `code` or `cursor` CLI, the CLI inside the app, then `open -a` | `code` or `cursor` on PATH | `code` or `cursor` on PATH, else the Windows install's |
 | Laya | Native on Apple silicon, else Docker on the CPU | Docker, on the CPU or an NVIDIA GPU (5.12) | Same, with the NVIDIA driver in Windows |

@@ -86,7 +86,10 @@ export async function runFollowUps(run: ChoreRun, deps: FollowUpDeps): Promise<v
   // The owner's switches (the Follow-ups playbook).
   const off = (id: string): boolean => run.ws.rulesOff?.has(id) === true;
   const closing = !off("fu-close");
-  const threads = ports.openThreads(org).slice(0, MAX_THREADS);
+  const open = ports.openThreads(org);
+  // A follow-up finding whose thread is closed (done, merged or closed by hand) is resolved with it.
+  findings.settle(org, "follow-up", "followup:", new Set(open.map((t) => `followup:${t.id}`)));
+  const threads = open.slice(0, MAX_THREADS);
   if (threads.length === 0) return;
   const known = findings.list({ status: "live", limit: 500 }, { kind: "captain", org }).findings;
 

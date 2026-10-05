@@ -2,7 +2,6 @@ import type {
   CliCheckResult,
   CliLoginResult,
   DirListing,
-  E2eRunResult,
   EditorApp,
   GitCliLoginResult,
   GitLoginsResult,
@@ -20,6 +19,7 @@ import type {
   SshStatus,
 } from "@majhi/shared";
 import { errorMessage } from "./errors.ts";
+import type { NotifyOutcome } from "./platform/types.ts";
 
 export interface JobHandlers {
   listDirs(params: { path: string; showHidden: boolean }): Promise<DirListing>;
@@ -59,11 +59,11 @@ export interface JobHandlers {
   layaInstall(): LayaStatus;
   /** Throws an error whose message is safe to show when the editor cannot open the path. */
   editorOpen(params: { app: EditorApp; path: string; line?: number | undefined }): Promise<void>;
-  /** Resolves when the suite ended, passed or not. Throws an error whose message is safe to show when it cannot start. */
-  e2eRun(params: Extract<HostJob, { method: "e2e.run" }>["params"]): Promise<E2eRunResult>;
   layaDecide(params: Extract<HostJob, { method: "decide" }>["params"]): Promise<LayaDecideResult>;
-  /** Throws an error whose message is safe to show when the computer shows nothing. */
-  notify(params: Extract<HostJob, { method: "notify" }>["params"]): Promise<{ clickable: boolean }>;
+  /** What the notification came to. `blocked` is not an error: macOS has notifications off for majhi. */
+  notify(params: Extract<HostJob, { method: "notify" }>["params"]): Promise<NotifyOutcome>;
+  /** macOS: opens System Settings at Notifications. False where there is none. */
+  notifyOpenSettings?: () => Promise<boolean>;
   /** Opens an http(s) page in the owner's browser (`Platform.openUrl`). False when nothing could open it. */
   openUrl?: (params: Extract<HostJob, { method: "openUrl" }>["params"]) => Promise<boolean>;
   /**
@@ -175,14 +175,28 @@ export async function runJob(
         await handlers.editorOpen(job.params);
         await reply({ id: job.id, ok: true, result: { opened: true } });
         return;
-      case "e2e.run":
-        await reply({ id: job.id, ok: true, result: await handlers.e2eRun(job.params) });
-        return;
       case "notify": {
-        const { clickable } = await handlers.notify(job.params);
-        await reply({ id: job.id, ok: true, result: { shown: true, clickable } });
+        const outcome = await handlers.notify(job.params);
+        if (outcome.kind === "shown") {
+          await reply({ id: job.id, ok: true, result: { shown: true, clickable: outcome.clickable } });
+        } else if (outcome.kind === "blocked") {
+          await reply({ id: job.id, ok: true, result: { shown: false, clickable: false, blocked: true } });
+        } else {
+          const error =
+            outcome.kind === "unavailable"
+              ? "majhi's notifier is not ready yet. Try again in a minute."
+              : outcome.error;
+          await reply({ id: job.id, ok: false, error });
+        }
         return;
       }
+      case "notify.openSettings":
+        await reply({
+          id: job.id,
+          ok: true,
+          result: { opened: (await handlers.notifyOpenSettings?.()) === true },
+        });
+        return;
       case "git.logins":
         await reply({ id: job.id, ok: true, result: await handlers.gitLogins(job.params) });
         return;

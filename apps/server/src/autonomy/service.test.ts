@@ -1,6 +1,6 @@
 import type { AutonomyStatus, Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { ASK, RUNS, TIDY } from "../captain/authority-fixtures.ts";
+import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import type { FakeSession } from "../testing/fakeSession.ts";
 import type { Harness } from "../testing/harness.ts";
@@ -46,7 +46,7 @@ async function world() {
       return "end_turn";
     };
   };
-  const status = async (): Promise<AutonomyStatus> => (await h.cmd("autonomy.status")).body;
+  const status = async (): Promise<AutonomyStatus> => (await h.cmd("autonomy.status", { detail: true })).body;
   const task = (id: string): Task => {
     const found = h.majhi.services.store.tasks.get(id);
     if (found === undefined) throw new Error(`no task ${id}`);
@@ -93,7 +93,7 @@ describe("autonomous mode's state machine", () => {
     const res = await plain.h.cmd("autonomy.start");
     expect(res.status).toBe(409);
     expect(res.body.error).toContain("There is no captain yet");
-    expect((await plain.h.cmd("autonomy.status")).body.mode).toBe("off");
+    expect((await plain.h.cmd("autonomy.status", { detail: true })).body.mode).toBe("off");
   });
 
   it("turns on, works in the lane, adopts the captain's task, and finishes its step when turned off", async () => {
@@ -224,7 +224,10 @@ describe("autonomous mode's state machine", () => {
     const t = await world();
     const id = await t.startWorking();
     extra = t.h.restart();
-    expect((await extra.cmd("autonomy.status")).body).toMatchObject({ mode: "on", now: [{ task: id }] });
+    expect((await extra.cmd("autonomy.status", { detail: true })).body).toMatchObject({
+      mode: "on",
+      now: [{ task: id }],
+    });
     await extra.majhi.close();
 
     expect((await t.h.cmd("autonomy.stop", { how: "graceful" })).body.mode).toBe("stopping");
@@ -232,10 +235,10 @@ describe("autonomous mode's state machine", () => {
     extra = t.h.restart();
     const again = extra;
     await t.w.until(
-      async () => (await again.cmd("autonomy.status")).body.mode === "off",
+      async () => (await again.cmd("autonomy.status", { detail: true })).body.mode === "off",
       "the stop after the restart",
     );
-    expect((await again.cmd("autonomy.status")).body).toMatchObject({
+    expect((await again.cmd("autonomy.status", { detail: true })).body).toMatchObject({
       by: "majhi",
       why: "turned off after the current turns",
     });

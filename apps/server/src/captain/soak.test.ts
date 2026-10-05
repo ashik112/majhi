@@ -1,7 +1,6 @@
 import {
   AGENT_BLOCKED_COMMANDS,
   type CaptainAction,
-  type CaptainChore,
   type CaptainRun,
   type CommandName,
   commands,
@@ -14,17 +13,17 @@ import { ASK, RUNS, TIDY } from "./authority-fixtures.ts";
 import { Lanes } from "./lanes.ts";
 import type { ApprovalCard, CaptainPorts, NewRepo, PendingFact, QuestionCard, TriageTask } from "./ports.ts";
 import { CaptainRepo } from "./repo.ts";
-import { DAILY_CAPS, RUN_CAPS, runActions } from "./rules.ts";
+import { PASS_BOUND } from "./rules.ts";
 import { CaptainService } from "./service.ts";
 
 /**
  * The soak test of SPEC 5.18 ("No runaway, no loops"). It replays 30 hours of a simulated world in
  * three workspaces (Private on "Runs it", Acme on "Keeps things tidy", Globex on "Only when I ask"):
  * tasks reaching review, bursts of approval cards, agents' questions, memories, new repos, done tasks,
- * quiet tasks, restarts in the middle of runs, failures, a "Stop the captain", and the captain's own
+ * restarts in the middle of runs, failures, a "Stop the captain", and the captain's own
  * ships and cards echoing back as events. The lanes run the fake ACP agent, so no token is spent.
  *
- * It fails when a run passes a cap, a daily cap is passed, the captain's own event starts a run, an
+ * It fails when a run passes the pass bound, the captain's own card (from its own agent) starts a run, an
  * action repeats, the captain acts while stopped or in a task the owner is in, or anything happens in
  * the workspace set to "Only when I ask". It runs on every merge, in well under a minute.
  */
@@ -60,12 +59,9 @@ interface SimTask {
   ready: boolean;
   /** The owner types in it right now. */
   typing?: boolean;
-  quietSince?: string;
   due?: string;
   priority?: "high" | "normal" | "low";
   updatedAt: string;
-  /** An account of the team needs a new sign-in: the lead's, or a teammate's whose step failed. */
-  signedOut?: { lead: boolean; since: string; teammateWorks: boolean };
 }
 
 /** The simulated world the chores read and act in, with every call they make. */
@@ -137,7 +133,12 @@ class Sim {
         embed: async () => undefined,
         closeThread: () => undefined,
       },
-      findings: undefined as unknown as CaptainPorts["findings"],
+      // The soak world files no findings: every call an upkeep pass makes is a no-op.
+      findings: {
+        find: () => undefined,
+        report: async () => undefined,
+        settle: () => undefined,
+      } as unknown as CaptainPorts["findings"],
       ownScope: async () => undefined,
       reviewTasks: async (org) =>
         of(org)
@@ -157,8 +158,7 @@ class Sim {
         const t = this.tasks.get(id);
         this.act("ship", org, `${id}@${t?.heads}`, id);
         if (t !== undefined) t.status = "done";
-        // The captain's own ship comes back as an event: it must start nothing.
-        this.selfInjected += 1;
+        // The captain's own ship comes back as an event: the run it starts finds every key taken.
         this.echo.review(id);
         return { text: `Shipped ${id}`, undoNote: "simulated" };
       },
@@ -174,7 +174,6 @@ class Sim {
       shipReady: async (org, id) => {
         const t = this.tasks.get(id);
         this.act("shipReady", org, `${id}@${t?.heads}`, id);
-        this.selfInjected += 1;
         this.echo.review(id);
       },
       approvals: (org) => this.cards.filter((c) => c.org === org && c.done !== true),
@@ -208,9 +207,7 @@ class Sim {
         this.act("answer", org, `${card.task}:${card.item}`, card.task);
         const found = this.questions.find((q) => q.item === card.item);
         if (found !== undefined) found.done = true;
-      },
-      flagLoop: async (org, card) => {
-        this.act("flagLoop", org, `${card.task}:${card.item}`, card.task);
+        return { answered: true };
       },
       laneRest: (org) => lanes.rest(org),
       askLane: async (org, text) => {
@@ -259,54 +256,13 @@ class Sim {
         if (found !== undefined) found.done = true;
         return { removed: [`worktree ${id}`], kept: [] };
       },
-      stalled: (org) =>
-        of(org)
-          .filter((t) => t.status === "running" && t.quietSince !== undefined)
-          .map((t) => ({ id: t.id, lead: "builder", quietSince: t.quietSince ?? "" })),
-      wakeLead: (org, id) => {
-        // The lead does not answer: the task stays quiet, so the owner is told next.
-        this.act("wakeLead", org, `${id}:${this.tasks.get(id)?.quietSince}`, id);
-      },
-      pauseForOwner: async (org, id) => {
-        this.act("pauseForOwner", org, `${id}:${this.tasks.get(id)?.quietSince}`, id);
-        const t = this.tasks.get(id);
-        if (t !== undefined) t.status = "paused";
-      },
-      signInStalls: async (org) =>
-        of(org).flatMap((t) => {
-          const out = t.signedOut;
-          if (out === undefined || (t.status !== "running" && t.status !== "paused")) return [];
-          return [
-            {
-              id: t.id,
-              lead: "builder",
-              agent: out.lead ? "builder" : "helper",
-              account: out.lead ? "claude-builder" : "claude-helper",
-              since: out.since,
-              ...(out.teammateWorks ? { to: out.lead ? "helper" : "builder" } : {}),
-            },
-          ];
-        }),
-      moveLead: async (org, id) => {
-        this.act("moveLead", org, `${id}:${this.tasks.get(id)?.signedOut?.since}`, id);
-        const t = this.tasks.get(id);
-        if (t !== undefined) {
-          delete t.signedOut;
-          t.status = "running";
-          delete t.quietSince;
-        }
-      },
-      handBack: (org, id) => {
-        // The lead does not answer: the task stays held, and the captain must not wake it again.
-        this.act("handBack", org, `${id}:${this.tasks.get(id)?.signedOut?.since}`, id);
-      },
       typing: (task) => this.tasks.get(task)?.typing === true,
     };
   }
 }
 
 describe("the captain's soak test", () => {
-  it("replays 30 hours of events without passing a cap, retriggering itself, repeating an action or touching Only when I ask", async () => {
+  it("replays 30 hours of events without passing the pass bound, retriggering itself, repeating an action or touching Only when I ask", async () => {
     const sim = new Sim();
     w = await bossWorld({ real: true, runClock: () => sim.now });
     const { h } = w;
@@ -326,8 +282,6 @@ describe("the captain's soak test", () => {
             authority: { ...RUNS, merge: "decide" },
             cap: { cost: 0.04 },
             account: "claude-own",
-            // The owner's ship cap: with Merge on Captain there is no default one.
-            chores: { ship: { actions: 5 } },
           },
           acme: { authority: TIDY },
           globex: { authority: ASK },
@@ -370,7 +324,7 @@ describe("the captain's soak test", () => {
       review: (task) => captain.reviewReached(task),
       card: (task, item) => captain.roomWrote(task, item),
     };
-    const rnd = random(13);
+    const rnd = random(7);
     const pick = <T>(list: readonly T[]): T => list[Math.floor(rnd() * list.length)] as T;
     let cardSeq = 0;
     /** Self events dropped by the instances before a restart. */
@@ -470,7 +424,7 @@ describe("the captain's soak test", () => {
           state: "pending",
         } as RoomItem);
       }
-      // Memories wait, repos appear, tasks get done, tasks get due, a running task goes quiet.
+      // Memories wait, repos appear, tasks get done, tasks get due.
       if (rnd() < 0.3) {
         factSeq += 1;
         sim.facts.push({ org: pick(ORGS), id: factSeq, text: `A lesson ${factSeq}` });
@@ -493,15 +447,6 @@ describe("the captain's soak test", () => {
         sim.cleanable.push({ org, id: sim.task(org, "done").id });
       }
       if (rnd() < 0.1) sim.task(pick(ORGS), "inbox", { due: iso.slice(0, 10) });
-      if (rnd() < 0.1) sim.task(pick(ORGS), "running", { quietSince: iso });
-      // An account signs out: the lead's, or a teammate's whose step failed; sometimes nobody can take over.
-      if (rnd() < 0.08) {
-        const lead = rnd() < 0.5;
-        sim.task(pick(ORGS), lead && rnd() < 0.5 ? "paused" : "running", {
-          quietSince: iso,
-          signedOut: { lead, since: iso, teammateWorks: rnd() < 0.8 },
-        });
-      }
       // A duplicate title, and a task nobody touched for 40 days.
       if (step === 20) {
         sim.task("acme", "inbox", { title: "Fix the login" });
@@ -555,52 +500,24 @@ describe("the captain's soak test", () => {
     expect(stoppedFrom).toBeDefined();
     expect(restarts.length).toBeGreaterThanOrEqual(3);
 
-    // The captain's own events never started a run or joined one: every one was dropped.
+    // The captain's own cards never started a run or joined one: every one was dropped. Its own ships echo
+    // back as review events; the runs they start find every key taken, which the no-repeat check above covers.
     expect(sim.selfInjected).toBeGreaterThan(10);
     expect(dropped + captain.runner.selfDropped).toBe(sim.selfInjected);
     const runs: CaptainRun[] = repo.allRuns();
     const actions: CaptainAction[] = repo.allActions();
 
-    // No run passed a cap, and none is left open.
+    // No run passed the pass bound, and none is left open.
     expect(runs.filter((r) => r.status === "running")).toEqual([]);
     for (const r of runs) {
-      expect(r.actions).toBeLessThanOrEqual(runActions(r.chore));
-      expect(r.tokens).toBeLessThanOrEqual(RUN_CAPS.tokens);
+      expect(r.tokens).toBeLessThanOrEqual(PASS_BOUND.tokens);
       const minutes = (Date.parse(r.endedAt ?? r.startedAt) - Date.parse(r.startedAt)) / 60_000;
-      expect(minutes).toBeLessThanOrEqual(RUN_CAPS.minutes);
+      expect(minutes).toBeLessThanOrEqual(PASS_BOUND.minutes);
     }
-    // Bursts of cards hit the run cap, and the run stopped there with a line.
-    expect(runs.some((r) => r.status === "capped")).toBe(true);
-    expect(
-      actions.some((a) => a.text.includes("stopped: reached its cap") || a.text.includes("today's cap")),
-    ).toBe(true);
     // The restart cut a run short; it ended as stopped.
     expect(runs.some((r) => r.status === "stopped" && r.note === "majhi restarted during the run")).toBe(
       true,
     );
-
-    // No daily cap passed, per workspace, chore and day.
-    const perDay = new Map<string, number>();
-    for (const a of actions) {
-      if (a.outcome !== "done" && a.outcome !== "asked") continue;
-      const key = `${a.org}:${a.chore}:${a.at.slice(0, 10)}`;
-      perDay.set(key, (perDay.get(key) ?? 0) + 1);
-    }
-    for (const [key, n] of perDay) {
-      const chore = key.split(":")[1] as CaptainChore;
-      const cap = DAILY_CAPS[chore].actions;
-      if (cap !== undefined) expect(n, key).toBeLessThanOrEqual(cap);
-    }
-    const runsPerDay = new Map<string, number>();
-    for (const r of runs) {
-      if (r.status === "rested") continue;
-      const key = `${r.org}:${r.chore}:${r.startedAt.slice(0, 10)}`;
-      runsPerDay.set(key, (runsPerDay.get(key) ?? 0) + 1);
-    }
-    for (const [key, n] of runsPerDay) {
-      const cap = DAILY_CAPS[key.split(":")[1] as CaptainChore].runs;
-      if (cap !== undefined) expect(n, key).toBeLessThanOrEqual(cap);
-    }
 
     // No action repeated: every change happened once per thing it acted on.
     const seen = new Set<string>();
@@ -614,9 +531,6 @@ describe("the captain's soak test", () => {
     expect(
       repeats.filter((c) => !(c.port === "ship" || c.port === "clean")).map((c) => `${c.port}:${c.key}`),
     ).toEqual([]);
-    // Sign-outs were handled: leads moved to a teammate whose account works, and leads woken.
-    expect(sim.calls.some((c) => c.port === "moveLead")).toBe(true);
-    expect(sim.calls.some((c) => c.port === "handBack")).toBe(true);
     const doneShips = actions.filter((a) => a.chore === "ship" && a.outcome === "done").map((a) => a.task);
     expect(new Set(doneShips).size).toBe(doneShips.length);
 

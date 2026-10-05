@@ -37,7 +37,7 @@ export interface RulesRunner {
   check?(settings: Readonly<Record<string, readonly string[]>>): string | undefined;
 }
 
-/** The rules runners that ship with the playbooks themselves. The ops watch and the sensors register theirs. */
+/** The rules runners that ship with the playbooks themselves. The ops watch registers its own. */
 export const RULES_RUNNERS: Readonly<Record<string, RulesRunner>> = {};
 
 /** Whether an outcome rule is on, given what the owner set: a rule not set follows its default (on unless it says off). */

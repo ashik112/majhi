@@ -1,8 +1,6 @@
 import { z } from "zod";
 import { AuthoritySchema } from "./authority.ts";
-import { ChoreCapsSchema } from "./chores.ts";
 import { ContainerCpusSchema, ContainerMemorySchema, ImageRefSchema } from "./containers.ts";
-import { E2eSettingsSchema } from "./e2e.ts";
 import { NotifyKindSchema } from "./notify.ts";
 
 /**
@@ -146,6 +144,8 @@ export const RoomPatchSchema = z.strictObject(roomFields).partial();
 const cleanupFields = {
   /** Tasks done for longer than this many days are offered for cleanup. */
   after_days: z.number().int().min(1).max(3650),
+  /** Ignored dependency and tool caches of tasks done for longer than this many days are freed by the captain. */
+  caches_after_days: z.number().int().min(1).max(3650),
   /** Dependency folders and build output of tasks done for longer than this many hours are deleted. */
   free_after_hours: z.number().int().min(1).max(8760),
   /** The whole worktree of a clean, merged or pushed task done this many days is removed. 0 is off. */
@@ -153,6 +153,7 @@ const cleanupFields = {
 };
 export const CleanupSettingsSchema = z.strictObject({
   after_days: cleanupFields.after_days.default(30),
+  caches_after_days: cleanupFields.caches_after_days.default(1),
   free_after_hours: cleanupFields.free_after_hours.default(24),
   worktree_after_days: cleanupFields.worktree_after_days.default(7),
 });
@@ -451,15 +452,20 @@ export const AutonomyOrgSchema = z.strictObject({
   providers: z.array(ProviderIdSchema).min(1).max(10).optional(),
   /** "More rules": the account that pays for the captain's decisions here. Absent: the captain's own. */
   account: z.string().regex(ACCOUNT_ID).optional(),
-  /** Limits: the owner's daily caps per chore here (`null`: no cap). Absent: majhi's defaults. */
-  chores: ChoreCapsSchema.optional(),
+  /** Removed in D9, kept so old config loads. */
+  chores: z.unknown().optional(),
   /**
    * Full access: the captain decides every row here and its calls run without a card, except a change
    * to anyone's permissions and anything destructive. Only the owner sets it.
    */
   fullAccess: z.boolean().optional(),
+  /** How many tasks the captain keeps working at once in this workspace. Absent: 1. */
+  tasksAtOnce: z.number().int().min(1).max(10).optional(),
 });
 export type AutonomyOrg = z.infer<typeof AutonomyOrgSchema>;
+
+/** Tasks the captain works on at once in a workspace when the owner set nothing. */
+export const TASKS_AT_ONCE = 1;
 
 /** Guidance the owner gave on the Autonomous page, which the captain follows until it is removed. */
 export const AutonomyInstructionSchema = z.strictObject({
@@ -537,9 +543,8 @@ export const AutonomyOrgPatchSchema = z
     branches: z.array(ShipBranchSchema).min(1).max(20).nullable(),
     providers: z.array(ProviderIdSchema).min(1).max(10).nullable(),
     account: z.string().regex(ACCOUNT_ID).nullable(),
-    /** Limits: the daily caps per chore, replacing the ones set before. `null`: back to majhi's defaults. */
-    chores: ChoreCapsSchema.nullable(),
     fullAccess: z.boolean().nullable(),
+    tasksAtOnce: z.number().int().min(1).max(10).nullable(),
   })
   .partial();
 export type AutonomyOrgPatch = z.infer<typeof AutonomyOrgPatchSchema>;
@@ -573,7 +578,6 @@ export const SettingsSchema = z.object({
   policy: PolicySettingsSchema,
   memory: MemorySettingsSchema,
   editor: EditorSettingsSchema,
-  e2e: E2eSettingsSchema,
   cleanup: CleanupSettingsSchema,
   containers: ContainersSettingsSchema,
   budgets: BudgetsSettingsSchema,

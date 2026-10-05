@@ -1,5 +1,4 @@
-import type { Deadline, Finding, OwnerDecision } from "@majhi/shared";
-import { daysUntil, dueInstant, stateOf } from "../business/time.ts";
+import type { Finding, OwnerDecision } from "@majhi/shared";
 
 /** Sample rows for the agenda tests. Generic names only. */
 
@@ -11,30 +10,6 @@ export function decision(over: Partial<OwnerDecision> & { id: string }): OwnerDe
     at: "2026-10-04T06:00:00.000Z",
     link: { kind: "captain" },
     ...over,
-  };
-}
-
-export function deadline(
-  over: Partial<Deadline> & { id: number; due?: string; tz?: string; now?: Date },
-): Deadline {
-  const { due = "2026-10-10", tz = "UTC", now = new Date("2026-10-04T08:00:00.000Z"), ...rest } = over;
-  return {
-    kind: "hackathon",
-    title: "Spring hack signup",
-    due,
-    tz,
-    allDay: !due.includes("T"),
-    dueAt: dueInstant(due, tz).toISOString(),
-    source: "",
-    notes: "",
-    leadDays: [14, 7, 1],
-    status: "open",
-    state: stateOf(due, tz, now, true),
-    daysLeft: daysUntil(due, tz, now),
-    by: "owner",
-    createdAt: "2026-09-01T00:00:00.000Z",
-    updatedAt: "2026-09-01T00:00:00.000Z",
-    ...rest,
   };
 }
 

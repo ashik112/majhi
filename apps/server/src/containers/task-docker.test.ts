@@ -234,7 +234,9 @@ describe("docker in a task: what it may never do", () => {
       kind: "call",
       args: ["rm", "-f", "majhi-acm-1-c-0123456789abcdef"],
     });
-    expect(plan(["rm", "-f", "0123456789abcdef"], { ids: new Map([["0123456789abcdef", "majhi-acm-1-c-web"]]) })).toEqual({
+    expect(
+      plan(["rm", "-f", "0123456789abcdef"], { ids: new Map([["0123456789abcdef", "majhi-acm-1-c-web"]]) }),
+    ).toEqual({
       kind: "call",
       args: ["rm", "-f", "majhi-acm-1-c-web"],
     });
@@ -242,7 +244,9 @@ describe("docker in a task: what it may never do", () => {
 
   it("uses the limits of the settings, not the script's", () => {
     const result = plan(["run", "--memory", "64g", "--cpus", "32", "nginx:1.27-alpine"]);
-    expect(result.kind === "run" && result.args).toEqual(expect.arrayContaining(["--memory", "512m", "--cpus", "1"]));
+    expect(result.kind === "run" && result.args).toEqual(
+      expect.arrayContaining(["--memory", "512m", "--cpus", "1"]),
+    );
     expect(result.kind === "run" && result.args).not.toContain("64g");
   });
 });
@@ -274,11 +278,33 @@ describe("docker in a task: the allow list is checked again on the call itself",
     ["a service's name", (a) => a.map((x) => (x === "majhi-acm-1-c-web" ? "majhi-acm-1-db" : x))],
     ["an added capability", (a) => ["run", "--cap-add", "SYS_ADMIN", ...a.slice(1)]],
     ["no memory limit", (a) => without(a, "--memory")],
-    ["a socket mount", (a) => ["run", "--mount", "type=bind,source=/var/run/docker.sock,target=/s", ...a.slice(1)]],
+    [
+      "a socket mount",
+      (a) => ["run", "--mount", "type=bind,source=/var/run/docker.sock,target=/s", ...a.slice(1)],
+    ],
     ["a bind outside the task", (a) => ["run", "--mount", "type=bind,source=/tmp,target=/s", ...a.slice(1)]],
-    ["a bind with an extra key", (a) => ["run", "--mount", `type=bind,source=${folder},target=/s,bind-propagation=shared`, ...a.slice(1)]],
-    ["a volume of another task", (a) => ["run", "--mount", "type=volume,source=majhi-acm-2-data-x,target=/s", ...a.slice(1)]],
-    ["a volume with a driver", (a) => ["run", "--mount", "type=volume,source=majhi-acm-1-data-x,target=/s,volume-driver=x", ...a.slice(1)]],
+    [
+      "a bind with an extra key",
+      (a) => [
+        "run",
+        "--mount",
+        `type=bind,source=${folder},target=/s,bind-propagation=shared`,
+        ...a.slice(1),
+      ],
+    ],
+    [
+      "a volume of another task",
+      (a) => ["run", "--mount", "type=volume,source=majhi-acm-2-data-x,target=/s", ...a.slice(1)],
+    ],
+    [
+      "a volume with a driver",
+      (a) => [
+        "run",
+        "--mount",
+        "type=volume,source=majhi-acm-1-data-x,target=/s,volume-driver=x",
+        ...a.slice(1),
+      ],
+    ],
     ["an image of another task", (a) => [...a.slice(0, -1), "majhi-acm-2-img-x:latest"]],
     ["the preview image", (a) => [...a.slice(0, -1), "majhi-preview-acm-1"]],
     ["an image the owner did not allow", (a) => [...a.slice(0, -1), "redis:7"]],
@@ -297,11 +323,54 @@ describe("docker in a task: the allow list is checked again on the call itself",
     ["logs of another task's container", ["logs", "majhi-acm-2-c-web"]],
     ["inspect with a flag smuggled in", ["inspect", "--size", "majhi-acm-1-c-web"]],
     ["a ps of all tasks", ["ps", "-a"]],
-    ["a ps of another task", ["ps", "--filter", "label=majhi.container=taskrun", "--filter", "label=majhi.task=ACM-2"]],
+    [
+      "a ps of another task",
+      ["ps", "--filter", "label=majhi.container=taskrun", "--filter", "label=majhi.task=ACM-2"],
+    ],
     ["network connect", ["network", "connect", "majhi-acm-1", "x"]],
     ["cp out of a container", ["cp", "majhi-acm-1-c-web:/etc/passwd", "/tmp/x"]],
-    ["a build on the default builder", ["buildx", "build", "--builder", "default", "--load", "--progress", "plain", "--tag", "majhi-acm-1-img-x:1", "--file", `${folder}/Dockerfile`, "--label", "majhi.container=image", "--label", "majhi.task=ACM-1", folder]],
-    ["a build tagged as another task's image", ["buildx", "build", "--builder", "majhi-preview-acm-1", "--load", "--progress", "plain", "--tag", "majhi-acm-2-img-x:1", "--file", `${folder}/Dockerfile`, "--label", "majhi.container=image", "--label", "majhi.task=ACM-1", folder]],
+    [
+      "a build on the default builder",
+      [
+        "buildx",
+        "build",
+        "--builder",
+        "default",
+        "--load",
+        "--progress",
+        "plain",
+        "--tag",
+        "majhi-acm-1-img-x:1",
+        "--file",
+        `${folder}/Dockerfile`,
+        "--label",
+        "majhi.container=image",
+        "--label",
+        "majhi.task=ACM-1",
+        folder,
+      ],
+    ],
+    [
+      "a build tagged as another task's image",
+      [
+        "buildx",
+        "build",
+        "--builder",
+        "majhi-preview-acm-1",
+        "--load",
+        "--progress",
+        "plain",
+        "--tag",
+        "majhi-acm-2-img-x:1",
+        "--file",
+        `${folder}/Dockerfile`,
+        "--label",
+        "majhi.container=image",
+        "--label",
+        "majhi.task=ACM-1",
+        folder,
+      ],
+    ],
   ])("refuses %s", (_name, args) => {
     expect(() => assertTaskArgv(args, safety, allowed)).toThrow();
   });

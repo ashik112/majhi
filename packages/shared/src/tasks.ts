@@ -1,12 +1,5 @@
 import { z } from "zod";
-import {
-  BranchPatternSchema,
-  BranchTypeSchema,
-  IdSchema,
-  MrHostSchema,
-  OrgIdSchema,
-  SecretRefSchema,
-} from "./accounts.ts";
+import { BranchPatternSchema, IdSchema, MrHostSchema, OrgIdSchema, SecretRefSchema } from "./accounts.ts";
 import { ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./rooms.ts";
 import { CommitsPatchSchema } from "./settings.ts";
@@ -976,6 +969,16 @@ export const RoomServerMessageSchema = z.discriminatedUnion("type", [
     processes: z.array(ProcessInfoSchema).default([]),
   }),
   z.object({ type: z.literal("item"), item: RoomItemSchema }),
+  /**
+   * More text for a streamed agent message or thought the socket already holds: `append` goes on
+   * the end of the item `id`, which must be `offset` characters long now. Anything else is ignored.
+   */
+  z.object({
+    type: z.literal("delta"),
+    id: z.string(),
+    offset: z.number().int().nonnegative(),
+    append: z.string(),
+  }),
   z.object({ type: z.literal("agent"), agent: AgentLiveSchema }),
   z.object({ type: z.literal("task"), task: TaskSchema }),
   /** Every process of the task, sent when any changed (output at most every 500 ms). */

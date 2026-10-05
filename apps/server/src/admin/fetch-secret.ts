@@ -16,6 +16,11 @@ export const SaveFromScriptInputSchema = z
     name: IdSchema.optional(),
     /** A short read-only script. What it prints is the secret. */
     script: z.string().min(1).max(4000),
+    /**
+     * `off`: no network at all, for a script that only builds a value (a URL or a connection string) from
+     * the connection's variables. `on` (default): it may call the connections' services, and is checked to only read.
+     */
+    network: z.enum(["on", "off"]).default("on"),
     /** The workspace's connections the script needs, by id. */
     connections: z.array(IdSchema).max(10).default([]),
   })
@@ -31,7 +36,12 @@ export const WithdrawSecretInputSchema = z.object({
 
 /** What the server runs a fetch with: the workspace's connections, in a throwaway runner. */
 export interface ScriptFetch {
-  run(input: { org: string; script: string; connections: readonly string[] }): Promise<string>;
+  run(input: {
+    org: string;
+    script: string;
+    connections: readonly string[];
+    network?: "on" | "off" | undefined;
+  }): Promise<string>;
   /** Whether the workspace (or Global) has this connection. Another workspace's never counts. */
   holds(org: string, connection: string): Promise<boolean>;
 }

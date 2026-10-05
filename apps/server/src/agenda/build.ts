@@ -1,40 +1,17 @@
-import type {
-  AgendaItem,
-  AgendaToday,
-  Deadline,
-  Finding,
-  OwnerDecision,
-  OwnerDecisionKind,
-} from "@majhi/shared";
-import { localDay } from "../usage/ranges.ts";
-import { ageWord, daysBetween, whenWord } from "./time.ts";
+import type { AgendaItem, AgendaToday, Finding, OwnerDecision, OwnerDecisionKind } from "@majhi/shared";
+import { ageWord } from "./time.ts";
 
 /**
  * The agenda (SPEC 5.18): one ordered list from what already exists, computed in code. Pure: every input is
  * passed in, so the order, the ties and the review budget are tested without a database.
  */
 
-/** Deadlines this many days ahead are on the agenda. */
-export const DEADLINE_DAYS = 14;
-
-/** A crm next step as the agenda reads it. */
-export interface AgendaStep {
-  id: number;
-  name: string;
-  org?: string | undefined;
-  nextStep: string;
-  due: string;
-  overdue: boolean;
-}
-
 export interface AgendaInput {
   now: Date;
   tz: string;
   decisions: readonly OwnerDecision[];
-  deadlines: readonly Deadline[];
   /** Findings that are live. Only open ones of high severity (and incidents) make the agenda. */
   findings: readonly Finding[];
-  steps: readonly AgendaStep[];
   /** A workspace's name by id; undefined reads as the id. */
   orgName: (org: string | undefined) => string | undefined;
 }
@@ -45,13 +22,13 @@ const DECISION_MINUTES: Record<OwnerDecisionKind, number> = {
   question: 2,
   approval: 1,
   budget: 1,
-  cap: 1,
   paused: 1,
   "sign-in": 2,
   secret: 1,
   draft: 2,
   batch: 3,
   trust: 1,
+  notifications: 1,
   incident: 1,
 };
 
@@ -67,29 +44,22 @@ const DECISION_WEIGHT: Record<OwnerDecisionKind, number> = {
   batch: 44,
   // A row that went back to You, or a promotion proposal: read when there is time.
   trust: 40,
+  // The owner's own switch on the Mac: until it is on, desktop alerts do not show.
+  notifications: 53,
   // An incident decision is left out of the agenda: its finding stands for it, with the same weight.
   incident: 100,
   // A budget hold is handled below: it stops new work.
   budget: 85,
-  cap: 85,
 };
 
 /** A waiting item gains up to this much weight over two days, so older ones go first within a kind. */
 const AGE_BONUS = 10;
 const AGE_FULL_HOURS = 48;
 
-/** The weight of an incident and the weights deadlines get, by how near they are. */
+/** The weight of an incident and of a finding. */
 const W = {
   incident: 100,
-  overdue: 95,
-  dueToday: 90,
   finding: 62,
-  within3: 70,
-  within7: 40,
-  within14: 20,
-  stepOverdue: 55,
-  stepToday: 40,
-  stepLater: 20,
 } as const;
 
 function ageBonus(at: string, now: Date): number {
@@ -107,7 +77,7 @@ function named(org: string | undefined, orgName: AgendaInput["orgName"]) {
 
 function decisionItem(d: OwnerDecision, input: AgendaInput): AgendaItem {
   const waited = ageWord(d.at, input.now);
-  const hold = d.kind === "budget" || d.kind === "cap";
+  const hold = d.kind === "budget";
   const kind = hold ? "budget" : d.kind === "draft" || d.kind === "batch" ? "draft" : "decision";
   const why =
     d.kind === "ship"
@@ -168,63 +138,6 @@ function findingItem(f: Finding, input: AgendaInput): AgendaItem | undefined {
   };
 }
 
-function deadlineItem(d: Deadline, input: AgendaInput): AgendaItem | undefined {
-  if (d.status !== "open") return undefined;
-  const due = new Date(d.dueAt);
-  // By the owner's calendar, at the moment it falls due: a deadline in another zone can land on a different day here.
-  const days = daysBetween(localDay(input.now, input.tz), localDay(due, input.tz));
-  const overdue = due.getTime() < input.now.getTime();
-  if (!overdue && days > DEADLINE_DAYS) return undefined;
-  const today = !overdue && days <= 0;
-  const weight = overdue
-    ? W.overdue
-    : today
-      ? W.dueToday
-      : days <= 3
-        ? W.within3
-        : days <= 7
-          ? W.within7
-          : W.within14;
-  const when = whenWord(due, input.now, input.tz);
-  return {
-    id: `deadline:${d.id}`,
-    kind: "deadline",
-    ...named(d.org, input.orgName),
-    title: d.title,
-    why: overdue ? `Overdue, it was due ${when}` : `Due ${when}`,
-    action: "Open",
-    target: { to: "deadline", id: d.id },
-    minutes: 4,
-    weight,
-    at: d.dueAt,
-    must: overdue || today,
-    done: { kind: "close-deadline", id: d.id },
-  };
-}
-
-function stepItem(s: AgendaStep, input: AgendaInput): AgendaItem {
-  const days = daysBetween(localDay(input.now, input.tz), s.due);
-  const weight = s.overdue || days < 0 ? W.stepOverdue : days === 0 ? W.stepToday : W.stepLater;
-  return {
-    id: `crm:${s.id}`,
-    kind: "crm",
-    ...named(s.org, input.orgName),
-    title: `${s.name}: ${s.nextStep}`.slice(0, 300),
-    why:
-      s.overdue || days < 0
-        ? `Follow-up was due ${s.due}`
-        : days === 0
-          ? "Follow-up is due today"
-          : `Follow-up due ${s.due}`,
-    action: "Open",
-    target: { to: "contact", id: s.id },
-    minutes: 2,
-    weight,
-    at: `${s.due}T00:00:00.000Z`,
-    must: false,
-  };
-}
-
 /** Highest weight first; then the older moment; then the id, so the same input is always the same order. */
 export function compareItems(a: AgendaItem, b: AgendaItem): number {
   if (b.weight !== a.weight) return b.weight - a.weight;
@@ -239,8 +152,6 @@ export function buildItems(input: AgendaInput): AgendaItem[] {
   const items: AgendaItem[] = [
     ...input.decisions.filter((d) => d.kind !== "incident").map((d) => decisionItem(d, input)),
     ...input.findings.flatMap((f) => findingItem(f, input) ?? []),
-    ...input.deadlines.flatMap((d) => deadlineItem(d, input) ?? []),
-    ...input.steps.map((s) => stepItem(s, input)),
   ];
   return items.sort(compareItems);
 }
@@ -254,7 +165,7 @@ export interface Planned {
 }
 
 /**
- * Cuts the ordered list at the owner's review budget. An item that must happen today (an incident, a deadline
+ * Cuts the ordered list at the owner's review budget. An item that must happen today (an incident
  * due today or overdue) is always today, even past the budget. Otherwise items go in order while they fit; the
  * first that does not fit ends today and everything after it is later, so the order stays the order. When
  * nothing fit at all, the first item is still today: the page never says "later" to everything.

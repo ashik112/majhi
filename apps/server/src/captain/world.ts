@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
-  ABSTAIN,
   type CommandName,
   commands,
   type Fact,
+  mergeVerdictLine,
   OpenMrsResultSchema,
   PRIVATE,
   type RoomItem,
@@ -31,14 +31,14 @@ import { captainAnsweredLine } from "../tasks/cards.ts";
 import type { CleanupService } from "../tasks/cleanup.ts";
 import type { TaskFolderSweep } from "../tasks/folder-sweep.ts";
 import type { TaskService } from "../tasks/service.ts";
-import { callOutcome, toolItemIdOf } from "./call-outcome.ts";
+import { isAnswerTask } from "./answer-check.ts";
+import { answerOnce } from "./keys.ts";
 import type { Lanes } from "./lanes.ts";
 import { askedSentence, SHIP_ROW } from "./levels.ts";
 import { laneScopes } from "./memory-scopes.ts";
 import { scopeOfTask } from "./own-work.ts";
-import { ownWorkSecondOpinion } from "./own-work-second.ts";
 import { answerFor, widenedNote } from "./permission-rules.ts";
-import type { ApprovalCard, CaptainPorts, NewRepo, QuestionCard, ShipCheck, SignInStall } from "./ports.ts";
+import type { ApprovalCard, CaptainPorts, NewRepo, QuestionCard, ShipCheck } from "./ports.ts";
 import type { CaptainRepo } from "./repo.ts";
 import { upkeepWorld } from "./upkeep-world.ts";
 
@@ -210,9 +210,12 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         const task = store.tasks.get(summary.id);
         if (task === undefined || task.repos.length === 0) continue;
         const heads: string[] = [];
-        for (const r of task.repos)
+        const bases: string[] = [];
+        for (const r of task.repos) {
           heads.push(`${r.project}@${(await branchTip(r.source, r.branch)).slice(0, 12)}`);
-        out.push({ id: task.id, title: task.title, heads: heads.join(",") });
+          bases.push(`${r.project}@${(await branchTip(r.source, r.base)).slice(0, 12)}`);
+        }
+        out.push({ id: task.id, title: task.title, heads: heads.join(","), bases: bases.join(",") });
       }
       return out;
     },
@@ -228,6 +231,9 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         const first = [...checked.failures, ...checked.held][0] ?? "the check did not pass";
         return { ready: false, why: `the hand-off check failed: ${first.split("\n")[0]}` };
       }
+      // The merge rule itself: the same verdict `tasks.merge` will read, so the chore never tries what it refuses.
+      const rule = await deps.tasks.mergeChecks(id);
+      if (rule.verdict.kind !== "ok") return { ready: false, why: mergeVerdictLine(rule.verdict) };
       return { ...base, checked: checked.summary.replace(/^Checked: /, "") };
     },
 
@@ -324,6 +330,7 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         out.push({
           id: task.id,
           title: task.title,
+          investigation: isAnswerTask(task),
           lead,
           report: message?.type === "agent" ? { text: message.text.trim(), at: message.at } : undefined,
         });
@@ -407,7 +414,15 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
 
     async decideCard(_org, card, verdict) {
       const captain = (await deps.lanes.boss()) ?? "captain";
-      return deps.admin.captainDecide(card.task, card.item, verdict, captain);
+      // A card is left (marked for the owner) any number of times; it is answered once. A card whose
+      // command failed was still answered: the key stays, so the same approval is not run again.
+      if (verdict.decision === "left")
+        return deps.admin.captainDecide(card.task, card.item, verdict, captain);
+      let decided: Awaited<ReturnType<typeof deps.admin.captainDecide>> | undefined;
+      const result = await answerOnce(deps.repo, new Date(), card, async () => {
+        decided = await deps.admin.captainDecide(card.task, card.item, verdict, captain);
+      });
+      return result.answered ? (decided ?? { ok: true }) : { ok: true, repeat: true };
     },
 
     // -------------------------------------------------------------------------
@@ -436,62 +451,42 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       return scopeOfTask(found, await deps.protectedProjects());
     },
 
-    ownSecondOpinion: (card, scope) =>
-      ownWorkSecondOpinion(
-        deps.decisions,
-        { text: card.text, task: card.task, item: card.item, agent: card.agent },
-        scope,
-      ),
-
     async answer(_org, card, option, reason) {
-      // Recorded as the captain's answer, never the owner's (5.18).
+      // Recorded as the captain's answer, never the owner's (5.18). One answer per card.
       const captain = (await deps.lanes.boss()) ?? "captain";
-      let answered: RoomItem;
-      let widened: string | undefined;
-      switch (card.kind) {
-        case "permission": {
-          // A tool a rule covers is allowed for the task, so its next call does not ask again.
-          const item = deps.room.get(card.task, card.item);
-          const chosen = item?.type === "permission" ? answerFor(item.title, item.options, option) : option;
-          if (item?.type === "permission") widened = widenedNote(item.title, option, chosen);
-          answered = deps.tasks.answerPermission(card.task, card.item, chosen, captain);
-          break;
+      return answerOnce(deps.repo, new Date(), card, async () => {
+        let answered: RoomItem;
+        let widened: string | undefined;
+        switch (card.kind) {
+          case "permission": {
+            // A tool a rule covers is allowed for the task, so its next call does not ask again.
+            const item = deps.room.get(card.task, card.item);
+            const chosen = item?.type === "permission" ? answerFor(item.title, item.options, option) : option;
+            if (item?.type === "permission") widened = widenedNote(item.title, option, chosen);
+            answered = deps.tasks.answerPermission(card.task, card.item, chosen, captain);
+            break;
+          }
+          case "choice":
+            answered = await deps.tasks.answerChoice(card.task, card.item, option, captain);
+            break;
+          case "ask":
+            answered = await deps.tasks.answerAsk(
+              card.task,
+              card.item,
+              { [card.question ?? "q"]: option },
+              captain,
+            );
+            break;
+          case "owner-question":
+            answered = await deps.tasks.answerQuestion(card.task, card.item, option, captain);
+            break;
         }
-        case "choice":
-          answered = await deps.tasks.answerChoice(card.task, card.item, option, captain);
-          break;
-        case "ask":
-          answered = await deps.tasks.answerAsk(
-            card.task,
-            card.item,
-            { [card.question ?? "q"]: option },
-            captain,
-          );
-          break;
-        case "owner-question":
-          answered = await deps.tasks.answerQuestion(card.task, card.item, option, captain);
-          break;
-      }
-      deps.room.post(card.task as TaskId, `captain:${randomUUID()}`, {
-        type: "system",
-        level: "info",
-        text: `${captainAnsweredLine(answered, reason)}${widened === undefined ? "" : `. ${widened}`}`,
+        deps.room.post(card.task as TaskId, `captain:${randomUUID()}`, {
+          type: "system",
+          level: "info",
+          text: `${captainAnsweredLine(answered, reason)}${widened === undefined ? "" : `. ${widened}`}`,
+        });
       });
-    },
-
-    callOutcome(task, item) {
-      const perm = deps.room.get(task, item);
-      const toolId = perm === undefined ? undefined : toolItemIdOf(perm);
-      return callOutcome(perm, toolId === undefined ? undefined : deps.room.get(task, toolId));
-    },
-
-    async flagLoop(_org, card, line, nudge) {
-      deps.room.post(card.task as TaskId, `captain:${randomUUID()}`, {
-        type: "system",
-        level: "warn",
-        text: `${line}. The captain left its question for the owner.`,
-      });
-      deps.runs.notify(card.task, card.agent, nudge);
     },
 
     laneRest: (org) => deps.lanes.rest(org),
@@ -687,6 +682,27 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       };
     },
 
+    async freeCaches(org, dry) {
+      const { cleanup } = await deps.config.settings();
+      const days = cleanup.caches_after_days;
+      const preview = await deps.cleanup.preview(cleanup.after_days, true, days);
+      const ids = preview.tasks.filter((t) => orgOfTask(t.id) === org).map((t) => t.id);
+      if (ids.length === 0) return [];
+      if (dry) {
+        return preview.tasks
+          .filter((t) => ids.includes(t.id))
+          .map((t) => ({
+            id: t.id,
+            removed: t.steps.filter((s) => s.action === "remove").map((s) => s.name),
+          }))
+          .filter((t) => t.removed.length > 0);
+      }
+      const report = await deps.cleanup.run(ids, cleanup.after_days, "captain", true, days);
+      return report.tasks
+        .map((t) => ({ id: t.id, removed: t.steps.filter((s) => s.action === "remove").map((s) => s.name) }))
+        .filter((t) => t.removed.length > 0);
+    },
+
     async foldersFreeable(org) {
       if (deps.folders === undefined) return { bytes: 0, tasks: 0 };
       const report = await deps.folders.preview(await sweepOptions(org));
@@ -707,113 +723,6 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
             folders: t.removed.length,
           })),
       };
-    },
-
-    // -------------------------------------------------------------------------
-    // Stuck tasks
-
-    stalled(org) {
-      const out = [];
-      for (const t of tasksOf(org)) {
-        if (t.status !== "running" || deps.lanes.orgOf(t.id) !== undefined) continue;
-        const lead = t.team[0];
-        if (lead === undefined || !deps.idle.quiet(t.id) || pendingOwnerCards(t.id)) continue;
-        const last = store.raw.prepare("SELECT MAX(at) AS at FROM turns WHERE task = ?").get(t.id) as {
-          at: string | null;
-        };
-        out.push({ id: t.id, lead, quietSince: last.at ?? t.updatedAt });
-      }
-      return out;
-    },
-
-    wakeLead(_org, task) {
-      const lead = store.tasks.get(task)?.team[0];
-      if (lead === undefined) return;
-      deps.room.post(task as TaskId, `captain:${randomUUID()}`, {
-        type: "system",
-        level: "info",
-        text: `Nobody was working on ${task} and nothing was pending. The captain woke @${lead}.`,
-      });
-      deps.runs.notify(
-        task,
-        lead,
-        [
-          `Nobody is working on ${task} now and nothing is pending: no handoff, no question to the owner, no background process.`,
-          'Hand off the next step of your plan (the majhi-room mention tool, or "@name: please ..."), finish the task, or say what it waits for.',
-        ].join("\n"),
-      );
-    },
-
-    async pauseForOwner(_org, task, text) {
-      await deps.tasks.pauseForOwner(task, text, "blocked");
-    },
-
-    async signInStalls(org) {
-      const out: SignInStall[] = [];
-      const firstWorking = async (team: readonly string[], except: string) => {
-        for (const a of team) {
-          if (a !== except && (await deps.accounts.signedOutAccountOf(a)) === undefined) return a;
-        }
-        return undefined;
-      };
-      for (const t of tasksOf(org)) {
-        if (deps.lanes.orgOf(t.id) !== undefined) continue;
-        const lead = t.team[0];
-        if (lead === undefined) continue;
-        const quiet = t.status === "running" && deps.idle.quiet(t.id) && !pendingOwnerCards(t.id);
-        const pausedSignedOut = t.status === "paused" && t.pausedReason === "signed-out";
-        if (!quiet && !pausedSignedOut) continue;
-        const leadAccount = await deps.accounts.signedOutAccountOf(lead);
-        const failed = quiet ? deps.idle.failedSignIn(t.id) : undefined;
-        const stuck =
-          leadAccount !== undefined
-            ? { agent: lead, account: leadAccount }
-            : failed !== undefined && (await deps.accounts.needsLogin(failed.account))
-              ? failed
-              : undefined;
-        if (stuck === undefined) continue;
-        const since = (await deps.accounts.signedOutSince(stuck.account)) ?? t.updatedAt;
-        const to = await firstWorking(t.team, stuck.agent);
-        out.push({
-          id: t.id,
-          lead,
-          agent: stuck.agent,
-          account: stuck.account,
-          since,
-          ...(to === undefined ? {} : { to }),
-        });
-      }
-      return out;
-    },
-
-    async moveLead(_org, task, to, reason) {
-      const old = store.tasks.get(task)?.team[0] ?? "the old lead";
-      await run("tasks.update", { id: task, agent: to }, reason, task);
-      if (store.tasks.get(task)?.status === "paused") await run("tasks.start", { id: task }, reason, task);
-      // The brief went to the old lead already: the new one is told what happened, which starts it.
-      deps.runs.notify(
-        task,
-        to,
-        `You lead ${task} now: @${old}'s account needs a new sign-in. Read TASK.md and the room (majhi-room read_recent), then go on with the plan.`,
-      );
-    },
-
-    handBack(_org, task, agent, account) {
-      const lead = store.tasks.get(task)?.team[0];
-      if (lead === undefined) return;
-      deps.room.post(task as TaskId, `captain:${randomUUID()}`, {
-        type: "system",
-        level: "info",
-        text: `@${agent} cannot run: its account ${account} needs a new sign-in. The captain woke @${lead} to give its step to a teammate.`,
-      });
-      deps.runs.notify(
-        task,
-        lead,
-        [
-          `@${agent} cannot run: its account ${account} needs a new sign-in, so its step is not being done. Nobody is working on ${task} now.`,
-          `Give its step to a teammate whose account works (the majhi-room mention tool, or "@name: please ..."). Do not hand anything to @${agent} until the owner signs it in again.`,
-        ].join("\n"),
-      );
     },
 
     typing(task) {

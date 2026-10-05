@@ -1,7 +1,8 @@
 import type { RoomItem, Task } from "@majhi/shared";
-import { useMutation } from "@tanstack/react-query";
-import { type KeyboardEvent, useCallback, useMemo, useState } from "react";
+import { useIsMutating, useMutation } from "@tanstack/react-query";
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/components/ui/toast";
+import { holdStop, STOP_TURN_EVENT, takeWaitingStop } from "@/features/shell/shortcuts";
 import { type ApiRequestError, cmd } from "@/lib/api";
 import { Composer } from "./composer";
 import { isBusy, type RoomAction, type RoomState } from "./model";
@@ -21,6 +22,7 @@ export function RoomPane({
   focusItem,
   onFocused,
   foldSteps,
+  initialDraft,
 }: {
   /** Reads as a conversation: steps between messages fold into one line. */
   foldSteps?: boolean | undefined;
@@ -37,10 +39,14 @@ export function RoomPane({
   /** A search match to scroll to, and what to do once it was shown. */
   focusItem?: string | undefined;
   onFocused?: (() => void) | undefined;
+  /** Text for the message box when the room opens; the box takes focus. */
+  initialDraft?: string | undefined;
 }) {
   const toast = useToast();
   // Text a card button puts in the composer; `n` changes on every click.
-  const [draft, setDraft] = useState<{ text: string; n: number }>();
+  const [draft, setDraft] = useState<{ text: string; n: number } | undefined>(
+    initialDraft === undefined ? undefined : { text: initialDraft, n: 1 },
+  );
   const compose = useCallback((text: string) => setDraft((d) => ({ text, n: (d?.n ?? 0) + 1 })), []);
   // Agents in the middle of a turn, each with its oldest queued message, as one string so the
   // cards redraw only when that changes, not on every tool call.
@@ -68,7 +74,21 @@ export function RoomPane({
     }),
     [task, compose, onShowChanges, turningKey],
   );
-  const busy = isBusy(state.agents);
+  // A running task with no agent yet is still being set up (worktrees, session): Esc stops that too.
+  const startRequests = useIsMutating({ mutationKey: ["tasks.start"] });
+  const starting =
+    startRequests > 0 || (task.status === "running" && state.agents.every((a) => a.status === "stopped"));
+  const busy = isBusy(state.agents) || starting;
+  // "Stopping..." from Esc or Stop until the agent is no longer busy, with a cap so it never sticks.
+  const [stopping, setStopping] = useState(false);
+  useEffect(() => {
+    if (!busy) setStopping(false);
+  }, [busy]);
+  useEffect(() => {
+    if (!stopping) return;
+    const timer = setTimeout(() => setStopping(false), 8000);
+    return () => clearTimeout(timer);
+  }, [stopping]);
   // Around a search match, going to the newest messages also scrolls the view to them.
   const [jumpSignal, setJumpSignal] = useState(0);
   const jumpToLatest = useCallback(() => {
@@ -78,7 +98,11 @@ export function RoomPane({
 
   const cancel = useMutation<{ cancelled: string[] }, ApiRequestError, void>({
     mutationFn: () => cmd("room.cancel", { task: task.id }),
-    onError: (error) => toast("Could not stop", { detail: error.message, tone: "error" }),
+    onMutate: () => setStopping(true),
+    onError: (error) => {
+      setStopping(false);
+      toast("Could not stop", { detail: error.message, tone: "error" });
+    },
   });
 
   const answer = useMutation<{ item: RoomItem }, ApiRequestError, { item: string; option: string }>({
@@ -95,12 +119,32 @@ export function RoomPane({
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (event.key !== "Escape" || event.defaultPrevented || event.nativeEvent.isComposing) return;
     if (event.target instanceof Element && event.target.closest('dialog, [role="menu"]')) return;
-    if (busy && !cancel.isPending) {
+    if (busy && !cancel.isPending && !stopping) {
       // Stopping the agent is what Esc did; a drawer around the room must not also close.
       event.preventDefault();
       cancel.mutate();
     }
   }
+
+  // Esc with focus on the page body (after a room opens or a reload) reaches the room as this event.
+  // Before the turn has begun there is nothing to stop yet: the Esc waits a few seconds for it.
+  const stopOnEsc = useRef(() => {});
+  stopOnEsc.current = () => {
+    if (cancel.isPending || stopping) return;
+    if (busy) cancel.mutate();
+    else holdStop();
+  };
+  useEffect(() => {
+    const onStop = (event: Event) => {
+      if (event instanceof CustomEvent) event.detail.taken = true;
+      stopOnEsc.current();
+    };
+    window.addEventListener(STOP_TURN_EVENT, onStop);
+    return () => window.removeEventListener(STOP_TURN_EVENT, onStop);
+  }, []);
+  useEffect(() => {
+    if (busy && takeWaitingStop()) stopOnEsc.current();
+  }, [busy]);
 
   return (
     <section
@@ -141,7 +185,8 @@ export function RoomPane({
         }}
         onDrop={(id) => dispatch({ type: "drop", id })}
         onCancel={() => cancel.mutate()}
-        cancelling={cancel.isPending}
+        cancelling={cancel.isPending || stopping}
+        starting={starting}
         draft={draft}
       />
     </section>

@@ -8,6 +8,7 @@ import {
   FindingTriageSchema,
 } from "@majhi/shared";
 import type Database from "better-sqlite3";
+import { parseRows } from "../store/tolerant.ts";
 
 /** The findings table in `majhi.db` (migration 125). */
 
@@ -84,6 +85,9 @@ function toFinding(r: Row): Finding {
   });
 }
 
+/** The findings of these rows. A row that does not parse (an unknown source, say) is skipped and logged once. */
+const readFindings = (rows: readonly Row[]): Finding[] => parseRows("findings", rows, (r) => r.id, toFinding);
+
 export interface NewFinding {
   org: string;
   project?: string | undefined;
@@ -121,14 +125,14 @@ export class FindingsRepo {
 
   get(id: number): Finding | undefined {
     const row = this.db.prepare("SELECT * FROM findings WHERE id = ?").get(id) as Row | undefined;
-    return row === undefined ? undefined : toFinding(row);
+    return row === undefined ? undefined : readFindings([row])[0];
   }
 
   byKey(org: string, key: string): Finding | undefined {
     const row = this.db.prepare("SELECT * FROM findings WHERE org = ? AND dedupe_key = ?").get(org, key) as
       | Row
       | undefined;
-    return row === undefined ? undefined : toFinding(row);
+    return row === undefined ? undefined : readFindings([row])[0];
   }
 
   add(n: NewFinding): Finding {
@@ -211,11 +215,11 @@ export class FindingsRepo {
       args.push(...filter.statuses);
     }
     const where = parts.length === 0 ? "" : `WHERE ${parts.join(" AND ")}`;
-    return (
+    return readFindings(
       this.db
         .prepare(`SELECT * FROM findings ${where} ORDER BY last_seen DESC, id DESC LIMIT ?`)
-        .all(...args, filter.limit) as Row[]
-    ).map(toFinding);
+        .all(...args, filter.limit) as Row[],
+    );
   }
 
   /** How many findings a playbook filed in a workspace, and how many were taken up or dismissed. */
@@ -241,10 +245,10 @@ export class FindingsRepo {
 
   /** Findings linked to a task, to follow the task. */
   linked(): Finding[] {
-    return (
+    return readFindings(
       this.db
         .prepare("SELECT * FROM findings WHERE task IS NOT NULL AND status IN ('proposed', 'task')")
-        .all() as Row[]
-    ).map(toFinding);
+        .all() as Row[],
+    );
   }
 }

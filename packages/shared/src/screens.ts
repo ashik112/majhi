@@ -24,7 +24,6 @@ export const PAGE_PATH = {
   watch: "/watch",
   limits: "/limits",
   decisions: "/decisions",
-  business: "/knowledge",
 } as const;
 
 export type PageName = keyof typeof PAGE_PATH;
@@ -40,12 +39,11 @@ export const PAGE_LABEL: Record<PageName, string> = {
   watch: "Watch",
   limits: "Limits",
   decisions: "Decisions",
-  business: "Knowledge",
   agents: "Agents",
   accounts: "Accounts",
   connections: "Connections",
   projects: "Projects and links",
-  skills: "Skills",
+  skills: "Skills & MCP",
   memory: "Memory",
   orgs: "Workspaces",
   setup: "Hub setup",
@@ -54,16 +52,8 @@ export const PAGE_LABEL: Record<PageName, string> = {
 };
 
 /** The sidebar's rows: the daily work at the top, the team and health at the foot, then Settings. */
-export const SIDEBAR_MAIN = [
-  "board",
-  "decisions",
-  "chats",
-  "captain",
-  "playbooks",
-  "watch",
-  "business",
-] as const;
-export const SIDEBAR_FOOT = ["agents", "accounts", "usage"] as const;
+export const SIDEBAR_MAIN = ["board", "decisions", "chats", "captain", "playbooks", "watch"] as const;
+export const SIDEBAR_FOOT = ["agents", "skills", "accounts", "usage"] as const;
 export type SidebarMainPage = (typeof SIDEBAR_MAIN)[number];
 export type SidebarFootPage = (typeof SIDEBAR_FOOT)[number];
 
@@ -88,7 +78,7 @@ export const SETUP_GROUPS = [
       "containers",
     ],
   },
-  { label: "More", sections: ["editor", "e2e", "appearance", "backups", "history"] },
+  { label: "More", sections: ["editor", "appearance", "backups", "history"] },
 ] as const;
 
 export type SetupSection = (typeof SETUP_GROUPS)[number]["sections"][number];
@@ -107,7 +97,6 @@ export const SECTION_TITLE: Record<SetupSection, string> = {
   approvals: "Approvals",
   notifications: "Notifications",
   editor: "Editor",
-  e2e: "Background e2e",
   containers: "Containers",
   appearance: "Appearance",
   backups: "Backups",
@@ -124,10 +113,7 @@ export type SettingsItem =
   | { kind: "section"; section: SetupSection; label?: string };
 
 /** The pages that open inside the Settings frame, besides Hub setup itself. */
-export type SettingsPage = Extract<
-  PageName,
-  "connections" | "projects" | "skills" | "memory" | "limits" | "audit"
->;
+export type SettingsPage = Extract<PageName, "connections" | "projects" | "memory" | "limits" | "audit">;
 
 /** The Settings list, in order. Pages keep their own address; Hub setup's sections are `/setup?section=`. */
 export const SETTINGS_GROUPS: readonly { label: string; items: readonly SettingsItem[] }[] = [
@@ -152,7 +138,6 @@ export const SETTINGS_GROUPS: readonly { label: string; items: readonly Settings
   {
     label: "Agents",
     items: [
-      { kind: "page", page: "skills" },
       { kind: "page", page: "memory" },
       { kind: "section", section: "memory", label: "Memory rules" },
       { kind: "section", section: "teams" },
@@ -172,7 +157,6 @@ export const SETTINGS_GROUPS: readonly { label: string; items: readonly Settings
     label: "System",
     items: [
       { kind: "section", section: "containers" },
-      { kind: "section", section: "e2e" },
       { kind: "section", section: "backups" },
       { kind: "section", section: "history" },
       { kind: "page", page: "audit" },

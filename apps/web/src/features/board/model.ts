@@ -29,15 +29,20 @@ const COLUMNS: readonly ColumnId[] = ["inbox", "working", "needs", "mr", "done"]
  * task that stopped and waits to be picked up: a finished one to review, a running one whose agents all finished
  * their turn, and a paused one.
  */
-export function columnOf(task: Pick<TaskSummary, "status" | "working" | "asking">): ColumnId {
+export function columnOf(
+  task: Pick<TaskSummary, "status" | "working" | "asking"> & Partial<Pick<TaskSummary, "children">>,
+): ColumnId {
   switch (task.status) {
     case "inbox":
     case "ready":
       return "inbox";
     case "running":
+      // A parent that waits on its own subtasks waits for no decision of the owner's.
+      if (waitsOnSubtasks(task)) return "working";
       // An agent that waits on an approval or a question is working on paper only.
       return isYourTurn(task) || task.asking === true ? "needs" : "working";
     case "paused":
+      return waitsOnSubtasks(task) ? "working" : "needs";
     case "review":
       return "needs";
     case "mr":
@@ -45,6 +50,34 @@ export function columnOf(task: Pick<TaskSummary, "status" | "working" | "asking"
     case "done":
       return "done";
   }
+}
+
+/** A running parent with no agent of its own and subtasks that are not done: it waits on them. */
+export function waitsOnSubtasks(
+  task: Pick<TaskSummary, "status" | "working"> & Partial<Pick<TaskSummary, "children">>,
+): boolean {
+  const kids = task.children;
+  const open = kids !== undefined && kids.done < kids.total;
+  // Paused as blocked is the idle watch's stop of a parent whose subtasks do not move by themselves.
+  return open && task.working.length === 0 && (task.status === "running" || task.status === "paused");
+}
+
+/** Order in Up next: ready tasks first, then the inbox, then what is open but not running. */
+export function rankNext(task: Pick<TaskSummary, "status">): number {
+  return task.status === "ready" ? 0 : task.status === "inbox" ? 1 : 2;
+}
+
+/** What an Up next card says: why the task is not running. */
+export function queuedText(task: TaskSummary): string {
+  if (task.status === "inbox" || task.status === "ready") {
+    if (task.waitingOn.length > 0) return waitingText(task.waitingOn);
+    return task.status === "ready" ? "Starts when a slot frees" : "In the inbox";
+  }
+  if (waitsOnSubtasks(task) && task.children !== undefined)
+    return `Waiting on its subtasks, ${task.children.done} of ${task.children.total} done`;
+  if (task.status === "running")
+    return task.working.length > 0 ? "Waiting for a slot" : "No agent is working on it";
+  return cardLine(task)?.text ?? "Open";
 }
 
 /** The one live line of a card, in its lamp's color: who works, or why it needs the owner. */
@@ -84,10 +117,20 @@ export function cardLine(task: TaskSummary): CardLine | null {
       if (task.waitingOn.length > 0) return { text: waitingText(task.waitingOn), lamp: "idle" };
       return task.status === "ready" ? { text: "Ready to start", lamp: "idle" } : null;
     case "running":
+      if (waitsOnSubtasks(task) && task.children !== undefined)
+        return {
+          text: `Waiting on its subtasks, ${task.children.done} of ${task.children.total} done`,
+          lamp: "idle",
+        };
       return isYourTurn(task)
         ? { text: "Your turn: reply in the room", lamp: "needs" }
         : { text: workingText(task.working), lamp: "working" };
     case "paused":
+      if (waitsOnSubtasks(task) && task.children !== undefined)
+        return {
+          text: `Waiting on its subtasks, ${task.children.done} of ${task.children.total} done`,
+          lamp: "idle",
+        };
       if (task.pausedReason === "owner" && task.pausedBy === "captain")
         return { text: "Paused by Captain", lamp: "paused" };
       if (task.pausedReason === "owner" && task.pausedBy === "autonomy-off")
@@ -188,22 +231,6 @@ export function buildColumns(tasks: readonly TaskSummary[], options: BoardOption
     label: COLUMN_LABEL[id],
     tasks: visible.filter((t) => columnOf(t) === id).toSorted(ORDER[id]),
   }));
-}
-
-export interface BoardCounts {
-  open: number;
-  working: number;
-  done: number;
-}
-
-/** The telemetry of the org filter's tasks: open, working now, done. What needs the owner is `useNeedsYou`. */
-export function boardCounts(tasks: readonly TaskSummary[], org: string | undefined): BoardCounts {
-  const own = tasks.filter((t) => inOrg(t, org));
-  return {
-    open: own.filter(isOpen).length,
-    working: own.filter((t) => columnOf(t) === "working").length,
-    done: own.filter((t) => !isOpen(t)).length,
-  };
 }
 
 /**

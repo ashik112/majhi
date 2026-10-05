@@ -17,11 +17,11 @@ import {
   CircleAlert,
   House,
   KeyRound,
-  Library,
   type LucideIcon,
   MessagesSquare,
   Radar,
   Settings,
+  Sparkles,
   Users,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -35,6 +35,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { useUnseenSummary } from "@/features/autonomy/summary-seen";
 import { cardLine, plainTitle } from "@/features/board/model";
 import { useBoss } from "@/features/boss/boss-context";
+import { preloadBossDrawer } from "@/features/boss/boss-drawer-lazy";
 import { useNeedsYou } from "@/features/decisions/needs-you";
 import { checksNeedingYou } from "@/features/health/model";
 import { isSettingsPath } from "@/features/settings/settings-frame";
@@ -45,6 +46,7 @@ import { UpdateNotice } from "@/features/update/update-notice";
 import { type AgentInfo, useAgentIndex } from "@/lib/agent-index";
 import { prefetchCaptain } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
+import { useDecisions } from "@/lib/decision-queries";
 import { MOD_KEY } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useFacts } from "@/lib/memory-queries";
@@ -144,7 +146,7 @@ type NavBadge = { text: string; tone?: "needs" | "check"; dot?: boolean; title?:
 const ICON = "size-4 shrink-0";
 
 /**
- * The sidebar's rows: Home, Needs you, Chats, the captain, Playbooks, Watch and Knowledge; then the
+ * The sidebar's rows: Home, Needs you, Chats, the captain, Playbooks, and Watch; then the
  * agents that work now (see AgentsNow); at the foot Agents, Accounts, Health & usage and Settings.
  */
 function MainNav() {
@@ -193,6 +195,7 @@ function FootNav() {
         : (accounts?.length ?? 0) > 0
           ? { text: String(accounts?.length ?? 0) }
           : undefined,
+    skills: undefined,
     usage: toFix > 0 ? { text: `${toFix} to fix`, tone: "check" } : undefined,
   };
   return (
@@ -239,9 +242,13 @@ const MAIN_ICON: Record<Exclude<SidebarMainPage, "captain" | "watch">, LucideIco
   decisions: CircleAlert,
   chats: MessagesSquare,
   playbooks: BookOpen,
-  business: Library,
 };
-const FOOT_ICON: Record<SidebarFootPage, LucideIcon> = { agents: Users, accounts: KeyRound, usage: Activity };
+const FOOT_ICON: Record<SidebarFootPage, LucideIcon> = {
+  agents: Users,
+  skills: Sparkles,
+  accounts: KeyRound,
+  usage: Activity,
+};
 
 function NavRow({
   page,
@@ -323,7 +330,10 @@ function CaptainRow() {
   const now = useNow(60_000);
   const summary = useUnseenSummary(now);
   const client = useQueryClient();
-  const warm = () => prefetchCaptain(client);
+  const warm = () => {
+    prefetchCaptain(client);
+    preloadBossDrawer();
+  };
   return (
     <div className="flex h-8 shrink-0 items-center gap-1">
       <Link
@@ -382,6 +392,7 @@ function agentRows(
   tasks: readonly TaskSummary[],
   accounts: readonly AccountView[],
   now: number,
+  live: ReadonlySet<string>,
 ): { rows: AgentRow[]; working: number; idle: number } {
   const open = tasks.filter(isOpen);
   const rows: AgentRow[] = [];
@@ -391,7 +402,8 @@ function agentRows(
       accounts.find((a) => a.id === agent.account),
       now,
     );
-    const running = open.find((t) => t.status === "running" && t.working.includes(agent.id));
+    // Working means the server counts the task as working: an agent that waits on the owner is waiting.
+    const running = open.find((t) => live.has(t.id) && t.working.includes(agent.id));
     const paused = open.find((t) => t.status === "paused" && t.team.includes(agent.id));
     const base = { id: agent.id, emoji: agent.emoji, limit: note?.text };
     if (running) {
@@ -417,9 +429,10 @@ function AgentsNow() {
   const tasks = useTasks().data;
   const accounts = useAccounts().data;
   const now = useNow(30_000);
+  const liveTasks = useDecisions().data?.counts.workingTasks;
   const { rows, working, idle } = useMemo(
-    () => agentRows([...index.values()], tasks ?? [], accounts ?? [], now),
-    [index, tasks, accounts, now],
+    () => agentRows([...index.values()], tasks ?? [], accounts ?? [], now, new Set(liveTasks)),
+    [index, tasks, accounts, now, liveTasks],
   );
   return (
     <section aria-label="Agents now" className="flex min-h-0 flex-1 flex-col gap-1">

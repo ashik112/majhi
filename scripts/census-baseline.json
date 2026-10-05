@@ -1,0 +1,23 @@
+{
+  "status writes: LifecycleRows.commit": 0,
+  "Task.pausedReason": 34,
+  "Task.pausedBy": 18,
+  "tasks.paused_reason column": 3,
+  "tasks.paused_by column": 3,
+  "tasks.start_when_ready column": 1,
+  "waitsForOwner()": 6,
+  "resumeRefusal()": 5,
+  "pausedLabel()": 3,
+  "autonomy task held": 9,
+  "autonomy task heldScope": 4,
+  "autonomy task resumedAt": 4,
+  "autonomy_tasks.held column": 1,
+  "autonomy_tasks.held_scope column": 1,
+  "autonomy_tasks.resumed_at column": 1,
+  "AutonomyState.holds": 5,
+  "QueueItem.waitFor": 11,
+  "QueueItem.readyAt": 5,
+  "AgentRun.paused": 45,
+  "AgentRun.held": 21,
+  "budget alert resumedAt()": 2
+}

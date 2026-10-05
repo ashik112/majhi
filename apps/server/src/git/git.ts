@@ -1,7 +1,10 @@
 import { execFile } from "node:child_process";
-import { stat } from "node:fs/promises";
-import { join } from "node:path";
+import { access, stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
+import { KeyedQueue } from "./keyed-queue.ts";
+import { refExists } from "./refs.ts";
+import { repoConfigIsPlain } from "./repo-config.ts";
 
 const run = promisify(execFile);
 
@@ -29,6 +32,11 @@ export const FETCH_TIMEOUT_MS = 60_000;
  * (its tests, a dev server) still makes and moves every task's branches. Never the caller's
  * `GIT_AUTHOR_*` or `GIT_COMMITTER_*` either: they win over `-c user.name`, so a merge, revert or
  * rebase would be made as whoever started majhi instead of the identity it names.
+ *
+ * `GIT_OPTIONAL_LOCKS=0` is set for every command (git's documentation: the same as
+ * `--no-optional-locks`; git skips only sub-operations that take an optional lock). A read such as
+ * `git status` otherwise refreshes the index and takes `index.lock`, which made a merge or rebase
+ * running in the same worktree fail with "Unable to create index.lock". It changes nothing for a write.
  */
 export function gitEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const {
@@ -43,6 +51,7 @@ export function gitEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     ...rest,
     GIT_TERMINAL_PROMPT: "0",
     GIT_SSH_COMMAND: source.GIT_SSH_COMMAND ?? "ssh -o BatchMode=yes",
+    GIT_OPTIONAL_LOCKS: "0",
   };
 }
 
@@ -240,6 +249,56 @@ function commandAt(args: readonly string[]): number {
   return i;
 }
 
+/** Commands that write the index (and so take `index.lock`) or the work tree. */
+const INDEX_WRITERS = new Set([
+  "add",
+  "am",
+  "apply",
+  "checkout",
+  "cherry-pick",
+  "clean",
+  "commit",
+  "merge",
+  "mv",
+  "pull",
+  "read-tree",
+  "rebase",
+  "reset",
+  "restore",
+  "revert",
+  "rm",
+  "stash",
+  "switch",
+]);
+
+/**
+ * Multi-step writes: when one stops on a lock halfway it leaves its own state behind (a rebase in
+ * progress), so running it again would not be a retry. They are queued but never retried.
+ */
+const NO_RETRY = new Set(["am", "cherry-pick", "merge", "pull", "rebase", "revert", "stash"]);
+
+/** One write at a time per worktree: majhi's merge, rebase, checkpoint commit and revert never overlap. */
+const writes = new KeyedQueue();
+
+/** How long a write waits for a lock someone else holds, before it gives up. */
+export const LOCK_RETRY_DELAYS_MS: readonly number[] = [100, 250, 500, 1000, 2000];
+
+const sleep = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
+
+/**
+ * Whether the worktree's index lock exists on disk: the structured signal that a write failed on
+ * someone else's lock, read from the file system instead of git's message text.
+ */
+async function indexLockHeld(cwd: string): Promise<boolean> {
+  try {
+    const dir = (await gitOnce(cwd, ["rev-parse", "--absolute-git-dir"], {})).trim();
+    await access(join(dir, "index.lock"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Runs `git` with an argument list, never through a shell. Prompts are off, so a
  * missing credential fails at once instead of hanging the server. The repo cannot make it run
@@ -250,13 +309,43 @@ export async function git(
   args: readonly string[],
   options: { timeoutMs?: number; maxBufferBytes?: number; env?: Record<string, string> } = {},
 ): Promise<string> {
+  const command = args[commandAt(args)] ?? "";
+  if (!INDEX_WRITERS.has(command)) return gitOnce(cwd, args, options);
+  return writes.run(resolve(cwd), async () => {
+    let lockGoneRetried = false;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await gitOnce(cwd, args, options);
+      } catch (err) {
+        // This worktree's write queue is held here, so a lock on disk is not majhi's own write: it is
+        // an agent's git in a container or the owner's. Wait for it; never remove it.
+        const wait = LOCK_RETRY_DELAYS_MS[attempt];
+        if (wait === undefined || NO_RETRY.has(command) || !(err instanceof GitError)) throw err;
+        if (!(await indexLockHeld(cwd))) {
+          // The lock may have been released between the failure and this look: try once more at once.
+          if (lockGoneRetried) throw err;
+          lockGoneRetried = true;
+          continue;
+        }
+        await sleep(wait);
+      }
+    }
+  });
+}
+
+async function gitOnce(
+  cwd: string,
+  args: readonly string[],
+  options: { timeoutMs?: number; maxBufferBytes?: number; env?: Record<string, string> },
+): Promise<string> {
   try {
     const at = commandAt(args);
     const command = args[at] ?? "";
     const base = { ...gitEnv(process.env), ...options.env };
-    const off = NO_LOOKUP.has(command)
-      ? { settings: [], env: {}, options: [] }
-      : await repoCommands(cwd, base, command);
+    const off =
+      NO_LOOKUP.has(command) || (await repoConfigIsPlain(cwd, base))
+        ? { settings: [], env: {}, options: [] }
+        : await repoCommands(cwd, base, command);
     const extra = DIFF_COMMANDS.has(command) ? ["--no-ext-diff", "--no-textconv"] : off.options;
     const argv = [...args.slice(0, at + 1), ...extra, ...args.slice(at + 1)];
     const { stdout } = await run("git", argv, {
@@ -343,12 +432,17 @@ export async function defaultBranch(repo: string): Promise<string | undefined> {
   }
 }
 
+/** `git show-ref --verify --quiet`, answered from the ref files when they can say, else by git. */
+export async function refIsThere(repo: string, ref: string): Promise<boolean> {
+  return (await refExists(repo, ref)) ?? gitOk(repo, ["show-ref", "--verify", "--quiet", ref]);
+}
+
 export function localBranchExists(repo: string, name: string): Promise<boolean> {
-  return gitOk(repo, ["show-ref", "--verify", "--quiet", `refs/heads/${name}`]);
+  return refIsThere(repo, `refs/heads/${name}`);
 }
 
 export function remoteBranchExists(repo: string, remote: string, name: string): Promise<boolean> {
-  return gitOk(repo, ["show-ref", "--verify", "--quiet", `refs/remotes/${remote}/${name}`]);
+  return refIsThere(repo, `refs/remotes/${remote}/${name}`);
 }
 
 /** Lines of `git status --porcelain`: what is changed or untracked. Empty when clean. */

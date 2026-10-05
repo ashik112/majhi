@@ -22,7 +22,7 @@ const CODE_WORDS =
 
 /**
  * Reads the task box text (SPEC 3.1): repos by project id or alias, `@agent`
- * mentions, links, and warnings (unknown agents, repos from more than one org).
+ * mentions, links, and warnings (unknown agents, repos from more than one workspace).
  * Branches are never read from the text: the base is the project's or the pick,
  * and the working branch is always a new task branch. A repo
  * means kind `code`. No repo means kind `ops` for an investigation or an incident
@@ -54,7 +54,7 @@ export function parseTaskText(text: string, ctx: ParseContext): ParsedTask {
     const org = ctx.projects.find((p) => p.id === repo.project)?.org;
     if (org !== undefined && !orgs.includes(org)) orgs.push(org);
   }
-  if (orgs.length > 1) warnings.push(`Repos from more than one org: ${orgs.join(", ")}`);
+  if (orgs.length > 1) warnings.push(`Repos from more than one workspace: ${orgs.join(", ")}`);
 
   const parsed: ParsedTask = {
     title: titleOf(text),
