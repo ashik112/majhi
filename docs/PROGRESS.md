@@ -1,5 +1,11 @@
 # Progress
 
+## Captain soak test fixed (branch fix/captain-soak)
+
+- **What changed.** The usage recorder now takes the run clock (`runClock`), so turns are stamped with the simulated time and the day and workspace budgets measure them. The soak test's findings stub gains `settle`, which the upkeep pass calls on every sweep since findings settle by key.
+- **What the owner will notice.** Nothing.
+- **How verified.** `soak.test.ts` passes; captain and autonomy folders pass; typecheck clean.
+
 ## Lifecycle C: one apply() for every status write (built, not merged)
 
 Branch `feat/lifecycle-c`. Merge main first (migration 154 is on main from another branch; this one is 156).

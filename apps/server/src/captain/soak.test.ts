@@ -133,7 +133,12 @@ class Sim {
         embed: async () => undefined,
         closeThread: () => undefined,
       },
-      findings: undefined as unknown as CaptainPorts["findings"],
+      // The soak world files no findings: every call an upkeep pass makes is a no-op.
+      findings: {
+        find: () => undefined,
+        report: async () => undefined,
+        settle: () => undefined,
+      } as unknown as CaptainPorts["findings"],
       ownScope: async () => undefined,
       reviewTasks: async (org) =>
         of(org)
