@@ -1,20 +1,13 @@
 import {
   type AccountView,
   type CardOutcome,
+  type HandoffState,
   plainAuthorityText,
   type RoomItem,
   type Task,
 } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
-import {
-  Check,
-  CircleCheck,
-  CirclePause,
-  MessageSquareReply,
-  RotateCw,
-  SendHorizontal,
-  TriangleAlert,
-} from "lucide-react";
+import { Check, CircleCheck, CirclePause, MessageSquareReply, RotateCw, SendHorizontal } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PageLink } from "@/components/ui/page-link";
@@ -25,12 +18,14 @@ import { type RunShip, Ship, type ShipChoices, type ShipTarget } from "@/feature
 import { CloseUnshippedDialog, unshippedCount } from "@/features/task/unshipped";
 import { useAgentIndex } from "@/lib/agent-index";
 import { type ApiRequestError, cmd } from "@/lib/api";
-import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
+import { useHandoff } from "@/lib/handoff-queries";
 import { useFixCheck, useHealthChecks } from "@/lib/ops-queries";
 import { useAccounts, useOrgs, useTools } from "@/lib/studio-queries";
 import { useAfterTaskChange, useShipOptions } from "@/lib/task-queries";
-import { questionLine } from "./dock-caption";
+import { useNow } from "@/lib/use-now";
+import { DockBar } from "./dock-bar";
+import { questionLine } from "./question-line";
 
 type Of<T extends RoomItem["type"]> = Extract<RoomItem, { type: T }>;
 
@@ -98,6 +93,7 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
   const toast = useToast();
   const after = useAfterTaskChange();
   const options = useShipOptions(task, true);
+  const now = useNow(15_000);
   const orgs = useOrgs().data;
   // Cards saved before the authority table name a retired level; show the plain rule instead.
   const workspace =
@@ -141,71 +137,83 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
     (options.data?.changed?.length !== 0 || (options.data?.protected ?? []).length > 0);
   const unshipped = doneOption?.unshipped ?? [];
 
+  // The hand-off check is read here too, so the bar's lamp and title say whether it is ready.
+  const handoff = useHandoff(task.id, task.repos.length > 0).data;
+  const checking = handoff?.running === true || handoff?.queued === true;
+  const red = handoff?.current?.verdict === "red" && !checking;
+  const notReady = (failed || red) && !checking;
+  const progress = checkProgress(handoff, now);
+  // Loaded, and no repo changed: there is nothing to ship, whatever the checks said.
+  const nothing = options.data !== undefined && !shipping;
+  const why = item.why === undefined ? undefined : plainAuthorityText(item.why, workspace);
+  const note =
+    doneOption?.ok === false
+      ? `Mark done: ${doneOption.why}`
+      : doneOption?.ok === true && unshipped.length > 0
+        ? `${unshippedCount(unshipped)}. Ship it, or mark it done to leave the commits on the branch.`
+        : undefined;
+  const line = checking
+    ? progress
+    : why !== undefined && failed
+      ? why
+      : (note ??
+        (notReady
+          ? (handoff?.current?.summary ?? "The agents are done, but the check found a problem.")
+          : nothing
+            ? "The agents are done. Mark it done to close the task."
+            : "The agents are done and wait for you."));
+
   return (
-    <section
-      aria-label={failed ? "Done, checks failed" : "Ready to ship"}
-      className={cn(
-        "flex max-w-[700px] flex-col gap-2.5 rounded-lg border px-3.5 py-3",
-        failed ? "border-amber-line bg-amber-wash" : "border-green-line bg-green-wash",
-      )}
-    >
-      <p className="flex items-start gap-2 text-base text-fg">
-        {failed ? (
-          <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
-        ) : (
-          <CircleCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-green" />
-        )}
-        <span className="min-w-0 break-words">
-          <span className="font-medium">{failed ? "Not ready." : "Ready to ship."}</span>{" "}
-          <span className="text-fg-muted">
-            {failed
-              ? "The agents are done, but the check found a problem."
-              : "The agents are done and wait for you."}
-          </span>
-        </span>
-      </p>
-      {item.why !== undefined && (
-        <p className="pl-6 text-sm text-amber text-pretty">{plainAuthorityText(item.why, workspace)}</p>
-      )}
-      {item.ready !== undefined && (
-        <p className="pl-6 text-sm text-fg-soft text-pretty">
-          <span className="font-medium">The captain checked it: </span>
-          {plainAuthorityText(item.ready, workspace)}
-        </p>
-      )}
-      {task.repos.length > 0 && <HandoffBlock task={task.id} className="pl-6" />}
-      <div className="flex flex-wrap items-center gap-2 pl-6">
-        {shipping && <Ship task={task} run={run} lead={lead} align="left" variant="primary" primaryAction />}
-        <Button
-          size="sm"
-          variant={shipping ? "secondary" : "primary"}
-          {...(task.repos.length > 0 ? {} : { "data-primary-action": "" })}
-          disabled={done.isPending || doneOption?.ok === false}
-          title={doneOption?.ok === false ? doneOption.why : "Mark the task done. Nothing is merged."}
-          onClick={() => (unshipped.length > 0 ? setConfirming(true) : done.mutate(false))}
-        >
-          <Check aria-hidden="true" />
-          Mark done
-        </Button>
-        {lead !== undefined && (
-          <Button size="sm" onClick={() => owner.compose(`@${lead} `)}>
-            Ask for changes
-          </Button>
-        )}
-        {owner.showChanges && (
-          <Button size="sm" variant="ghost" className="px-2" onClick={owner.showChanges}>
-            Open changes
-          </Button>
-        )}
-      </div>
-      {doneOption?.ok === false && (
-        <p className="pl-6 text-xs text-fg-muted text-pretty">Mark done: {doneOption.why}</p>
-      )}
-      {doneOption?.ok === true && unshipped.length > 0 && (
-        <p className="pl-6 text-xs text-amber-soft text-pretty">
-          {unshippedCount(unshipped)}. Ship it, or mark it done to leave the commits on the branch.
-        </p>
-      )}
+    <>
+      <DockBar
+        label={notReady ? "Done, checks failed" : nothing ? "No code changes" : "Ready to ship"}
+        lamp={checking ? "working" : notReady ? "needs" : "done"}
+        title={checking ? "Checking" : notReady ? "Not ready" : nothing ? "No code changes" : "Ready to ship"}
+        line={line}
+        actions={
+          <>
+            {shipping && (
+              <Ship task={task} run={run} lead={lead} align="left" variant="primary" primaryAction />
+            )}
+            <Button
+              size="sm"
+              variant={shipping ? "secondary" : "primary"}
+              {...(task.repos.length > 0 ? {} : { "data-primary-action": "" })}
+              disabled={done.isPending || doneOption?.ok === false}
+              title={doneOption?.ok === false ? doneOption.why : "Mark the task done. Nothing is merged."}
+              onClick={() => (unshipped.length > 0 ? setConfirming(true) : done.mutate(false))}
+            >
+              <Check aria-hidden="true" />
+              Mark done
+            </Button>
+            {lead !== undefined && (
+              <Button size="sm" onClick={() => owner.compose(`@${lead} `)}>
+                Ask for changes
+              </Button>
+            )}
+          </>
+        }
+        details={
+          <>
+            {why !== undefined && <p className="text-amber text-pretty">{why}</p>}
+            {item.ready !== undefined && (
+              <p className="text-pretty">
+                <span className="font-medium">The captain checked it: </span>
+                {plainAuthorityText(item.ready, workspace)}
+              </p>
+            )}
+            {task.repos.length > 0 && <HandoffBlock task={task.id} />}
+            {note !== undefined && <p className="text-xs text-fg-muted text-pretty">{note}</p>}
+            {owner.showChanges && (
+              <div>
+                <Button size="sm" variant="ghost" className="-ml-2 px-2" onClick={owner.showChanges}>
+                  Open changes
+                </Button>
+              </div>
+            )}
+          </>
+        }
+      />
       {confirming && (
         <CloseUnshippedDialog
           unshipped={unshipped}
@@ -215,8 +223,27 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
           onConfirm={() => done.mutate(true)}
         />
       )}
-    </section>
+    </>
   );
+}
+
+const STEP_NOW = {
+  ready: "Checking it can merge",
+  tests: "Running tests",
+  build: "Running the build",
+  lint: "Running lint",
+  acceptance: "Checking the brief",
+  review: "Reading the change",
+} as const;
+
+/** What a running hand-off check is doing now: its step and how long it has run, or its place in the queue. */
+function checkProgress(state: HandoffState | undefined, now: number): string {
+  const a = state?.activity;
+  if (a === undefined) return "Checking the new commit";
+  if (a.phase === "queued")
+    return `Waiting for a free slot${a.position === undefined ? "" : `, number ${a.position}`}`;
+  const mins = Math.max(0, Math.floor((now - new Date(a.since).getTime()) / 60_000));
+  return `${a.step === undefined ? "Checking the new commit" : STEP_NOW[a.step]} · ${mins < 1 ? "under 1 min" : `${mins} min`}`;
 }
 
 const PAUSE_WHY: Record<Of<"paused">["reason"], string> = {
@@ -260,34 +287,29 @@ function PendingPause({
     onSuccess: () => after(),
     onError: (error) => toast("Could not resume", { detail: describeError(error), tone: "error" }),
   });
+  const why =
+    item.why ??
+    (item.by === "captain" && item.reason === "owner" ? "Captain paused it." : PAUSE_WHY[item.reason]);
   return (
-    <section
-      aria-label="Paused"
-      className="flex max-w-[700px] flex-col gap-2.5 rounded-lg border border-amber-line bg-amber-wash px-3.5 py-3"
-    >
-      <p className="flex items-start gap-2 text-base text-fg">
-        <CirclePause aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
-        <span className="min-w-0 break-words">
-          <span className="font-medium">Paused.</span>{" "}
-          <span className="text-fg-muted">
-            {item.why ??
-              (item.by === "captain" && item.reason === "owner"
-                ? "Captain paused it."
-                : PAUSE_WHY[item.reason])}
-          </span>
-        </span>
-      </p>
-      <div className="flex flex-wrap items-center gap-2 pl-6">
-        <Button size="sm" variant="primary" disabled={resume.isPending} onClick={() => resume.mutate()}>
-          <RotateCw aria-hidden="true" />
-          Resume
-        </Button>
-        {item.reason !== "owner" && item.reason !== "offline" && <PauseFixes task={task} />}
-      </div>
-      {turning.map((t) => (
+    <DockBar
+      label="Paused"
+      lamp="paused"
+      title="Paused"
+      line={why}
+      actions={
+        <>
+          <Button size="sm" variant="primary" disabled={resume.isPending} onClick={() => resume.mutate()}>
+            <RotateCw aria-hidden="true" />
+            Resume
+          </Button>
+          {item.reason !== "owner" && item.reason !== "offline" && <PauseFixes task={task} />}
+        </>
+      }
+      details={<p className="text-pretty">{why}</p>}
+      below={turning.map((t) => (
         <StillWorking key={t.agent} task={task.id} agent={t.agent} queuedItem={t.queuedItem} />
       ))}
-    </section>
+    />
   );
 }
 
@@ -307,7 +329,7 @@ function StillWorking({
     onError: (error) => toast("Could not send it now", { detail: describeError(error), tone: "error" }),
   });
   return (
-    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-6 text-sm text-fg-muted">
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-4 text-sm text-fg-muted">
       <span>
         @{agent} is still working on its turn.
         {queuedItem !== undefined && " Your queued message goes when it ends."}
@@ -429,28 +451,25 @@ export function QuestionActions({
   if (item.choices.length === 0 && owner.task.status === "review") return null;
   const line = questionLine(item);
   return (
-    <fieldset
-      aria-label={`Answer @${item.agent}`}
-      className="m-0 flex flex-wrap items-center gap-2 border-0 p-0 pl-[34px]"
-    >
-      <legend className="mb-1.5 w-full text-sm text-fg text-pretty">
-        {line.text === undefined ? (
-          <span className="font-medium">{line.who} asked for you.</span>
-        ) : (
-          <>
-            <span className="font-medium">{line.who} asks:</span> {line.text}
-          </>
-        )}
-      </legend>
-      {item.choices.map((choice) => (
-        <Button key={choice} size="sm" disabled={pick.isPending} onClick={() => pick.mutate(choice)}>
-          {choice}
-        </Button>
-      ))}
-      <Button size="sm" variant="ghost" onClick={() => owner.compose(`@${item.agent} `)}>
-        <MessageSquareReply aria-hidden="true" />
-        Reply
-      </Button>
-    </fieldset>
+    <DockBar
+      label={`Answer @${item.agent}`}
+      lamp="needs"
+      title={line.text === undefined ? `${line.who} asked for you` : `${line.who} asks`}
+      line={line.text}
+      actions={
+        <>
+          {item.choices.map((choice) => (
+            <Button key={choice} size="sm" disabled={pick.isPending} onClick={() => pick.mutate(choice)}>
+              {choice}
+            </Button>
+          ))}
+          <Button size="sm" variant="ghost" onClick={() => owner.compose(`@${item.agent} `)}>
+            <MessageSquareReply aria-hidden="true" />
+            Reply
+          </Button>
+        </>
+      }
+      details={line.text === undefined ? undefined : <p className="text-pretty">{line.text}</p>}
+    />
   );
 }

@@ -151,7 +151,7 @@ export function HandoffBlock({ task, className }: { task: string; className?: st
         ? "Waiting for a free slot to check it."
         : "Checking it."
       : state.running
-        ? `Checking again. Before: ${result.summary}`
+        ? `Previous commit: ${result.summary}`
         : result.summary;
   return (
     <section aria-label="Hand-off check" className={cn("flex min-w-0 flex-col gap-1.5", className)}>

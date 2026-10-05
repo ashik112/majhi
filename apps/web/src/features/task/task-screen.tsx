@@ -1,23 +1,21 @@
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { SearchX } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChangesView } from "@/features/changes/changes-view";
 import { hasMemoryTab, TaskMemory } from "@/features/memory/task-memory";
 import { dockItems } from "@/features/room/dock";
-import { permissionDomId } from "@/features/room/items";
 import { isWorking } from "@/features/room/model";
 import { RoomPane } from "@/features/room/room-pane";
 import { useRoom } from "@/features/room/use-room";
-import { setPendingPermission } from "@/lib/attention";
 import { useLaneRedirect } from "@/lib/lane-link";
 import { useFacts, useTaskRecord } from "@/lib/memory-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useReport, useTask } from "@/lib/task-queries";
 import type { AppSearch } from "@/router";
 import { ContextTab } from "./context-tab";
-import { briefBody, firstPendingPermission } from "./model";
+import { briefBody } from "./model";
 import { ReportTab } from "./report-tab";
 import { RoomPanel } from "./room-panel";
 import { TaskHeader } from "./task-header";
@@ -63,17 +61,6 @@ function TaskView({ taskId }: { taskId: string }) {
   useEffect(() => {
     if (item !== undefined) setTab("room");
   }, [item]);
-
-  // The shell's banner points at a prompt waiting in this room.
-  const pending = useMemo(() => firstPendingPermission(room.state.items), [room.state.items]);
-  useEffect(() => {
-    setPendingPermission(
-      pending
-        ? { task: taskId, agent: pending.agent, elementId: permissionDomId(pending.itemId) }
-        : undefined,
-    );
-    return () => setPendingPermission(undefined);
-  }, [pending, taskId]);
 
   if (task.isError) {
     return (
@@ -144,44 +131,46 @@ function TaskView({ taskId }: { taskId: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <TaskHeader
-        task={data}
-        yourTurn={yourTurn}
-        cardAsks={cardAsks}
-        brief={brief}
-        tabs={<TaskTabs tabs={tabs} value={shown} onChange={setTab} />}
-      />
-      <div className="flex min-h-0 flex-1 gap-4 pl-1">
-        <div
-          id={TAB_PANEL_ID}
-          role="tabpanel"
-          aria-labelledby={tabId(shown)}
-          className="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
-        >
-          {/* The room stays mounted while another tab shows, so a draft and the scroll place are kept. */}
-          <div className={shown === "room" ? "contents" : "hidden"}>
-            <RoomPane
-              task={data}
-              state={room.state}
-              dispatch={room.dispatch}
-              loadOlder={room.loadOlder}
-              loadAround={room.loadAround}
-              loadNewer={room.loadNewer}
-              loadLatest={room.loadLatest}
-              onShowChanges={showChanges}
-              focusItem={shown === "room" ? item : undefined}
-              onFocused={clearItem}
-            />
+      <div className="flex min-h-0 flex-1 gap-4">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+          <TaskHeader
+            task={data}
+            yourTurn={yourTurn}
+            cardAsks={cardAsks}
+            brief={brief}
+            tabs={<TaskTabs tabs={tabs} value={shown} onChange={setTab} />}
+          />
+          <div
+            id={TAB_PANEL_ID}
+            role="tabpanel"
+            aria-labelledby={tabId(shown)}
+            className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 pl-1"
+          >
+            {/* The room stays mounted while another tab shows, so a draft and the scroll place are kept. */}
+            <div className={shown === "room" ? "contents" : "hidden"}>
+              <RoomPane
+                task={data}
+                state={room.state}
+                dispatch={room.dispatch}
+                loadOlder={room.loadOlder}
+                loadAround={room.loadAround}
+                loadNewer={room.loadNewer}
+                loadLatest={room.loadLatest}
+                onShowChanges={showChanges}
+                focusItem={shown === "room" ? item : undefined}
+                onFocused={clearItem}
+              />
+            </div>
+            {shown === "changes" && data.repos.length > 0 && (
+              <ChangesView task={data} onSent={(item) => room.dispatch({ type: "local", item })} />
+            )}
+            {shown === "report" && <ReportTab task={data} />}
+            {shown === "context" && (
+              <ContextTab task={data} agents={room.state.agents} items={room.state.items} />
+            )}
+            {shown === "memory" && <TaskMemory task={data} />}
+            {shown === "terminal" && <TaskTerminal task={data} />}
           </div>
-          {shown === "changes" && data.repos.length > 0 && (
-            <ChangesView task={data} onSent={(item) => room.dispatch({ type: "local", item })} />
-          )}
-          {shown === "report" && <ReportTab task={data} />}
-          {shown === "context" && (
-            <ContextTab task={data} agents={room.state.agents} items={room.state.items} />
-          )}
-          {shown === "memory" && <TaskMemory task={data} />}
-          {shown === "terminal" && <TaskTerminal task={data} />}
         </div>
         <RoomPanel
           task={data}

@@ -20,7 +20,7 @@ import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { queryKeys } from "@/lib/queries";
 import { useTask } from "@/lib/task-queries";
-import { DOCK_ACTIONS } from "./dock";
+import { DockBar } from "./dock-bar";
 import { SecretAnswer } from "./secret-answer";
 
 type Scope = "task" | "org";
@@ -61,7 +61,6 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
     onError: (error) => toast("Could not undo", { detail: describeError(error), tone: "error" }),
   });
   const outcome = approvalOutcome(item);
-  const [open, setOpen] = useState(false);
   const [more, setMore] = useState(false);
   const [always, setAlways] = useState(false);
   const [scope, setScope] = useState<Scope>("task");
@@ -72,92 +71,94 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
 
   if (outcome === undefined) {
     return (
-      <section
-        aria-label={`Approval: ${item.summary}`}
-        className="flex max-w-[72ch] flex-col gap-2.5 rounded-lg border border-amber-line bg-amber-wash px-3.5 py-3"
-      >
-        <p className="flex items-start gap-2 text-base text-fg">
-          <ShieldCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
-          <span className="min-w-0 break-words">
-            <span className="text-fg-muted">@{item.agent} wants to </span>
-            <span className="font-medium">{item.summary}</span>
-          </span>
-          <Badge tone={RISK_TONE[item.risk]} className="ml-auto">
-            {RISK_LABEL[item.risk]}
-          </Badge>
-        </p>
-        {item.reason && (
-          <p
-            title={open ? undefined : item.reason}
-            className={cn("pl-6 text-sm text-fg-muted text-pretty", !open && "line-clamp-2")}
-          >
-            {item.reason}
-          </p>
-        )}
-        {item.autonomy?.decision === "left" && (
-          <p className="flex items-start gap-1.5 pl-6 text-sm text-amber text-pretty">
-            <Bot aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-            <span className="min-w-0">Captain left this for you: {item.autonomy.why}</span>
-          </p>
-        )}
-        {item.autonomy?.decision === "left" && item.autonomy.fix !== undefined && (
-          <p className="pl-6 text-sm">
-            <PageLink
-              page={item.autonomy.fix.page}
-              search={
-                item.autonomy.fix.page === "orgs"
-                  ? { org: item.autonomy.fix.org }
-                  : { project: item.autonomy.fix.project, section: "remotes" }
-              }
-              className="inline-flex items-center gap-1 text-blue underline-offset-2 hover:underline"
+      <DockBar
+        label={`Approval: ${item.summary}`}
+        lamp="needs"
+        title={`@${item.agent} wants to`}
+        line={item.summary}
+        actions={
+          <>
+            <Badge tone={RISK_TONE[item.risk]}>{RISK_LABEL[item.risk]}</Badge>
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={decide.isPending}
+              onClick={() => decide.mutate({ decision: "approve", ...(always ? { always: scope } : {}) })}
             >
-              <Wrench aria-hidden="true" className="size-3.5" />
-              {item.autonomy.fix.page === "orgs" ? "Connect the git account" : "Fix the remote"}
-            </PageLink>
-          </p>
-        )}
-        <Details input={item.input} command={item.command} onToggle={setOpen} />
-        <div className={cn(DOCK_ACTIONS, "flex gap-2 pl-[34px]")}>
-          <Button
-            size="sm"
-            variant="primary"
-            disabled={decide.isPending}
-            onClick={() => decide.mutate({ decision: "approve", ...(always ? { always: scope } : {}) })}
-          >
-            Approve
-          </Button>
-          <Button size="sm" disabled={decide.isPending} onClick={() => decide.mutate({ decision: "reject" })}>
-            Reject
-          </Button>
-        </div>
-        {canAlways && (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-[34px]">
-            <label className="flex min-w-0 items-center gap-2 text-sm text-fg-muted">
-              <input
-                type="checkbox"
-                checked={always}
-                disabled={decide.isPending}
-                onChange={(event) => setAlways(event.target.checked)}
-              />
-              <span className="min-w-0 break-words">
-                Always allow <span className="font-mono text-fg-soft">{item.command}</span> for @{item.agent}
-              </span>
-            </label>
-            {always && (
-              <Select
-                aria-label="Where to always allow it"
-                value={scope}
-                disabled={decide.isPending}
-                onChange={(event) => setScope(event.target.value as Scope)}
-                className="h-7 w-auto text-sm"
-              >
-                <option value="task">In this task</option>
-                {org !== undefined && <option value="org">Everywhere in {org}</option>}
-              </Select>
+              Approve
+            </Button>
+            <Button
+              size="sm"
+              disabled={decide.isPending}
+              onClick={() => decide.mutate({ decision: "reject" })}
+            >
+              Reject
+            </Button>
+          </>
+        }
+        details={
+          <>
+            <p className="text-fg-muted text-pretty">
+              <span className="font-medium text-fg">{item.summary}</span>
+            </p>
+            {item.reason && <p className="text-fg-muted text-pretty">{item.reason}</p>}
+            {item.autonomy?.decision === "left" && (
+              <p className="flex items-start gap-1.5 text-amber text-pretty">
+                <Bot aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+                <span className="min-w-0">Captain left this for you: {item.autonomy.why}</span>
+              </p>
             )}
-          </div>
-        )}
-      </section>
+            {item.autonomy?.decision === "left" && item.autonomy.fix !== undefined && (
+              <p>
+                <PageLink
+                  page={item.autonomy.fix.page}
+                  search={
+                    item.autonomy.fix.page === "orgs"
+                      ? { org: item.autonomy.fix.org }
+                      : { project: item.autonomy.fix.project, section: "remotes" }
+                  }
+                  className="inline-flex items-center gap-1 text-blue underline-offset-2 hover:underline"
+                >
+                  <Wrench aria-hidden="true" className="size-3.5" />
+                  {item.autonomy.fix.page === "orgs" ? "Connect the git account" : "Fix the remote"}
+                </PageLink>
+              </p>
+            )}
+            <p className="text-fg-muted">
+              Input <span className="font-mono">{item.command}</span>
+            </p>
+            <pre className={PRE}>{item.input}</pre>
+            {canAlways && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <label className="flex min-w-0 items-center gap-2 text-sm text-fg-muted">
+                  <input
+                    type="checkbox"
+                    checked={always}
+                    disabled={decide.isPending}
+                    onChange={(event) => setAlways(event.target.checked)}
+                  />
+                  <span className="min-w-0 break-words">
+                    Always allow <span className="font-mono text-fg-soft">{item.command}</span> for @
+                    {item.agent}
+                  </span>
+                </label>
+                {always && (
+                  <Select
+                    aria-label="Where to always allow it"
+                    value={scope}
+                    disabled={decide.isPending}
+                    onChange={(event) => setScope(event.target.value as Scope)}
+                    className="h-7 w-auto text-sm"
+                  >
+                    <option value="task">In this task</option>
+                    {org !== undefined && <option value="org">Everywhere in {org}</option>}
+                  </Select>
+                )}
+              </div>
+            )}
+          </>
+        }
+      />
     );
   }
 
@@ -244,29 +245,6 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
 const PRE =
   "max-h-48 overflow-auto rounded-md bg-sunken p-2 font-mono text-xs break-words whitespace-pre-wrap text-fg-soft";
 
-/** The command's input, folded. Opening it also unclamps the reason above it. */
-function Details({
-  input,
-  command,
-  onToggle,
-}: {
-  input: string;
-  command: string;
-  onToggle?: (open: boolean) => void;
-}) {
-  return (
-    <details
-      onToggle={(event) => onToggle?.(event.currentTarget.open)}
-      className="pl-6 text-sm text-fg-muted"
-    >
-      <summary className="cursor-pointer hover:text-fg">
-        Details <span className="font-mono">{command}</span>
-      </summary>
-      <pre className={cn(PRE, "mt-1.5")}>{input}</pre>
-    </details>
-  );
-}
-
 /**
  * The agent needs a secret. A password field sends it straight to majhi; it is never shown in the
  * room, never echoed, and the agent gets only the reference.
@@ -274,24 +252,18 @@ function Details({
 export function SecretRequestCard({ item }: { item: Item<"secret-request"> }) {
   if (item.state !== "pending") return <SecretDone item={item} />;
   return (
-    <section
-      aria-label={`Secret requested: ${item.label}`}
-      className="flex max-w-[72ch] flex-col gap-2.5 rounded-lg border border-amber-line bg-amber-wash px-3.5 py-3"
-    >
-      <p className="flex items-start gap-2 text-base text-fg">
-        <KeyRound aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
-        <span className="min-w-0 break-words">
-          <span className="text-fg-muted">@{item.agent} needs </span>
-          <span className="font-medium">{item.label}</span>
-        </span>
-      </p>
-      <div className="pl-6">
-        <SecretAnswer task={item.task} item={item.id} label={item.label} name={item.name} />
-      </div>
-      <p className="pl-6 text-xs text-fg-faint">
-        Stored encrypted as secret:{item.name}. The agent sees only that name.
-      </p>
-    </section>
+    <DockBar
+      label={`Secret requested: ${item.label}`}
+      lamp="needs"
+      title={`@${item.agent} needs`}
+      line={item.label}
+      actions={<SecretAnswer task={item.task} item={item.id} label={item.label} name={item.name} />}
+      details={
+        <p className="text-xs text-fg-faint">
+          Stored encrypted as secret:{item.name}. The agent sees only that name.
+        </p>
+      }
+    />
   );
 }
 

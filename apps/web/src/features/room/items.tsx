@@ -27,7 +27,7 @@ import { formatAgo } from "@/lib/format";
 import { useNow } from "@/lib/use-now";
 import { ApprovalCard, SecretRequestCard } from "./approval-card";
 import { PendingAsk } from "./ask-card";
-import { DOCK_ACTIONS } from "./dock";
+import { DockBar } from "./dock-bar";
 import { Markdown } from "./markdown";
 import { MediaView, TaskFileLink, type TaskFiles } from "./media";
 import { contextLine, permissionSummary, toolLabel } from "./model";
@@ -670,51 +670,48 @@ function Permission({
       </details>
     );
   }
+  const destructive = item.connection?.destructive === true;
   return (
-    <section
+    <DockBar
       id={permissionDomId(item.id)}
-      tabIndex={-1}
-      aria-label={`Permission: ${item.title}`}
-      className="flex max-w-[72ch] outline-none flex-col gap-2.5 rounded-lg border border-amber-line bg-amber-wash px-3.5 py-3"
-    >
-      <p className="flex items-start gap-2 text-base text-fg">
-        <ShieldQuestion aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
-        {item.connection === undefined ? (
-          <span className="min-w-0 break-words">
-            <span className="text-fg-muted">{item.agent} asks to </span>
-            <span className="text-sm">{toolLabel(item.title)}</span>
-          </span>
-        ) : (
-          <span className="flex min-w-0 flex-col gap-1 break-words">
-            <span>
-              <span className="text-fg-muted">{item.agent} wants to change </span>
-              {item.connection.name}
-              {item.connection.destructive === true ? (
-                <span className="text-red">
-                  . This deletes or destroys something. Only you can approve it.
-                </span>
-              ) : (
-                <span className="text-fg-muted">. This is a write: {item.connection.why}.</span>
-              )}
-            </span>
-            <code className="font-mono text-sm text-fg-soft">{item.connection.action}</code>
-          </span>
-        )}
-      </p>
-      <div className={cn(DOCK_ACTIONS, "flex flex-wrap gap-2")}>
-        {item.options.map((option) => (
-          <Button
-            key={option.id}
-            size="sm"
-            variant={option.kind === "allow_once" ? "primary" : "secondary"}
-            disabled={busy}
-            onClick={() => onAnswer(item.id, option.id)}
-          >
-            {permissionOptionLabel(option)}
-          </Button>
-        ))}
-      </div>
-    </section>
+      label={`Permission: ${item.title}`}
+      lamp="needs"
+      title={
+        item.connection === undefined
+          ? `${item.agent} asks to`
+          : `${item.agent} wants to change ${item.connection.name}`
+      }
+      line={
+        item.connection === undefined
+          ? toolLabel(item.title)
+          : destructive
+            ? "This deletes or destroys something. Only you can approve it."
+            : `This is a write: ${item.connection.why}.`
+      }
+      actions={item.options.map((option) => (
+        <Button
+          key={option.id}
+          size="sm"
+          variant={option.kind === "allow_once" ? "primary" : "secondary"}
+          disabled={busy}
+          onClick={() => onAnswer(item.id, option.id)}
+        >
+          {permissionOptionLabel(option)}
+        </Button>
+      ))}
+      details={
+        <>
+          {item.connection === undefined ? (
+            <code className="font-mono break-words text-fg-soft">{toolLabel(item.title)}</code>
+          ) : (
+            <code className="font-mono break-words text-fg-soft">{item.connection.action}</code>
+          )}
+          {destructive && (
+            <p className="text-red">This deletes or destroys something. Only you can approve it.</p>
+          )}
+        </>
+      }
+    />
   );
 }
 
@@ -742,28 +739,24 @@ function ChoiceCard({ item }: { item: Of<"choice"> }) {
     );
   }
   return (
-    <section
-      aria-label="Choice"
-      className="flex max-w-[72ch] flex-col gap-2.5 rounded-lg border border-amber-line bg-amber-wash px-3.5 py-3"
-    >
-      <p className="flex items-start gap-2 text-base text-fg">
-        <GitCompareArrows aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-amber" />
-        <span className="min-w-0 break-words">{item.question}</span>
-      </p>
-      <div className={cn(DOCK_ACTIONS, "flex flex-wrap gap-2")}>
-        {item.options.map((option, i) => (
-          <Button
-            key={option.id}
-            size="sm"
-            variant={i === 0 ? "primary" : "secondary"}
-            disabled={choose.isPending}
-            onClick={() => choose.mutate(option.id)}
-          >
-            {option.label}
-          </Button>
-        ))}
-      </div>
-    </section>
+    <DockBar
+      label="Choice"
+      lamp="needs"
+      title="Choice"
+      line={item.question}
+      actions={item.options.map((option, i) => (
+        <Button
+          key={option.id}
+          size="sm"
+          variant={i === 0 ? "primary" : "secondary"}
+          disabled={choose.isPending}
+          onClick={() => choose.mutate(option.id)}
+        >
+          {option.label}
+        </Button>
+      ))}
+      details={<p className="text-pretty">{item.question}</p>}
+    />
   );
 }
 

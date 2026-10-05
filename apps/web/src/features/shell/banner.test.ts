@@ -49,4 +49,12 @@ describe("the banner never repeats a row on the page", () => {
     expect(banner?.key).toBe("signin:claude-acme");
     expect(banner?.more).toBe(1);
   });
+
+  it("leaves out the open task's own decisions and keeps the rest", () => {
+    const only = [decision("room:ACM-1:ship", "ACM-1", "acme")];
+    expect(deriveBanner({ decisions: only, permission: undefined, openTask: "ACM-1" })).toBeNull();
+    const banner = deriveBanner({ decisions: all, permission: undefined, openTask: "ACM-1" });
+    expect(banner?.key).toBe("signin:claude-acme");
+    expect(banner?.more).toBe(1);
+  });
 });
