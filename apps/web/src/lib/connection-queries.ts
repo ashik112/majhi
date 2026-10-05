@@ -25,7 +25,10 @@ type ChangeCommand =
   | "connections.setSecret"
   | "connections.setFile"
   | "connections.allow"
-  | "connections.test";
+  | "connections.test"
+  | "connections.connectToken"
+  | "connections.probeMcp"
+  | "connections.connectMcpUrl";
 
 /** A connections command that changes something. The list refetches after it. */
 export function useConnectionCommand<N extends ChangeCommand>(name: N) {

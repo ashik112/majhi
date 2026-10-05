@@ -6,25 +6,10 @@ import {
   type ConnectionView,
   connectionType,
   type FieldKind,
-  GLOBAL_CONNECTIONS,
   HeaderNameSchema,
   reservedVariable,
   VariableNameSchema,
 } from "@majhi/shared";
-import type { LampState } from "@/components/ui/lamp";
-
-/** A connection's lamp and word: testing now, not set up, or how its last Test went. */
-export function connectionStatus(
-  view: Pick<ConnectionView, "problems" | "lastTest">,
-  testing: boolean,
-): { lamp: LampState; label: string } {
-  if (testing) return { lamp: "working", label: "Testing" };
-  if (view.problems.length > 0) return { lamp: "needs", label: "Not set up" };
-  const test = view.lastTest;
-  if (test === undefined) return { lamp: "idle", label: "Not tested" };
-  if (!test.ok) return { lamp: "needs", label: "Failed" };
-  return { lamp: "done", label: test.warnings.length > 0 ? "Works, with a warning" : "Works" };
-}
 
 export const KIND_LABEL: Record<FieldKind, string> = { secret: "Secret", text: "Text", file: "File" };
 
@@ -161,21 +146,4 @@ export function createInput(input: {
     if (entries.length > 0) out[key] = entriesInput(entries);
   }
   return out;
-}
-
-/**
- * The connections by workspace, in the workspaces' order, then Global. Every workspace shows, so
- * each offers its connect button; Global shows only when it holds one. `filter` keeps one
- * workspace and Global.
- */
-export function connectionGroups(
-  connections: readonly ConnectionView[],
-  orgs: readonly { id: string }[],
-  filter: string | undefined,
-): { org: string; items: ConnectionView[] }[] {
-  const groups = orgs
-    .filter((o) => filter === undefined || o.id === filter)
-    .map((o) => ({ org: o.id, items: connections.filter((c) => c.org === o.id) }));
-  const global = connections.filter((c) => c.org === GLOBAL_CONNECTIONS);
-  return global.length > 0 ? [...groups, { org: GLOBAL_CONNECTIONS, items: global }] : groups;
 }

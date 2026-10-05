@@ -66,7 +66,7 @@ esac
 }
 
 function toolDef(account: string, mode = "ok"): CliToolDef {
-  const base = CLI_TOOLS.wrangler;
+  const base = CLI_TOOLS.vercel;
   return {
     ...base,
     binary: "faketool",
@@ -88,7 +88,7 @@ function logins(
     find: async () => bin,
     env: { TMPDIR: "/tmp" },
     ...(extra.timeoutMs === undefined ? {} : { timeoutMs: extra.timeoutMs }),
-    tools: { wrangler: toolDef(account, extra.mode) },
+    tools: { vercel: toolDef(account, extra.mode) },
   });
 }
 
@@ -122,11 +122,11 @@ describe("a workspace's own sign-in", () => {
     try {
       const pages: HostLoginProgress["login"][] = [];
       const a = await logins(home, bin, "ops@acme.test").login(
-        { signIn: "sign-in-a", tool: "wrangler", connection: "acme-cf" },
+        { signIn: "sign-in-a", tool: "vercel", connection: "acme-cf" },
         (p) => pages.push(p.login),
       );
       const b = await logins(home, bin, "dev@globex.test").login(
-        { signIn: "sign-in-b", tool: "wrangler", connection: "globex-cf" },
+        { signIn: "sign-in-b", tool: "vercel", connection: "globex-cf" },
         () => undefined,
       );
       expect(a).toEqual({ state: "done", identity: "ops@acme.test" });
@@ -158,11 +158,11 @@ describe("a workspace's own sign-in", () => {
     const home = await temp();
     const bin = await fakeTool(home);
     await logins(home, bin, "ops@acme.test").login(
-      { signIn: "first-signin", tool: "wrangler", connection: "acme-cf" },
+      { signIn: "first-signin", tool: "vercel", connection: "acme-cf" },
       () => undefined,
     );
     const err = await logins(home, bin, "x", { mode: "deny" })
-      .login({ signIn: "second-signin", tool: "wrangler", connection: "acme-cf" }, () => undefined)
+      .login({ signIn: "second-signin", tool: "vercel", connection: "acme-cf" }, () => undefined)
       .then(
         () => undefined,
         (e: Error) => e,
@@ -180,7 +180,7 @@ describe("a workspace's own sign-in", () => {
     const bin = await fakeTool(home);
     await expect(
       logins(home, bin, "x", { mode: "deny" }).login(
-        { signIn: "only-signin", tool: "wrangler", connection: "acme-cf" },
+        { signIn: "only-signin", tool: "vercel", connection: "acme-cf" },
         () => undefined,
       ),
     ).rejects.toThrow();
@@ -193,7 +193,7 @@ describe("a workspace's own sign-in", () => {
     const started = Date.now();
     await expect(
       logins(home, bin, "x", { mode: "hang", timeoutMs: 400 }).login(
-        { signIn: "hang-signin", tool: "wrangler", connection: "acme-cf" },
+        { signIn: "hang-signin", tool: "vercel", connection: "acme-cf" },
         () => undefined,
       ),
     ).rejects.toThrow(/ran out of time/);
@@ -206,7 +206,7 @@ describe("a workspace's own sign-in", () => {
     const bin = await fakeTool(home);
     const l = logins(home, bin, "x", { mode: "hang" });
     const pending = l.login(
-      { signIn: "cancel-signin", tool: "wrangler", connection: "acme-cf" },
+      { signIn: "cancel-signin", tool: "vercel", connection: "acme-cf" },
       () => undefined,
     );
     await until(() => l.cancel("cancel-signin"));
@@ -218,11 +218,11 @@ describe("a workspace's own sign-in", () => {
     const home = await temp();
     const bin = await fakeTool(home);
     await logins(home, bin, "ops@acme.test").login(
-      { signIn: "first-signin", tool: "wrangler", connection: "acme-cf" },
+      { signIn: "first-signin", tool: "vercel", connection: "acme-cf" },
       () => undefined,
     );
     const result = await logins(home, bin, "intruder@other.test").login(
-      { signIn: "again-signin", tool: "wrangler", connection: "acme-cf", expected: "ops@acme.test" },
+      { signIn: "again-signin", tool: "vercel", connection: "acme-cf", expected: "ops@acme.test" },
       () => undefined,
     );
     expect(result).toEqual({ state: "other-account", identity: "intruder@other.test" });
@@ -235,7 +235,7 @@ describe("a workspace's own sign-in", () => {
     const home = await temp();
     const l = new CliToolLogins({ majhiHome: home, path: PATH, find: async () => undefined });
     await expect(
-      l.login({ signIn: "missing-signin", tool: "wrangler", connection: "acme-cf" }, () => undefined),
+      l.login({ signIn: "missing-signin", tool: "vercel", connection: "acme-cf" }, () => undefined),
     ).resolves.toEqual({ state: "missing" });
   });
 
@@ -243,9 +243,9 @@ describe("a workspace's own sign-in", () => {
     const home = await temp();
     const bin = await fakeTool(home);
     const l = logins(home, bin, "ops@acme.test");
-    await l.login({ signIn: "first-signin", tool: "wrangler", connection: "acme-cf" }, () => undefined);
-    expect((await l.check({ tool: "wrangler", connection: "acme-cf" })).ok).toBe(true);
-    await expect(l.logout({ tool: "wrangler", connection: "acme-cf" })).resolves.toEqual({ revoked: true });
+    await l.login({ signIn: "first-signin", tool: "vercel", connection: "acme-cf" }, () => undefined);
+    expect((await l.check({ tool: "vercel", connection: "acme-cf" })).ok).toBe(true);
+    await expect(l.logout({ tool: "vercel", connection: "acme-cf" })).resolves.toEqual({ revoked: true });
     expect(await exists(profileFolder(home, "acme-cf"))).toBe(false);
   });
 
@@ -255,7 +255,7 @@ describe("a workspace's own sign-in", () => {
     await mkdir(join(home, "connections"), { recursive: true });
     await expect(
       logins(home, bin, "x").login(
-        { signIn: "escape-signin", tool: "wrangler", connection: "../../etc" },
+        { signIn: "escape-signin", tool: "vercel", connection: "../../etc" },
         () => undefined,
       ),
     ).rejects.toThrow();

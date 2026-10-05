@@ -26,6 +26,14 @@ export const AppSetupViewSchema = z.object({
   steps: z.array(
     z.object({
       n: z.number().int(),
+      /** A stable name, so the page can mark a step done and the server can say which step failed. */
+      id: z.string().optional(),
+      /**
+       * A live check the page can run after this step: `client` (the saved client file is a Desktop client),
+       * `apis` (each API answers with the stored sign-in), `published` (the app is out of Testing, so its sign-in
+       * does not end after 7 days).
+       */
+      check: z.enum(["client", "apis", "published"]).optional(),
       title: z.string(),
       body: z.string(),
       links: z.array(z.object({ label: z.string(), url: z.string() })),
@@ -101,7 +109,8 @@ const step = (
   body: string,
   links: { label: string; url: string }[] = [],
   values: { label: string; value: string }[] = [],
-) => ({ title, body, links, values });
+  more: { id?: string; check?: "client" | "apis" | "published" } = {},
+) => ({ title, body, links, values, ...more });
 
 /** Slack bot scopes at an access, from the catalog (the one place that names them). */
 export function slackBotScopes(access: ConnectAccess): string[] {
@@ -149,7 +158,7 @@ const DEFS: Readonly<Record<string, Def>> = {
   google: {
     title: "Google app (Gmail, Calendar, Drive)",
     intro:
-      "Google gives majhi no app of its own, so you make one in your Google account, once for this workspace. About five minutes. The app stays yours: Google bills nothing and majhi never sees your password.",
+      "Google gives majhi no app of its own, so you make one in your Google account, once for this workspace, about ten minutes. One app covers Gmail, Calendar and Drive. The app stays yours: Google bills nothing and majhi never sees your password.",
     finishes: "consent",
     services: ["gmail", "google-calendar", "google-drive"],
     inputs: [
@@ -166,39 +175,60 @@ const DEFS: Readonly<Record<string, Def>> = {
         "Google keeps an app inside a project. Name it as below, or use a project you already have.",
         [{ label: "Open Google Cloud: new project", url: `${GOOGLE_CONSOLE}/projectcreate` }],
         [{ label: "Project name", value: c.appName }],
+        { id: "project" },
       ),
-      step("Turn on the three APIs", "Open each page and press Enable. Skip the ones you will not connect.", [
-        { label: "Gmail API", url: `${GOOGLE_CONSOLE}/apis/library/gmail.googleapis.com` },
-        { label: "Google Calendar API", url: `${GOOGLE_CONSOLE}/apis/library/calendar-json.googleapis.com` },
-        { label: "Google Drive API", url: `${GOOGLE_CONSOLE}/apis/library/drive.googleapis.com` },
-      ]),
       step(
         "Set up the consent screen",
-        "Pick External (Internal if this is a Google Workspace you administer). Add yourself as a test user. To stop Google ending the sign-in after 7 days, press Publish app when you are done.",
-        [
-          { label: "Open the consent screen", url: `${GOOGLE_CONSOLE}/auth/branding` },
-          { label: "Test users and publishing", url: `${GOOGLE_CONSOLE}/auth/audience` },
-        ],
+        "Pick External (Internal if this is a Google Workspace you administer) and add your own email. You publish the app in the last step.",
+        [{ label: "Open the consent screen", url: `${GOOGLE_CONSOLE}/auth/branding` }],
         [{ label: "App name", value: c.appName }],
+        { id: "consent" },
       ),
       step(
         "Add the permissions",
         "Add only the permissions listed under What the app may do, above. Read comes first; the rest only when you turn a pack on.",
         [{ label: "Open Data Access", url: `${GOOGLE_CONSOLE}/auth/scopes` }],
+        [],
+        { id: "scopes" },
       ),
       step(
         "Make a Desktop client",
-        "Choose the type Desktop app. Google accepts majhi's local address for it without you adding one.",
+        "Choose the type Desktop app. Google accepts majhi's local address for it without you adding one. On the new client, press Download JSON.",
         [{ label: "Open: create client", url: `${GOOGLE_CONSOLE}/auth/clients/create` }],
         [
           { label: "Application type", value: "Desktop app" },
           { label: "Name", value: c.appName },
           { label: "Redirect address", value: c.redirect },
         ],
+        { id: "client" },
       ),
       step(
-        "Download the JSON and drop it here",
-        "On the new client, press Download JSON, then drop that file below.",
+        "Drop the JSON here",
+        "majhi reads the file and checks that it is a Desktop client. Then connect Gmail, Calendar or Drive: one sign-in each, all on this same client.",
+        [],
+        [],
+        { id: "json", check: "client" },
+      ),
+      step(
+        "Turn on the APIs",
+        "Open each page and press Enable, for the services you connected. majhi then calls each one with your sign-in and shows which answers. A page that is still off shows the exact link to turn on.",
+        [
+          { label: "Gmail API", url: `${GOOGLE_CONSOLE}/apis/library/gmail.googleapis.com` },
+          {
+            label: "Google Calendar API",
+            url: `${GOOGLE_CONSOLE}/apis/library/calendar-json.googleapis.com`,
+          },
+          { label: "Google Drive API", url: `${GOOGLE_CONSOLE}/apis/library/drive.googleapis.com` },
+        ],
+        [],
+        { id: "apis", check: "apis" },
+      ),
+      step(
+        "Publish the app",
+        "While the app is in Testing, Google ends every sign-in after 7 days. Press Publish app, then sign in once more. Google shows an unverified-app warning for your own account: choose Advanced, then continue. majhi checks that the new sign-in no longer expires in 7 days.",
+        [{ label: "Open Audience and publish", url: `${GOOGLE_CONSOLE}/auth/audience` }],
+        [],
+        { id: "publish", check: "published" },
       ),
     ],
   },
@@ -282,68 +312,6 @@ const DEFS: Readonly<Record<string, Def>> = {
       ),
     ],
   },
-  linkedin: {
-    title: "LinkedIn app",
-    intro:
-      "LinkedIn needs an app tied to a Company Page you manage. After you paste its client ID and secret, you sign in once as usual.",
-    finishes: "consent",
-    services: ["linkedin"],
-    inputs: [
-      { key: "clientId", label: "Client ID", kind: "text", help: "Auth tab, Client ID." },
-      {
-        key: "clientSecret",
-        label: "Client secret",
-        kind: "secret",
-        help: "Auth tab, Primary Client Secret.",
-      },
-    ],
-    steps: (c) => [
-      step(
-        "Create the app",
-        "Press Create app. Pick your Company Page and a name.",
-        [{ label: "Open LinkedIn: create app", url: "https://www.linkedin.com/developers/apps/new" }],
-        [{ label: "App name", value: c.appName }],
-      ),
-      step(
-        "Add the products",
-        "On the Products tab request Sign In with LinkedIn using OpenID Connect and, to post, Share on LinkedIn.",
-      ),
-      step(
-        "Add the redirect address",
-        "On the Auth tab, under OAuth 2.0 settings, add this redirect URL.",
-        [],
-        [{ label: "Redirect URL", value: c.redirect }],
-      ),
-      step("Copy the client ID and secret", "Both are on the Auth tab. Paste them below."),
-    ],
-  },
-  linear: {
-    title: "Linear app",
-    intro:
-      "Linear lets you make an OAuth app in your workspace. majhi uses it as a public client, so there is no secret to copy.",
-    finishes: "consent",
-    services: ["linear-api"],
-    inputs: [
-      { key: "clientId", label: "Client ID", kind: "text", help: "Shown on the app's page in Linear." },
-    ],
-    steps: (c) => [
-      step(
-        "Create the application",
-        "Needs an admin of the Linear workspace.",
-        [
-          {
-            label: "Open Linear: new OAuth application",
-            url: "https://linear.app/settings/api/applications/new",
-          },
-        ],
-        [
-          { label: "Application name", value: c.appName },
-          { label: "Callback URL", value: c.redirect },
-        ],
-      ),
-      step("Copy the Client ID", "Paste it below. Leave the client secret in Linear; majhi does not use it."),
-    ],
-  },
   microsoft: {
     title: "Microsoft app (Outlook)",
     intro:
@@ -384,59 +352,6 @@ const DEFS: Readonly<Record<string, Def>> = {
         "Copy the Application ID",
         "Paste it below. majhi asks for the permissions listed under What it can do when you connect.",
       ),
-    ],
-  },
-  x: {
-    title: "X developer app",
-    intro:
-      "X needs your own developer app, and bills you for what it uses. Make it a Native App so there is no secret.",
-    finishes: "consent",
-    services: ["x"],
-    inputs: [
-      {
-        key: "clientId",
-        label: "Client ID",
-        kind: "text",
-        help: "Keys and tokens, OAuth 2.0 Client ID. Not the client secret.",
-      },
-    ],
-    steps: (c) => [
-      step(
-        "Make the app",
-        "Create a project and an app in the developer portal.",
-        [{ label: "Open the X developer portal", url: "https://developer.x.com/en/portal/dashboard" }],
-        [{ label: "App name", value: c.appName }],
-      ),
-      step(
-        "Set up user authentication",
-        "Turn it on. Choose Native App as the type, and the permission Read (Read and write only for a pack that posts).",
-        [],
-        [
-          { label: "Callback URI", value: c.redirect },
-          { label: "App type", value: "Native App" },
-        ],
-      ),
-      step("Copy the Client ID", "Paste it below. Leave the client secret in X."),
-    ],
-  },
-  github: {
-    title: "GitHub OAuth app",
-    intro: "GitHub's device sign-in needs no secret, but it needs an OAuth app with device flow turned on.",
-    finishes: "consent",
-    services: ["github"],
-    inputs: [{ key: "clientId", label: "Client ID", kind: "text", help: "On the app's page, Client ID." }],
-    steps: (c) => [
-      step(
-        "Register the app",
-        "GitHub asks for a homepage and a callback; any address works for the homepage.",
-        [{ label: "Open GitHub: new OAuth app", url: "https://github.com/settings/applications/new" }],
-        [
-          { label: "Application name", value: c.appName },
-          { label: "Authorization callback URL", value: c.redirect },
-        ],
-      ),
-      step("Turn on device flow", "On the new app's page, tick Enable Device Flow and save."),
-      step("Copy the Client ID", "Paste it below."),
     ],
   },
 };

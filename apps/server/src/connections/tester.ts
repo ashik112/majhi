@@ -5,16 +5,20 @@ import type { BaseEnv, Command, Spawner, SpawnRequest } from "@majhi/acp";
 import {
   activeLists,
   type ConnectionConfig,
+  type ConnectionFailure,
   type ConnectionListKey,
   type ConnectionTestResult,
   type ConnectionType,
   connectionType,
   type FieldKind,
+  failureFromError,
+  failureFromExit,
   serviceByUrl,
   sshTargetArgs,
   textValue,
 } from "@majhi/shared";
 import { errorCode, errorMessage, UserError } from "../errors.ts";
+import type { GitCheck } from "../gitConnect/check.ts";
 import { sshConfigHosts } from "../scan/sshConfig.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import { classifyProbe, runSsh, type SshRunFn } from "../ssh/hosts.ts";
@@ -54,12 +58,18 @@ export interface TesterDeps {
    */
   browserCommand?: (server: BrowserServer) => Command;
   now?: () => Date;
-  /** Who the workspace's git sign-in for a host is, for a `git` connection's Test. */
-  gitWhoAmI?: (
+  /**
+   * The check of a `git` connection: a real call to the host's API with the workspace's sign-in, as a
+   * typed result. `privateNetwork` is the owner's confirmation for a self-hosted server.
+   */
+  gitCheck?: (
     org: string,
-    provider: "gitlab" | "github",
+    provider: "gitlab" | "github" | "bitbucket",
     host: string,
-  ) => Promise<{ account: string } | { problem: string }>;
+    privateNetwork: boolean,
+  ) => Promise<GitCheck | { problem: "signed-out" }>;
+  /** Told how every check ended, so the connection's one state follows it. */
+  health?: { observe(id: string, result: ConnectionTestResult): void } | undefined;
   /** The Test of a connection signed in through Connect (5.14). */
   oauth?:
     | {
@@ -75,6 +85,20 @@ interface Outcome {
   /** An MCP server's tool names. */
   tools?: string[];
   warnings: string[];
+  /** Why it failed, read from a status, an error code or an exit code. */
+  failure?: ConnectionFailure;
+  /** What a pass did, one sentence each. */
+  checked?: string[];
+}
+
+/** A failure raised in a check, with the typed reason the caller reads. */
+class CheckFailed extends Error {
+  constructor(
+    message: string,
+    readonly failure: ConnectionFailure,
+  ) {
+    super(message);
+  }
 }
 
 interface Entry {
@@ -123,7 +147,14 @@ export class ConnectionTester {
 
   constructor(private readonly deps: TesterDeps) {}
 
+  /** The Test, and the one place its result moves the connection's state. */
   async test(id: string): Promise<ConnectionTestResult> {
+    const result = await this.testOnce(id);
+    this.deps.health?.observe(id, result);
+    return result;
+  }
+
+  private async testOnce(id: string): Promise<ConnectionTestResult> {
     const started = Date.now();
     const view = await this.deps.connections.get(id);
     const found = await this.deps.connections.find(id);
@@ -143,29 +174,68 @@ export class ConnectionTester {
     let outcome: Outcome;
     let secrets: Values["secrets"] = [];
     if (found.connection.type === "git") {
-      const { provider, host, cli } = gitTarget(found.connection);
-      const who = (await this.deps.gitWhoAmI?.(found.org, provider, host)) ?? {
-        problem: "majhi cannot check it here.",
+      const { provider, host, cli, privateNetwork } = gitTarget(found.connection);
+      const at = (this.deps.now?.() ?? new Date()).toISOString();
+      const checked = (await this.deps.gitCheck?.(found.org, provider, host, privateNetwork)) ?? {
+        ok: false as const,
+        failure: { reason: "unexpected" as const },
       };
-      const result = {
-        ok: "account" in who,
-        detail: "account" in who ? `${cli} works on ${host} as ${who.account}.` : who.problem,
-        warnings: [],
-        at: (this.deps.now?.() ?? new Date()).toISOString(),
-        durationMs: Date.now() - started,
-      };
+      let result: ConnectionTestResult;
+      if ("problem" in checked) {
+        result = {
+          ok: false,
+          detail: `This workspace is not signed in to ${host}.`,
+          warnings: [],
+          at,
+          durationMs: Date.now() - started,
+          failure: {
+            reason: "no-credential",
+            fix: `Sign this workspace in to ${host} again.`,
+          },
+        };
+      } else if (checked.ok) {
+        result = {
+          ok: true,
+          detail: `${cli ?? provider} works on ${host} as ${checked.account}.`,
+          warnings: [],
+          at,
+          durationMs: Date.now() - started,
+          checked: checked.checked,
+          account: checked.account,
+        };
+      } else {
+        result = {
+          ok: false,
+          detail: `${host} did not pass the check.`,
+          warnings: [],
+          at,
+          durationMs: Date.now() - started,
+          failure: checked.failure,
+        };
+      }
       this.deps.connections.recordTest(id, result);
       return result;
     }
     if (view.problems.length > 0) {
-      outcome = { ok: false, detail: `${view.problems.join(". ")}.`, warnings: [] };
+      outcome = {
+        ok: false,
+        detail: `${view.problems.join(". ")}.`,
+        warnings: [],
+        failure: { reason: "no-credential", fix: `${view.problems.join(". ")}.` },
+      };
     } else {
       try {
         const values = await this.resolve(id, found.connection);
         secrets = values.secrets;
         outcome = await this.run(found.connection.type, values);
       } catch (err) {
-        outcome = { ok: false, detail: firstLine(errorMessage(err)), warnings: [] };
+        // The error's code decides, never its words.
+        outcome = {
+          ok: false,
+          detail: firstLine(errorMessage(err)),
+          warnings: [],
+          failure: err instanceof CheckFailed ? err.failure : { reason: failureFromError(err) },
+        };
       }
     }
     const result: ConnectionTestResult = {
@@ -175,6 +245,8 @@ export class ConnectionTester {
       warnings: outcome.warnings.map((w) => redact(w, id, secrets)),
       at: (this.deps.now?.() ?? new Date()).toISOString(),
       durationMs: Math.max(0, Date.now() - started),
+      ...(outcome.ok || outcome.failure === undefined ? {} : { failure: outcome.failure }),
+      ...(outcome.ok && outcome.checked !== undefined ? { checked: outcome.checked } : {}),
     };
     this.deps.connections.recordTest(id, result);
     return result;
@@ -293,9 +365,13 @@ export class ConnectionTester {
         return this.browser(values);
       case "api":
       case "cli":
-        return Promise.resolve(fail("This connection is checked through Connect."));
+        return Promise.resolve(
+          fail("This connection is checked through Connect.", { reason: "no-credential" }),
+        );
       case "git":
-        return Promise.resolve(fail("This connection is checked with the workspace's sign-in."));
+        return Promise.resolve(
+          fail("This connection is checked with the workspace's sign-in.", { reason: "no-credential" }),
+        );
     }
   }
 
@@ -307,7 +383,9 @@ export class ConnectionTester {
     try {
       cut = cutKubeconfig(v.files.kubeconfig?.toString("utf8") ?? "", context, namespace);
     } catch (err) {
-      if (err instanceof KubeconfigError) return fail(err.message);
+      if (err instanceof KubeconfigError) {
+        return fail(err.message, { reason: "no-credential", fix: err.message });
+      }
       throw err;
     }
     return this.scratch(async (dir) => {
@@ -324,9 +402,15 @@ export class ConnectionTester {
         kubectl("auth", "can-i", "delete", "pods"),
         kubectl("auth", "can-i", "patch", "deployments"),
       ]);
-      if (notInstalled(list)) return fail("kubectl is not installed where agents run.");
-      if (list.code !== 0)
-        return fail(`kubectl could not read the cluster: ${firstLine(list.stderr || list.stdout)}`);
+      if (notInstalled(list))
+        return fail("kubectl is not installed where agents run.", { reason: "tool-missing" });
+      if (list.code !== 0) {
+        const reason = failureFromExit(list.code, false) ?? "unexpected";
+        return fail(`kubectl could not read the cluster: ${firstLine(list.stderr || list.stdout)}`, {
+          reason: reason === "not-signed-in" ? "rejected" : reason,
+          fix: "Check that the kubeconfig's credentials still work and that the cluster is reachable.",
+        });
+      }
       const rules = Math.max(0, list.stdout.split("\n").filter((l) => l.trim() !== "").length - 1);
       const warnings: string[] = [];
       for (const [run, what] of [
@@ -338,7 +422,12 @@ export class ConnectionTester {
         }
       }
       const where = namespace ? `context ${context}, namespace ${namespace}` : `context ${context}`;
-      return { ok: true, detail: `kubectl reads ${where}: ${rules} permission rules.`, warnings };
+      return {
+        ok: true,
+        detail: `kubectl reads ${where}: ${rules} permission rules.`,
+        warnings,
+        checked: [`Ran kubectl auth can-i --list against ${where}`],
+      };
     });
   }
 
@@ -366,7 +455,10 @@ export class ConnectionTester {
     const hosts = await sshConfigHosts(this.deps.hostHome);
     // A name without user, address or dot must be a Host of ~/.ssh/config; anything else ssh resolves itself.
     if (/^[A-Za-z0-9_-]+$/.test(alias) && !hosts.some((h) => h.alias === alias)) {
-      return fail(`~/.ssh/config has no Host ${alias}. Use user@address, like root@203.0.113.10.`);
+      return fail(`~/.ssh/config has no Host ${alias}. Use user@address, like root@203.0.113.10.`, {
+        reason: "not-found",
+        fix: `~/.ssh/config has no Host ${alias}. Use user@address, like root@203.0.113.10.`,
+      });
     }
     const run = await (this.deps.ssh ?? runSsh)([
       "-o",
@@ -379,11 +471,25 @@ export class ConnectionTester {
       ),
       "true",
     ]);
-    if (run.code === 0) return { ok: true, detail: `Signed in to ${alias} and ran a command.`, warnings: [] };
-    if (run.code !== null && run.code !== 255) {
-      return fail(`${alias} took the key but did not run a command (exit ${run.code}).`);
+    if (run.code === 0) {
+      return {
+        ok: true,
+        detail: `Signed in to ${alias} and ran a command.`,
+        warnings: [],
+        checked: [`Signed in to ${alias} over SSH and ran a command`],
+      };
     }
-    return fail(classifyProbe(run).detail);
+    if (run.code === null) return fail(classifyProbe(run).detail, { reason: "timeout" });
+    if (run.code !== 255) {
+      return fail(`${alias} took the key but did not run a command (exit ${run.code}).`, {
+        reason: "unexpected",
+        fix: "The host took the key but would not run a command. Check that the account may run commands.",
+      });
+    }
+    return fail(classifyProbe(run).detail, {
+      reason: "unreachable",
+      fix: "Check the host name and port, and that your ssh-agent holds the key this host needs.",
+    });
   }
 
   /** The required values are set; with a test command, it runs with them. */
@@ -395,6 +501,7 @@ export class ConnectionTester {
         ok: true,
         detail: `${vars.length} ${vars.length === 1 ? "variable" : "variables"} set.`,
         warnings: ["There is no test command, so majhi only checked that the values are set."],
+        checked: [`Checked that ${vars.length} ${vars.length === 1 ? "value is" : "values are"} set`],
       };
     }
     return this.scratch(async (dir) => {
@@ -405,12 +512,24 @@ export class ConnectionTester {
       );
       if (run.code === 0) {
         const said = oneLine(run.stdout).slice(0, 160);
-        return { ok: true, detail: said === "" ? `${test} works.` : `${test} works: ${said}`, warnings: [] };
+        return {
+          ok: true,
+          detail: said === "" ? `${test} works.` : `${test} works: ${said}`,
+          warnings: [],
+          checked: [`Ran ${test} with the values, exit 0`],
+        };
       }
-      if (run.code === 127) return fail(`${firstWord(test)} is not installed where agents run.`);
+      const reason = failureFromExit(run.code, run.missing) ?? "unexpected";
+      if (reason === "tool-missing") {
+        return fail(`${firstWord(test)} is not installed where agents run.`, { reason });
+      }
       const why = firstLine(run.stderr || run.stdout);
       const exit = run.code === null ? "did not finish" : `failed with exit ${run.code}`;
-      return fail(`${test} ${exit}${why ? `: ${why}` : "."}`);
+      return fail(`${test} ${exit}${why ? `: ${why}` : "."}`, {
+        reason,
+        ...(run.code === null ? {} : { status: run.code }),
+        fix: "The test command failed with these values. Check them, then check again.",
+      });
     });
   }
 
@@ -430,6 +549,7 @@ export class ConnectionTester {
         ok: true,
         detail: `Signed in to ${host}. There is no SMTP host, so it only reads.`,
         warnings: [],
+        checked: [`Logged in to ${host} over IMAP`],
       };
     }
     await smtpGreeting({
@@ -437,7 +557,12 @@ export class ConnectionTester {
       port: Number(v.fields.smtp_port ?? "465"),
       timeoutMs: MAIL_TIMEOUT_MS,
     });
-    return { ok: true, detail: `Signed in to ${host}, and ${smtpHost} answers.`, warnings: [] };
+    return {
+      ok: true,
+      detail: `Signed in to ${host}, and ${smtpHost} answers.`,
+      warnings: [],
+      checked: [`Logged in to ${host} over IMAP`, `Got ${smtpHost}'s SMTP greeting`],
+    };
   }
 
   /** The browser MCP server starts and lists its tools. */
@@ -450,7 +575,11 @@ export class ConnectionTester {
     return this.scratch(async (dir) => {
       const names = await this.stdioTools({ command, env: this.runEnv(dir), cwd: dir }, BROWSER_TIMEOUT_MS);
       const tools = toolsOutcome(names);
-      return { ...tools, detail: `${server.label} starts. ${tools.detail}` };
+      return {
+        ...tools,
+        detail: `${server.label} starts. ${tools.detail}`,
+        checked: [`Started ${server.label}`, ...(tools.checked ?? [])],
+      };
     });
   }
 
@@ -487,7 +616,11 @@ export class ConnectionTester {
       return await listTools(transport, timeoutMs);
     } catch (err) {
       const why = firstLine(transport.stderr);
-      throw new Error(`${firstLine(errorMessage(err))}${why ? `: ${why}` : ""}`);
+      const reason = failureFromError(err);
+      throw new CheckFailed(`${firstLine(errorMessage(err))}${why ? `: ${why}` : ""}`, {
+        // A program that starts and then closes has a problem of its own, not the network's.
+        reason: reason === "unreachable" ? "mcp-error" : reason,
+      });
     } finally {
       spawned.kill();
     }
@@ -590,8 +723,8 @@ export class ConnectionTester {
   }
 }
 
-function fail(detail: string): Outcome {
-  return { ok: false, detail, warnings: [] };
+function fail(detail: string, failure: ConnectionFailure): Outcome {
+  return { ok: false, detail, warnings: [], failure };
 }
 
 function toolsOutcome(names: readonly string[]): Outcome {
@@ -601,6 +734,7 @@ function toolsOutcome(names: readonly string[]): Outcome {
       detail: "It answers, with no tools.",
       tools: [],
       warnings: ["The server lists no tools."],
+      checked: ["Initialized the MCP server", "Listed its tools (none)"],
     };
   const shown = names.slice(0, 5).join(", ");
   const more = names.length > 5 ? `, and ${names.length - 5} more` : "";
@@ -609,6 +743,10 @@ function toolsOutcome(names: readonly string[]): Outcome {
     detail: `${names.length} ${names.length === 1 ? "tool" : "tools"}: ${shown}${more}.`,
     tools: [...names],
     warnings: [],
+    checked: [
+      "Initialized the MCP server",
+      `Listed ${names.length} ${names.length === 1 ? "tool" : "tools"}`,
+    ],
   };
 }
 

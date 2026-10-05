@@ -169,6 +169,9 @@ type Outcome = { ok: boolean; error?: string | undefined };
  * dispatcher under the approval policy, posts an approval card for every change, and carries out
  * the owner's decision later (SPEC 5.16).
  */
+const PRIVATE_OWNER_ONLY =
+  "Only the owner can allow a private network address. Ask the owner to add this connection from the Connections page.";
+
 export class AdminService {
   private dispatch: Dispatch | undefined;
   /** Inputs of pending calls, unredacted. A restart drops them; the card then cannot run secrets it hid. */
@@ -307,6 +310,8 @@ export class AdminService {
       const details = checked.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`);
       return error(`Invalid input for ${command}.\n${details.join("\n")}`);
     }
+    // Reaching a private network address is the owner's choice alone: the captain never sets it.
+    if ((checked.data as Record<string, unknown>).allowPrivate === true) return error(PRIVATE_OWNER_ONLY);
     const auto = this.autonomy === undefined ? undefined : await this.autonomy.callerKind(caller);
     if (auto !== undefined && this.autonomy !== undefined) {
       const parsed = checked.data as Record<string, unknown>;
@@ -355,6 +360,8 @@ export class AdminService {
       const details = checked.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`);
       return error(`Invalid input for ${command}.\n${details.join("\n")}`);
     }
+    // Reaching a private network address is the owner's choice alone: the captain never sets it.
+    if ((checked.data as Record<string, unknown>).allowPrivate === true) return error(PRIVATE_OWNER_ONLY);
     // A bad attachment fails now, not after the owner approved the card.
     await this.deps.tasks.checkAttachments(attachmentsOf(command, checked.data), caller.task);
     const parsed = checked.data as Record<string, unknown>;

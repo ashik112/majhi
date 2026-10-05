@@ -302,6 +302,118 @@ esac`,
     expect(sshCalls).toHaveLength(1);
   });
 
+  describe("typed failures: the call's result decides, never its words", () => {
+    async function env(test: string): Promise<void> {
+      await service.create(
+        { org: "acme", id: "acme-keys", type: "env", name: "Keys", fields: { clis: "acme", test }, vars: {} },
+        "connections.create",
+        OWNER,
+      );
+    }
+
+    it("an env test command that exits 0 is a pass and says what it ran", async () => {
+      await env("acme whoami");
+      await script("acme", "echo ok");
+      const result = await tester().test("acme-keys");
+      expect(result).toMatchObject({ ok: true, checked: ["Ran acme whoami with the values, exit 0"] });
+      expect(result.failure).toBeUndefined();
+    });
+
+    it("exit 127 is a missing tool, any other exit is a tool that is not signed in, whatever it printed", async () => {
+      await env("acme whoami");
+      await script("acme", "echo 'everything is fine, you are connected'; exit 1");
+      expect((await tester().test("acme-keys")).failure).toMatchObject({
+        reason: "not-signed-in",
+        status: 1,
+      });
+      await script("acme", "exit 127");
+      expect((await tester().test("acme-keys")).failure).toMatchObject({ reason: "tool-missing" });
+    });
+
+    it("a program that does not exist is a missing tool", async () => {
+      await env("nothing-like-this whoami");
+      expect((await tester().test("acme-keys")).failure).toMatchObject({ reason: "tool-missing" });
+    });
+
+    it("a required value that is not set is no-credential with the exact line", async () => {
+      await service.create(
+        { org: "acme", id: "acme-mail", type: "mail", name: "Mail" },
+        "connections.create",
+        OWNER,
+      );
+      const result = await tester().test("acme-mail");
+      expect(result.failure).toMatchObject({ reason: "no-credential" });
+      expect(result.failure?.fix).toContain("IMAP host is not set");
+    });
+
+    it("ssh: exit 255 is an unreachable host, another exit a refused command, none a timeout", async () => {
+      await service.create(
+        { org: "acme", id: "acme-box", type: "ssh", name: "Box", fields: { alias: "acme-prod" } },
+        "connections.create",
+        OWNER,
+      );
+      const withCode = (code: number | null) =>
+        new ConnectionTester({
+          connections: service,
+          secrets,
+          spawner: localSpawner,
+          base: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+          scratchRoot: async () => scratchRoot,
+          hostHome: dir,
+          ssh: async (): Promise<SshRun> => ({ code, output: "Permission denied (publickey)" }),
+        });
+      expect((await withCode(255).test("acme-box")).failure?.reason).toBe("unreachable");
+      expect((await withCode(1).test("acme-box")).failure?.reason).toBe("unexpected");
+      expect((await withCode(null).test("acme-box")).failure?.reason).toBe("timeout");
+    });
+
+    it("a remote MCP server's HTTP status is the reason: 401 is rejected, 503 is service-down", async () => {
+      const answer = { status: 401 };
+      const server = createServer((_req, res) => {
+        res.writeHead(answer.status).end();
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      try {
+        const port = (server.address() as AddressInfo).port;
+        await service.create(
+          {
+            org: "acme",
+            id: "acme-remote",
+            type: "mcp",
+            name: "Remote",
+            fields: { url: `http://127.0.0.1:${port}/mcp` },
+          },
+          "connections.create",
+          OWNER,
+        );
+        expect((await tester().test("acme-remote")).failure?.reason).toBe("rejected");
+        answer.status = 503;
+        expect((await tester().test("acme-remote")).failure?.reason).toBe("service-down");
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
+
+    it("moves the connection's state through the health service on every test", async () => {
+      await env("acme whoami");
+      const seen: string[] = [];
+      const withHealth = new ConnectionTester({
+        connections: service,
+        secrets,
+        spawner: localSpawner,
+        base: { PATH: `${bin}:${process.env.PATH ?? "/usr/bin:/bin"}` },
+        scratchRoot: async () => scratchRoot,
+        hostHome: dir,
+        health: { observe: (id, result) => void seen.push(`${id}:${result.ok}`) },
+      });
+      await script("acme", "exit 0");
+      await withHealth.test("acme-keys");
+      await script("acme", "exit 1");
+      await withHealth.test("acme-keys");
+      expect(seen).toEqual(["acme-keys:true", "acme-keys:false"]);
+    });
+  });
+
   it("does not run what is not set yet", async () => {
     await service.create(
       { org: "acme", id: "acme-mail", type: "mail", name: "Mail" },

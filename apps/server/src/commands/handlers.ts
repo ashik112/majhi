@@ -212,7 +212,12 @@ export function createHandlers({
     }),
     ...backupHandlers(services.backup),
     ...connectHandlers(services.connect),
-    ...connectionHandlers(services.connections, services.connectionTests, services.secretService),
+    ...connectionHandlers(services.connections, services.connectionTests, services.secretService, {
+      connect: services.connect,
+      gitConnect: services.gitConnect,
+      gitLink: services.gitLink,
+      mcpUrl: services.mcpUrl,
+    }),
     ...skillHandlers(services.skills),
     ...toolsHandlers({
       tools: services.tools,

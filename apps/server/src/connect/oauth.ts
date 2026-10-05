@@ -212,6 +212,8 @@ export interface TokenSet {
   expiresAt?: string | undefined;
   scope?: string[] | undefined;
   idToken?: string | undefined;
+  /** Seconds until the refresh token ends, when the provider says (Google, for an app in Testing). */
+  refreshExpiresIn?: number | undefined;
 }
 
 function tokenSet(tokens: OAuthTokens, now: () => Date): TokenSet {
@@ -398,7 +400,7 @@ export type TokenProbe =
   /** The service took the call and gave no answer in time. */
   | { kind: "slow" }
   /** The service answered, and refused or failed: its status and a short reason (never the token). */
-  | { kind: "other"; status: number; reason: string };
+  | { kind: "other"; status: number; reason: string; disabled?: { url?: string | undefined } };
 
 /**
  * One unauthenticated-looking call to the MCP server with the token: tells a working token from a

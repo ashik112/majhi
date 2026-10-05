@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ConnectionFailureSchema, ConnectionHealthSchema } from "./connection-health.ts";
 import { IdSchema, SecretRefSchema } from "./ids.ts";
 
 /**
@@ -507,18 +508,32 @@ export const CONNECTION_TYPES: readonly ConnectionTypeDef[] = [
   },
   {
     type: "git",
-    label: "GitLab or GitHub CLI",
-    summary: "glab or gh with this workspace's own git sign-in, renewed by majhi. Changes ask first",
+    label: "Git host",
+    summary:
+      "GitHub, GitLab or Bitbucket with this workspace's own sign-in, renewed by majhi. glab and gh get it; changes ask first",
     fields: [
       {
         key: "provider",
         label: "Service",
         kind: "text",
         required: true,
-        help: "GitLab gives runs glab with GITLAB_TOKEN, GitHub gives gh with GH_TOKEN.",
+        help: "GitLab gives runs glab with GITLAB_TOKEN, GitHub gives gh with GH_TOKEN, Bitbucket gives BITBUCKET_API_TOKEN and BITBUCKET_EMAIL.",
         choices: [
           { value: "gitlab", label: "GitLab (glab)" },
           { value: "github", label: "GitHub (gh)" },
+          { value: "bitbucket", label: "Bitbucket" },
+        ],
+      },
+      {
+        key: "signed_in_by",
+        label: "Signed in by",
+        kind: "text",
+        required: false,
+        managed: true,
+        help: "How the workspace signed in to the host: its own page, or a pasted token.",
+        choices: [
+          { value: "browser", label: "The host's own page" },
+          { value: "token", label: "A pasted token" },
         ],
       },
       {
@@ -528,7 +543,7 @@ export const CONNECTION_TYPES: readonly ConnectionTypeDef[] = [
         required: false,
         format: "host",
         placeholder: "gitlab.com",
-        help: "Leave empty for gitlab.com or github.com. The workspace must be signed in to this host.",
+        help: "Leave empty for gitlab.com, github.com or bitbucket.org. For GitHub Enterprise, GitLab self-managed or Bitbucket Server, the host you signed in to. The workspace must be signed in to this host.",
       },
     ],
     lists: [],
@@ -938,6 +953,15 @@ export const ConnectionTestResultSchema = z.object({
   warnings: z.array(z.string()),
   at: z.string(),
   durationMs: z.number().int().nonnegative(),
+  /**
+   * Why it failed, read from the call's HTTP status, MCP error code or exit code. The connection's
+   * state follows this and never `detail`, which is only for people.
+   */
+  failure: ConnectionFailureSchema.optional(),
+  /** What a passing check did, one short sentence each. */
+  checked: z.array(z.string().min(1).max(200)).optional(),
+  /** Who the service says the credential belongs to. */
+  account: z.string().max(200).optional(),
 });
 export type ConnectionTestResult = z.infer<typeof ConnectionTestResultSchema>;
 
@@ -961,6 +985,12 @@ export const ConnectionViewSchema = z.object({
   problems: z.array(z.string()),
   /** The last Test since majhi started. */
   lastTest: ConnectionTestResultSchema.optional(),
+  /**
+   * Where the connection stands: connecting, connected (a real call passed, and when), failed (a typed
+   * reason and the fix) or needs-attention (it worked, and the last re-check failed). Absent only for a
+   * connection majhi has not checked yet, which it does at startup.
+   */
+  health: ConnectionHealthSchema.optional(),
 });
 export type ConnectionView = z.infer<typeof ConnectionViewSchema>;
 

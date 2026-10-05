@@ -100,7 +100,7 @@ describe("the Slack manifest", () => {
 
 describe("the sheets", () => {
   it("every app names the redirect address and the app name, and no sheet holds a secret", () => {
-    for (const app of ["google", "linkedin", "linear", "microsoft", "x", "github"]) {
+    for (const app of ["google", "microsoft"]) {
       const view = buildAppSetup(app, { orgName: "Acme", redirect: REDIRECT, access: "read" });
       const text = JSON.stringify(view);
       expect(view?.appName).toBe("majhi (Acme)");
@@ -246,39 +246,31 @@ describe("saving an app", () => {
     expect(await t.apps.get("google", "acme")).toBeUndefined();
   });
 
-  it("saves a client ID and secret for LinkedIn and refuses empty or spaced values", async () => {
+  it("saves a client ID for Microsoft and refuses empty or spaced values", async () => {
     const t = await rig();
     await expect(
       t.service.save(
-        { org: "acme", app: "linkedin", values: { clientId: "abc def" }, access: "read" },
+        { org: "acme", app: "microsoft", values: { clientId: "abc def" }, access: "read" },
         OWNER,
       ),
     ).rejects.toThrow();
     await expect(
-      t.service.save(
-        { org: "acme", app: "linkedin", values: { clientId: "78abcdef12" }, access: "read" },
-        OWNER,
-      ),
-    ).rejects.toThrow(/secret is empty/);
+      t.service.save({ org: "acme", app: "microsoft", values: { clientId: "" }, access: "read" }, OWNER),
+    ).rejects.toThrow(/empty/);
     await t.service.save(
-      {
-        org: "acme",
-        app: "linkedin",
-        values: { clientId: "78abcdef12", clientSecret: "wpl-secret-value" },
-        access: "read",
-      },
+      { org: "acme", app: "microsoft", values: { clientId: "78abcdef12" }, access: "read" },
       OWNER,
     );
-    expect(await t.apps.get("linkedin", "acme")).toMatchObject({
-      clientId: "78abcdef12",
-      clientSecret: "wpl-secret-value",
-    });
+    expect(await t.apps.get("microsoft", "acme")).toMatchObject({ clientId: "78abcdef12" });
   });
 
   it("refuses an unknown workspace and an unknown app", async () => {
     const t = await rig();
     await expect(
-      t.service.save({ org: "nope", app: "x", values: { clientId: "abcdef12" }, access: "read" }, OWNER),
+      t.service.save(
+        { org: "nope", app: "microsoft", values: { clientId: "abcdef12" }, access: "read" },
+        OWNER,
+      ),
     ).rejects.toThrow(/does not exist/);
     await expect(
       t.service.save({ org: "acme", app: "nope", values: {}, access: "read" }, OWNER),

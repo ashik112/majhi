@@ -1,5 +1,18 @@
 # Progress
 
+## Connections v2: every service connects, and "connected" means a real call passed (built, not merged)
+
+Branch `feat/connections-v2`.
+
+- **What changed.** One typed state per connection (`connecting`, `connected` with `verifiedAt` and what was checked, `failed` with a typed reason and the fix, `needs-attention`). There is no separate "tested". A check ends in a reason read from an HTTP status, an MCP error code or an exit code, never message text (`packages/shared/src/connection-health.ts`, `apps/server/src/connections/health.ts`). States are saved (migration 157), re-checked every four hours, set once at startup for connections that had none, and a refused renewal fails a connection at once.
+- **Every service has a path.** One click: 13 verified plus Cloudflare (full), Neon, PayPal, Intercom, Canva, Webflow, Zapier. MCP server by address (probe, then one click or a header token). On this Mac: gh, glab, vercel, stripe, aws, gcloud, az, each with a check command run signed out for its exit code. Token: GitHub (fine-grained page prefilled), GitLab, Bitbucket, Linear, Sentry, DigitalOcean, each checked with real calls before anything is saved. Own app: one Google card (guided sheet, then live checks for API on and app published), Slack, Discord, Outlook.
+- **Git hosts.** GitHub Enterprise, GitLab self-managed and Bitbucket Server work through a host field. A git sign-in is also a `git` connection with its own state. `hostFor` now validates instead of refusing. Bitbucket's user name is read from `nickname` (the old `username` field is gone from Atlassian's API).
+- **Self-hosted safety.** Hosts that are or resolve to private, loopback or link-local addresses are refused unless the owner confirms; metadata addresses never pass; number tricks are normalised; redirects are never followed with a token; every call a server added by address leads to goes through the same guard.
+- **Removed.** GitHub device entry, Linear API (own OAuth app), X, LinkedIn, wrangler, Sentry CLI. Duplicates (Linear, Sentry, Vercel, Stripe, Cloudflare, GitLab MCP, DigitalOcean token) are "Other ways" of one service. Asana is not offered (no registration endpoint).
+- **UI.** `connections-view.tsx` (rows by method, one lamp per row), `connection-detail.tsx` (side panel), `add-dialog.tsx` and its bodies. The old catalog page and its stub screenshot scripts are gone.
+- **Verified.** Typecheck 0. Tests: shared state machine and address checks; health service; typed tester outcomes; provider and MCP connect flows (pass, fail, re-check, Google steps); token connect (no token in URL, log or state); git host checks and host guard; MCP by address; git link. In a real browser on an isolated e2e server at 1440 and 1100 (empty state, add dialog, host refusal, MCP by address connect and failing re-check, Google guide, 20-row list in every state, light theme), 0 console errors or failed requests. The helper ran with fake CLIs first on PATH.
+- **Left.** gh and glab browser sign-in, Bitbucket Server and GitHub Enterprise against real servers, and Google's real consent and publish flow can only be checked on the owner's accounts. Atlassian's Bitbucket MCP tools (API token, admin switch) are not wired.
+
 ## Secret scan and package store fixes (built, not merged)
 
 Branch `fix/scan-and-store`.

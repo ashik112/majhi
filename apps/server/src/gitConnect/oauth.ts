@@ -1,6 +1,6 @@
-import type { MrHost } from "@majhi/shared";
+import { failureFromHttp, type MrHost } from "@majhi/shared";
 import { z } from "zod";
-import { call, type Fetch, HostUnreachable, TokenRefused } from "./http.ts";
+import { call, type Fetch, HostUnreachable, str, TokenRefused } from "./http.ts";
 
 /**
  * The OAuth calls of each git host: the device flow (GitHub, GitLab), refreshing a GitLab token,
@@ -174,24 +174,34 @@ async function tokenCall(
   throw new HostUnreachable(`${host} did not answer the sign-in (answer ${answer.status}). Try again.`);
 }
 
-/** The API base and user call of each host. */
+/**
+ * The API base and user call of each host. GitHub Enterprise serves its API under `/api/v3`, and
+ * Bitbucket Server names the user in a response header of `whoami` (its `field` is then `header`).
+ */
 export function userRequest(
   kind: MrHost,
   host: string,
   token: string,
-): { url: string; headers: Record<string, string>; field: "login" | "username" } {
+): { url: string; headers: Record<string, string>; field: "login" | "username" | "nickname" | "header" } {
   if (kind === "github") {
     return {
-      url: "https://api.github.com/user",
+      url: host === "github.com" ? "https://api.github.com/user" : `https://${host}/api/v3/user`,
       headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" },
       field: "login",
     };
   }
   if (kind === "bitbucket") {
+    if (host !== "bitbucket.org") {
+      return {
+        url: `https://${host}/plugins/servlet/applinks/whoami`,
+        headers: { authorization: `Bearer ${token}` },
+        field: "header",
+      };
+    }
     return {
       url: "https://api.bitbucket.org/2.0/user",
       headers: { authorization: bitbucketAuth(token) },
-      field: "username",
+      field: "nickname",
     };
   }
   return {
@@ -213,16 +223,31 @@ export async function whoAmI(fetchFn: Fetch, kind: MrHost, host: string, token: 
   const answer = await call(fetchFn, req.url, { headers: req.headers });
   if (answer.status === 401 || answer.status === 403) {
     throw new TokenRefused(
-      kind === "bitbucket"
+      kind === "bitbucket" && host === "bitbucket.org"
         ? "Bitbucket did not accept the email and token. Use the email of your Atlassian account, and a token with the read:user:bitbucket scope."
         : `${host} refused the token.`,
     );
   }
-  const user = z.object({ [req.field]: z.string().min(1) }).safeParse(answer.body);
-  if (answer.status < 200 || answer.status >= 300 || !user.success) {
-    throw new HostUnreachable(`majhi could not check the account on ${host}. Try again.`);
+  if (req.field === "header") {
+    const name = answer.headers.get("x-ausername");
+    if (answer.status >= 200 && answer.status < 300 && (name === null || name === "")) {
+      // Bitbucket Server answers an unknown token as nobody, with a 200.
+      throw new TokenRefused(`${host} did not recognize the token.`);
+    }
+    if (answer.status < 200 || answer.status >= 300 || name === null) {
+      throw new HostUnreachable(`majhi could not check the account on ${host}. Try again.`);
+    }
+    return decodeURIComponent(name);
   }
-  return String(user.data[req.field]);
+  const fields = req.field === "nickname" ? ["nickname", "display_name", "username"] : [req.field];
+  const found = fields.map((f) => str(answer.body, f)).find((v) => v !== undefined);
+  if (answer.status < 200 || answer.status >= 300 || found === undefined) {
+    throw new HostUnreachable(
+      `majhi could not check the account on ${host}. Try again.`,
+      failureFromHttp(answer.status) ?? "unexpected",
+    );
+  }
+  return found;
 }
 
 /**

@@ -1,3 +1,5 @@
+import { type FailureReason, failureFromError, failureFromHttp } from "@majhi/shared";
+
 /**
  * One HTTP call to a git host's OAuth or REST API. Tokens go in headers or form bodies only, never in
  * a URL, and no error message here ever holds a header, a body or a token: callers get the status
@@ -15,11 +17,28 @@ export interface HttpAnswer {
   headers: Headers;
 }
 
-/** The host could not be reached, or answered something that is not a known shape. Safe to show. */
-export class HostUnreachable extends Error {}
+/**
+ * The host could not be reached, or answered something that is not a known shape. Safe to show.
+ * `reason` is what the status or the network error said, as a typed reason.
+ */
+export class HostUnreachable extends Error {
+  constructor(
+    message: string,
+    readonly reason: FailureReason = "unreachable",
+  ) {
+    super(message);
+  }
+}
 
 /** The host answered 401 or 403 to a token. Safe to show. */
-export class TokenRefused extends Error {}
+export class TokenRefused extends Error {
+  constructor(
+    message: string,
+    readonly reason: FailureReason = "rejected",
+  ) {
+    super(message);
+  }
+}
 
 export interface HttpRequest {
   method?: "GET" | "POST" | "DELETE" | "PUT";
@@ -50,8 +69,11 @@ export async function call(fetchFn: Fetch, url: string, req: HttpRequest = {}): 
       redirect: "error",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-  } catch {
-    throw new HostUnreachable(`majhi could not reach ${hostOf(url)}. Check the connection and try again.`);
+  } catch (err) {
+    throw new HostUnreachable(
+      `majhi could not reach ${hostOf(url)}. Check the connection and try again.`,
+      failureFromError(err),
+    );
   }
   const text = await res.text().catch(() => "");
   let parsed: unknown;
@@ -70,7 +92,10 @@ export async function callWithToken(fetchFn: Fetch, url: string, req: HttpReques
     throw new TokenRefused(`${hostOf(url)} refused the workspace's token.`);
   }
   if (answer.status < 200 || answer.status >= 300) {
-    throw new HostUnreachable(`${hostOf(url)} answered ${answer.status}. Try again in a moment.`);
+    throw new HostUnreachable(
+      `${hostOf(url)} answered ${answer.status}. Try again in a moment.`,
+      failureFromHttp(answer.status) ?? "unexpected",
+    );
   }
   return answer;
 }

@@ -89,9 +89,14 @@ import {
   ConnectDisconnectResultSchema,
   ConnectFlowInputSchema,
   ConnectFlowViewSchema,
+  ConnectMcpUrlInputSchema,
   ConnectNeedScopeInputSchema,
   ConnectStartInputSchema,
   ConnectStatusSchema,
+  ConnectTokenInputSchema,
+  ConnectTokenResultSchema,
+  ProbeMcpInputSchema,
+  ProbeMcpResultSchema,
 } from "./connect.ts";
 import {
   ConnectionCreateInputSchema,
@@ -2545,9 +2550,30 @@ export const commands = {
   "connections.test": {
     risk: "read",
     summary:
-      "Test a connection the way a run would reach it: kubectl auth can-i --list, an MCP server's tool list, an SSH login, the env test command, an IMAP login and the SMTP greeting, or the browser MCP server starting. Warns when a kubectl identity can change things. Never shows a secret",
+      "Check a connection with a real call, the way a run would reach it, and move its one state from the result (connected, failed or needs-attention; a failing check carries a typed reason and the exact fix). The call: kubectl auth can-i --list, an MCP server's tool list, an SSH login, the env test command, an IMAP login and the SMTP greeting, or the browser MCP server starting. Warns when a kubectl identity can change things. Never shows a secret",
     input: ById,
     output: ConnectionTestResultSchema,
+  },
+  "connections.connectToken": {
+    risk: "change",
+    summary:
+      "Connect a service by a pasted token (GitHub, GitLab and Bitbucket at their public host or a self-hosted one, Linear, Sentry, DigitalOcean). The token is checked with a real call first and a wrong one saves nothing; a good one makes the connection and checks it through the stored secret. A self-hosted host that is a private address is refused unless the owner confirms it is on their own network. Only the owner does this, on the Connections page",
+    input: ConnectTokenInputSchema,
+    output: ConnectTokenResultSchema,
+  },
+  "connections.probeMcp": {
+    risk: "read",
+    summary:
+      "Ask an MCP server's address how it signs in, without saving anything: one-click OAuth with self-registration, OAuth that needs an app made by hand, a header token, or no sign-in. Refuses private and metadata addresses unless the owner confirms the address is on their own network",
+    input: ProbeMcpInputSchema,
+    output: ProbeMcpResultSchema,
+  },
+  "connections.connectMcpUrl": {
+    risk: "change",
+    summary:
+      "Connect an MCP server by address with a header token, or with no sign-in. The connection is made, the token stored as a secret, and the server checked with initialize and tools/list. A server that signs in with OAuth connects with connect.start and its url instead. Only the owner does this, on the Connections page",
+    input: ConnectMcpUrlInputSchema,
+    output: ConnectTokenResultSchema,
   },
 
   // Connect (5.14) -------------------------------------------------------------

@@ -103,6 +103,7 @@ describe("store", () => {
       "captain_state",
       "chat_state",
       "clone_jobs",
+      "connection_health",
       "crm_contacts",
       "crm_interactions",
       "crm_keys",

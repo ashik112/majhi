@@ -1,5 +1,5 @@
 /**
- * Signs a workspace in to a command-line tool (wrangler, vercel, stripe, aws, gcloud, sentry) with
+ * Signs a workspace in to a command-line tool (vercel, stripe, aws, gcloud, az) with
  * the tool's own login (SPEC 5.14, "Command-line tools").
  *
  * Isolation, so the owner's own login and another workspace's are never read or changed:
@@ -260,16 +260,25 @@ export class CliToolLogins {
   }
 
   private async runCheck(file: string, def: CliToolDef, profile: string): Promise<CliCheckResult> {
-    const out = await capture(
-      file,
-      [...def.check],
-      this.env(def, profile),
-      join(profile, "home"),
-      this.deps.checkTimeoutMs ?? CHECK_TIMEOUT_MS,
-    );
-    if (out.timedOut) return { ok: false, detail: `${def.name} did not answer in time.` };
-    if (out.code !== 0) return { ok: false, detail: `${def.name} is not signed in.` };
-    const identity = parseIdentity(out.stdout);
+    const env = this.env(def, profile);
+    const home = join(profile, "home");
+    const timeoutMs = this.deps.checkTimeoutMs ?? CHECK_TIMEOUT_MS;
+    const out = await capture(file, [...def.check], env, home, timeoutMs);
+    // The exit code decides, never the words the tool printed.
+    if (out.timedOut) return { ok: false, detail: `${def.name} did not answer in time.`, failure: "timeout" };
+    if (out.code === null || out.code === 127) {
+      return { ok: false, detail: `${def.binary} did not run.`, failure: "tool-missing" };
+    }
+    if (out.code !== 0) {
+      return { ok: false, detail: `${def.name} is not signed in.`, failure: "not-signed-in" };
+    }
+    let identity: string | undefined;
+    if (def.whoami !== undefined) {
+      const who = await capture(file, [...def.whoami], env, home, timeoutMs);
+      if (who.code === 0) identity = parseIdentity(who.stdout);
+    } else if (def.identityFromCheck === true) {
+      identity = parseIdentity(out.stdout);
+    }
     return { ok: true, ...(identity === undefined ? {} : { identity }), detail: "Signed in." };
   }
 

@@ -1,5 +1,6 @@
 import {
   type CommandMeta,
+  type ConnectionFailure,
   DEFAULT_GIT_HOST,
   type GitAccount,
   type GitCli,
@@ -81,6 +82,11 @@ export interface SignInDeps {
   changed: (flow: SignInStatus, ended: boolean) => void;
   /** Waits between polls. Tests replace it. */
   wait?: (ms: number) => Promise<void>;
+  /**
+   * Throws a `UserError` when majhi must not send a token to this self-hosted host (a private or
+   * metadata address the owner did not confirm). Undefined: every host is allowed (tests).
+   */
+  checkHost?: (host: string, options: { allowPrivate: boolean }) => Promise<void>;
 }
 
 /**
@@ -104,7 +110,7 @@ export class SignInService {
    * then majhi's own device flow when it has a client ID, else `paste` with the reason.
    */
   async start(
-    input: { org: string; kind: MrHost; host?: string | undefined },
+    input: { org: string; kind: MrHost; host?: string | undefined; allowPrivate?: boolean | undefined },
     meta: CommandMeta,
   ): Promise<SignInStart> {
     const host = await this.hostFor(input);
@@ -135,10 +141,12 @@ export class SignInService {
    */
   async token(input: SignInTokenInput, meta: CommandMeta): Promise<SignInStatus> {
     const host = await this.hostFor(input);
-    if (input.kind === "bitbucket" && input.email === undefined) {
-      throw new UserError("Bitbucket needs the email of your Atlassian account.");
+    const cloud = input.kind === "bitbucket" && host === DEFAULT_GIT_HOST.bitbucket;
+    if (cloud && input.email === undefined) {
+      throw new UserError("Bitbucket Cloud needs the email of your Atlassian account.");
     }
-    const value = input.kind === "bitbucket" ? `${input.email}:${input.token}` : input.token;
+    // Bitbucket Cloud's API token goes with the Atlassian email; Server's access token stands alone.
+    const value = cloud ? `${input.email}:${input.token}` : input.token;
     this.stopOpen(input.org, host);
     const flow = this.flows.start({
       org: input.org,
@@ -153,17 +161,22 @@ export class SignInService {
     return this.flows.get(flow.id)?.status ?? flow.status;
   }
 
-  /** The host a call means, after checking the workspace and that majhi signs in there. */
-  private async hostFor(input: { org: string; kind: MrHost; host?: string | undefined }): Promise<string> {
+  /**
+   * The host a call means, after checking the workspace and the host. A host other than the public
+   * one is a self-hosted server (GitHub Enterprise, GitLab self-managed, Bitbucket Server): it must
+   * be a plain host name, and not a private or metadata address unless the owner confirmed it.
+   */
+  private async hostFor(input: {
+    org: string;
+    kind: MrHost;
+    host?: string | undefined;
+    allowPrivate?: boolean | undefined;
+  }): Promise<string> {
     const orgs = await this.deps.orgs();
     if (orgs[input.org] === undefined) throw new UserError(`Workspace "${input.org}" does not exist.`, 404);
     const host = input.host ?? DEFAULT_GIT_HOST[input.kind];
-    if (input.kind !== "gitlab" && host !== DEFAULT_GIT_HOST[input.kind]) {
-      throw new UserError(
-        input.kind === "github"
-          ? "majhi signs in to github.com only. GitHub Enterprise is not covered yet."
-          : "majhi signs in to bitbucket.org only.",
-      );
+    if (host !== DEFAULT_GIT_HOST[input.kind]) {
+      await this.deps.checkHost?.(host, { allowPrivate: input.allowPrivate === true });
     }
     return host;
   }
@@ -479,7 +492,22 @@ export class SignInService {
     try {
       account = await whoAmI(this.deps.fetch, flow.kind, flow.host, answer.access_token);
     } catch (err) {
-      this.flows.failed(flow.id, safeReason(err, `majhi could not check the account on ${flow.host}.`));
+      // The host's status decided: a 401 or 403 is a refused token, anything else a host that did not answer.
+      const failure: ConnectionFailure =
+        err instanceof TokenRefused || err instanceof HostUnreachable
+          ? {
+              reason: err.reason,
+              fix:
+                err instanceof TokenRefused
+                  ? `${flow.host} did not accept the token. Make a new one and paste it.`
+                  : `${flow.host} did not answer as ${flow.kind}. Check the host, then try again.`,
+            }
+          : { reason: "unexpected" };
+      this.flows.failed(
+        flow.id,
+        safeReason(err, `majhi could not check the account on ${flow.host}.`),
+        failure,
+      );
       return;
     }
     const grant: OAuthGrant | undefined =
@@ -559,7 +587,12 @@ export class SignInService {
           if (old.token !== undefined) await this.deps.dropSecret(old.token).catch(() => undefined);
         }
       }
-      this.flows.done(flow.id, { account, alsoUsedBy: others, replaced });
+      this.flows.done(flow.id, {
+        account,
+        alsoUsedBy: others,
+        replaced,
+        via: flow.secret.kind === "paste" ? "token" : "browser",
+      });
     } catch (err) {
       this.flows.failed(flow.id, safeReason(err, "majhi could not save the sign-in."));
     }

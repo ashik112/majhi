@@ -67,13 +67,34 @@ export interface PlanDeps {
     | undefined;
 }
 
-export type GitProvider = "gitlab" | "github";
+export type GitProvider = "gitlab" | "github" | "bitbucket";
 
-/** A `git` connection's service, host and CLI, with gitlab.com or github.com when no host is set. */
-export function gitTarget(c: ConnectionConfig): { provider: GitProvider; host: string; cli: "glab" | "gh" } {
-  const provider: GitProvider = textValue(c, "provider") === "github" ? "github" : "gitlab";
-  const host = textValue(c, "host") ?? (provider === "github" ? "github.com" : "gitlab.com");
-  return { provider, host, cli: provider === "github" ? "gh" : "glab" };
+const PUBLIC_HOST: Record<GitProvider, string> = {
+  github: "github.com",
+  gitlab: "gitlab.com",
+  bitbucket: "bitbucket.org",
+};
+
+/**
+ * A `git` connection's service, host and CLI, with the public host when none is set. Bitbucket has
+ * no CLI. `privateNetwork` is the owner's confirmation that a self-hosted server is on their own network.
+ */
+export function gitTarget(c: ConnectionConfig): {
+  provider: GitProvider;
+  host: string;
+  cli: "glab" | "gh" | undefined;
+  privateNetwork: boolean;
+} {
+  const chosen = textValue(c, "provider");
+  const provider: GitProvider =
+    chosen === "github" ? "github" : chosen === "bitbucket" ? "bitbucket" : "gitlab";
+  const host = textValue(c, "host") ?? PUBLIC_HOST[provider];
+  return {
+    provider,
+    host,
+    cli: provider === "github" ? "gh" : provider === "gitlab" ? "glab" : undefined,
+    privateNetwork: textValue(c, "private_network") === "yes",
+  };
 }
 
 const SECRET = "secret:";
@@ -282,12 +303,22 @@ export async function planConnections(
         if (provider === "github") {
           setVar(h.id, "GH_TOKEN", answer.token);
           if (host !== "github.com") setVar(h.id, "GH_HOST", host);
-        } else {
+        } else if (provider === "gitlab") {
           setVar(h.id, "GITLAB_TOKEN", answer.token);
           setVar(h.id, "GITLAB_HOST", host);
+        } else {
+          // A Bitbucket Cloud token is saved as `email:token`; Server's access token has no email.
+          const at = answer.token.indexOf(":");
+          if (at !== -1) setVar(h.id, "BITBUCKET_EMAIL", answer.token.slice(0, at));
+          setVar(h.id, "BITBUCKET_API_TOKEN", at === -1 ? answer.token : answer.token.slice(at + 1));
+          if (host !== "bitbucket.org") setVar(h.id, "BITBUCKET_HOST", host);
+          plan.secrets.push({
+            name: `${h.id}.api-token`,
+            value: at === -1 ? answer.token : answer.token.slice(at + 1),
+          });
         }
         plan.secrets.push({ name: `${h.id}.token`, value: answer.token });
-        gate(h, { clis: [cli] });
+        gate(h, { clis: cli === undefined ? [] : [cli] });
         use(h, useLine(h));
         break;
       }
@@ -430,8 +461,10 @@ export function useLine(h: HeldConnection, current = false): string {
     case "api":
       return `Variable ${textValue(c, "token_var") ?? "ACCESS_TOKEN"} holds a short-lived token for ${c.name}. Anything that changes something asks the owner first.`;
     case "git": {
-      const { host, cli } = gitTarget(c);
-      return `${cli} is signed in to ${host} as this workspace. Commands that change something ask the owner first.`;
+      const { host, cli, provider } = gitTarget(c);
+      return cli === undefined
+        ? `Variables BITBUCKET_API_TOKEN${provider === "bitbucket" && host === "bitbucket.org" ? " and BITBUCKET_EMAIL" : ""} hold this workspace's sign-in to ${host}. Anything that changes something asks the owner first.`
+        : `${cli} is signed in to ${host} as this workspace. Commands that change something ask the owner first.`;
     }
     case "cli": {
       const tool = cliTool(textValue(c, "tool") ?? "");

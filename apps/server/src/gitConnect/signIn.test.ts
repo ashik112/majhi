@@ -191,6 +191,7 @@ describe("GitHub device flow", () => {
       host: "github.com",
       account: "octo-acme",
       alsoUsedBy: [],
+      via: "browser",
     });
     // 5 s, 5 s, then 10 s after slow_down.
     expect(s.waits).toEqual([5000, 5000, 10000]);

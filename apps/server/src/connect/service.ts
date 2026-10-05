@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
 import {
   type CommandMeta,
@@ -6,6 +7,7 @@ import {
   type ConnectFlowState,
   type ConnectFlowView,
   type ConnectionConfig,
+  type ConnectionFailure,
   type ConnectionTestResult,
   type ConnectionType,
   type ConnectScopeLine,
@@ -13,6 +15,8 @@ import {
   type ConnectState,
   type ConnectStatus,
   cliTool,
+  failureFromError,
+  failureFromHttp,
   SERVICE_CATALOG,
   type ServiceEntry,
   type ServiceProduct,
@@ -59,6 +63,8 @@ import {
   refreshTokens,
   startDevice,
 } from "./provider-oauth.ts";
+import { bareHost, guardedFetch } from "./self-host.ts";
+import { checkToken } from "./token-check.ts";
 
 /** How long the browser page works. The owner has this long to approve. */
 export const FLOW_TTL_MS = 10 * 60_000;
@@ -119,6 +125,17 @@ export interface ConnectDeps {
   catalog?: readonly ServiceEntry[];
   /** Tells the screens. */
   changed: () => void;
+  /** DNS lookup of the host guard for servers added by address. Tests give a fake. */
+  lookup?: ((name: string) => Promise<string[]>) | undefined;
+  /** Where a connection stands: a connect starts it, a check ends it, a refused renewal fails it. */
+  health?:
+    | {
+        start(id: string): unknown;
+        observe(id: string, result: ConnectionTestResult): unknown;
+        failed(id: string, failure: ConnectionFailure): unknown;
+        remove(id: string): unknown;
+      }
+    | undefined;
   /** Lists the tools of the server with a bearer token. Throws with a sentence when it cannot. */
   listTools: (url: string, token: string) => Promise<string[]>;
   /** True while a session holds the connection, so its token is renewed ahead of time. */
@@ -176,6 +193,8 @@ interface Flow {
   reconnect: boolean;
   /** The account a reconnect must keep. */
   expected: { id?: string | undefined; label?: string | undefined } | undefined;
+  /** The owner confirmed that this server is on their own network. */
+  privateNetwork: boolean;
   /** Scopes asked for. */
   requested: string[];
   state: ConnectFlowState;
@@ -201,6 +220,33 @@ class Transient extends Error {}
 
 const unique = (list: readonly string[]) => [...new Set(list)];
 
+/** The id of the transient service of an MCP server added by address. A grant of one has no service. */
+const CUSTOM_ID = "custom";
+
+/** An MCP server added by its address: sign-in comes from the server's own metadata, as for any catalog server. */
+function customEntry(url: string, name: string, privateNetwork: boolean): ServiceEntry {
+  return {
+    id: CUSTOM_ID,
+    name,
+    kind: "mcp-oauth",
+    summary: "An MCP server added by its address",
+    mcpUrl: url,
+    packs: [],
+    ready: true,
+    verified: false,
+    verifiedNote: `Added by address${privateNetwork ? " on the owner's own network" : ""}. The sign-in comes from the server's own metadata.`,
+    scopes: [
+      {
+        id: "mcp",
+        access: "write",
+        sentence: "Use the server's tools as you. Anything that changes something asks you first.",
+      },
+    ],
+    test: { kind: "mcp-tools", sentence: "Lists the server's tools." },
+    docs: url,
+  };
+}
+
 /**
  * Connect (SPEC 5.14): joins a remote MCP server with OAuth in one click. It runs the attempt (the
  * page, the callback, the exchange, the test), keeps each workspace's grant apart, renews tokens
@@ -218,6 +264,14 @@ export class ConnectService {
   private readonly warned = new Set<string>();
   private readonly discovered = new Map<string, { at: number; found: Discovered }>();
   private timer: ReturnType<typeof setInterval> | undefined;
+  /**
+   * Host names (any port) of MCP servers added by address that the owner confirmed are on their own
+   * network. The server's sign-in may live on another port of the same machine.
+   */
+  private readonly privateHosts = new Set<string>();
+  /** True inside the work of a server added by address: its sign-in metadata is not trusted. */
+  private readonly untrusted = new AsyncLocalStorage<boolean>();
+  private guarded: Fetch | undefined;
 
   private readonly appSvc: AppService;
 
@@ -253,8 +307,26 @@ export class ConnectService {
     return this.appSvc.forget(org, app);
   }
 
+  /**
+   * Every call to a service. For a server added by address it goes through the host guard: that
+   * server can name any address in its sign-in metadata, so a private or metadata address is refused
+   * unless the owner confirmed that server's own host. A catalog service is the vendor's own and is not guarded.
+   */
   private get fetchFn(): Fetch {
-    return this.deps.fetch ?? fetch;
+    const base = this.deps.fetch ?? fetch;
+    if (this.untrusted.getStore() !== true) return base;
+    this.guarded ??= guardedFetch(base, (host) => this.privateHosts.has(bareHost(host)), this.deps.lookup);
+    return this.guarded;
+  }
+
+  /** Runs `work` as work of a server added by address when the grant is one (it names no catalog service). */
+  private forGrant<T>(grant: Grant, work: () => Promise<T>): Promise<T> {
+    return grant.service === undefined && grant.provider !== true ? this.untrusted.run(true, work) : work();
+  }
+
+  /** The hosts a grant on a confirmed private server may reach again, after a restart. */
+  private allowFor(grant: Grant): void {
+    if (grant.privateNetwork === true) this.privateHosts.add(new URL(grant.serverUrl).hostname);
   }
   private now(): Date {
     return this.deps.now?.() ?? new Date();
@@ -299,7 +371,8 @@ export class ConnectService {
   private isTokenService(connection: ConnectionConfig): boolean {
     if (connection.type !== "env") return false;
     const id = connection.fields?.service;
-    return id !== undefined && this.service(id)?.kind === "api-key";
+    const kind = id === undefined ? undefined : this.service(id)?.kind;
+    return kind === "api-key" || kind === "token";
   }
 
   private tokenStatus(id: string, org: string, connection: ConnectionConfig): ConnectStatus {
@@ -387,15 +460,26 @@ export class ConnectService {
   // Start, watch, cancel
 
   /** Opens the service's sign-in in the owner's browser and starts waiting. */
-  async start(input: ConnectStartInput, meta: CommandMeta): Promise<ConnectFlowView> {
+  start(input: ConnectStartInput, meta: CommandMeta): Promise<ConnectFlowView> {
+    return input.service === undefined
+      ? this.untrusted.run(true, () => this.startEntry(input, meta))
+      : this.startEntry(input, meta);
+  }
+
+  private async startEntry(input: ConnectStartInput, meta: CommandMeta): Promise<ConnectFlowView> {
     this.prune();
-    const entry = this.service(input.service);
-    if (entry === undefined) throw new UserError(`There is no service ${input.service}.`, 404);
+    const entry = await this.entryFor(input);
     if (!entry.ready) {
       throw new UserError(`${entry.name} cannot be connected with one click yet. ${entry.note ?? ""}`.trim());
     }
     if (entry.kind === "api-key") {
       throw new UserError(`${entry.name} connects when you save its tokens in its app setup.`, 409);
+    }
+    if (entry.kind === "token" || entry.kind === "git-host") {
+      throw new UserError(
+        `${entry.name} connects by pasting a token or signing in to the host, on the Connections page.`,
+        409,
+      );
     }
     if (entry.kind === "mcp-oauth" && entry.mcpUrl === undefined) {
       throw new UserError(`${entry.name} has no server address.`);
@@ -448,6 +532,7 @@ export class ConnectService {
       connection,
       reconnect,
       expected,
+      privateNetwork: entry.id === CUSTOM_ID && this.privateHosts.has(bareHost(hostOf(entry.mcpUrl ?? ""))),
       requested,
       state: "waiting",
       message: `Waiting for you in the browser. Approve ${entry.name} there.`,
@@ -481,6 +566,39 @@ export class ConnectService {
     flow.url = started.url;
     flow.pending = { state, verifier: started.verifier, found, client, scope, provider: undefined };
     return this.begin(flow, started.url);
+  }
+
+  /**
+   * The service to connect: a catalog entry, or for a server added by address a transient one made
+   * from the address (or, on a reconnect, from the connection's own grant). Only the owner's own typed
+   * address or stored grant gives the address; a private one needs the owner's confirmation.
+   */
+  private async entryFor(input: ConnectStartInput): Promise<ServiceEntry> {
+    if (input.service !== undefined) {
+      const entry = this.service(input.service);
+      if (entry === undefined) throw new UserError(`There is no service ${input.service}.`, 404);
+      return entry;
+    }
+    let url = input.url;
+    let name = input.name;
+    let allowPrivate = input.allowPrivate === true;
+    if (url === undefined && input.connection !== undefined) {
+      const grant = await this.deps.grants.get(input.connection);
+      if (grant === undefined) throw new UserError(`${input.connection} has no sign-in to renew.`, 404);
+      url = grant.serverUrl;
+      allowPrivate = grant.privateNetwork === true;
+      name ??= hostOf(url);
+    }
+    if (url === undefined) throw new UserError("Give a service, or the address of an MCP server.");
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && !(allowPrivate && parsed.protocol === "http:")) {
+      throw new UserError("An MCP server's address starts with https://.");
+    }
+    if (parsed.username !== "" || parsed.password !== "") {
+      throw new UserError("Leave the sign-in out of the address.");
+    }
+    if (allowPrivate) this.privateHosts.add(parsed.hostname);
+    return customEntry(parsed.toString(), name ?? parsed.host, allowPrivate);
   }
 
   /** The products asked for, all known to the service; a reconnect keeps the ones it has. */
@@ -718,6 +836,7 @@ export class ConnectService {
   private async commitCli(flow: Flow, entry: ServiceEntry, identity: string | undefined): Promise<void> {
     const tool = entry.cli;
     if (tool === undefined) return;
+    this.deps.health?.start(flow.connection);
     if (!flow.reconnect) {
       await this.deps.connections
         .create(
@@ -740,13 +859,22 @@ export class ConnectService {
     }
     flow.account = identity;
     flow.scopes = scopeLines(entry, [], "readwrite");
-    flow.test = {
-      ok: true,
-      detail: `${entry.name} is signed in${identity === undefined ? "" : ` as ${identity}`}.`,
-      warnings: [],
-      at: this.now().toISOString(),
-      durationMs: 0,
-    };
+    // The sign-in is not the proof. A real call with it is: the tool's own check command, exit code decides.
+    flow.test = await this.testCli(flow.connection, {
+      type: "cli",
+      name: flow.name,
+      fields: { tool, ...(identity === undefined ? {} : { account: identity }) },
+    });
+    this.deps.health?.observe(flow.connection, flow.test);
+    if (!flow.test.ok) {
+      this.end(
+        flow,
+        "failed",
+        `${entry.name} signed in, but the check failed. ${flow.test.failure?.fix ?? flow.test.detail}`,
+      );
+      this.log(`connect: ${entry.id} check failed in ${flow.org}`);
+      return;
+    }
     this.end(flow, "connected", `Connected${identity === undefined ? "" : ` as ${identity}`}.`);
     this.log(`connect: ${entry.id} connected in ${flow.org}`);
   }
@@ -847,7 +975,9 @@ export class ConnectService {
     flow.message = "Checking the sign-in.";
     this.deps.changed();
     try {
-      await this.finish(flow, pending, code);
+      await (flow.service.id === CUSTOM_ID
+        ? this.untrusted.run(true, () => this.finish(flow, pending, code))
+        : this.finish(flow, pending, code));
     } catch (err) {
       const message =
         err instanceof ConnectError ? err.message : `Something went wrong connecting ${flow.service.name}.`;
@@ -1014,7 +1144,8 @@ export class ConnectService {
       v: 1,
       connection: flow.connection,
       org: flow.org,
-      service: entry.id,
+      ...(entry.id === CUSTOM_ID ? {} : { service: entry.id }),
+      ...(flow.privateNetwork ? { privateNetwork: true as const } : {}),
       serverUrl: url,
       resource: found?.resource ?? url,
       issuer: found?.issuer ?? provider?.issuer ?? hostOf(provider?.tokenUrl ?? url),
@@ -1034,6 +1165,10 @@ export class ConnectService {
       missing,
       requested: flow.requested,
       access: flow.access,
+      // Google ends the sign-in of an app in Testing after 7 days, and says so in the token answer.
+      ...(tokens.refreshExpiresIn !== undefined && tokens.refreshExpiresIn <= 8 * 86_400
+        ? { testing: true as const }
+        : {}),
       account: {
         ...(account.id === undefined ? {} : { id: account.id }),
         ...(account.label === undefined ? {} : { label: account.label }),
@@ -1041,6 +1176,7 @@ export class ConnectService {
       connectedAt: now,
       updatedAt: now,
     };
+    this.deps.health?.start(flow.connection);
     if (!flow.reconnect) {
       await this.deps.connections.create(
         {
@@ -1091,14 +1227,23 @@ export class ConnectService {
       });
     }
     flow.test = await this.testGrant(grant);
+    this.deps.health?.observe(flow.connection, flow.test);
+    if (!flow.test.ok) {
+      // Signed in is not connected. The connection stays, as failed, with the exact fix.
+      this.end(
+        flow,
+        "failed",
+        `${entry.name} accepted the sign-in, but the check failed. ${flow.test.failure?.fix ?? flow.test.detail}`,
+      );
+      this.log(`connect: ${entry.id} check failed in ${flow.org}`);
+      return;
+    }
     this.end(
       flow,
       "connected",
       state === "insufficient-scope"
         ? reason
-        : flow.test.ok
-          ? `Connected${account.label === undefined ? "" : ` as ${account.label}`}.`
-          : `Connected${account.label === undefined ? "" : ` as ${account.label}`}, but the test failed: ${flow.test.detail}`,
+        : `Connected${account.label === undefined ? "" : ` as ${account.label}`}.`,
     );
     this.log(`connect: ${entry.id} connected in ${flow.org}`);
   }
@@ -1168,6 +1313,7 @@ export class ConnectService {
     // Another flight may have renewed it between the check and here.
     const grant = await this.deps.grants.get(connection);
     if (grant === undefined || grant.tokens.refreshToken === undefined) return grant;
+    this.allowFor(grant);
     const due =
       grant.tokens.expiresAt !== undefined &&
       Date.parse(grant.tokens.expiresAt) - this.now().getTime() < skew;
@@ -1179,19 +1325,20 @@ export class ConnectService {
     }
     let tokens: TokenSet;
     try {
-      if (grant.provider === true) {
-        tokens = await this.renewProvider(grant, grant.tokens.refreshToken);
-      } else {
+      tokens = await this.forGrant(grant, async () => {
+        if (grant.provider === true) {
+          return this.renewProvider(grant, grant.tokens.refreshToken ?? "");
+        }
         const found = await this.discover(grant.serverUrl, grant.issuer);
         const client = await this.clientOf(grant);
-        tokens = await refresh(
+        return refresh(
           found,
           client,
-          { redirect: this.deps.redirect, refreshToken: grant.tokens.refreshToken },
+          { redirect: this.deps.redirect, refreshToken: grant.tokens.refreshToken ?? "" },
           this.fetchFn,
           () => this.now(),
         );
-      }
+      });
     } catch (err) {
       if (err instanceof ConnectError && err.kind === "refused") {
         this.log(`connect: ${grant.service ?? connection} needs reconnect`);
@@ -1247,6 +1394,12 @@ export class ConnectService {
       stateReason: reason,
       updatedAt: this.now().toISOString(),
     }));
+    if (state === "needs-reconnect" || state === "revoked") {
+      this.deps.health?.failed(connection, {
+        reason: state === "revoked" ? "rejected" : "expired",
+        fix: "Sign in again.",
+      });
+    }
     this.deps.changed();
     if (before !== undefined && before.state !== state) {
       this.deps.attention?.({
@@ -1274,6 +1427,16 @@ export class ConnectService {
     if (found?.connection.type === "cli") return this.testCli(found.id, found.connection);
     if (found !== undefined && this.isTokenService(found.connection)) {
       const service = found.connection.fields?.service ?? "";
+      const tokenEntry = this.service(service);
+      if (tokenEntry?.kind === "token" && tokenEntry.token !== undefined) {
+        const result = await this.testToken(found.id, tokenEntry);
+        this.tokenStates.set(found.id, {
+          state: result.ok ? "connected" : "error",
+          reason: result.ok ? "Connected with its token." : (result.failure?.fix ?? result.detail),
+        });
+        this.deps.changed();
+        return result;
+      }
       const result = await this.appSvc.test(found.id, service);
       this.tokenStates.set(found.id, {
         state: result.ok ? "connected" : "error",
@@ -1283,9 +1446,98 @@ export class ConnectService {
       return result;
     }
     const grant = await this.deps.grants.get(connection);
-    if (grant === undefined)
-      return this.result(false, "majhi has no sign-in for it. Connect it again.", Date.now());
+    if (grant === undefined) {
+      return this.result(false, "majhi has no sign-in for it. Connect it again.", Date.now(), undefined, {
+        reason: "no-credential",
+      });
+    }
     return this.testGrant(grant);
+  }
+
+  /** The Test of a pasted token: one real call with it, decided by the status. */
+  private async testToken(id: string, entry: ServiceEntry): Promise<ConnectionTestResult> {
+    const started = Date.now();
+    const method = entry.token;
+    if (method === undefined) {
+      return this.result(false, `${entry.name} has no token check.`, started, undefined, {
+        reason: "unexpected",
+      });
+    }
+    const token = await this.deps.secretOf(id, method.variable);
+    if (token === undefined) {
+      return this.result(false, "The token is not saved. Paste it again.", started, undefined, {
+        reason: "no-credential",
+        fix: "Paste the token again.",
+        fixUrl: method.page.url,
+      });
+    }
+    const checked = await checkToken(this.fetchFn, method, token);
+    if (!checked.ok) {
+      return this.result(false, `${entry.name} did not pass the check.`, started, undefined, checked.failure);
+    }
+    return this.result(
+      true,
+      `${entry.name}: the token works for ${checked.account}.`,
+      started,
+      undefined,
+      undefined,
+      {
+        checked: checked.checked,
+        account: checked.account,
+      },
+    );
+  }
+
+  /**
+   * Connects a service by a pasted token. The token is checked first with a real call, so a wrong one
+   * saves nothing. A good one makes the connection and checks it again through the stored secret, so
+   * "connected" is what the next run will get.
+   */
+  async connectToken(
+    input: { org: string; service: string; token: string; name?: string | undefined },
+    meta: CommandMeta,
+  ): Promise<{ ok: true; connection: string; account: string } | { ok: false; failure: ConnectionFailure }> {
+    const entry = this.service(input.service);
+    const method = entry?.token;
+    if (entry === undefined || entry.kind !== "token" || method === undefined) {
+      throw new UserError(`${input.service} is not connected by a token.`, 404);
+    }
+    if (!(await this.deps.orgExists(input.org)))
+      throw new UserError(`Org "${input.org}" does not exist.`, 404);
+    const verified = await checkToken(this.fetchFn, method, input.token);
+    if (!verified.ok) return verified;
+    const all = await this.deps.connectionIds();
+    const id = suggestConnectionId(input.name ?? entry.id, new Set(all.map((c) => c.id)));
+    this.deps.health?.start(id);
+    try {
+      await this.deps.connections.create(
+        {
+          org: input.org,
+          id,
+          type: "env",
+          name: input.name ?? entry.name,
+          description: `${entry.name}, with a token of this workspace. Variable ${method.variable} holds it. Anything that changes something asks the owner first.`,
+          fields: { service: entry.id, access: "read", account: verified.account },
+          vars: { [method.variable]: { kind: "secret" } },
+        },
+        "connections.connectToken",
+        meta,
+      );
+      await this.deps.connections.setSecret?.(
+        { id, field: method.variable, list: "vars", value: input.token },
+        "connections.connectToken",
+        meta,
+      );
+    } catch (err) {
+      await this.deps.connections.remove(id, "connections.connectToken", meta).catch(() => undefined);
+      this.deps.health?.remove(id);
+      throw err;
+    }
+    const test = await this.testToken(id, entry);
+    this.deps.health?.observe(id, test);
+    this.deps.changed();
+    this.log(`connect: ${entry.id} connected by token in ${input.org}`);
+    return { ok: true, connection: id, account: verified.account };
   }
 
   /** A command-line tool's Test: its own who-am-I command, in this workspace's folder. */
@@ -1293,9 +1545,20 @@ export class ConnectService {
     const started = Date.now();
     const tool = cliTool(textValue(connection, "tool") ?? "");
     const host = this.deps.cli;
-    if (tool === undefined) return this.result(false, "That tool is not known to majhi.", started);
+    if (tool === undefined) {
+      return this.result(false, "That tool is not known to majhi.", started, undefined, {
+        reason: "unexpected",
+        fix: "Remove this connection and connect the tool again.",
+      });
+    }
     if (host === undefined || !host.connected()) {
-      return this.result(false, "majhi's helper is not running, so the tool cannot be checked now.", started);
+      return this.result(
+        false,
+        "majhi's helper is not running, so the tool cannot be checked now.",
+        started,
+        undefined,
+        { reason: "helper-offline" },
+      );
     }
     try {
       const checked = await host.check({ tool: tool.id, connection: id });
@@ -1310,22 +1573,53 @@ export class ConnectService {
           ? `${tool.name}: signed in${checked.identity === undefined ? "" : ` as ${checked.identity}`}.`
           : checked.detail,
         started,
+        undefined,
+        checked.ok
+          ? undefined
+          : {
+              // The helper read the tool's exit code: 127 or no program, none, or any other.
+              reason:
+                checked.failure === "tool-missing"
+                  ? "tool-missing"
+                  : checked.failure === "timeout"
+                    ? "timeout"
+                    : "not-signed-in",
+            },
+        checked.ok
+          ? {
+              checked: [`Ran ${tool.binary} ${tool.check.join(" ")} in this workspace's profile, exit 0`],
+              ...(checked.identity === undefined ? {} : { account: checked.identity }),
+            }
+          : undefined,
       );
     } catch {
-      return this.result(false, "majhi's helper did not answer. Try again.", started);
+      return this.result(false, "majhi's helper did not answer. Try again.", started, undefined, {
+        reason: "helper-offline",
+      });
     }
   }
 
-  private async testGrant(first: Grant): Promise<ConnectionTestResult> {
+  private testGrant(first: Grant): Promise<ConnectionTestResult> {
+    return this.forGrant(first, () => this.testGrantInner(first));
+  }
+
+  private async testGrantInner(first: Grant): Promise<ConnectionTestResult> {
     const started = Date.now();
     let grant: Grant | undefined = first;
+    this.allowFor(first);
     try {
       grant = (await this.ensureFresh(first.connection)) ?? first;
     } catch (err) {
       if (!(err instanceof Transient)) throw err;
     }
     if (grant.state === "needs-reconnect" || grant.state === "revoked") {
-      return this.result(false, grant.stateReason || stateWords(grant.state, this.nameOf(grant)), started);
+      return this.result(
+        false,
+        grant.stateReason || stateWords(grant.state, this.nameOf(grant)),
+        started,
+        undefined,
+        { reason: grant.state === "revoked" ? "rejected" : "expired" },
+      );
     }
     const apiEntry = grant.provider === true ? this.service(grant.service ?? "") : undefined;
     const apiOnly = apiEntry?.provider !== undefined && apiEntry.mcpUrl === undefined;
@@ -1346,7 +1640,9 @@ export class ConnectService {
       } catch (err) {
         if (!(err instanceof Transient)) throw err;
       }
-      if (grant.state === "needs-reconnect") return this.result(false, grant.stateReason, started);
+      if (grant.state === "needs-reconnect") {
+        return this.result(false, grant.stateReason, started, undefined, { reason: "expired" });
+      }
       probe = await probeNow(grant);
     }
     const name = this.nameOf(grant);
@@ -1360,6 +1656,8 @@ export class ConnectService {
         false,
         `${name} no longer accepts majhi. The access was revoked. Reconnect it.`,
         started,
+        undefined,
+        { reason: "rejected", status: 401 },
       );
     }
     if (probe.kind === "insufficient-scope") {
@@ -1369,6 +1667,8 @@ export class ConnectService {
         false,
         `${name} needs more access${missing.length > 0 ? ` (${missing.join(", ")})` : ""}. Reconnect and allow it.`,
         started,
+        undefined,
+        { reason: "insufficient-scope", status: 403 },
       );
     }
     if (probe.kind === "other") {
@@ -1376,10 +1676,34 @@ export class ConnectService {
       const hint =
         this.service(grant.service ?? "")?.enableHint ??
         `Your account may not have ${name}'s MCP server turned on.`;
+      const typed = failureFromHttp(probe.status);
+      const enableHint = this.service(grant.service ?? "")?.enableHint;
+      if (probe.disabled !== undefined) {
+        // Google's API is off for the owner's project: the answer says so, and where to turn it on.
+        return this.result(
+          false,
+          `The ${apiEntry?.name ?? name} API is turned off in your Google project.`,
+          started,
+          undefined,
+          {
+            reason: "setup-needed",
+            status: 403,
+            fix: `Turn on the ${apiEntry?.name ?? name} API in your Google project, then check again.`,
+            ...(probe.disabled.url === undefined ? {} : { fixUrl: probe.disabled.url }),
+          },
+        );
+      }
       return this.result(
         false,
         `${name} refused majhi's calls (${probe.status}${why}). ${hint} The sign-in is kept.`,
         started,
+        undefined,
+        {
+          // A 403 from a server that has an own switch is that switch being off.
+          reason: probe.status === 403 && enableHint !== undefined ? "setup-needed" : (typed ?? "unexpected"),
+          status: probe.status,
+          ...(probe.status === 403 ? { fix: hint } : {}),
+        },
       );
     }
     if (probe.kind === "slow") {
@@ -1387,6 +1711,8 @@ export class ConnectService {
         false,
         `${hostOf(grant.serverUrl)} took the call but did not answer in 15 seconds. The sign-in is kept; try again.`,
         started,
+        undefined,
+        { reason: "timeout" },
       );
     }
     if (probe.kind === "unreachable") {
@@ -1394,14 +1720,36 @@ export class ConnectService {
         false,
         `majhi could not reach ${hostOf(grant.serverUrl)} just now. The sign-in is kept; try again.`,
         started,
+        undefined,
+        { reason: "unreachable" },
       );
     }
     if (apiOnly) {
       if (grant.state === "error") await this.markState(grant.connection, "connected", "");
+      // A Google app still in Testing ends its sign-in after 7 days: connected today, dead next week.
+      if (grant.testing === true) {
+        return this.result(
+          false,
+          `The ${name} app is still in Testing, so Google ends this sign-in after 7 days.`,
+          started,
+          undefined,
+          {
+            reason: "app-in-testing",
+            fix: "Publish the app in the Google console (Audience, Publish app), then sign in once more.",
+            fixUrl: "https://console.cloud.google.com/auth/audience",
+          },
+        );
+      }
       return this.result(
         true,
         `Signed in${identityLabel === undefined ? "" : ` as ${identityLabel}`}.`,
         started,
+        undefined,
+        undefined,
+        {
+          checked: [`Called ${apiEntry?.name ?? name}'s API with the stored sign-in`],
+          ...(identityLabel === undefined ? {} : { account: identityLabel }),
+        },
       );
     }
     const products = await this.productsOf(grant);
@@ -1414,9 +1762,24 @@ export class ConnectService {
         `${tools.length} tool${tools.length === 1 ? "" : "s"}${tools.length > 0 ? `: ${tools.slice(0, 4).join(", ")}${tools.length > 4 ? ", ..." : ""}` : ""}`,
         started,
         tools,
+        undefined,
+        {
+          checked: [
+            `Called ${name}'s MCP server with the stored sign-in (initialize)`,
+            `Listed ${tools.length} tool${tools.length === 1 ? "" : "s"} (tools/list)`,
+          ],
+          ...(grant.account.label === undefined ? {} : { account: grant.account.label }),
+        },
       );
-    } catch {
-      return this.result(false, `${name} signed majhi in but would not list its tools. Try again.`, started);
+    } catch (err) {
+      // The error's code decides: an HTTP status the server gave, or an MCP error code.
+      return this.result(
+        false,
+        `${name} signed majhi in but would not list its tools. Try again.`,
+        started,
+        undefined,
+        { reason: failureFromError(err) },
+      );
     }
   }
 
@@ -1435,10 +1798,16 @@ export class ConnectService {
     products: readonly ServiceProduct[],
     started: number,
   ): Promise<ConnectionTestResult> {
-    if (products.length === 0) return this.result(false, "No product is picked. Pick at least one.", started);
+    if (products.length === 0) {
+      return this.result(false, "No product is picked. Pick at least one.", started, undefined, {
+        reason: "setup-needed",
+        fix: "Pick at least one product on the connection.",
+      });
+    }
     const lines: string[] = [];
     const tools: string[] = [];
     const failed: string[] = [];
+    let lastError: unknown;
     for (const product of products) {
       try {
         const listed = await this.deps.listTools(product.mcpUrl, grant.tokens.accessToken);
@@ -1447,19 +1816,36 @@ export class ConnectService {
       } catch (err) {
         const why = refusalReason(null, JSON.stringify({ message: errorText(err) }));
         failed.push(`${product.name} failed${why === "" ? "" : ` (${why})`}`);
+        lastError = err;
       }
     }
-    if (lines.length === 0) return this.result(false, `${failed.join(". ")}.`, started, tools);
+    if (lines.length === 0) {
+      return this.result(false, `${failed.join(". ")}.`, started, tools, {
+        reason: failureFromError(lastError),
+      });
+    }
     if (grant.state === "error") await this.markState(grant.connection, "connected", "");
     // A product the account may not use (billing for a member without it) is a warning: the
     // other products work, and agents get them.
     return {
-      ...this.result(true, `${lines.join(". ")}.`, started, tools),
+      ...this.result(true, `${lines.join(". ")}.`, started, tools, undefined, {
+        checked: [
+          `Listed the tools of ${lines.length} product${lines.length === 1 ? "" : "s"} with the stored sign-in`,
+        ],
+        ...(grant.account.label === undefined ? {} : { account: grant.account.label }),
+      }),
       warnings: failed.map((f) => `${f}. Agents still get the other products.`),
     };
   }
 
-  private result(ok: boolean, detail: string, started: number, tools?: string[]): ConnectionTestResult {
+  private result(
+    ok: boolean,
+    detail: string,
+    started: number,
+    tools?: string[],
+    failure?: ConnectionFailure,
+    passed?: { checked: string[]; account?: string },
+  ): ConnectionTestResult {
     return {
       ok,
       detail,
@@ -1467,6 +1853,8 @@ export class ConnectService {
       warnings: [],
       at: this.now().toISOString(),
       durationMs: Math.max(0, Date.now() - started),
+      ...(failure === undefined ? {} : { failure }),
+      ...(passed === undefined ? {} : passed),
     };
   }
 
@@ -1597,7 +1985,12 @@ export class ConnectService {
     await this.deps.grants.delete(connection);
   }
 
-  private async revokeGrant(grant: Grant): Promise<boolean> {
+  private revokeGrant(grant: Grant): Promise<boolean> {
+    this.allowFor(grant);
+    return this.forGrant(grant, () => this.revokeGrantInner(grant));
+  }
+
+  private async revokeGrantInner(grant: Grant): Promise<boolean> {
     const entry = grant.service === undefined ? undefined : this.service(grant.service);
     const own =
       grant.provider === true && entry?.app !== undefined
@@ -1766,7 +2159,9 @@ export class ConnectService {
       org: flow.org,
       service: flow.service.id,
       serviceName: flow.service.name,
-      ...(flow.state === "connected" || flow.reconnect ? { connection: flow.connection } : {}),
+      ...(flow.state === "connected" || flow.reconnect || flow.test !== undefined
+        ? { connection: flow.connection }
+        : {}),
       state: flow.state,
       message: flow.message,
       ...(flow.url === undefined ? {} : { url: flow.url }),
@@ -1852,7 +2247,8 @@ function isOf(connection: ConnectionConfig, entry: ServiceEntry): boolean {
     return connection.type === "cli" && textValue(connection, "tool") === entry.cli;
   }
   if (entry.mcpUrl !== undefined) {
-    return textValue(connection, "auth") === "oauth" && textValue(connection, "url") === entry.mcpUrl;
+    const same = (a: string | undefined, b: string) => a?.replace(/\/+$/, "") === b.replace(/\/+$/, "");
+    return textValue(connection, "auth") === "oauth" && same(textValue(connection, "url"), entry.mcpUrl);
   }
   return connection.type === "api" && textValue(connection, "service") === entry.id;
 }
@@ -1892,7 +2288,9 @@ function asTokenProbe(probe: ApiProbe): TokenProbe {
     case "invalid":
       return { kind: "invalid" };
     case "forbidden":
-      return { kind: "other", status: 403, reason: "" };
+      return probe.disabled === undefined
+        ? { kind: "other", status: 403, reason: "" }
+        : { kind: "other", status: 403, reason: "", disabled: probe.disabled };
     case "unreachable":
       return { kind: "unreachable" };
   }

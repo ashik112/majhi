@@ -213,6 +213,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       services.automation.scheduler.start();
       services.autonomy.startSweep();
       services.captain.startSweep();
+      services.startConnectionChecks();
       stopSelfWatch = startSelfWatch(services.ops.watch, selfChecks);
       sockets = attachSockets(server, {
         events: services.events,
@@ -231,6 +232,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       services.watcher.stop();
       services.usageSweeper.stop();
       services.mrPoller.stop();
+      services.connectionHealth.stop();
       system.close();
       services.terminals.closeAll();
       stopSelfWatch?.();

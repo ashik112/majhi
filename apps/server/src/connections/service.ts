@@ -8,6 +8,7 @@ import {
   type ConnectionCreateInput,
   type ConnectionEntry,
   type ConnectionEntryInput,
+  type ConnectionHealth,
   type ConnectionListKey,
   type ConnectionSetFileInput,
   type ConnectionSetSecretInput,
@@ -65,6 +66,8 @@ export interface ConnectionDeps {
   agentsChanged?: (agents: string[]) => void;
   /** A connection's fields changed: the sessions that hold it must restart. */
   fieldsChanged?: (connection: string) => void;
+  /** Where a connection stands (the health service), for its view. */
+  health?: (connection: string) => ConnectionHealth | undefined;
 }
 
 interface Found {
@@ -81,13 +84,13 @@ interface Found {
 export class ConnectionService {
   /** The last Test of each connection since majhi started. */
   private readonly tests = new Map<string, ConnectionTestResult>();
-  private removedHook: ((id: string) => Promise<void>) | undefined;
+  private readonly removedHooks: ((id: string) => Promise<void>)[] = [];
 
   constructor(private readonly deps: ConnectionDeps) {}
 
   /** Called after a connection is removed, so Connect can revoke and delete its tokens. */
   onRemoved(hook: (id: string) => Promise<void>): void {
-    this.removedHook = hook;
+    this.removedHooks.push(hook);
   }
 
   list(org?: string): Promise<ConnectionView[]> {
@@ -251,7 +254,7 @@ export class ConnectionService {
     await this.release(id, released);
     await rm(this.dir(id), { recursive: true, force: true });
     this.tests.delete(id);
-    await this.removedHook?.(id);
+    for (const hook of this.removedHooks) await hook(id);
     return { removed: id };
   }
 
@@ -362,7 +365,15 @@ export class ConnectionService {
       for (const [id, connection] of Object.entries(entry.connections ?? {})) {
         if (only !== undefined && id !== only) continue;
         const files = await this.files(id);
-        out.push(viewOf(id, orgId, connection, { secretNames, files, agents, lastTest: this.tests.get(id) }));
+        out.push(
+          viewOf(id, orgId, connection, {
+            secretNames,
+            files,
+            agents,
+            lastTest: this.tests.get(id),
+            health: this.deps.health?.(id),
+          }),
+        );
       }
     }
     return out;
@@ -553,6 +564,7 @@ function viewOf(
     files: ReadonlySet<string>;
     agents: readonly StoredAgent[];
     lastTest: ConnectionTestResult | undefined;
+    health: ConnectionHealth | undefined;
   },
 ): ConnectionView {
   const stored = (kind: "secret" | "file", value: string) =>
@@ -593,6 +605,7 @@ function viewOf(
     problems: connectionProblems(connection, stored),
   };
   if (known.lastTest !== undefined) view.lastTest = known.lastTest;
+  if (known.health !== undefined) view.health = known.health;
   return view;
 }
 
