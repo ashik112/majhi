@@ -1635,6 +1635,24 @@ CREATE TABLE skill_uses (
 CREATE INDEX skill_uses_skill_at ON skill_uses (skill, at);
 `,
   },
+  {
+    // The project map (5.20): one row per workspace with its boxes, lines and the lines the owner removed
+    // (JSON, checked by zod when read), when it was updated and the last update's report. The id leaves a
+    // gap on purpose: other work adds migrations at the same time.
+    id: 163,
+    name: "project map per workspace",
+    sql: `
+CREATE TABLE project_maps (
+  org TEXT PRIMARY KEY,
+  v INTEGER NOT NULL DEFAULT 1,
+  nodes TEXT NOT NULL,
+  edges TEXT NOT NULL,
+  removed TEXT NOT NULL,
+  updated_at TEXT,
+  report TEXT
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */
