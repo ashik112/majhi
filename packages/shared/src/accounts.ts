@@ -303,7 +303,6 @@ export const AgentFrontmatterSchema = z.strictObject({
   perms: z.array(PermSchema).default([]),
   tools: z.array(AgentToolRefSchema).default([]),
   connections: z.array(IdSchema).default([]),
-  skills: z.array(z.string().trim().min(1)).default([]),
   fallback: IdSchema.optional(),
   context: z
     .strictObject({

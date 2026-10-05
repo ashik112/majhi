@@ -2762,7 +2762,7 @@ export const commands = {
   "skills.enable": {
     risk: "change",
     summary:
-      "Turn an installed skill on for one agent: adds it to the agent file's skills list and clears the agent's opt-out. Its next run gets the skill",
+      "Turn an installed skill on for one agent, whatever the workspace or all-agents rule says. Its next run gets the skill",
     input: SkillAgentInputSchema,
     output: SkillSchema,
   },
@@ -2775,8 +2775,7 @@ export const commands = {
   },
   "skills.disable": {
     risk: "change",
-    summary:
-      "Turn a skill off for one agent: takes it off the agent file's skills list and records an opt-out when the skill is on for all agents",
+    summary: "Turn a skill off for one agent, whatever the workspace or all-agents rule says",
     input: SkillAgentInputSchema,
     output: SkillSchema,
   },
@@ -2789,9 +2788,9 @@ export const commands = {
   },
   "skills.remove": {
     risk: "destructive",
-    summary: "Uninstall a skill and take it off every agent that lists it",
+    summary: "Uninstall a skill, which takes it off every agent",
     input: z.object({ name: SkillNameSchema }),
-    output: z.object({ removed: SkillNameSchema, agents: z.array(IdSchema) }),
+    output: z.object({ removed: SkillNameSchema }),
   },
   "skills.update": {
     risk: "change",

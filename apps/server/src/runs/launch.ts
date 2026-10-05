@@ -190,7 +190,7 @@ export async function launch(
       ? undefined
       : await prepareRunSkills(
           { store: deps.skills, majhiHome: deps.majhiHome },
-          await deps.skills.effectiveFor(fm.id, fm.skills, fm.scope),
+          await deps.skills.effectiveFor(fm),
           nativeSkills ? { overlayTarget: join(task.folder, SKILLS_OVERLAY_DIR) } : {},
         ).catch(async (err) => {
           if (held !== undefined) await removeRunFiles(held.dir);

@@ -4,7 +4,7 @@ import { IdSchema } from "./ids.ts";
 /**
  * Skills (SPEC 5.2, Phase 6): folders in the open Agent Skills format, a `SKILL.md` with YAML
  * frontmatter (`name`, `description`) and any files next to it. They are installed once into
- * `~/.majhi/skills/<name>/` and turned on per agent through the agent file's `skills` list.
+ * `~/.majhi/skills/<name>/` and turned on by rules kept in the skills lock (see `skillStateFor`).
  */
 
 /** Lowercase letters, digits, hyphens and underscores: the name is a folder name and a list entry. */
@@ -50,16 +50,44 @@ export const SkillSchema = z.object({
   /** SHA-256 over the file paths and contents, so a changed skill shows as changed. */
   hash: z.string(),
   installedAt: z.string(),
-  /** The agents that have it: the ones whose file lists it, and every agent when `defaultOn` (minus `optOut`). */
+  /** The agents that have it, by the rules below (see `skillStateFor`). */
   agents: z.array(IdSchema),
   /** On for every agent, including agents created later, unless the agent opted out. */
   defaultOn: z.boolean(),
   /** Agents that turned it off, whatever else would give it to them. */
   optOut: z.array(IdSchema),
+  /** Agents that turned it on for themselves. */
+  optIn: z.array(IdSchema).default([]),
   /** Workspace rules: `on` or `off` for every agent of that workspace, agents created later included. */
   orgs: z.record(z.string(), z.enum(["on", "off"])).default({}),
 });
 export type Skill = z.infer<typeof SkillSchema>;
+
+/** The rules that decide who has a skill. The same fields as `Skill`. */
+export interface SkillRule {
+  defaultOn: boolean;
+  optOut: readonly string[];
+  optIn: readonly string[];
+  orgs: Readonly<Record<string, "on" | "off">>;
+}
+
+/** Whose rule gave an agent its state for a skill: its own choice, its workspace's, or the all-agents one. */
+export type SkillVia = "agent" | "workspace" | "all";
+
+/**
+ * The one rule. The agent's own choice first (an opt-out is off, an opt-in is on), then its
+ * workspace's rule, then the all-agents rule. Says which of them decided.
+ */
+export function skillStateFor(
+  rule: SkillRule,
+  agent: { id: string; scope: string },
+): { on: boolean; via: SkillVia } {
+  if (rule.optOut.includes(agent.id)) return { on: false, via: "agent" };
+  if (rule.optIn.includes(agent.id)) return { on: true, via: "agent" };
+  const org = rule.orgs[agent.scope];
+  if (org !== undefined) return { on: org === "on", via: "workspace" };
+  return { on: rule.defaultOn, via: "all" };
+}
 
 /** One skill in an install preview. Nothing is in the store yet. */
 export const SkillPreviewItemSchema = z.object({

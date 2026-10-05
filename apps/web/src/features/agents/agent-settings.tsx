@@ -27,10 +27,10 @@ import { Select, Textarea } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { orgLabel } from "@/features/accounts/model";
 import { AgentConnections } from "@/features/agents/agent-connections";
+import { AgentSkills } from "@/features/agents/agent-skills";
 import { capFromField } from "@/features/boss/model";
 import { describeError, errorDetails } from "@/lib/errors";
 import { queryKeys } from "@/lib/queries";
-import { useSkills } from "@/lib/skills-queries";
 import { useAccountModels, useAgentAttached, useTools, useUpdateAgent } from "@/lib/studio-queries";
 import {
   type AgentDraft,
@@ -55,7 +55,6 @@ const SECTIONS = {
   model: ["model", "effort", "models", "tier"],
   perms: ["perms"],
   tools: ["tools"],
-  skills: ["skills"],
   fallback: ["fallback"],
   context: ["contextCap"],
   instructions: ["instructions"],
@@ -182,11 +181,7 @@ export function AgentSettings({
         {...sectionProps("tools")}
       />
       <AgentConnections agent={entry.agent.frontmatter} orgs={orgs} />
-      <SkillsSection
-        draft={view("skills")}
-        onChange={(patch) => change("skills", patch)}
-        {...sectionProps("skills")}
-      />
+      <AgentSkills agent={entry.agent.frontmatter} />
       <FallbackSection
         draft={view("fallback")}
         candidates={fallbackCandidates(agents, entry).map(entryId)}
@@ -524,62 +519,6 @@ function ToolsSection({ agent, draft, onChange, ...section }: SectionProps & { a
           ? `Latest run (${attached.task}) attached: ${attached.tools.length === 0 ? "nothing" : attached.tools.join(", ")}.`
           : "No run has recorded its tools yet."}
       </p>
-    </SettingsSection>
-  );
-}
-
-/** The installed skills this agent uses. Each run gets read-only copies of just these. */
-function SkillsSection({ draft, onChange, ...section }: SectionProps) {
-  const skills = useSkills();
-  const installed = skills.data ?? [];
-  const gone = draft.skills.filter((n) => skills.data !== undefined && !installed.some((s) => s.name === n));
-  const toggle = (name: string, on: boolean) =>
-    onChange({ skills: on ? [...draft.skills, name] : draft.skills.filter((n) => n !== name) });
-  return (
-    <SettingsSection
-      title="Skills"
-      note="Skills it may use in its next run, as read-only copies. Install them on the Skills page."
-      {...section}
-    >
-      {skills.isError ? (
-        <p role="alert" className="text-sm text-red text-pretty">
-          Could not load skills: {describeError(skills.error)}
-        </p>
-      ) : installed.length === 0 && skills.data !== undefined ? (
-        <p className="text-sm text-fg-muted text-pretty">
-          No skills are installed yet.{" "}
-          <PageLink page="skills" className="text-fg underline-offset-2 hover:underline">
-            Install one
-          </PageLink>
-          .
-        </p>
-      ) : (
-        <ul aria-label="Skills" className="flex flex-col gap-0.5">
-          {installed.map((skill) => (
-            <li key={skill.name} className="flex flex-col">
-              <Switch
-                label={skill.name}
-                checked={draft.skills.includes(skill.name)}
-                onChange={(on) => toggle(skill.name, on)}
-              />
-              <p className="pl-[42px] text-sm text-fg-faint text-pretty">{skill.description}</p>
-            </li>
-          ))}
-        </ul>
-      )}
-      {gone.length > 0 && (
-        <p className="text-sm text-amber text-pretty">
-          Lists {gone.join(", ")}, which {gone.length === 1 ? "is" : "are"} not installed, so it gets{" "}
-          {gone.length === 1 ? "it" : "them"} nowhere.{" "}
-          <button
-            type="button"
-            className="cursor-pointer text-fg underline-offset-2 hover:underline"
-            onClick={() => onChange({ skills: draft.skills.filter((n) => !gone.includes(n)) })}
-          >
-            Remove from the list
-          </button>
-        </p>
-      )}
     </SettingsSection>
   );
 }

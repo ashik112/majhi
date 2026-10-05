@@ -19,6 +19,15 @@ Design note.
 - **Owner will notice.** A round chat button bottom right on every page. A badge counts agent replies not read yet. The panel groups chats by workspace (mark, name), each row with the chat name, newest line, time and unread count. A row opens the chat in place, with an arrow back and a button to open it on its own page. Opening a chat on any page clears its count.
 - **Verified.** Typecheck clean. `store/conversations.test.ts`. Browser on an isolated e2e server (temp home, port 7161), 1440 and 1100 and 390 wide: the badge rises when a fake agent replies with no reload, the panel groups Private and Acme, a chat opens in the panel, Enter sends, the badge stays clear while the reply is viewed, back returns to the list, the captain thread opens with its box, Esc closes, no overlap with Send on the task, Captain and Chats pages, the button hides under the Cmd J drawer, no console errors or failed requests.
 - **Left.** A task's title change or a task finishing updates the list on the next read (opening the panel reads it once). The list holds at most 200 conversations.
+## Skills have one source of truth (built, not merged)
+
+Branch `fix/skills-one-source`.
+
+- **Cause.** Who has a skill was decided in two places: the rules in `skills-lock.json` (all agents, workspace, per agent) and a `skills:` list in each agent file. Runs read both, so agents did get skills the Skills page turned on for everyone. The Agent page showed only the file list, so every switch showed off, and its switches wrote the second store.
+- **Changed.** The lock is the only store. A one-time startup move turns each installed skill an agent file listed into an opt-in for that agent (an existing opt-out still wins), then drops `skills:` from the file in one config commit. Old files with the key still load. `skillStateFor` (shared) is the one rule and says which level decided. `skills.enable` and `skills.disable` now go through `skills.setMany`. Staffing and the task Context tab read the lock too. The Agent page Skills section shows each skill with its real state, a muted one-line description and "via workspace" or "via all agents", search above 10 skills, and saves at once with the same switches as the Skills page.
+- **Owner will notice.** Skills turned on for everyone show on for every agent. Toggling on either page shows on the other.
+- **Verified.** Typecheck clean. `skills/migrate.test.ts`, `agents/file.test.ts`, `skills/skills.test.ts`. Browser check on an isolated server.
+- **Left.** Nothing.
 
 ## Agents can update their task branch from the base (built, not merged)
 

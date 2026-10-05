@@ -36,7 +36,6 @@ describe("serializeAgent", () => {
       perms: ["edit" as const, "shell" as const],
       tools: ["git"],
       connections: ["github-acme"],
-      skills: ["review"],
       fallback: "backup",
       context: { compact_at: 0.8 },
       turns: { idle: "10m", max_tool_calls: 200 },
@@ -47,13 +46,13 @@ describe("serializeAgent", () => {
 
   it("round trips exactly, every field and odd instruction text included", () => {
     const text = serializeAgent(full);
-    expect(parseAgentFile("lead.md", text)).toEqual({ ok: true, agent: full });
+    expect(parseAgentFile("lead.md", text)).toEqual({ ok: true, agent: full, legacySkills: [] });
   });
 
   it("round trips empty and blank-line-leading instructions", () => {
     for (const instructions of ["", "\nstarts blank", "no newline at end"]) {
       const agent = { ...full, instructions };
-      expect(parseAgentFile("lead.md", serializeAgent(agent))).toEqual({ ok: true, agent });
+      expect(parseAgentFile("lead.md", serializeAgent(agent))).toEqual({ ok: true, agent, legacySkills: [] });
     }
   });
 });
