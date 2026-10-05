@@ -1,7 +1,10 @@
 import { type Health, type ReloadDecision, reloadDecision } from "@majhi/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { queryKeys } from "./queries";
+import { getHealth } from "./api";
+
+/** How often an open tab asks `/health` which build the server serves. */
+const BUILD_POLL_MS = 30_000;
 
 /** The id this tab's bundle was built with (index.html's `majhi-build` meta). Undefined in dev. */
 export const MY_BUILD: string | undefined =
@@ -58,11 +61,13 @@ function markReloaded(server: string): void {
  */
 export function useStaleBuild(): { decision: ReloadDecision; reload: () => void } {
   const hello = useSyncExternalStore(subscribe, () => helloBuild);
-  // The cached answer of the health poll; this reads it and never fetches.
+  // The events hello says it on every connect; `/health` is the check for a feed that stays up.
   const health = useQuery<Health>({
-    queryKey: queryKeys.health,
-    queryFn: () => Promise.reject(new Error("read from the cache only")),
-    enabled: false,
+    queryKey: ["build-watch"],
+    queryFn: ({ signal }) => getHealth(signal),
+    refetchInterval: BUILD_POLL_MS,
+    refetchIntervalInBackground: false,
+    retry: false,
   }).data;
   const server = hello ?? health?.build;
   const [tick, setTick] = useState(0);
