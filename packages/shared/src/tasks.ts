@@ -1,12 +1,5 @@
 import { z } from "zod";
-import {
-  BranchPatternSchema,
-  BranchTypeSchema,
-  IdSchema,
-  MrHostSchema,
-  OrgIdSchema,
-  SecretRefSchema,
-} from "./accounts.ts";
+import { BranchPatternSchema, IdSchema, MrHostSchema, OrgIdSchema, SecretRefSchema } from "./accounts.ts";
 import { ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./rooms.ts";
 import { CommitsPatchSchema } from "./settings.ts";

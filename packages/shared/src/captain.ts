@@ -2,7 +2,7 @@ import { z } from "zod";
 import { AuthoritySchema } from "./authority.ts";
 import { AutonomyModeSchema, SpendSchema } from "./autonomy.ts";
 import { IdSchema } from "./ids.ts";
-import { AutonomyOrgSchema, BudgetSchema, type CaptainLevelSchema } from "./settings.ts";
+import { AutonomyOrgSchema, BudgetSchema } from "./settings.ts";
 import { TaskIdSchema, TaskPrioritySchema } from "./tasks.ts";
 
 /**

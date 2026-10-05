@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import {
-  ABSTAIN,
   type CommandName,
   commands,
   type Fact,

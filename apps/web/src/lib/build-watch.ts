@@ -80,6 +80,7 @@ export function useStaleBuild(): { decision: ReloadDecision; reload: () => void 
     return () => window.clearInterval(timer);
   }, [differs]);
   const reload = () => window.location.reload();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `tick` re-runs the check every second while the builds differ.
   useEffect(() => {
     if (decision !== "reload" || server === undefined || reloadedRecently(server)) return;
     markReloaded(server);

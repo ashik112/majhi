@@ -52,7 +52,7 @@ const LOCAL_IMAGE = /^([a-z0-9][a-z0-9_./-]{0,60})(?::([A-Za-z0-9_][A-Za-z0-9_.-
 const CONTAINER_ID = /^[0-9a-f]{12,64}$/;
 const BUILT_TAG = /^[a-z0-9][a-z0-9_.-]{0,60}:[A-Za-z0-9_][A-Za-z0-9_.-]{0,40}$/;
 /** A mount source goes into a comma separated `--mount` value. */
-const BAD_SOURCE = /[,"'\u0000\n\r]/;
+const BAD_SOURCE = { test: (v: string) => [",", '"', "'", "\u0000", "\n", "\r"].some((c) => v.includes(c)) };
 const MAX_MOUNTS = 16;
 const MAX_COMMAND = 64;
 
@@ -772,10 +772,15 @@ export function assertTaskArgv(args: readonly string[], s: Safety, allowedImages
   assertNoHostPaths(args, s);
   switch (args[0]) {
     case "run":
-      return checkRun(args, s, allowedImages);
+      checkRun(args, s, allowedImages);
+      return;
     case "buildx":
-      if (args[1] !== "build") return refuse("Only docker buildx build is available in a task.");
-      return checkBuild(args, s);
+      if (args[1] !== "build") {
+        refuse("Only docker buildx build is available in a task.");
+        return;
+      }
+      checkBuild(args, s);
+      return;
     case "exec": {
       const { flags, rest } = split(args.slice(1), EXEC_FLAGS);
       const parsed = parseFlags(flags, EXEC_FLAGS);
@@ -795,28 +800,35 @@ export function assertTaskArgv(args: readonly string[], s: Safety, allowedImages
       const since = atMostOne(parsed, "--since");
       if (since !== undefined && !SINCE.test(since)) refuse("The --since value is not allowed.");
       if (rest.length !== 1) refuse("docker logs reads one container.");
-      return checkOwnContainer(rest[0] ?? "", s);
+      checkOwnContainer(rest[0] ?? "", s);
+      return;
     }
     case "ps":
-      return checkPs(args, s);
+      checkPs(args, s);
+      return;
     case "rm":
-      return checkOperands(args, s, RM_FLAGS);
+      checkOperands(args, s, RM_FLAGS);
+      return;
     case "stop": {
       const { flags } = split(args.slice(1), STOP_FLAGS);
       const time = atMostOne(parseFlags(flags, STOP_FLAGS), "--time");
       if (time !== undefined && !/^[0-9]{1,3}$/.test(time)) refuse("The --time value is not allowed.");
-      return checkOperands(args, s, STOP_FLAGS);
+      checkOperands(args, s, STOP_FLAGS);
+      return;
     }
     case "start":
     case "wait":
-      return checkOperands(args, s, NO_FLAGS_TABLE);
+      checkOperands(args, s, NO_FLAGS_TABLE);
+      return;
     case "inspect": {
       const { flags } = split(args.slice(1), INSPECT_FLAGS);
       checkFormat(parseFlags(flags, INSPECT_FLAGS));
-      return checkOperands(args, s, INSPECT_FLAGS);
+      checkOperands(args, s, INSPECT_FLAGS);
+      return;
     }
     default:
-      return refuse(`The docker command ${shown(args[0] ?? "")} is not allowed in a task.`);
+      refuse(`The docker command ${shown(args[0] ?? "")} is not allowed in a task.`);
+      return;
   }
 }
 

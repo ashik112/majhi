@@ -1,11 +1,4 @@
-import {
-  type AccountView,
-  type OrgView,
-  type OwnerDecision,
-  PAGE_PATH,
-  type PagePath,
-  type TaskSummary,
-} from "@majhi/shared";
+import type { AccountView, OrgView, OwnerDecision, PagePath, TaskSummary } from "@majhi/shared";
 import type { AgentInfo } from "../../lib/agent-index";
 import { badgeLetters, formatAgo } from "../../lib/format";
 import { actionOf, openLabel } from "../decisions/model";

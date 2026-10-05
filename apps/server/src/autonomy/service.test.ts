@@ -1,6 +1,6 @@
 import type { AutonomyStatus, Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { ASK, RUNS, TIDY } from "../captain/authority-fixtures.ts";
+import { RUNS } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import type { FakeSession } from "../testing/fakeSession.ts";
 import type { Harness } from "../testing/harness.ts";
