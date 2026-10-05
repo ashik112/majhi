@@ -1,6 +1,7 @@
 import type { BaseEnv, RunMount, Spawner } from "@majhi/acp";
 import { detectSecrets, type Task } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
+import type { PackageStoreFor } from "../runs/package-cache.ts";
 import { taskTerminalEnv } from "../terminal/task-terminal.ts";
 import { HANDOFF_CPU_SHARES } from "./limits.ts";
 import type { ExecLimits, ExecResult } from "./service.ts";
@@ -17,6 +18,8 @@ export interface ExecDeps {
   task: (id: string) => Task | undefined;
   /** Each task repo's `.git`, as a run mounts them. */
   repoMounts: (task: Task) => Promise<RunMount[]>;
+  /** The workspace's shared package store, so an install never writes `.pnpm-store` into the worktree. */
+  packages?: PackageStoreFor | undefined;
   /**
    * What the check's `docker` needs to reach this task's containers through majhi: the shim's two
    * variables, and the end of the token. Absent when majhi cannot run containers.
@@ -58,9 +61,10 @@ export function execInTask(deps: ExecDeps) {
     let spawned: Awaited<ReturnType<Spawner>>;
     const shim = deps.dockerShim?.(taskId);
     try {
+      const store = await deps.packages?.(task);
       spawned = await deps.spawner({
         command: { command: "/bin/sh", args: ["-c", command] },
-        env: { ...taskTerminalEnv(deps.base), ...shim?.env },
+        env: { ...store?.env, ...taskTerminalEnv(deps.base), ...shim?.env },
         cwd,
         task: taskId,
         ...(limits === undefined
@@ -72,7 +76,7 @@ export function execInTask(deps: ExecDeps) {
                 cpuShares: HANDOFF_CPU_SHARES,
               },
             }),
-        mounts: [{ path: task.folder }, ...(await deps.repoMounts(task))],
+        mounts: [{ path: task.folder }, ...(await deps.repoMounts(task)), ...(store?.mounts ?? [])],
       });
     } catch (err) {
       shim?.release();

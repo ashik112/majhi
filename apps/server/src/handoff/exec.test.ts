@@ -25,6 +25,35 @@ async function run(command: string, timeoutMs = 10_000, spawner: Spawner = local
   return exec("ACM-1", folder, command, timeoutMs);
 }
 
+describe("the package store of a hand-off check", () => {
+  it("points pnpm at the shared store outside the worktree and mounts it", async () => {
+    dir = await mkdtemp(join(tmpdir(), "majhi-exec-"));
+    const folder = dir;
+    const store = join(tmpdir(), "majhi-home", "cache", "acme", "pnpm-store");
+    const seen: { env?: Record<string, string>; mounts?: { path: string }[] | undefined } = {};
+    const spawner: Spawner = async (req) => {
+      seen.env = req.env;
+      seen.mounts = req.mounts;
+      return localSpawner(req);
+    };
+    const exec = execInTask({
+      spawner,
+      base: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+      task: () => ({ folder }) as Task,
+      repoMounts: async () => [],
+      packages: async () => ({
+        mounts: [{ path: join(tmpdir(), "majhi-home", "cache", "acme") }],
+        env: { npm_config_store_dir: store, PNPM_STORE_DIR: store },
+      }),
+    });
+    const result = await exec("ACM-1", folder, 'printf %s "$npm_config_store_dir"', 10_000);
+    expect(result.output).toBe(store);
+    expect(seen.env?.PNPM_STORE_DIR).toBe(store);
+    expect(store.startsWith(`${folder}/`)).toBe(false);
+    expect(seen.mounts?.map((m) => m.path)).toContain(join(tmpdir(), "majhi-home", "cache", "acme"));
+  });
+});
+
 describe("running a project's command for the hand-off", () => {
   it("returns the exit code and what it printed, in the worktree", async () => {
     const ok = await run("pwd; echo out; echo err 1>&2");
