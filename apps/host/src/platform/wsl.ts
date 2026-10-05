@@ -5,6 +5,7 @@
  */
 import { readdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { clipboardCopy, LINUX_CLIPBOARD } from "./clipboard.ts";
 import { LINUX_DESKTOP_VARS, linuxPlatform, sessionEnv } from "./linux.ts";
 import { openUrl } from "./openUrl.ts";
 import { powershellArgs, toastNotifier } from "./toast.ts";
@@ -12,6 +13,7 @@ import type { DockerHelpReason, Platform, PlatformDeps } from "./types.ts";
 
 const POWERSHELL = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
 const EXPLORER = "C:\\Windows\\explorer.exe";
+const CLIP = "C:\\Windows\\System32\\clip.exe";
 const CMD = "C:\\Windows\\System32\\cmd.exe";
 const DOCKER_DESKTOP = "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe";
 const WSLPATH_TIMEOUT_MS = 5_000;
@@ -183,6 +185,16 @@ export function wslPlatform(deps: PlatformDeps, paths: WslPaths = {}): Platform 
         },
         ["wslview", "explorer.exe"],
         url,
+      ),
+    clipboardCopy: (text) =>
+      clipboardCopy(
+        {
+          run: deps.run,
+          find: (name) => (name === "clip.exe" ? program(name, CLIP) : deps.find(name)),
+          env: desktopEnv,
+        },
+        [{ name: "clip.exe" }, ...LINUX_CLIPBOARD],
+        text,
       ),
   };
 }

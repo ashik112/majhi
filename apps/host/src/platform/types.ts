@@ -49,6 +49,8 @@ export interface Platform {
   desktopEnv(): Promise<Record<string, string>>;
   /** Opens an http(s) page in the owner's browser. False when nothing opened it. Never throws. */
   openUrl(url: string): Promise<boolean>;
+  /** Puts `text` on the owner's clipboard through a program's stdin. False when none worked. Never throws, never logs the text. */
+  clipboardCopy(text: string): Promise<boolean>;
 }
 
 export type CreatePlatform = (os: HostOs, deps: PlatformDeps) => Platform;
