@@ -710,7 +710,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     connectionFiles,
     skills: skillStore,
     ...(env.runner.mode === "container" ? { serena: { command: SERENA_COMMAND } } : {}),
-    onTasksChanged: () => events.emit(["tasks"]),
+    onTasksChanged: (task, rows) => events.emitTask(task, rows ? true : undefined),
     // Bound below: the task service and the resume coordinator are built after the run manager.
     onIdle: (task, refused) => {
       background.run(() => tasks.agentsIdle(task, refused));
@@ -987,6 +987,24 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           })(),
         };
   };
+  /** The subjects of many tasks in three queries, for a list that names a task per row. Done and missing tasks are left out. */
+  const openSubjectsOf = (ids: readonly string[]): Map<string, Subject> => {
+    const out = new Map<string, Subject>();
+    for (const [id, task] of store.tasks.subjectsMany(ids)) {
+      if (task.status === "done") continue;
+      out.set(id, {
+        id,
+        title: task.title,
+        chat: isOwnerChat(task),
+        ...(task.org === undefined ? {} : { org: task.org }),
+        repos: task.repos,
+        status: task.status,
+        openSubtasks: task.open,
+        ...(task.newest === undefined ? {} : { newestSubtask: task.newest }),
+      });
+    }
+    return out;
+  };
   const notifier = new Notifier({
     subject: subjectOf,
     // The captain answers it by itself when Autonomous is on and the workspace lets it decide: an
@@ -1209,7 +1227,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     incidents: () => opsWatch?.unacked() ?? [],
     items: () => store.room.waitingDecisions(),
     working: () => runs.workingTasks(),
-    changed: () => events.emit(["tasks"]),
+    changed: (task) => events.emitTask(task),
     // The same live look the captain's ship chore takes: a card never offers a merge that fails.
     shipBlock: async (task) => {
       const check = await shipReadiness({ store, room, runs, mrs }, task);
@@ -1221,6 +1239,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       const task = store.tasks.subjectInfo(id);
       return task === undefined || task.status === "done" ? undefined : subjectOf(id);
     },
+    subjects: openSubjectsOf,
     budgets: () => autonomy.budgetAsks(),
     signedOut: async () =>
       (await accounts.list())
@@ -1488,7 +1507,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     autonomous: () => autonomy.mode() === "on",
     ruleOff: (org, rule) => ruleSwitches.off(org, rule),
     ceilingHeld: () => outcomesService?.ceilingHeld(),
-    changed: () => events.emit(["tasks"]),
+    changed: (task) => events.emitTask(task),
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
     ...(options.handoff === undefined ? {} : options.handoff),
   });

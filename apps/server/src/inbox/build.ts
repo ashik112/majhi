@@ -4,6 +4,7 @@ import {
   budgetDecisionId,
   type DecisionOption,
   type DecisionSuggestion,
+  compareDecisions,
   draftDecisionId,
   incidentDecisionId,
   OUTBOUND_CHANNEL_LABEL,
@@ -305,10 +306,6 @@ export function decisionIdOf(item: RoomItem): string {
   return roomDecisionId(item.task, item.id);
 }
 
-function priority(d: OwnerDecision): number {
-  return d.kind === "incident" ? -1 : d.kind === "ship" || d.kind === "budget" ? 0 : 1;
-}
-
 /**
  * Everything that waits for the owner as decisions: ship and budget first, then oldest first. Pure:
  * built from what the sources hold now, so an answered card or a raised budget is simply gone.
@@ -474,5 +471,5 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
   }
 
   out.push(...(src.extras ?? []));
-  return out.sort((a, b) => priority(a) - priority(b) || a.at.localeCompare(b.at));
+  return out.sort(compareDecisions);
 }

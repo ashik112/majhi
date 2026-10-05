@@ -466,12 +466,12 @@ export const TaskSummarySchema = TaskSchema.pick({
   due: true,
   noAutonomy: true,
   team: true,
-  mode: true,
   updatedAt: true,
 }).extend({
   /** Autonomous mode runs this task: it created, started or adopted it (PRV-74). */
   autonomous: z.boolean().optional(),
-  repos: z.array(z.object({ project: IdSchema, branch: z.string() })),
+  /** The projects it works in. The branch is in `tasks.get`. */
+  repos: z.array(z.object({ project: IdSchema })),
   /** Agents working right now. */
   working: z.array(IdSchema),
   links: z.array(TaskLinkSchema),

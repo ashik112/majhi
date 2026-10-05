@@ -13,11 +13,18 @@ import { queryKeys } from "./queries";
  * `decisions.list`: everything that waits for the owner, ship and budget first, then oldest first.
  * The tasks, captain, autonomy and accounts topics refetch it.
  */
+const decisionListQuery = {
+  queryKey: queryKeys.decisions,
+  queryFn: () => cmd("decisions.list", {}),
+  // The feed refetches it when something that waits changes, and patches its counts when work starts or stops.
+  staleTime: Number.POSITIVE_INFINITY,
+  // A slow safety net, not the way the list stays current: an unchanged answer costs no render.
+  refetchInterval: 60_000,
+  refetchIntervalInBackground: false,
+} as const;
+
 export function useDecisions() {
-  return useQuery<DecisionList, ApiRequestError>({
-    queryKey: queryKeys.decisions,
-    queryFn: () => cmd("decisions.list", {}),
-  });
+  return useQuery<DecisionList, ApiRequestError>(decisionListQuery);
 }
 
 /**
@@ -27,7 +34,12 @@ export function useDecisions() {
  * answers 404, which is an empty detail, not an error.
  */
 export function useDecisionDetail(id: string | undefined) {
-  const listed = useDecisions().data?.decisions.some((d) => d.id === id) === true;
+  // A boolean: a card that asks renders again only when its decision enters or leaves the list.
+  const listed =
+    useQuery<DecisionList, ApiRequestError, boolean>({
+      ...decisionListQuery,
+      select: (list) => id !== undefined && list.decisions.some((d) => d.id === id),
+    }).data === true;
   return useQuery<DecisionDetail, ApiRequestError>({
     queryKey: [...queryKeys.decisions, "detail", id],
     queryFn: async () => {

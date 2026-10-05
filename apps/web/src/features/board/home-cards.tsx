@@ -1,6 +1,6 @@
 import { DECISION_KIND_LABEL, type OwnerDecision, type TaskSummary } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { useRunAttention } from "@/components/shell/banner";
 import { Button } from "@/components/ui/button";
 import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
@@ -14,7 +14,7 @@ import { cn } from "@/lib/cn";
 import { useDecisionDetail } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
 import { useAccounts, useOrgs } from "@/lib/studio-queries";
-import { useTasks } from "@/lib/task-queries";
+import { useTaskRow } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
 import { limitNote } from "../shell/limit-note";
 import { openDue } from "../tasks/schedule";
@@ -119,13 +119,13 @@ function StatusLine({ lamp, children }: { lamp: LampState; children: ReactNode }
 }
 
 /** A decision with its answers as buttons; the main one is filled. */
-export function DecisionCard({ decision }: { decision: OwnerDecision }) {
+export const DecisionCard = memo(function DecisionCard({ decision }: { decision: OwnerDecision }) {
   const run = useRunAttention();
   const { send: sendDecision, busy } = useSendDecision();
   const held = useHeldOption(decision.id);
   const ship = decision.kind === "ship";
   const detail = useDecisionDetail(ship ? decision.id : undefined).data;
-  const task = useTasks().data?.find((t) => t.id === decision.task);
+  const task = useTaskRow(decision.task);
   const typed = decision.options.some((o) => o.text === true);
   const options = decision.options.filter((o) => o.text !== true && (!ship || o.primary === true));
   const open = () => run(actionOf(decision.link));
@@ -187,10 +187,10 @@ export function DecisionCard({ decision }: { decision: OwnerDecision }) {
       </div>
     </Frame>
   );
-}
+});
 
 /** A task that runs or is paused: the live line, the lead and its age. */
-export function WorkingCard({ task, ago }: { task: TaskSummary; ago: string }) {
+export const WorkingCard = memo(function WorkingCard({ task, ago }: { task: TaskSummary; ago: string }) {
   const agents = useAgentIndex();
   const accounts = useAccounts().data;
   const line = cardLine(task);
@@ -225,9 +225,9 @@ export function WorkingCard({ task, ago }: { task: TaskSummary; ago: string }) {
       </span>
     </Frame>
   );
-}
+});
 
-export function QueuedCard({ task }: { task: TaskSummary }) {
+export const QueuedCard = memo(function QueuedCard({ task }: { task: TaskSummary }) {
   const text = queuedText(task);
   return (
     <Frame tone="none">
@@ -237,9 +237,9 @@ export function QueuedCard({ task }: { task: TaskSummary }) {
       <span className="text-sm text-fg-faint">{text}</span>
     </Frame>
   );
-}
+});
 
-export function DoneCard({
+export const DoneCard = memo(function DoneCard({
   task,
   time,
   undoId,
@@ -283,4 +283,4 @@ export function DoneCard({
       </span>
     </Frame>
   );
-}
+});

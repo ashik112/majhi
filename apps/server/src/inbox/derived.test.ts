@@ -223,6 +223,51 @@ describe("one count for every screen", () => {
     expect((await service.list())[0]?.blocked).toBe("It conflicts with main in a.ts.");
   });
 
+  it("never runs more than a few merge looks at once, however many review tasks wait", async () => {
+    const ids = Array.from({ length: 12 }, (_, i) => `ACM-${i + 1}`);
+    let running = 0;
+    let peak = 0;
+    let looks = 0;
+    const service = inbox({
+      items: ids.map((id) => review(id)),
+      subjects: ids.map((id) => subject(id, "review")),
+      working: [],
+      block: async () => {
+        looks += 1;
+        running += 1;
+        peak = Math.max(peak, running);
+        await new Promise((r) => setTimeout(r, 5));
+        running -= 1;
+        return undefined;
+      },
+    });
+    expect((await service.list()).filter((d) => d.kind === "ship")).toHaveLength(12);
+    await service.list();
+    expect(looks).toBe(12);
+    expect(peak).toBeLessThanOrEqual(3);
+  });
+
+  it("recounts who is working from the last look at what waits", async () => {
+    let working = ["ACM-1"];
+    const by = [subject("ACM-1", "running"), subject("ACM-2", "running")];
+    const db = new Database(":memory:");
+    migrate(db);
+    const service = new InboxService({
+      items: () => [ask("ACM-2")],
+      subject: (task) => by.find((s) => s.id === task),
+      budgets: async () => [],
+      signedOut: async () => [],
+      recommendations: new RecommendationRepo(db),
+      actions: noActions,
+      working: () => working,
+    });
+    expect((await service.workCounts()).workingTasks).toEqual(["ACM-1"]);
+    working = ["ACM-1", "ACM-2"];
+    // ACM-2 asks, so it is waiting, not working.
+    expect((await service.workCounts()).workingTasks).toEqual(["ACM-1"]);
+    expect((await service.workCounts()).needsYou).toBe(1);
+  });
+
   it("keeps the card when the look at the merge breaks", async () => {
     const service = inbox({
       items: [review("ACM-4")],
