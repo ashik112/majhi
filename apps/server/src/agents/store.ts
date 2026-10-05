@@ -8,7 +8,7 @@ import { fileSignature } from "../fs.ts";
 import { parseAgentFile, serializeAgent } from "./file.ts";
 
 export type StoredAgent =
-  | { ok: true; id: string; file: string; agent: Agent }
+  | { ok: true; id: string; file: string; agent: Agent; legacySkills: string[] }
   | { ok: false; id: string; file: string; errors: string[]; account: string | undefined };
 
 /** Reads and writes `<majhi home>/agents/<id>.md`. No warnings and no history here. */
@@ -80,7 +80,7 @@ export class AgentStore {
     const id = name.replace(/\.md$/, "");
     const parsed = parseAgentFile(name, text);
     const stored: StoredAgent = parsed.ok
-      ? { ok: true, id, file: name, agent: parsed.agent }
+      ? { ok: true, id, file: name, agent: parsed.agent, legacySkills: parsed.legacySkills }
       : { ok: false, id, file: name, errors: parsed.errors, account: rawAccount(text) };
     this.parsed.set(name, { signature, stored: structuredClone(stored) });
     return stored;

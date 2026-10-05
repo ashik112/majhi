@@ -490,13 +490,13 @@ function ShipPanel({
   }
 
   /** Sends the failed check back to the task's agent. */
-  async function fixWithAgent(check: string) {
+  async function fixWithAgent(text: string) {
     setBusy(true);
     setError(undefined);
     try {
       await cmd("room.send", {
         task: task.id,
-        text: `The ${check} check failed on your latest commit, so it cannot merge. Read the failure with the hand-off tool, fix it and commit.`,
+        text,
       });
       onClose();
     } catch (err) {
@@ -769,7 +769,25 @@ function ShipPanel({
                     size="sm"
                     variant="primary"
                     disabled={busy}
-                    onClick={() => void fixWithAgent(verdict.check)}
+                    onClick={() =>
+                      void fixWithAgent(
+                        `The ${verdict.check} check failed on your latest commit, so it cannot merge. Read the failure with the hand-off tool, fix it and commit.`,
+                      )
+                    }
+                  >
+                    Fix with agent
+                  </Button>
+                )}
+                {verdict.kind === "blocked" && (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={busy}
+                    onClick={() =>
+                      void fixWithAgent(
+                        `Your branch cannot merge yet: ${verdict.why}. Fix it (for a conflict, run tasks.syncBase, or merge the base and resolve it), commit, and say when it is done.`,
+                      )
+                    }
                   >
                     Fix with agent
                   </Button>

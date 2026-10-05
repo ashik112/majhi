@@ -116,6 +116,7 @@ import {
   PreviewRunInputSchema,
   ServiceStartInputSchema,
 } from "./containers.ts";
+import { ConversationListSchema, ConversationMarkReadInputSchema } from "./conversations.ts";
 import {
   DecisionLabelSchema,
   EvalInputSchema,
@@ -1255,6 +1256,21 @@ export const commands = {
       "Dismiss the morning brief of a day on Today. The owner, or the captain through the owner's approval",
     input: AgendaDismissInputSchema,
     output: z.object({ day: z.string() }),
+  },
+  // The chat dock -----------------------------------------------------------------
+  "conversations.list": {
+    risk: "read",
+    summary:
+      "The owner's task rooms and workspace captain threads for the chat dock: title, newest line and how many agent messages the owner has not read, newest first. Owner only",
+    input: z.object({}),
+    output: ConversationListSchema,
+  },
+  "conversations.markRead": {
+    risk: "change",
+    summary:
+      "Mark a conversation read up to the newest message on screen. The mark never moves back and never passes the newest agent message. Owner only",
+    input: ConversationMarkReadInputSchema,
+    output: z.object({ ok: z.literal(true) }),
   },
   "notify.pending": {
     risk: "read",
@@ -2770,7 +2786,7 @@ export const commands = {
   "skills.enable": {
     risk: "change",
     summary:
-      "Turn an installed skill on for one agent: adds it to the agent file's skills list and clears the agent's opt-out. Its next run gets the skill",
+      "Turn an installed skill on for one agent, whatever the workspace or all-agents rule says. Its next run gets the skill",
     input: SkillAgentInputSchema,
     output: SkillSchema,
   },
@@ -2783,8 +2799,7 @@ export const commands = {
   },
   "skills.disable": {
     risk: "change",
-    summary:
-      "Turn a skill off for one agent: takes it off the agent file's skills list and records an opt-out when the skill is on for all agents",
+    summary: "Turn a skill off for one agent, whatever the workspace or all-agents rule says",
     input: SkillAgentInputSchema,
     output: SkillSchema,
   },
@@ -2797,9 +2812,9 @@ export const commands = {
   },
   "skills.remove": {
     risk: "destructive",
-    summary: "Uninstall a skill and take it off every agent that lists it",
+    summary: "Uninstall a skill, which takes it off every agent",
     input: z.object({ name: SkillNameSchema }),
-    output: z.object({ removed: SkillNameSchema, agents: z.array(IdSchema) }),
+    output: z.object({ removed: SkillNameSchema }),
   },
   "skills.update": {
     risk: "change",

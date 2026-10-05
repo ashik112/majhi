@@ -1,10 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { cmd } from "@/lib/api";
+import { useMarkRead } from "@/lib/conversation-queries";
 import { closeSocket, reconnectDelay, wsUrl } from "@/lib/events-model";
 import { setTaskInCache } from "@/lib/task-queries";
 import {
   emptyRoom,
+  newestAgentAt,
   newestSeq,
   oldestSeq,
   parseRoomMessage,
@@ -42,6 +44,8 @@ export function useRoom(taskId: string) {
     };
   });
   useEffect(() => remember(taskId, state), [taskId, state]);
+  // Showing the newest agent message is reading it, wherever the room is shown.
+  useMarkRead(taskId, state.newer ? undefined : newestAgentAt(state.items));
   const loadingOlder = useRef(false);
   const loadingNewer = useRef(false);
   const latest = useRef(state);

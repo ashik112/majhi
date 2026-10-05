@@ -109,6 +109,7 @@ import type { HandoffService } from "./handoff/service.ts";
 import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
 import type { HostLink } from "./host/link.ts";
 import { RecommendationRepo } from "./inbox/recommendations.ts";
+import { ConversationsService } from "./conversations/service.ts";
 import { InboxService } from "./inbox/service.ts";
 import { InstallRequests } from "./installs/service.ts";
 import { busyReason } from "./machine/busy.ts";
@@ -182,6 +183,7 @@ import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
 import { SkillsCli } from "./skills/cli.ts";
 import { skillGitEnv } from "./skills/git-env.ts";
+import { migrateAgentSkills } from "./skills/migrate.ts";
 import { SkillRegistry } from "./skills/registry.ts";
 import { SkillService } from "./skills/service.ts";
 import { SkillStore } from "./skills/store.ts";
@@ -353,6 +355,8 @@ export interface Services {
   autonomy: AutonomyService;
   /** The owner's inbox of everything that waits for them (5.18). */
   inbox: InboxService;
+  /** The chat dock: task rooms and captain threads with their unread counts. */
+  conversations: ConversationsService;
   /** The captain per workspace (5.18): the choice, the upkeep chores, the lanes, the log and the stop switch. */
   captain: CaptainService;
   /** What playbooks and agents noticed, deduplicated (5.18, Findings). */
@@ -1103,6 +1107,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   room.onWrite((task, item) => notifier.observe(task, item));
   room.onWrite((task, item) => captain.roomWrote(task, item));
+  const conversations = new ConversationsService({ store, events });
+  room.onWrite((task, item) => conversations.observe(task, item));
   const updateWatch = setInterval(() => void watchUpdate(env.majhiHome, notifier), UPDATE_WATCH_MS);
   updateWatch.unref();
   const chatSweep = setInterval(() => background.run(async () => chatMemory?.sweep()), CHAT_SWEEP_MS);
@@ -1410,6 +1416,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
   });
   const autonomy = new AutonomyService({
+    skills: skillStore,
     machine: () => machine.get(),
     lanes,
     processWaiting: (task) => processes.waiting(task).length > 0,
@@ -1932,19 +1939,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     agents: {
       skillLists: async () =>
         (await agents.list()).flatMap((e) =>
-          e.status === "ok"
-            ? [
-                {
-                  id: e.agent.frontmatter.id,
-                  scope: e.agent.frontmatter.scope,
-                  skills: e.agent.frontmatter.skills,
-                },
-              ]
-            : [],
+          e.status === "ok" ? [{ id: e.agent.frontmatter.id, scope: e.agent.frontmatter.scope }] : [],
         ),
-      setSkills: async (agent, list, command, meta) => {
-        await agents.edit(agent, { set: { skills: list } }, command, meta);
-      },
     },
     uploads,
     changed: (ids) => {
@@ -1958,6 +1954,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     hostHome: env.hostHome,
   });
+  // Agent files used to list their skills: move the lists into the skills lock once.
+  background.run(() => migrateAgentSkills({ agents, store: skillStore }, { actor: { kind: "owner" } }));
   const connectionTests = new ConnectionTester({
     oauth: connect,
     gitCheck: async (org, provider, host, privateNetwork) => {
@@ -2313,6 +2311,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     containers,
     autonomy,
     inbox,
+    conversations,
     captain,
     findings,
     playbooks,
@@ -2372,6 +2371,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       clearInterval(retentionSweep);
       clearTimeout(retentionFirst);
       clearInterval(chatSweep);
+      conversations.stop();
       clearInterval(limitSweep);
       clearInterval(agendaSweep);
       clearInterval(pruneSweep);

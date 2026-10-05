@@ -12,6 +12,7 @@ import { StaleBuildBar } from "@/components/shell/stale-build";
 import { AgentDrawer } from "@/features/agent-drawer/agent-drawer";
 import { BossProvider, useBoss } from "@/features/boss/boss-context";
 import { LazyBossDrawer } from "@/features/boss/boss-drawer-lazy";
+import { ChatDock } from "@/features/chat-dock/chat-dock";
 import { useNeedsYou } from "@/features/decisions/needs-you";
 import { AppGate } from "@/features/home/app-gate";
 import { NewTaskProvider, useNewTask } from "@/features/new-task/new-task-context";
@@ -139,6 +140,7 @@ function Frame() {
         </Suspense>
       )}
       <GlobalFileViewer />
+      <ChatDock />
       {drawerTask !== undefined && <TaskDrawer id={drawerTask} />}
       {peek !== undefined && drawerTask === undefined && <AgentDrawer id={peek} />}
       {helpOpen && <ShortcutsDialog onClose={() => setHelpOpen(false)} />}

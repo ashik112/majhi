@@ -9,6 +9,35 @@ Branch `fix/prv-137-majhi-bug-no-way-to-fetch-sync-a-project`.
 - **Verified.** Typecheck. `mrs/project-fetch.test.ts` (real temp repos, no network): fetch and fast-forward with no task, tracking ref moves while a local branch with its own commits stays, another org's agent refused with nothing fetched, the owner allowed.
 - **Left.** A "Fetch" button on the Projects page. A remote that needs the computer's saved login (https) is refused with a reason, as for `tasks.syncBase`.
 
+## Chat dock: one button for task and captain replies (built, not merged)
+
+Branch `feat/chat-dock`.
+
+Design note.
+1. A conversation is a task room or a workspace's captain thread. Both are rooms in `room_items`, keyed by task id, so there is one store, one query and one unread rule. The owner's own chats (Chats page, Cmd J chat) are not listed.
+2. Read state is one small table, `read_marks` (migration 158): conversation id, `read_at` (the `at` of the newest message the owner has seen), `updated_at`. Nothing is stored per message. Existing conversations start fully read.
+3. Unread is the `agent` items with `at` after the mark. `at` is set once on insert, so an agent message that streams or is edited in place never becomes unread again (`seq` would). Owner, system, context and tool items never count.
+4. One query (`ConversationsRepo.list`) gives title, newest line and unread for every conversation, one index seek each, on the new `room_items(task, type, at)` index. 1500 tasks with 100 items each: p50 9 ms, p95 12 ms. One conversation (`one`): 0.05 ms.
+5. Commands `conversations.list` (read) and `conversations.markRead` (change), owner only, agents blocked (`AGENT_BLOCKED_COMMANDS`). A mark never moves back and never passes the newest agent message.
+6. Live: one new event on the existing events socket, `{type: "conversation", id, conversation?}`, carrying the row as it is now. The server sends it 150 ms after a message is stored (a streamed reply sends one) and after a mark. Tabs patch the cached list with it: no refetch, no polling, no second socket. A lost frame or a reconnect reads the list once.
+7. Marking read is one hook, `useMarkRead`, called from `useRoom`, so the task page, the Captain thread and the dock panel share it. It sends only when the cache says something is unread, the tab is visible and the newest agent message is on screen.
+8. Web: one `ChatDock` in the shell. The badge selects one number from the list, so a new message re-renders the button only. The panel code loads when the pointer reaches the button or it opens. The room in the panel is the same `ChatRoom` (task) and `Thread` (captain thread) the pages use; there is no second room view or composer.
+9. The button sits bottom right and hides while the Captain drawer (Cmd J) is open. On the task page, Captain page and Chats it does not touch the Send button at 1100 or 1440.
+10. Tests are for the counting rule, the cap on marks, which conversations are listed, and the migration's seed. None for UI.
+
+- **Owner will notice.** A round chat button bottom right on every page. A badge counts agent replies not read yet. The panel groups chats by workspace (mark, name), each row with the chat name, newest line, time and unread count. A row opens the chat in place, with an arrow back and a button to open it on its own page. Opening a chat on any page clears its count.
+- **Verified.** Typecheck clean. `store/conversations.test.ts`. Browser on an isolated e2e server (temp home, port 7161), 1440 and 1100 and 390 wide: the badge rises when a fake agent replies with no reload, the panel groups Private and Acme, a chat opens in the panel, Enter sends, the badge stays clear while the reply is viewed, back returns to the list, the captain thread opens with its box, Esc closes, no overlap with Send on the task, Captain and Chats pages, the button hides under the Cmd J drawer, no console errors or failed requests.
+- **Left.** A task's title change or a task finishing updates the list on the next read (opening the panel reads it once). The list holds at most 200 conversations.
+## Skills have one source of truth (built, not merged)
+
+Branch `fix/skills-one-source`.
+
+- **Cause.** Who has a skill was decided in two places: the rules in `skills-lock.json` (all agents, workspace, per agent) and a `skills:` list in each agent file. Runs read both, so agents did get skills the Skills page turned on for everyone. The Agent page showed only the file list, so every switch showed off, and its switches wrote the second store.
+- **Changed.** The lock is the only store. A one-time startup move turns each installed skill an agent file listed into an opt-in for that agent (an existing opt-out still wins), then drops `skills:` from the file in one config commit. Old files with the key still load. `skillStateFor` (shared) is the one rule and says which level decided. `skills.enable` and `skills.disable` now go through `skills.setMany`. Staffing and the task Context tab read the lock too. The Agent page Skills section shows each skill with its real state, a muted one-line description and "via workspace" or "via all agents", search above 10 skills, and saves at once with the same switches as the Skills page.
+- **Owner will notice.** Skills turned on for everyone show on for every agent. Toggling on either page shows on the other.
+- **Verified.** Typecheck clean. `skills/migrate.test.ts`, `agents/file.test.ts`, `skills/skills.test.ts`. Browser check on an isolated server.
+- **Left.** Nothing.
+
 ## Agents can update their task branch from the base (built, not merged)
 
 Branch `feat/tasks-sync-base`.

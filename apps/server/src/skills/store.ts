@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { SKILL_NAME, type SkillSource } from "@majhi/shared";
+import { SKILL_NAME, type SkillRule, type SkillSource, skillStateFor } from "@majhi/shared";
 import { z } from "zod";
 import { errorCode, UserError } from "../errors.ts";
 import { copyFolder, describeFolder } from "./files.ts";
@@ -31,6 +31,15 @@ export type LockEntry = z.infer<typeof LockEntrySchema>;
 
 const LockSchema = z.object({ version: z.literal(1), skills: z.record(z.string(), LockEntrySchema) });
 
+function ruleOf(entry: LockEntry): SkillRule {
+  return {
+    defaultOn: entry.defaultOn ?? false,
+    optOut: entry.optOut ?? [],
+    optIn: entry.optIn ?? [],
+    orgs: entry.orgs ?? {},
+  };
+}
+
 /** One installed skill as the store reads it back from its folder and the lock. */
 export interface StoredSkill {
   name: string;
@@ -47,30 +56,6 @@ export interface StoredSkill {
   optOut: string[];
   optIn: string[];
   orgs: Record<string, "on" | "off">;
-}
-
-/** What decides whether a skill is on for an agent. */
-export interface SkillRule {
-  defaultOn: boolean;
-  optOut: readonly string[];
-  optIn: readonly string[];
-  orgs: Readonly<Record<string, "on" | "off">>;
-}
-
-/**
- * The one rule. The agent's own choice first: an opt-out is off, an opt-in or a listing in its file
- * is on. Then its workspace's rule, then the all-agents rule.
- */
-export function skillOnFor(
-  rule: SkillRule,
-  name: string,
-  agent: { id: string; scope: string; skills: readonly string[] },
-): boolean {
-  if (rule.optOut.includes(agent.id)) return false;
-  if (rule.optIn.includes(agent.id) || agent.skills.includes(name)) return true;
-  const org = rule.orgs[agent.scope];
-  if (org !== undefined) return org === "on";
-  return rule.defaultOn;
 }
 
 /**
@@ -172,22 +157,12 @@ export class SkillStore {
     });
   }
 
-  /** The skills an agent has: the ones its file lists, plus what the rules give it (see `skillOnFor`). */
-  async effectiveFor(agent: string, listed: readonly string[], scope = ""): Promise<string[]> {
+  /** The skills an agent has, by the rules (see `skillStateFor`). */
+  async effectiveFor(agent: { id: string; scope: string }): Promise<string[]> {
     const lock = await this.readLock();
-    const who = { id: agent, scope, skills: listed };
-    const out = new Set<string>();
-    for (const name of new Set([...listed, ...Object.keys(lock.skills)])) {
-      const entry = lock.skills[name];
-      const rule: SkillRule = {
-        defaultOn: entry?.defaultOn ?? false,
-        optOut: entry?.optOut ?? [],
-        optIn: entry?.optIn ?? [],
-        orgs: entry?.orgs ?? {},
-      };
-      if (skillOnFor(rule, name, who)) out.add(name);
-    }
-    return [...out];
+    return Object.entries(lock.skills)
+      .filter(([, entry]) => skillStateFor(ruleOf(entry), agent).on)
+      .map(([name]) => name);
   }
 
   /** Edits several entries and writes the lock once. An unknown name is an error before anything is written. */

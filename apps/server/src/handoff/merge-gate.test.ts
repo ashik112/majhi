@@ -45,6 +45,18 @@ describe("decideMerge", () => {
     ).toEqual({ kind: "ok" });
   });
 
+  it("is blocked, not stale, when the first check failed on this head, so running again is not offered", () => {
+    const ready = { ...step("ready", "fail"), detail: "it conflicts with main in docs/PROGRESS.md" };
+    const skipped = [step("tests", "skipped"), step("build", "skipped"), step("lint", "skipped")];
+    expect(
+      decideMerge({
+        configured: true,
+        head: "api@a1",
+        state: { ...idle, current: result("api@a1", [ready, ...skipped]) },
+      }),
+    ).toEqual({ kind: "blocked", why: "it conflicts with main in docs/PROGRESS.md" });
+  });
+
   it("is stale when the checks ran on an older head or never ran", () => {
     expect(
       decideMerge({

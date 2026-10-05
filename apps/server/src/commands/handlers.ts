@@ -38,6 +38,7 @@ import { gitConnectHandlers } from "../gitConnect/handlers.ts";
 import { handoffHandlers } from "../handoff/handlers.ts";
 import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
+import { conversationsHandlers } from "../conversations/handlers.ts";
 import { inboxHandlers } from "../inbox/handlers.ts";
 import { mcpHandlers } from "../mcp-servers/handlers.ts";
 import { hostNameOf } from "../mrs/remote.ts";
@@ -173,6 +174,7 @@ export function createHandlers({
     ...autonomyHandlers(services.autonomy),
     ...captainHandlers(services.captain, services.autonomy),
     ...inboxHandlers(services.inbox),
+    ...conversationsHandlers(services.conversations),
     ...agendaHandlers({
       agenda: services.agenda,
       findings: services.findings,

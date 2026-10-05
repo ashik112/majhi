@@ -124,8 +124,19 @@ export const roomItems = sqliteTable(
       { mode: "virtual" },
     ),
   },
-  (t) => [primaryKey({ columns: [t.task, t.id] }), uniqueIndex("room_items_seq").on(t.task, t.seq)],
+  (t) => [
+    primaryKey({ columns: [t.task, t.id] }),
+    uniqueIndex("room_items_seq").on(t.task, t.seq),
+    index("room_items_task_type_at").on(t.task, t.type, t.at),
+  ],
 );
+
+/** The owner's read state per conversation (migration 158): the `at` of the newest message seen. */
+export const readMarks = sqliteTable("read_marks", {
+  id: text("id").primaryKey(),
+  readAt: text("read_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
 
 export const runs = sqliteTable(
   "runs",

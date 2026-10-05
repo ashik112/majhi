@@ -18,6 +18,8 @@ export const MergeVerdictSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("running") }),
   /** A check failed on this exact commit. */
   z.object({ kind: z.literal("failed"), check: MergeCheckNameSchema }),
+  /** The first check (merges cleanly, committed, no card waits) failed on this commit: `why` says how. */
+  z.object({ kind: z.literal("blocked"), why: z.string() }),
   /** The checks ran on an older commit (`ran`), or never ran. */
   z.object({ kind: z.literal("stale"), ran: z.boolean() }),
 ]);
@@ -39,6 +41,7 @@ export function mergeVerdictAction(verdict: MergeVerdict): MergeVerdictAction {
     case "stale":
       return "run-checks";
     case "failed":
+    case "blocked":
       return "fix-with-agent";
   }
 }
@@ -59,6 +62,8 @@ export function mergeVerdictLine(verdict: MergeVerdict): string {
       return verdict.check === "secret"
         ? "The diff holds what looks like a secret. It cannot merge."
         : `The ${verdict.check} check failed on this commit.`;
+    case "blocked":
+      return `Not ready: ${verdict.why}.`;
     case "stale":
       return verdict.ran
         ? "The checks ran on an older commit, so they say nothing about this one."

@@ -68,6 +68,15 @@ export function mergeItems(current: readonly RoomItem[], incoming: readonly Room
   return out;
 }
 
+/** When the newest agent message the room holds appeared, or undefined when it holds none. */
+export function newestAgentAt(items: readonly RoomItem[]): string | undefined {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item?.type === "agent") return item.at;
+  }
+  return undefined;
+}
+
 /** The highest seq we hold, the cursor for the next newer page of `room.items`. */
 export function newestSeq(items: readonly RoomItem[]): number | undefined {
   let max: number | undefined;

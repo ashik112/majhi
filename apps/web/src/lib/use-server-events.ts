@@ -4,6 +4,7 @@ import { useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { currentPermission, showAttention } from "./browser-notify";
 import { setHelloBuild } from "./build-watch";
+import { patchConversation } from "./conversation-queries";
 import {
   ALL_TOPICS,
   closeSocket,
@@ -85,6 +86,7 @@ export function useServerEvents(): void {
           setHelloBuild(event.build);
           return;
         }
+        if (event.type === "conversation") patchConversation(client, event);
         if (event.type === "attention") showAttention(event, (path) => router.history.push(path));
         const step = feedStep(lastSeq, event);
         lastSeq = step.seq;

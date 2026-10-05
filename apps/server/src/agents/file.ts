@@ -4,7 +4,22 @@ import { formatIssues } from "../errors.ts";
 
 const FENCE = "---";
 
-export type ParsedAgentFile = { ok: true; agent: Agent } | { ok: false; errors: string[] };
+export type ParsedAgentFile =
+  | { ok: true; agent: Agent; legacySkills: string[] }
+  | { ok: false; errors: string[] };
+
+/**
+ * Files written before skills moved to the skills lock have a `skills` list. It is read apart from
+ * the frontmatter, for the one-time move into the lock (`skills/migrate.ts`), and never written back.
+ */
+function takeLegacySkills(raw: unknown): { rest: unknown; skills: string[] } {
+  if (typeof raw !== "object" || raw === null || !("skills" in raw)) return { rest: raw, skills: [] };
+  const { skills, ...rest } = raw;
+  return {
+    rest,
+    skills: Array.isArray(skills) ? skills.filter((s): s is string => typeof s === "string") : [],
+  };
+}
 
 /**
  * Reads `---` YAML frontmatter and the markdown body. The file name (without
@@ -21,7 +36,8 @@ export function parseAgentFile(fileName: string, text: string): ParsedAgentFile 
       errors: doc.errors.map((e) => `Frontmatter: ${e.message.split("\n", 1)[0] ?? e.message}`),
     };
   }
-  const parsed = AgentFrontmatterSchema.safeParse(doc.toJS() ?? {});
+  const { rest, skills: legacySkills } = takeLegacySkills(doc.toJS() ?? {});
+  const parsed = AgentFrontmatterSchema.safeParse(rest);
   if (!parsed.success) return { ok: false, errors: formatIssues(parsed.error) };
   const expected = fileName.replace(/\.md$/, "");
   if (parsed.data.id !== expected) {
@@ -30,7 +46,7 @@ export function parseAgentFile(fileName: string, text: string): ParsedAgentFile 
       errors: [`id: The file is ${fileName}, so the id must be "${expected}", not "${parsed.data.id}"`],
     };
   }
-  return { ok: true, agent: { frontmatter: parsed.data, instructions: split.body } };
+  return { ok: true, agent: { frontmatter: parsed.data, instructions: split.body }, legacySkills };
 }
 
 function splitFrontmatter(
@@ -74,7 +90,6 @@ function stringifyFrontmatter(f: AgentFrontmatter): string {
     perms: f.perms,
     tools: f.tools,
     connections: f.connections,
-    skills: f.skills,
     fallback: f.fallback,
     context: f.context,
     turns: f.turns,

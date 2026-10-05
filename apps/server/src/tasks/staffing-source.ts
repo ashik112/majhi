@@ -12,6 +12,7 @@ import type { AccountService } from "../accounts/service.ts";
 import type { AgentStore } from "../agents/store.ts";
 import type { ConfigService } from "../config/service.ts";
 import { readDecisionSettings } from "../decisions/settings.ts";
+import type { SkillStore } from "../skills/store.ts";
 import type { Store } from "../store/index.ts";
 import { readPrices } from "../usage/prices.ts";
 import {
@@ -37,6 +38,7 @@ export interface StaffRequest {
 export interface StaffingDeps {
   store: Store;
   agents: AgentStore;
+  skills: Pick<SkillStore, "effectiveFor">;
   accounts: Pick<AccountService, "list"> & Partial<Pick<AccountService, "cachedModels">>;
   config: ConfigService;
   /** Free slots now, as `RunManager.capacity` gives them. */
@@ -101,7 +103,7 @@ export class StaffingSource {
     const accountFacts = new Map<string, StaffAccount>();
     for (const fm of all) {
       const m = memberFacts(fm, facts);
-      staff.push(agentOf(fm, m, tierOf(fm).model));
+      staff.push(agentOf(fm, m, tierOf(fm).model, await this.deps.skills.effectiveFor(fm)));
       if (!accountFacts.has(fm.account)) {
         accountFacts.set(fm.account, accountOf(fm.account, m, viewById.get(fm.account)?.status, free));
       }
@@ -147,14 +149,14 @@ export class StaffingSource {
   }
 }
 
-function agentOf(fm: AgentFrontmatter, m: MemberFacts, fallback: ModelTier): StaffAgent {
+function agentOf(fm: AgentFrontmatter, m: MemberFacts, fallback: ModelTier, skills: string[]): StaffAgent {
   return {
     id: fm.id,
     scope: fm.scope,
     where: fm.where,
     role: fm.role,
     account: fm.account,
-    skills: fm.skills,
+    skills,
     tier: (m.tier === undefined ? undefined : TIER_BY_LABEL[m.tier]) ?? fallback,
     pricePerMTok: m.price === undefined ? undefined : (m.price.input + m.price.output) / 2,
   };

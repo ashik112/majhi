@@ -68,6 +68,7 @@ import { CalmWake } from "../machine/calm-wake.ts";
 import type { RoomService } from "../room/service.ts";
 import { noRoomLine } from "../runs/limits.ts";
 import type { RunManager } from "../runs/manager.ts";
+import type { SkillStore } from "../skills/store.ts";
 import type { Store } from "../store/index.ts";
 import { captainAnsweredLine } from "../tasks/cards.ts";
 import { ancestorsOf } from "../tasks/planner.ts";
@@ -132,6 +133,8 @@ export interface AutonomyDeps {
   room: RoomService;
   accounts: { list(): Promise<AccountView[]>; cachedModels?(id: string): Promise<AccountModels | undefined> };
   agents: AgentStore;
+  /** The skills an agent has, by the skills lock. */
+  skills: Pick<SkillStore, "effectiveFor">;
   events: EventHub;
   /** This computer's git logins, to tell whose a gh or glab login is. */
   gitLogins?: { list(refresh?: boolean): Promise<GitLoginsResult> };
@@ -693,6 +696,7 @@ export class AutonomyService {
     this.staffingSource ??= new StaffingSource({
       store: this.deps.store,
       agents: this.deps.agents,
+      skills: this.deps.skills,
       accounts: this.deps.accounts,
       config: this.deps.config,
       capacity: (accounts) => this.deps.runs.capacity(accounts),

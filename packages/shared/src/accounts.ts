@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AgentToolRefSchema } from "./agent-tools.ts";
 import { ConnectionConfigSchema, duplicateConnectionIds, GLOBAL_CONNECTIONS } from "./connections.ts";
+import { ConversationEventSchema } from "./conversations.ts";
 import { EmojiSchema } from "./emoji.ts";
 import { IdSchema, SecretRefSchema } from "./ids.ts";
 import { AttentionEventSchema } from "./notify.ts";
@@ -302,7 +303,6 @@ export const AgentFrontmatterSchema = z.strictObject({
   perms: z.array(PermSchema).default([]),
   tools: z.array(AgentToolRefSchema).default([]),
   connections: z.array(IdSchema).default([]),
-  skills: z.array(z.string().trim().min(1)).default([]),
   fallback: IdSchema.optional(),
   context: z
     .strictObject({
@@ -588,6 +588,8 @@ export const ServerEventSchema = z.discriminatedUnion("type", [
     rows: z.literal(true).optional(),
   }),
   AttentionEventSchema.extend({ seq: z.number().int().positive().optional() }),
+  /** One conversation of the chat dock changed: tabs patch their list with this row. */
+  ConversationEventSchema.extend({ seq: z.number().int().positive().optional() }),
   /** The first frame of a connection: which build of the web bundle this server serves. It takes no number. */
   z.object({ type: z.literal("hello"), build: z.string().optional(), seq: z.undefined().optional() }),
 ]);

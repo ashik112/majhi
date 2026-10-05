@@ -23,6 +23,7 @@ export * from "./connect.ts";
 export * from "./connection-health.ts";
 export * from "./connections.ts";
 export * from "./containers.ts";
+export * from "./conversations.ts";
 export * from "./decision-learning.ts";
 export * from "./decisions.ts";
 export * from "./emoji.ts";
