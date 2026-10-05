@@ -450,8 +450,12 @@ function RunSkills({ run, single }: { run: SkillRun; single: boolean }) {
           aria-hidden="true"
           className={cn("size-3 shrink-0 text-fg-faint", open && "rotate-90")}
         />
-        <span>{single ? label : `@${run.agent}: ${label}`}</span>
-        {run.used.length > 0 && <span className="text-xs text-fg-faint">, {run.used.length} used</span>}
+        <span>
+          {single ? label : `@${run.agent}: ${label}`}
+          {run.used.length > 0 && (
+            <span className="text-xs text-fg-faint">{`, ${run.used.length} used`}</span>
+          )}
+        </span>
       </button>
       {open && (
         <ul

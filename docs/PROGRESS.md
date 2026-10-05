@@ -1,5 +1,14 @@
 # Progress
 
+## Skill use is recorded and shown (built, not merged)
+
+Branch `feat/skill-usage`.
+
+- **Changed.** A run now records the skills it had at launch (`runs.skills`, JSON names like `runs.tools`) and each use (`skill_uses`, one row per tool call, migration 159). A use is detected from typed fields only: Claude Code's `Skill` tool (`_meta.claudeCode.toolName` "Skill" and `rawInput.skill`, read in `packages/acp/src/normalize.ts`), or a tool call whose `locations` hold `<folder>/<name>/SKILL.md` in the run's copies or the task's `.claude/skills` (`skills/use.ts`). Only skills the run has count. Room: such a call renders as "Used skill: name" in the existing tool row, linking to `/skills?skill=name`. Context tab: "Skills this run had: N" per agent (collapsed names, used ones marked). Skills page detail: "Last used" and uses in the last 30 days, from one grouped query inside `skills.list`. New command `skills.runs`, new event topic `skills`. The fake agent takes a `skill: <name>` prompt line.
+- **Owner will notice.** Skill lines in the room, the list of skills each run had, and when each skill was last used.
+- **Verified.** Typecheck. `skills/use.test.ts` (detection, once-per-call, aggregation), `acp/src/skill-call.test.ts` (adapter shape). Browser on an isolated e2e server (temp home, port 7094): fake agent calls triage twice and an unknown skill; two "Used skill" lines, Context list, Skills detail "Last used just now. 2 uses", the room link opens the detail.
+- **Left.** Codex reads a SKILL.md through its shell, which reports no location in every case, so Codex use is only seen when the adapter gives a path. The Skills list rows do not show last used, only the detail.
+
 ## Fetch a project's base with no task (built, not merged)
 
 Branch `fix/prv-137-majhi-bug-no-way-to-fetch-sync-a-project`.
