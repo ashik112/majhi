@@ -105,6 +105,28 @@ RUN set -eu; \
   tar -xzf glab.tgz -C /out --strip-components=1 bin/glab; \
   /out/gh --version; /out/glab --version
 
+# doctl for DigitalOcean connections: scripts of majhi_secrets_saveFromScript and script watches run it
+# in the runner (`doctl databases connection`, `doctl databases user get`). Pinned by version and by the
+# SHA-256 of each release archive, per CPU. To update, change the version and take the sums from
+# `doctl-<version>-checksums.sha256` (github.com/digitalocean/doctl releases).
+FROM debian:bookworm-slim AS doctl
+ARG TARGETARCH
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+RUN set -eu; \
+  DOCTL_VERSION=1.177.0; \
+  case "$TARGETARCH" in \
+    amd64) DOCTL_SHA=34d3954721bfb8cdb42032e78d98274f157426fa6332511ae356edcce59dade3 ;; \
+    arm64) DOCTL_SHA=3adfe5bb667c2cdee15eb3501d53b57d8f04dfa945ddd4584f6f760834506992 ;; \
+    *) echo "doctl is not pinned for $TARGETARCH" >&2; exit 1 ;; \
+  esac; \
+  mkdir /out /dl; cd /dl; \
+  curl -fsSL -o doctl.tgz "https://github.com/digitalocean/doctl/releases/download/v${DOCTL_VERSION}/doctl-${DOCTL_VERSION}-linux-${TARGETARCH}.tar.gz"; \
+  echo "${DOCTL_SHA}  doctl.tgz" | sha256sum -c -; \
+  tar -xzf doctl.tgz -C /out doctl; \
+  /out/doctl version
+
 FROM base AS runner
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 RUN apt-get update \
@@ -145,6 +167,8 @@ RUN --mount=from=ghcr.io/astral-sh/uv:0.12.21,source=/uv,target=/usr/local/bin/u
 COPY --from=kubectl /kubectl /usr/local/bin/kubectl
 # glab and gh for `git` connections (SPEC 5.14): the run gets the workspace's own sign-in as GITLAB_TOKEN or GH_TOKEN.
 COPY --from=host-clis /out/gh /out/glab /usr/local/bin/
+# doctl for `digitalocean` connections: the run, and majhi's script fetches and watches, get DIGITALOCEAN_ACCESS_TOKEN.
+COPY --from=doctl /out/doctl /usr/local/bin/doctl
 # `docker` for scripts in a run (a repo's hand-off check, tests): a shim that sends the call to majhi,
 # which runs the task's own containers (apps/server/src/containers/task-docker.ts). No Docker, no socket.
 COPY --chmod=0755 docker/docker-shim.mjs /usr/local/bin/docker

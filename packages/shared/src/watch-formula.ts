@@ -233,14 +233,15 @@ function sendsData(script: string): boolean {
     const program = (words[at] ?? "").split("/").pop() ?? "";
     if (!HTTP_CLIENTS.has(program)) continue;
     const flags = words.slice(at + 1).filter((w) => w.startsWith("-"));
-    // `--data=x`, `--post-data=x` and a short flag with its value attached (`-d@file`) are data flags too.
-    if (
-      flags.some(
-        (w) => DATA_FLAGS.test(w.startsWith("--") ? (w.split("=")[0] ?? w) : w) || /^-[dFT]./.test(w),
-      )
-    ) {
-      return true;
-    }
+    // `curl -G -d a=b` and `--data-urlencode` put the data in the query of a GET: a read, like a URL with `?a=b`.
+    const getsQuery = program === "curl" && flags.some((w) => w === "--get" || /^-[A-Za-z]*G[A-Za-z]*$/.test(w));
+    const isData = (w: string): boolean => {
+      const name = w.startsWith("--") ? (w.split("=")[0] ?? w) : w;
+      if (getsQuery && (w.startsWith("-d") || /^--data(?:-[\w-]+)?$/.test(name))) return false;
+      // `--data=x`, `--post-data=x` and a short flag with its value attached (`-d@file`) are data flags too.
+      return DATA_FLAGS.test(name) || /^-[dFT]./.test(w);
+    };
+    if (flags.some(isData)) return true;
   }
   return false;
 }
