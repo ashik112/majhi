@@ -1,5 +1,5 @@
 import { DECISION_KIND_LABEL, type OwnerDecisionKind } from "@majhi/shared";
-import { ChevronRight, LoaderCircle } from "lucide-react";
+import { ChevronRight, CornerDownRight, LoaderCircle } from "lucide-react";
 import { memo, type ReactNode, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -22,12 +22,14 @@ import {
   type NeedsItem,
   type QueuedItem,
   queuedChip,
+  type Relation,
   type RowEntry,
   type RunningItem,
   SECTION_LABEL,
   SECTION_SORT,
   type SectionId,
   type ShippingItem,
+  type TreeInfo,
 } from "./home-model";
 import { plainTitle } from "./model";
 
@@ -38,10 +40,16 @@ export interface RowHandlers {
   onOpen: (key: string) => void;
   onToggle: (section: SectionId) => void;
   onMore: (section: SectionId) => void;
+  /** Fold or unfold the subtasks of a task in the tree. */
+  onFold: (task: string) => void;
 }
 
-interface RowProps extends Pick<RowHandlers, "onFocus" | "onAct" | "onOpen"> {
+interface RowProps extends Pick<RowHandlers, "onFocus" | "onAct" | "onOpen" | "onFold"> {
   entryKey: string;
+  /** How the task connects to others. */
+  rel: Relation | undefined;
+  /** Set in the tree: where the row stands in it. */
+  tree: TreeInfo | undefined;
   focused: boolean;
   selected: boolean;
   now: number;
@@ -62,6 +70,49 @@ function OrgChip({ org }: { org: OrgTag }) {
     >
       <OrgBadge label={org.letters} color={org.color} size="xs" />
       <span className="min-w-0 truncate max-[1279px]:hidden">{org.name}</span>
+    </span>
+  );
+}
+
+/** Horizontal step of one tree level, in pixels. */
+const TREE_STEP = 18;
+
+/** The vertical guide lines of a tree row, one under each parent level. */
+function Guides({ depth }: { depth: number }) {
+  return Array.from({ length: depth }, (_, i) => (
+    <span
+      // biome-ignore lint/suspicious/noArrayIndexKey: the level is the identity
+      key={i}
+      aria-hidden="true"
+      className="absolute inset-y-0 w-px bg-line-strong"
+      style={{ left: 12 + i * TREE_STEP + 8 }}
+    />
+  ));
+}
+
+/**
+ * How a task connects, after its title: in the list the task it is part of and its subtask count; in
+ * the tree, which already shows the parent, the progress of its subtasks.
+ */
+function Connections({ rel, tree }: { rel: Relation | undefined; tree: boolean }) {
+  if (rel === undefined) return null;
+  const parent = tree ? undefined : rel.parent;
+  const kids =
+    rel.total === 0
+      ? undefined
+      : tree
+        ? `${rel.done} of ${rel.total} done`
+        : `${rel.total} ${rel.total === 1 ? "subtask" : "subtasks"}`;
+  if (parent === undefined && kids === undefined) return null;
+  return (
+    <span className="tnum flex max-w-[170px] shrink-0 items-center gap-1.5 truncate text-xs text-fg-faint">
+      {parent !== undefined && (
+        <span title={`Part of ${parent}`} className="inline-flex items-center gap-0.5 font-mono">
+          <CornerDownRight aria-hidden="true" className="size-3" />
+          {parent}
+        </span>
+      )}
+      {kids !== undefined && <span>{kids}</span>}
     </span>
   );
 }
@@ -107,10 +158,16 @@ function Row({
   busy = false,
   elapsed: waited,
   detailTitle,
+  rel,
+  tree,
   onFocus,
   onAct,
   onOpen,
-}: Pick<RowProps, "entryKey" | "focused" | "selected" | "onFocus" | "onAct" | "onOpen"> & {
+  onFold,
+}: Pick<
+  RowProps,
+  "entryKey" | "focused" | "selected" | "rel" | "tree" | "onFocus" | "onAct" | "onOpen" | "onFold"
+> & {
   lamp: LampState;
   chip: string;
   chipTone?: LampState | undefined;
@@ -140,11 +197,33 @@ function Row({
         "min-h-9 py-1 transition-colors duration-100",
         focused ? "bg-selected" : "hover:bg-raised",
         selected && "bg-accent-wash",
+        tree?.dim && "opacity-55",
         "before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:content-['']",
         focused && "before:bg-accent",
       )}
     >
-      <span className="flex h-7 items-center">
+      {tree !== undefined && <Guides depth={tree.depth} />}
+      <span
+        className="flex h-7 items-center gap-1"
+        style={tree === undefined ? undefined : { marginLeft: tree.depth * TREE_STEP }}
+      >
+        {tree !== undefined &&
+          (tree.hasChildren && rel !== undefined ? (
+            <button
+              type="button"
+              aria-label={tree.open ? "Fold subtasks" : "Unfold subtasks"}
+              aria-expanded={tree.open}
+              onClick={() => onFold(rel.task)}
+              className="grid size-4 cursor-pointer place-items-center rounded-xs text-fg-faint hover:text-fg"
+            >
+              <ChevronRight
+                aria-hidden="true"
+                className={cn("size-3.5 transition-transform", tree.open && "rotate-90")}
+              />
+            </button>
+          ) : (
+            <span className="size-4" />
+          ))}
         <Lamp state={lamp} size={7} />
       </span>
       <span
@@ -156,14 +235,17 @@ function Row({
         {chip}
       </span>
       <span className="w-[62px] shrink-0 truncate font-mono text-xs text-fg-faint">{id ?? ""}</span>
-      <button
-        type="button"
-        onClick={() => onOpen(entryKey)}
-        title={title}
-        className="m-0 min-w-0 flex-[2] cursor-pointer truncate p-0 text-left text-base font-medium text-fg outline-none hover:underline focus-visible:underline"
-      >
-        {title}
-      </button>
+      <span className="flex min-w-0 flex-[2] items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onOpen(entryKey)}
+          title={title}
+          className="m-0 min-w-0 cursor-pointer truncate p-0 text-left text-base font-medium text-fg outline-none hover:underline focus-visible:underline"
+        >
+          {title}
+        </button>
+        <Connections rel={rel} tree={tree !== undefined} />
+      </span>
       {org !== undefined ? (
         <OrgChip org={org} />
       ) : (
@@ -628,12 +710,17 @@ export function EntryView({
   now,
   orgLabel,
   orgName,
+  relations,
+  treeInfo,
   handlers,
 }: {
   entry: Entry;
   focusKey: string | undefined;
   selectedKeys: ReadonlySet<string>;
   now: number;
+  relations: ReadonlyMap<string, Relation>;
+  /** Set in the tree. */
+  treeInfo: ReadonlyMap<string, TreeInfo> | undefined;
   orgLabel: (entry: Entry) => OrgTag | undefined;
   orgName: (id: string) => string;
   handlers: RowHandlers;
@@ -656,6 +743,9 @@ export function EntryView({
     selected: selectedKeys.has(entry.key),
     now,
     org: orgLabel(entry),
+    rel: relations.get(entry.key),
+    tree: treeInfo?.get(entry.key),
+    onFold: handlers.onFold,
     onFocus: handlers.onFocus,
     onAct: handlers.onAct,
     onOpen: handlers.onOpen,
