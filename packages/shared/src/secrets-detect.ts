@@ -46,7 +46,8 @@ const KNOWN: { kind: SecretKind; pattern: RegExp; group?: number }[] = [
   {
     // A quoted literal can be short: `password = "hunter2xyz9"`.
     kind: "assigned",
-    pattern: /\b(?:api[_-]?key|access[_-]?key|secret|token|password|passwd|pwd)\s*[:=]\s*["']([^\s"',;]{8,})["']/gi,
+    pattern:
+      /\b(?:api[_-]?key|access[_-]?key|secret|token|password|passwd|pwd)\s*[:=]\s*["']([^\s"',;]{8,})["']/gi,
     group: 1,
   },
 ];
