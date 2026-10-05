@@ -14,6 +14,7 @@ import { createApp } from "./http/app.ts";
 import { eventLoopLag, LIMITS, SelfChecks, startSelfWatch } from "./ops/self.ts";
 import { RepoScanner } from "./scan/scanner.ts";
 import { createServices, type ServiceOptions, type Services } from "./services.ts";
+import { readBuildId } from "./http/build-id.ts";
 import { attachSockets, type UpgradeSource } from "./sockets.ts";
 import { SshHostProbe, sshTargets } from "./ssh/hosts.ts";
 import { DB_FILE_NAME } from "./store/index.ts";
@@ -86,10 +87,12 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
   );
   services.admin.bind(dispatch);
   services.bindCaptain(dispatch);
+  const build = readBuildId(env.webDist);
   const app = createApp({
     version: env.version,
     commit: env.commit,
     webDist: env.webDist,
+    build,
     dispatch,
     host: { link: hostLink, majhiHome: env.majhiHome },
     uploads: services.uploads,
@@ -211,6 +214,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       stopSelfWatch = startSelfWatch(services.ops.watch, selfChecks);
       sockets = attachSockets(server, {
         events: services.events,
+        build,
         terminals: services.terminals,
         rooms: {
           snapshot: (id) => services.tasks.snapshot(id),

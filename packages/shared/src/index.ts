@@ -2,6 +2,7 @@ export * from "./accounts.ts";
 export * from "./agenda.ts";
 export * from "./agent-tools.ts";
 export * from "./api.ts";
+export * from "./build-id.ts";
 export * from "./app-setup.ts";
 export * from "./approval-groups.ts";
 export * from "./approval-stats.ts";
