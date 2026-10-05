@@ -85,5 +85,4 @@ describe("background processes and the task", () => {
     const items = (await h.cmd("room.items", { task: "ACM-1" })).body.items as { type: string }[];
     expect(items.some((i) => i.type === "review")).toBe(false);
   });
-
 });

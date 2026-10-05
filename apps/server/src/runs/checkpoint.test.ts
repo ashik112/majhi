@@ -81,5 +81,4 @@ describe("checkpoints", () => {
     expect(await git(a.worktree, "log", "-1", "--format=%s")).toBe("init");
     expect(await git(a.worktree, "diff", "--cached", "--name-only")).toBe("");
   });
-
 });

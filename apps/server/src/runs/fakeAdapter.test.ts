@@ -40,5 +40,4 @@ describe("the run manager with the fake ACP adapter", () => {
       else process.env.SSH_AUTH_SOCK = before;
     }
   });
-
 });

@@ -78,7 +78,6 @@ describe("queue items that wait for an account", () => {
     expect(waitProblem(item("signed-in"), status("needs-login"), known)).toBeUndefined();
     expect(waitProblem(item("signed-in"), status("healthy"), () => false)).toContain("There is no account");
   });
-
 });
 
 describe("majhi watching the account for the captain", () => {

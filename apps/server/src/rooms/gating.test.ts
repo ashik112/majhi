@@ -21,7 +21,6 @@ const agent = (patch: Partial<{ id: string; role: Role; scope: string; tools: st
 });
 
 describe("gateTools: the defaults are what agents had before gating", () => {
-
   it("attaches majhi-decide only to an agent that lists it", () => {
     expect(gateTools(agent({ tools: ["majhi-decide"] }), ctx)).toContain("majhi-decide");
     expect(gateTools(agent({ role: "Lead", scope: "root" }), { ...ctx, teamSize: 3 })).not.toContain(
@@ -54,7 +53,6 @@ describe("gateTools: the defaults are what agents had before gating", () => {
 });
 
 describe("gateTools: the agent's tools list", () => {
-
   it("a dash cannot take majhi-admin from the captain", () => {
     const boss = agent({ id: "majhi-boss", role: "Root", scope: "root", tools: ["-majhi-admin"] });
     expect(gateTools(boss, ctx)).toContain("majhi-admin");

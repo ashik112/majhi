@@ -19,7 +19,6 @@ describe("dayWindow", () => {
       end: "2026-10-02T04:00:00.000Z",
     });
   });
-
 });
 
 const settings = AutonomySettingsSchema.parse({

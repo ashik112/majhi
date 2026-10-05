@@ -82,5 +82,4 @@ describe("the secret scan of a branch", () => {
     const scan = await scanForSecrets(repo, "task/acm-1", "task/acm-3");
     expect(scan).toMatchObject({ kind: "secret", hit: { path: "src/a.ts", line: 11 } });
   });
-
 });

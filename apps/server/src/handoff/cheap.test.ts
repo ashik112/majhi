@@ -57,5 +57,4 @@ describe("the cheap checks in a real repository", { timeout: 60_000 }, () => {
     expect(state.current?.failures[0]).toContain("holds what looks like a secret");
     expect(JSON.stringify(state)).not.toContain(token);
   });
-
 });

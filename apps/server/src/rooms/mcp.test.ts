@@ -97,7 +97,6 @@ const text = (res: unknown): string =>
   ((res as { content: { text: string }[] }).content[0]?.text ?? "") as string;
 
 describe("majhi-room", () => {
-
   it("refuses a request without a valid token, and a token after its session ended", async () => {
     const { h, servers, release } = await world();
     const spec = servers["acme-lead"]?.find((s) => s.name === "majhi-room");

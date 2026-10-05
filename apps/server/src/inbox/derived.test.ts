@@ -118,7 +118,6 @@ describe("cards derive from the task's state now, so none goes stale", () => {
     expect(second?.options.map((o) => o.id)).toEqual(["changes"]);
     expect(second?.blocked).toBe("It conflicts with main in a.ts.");
   });
-
 });
 
 const noActions = {} as unknown as DecisionActions;

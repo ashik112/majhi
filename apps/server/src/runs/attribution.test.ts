@@ -161,7 +161,6 @@ describe("another task's branch", () => {
     await updateRef(repo, as(), "main");
     expect(await git(repo, "log", "-1", "--format=%s", "main")).toBe("change");
   });
-
 });
 
 describe("a run in the shared git folder", () => {

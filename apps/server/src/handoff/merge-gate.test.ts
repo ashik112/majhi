@@ -75,7 +75,6 @@ describe("decideMerge", () => {
       }),
     ).toEqual({ kind: "stale", ran: false });
   });
-
 });
 
 let w: BossWorld | undefined;

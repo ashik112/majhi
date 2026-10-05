@@ -164,7 +164,6 @@ describe("batch approve and leave", () => {
     expect(out.skipped).toEqual([{ id: "room:ACM-1:pm1", reason: "The captain suggests Deny" }]);
     expect(log).toEqual(["permission pm2 yes"]);
   });
-
 });
 
 describe("decisions.answerBatch through the command table", () => {

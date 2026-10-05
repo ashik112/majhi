@@ -174,7 +174,6 @@ describe("a green hand-off", () => {
     expect(x.at).toBe(y.at);
     expect(w.calls.exec).toHaveLength(3);
   });
-
 });
 
 describe("a red hand-off", () => {
@@ -214,7 +213,6 @@ describe("a red hand-off", () => {
     const again = await w.service.ensure("ACM-1", { force: false });
     expect(again.verdict).toBe("green");
   });
-
 });
 
 describe("three strikes", () => {
@@ -246,7 +244,6 @@ describe("three strikes", () => {
     expect(after.strikes).toBe(0);
     expect(after.escalated).toBe(false);
   });
-
 });
 
 describe("the review pass", () => {

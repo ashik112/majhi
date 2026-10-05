@@ -13,7 +13,6 @@ const ask = (q: Partial<MergeQuery> & Pick<MergeQuery, "order">) =>
   nextMerge({ policy: "approve", trigger: "owner", nowMs: NOW, ...q });
 
 describe("nextMerge", () => {
-
   describe("never", () => {
     it("merges nothing, whoever asks", () => {
       for (const trigger of ["owner", "poll"] as const) {

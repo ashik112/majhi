@@ -220,7 +220,6 @@ describe("building decisions", () => {
     });
     expect(isDecisionItem({ ...paused, reason: "offline" }, subjects["ACM-2"] as never)).toBe(false);
   });
-
 });
 
 function fakeActions(log: string[]): DecisionActions {
@@ -363,5 +362,4 @@ describe("the captain's recommendation", () => {
       handlers["decisions.recommend"]({ id: "room:ACM-1:ask1", option: "keep", reason: "x" }, ctx),
     ).rejects.toThrow(/tool of the captain/);
   });
-
 });

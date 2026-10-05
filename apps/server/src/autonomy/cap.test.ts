@@ -131,5 +131,4 @@ describe("the day cap of autonomous mode", () => {
     expect(await asked()).toEqual([]);
     expect((await h.cmd("captain.answerBudget", { scope: "day", answer: "raise" })).status).toBe(409);
   });
-
 });

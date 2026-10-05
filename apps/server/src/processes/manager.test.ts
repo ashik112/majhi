@@ -83,5 +83,4 @@ describe("ProcessManager", () => {
     await until(() => manager.list("ACM-1")[0]?.status === "exited", "pwd to exit");
     expect(manager.list("ACM-1")).toHaveLength(1);
   });
-
 });

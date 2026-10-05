@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  afterLimit,
-  firedLimit,
-  MAX_STRIKES,
-  type TurnLimits,
-  type TurnState,
-} from "./turn-limits.ts";
+import { afterLimit, firedLimit, MAX_STRIKES, type TurnLimits, type TurnState } from "./turn-limits.ts";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
