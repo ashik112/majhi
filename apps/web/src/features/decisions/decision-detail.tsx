@@ -205,6 +205,25 @@ export function DecisionDetailPane({
       <div className="@container min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-4 pb-4 scroll-fade">
         <p className="m-0 text-md text-fg text-pretty break-words">{decision.sentence ?? decision.title}</p>
 
+        {decision.blocked !== undefined && (
+          <p className="mt-2 mb-0 flex items-start gap-1.5 text-sm text-caution text-pretty break-words">
+            <TriangleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+            {decision.blocked}
+          </p>
+        )}
+
+        {detail?.command !== undefined && (
+          <Block title={decision.kind === "approval" ? "What it asks" : "Command"}>
+            <p className="m-0 text-sm text-fg-muted">
+              {detail.agent === undefined ? "Asked" : `@${detail.agent} asks`} to run this
+              {decision.task !== undefined && decision.chat !== true ? ` in ${decision.task}` : ""}:
+            </p>
+            <pre className="m-0 max-h-72 overflow-auto rounded-md border border-line bg-sunken p-2.5 font-mono text-xs whitespace-pre-wrap break-words text-fg-soft">
+              {detail.command}
+            </pre>
+          </Block>
+        )}
+
         {suggestion !== undefined && (
           <div className="mt-4 flex flex-col gap-1 rounded-xl border border-accent-line bg-accent-wash px-3 py-2.5">
             <p className="m-0 flex items-center gap-1.5 text-sm text-fg-muted">
@@ -234,10 +253,7 @@ export function DecisionDetailPane({
                 <p className="m-0 font-medium text-fg">{detail.draft.subject}</p>
               )}
               <p className="m-0 whitespace-pre-wrap text-pretty break-words">{detail.draft.body}</p>
-              <p className="m-0 text-xs text-fg-faint">
-                {detail.draft.voice === undefined ? "No voice profile used" : `Voice: ${detail.draft.voice}`}
-                {" · "}Nothing is sent until you approve it.
-              </p>
+              <p className="m-0 text-xs text-fg-faint">Nothing is sent until you approve it.</p>
             </div>
           </Block>
         )}

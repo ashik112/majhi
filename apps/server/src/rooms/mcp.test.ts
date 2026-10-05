@@ -259,7 +259,6 @@ describe("majhi-tasks", () => {
       "change_task_branch",
       "close",
       "create",
-      "e2e_latest",
       "get",
       "link",
       "list",

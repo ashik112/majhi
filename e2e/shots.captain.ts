@@ -74,7 +74,7 @@ function findings(): Finding[] {
   });
 }
 
-const CHORES = ["ship", "cards", "questions", "memory", "projects", "triage", "cleanup", "stuck"] as const;
+const CHORES = ["ship", "cards", "questions", "memory", "projects", "triage", "cleanup"] as const;
 
 const ROWS = (
   start: boolean,

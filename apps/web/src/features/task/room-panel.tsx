@@ -54,7 +54,8 @@ export function RoomPanel({
       <ProcessesCard task={task} processes={processes} />
       {showsMrCard(task) && <MrCard task={task} />}
       <BranchCard task={task} />
-      <ChangesPanel task={task} items={items} onShowChanges={onShowChanges} />
+      {/* With a repo the Changes tab is the one place for it; the card is for a task with none. */}
+      {task.repos.length === 0 && <ChangesPanel task={task} items={items} onShowChanges={onShowChanges} />}
     </aside>
   );
 }

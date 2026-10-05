@@ -371,7 +371,10 @@ export function serveAcp(o: ServeOptions): void {
           })
           .safeParse(raw);
         if (!parsed.success) return [];
-        const headers = Object.fromEntries(parsed.data.headers.map((h) => [h.name, h.value]));
+        // Like the real Claude CLI, which expands ${NAME} in MCP headers from its environment.
+        const expand = (v: string) =>
+          v.replace(/\$\{([A-Za-z0-9_]+)\}/g, (all, n: string) => process.env[n] ?? all);
+        const headers = Object.fromEntries(parsed.data.headers.map((h) => [h.name, expand(h.value)]));
         return [{ name: parsed.data.name, url: parsed.data.url, headers }];
       });
       const state: Session = {
@@ -633,6 +636,16 @@ export function serveAcp(o: ServeOptions): void {
         if (text.startsWith("limit:")) {
           throw new RequestError(-32603, text.slice("limit:".length).trim());
         }
+        // A `fake-limit` file in the account's config home puts the whole account at its limit: every
+        // prompt fails with the file's text, so e2e can hit a limit mid-run on one account only.
+        const home = process.env.CLAUDE_CONFIG_DIR ?? process.env.CODEX_HOME;
+        const accountLimit =
+          home === undefined
+            ? undefined
+            : await readFile(join(home, "fake-limit"), "utf8").catch(() => undefined);
+        if (accountLimit !== undefined && accountLimit.trim() !== "") {
+          throw new RequestError(-32603, accountLimit.trim());
+        }
         const scripted = text.startsWith("echo:") ? undefined : await scriptedTurn(s, text);
         if (text.startsWith("crash:")) {
           console.error("fake-agent: crashed on purpose");
@@ -876,6 +889,7 @@ export function serveAcp(o: ServeOptions): void {
               content: { type: "text", text: agentText },
             });
           }
+          stopReason = "end_turn";
         } else if (text.startsWith("limit-text:")) {
           // The same limit as the turn's own answer, ending normally: the other way the CLIs say it.
           agentText = text.slice("limit-text:".length).trim();

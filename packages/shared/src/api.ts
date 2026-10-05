@@ -6,6 +6,8 @@ export const HealthSchema = z.object({
   version: z.string(),
   /** Git commit the running image was built from. Absent in older servers. */
   commit: z.string().optional(),
+  /** Id of the web bundle this server serves. A tab with another id reloads. Absent: no bundle (dev) or an older server. */
+  build: z.string().optional(),
 });
 export type Health = z.infer<typeof HealthSchema>;
 

@@ -22,78 +22,117 @@ const OWNER_WAIT_TYPES: RoomItem["type"][] = [
   "choice",
   "owner-question",
 ];
-const PENDING = sql`json_extract(${roomItems.payload}, '$.state') = 'pending'`;
+/** An item whose `state` is pending: an indexed virtual column (migration 153), not a JSON parse per row. */
+const PENDING = sql`${roomItems.pending} = 1`;
+
+const TASK = sql.placeholder("task");
+const ITEM = sql.placeholder("id");
+const LIMIT = sql.placeholder("limit");
+const SEQ = sql.placeholder("seq");
+
+/** The hot queries, built and prepared once (Drizzle builds and prepares a plain query on every call). */
+function roomStatements(db: Db) {
+  return {
+    at: db
+      .select({ at: roomItems.at })
+      .from(roomItems)
+      .where(and(eq(roomItems.task, TASK), eq(roomItems.id, ITEM)))
+      .prepare(),
+    topSeq: db
+      .select({ seq: sql<number>`coalesce(max(${roomItems.seq}), 0)` })
+      .from(roomItems)
+      .where(eq(roomItems.task, TASK))
+      .prepare(),
+    put: db
+      .insert(roomItems)
+      .values({
+        task: TASK,
+        id: ITEM,
+        seq: SEQ,
+        type: sql.placeholder("type"),
+        payload: sql.placeholder("payload"),
+        at: sql.placeholder("at"),
+      })
+      .onConflictDoUpdate({
+        target: [roomItems.task, roomItems.id],
+        set: { seq: sql`excluded.seq`, type: sql`excluded.type`, payload: sql`excluded.payload` },
+      })
+      .prepare(),
+    get: db
+      .select()
+      .from(roomItems)
+      .where(and(eq(roomItems.task, TASK), eq(roomItems.id, ITEM)))
+      .prepare(),
+    latest: db
+      .select()
+      .from(roomItems)
+      .where(eq(roomItems.task, TASK))
+      .orderBy(desc(roomItems.seq))
+      .limit(LIMIT)
+      .prepare(),
+    before: db
+      .select()
+      .from(roomItems)
+      .where(and(eq(roomItems.task, TASK), lt(roomItems.seq, SEQ)))
+      .orderBy(desc(roomItems.seq))
+      .limit(LIMIT)
+      .prepare(),
+    after: db
+      .select()
+      .from(roomItems)
+      .where(and(eq(roomItems.task, TASK), gt(roomItems.seq, SEQ)))
+      .orderBy(asc(roomItems.seq))
+      .limit(LIMIT)
+      .prepare(),
+  };
+}
 
 /** Room items: one row per (task, id), replaced in place, with a per-task `seq` that grows on every write. */
 export class RoomRepo {
   private readonly lastAt = new Map<string, number>();
+  private prepared: ReturnType<typeof roomStatements> | undefined;
 
   constructor(private readonly db: Db) {}
+
+  private get q(): ReturnType<typeof roomStatements> {
+    this.prepared ??= roomStatements(this.db);
+    return this.prepared;
+  }
 
   /**
    * Inserts or replaces an item and gives it the next `seq`. `at` is set once, on insert,
    * and strictly increases within a task, so sorting by `at` gives the order items appeared in.
    */
   upsert(task: TaskId, id: string, payload: RoomPayload): RoomItem {
-    return this.db.transaction((tx) => {
-      const existing = tx
-        .select({ at: roomItems.at })
-        .from(roomItems)
-        .where(and(eq(roomItems.task, task), eq(roomItems.id, id)))
-        .get();
-      const top = tx
-        .select({ seq: sql<number>`coalesce(max(${roomItems.seq}), 0)` })
-        .from(roomItems)
-        .where(eq(roomItems.task, task))
-        .get();
+    // Prepared statements run on the same connection, so they sit inside this transaction.
+    return this.db.transaction(() => {
+      const existing = this.q.at.get({ task, id });
+      const top = this.q.topSeq.get({ task });
       const seq = (top?.seq ?? 0) + 1;
       const at = existing?.at ?? this.nextAt(task);
       const item = RoomItemSchema.parse({ ...payload, id, task, seq, at });
-      tx.insert(roomItems)
-        .values({ task, id, seq, type: item.type, payload: JSON.stringify(payload), at })
-        .onConflictDoUpdate({
-          target: [roomItems.task, roomItems.id],
-          set: { seq, type: item.type, payload: JSON.stringify(payload) },
-        })
-        .run();
+      this.q.put.run({ task, id, seq, type: item.type, payload: JSON.stringify(payload), at });
       return item;
     });
   }
 
   get(task: string, id: string): RoomItem | undefined {
-    const row = this.db
-      .select()
-      .from(roomItems)
-      .where(and(eq(roomItems.task, task), eq(roomItems.id, id)))
-      .get();
+    const row = this.q.get.get({ task, id });
     return row === undefined ? undefined : toItem(row);
   }
 
   /** Newest first by `seq`, at most `limit`, and whether older ones exist. */
   page(task: string, limit: number, beforeSeq?: number): { items: RoomItem[]; more: boolean } {
-    const rows = this.db
-      .select()
-      .from(roomItems)
-      .where(
-        beforeSeq === undefined
-          ? eq(roomItems.task, task)
-          : and(eq(roomItems.task, task), lt(roomItems.seq, beforeSeq)),
-      )
-      .orderBy(desc(roomItems.seq))
-      .limit(limit + 1)
-      .all();
+    const rows =
+      beforeSeq === undefined
+        ? this.q.latest.all({ task, limit: limit + 1 })
+        : this.q.before.all({ task, seq: beforeSeq, limit: limit + 1 });
     return { items: rows.slice(0, limit).flatMap(readable), more: rows.length > limit };
   }
 
   /** The next `limit` items after `afterSeq`, newest first, and whether newer ones exist beyond them. */
   pageAfter(task: string, limit: number, afterSeq: number): { items: RoomItem[]; more: boolean } {
-    const rows = this.db
-      .select()
-      .from(roomItems)
-      .where(and(eq(roomItems.task, task), gt(roomItems.seq, afterSeq)))
-      .orderBy(asc(roomItems.seq))
-      .limit(limit + 1)
-      .all();
+    const rows = this.q.after.all({ task, seq: afterSeq, limit: limit + 1 });
     return { items: rows.slice(0, limit).flatMap(readable).reverse(), more: rows.length > limit };
   }
 
@@ -107,11 +146,7 @@ export class RoomRepo {
     id: string,
     half: number,
   ): { items: RoomItem[]; older: boolean; newer: boolean } | undefined {
-    const row = this.db
-      .select()
-      .from(roomItems)
-      .where(and(eq(roomItems.task, task), eq(roomItems.id, id)))
-      .get();
+    const row = this.q.get.get({ task, id });
     const target = row === undefined ? undefined : toItem(row);
     if (target === undefined) return undefined;
     const before = this.page(task, half, target.seq);
@@ -142,9 +177,7 @@ export class RoomRepo {
     return this.db
       .select()
       .from(roomItems)
-      .where(
-        and(eq(roomItems.type, "permission"), sql`json_extract(${roomItems.payload}, '$.state') = 'pending'`),
-      )
+      .where(and(eq(roomItems.type, "permission"), PENDING))
       .all()
       .flatMap(readable);
   }
@@ -154,13 +187,7 @@ export class RoomRepo {
     return this.db
       .select()
       .from(roomItems)
-      .where(
-        and(
-          eq(roomItems.task, task),
-          eq(roomItems.type, type),
-          sql`json_extract(${roomItems.payload}, '$.state') = 'pending'`,
-        ),
-      )
+      .where(and(eq(roomItems.task, task), eq(roomItems.type, type), PENDING))
       .orderBy(asc(roomItems.at))
       .all()
       .flatMap(readable);
@@ -172,32 +199,29 @@ export class RoomRepo {
    */
   pendingOfTypes(tasks: readonly string[], types: readonly RoomItem["type"][]): Map<string, RoomItem[]> {
     const out = new Map<string, RoomItem[]>();
-    for (let from = 0; from < tasks.length; from += 400) {
-      const rows = this.db
-        .select()
-        .from(roomItems)
-        .where(
-          and(
-            inArray(roomItems.task, tasks.slice(from, from + 400)),
-            inArray(roomItems.type, [...types]),
-            PENDING,
-          ),
-        )
-        .orderBy(asc(roomItems.at))
-        .all();
-      for (const item of rows.flatMap(readable)) {
-        const own = out.get(item.task);
-        if (own === undefined) out.set(item.task, [item]);
-        else own.push(item);
-      }
+    // Pending cards are few, so read them all through the pending index and keep the asked tasks:
+    // cheaper than one query per chunk of ids, and the same however many tasks are asked.
+    const wanted = new Set(tasks);
+    const rows = this.db
+      .select()
+      .from(roomItems)
+      .where(and(inArray(roomItems.type, [...types]), PENDING))
+      .orderBy(asc(roomItems.at))
+      .all();
+    for (const item of rows.flatMap(readable)) {
+      if (!wanted.has(item.task)) continue;
+      const own = out.get(item.task);
+      if (own === undefined) out.set(item.task, [item]);
+      else own.push(item);
     }
     return out;
   }
 
   /** Tasks with something pending for the owner: an approval, a permission, a secret, a question. One query. */
   tasksWaitingOnOwner(): Set<string> {
+    // Not DISTINCT: with it SQLite drops the pending index for the type index. The set dedupes.
     const rows = this.db
-      .selectDistinct({ task: roomItems.task })
+      .select({ task: roomItems.task })
       .from(roomItems)
       .where(and(inArray(roomItems.type, OWNER_WAIT_TYPES), PENDING))
       .all();
@@ -207,7 +231,7 @@ export class RoomRepo {
   /** Tasks with a pending paused card: stopped and waiting for the owner to resume or decide. One query. */
   tasksPausedOnOwner(): Set<string> {
     const rows = this.db
-      .selectDistinct({ task: roomItems.task })
+      .select({ task: roomItems.task })
       .from(roomItems)
       .where(and(eq(roomItems.type, "paused"), PENDING))
       .all();
@@ -274,6 +298,18 @@ export class RoomRepo {
       r.command === null || r.state === null
         ? []
         : [{ command: r.command, state: r.state, alone: r.alone === 1, n: r.n }],
+    );
+  }
+
+  /** Whether the room holds an item that appeared after `at` (ISO): one indexed probe, no row read. */
+  hasItemAfter(task: string, at: string): boolean {
+    return (
+      this.db
+        .select({ one: sql<number>`1` })
+        .from(roomItems)
+        .where(and(eq(roomItems.task, task), gt(roomItems.at, at)))
+        .limit(1)
+        .get() !== undefined
     );
   }
 

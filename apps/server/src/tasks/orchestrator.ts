@@ -55,12 +55,7 @@ export class Orchestrator {
   }
 
   private waiting(): Task[] {
-    const { store } = this.deps;
-    return store.tasks
-      .list(false)
-      .filter((t) => (t.status === "inbox" || t.status === "ready") && store.tasks.startWhenReady(t.id))
-      .reverse()
-      .flatMap((t) => store.tasks.get(t.id) ?? []);
+    return this.deps.store.tasks.waitingToStart();
   }
 
   private async sweep(): Promise<void> {

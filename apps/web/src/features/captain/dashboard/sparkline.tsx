@@ -35,7 +35,7 @@ export function Bars({
       className="shrink-0"
     >
       {values.map((v, i) => {
-        const h = v <= 0 ? 1 : Math.max(2, (v / top) * height);
+        const h = v <= 0 ? 2 : Math.max(3, (v / top) * height);
         return (
           <rect
             // Bars never reorder, so the position is the identity.
@@ -46,8 +46,8 @@ export function Bars({
             width={bar}
             height={h}
             rx={1}
-            fill={v <= 0 ? "var(--c-line-strong)" : color}
-            opacity={i === values.length - 1 ? 1 : 0.55}
+            fill={v <= 0 ? "var(--c-fg-faint)" : color}
+            opacity={v <= 0 ? 0.45 : i === values.length - 1 ? 1 : 0.6}
           >
             <title>{labels[i]}</title>
           </rect>

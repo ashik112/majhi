@@ -1,5 +1,360 @@
 # Progress
 
+## Nothing merges unless the checks are green for the exact commit (built, not merged)
+
+Branch `feat/merge-needs-green`.
+
+- **Cause.** The merge decision answer (`decisions.answer` merge, `inbox/service.ts`) and the review card buttons (`room.cardAction`) call `tasks.merge` as the owner with no look at the hand-off. `TaskService.merge` itself checked only conflicts and uncommitted files. The captain's ship chore (`shipCheck`) did wait for the hand-off, but the other paths never asked. The owner's merge also ran no secret scan; only the ship readiness did.
+- **The rule, in one place.** `MergeGate.checks` (`handoff/merge-gate.ts`) reads the task's head commits and the hand-off result recorded for that head, and `decideMerge` returns a typed `MergeVerdict` (`ok`, `running`, `failed` with the check, `stale`). `TaskService.merge` is the only function that merges a task branch, and it calls the gate before anything is touched. So the owner, the captain, decision answers, the ship chore, push after merge, a ship that waited for its lead and any agent tool all go through it. The gate is a required dependency of `TaskService`. Refusals are `MergeRefused` (typed, 409), and `tasks.shipOptions` returns `checks: { verdict, head }`.
+- **Overrides.** Only the owner, with `confirmChecks: "<head>"` on `tasks.merge` or `room.cardAction`, and only for a failed test, build or lint check. Agents and the captain are refused up front (`refuseForAgents`, the command handlers and the card action). A wrong head is refused. The override is written to the audit trail (`merge-override`) and a room note. The secret scan is a hard block with no override, and now applies to every merge path, not only the ship readiness.
+- **No checks set up** (no test, build or lint command on the project card): merges as before, and the Ship panel says "No checks set up for this project."
+- **UI.** The Ship panel shows the verdict line. A stale or never-run verdict shows "Run checks"; a failed one shows "Fix with agent" (sends the failure to the lead) and "Merge anyway (checks failed: test)"; running shows a disabled "Checks running" and polls. The Needs you list blocks Merge with the verdict sentence and sends the owner to the task.
+- **Also.** A done task can now be checked (its review-state checks do not apply), so its unshipped work can still be merged. The ship chore's `shipCheck` also reads the gate verdict.
+- **Verified.** Typecheck clean. Tests: `handoff/merge-gate.test.ts` (running, failed test, stale, green, agent and captain refused and cannot confirm, wrong sha, owner override recorded, no-checks project), plus handoff, captain ship, mrs, inbox, admin and tasks suites. Browser on an isolated e2e server at 1440x900 and 1100x800: failed, stale, run checks, merge anyway; no console errors or failed requests.
+- **Left.** MRs merged on the host by CI (`mrs.merge`, `tasks.mergeMrs`) follow the host's own CI, not this rule: they do not merge a task branch locally. Typecheck is not a separate hand-off step, so it is not in the verdict.
+
+## Home as one list by who holds the ball (built, not merged)
+
+Branch `feat/home-flow`.
+
+- **What changed.** Home is no longer four columns. It is one list of one-line rows in sections: Needs you, Running now, Shipping, Up next, To triage, Captain handled, Done today. Empty sections are not drawn; an all-quiet Home says so and offers New task. Every row has a primary verb button that fixes its reason (Answer, Review, Resume, Watch, Fix with agent, Merge, Start now, Sign in, Raise limit, Verify, Undo).
+- **Up next reasons.** New `lifecycle.blockerOf` in `packages/shared/src/lifecycle/blocker.ts` returns a typed reason for a ready or inbox task (dependency, account signed out or at limit, machine busy, no free slot, tasks at once, budget hold, not triaged, nobody started it), in the order of the lifecycle design section 5. Read through the new command `tasks.blockers`. `tasks.homeFacts` gives open merge requests with CI state and what working agents do now.
+- **Keys.** j/k and arrows move through all rows, Shift+J/K jump sections, Enter opens, 1 to 3 run the row's numbered actions, x selects (then 1 runs on all selected), / filters, t opens To triage. `g` then a letter still goes to pages; Cmd J, Cmd K and Esc are untouched.
+- **What the owner will notice.** Needs you is exactly `decisions.list`, so it matches the bell. At 1100px the detail and the other numbered actions drop to a second line of the focused row; the wait and the main button stay at the right.
+- **Not sourced.** Per-row cost, step progress, the CI failure reason (shows "CI failed"), and why a paused task paused when no decision exists (shows "Paused, no agent is working on it").
+- **Also fixed.** `guardMounts` wrote `refs/heads/task/.keep`, which fails for any branch not under `task/`, so tasks could not start. It now writes into the branch's own folder (separate commit).
+- **Verified.** Typecheck clean. Tests: `blocker.test.ts`, `home-model.test.ts`. Browser on isolated e2e servers at 1440x900 and 1100x800 with about 50 tasks and live fake agents, an empty home, and a 200-task seed; keyboard flow checked; no console errors or failed requests.
+## fix/autopilot-load: Auto-pilot made majhi slow (not merged)
+
+Three causes of "slow with Auto-pilot on, captain chats do not load".
+
+- **Stale tab after an update.** The web build writes a build id into index.html (a hash of the hashed file names). The server reports it on `/health` (`build`) and in a `hello` first frame of `/api/events`. A tab on another build reloads itself at once when no text box holds unsent text. Otherwise it shows "majhi was updated. Reload to use the new version." with a Reload button, and reloads by itself once the text is sent. At most one self-reload a minute per server build, so a stale cache cannot loop. The rule is `reloadDecision` in `packages/shared/src/build-id.ts` (test: same build, different build, unsent text, no id).
+- **Hand-off checks starved the Mac.** Default CPUs per check are `max(2, floor(cores/6))`, and at most `clamp(floor(cores/3 / cpus), 1, 2)` checks run at once. On 10 cores that is one check of 2 CPUs, not two of 5. Hand-off containers run with `--cpu-shares 256`, so agent runs and the server win any contention. `containers.handoff_cpus` still overrides. See DECISIONS.
+- **Captain retried what the gates refuse.** The wake digest now says which gate holds each backlog task and each resumable paused task ("ACM-3 waits: This workspace works on 1 task at once and ACM-2 is running."), with a line telling the captain not to start them. Gates (`StartGate`: machine busy, workspace at tasks-at-once, no free agent slot) are typed, read live, and part of the facts key. A refusal only writes events and never wakes the captain, so the same gate in the same state is the same fact: no new wake until it changes. A refused resume says its line once, not every minute. A task that waits for room no longer raises the "running, but no agent is working" alarm.
+
+**Measured** on the in-process world (real services, fake agent, `bossWorld`; Acme with one running task, tasks-at-once 1, three waiting tasks, a captain that tries every task its digest does not mark as waiting, a news wake every 25 s for 150 s, scaled to 10 minutes):
+
+| | captain turns / 10 min | refused starts / 10 min |
+|---|---|---|
+| before | 16 | 32 |
+| after | 16 | 0 |
+
+Turns stay equal here because the test sends the wakes itself. What changes is that no turn is spent on a start the gates refuse. I found no path where a refusal wakes the captain: refusals write `decision` events, and the facts key does not read events. The paid retries were the captain choosing to try gated tasks on wakes it got for other reasons, which the digest now prevents.
+
+**How verified.** Typecheck clean. Tests: `autonomy/driver.test.ts` (digest names the gate; a refusal by the same gate does not wake again; one wake when the gate clears), `handoff/limits.test.ts`, `packages/shared/src/build-id.test.ts`. Browser (isolated e2e server, 1440x900 and 1100x800): with unsent text and a different server build the bar shows and the tab reloads once the text is gone; with nothing unsent it reloads once. No console errors. Shots: `scratchpad/fix-autopilot-load/bar-1440.png`, `bar-1100.png`.
+
+**Left.** The repo rule (two tasks on one repo) is not a typed gate yet, so the digest does not name it. `autonomy/live-state.test.ts` (2 tests) and `autonomy/slots.test.ts` (1 test) fail the same way on main in this checkout: the test world's git lacks `refs/heads/task` (`ENOENT ... .git/refs/heads/task/.keep`), so the first started task pauses with an error and no gate holds. Not caused by this branch.
+
+## Overnight 2026-10-05: summary for the owner (deployed, ff22e3dd)
+
+Live majhi runs ff22e3dd. A backup was taken before the update. All server, web, host and shared tests pass (3,951), typecheck is clean, and a final browser smoke test on an isolated server passed. Since yesterday afternoon: 29 merges, 28,268 lines removed and 14,293 added.
+
+### Do these yourself (only you can)
+1. **Rotate the DigitalOcean token.** Agents could read connection tokens from process command lines; that is fixed. Sign the DigitalOcean connection out and in again under Connections, then revoke the old token at cloud.digitalocean.com (API, Tokens).
+2. **Clear old token text.** Token values may sit in agent transcripts and in the room history of PRV-127. Delete those rooms or transcripts.
+3. **Re-pause watches you paused on purpose.** Watches now store who paused them and why. A watch paused before tonight has no recorded reason, so it resumes by itself once it reads fine. If you paused one deliberately, pause it again.
+
+### What you will notice
+- **Counts agree everywhere.** Home, the columns, the bell and the sidebar show one number from the server. "Working" means an agent is actually working; waiting on you is under Needs you. A parent waiting on its subtasks is not a decision.
+- **No dead buttons.** A finished task with nothing to merge shows Mark done and Ask for changes, not Merge. Failed answers say what failed.
+- **Same permission buttons everywhere:** Allow once, Allow for this task, Deny, with the command shown. Questions answered from Needs you have a 5 s Undo.
+- **Room.** Esc stops a turn wherever focus is, even while the agent is still starting. The two-question card keeps Send in view. Cleaner header, Changes shown once.
+- **Captain.** Cmd J puts the cursor in the message box. It no longer sends finished code tasks back for a "short report" and spends no turn on work it may not ship.
+- **New task.** The button stays on screen, Cmd+Enter submits, mixed-workspace repos are blocked up front, each repo has a "starts from" branch field, and one press makes one task.
+- **Online pill** turns offline within about a second of the server dying.
+- **Faster.** The board makes about 1 request a second instead of 15 while agents run, and moves 7 KB/s instead of about 1 MB/s. One task change re-renders one card. Boot no longer stalls. Web assets are compressed and cached.
+- **Tools.** The captain can install a command-line tool it needs (for example doctl) through majhi with a verified checksum, so secret fetches and script watches can use it.
+- **Less noise.** Findings resolve themselves when their condition is gone. Findings from removed features are closed. `~/.majhi/e2e` (about 1 GB) was removed.
+
+### Under the hood
+- Every task status change goes through one `apply()` with an audit row (`task_events`) and an outbox in the same transaction. Illegal moves are refused (a note on a merge-request task no longer restarts it).
+- Counts and slot gates read live runs, so a restart cannot leave ghost "running" tasks blocking work. A restart reconciles each task once.
+- Secrets are off process command lines. Hand-off secret blocks name the file, line and rule.
+- Git: optional locks off, one majhi write per worktree, a write waits out another process's index lock instead of failing.
+- Database: prepared statements, batched reads, new indexes, daily batched retention (audit 1 year, costs 2 years; finished rooms keep messages and cards), one bad row no longer fails a whole list.
+- Tests: suite health fixed (root config per package, no keychain writes, stale expectations).
+
+### Still open
+- The first task create with a repo right after a restart took about 30 s on the test server. Not traced yet.
+- The "restore folders by hand" card is handled by an instruction to agents, not by a structural guard.
+- Follow-up findings about removed trackers and the old e2e runner close when their memory threads close, or dismiss them.
+- Next stage of the task model: step D (readers and one owner-facing text table), E (a `hold` column, old columns dropped after a backup), F (one scheduler tick with fairness). See docs/design/task-lifecycle.md sections 9 and 12.
+
+## Esc anywhere in a room, one task per Cmd+Enter, Watch header spacing (built, not merged)
+
+Branch `fix/esc-focus-create-once`.
+
+- Esc stops the running or starting turn wherever focus is on a task page (body, a button, the room), unless a dialog, menu, popover, the captain drawer or another text field has it. It goes through the shortcut table (`stop` row) and reaches the room by a window event. Right after a room opens, the Esc waits up to 4 s for the turn to start. A room that opens with nothing focused now focuses the message box.
+- New task dialog: while a create is in flight further submits are ignored, both buttons are disabled and show busy ("Adding..."). The dialog sends a request id (one per dialog session); `tasks.create` returns the first task for a repeated id for 5 minutes. The dialog used to wait for the task list refetch before closing; it now closes and opens the room as soon as `tasks.create` returns.
+- Watch list at 1100 px: the grid gave the name column 49 px, so its header ran into WORKSPACE. Columns are now narrower and the name column has a floor of 88 px.
+- Verified in a browser on an isolated server: Esc at +0, +150, +300, +600 and +2000 ms after Cmd+Enter, with focus on the body and in the box, stops the run. After a server restart, three quick Cmd+Enter presses made one task and the dialog closed on return. Test: `apps/server/src/tasks/create-once.test.ts`.
+- Left: the first `tasks.create` with a repo after a server restart took about 30 s in the isolated server (the request itself, not the UI). The likely cause is a server or host-link call that waits for a timeout on a cold start. Not investigated here.
+
+## UI sync: typed feed events, patched lists, cheaper decisions, windowed board (built, not merged)
+
+Branch `perf/ui-sync`. Measured on the audit's seeded rig (2,000 tasks, 200k room items, 50k events), one board tab at 1440x900, 10 fake-agent runs (about 49 turns/min), same machine, base 2c013560 plus the hot-paths merge against this branch. Renders counted with the React commit hook on an unminified build.
+
+| Measure | Before | After |
+|---|---|---|
+| Requests per second, board tab, 10 runs | 15.4 | 0.9 |
+| Bytes per second | 993 KB/s | 7 KB/s |
+| Request latency in the browser | 2.5 to 3.3 s | 2 to 20 ms |
+| Card renders per commit (`Frame`) | 1,274 | 3 |
+| DOM nodes on the board | 22,393 | 1,080 |
+| Main thread busy | 5.6% | 2.4% |
+| `tasks.list` payload | 577 KB | 499 KB |
+| `decisions.list` | 242 KB, 16 ms | 242 KB, 8 ms warm (the per-row task reads are three queries total) |
+
+- **What changed.**
+  - The events socket stamps every frame with `seq` (per connection, 1, 2, 3 ...; a frame dropped for a tab with over 1 MB unsent still takes its number). A tab that sees a gap reads everything once; so does a reconnect. A `changed` event can name its tasks (`tasks`) and say only their rows changed (`rows`). The hub has `emitTask(id, rows?)`; run start/stop, messages, titles, handoff checks, merge looks and most task state changes in `TaskService` now name their task. Owner commands and a few rare paths still send the bare `tasks` topic.
+  - New command `tasks.changed {ids, decisions?}`: the list rows of those tasks plus the counts, and with `decisions` what waits in them. The web (`lib/task-sync.ts`) reads named tasks in one request per 2 s window, patches the task list and the decisions list (counts, and the named tasks' decisions in the server's order), and reads again only the open detail of those tasks' cards. `staleTime: Infinity` for the task list and decisions list; a 60 s refetch is the safety net. `cmd()` hands back the previous parsed object when the answer text is identical (no JSON parse, no zod, no new identity).
+  - `decisions.list`: subjects of all rows read in three queries (was three per row), first looks at review tasks (each reads the repos) run at most three at once, the list waits 1.5 s for first looks and the rest answer when they finish (the touched task's decisions are re-read through the feed), `counts` kept. Renewals stay behind the answer.
+  - Board: cards are memoised, a card reads its own row (`useTaskRow`, same object until that task changes), one shared clock replaces a timer per card, a column of more than 30 cards draws only the ones in view (`@tanstack/react-virtual`, already used by Needs you).
+  - `tasks.list` rows lose `mode` and the repos' `branch` (the board shows neither).
+- **What the owner will notice.** A busy board no longer lags. A card's change shows within about 2 s during a burst, at once when quiet. Long columns scroll the same.
+- **How verified.** Typecheck clean. Tests: `packages/shared/src/event-seq.test.ts` (seq monotonic per connection, gaps), `apps/web/src/lib/events-model.test.ts` (a gap makes the client read everything once; what each event reads), `task-sync.test.ts` (list and decisions patches keep identity and order), `events/hub.test.ts`, inbox tests (look concurrency capped at 3, recount). Census guard green. Browser on an isolated server with 10 runs: board, Needs you and a running task room at 1440 and 1100, no console errors or failed requests (`scratchpad/perf-ui-sync/*.png`).
+- **Left.** `decisions.list` is still 242 KB at 505 decisions: every field is shown by the board or Needs you, so it was not cut; it is now read only on a real change or every 60 s. The sidebar still re-renders on every room message (`NavRow`). The 10-run rig has agents that pause on an error again and again (`pausedByRuns`, about 6 a second), which is the main source of `tasks:ids` events; worth a look on its own.
+
+## Captain soak test fixed (branch fix/captain-soak)
+
+- **What changed.** The usage recorder now takes the run clock (`runClock`), so turns are stamped with the simulated time and the day and workspace budgets measure them. The soak test's findings stub gains `settle`, which the upkeep pass calls on every sweep since findings settle by key.
+- **What the owner will notice.** Nothing.
+- **How verified.** `soak.test.ts` passes; captain and autonomy folders pass; typecheck clean.
+
+## Lifecycle C: one apply() for every status write (built, not merged)
+
+Branch `feat/lifecycle-c`. Merge main first (migration 154 is on main from another branch; this one is 156).
+
+- **What changed.** `TaskRepo.setStatus` is gone. Every status change goes through `apply(taskId, event)` in `apps/server/src/tasks/lifecycle/` (`apply.ts`, `rows.ts`, `types.ts`): load the state with `fromStored`, `transition()`, then a refusal writes one `task_events` row and nothing else; otherwise one transaction writes status, `paused_reason`, `paused_by` and `autonomy_tasks.held / held_scope / resumed_at` through `toStored`, the audit row and the outbox, and then the effects run through one runner (`TaskService.runEffect`). Migration 156 adds `task_events` (audit and outbox in one table). `drainOutbox()` runs at start, before the restart reconcile. All 14 writers are routed (tasks, merge requests, runs: `pausedByRuns`, `resumedByRuns`, and the restart reconcile through `runLost`).
+- **What the owner will notice.** Nothing, except: a message to a task with a merge request open from the captain, a hand-off or a schedule leaves a note and does not restart it (the owner's message still sends it back); a scheduled message no longer restarts a task the owner stopped.
+- **Design points to read** (DECISIONS, 2026-10-05, Lifecycle C): two changes to the pure model, found in practice: `sendBack` from `mr` for the owner, and `runResumed` lifts an `error` hold (SPEC 5.7 auto resume). The old pause fields are ambiguous in two places (a gate pause looks like an owner stop, `blocked` is idle or a dependency); each is named and handled until step E.
+- **Census.** `status writes` 15 to 0 (now tracked on `LifecycleRows.commit`), `Task.pausedReason` 41 to 34, `waitsForOwner()` 9 to 6, total outside the lifecycle module 203 to 182. Baseline refreshed, no count rose.
+- **Tests.** `tasks/lifecycle/apply.test.ts` (setStatus not a method, refusal writes only its row, atomic rollback, outbox drains after a crash and drops a stale event, 24 transition rows round-trip with the old columns), `illegal-moves.test.ts` (tell on mr, wish start, logged refusal, scheduler vs owner stop), `store/task-events-migration.test.ts`, transition tests for the two model changes. Task, MR, store, runs, rooms, autonomy, captain, budgets, processes, inbox, notify and automation suites run with `--maxWorkers=3`.
+- **Left.** Creation still inserts the row directly (no event). Raw SQL on `autonomy_tasks` in `autonomy/repo.ts` is not moved to drizzle yet; apply writes those columns with drizzle. Step D (readers, drop `paused`), the tick lock (F). `lostByRestart` for tasks that already have a hold is a no-op as before.
+
+## Server hot paths (built, not merged)
+
+Branch `perf/hot-paths`. Measured on the audit's seeded rig (2,000 tasks, 750 done), base 72742a34 against this branch, same machine, run back to back. The machine is shared, so read the ratios.
+
+| Item | Before | After |
+|---|---|---|
+| Boot CPU, first 60 s (includes tsx compile) | 26.2 s | 5.5 to 7.4 s |
+| Slowest `config.get` after the first request | 275 to 547 ms every 10 s for 60 s | 8 to 27 ms |
+| `autonomy.status` as the shell reads it | 259 KB, 0.8 to 1.2 s | 2.4 KB, 0.2 to 0.7 s, one answer shared for 2 s |
+| `autonomy.status` with `detail` (Captain page only) | 259 KB | 259 KB, sizes in one query instead of one per task |
+| `roomWrote` task loads | 3 per room item | 0 for items that wake nothing |
+| 50 KB streamed reply on the room socket | quadratic (each flush re-sent the whole text) | about 1x text as deltas plus one whole item at the end |
+| Store writes for a 25 s streamed reply | one per 50 ms | about one per second |
+| Initial JS (index + shared + preloads), raw / gzip | 1819 / 545 kB | 1560 / 483 kB |
+| `index` chunk | 917 kB | 654 kB |
+| Markdown renderer (react-markdown, remark) | in the first load | loads with the first rendered message |
+| Task screen, chats, edit-roots | in `index` | own chunks (97, 13, 2 kB) |
+| Static files | no compression, no cache headers | brotli and gzip made at build, `/assets` immutable, pages `no-cache` |
+
+What changed
+- Boot: `Resilience.startup` no longer calls `statusChanged` for every done task. It reads links, merge requests and statuses once and hands only the done tasks something hangs on (a waiting task, a parent, an open merge request) to `TaskService.reconcileDone`, which runs the orchestrator once and emits `tasks` once. The restart reconcile for running tasks is unchanged and now skips non-running tasks before loading them.
+- `autonomy.status` takes `{detail}`. Without it, `now`, `backlog` and `waiting` are empty and `running` (ids) is sent; the Captain page and the delegation sheet ask with `detail: true`. Commands that return the status still return the full one.
+- Room socket: new `delta` message `{id, offset, append}`. The client appends only when its text is `offset` long. Stored text is saved at most once a second and whenever `flush` runs (snapshot, any other write), and then one whole item is sent so every client ends equal. A reconnecting client gets a snapshot that is flushed first, so it has the full text.
+
+How verified: typecheck clean; tests for streaming (`room/streaming.test.ts`: linear bytes, mid-message reconnect), static headers (`http/app.test.ts`), live-state, resume, autonomy suite, census guard. `autonomy/approvals.test.ts` "counts an agent of an autonomous task" fails the same way on the base (ENOTEMPTY on temp dir cleanup). Browser: isolated server on the `team` seed at 1440x900 and 1100x800, home, task room (lazy screen and markdown render, reply and link shown), captain, chats: no console errors or failed requests; assets arrive as br with immutable cache.
+
+Left: the shared-schemas chunk (386 kB, zod) stays in the first load because `cmd()` parses every answer with the command's schema; moving that out needs a decision on parsing. `e2e/phase2a-room.spec.ts` fails on the stale "Board" heading, unrelated.
+## Ops hygiene (built, not merged)
+
+Branch `fix/ops-hygiene`.
+
+What changed.
+- **Tools the captain can install.** The old path was only a prompt line: download a binary into `$MAJHI_TOOLS/bin` inside a run. Secret fetches and script watches run in a separate throwaway container that never mounted that folder, so `doctl` was never on their PATH. New commands `toolbox.list`, `toolbox.install`, `toolbox.remove` (MCP: `majhi_toolbox_*`). majhi downloads the vendor's release itself (https, public hosts, 300 MB cap, redirects checked), keeps it only when its SHA-256 matches the one given or the one in the vendor's checksums file, unpacks a tar.gz or zip safely, and writes it to two places: `tool-installs/<org>/bin` (checked copy, never mounted into runs) and `tools/<org>/bin` (what runs already put on PATH). Script and secret-fetch containers now mount only the checked folder, read-only, and have it first on PATH. `{arch}` and `{machine}` in a URL match the runner's CPU. The runner Dockerfile is unchanged.
+- **Build-a-URL scripts are no longer refused as "sends data".** A script declares `network: "off"` (script watches and `majhi_secrets_saveFromScript`) and then runs with `--network none`, so nothing can be sent and the text guard does not apply. With network on, the "sends data" rule now reads the script's commands: a data flag counts only for an HTTP client (`curl`, `wget`, ...). `tr -d` and `psql -d` no longer trip it.
+- **Findings.** `tidy:dirty:<task>` findings resolve by themselves when the worktree is clean or gone (`FindingsService.settle`, by key prefix, never text). Follow-up findings resolve when their memory thread closes. Migration 154 dismisses open findings of removed sources (radar, ci, dependency, eol, opportunity, tracker) once and deletes the `tracker-comment` channel rows, drafts and trust state. The channel is gone from `OUTBOUND_CHANNELS`.
+- **Watches.** A paused watch carries who paused it and why (owner, agent with its note, or unrecorded) and shows it in the detail. An agent must give a note when it pauses. A pause nobody chose (agent, or from before this) is checked once per interval and the watch resumes once it reads fine. Only the owner's pause stays.
+- **Startup cleanup.** `removeLeftoverFolders` removes `e2e` and `business/kb` under the majhi home at startup from an explicit list, never follows a link, and logs each removal.
+- **Skills.** A skill that fails to install fails once with its reason, becomes a finding under the same key, and is not tried again.
+- **Manual work.** The task rules and the captain's prompt now say never to ask the owner for manual file, folder or command work. The restore-folders card came from agents having no way to see git-ignored folders in a worktree and no rule against handing the step to the owner. majhi writes nothing into the owner's checkout, so it does not restore them itself.
+
+What the owner will notice. Fewer findings, a reason on every paused watch, secret fetches that can use installed tools.
+
+Verified. Tests for findings settle, the migration, the cleanup allowlist, watch pause reasons and auto-resume, the skill no-retry, the toolbox installer, the script classifier and the container mount guard. Typecheck clean.
+
+Left. `psql` is not a single release binary, so it is not a toolbox install; database watches use the bundled drivers. Follow-up findings about removed features (tracker tests, the e2e runner) are text only: they resolve when their memory threads close, and are not matched by wording. The `business` playbook scope is still used by the Laya check and stays.
+
+## Server data layer performance (built, not merged)
+
+Branch `perf/db-layer`. Measured on the audit's seeded rig (2,000 tasks, 200k room items, 50k autonomy events, 20k turns and audit rows), same machine, old and new code run back to back. The machine is shared, so read the ratios, not the absolute times.
+
+| Item | Before | After |
+|---|---|---|
+| `tasks.get` for all 2,000 tasks (4 queries each) | 362 to 906 ms | 36 to 76 ms |
+| Orchestrator `waiting()` (every sweep, and per done task at boot) | 15 to 42 ms | 0.1 ms |
+| Planner `running()` | 7 to 19 ms | 0.1 ms |
+| Chat memory sweep, task part (every minute) | 11 to 38 ms | 0.1 ms (plus no room read for a chat with nothing new) |
+| Budget lift, task part (every minute) | 7 to 23 ms | 6 to 9 ms with 504 paused tasks (a few in real use) |
+| Room item write (`room.upsert`) | 0.6 ms | 0.13 to 0.15 ms |
+| `pendingOfType` per task, 200 tasks | 21 to 48 ms | 10 to 16 ms |
+| `pendingOfTypes` for 2,000 tasks | 4 to 9 ms | 1.7 to 2.7 ms |
+| Captain key claim, settle and read, 2,000 times | 105 to 362 ms | 78 to 92 ms |
+| `autonomy.task` 2,000 times | 15 to 54 ms | 3 to 4 ms |
+| Outcomes pass, rows written when nothing changed | 5,015 rows, 62 ms (160 to 250 ms in the audit) | 0 rows, 0 ms (a pass that derives the same does nothing; a changed one writes only the changed rows, 1.3 ms to find them) |
+| Worst-case first prune (all seeded rows old) | not possible, no pruning | 958 batches of 500, 329 ms total, event loop lag at most 6 ms |
+
+What changed.
+- **Prepared statements.** `TaskRepo` (get, list, getMany, has, statuses, links, unmerged, start-when-ready) and `RoomRepo` (upsert, get, page, pageAfter, around) build their Drizzle queries once with placeholders. `getMany` loads any number of tasks in four queries through `json_each`, so no per-id loop is left in the store. Every connection also keeps one compiled statement per SQL text (`cacheStatements` in `store/db.ts`, 400 entries), which covers the raw `db.prepare` repos (autonomy, captain keys, outcomes, findings, agenda) and Drizzle's own prepare without touching them. New loop methods: `waitingToStart()`, `runningTasks(except)`, `chatIds()`. `Orchestrator.waiting`, `TaskPlanner.running`, `ChatMemory.sweepDue` and the budget lift use them.
+- **SQLite baseline.** Startup sets and reads back WAL, synchronous NORMAL, busy timeout 5000 ms and foreign keys, and logs one line with the version. A warning shows if any is below the baseline. better-sqlite3 is already 13.0.3 with SQLite 3.53.4, newer than the 3.51.3 WAL-reset fix, so nothing was upgraded. A test asserts the baseline and the version.
+- **Indexes, migration 153.** `room_items.pending` is a virtual column over the payload's `state` (safe for a payload that is not JSON) with a partial index `(type, task) WHERE pending = 1`, so the owner's pending cards are an index lookup, not a JSON parse per card ever made. Also `tasks(status, updated_at)`, a partial index for open MRs, `tasks(brief) WHERE kind = 'chat'`, `findings(created_at)`, `findings(status, last_seen)`, `autonomy_events(kind, at)`, `outcomes(at)`, `captain_actions(at)`, `audit(kind)` and `audit(agent)` (the audit page's DISTINCT lists read an index now). Each was checked with EXPLAIN QUERY PLAN. Test: the migration on a pre-153 database with damaged payloads.
+- **Retention.** `store/retention.ts`, numbers in `RETENTION`. A daily job (first run 10 minutes after boot) deletes in batches of 500 with the event loop free between batches: audit 365 days, turns 730, autonomy events 180, outcomes 400, captain actions 365, settled action keys 180, ended captain, playbook and automation runs 180 (the newest of each kind always stays), hand-off history 180, usage events 365. Rooms of tasks done more than 90 days: tool output, thoughts and context notes only. Messages, plans, reviews, every card, anything pending and the newest item (the room's `seq` counter) stay. Tasks, decisions and the Laya decision log are never pruned. Tests: what is kept and deleted, batching, twice in a row.
+- **Idle loops.** The outcomes pass hashes what it derived and writes nothing when it is the same as the last pass, otherwise only the rows that differ; it tells the UI to refetch only when something was written. The ladder still runs every pass (it reads settings and the clock). The chat sweep reads only chats with an item newer than their last memory read. Test: only changed rows are written.
+- **One bad row.** `store/tolerant.ts`: tasks, task links, task statuses and findings are parsed row by row; a bad row is skipped and logged once. `findings.list` and `agenda.today` no longer fail on a finding with an unknown source. Test: one invalid finding and one invalid task, the rest returned, one log line.
+
+How verified. Typecheck of every package clean. Tests run: `store/*` (retention, migration, tolerant reads, existing store, audit and room tests), `outcomes/*`, `memory/chats`, `tasks/orchestrator`, `tasks/planner`, `budgets/*`, census guard (the start-when-ready column count went down by one). Bench scripts are in the scratchpad (`perf-db-layer/`).
+
+Left. `tasks.list` is still about 9 to 20 ms for 2,000 tasks: the cost is zod and JSON parsing of each row, not SQL. `RoomRepo.page` is dominated by zod parsing of each item. The `autonomy.status` N+1 and the boot storm are outside this branch.
+## Merges no longer fail on index.lock (built, not merged)
+
+Branch `fix/git-optional-locks`.
+
+- **What the owner will notice.** A merge or rebase no longer fails with "Unable to create index.lock" because a background `git status` or `diff` ran in the same worktree.
+- **Cause.** Read-only git (checkpoint, handoff ready check, room coordinator) refreshes the index and takes `index.lock` unless told not to. Nothing set `GIT_OPTIONAL_LOCKS`.
+- **Fix.** `gitEnv` in `git/git.ts` sets `GIT_OPTIONAL_LOCKS=0` for every command the server runs through `git()` (git's docs: same as `--no-optional-locks`, safe for writes). Index-writing commands (add, commit, merge, rebase, reset, checkout and so on) now run one at a time per worktree through a keyed queue (`git/keyed-queue.ts`). A single-step write that still hits a lock held by someone else (an agent's git in its container) waits and retries up to 5 times (100 ms to 2 s); the lock file is never removed. Multi-step writes (rebase, merge, pull, stash, cherry-pick, revert, am) are queued but not retried, since they leave state behind when they stop halfway.
+- **Left.** `apps/host` git calls (clone, push) and the config-history and backup repos run their own git and are not in a task worktree's index path; unchanged. Agent containers' own git cannot be locked by majhi.
+- **Verified.** `git/locks.test.ts` (env on every command, read during a held lock, writes never overlap, wait out a foreign lock without removing it); `tasks/shipped.test.ts` 5 runs in a row under `--maxWorkers=2`; `git/` tests; typecheck clean.
+
+## Captain checks and the new task dialog (built, not merged)
+
+Branch `fix/captain-checks-new-task`.
+
+- **What the owner will notice.** Auto-pilot no longer sends finished code tasks with no changes back to running. They get one line on the log: "not ready to ship: nothing changed since it started". Investigation tasks with an empty report are still sent back. The new task dialog keeps "Add and start" on screen, the body scrolls, Enter in the title and Cmd+Enter anywhere send it, repos from two workspaces block the save with the reason beside the picker, each picked repo has a "starts from" branch field, and the dependency chip never wraps.
+- **Cause.** `answerTasks` took every review task with no diff, code tasks included, and judged the report length. Now it marks `investigation` from the task's kind, repos and read mounts, and the chore skips the rest. The authority gate is one function (`answerGate`) used before the pass and again in the recheck before a turn.
+- **Left as is.** The sentence still attaches no repos or branches (SPEC, decision 2026-10-02); aliases are suggested with one click. See DECISIONS.
+- **Verified.** `captain/ship-mr.test.ts` (code task not bounced, investigation bounced, no turn when the workspace asks), typecheck clean. Browser on an isolated server at 1440x900, 1100x800 and 1100x600: footer visible, cross-workspace block, Enter and Cmd+Enter submit, base `develop` saved, no console errors. Isolated Auto-pilot run with three no-change review tasks: none bounced.
+## Room, captain drawer and shell fixes (built, not merged)
+
+Branch `fix/room-captain-shell`.
+
+- **What the owner will notice.** Esc (and Stop) now stops a turn while the agent is still starting, shows "Stopping..." and posts one line ("Stopped @lead's turn." or "Stopped before the agent started."); the held prompt goes out with the next message. Cmd J focuses the box at once and keeps early keystrokes in it (a box shows while the chat opens); single-key shortcuts no longer fire inside the drawer. The online pill shows a dead server within about 3 s and a returning one within 2 s; sending while offline says so and keeps the text. A two-question card keeps Send in view and says how many questions are left. The task header no longer wraps the key or overlaps chips, keeps one primary button when a card in the room asks for the same decision, and shows Changes once (the tab, for tasks with a repo). A stopped agent reads "Idle". A restart that ends an open permission request leaves one room line.
+- **Cause and fix of Esc.** Three gaps: the web ignored Esc while the task was set up but no agent had reported (now counts as busy: a start request in flight, or a running task whose agents are all stopped); the service had no run to cancel during `start` (worktrees, memory), so it now remembers the cancel and skips starting the agent; the manager cancelled nothing between the session opening and the prompt going out (`cancel` now sets `cancelBeforePrompt` whenever no prompt is in flight, and the loop checks it before sending and keeps the prompt queued).
+- **Shortcuts.** `use-shortcuts.ts` treats the drawer, and the page body while the drawer is open, as typing. The drawer focuses in a layout effect, and the loading state is a real box whose text moves into the composer.
+- **Pill.** `/health` every 1.5 s with a 1.5 s timeout, one immediate retry, `networkMode: always` (the browser's offline flag paused the check before), and a refetch on every events socket open or close.
+- **Sockets.** `closeSocket` closes a connecting socket once it opens, so leaving a page logs no "closed before the connection is established".
+- **Not done.** Expected 4xx results: the browser prints "Failed to load resource" for every 4xx response itself, and the app logs nothing of its own. Hiding them would mean answering 200 for handled errors, a protocol change; left alone.
+- **Tests.** `runs/manager.test.ts` "Esc before the agent has started" (session still opening: nothing is sent, the queue waits, later messages still go). The fake runtime got `startGate`.
+- **Verified in a browser** on an isolated e2e server at 1440x900 and 1100x800: Esc 60 ms to 1.8 s after Start, offline and hung-server timings, Cmd J typing, the two-question card, review header and long-chip header.
+## One count, cards from current state (built, not merged)
+
+Branch `fix/needs-you-counts-cards`.
+
+- **What the owner will notice.** Home header, the Needs you column, the bell, the sidebar and the banner show the same number: the server counts them in `decisions.list` (`counts`: needs you, working, per workspace). "Working" is a task an agent works on right now. An agent that waits on an answer, or is queued for a slot, is not working; its task is under Needs you or Up next. A parent that waits on its own subtasks is not a decision: it sits in Up next as "Waiting on its subtasks, 0 of 2 done", with no Resume. Home's Up next also holds paused (by you), MR-open and quiet running tasks, so nothing open vanishes.
+- **Cards cannot go stale.** Each card is checked against its task now. A review card only counts while the task is in review; a merge approval or permission only while the task runs or is in review; a pause card only while paused and with no open subtasks; a split approval goes once its subtasks exist. A review whose merge the server knows fails ("Nothing changed since it started.", conflict, uncommitted work) says so in one line, is titled "Finished" and offers only what can work. The look is the captain's own ship check (`shipReadiness`), kept 15 s, renewed behind the answer, and screens are told when it changes.
+- **Answers.** One shared label set (`permission-labels.ts`): Allow once, Allow for this task, Deny, in the room and in Needs you. The Needs you detail shows the whole command and the task. Permission prompts have their own filter, Permission; Access is for secrets and sign-ins. A one-click answer to a question from Needs you, the bell or Home waits 5 s with an Undo toast, like the room. A multi-question card says "Answer in the task" and opens it with the card focused. A failed answer says what failed ("Could not merge" and why). The detail is not read again after its decision left (no 404).
+- **Slots.** A queued run's room line names the limit and who holds the slots, from run state: "Queued, #1 in line: the limit of 2 at once on codex-acme is reached. Holding the slots: ACM-1 (@acme-builder, waiting for you), ACM-2 (@acme-two). @acme-three starts when one frees." Policy unchanged.
+- **Cost.** The Home header reads "Auto-pilot spent $0.00 of $20 today"; its hover says tasks you start yourself are not in it. The task's own "Cost so far" counts all its turns.
+- **Tests.** `inbox/derived.test.ts` pins header = column = bell = sidebar (one server count for a seeded mix), and each stale case is not produced. `runs/resume.test.ts` pins the queued line. `inbox.test`, `batch.test` updated for the new labels.
+- **How verified.** Isolated e2e server from this branch with a seeded mix (one working, one waiting on a permission, one question, a parent with unstarted subtasks, a finished task with nothing to merge) against a server from main, at 1440x900 and 1100x800. Before: header "6 need you, 0 working", column 5, sidebar "1 working"; Ready to ship with an amber Merge on a task with nothing to merge; a "Blocked and waits for you" card for the parent; permission buttons "Allow / Always allow / Reject". After: 4 and 1 everywhere, and the cards above. Undo hold, Undo cancel and the single request after 5 s were driven in the browser; no console errors or failed requests.
+- **Left.** (1) A card whose text asks the owner to restore folders by hand is agent-written text, so no state check removes it; it needs an agent rule, not code here. (2) The idle watch still pauses a parent as `blocked` when the lead ends and no subtask moves by itself (pinned by `rooms/idle-watch.test.ts`); it no longer shows as a decision. Changing that pause itself would change what the lead and the captain are told. (3) A task in `mr` has no owner decision by design: the merge happens on the host and the poller closes it.
+
+## Live-state counts and restart reconcile (built, not merged)
+
+Branch `fix/live-state-counts`.
+
+- **What the owner will notice.** After a restart, a task that was running but could not be brought back no longer blocks its workspace: the captain can start and resume other tasks again. Such a task shows as paused with "majhi restarted and could not resume this; Resume to continue" (when automatic resume is off or the agent cannot be woken). Idle chats that sat "running" for days show as review. A lane's "N things for you" is now the number of open owner cards, the same as Needs you.
+- **Gates.** Tasks at once (`workspaceFull`, `noRoomFor`) and the repo-rule writers count tasks with a live run (`RunManager.busy`, or a wait on a background process), not status `running`. A task queued for an agent slot still counts.
+- **Reconcile.** One place, `Resilience.wakeStranded`, after the resume attempts: chats go to review, others are woken or paused with reason `error`; a failed resume in the drip or the interrupted pass also pauses instead of leaving the task running.
+- **Lane count.** `forYou` comes from `inbox.list(org)`; the summary line uses it. The day's log no longer feeds it.
+- **desk.test.** It was failing because the default is one task at once and the test starts two per workspace; it now sets `tasksAtOnce: 2` as its comments assume.
+- **Tests.** `autonomy/live-state.test.ts`. done-when.test updated for the new count.
+- **Known.** approvals.test "counts an agent of an autonomous task" fails on main too (ENOTEMPTY on cleanup).
+## Secrets off process argv (built, not merged)
+
+Branch `fix/no-secrets-in-argv`. Closes the leak behind PRV-127.
+
+- **The leak.** The Claude adapter starts `claude --mcp-config '<json>'`, and the JSON holds every MCP header and every stdio server variable. That covers majhi's own bearer tokens (`majhi-room`, `majhi-tasks`, `majhi-processes`, `majhi-containers`, `majhi-memory`, `majhi-connections`) and the OAuth token of a signed-in connection such as DigitalOcean. Any process in the container could read them from `/proc/*/cmdline`. Checked in the runner image: the argv held the token. Codex keeps headers in memory and showed none.
+- **The fix.** `packages/acp/src/mcp-env.ts` swaps each header and stdio variable value for `${MAJHI_MCP_<server>_<H|E><n>}`, and the values go in the adapter's environment. Claude expands them itself (checked end to end through the real adapter in the runner image: the server got the header, argv held only the placeholder). Only tools with `mcpOnArgv` (Claude) do this. The docker runner already passes variables by name, so the values are on no command line anywhere.
+- **Service, preview and database-check containers.** Their `--env NAME=value` flags put passwords on the docker CLI's line inside the server container. `envByName` (`containers/args.ts`) now moves them into the CLI's environment. No agent could see these, but any process of the server could.
+- **PID namespaces.** Each run is its own container with no `--pid`, `--ipc`, `--uts`, `--userns` or `--privileged`, so an agent sees only its own container's processes, not another task's, the server's or the host helper's. Agent-started containers refuse those flags too. Tested on the built args.
+- **Per-task tokens.** Already per task and agent, in memory, per server, revoked when the session ends. Tests added for that.
+- **Hand-off secret scan.** It reads only the diff (`git diff -U0`), never output or argv. A block now says the file, line, rule and a masked value (`src/app.ts line 3, rule github, value ghp_[hidden, 44 chars]`). Before it named only the file.
+- **Agent guidance.** The captain prompt now says to feed a token to curl on stdin, not as an argument.
+- **Known limit.** The environment of a process is readable by the same user (`/proc/<pid>/environ`), and the agent runs as that user in its own container. The tokens are per task, so what an agent can read is its own task's; they are on no process list. Anything an agent types itself (`curl -H "Authorization: Bearer $VAR"`) still shows in the argv of that curl while it runs.
+- **Owner action.** Rotate: (1) the DigitalOcean token, by signing the DigitalOcean connection out and in again in Connections (the old OAuth token stays valid until it expires or is revoked at cloud.digitalocean.com under API, Tokens); (2) any other OAuth or `env` connection whose token an agent printed or ran through `ps`. majhi's own MCP tokens need no action: they live in memory and ended with their sessions (a restart also clears them). The old tokens may still sit in agent transcripts and the room history of the task that showed them (PRV-127): delete those transcripts. No token value is written here.
+
+## Lifecycle A and B: census guard and pure model (built, not merged)
+
+Branch `feat/lifecycle-a-b`. Nothing in `apps/server` or `apps/web` uses the new module yet.
+
+- **A, census guard.** `scripts/census-baseline.json` refreshed against main (acd08080). `apps/server/src/tasks/census-guard.test.ts` runs `scripts/census-lifecycle.ts --check` through the TypeScript compiler API and fails if any tracked symbol's count outside the lifecycle module rises. Going down is allowed; refresh with `pnpm exec tsx scripts/census-lifecycle.ts --write scripts/census-baseline.json`. Total outside the lifecycle module: 208 sites in 31 files (was 211 in 33).
+- **B, the pure model**, in `packages/shared/src/lifecycle/` (exported as `lifecycle`): `hold.ts` (`HoldSchema`, twelve kinds, `HOLD_TABLE` with lifters, typed auto-clear condition and the owner sentence, exhaustive by type; `liftersOf`, `autoClears`, `sentenceOf`, `conditionMet`, `mergeHold`), `transition.ts` (`LifecycleStatus`, `TaskState`, `LifecycleEvent`, `Effect`, `Refusal`, `transition`), `stored.ts` (`fromStored` and `toStored` for status, `paused_reason`, `paused_by`, `held`, `held_scope`, `resumed_at`). `TaskStatusSchema` is unchanged and still has `paused`.
+- **Design doc updated.** The hold list in `docs/design/task-lifecycle.md` section 4.2 now says what D1 to D10 changed, and 4.4 lists the choices the build made.
+- **Tests.** `lifecycle/hold.test.ts` (32), `transition.test.ts` (214: every table row, every illegal status per event, hold refusals, lift permissions per cause and lifter, reachability invariants), `stored.test.ts` (76: every combination that exists today, round trips, and the seven that cannot round-trip with the reason), plus the census guard (1).
+- **Left for step C.** `apply()` with the per-task lock, routing the 14 `setStatus` sites, dual-writing through `toStored`, raw SQL on `autonomy_tasks` onto drizzle. The characterization test of `tellAgent` on an `mr` task comes with C, where the old behaviour can be run.
+- **Known.** `packages/acp/testing/fake-turn.ts` typecheck error at line 920 is not from this branch.
+## Test health (built, not merged)
+
+Branch `test/suite-health`. Test and harness changes only; no product behavior changed.
+
+- **Fixed (harness or stale test).** `config/settings.test.ts` lists the current schema defaults. `testing/fixtures.ts` `tempDir` cleanup retries ENOTEMPTY (a size rating ends after the world closes and asks a decision provider, which makes its scratch folder). `installs.test.ts` and `runner/isolation.test.ts` follow two earlier design changes (a connection reaches agents by org; the task branch folder is named by kind). `rooms/idle-watch.test.ts` signed-out pause: the lead is alone, since a teammate with a working account now takes over. `memory/housekeeper.test.ts` waits for the project card pass before it counts sessions. `packages/acp/src/runner/docker.test.ts` fake docker writes its state atomically. `host/gitGuard.test.ts` ignores the system git config (on a Mac it named the Keychain as credential helper: the test hung on a prompt and stored a fake password). `autonomy/perf.test.ts` reads the fastest of five calls. `captain/done-when.test.ts` has a 60 s timeout (about 1000 real git processes). `pnpm --filter <package> test` now exists and uses the root config, so a run from a package gets the same 20 s timeout as `pnpm test` (inside a package folder vitest used its 5 s default).
+- **Left failing on purpose.** `captain/desk.test.ts` "resumes what Autonomous paused" (rule conflict, see docs/design/task-lifecycle.md and the D10 entry below). `web/lib/naming.test.ts`: `features/captain/dashboard/strip.tsx` has the retired words "day cap" (copy change, the owner approves copy).
+- **Real bug, not fixed.** A merge can fail with `index.lock: File exists` in the task worktree when a background `git status` (checkpoint, hand-off, coordinator) runs at the same time. No git call in the server uses `--no-optional-locks`. Seen under load in `tasks/shipped.test.ts` "closes after a rebase". Fix in the code: read-only git calls run with `GIT_OPTIONAL_LOCKS=0`.
+- **Full run.** Before: 3495 tests, 3484 passed, 11 failed, 0 skipped, 4 min 43 s. After: 3490 passed, 5 failed, 0 skipped, 9 min 21 s, on a machine at load average 45 (other jobs). Of the 5, two stay failing on purpose (above), `housekeeper.test.ts` was a fixed 50 ms sleep (now waits for the extraction), and `budgets/limit.test.ts` and `mrs/multi-repo-ship.test.ts` timed out at 20 s under that load (3 to 5 s alone). Tests of 20 s or more under load: the hand-off, ship and merge tests that run real git.
+- **Slow by nature.** Config writes cost about 110 ms each (the home is a git repo and each write commits), so a world takes about 1 s to build. Tests that ship, merge or hand off run hundreds of real git processes.
+
+## After D1 to D10: one day of use, then one list
+
+Deployed 2026-10-05 (707aedbf). Collect what you see in one list, not one fix at a time. Watch:
+
+- **Spend.** Chores now run on every relevant event, not up to a daily count. A run that finds nothing new makes no model call. If spend per day goes up, note when and which workspace.
+- **Permission prompts reaching you.** The second-opinion model is gone, so prompts the rule table does not know come to you. Note which programs or tools they are: each one is a rule to add, not a model to bring back.
+- **Stalls.** A task that sits without moving and without a reason you can see. Note the task and what the board says.
+- **Loop pauses.** A task paused as "going in circles" after three answers with no progress. Note whether it was right.
+- **Sign-in handoffs.** A lead whose account needs a new sign-in now hands its task to a fallback or teammate at once. Note any handoff that went to the wrong agent.
+
+Next stage after the list: the task model (one hold per task, one transition table), then one scheduler. See docs/design/task-lifecycle.md section 9.
+
+## D10: loop, stuck, wake gate, heartbeat, roll-ups, second opinion and echo guard (merged)
+
+- **Progress counter first.** After 3 captain answers to one task with no progress in between, majhi pauses the task for the owner with the existing loop pause (`pauseForOwner`, reason `loop`; the paused card says so). `LOOP_GUARD_ANSWERS = 3` in `captain/rules.ts`. The count lives in `captain_loop_guard` (migration 152): per task, the progress mark it was counted against (status plus the head of each branch) and the count. A commit or a status change gives a new mark and the count starts again; answers to another task do not count, and any card of the same task does. It is stored, so a restart keeps it, and the count and the pause happen in one transaction, so answers that land together pause once. A permission Allow is not counted (a rejection is). The prompt gained one line: "After three answers with no progress, majhi pauses the task for the owner."
+- **Removed.** The question-loop similarity rule (word overlap, 10-minute and 5-minute windows) in the questions chore and in `autonomy.answer`, with its room line and nudge, the `q-loop` playbook rule, and the call-outcome reader. The stuck chore (sign-in lead move, wake, pause), its playbook, log words and ports, and the stuck detector's failures and repeated-line rules. The Laya wake gate and its `wake-gate` decision slot. The driver's hourly heartbeat and its `pendingWork` input. The periodic and notable roll-up posts in the root chat. The own-work second opinion and its `own-work-second` slot, the unknown-middle flag in the rule table and the label the owner's answer put on that decision. The echo guard (`markCaused`, `CAUSED_MS`).
+- **Kept, with the reason.** The root-chat relay of a workspace captain's message (now `captain/relay.ts`): a different surface from the roll-up. `HOURLY_MS` in `captain/service.ts` (it merges into the one tick later). The driver's facts-key compare and 20-second debounce. The Stuck list on the dashboard, now showing only the one definition (quiet 2 hours running, 4 hours in review or open MR, no pause and no card waiting for the owner). It is not the same as Needs you, which lists what waits for the owner.
+- **The owner will notice.** A task is paused for them after three answers with no progress. No Stuck row for a failing or looping task, and none for a paused task or one with a card waiting; those are in Needs you. No "keeps asking" line in a room. No hourly check wake. No roll-up posts in All. A permission request the rule table cannot place goes to the owner (no model gives a second opinion). The Stuck tasks playbook is gone from Upkeep (12 chores). Old log lines of the stuck chore no longer show in the captain's log.
+- **Verified.** `pnpm -r typecheck` clean except the known `packages/acp/testing/fake-turn.ts` error. New `captain/loop-guard.test.ts` (3 answers pause; a commit and a status change reset; another task does not count; the count survives a restart; answers at once pause once; a paused task pauses again only after progress and more answers; a gone task is not guarded), new `captain/echo.test.ts` (a run the echo starts, with every key taken, makes no ship, answer, card or lane turn), and the stuck, desk, driver, soak, runner and own-work-chore tests rewritten for what remains. Tests of captain, autonomy, rooms, playbooks, decisions, store, config, commands, inbox, findings, tasks and `packages/shared` pass; failing before and after: `config/settings.test.ts` "fills every default", `autonomy/approvals.test.ts` (ENOTEMPTY), `captain/desk.test.ts` "resumes what Autonomous paused". Some tests time out at 5 seconds when many files run at once and pass alone.
+- **Left.** SPEC 5.12 and 5.18 still describe the wake gate, the second opinion, the question loop and the roll-up (SPEC edits wait for the owner, see the lifecycle design). Tables stay until E2: `captain_cap_asks`. The soak seed moved from 13 to 7. The permission-Allow exception to the loop guard is a choice (DECISIONS); typed holds replace the loop pause in a later step.
+- **Signed-out handoff.** Signed-out handoff moved from the stuck chore into the run manager (`takeOverFor`, same `resume.handoff` switch as a limit; fallback first, then a teammate for a signed-out lead; pause `signed-out` only when neither works). Test: `runs/signed-out-handoff.test.ts`.
+- **UI to check in a browser.** Not run in a browser here (typecheck only). Check: the Captain page dashboard Stuck panel (labels "No progress" and "Waiting", no link to a card), Playbooks (Upkeep pack has 12 chores, no Stuck tasks, the Questions chore has two outcome rules), the Captain log (no stuck rows), the Decisions Hub (no wake-gate or own-work slot), the All chat (no roll-up posts, lane relay lines still arrive), and a task paused by the loop guard (paused card, Resume works).
+
+## D9: captain actions keyed by state; daily caps, cap asks and tell limit removed (merged)
+
+- **Keys first (G1).** Every captain action takes a key of the state it acts on in one `INSERT OR IGNORE` on a primary key (`captain_keys`, migration 151). Ship: `ship:<task>:<repo@head,...>><repo@base,...>` (the chore and the lane share it; the base tip is new). Answer: `answer:<task>:<card item>`, for the chores, the rules and the lane's `room.approve`, `room.answerQuestion` and `room.answerAsk`. Tell: `tell:<task>:<agent>:<id of the agent's last turn row>`. A repeat is a typed no-op: `answered: false` / `refused: "already-answered" | "in-flight"` on the answer commands, `told: false` / `refused: "already-told" | "in-flight"` on `tasks.tell`, never an error the captain retries on. A failed action gives its key back; a claim a crashed call left running is taken over after an hour. Keys survive a restart.
+- **Removed.** Daily chore caps (13 keys, 22 numbers), `dailyCaps` and the REACHED texts, the "raise the cap for today?" cards and `captain.answerCap`, the `cap` decision kind, the per-chore rows in Limits, the playbook "Daily limit" row and `dailyLimit`, `RAISE_FACTOR`, the tell limit (3 in 10 minutes), `RUN_CAPS`, `RUN_ACTIONS`, `RUN_MINUTES` and the duplicate `RUN_TOKENS`. `overCap` is gone from Review now.
+- **One pass bound.** `PASS_BOUND` in `captain/rules.ts`: a pass ends at 45 minutes or 60,000 tokens (the 45 keeps the ship fix from 4207cc99). `FAILURES_OFF` (2) and `MAX_PASSES` (3) stay.
+- **Prompt.** The captain's lane text lost "three times in ten minutes" and "the same daily cap of ships", and gained one line: "Repeating an action on the same state does nothing; a tell waits for the lead's next turn."
+- **The owner will notice.** No per-chore limits in Limits and no Daily limit row on a chore playbook. No "raise the cap" cards in Needs you or the bell (budget raise requests stay). A chore can run again when something happens: what stops it doing the same thing twice is the key, not a count.
+- **Verified.** `pnpm -r typecheck` is clean except the known `packages/acp/testing/fake-turn.ts` error. New `captain/keys.test.ts` (key claim, restart, two connections racing, answer once, tell once per turn, ship once per state, a different key acts, results typed) and new cases in `runner.test.ts` (no action cap, one action when the same key runs at once, key given back on failure, 45-minute bound). Tests of captain, autonomy, playbooks, store, config, commands, inbox, admin, agenda, usage, rooms, tasks and `packages/shared` pass; failing before and after: `config/settings.test.ts` "fills every default", `autonomy/approvals.test.ts` (ENOTEMPTY on cleanup), and `captain/desk.test.ts` "resumes what Autonomous paused" (the tasks-at-once gate refuses its second start; fails on main too). `tell-ship.test.ts` keeps its two lane-ship cases and the injected-text case; the 3-in-10-minutes case is replaced by the keyed one in `keys.test.ts`.
+- **Left.** The `captain_cap_asks` table stays until E2. `chores` on an org and `dailyLimit` in a playbook's saved state still load (`z.unknown().optional()`, "Removed in D9"). A chore with no daily run cap now runs on every trigger; the event debounce and `MEMORY_WAITING` are its only brake, and a run that finds nothing costs no model tokens. The ship key does not cover a ship that crashed after the merge but before its log line: the claim is taken over after an hour and the state is checked again by `shipCheck`. SPEC 5.18 still describes the daily caps. UI checked in a browser on an isolated server at 1440 and 1100: Limits, chore playbooks, the bell, the Captain page and Review now render with no errors. Command summaries no longer mention chore caps.
+- **Task found.** `captain/desk.test.ts` "resumes what Autonomous paused" fails on main since d1c85f58: the tasks-at-once gate refuses the second start of a task Auto-pilot paused. Two rules conflict (resume what Auto-pilot paused vs one task at a time). Fix it in the lifecycle steps (holds and `blockerOf`), not with another branch.
+
+## D2 to D5 and D8: unused features removed (merged)
+
+- **Removed.** Tracker sync (Jira, ClickUp, GitHub Issues: server, commands, org settings, task chip and menu items). Growth (feeds, opportunities, client updates, the Growth pack, `findings.proposal`, `findings.deadline` and their buttons on Findings). Client economics (`economics.get`, the profit and loss table, the Business playbook pack). Sensors (CI, dependencies, secrets, EOL, radar, and the five Engineering playbooks that ran them). Business knowledge base, voice and CRM, and deadlines (commands, pages, agent tools). Two Laya slots that read tracker routing were detached from `decisions`.
+- **Deadlines removed too (owner decision).** The Deadlines page, its routes, sidebar row and `i` shortcut, the `deadlines.*` commands and agent tools, reminder logic, the finding-to-deadline link and the `business` event topic are gone. Old `/business`, `/knowledge` and `/deadlines` addresses fall through to the normal not-found behaviour. Today stays: it no longer lists deadlines (no agenda items, no "This week" plan list, no brief line, no close action) or CRM follow-ups, and the brief writes in a neutral style. The wall-clock helpers the brief hour needs moved into `agenda/time.ts`.
+- **Also kept.** The `opportunity`, `ci`, `deps`, `eol`, `radar` finding sources (old findings still load). The monthly-ceiling "profit and loss" rates table on the Money panel: its rates and minutes come from the outcomes module (D6), so it goes with that step. Playbook packs `engineering` and `business` stay as categories for playbooks the owner makes.
+- **Verified.** `pnpm -r typecheck` is clean after every commit except the `packages/acp/testing/fake-turn.ts` error already on main. Tests: playbooks, agenda, deadlines, commands, store, config, decisions, events, orgs, admin, findings, rooms and `packages/shared` all pass; only the known `config/settings.test.ts` "fills every default" fails, as before. The deadlines test lost its contact case and gained a finding-link case; the brief tests lost the voice cases; the Engineering "code health" outcome test was cut to the Upkeep default it still covers.
+- **Left.** Tables stay in the DB until step E2: `tracker_links`, `sensor_cache`, `kb_entries`, `kb_versions`, `crm_*`, `voice_profiles`, `deadlines`. Config keys `tracker` on an org still load (`z.unknown().optional()`, "Removed in D2"). Folders no longer used: `~/.majhi/business/kb`. The `business` event topic and query key keep their name and now carry deadlines only. Screenshot specs for trackers, economics and business were deleted; `e2e/shots.today.ts` no longer seeds CRM contacts.
+
+## D1: background e2e runner removed (merged)
+
+- **Removed.** `apps/server/src/e2e/` (service, repo, wire, test), the host helper's runner (`apps/host/src/e2e.ts`, its test, the `e2e.run` job and two git-guard tests of it), `packages/shared/src/e2e.ts`, the `e2e.status` and `e2e.runNow` commands, the `e2e_latest` agent tool, the `e2e` settings section and setup row, the Health panel, the screens-map entries, the `e2e traces` self-check and the agent brief's pointer to the runner. The real Playwright suite (`e2e/*.spec.ts`, configs, `scripts/ci.sh`) is untouched.
+- **Verified.** `pnpm -r typecheck` is clean except a `packages/acp/testing/fake-turn.ts` error that is already on main; tests of every touched file pass.
+- **Left.** An `e2e:` key in an old `majhi.yaml` is still accepted and ignored (`MajhiConfigSchema`). The `e2e_runs` table stays in the DB and in `store/schema.ts` until step E2. `~/.majhi/e2e` on disk is no longer used.
+
+## Needs you holds only what needs the owner (merged)
+
+- **Runs.** A machine-wide cap on agent runs (`limits.runs_total`, auto from the core count, set on Limits). Extra runs queue, owner first. After a restart runs come back one every 20 seconds. A run near its memory limit gets one note.
+- **Merge cards.** With Merge the owner's and Push the captain's, a lead's merge request becomes an MR opened by majhi on the server; with no git sign-in the card names the host and links the fix, and the captain retries once it is connected. Agents no longer push from containers.
+- **Ship blockers.** The secret scan reads the branch's own changes over the merge base, file by file, skipping lockfiles. Failed hand-off checks retry after a majhi or runner image change or 6 hours, 3 times at most. Hand-off checks get their own CPUs and memory and a per-project time limit. A lead with uncommitted changes is told once.
+- **Permissions.** Tools a rule covers (majhi read-only tools, the task's own containers) are allowed for the task, so they do not ask again; the stuck check ignores repeats that succeeded and tells the agent the error when one keeps failing.
+- **Secrets.** The lane captain fetches a secret through a workspace connection and saves it straight to the store (`majhi_secrets_saveFromScript`), then withdraws the request. Duplicates collapse.
+- **Charts** are back under the workspaces table: spend by hour or day, tasks finished per day, account usage, work flow.
+- **Known:** `autonomy/approvals.test.ts` fails on a temp folder cleanup (ENOTEMPTY), also on earlier commits; the wake-gate shadow test in driver.test.ts is flaky under load.
+- **Owner check:** after deploy, PRV-116's merge card turns into a GitHub MR or names the missing sign-in; Pyzasoft's secret requests are fetched through DigitalOcean.
+
 ## Captain closes the loop on review, secrets and reports (merged)
 
 - **MRs.** When Merge is the owner's and Push the captain's, the ship chore pushes the branch and opens the MR once checks pass, and the card leaves Needs you. The task sits in Open MRs until it is merged on the host.
@@ -89,35 +444,53 @@
 - **Tests.** `features/decisions/model.test.ts` (the count), `lib/naming.test.ts` (retired words in `apps/web/src`), `events/watcher.test.ts` (`boss.chat` emits nothing), `packages/shared/src/plain-text.test.ts`. Shots and rules in `e2e/shots.captain.ts` (`cohesion`).
 - **Left:** Decisions "Merge" is still the action name where the room offers a Ship menu (Merge is one of its entries). The Board column and cards still say "Your turn" and "Finished" from their own lamps. `autonomy.status` takes about 0.6 s and `captain.status` about 0.35 s on the live data; both run on the single server thread and are in the captain and autonomy code, which this pass did not touch.
 
-## Phase 7: Resilience and health (PRV-22, in progress)
+## Phase 7: Resilience and health (PRV-22, built)
 
-Built on `task/prv-22-phase-7-resilience-and-health`, with `main` merged (Phases 6 and 11 in). Phase 2b already gives checkpoints, offline pause and resume (probe plus network-looking errors), wake, restart and crash resume, and context-window recovery (`isContextError`, `max_tokens`, `max_turn_requests` go to the note built by majhi). The usage reads, the Usage page meters and the health checks exist since Phases 1 and 2c. What Phase 7 adds:
+Branch `task/prv-22-phase-7-resilience-and-health`. The server and web halves reached `main` at `ac821e18` (merge `6968e842`); the branch then adds the e2e test, the account readout on the new Home top bar, limit notes that take the reset from a run's limit error, and the decisions. Phase 2b already gave checkpoints, offline pause and resume (a probe plus network-looking errors), wake, restart and crash resume, and context-window recovery. Phases 1 and 2c gave the usage reads, the Usage page meters and the health checks.
 
-### Plan, in order
+### What works
 
-1. **Limit error shapes per CLI** (`packages/acp/src/limit-failure.ts`, shapes in each tool's registry entry). Claude Code and Codex, login and API key: usage limits, rate limits (429) and quota or credit errors, with the reset time when the text gives one ("resets 3pm (Europe/Berlin)", "try again at 3:40 PM", "try again in 2 hours 13 minutes", an epoch after `|`). Checked on errors and on a short last message of a failed turn, never on prose. A context-window error and an overload are not limits.
-2. **Account at limit.** A run's limit error marks its account (`AccountView.limit`: since, until, resetKnown, detail). The account is `at-limit` until then. Without a reset in the error: the full usage window's reset, else 15 minutes.
-3. **Fallback handoff.** When the agent's `fallback` exists, its account is not at limit and is signed in, and `resume.handoff` allows it (majhi, org; default on): the fallback takes the agent's place in the team, gets majhi's handoff note and the pending prompt, and continues from the checkpoint. One room line says so. The same applies before a turn when the account is already at limit, and to a start that fails on a limit.
-4. **Pause and auto-resume at reset.** Otherwise the run pauses with reason `limit`, the prompt queued again. Other agents on the account pause at their next turn boundary. The budget lift sweep (every 60 s) resumes them once the account's `until` passes, when `resume.auto` allows; otherwise the room says the limit reset and the owner resumes.
-5. **Context-window errors**: check the shapes of both CLIs against `isContextError`, add tests.
-6. **Usage and health in the top bar and Studio.** The board's top bar shows the busiest account's window, with its reset and a link to Usage; at-limit accounts show until when, in Usage and Accounts. Orgs form: the handoff switch next to auto-resume.
+- **Limit detection per CLI.** `packages/acp/src/limit-failure.ts`, with the shapes in each tool's registry entry (`limitShapes`). Claude Code and Codex, sign-in and API key: usage limits, rate limits (429) and credit or quota errors, with the reset when the message names one (an epoch after `|`, "resets 3pm (Europe/Berlin)", "try again at 3:40 PM", "try again in 2 hours 13 minutes"). Errors count, and so does a turn whose whole text is one short limit line (the CLI's result handed back as text); an agent's prose about rate limits does not. Context-window errors and overloads are not limits.
+- **The account at its limit.** A limit error marks the account (`AccountView.limit`: since, until, resetKnown, detail), `at-limit` until `until`: the error's reset, else the reset of a full usage window, else 15 minutes (shown as "about").
+- **Fallback handoff.** When the agent's fallback (Agents, "When usage runs out or the run breaks", "Hand the run to") may work in the org, is not on the team, its account is signed in, not at a limit and not held by a budget, and `resume.handoff` is on (Hub setup, Resume; per org in the Orgs form; default on): the fallback takes the agent's place in the team, starts from majhi's handoff note (TASK.md, the last checkpoint, the room since, the diff) with the queued messages, and the room says "@acme-lead hit its usage limit (resets 4:24 PM). @acme-builder continues from the checkpoint." The same happens before a turn when the account is already at its limit, and when a start fails on a limit.
+- **Pause and resume at the reset.** Otherwise the run pauses with reason `limit`, its prompt queued again. Other agents on the account hand off or pause at their next turn boundary. The 60 second lift sweep resumes them once the reset passes; with `resume.auto` off the room says once that the limit reset and the task waits for the owner.
+- **Context-window errors.** `isContextError` is checked against both CLIs' wordings; recovery through majhi's note is Phase 2b's.
+- **Usage and health in the UI.** Home's top bar ends with the fullest account of the workspace ("claude-acme-1 82%", amber from 80%, "claude-acme-1 at limit" in the limit lamp's colour, every account's windows and resets in its tooltip, a link to Health and usage; hidden under 1200 px). Health and usage rows and the account details say "At limit until 4:24 PM" with the CLI's message as the tooltip. The sidebar's Agents now and the paused cards say "At limit, back 16:24", from the limit error's reset first.
 
-### How it is tested
+### How to try it
 
-- Unit: every limit shape per CLI and auth type, reset parsing, negatives (context errors, overload, auth errors, prose).
-- Integration with the fake agent (a new `limit:<message>` prompt): hand off to a fallback, pause without one, fallback also at limit, policy off, resume at reset with a fake clock, auto-resume off, a second agent on the account pausing.
-- E2E: a simulated limit hands off to the fallback; network drop and return (`phase2b-runs.spec.ts`) still pass.
+1. Give an agent a fallback on another account: Agents, the agent, "Hand the run to".
+2. Run a task with it. When its account runs out mid-run, the room says who took over, the fallback sits in its place in the room, and the account shows at its limit until the reset on Home's top bar and in Health and usage.
+3. Without a fallback, or with the handoff off for the org, the task pauses as "at its limit" and continues by itself at the reset.
+4. With the fake adapters: write `Claude AI usage limit reached|<epoch>` into `<majhi home>/accounts/<account>/fake-limit`, and every prompt of that account fails with it (`e2e/phase7-limits.spec.ts`).
 
-### Server half of steps 1 to 4 (built, web not yet)
+### Done when
 
-- **Where:** detection in `packages/acp/src/limit-failure.ts`; the account mark in `accounts/` (`markLimit`, `limitOf`, `expireLimits`); the handoff and pause in `runs/manager.ts` (`handOffOrPause`, `takeOverFor`, `pauseForAccount`), with the words in `runs/limit.ts`; the swap in `tasks/service.ts` (`takeOver`); the lift at the reset in `budgets/limit-action.ts` (`liftLimits`). `resume.handoff` is in the org view and patch.
-- **Tests:** `limit-failure.test.ts`, `accounts/limit.test.ts`, `runs/limit.test.ts` (fake agent `limit:` and `limit-text:` directives, fake clock), `budgets/limit.test.ts`.
-- **Known limits:**
-  - The fallback keeps the agent's repos override only: a model or effort set for the agent may not exist on the fallback's account.
-  - A fallback already on the team does not take over; the run pauses for the reset instead.
-  - Only queued owner and handoff items follow the handoff. The fallback's queue is in memory, so a restart before its first prompt can drop other entries.
-  - After a restart, a paused task with no run in memory is lifted whether a budget or an account limit paused it, and `resume.auto` does not gate that lift.
-  - `resetKnown` is false when the reset comes from the usage window or the 15 minute guess.
+- Unplugging the network mid-run pauses the task, and plugging it back resumes it from the checkpoint with no lost work: `e2e/phase2b-runs.spec.ts`, "offline pauses the running task, and it resumes on its own when the connection is back" (built in Phase 2b).
+- A simulated limit error hands off to the fallback: `e2e/phase7-limits.spec.ts`, an account at its limit mid-run hands the task to the fallback with a handoff note, and Home's top bar shows the account at its limit.
+
+### Verified
+
+On the branch with `main` merged at `a99f71c0`, 4 Oct:
+
+- `pnpm -r typecheck` and `tsc -p e2e` pass. The e2e check needed `agentsOff` in the two Connect screenshot fixtures, which `main` lacked.
+- Biome passes on the changed files.
+- Phase 7 unit tests: 73 of 73 pass. They cover `limit-failure`, the fake agent, `config/settings`, `accounts/limit`, `budgets/limit`, `runs/context`, `runs/limit` and `runs/start-failure`. The settings test also needed `main`'s new cleanup and container defaults.
+- Done when, in the browser with the fake adapters: 3 of 3 pass. The specs are `e2e/phase7-limits.spec.ts` and `e2e/phase2b-runs.spec.ts`: the limit handoff, offline pause and resume, and waiting in line at the account limit.
+- The whole unit and e2e suites were not run from the task (CLAUDE.md test rule: they run once, at the end of a phase).
+
+### Left and known issues
+
+- A fallback already on the team does not take over; the run pauses for the reset instead.
+- The fallback keeps only the agent's repos override: a model or effort set for the agent may not exist on the fallback's account.
+- The agent that hit its limit does not come back by itself after the reset; the fallback keeps the task.
+- Only queued owner and handoff messages follow the handoff, and the fallback's queue lives in memory, so a restart before its first prompt can drop other queued entries.
+- After a majhi restart, a task paused at a limit lifts at the reset whatever `resume.auto` says: the stored pause does not say whether a budget or an account limit set it.
+- API-key accounts have no usage windows, so a rate limit without "try again in" is held for the 15 minute guess.
+
+### Owner-only checks
+
+- A real signed-in Claude Code and Codex account, and an API key, reaching their limits: the shapes come from the CLIs' published wording, not from a live account at its limit.
 
 ## Captain step 6b: staffing and lead handover (built)
 

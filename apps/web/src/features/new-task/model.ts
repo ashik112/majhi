@@ -67,6 +67,30 @@ export function togglePicked(picked: readonly string[], id: string): string[] {
   return picked.includes(id) ? picked.filter((p) => p !== id) : [...picked, id];
 }
 
+/**
+ * The workspaces of the picked repos when there is more than one: a task lives in one workspace, so
+ * this blocks the save before the server would refuse it. Undefined when there is no conflict.
+ */
+export function workspaceConflict(
+  picked: readonly string[],
+  projects: readonly ProjectView[],
+  orgs: readonly OrgView[],
+): string[] | undefined {
+  const ids = new Set<string>();
+  for (const id of picked) {
+    const org = projects.find((p) => p.id === id)?.org;
+    if (org !== undefined) ids.add(org);
+  }
+  if (ids.size < 2) return undefined;
+  return [...ids].map((id) => orgs.find((o) => o.id === id)?.name ?? id);
+}
+
+/** The base a repo starts from when the owner types one: only a branch that differs from the default is sent. */
+export function baseFields(typed: string | undefined, fallback: string | undefined): { base?: string } {
+  const base = typed?.trim() ?? "";
+  return base === "" || base === fallback ? {} : { base };
+}
+
 /** Whether the dialog can save: a title and no upload still running. */
 export function canAdd(draft: Draft, uploading: boolean, saving: boolean): boolean {
   return draft.title.trim() !== "" && !uploading && !saving;

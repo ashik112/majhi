@@ -146,6 +146,36 @@ export class OutcomesRepo {
       );
   }
 
+  /**
+   * Writes what the derivation found, but only the rows that are new or whose judgment, key or playbook
+   * differ from the stored row: `upsert` of 5,000 unchanged rows every pass cost 250 ms for nothing.
+   * Returns how many rows were written.
+   */
+  upsertChanged(derived: readonly Derived[], now: string): number {
+    const stored = new Map<string, { result: string | null; key: string | null; playbook: string | null }>();
+    for (const r of this.db.prepare("SELECT subject, result, key, playbook FROM outcomes").all() as {
+      subject: string;
+      result: string | null;
+      key: string | null;
+      playbook: string | null;
+    }[])
+      stored.set(r.subject, r);
+    const changed = derived.filter((d) => {
+      const row = stored.get(d.subject);
+      if (row === undefined) return true;
+      return (
+        (d.result ?? null) !== row.result ||
+        (d.key !== undefined && d.key !== row.key) ||
+        (d.playbook !== undefined && d.playbook !== row.playbook)
+      );
+    });
+    if (changed.length === 0) return 0;
+    this.db.transaction(() => {
+      for (const d of changed) this.upsert(d, now);
+    })();
+    return changed.length;
+  }
+
   /** Writes a judgment the owner made once and nothing else will recompute (an answer against a recommendation). */
   record(d: Derived, now: string): void {
     this.db

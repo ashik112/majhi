@@ -9,9 +9,20 @@ interface ToastMessage {
   title: string;
   detail?: string | undefined;
   tone: "success" | "error";
+  /** A button on the toast (Undo). The toast stays for `ms`. */
+  action?: { label: string; onClick: () => void } | undefined;
+  ms?: number | undefined;
 }
 
-type ShowToast = (title: string, options?: { detail?: string; tone?: ToastMessage["tone"] }) => void;
+type ShowToast = (
+  title: string,
+  options?: {
+    detail?: string;
+    tone?: ToastMessage["tone"];
+    action?: { label: string; onClick: () => void };
+    ms?: number;
+  },
+) => void;
 
 const ToastContext = createContext<ShowToast | null>(null);
 
@@ -28,12 +39,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const show = useCallback<ShowToast>((title, options) => {
     nextId.current += 1;
-    setToast({ id: nextId.current, title, detail: options?.detail, tone: options?.tone ?? "success" });
+    setToast({
+      id: nextId.current,
+      title,
+      detail: options?.detail,
+      tone: options?.tone ?? "success",
+      action: options?.action,
+      ms: options?.ms,
+    });
   }, []);
 
   useEffect(() => {
     if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), toast.tone === "error" ? 4000 : 1800);
+    const timer = window.setTimeout(() => setToast(null), toast.ms ?? (toast.tone === "error" ? 4000 : 1800));
     return () => window.clearTimeout(timer);
   }, [toast]);
 
@@ -70,6 +88,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               <span className="text-base font-medium text-fg">{toast.title}</span>
               {toast.detail && (
                 <span className="min-w-0 truncate font-mono text-sm text-fg-faint">{toast.detail}</span>
+              )}
+              {toast.action && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    toast.action?.onClick();
+                    setToast(null);
+                  }}
+                  className="pointer-events-auto ml-1 shrink-0 cursor-pointer rounded-sm px-1.5 py-0.5 text-sm font-medium text-accent-text hover:underline"
+                >
+                  {toast.action.label}
+                </button>
               )}
             </m.div>
           )}

@@ -8,7 +8,6 @@ import { describeError } from "@/lib/errors";
 import { GLASS } from "@/lib/glass";
 import { useMoney, useSetMoney } from "@/lib/scorecard-queries";
 import { useOrgs } from "@/lib/studio-queries";
-import { EconomicsTable } from "./economics-table";
 
 /** A money field: empty means not set. Saves on leaving the field, only when it changed. */
 function RateField({
@@ -174,7 +173,6 @@ export function MoneyPanel() {
       ) : (
         <Ceiling money={money} />
       )}
-      {open && money && <EconomicsTable />}
       {open && money && (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[620px] border-collapse text-sm">

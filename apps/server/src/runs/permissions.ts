@@ -64,6 +64,8 @@ export function decidePermission(ask: PermissionAsk, ctx: DecideContext): Decisi
   if (need !== "unknown" && ctx.perms.includes(need))
     return { action: "allow", option: option.id, via: "perms" };
   const guarded = need === "push" || need === "mr";
+  // The captain's "Allow for this task" on a tool a rule covers is kept for that one tool.
+  if (ctx.rememberedFor(toolAllowKey(ask.title))) return { action: "allow", option: option.id, via: "task" };
   if (!guarded && ctx.rememberedFor(ask.kind ?? "other")) {
     return { action: "allow", option: option.id, via: "task" };
   }
@@ -78,6 +80,15 @@ export function isProcessTool(title: string): boolean {
 /** A call to one of majhi's own MCP servers, as the CLIs name it: `mcp__majhi-admin__<tool>`. */
 export function isMajhiTool(title: string): boolean {
   return /^mcp__majhi-(admin|decide|room|tasks|memory|connections)__[a-z0-9_]+$/.test(title.trim());
+}
+
+/**
+ * The key a per-tool "Allow for this task" is kept under: the captain's answer on a tool a rule
+ * covers allows that tool for the task, not every tool of its kind.
+ */
+export function toolAllowKey(title: string): string {
+  const tool = mcpToolOf(title);
+  return tool === undefined ? `tool:${title.trim()}` : `tool:${tool.server}.${tool.tool}`;
 }
 
 /** The server and tool of an MCP call: Claude names it `mcp__<server>__<tool>`, Codex `mcp.<server>.<tool>`. */

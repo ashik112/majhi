@@ -1,4 +1,7 @@
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
+import { redactText } from "../admin/policy.ts";
+import { verifiedBin } from "../tools/installer.ts";
 import { DBCHECK_TASK, dbCheckRunArgs, type HostPaths, type Safety } from "./args.ts";
 import type { ContainerDocker } from "./service.ts";
 
@@ -18,7 +21,15 @@ export class ImageCheckFailed extends Error {}
 export async function runImageCheck(
   docker: ContainerDocker | undefined,
   paths: HostPaths,
-  input: { image: string; command: readonly string[]; env: Record<string, string> },
+  input: {
+    image: string;
+    command: readonly string[];
+    env: Record<string, string>;
+    /** The workspace whose checked programs (majhi's toolbox) the run sees on PATH, read-only. */
+    toolsOrg?: string | undefined;
+    /** No network at all. */
+    offline?: boolean | undefined;
+  },
   timeoutMs: number,
 ): Promise<string> {
   if (docker === undefined) throw new ImageCheckFailed(MAJHI_DOCKER);
@@ -29,7 +40,11 @@ export async function runImageCheck(
   );
   const safety: Safety = { ...paths, task: DBCHECK_TASK, runnerNetwork: "", taskFolder: "/" };
   const name = `majhi-dbcheck-${randomBytes(6).toString("hex")}`;
-  const parts = dbCheckRunArgs(name, input.image, input.command, env, { cpus: 1, memory: "512m" }, safety);
+  const toolsBin = input.toolsOrg === undefined ? undefined : verifiedBin(paths.majhiHome, input.toolsOrg);
+  const parts = dbCheckRunArgs(name, input.image, input.command, env, { cpus: 1, memory: "512m" }, safety, {
+    toolsBin: toolsBin !== undefined && existsSync(toolsBin) ? toolsBin : undefined,
+    offline: input.offline,
+  });
   const run = await docker.attached(parts, safety);
   return new Promise<string>((resolve, reject) => {
     let out = "";
@@ -47,7 +62,11 @@ export async function runImageCheck(
       out += d.toString("utf8");
       if (out.length > MAX_OUT) finish(new ImageCheckFailed("the answer is too large"));
     });
-    run.child.stderr?.on("data", () => undefined);
+    // The last of what the program said on stderr, so a failure names its cause. Never the answer.
+    let err = "";
+    run.child.stderr?.on("data", (d: Buffer) => {
+      err = (err + d.toString("utf8")).slice(-ERR_TAIL);
+    });
     run.child.once("error", () => finish(new ImageCheckFailed(MAJHI_DOCKER)));
     run.child.once("close", (code) => {
       if (code === 0) finish();
@@ -55,7 +74,30 @@ export async function runImageCheck(
         finish(new ImageCheckFailed("majhi problem: Docker could not start or pull the client image."));
       else if (code === 126 || code === 127)
         finish(new ImageCheckFailed("majhi problem: the client program is missing from the image."));
-      else finish(new ImageCheckFailed("the database client failed or was refused"));
+      else finish(new ImageCheckFailed(failureLine(code, hideValues(err, Object.values(env)))));
     });
   });
+}
+
+/** How much of stderr a failure keeps. */
+const ERR_TAIL = 600;
+
+/** stderr with every value the program was given (tokens, passwords) and every detected secret hidden. */
+export function hideValues(text: string, values: readonly string[]): string {
+  let out = text;
+  for (const v of values) if (v.length >= 6) out = out.split(v).join("[redacted]");
+  return redactText(out);
+}
+
+/** "The program exited 1: <its last error line>", trimmed to one short line. */
+export function failureLine(code: number | null, stderr: string): string {
+  const said = stderr
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "")
+    .slice(-3)
+    .join(" ")
+    .slice(0, 300);
+  const exit = code === null ? "stopped" : `exited ${code}`;
+  return said === "" ? `the program ${exit} without saying why` : `the program ${exit}: ${said}`;
 }

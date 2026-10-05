@@ -1,4 +1,5 @@
 import type { CaptainChore } from "@majhi/shared";
+import { errorMessage } from "../errors.ts";
 import { upperFirst } from "../machine/busy.ts";
 import type { CaptainPorts } from "./ports.ts";
 import type { ChoreRun } from "./runner.ts";
@@ -116,7 +117,30 @@ export function createUpkeepChores(ports: CaptainPorts): Chores {
             text: `Installed the skill ${c.title}`,
             reason: `A low-risk skill that fits ${ws.name}'s projects. It is enabled for no agent. ${why}`,
             do: async () => {
-              await u.installSkill(org, c);
+              try {
+                await u.installSkill(org, c);
+              } catch (err) {
+                // A skill that fails to install (it does not validate, say) fails once, with its reason.
+                // The finding is kept under the same key, so no later pass tries it again.
+                const why = clip(errorMessage(err), 300);
+                await findings.report(
+                  {
+                    org,
+                    source: "setup",
+                    title: `The skill ${c.title} could not be installed`,
+                    detail: `${why}\nmajhi will not try it again. Dismiss this when you no longer need it.`,
+                    evidence: [],
+                    severity: "info",
+                    dedupeKey: key,
+                  },
+                  { kind: "captain", org },
+                );
+                return {
+                  outcome: "asked",
+                  text: `Could not install the skill ${c.title}: ${why}`,
+                  undoNote: "A finding for you: dismiss it to undo",
+                };
+              }
               return { undoNote: `Remove it with skills.remove ${c.title}` };
             },
           });
@@ -200,9 +224,32 @@ export function createUpkeepChores(ports: CaptainPorts): Chores {
           if (outcome === "done") fixed += 1;
         }
       }
+      // What waits for the owner still: the workspace's captain tries to fetch each through a connection first.
+      // The wake is once per set of requests, so a day with the same requests wakes it once.
+      const open = (await u.pendingSecrets?.(org)) ?? [];
+      if (open.length > 0 && u.wakeCaptain !== undefined && !off(run, "tidy-secrets")) {
+        const wake = u.wakeCaptain.bind(u);
+        run.check();
+        await run.act({
+          key: `tidy:secrets-fetch:${run.ws.day}:${open.join(",")}`,
+          text: `Asked the captain to try ${open.length} secret ${open.length === 1 ? "request" : "requests"} through the workspace's connections first`,
+          reason: "A connection may produce the value, so the owner need not paste it",
+          do: async () => {
+            wake(
+              org,
+              `${open.length} secret ${open.length === 1 ? "request waits" : "requests wait"} for the owner: try to fetch each through a connection before they are asked`,
+            );
+            return { undoNote: "Nothing changed: the captain only looks" };
+          },
+        });
+      }
       // Worktrees of done tasks: the cleanup chore removes the clean ones. Here the dirty ones are
       // named for the owner and never touched.
-      for (const t of await ports.cleanable(org)) {
+      const cleanable = await ports.cleanable(org);
+      // One finding per task under a stable key. When a worktree is clean again or gone, its finding is resolved.
+      const dirtyNow = new Set(cleanable.filter((t) => t.dirty.length > 0).map((t) => `tidy:dirty:${t.id}`));
+      findings.settle(org, "setup", "tidy:dirty:", dirtyNow);
+      for (const t of cleanable) {
         if (t.dirty.length === 0 || off(run, "tidy-dirty")) continue;
         run.check();
         const s: Signal = {

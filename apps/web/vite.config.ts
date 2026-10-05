@@ -1,5 +1,8 @@
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { join } from "node:path";
+import { brotliCompressSync, constants, gzipSync } from "node:zlib";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
@@ -35,8 +38,56 @@ function emojibase(): Plugin {
   };
 }
 
+/**
+ * Writes the build id into index.html: a hash of the hashed names of every emitted file, so it changes
+ * exactly when the bundle does. The server reads it back (`readBuildId`) and reports it on `/health` and
+ * in the events hello, and a tab compares it with its own (`<meta name="majhi-build">`).
+ */
+function buildId(): Plugin {
+  return {
+    name: "majhi-build-id",
+    apply: "build",
+    transformIndexHtml: {
+      order: "post",
+      handler(html, ctx) {
+        const names = Object.keys(ctx.bundle ?? {})
+          .filter((n) => n !== "index.html")
+          .sort()
+          .join("\n");
+        const id = createHash("sha1").update(names).digest("hex").slice(0, 12);
+        return html.replace("<head>", `<head>\n    <meta name="majhi-build" content="${id}" />`);
+      },
+    },
+  };
+}
+
+/** Text files of the build get a `.br` and a `.gz` next to them; majhi serves the one the browser accepts. */
+function precompress(): Plugin {
+  const TEXT = /\.(js|mjs|css|html|svg|json|txt|map)$/;
+  const walk = (dir: string): string[] =>
+    readdirSync(dir).flatMap((name) => {
+      const path = join(dir, name);
+      return statSync(path).isDirectory() ? walk(path) : [path];
+    });
+  return {
+    name: "majhi-precompress",
+    apply: "build",
+    closeBundle() {
+      for (const file of walk("dist").filter((f) => TEXT.test(f))) {
+        const body = readFileSync(file);
+        if (body.length < 1024) continue;
+        writeFileSync(`${file}.gz`, gzipSync(body, { level: 9 }));
+        writeFileSync(
+          `${file}.br`,
+          brotliCompressSync(body, { params: { [constants.BROTLI_PARAM_QUALITY]: 11 } }),
+        );
+      }
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss(), emojibase()],
+  plugins: [react(), tailwindcss(), emojibase(), buildId(), precompress()],
   resolve: {
     alias: { "@": decodeURIComponent(new URL("./src", import.meta.url).pathname) },
   },

@@ -30,7 +30,7 @@ export function agentState(live: AgentLive | undefined, pausedReason?: string | 
     case "error":
       return { label: "Error", tone: "red" };
     case "stopped":
-      return { label: "Stopped", tone: "muted" };
+      return { label: "Idle", tone: "muted" };
     case "idle":
       return { label: "Idle", tone: "faint" };
   }

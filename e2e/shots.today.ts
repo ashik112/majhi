@@ -1,8 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
 
 /**
- * Today at realistic volume, at 1440 and 1100 wide, dark and light. The server is the seeded one: deadlines,
- * findings, an incident, follow-ups, goals and the brief are real. The browser adds forty more decisions to
+ * Today at realistic volume, at 1440 and 1100 wide, dark and light. The server is the seeded one:
+ * findings, an incident, goals and the brief are real. The browser adds forty more decisions to
  * the agenda response, which room cards would otherwise supply. Saved to TODAY_SHOTS.
  * Run: `pnpm exec playwright test -c playwright.today.config.ts`.
  */
@@ -19,30 +19,6 @@ async function cmd(page: Page, name: string, body: unknown) {
 const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 
 async function seed(page: Page) {
-  const dates: [string, string, string][] = [
-    [
-      "hackathon",
-      "Final submission for the Spring Open Source Hackathon with a very long official name",
-      "UTC",
-    ],
-    ["grant", "Hooli Grants Office: round two application", "America/Los_Angeles"],
-    ["launch", "Product directory launch", "Europe/Berlin"],
-    ["client", "Acme quarterly review", "Asia/Kolkata"],
-    ["renewal", "Globex hosting renewal", "Pacific/Auckland"],
-    ["other", "Northwind invoice run", "America/New_York"],
-    ["client", "Initech security questionnaire", "UTC"],
-    ["grant", "Umbrella community fund", "Europe/Berlin"],
-  ];
-  for (const [i, [kind, title, tz]] of dates.entries()) {
-    await cmd(page, "deadlines.upsert", {
-      kind,
-      title,
-      due: i % 2 === 0 ? day(i - 1) : `${day(i - 1)}T17:00`,
-      tz,
-      ...(i % 3 === 1 ? { org: "acme" } : {}),
-    });
-  }
-  await cmd(page, "deadlines.upsert", { kind: "other", title: "Domain renewal", due: day(12), tz: "UTC" });
   const found: [string, string, string, string][] = [
     ["incident", "high", "Checkout API is returning 500 for 12% of requests", "Acme API uptime"],
     ["security", "high", "Outdated TLS setting on the staging proxy", "tls"],
@@ -58,16 +34,6 @@ async function seed(page: Page) {
       detail: title,
       evidence: [],
       dedupeKey: key,
-    });
-  }
-  for (let i = 0; i < 6; i++) {
-    await cmd(page, "crm.upsert", {
-      name: ["Dana Quinn", "Ben Okafor", "Chen Varga", "Ada Stein", "Eli Marlowe", "Pia Tran"][i],
-      company: "Northwind Traders",
-      relation: "lead",
-      stage: "talking",
-      nextStep: "Send the deck and a pricing sheet",
-      nextDue: day(i - 3),
     });
   }
   await cmd(page, "goals.create", {

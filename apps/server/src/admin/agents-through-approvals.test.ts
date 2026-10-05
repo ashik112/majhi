@@ -49,7 +49,7 @@ describe("commands the captain does through the owner's approval", () => {
     expect(w.h.majhi.services.ops.repo.services().map((s) => s.def.name)).toEqual(["Acme site"]);
   });
 
-  it("refuses a playbook's limit before any card, and who is paged even after the owner's click", async () => {
+  it("refuses turning on a playbook's outcome rule before any card, and who is paged even after the owner's click", async () => {
     w = await bossWorld({ real: false });
     const caller = { task: w.chat.id, agent: "boss" };
     const { admin } = w.h.majhi.services;
@@ -57,11 +57,11 @@ describe("commands the captain does through the owner's approval", () => {
     const limit = await admin.call(caller, "majhi_playbooks_update", {
       org: "acme",
       id: "ops-uptime",
-      dailyLimit: 1000,
+      outcomes: { "ops-brief": true },
       ...plain,
     });
     expect(limit).toEqual({
-      text: "A chore's daily limit is the owner's, on the Playbooks page.",
+      text: "Turning an outcome rule on is the owner's, on the Playbooks page.",
       isError: true,
     });
     expect(await cards()).toEqual([]);

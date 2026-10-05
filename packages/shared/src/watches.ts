@@ -233,29 +233,32 @@ export const WatchCheckSchema = z.discriminatedUnion("kind", [
     command: z.string().trim().min(1).max(4_000),
     cwd: z.string().trim().min(1).max(1_000).optional(),
   }),
-  z.object({
-    kind: z.literal("script"),
-    /**
-     * A read-only shell script that prints the value: a number, a word, or JSON read at `path`. It runs
-     * on majhi's clock in a throwaway runner container, with the named connections of the workspace.
-     */
-    script: z
-      .string()
-      .trim()
-      .min(1)
-      .max(4_000)
-      .superRefine((v, ctx) => {
-        const problem = scriptProblem(v);
-        if (problem !== undefined) ctx.addIssue({ code: "custom", message: problem });
-      }),
-    /** The workspace's connections it may use, by id: their variables, and `<ID>_TOKEN` for a sign-in. */
-    connections: z.array(Conn).max(8).default([]),
-    path: z.string().trim().max(200).optional(),
-    agg: MetricAggSchema.optional(),
-    where: MetricReadSchema.shape.where,
-    label: z.string().trim().max(60).optional(),
-    unit: z.string().trim().max(12).optional(),
-  }),
+  z
+    .object({
+      kind: z.literal("script"),
+      /**
+       * A read-only shell script that prints the value: a number, a word, or JSON read at `path`. It runs
+       * on majhi's clock in a throwaway runner container, with the named connections of the workspace.
+       */
+      script: z.string().trim().min(1).max(4_000),
+      /**
+       * `off`: the script runs with no network, for one that only builds a value (a URL, a connection
+       * string) from what the connections give it. `on` (the default): it may call the connections' services,
+       * and the script is checked to only read.
+       */
+      network: z.enum(["on", "off"]).default("on"),
+      /** The workspace's connections it may use, by id: their variables, and `<ID>_TOKEN` for a sign-in. */
+      connections: z.array(Conn).max(8).default([]),
+      path: z.string().trim().max(200).optional(),
+      agg: MetricAggSchema.optional(),
+      where: MetricReadSchema.shape.where,
+      label: z.string().trim().max(60).optional(),
+      unit: z.string().trim().max(12).optional(),
+    })
+    .superRefine((v, ctx) => {
+      const problem = scriptProblem(v.script, v.network);
+      if (problem !== undefined) ctx.addIssue({ code: "custom", message: problem, path: ["script"] });
+    }),
   z.object({
     kind: z.literal("custom"),
     /** What to check, in words. The captain looks on the schedule and reports a value or a state. */
@@ -384,6 +387,10 @@ export const WatchQuestionSchema = z.object({
   options: z.array(z.object({ id: z.string(), label: z.string(), primary: z.boolean().optional() })),
 });
 
+/** Who paused a watch. `unrecorded`: paused before majhi kept a reason. */
+export const WatchPausedBySchema = z.enum(["owner", "agent", "unrecorded"]);
+export type WatchPausedBy = z.infer<typeof WatchPausedBySchema>;
+
 export const WatchViewSchema = z.object({
   id: WatchIdSchema,
   org: IdSchema,
@@ -401,6 +408,8 @@ export const WatchViewSchema = z.object({
   quietKind: z.enum(["snooze", "maintenance"]).optional(),
   /** Why the last look could not tell. */
   unavailable: z.string().optional(),
+  /** Set while the watch is paused: who did it and why, in one sentence. */
+  paused: z.object({ by: WatchPausedBySchema, why: z.string() }).optional(),
   samples24: z.array(WatchSampleSchema),
   samples90: z.array(WatchSampleSchema),
   /** The price before it changed. */
@@ -457,7 +466,12 @@ export const WatchSaveInputSchema = z.object({
   def: WatchDefSchema,
 });
 export const WatchIdInputSchema = z.object({ id: WatchIdSchema });
-export const WatchPauseInputSchema = z.object({ id: WatchIdSchema, paused: z.boolean() });
+export const WatchPauseInputSchema = z.object({
+  id: WatchIdSchema,
+  paused: z.boolean(),
+  /** Why, in a line. An agent must say; a watch an agent paused resumes by itself once it reads fine. */
+  note: z.string().trim().max(200).optional(),
+});
 export const WatchSnoozeInputSchema = z.object({
   id: WatchIdSchema,
   /** 0 clears it. */

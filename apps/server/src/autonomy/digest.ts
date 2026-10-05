@@ -25,6 +25,17 @@ import { meets, stateWords } from "./waits.ts";
 export const DIGEST_MAX_CHARS = 6_000;
 const LINE_MAX = 180;
 
+/**
+ * What holds a start now, typed: the machine is busy, the workspace is at its tasks-at-once limit,
+ * or no agent slot of the team's accounts is free. `key` names the gate's state (the limit and the
+ * running tasks, say), so a refusal by the same gate in the same state is the same fact.
+ */
+export interface StartGate {
+  kind: "machine" | "workspace" | "accounts";
+  text: string;
+  key: string;
+}
+
 /** An inbox or ready task of the backlog. */
 export interface BacklogTask {
   id: string;
@@ -63,6 +74,8 @@ export interface DigestInput {
   backlog: readonly BacklogTask[];
   /** How many backlog tasks the pick rules leave out. */
   leftOut: number;
+  /** The gate that holds each startable-looking task (backlog or resumable), by task id. */
+  gates?: Readonly<Record<string, StartGate>> | undefined;
   /** The owner's pick rules, one line each. */
   rules: readonly string[];
   queue: readonly QueueItem[];
@@ -78,6 +91,8 @@ export interface DigestInput {
   review?: readonly string[] | undefined;
   /** Paused tasks of the workspace with why, and whether the captain may resume them. */
   paused?: readonly string[] | undefined;
+  /** Secret requests of the workspace's tasks waiting for the owner, one line each. */
+  secretRequests?: readonly string[] | undefined;
   /**
    * Whether the captain decides when work starts here. False (Start is You): the lane files
    * proposals and does upkeep; it starts nothing.
@@ -123,6 +138,9 @@ export function factsOf(input: DigestInput): Facts {
     waiting: input.waiting.map((w) => [w.task, w.item]),
     backlog: input.backlog.map((b) => [b.id, b.priority, b.due]),
     leftOut: input.leftOut,
+    gates: Object.entries(input.gates ?? {})
+      .map(([id, g]) => [id, g.kind, g.key])
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
     rules: input.rules,
     queue: input.queue.map((q) => [q.title, q.task, q.after, q.waitFor, q.readyAt !== undefined]),
     projects: input.projects,
@@ -131,6 +149,7 @@ export function factsOf(input: DigestInput): Facts {
     incidents: input.incidents,
     review: input.review,
     paused: input.paused,
+    secretRequests: input.secretRequests,
   };
 }
 
@@ -163,6 +182,7 @@ const BASE = {
   incidents: 6,
   review: 6,
   paused: 6,
+  secretRequests: 8,
 };
 
 export function digest(input: DigestInput): string {
@@ -232,7 +252,8 @@ function build(input: DigestInput, scale: number): string {
             : t.pause.mayResume
               ? ` (${t.pause.label}: you may resume it with majhi_tasks_start)`
               : ` (${t.pause.label}: ${t.pause.stays ?? "leave it paused"})`;
-        return `${t.task} [${t.status}]${pause} ${t.title}${t.org === undefined ? "" : ` (${t.org})`}${doing.length === 0 ? "" : `. ${doing.join("; ")}`}`;
+        const held = input.gates?.[t.task];
+        return `${t.task} [${t.status}]${pause}${held === undefined ? "" : ` (waits: ${held.text})`} ${t.title}${t.org === undefined ? "" : ` (${t.org})`}${doing.length === 0 ? "" : `. ${doing.join("; ")}`}`;
       }),
       max(BASE.tasks),
       "none yet",
@@ -258,12 +279,18 @@ function build(input: DigestInput, scale: number): string {
           b.priority === undefined || b.priority === "normal" ? undefined : b.priority,
           b.due === undefined ? undefined : `due ${b.due}`,
         ].filter((t) => t !== undefined);
-        return `${b.id}${b.org === undefined ? "" : ` (${b.org})`} [${tags.join(", ")}] ${b.title}`;
+        const held = input.gates?.[b.id];
+        return `${b.id}${b.org === undefined ? "" : ` (${b.org})`} [${tags.join(", ")}]${held === undefined ? "" : ` waits: ${held.text}`} ${b.title}`;
       }),
       max(BASE.backlog),
       "empty",
     ),
     ...(input.leftOut > 0 ? [`- ${input.leftOut} more left out by the pick rules`] : []),
+    ...(Object.keys(input.gates ?? {}).length === 0
+      ? []
+      : [
+          "Tasks marked waits are held by a start gate: majhi refuses their start and each try costs a turn. Do not start them. You are woken when the gate clears.",
+        ]),
     ...list(
       "Your queue",
       input.queue.map(
@@ -282,6 +309,11 @@ function build(input: DigestInput, scale: number): string {
       "In review in this workspace (code: merge it where Merge is Captain, else open the merge request where Push is Captain; no code change: close it if the report answers the brief)",
       input.review,
       max(BASE.review),
+    ),
+    ...optional(
+      "Secret requests waiting for the owner. Before the owner is asked, try to fetch each one through a connection of this workspace (doctl with a DigitalOcean connection, a token from a GitHub connection): majhi_secrets_saveFromScript with its task and item runs a read-only script and saves what it prints, and the value never reaches chat. Requests for the same thing (a password and a connection URL of one database user) collapse: fetch one, then withdraw the others with majhi_secrets_withdrawRequest. Leave a request only when no connection can produce it",
+      input.secretRequests,
+      max(BASE.secretRequests),
     ),
     ...optional("Paused tasks of this workspace (not in your list above)", input.paused, max(BASE.paused)),
     ...((input.findings ?? []).length === 0

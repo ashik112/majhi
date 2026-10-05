@@ -95,7 +95,7 @@ describe("the day cap of autonomous mode", () => {
     const card = items.find((i) => i.type === "paused" && i.state === "pending");
     expect(card?.type === "paused" && card.why).toContain("Waiting for the autonomous daily budget, $");
 
-    const status = (await h.cmd("autonomy.status")).body as AutonomyStatus;
+    const status = (await h.cmd("autonomy.status", { detail: true })).body as AutonomyStatus;
     const used = status.spend.total.used.cost;
     // Past the cap, and over it by no more than the margin and the tool call that crossed it.
     expect(used).toBeGreaterThan(CAP);
@@ -120,7 +120,7 @@ describe("the day cap of autonomous mode", () => {
     const answered = await h.cmd("captain.answerBudget", { scope: "day", answer: "raise" });
     expect(answered.status).toBe(200);
     expect(answered.body.budgets).toEqual([]);
-    const after = (await h.cmd("autonomy.status")).body as AutonomyStatus;
+    const after = (await h.cmd("autonomy.status", { detail: true })).body as AutonomyStatus;
     expect(after.holds.map((x) => x.kind)).not.toContain("day-cap");
     expect(after.spend.total.cap).toEqual({ cost: CAP * 2 });
     expect(after.raised).toEqual({ day: { cost: CAP * 2 } });
@@ -140,7 +140,7 @@ describe("the day cap of autonomous mode", () => {
     for (const day of [null, {}, { cost: 0 }]) {
       expect((await h.cmd("autonomy.configure", { day })).status).toBe(400);
     }
-    const status = (await h.cmd("autonomy.status")).body as AutonomyStatus;
+    const status = (await h.cmd("autonomy.status", { detail: true })).body as AutonomyStatus;
     expect(status.settings.day).toEqual({ cost: CAP });
   });
 });

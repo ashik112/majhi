@@ -175,6 +175,14 @@ export class UsageRepo {
     return Number(res.lastInsertRowid);
   }
 
+  /** The id of the agent's last finished turn in the task, 0 when it had none. */
+  lastTurnId(task: string, agent: string): number {
+    const row = this.db
+      .prepare("SELECT MAX(id) AS id FROM turns WHERE task = ? AND agent = ?")
+      .get(task, agent) as { id: number | null };
+    return row.id ?? 0;
+  }
+
   totals(q: TurnQuery): UsageTotals {
     const w = where(q);
     return totalsOf(this.db.prepare(`SELECT ${SUMS} FROM turns ${w.sql}`).get(...w.params) as SumRow);

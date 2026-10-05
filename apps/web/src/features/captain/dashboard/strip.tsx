@@ -58,7 +58,7 @@ function stateOf(
     const until = first.until === undefined ? "" : `, back ${atTime(first.until, nowMs, tz)}`;
     return {
       lamp: "needs",
-      word: first.kind === "day-cap" ? "Held by day cap" : `Held by ${plural(caps.length, "cap")}`,
+      word: first.kind === "day-cap" ? "Held by today's budget" : `Held by ${plural(caps.length, "cap")}`,
       why: `${first.text}${until}`,
     };
   }
@@ -142,8 +142,8 @@ export function StatusStrip({
           className={cn("flex items-center gap-2 text-xs text-fg-muted", LINK)}
         >
           <Bars
-            width={70}
-            height={14}
+            width={84}
+            height={16}
             slots={14}
             values={finished}
             labels={(report?.days ?? []).map((d, i) => `${d.day}: ${finished[i] ?? 0} finished`)}
@@ -157,7 +157,7 @@ export function StatusStrip({
 
       <Segment
         label="Spend today"
-        aside={<span className="tnum">{cap === undefined ? "no day cap" : `cap ${dollars(cap)}`}</span>}
+        aside={<span className="tnum">{cap === undefined ? "no budget" : `cap ${dollars(cap)}`}</span>}
       >
         <PageLink page="usage" title="Open Usage" className="flex min-w-0 items-baseline gap-2">
           <span

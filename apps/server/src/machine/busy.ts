@@ -26,18 +26,24 @@ function memFreePct(host: MachineHost): number | undefined {
 }
 
 /**
+ * The kind of load that keeps majhi from starting new work, or undefined. Memory covers free memory
+ * under 10 percent and a critical pressure reading; load is the 1-minute load over the core count.
+ */
+export function busyKind(host: MachineHost | undefined): "memory" | "load" | undefined {
+  if (host === undefined) return undefined;
+  if (host.load1 > host.cores) return "load";
+  const pct = memFreePct(host);
+  if ((pct !== undefined && pct < MEMORY_FREE_MIN_PCT) || host.pressure === "critical") return "memory";
+  return undefined;
+}
+
+/**
  * Why majhi must not start new work now, or undefined. Busy means the 1-minute load is over the core
  * count, free memory is under 10 percent, or the system reports critical memory pressure. No reading
  * (helper offline) never blocks a start.
  */
 export function busyReason(host: MachineHost | undefined): string | undefined {
-  if (host === undefined) return undefined;
-  const pct = memFreePct(host);
-  const busy =
-    host.load1 > host.cores ||
-    (pct !== undefined && pct < MEMORY_FREE_MIN_PCT) ||
-    host.pressure === "critical";
-  if (!busy) return undefined;
+  if (host === undefined || busyKind(host) === undefined) return undefined;
   const free = host.memAvailableBytes === undefined ? "" : `, ${gb(host.memAvailableBytes)} free`;
   return `the machine is busy: load ${host.load1.toFixed(1)} on ${host.cores} cores${free}`;
 }
@@ -48,7 +54,11 @@ export function heaviest(containers: readonly MachineContainer[], n: number): Ma
 }
 
 /** One line for the digest and the captain. */
-export function machineLine(reading: MachineReading | undefined): string {
+/** `runs`: agent runs in use and the machine-wide cap, shown first so a full cap is plain. */
+export function machineLine(
+  reading: MachineReading | undefined,
+  runs?: { inUse: number; cap: number },
+): string {
   const host = reading?.host;
   if (reading === undefined || host === undefined) return "not known (the host helper is not connected)";
   const parts = [`load ${host.load1.toFixed(1)} on ${host.cores} cores`];
@@ -60,13 +70,14 @@ export function machineLine(reading: MachineReading | undefined): string {
   }
   if (host.diskFreeBytes !== undefined) parts.push(`${gb(host.diskFreeBytes)} disk free`);
   const top = heaviest(reading.containers, 3);
-  const runs =
+  const containers =
     reading.containers.length === 0
       ? "no agent containers"
       : `${reading.containers.length} containers, heaviest ${top
           .map((c) => `${c.name} ${Math.round(c.cpuPct)}% CPU ${gb(c.memBytes)}`)
           .join(", ")}`;
-  return `${parts.join(", ")}; ${runs}`;
+  const use = runs === undefined ? "" : `; ${runs.inUse} of ${runs.cap} agent runs in use`;
+  return `${parts.join(", ")}${use}; ${containers}`;
 }
 
 /** Why health should warn, one sentence each. `idleLowMs`: how long idle CPU has stayed under the minimum. */

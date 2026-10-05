@@ -65,7 +65,7 @@ import { BUDGET, freshPrompt, roomLines } from "./handoff.ts";
 import { handoffPayload, ItemMapper, ownerPayload, permissionPayload } from "./items.ts";
 import { type LaunchDeps, launch, resolveAgent, withAccount, withOverride } from "./launch.ts";
 import { handedOffLine, limitPauseText } from "./limit.ts";
-import { capacityOf, Slots } from "./limits.ts";
+import { capacityOf, globalCap, type Limits, runsTotal, Slots } from "./limits.ts";
 import { type LivePatch, RunLive, WORKING } from "./live.ts";
 import { taskMediaSink } from "./media.ts";
 import { looksLikeNetworkError, looksLikeOverload, OVERLOAD_BACKOFF_MS } from "./network.ts";
@@ -95,6 +95,25 @@ const RESUME_RETRY_MS = 1_000;
 const ACTIVE_EVERY_MS = 5_000;
 const CONTINUE_TEXT = "Continue from where you stopped.";
 /** The first prompt of the fresh session a turn limit moved the agent to (PRV-96). */
+/** Why work moves to another agent: the note's reason, the room's line, and whether a teammate may take it. */
+interface Handoff {
+  carry: string;
+  line: (to: string) => string;
+  teammates: boolean;
+}
+
+const limitHandoff = (from: string, until: string, now: Date): Handoff => ({
+  carry: `@${from}'s account hit its usage limit`,
+  line: (to) => handedOffLine(from, to, until, now),
+  teammates: false,
+});
+
+const signedOutHandoff = (from: string): Handoff => ({
+  carry: `@${from}'s account needs a new sign-in`,
+  line: (to) => `@${from}'s account needs a new sign-in. @${to} continues from the checkpoint.`,
+  teammates: true,
+});
+
 const CONTINUE_FROM_NOTE = "Continue from the handoff note.";
 /** How often a running turn is checked against its turn limits. */
 const LIMIT_CHECK_MS = 15_000;
@@ -132,7 +151,7 @@ export interface RunDeps {
     readAfterEnd(p: ProcessInfo): boolean;
   };
   /** Called when the set of working agents of some task changed, so the task list can refresh. */
-  onTasksChanged: () => void;
+  onTasksChanged: (task: string, rows: boolean) => void;
   /**
    * An agent ended a turn by itself (stop reason end_turn) with this final message. The room
    * routes its @mentions (5.3) before the task can count as idle, so this is awaited. `refused`:
@@ -162,6 +181,8 @@ export interface RunDeps {
    * Autonomous mode's say in the line for a slot: `fair` while it is On (slots are shared evenly
    * across workspaces), and `owner` for a task the owner runs, which always goes first (5.18).
    */
+  /** The computer's CPU core count, for the default machine-wide run cap. */
+  cores?: () => number | undefined;
   slotPolicy?: { fair(): boolean; owner(task: string): boolean };
   /** A run's loop ended: its turn is over and nothing more is sent until something wakes it. */
   onLoopEnd?: (task: string, agent: string) => void;
@@ -196,7 +217,15 @@ export interface RunDeps {
    * `resume.handoff` is on. Else undefined.
    */
   fallbackFor?: (task: string, agent: string) => Promise<string | undefined>;
-  /** Puts `to` in `from`'s place in the task's team, same position and overrides. False when it could not. */
+  /**
+   * When `agent` is the lead and its account is signed out: the first teammate whose account works,
+   * under the same `resume.handoff` switch. Undefined when there is none.
+   */
+  teammateFor?: (task: string, agent: string) => Promise<string | undefined>;
+  /**
+   * Puts `to` in `from`'s place in the task's team, same position and overrides. A teammate already
+   * on the team takes the lead's place and `from` leaves it. False when it could not.
+   */
   takeOver?: (task: string, from: string, to: string) => Promise<boolean>;
   /** A fresh health check of an account, asked after a start failed. Undefined when it cannot be read. */
   checkAccount?: (account: string) => Promise<AccountProbe | undefined>;
@@ -253,6 +282,8 @@ export class RunManager {
   private readonly limitStrikes = new Map<string, number>();
   /** Set by `closeAll`: no session starts after shutdown, and queued prompts wait in the store. */
   private closed = false;
+  /** The machine-wide run cap as of the last look, for the line a waiting run shows. */
+  private cap = 0;
 
   constructor(private readonly deps: RunDeps) {
     this.now = deps.now ?? (() => new Date());
@@ -263,7 +294,7 @@ export class RunManager {
       pause: (run, reason, text) => this.pause(run, reason, text),
     });
     this.slots = new Slots({
-      limits: async () => (await deps.config.settings()).limits,
+      limits: () => this.limits(),
       canEvict: (key) => {
         const run = this.runs.get(key);
         return run !== undefined && run.session !== undefined && !run.turning;
@@ -273,15 +304,38 @@ export class RunManager {
       onQueue: (positions) => this.showLine(positions),
       now: () => this.now().getTime(),
     });
+    void this.limits().catch(() => undefined);
+  }
+
+  /** Runs holding a slot now and the machine-wide cap, for the Machine line. */
+  runUse(): { inUse: number; cap: number } {
+    return { inUse: this.slots.state().holders.length, cap: this.cap };
+  }
+
+  /** The limits now, with the machine-wide run cap resolved from the setting or the core count. */
+  private async limits(): Promise<Limits> {
+    const { limits } = await this.deps.config.settings();
+    const limit = { ...limits, runs_total: runsTotal(limits, this.deps.cores?.()) };
+    this.cap = globalCap(limit);
+    return limit;
   }
 
   /** At server start: runs that were live are over, and prompts nobody can answer any more are cancelled. */
   recover(): void {
     const { store, room } = this.deps;
     store.runs.endAllLive("server-restart", this.now().toISOString());
+    const told = new Set<string>();
     for (const item of store.room.pendingPermissions()) {
-      if (item.type === "permission")
-        room.post(item.task, item.id, permissionPayload(item, { state: "cancelled" }));
+      if (item.type !== "permission") continue;
+      room.post(item.task, item.id, permissionPayload(item, { state: "cancelled" }));
+      // One line per task: why the request vanished.
+      if (told.has(item.task)) continue;
+      told.add(item.task);
+      room.post(item.task, `restart:${randomUUID()}`, {
+        type: "system",
+        level: "info",
+        text: "majhi restarted, so the open permission request ended. The agent asks again if it still needs it.",
+      });
     }
   }
 
@@ -295,7 +349,7 @@ export class RunManager {
    * captain's own slot is outside the limits and not counted.
    */
   async capacity(accounts: readonly string[] = []): Promise<SlotCapacity> {
-    const { limits } = await this.deps.config.settings();
+    const limits = await this.limits();
     return capacityOf(this.slots.state(), limits, accounts);
   }
 
@@ -323,6 +377,26 @@ export class RunManager {
         (r) => r.task === task && (WORKING.has(r.live.status) || (r.turning && !r.closing && !r.settling)),
       )
       .map((r) => r.agent);
+  }
+
+  /**
+   * The tasks an agent is working on right now: starting or in a turn. An agent that is queued for a
+   * slot or waits on an answer is not working, so its task is not counted here.
+   */
+  workingTasks(): string[] {
+    const out = new Set<string>();
+    for (const r of this.runs.values()) {
+      const status = r.live.status;
+      const idleish = status === "queued" || status === "waiting";
+      if (
+        status === "starting" ||
+        status === "working" ||
+        (r.turning && !r.closing && !r.settling && !idleish)
+      ) {
+        out.add(r.task);
+      }
+    }
+    return [...out];
   }
 
   /** Agents in the middle of a turn, across majhi. An update waits for these with "when they finish". */
@@ -634,7 +708,11 @@ export class RunManager {
     const targets = [...this.runs.values()].filter(
       (r) => r.task === task && (agent === undefined || r.agent === agent) && r.turning,
     );
-    for (const run of targets) if (run.queue.length > 0) run.held = true;
+    for (const run of targets) {
+      if (run.queue.length > 0) run.held = true;
+      // Between the session opening and the prompt going out there is no turn to cancel yet.
+      if (!run.prompting) run.cancelBeforePrompt = true;
+    }
     await Promise.all(targets.map((run) => this.cancelRun(run)));
     return targets.map((r) => r.agent);
   }
@@ -774,7 +852,8 @@ export class RunManager {
   }
 
   /** The concurrency limits changed: starts that wait may fit now. */
-  limitsChanged(): Promise<void> {
+  async limitsChanged(): Promise<void> {
+    await this.limits();
     return this.slots.pump();
   }
 
@@ -968,6 +1047,7 @@ export class RunManager {
     } finally {
       run.turning = false;
       run.settling = false;
+      run.cancelBeforePrompt = false;
       run.drive = undefined;
       // Idle between turns: a waiting start may stop this process now.
       if (run.session !== undefined && run.live.status === "idle") {
@@ -1091,11 +1171,7 @@ export class RunManager {
           else this.resumeFailed(run, "the agent could not start");
           return;
         }
-        if (run.cancelBeforePrompt) {
-          run.cancelBeforePrompt = false;
-          if (run.queue.length > 0) run.held = true;
-          break;
-        }
+        if (this.stoppedBeforePrompt(run)) break;
       }
       if (run.closing || run.paused !== undefined) break;
       // The wait for a slot or the session start may have been long: ask again before the turn.
@@ -1135,6 +1211,13 @@ export class RunManager {
           continue;
         }
       }
+      // Esc while the prompt was being prepared: keep it queued, send nothing.
+      if (run.cancelBeforePrompt) {
+        run.queue.unshift(entry);
+        this.live.refreshQueued(run);
+        this.stoppedBeforePrompt(run);
+        break;
+      }
       const stopReason = await this.turn(
         run,
         session,
@@ -1149,6 +1232,11 @@ export class RunManager {
           run.queue.unshift(entry);
           this.live.refreshQueued(run);
         }
+        // The account is signed out: a fallback or a teammate takes the queue over, or the run waits for the sign-in.
+        const signedOut = run.signedOutAccount;
+        run.signedOutAccount = undefined;
+        if (signedOut !== undefined && !(await this.takeOverFor(run, signedOutHandoff(run.agent))))
+          this.pauseSignedOut(run, signedOut);
         // The account hit its usage limit: the fallback takes the queue over, or the run waits for the reset.
         const mark = run.limitMark;
         run.limitMark = undefined;
@@ -1360,7 +1448,7 @@ export class RunManager {
    * resumes it at the reset.
    */
   private async handOffOrPause(run: AgentRun, account: string, mark: AccountLimit): Promise<void> {
-    if (await this.takeOverFor(run, mark)) return;
+    if (await this.takeOverFor(run, limitHandoff(run.agent, mark.until, this.now()))) return;
     this.pauseForAccount(run, account, mark);
   }
 
@@ -1376,22 +1464,18 @@ export class RunManager {
    * handoff note built from saved state and the queue, and the run's session ends. False when no
    * fallback can take over, and nothing changed.
    */
-  private async takeOverFor(run: AgentRun, mark: AccountLimit): Promise<boolean> {
+  private async takeOverFor(run: AgentRun, why: Handoff): Promise<boolean> {
     const { deps } = this;
-    const to = await deps.fallbackFor?.(run.task, run.agent).catch(() => undefined);
+    const to =
+      (await deps.fallbackFor?.(run.task, run.agent).catch(() => undefined)) ??
+      (why.teammates ? await deps.teammateFor?.(run.task, run.agent).catch(() => undefined) : undefined);
     if (to === undefined || run.closing) return false;
     if (!(await deps.takeOver?.(run.task, run.agent, to).catch(() => false))) return false;
     const task = deps.store.tasks.get(run.task);
     const next = this.runFor(run.task, to);
     if (task !== undefined) {
       try {
-        const built = await buildCarry(
-          deps,
-          task,
-          to,
-          undefined,
-          `@${run.agent}'s account hit its usage limit`,
-        );
+        const built = await buildCarry(deps, task, to, undefined, why.carry);
         next.carry = built.carry;
         next.freshNext = true;
       } catch (err) {
@@ -1413,7 +1497,7 @@ export class RunManager {
     next.queue = [...carried, ...next.queue];
     next.held = false;
     next.paused = undefined;
-    this.live.system(run, "warn", handedOffLine(run.agent, to, mark.until, this.now()));
+    this.live.system(run, "warn", why.line(to));
     this.retire(run);
     this.live.refreshQueued(next);
     void this.drive(next);
@@ -1477,15 +1561,21 @@ export class RunManager {
       });
       return;
     }
-    // Kept in flight: after a restart the turn continues too.
+    // Kept in flight: after a restart the turn continues too. The loop hands off or pauses once the prompt is back in the queue.
     this.markTurn(run, false, false);
     run.requeue = true;
+    run.signedOutAccount = account;
+  }
+
+  /** The run waits for its account's sign-in, with its prompts queued. */
+  private pauseSignedOut(run: AgentRun, account: string): void {
+    const lead = this.deps.store.tasks.get(run.task)?.team[0];
     run.startFailure = { kind: "signed-out", text: `${account} needs a new sign-in.` };
     const nobody = lead === run.agent ? "" : " No teammate with a working account can take its step.";
     this.pause(
       run,
       "signed-out",
-      `${cannot}${nobody} Sign in ${account} on the Accounts page, then the task continues.`,
+      `@${run.agent} cannot run: its account ${account} needs a new sign-in.${nobody} Sign in ${account} on the Accounts page, then the task continues.`,
       true,
     );
   }
@@ -1536,7 +1626,7 @@ export class RunManager {
     }
     run.refusalSwitched = true;
     this.live.system(run, "warn", `@${run.agent} was blocked by ${by}. Continuing on ${next} for this task.`);
-    this.deps.onTasksChanged();
+    this.deps.onTasksChanged(run.task, false);
     run.queue.unshift({ kind: "continue" });
     this.live.refreshQueued(run);
     return true;
@@ -1991,7 +2081,7 @@ export class RunManager {
         ...(failure.resetsAt === undefined ? {} : { resetsAt: failure.resetsAt }),
       });
       if (run.closing) return;
-      if (await this.takeOverFor(run, mark)) return;
+      if (await this.takeOverFor(run, limitHandoff(run.agent, mark.until, this.now()))) return;
       if (!up) {
         this.pauseForAccount(run, run.account, mark);
         return;
@@ -2001,6 +2091,8 @@ export class RunManager {
       this.live.system(run, "warn", `@${run.agent} is out: ${failure.text}`);
       return;
     }
+    // Signed out: a fallback or a teammate takes over, as for a limit.
+    if (failure.kind === "signed-out" && (await this.takeOverFor(run, signedOutHandoff(run.agent)))) return;
     // The paused card carries the cause and the fix, so the pause adds no line of its own.
     this.pause(run, failure.kind === "signed-out" ? "signed-out" : "error", failure.text, true);
   }
@@ -2119,6 +2211,15 @@ export class RunManager {
     }
   }
 
+  /** Esc came before the first prompt went out: nothing is sent, the queue waits, the room says so. */
+  private stoppedBeforePrompt(run: AgentRun): boolean {
+    if (!run.cancelBeforePrompt) return false;
+    run.cancelBeforePrompt = false;
+    if (run.queue.length > 0) run.held = true;
+    this.live.system(run, "info", `Stopped @${run.agent}'s turn.`);
+    return true;
+  }
+
   private async cancelRun(run: AgentRun): Promise<void> {
     this.permissions.cancelAll(run);
     const session = run.session;
@@ -2208,19 +2309,47 @@ export class RunManager {
     return run.agent === (await this.deps.config.sections()).boss;
   }
 
+  /**
+   * The line a queued run says: its place, which limit is full and which tasks hold the slots, with
+   * the ones that wait on the owner marked, since an agent waiting on an answer still holds its slot.
+   */
+  private queuedLine(run: AgentRun, key: string, slot: number): string {
+    const why = this.slots.blockedBy(key);
+    const start = `@${run.agent} starts when one frees.`;
+    if (why === undefined) return `Queued, #${slot} in line, behind earlier starts. ${start}`;
+    const asking = this.deps.store.room.tasksWaitingOnOwner();
+    const holders = why.holders.map((h) => {
+      const holder = this.runs.get(h.key);
+      const mark = asking.has(h.task) ? ", waiting for you" : "";
+      return `${h.task} (${holder === undefined ? h.account : `@${holder.agent}`}${mark})`;
+    });
+    const shown = holders.slice(0, 4).join(", ");
+    const more = holders.length > 4 ? ` and ${holders.length - 4} more` : "";
+    const full =
+      why.limit === "account"
+        ? `the limit of ${why.max} at once on ${why.account}`
+        : why.limit === "task"
+          ? `the limit of ${why.max} agents on one task`
+          : `the limit of ${why.max} agents at once`;
+    return `Queued, #${slot} in line: ${full} is reached. Holding the slots: ${shown}${more}. ${start}`;
+  }
+
   /** Shows each waiting run's place in line. */
   private showLine(positions: Map<string, number>): void {
     for (const [key, slot] of positions) {
       const run = this.runs.get(key);
       if (run === undefined) continue;
-      this.setLive(run, { status: "queued", slot });
+      const inUse = this.slots.state().holders.length;
+      this.setLive(run, {
+        status: "queued",
+        slot,
+        ...(this.cap > 0 && inUse >= this.cap
+          ? { nowDoing: `Waiting for a free run: ${inUse} of ${this.cap} in use` }
+          : {}),
+      });
       if (!run.queuedNoted) {
         run.queuedNoted = true;
-        this.live.system(
-          run,
-          "info",
-          `Queued, #${slot} in line: majhi is running as many agents as the limits allow. @${run.agent} starts when a slot is free.`,
-        );
+        this.live.system(run, "info", this.queuedLine(run, key, slot));
       }
     }
   }

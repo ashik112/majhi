@@ -104,15 +104,15 @@ describe("a night with the captain deciding in Private and asking about everythi
     expect(priv).toMatchObject({
       authority: { start: "decide", upkeep: "decide", merge: "decide" },
       effective: { start: "decide", upkeep: "decide", merge: "decide" },
-      // The owner checklist asks about the backup this world never made.
-      summary: "shipped 1, 2 things for you",
+      // "For you" counts open owner cards, not asks the captain logged: none are open here.
+      summary: "shipped 1",
       budget: { cost: 5 },
     });
     expect(priv?.used.cost ?? 0).toBeLessThanOrEqual(5);
     expect(status.orgs.find((o) => o.org === "acme")).toMatchObject({
       authority: { start: "ask", upkeep: "ask", merge: "ask" },
       effective: { start: "ask", upkeep: "ask", merge: "ask" },
-      summary: "",
+      summary: "1 thing for you",
     });
 
     // Undo: a revert commit on main, the task's file gone, the history kept.
@@ -139,5 +139,6 @@ describe("a night with the captain deciding in Private and asking about everythi
     expect(pending).toContainEqual(
       expect.objectContaining({ task: client.id, text: `${client.id} is ready to ship` }),
     );
-  });
+    // A whole night with real git: about a thousand git processes, 8 s alone and over 20 s on a busy machine.
+  }, 60_000);
 });

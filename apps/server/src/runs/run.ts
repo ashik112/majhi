@@ -161,6 +161,8 @@ export class AgentRun {
   requeue = false;
   /** The account's limit mark a failed turn just set: the loop hands off or pauses with it once the prompt is back in the queue. */
   limitMark: AccountLimit | undefined;
+  /** The account a failed turn found signed out: the loop hands off or pauses once the prompt is back in the queue. */
+  signedOutAccount: string | undefined;
   /** The account whose usage limit paused this run, for the lift at its reset. Cleared when the run resumes. */
   limitAccount: string | undefined;
   /** The room already said this run's account limit passed while resuming is off. */

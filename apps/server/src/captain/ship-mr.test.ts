@@ -1,7 +1,7 @@
 import type { Authority } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
-import { judgeReport } from "./answer-check.ts";
+import { answerGate, isAnswerTask, judgeReport } from "./answer-check.ts";
 import { RUNS } from "./authority-fixtures.ts";
 import { createChores } from "./chores.ts";
 import type { AnswerTask, CaptainPorts } from "./ports.ts";
@@ -12,18 +12,24 @@ import { ChoreRunner, type Workspace } from "./runner.ts";
 
 const NOW = () => new Date("2026-10-04T10:00:00.000Z");
 
-function setup(authority: Authority, answers: AnswerTask[] = [], mr: { ok: boolean } = { ok: true }) {
+function setup(
+  authority: Authority,
+  answers: AnswerTask[] = [],
+  mr: { ok: boolean } = { ok: true },
+  over: { check?: () => unknown; heads?: () => string } = {},
+) {
   const repo = new CaptainRepo(new Store(":memory:").raw);
   const calls = { merged: 0, opened: 0, asked: 0, closed: [] as string[], changes: [] as string[] };
   const ports = {
     typing: () => false,
     answerTasks: async () => answers,
-    reviewTasks: async () => [{ id: "ACM-1", title: "Add export", heads: "abc" }],
-    shipCheck: async () => ({
-      ready: true,
-      evidence: "checks pass",
-      targets: [{ project: "api", into: "main", base: "main" }],
-    }),
+    reviewTasks: async () => [{ id: "ACM-1", title: "Add export", heads: over.heads?.() ?? "abc" }],
+    shipCheck: async () =>
+      over.check?.() ?? {
+        ready: true,
+        evidence: "checks pass",
+        targets: [{ project: "api", into: "main", base: "main" }],
+      },
     ship: async () => {
       calls.merged += 1;
       return { text: "Shipped ACM-1" };
@@ -59,7 +65,6 @@ function setup(authority: Authority, answers: AnswerTask[] = [], mr: { ok: boole
     workspace: async () => ws(),
     stopped: () => false,
     tellOwner: () => undefined,
-    caused: () => undefined,
     laneTokens: () => 0,
     chores: createChores(ports, NOW),
   });
@@ -102,11 +107,48 @@ describe("ship with Merge on the owner", () => {
   });
 });
 
+describe("a task with uncommitted changes", () => {
+  const dirty = (files: string[]) => ({
+    ready: false,
+    why: `oryza has uncommitted changes: ${files.join(", ")}`,
+    uncommitted: { project: "oryza", files },
+  });
+
+  it("sends the lead one line naming the files, and not again for the same state", async () => {
+    const t = setup(
+      { ...RUNS, merge: "ask", push: "decide" },
+      [],
+      { ok: true },
+      { check: () => dirty(["a.ts", "b.ts"]) },
+    );
+    await t.run();
+    await t.run();
+    expect(t.calls.changes).toEqual([
+      "Captain: Commit or discard the uncommitted changes in oryza: a.ts, b.ts",
+    ]);
+    expect(t.calls.opened).toBe(0);
+  });
+
+  it("asks twice at most, then leaves it for the owner", async () => {
+    let n = 0;
+    const t = setup(
+      { ...RUNS, merge: "ask", push: "decide" },
+      [],
+      { ok: true },
+      { check: () => dirty([`f${n}.ts`]), heads: () => `head${n}` },
+    );
+    for (n = 1; n <= 4; n++) await t.run();
+    expect(t.calls.changes).toHaveLength(2);
+    expect(t.repo.allActions().some((a) => a.text.includes("is not ready to ship"))).toBe(true);
+  });
+});
+
 describe("tasks that changed no code", () => {
   const done = "The invoice stayed Pending because the webhook retried after the deadline. ".repeat(3);
   const task = (text: string | undefined): AnswerTask => ({
     id: "ACM-2",
     title: "Why did it stay Pending",
+    investigation: true,
     lead: "lead",
     report: text === undefined ? undefined : { text, at: "2026-10-04T09:00:00.000Z" },
   });
@@ -145,6 +187,37 @@ describe("tasks that changed no code", () => {
     const t = setup({ ...RUNS, upkeep: "ask", questions: "ask" }, [task(done)]);
     await t.run();
     expect(t.calls.closed).toEqual([]);
+  });
+
+  it("never bounces a code task that changed nothing for a short report", async () => {
+    const code: AnswerTask = { ...task("done"), id: "ACM-3", investigation: false };
+    const t = setup({ ...RUNS, upkeep: "decide" }, [code]);
+    await t.run();
+    expect(t.calls.changes).toEqual([]);
+    expect(t.calls.closed).toEqual([]);
+  });
+
+  it("sends an investigation with an empty report back", async () => {
+    const t = setup({ ...RUNS, upkeep: "decide" }, [task("")]);
+    await t.run();
+    expect(t.calls.changes).toHaveLength(1);
+    expect(t.calls.changes[0]).toContain("too short");
+  });
+
+  it("spends no turn on a lead when the workspace does not let the captain answer", async () => {
+    const t = setup({ ...RUNS, upkeep: "ask", questions: "ask", merge: "decide" }, [task("")]);
+    await t.run();
+    expect(t.calls.changes).toEqual([]);
+    expect(t.calls.closed).toEqual([]);
+  });
+
+  it("names the refused row, and tells answer tasks from code tasks by structure", () => {
+    expect(answerGate({ upkeep: "ask", questions: "ask" })).toMatchObject({ open: false, row: "upkeep" });
+    expect(answerGate({ upkeep: "ask", questions: "decide" })).toEqual({ open: true });
+    expect(isAnswerTask({ kind: "code", repos: [{}] })).toBe(false);
+    expect(isAnswerTask({ kind: "code", repos: [{}], readMounts: [{}] })).toBe(true);
+    expect(isAnswerTask({ kind: "ops", repos: [{}] })).toBe(true);
+    expect(isAnswerTask({ kind: "code", repos: [] })).toBe(true);
   });
 
   it("reads a report", () => {

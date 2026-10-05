@@ -7,6 +7,7 @@ import {
   type CaptainStatus,
   CHORE_LABEL,
   FULL_ACCESS_KEEPS,
+  TASKS_AT_ONCE,
   type TaskSizeLimit,
 } from "@majhi/shared";
 import { Check, ChevronRight, MoreHorizontal, X } from "lucide-react";
@@ -18,6 +19,7 @@ import { Menu } from "@/components/ui/menu";
 import { Modal } from "@/components/ui/modal";
 import { PageLink } from "@/components/ui/page-link";
 import { Segmented } from "@/components/ui/segmented";
+import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/sheet";
 import { useToast } from "@/components/ui/toast";
 import { useExclude } from "@/features/autonomy/desk";
@@ -137,6 +139,41 @@ function BudgetCell({ org }: { org: CaptainOrg }) {
   );
 }
 
+/** How many tasks the captain works on at once in a workspace. */
+function AtOnceCell({ org }: { org: CaptainOrg }) {
+  const toast = useToast();
+  const save = useCaptainRules();
+  const current = org.rules.tasksAtOnce ?? TASKS_AT_ONCE;
+  return (
+    <Select
+      aria-label={`Tasks at once in ${org.name}`}
+      title="How many tasks the captain works on at the same time here"
+      value={String(current)}
+      disabled={save.isPending}
+      onChange={(e) => {
+        const n = Number(e.target.value);
+        save.mutate(
+          {
+            input: { orgs: { [org.org]: { tasksAtOnce: n === TASKS_AT_ONCE ? null : n } } },
+            reason: `Owner set tasks at once in ${org.name} to ${n}`,
+          },
+          {
+            onSuccess: () => toast(`${org.name}: ${n} ${n === 1 ? "task" : "tasks"} at once`),
+            onError: (error) => toast("Could not save it", { detail: describeError(error), tone: "error" }),
+          },
+        );
+      }}
+      className="h-8 w-[88px] px-2 text-center font-mono text-sm"
+    >
+      {[1, 2, 3, 4, 5].map((n) => (
+        <option key={n} value={n}>
+          {n}
+        </option>
+      ))}
+    </Select>
+  );
+}
+
 /** The workspaces as columns, the six decisions and the daily budget as rows. */
 function Grid({
   orgs,
@@ -237,7 +274,9 @@ function Grid({
             title="The captain decides everything here and acts without a card. It still asks before changing anyone's permissions, before anything destructive, and before merging or pushing when those rows are yours."
           >
             <span className="text-base text-fg">Full access</span>
-            <span className="text-xs text-fg-faint">No cards, except permissions, deletes, and Merge or Push when they are yours</span>
+            <span className="text-xs text-fg-faint">
+              No cards, except permissions, deletes, and Merge or Push when they are yours
+            </span>
           </div>
           {orgs.map((org) => (
             <div key={org.org} className={COLUMN}>
@@ -260,6 +299,17 @@ function Grid({
                   )
                 }
               />
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 border-b border-line py-1.5">
+          <div className={cn(FIRST_COLUMN, sticky, "flex flex-col pr-2 leading-snug")}>
+            <span className="text-base text-fg">Tasks at once</span>
+            <span className="text-xs text-fg-faint">Started by the captain here</span>
+          </div>
+          {orgs.map((org) => (
+            <div key={org.org} className={COLUMN}>
+              <AtOnceCell org={org} />
             </div>
           ))}
         </div>
@@ -502,7 +552,7 @@ export function DelegationSheet({
   now: number;
   onClose: () => void;
 }) {
-  const autonomy = useAutonomyStatus().data;
+  const autonomy = useAutonomyStatus(true).data;
   const accounts = useAccounts().data ?? [];
   const [more, setMore] = useState<string>();
   const moreOrg = captain.orgs.find((o) => o.org === more);

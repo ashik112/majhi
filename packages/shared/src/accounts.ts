@@ -12,7 +12,6 @@ import {
   TurnsPatchSchema,
 } from "./settings.ts";
 import { RoleSchema, TierPatchSchema, TiersPatchSchema } from "./tiers.ts";
-import { TrackerConfigSchema } from "./trackers.ts";
 
 /**
  * Accounts, orgs, tools and agents (SPEC 2, 3.3, 4.4, 5.1, 5.2, 5.8).
@@ -233,8 +232,8 @@ export const OrgConfigSchema = z.looseObject({
   dismissed_logins: z.array(DismissedLoginSchema).optional(),
   /** The clusters, MCP servers, hosts and accounts this org's agents may reach (5.14), by id. */
   connections: z.record(IdSchema, ConnectionConfigSchema).optional(),
-  /** The org's tracker (5.11), when it has one. */
-  tracker: TrackerConfigSchema.optional(),
+  /** Removed in D2, kept so old config loads. */
+  tracker: z.unknown().optional(),
 });
 export type OrgConfig = z.infer<typeof OrgConfigSchema>;
 
@@ -523,8 +522,6 @@ export const OrgViewSchema = z.object({
   /** Secret references (never values) for the MR hosts, when set. */
   mrTokens: OrgConfigSchema.shape.mr_tokens,
   gitAccounts: OrgConfigSchema.shape.git_accounts,
-  /** The org's tracker, with secret references only. */
-  tracker: OrgConfigSchema.shape.tracker,
   accountCount: z.number().int().nonnegative(),
   agentCount: z.number().int().nonnegative(),
 });
@@ -562,8 +559,6 @@ export const EventTopicSchema = z.enum([
   "playbooks",
   /** The ops watch (5.18): watched services, incidents and the phone push, `ops.*`. */
   "ops",
-  /** Business memory (5.19): the knowledge base, voice, contacts and deadlines. */
-  "business",
   /** The morning brief was made or dismissed, or the review budget changed (5.18): refetch `agenda.today`. */
   "agenda",
   /** A git sign-in flow changed state: refetch `git.signIn.poll`. Ending one also emits `orgs`. */
@@ -572,9 +567,27 @@ export const EventTopicSchema = z.enum([
   "clones",
 ]);
 export type EventTopic = z.infer<typeof EventTopicSchema>;
+/**
+ * Every frame on `/api/events` carries `seq`, a counter per connection that starts at 1 and goes up by
+ * one per frame the server meant to send (a frame it dropped still takes its number). A tab that sees a
+ * gap missed something and reads everything again (`seqGap`).
+ *
+ * A `changed` event may say more than the topics: `tasks` lists the tasks that changed, so the board
+ * reads just those; `rows` says only their rows changed (agents started or stopped, a message touched
+ * them, a title): nothing that waits for the owner is different. Without `tasks`, any task may have
+ * changed and the lists are read again.
+ */
 export const ServerEventSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("changed"), topics: z.array(EventTopicSchema).min(1) }),
-  AttentionEventSchema,
+  z.object({
+    type: z.literal("changed"),
+    topics: z.array(EventTopicSchema).min(1),
+    seq: z.number().int().positive().optional(),
+    tasks: z.array(z.string().min(1)).max(100).optional(),
+    rows: z.literal(true).optional(),
+  }),
+  AttentionEventSchema.extend({ seq: z.number().int().positive().optional() }),
+  /** The first frame of a connection: which build of the web bundle this server serves. It takes no number. */
+  z.object({ type: z.literal("hello"), build: z.string().optional(), seq: z.undefined().optional() }),
 ]);
 export type ServerEvent = z.infer<typeof ServerEventSchema>;
 

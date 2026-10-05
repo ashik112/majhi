@@ -17,7 +17,6 @@ import { UsageBar } from "@/components/ui/usage-bar";
 import { incidentLamp } from "@/features/watch/model";
 import {
   useAgendaToday,
-  useCloseDeadline,
   useDismissBrief,
   useDismissFinding,
   useMakeBrief,
@@ -503,37 +502,10 @@ function RightNowPanel({ today, org }: { today: AgendaToday; org: string | undef
 }
 
 function PlanPanel({ today }: { today: AgendaToday }) {
-  const run = useRunAttention();
   const { plan } = today;
   return (
     <Panel title="Plan" className="min-h-[200px] flex-1">
       <div className="scroll-fade -mx-1 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-1">
-        <section aria-label="This week">
-          <h3 className="m-0 mb-1 text-xs font-medium tracking-[0.08em] text-fg-faint uppercase">
-            This week
-          </h3>
-          {plan.deadlines.length === 0 ? (
-            <p className="m-0 text-sm text-fg-muted">No dates in the next seven days.</p>
-          ) : (
-            <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
-              {plan.deadlines.map((d) => (
-                <li key={d.id}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      run({ kind: "page", to: "/knowledge", search: { id: String(d.id), tab: "deadlines" } })
-                    }
-                    className="flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-raised"
-                  >
-                    <Lamp state={d.daysLeft <= 0 ? "needs" : "idle"} size={7} />
-                    <span className="min-w-0 flex-1 truncate text-base text-fg">{d.title}</span>
-                    <span className="tnum shrink-0 text-sm text-fg-muted">{d.when}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
         <section aria-label="Goals">
           <h3 className="m-0 mb-1 text-xs font-medium tracking-[0.08em] text-fg-faint uppercase">Goals</h3>
           {plan.goals.length === 0 ? (
@@ -595,7 +567,6 @@ export function TodayView() {
   const run = useRunAttention();
   const toast = useToast();
   const dismiss = useDismissFinding();
-  const close = useCloseDeadline();
   const [picked, setPicked] = useState<string | undefined>();
   const [later, setLater] = useState(false);
 
@@ -610,9 +581,7 @@ export function TodayView() {
     const done = item.done;
     if (done === undefined) return;
     const fail = (e: unknown) => toast("Could not do that", { detail: describeError(e), tone: "error" });
-    if (done.kind === "dismiss-finding")
-      dismiss.mutate(done.id, { onSuccess: () => toast(`Dismissed: ${item.title}`), onError: fail });
-    else close.mutate(done.id, { onSuccess: () => toast(`Marked done: ${item.title}`), onError: fail });
+    dismiss.mutate(done.id, { onSuccess: () => toast(`Dismissed: ${item.title}`), onError: fail });
   };
 
   const live = useRef({ flat, selectedId });

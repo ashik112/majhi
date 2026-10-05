@@ -5,6 +5,7 @@ import { parseEnv, type ServerEnv } from "./env.ts";
 import { errorMessage } from "./errors.ts";
 import { HostLink } from "./host/link.ts";
 import { createMajhi } from "./server.ts";
+import { removeLeftoverFolders } from "./system/removed-folders.ts";
 
 const SHUTDOWN_GRACE_MS = 5_000;
 
@@ -24,6 +25,8 @@ if (env.runner.mode === "local") {
 
 // A staged restore is swapped in, and a database about to be migrated is backed up, before any file opens.
 await prepareStart(env);
+// Folders of removed features (the old e2e runner) are taken off the disk, in the background.
+void removeLeftoverFolders(env.majhiHome).catch(() => undefined);
 
 const hostLink = new HostLink();
 const majhi = createMajhi(env, { hostLink });

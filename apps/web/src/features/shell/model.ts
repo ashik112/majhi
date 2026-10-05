@@ -1,7 +1,7 @@
-import { type AccountView, type OrgView, PAGE_PATH, type PagePath, type TaskSummary } from "@majhi/shared";
+import type { AccountView, OrgView, OwnerDecision, PagePath, TaskSummary } from "@majhi/shared";
 import type { AgentInfo } from "../../lib/agent-index";
 import { badgeLetters, formatAgo } from "../../lib/format";
-import { limitResetAt, resetLabel } from "../accounts/model";
+import { actionOf, openLabel } from "../decisions/model";
 
 // Organisations -------------------------------------------------------------
 
@@ -121,8 +121,8 @@ export type BannerAction =
   | { kind: "page"; to: PagePath; search?: { account?: string; id?: string; tab?: string } }
   | { kind: "element"; id: string };
 
-/** One thing that needs the owner, as the banner above the page shows it. */
-export interface AttentionItem {
+/** The one thing that needs the owner most, as the banner above the page shows it. */
+export interface Banner {
   key: string;
   tone: BannerTone;
   /** Paused for a limit, an error, a loop or a block; needs you for a question or a sign-in. */
@@ -130,15 +130,6 @@ export interface AttentionItem {
   text: string;
   actionLabel: string;
   action: BannerAction;
-  /** The task or chat it is about, for the row's second line. Absent for an account. */
-  task?: AttentionTask;
-  /** The row's second line when it is about no task: "Accounts", "Captain". */
-  where?: string;
-}
-
-export type AttentionTask = Pick<TaskSummary, "id" | "title" | "org" | "chat">;
-
-export interface Banner extends AttentionItem {
   /** How many other things also need the owner. */
   more: number;
 }
@@ -150,136 +141,53 @@ export interface PendingPermission {
   elementId: string;
 }
 
-export interface AttentionInput {
-  tasks: readonly TaskSummary[];
-  agents: ReadonlyMap<string, AgentInfo>;
-  accounts: readonly AccountView[];
-  now: number;
+/** Which decision the banner leads with: what is stuck first, then what asks, then work to ship. */
+function bannerRank(d: OwnerDecision): number {
+  switch (d.kind) {
+    case "incident":
+      return 0;
+    case "sign-in":
+      return 1;
+    case "paused":
+      return 2;
+    case "ship":
+      return 4;
+    default:
+      return 3;
+  }
 }
 
-export interface BannerInput extends AttentionInput {
+/**
+ * The banner, from the decisions the server lists and nothing else, so it cannot name something the
+ * Needs you page does not. The prompt waiting in the task the owner has open points at itself.
+ */
+export function deriveBanner(input: {
+  decisions: readonly OwnerDecision[] | undefined;
   permission: PendingPermission | undefined;
-}
-
-/** A task is named by its id, a chat by its title. */
-function name(task: Pick<TaskSummary, "id" | "title" | "chat">): string {
-  return task.chat === true ? task.title : task.id;
-}
-
-function open(task: Pick<TaskSummary, "id" | "chat">): BannerAction {
-  return task.chat === true ? { kind: "chat", id: task.id } : { kind: "task", id: task.id };
-}
-
-function about(task: TaskSummary): AttentionTask {
-  return task;
-}
-
-/** Tasks paused for the owner: a usage limit, an error, a loop, a block. */
-function pauses(input: AttentionInput): AttentionItem[] {
-  const found: AttentionItem[] = [];
-  for (const task of input.tasks) {
-    if (task.status !== "paused") continue;
-    const agent = task.team[0] ? input.agents.get(task.team[0]) : undefined;
-    if (task.pausedReason === "limit") {
-      const account = agent ? input.accounts.find((a) => a.id === agent.account) : undefined;
-      const resets = account && limitResetAt(account);
-      const who = account?.id ?? agent?.account;
-      const reset = resets ? `, resets ${resetLabel(resets, input.now)}` : "";
-      found.push({
-        key: `limit:${task.id}`,
-        tone: "amber",
-        lamp: "paused",
-        text: who
-          ? `${task.id} is paused: ${who} hit its usage limit${reset}.`
-          : `${task.id} is paused: its account hit the usage limit.`,
-        actionLabel: `Open ${task.id}`,
-        action: { kind: "task", id: task.id },
-        task: about(task),
-      });
-    } else if (task.pausedReason === "error") {
-      found.push({
-        key: `error:${task.id}`,
-        tone: "red",
-        lamp: "paused",
-        text: `${name(task)} paused after an error.`,
-        actionLabel: "Open",
-        action: open(task),
-        task: about(task),
-      });
-    } else if (task.pausedReason === "loop") {
-      found.push({
-        key: `loop:${task.id}`,
-        tone: "amber",
-        lamp: "paused",
-        text: `${name(task)} stopped: the agents were going in circles.`,
-        actionLabel: "Open",
-        action: open(task),
-        task: about(task),
-      });
-    } else if (task.pausedReason === "blocked") {
-      found.push({
-        key: `blocked:${task.id}`,
-        tone: "amber",
-        lamp: "paused",
-        text: `${name(task)} is blocked and waits for you.`,
-        actionLabel: "Open",
-        action: open(task),
-        task: about(task),
-      });
-    }
-  }
-  return found;
-}
-
-/** A task or chat with an approval, a secret request or a question open, said in general words. */
-function asking(task: TaskSummary): AttentionItem {
-  return {
-    key: `asking:${task.id}`,
-    tone: "amber",
-    lamp: "needs",
-    text: `${name(task)} is waiting for your answer.`,
-    actionLabel: "Open",
-    action: open(task),
-    task: about(task),
-  };
-}
-
-/** Accounts signed out or not answering. */
-function signIns(accounts: readonly AccountView[]): AttentionItem[] {
-  return accounts
-    .filter((a) => a.status === "needs-login" || a.status === "unreachable")
-    .map<AttentionItem>((account) => ({
-      key: `account:${account.id}`,
-      tone: "red",
-      lamp: "needs",
-      text:
-        account.status === "needs-login"
-          ? `Sign in ${account.id}: its agents cannot run until you do.`
-          : `${account.id} is not answering.`,
-      actionLabel: "Accounts",
-      action: { kind: "page", to: PAGE_PATH.accounts, search: { account: account.id } },
-    }));
-}
-
-/** The one thing that needs the owner most: limit pauses, errors, a prompt in the open task, then sign-ins. */
-export function deriveBanner(input: BannerInput): Banner | null {
-  const found: AttentionItem[] = pauses(input);
-  // The task the owner is looking at shows its own prompt below, so it is not listed twice.
-  for (const task of input.tasks) {
-    if (task.asking !== true || task.status === "done" || task.id === input.permission?.task) continue;
-    found.push(asking(task));
-  }
-  if (input.permission) {
-    found.push({
-      key: `permission:${input.permission.task}`,
+}): Banner | null {
+  const all = input.decisions ?? [];
+  const first = all.toSorted((a, b) => bannerRank(a) - bannerRank(b))[0];
+  if (first === undefined) return null;
+  const more = all.length - 1;
+  const here = input.permission;
+  if (first.kind === "approval" && here !== undefined && first.task === here.task) {
+    return {
+      key: `permission:${here.task}`,
       tone: "amber",
       lamp: "needs",
-      text: `@${input.permission.agent} is waiting for your answer in ${input.permission.task}.`,
+      text: `@${here.agent} is waiting for your answer in ${here.task}.`,
       actionLabel: "Show",
-      action: { kind: "element", id: input.permission.elementId },
-    });
+      action: { kind: "element", id: here.elementId },
+      more,
+    };
   }
-  found.push(...signIns(input.accounts));
-  const [first, ...rest] = found;
-  return first ? { ...first, more: rest.length } : null;
+  return {
+    key: first.id,
+    tone: first.kind === "incident" || first.kind === "sign-in" ? "red" : "amber",
+    lamp: first.kind === "paused" ? "paused" : "needs",
+    text: first.sentence ?? first.title,
+    actionLabel: openLabel(first.link),
+    action: actionOf(first.link),
+    more,
+  };
 }

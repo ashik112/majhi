@@ -81,6 +81,7 @@ export interface MrDeps {
     | "reviewOptions"
     | "cards"
     | "doneAndShipped"
+    | "apply"
     | "assertDeletable"
     | "shipPlan"
     | "deleteAfterShip"
@@ -449,11 +450,15 @@ export class MrService {
       const anyMr = this.deps.store.tasks.get(id)?.repos.some((r) => r.mr !== undefined) === true;
       if (!failed && anyMr) {
         if (task.status !== "mr") {
-          this.deps.store.tasks.setStatus(id, "mr", undefined, this.now().toISOString());
           const target = [
             ...new Set(plans.filter((p) => p.skip === undefined).map((p) => p.into ?? p.ctx.repo.base)),
           ].join(", ");
-          this.deps.tasks.cards.settle(id, "review", `Opened merge requests into ${target}`, by ?? "owner");
+          // Settles the review card with what was opened.
+          await this.deps.tasks.apply(
+            id,
+            { type: "mrOpened" },
+            { ctx: { by: by ?? "owner", settle: `Opened merge requests into ${target}` } },
+          );
           this.note(id, "Merge requests are open. Waiting for them to be merged.");
         }
         this.publish(id);
@@ -641,6 +646,7 @@ export class MrService {
       push,
       mr,
       done: local.done,
+      ...(local.checks === undefined ? {} : { checks: local.checks }),
     };
   }
 
@@ -746,6 +752,8 @@ export class MrService {
     createRemoteBranch?: boolean | undefined;
     /** The owner typed this protected repo's name to ship it alone. */
     confirmProtected?: string | undefined;
+    /** The owner merges past a failed check by sending the head of this merge. */
+    confirmChecks?: string | undefined;
     targets?: Readonly<Record<string, string>> | undefined;
     project?: string | undefined;
     done: boolean;
@@ -808,6 +816,7 @@ export class MrService {
         targets,
         project: input.project,
         confirmProtected: input.confirmProtected,
+        confirmChecks: input.confirmChecks,
         done: false,
         by: input.by,
         settle: false,

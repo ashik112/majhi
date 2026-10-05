@@ -1,8 +1,6 @@
 import { z } from "zod";
 import { AuthoritySchema } from "./authority.ts";
-import { ChoreCapsSchema } from "./chores.ts";
 import { ContainerCpusSchema, ContainerMemorySchema, ImageRefSchema } from "./containers.ts";
-import { E2eSettingsSchema } from "./e2e.ts";
 import { NotifyKindSchema } from "./notify.ts";
 
 /**
@@ -62,6 +60,8 @@ export function durationMs(value: string): number {
 const limitsFields = {
   /** Agent processes running at once, across majhi. */
   agents_max: z.number().int().min(1).max(64),
+  /** Agent runs at once on the whole machine, helpers included. Unset: a share of the CPU cores. */
+  runs_total: z.number().int().min(1).max(64),
   /** Agent processes running at once on one account. */
   per_account: z.number().int().min(1).max(16),
   /** Agent processes running at once in one task. */
@@ -71,6 +71,7 @@ const limitsFields = {
 };
 export const LimitsSettingsSchema = z.strictObject({
   agents_max: limitsFields.agents_max.default(6),
+  runs_total: limitsFields.runs_total.optional(),
   per_account: limitsFields.per_account.default(2),
   per_task: limitsFields.per_task.default(3),
   idle_timeout: limitsFields.idle_timeout.default("3m"),
@@ -299,6 +300,12 @@ const containersFields = {
   build_cpus: ContainerCpusSchema,
   /** Memory of the preview builder. */
   build_memory: ContainerMemorySchema,
+  /** CPUs of a hand-off check (tests, build, lint of a finished task). Unset: half the machine's cores, at least 2. */
+  handoff_cpus: ContainerCpusSchema,
+  /** Memory of a hand-off check. Unset: 4g. */
+  handoff_memory: ContainerMemorySchema,
+  /** Minutes a project's hand-off tests and build may run before they are stopped, by project. A project left out gets 10. */
+  handoff_minutes: z.record(z.string(), z.number().int().min(1).max(240)),
 };
 export const ContainersSettingsSchema = z.strictObject({
   images: containersFields.images.default([]),
@@ -309,6 +316,9 @@ export const ContainersSettingsSchema = z.strictObject({
   build_total: containersFields.build_total.default(1),
   build_cpus: containersFields.build_cpus.default(2),
   build_memory: containersFields.build_memory.default("4g"),
+  handoff_cpus: containersFields.handoff_cpus.optional(),
+  handoff_memory: containersFields.handoff_memory.optional(),
+  handoff_minutes: containersFields.handoff_minutes.optional(),
 });
 export type ContainersSettings = z.infer<typeof ContainersSettingsSchema>;
 /** What majhi.yaml may hold and what majhi writes: the limits and the image list. */
@@ -439,15 +449,20 @@ export const AutonomyOrgSchema = z.strictObject({
   providers: z.array(ProviderIdSchema).min(1).max(10).optional(),
   /** "More rules": the account that pays for the captain's decisions here. Absent: the captain's own. */
   account: z.string().regex(ACCOUNT_ID).optional(),
-  /** Limits: the owner's daily caps per chore here (`null`: no cap). Absent: majhi's defaults. */
-  chores: ChoreCapsSchema.optional(),
+  /** Removed in D9, kept so old config loads. */
+  chores: z.unknown().optional(),
   /**
    * Full access: the captain decides every row here and its calls run without a card, except a change
    * to anyone's permissions and anything destructive. Only the owner sets it.
    */
   fullAccess: z.boolean().optional(),
+  /** How many tasks the captain keeps working at once in this workspace. Absent: 1. */
+  tasksAtOnce: z.number().int().min(1).max(10).optional(),
 });
 export type AutonomyOrg = z.infer<typeof AutonomyOrgSchema>;
+
+/** Tasks the captain works on at once in a workspace when the owner set nothing. */
+export const TASKS_AT_ONCE = 1;
 
 /** Guidance the owner gave on the Autonomous page, which the captain follows until it is removed. */
 export const AutonomyInstructionSchema = z.strictObject({
@@ -525,9 +540,8 @@ export const AutonomyOrgPatchSchema = z
     branches: z.array(ShipBranchSchema).min(1).max(20).nullable(),
     providers: z.array(ProviderIdSchema).min(1).max(10).nullable(),
     account: z.string().regex(ACCOUNT_ID).nullable(),
-    /** Limits: the daily caps per chore, replacing the ones set before. `null`: back to majhi's defaults. */
-    chores: ChoreCapsSchema.nullable(),
     fullAccess: z.boolean().nullable(),
+    tasksAtOnce: z.number().int().min(1).max(10).nullable(),
   })
   .partial();
 export type AutonomyOrgPatch = z.infer<typeof AutonomyOrgPatchSchema>;
@@ -561,7 +575,6 @@ export const SettingsSchema = z.object({
   policy: PolicySettingsSchema,
   memory: MemorySettingsSchema,
   editor: EditorSettingsSchema,
-  e2e: E2eSettingsSchema,
   cleanup: CleanupSettingsSchema,
   containers: ContainersSettingsSchema,
   budgets: BudgetsSettingsSchema,

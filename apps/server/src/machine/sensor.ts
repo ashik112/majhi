@@ -34,7 +34,13 @@ export function parseDockerStats(out: string): MachineContainer[] {
     const cpuPct = Number(cpu.replace("%", ""));
     const memBytes = parseSize(mem.split("/")[0] ?? "");
     if (!Number.isFinite(cpuPct) || memBytes === undefined) continue;
-    rows.push({ name, cpuPct, memBytes });
+    const limit = parseSize(mem.split("/")[1] ?? "");
+    rows.push({
+      name,
+      cpuPct,
+      memBytes,
+      ...(limit === undefined || limit <= 0 ? {} : { memLimitBytes: limit }),
+    });
   }
   return rows;
 }

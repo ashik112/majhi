@@ -211,7 +211,7 @@ describe("the weekly eval job", () => {
     // The same week again refreshes them, it does not file twice.
     await t.run();
     expect(t.open()).toHaveLength(LAYA_USE_SLOTS.length);
-    expect(t.svc.slots().find((s) => s.slot === "wake-gate")?.regressed).toBeDefined();
+    expect(t.svc.slots().find((s) => s.slot === "text-injection")?.regressed).toBeDefined();
     // Laya recovers: the findings close.
     t.mode.wrong = false;
     await t.run();

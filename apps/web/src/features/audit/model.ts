@@ -92,6 +92,7 @@ const KIND_LABELS: Record<string, string> = {
   mr: "Merge request",
   merge: "Merge",
   "merge+push": "Push after merge",
+  "merge-override": "Merge past failed check",
   ship: "Resolve and merge",
   cleanup: "Cleanup",
   "tasks.start": "Lead start",

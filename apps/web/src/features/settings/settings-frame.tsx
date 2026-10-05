@@ -15,7 +15,6 @@ import {
   Container,
   Cpu,
   DatabaseBackup,
-  FlaskConical,
   FolderGit2,
   FolderTree,
   Gauge,
@@ -56,7 +55,6 @@ const SECTION_ICON: Record<SetupSection, LucideIcon> = {
   approvals: ShieldCheck,
   decisions: Cpu,
   containers: Container,
-  e2e: FlaskConical,
   backups: DatabaseBackup,
   history: History,
 };

@@ -1,4 +1,4 @@
-import { type Authority, type AutonomyOrg, type CaptainChore, DAILY_CHORE_CAPS } from "@majhi/shared";
+import type { AutonomyOrg, CaptainChore } from "@majhi/shared";
 import { localDay } from "../usage/ranges.ts";
 
 /**
@@ -6,94 +6,22 @@ import { localDay } from "../usage/ranges.ts";
  * keep it from running away. Pure.
  */
 
-/** The hard caps of one run of a chore. A run stops at the first it reaches, with a line in the log. */
-export const RUN_CAPS = { actions: 20, tokens: 60_000, minutes: 10 } as const;
+/**
+ * The one bound of a chore pass (D9): it ends at the first of these, with a line in the log. There is
+ * no cap on actions: every action is keyed by the state it acts on (G1), so a repeat does nothing.
+ * The 45 minutes are from 4207cc99: one slow test suite ended a ship run at 10 minutes before the
+ * next task was looked at. The policy table replaces this constant in a later step.
+ */
+export const PASS_BOUND = { minutes: 45, tokens: 60_000 } as const;
 
 /**
- * A chore whose run may take more actions than `RUN_CAPS.actions`: one memory run looks at every
- * waiting memory of its workspace, in chunks, without a model turn of the lane per memory.
+ * The loop guard (D10): after this many captain answers to one task with no progress in between (a
+ * new commit in its worktree or a change of its status), majhi pauses the task for the owner.
  */
-const RUN_ACTIONS: Partial<Record<CaptainChore, number>> = { memory: 100 };
-
-/** The cap on actions in one run of the chore. */
-export function runActions(chore: CaptainChore): number {
-  return RUN_ACTIONS[chore] ?? RUN_CAPS.actions;
-}
+export const LOOP_GUARD_ANSWERS = 3;
 
 /** A workspace with this many memories its memory chore has not looked at runs the chore, not only daily. */
 export const MEMORY_WAITING = 10;
-
-/**
- * The daily caps per chore and workspace: `actions` counts what it did or handed to the owner,
- * `runs` counts runs. "Five ships, four memory runs": the daily one and up to three when memories pile up.
- */
-export const DAILY_CAPS = DAILY_CHORE_CAPS;
-
-/** A raise the owner gave for one day multiplies that day's caps of the chore. */
-export const RAISE_FACTOR = 2;
-
-/**
- * A chore's daily caps in a workspace on one day. The owner's own caps in Limits come first (`null`
- * there means no cap); without them, majhi's defaults. Ship has no default cap where the owner let the
- * captain decide merges: that row already says so, and the money budgets still hold it. `raised`: the
- * owner raised them for that day, which doubles what is capped.
- */
-export function dailyCaps(
-  chore: CaptainChore,
-  raised: boolean,
-  ws?: { rules?: Pick<AutonomyOrg, "chores"> | undefined; authority?: Pick<Authority, "merge"> | undefined },
-): { actions?: number; runs?: number } {
-  const own = ws?.rules?.chores?.[chore];
-  const fallback: { actions?: number; runs?: number } =
-    chore === "ship" && ws?.authority?.merge === "decide" ? {} : DAILY_CAPS[chore];
-  const pick = (key: "actions" | "runs"): number | undefined => {
-    const set = own?.[key];
-    if (set === null) return undefined;
-    return set ?? fallback[key];
-  };
-  const base = { actions: pick("actions"), runs: pick("runs") };
-  const out: { actions?: number; runs?: number } = {};
-  if (base.actions !== undefined) out.actions = raised ? base.actions * RAISE_FACTOR : base.actions;
-  if (base.runs !== undefined) out.runs = raised ? base.runs * RAISE_FACTOR : base.runs;
-  return out;
-}
-
-/** What reaching a cap means, per chore and cap: "answered its 20 questions". */
-const REACHED: Record<CaptainChore, { actions?: (n: number) => string; runs?: (n: number) => string }> = {
-  ship: { actions: (n) => `shipped its ${n} tasks` },
-  cards: { actions: (n) => `answered its ${n} approval cards` },
-  questions: { actions: (n) => `answered its ${n} questions` },
-  memory: { runs: (n) => `did its ${n} memory runs` },
-  projects: { runs: (n) => `did its ${n} project checks`, actions: (n) => `made its ${n} project changes` },
-  triage: {
-    runs: (n) => (n === 1 ? "did its triage run" : `did its ${n} triage runs`),
-    actions: (n) => `triaged its ${n} tasks`,
-  },
-  cleanup: {
-    runs: (n) => (n === 1 ? "did its cleanup run" : `did its ${n} cleanup runs`),
-    actions: (n) => `cleaned up its ${n} items`,
-  },
-  stuck: { actions: (n) => `looked at its ${n} stuck tasks` },
-  followups: {
-    runs: (n) => (n === 1 ? "did its follow-ups run" : `did its ${n} follow-ups runs`),
-    actions: (n) => `went through its ${n} follow-ups`,
-  },
-  discover: { runs: () => "did its tool search", actions: (n) => `proposed its ${n} tools` },
-  tidy: { runs: () => "did its tidy run", actions: (n) => `tidied its ${n} items` },
-  health: { runs: (n) => `did its ${n} health sweeps`, actions: (n) => `handled its ${n} health items` },
-  checklist: { runs: () => "did its checklist", actions: (n) => `went through its ${n} checklist items` },
-};
-
-/** The question to the owner when a chore reached a daily cap in a workspace. */
-export function capAskText(
-  workspace: string,
-  chore: CaptainChore,
-  kind: "actions" | "runs",
-  cap: number,
-): string {
-  const reached = REACHED[chore][kind]?.(cap) ?? `reached its daily cap of ${cap}`;
-  return `${workspace}: the captain ${reached} for today. Raise the limit for today?`;
-}
 
 /** Two failures in a row turn a chore off for the workspace. */
 export const FAILURES_OFF = 2;

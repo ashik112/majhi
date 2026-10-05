@@ -1,4 +1,4 @@
-import { type CaptainOrg, type Finding, findingDeadline, opportunityEffort } from "@majhi/shared";
+import { type CaptainOrg, type Finding, opportunityEffort } from "@majhi/shared";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -14,9 +14,7 @@ import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import {
   FINDINGS_LIMIT,
-  useFindingDeadline,
   useFindingDismiss,
-  useFindingProposal,
   useFindingReopen,
   useFindings,
   useFindingToTask,
@@ -140,8 +138,6 @@ function FindingRow({
   onSelect,
   onToggle,
   onMakeTask,
-  onProposal,
-  onDeadline,
   onStartDismiss,
   onCancelDismiss,
   onDismiss,
@@ -158,8 +154,6 @@ function FindingRow({
   onSelect: () => void;
   onToggle: () => void;
   onMakeTask: () => void;
-  onProposal: () => void;
-  onDeadline: () => void;
   onStartDismiss: () => void;
   onCancelDismiss: () => void;
   onDismiss: (reason: string) => void;
@@ -170,7 +164,6 @@ function FindingRow({
   const [reason, setReason] = useState("");
   const live = finding.status === "open" || finding.status === "decision";
   const effort = finding.source === "opportunity" ? opportunityEffort(finding.detail) : undefined;
-  const deadline = findingDeadline(finding.evidence);
   return (
     // The list owns the keys (arrows, Enter, t, d); the row only reports clicks.
     // biome-ignore lint/a11y/useKeyWithClickEvents: keys are handled by the listbox that holds the rows
@@ -286,16 +279,6 @@ function FindingRow({
           <Button size="sm" variant="secondary" disabled={busy} onClick={onMakeTask}>
             Make a task <Kbd>t</Kbd>
           </Button>
-          {finding.source === "opportunity" && finding.org !== "private" && (
-            <Button size="sm" variant="secondary" disabled={busy} onClick={onProposal}>
-              Draft a proposal <Kbd>p</Kbd>
-            </Button>
-          )}
-          {deadline !== undefined && (
-            <Button size="sm" variant="secondary" disabled={busy} onClick={onDeadline}>
-              Add to deadlines
-            </Button>
-          )}
           <Button size="sm" variant="ghost" disabled={busy} onClick={onStartDismiss}>
             Dismiss <Kbd>d</Kbd>
           </Button>
@@ -361,8 +344,6 @@ export function FindingsSheet({
   const toTask = useFindingToTask();
   const dismiss = useFindingDismiss();
   const reopen = useFindingReopen();
-  const proposal = useFindingProposal();
-  const addDeadline = useFindingDeadline();
   const toast = useToast();
   const all = useMemo(() => query.data?.findings ?? [], [query.data]);
   const [org, setOrg] = useState("");
@@ -426,16 +407,6 @@ export function FindingsSheet({
       { id: f.id },
       { onSuccess: (done) => toast("Task made", { detail: `${done.task}: ${f.title}` }) },
     );
-  const makeProposal = (f: Finding) =>
-    proposal.mutate(
-      { id: f.id },
-      { onSuccess: () => toast("Proposal drafted", { detail: "It waits in Decisions. Nothing was sent." }) },
-    );
-  const confirmDeadline = (f: Finding) =>
-    addDeadline.mutate(
-      { id: f.id },
-      { onSuccess: (done) => toast("Added to deadlines", { detail: `${f.title}, ${done.deadline.due}` }) },
-    );
   const onKeyDown = (e: React.KeyboardEvent) => {
     if ((e.target as HTMLElement).tagName === "INPUT") return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -459,14 +430,11 @@ export function FindingsSheet({
       } else if (e.key === "d") {
         e.preventDefault();
         setDismissing(true);
-      } else if (e.key === "p" && selected.source === "opportunity" && selected.org !== "private") {
-        e.preventDefault();
-        makeProposal(selected);
       }
     }
   };
 
-  const error = toTask.error ?? dismiss.error ?? reopen.error ?? proposal.error ?? addDeadline.error;
+  const error = toTask.error ?? dismiss.error ?? reopen.error;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 pb-2">
@@ -556,21 +524,13 @@ export function FindingsSheet({
                       selected={f.id === selectedId}
                       expanded={expanded.has(f.id)}
                       dismissing={dismissing && f.id === selectedId}
-                      busy={
-                        toTask.isPending ||
-                        dismiss.isPending ||
-                        reopen.isPending ||
-                        proposal.isPending ||
-                        addDeadline.isPending
-                      }
+                      busy={toTask.isPending || dismiss.isPending || reopen.isPending}
                       error={f.id === selectedId && error ? describeError(error) : undefined}
                       onSelect={() => {
                         setSelectedId(f.id);
                         setDismissing(false);
                         toTask.reset();
                         dismiss.reset();
-                        proposal.reset();
-                        addDeadline.reset();
                       }}
                       onToggle={() =>
                         setExpanded((prev) => {
@@ -580,8 +540,6 @@ export function FindingsSheet({
                         })
                       }
                       onMakeTask={() => makeTask(f)}
-                      onProposal={() => makeProposal(f)}
-                      onDeadline={() => confirmDeadline(f)}
                       onStartDismiss={() => setDismissing(true)}
                       onCancelDismiss={() => setDismissing(false)}
                       onReopen={() =>
@@ -609,7 +567,7 @@ export function FindingsSheet({
           </div>
           <p className="shrink-0 pt-2 text-xs text-fg-faint">
             <Kbd>j</Kbd> <Kbd>k</Kbd> move · <Kbd>Enter</Kbd> details · <Kbd>t</Kbd> make a task ·{" "}
-            <Kbd>d</Kbd> dismiss · <Kbd>p</Kbd> proposal
+            <Kbd>d</Kbd> dismiss
           </p>
         </>
       )}

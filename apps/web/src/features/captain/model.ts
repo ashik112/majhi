@@ -23,7 +23,7 @@ export const AUTHORITY_ROW_TEXT: Record<AuthorityRow, { label: string; hint: str
   start: { label: "Start work", hint: "Takes tasks from the backlog" },
   questions: { label: "Answer questions", hint: "When the brief or the code settles them" },
   approvals: { label: "Approvals", hint: "Routine cards your rules allow" },
-  upkeep: { label: "Upkeep", hint: "Memory, cleanup, triage, stuck tasks" },
+  upkeep: { label: "Upkeep", hint: "Memory, cleanup, triage, follow-ups" },
   merge: { label: "Merge", hint: "Into the base branch, after checks pass" },
   push: { label: "Push", hint: "Branches and merge requests" },
   own: { label: "Own work", hint: "Routine requests of tasks it started", detail: OWN_WORK_LINE },

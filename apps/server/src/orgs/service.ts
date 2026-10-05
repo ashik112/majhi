@@ -26,6 +26,9 @@ export class OrgService {
     private readonly renameTasks: (id: string, newId: string) => void = () => undefined,
   ) {}
 
+  /** Called after an org's git accounts or MR tokens change, so the captain can retry what lacked them. */
+  onGitChange: (org: string) => void = () => undefined;
+
   async list(): Promise<OrgView[]> {
     const { orgs, accounts } = await this.config.sections();
     const agents = await this.agentScopes();
@@ -79,7 +82,6 @@ export class OrgService {
       "mr_tokens",
       "git_accounts",
       "dismissed_logins",
-      "tracker",
     ] as const) {
       const value = patch[field];
       if (value === null) delete next[field];
@@ -93,6 +95,7 @@ export class OrgService {
     await this.config.change({ command, meta, summary: `edited org ${id}` }, () =>
       writeOrg(this.config.file, id, next),
     );
+    if (patch.git_accounts !== undefined || patch.mr_tokens !== undefined) this.onGitChange(id);
     const [agentScopes, accounts] = [await this.agentScopes(), Object.values(sections.accounts)];
     return view(id, next, orgKeys(orgs).get(id) ?? "", accounts, agentScopes);
   }
@@ -173,6 +176,5 @@ function view(
   if (org.team !== undefined && org.team.length > 0) out.team = org.team;
   if (org.mr_tokens !== undefined && Object.keys(org.mr_tokens).length > 0) out.mrTokens = org.mr_tokens;
   if (org.git_accounts !== undefined && org.git_accounts.length > 0) out.gitAccounts = org.git_accounts;
-  if (org.tracker !== undefined) out.tracker = org.tracker;
   return out;
 }

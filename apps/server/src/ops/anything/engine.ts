@@ -188,6 +188,24 @@ function sampled(list: WatchSample[]): WatchSample[] {
   return out;
 }
 
+/** Who paused a watch and why, in a sentence. */
+function pausedWhy(state: WatchState): { by: "owner" | "agent" | "unrecorded"; why: string } {
+  if (state.pausedBy === "owner") {
+    return {
+      by: "owner",
+      why: state.pausedNote === undefined ? "You paused it." : `You paused it: ${state.pausedNote}`,
+    };
+  }
+  if (state.pausedBy === "agent") {
+    const note = state.pausedNote ?? "No reason was given";
+    return { by: "agent", why: `An agent paused it: ${note}. It resumes by itself once it reads fine.` };
+  }
+  return {
+    by: "unrecorded",
+    why: "Paused before majhi kept a reason. It resumes by itself once it reads fine.",
+  };
+}
+
 export class WatchEngine {
   private readonly running = new Set<string>();
 
@@ -390,14 +408,24 @@ export class WatchEngine {
     this.deps.changed();
   }
 
-  async pause(id: string, paused: boolean): Promise<WatchView> {
+  async pause(
+    id: string,
+    paused: boolean,
+    by: "owner" | "agent" = "owner",
+    note?: string,
+  ): Promise<WatchView> {
     const w = this.mustGet(id);
     // An action-only watch looks afresh on resume: what changed while it was paused does not fire it.
     const afresh = w.paused && !paused && w.def.fire.run !== undefined && !w.def.fire.alert.on;
     if (afresh) forgetCommand(id);
-    const state = afresh
+    const base = afresh
       ? WatchStateSchema.parse({ ...w.state, baseline: undefined, signature: undefined })
-      : w.state;
+      : { ...w.state };
+    delete base.pausedBy;
+    delete base.pausedNote;
+    const state: WatchState = paused
+      ? { ...base, pausedBy: by, ...(note === undefined || note === "" ? {} : { pausedNote: note }) }
+      : base;
     this.deps.repo.save({ ...w, state, paused });
     this.deps.changed();
     return this.view(this.mustGet(id), await this.ctx(w.org));
@@ -601,7 +629,10 @@ export class WatchEngine {
   async tick(): Promise<void> {
     const now = this.deps.now().getTime();
     for (const w of this.deps.repo.all()) {
-      if (w.paused) continue;
+      if (w.paused) {
+        await this.reconsiderPause(w).catch(() => undefined);
+        continue;
+      }
       const last = w.state.lastAt === undefined ? 0 : Date.parse(w.state.lastAt);
       if (w.def.spec.kind === "custom") {
         const lastAsk = w.state.lastCustomAt === undefined ? 0 : Date.parse(w.state.lastCustomAt);
@@ -612,6 +643,21 @@ export class WatchEngine {
       await this.checkDeadline(this.mustGet(w.id));
     }
     this.deps.repo.prune(this.deps.now());
+  }
+
+  /**
+   * A pause only the owner chose stays. One an agent made, or one made before a reason was kept, is
+   * not the owner's decision: the watch looks once per interval and resumes as soon as it reads fine,
+   * so a pause cannot hide a watch for good.
+   */
+  private async reconsiderPause(w: StoredWatch): Promise<void> {
+    if (w.state.pausedBy === "owner" || w.def.spec.kind === "custom") return;
+    const last = w.state.lastAt === undefined ? 0 : Date.parse(w.state.lastAt);
+    if (this.deps.now().getTime() - last < w.def.everyMin * MIN - 1000) return;
+    await this.look(w.id, true);
+    const after = this.deps.repo.get(w.id);
+    if (after === undefined || !after.paused || !after.state.readable) return;
+    await this.pause(w.id, false);
   }
 
   private async askCaptain(w: StoredWatch): Promise<void> {
@@ -1123,7 +1169,13 @@ export class WatchEngine {
 
   private wordOf(w: StoredWatch, status: WatchStatus): string {
     if (status === "paused")
-      return w.paused ? "Paused" : w.state.quietKind === "maintenance" ? "Maintenance" : "Snoozed";
+      return w.paused
+        ? w.state.pausedBy === "owner"
+          ? "Paused"
+          : "Paused by majhi"
+        : w.state.quietKind === "maintenance"
+          ? "Maintenance"
+          : "Snoozed";
     if (status === "new") return "Checking";
     if (status === "unknown") return "Unknown";
     if (status === "ok") return w.def.spec.kind === "website" ? "Up" : "OK";
@@ -1276,6 +1328,7 @@ export class WatchEngine {
       ...(w.state.quietUntil !== undefined && this.quiet(w.state) ? { quietUntil: w.state.quietUntil } : {}),
       ...(w.state.quietKind !== undefined && this.quiet(w.state) ? { quietKind: w.state.quietKind } : {}),
       ...(w.state.unavailable === undefined ? {} : { unavailable: w.state.unavailable }),
+      ...(w.paused ? { paused: pausedWhy(w.state) } : {}),
       samples24: sampled(s24),
       samples90: sampled(s90),
       ...(changedPrice && w.state.previous !== undefined ? { previous: w.state.previous } : {}),

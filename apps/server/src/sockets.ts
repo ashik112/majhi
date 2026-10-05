@@ -1,6 +1,7 @@
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import {
+  EventSeq,
   EventsClientMessageSchema,
   type RoomServerMessage,
   RoomServerMessageSchema,
@@ -21,6 +22,8 @@ const TERMINAL_PATH = /^\/api\/term\/([A-Za-z0-9-]{1,64})$/;
 const ROOM_PATH = /^\/api\/tasks\/([A-Z][A-Z0-9]{0,9}-[1-9][0-9]*)\/room$/;
 /** A tab's report is a few dozen bytes. Anything longer is not one. */
 const MAX_CLIENT_MESSAGE = 1024;
+/** A tab with more than this unsent is too slow for the feed: its events are dropped and it reads again. */
+const MAX_EVENTS_BACKLOG = 1024 * 1024;
 
 /** What the room socket needs from the task and room services. */
 export interface RoomFeed {
@@ -35,7 +38,7 @@ export interface RoomFeed {
  */
 export function attachSockets(
   server: UpgradeSource,
-  deps: { events: EventHub; terminals: TerminalManager; rooms: RoomFeed },
+  deps: { events: EventHub; build?: string | undefined; terminals: TerminalManager; rooms: RoomFeed },
 ): { close: () => void } {
   const wss = new WebSocketServer({ noServer: true });
 
@@ -45,7 +48,7 @@ export function attachSockets(
     const path = new URL(req.url ?? "/", "http://localhost").pathname;
 
     if (path === "/api/events") {
-      wss.handleUpgrade(req, socket, head, (ws) => serveEvents(ws, deps.events));
+      wss.handleUpgrade(req, socket, head, (ws) => serveEvents(ws, deps.events, deps.build));
       return;
     }
     const match = TERMINAL_PATH.exec(path);
@@ -73,9 +76,18 @@ export function attachSockets(
   };
 }
 
-function serveEvents(ws: WebSocket, events: EventHub): void {
+function serveEvents(ws: WebSocket, events: EventHub, build: string | undefined): void {
+  const seq = new EventSeq();
+  // The first frame: which web build this server serves, so a tab from before an update reloads.
+  ws.send(
+    JSON.stringify(ServerEventSchema.parse({ type: "hello", ...(build === undefined ? {} : { build }) })),
+  );
   const stop = events.subscribe((event) => {
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(ServerEventSchema.parse(event)));
+    if (ws.readyState !== ws.OPEN) return;
+    // A frame dropped for a slow tab still takes its number, so the tab sees the gap and reads again.
+    const n = seq.next();
+    if (ws.bufferedAmount > MAX_EVENTS_BACKLOG) return;
+    ws.send(JSON.stringify(ServerEventSchema.parse({ ...event, seq: n })));
   });
   const leave = () => {
     stop();

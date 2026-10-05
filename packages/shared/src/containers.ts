@@ -184,10 +184,7 @@ export const ContainerLogsInputSchema = z.object({
  * is where it ran, for relative paths. majhi checks all of it again (apps/server/src/containers/task-docker.ts).
  */
 export const TaskDockerRequestSchema = z.strictObject({
-  argv: z
-    .array(z.string().max(4_000).refine(noNul, "No NUL character"))
-    .min(1)
-    .max(200),
+  argv: z.array(z.string().max(4_000).refine(noNul, "No NUL character")).min(1).max(200),
   cwd: z.string().max(1_000).refine(noNul, "No NUL character"),
 });
 export type TaskDockerRequest = z.infer<typeof TaskDockerRequestSchema>;
