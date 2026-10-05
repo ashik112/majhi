@@ -553,6 +553,16 @@ export function createHandlers({
       const { decisions, counts } = await services.inbox.view();
       return { tasks, counts, decisions: decisions.filter((d) => d.task !== undefined && named.has(d.task)) };
     },
+    "tasks.blockers": async () => services.autonomy.blockers(),
+    "tasks.homeFacts": async () => ({
+      mrs: services.store.tasks.openMrs(),
+      doing: services.room.workingNow().map(({ task, live }) => ({
+        task,
+        agent: live.agent,
+        ...(live.nowDoing === undefined ? {} : { text: live.nowDoing }),
+        ...(live.turnAt === undefined ? {} : { since: live.turnAt }),
+      })),
+    }),
     "tasks.get": async (input) => services.tasks.get(input.id),
     "captain.reportBug": async (input, ctx) => {
       // majhi's own code: the Private project named majhi, or the one whose folder is called majhi.

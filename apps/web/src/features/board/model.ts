@@ -75,7 +75,8 @@ export function queuedText(task: TaskSummary): string {
   }
   if (waitsOnSubtasks(task) && task.children !== undefined)
     return `Waiting on its subtasks, ${task.children.done} of ${task.children.total} done`;
-  if (task.status === "running") return task.working.length > 0 ? "Waiting for a slot" : "No agent is working on it";
+  if (task.status === "running")
+    return task.working.length > 0 ? "Waiting for a slot" : "No agent is working on it";
   return cardLine(task)?.text ?? "Open";
 }
 

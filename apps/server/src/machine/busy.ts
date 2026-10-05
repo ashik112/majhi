@@ -26,18 +26,24 @@ function memFreePct(host: MachineHost): number | undefined {
 }
 
 /**
+ * The kind of load that keeps majhi from starting new work, or undefined. Memory covers free memory
+ * under 10 percent and a critical pressure reading; load is the 1-minute load over the core count.
+ */
+export function busyKind(host: MachineHost | undefined): "memory" | "load" | undefined {
+  if (host === undefined) return undefined;
+  if (host.load1 > host.cores) return "load";
+  const pct = memFreePct(host);
+  if ((pct !== undefined && pct < MEMORY_FREE_MIN_PCT) || host.pressure === "critical") return "memory";
+  return undefined;
+}
+
+/**
  * Why majhi must not start new work now, or undefined. Busy means the 1-minute load is over the core
  * count, free memory is under 10 percent, or the system reports critical memory pressure. No reading
  * (helper offline) never blocks a start.
  */
 export function busyReason(host: MachineHost | undefined): string | undefined {
-  if (host === undefined) return undefined;
-  const pct = memFreePct(host);
-  const busy =
-    host.load1 > host.cores ||
-    (pct !== undefined && pct < MEMORY_FREE_MIN_PCT) ||
-    host.pressure === "critical";
-  if (!busy) return undefined;
+  if (host === undefined || busyKind(host) === undefined) return undefined;
   const free = host.memAvailableBytes === undefined ? "" : `, ${gb(host.memAvailableBytes)} free`;
   return `the machine is busy: load ${host.load1.toFixed(1)} on ${host.cores} cores${free}`;
 }

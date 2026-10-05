@@ -260,6 +260,15 @@ export class RoomService {
     return this.live.get(task)?.get(agent);
   }
 
+  /** Every agent that is in a turn now, with the task it works in. */
+  workingNow(): { task: TaskId; live: AgentLive }[] {
+    const out: { task: TaskId; live: AgentLive }[] = [];
+    for (const [task, agents] of this.live) {
+      for (const live of agents.values()) if (live.status === "working") out.push({ task, live });
+    }
+    return out;
+  }
+
   /** Agents of the task that have live state. */
   liveAgents(task: string): AgentLive[] {
     return [...(this.live.get(task)?.values() ?? [])];
