@@ -43,7 +43,7 @@ export const PAGE_LABEL: Record<PageName, string> = {
   accounts: "Accounts",
   connections: "Connections",
   projects: "Projects and links",
-  skills: "Skills",
+  skills: "Skills & MCP",
   memory: "Memory",
   orgs: "Workspaces",
   setup: "Hub setup",
@@ -53,7 +53,7 @@ export const PAGE_LABEL: Record<PageName, string> = {
 
 /** The sidebar's rows: the daily work at the top, the team and health at the foot, then Settings. */
 export const SIDEBAR_MAIN = ["board", "decisions", "chats", "captain", "playbooks", "watch"] as const;
-export const SIDEBAR_FOOT = ["agents", "accounts", "usage"] as const;
+export const SIDEBAR_FOOT = ["agents", "skills", "accounts", "usage"] as const;
 export type SidebarMainPage = (typeof SIDEBAR_MAIN)[number];
 export type SidebarFootPage = (typeof SIDEBAR_FOOT)[number];
 
@@ -113,10 +113,7 @@ export type SettingsItem =
   | { kind: "section"; section: SetupSection; label?: string };
 
 /** The pages that open inside the Settings frame, besides Hub setup itself. */
-export type SettingsPage = Extract<
-  PageName,
-  "connections" | "projects" | "skills" | "memory" | "limits" | "audit"
->;
+export type SettingsPage = Extract<PageName, "connections" | "projects" | "memory" | "limits" | "audit">;
 
 /** The Settings list, in order. Pages keep their own address; Hub setup's sections are `/setup?section=`. */
 export const SETTINGS_GROUPS: readonly { label: string; items: readonly SettingsItem[] }[] = [
@@ -141,7 +138,6 @@ export const SETTINGS_GROUPS: readonly { label: string; items: readonly Settings
   {
     label: "Agents",
     items: [
-      { kind: "page", page: "skills" },
       { kind: "page", page: "memory" },
       { kind: "section", section: "memory", label: "Memory rules" },
       { kind: "section", section: "teams" },

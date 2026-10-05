@@ -10,7 +10,7 @@ import type {
 } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
-import { FETCH_TIMEOUT_MS, git, gitOk, localBranchExists } from "../git/git.ts";
+import { FETCH_TIMEOUT_MS, git, gitOk, localBranchExists, refIsThere } from "../git/git.ts";
 import { dirtyWorktrees, removeWorktree } from "../git/worktrees.ts";
 import { mrRemoteName } from "../mrs/remote.ts";
 import type { RoomService } from "../room/service.ts";
@@ -33,6 +33,8 @@ export interface CleanupDeps {
 /** A step and what a run needs to do it. */
 interface Planned extends CleanupStep {
   repo: TaskRepo;
+  /** Cache steps: the worktree has uncommitted changes. */
+  treeDirty?: boolean;
 }
 
 /**
@@ -55,13 +57,14 @@ export class CleanupService {
   }
 
   /** Done tasks older than `days` that have something to clean up or something to say about it. */
-  async preview(days: number, cachesOnly = false): Promise<CleanupPreview> {
+  async preview(days: number, cachesOnly = false, cachesAfterDays?: number): Promise<CleanupPreview> {
     const tasks: CleanupTask[] = [];
-    for (const { id, doneAt } of this.deps.store.tasks.doneBefore(this.cutoff(cachesOnly ? 0 : days))) {
+    const age = cachesOnly ? (cachesAfterDays ?? 0) : days;
+    for (const { id, doneAt } of this.deps.store.tasks.doneBefore(this.cutoff(age))) {
       const task = this.deps.store.tasks.get(id);
       if (task === undefined) continue;
       const planned = await this.plan(task);
-      const steps = cachesOnly ? planned.filter((s) => s.kind === "cache") : planned;
+      const steps = cachesOnly ? this.cacheSteps(planned, cachesAfterDays) : planned;
       const roomItems = cachesOnly ? 0 : this.deps.store.room.count(id, NOTE_PREFIX);
       if (steps.length === 0 && roomItems === 0) continue;
       tasks.push({ id: task.id, title: task.title, doneAt, steps: steps.map(publicStep), roomItems });
@@ -69,12 +72,23 @@ export class CleanupService {
     return { days, tasks, ...(cachesOnly ? { cachesOnly: true } : {}) };
   }
 
-  async run(ids: readonly string[], days: number, by: string, cachesOnly = false): Promise<CleanupReport> {
+  /**
+   * `cachesAfterDays` makes a caches-only run the automatic one: a task done for fewer days, or with
+   * uncommitted changes in its worktree, is left alone.
+   */
+  async run(
+    ids: readonly string[],
+    days: number,
+    by: string,
+    cachesOnly = false,
+    cachesAfterDays?: number,
+  ): Promise<CleanupReport> {
     if (this.running) throw new UserError("A cleanup is already running.", 409);
     this.running = true;
     try {
       const report: CleanupReport = { tasks: [] };
-      for (const id of new Set(ids)) report.tasks.push(await this.cleanTask(id, days, by, cachesOnly));
+      for (const id of new Set(ids))
+        report.tasks.push(await this.cleanTask(id, days, by, cachesOnly, cachesAfterDays));
       this.deps.events.emit(["tasks"]);
       return report;
     } finally {
@@ -87,6 +101,7 @@ export class CleanupService {
     days: number,
     by: string,
     cachesOnly: boolean,
+    cachesAfterDays?: number,
   ): Promise<CleanupReport["tasks"][number]> {
     const { store } = this.deps;
     const task = store.tasks.get(id);
@@ -103,10 +118,15 @@ export class CleanupService {
     if (!cachesOnly && task.updatedAt >= this.cutoff(days)) {
       return left(task.title, `It was closed less than ${days} days ago.`, task.updatedAt);
     }
+    if (cachesOnly && cachesAfterDays !== undefined && task.updatedAt >= this.cutoff(cachesAfterDays)) {
+      return left(task.title, `It was closed less than ${cachesAfterDays} days ago.`, task.updatedAt);
+    }
 
     const steps: CleanupStep[] = [];
     const planned = await this.plan(task);
-    for (const step of planned.filter((p) => p.kind === "cache")) {
+    for (const step of cachesOnly
+      ? this.cacheSteps(planned, cachesAfterDays)
+      : planned.filter((p) => p.kind === "cache")) {
       try {
         const removed =
           step.repo.worktree !== undefined && (await removeDependencyCache(step.repo.worktree, step.name));
@@ -205,6 +225,13 @@ export class CleanupService {
     return { id: task.id, title: task.title, doneAt: task.updatedAt, steps, roomItems };
   }
 
+  /** The cache steps. The automatic pass (with an age) skips a worktree with uncommitted changes. */
+  private cacheSteps(planned: readonly Planned[], cachesAfterDays: number | undefined): Planned[] {
+    return planned.filter(
+      (p) => p.kind === "cache" && (cachesAfterDays === undefined || p.treeDirty !== true),
+    );
+  }
+
   private note(task: Task, steps: readonly CleanupStep[], roomItems: number): void {
     const date = this.now().toISOString().slice(0, 10);
     const kept = steps.filter((s) => s.action === "skip");
@@ -272,6 +299,7 @@ export class CleanupService {
         }
         const [dirty] = await dirtyWorktrees([repo.worktree]);
         treeKept = dirty !== undefined;
+        if (dirty !== undefined) for (const c of caches) if (c.repo === repo) c.treeDirty = true;
         trees.push({
           kind: "worktree",
           project: repo.project,
@@ -362,7 +390,7 @@ async function fetchTip(
 }
 
 function refExists(source: string, ref: string): Promise<boolean> {
-  return gitOk(source, ["show-ref", "--verify", "--quiet", ref]);
+  return refIsThere(source, ref);
 }
 
 function publicStep(step: CleanupStep): CleanupStep {

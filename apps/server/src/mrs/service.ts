@@ -25,7 +25,7 @@ import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
 import { type FastForwardOutcome, fastForwardBranch } from "../git/fast-forward.ts";
-import { FETCH_TIMEOUT_MS, git, gitOk, localBranchExists, uncommitted } from "../git/git.ts";
+import { FETCH_TIMEOUT_MS, git, gitOk, localBranchExists, refIsThere, uncommitted } from "../git/git.ts";
 import type { GitLoginService } from "../git/logins.ts";
 import { isSshAuthFailure, removeWorktree } from "../git/worktrees.ts";
 import type { ProjectInfo, ProjectService } from "../projects/service.ts";
@@ -1108,7 +1108,7 @@ export class MrService {
     if (!(await localBranchExists(source, branch))) return none;
     const tracking = `refs/remotes/${target.remote}/${branch}`;
     if (target.viaHost) {
-      if (!(await gitOk(source, ["show-ref", "--verify", "--quiet", tracking]))) {
+      if (!(await refIsThere(source, tracking))) {
         return { ...none, missing: true, unknown: true };
       }
     } else if (!(await this.fetchTracking(source, target, branch))) {

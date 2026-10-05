@@ -62,8 +62,8 @@ interface Pending {
 /**
  * Skills: install from a source after the owner has seen what it holds, turn them on per agent, and
  * keep the audit trail. Installing is two steps: the first call fetches into a stage and returns a
- * preview, the second, with the preview's id, moves exactly that into the store. Nothing is ever
- * enabled by installing.
+ * preview, the second, with the preview's id, moves exactly that into the store. A new skill is on for every agent
+ * (`defaultOn`), and an agent opts out per skill.
  */
 export class SkillService {
   private readonly pending = new Map<string, Pending>();
@@ -187,9 +187,19 @@ export class SkillService {
     }
   }
 
+  /** Turns the skill on for every agent, now and later. Agents that opted out are switched back on. */
+  async enableAll(name: string, meta: CommandMeta): Promise<Skill> {
+    await this.get(name);
+    await this.deps.store.setDefault(name, true);
+    this.log(meta, "skill-enable", `Enable ${name} for all agents`, `${name} for all agents`);
+    return this.get(name);
+  }
+
   async enable(name: string, agent: string, command: string, meta: CommandMeta): Promise<Skill> {
     await this.get(name);
     const list = await this.agentList(agent);
+    const stored = await this.deps.store.get(name);
+    if (stored?.optOut.includes(agent)) await this.deps.store.setOptOut(name, agent, false);
     if (!list.includes(name)) {
       await this.deps.agents.setSkills(agent, [...list, name], command, meta);
       this.log(meta, "skill-enable", `Enable ${name} for @${agent}`, `${name} for ${agent}`);
@@ -199,6 +209,14 @@ export class SkillService {
 
   async disable(name: string, agent: string, command: string, meta: CommandMeta): Promise<Skill> {
     const list = await this.agentList(agent);
+    const stored = await this.deps.store.get(name);
+    if (stored?.defaultOn === true && !stored.optOut.includes(agent)) {
+      // The opt-out is what keeps a default-on skill off this agent, now and after a restart.
+      await this.deps.store.setOptOut(name, agent, true);
+      if (!list.includes(name)) {
+        this.log(meta, "skill-disable", `Disable ${name} for @${agent}`, `${name} for ${agent}`);
+      }
+    }
     if (list.includes(name)) {
       await this.deps.agents.setSkills(
         agent,
@@ -425,7 +443,11 @@ function toSkill(s: StoredSkill, lists: { id: string; skills: string[] }[]): Ski
     ...(s.commit === undefined ? {} : { commit: s.commit }),
     hash: s.hash,
     installedAt: s.installedAt,
-    agents: lists.filter((l) => l.skills.includes(s.name)).map((l) => l.id),
+    defaultOn: s.defaultOn,
+    agents: lists
+      .filter((l) => l.skills.includes(s.name) || (s.defaultOn && !s.optOut.includes(l.id)))
+      .map((l) => l.id),
+    optOut: s.optOut,
   };
 }
 

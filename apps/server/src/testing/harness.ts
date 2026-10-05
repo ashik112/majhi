@@ -82,6 +82,15 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
   return h;
 }
 
+/** A harness over a home that is already set up, such as a copy of a template. Runs no setup. */
+export function harnessOver(
+  dir: string,
+  cleanup: () => Promise<void>,
+  options: HarnessOptions = {},
+): Harness {
+  return build(dir, testEnv(dir), fakeRuntime(), cleanup, options);
+}
+
 function build(
   dir: string,
   env: ServerEnv,

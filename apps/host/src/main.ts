@@ -86,6 +86,8 @@ async function main(): Promise<void> {
   });
   const real = createPlatform(os, deps);
   const platform = { ...real, notifier: desktopNotifier(config.notify, real.notifier, log) };
+  // On macOS this builds majhi's own notifier now, so the first notification shows as majhi.
+  void platform.notifier.prepare?.().catch((err: unknown) => log(`notify: ${errorMessage(err)}`));
   const path = deps.path;
   const gitBin = await deps.find("git");
   const gitContext: GitContext | undefined =
@@ -346,6 +348,7 @@ async function main(): Promise<void> {
     gitCredential: (params: { host: string; username: string }) => gitCredential(gitPushDeps, params),
     notify: (params: { title: string; message: string; path?: string | undefined; sound: boolean }) =>
       showNotification(platform.notifier, config.url, params),
+    notifyOpenSettings: () => platform.notifier.openSettings?.() ?? Promise.resolve(false),
     layaStatus: () => laya.status(),
     layaInstall: () => laya.install(),
     layaDecide: (params: { state: string; questions: Record<string, LayaQuestion> }) => laya.decide(params),

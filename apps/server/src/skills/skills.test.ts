@@ -33,12 +33,21 @@ describe("skills", () => {
     if (res.status !== 200) throw new Error(`${name}: ${JSON.stringify(res.body)}`);
     return res.body;
   };
-  const install = async (body: Record<string, unknown>) => {
+  const installAll = async (body: Record<string, unknown>) => {
     const preview = (await must("skills.install", body)) as SkillPreview;
     expect(preview.status).toBe("preview");
     const done = (await must("skills.install", { confirm: preview.previewId })) as SkillInstallResult;
     if (done.status !== "installed") throw new Error("not installed");
     return { preview, skills: done.skills };
+  };
+  /** Installs, then puts the skill in the state skills had before the all-agents rule: on for no agent. */
+  const install = async (body: Record<string, unknown>) => {
+    const out = await installAll(body);
+    const file = join(store(), "skills-lock.json");
+    const lock = JSON.parse(await readFile(file, "utf8"));
+    for (const skill of out.skills) lock.skills[skill.name].defaultOn = false;
+    await writeFile(file, JSON.stringify(lock));
+    return { preview: out.preview, skills: out.skills.map((s) => ({ ...s, defaultOn: false, agents: [] })) };
   };
   const store = () => join(w.h.env.majhiHome, "skills");
   const exists = (path: string) =>
@@ -93,7 +102,7 @@ describe("skills", () => {
     };
     expect(done.status).toBe("installed");
     expect(done.skills.map((s) => s.name)).toEqual(["lint-fixes", "release-notes"]);
-    expect(done.skills.every((s) => s.agents.length === 0)).toBe(true);
+    expect(done.skills.every((s) => s.defaultOn)).toBe(true);
     expect(await readFile(join(store(), "lint-fixes", "SKILL.md"), "utf8")).toContain("Fix lint errors");
     const lock = JSON.parse(await readFile(join(store(), "skills-lock.json"), "utf8"));
     expect(lock.skills["lint-fixes"]).toMatchObject({
@@ -110,6 +119,38 @@ describe("skills", () => {
     // The throwaway stage is gone.
     const stages = await readdir(join(w.h.dir, "Work", ".majhi", ".skills")).catch(() => []);
     expect(stages).toEqual([]);
+  });
+
+  it("a new skill is on for every agent, agents made later get it, and an opt-out sticks", async () => {
+    await installAll({ source: "acme/agent-skills", skill: "lint-fixes" });
+    const has = async (agent: string) =>
+      ((await must("skills.list", { agent })) as Skill[]).map((s) => s.name);
+    expect(await has("acme-builder")).toEqual(["lint-fixes"]);
+
+    await must("agents.create", {
+      id: "acme-late",
+      frontmatter: { scope: "acme", role: "Reviewer", account: "claude-acme" },
+      instructions: "Help.",
+    });
+    expect(await has("acme-late")).toEqual(["lint-fixes"]);
+    expect(await w.h.majhi.services.skillStore.effectiveFor("acme-late", [])).toEqual(["lint-fixes"]);
+
+    await must("skills.disable", { name: "lint-fixes", agent: "acme-builder" });
+    expect(await has("acme-builder")).toEqual([]);
+    expect(await has("acme-late")).toEqual(["lint-fixes"]);
+    // Updating the skill keeps the opt-out.
+    const lock = () => readFile(join(store(), "skills-lock.json"), "utf8");
+    expect(JSON.parse(await lock()).skills["lint-fixes"]).toMatchObject({
+      defaultOn: true,
+      optOut: ["acme-builder"],
+    });
+    expect(await w.h.majhi.services.skillStore.effectiveFor("acme-builder", [])).toEqual([]);
+
+    // Turning it back on for that agent, and "enable for all" clears every opt-out.
+    await must("skills.disable", { name: "lint-fixes", agent: "acme-late" });
+    await must("skills.enableAll", { name: "lint-fixes" });
+    expect(await has("acme-builder")).toEqual(["lint-fixes"]);
+    expect(await has("acme-late")).toEqual(["lint-fixes"]);
   });
 
   it("installs one skill of a source when asked", async () => {

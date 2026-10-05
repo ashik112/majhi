@@ -14,7 +14,6 @@ import { DetailPane } from "@/components/ui/list-detail";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
-import { McpTab } from "@/features/skills/mcp-tab";
 import { cn } from "@/lib/cn";
 import { useConnectStatus } from "@/lib/connect-queries";
 import { useConnectionCommand, useConnections } from "@/lib/connection-queries";
@@ -41,9 +40,8 @@ export function ConnectionsView() {
   const { org: orgFilter } = useOrgFilter();
   const [picked, setPicked] = useState<string>();
   const [linked, setLinked] = useSearchParam("connection");
-  const [view, setView] = useSearchParam("tab");
+  const [, setView] = useSearchParam("tab");
   const [mode, setMode] = useState<"connected" | "catalog" | "custom">();
-  const mcp = view === "mcp";
   const [connecting, setConnecting] = useState(false);
   const [destination, setDestination] = useState<string>();
   const [customType, setCustomType] = useState<ConnectionType>("mcp");
@@ -127,8 +125,8 @@ export function ConnectionsView() {
           <nav aria-label="Connection views" className="mb-3 flex shrink-0 items-center gap-1">
             <Button
               variant="ghost"
-              aria-pressed={!mcp && !catalog && mode !== "custom"}
-              className={cn(!mcp && !catalog && mode !== "custom" && "bg-selected text-fg")}
+              aria-pressed={!catalog && mode !== "custom"}
+              className={cn(!catalog && mode !== "custom" && "bg-selected text-fg")}
               onClick={overview}
               disabled={connecting}
             >
@@ -136,34 +134,15 @@ export function ConnectionsView() {
             </Button>
             <Button
               variant="ghost"
-              aria-pressed={!mcp && (catalog || mode === "custom")}
-              className={cn(!mcp && (catalog || mode === "custom") && "bg-selected text-fg")}
+              aria-pressed={catalog || mode === "custom"}
+              className={cn((catalog || mode === "custom") && "bg-selected text-fg")}
               onClick={() => browse()}
               disabled={connecting}
             >
               Browse services
             </Button>
-            <Button
-              variant="ghost"
-              aria-pressed={mcp}
-              className={cn(mcp && "bg-selected text-fg")}
-              onClick={() => {
-                setPicked(undefined);
-                setLinked(undefined);
-                setView("mcp");
-              }}
-              disabled={connecting}
-            >
-              MCP servers
-            </Button>
           </nav>
-          {mcp ? (
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-8 scroll-fade">
-              <div className="mx-auto flex max-w-[960px] flex-col gap-4">
-                <McpTab />
-              </div>
-            </div>
-          ) : mode === "custom" ? (
+          {mode === "custom" ? (
             <NewConnection
               initialType={customType}
               orgs={orgList}

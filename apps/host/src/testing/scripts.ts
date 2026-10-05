@@ -76,7 +76,19 @@ export interface Sandbox {
   cleanup(): Promise<void>;
 }
 
-async function which(name: string): Promise<string | undefined> {
+/** Where each tool is, looked up once per process: the PATH does not change between sandboxes. */
+const found = new Map<string, Promise<string | undefined>>();
+
+function which(name: string): Promise<string | undefined> {
+  let path = found.get(name);
+  if (path === undefined) {
+    path = lookUp(name);
+    found.set(name, path);
+  }
+  return path;
+}
+
+async function lookUp(name: string): Promise<string | undefined> {
   for (const dir of (process.env.PATH ?? "").split(delimiter)) {
     if (dir === "") continue;
     const path = join(dir, name);
@@ -98,10 +110,12 @@ export async function scriptSandbox(homeName = "home"): Promise<Sandbox> {
   const tools = join(root, "tools");
   const callsDir = join(root, "calls");
   await Promise.all([home, bin, tools, callsDir].map((dir) => mkdir(dir, { recursive: true })));
-  for (const tool of TOOLS) {
-    const path = await which(tool);
-    if (path !== undefined) await symlink(path, join(tools, tool));
-  }
+  await Promise.all(
+    TOOLS.map(async (tool) => {
+      const path = await which(tool);
+      if (path !== undefined) await symlink(path, join(tools, tool));
+    }),
+  );
 
   const fake = async (name: string, body: string): Promise<void> => {
     const path = join(bin, name);

@@ -28,6 +28,7 @@ const DECISION_MINUTES: Record<OwnerDecisionKind, number> = {
   draft: 2,
   batch: 3,
   trust: 1,
+  notifications: 1,
   incident: 1,
 };
 
@@ -43,6 +44,8 @@ const DECISION_WEIGHT: Record<OwnerDecisionKind, number> = {
   batch: 44,
   // A row that went back to You, or a promotion proposal: read when there is time.
   trust: 40,
+  // The owner's own switch on the Mac: until it is on, desktop alerts do not show.
+  notifications: 53,
   // An incident decision is left out of the agenda: its finding stands for it, with the same weight.
   incident: 100,
   // A budget hold is handled below: it stops new work.

@@ -49,12 +49,12 @@ export function patchDecisions(
   return [...kept, ...fresh].toSorted(compareDecisions);
 }
 
-/** The details of these tasks' cards are read again; the details of every other card stay (each one runs the diff). */
+/** The detail of the selected card is read again when its task changed; every other card's detail stays (each one runs the diff). */
 function readDetails(client: QueryClient, tasks: ReadonlySet<string>): void {
   void client.invalidateQueries({
-    queryKey: [...queryKeys.decisions, "detail"],
+    queryKey: ["decision-detail"],
     predicate: (query) => {
-      const task = taskOfDecision(query.queryKey[2]);
+      const task = taskOfDecision(query.queryKey[1]);
       return task !== undefined && tasks.has(task);
     },
   });
