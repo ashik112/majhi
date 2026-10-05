@@ -244,6 +244,78 @@ export async function restack(input: {
   });
 }
 
+export type SyncResult =
+  | { status: "current"; from: string; to: string }
+  | { status: "fast-forwarded" | "rebased" | "merged"; from: string; to: string }
+  | { status: "refused"; reason: string };
+
+/**
+ * Brings `upstream` (a ref already fetched, like `origin/main`) into the task branch checked out in
+ * `worktree`. A fast-forward when the branch has nothing of its own. Otherwise a rebase when the
+ * branch was never pushed (`pushed` false: no one has the old commits), and a merge when it was, so
+ * no force push is ever needed. Refused, with the branch and worktree exactly as they were, when the
+ * worktree has uncommitted changes, is not on `branch`, or the change conflicts.
+ */
+export async function syncBranch(input: {
+  worktree: string;
+  branch: string;
+  upstream: string;
+  pushed: boolean;
+  identity: { name: string; email: string };
+}): Promise<SyncResult> {
+  const { worktree, branch, upstream } = input;
+  const who = ["-c", `user.name=${input.identity.name}`, "-c", `user.email=${input.identity.email}`];
+  return queue.run(worktree, async (): Promise<SyncResult> => {
+    const current = (await git(worktree, ["symbolic-ref", "--short", "HEAD"]).catch(() => "")).trim();
+    if (current !== branch) return { status: "refused", reason: `the worktree is not on ${branch}` };
+    const dirty = await uncommitted(worktree);
+    if (dirty.length > 0) return { status: "refused", reason: "it has uncommitted changes" };
+    const tip = (await git(worktree, ["rev-parse", `${upstream}^{commit}`])).trim();
+    const head = (await git(worktree, ["rev-parse", "HEAD"])).trim();
+    if (head === tip || (await gitOk(worktree, ["merge-base", "--is-ancestor", tip, head]))) {
+      return { status: "current", from: head, to: head };
+    }
+    const done = async (status: "fast-forwarded" | "rebased" | "merged"): Promise<SyncResult> => ({
+      status,
+      from: head,
+      to: (await git(worktree, ["rev-parse", "HEAD"])).trim(),
+    });
+    if (await gitOk(worktree, ["merge-base", "--is-ancestor", head, tip])) {
+      await git(worktree, ["merge", "--ff-only", "--quiet", tip]);
+      return done("fast-forwarded");
+    }
+    const action = input.pushed ? "merge" : "rebase";
+    try {
+      if (input.pushed) {
+        await git(worktree, [
+          ...who,
+          "merge",
+          "--no-ff",
+          "--no-verify",
+          "--quiet",
+          "-m",
+          `Merge ${upstream} into ${branch}`,
+          tip,
+        ]);
+      } else {
+        await git(worktree, [...who, "rebase", "--quiet", tip]);
+      }
+      return done(input.pushed ? "merged" : "rebased");
+    } catch (err) {
+      const files = (await git(worktree, ["diff", "--name-only", "--diff-filter=U"]).catch(() => ""))
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l !== "");
+      await git(worktree, [action, "--abort"]).catch(() => undefined);
+      if (files.length === 0) throw err;
+      return {
+        status: "refused",
+        reason: `${upstream} conflicts with this branch in ${files.slice(0, 5).join(", ")}${files.length > 5 ? ` and ${files.length - 5} more` : ""}. Nothing was changed`,
+      };
+    }
+  });
+}
+
 /** Worktrees with uncommitted changes, from the paths given. Missing folders count as clean. */
 export async function dirtyWorktrees(
   paths: readonly string[],
