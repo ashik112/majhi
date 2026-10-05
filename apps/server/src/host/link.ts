@@ -37,6 +37,7 @@ const parseResult: { [M in HostMethod]: (value: unknown) => z.ZodSafeParseResult
   "secretsKey.restore": (value) => HostResultSchemas["secretsKey.restore"].safeParse(value),
   "editor.open": (value) => HostResultSchemas["editor.open"].safeParse(value),
   notify: (value) => HostResultSchemas.notify.safeParse(value),
+  "notify.openSettings": (value) => HostResultSchemas["notify.openSettings"].safeParse(value),
   "git.logins": (value) => HostResultSchemas["git.logins"].safeParse(value),
   "git.token": (value) => HostResultSchemas["git.token"].safeParse(value),
   "git.push": (value) => HostResultSchemas["git.push"].safeParse(value),

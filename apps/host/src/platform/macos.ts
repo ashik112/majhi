@@ -1,24 +1,22 @@
 /**
  * macOS, as the helper always ran there: the login Keychain through `security`, launchd's SSH agent
  * with Apple's ssh-add keeping passphrases, the agent socket Docker Desktop and OrbStack give
- * containers, terminal-notifier (installed by majhi) or osascript, `open`, and OrbStack or Docker Desktop to start.
+ * containers, majhi's own notifier app (built by the helper) or terminal-notifier, `open`, and OrbStack or Docker Desktop to start.
  */
 import { join } from "node:path";
 import type { EditorApp } from "@majhi/shared";
-import { plainLine } from "../notify.ts";
+import { macNotifier } from "./macNotifier.ts";
 import { openUrl } from "./openUrl.ts";
-import { type NotifierRelease, TERMINAL_NOTIFIER, terminalNotifier } from "./terminalNotifier.ts";
+import { type NotifierRelease, TERMINAL_NOTIFIER } from "./terminalNotifier.ts";
 import type { DockerHelpReason, Keyring, KeyringItem, Platform, PlatformDeps } from "./types.ts";
 
 const SECURITY = "/usr/bin/security";
 const LAUNCHCTL = "/bin/launchctl";
 const OPEN = "/usr/bin/open";
-const OSASCRIPT = "/usr/bin/osascript";
 /** `security` exits with this when the item is not there. */
 const NOT_FOUND = 44;
 const KEYCHAIN_TIMEOUT_MS = 15_000;
 const LAUNCHCTL_TIMEOUT_MS = 10_000;
-const NOTIFY_TIMEOUT_MS = 10_000;
 const OPEN_TIMEOUT_MS = 15_000;
 /** What Docker Desktop and OrbStack mount for the Mac's agent. */
 const HOST_SERVICES_SOCKET = "/run/host-services/ssh-auth.sock";
@@ -129,23 +127,6 @@ function keychain(deps: PlatformDeps): Keyring {
   };
 }
 
-/** AppleScript string text: one plain line, with quotes and backslashes escaped. */
-function quoted(text: string): string {
-  return `"${plainLine(text).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
-
-/**
- * AppleScript text for a notification. Quotes and backslashes are escaped and line breaks removed, so
- * a message cannot end the string or add a command.
- */
-export function notificationScript(
-  message: string,
-  options: { title?: string; sound?: boolean } = {},
-): string {
-  const sound = options.sound === true ? ' sound name "Glass"' : "";
-  return `display notification ${quoted(message)} with title ${quoted(options.title ?? "majhi")}${sound}`;
-}
-
 /** `notifierRelease` is the terminal-notifier release to install. Tests pin their own. */
 export function macosPlatform(
   deps: PlatformDeps,
@@ -153,7 +134,6 @@ export function macosPlatform(
 ): Platform {
   const desktopEnv = async (): Promise<Record<string, string>> => ({ PATH: deps.path, HOME: deps.home });
   let lastSocketNote = "";
-  const findTerminalNotifier = terminalNotifier(deps, options.notifierRelease ?? TERMINAL_NOTIFIER);
 
   return {
     os: "macos",
@@ -190,31 +170,7 @@ export function macosPlatform(
       composeSocket: deps.env.SSH_AGENT_SOCK?.trim() || HOST_SERVICES_SOCKET,
       serve: () => () => undefined,
     },
-    notifier: {
-      /**
-       * With terminal-notifier a click opens majhi at the page. When there is none the helper
-       * installs its own copy in the background, and this one goes through osascript, which cannot
-       * carry a click. `-group majhi` keeps majhi's notifications together. No `-sender`: 3.x
-       * dropped it, and borrowing another app's identity would misattribute the notification.
-       */
-      async show(request) {
-        const env = { PATH: deps.path };
-        const program = await findTerminalNotifier();
-        if (program !== undefined) {
-          const args = ["-title", request.title, "-message", request.message, "-group", "majhi"];
-          if (request.url !== undefined) args.push("-open", request.url);
-          if (request.sound) args.push("-sound", "Glass");
-          const done = await deps.run(program, args, { env, timeoutMs: NOTIFY_TIMEOUT_MS });
-          if (done.code === 0) return { clickable: request.url !== undefined };
-        }
-        const script = notificationScript(request.message, { title: request.title, sound: request.sound });
-        const done = await deps.run(OSASCRIPT, ["-e", script], { env, timeoutMs: NOTIFY_TIMEOUT_MS });
-        if (done.code !== 0) {
-          throw new Error("macOS did not show the notification. Check System Settings, Notifications.");
-        }
-        return { clickable: false };
-      },
-    },
+    notifier: macNotifier(deps, options.notifierRelease ?? TERMINAL_NOTIFIER),
     editor: {
       cliCandidates: async (app) =>
         ["/Applications", join(deps.home, "Applications")].map((dir) => join(dir, EDITOR_APPS[app].bundle)),

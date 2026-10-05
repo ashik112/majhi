@@ -32,6 +32,7 @@ const ICON: Record<OwnerDecisionKind, ReactNode> = {
   batch: <Mails aria-hidden="true" />,
   incident: <BellRing aria-hidden="true" />,
   trust: <Scale aria-hidden="true" />,
+  notifications: <BellRing aria-hidden="true" />,
 };
 
 export function KindIcon({ kind, className }: { kind: OwnerDecisionKind; className?: string }) {
