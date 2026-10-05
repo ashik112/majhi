@@ -10,7 +10,7 @@ import { useHeldOption } from "@/features/decisions/use-send-decision";
 import { cn } from "@/lib/cn";
 import { openDue, shortAgo } from "../tasks/schedule";
 import { DueChip, PriorityChip } from "../tasks/schedule-chips";
-import { backgroundChip, backgroundLine, checkElapsed, checkLine, checkState } from "./check-state";
+import { backgroundChip, backgroundLine, checkElapsed, checkLine, checkState, duration } from "./check-state";
 import {
   type ActionSpec,
   actionsOf,
@@ -206,7 +206,7 @@ function Row({
         <span className="tnum w-9 text-right font-mono text-xs text-fg-faint">{wait}</span>
         {first?.kind === "wait" && (
           <span
-            role="status"
+            title="Checks are running"
             data-testid="row-waiting"
             className="tnum inline-flex h-7 min-w-[84px] items-center justify-center gap-1.5 text-sm text-fg-muted"
           >
@@ -304,6 +304,12 @@ function elapsed(iso: string | undefined, now: number): string {
   return iso === undefined ? "" : shortAgo(iso, now);
 }
 
+/** How long background work has run: seconds in the first minute, so a fresh check does not read "now". */
+function runFor(iso: string, now: number): string {
+  const ms = now - Date.parse(iso);
+  return ms >= 0 && ms < 60_000 ? duration(ms) : shortAgo(iso, now);
+}
+
 const RunningRow = memo(function RunningRow({
   item,
   org,
@@ -351,7 +357,7 @@ const BackgroundRow = memo(function BackgroundRow({
       title={plainTitle(task.title)}
       org={org}
       detail={backgroundLine(work)}
-      wait={elapsed(work.since, rest.now)}
+      wait={runFor(work.since, rest.now)}
       actions={actionsOf({ type: "background", key: entryKey, section: "running", item })}
     />
   );
