@@ -184,7 +184,7 @@ export function linuxPlatform(
             env: await desktopEnv(),
             timeoutMs: NOTIFY_TIMEOUT_MS,
           });
-          if (result.code === 0) return { clickable: false };
+          if (result.code === 0) return { kind: "shown", clickable: false };
         }
         throw new Error(NOT_SHOWN);
       },

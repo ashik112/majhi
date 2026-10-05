@@ -10,7 +10,7 @@ import type {
 } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
-import { FETCH_TIMEOUT_MS, git, gitOk, localBranchExists } from "../git/git.ts";
+import { FETCH_TIMEOUT_MS, git, gitOk, localBranchExists, refIsThere } from "../git/git.ts";
 import { dirtyWorktrees, removeWorktree } from "../git/worktrees.ts";
 import { mrRemoteName } from "../mrs/remote.ts";
 import type { RoomService } from "../room/service.ts";
@@ -390,7 +390,7 @@ async function fetchTip(
 }
 
 function refExists(source: string, ref: string): Promise<boolean> {
-  return gitOk(source, ["show-ref", "--verify", "--quiet", ref]);
+  return refIsThere(source, ref);
 }
 
 function publicStep(step: CleanupStep): CleanupStep {

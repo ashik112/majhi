@@ -206,11 +206,13 @@ export class ConfigService {
         actor: OWNER,
       });
     }
-    await this.history.commit({
-      files: TRACKED,
-      message: "manual: changes made outside majhi",
-      actor: OWNER,
-    });
+    if (await this.history.hasChanges(TRACKED)) {
+      await this.history.commit({
+        files: TRACKED,
+        message: "manual: changes made outside majhi",
+        actor: OWNER,
+      });
+    }
   }
 
   private serialize<T>(task: () => Promise<T>): Promise<T> {
