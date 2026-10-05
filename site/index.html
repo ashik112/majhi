@@ -7,7 +7,7 @@
 <meta name="description" content="You steer. The agents row. Run AI coding agents for every client from one place, each client in its own boat.">
 <meta property="og:title" content="majhi">
 <meta property="og:description" content="You steer. The agents row. Run AI coding agents for every client from one place, each client in its own boat.">
-<meta property="og:image" content="https://majhi.dev/assets/onboarding.webp">
+<meta property="og:image" content="https://majhi.dev/assets/og.jpg">
 <meta property="og:url" content="https://majhi.dev">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#1d47c4">
@@ -21,6 +21,8 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/v2.css">
 <link href="https://fonts.googleapis.com/css2?family=Baloo+Da+2:wght@600;700;800&family=Hind+Siliguri:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -102,71 +104,6 @@ nav .sign{padding:11px 18px 9px;font-size:16px}
 .down svg{width:26px}
 @keyframes nudge{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,6px)}}
 
-/* one sentence */
-.crew{background:var(--green);padding:clamp(80px,13vh,140px) clamp(18px,6vw,80px)}
-.crew p{margin:0 auto;max-width:1120px;font:700 clamp(32px,4.4vw,62px)/1.5 "Baloo Da 2",sans-serif}
-.chip{display:inline-block;padding:0 .32em .02em;margin:0 .05em;border:3px solid var(--ink);border-radius:.5em;box-shadow:3px 4px 0 var(--ink);line-height:1.1;color:var(--ink)}
-.chip.y{background:var(--yellow)}.chip.p{background:var(--pink)}.chip.c{background:#7fb3ff}.chip.r{background:#ff8a5c}
-
-/* strengths: a painted ledger */
-.ledger{background:var(--yellow);color:var(--ink);padding:clamp(80px,12vh,130px) clamp(18px,5vw,70px)}
-.ledger .inner,.gallery .inner,.boats .inner{max-width:1240px;margin:0 auto}
-h2{margin:0 0 14px;font-size:clamp(40px,5.2vw,74px)}
-.ledger h2{color:var(--red)}
-.row{display:grid;grid-template-columns:minmax(260px,5fr) 7fr;gap:clamp(16px,4vw,60px);align-items:start;padding:30px 0;border-top:3px solid var(--ink)}
-.row:last-child{border-bottom:3px solid var(--ink)}
-.row h3{margin:0;font:800 clamp(28px,3vw,42px)/1.02 "Baloo Da 2",sans-serif;letter-spacing:-.01em}
-.row p{margin:4px 0 0;font-size:19px;color:#3a2a00}
-.row b{color:var(--ink)}
-.ledger .open{margin-top:40px}
-
-/* gallery: an endless tin strip */
-.gallery{background:var(--cobalt);padding:clamp(80px,12vh,130px) 0}
-.gallery .inner{padding:0 clamp(18px,5vw,70px)}
-.gallery h2{color:var(--yellow)}
-.gallery .lead{margin:0 0 46px;max-width:620px;font-size:20px;color:#e3eaff}
-.strip{overflow:hidden;padding:6px 0 26px;-webkit-mask:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);mask:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
-.track{display:flex;gap:28px;width:max-content;animation:roll 70s linear infinite}
-.strip:hover .track{animation-play-state:paused}
-@keyframes roll{to{transform:translateX(calc(-50% - 14px))}}
-.frame{flex:0 0 auto;width:min(68vw,760px);margin:0;padding:12px;background:var(--red);border:4px solid var(--ink);border-radius:22px;box-shadow:7px 9px 0 var(--ink)}
-.frame:nth-child(3n+2){background:var(--green)}.frame:nth-child(3n){background:var(--yellow)}
-.frame img{display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;object-position:top left;border:3px solid var(--ink);border-radius:12px;background:#0b1020}
-.frame figcaption{font:700 21px/1.2 "Baloo Da 2",sans-serif;color:var(--ink);padding:12px 6px 2px}
-
-/* one boat per client */
-.boats{background:var(--green);padding:clamp(80px,12vh,130px) clamp(18px,5vw,70px)}
-.boats h2{color:var(--yellow)}
-.boats .lead{margin:0 0 30px;max-width:640px;font-size:20px;color:#d9f3e2}
-.fleet{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(20px,5vw,80px);max-width:980px;margin:0 auto}
-.fleet figure{margin:0;text-align:center}
-.fleet svg{width:100%;height:auto;overflow:visible}
-.fleet figcaption{font:800 26px/1 "Baloo Da 2",sans-serif;margin-top:2px;-webkit-text-stroke:1.5px var(--ink);paint-order:stroke fill;text-shadow:2px 2px 0 var(--ink)}
-.points{list-style:none;margin:56px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,1fr);gap:36px}
-.points li{display:grid;grid-template-columns:48px 1fr;gap:14px;align-items:start}
-.points svg{width:48px}
-.points b{display:block;font:700 23px/1.2 "Baloo Da 2",sans-serif;margin-bottom:4px}
-.points span{font-size:17px;line-height:1.55;color:#d9f3e2}
-.float{animation:bob 4s ease-in-out infinite alternate}
-.fleet figure:nth-child(2) .float{animation-delay:-1.3s}.fleet figure:nth-child(3) .float{animation-delay:-2.6s}
-
-/* install */
-.board{background:var(--red);padding:clamp(80px,13vh,140px) clamp(18px,5vw,70px);text-align:center}
-.board h2{color:var(--yellow)}
-.board .lead{margin:0 auto 40px;max-width:600px;font-size:20px;color:#ffe3e3}
-.plate{display:inline-flex;align-items:center;gap:16px;max-width:100%;background:var(--white);color:var(--ink);border:4px solid var(--ink);border-radius:18px;padding:12px 12px 12px 22px;box-shadow:7px 8px 0 var(--ink);position:relative}
-.plate::before{content:"";position:absolute;inset:6px;border:2px dashed var(--red);border-radius:12px;pointer-events:none}
-.plate code{font:500 clamp(13px,1.45vw,18px)/1.4 "JetBrains Mono",monospace;white-space:nowrap;overflow-x:auto;text-align:left;position:relative}
-.plate .sign{position:relative;padding:11px 16px 9px;font-size:15px}
-.os{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:30px}
-.os span{font:700 17px/1 "Baloo Da 2",sans-serif;background:var(--white);color:var(--ink);border:3px solid var(--ink);border-radius:999px;padding:10px 16px 8px}
-
-footer{background:var(--ink);color:#e9e1d3;padding:30px clamp(18px,5vw,70px);display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:16px}
-footer .tile{width:36px;height:36px;border-width:2px;box-shadow:none}
-footer .tile svg{width:22px}
-footer .r{margin-left:auto;display:flex;gap:22px}
-footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-color:var(--yellow)}
-
 @media (max-width:860px){
   .copy p{font-size:19px}
   .cloud{display:none}
@@ -174,14 +111,9 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
   .birds{display:none}
   .land{max-height:none}
   .sun{display:none}
-  .row{grid-template-columns:1fr;gap:6px}
-  .fleet{gap:12px}
-  .points{grid-template-columns:1fr;gap:24px}
-  .fleet figcaption{font-size:19px}
   nav .hide{display:none}
-  .frame{width:84vw}
 }
-@media (prefers-reduced-motion:reduce){*,*::before{animation:none!important;transition:none!important}.boat{transform:translateX(calc(50cqw - 50%))}.birds{transform:translateX(55vw)}.strip{overflow-x:auto}}
+@media (prefers-reduced-motion:reduce){*,*::before{animation:none!important;transition:none!important}.boat{transform:translateX(calc(50cqw - 50%))}.birds{transform:translateX(55vw)}}
 </style>
 </head>
 <body>
@@ -255,82 +187,381 @@ footer a{text-decoration:underline;text-underline-offset:4px;text-decoration-col
   <a class="down" href="#crew" aria-label="Scroll to how majhi works"><svg viewBox="0 0 24 24" fill="none" stroke="#fffdf6" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v15M5 12l7 7 7-7"/></svg></a>
 </header>
 
-<div class="trim" style="--below:var(--green)"></div>
+<div class="trim" style="--below:#fff8e4"></div>
 
-<section class="crew" id="crew">
-  <p>Every client gets its own <span class="chip y">crew</span>, its own <span class="chip c">accounts</span> and its own <span class="chip p">rules</span>. Nothing crosses between them. Bring the subscriptions you already pay for, and the captain runs it all from <span class="chip r">one desk</span> on your machine.</p>
-</section>
+<main class="v2">
 
-<div class="trim" style="--below:var(--yellow)"></div>
+<section class="s s1" id="crew">
+  <div class="wrap">
+    <div class="intro">
+      <h2 class="letter">One desk for every boat.</h2>
+      <p class="lead">All your projects and all your agents on one screen. See what is running, what waits for you and what is done. This is majhi, running.</p>
+    </div>
+    <div class="pf" style="--fc:var(--cobalt)">
+      <div class="ap win" id="win" role="img" aria-label="The majhi Home screen: tasks grouped as Needs you, Running now, Up next and Done today, moving between groups as agents finish">
+        <div class="chrome" aria-hidden="true"><i></i><i></i><i></i><span>127.0.0.1:7070</span></div>
+        <div class="wbody" aria-hidden="true">
+          <div class="side">
+            <div class="brandrow"><span class="mark"><svg viewBox="28 54 200 172"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></span>majhi</div>
+            <div class="switch"><span class="abadge">3</span><b>All workspaces</b><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 4l3 3 3-3"/></svg></div>
+            <div class="nav">
+              <div class="sel"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>Home<em>7</em></div>
+              <div><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"/></svg>Chats</div>
+              <div><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Captain</div>
+              <div><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/></svg>Agents<em>7</em></div>
+              <div><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 11h18"/></svg>Accounts</div>
+              <div><svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4Z"/></svg>Skills</div>
+            </div>
+            <div class="now">
+              <span class="gl">Agents right now</span>
+              <div><span class="lamp work"></span>@acme-builder</div>
+              <div><span class="lamp work"></span>@globex-lead</div>
+              <div><span class="lamp work"></span>@northwind-builder</div>
+              <div><span class="lamp idle"></span>@acme-lead</div>
+            </div>
+          </div>
+          <div class="main">
+            <div class="top">
+              <h3>Home</h3>
+              <div class="tele"><span><b id="t-open">7</b>open</span><span><b id="t-work" style="--c:var(--l-work)">3</b>working</span><span><b id="t-need" style="--c:var(--l-need)">1</b>needs you</span><span><b id="t-done" style="--c:var(--l-done)">2</b>done today</span></div>
+              <span class="ap-pill"><span class="tg on" id="ap-tg"></span>Auto-pilot on</span>
+            </div>
+            <div class="list" id="hl"></div>
+          </div>
+        </div>
+      </div>
+    </div>
 
-<section class="ledger">
-  <div class="inner">
-    <h2 class="letter">Why the boat keeps moving</h2>
-    <div class="row"><h3>It rows through the night</h3><p>Switch on autonomous mode before bed. The captain takes tasks by priority and due date, picks a crew for each one, ships what passes review and leaves you a summary for the morning. <b>Each client has a spend cap it won't cross.</b></p></div>
-    <div class="row"><h3>It doesn't capsize</h3><p>Laptop asleep, Wi-Fi down, a usage limit hit, a model refusing a request. The run stops at its last checkpoint and picks up from there, or hands the step to another agent. No agent can close a task while its work sits unshipped. Only you can.</p></div>
-    <div class="row"><h3>It reaches the other bank</h3><p>Merge, squash or rebase into any branch. Push, or open pull and merge requests on GitHub, GitLab and Bitbucket. A change across three repos lands in all three or in none. A conflict opens in one click.</p></div>
-    <div class="row"><h3>It calls out only when it needs you</h3><p>Approvals, questions and stuck work land in one bell. Client by client, you choose which steps wait for your click and which go ahead on their own.</p></div>
-    <div class="row"><h3>It rows cheap</h3><p>Laya, a small open model running free on your machine, makes the hundreds of small calls, like routing tasks and picking models. Claude and Codex only get the real work, and every account's usage and cost is on screen.</p></div>
-    <div class="row"><h3>It remembers the river</h3><p>Every finished task leaves notes on the repo it touched. The next crew reads them first, so nobody relearns the same quirks.</p></div>
+    <div class="stats">
+      <div class="stat" style="--sc:var(--yellow)"><b data-to="3">3</b><span>clients</span></div>
+      <div class="stat" style="--sc:var(--pink)"><b data-to="7">7</b><span>agents</span></div>
+      <div class="stat" style="--sc:var(--sky)"><b data-to="12">12</b><span>tasks shipped overnight</span></div>
+      <div class="stat" style="--sc:#5fd491"><b data-to="2">2</b><span>taps from you</span></div>
+    </div>
+    <p class="cap">An example night for a freelancer with three clients.</p>
   </div>
 </section>
 
-<div class="trim" style="--below:var(--cobalt)"></div>
+<div class="trim" style="--below:#dce8ff"></div>
 
-<section class="gallery" aria-label="Screens from majhi">
-  <div class="inner">
-    <h2 class="letter">Inside majhi</h2>
-  </div>
-  <div class="strip">
-    <div class="track">
-      <figure class="frame"><img src="/assets/board.webp" alt="The board with every client's tasks and each agent's state" loading="lazy"><figcaption>All your clients on one board</figcaption></figure>
-      <figure class="frame"><img src="/assets/task-room.webp" alt="A task room with the plan, the crew and the branch" loading="lazy"><figcaption>Each task gets its own room</figcaption></figure>
-      <figure class="frame"><img src="/assets/onboarding.webp" alt="The first-run river journey" loading="lazy"><figcaption>Setup finds your folders, accounts and logins</figcaption></figure>
-      <figure class="frame"><img src="/assets/health.webp" alt="Usage windows and cost for every AI account" loading="lazy"><figcaption>Usage and limits for each account</figcaption></figure>
-      <figure class="frame"><img src="/assets/orgs.webp" alt="Workspaces, one per client" loading="lazy"><figcaption>One workspace per client</figcaption></figure>
-      <figure class="frame"><img src="/assets/new-task.webp" alt="Starting a task in one sentence" loading="lazy"><figcaption>One sentence starts a task</figcaption></figure>
-      <figure class="frame" aria-hidden="true"><img src="/assets/board.webp" alt="" loading="lazy"><figcaption>All your clients on one board</figcaption></figure>
-      <figure class="frame" aria-hidden="true"><img src="/assets/task-room.webp" alt="" loading="lazy"><figcaption>Each task gets its own room</figcaption></figure>
-      <figure class="frame" aria-hidden="true"><img src="/assets/onboarding.webp" alt="" loading="lazy"><figcaption>Setup finds your folders, accounts and logins</figcaption></figure>
-      <figure class="frame" aria-hidden="true"><img src="/assets/health.webp" alt="" loading="lazy"><figcaption>Usage and limits for each account</figcaption></figure>
-      <figure class="frame" aria-hidden="true"><img src="/assets/orgs.webp" alt="" loading="lazy"><figcaption>One workspace per client</figcaption></figure>
-      <figure class="frame" aria-hidden="true"><img src="/assets/new-task.webp" alt="" loading="lazy"><figcaption>One sentence starts a task</figcaption></figure>
+<section class="s s2" id="how">
+  <div class="wrap">
+    <h2 class="letter">Say it. Watch it. Ship it.</h2>
+    <p class="lead">Four steps, and the last one is yours. Pick a step to see it.</p>
+    <div class="how">
+      <ol class="hw-steps" role="tablist" aria-label="How it works">
+        <li><button class="hw-step on" role="tab" aria-selected="true" type="button"><span class="n">1</span><span><h3>Write what you want.</h3><p>"Fix the login bug in the Acme app." Add files or screenshots if it helps.</p></span></button></li>
+        <li><button class="hw-step" role="tab" aria-selected="false" type="button"><span class="n">2</span><span><h3>Agents get to work.</h3><p>Each agent works on its own copy of the code, so your files stay safe. You can chat with them while they work.</p></span></button></li>
+        <li><button class="hw-step" role="tab" aria-selected="false" type="button"><span class="n">3</span><span><h3>Check what they did.</h3><p>See every line they changed, and the test results. Not happy? Ask for changes.</p></span></button></li>
+        <li><button class="hw-step" role="tab" aria-selected="false" type="button"><span class="n">4</span><span><h3>Ship it in one click.</h3><p>Add it to your code, or open a pull request on GitHub, GitLab or Bitbucket.</p></span></button></li>
+      </ol>
+      <div class="hw-stage" id="hw">
+        <div class="pf" style="--fc:var(--yellow)"><div class="ap" style="position:absolute;inset:10px">
+
+          <div class="pane on" data-pane="0" role="img" aria-label="A new task form where the sentence types itself and the repo chips appear">
+            <div class="hd"><h4>New task</h4><span class="abadge">Acme</span></div>
+            <div><span class="lab">What should the team do?</span><span class="fld focus"><span data-type="Fix the login bug in the Acme app"></span><i class="caret" id="caret1"></i></span></div>
+            <div><span class="lab">Details for the team</span><span class="fld ta"><span data-type="Users get signed out after a password reset. Done means they stay signed in, with a test."></span></span></div>
+            <div class="rowc"><span class="lab" style="margin:0 4px 0 0">Workspace</span><span class="achip on" data-step="1"><span class="ot" style="--oc:var(--yellow)">A</span>Acme</span><span class="lab" style="margin:0 4px 0 10px">Agent</span><span class="achip mono" data-step="2">@acme-lead</span></div>
+            <div class="rowc"><span class="lab" style="margin:0 4px 0 0">Write in</span><span class="achip mono on" data-step="3">acme-web</span><span class="achip mono" data-step="3">acme-api</span></div>
+            <div class="rowc" style="margin-top:auto"><span class="toast" data-step="4"><span class="lamp work"></span>ACM-12 created. @acme-lead is planning.</span><span class="abtn pri h34" id="create" style="margin-left:auto">Create task</span></div>
+          </div>
+
+          <div class="pane" data-pane="1" role="img" aria-label="A task room where two agents post updates and the plan ticks to three of three done">
+            <div class="hd"><span class="lamp work"></span><h4>ACM-12 · Fix the login bug</h4><span class="abadge">acm-12-login-bug</span></div>
+            <div class="stack">
+              <div class="msg"><span class="bub me">Fix the login bug in the Acme app.</span></div>
+              <div class="msg" data-step="1"><span class="av" style="background:var(--violet)">AL</span><div class="bub"><span class="who">@acme-lead</span>I will find the cause, fix it and add a test.
+                <div class="plan"><div class="ph"><span class="lamp work"></span>Plan<span class="mono"><span data-count>3</span> of 3 done</span></div>
+                  <ul style="padding:0"><li data-dn="1"><span class="ring"></span>Find the cause</li><li data-dn="2"><span class="ring"></span>Fix it</li><li data-dn="3"><span class="ring"></span>Add a test</li></ul></div></div></div>
+              <div class="msg" data-step="2"><span class="av" style="background:var(--a-blue)">AB</span><div class="bub"><span class="who">@acme-builder</span>Found it. The reset handler clears the session twice.
+                <div class="tool"><span class="tick"><svg viewBox="0 0 10 10"><path d="M2 5.2l2 2L8 3"/></svg></span>Read <span class="mono">src/auth/session.ts</span></div>
+                <div class="tool" data-step="3"><span class="tick"><svg viewBox="0 0 10 10"><path d="M2 5.2l2 2L8 3"/></svg></span>Edit <span class="mono">src/auth/session.ts</span> <span class="mono t-done">+4</span> <span class="mono" style="color:var(--a-red)">-2</span></div>
+                <div class="tool" data-step="4"><span class="tick"><svg viewBox="0 0 10 10"><path d="M2 5.2l2 2L8 3"/></svg></span>Run tests <span class="mono">42 passed</span></div></div></div>
+            </div>
+            <div class="dock" data-step="6"><span class="lamp need"></span><span class="tt">Ready to ship</span><span class="ln">ACM-12 · checks green · 3 files</span><span class="abtn">Review</span></div>
+          </div>
+
+          <div class="pane" data-pane="2" role="img" aria-label="The Changes tab: a diff with a few lines added and removed while the checks turn from spinners to green">
+            <div class="hd"><span class="lamp work"></span><h4>ACM-12 · Fix the login bug</h4></div>
+            <div class="seg"><span>Report</span><span class="sel">Changes <em>2</em></span><span>Checks</span><span>Context</span></div>
+            <div class="diff">
+              <div class="fh"><span class="mono">src/auth/session.ts</span><span class="mono t-done" style="margin-left:auto">+4</span><span class="mono" style="color:var(--a-red)">-2</span></div>
+              <div class="dl" data-step="1"><s>41</s><i>async function resetPassword(user, pw) {</i></div>
+              <div class="dl" data-step="1"><s>42</s><i>  await db.users.setPassword(user.id, pw);</i></div>
+              <div class="dl del" data-step="2"><s>43</s><i>-  res.clearCookie("session");</i></div>
+              <div class="dl del" data-step="2"><s>44</s><i>-  await db.sessions.revoke(user.id);</i></div>
+              <div class="dl add" data-step="3"><s>43</s><i>+  const next = await db.sessions.rotate(user.id);</i></div>
+              <div class="dl add" data-step="3"><s>44</s><i>+  res.cookie("session", next.token, opts);</i></div>
+              <div class="dl add" data-step="3"><s>45</s><i>+  log.info("session rotated", user.id);</i></div>
+              <div class="dl add" data-step="3"><s>46</s><i>+  return next;</i></div>
+            </div>
+            <div class="checks">
+              <div class="chk"><span class="sl"><span class="spin" data-step="4" data-until="5"></span><span class="tick" data-step="5"><svg viewBox="0 0 10 10"><path d="M2 5.2l2 2L8 3"/></svg></span></span><span>Tests<small>42 passed</small></span></div>
+              <div class="chk"><span class="sl"><span class="spin" data-step="4" data-until="6"></span><span class="tick" data-step="6"><svg viewBox="0 0 10 10"><path d="M2 5.2l2 2L8 3"/></svg></span></span><span>Types<small>no errors</small></span></div>
+              <div class="chk"><span class="sl"><span class="spin" data-step="4" data-until="7"></span><span class="tick" data-step="7"><svg viewBox="0 0 10 10"><path d="M2 5.2l2 2L8 3"/></svg></span></span><span>Lint<small>clean</small></span></div>
+            </div>
+            <div class="dock ok" data-step="8" style="margin-top:auto"><span class="lamp done"></span><span class="tt">All checks green</span><span class="ln"></span><span class="abtn ghost">Ask for changes</span><span class="abtn pri">Ship</span></div>
+          </div>
+
+          <div class="pane" data-pane="3" role="img" aria-label="The Ship menu opens, Merge into main is chosen and a toast says it merged">
+            <div class="hd"><span class="lamp need" id="lamp-ship"></span><h4>ACM-12 · <span id="ship-st">Ready to ship</span></h4></div>
+            <div class="shiprow"><span class="ot" style="--oc:var(--yellow)">A</span><span class="ti">Fix the login bug</span><span class="abadge">3 files</span><span class="abtn h34" id="ship-btn">Done</span></div>
+            <div class="card" style="padding:12px 14px;display:flex;flex-direction:column;gap:9px">
+              <span class="gl">Ship to</span>
+              <div style="display:flex;align-items:center;gap:10px"><span class="mono" style="min-width:74px">acme-web</span><span class="mono" style="color:var(--fg4)">acme-12-login-bug</span><span style="color:var(--fg4)">into</span><span class="achip mono">main</span><span class="mono t-done" style="margin-left:auto">+22</span><span class="mono" style="color:var(--a-red)">-2</span></div>
+              <div style="display:flex;align-items:center;gap:10px;color:var(--fg4)"><span class="mono" style="min-width:74px">acme-api</span><span>no changes, skipped</span></div>
+              <div class="seg" style="margin-top:2px"><span class="sel">Merge commit</span><span>Squash</span><span>Rebase</span></div>
+            </div>
+            <div class="menu" data-step="2" data-until="5">
+              <div><b>Merge into main</b><span>In your checkout. Nothing is pushed.</span></div>
+              <div><b>Merge into main and push main</b><span>Then pushes main to the remote. Never forced.</span></div>
+              <div><b>Push the task branch</b><span>Only the push. No pull request is opened.</span></div>
+              <div><b>Push and open a pull request into main</b><span>One per repo. Nothing merges yet.</span></div>
+            </div>
+            <div style="margin-top:auto"><span class="toast" data-step="6"><span class="lamp done"></span>Merged into main · 3 files</span></div>
+          </div>
+
+        </div></div>
+      </div>
     </div>
   </div>
 </section>
 
-<div class="trim" style="--below:var(--green)"></div>
 
-<section class="boats">
-  <div class="inner">
-    <h2 class="letter">One boat per client</h2>
-    <p class="lead">Acme's agents can't read Globex's repos, keys or notes. The walls are built into the containers, not a setting you have to remember.</p>
-    <div class="fleet" aria-hidden="true">
-      <figure><svg aria-hidden="true" viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#f6c419"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#d42a3c"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Acme</figcaption></figure>
-      <figure><svg aria-hidden="true" viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#ef6aa6"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#f6c419"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Globex</figcaption></figure>
-      <figure><svg aria-hidden="true" viewBox="10 50 236 200"><g class="float" stroke="#120e0b" stroke-width="10" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#7fb3ff"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#1d47c4"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="9" stroke-linecap="round"/></svg><figcaption>Northwind</figcaption></figure>
+<div class="trim" style="--below:#d9f2e2"></div>
+
+<section class="s s3" id="clients">
+  <img class="deco fl" src="/assets/h-lotus.webp" alt="" aria-hidden="true" style="width:150px;left:3%;bottom:34px">
+  <div class="wrap split">
+    <div class="txt">
+      <h2 class="letter">One boat per client.</h2>
+      <p class="lead">Working for Acme and Globex? Each client gets its own space. Acme's agents never see Globex's code, passwords or notes.</p>
     </div>
-    <ul class="points">
-      <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own oars</b><span>Acme's Claude and Codex logins, host tokens and git identity belong to Acme. Commits for Acme go out under the name and email you set for Acme.</span></div></li>
-      <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own hull</b><span>Each agent runs in a container that holds one task's worktrees and nothing else. It never sees your SSH keys, majhi's own config or another client's code.</span></div></li>
-      <li><svg viewBox="0 0 120 90" aria-hidden="true"><use href="#lotus"/></svg><div><b>Its own ledger</b><span>Spend, usage limits, budgets and what the crew has learned are kept per client. Globex's notes never show up in an Acme task.</span></div></li>
-    </ul>
+    <div class="pf" style="--fc:var(--red)">
+      <div class="ap cl" id="cl" role="img" aria-label="Three workspaces, Acme, Globex and Northwind, each with its own repos, accounts and notes, and an access log that refuses an agent reading another client's notes">
+        <div class="cols">
+          <div class="col card"><div class="ch"><svg class="mark" aria-hidden="true" viewBox="10 50 236 200"><g class="bob" stroke="#120e0b" stroke-width="12" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#f6c419"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#d42a3c"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="11" stroke-linecap="round"/></svg><b>Acme</b></div>
+            <div class="it"><span class="gl">Repos</span><div class="v"><span>acme-web</span><span>acme-api</span></div></div>
+            <div class="it"><span class="gl">Account</span><div class="v"><span>claude-acme</span></div></div>
+            <div class="it"><span class="gl">Notes</span><div class="v"><span class="pl">Deploys need sign-off.</span></div></div></div>
+          <div class="wall"></div>
+          <div class="col card"><div class="ch"><svg class="mark" aria-hidden="true" viewBox="10 50 236 200"><g class="bob" stroke="#120e0b" stroke-width="12" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#ef6aa6"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#f6c419"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="11" stroke-linecap="round"/></svg><b>Globex</b></div>
+            <div class="it"><span class="gl">Repos</span><div class="v"><span>globex-billing</span></div></div>
+            <div class="it"><span class="gl">Account</span><div class="v"><span>codex-globex</span></div></div>
+            <div class="it"><span class="gl">Notes</span><div class="v"><span class="pl">Invoices use the v2 API.</span></div></div></div>
+          <div class="wall"></div>
+          <div class="col card"><div class="ch"><svg class="mark" aria-hidden="true" viewBox="10 50 236 200"><g class="bob" stroke="#120e0b" stroke-width="12" stroke-linejoin="round"><circle cx="84" cy="98" r="30" fill="#fffdf6"/><rect x="142" y="68" width="60" height="60" rx="14" fill="#7fb3ff"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z" fill="#1d47c4"/></g><path d="M14 240 q29 -12 58 0 t58 0 t58 0 t58 0" fill="none" stroke="#7fb3ff" stroke-width="11" stroke-linecap="round"/></svg><b>Northwind</b></div>
+            <div class="it"><span class="gl">Repos</span><div class="v"><span>nw-reports</span></div></div>
+            <div class="it"><span class="gl">Account</span><div class="v"><span>claude-nw</span></div></div>
+            <div class="it"><span class="gl">Notes</span><div class="v"><span class="pl">Reports run at 6 AM.</span></div></div></div>
+        </div>
+        <div class="alog card">
+          <div data-step="1"><span class="lamp work"></span><span class="mono">@acme-builder</span><span>reads acme-api</span><span class="res ok">Allowed</span></div>
+          <div data-step="2"><span class="lamp need"></span><span class="mono">@acme-builder</span><span>reads Globex's notes</span><span class="res no">Refused: Acme only</span></div>
+          <div data-step="3"><span class="lamp work"></span><span class="mono">@globex-lead</span><span>reads globex-billing</span><span class="res ok">Allowed</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="trim" style="--below:#ffeeaa"></div>
+
+<section class="s s4" id="accounts">
+  <div class="wrap split flip">
+    <div class="txt">
+      <h2 class="letter">Bring your own AI accounts.</h2>
+      <p class="lead">Use the Claude Code and Codex accounts you already pay for, as many as you like. When one hits its limit, the work moves to the next account and carries on from where it stopped.</p>
+      <img class="fl boatpic" src="/assets/boat.webp" alt="" aria-hidden="true">
+    </div>
+    <div class="pf" style="--fc:var(--green)">
+      <div class="ap acc" id="acc" role="img" aria-label="Three accounts with usage bars. The first hits its 5 hour limit and the task continues on the second account">
+        <div class="card ac-card" id="c1">
+          <div class="ac-h"><span class="lamp work"></span><b>claude-1</b><span class="abadge">Claude Code</span><span class="tl t-work" data-st>Working</span></div>
+          <div class="wins">
+            <div class="win1"><div class="tp"><span>5 h</span><b class="mono">82%</b><em>resets in 1h 12m</em></div><div class="bar amber" style="--p:82"><i></i></div></div>
+            <div class="win1"><div class="tp"><span>Week</span><b class="mono">40%</b><em>resets Mon</em></div><div class="bar" style="--p:40"><i></i></div></div>
+          </div>
+          <div class="runl"><span class="lamp work"></span><span data-run>@acme-builder is working on ACM-12</span></div>
+        </div>
+        <div class="handoff" data-step="1"><span class="spin" style="display:none"></span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--l-work)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span>Hit the 5 h limit on claude-1. ACM-12 continued on claude-2, from its last checkpoint.</span></div>
+        <div class="card ac-card" id="c2">
+          <div class="ac-h"><span class="lamp idle"></span><b>claude-2</b><span class="abadge">Claude Code</span><span class="tl t-idle" data-st>Ready</span></div>
+          <div class="wins">
+            <div class="win1"><div class="tp"><span>5 h</span><b class="mono">6%</b><em>resets in 4h 50m</em></div><div class="bar" style="--p:6"><i></i></div></div>
+            <div class="win1"><div class="tp"><span>Week</span><b class="mono">22%</b><em>resets Mon</em></div><div class="bar" style="--p:22"><i></i></div></div>
+          </div>
+        </div>
+        <div class="card ac-card" id="c3">
+          <div class="ac-h"><span class="lamp work"></span><b>codex-1</b><span class="abadge">Codex</span><span class="tl t-work">Working</span></div>
+          <div class="wins">
+            <div class="win1"><div class="tp"><span>5 h</span><b class="mono">31%</b><em>resets in 2h 05m</em></div><div class="bar" style="--p:31"><i></i></div></div>
+            <div class="win1"><div class="tp"><span>Week</span><b class="mono">12%</b><em>resets Mon</em></div><div class="bar" style="--p:12"><i></i></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="trim" style="--below:#ffdfec"></div>
+
+<section class="s s5" id="sleep">
+  <img class="deco sun" src="/assets/h-sun-rays.webp" alt="" aria-hidden="true">
+  <div class="wrap">
+    <div class="split">
+      <div class="txt">
+        <h2 class="letter">It rows while you sleep.</h2>
+        <p class="lead">Turn on Auto-pilot and go to bed. It picks the next task, finishes it, and leaves you a summary in the morning. You choose what still needs your OK.</p>
+      </div>
+      <div class="pf" style="--fc:var(--cobalt)">
+        <div class="ap night" id="night" role="img" aria-label="Auto-pilot is switched on and a night timeline fills in: picked a task at 11:40 PM, checks green at 1:15 AM, shipped at 2:02 AM, and a summary at 7 AM">
+          <div class="nh"><span class="lamp work"></span><b>Auto-pilot</b><span class="tg on" id="nt-tg"></span><span class="sp"><span>Spent today</span><span class="bar green" id="nt-bar" style="--p:21"><i></i></span><span class="mono" id="nt-sp">$4.20 of $20</span></span></div>
+          <div class="path">
+            <div class="card nc" data-step="1"><span class="tm">11:40 PM</span><h5>Picked ACM-12</h5><p>The login bug, next in line by priority.</p></div>
+            <div class="card nc" data-step="2"><span class="tm">1:15 AM</span><h5>Checks are green</h5><p>42 tests passed on the task branch.</p></div>
+            <div class="card nc" data-step="3"><span class="tm">2:02 AM</span><h5>Shipped</h5><p>Merged into main, as you allowed.</p></div>
+            <div class="card nc" data-step="4"><span class="tm">7:00 AM</span><h5>Your summary</h5><p>What got done, what waits for you.</p></div>
+          </div>
+          <div class="card sum" data-step="5"><b>While you slept</b><div class="n3"><span><b>3</b>shipped</span><span><b>1</b>needs you</span><span><b>$4.20</b>spent</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="trim" style="--below:#d9f2e2"></div>
+
+<section class="s s6" id="control">
+  <img class="deco fl" src="/assets/h-haystack.webp" alt="" aria-hidden="true" style="width:120px;right:4%;bottom:30px">
+  <div class="wrap split flip">
+    <div class="txt">
+      <h2 class="letter">Your hand stays on the oar.</h2>
+      <p class="lead">Nothing is pushed without your OK, unless you allow it for that client. Spending limits are firm: when Auto-pilot's daily budget runs out, it stops and asks you.</p>
+    </div>
+    <div class="pf" style="--fc:var(--pink)">
+      <div class="ap ctl" id="ctl" role="img" aria-label="An approval card asks to push to main and is approved, a list of permissions, and a daily budget bar that fills until Auto-pilot stops and asks">
+        <div class="card" style="padding:6px 14px"><div class="dockwrap">
+          <div class="dock pend" data-step="0" data-until="3" style="border:0;background:none;padding:6px 0"><span class="lamp need"></span><span class="tt">Needs you</span><span class="ln">@acme-lead wants to push 3 commits to main</span><span class="abtn pri" id="appr">Approve</span><span class="abtn">Deny</span></div>
+          <div class="dock dfin" data-step="3" style="border:0;background:none;padding:6px 0"><span class="lamp done"></span><span class="tt">Approved</span><span class="ln">Pushed 3 commits to origin/main. Logged in Audit.</span></div>
+        </div></div>
+        <div class="card"><span class="gl">@acme-builder may</span>
+          <div class="perm" style="margin-top:6px">
+            <div>Edit files in its own copy of the code<em class="al">Allowed</em></div>
+            <div>Run commands in its container<em class="al">Allowed</em></div>
+            <div>Push to the remote<em>Ask me</em></div>
+            <div>Merge into main<em>Ask me</em></div>
+            <div>Read other clients' code<em>Never</em></div>
+          </div></div>
+        <div class="card bud"><div class="tp"><span>Auto-pilot day budget</span><b id="bud-n">$12.00</b><em>of $20</em></div><div class="bar" id="bud-bar" style="--p:60"><i></i></div>
+          <div class="dock" data-step="4" style="border-color:rgb(194 53 42/.34);padding:7px 10px"><span class="lamp pause"></span><span class="tt">Budget used up</span><span class="ln">Auto-pilot stopped and is asking you.</span><span class="abtn">Raise it</span></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="trim" style="--below:#ffeeaa"></div>
+
+<section class="s s7" id="breaks">
+  <div class="wrap">
+    <div class="intro">
+      <h2 class="letter">It doesn't capsize.</h2>
+      <p class="lead">Ran out of credits? Lost Wi-Fi? Laptop went to sleep? majhi picks up where it left off, or switches to another account. You always see what you've spent.</p>
+    </div>
+    <div class="rz" id="rz">
+      <div class="pf" style="--fc:var(--red)"><div class="ap rc" data-rc><h3>Out of credits</h3>
+        <div class="ev"><span class="lamp pause"></span>claude-1 hit its limit<span class="tm">2:14 AM</span></div>
+        <div class="ev" data-step="1"><span class="lamp work"></span>Switched to claude-2<span class="tm">2:14 AM</span></div>
+        <small data-step="1">The task carried on from its last checkpoint.</small></div></div>
+      <div class="pf" style="--fc:var(--yellow)"><div class="ap rc" data-rc><h3>Wi-Fi lost</h3>
+        <div class="ev"><span class="lamp pause"></span>Offline, 2 tasks paused<span class="tm">3:02 AM</span></div>
+        <div class="ev" data-step="1"><span class="lamp work"></span>Back online, resumed<span class="tm">3:05 AM</span></div>
+        <small data-step="1">Back after 3 minutes, no work lost.</small></div></div>
+      <div class="pf" style="--fc:var(--cobalt)"><div class="ap rc" data-rc><h3>Laptop went to sleep</h3>
+        <div class="ev"><span class="lamp pause"></span>Computer asleep<span class="tm">11:50 PM</span></div>
+        <div class="ev" data-step="1"><span class="lamp work"></span>Woke up, picked up<span class="tm">6:10 AM</span></div>
+        <small data-step="1">Each task resumed from its checkpoint.</small></div></div>
+    </div>
+  </div>
+</section>
+
+<div class="trim" style="--below:#ffdfec"></div>
+
+<section class="s s8" id="more">
+  <div class="wrap">
+    <h2 class="letter">What else it does.</h2>
+    <div class="more">
+      <div class="mc" style="--ic:var(--yellow)"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"/></svg><b>Chat with your agents</b><span>Talk to them like a teammate.</span></div>
+      <div class="mc" style="--ic:var(--sky)"><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg><b>Many projects at once</b><span>One task can change several repos.</span></div>
+      <div class="mc" style="--ic:#5fd491"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.8c0-1 1-1.6 2.5-1.6s2.5.7 2.5 1.7-1 1.4-2.5 1.7-2.5.8-2.5 1.8 1 1.7 2.5 1.7 2.5-.6 2.5-1.6"/></svg><b>Spending limits</b><span>Set a daily budget for Auto-pilot. When it runs out, it stops and asks you.</span></div>
+      <div class="mc" style="--ic:var(--pink)"><svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4Z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg><b>Skills</b><span>Teach your agents how you like things done.</span></div>
+      <div class="mc" style="--ic:var(--pink)"><svg viewBox="0 0 24 24"><path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0V8ZM12 17v4"/></svg><b>Connect your tools</b><span>GitHub, GitLab, Bitbucket and more.</span></div>
+      <div class="mc" style="--ic:#5fd491"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg><b>Memory</b><span>Agents remember what they learned on your project.</span></div>
+      <div class="mc" style="--ic:var(--sky)"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4l2-2ZM10 21h4"/></svg><b>Alerts</b><span>Get a ping only when something needs you.</span></div>
+      <div class="mc" style="--ic:var(--yellow)"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="2"/><path d="M2 20h20"/></svg><b>Runs on your computer</b><span>Nothing is pushed without your OK.</span></div>
+    </div>
+  </div>
+</section>
+
+<div class="trim" style="--below:#dce8ff"></div>
+
+<section class="s s9" id="works">
+  <div class="wrap split">
+    <div class="txt">
+      <h2 class="letter">Works with what you use.</h2>
+      <p class="lead">Claude Code and Codex do the work. GitHub, GitLab and Bitbucket take the result. MCP servers give your agents more tools.</p>
+    </div>
+    <div class="orbit" role="img" aria-label="majhi in the middle, with Claude Code, Codex, GitHub, GitLab, Bitbucket and MCP servers around it">
+      <div class="ring"></div><div class="ring r2"></div>
+      <div class="spinner" aria-hidden="true">
+        <span class="pill" style="--a:0deg;--r:var(--or)"><i><b style="--c:var(--red)"></b>Claude Code</i></span>
+        <span class="pill" style="--a:60deg;--r:var(--or)"><i><b style="--c:var(--cobalt)"></b>Codex</i></span>
+        <span class="pill" style="--a:120deg;--r:var(--or)"><i><b style="--c:var(--green)"></b>GitHub</i></span>
+        <span class="pill" style="--a:180deg;--r:var(--or)"><i><b style="--c:var(--pink)"></b>GitLab</i></span>
+        <span class="pill" style="--a:240deg;--r:var(--or)"><i><b style="--c:var(--yellow)"></b>Bitbucket</i></span>
+        <span class="pill" style="--a:300deg;--r:var(--or)"><i><b style="--c:var(--sky)"></b>MCP servers</i></span>
+      </div>
+      <div class="pf core" style="--fc:var(--yellow);padding:6px;border-radius:18px"><div class="ap" style="padding:14px;text-align:center"><span class="mark"><svg viewBox="28 54 200 172"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></span><b style="display:block;font-size:15px">majhi</b><span style="font-size:12px;color:var(--fg4)">on your computer</span></div></div>
+    </div>
+  </div>
+</section>
+
+<div class="trim" style="--below:#fff8e4"></div>
+
+<section class="s s10" id="faq">
+  <div class="wrap">
+    <h2 class="letter" style="text-align:center">Questions, answered.</h2>
+    <div class="faq">
+      <details><summary>Does my code leave my computer?</summary><div class="a">majhi runs on your computer, in Docker. Your agents send what they read to the AI company whose account you signed in with, the same as using Claude Code or Codex on their own. majhi does not send your code anywhere else.</div></details>
+      <details><summary>Which AI accounts work?</summary><div class="a">Claude Code and Codex. Sign in with the subscription you already have, or paste an API key. You can add as many accounts as you like, and each client can have its own.</div></details>
+      <details><summary>Do I need Docker?</summary><div class="a">Yes. majhi runs in Docker, and the install command checks that everything is ready and tells you what to fix. You also need git and Node 20 or newer. It runs on macOS, Linux and Windows through WSL2.</div></details>
+      <details><summary>Is it free? Is it open source?</summary><div class="a">The source is public on GitHub, under the PolyForm Noncommercial license. It is free for noncommercial use. Using it for commercial work needs a separate commercial license from the author.</div></details>
+      <details><summary>Can it push my code without me?</summary><div class="a">No. Pushing and merging wait for your click. The only exception is a client where you turned that permission on yourself.</div></details>
+      <details><summary>What happens when my credits run out?</summary><div class="a">majhi marks that account as at its limit. If the agent has a backup agent on another account, the work moves there and carries on from its last checkpoint. If not, the task pauses and starts again when the limit resets.</div></details>
+      <details><summary>Does it keep working when my laptop sleeps?</summary><div class="a">majhi runs on your computer, so it needs the computer to be on. If the laptop sleeps or the Wi-Fi drops, tasks pause and pick up from their last checkpoint when it wakes.</div></details>
+    </div>
   </div>
 </section>
 
 <div class="trim" style="--below:var(--red)"></div>
 
-<section class="board" id="install">
-  <h2 class="letter">Come aboard</h2>
-  <p class="lead">You need Docker and one command. A short trip down the river then sets up your folders, AI accounts, clients and git logins.</p>
-  <div class="plate"><code>git clone https://github.com/ashik112/majhi.git &amp;&amp; cd majhi &amp;&amp; make up</code><button class="sign" type="button" data-copy="git clone https://github.com/ashik112/majhi.git && cd majhi && make up">Copy</button></div>
-  <div class="os"><span>macOS</span><span>Linux</span><span>Windows (WSL2)</span><span>Claude Code</span><span>Codex</span></div>
+<section class="fin" id="install">
+  <img class="deco peac" src="/assets/h-peacock.webp" alt="" aria-hidden="true">
+  <div class="wrap">
+    <h2 class="letter">Ready to push off?</h2>
+    <p class="lead">You need Docker and one command. A short trip down the river then sets up your folders, AI accounts, clients and git logins.</p>
+    <div class="plate"><code>git clone https://github.com/ashik112/majhi.git &amp;&amp; cd majhi &amp;&amp; make up</code><button class="sign" type="button" data-copy="git clone https://github.com/ashik112/majhi.git && cd majhi && make up">Copy</button></div>
+    <div class="os"><span>macOS</span><span>Linux</span><span>Windows (WSL2)</span><span>Claude Code</span><span>Codex</span></div>
+    <p class="go"><a class="sign" href="https://github.com/ashik112/majhi">Get majhi</a></p>
+  </div>
 </section>
 
-<footer>
-  <span class="tile"><svg aria-hidden="true" viewBox="28 54 200 172" fill="#120e0b"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></span>
+</main>
+<footer class="v2 vfoot">
+  <div class="wrap"><span class="tile"><svg aria-hidden="true" viewBox="28 54 200 172" fill="#120e0b"><circle cx="84" cy="98" r="30"/><rect x="142" y="68" width="60" height="60" rx="14"/><path d="M28 140 H228 C224 192 182 222 128 222 C74 222 32 192 28 140 Z"/></svg></span>
   <span>majhi, মাঝি</span>
-  <div class="r"><a href="https://github.com/ashik112/majhi">Source</a><a href="https://github.com/ashik112">Commercial license</a></div>
+  <div class="r"><a href="https://github.com/ashik112/majhi">Source</a><a href="https://github.com/ashik112">Commercial license</a></div></div>
 </footer>
 
 <script>
@@ -350,5 +581,6 @@ for(const b of document.querySelectorAll("[data-copy]"))b.addEventListener("clic
   setTimeout(show, 4000);
 })();
 </script>
+<script src="/v2.js" defer></script>
 </body>
 </html>
