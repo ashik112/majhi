@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, sep } from "node:path";
 import {
   type AccountStatus,
+  type AccountView,
   type AgentFrontmatter,
   type Attachment,
   AUTO,
@@ -47,6 +48,7 @@ import type { AccountService } from "../accounts/service.ts";
 import { isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
 import { auditActor, auditDetail, logShip } from "../audit.ts";
+import { accountsOf } from "../autonomy/spend.ts";
 import { connectionScopes } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
 import { runConnections } from "../connections/access.ts";
@@ -101,7 +103,7 @@ import {
 } from "../uploads/attach.ts";
 import type { UploadStore } from "../uploads/store.ts";
 import type { UsageRepo } from "../usage/repo.ts";
-import { pickDefaultAgent } from "./agents.ts";
+import { pickDefaultAgent, roleIn } from "./agents.ts";
 import {
   branchName,
   freeBranch,
@@ -469,7 +471,8 @@ export class TaskService {
     const asked = this.askedTeam({ input, parsed, agents, org });
     const views = asked === undefined ? await this.deps.accounts.list() : [];
     const accountStatus = new Map(views.map((v) => [v.id, v.status]));
-    const agent = asked?.[0] ?? pickDefaultAgent({ agents, org, boss: sections.boss, accountStatus });
+    const held = asked === undefined ? await this.heldAccounts(views) : undefined;
+    const agent = asked?.[0] ?? pickDefaultAgent({ agents, org, boss: sections.boss, accountStatus, held });
     if (agent === undefined && input.start) {
       throw new UserError(
         org === undefined
@@ -1294,24 +1297,40 @@ export class TaskService {
     return this.afterProcessesOf(id, held, await this.teamChanged(id));
   }
 
-  /** Puts another agent in an agent's place in the team. The old session closes. */
+  /**
+   * Puts another agent in an agent's place in the team. The old session closes, and what it had
+   * pending (the brief, queued messages, a cut turn) goes to the replacement, which starts on it.
+   */
   async swapInTeam(id: string, agent: string, replacement: string): Promise<Task> {
     const task = this.get(id);
     if (!task.team.includes(agent)) throw new UserError(`@${agent} is not on ${id}.`, 404);
     if (task.team.includes(replacement)) throw new UserError(`@${replacement} is already on ${id}.`, 409);
     const fm = await this.checkMember(task, replacement);
-    await this.deps.runs.remove(id, agent);
+    const pending = await this.deps.runs.remove(id, agent);
     const held = await this.stopProcessesOf(id, agent);
     const at = this.now().toISOString();
-    this.deps.store.tasks.setTeam(
-      id,
-      task.team.map((a) => (a === agent ? replacement : a)),
-      at,
-    );
+    const team = task.team.map((a) => (a === agent ? replacement : a));
+    this.deps.store.tasks.setTeam(id, team, at);
     const { [agent]: _gone, ...overrides } = task.overrides;
     this.deps.store.tasks.setOverrides(id, overrides, at);
-    this.note(id, `@${replacement} (${fm.role}) took @${agent}'s place.`);
-    return this.afterProcessesOf(id, held, await this.teamChanged(id));
+    // TASK.md names the replacement before its session starts.
+    const changed = await this.teamChanged(id);
+    const role = roleIn({ mode: task.mode, team }, replacement, fm.role);
+    // A paused task stays paused: only a running one wakes the replacement.
+    const woken =
+      task.status === "running" &&
+      this.deps.runs.handOn(
+        id,
+        agent,
+        replacement,
+        pending,
+        `@${agent} left ${id} in the middle of its work and you took its place. Read TASK.md and the room, then carry on with it.`,
+      );
+    this.note(
+      id,
+      `@${replacement} (${role}) took @${agent}'s place.${woken ? ` It carries on with what @${agent} had pending.` : ""}`,
+    );
+    return this.afterProcessesOf(id, held, changed);
   }
 
   /**
@@ -1533,6 +1552,18 @@ export class TaskService {
       this.note(task.id, `@${input.agent} in this task: ${parts.join(", ")}.${when}`);
     }
     return this.teamChanged(task.id);
+  }
+
+  /** Accounts autonomous mode's floors keep new work off, as the digest shows them held. */
+  private async heldAccounts(views: readonly AccountView[]): Promise<Set<string>> {
+    const floors = await this.deps.config
+      .settings()
+      .then((s) => s.autonomy.floors)
+      .catch(() => undefined);
+    if (floors === undefined) return new Set();
+    return new Set(
+      accountsOf(views, floors, this.now()).flatMap((a) => (a.blocked === undefined ? [] : [a.id])),
+    );
   }
 
   private async checkMember(task: Task, agent: string): Promise<AgentFrontmatter> {
@@ -3659,7 +3690,7 @@ function briefTeam(task: Task, agents: readonly AgentFrontmatter[]): BriefAgent[
     return [
       {
         id: fm.id,
-        role: fm.role,
+        role: roleIn(task, fm.id, fm.role),
         model: o?.model ?? fm.model,
         effort: o?.effort ?? fm.effort,
         perms: fm.perms,

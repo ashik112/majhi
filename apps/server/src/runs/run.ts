@@ -65,6 +65,8 @@ export class AgentRun {
   runId: number | undefined;
   mapper: ItemMapper | undefined;
   queue: QueueEntry[] = [];
+  /** The prompt the loop took off the queue and is sending, until its turn ends. A swap hands it on. */
+  sending: QueueEntry | undefined;
   /** Ended background processes of this agent not yet told, for the queued `processes` entry. */
   processEnds: ProcessInfo[] = [];
   /** Notes from majhi that ride with the next prompt and start no turn of their own. */

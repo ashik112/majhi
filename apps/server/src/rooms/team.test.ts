@@ -330,6 +330,56 @@ describe("team editing", () => {
     expect(cleared.body.overrides).toEqual({});
   });
 
+  it("hands a just-started lead's brief to the agent swapped into its place, which starts on it as the lead", async () => {
+    const { h, prompts } = await teamWorld({
+      // The lead is still on its brief when it is swapped out: its turn ends only with the cancel.
+      "acme-lead": [
+        async (turn) => {
+          await turn.untilCancelled();
+          return "never seen";
+        },
+      ],
+      "acme-builder": [say("Read the brief and did the work.")],
+    });
+    await h.cmd("tasks.create", {
+      text: "add a health endpoint to api",
+      repos: [{ project: "acme-api" }],
+      team: ["acme-lead"],
+      start: true,
+    });
+    await until(() => (prompts["acme-lead"]?.length ?? 0) === 1, "lead's first turn");
+    const swapped = await h.cmd("team.swap", { task: "ACM-1", agent: "acme-lead", with: "acme-builder" });
+    expect(swapped.status).toBe(200);
+    expect(swapped.body.team).toEqual(["acme-builder"]);
+
+    // The replacement gets the brief the lead was working on, without anyone telling it.
+    await until(() => (prompts["acme-builder"]?.length ?? 0) === 1, "replacement's turn");
+    expect(prompts["acme-builder"]?.[0]).toMatch(/Read TASK.md/);
+    expect(await systemTexts("ACM-1")).toContain(
+      "@acme-builder (Lead) took @acme-lead's place. It carries on with what @acme-lead had pending.",
+    );
+    const md = await readFile(join(w.taskDir("ACM-1"), "TASK.md"), "utf8");
+    expect(md).toContain("- @acme-builder (Lead)");
+    await until(async () => (await status("ACM-1")) === "review", "review");
+    expect(prompts["acme-lead"]).toHaveLength(1);
+  });
+
+  it("wakes nobody when the swapped agent had nothing pending", async () => {
+    const { h, prompts } = await teamWorld({});
+    await h.cmd("tasks.create", {
+      text: "add a health endpoint to api",
+      repos: [{ project: "acme-api" }],
+      team: ["acme-lead", "acme-builder"],
+      start: true,
+    });
+    await until(async () => (await status("ACM-1")) === "review", "review");
+    const swapped = await h.cmd("team.swap", { task: "ACM-1", agent: "acme-builder", with: "acme-reviewer" });
+    expect(swapped.body.team).toEqual(["acme-lead", "acme-reviewer"]);
+    await settled("ACM-1", ["acme-lead", "acme-reviewer"]);
+    expect(prompts["acme-reviewer"]).toBeUndefined();
+    expect(await systemTexts("ACM-1")).toContain("@acme-reviewer (Reviewer) took @acme-builder's place.");
+  });
+
   it("adds and removes with tasks.addAgent and tasks.removeAgent, never removing a working agent", async () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((r) => {
