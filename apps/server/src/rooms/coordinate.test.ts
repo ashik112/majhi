@@ -9,6 +9,7 @@ import {
   planTurn,
   statusOnly,
   type TurnEnd,
+  unreviewed,
   verdictOf,
   waitsOnly,
 } from "./coordinate.ts";
@@ -238,6 +239,16 @@ describe("waitsOnly", () => {
     expect(waitsOnly("Standing by. @acme-reviewer the branch is ready for review.")).toBe(false);
     expect(waitsOnly("> Waiting for you\nFixed the import.")).toBe(false);
     expect(waitsOnly("Set `waiting: true` in the config.")).toBe(false);
+  });
+});
+
+describe("unreviewed", () => {
+  it("holds only when the worktrees changed since the last review, and not when either state is unknown", () => {
+    expect(unreviewed({ fingerprint: "b", reviewedFingerprint: "a" })).toBe(true);
+    expect(unreviewed({ fingerprint: "a", reviewedFingerprint: "a" })).toBe(false);
+    // A room state from before reviews were recorded, or worktrees git could not read.
+    expect(unreviewed({ fingerprint: "b" })).toBe(false);
+    expect(unreviewed({ reviewedFingerprint: "a" })).toBe(false);
   });
 });
 

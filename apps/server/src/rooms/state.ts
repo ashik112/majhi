@@ -13,6 +13,11 @@ export const RoomStateSchema = z.object({
   agentTurns: z.number().int().nonnegative().default(0),
   /** The worktrees' state after the last turn (HEADs and uncommitted changes), to see progress. */
   fingerprint: z.string().optional(),
+  /**
+   * The worktrees' state after the last turn of the lead or a reviewer: a later change is work
+   * nobody has reviewed yet.
+   */
+  reviewedFingerprint: z.string().optional(),
   /** Pipeline: the index of the stage that runs now, in `pipelineStages` order. */
   stage: z.number().int().nonnegative().optional(),
   /** Pipeline: agents of the current stage that have not finished their turn yet. */

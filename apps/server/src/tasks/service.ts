@@ -86,7 +86,7 @@ import { endItemId, supersededBy } from "../processes/notices.ts";
 import type { ProjectInfo, ProjectService } from "../projects/service.ts";
 import { type FileHit, FileIndex } from "../room/files.ts";
 import type { RoomService } from "../room/service.ts";
-import { firstTurn, type Member } from "../rooms/coordinate.ts";
+import { firstTurn, type Member, unreviewed } from "../rooms/coordinate.ts";
 import { chooseTeam, teamOptions, teamQuestion } from "../rooms/teams.ts";
 import { attributionOf } from "../runs/attribution.ts";
 import { commitAll, commitBy, DEFAULT_IDENTITY } from "../runs/checkpoint.ts";
@@ -275,6 +275,8 @@ export class TaskService {
   private readonly now: () => Date;
   /** `wait` processes the room was told the task waits for, so it is said once. */
   private readonly waitNoted = new Set<string>();
+  /** Worktree states the lead was woken to review, so a lead that cannot run is not woken again. */
+  private readonly reviewWoken = new Set<string>();
   /** Tasks inside `start` (worktrees, memory) that have no run yet, and the ones the owner stopped there. */
   private readonly starting = new Set<string>();
   private readonly startStopped = new Set<string>();
@@ -3109,6 +3111,7 @@ export class TaskService {
       }
       return;
     }
+    if (this.leadReviewDue(task)) return;
     const moved = await this.lifecycle.apply(
       id,
       { type: "agentsIdle" },
@@ -3124,6 +3127,37 @@ export class TaskService {
     await this.deps
       .onReview?.(id)
       .catch((err: unknown) => this.warn(id, `Could not ship: ${errorMessage(err)}`));
+  }
+
+  /**
+   * Lead mode: the worktrees changed since the last turn of the lead or a reviewer, so a teammate's
+   * work waits for review. Wakes the lead instead of sending the task to review, once per worktree
+   * state: the lead's next turn marks the change seen, and a lead that cannot run is not woken again.
+   */
+  private leadReviewDue(task: Task): boolean {
+    const lead = task.team[0];
+    if (task.mode !== "lead" || lead === undefined || task.team.length < 2) return false;
+    // A question to the owner waits: the owner has the next move, and the answer starts the room again.
+    if (this.deps.store.room.pendingOfType(task.id, "owner-question").length > 0) return false;
+    const state = this.deps.store.tasks.roomState(task.id);
+    if (!unreviewed(state)) return false;
+    const key = `${task.id} ${state.fingerprint}`;
+    if (this.reviewWoken.has(key)) return false;
+    this.reviewWoken.add(key);
+    this.note(
+      task.id,
+      `Nobody is working on ${task.id}, but a teammate changed the worktrees and nobody has reviewed it. Woke @${lead} to review that work before the task goes to review.`,
+    );
+    this.deps.runs.notify(
+      task.id,
+      lead,
+      [
+        `A teammate changed the worktrees since your last turn (commits or edits) and nobody is working on ${task.id} now.`,
+        'Review that work against your plan and the teammate\'s report in the room. Hand on what is left (the majhi-room mention tool, or "@name: please ..."), or finish it yourself.',
+        "When the task is done, end your turn without handing on: it then goes to review.",
+      ].join("\n"),
+    );
+    return true;
   }
 
   /**

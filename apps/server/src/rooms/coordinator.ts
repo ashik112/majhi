@@ -28,6 +28,7 @@ import {
   planTurn,
   routesMentions,
   statusOnly,
+  unreviewed,
   type Verdict,
   verdictOf,
   waitsOnly,
@@ -145,13 +146,34 @@ export class RoomCoordinator {
       acted ? "true" : "false",
       acted ? "the woken agent acted" : "the woken agent only reported status",
     );
-    const state = changed ? { ...before, agentTurns: 0, fingerprint, nudged: false } : before;
+    const lead = task.team[0];
+    // The lead or a reviewer has seen the worktrees as they are now: only later changes wait for review.
+    const seen =
+      (turn.agent === lead || role === "Reviewer") && fingerprint !== undefined
+        ? { reviewedFingerprint: fingerprint }
+        : {};
+    const state = {
+      ...(changed ? { ...before, agentTurns: 0, fingerprint, nudged: false } : before),
+      ...seen,
+    };
     // The owner has yet to answer and this turn only waits: nobody else needs to wake for it.
     const waiting = !changed && this.ownerQuestionPending(task.id) && waitsOnly(text);
+    // Lead mode: a teammate that addresses the lead after the worktrees changed since the last
+    // review hands its work back, whatever its words. The lead reviews and integrates it.
+    const handsBack =
+      task.mode === "lead" &&
+      lead !== undefined &&
+      turn.agent !== lead &&
+      addresses(text, lead) &&
+      unreviewed({
+        fingerprint: fingerprint ?? before.fingerprint,
+        reviewedFingerprint: before.reviewedFingerprint,
+      });
     // A turn that changed nothing wakes only the teammates it asks to act. One that just joined
     // was asked for, so it wakes.
     const named = mentions.filter(
-      (m) => m !== OWNER_HANDLE && team.some((t) => t.id === m) && !joined.has(m),
+      (m) =>
+        m !== OWNER_HANDLE && team.some((t) => t.id === m) && !joined.has(m) && !(handsBack && m === lead),
     );
     const { quiet, told } =
       waiting || named.length === 0 || !routesMentions(task.mode, team, turn.agent)
