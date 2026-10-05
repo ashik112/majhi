@@ -314,10 +314,10 @@ export class TaskRepo {
           : this.q.listOpen.all();
     // `pos` orders a task's repos; sorting here saves SQLite a temp sort of every repo row on each call.
     const repos = this.q.repoSummaries.all().sort((a, b) => a.pos - b.pos);
-    const byTask = new Map<string, { project: string }[]>();
+    const byTask = new Map<string, { project: string; branch: string }[]>();
     for (const r of repos) {
       const list = byTask.get(r.task) ?? [];
-      list.push({ project: r.project });
+      list.push({ project: r.project, branch: r.branch });
       byTask.set(r.task, list);
     }
     const linkRows = this.allLinks();
@@ -350,6 +350,7 @@ export class TaskRepo {
           kind: TaskSchema.shape.kind.parse(row.kind),
           status: TaskSchema.shape.status.parse(row.status),
           team: TeamSchema.parse(JSON.parse(row.team)),
+          mode: CoordinationModeSchema.catch("lead").parse(row.mode),
           updatedAt: row.updatedAt,
           repos: byTask.get(row.id) ?? [],
           links: own.map(toLink),
@@ -892,6 +893,7 @@ function taskStatements(db: Db) {
       .select({
         task: taskRepos.task,
         project: taskRepos.project,
+        branch: taskRepos.branch,
         pos: taskRepos.pos,
       })
       .from(taskRepos)

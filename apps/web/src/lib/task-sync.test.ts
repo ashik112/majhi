@@ -8,6 +8,7 @@ const row = (id: string, updatedAt: string, status: TaskSummary["status"] = "run
   kind: "code",
   status,
   team: [],
+  mode: "lead",
   updatedAt,
   repos: [],
   working: [],
