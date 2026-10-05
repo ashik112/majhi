@@ -95,15 +95,17 @@ describe("runner mounts", () => {
     ]);
   });
 
-  it("runs as the owner, with no capabilities, on the runner network", () => {
+  it("starts every run through the network guard, which drops to the owner with no capabilities", () => {
     const args = dockerRunArgs(request(), cfg, "majhi-run-test");
     const pairs = (flag: string) => args.flatMap((a, i) => (args[i - 1] === flag ? [a] : []));
-    expect(pairs("--user")).toEqual(["501:20"]);
+    // Docker's own --user is never set: the guard needs root for iptables, then setpriv drops to 501:20.
+    expect(pairs("--user")).toEqual([]);
     expect(pairs("--cap-drop")).toEqual(["ALL"]);
+    expect(pairs("--cap-add")).toEqual(["NET_ADMIN", "SETUID", "SETGID", "SETPCAP"]);
     expect(pairs("--security-opt")).toEqual(["no-new-privileges"]);
     expect(pairs("--network")).toEqual(["majhi-runners"]);
     expect(pairs("--workdir")).toEqual([join(home, "Work", ".majhi", "ACM-1")]);
-    expect(args.slice(-2)).toEqual(["majhi-runner:dev", "claude-agent-acp"]);
+    expect(args.slice(-4)).toEqual(["majhi-runner:dev", "majhi-netguard", "501:20", "claude-agent-acp"]);
   });
 
   it("labels a run with its task and joins the task's networks, after the runner network", () => {
