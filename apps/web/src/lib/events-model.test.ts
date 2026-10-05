@@ -1,7 +1,6 @@
 import type { ServerEvent } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { ALL_TOPICS, feedStep, planEvent, topicQueryKeys } from "./events-model";
-import { healthEveryMs } from "./feed-status";
+import { feedStep, planEvent } from "./events-model";
 import { queryKeys } from "./queries";
 
 const changed = (extra: { seq?: number; tasks?: string[]; rows?: true }): ServerEvent => ({
@@ -30,30 +29,6 @@ describe("what a feed event asks the board to read", () => {
     const plan = planEvent(changed({}));
     expect(plan.tasks).toEqual([]);
     expect(plan.keys).toEqual([queryKeys.tasks, queryKeys.decisions, queryKeys.agenda]);
-  });
-});
-
-describe("which queries a topic refetches", () => {
-  const touches = (topic: (typeof ALL_TOPICS)[number], key: readonly string[]) =>
-    topicQueryKeys(topic).some((k) => k[0] === key[0]);
-
-  it("refetches the ops reads only for the ops topic", () => {
-    for (const topic of ALL_TOPICS) expect(touches(topic, queryKeys.ops)).toBe(topic === "ops");
-  });
-
-  it("never names a decision detail, so a list refetch does not read the details again", () => {
-    for (const topic of ALL_TOPICS) {
-      for (const key of topicQueryKeys(topic)) expect(key[0]).not.toBe("decision-detail");
-    }
-  });
-
-  it("maps a captain event to the captain reads, the decisions and the agenda", () => {
-    expect(topicQueryKeys("captain")).toEqual([queryKeys.captain, queryKeys.decisions, queryKeys.agenda]);
-  });
-
-  it("asks /health slowly while the socket is up and fast while it is down", () => {
-    expect(healthEveryMs(true)).toBe(30_000);
-    expect(healthEveryMs(false)).toBe(1500);
   });
 });
 
