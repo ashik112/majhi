@@ -9,7 +9,7 @@ import { pickValue, readInRoots } from "./clipboard-copy.ts";
 
 vi.setConfig({ testTimeout: 30_000 });
 
-const KEY = "sk-live-9f2c41d7a8b35e60";
+const KEY = "Zq-live-9f2c41d7a8b35e60";
 
 describe("pickValue", () => {
   const text = `# keys\nAPI_KEY="${KEY}"\nexport TOKEN=abc==  # rotate monthly\nname: ${KEY}\n${KEY}\n\n`;

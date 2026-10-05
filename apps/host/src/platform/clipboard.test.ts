@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { clipboardCopy, LINUX_CLIPBOARD, MAC_CLIPBOARD } from "./clipboard.ts";
 import { type FakeProgram, failed, fakeOs, ok } from "./fakeOs.ts";
 
-const KEY = "sk-live-9f2c41d7a8b35e60";
+const KEY = "Zq-live-9f2c41d7a8b35e60";
 
 function copier(programs: Record<string, FakeProgram>) {
   const os = fakeOs({ programs });
