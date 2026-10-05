@@ -110,6 +110,9 @@ export interface HandlerDeps {
   system?: SystemService;
 }
 
+/** How long a `tasks.create` request id is remembered. */
+const CREATE_DEDUPE_MS = 5 * 60_000;
+
 export function createHandlers({
   config,
   scanner,
@@ -139,6 +142,8 @@ export function createHandlers({
     },
   });
   const gitChecks = new CheckCache();
+  /** `tasks.create` calls by their request id, kept a few minutes: the same id returns the first task. */
+  const recentCreates = new Map<string, { at: number; made: ReturnType<typeof services.tasks.create> }>();
   const readSaved = async (host: string, account: string) =>
     (await hostLink.call("git.credential", { host, username: account }, GIT_TOKEN_TIMEOUT_MS)).secret;
   /** Host names of the remotes of an org's projects, with ~/.ssh/config aliases resolved. */
@@ -574,17 +579,30 @@ export function createHandlers({
       noteSecrets(services, task.id, captured.saved);
       return { task: task.id };
     },
-    "tasks.create": async (input, ctx) => {
-      // A secret in the task text must not reach TASK.md or the agent.
-      const captured = await services.secretService.capture(input.text);
-      const task = await services.tasks.create({
-        ...input,
-        text: captured.text,
-        from: ctx.meta.task,
-        byOwner: ctx.meta.actor.kind === "owner",
-      });
-      noteSecrets(services, task.id, captured.saved);
-      return task;
+    "tasks.create": ({ requestId, ...input }, ctx) => {
+      const now = Date.now();
+      for (const [key, seen] of recentCreates) if (now - seen.at > CREATE_DEDUPE_MS) recentCreates.delete(key);
+      const key = requestId === undefined ? undefined : `${ctx.meta.actor.kind}:${requestId}`;
+      const earlier = key === undefined ? undefined : recentCreates.get(key);
+      if (earlier !== undefined) return earlier.made;
+      const made = (async () => {
+        // A secret in the task text must not reach TASK.md or the agent.
+        const captured = await services.secretService.capture(input.text);
+        const task = await services.tasks.create({
+          ...input,
+          text: captured.text,
+          from: ctx.meta.task,
+          byOwner: ctx.meta.actor.kind === "owner",
+        });
+        noteSecrets(services, task.id, captured.saved);
+        return task;
+      })();
+      if (key !== undefined) {
+        recentCreates.set(key, { at: now, made });
+        // A failed create can be tried again with the same id.
+        made.catch(() => recentCreates.delete(key));
+      }
+      return made;
     },
     "tasks.report": async (input) => {
       const task = services.tasks.get(input.id);

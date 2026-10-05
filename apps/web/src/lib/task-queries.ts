@@ -165,7 +165,8 @@ export function useCreateTask() {
     mutationFn: (input) => cmd("tasks.create", input),
     onSuccess: (task) => {
       client.setQueryData([...queryKeys.tasks, "one", task.id], task);
-      return refreshTasks(client);
+      // Not returned: the caller closes the dialog and opens the room now, not after the list refetch.
+      void refreshTasks(client);
     },
   });
 }

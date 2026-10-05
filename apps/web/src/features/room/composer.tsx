@@ -104,6 +104,14 @@ export function Composer({
   const [dismissed, setDismissed] = useState<number | null>(null);
   const [active, setActive] = useState(0);
   const [focused, setFocused] = useState(false);
+  // A room that opens with nothing focused (from the new-task dialog, or a page load) gets the box.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const now = document.activeElement;
+      if (now === null || now === document.body) field.current?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
   useTypingSignal(taskId, focused && text.trim() !== "");
 
   const secretInText = useMemo(() => looksLikeSecret(text), [text]);

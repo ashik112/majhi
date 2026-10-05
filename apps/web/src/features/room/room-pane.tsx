@@ -1,8 +1,9 @@
 import type { RoomItem, Task } from "@majhi/shared";
 import { useIsMutating, useMutation } from "@tanstack/react-query";
-import { type KeyboardEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/components/ui/toast";
 import { type ApiRequestError, cmd } from "@/lib/api";
+import { holdStop, STOP_TURN_EVENT, takeWaitingStop } from "@/features/shell/shortcuts";
 import { Composer } from "./composer";
 import { isBusy, type RoomAction, type RoomState } from "./model";
 import type { OwnerContext } from "./owner-cards";
@@ -124,6 +125,26 @@ export function RoomPane({
       cancel.mutate();
     }
   }
+
+  // Esc with focus on the page body (after a room opens or a reload) reaches the room as this event.
+  // Before the turn has begun there is nothing to stop yet: the Esc waits a few seconds for it.
+  const stopOnEsc = useRef(() => {});
+  stopOnEsc.current = () => {
+    if (cancel.isPending || stopping) return;
+    if (busy) cancel.mutate();
+    else holdStop();
+  };
+  useEffect(() => {
+    const onStop = (event: Event) => {
+      if (event instanceof CustomEvent) event.detail.taken = true;
+      stopOnEsc.current();
+    };
+    window.addEventListener(STOP_TURN_EVENT, onStop);
+    return () => window.removeEventListener(STOP_TURN_EVENT, onStop);
+  }, []);
+  useEffect(() => {
+    if (busy && takeWaitingStop()) stopOnEsc.current();
+  }, [busy]);
 
   return (
     <section

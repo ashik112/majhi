@@ -95,6 +95,10 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
   const [parent, setParent] = useState<string[]>([]);
   const [failure, setFailure] = useState<string | undefined>();
   const seeded = useRef(false);
+  // One id per dialog session: the server returns the first task for a repeated id, so a double
+  // press makes one task. `sending` closes the gap before the next render shows the pending state.
+  const requestId = useRef(crypto.randomUUID());
+  const sending = useRef(false);
 
   // The org filter preselects its only project, once the projects have loaded.
   useEffect(() => {
@@ -138,10 +142,12 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
   const ready = canAdd(draft, attachments.uploading, create.isPending) && mixed === undefined;
 
   function submit(start: boolean) {
-    if (!ready) return;
+    if (!ready || sending.current) return;
+    sending.current = true;
     setFailure(undefined);
     create.mutate(
       {
+        requestId: requestId.current,
         text: typedText(draft),
         repos: chosen.map((project) => ({
           project,
@@ -167,7 +173,10 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
           onClose();
           void navigate({ to: "/t/$taskId", params: { taskId: task.id }, search: orgSearch(filterOrg) });
         },
-        onError: (error) => setFailure([error.message, ...error.details].join(". ")),
+        onError: (error) => {
+          sending.current = false;
+          setFailure([error.message, ...error.details].join(". "));
+        },
       },
     );
   }
@@ -477,6 +486,7 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
             size="xl"
             className="bg-field"
             disabled={!ready}
+            aria-busy={create.isPending}
             onClick={() => submit(false)}
           >
             Add to inbox
@@ -485,11 +495,12 @@ export function NewTaskDialog({ onClose }: { onClose: () => void }) {
             variant="primary"
             size="xl"
             disabled={!ready}
+            aria-busy={create.isPending}
             title={`Add and start (${MOD_KEY} Enter)`}
             aria-keyshortcuts="Meta+Enter Control+Enter"
             onClick={() => submit(true)}
           >
-            Add and start
+            {create.isPending ? "Adding..." : "Add and start"}
           </Button>
         </div>
       </div>

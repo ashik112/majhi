@@ -1,5 +1,15 @@
 # Progress
 
+## Esc anywhere in a room, one task per Cmd+Enter, Watch header spacing (built, not merged)
+
+Branch `fix/esc-focus-create-once`.
+
+- Esc stops the running or starting turn wherever focus is on a task page (body, a button, the room), unless a dialog, menu, popover, the captain drawer or another text field has it. It goes through the shortcut table (`stop` row) and reaches the room by a window event. Right after a room opens, the Esc waits up to 4 s for the turn to start. A room that opens with nothing focused now focuses the message box.
+- New task dialog: while a create is in flight further submits are ignored, both buttons are disabled and show busy ("Adding..."). The dialog sends a request id (one per dialog session); `tasks.create` returns the first task for a repeated id for 5 minutes. The dialog used to wait for the task list refetch before closing; it now closes and opens the room as soon as `tasks.create` returns.
+- Watch list at 1100 px: the grid gave the name column 49 px, so its header ran into WORKSPACE. Columns are now narrower and the name column has a floor of 88 px.
+- Verified in a browser on an isolated server: Esc at +0, +150, +300, +600 and +2000 ms after Cmd+Enter, with focus on the body and in the box, stops the run. After a server restart, three quick Cmd+Enter presses made one task and the dialog closed on return. Test: `apps/server/src/tasks/create-once.test.ts`.
+- Left: the first `tasks.create` with a repo after a server restart took about 30 s in the isolated server (the request itself, not the UI). The likely cause is a server or host-link call that waits for a timeout on a cold start. Not investigated here.
+
 ## UI sync: typed feed events, patched lists, cheaper decisions, windowed board (built, not merged)
 
 Branch `perf/ui-sync`. Measured on the audit's seeded rig (2,000 tasks, 200k room items, 50k events), one board tab at 1440x900, 10 fake-agent runs (about 49 turns/min), same machine, base 2c013560 plus the hot-paths merge against this branch. Renders counted with the React commit hook on an unminified build.
