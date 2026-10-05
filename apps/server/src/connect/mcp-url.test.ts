@@ -142,7 +142,7 @@ describe("probing an MCP server by address", () => {
     const t = service({});
     expect(await t.svc.probe({ url: "http://mcp.acme.test/mcp" })).toMatchObject({
       method: "unreachable",
-      failure: { reason: "unexpected", fix: expect.stringContaining("https") },
+      failure: { reason: "blocked-host", fix: expect.stringContaining("https") },
     });
     expect(await t.svc.probe({ url: "https://user:pass@mcp.acme.test/mcp" })).toMatchObject({
       method: "unreachable",

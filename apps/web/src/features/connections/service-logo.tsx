@@ -96,6 +96,10 @@ export function ServiceLogo({
 export function serviceOf(view: ConnectionView): string | undefined {
   const explicit = view.fields.service?.value;
   if (explicit) return explicit;
+  if (view.type === "cli") {
+    const tool = view.fields.tool?.value;
+    return tool === "vercel" ? "vercel-cli" : tool === "stripe" ? "stripe-cli" : tool;
+  }
   if (view.type === "git") return view.fields.provider?.value ?? "gitlab";
   const address = view.fields.url?.value;
   if (!address) return undefined;

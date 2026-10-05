@@ -6,6 +6,7 @@ import {
   type CommandMeta,
   type ConnectAccess,
   type ConnectionConfig,
+  type ConnectionFailure,
   type ConnectionTestResult,
   discordAddBotUrl,
   suggestConnectionId,
@@ -321,35 +322,63 @@ export class AppService {
   /** The Test of a Slack or Discord connection. */
   async test(connection: string, service: string): Promise<ConnectionTestResult> {
     const started = Date.now();
-    const result = (ok: boolean, detail: string): ConnectionTestResult => ({
+    const result = (
+      ok: boolean,
+      detail: string,
+      more: { failure?: ConnectionFailure; checked?: string[]; account?: string } = {},
+    ): ConnectionTestResult => ({
       ok,
       detail,
       warnings: [],
       at: new Date().toISOString(),
       durationMs: Date.now() - started,
+      ...more,
     });
     try {
       if (service === "slack") {
         const token = await this.deps.secretOf(connection, "SLACK_BOT_TOKEN");
-        if (token === undefined) return result(false, "The bot token is not saved. Set the app up again.");
+        if (token === undefined) {
+          return result(false, "The bot token is not saved. Set the app up again.", {
+            failure: { reason: "no-credential" },
+          });
+        }
         const who = await this.slack<{ team?: string; user?: string }>("auth.test", token);
+        // Slack answers 200 with `ok: false`: that field is the status.
         return who.ok
-          ? result(true, `Slack: ${who.team ?? "workspace"} as ${who.user ?? "the app"}.`)
-          : result(false, "Slack no longer accepts the bot token. Set the app up again.");
+          ? result(true, `Slack: ${who.team ?? "workspace"} as ${who.user ?? "the app"}.`, {
+              checked: ["Asked Slack which workspace the app is in (auth.test)"],
+              account: [who.team, who.user].filter((v): v is string => typeof v === "string").join(" / "),
+            })
+          : result(false, "Slack no longer accepts the bot token. Set the app up again.", {
+              failure: { reason: "rejected" },
+            });
       }
       if (service === "discord") {
         const token = await this.deps.secretOf(connection, "DISCORD_BOT_TOKEN");
-        if (token === undefined) return result(false, "The bot token is not saved. Set the app up again.");
+        if (token === undefined) {
+          return result(false, "The bot token is not saved. Set the app up again.", {
+            failure: { reason: "no-credential" },
+          });
+        }
         const me = await this.discordMe(token);
         return me === undefined
-          ? result(false, "Discord no longer accepts the bot token. Reset it and set the app up again.")
-          : result(true, `Discord: bot ${me.name}.`);
+          ? result(false, "Discord no longer accepts the bot token. Reset it and set the app up again.", {
+              failure: { reason: "rejected" },
+            })
+          : result(true, `Discord: bot ${me.name}.`, {
+              checked: ["Asked Discord who the bot is (users/@me)"],
+              account: me.name,
+            });
       }
     } catch (err) {
-      if (err instanceof ConnectError) return result(false, err.message);
+      if (err instanceof ConnectError) {
+        return result(false, err.message, {
+          failure: { reason: err.kind === "network" ? "unreachable" : "unexpected" },
+        });
+      }
       throw err;
     }
-    return result(false, "That service has no test.");
+    return result(false, "That service has no test.", { failure: { reason: "unexpected" } });
   }
 
   /** Asks Slack to end the app's bot token. Discord has no such call. */

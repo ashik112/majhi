@@ -158,7 +158,7 @@ const DEFS: Readonly<Record<string, Def>> = {
   google: {
     title: "Google app (Gmail, Calendar, Drive)",
     intro:
-      "Google gives majhi no app of its own, so you make one in your Google account, once for this workspace. About five minutes. The app stays yours: Google bills nothing and majhi never sees your password.",
+      "Google gives majhi no app of its own, so you make one in your Google account, once for this workspace, about ten minutes. One app covers Gmail, Calendar and Drive. The app stays yours: Google bills nothing and majhi never sees your password.",
     finishes: "consent",
     services: ["gmail", "google-calendar", "google-drive"],
     inputs: [

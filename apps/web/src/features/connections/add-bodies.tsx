@@ -19,6 +19,7 @@ import { SignIn } from "@/features/git-signin/sign-in";
 import { useConnectCatalog, useConnectCommand, useConnectStatus } from "@/lib/connect-queries";
 import { useConnectionCommand } from "@/lib/connection-queries";
 import { describeError } from "@/lib/errors";
+import { useGitLogins } from "@/lib/studio-queries";
 import { ConnectFlowCard, ScopeList } from "./connect-flow";
 import { NewConnection } from "./new-connection";
 import { defaultProducts, ProductPicker } from "./product-picker";
@@ -161,32 +162,45 @@ export function GitHostBody({
   onDone: (connection?: string) => void;
 }) {
   const kind = entry.gitKind ?? "github";
-  const [paste, setPaste] = useState(kind === "bitbucket");
+  const logins = useGitLogins();
+  // Git over SSH may already work on this Mac. Say so: the token adds pull requests and the API.
+  const ssh = (logins.data?.hosts ?? [])
+    .find((h) => h.host === DEFAULT_GIT_HOST[kind])
+    ?.logins.find((l) => l.via === "ssh");
+  // The Mac sign-in starts a real login on this computer, so it starts only when the owner asks.
+  const [mode, setMode] = useState<"choose" | "mac" | "token">(kind === "bitbucket" ? "token" : "choose");
   const name = orgs.find((o) => o.id === org)?.name ?? org;
   return (
     <div className="flex max-w-[660px] flex-col gap-4">
       {kind !== "bitbucket" && (
         <fieldset className="m-0 flex min-w-0 flex-wrap items-center gap-2 border-0 p-0">
           <legend className="sr-only">How to sign in</legend>
-          <Button variant={paste ? "ghost" : "secondary"} size="sm" onClick={() => setPaste(false)}>
+          <Button variant={mode === "mac" ? "secondary" : "ghost"} size="sm" onClick={() => setMode("mac")}>
             Sign in on this Mac
           </Button>
-          <Button variant={paste ? "secondary" : "ghost"} size="sm" onClick={() => setPaste(true)}>
+          <Button
+            variant={mode === "token" ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setMode("token")}
+          >
             Paste a token
           </Button>
           <span className="text-sm text-fg-faint">
-            {paste
+            {mode === "token"
               ? "Works for self-hosted servers too."
               : `Uses the ${kind === "github" ? "gh" : "glab"} sign-in on this Mac. ${kind === "github" ? "GitHub Enterprise" : "A self-managed GitLab"} takes a token.`}
           </span>
         </fieldset>
       )}
-      {kind === "bitbucket" && entry.note !== undefined && (
-        <p className="text-sm text-fg-muted text-pretty">{entry.note}</p>
+      {ssh !== undefined && (
+        <p className="rounded-lg border border-line bg-sunken px-3 py-2 text-sm text-fg-muted text-pretty">
+          git already works over SSH on this Mac as <span className="font-mono text-fg">{ssh.account}</span>.
+          Add {kind === "bitbucket" ? "the API token" : "a sign-in"} for pull requests and the API.
+        </p>
       )}
-      {paste ? (
+      {mode === "token" ? (
         <TokenForm org={org} git={{ kind }} onDone={onDone} />
-      ) : (
+      ) : mode === "choose" ? null : (
         <SignIn
           workspace={{ id: org, name }}
           kind={kind}
@@ -279,7 +293,7 @@ export function McpUrlBody({ org, onDone }: { org: string; onDone: (connection?:
               <p className="text-base text-fg-soft text-pretty">
                 {found.failure.fix ?? "Check the address."}
               </p>
-              {(found.failure.reason === "blocked-host" || found.failure.reason === "unexpected") && (
+              {found.failure.reason === "blocked-host" && (
                 <Switch
                   label="This server is on my own network"
                   checked={priv}

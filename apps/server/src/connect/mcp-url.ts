@@ -97,7 +97,7 @@ export class McpUrlService {
       url = mcpAddress(input.url, allowPrivate);
     } catch (err) {
       if (!(err instanceof UserError)) throw err;
-      return { method: "unreachable", url: input.url, failure: { reason: "unexpected", fix: err.message } };
+      return { method: "unreachable", url: input.url, failure: { reason: "blocked-host", fix: err.message } };
     }
     try {
       await assertHostAllowed(url.host, {

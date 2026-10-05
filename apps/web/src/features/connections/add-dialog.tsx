@@ -12,7 +12,7 @@ import { useConnections } from "@/lib/connection-queries";
 import { describeError } from "@/lib/errors";
 import { AppBackedBody, TokenAppBody } from "./add-app";
 import { CustomBody, GitHostBody, McpUrlBody, OneClickBody } from "./add-bodies";
-import { type AddCard, addCards, GROUPS, groupOfEntry, type MethodGroup, matchesCard } from "./catalog";
+import { type AddCard, addCards, GROUPS, groupOfEntry, type MethodGroup, matchesCard, TIME } from "./catalog";
 import { ScopePicker } from "./scope-picker";
 import { ServiceLogo, serviceOf } from "./service-logo";
 import { TokenForm } from "./token-form";
@@ -249,8 +249,10 @@ function Setup({
         <div className="min-w-0">
           <p className="text-base text-fg-muted text-pretty">{card.summary}</p>
           <p className="text-sm text-fg-faint">
-            {GROUPS.find((g) => g.id === (entry === undefined ? card.group : groupOfEntry(entry)))?.title} ·{" "}
-            {card.time}
+            {entry?.kind === "git-host"
+              ? ""
+              : `${GROUPS.find((g) => g.id === (entry === undefined ? card.group : groupOfEntry(entry)))?.title} · `}
+            {entry === undefined ? card.time : TIME[groupOfEntry(entry)]}
           </p>
         </div>
       </div>

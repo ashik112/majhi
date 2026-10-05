@@ -279,30 +279,33 @@ function Verified({
 function GitFix({ view, orgs }: { view: ConnectionView; orgs: readonly OrgView[] }) {
   const kind = (view.fields.provider?.value ?? "gitlab") as "github" | "gitlab" | "bitbucket";
   const host = view.fields.host?.value;
-  const [paste, setPaste] = useState(host !== undefined || kind === "bitbucket");
+  // The Mac sign-in starts a real login on this computer, so it starts only when the owner asks.
+  const [mode, setMode] = useState<"choose" | "mac" | "token">(
+    host !== undefined || kind === "bitbucket" ? "token" : "choose",
+  );
   const name = scopeName(view.org, orgs);
   return (
     <div className="flex min-w-0 flex-col gap-3 border-t border-line pt-3">
       <div className="flex items-center gap-2">
         <Button
           size="sm"
-          variant={paste ? "ghost" : "secondary"}
-          onClick={() => setPaste(false)}
+          variant={mode === "mac" ? "secondary" : "ghost"}
+          onClick={() => setMode("mac")}
           disabled={host !== undefined || kind === "bitbucket"}
         >
           Sign in on this Mac
         </Button>
-        <Button size="sm" variant={paste ? "secondary" : "ghost"} onClick={() => setPaste(true)}>
+        <Button size="sm" variant={mode === "token" ? "secondary" : "ghost"} onClick={() => setMode("token")}>
           Paste a token
         </Button>
       </div>
-      {paste ? (
+      {mode === "token" ? (
         <TokenForm
           org={view.org}
           git={{ kind, ...(host === undefined ? {} : { host }) }}
           onDone={() => undefined}
         />
-      ) : (
+      ) : mode === "choose" ? null : (
         <SignIn
           workspace={{ id: view.org, name }}
           kind={kind}
