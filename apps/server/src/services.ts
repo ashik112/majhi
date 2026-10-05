@@ -94,6 +94,7 @@ import type { Fetch } from "./gitConnect/http.ts";
 import { whoAmI } from "./gitConnect/oauth.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
 import { DEFAULT_HANDOFF_MEMORY, defaultHandoffCpus } from "./handoff/limits.ts";
+import { MergeGate } from "./handoff/merge-gate.ts";
 import { shipReadiness } from "./handoff/ready.ts";
 import type { HandoffService } from "./handoff/service.ts";
 import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
@@ -891,7 +892,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   let handoffService: HandoffService | undefined;
   // Bound below, once the captain's tables are read: the loop guard counts the captain's answers.
   let loopGuard: LoopGuard | undefined;
+  // The merge rule: every merge of a task branch asks this, read from the hand-off bound below.
+  const mergeGate = new MergeGate({
+    handoff: () => handoffService,
+    configured: (project) => {
+      const commands = cards.get(project)?.commands ?? {};
+      return [commands.test, commands.build, commands.lint].some((c) => c !== undefined && c.trim() !== "");
+    },
+  });
   const tasks = new TaskService({
+    mergeGate,
     protectedPaths: [env.secretsKeyFile],
     onCaptainAnswer: (task) => void loopGuard?.answered(task).catch(() => undefined),
     onOwnerResumedLimit: (task) => budgets.exempt(task),

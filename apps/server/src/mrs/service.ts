@@ -646,6 +646,7 @@ export class MrService {
       push,
       mr,
       done: local.done,
+      ...(local.checks === undefined ? {} : { checks: local.checks }),
     };
   }
 
@@ -751,6 +752,8 @@ export class MrService {
     createRemoteBranch?: boolean | undefined;
     /** The owner typed this protected repo's name to ship it alone. */
     confirmProtected?: string | undefined;
+    /** The owner merges past a failed check by sending the head of this merge. */
+    confirmChecks?: string | undefined;
     targets?: Readonly<Record<string, string>> | undefined;
     project?: string | undefined;
     done: boolean;
@@ -813,6 +816,7 @@ export class MrService {
         targets,
         project: input.project,
         confirmProtected: input.confirmProtected,
+        confirmChecks: input.confirmChecks,
         done: false,
         by: input.by,
         settle: false,

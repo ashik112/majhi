@@ -212,6 +212,7 @@ import {
   TaskRecordSchema,
   ThreadSchema,
 } from "./memory.ts";
+import { MergeChecksSchema } from "./merge-checks.ts";
 import {
   MarkMergedResultSchema,
   MergeMrsResultSchema,
@@ -503,6 +504,8 @@ export const ShipOptionsSchema = z.object({
   mr: ShipOptionSchema,
   /** Mark the task done. `unshipped` lists the repos whose commits would stay behind on their branch. */
   done: ShipOptionSchema.extend({ unshipped: z.array(UnshippedRepoSchema).optional() }),
+  /** The merge rule for the task's head now: a merge goes through only when this is `ok`. */
+  checks: MergeChecksSchema.optional(),
 });
 export type ShipOptions = z.infer<typeof ShipOptionsSchema>;
 const ById = z.object({ id: IdSchema });
@@ -1942,6 +1945,8 @@ export const commands = {
       createRemoteBranch: z.boolean().default(false),
       /** Owner only. A protected repo ships only alone (project set to it) with its name typed here. */
       confirmProtected: z.string().optional(),
+      /** Owner only. Merge past a failed check: the head this merge sends, as `tasks.shipOptions` says it. Never for the secret scan. */
+      confirmChecks: z.string().optional(),
       /** Default `merge`: fast-forward when it can, else a merge commit. */
       method: MergeMethodSchema.optional(),
       /** After a clean merge (and push), remove the worktree and delete the local branch majhi created. */
@@ -2383,6 +2388,8 @@ export const commands = {
       createRemoteBranch: z.boolean().optional(),
       /** For done: the owner confirmed closing with work not shipped. */
       unshipped: UnshippedChoiceSchema.optional(),
+      /** For merge and mergePush: the owner merges past a failed check by sending the head from the ship options. */
+      confirmChecks: z.string().optional(),
     }),
     output: z.object({
       item: RoomItemSchema,

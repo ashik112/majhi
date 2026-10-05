@@ -655,6 +655,10 @@ export function createHandlers({
       if (input.confirmProtected !== undefined && ctx.meta.actor.kind === "agent") {
         throw new UserError("Only the owner can ship a protected repo, from Ship in the task.", 409);
       }
+      // The captain and agents can never merge past the checks: only the owner's own call may.
+      if (input.confirmChecks !== undefined && ctx.meta.actor.kind !== "owner") {
+        throw new UserError("Only the owner can merge past a failed check.", 409);
+      }
       if ((pushLocalCommits || createRemoteBranch) && ctx.meta.actor.kind === "agent") {
         throw new UserError(
           "Only the owner can confirm pushing commits that are not the task's, or creating a branch on the remote.",
@@ -874,12 +878,16 @@ export function createHandlers({
     "room.secret": async (input) => ({
       item: await services.admin.answerSecret(input.task, input.item, input.value),
     }),
-    "room.cardAction": (input, ctx) =>
-      services.cardActions.act({
+    "room.cardAction": (input, ctx) => {
+      if (input.confirmChecks !== undefined && ctx.meta.actor.kind !== "owner") {
+        throw new UserError("Only the owner can merge past a failed check.", 409);
+      }
+      return services.cardActions.act({
         ...input,
         by: actorName(ctx.meta.actor),
         agent: ctx.meta.actor.kind === "agent",
-      }),
+      });
+    },
     "room.answerQuestion": (input, ctx) =>
       answerCard(services, ctx, input, () =>
         services.tasks.answerQuestion(input.task, input.item, input.choice),
