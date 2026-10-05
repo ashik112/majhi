@@ -371,7 +371,10 @@ export function serveAcp(o: ServeOptions): void {
           })
           .safeParse(raw);
         if (!parsed.success) return [];
-        const headers = Object.fromEntries(parsed.data.headers.map((h) => [h.name, h.value]));
+        // Like the real Claude CLI, which expands ${NAME} in MCP headers from its environment.
+        const expand = (v: string) =>
+          v.replace(/\$\{([A-Za-z0-9_]+)\}/g, (all, n: string) => process.env[n] ?? all);
+        const headers = Object.fromEntries(parsed.data.headers.map((h) => [h.name, expand(h.value)]));
         return [{ name: parsed.data.name, url: parsed.data.url, headers }];
       });
       const state: Session = {

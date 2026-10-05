@@ -115,6 +115,18 @@ export class TaskSizes {
     const row = this.db.prepare("SELECT * FROM autonomy_sizes WHERE task = ?").get(task.id) as
       | SizeRow
       | undefined;
+    return this.fromRow(task, row);
+  }
+
+  /** `known` for many tasks with one query. */
+  knownMany(tasks: readonly Task[]): Map<string, SizeOf | undefined> {
+    const rows = new Map(
+      (this.db.prepare("SELECT * FROM autonomy_sizes").all() as SizeRow[]).map((r) => [r.task, r]),
+    );
+    return new Map(tasks.map((t) => [t.id, this.fromRow(t, rows.get(t.id))]));
+  }
+
+  private fromRow(task: Task, row: SizeRow | undefined): SizeOf | undefined {
     if (row === undefined || row.key !== sizeKey(task)) return undefined;
     const size = row.size !== null && SIZES.includes(row.size) ? (row.size as TaskSize) : undefined;
     if (size === undefined && this.now().getTime() - Date.parse(row.at) > RETRY_UNKNOWN_MS) return undefined;

@@ -1,16 +1,17 @@
 import { randomUUID } from "node:crypto";
+import { lookup } from "node:dns/promises";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Command, dockerTty, localSpawner } from "@majhi/acp";
 import {
   BUILT_IN_CONNECT_APPS,
-  type CaptainChore,
   GLOBAL_CONNECTIONS,
   isOwnerChat,
   NotificationsSettingsSchema,
   PRIVATE,
   type ServiceEntry,
+  type TaskId,
   textValue,
   UPDATE_STATUS_FILE,
   UpdateStatusSchema,
@@ -21,7 +22,7 @@ import { startLogin } from "./accounts/login.ts";
 import { AccountService } from "./accounts/service.ts";
 import { AccountUsageReader, UsageSweeper } from "./accounts/usage.ts";
 import { AdminAccess } from "./admin/access.ts";
-import { isBossChat } from "./admin/boss.ts";
+import { findBossChat, isBossChat } from "./admin/boss.ts";
 import { AdminService } from "./admin/service.ts";
 import { AdminTokens } from "./admin/tokens.ts";
 import { AgendaRepo } from "./agenda/repo.ts";
@@ -34,21 +35,16 @@ import { watchIdOf } from "./automation/migrate.ts";
 import { ScheduleRepo } from "./automation/schedules.ts";
 import { AutonomyDriver } from "./autonomy/driver.ts";
 import { AutonomyService, zoneOr } from "./autonomy/service.ts";
-import { WakeGate } from "./autonomy/wake-gate.ts";
 import { Background } from "./background.ts";
 import { BackupService } from "./backup/service.ts";
 import { alertLine } from "./budgets/alert-line.ts";
 import { atLimit, liftLimits } from "./budgets/limit-action.ts";
 import { BudgetMonitor } from "./budgets/monitor.ts";
 import { BudgetAlertRepo } from "./budgets/repo.ts";
-import { CrmService } from "./business/crm.ts";
-import { DeadlinesService } from "./business/deadlines.ts";
-import { KbService } from "./business/kb.ts";
-import { VoiceService } from "./business/voice.ts";
 import { freshCaptainAfterUpdate } from "./captain/fresh-after-update.ts";
 import { Lanes } from "./captain/lanes.ts";
 import { authorityOf, workspaceIds } from "./captain/levels.ts";
-import { labelOwnWork } from "./captain/own-work-second.ts";
+import { LoopGuard } from "./captain/loop-guard.ts";
 import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
 import { CaptainTell } from "./captain/tell.ts";
@@ -70,6 +66,7 @@ import { sweepRunFiles } from "./connections/run-files.ts";
 import { ConnectionService, connectionDir } from "./connections/service.ts";
 import { ConnectionTester } from "./connections/tester.ts";
 import { DockerCli } from "./containers/docker.ts";
+import { TOOLS_TARGET } from "./containers/args.ts";
 import { ImageCheckFailed, runImageCheck } from "./containers/image-check.ts";
 import { type ContainerDocker, ContainerService } from "./containers/service.ts";
 import { AcpProvider } from "./decisions/acp.ts";
@@ -83,12 +80,7 @@ import { DecisionLog } from "./decisions/log.ts";
 import { rulesProvider } from "./decisions/rules.ts";
 import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
-import { classifyInjection } from "./decisions/uses/injection.ts";
 import { layaEvalRunner } from "./decisions/uses/weekly-eval.ts";
-import type { E2eService } from "./e2e/service.ts";
-import { createE2e } from "./e2e/wire.ts";
-import { economicsRunner } from "./economics/playbook.ts";
-import { EconomicsService } from "./economics/service.ts";
 import type { ServerEnv } from "./env.ts";
 import { errorMessage, UserError } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
@@ -96,23 +88,22 @@ import { HomeWatcher } from "./events/watcher.ts";
 import { FindingsRepo } from "./findings/repo.ts";
 import { FindingsService } from "./findings/service.ts";
 import { triageFinding } from "./findings/triage.ts";
+import { git } from "./git/git.ts";
 import { GitLoginService } from "./git/logins.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { whoAmI } from "./gitConnect/oauth.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
-import { feedsRunner } from "./growth/feeds.ts";
-import { keywordLines } from "./growth/gather.ts";
-import { OPPORTUNITIES_ID, opportunitiesHooks } from "./growth/opportunities.ts";
-import type { GrowthDeps } from "./growth/ports.ts";
-import { clientUpdate } from "./growth/update.ts";
+import { DEFAULT_HANDOFF_MEMORY, defaultHandoffCpus } from "./handoff/limits.ts";
+import { shipReadiness } from "./handoff/ready.ts";
 import type { HandoffService } from "./handoff/service.ts";
 import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
 import type { HostLink } from "./host/link.ts";
-import { busyReason } from "./machine/busy.ts";
-import { MachineSensor } from "./machine/sensor.ts";
 import { RecommendationRepo } from "./inbox/recommendations.ts";
 import { InboxService } from "./inbox/service.ts";
 import { InstallRequests } from "./installs/service.ts";
+import { busyReason } from "./machine/busy.ts";
+import { MemoryWatch } from "./machine/memwatch.ts";
+import { MachineSensor } from "./machine/sensor.ts";
 import { McpRegistry } from "./mcp-servers/registry.ts";
 import { McpService } from "./mcp-servers/service.ts";
 import { ChatMemory } from "./memory/chats.ts";
@@ -137,14 +128,13 @@ import { Notifier } from "./notify/service.ts";
 import { Unavailable } from "./ops/anything/checks.ts";
 import type { WatchEngine } from "./ops/anything/engine.ts";
 import { createWatchHost } from "./ops/anything/host.ts";
+import { incidentLines } from "./ops/digest-lines.ts";
 import type { ProbePorts } from "./ops/probes.ts";
 import { opsRunners } from "./ops/runner.ts";
-import { incidentLines } from "./ops/digest-lines.ts";
 import type { OpsWatch } from "./ops/watch.ts";
 import { createOps, type Ops } from "./ops/wire.ts";
 import { mrKindOf } from "./orgs/gitAccount.ts";
 import { OrgService } from "./orgs/service.ts";
-import { OutcomesRepo } from "./outcomes/repo.ts";
 import { OutcomesService } from "./outcomes/service.ts";
 import { Catalog } from "./playbooks/catalog.ts";
 import { parsePlan, planPrompt } from "./playbooks/custom.ts";
@@ -154,7 +144,6 @@ import { PlaybookRepo } from "./playbooks/repo.ts";
 import { RULES_RUNNERS, type RulesRunner } from "./playbooks/rules.ts";
 import { PlaybookService } from "./playbooks/service.ts";
 import { ProcessManager } from "./processes/manager.ts";
-import { CardRepo } from "./projectcard/repo.ts";
 import { suggestRepoAliases } from "./projectcard/scanner.ts";
 import type { ProjectCards } from "./projectcard/service.ts";
 import { createCards } from "./projectcard/wire.ts";
@@ -179,15 +168,15 @@ import { RepoScanner } from "./scan/scanner.ts";
 import { KeyExports } from "./secrets/backup.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
-import type { Net } from "./sensors/net.ts";
-import { sensorRunners } from "./sensors/runners.ts";
-import { createSensorPorts } from "./sensors/wire.ts";
 import { SkillsCli } from "./skills/cli.ts";
+import { ToolInstaller } from "./tools/installer.ts";
 import { skillGitEnv } from "./skills/git-env.ts";
 import { SkillRegistry } from "./skills/registry.ts";
 import { SkillService } from "./skills/service.ts";
 import { SkillStore } from "./skills/store.ts";
+import { logSqliteBaseline } from "./store/db.ts";
 import { DB_FILE_NAME, Store } from "./store/index.ts";
+import { pruneOld } from "./store/retention.ts";
 import { CardActions } from "./tasks/card-actions.ts";
 import { CleanupService } from "./tasks/cleanup.ts";
 import { TaskFolderSweep } from "./tasks/folder-sweep.ts";
@@ -196,9 +185,6 @@ import { PendingShips } from "./tasks/pending-ship.ts";
 import { TaskService } from "./tasks/service.ts";
 import { TerminalManager, type TerminalTimers } from "./terminal/manager.ts";
 import { openTaskTerminal } from "./terminal/task-terminal.ts";
-import { createAdapter } from "./trackers/index.ts";
-import { TrackerService } from "./trackers/service.ts";
-import type { TrackerAdapter, TrackerAdapterInit } from "./trackers/types.ts";
 import { UploadStore } from "./uploads/store.ts";
 import { readPrices } from "./usage/prices.ts";
 import { UsageRecorder } from "./usage/recorder.ts";
@@ -207,6 +193,8 @@ import { UsageService } from "./usage/service.ts";
 
 /** How often chats are checked for memory. */
 const CHAT_SWEEP_MS = 60_000;
+const RETENTION_SWEEP_MS = 24 * 60 * 60_000;
+const RETENTION_FIRST_MS = 10 * 60_000;
 /** How often paused budget runs are checked against the week. */
 const LIMIT_SWEEP_MS = 60_000;
 const AGENDA_SWEEP_MS = 60_000;
@@ -247,8 +235,6 @@ export interface ServiceOptions {
   idleWatchMs?: number;
   /** Replaces `fetch` for git sign-in and the git hosts' APIs, so tests never reach a real host. */
   gitFetch?: Fetch;
-  /** Replaces the sensors' network (advisories, end-of-life dates, releases, CI), so tests never reach a real host. */
-  sensorNet?: Net;
   /** Replaces the ops watch's network (addresses, certificates, names), so tests never reach a real host. */
   opsProbes?: Partial<ProbePorts>;
   /** Replaces `fetch` for the phone push, so tests never reach an ntfy server. */
@@ -259,10 +245,6 @@ export interface ServiceOptions {
   connectFetch?: Fetch;
   /** Replaces the service catalog, so tests connect to a fake server. */
   connectCatalog?: readonly ServiceEntry[];
-  /** Replaces `fetch` for Jira, ClickUp and GitHub Issues, so tests never reach a tracker. */
-  trackerFetch?: typeof fetch;
-  /** Replaces the tracker adapters, so tests can play a tracker without its API. */
-  trackerAdapter?: (init: TrackerAdapterInit) => TrackerAdapter;
   /** Replaces the `skills` program, so tests never run the real CLI or reach a git host. */
   skillsCommand?: Command;
   /** Replaces `fetch` for the skills.sh directory, so tests never reach it. */
@@ -272,13 +254,6 @@ export interface ServiceOptions {
 }
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
-export interface BusinessServices {
-  kb: KbService;
-  voice: VoiceService;
-  crm: CrmService;
-  deadlines: DeadlinesService;
-}
-
 export interface Services {
   config: ConfigService;
   runtime: AcpRuntime;
@@ -296,6 +271,8 @@ export interface Services {
   skills: SkillService;
   /** The skills store, for runs to copy from. */
   skillStore: SkillStore;
+  /** Command-line tools installed into a workspace's tools folder, checked against the vendor's checksum. */
+  tools: ToolInstaller;
   /** MCP servers: install as connections and the per-agent switches (5.2). */
   mcpServers: McpService;
   /** "@agent install this skill <link>" in a room (Phase 6): one approval card, then install and enable. */
@@ -344,7 +321,6 @@ export interface Services {
   machine: MachineSensor;
   mrPoller: MrPoller;
   /** Jira, ClickUp and GitHub Issues per org: pull into Up next, push, write MR links and status back (5.11). */
-  trackers: TrackerService;
   /** One notification for each thing that needs the owner: a desktop banner and a browser notice. */
   notifier: Notifier;
   /** Background processes agents start through majhi-processes (5.15). */
@@ -371,11 +347,6 @@ export interface Services {
   outcomes: OutcomesService;
   /** The checked hand-off: tests, build, lint and a review before "Ready to ship" (5.18). */
   handoff: HandoffService;
-  /** Client economics and the growth playbooks' views (5.18, step 11). */
-  economics: EconomicsService;
-  growth: GrowthDeps;
-  /** The knowledge base, voice, contacts and deadlines (5.19). */
-  business: BusinessServices;
   /** The owner's agenda and the morning brief (5.18). */
   agenda: AgendaService;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
@@ -386,8 +357,6 @@ export interface Services {
   bindCaptain(dispatch: Dispatch): void;
   /** Schedules and the action runner they share with watch triggers (PRV-63). */
   automation: Automation;
-  /** Background e2e after a merge into main (PRV-72). Without a host helper link there is none. */
-  e2e: E2eService | undefined;
   /** Project knowledge cards, refreshed when a base branch moves. */
   cards: ProjectCards;
   /** Facts, hybrid search and recall (5.6). */
@@ -460,6 +429,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     now: () => options.runClock?.() ?? new Date(),
   });
   const store = Store.open(env.majhiHome);
+  logSqliteBaseline(store.baseline);
   const memory = createMemory(env.majhiHome, options.embedder);
   const backup = new BackupService({
     majhiHome: env.majhiHome,
@@ -534,7 +504,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         // A run autonomous mode holds stays held when no budget does.
         limited: async (task, agent) => (await limitedRun(task, agent)) ?? autonomy.holdFor(task)?.why,
         pausedTasks: () =>
-          store.tasks.list(false).filter((t) => t.status === "paused" && t.pausedReason === "limit"),
+          store.tasks.getMany(store.tasks.idsWithStatus("paused")).filter((t) => t.pausedReason === "limit"),
         start: (id) => tasks.start(id, "majhi"),
       });
     },
@@ -553,6 +523,17 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     return account === undefined || limit === undefined ? undefined : { account, limit };
   };
   /** Whether a budget holds this agent's task: its org's budget, or its account's. */
+  /** Whether `candidate` can take work over now: it exists, its account is up and under its limits. */
+  const canTakeOver = async (task: string, candidate: string): Promise<boolean> => {
+    const target = await agentStore.get(candidate);
+    if (target === undefined || !target.ok) return false;
+    // The status folds in a sign-in, an unreachable account and a limit mark or a full window.
+    const view = (await accounts.list().catch(() => [])).find(
+      (v) => v.id === target.agent.frontmatter.account,
+    );
+    if (view === undefined || ["needs-login", "at-limit", "unreachable"].includes(view.status)) return false;
+    return (await budgetLimited(task, candidate)) === undefined;
+  };
   const budgetLimited = async (task: string, agent: string): Promise<string | undefined> => {
     const found = store.tasks.get(task);
     // The captain is how the owner raises a budget (SPEC 5.17): its chat is never held.
@@ -575,6 +556,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const usageRecorder = new UsageRecorder({
     repo: usageRepo,
     store,
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
     prices: () => readPrices(config.file),
     onRecorded: () => events.emit(["usage"]),
     afterRecord: async (turn) => {
@@ -701,11 +683,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   pruneContainers();
   const pruneSweep = setInterval(pruneContainers, PRUNE_SWEEP_MS);
   pruneSweep.unref();
+  // The captain is built after the runs; a finished turn reaches it through this.
+  const captainRef: { current: CaptainService | undefined } = { current: undefined };
   const runs = new RunManager({
     store,
     limited: limitedRun,
     // Bound below: autonomous mode is built after the task service.
     held: (task) => autonomy.held(task),
+    cores: () => machine.get()?.host?.cores,
     slotPolicy: { fair: () => autonomy.slotsFair(), owner: (task) => autonomy.ownerRuns(task) },
     onLoopEnd: (task) => autonomy.loopEnded(task),
     // Bound below: the captain's lanes are built after the task service.
@@ -725,7 +710,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     connectionFiles,
     skills: skillStore,
     ...(env.runner.mode === "container" ? { serena: { command: SERENA_COMMAND } } : {}),
-    onTasksChanged: () => events.emit(["tasks"]),
+    onTasksChanged: (task, rows) => events.emitTask(task, rows ? true : undefined),
     // Bound below: the task service and the resume coordinator are built after the run manager.
     onIdle: (task, refused) => {
       background.run(() => tasks.agentsIdle(task, refused));
@@ -752,15 +737,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       const stored = await agentStore.get(agent);
       const fallback = stored?.ok ? stored.agent.frontmatter.fallback : undefined;
       if (fallback === undefined || found.team.includes(fallback)) return undefined;
-      const target = await agentStore.get(fallback);
-      if (target === undefined || !target.ok) return undefined;
-      // The status folds in a sign-in, an unreachable account and a limit mark or a full window.
-      const view = (await accounts.list().catch(() => [])).find(
-        (v) => v.id === target.agent.frontmatter.account,
-      );
-      if (view === undefined || ["needs-login", "at-limit", "unreachable"].includes(view.status))
+      return (await canTakeOver(task, fallback)) ? fallback : undefined;
+    },
+    teammateFor: async (task, agent) => {
+      const found = store.tasks.get(task);
+      if (found === undefined || found.team[0] !== agent || !(await resilience.handoffOn(found)))
         return undefined;
-      return (await budgetLimited(task, fallback)) === undefined ? fallback : undefined;
+      for (const other of found.team) {
+        if (other !== agent && (await canTakeOver(task, other))) return other;
+      }
+      return undefined;
     },
     teamCanRun: async (task, agent) => {
       const team = store.tasks.get(task)?.team ?? [];
@@ -776,6 +762,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onResumed: (task) => background.run(() => tasks.resumedByRuns(task)),
     onTurnEnd: (turn) => {
       idleWatch.turnEnded(turn);
+      captainRef.current?.turnEnded(turn);
       return coordinator.turnEnded(turn);
     },
     onCheckpoint: (task) => background.run(() => tasks.restackOnto(task)),
@@ -900,17 +887,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     say: (id, level, text) => room.post(id, `${level}:${randomUUID()}`, { type: "system", level, text }),
   });
   let chatMemory: ChatMemory | undefined;
-  // Bound below: background e2e is built after the task service, which it creates tasks with.
-  let e2e: E2eService | undefined;
   // Bound below, after the services it reads: the checked hand-off (5.18).
   let handoffService: HandoffService | undefined;
+  // Bound below, once the captain's tables are read: the loop guard counts the captain's answers.
+  let loopGuard: LoopGuard | undefined;
   const tasks = new TaskService({
     protectedPaths: [env.secretsKeyFile],
+    onCaptainAnswer: (task) => void loopGuard?.answered(task).catch(() => undefined),
     onOwnerResumedLimit: (task) => budgets.exempt(task),
     // Bound below: autonomous mode is built after the task service.
     onOwnerResumed: (task) => autonomy.ownerResumed(task),
-    // The owner's answer to a prompt Laya was asked about labels that decision (Allow once: it was routine).
-    onOwnerPermission: (task, item) => labelOwnWork(decisions, task, item),
     store,
     config,
     projects,
@@ -946,7 +932,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     onMerged: (merge) => {
       cards.onMerged(merge.project);
-      return e2e?.onMerged(merge);
     },
     usage: usageRepo,
     flushUsage: () => usageRecorder.flush(),
@@ -992,7 +977,33 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           chat: isOwnerChat(task),
           ...(task.org === undefined ? {} : { org: task.org }),
           repos: task.repos,
+          status: task.status,
+          ...(() => {
+            const kids = store.tasks.openSubtasks(id);
+            return {
+              openSubtasks: kids.open,
+              ...(kids.newest === undefined ? {} : { newestSubtask: kids.newest }),
+            };
+          })(),
         };
+  };
+  /** The subjects of many tasks in three queries, for a list that names a task per row. Done and missing tasks are left out. */
+  const openSubjectsOf = (ids: readonly string[]): Map<string, Subject> => {
+    const out = new Map<string, Subject>();
+    for (const [id, task] of store.tasks.subjectsMany(ids)) {
+      if (task.status === "done") continue;
+      out.set(id, {
+        id,
+        title: task.title,
+        chat: isOwnerChat(task),
+        ...(task.org === undefined ? {} : { org: task.org }),
+        repos: task.repos,
+        status: task.status,
+        openSubtasks: task.open,
+        ...(task.newest === undefined ? {} : { newestSubtask: task.newest }),
+      });
+    }
+    return out;
   };
   const notifier = new Notifier({
     subject: subjectOf,
@@ -1081,20 +1092,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     hosts: createMrHosts(options.mrHosts),
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
-  e2e =
-    options.hostLink === undefined
-      ? undefined
-      : createE2e({
-          store,
-          config,
-          projects,
-          hostLink: options.hostLink,
-          room,
-          tasks,
-          uploads,
-          majhiHome: env.majhiHome,
-          log: (message) => console.error(message),
-        });
   const pendingShips = new PendingShips({ store, tasks, mrs, room, events, now: () => new Date() });
   const resumeLimited = async (org: string): Promise<string[]> => {
     const resumed: string[] = [];
@@ -1187,6 +1184,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const admin = new AdminService({ config, room, store, secrets, tasks });
   const scheduleRows = new ScheduleRepo(store.raw);
   const captainRepo = new CaptainRepo(store.raw);
+  loopGuard = new LoopGuard({
+    repo: captainRepo,
+    mark: async (id) => {
+      const task = store.tasks.get(id);
+      if (task === undefined || task.status === "done") return undefined;
+      const heads: string[] = [];
+      for (const r of task.repos) {
+        const tip = await git(r.source, ["rev-parse", "--verify", `refs/heads/${r.branch}`]).catch(() => "");
+        heads.push(`${r.project}@${tip.trim()}`);
+      }
+      return `${task.status}|${heads.join(",")}`;
+    },
+    pause: (id, text) => tasks.pauseForOwner(id, text),
+  });
   const cardActions = new CardActions({ tasks, mrs, room });
   const knownOrg = async (org: string) =>
     org === PRIVATE || (await config.sections()).orgs[org] !== undefined;
@@ -1215,11 +1226,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outbound,
     incidents: () => opsWatch?.unacked() ?? [],
     items: () => store.room.waitingDecisions(),
+    working: () => runs.workingTasks(),
+    changed: (task) => events.emitTask(task),
+    // The same live look the captain's ship chore takes: a card never offers a merge that fails.
+    shipBlock: async (task) => {
+      const check = await shipReadiness({ store, room, runs, mrs }, task);
+      return check.ready || check.unmergeable === undefined
+        ? undefined
+        : { why: check.why, empty: check.unmergeable === "empty" };
+    },
     subject: (id) => {
       const task = store.tasks.subjectInfo(id);
       return task === undefined || task.status === "done" ? undefined : subjectOf(id);
     },
-    caps: async () => (await captain.asks()).asks,
+    subjects: openSubjectsOf,
     budgets: () => autonomy.budgetAsks(),
     signedOut: async () =>
       (await accounts.list())
@@ -1254,7 +1274,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           mode: "queue",
           ...(lead === undefined ? {} : { agent: lead }),
         }),
-      answerCap: (org, chore, answer) => captain.answerCap(org, chore as CaptainChore, answer),
       answerBudget: (scope, answer) => autonomy.answerBudget(scope, answer),
       decideDraft: (id, decision) => outbound.decide(id, decision),
       decideBatch: (org, channel, decision) => outbound.decideBatch(org, channel, decision),
@@ -1280,17 +1299,45 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     // Bound below: autonomous mode measures the spend.
     rest: (org, account) => autonomy.laneRest(org, account),
   });
+  const machineDocker = dockerCli(env.runner.cliEnv);
+  const memoryWatch = new MemoryWatch();
+  /** A run container that sits at its memory limit is noted once on its task, so the captain or owner sees it. */
+  const noteHotMemory = async (): Promise<void> => {
+    const hot = memoryWatch.read(machine.get()?.containers ?? []);
+    if (hot.length === 0) return;
+    const rows = await machineDocker([
+      "ps",
+      "--filter",
+      "label=majhi.runner=1",
+      "--format",
+      '{{.Names}}\t{{.Label "majhi.task"}}',
+    ]);
+    for (const line of rows.split("\n")) {
+      const [name, task] = line.split("\t");
+      if (name === undefined || task === undefined || task === "" || !hot.includes(name)) continue;
+      if (store.tasks.get(task) === undefined) continue;
+      room.post(task as TaskId, `memory:${randomUUID()}`, {
+        type: "system",
+        level: "warn",
+        text: "An agent on this task is using almost all of its memory limit and may be slow or get stopped. Ask it to do less at once, or stop the task if it keeps stalling.",
+      });
+    }
+  };
   const machine = new MachineSensor({
     host: async () =>
       options.hostLink?.isConnected() === true
         ? await options.hostLink.call("machine.read", {}, 15_000)
         : undefined,
-    docker: dockerCli(env.runner.cliEnv),
-    onChange: () => autonomy.machineRead(),
+    docker: machineDocker,
+    onChange: () => {
+      autonomy.machineRead();
+      void noteHotMemory().catch(() => undefined);
+    },
   });
   const autonomy = new AutonomyService({
     machine: () => machine.get(),
     lanes,
+    processWaiting: (task) => processes.waiting(task).length > 0,
     typing: (task) => events.typing.holds(task),
     protectedProjects: async () =>
       new Set((await projects.infos()).filter((p) => p.protected).map((p) => p.id)),
@@ -1336,12 +1383,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       room,
       quiet: (task) => idleWatch.quiet(task),
       explained: (task) => autonomy.stallExplained(task),
-      pendingWork: (org) => autonomy.pendingWork(org, findingsStore?.openCount(org) ?? 0),
       findingLines: (org) => findingsStore?.digestLines(org) ?? [],
       incidentLines: (org) => incidentLines(opsWatch?.openIncidents() ?? [], org),
       projectLines: (org) => cards.digestLines(org),
-      // Laya reads what changed before a soft wake costs a captain turn; any doubt takes the turn.
-      wakeGate: new WakeGate(decisions),
       store,
       events,
       ...(options.runClock === undefined ? {} : { now: options.runClock }),
@@ -1388,31 +1432,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   findingsStore = findings;
   reportFinding = (input, actor) => findings.report(input, actor);
-  const businessChanged = () => events.emit(["business"]);
-  const orgExists = async (org: string) => org === PRIVATE || org in (await config.sections()).orgs;
-  const businessNow = options.runClock === undefined ? {} : { now: options.runClock };
-  const crm = new CrmService({ db: store.raw, orgExists, changed: businessChanged, ...businessNow });
-  const business: BusinessServices = {
-    kb: new KbService({
-      db: store.raw,
-      embed: (texts) => memory.embed(texts),
-      takeUpload: (id, dir) => uploads.take(id, dir),
-      filesDir: (entry) => join(env.majhiHome, "business", "kb", String(entry)),
-      orgExists,
-      changed: businessChanged,
-      ...businessNow,
-    }),
-    voice: new VoiceService({ db: store.raw, orgExists, changed: businessChanged, ...businessNow }),
-    crm,
-    deadlines: new DeadlinesService({
-      db: store.raw,
-      orgExists,
-      contactVisible: (id, actor) => crm.exists(id, actor),
-      findingExists: (id) => findings.exists(id),
-      changed: businessChanged,
-      ...businessNow,
-    }),
-  };
   const agendaOwner = { kind: "owner" } as const;
   const agenda = new AgendaService({
     repo: new AgendaRepo(store.raw),
@@ -1421,23 +1440,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return { at: a.summary_at, tz: a.tz };
     },
     decisions: (org) => inbox.list(org),
-    deadlines: (within) => business.deadlines.list({ withinDays: within, limit: 500 }, agendaOwner).deadlines,
     findings: () => findings.list({ limit: 500 }, agendaOwner).findings,
     briefHidden: (f) => ruleSwitches.briefHidden(f.org, f.playbook),
-    steps: () =>
-      crm
-        .nextSteps(
-          { until: new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10), limit: 50 },
-          agendaOwner,
-        )
-        .steps.map((s) => ({
-          id: s.contact.id,
-          name: s.contact.name,
-          ...(s.contact.org === undefined ? {} : { org: s.contact.org }),
-          nextStep: s.contact.nextStep,
-          due: s.due,
-          overdue: s.overdue,
-        })),
     goals: () => goals.list({}, agendaOwner),
     running: () =>
       store.tasks
@@ -1457,7 +1461,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ]);
     },
     overnight: (from, to) => autonomy.overnight(from, to),
-    voice: () => business.voice.get(undefined, agendaOwner).effective,
     write: async (prompt) =>
       (
         await housekeeper.ask({ id: "morning-brief" }, prompt, (reply) =>
@@ -1491,11 +1494,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         ? undefined
         : { env: shim.env, release: () => roomAccess.revoke([shim.entry]) };
     },
+    environment: () => `${env.commit}|${env.runner.image}`,
+    limits: async (project) => {
+      const c = (await config.settings()).containers;
+      return {
+        cpus: c.handoff_cpus ?? defaultHandoffCpus(),
+        memory: c.handoff_memory ?? DEFAULT_HANDOFF_MEMORY,
+        minutes: c.handoff_minutes?.[project],
+      };
+    },
     mergeDecides: async (org) => authorityOf((await config.settings()).autonomy, org).merge === "decide",
     autonomous: () => autonomy.mode() === "on",
     ruleOff: (org, rule) => ruleSwitches.off(org, rule),
     ceilingHeld: () => outcomesService?.ceilingHeld(),
-    changed: () => events.emit(["tasks"]),
+    changed: (task) => events.emitTask(task),
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
     ...(options.handoff === undefined ? {} : options.handoff),
   });
@@ -1508,6 +1520,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     events,
     autonomy,
     lanes,
+    ownerCards: async (org) => (await inbox.list(org)).length,
     threadState: () => {
       const waiting = store.room.tasksWaitingOnOwner();
       const pausedOrgs = new Set(
@@ -1521,6 +1534,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
             : "idle";
     },
     fresh: (chat, agent) => tasks.fresh(chat, agent),
+    relay: {
+      bossChat: async () => {
+        const boss = await lanes.boss();
+        const chat = boss === undefined ? undefined : findBossChat({ store, tasks }, boss);
+        return boss === undefined || chat === undefined ? undefined : { chat: chat.id, agent: boss };
+      },
+      post: (task, id, payload) => room.post(task as TaskId, id, payload),
+    },
     ports: captainWorld({
       machineBusy: () => busyReason(machine.get()?.host),
       store,
@@ -1562,64 +1583,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
-  // The sensors behind the Engineering playbooks: cheap code that reads checkouts and public advisories.
-  const sensors = createSensorPorts({
-    store,
-    projects,
-    cards: new CardRepo(store.raw),
-    tokens: gitTokens,
-    orgs: async () => (await config.sections()).orgs,
-    housekeeper,
-    injects: async (text) => (await classifyInjection(decisions, text, "release-notes")).flagged,
-    ...(options.sensorNet === undefined ? {} : { net: options.sensorNet }),
-    ...(options.runClock === undefined ? {} : { now: options.runClock }),
-    log: (message) => console.error(message),
-  });
-  // Client economics and the growth playbooks (captain v2 step 11): code, plus one small model call where noted.
-  const rateRepo = new OutcomesRepo(store.raw);
-  const orgLabel = async (org: string) =>
-    org === PRIVATE ? "Private" : ((await config.sections()).orgs[org]?.name ?? org);
-  const economics = new EconomicsService({
-    db: store.raw,
-    tz: async () => zoneOr((await config.settings()).autonomy.tz),
-    orgs: async () => workspaceIds((await config.sections()).orgs),
-    rates: () => rateRepo.rates(),
-    minutes: () => rateRepo.minutes(),
-    ...(options.runClock === undefined ? {} : { now: options.runClock }),
-  });
-  const growth: GrowthDeps = {
-    db: store.raw,
-    now: options.runClock ?? (() => new Date()),
-    findings,
-    ...business,
-    goals,
-    cards: new CardRepo(store.raw),
-    outbound,
-    cache: sensors.cache,
-    orgName: orgLabel,
-    write: async (task, prompt, parse) => {
-      try {
-        return (await housekeeper.ask(task, prompt, parse)).value;
-      } catch (err) {
-        if (err instanceof NoHousekeeper) return undefined;
-        throw err;
-      }
-    },
-  };
-  const opportunities = opportunitiesHooks(growth);
+  captainRef.current = captain;
+
   // The ops watch adds its runner below, once the connections it reads through exist.
   const rulesTable: Record<string, RulesRunner> = {
     ...RULES_RUNNERS,
-    ...sensorRunners(sensors),
     // The weekly check of Laya's decisions, and a few old findings read each run.
     "laya-eval": layaEvalRunner({ decisions, backlog: findings }),
-    economics: economicsRunner(economics, orgLabel),
-    "client-update": clientUpdate(growth),
-    feeds: feedsRunner({
-      net: sensors.net,
-      cache: sensors.cache,
-      keywords: async (org) => keywordLines(growth, org),
-    }),
   };
   const playbooks = new PlaybookService({
     catalog: playbookCatalog,
@@ -1648,8 +1618,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         throw err;
       }
     },
-    preflight: { [OPPORTUNITIES_ID]: (org) => opportunities.preflight(org) },
-    context: { [OPPORTUNITIES_ID]: (org) => opportunities.context(org) },
     repo: new PlaybookRepo(store.raw),
     captain,
     findings,
@@ -1701,6 +1669,21 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   void outcomes.sweep().catch(() => undefined);
   const outcomeSweep = setInterval(() => void outcomes.sweep().catch(() => undefined), 5 * 60_000);
   outcomeSweep.unref();
+  // Old rows of the growing tables go once a day, a small batch at a time. The first run waits, so a
+  // restart is not also a prune.
+  const pruneDb = () =>
+    background.run(async () => {
+      const done = await pruneOld(
+        store.raw,
+        options.runClock === undefined ? {} : { now: options.runClock() },
+      );
+      if (Object.keys(done.deleted).length > 0)
+        console.log(`retention pruned ${JSON.stringify(done.deleted)} in ${done.batches} batches`);
+    });
+  const retentionSweep = setInterval(pruneDb, RETENTION_SWEEP_MS);
+  retentionSweep.unref();
+  const retentionFirst = setTimeout(pruneDb, RETENTION_FIRST_MS);
+  retentionFirst.unref();
   // A backlog of waiting memories runs the memory chore of the workspace that reviews them.
   autonomy.useLaneGate(captain.laneGate);
   events.typing.onIdle((task) => captain.ownerIdle(task));
@@ -1722,13 +1705,21 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     probe: options.probe ?? probeFromSetting(env.netProbe),
     ...(env.netProbeMs === undefined ? {} : { probeMs: env.netProbeMs }),
     runners: runner.runner,
+    resumeReady: async () => {
+      if (busyReason(machine.get()?.host) !== undefined) return false;
+      return (await runs.capacity()).agents.free > 0;
+    },
     accountSignedIn: async (id) => signedIn((await accounts.health(id, true)).account.status),
     ...(options.runClock === undefined ? {} : { now: () => (options.runClock?.() ?? new Date()).getTime() }),
   });
   if (options.hostLink !== undefined) machine.start();
   options.hostLink?.onWake(() => background.run(() => resilience.wake()));
   background.run(
-    () => resilience.startup(),
+    async () => {
+      // Effects a crash left in the lifecycle outbox run first, so the reconcile sees their result.
+      await tasks.drainOutbox();
+      await resilience.startup();
+    },
     (err) => console.error(`Could not resume interrupted work: ${errorMessage(err)}`),
   );
   const secretService = new SecretService(secrets, config);
@@ -1736,6 +1727,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     store.tasks.renameOrg(id, newId);
     events.emit(["tasks"]);
   });
+  orgs.onGitChange = (org) => captain.gitChanged(org);
   const gitConnect = createGitConnect({
     config,
     secrets,
@@ -1884,6 +1876,65 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ? { browserCommand: (server: BrowserServer) => ({ command: server.command, args: [] }) }
       : {}),
   });
+  const tools = new ToolInstaller({
+    majhiHome: env.majhiHome,
+    fetch: (url, init) => fetch(url, init),
+    lookup: async (host) => (await lookup(host, { all: true })).map((a) => a.address),
+  });
+  /** Runs a read-only script in a throwaway runner with a workspace's connections. Watches and the captain's secret fetches use it. */
+  const runScript = async ({
+    org,
+    script,
+    connections: ids,
+    network,
+  }: {
+    org: string;
+    script: string;
+    connections: readonly string[];
+    network?: "on" | "off" | undefined;
+  }): Promise<string> => {
+    // The named connections of this workspace (or Global), as a run of an agent there would get them.
+    const sections = await config.sections();
+    const own = sections.orgs[org]?.connections ?? {};
+    const shared = sections.connections ?? {};
+    const held = ids.flatMap((id) =>
+      own[id] !== undefined
+        ? [{ id, org, connection: own[id] }]
+        : shared[id] !== undefined
+          ? [{ id, org: GLOBAL_CONNECTIONS, connection: shared[id] }]
+          : [],
+    );
+    const plan = await planConnections(held, "/tmp/majhi-script", {
+      secrets,
+      connectionDir: connectionFiles.connectionDir,
+      oauth: connectionFiles.oauth,
+      gitToken: connectionFiles.gitToken,
+    });
+    const vars: Record<string, string> = { ...plan.env };
+    // A signed-in connection's token for its own API, as <ID>_TOKEN.
+    for (const h of held) {
+      if (textValue(h.connection, "auth") !== "oauth") continue;
+      const bearer = await connectionFiles.oauth(h.id);
+      if ("token" in bearer) vars[`${h.id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_TOKEN`] = bearer.token;
+    }
+    try {
+      return await runImageCheck(
+        containerDocker,
+        { majhiHome: env.majhiHome, hostHome: env.hostHome, protectedPaths: [env.secretsKeyFile] },
+        {
+          // The workspace's checked programs (doctl, kubectl, whatever was installed) come first on PATH.
+          image: env.runner.image,
+          command: ["sh", "-c", `PATH="${TOOLS_TARGET}:$PATH"; export PATH\n${script}`],
+          env: vars,
+          toolsOrg: org,
+          offline: network === "off",
+        },
+        60_000,
+      );
+    } catch (err) {
+      throw err instanceof ImageCheckFailed ? new Unavailable(err.message) : err;
+    }
+  };
   const ops = createOps({
     db: store.raw,
     findings,
@@ -1922,42 +1973,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         throw err instanceof ImageCheckFailed ? new Unavailable(err.message) : err;
       }
     },
-    scriptRun: async ({ org, script, connections: ids }) => {
-      // The named connections of this workspace (or Global), as a run of an agent there would get them.
-      const sections = await config.sections();
-      const own = sections.orgs[org]?.connections ?? {};
-      const shared = sections.connections ?? {};
-      const held = ids.flatMap((id) =>
-        own[id] !== undefined
-          ? [{ id, org, connection: own[id] }]
-          : shared[id] !== undefined
-            ? [{ id, org: GLOBAL_CONNECTIONS, connection: shared[id] }]
-            : [],
-      );
-      const plan = await planConnections(held, "/tmp/majhi-script", {
-        secrets,
-        connectionDir: connectionFiles.connectionDir,
-        oauth: connectionFiles.oauth,
-        gitToken: connectionFiles.gitToken,
-      });
-      const vars: Record<string, string> = { ...plan.env };
-      // A signed-in connection's token for its own API, as <ID>_TOKEN.
-      for (const h of held) {
-        if (textValue(h.connection, "auth") !== "oauth") continue;
-        const bearer = await connectionFiles.oauth(h.id);
-        if ("token" in bearer) vars[`${h.id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_TOKEN`] = bearer.token;
-      }
-      try {
-        return await runImageCheck(
-          containerDocker,
-          { majhiHome: env.majhiHome, hostHome: env.hostHome, protectedPaths: [env.secretsKeyFile] },
-          { image: env.runner.image, command: ["sh", "-c", script], env: vars },
-          60_000,
-        );
-      } catch (err) {
-        throw err instanceof ImageCheckFailed ? new Unavailable(err.message) : err;
-      }
-    },
+    scriptRun: runScript,
     tester: connectionTests,
     orgs: async () => Object.entries((await config.sections()).orgs).map(([id, o]) => ({ id, name: o.name })),
     askModel: async (task, prompt, parse) => {
@@ -1983,6 +1999,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.opsProbes === undefined ? {} : { probes: options.opsProbes }),
     ...(options.ntfyFetch === undefined ? {} : { ntfyFetch: options.ntfyFetch }),
     ...(options.opsRetryMs === undefined ? {} : { retryMs: options.opsRetryMs }),
+  });
+  admin.useScript({
+    run: runScript,
+    holds: async (org, id) => {
+      const sections = await config.sections();
+      return sections.orgs[org]?.connections?.[id] !== undefined || sections.connections?.[id] !== undefined;
+    },
   });
   opsWatch = ops.watch;
   opsEngine = ops.engine;
@@ -2013,22 +2036,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return found?.status === "ok" ? found.agent.frontmatter.scope : undefined;
     },
   });
-  const trackers = new TrackerService({
-    store,
-    config,
-    secrets,
-    room,
-    events,
-    projects,
-    tasks,
-    decisions,
-    adapter: options.trackerAdapter ?? createAdapter,
-    ...(options.trackerFetch === undefined ? {} : { fetch: options.trackerFetch }),
-  });
   // A new majhi version brings new instructions and tools for the captain; a resumed session keeps the
   // old ones. So after an update each captain thread starts fresh (with its handoff note) once.
-  background.run(() =>
-    freshCaptainAfterUpdate({
+  background.run(async () => {
+    const refreshed = await freshCaptainAfterUpdate({
       commit: env.commit,
       file: join(env.majhiHome, "captain-version"),
       chats: () => autonomy.laneChats(),
@@ -2036,8 +2047,21 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         const agent = store.tasks.get(chat)?.team[0];
         if (agent !== undefined) await tasks.fresh(chat, agent);
       },
-    }),
-  );
+    });
+    // The same update may unblock waiting work: look at it now, not at the next hourly check.
+    if (refreshed.length > 0) {
+      const sections = await config.sections();
+      const orgs = [PRIVATE, ...Object.keys(sections.orgs)];
+      captain.afterUpdate(orgs);
+      // Each lane retries what a majhi problem stopped: a fixed tool only helps if someone tries again.
+      for (const org of orgs) {
+        autonomy.news(
+          `majhi was updated (${env.commit.slice(0, 8)}). Retry anything that failed because of a majhi problem, and go through what waits for the owner in this workspace: settle what a connection or a tool can settle, and say in one line why each of the rest needs the owner.`,
+          org,
+        );
+      }
+    }
+  });
   return {
     config,
     runtime,
@@ -2048,6 +2072,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     connect,
     skills: skills,
     skillStore,
+    tools,
     mcpServers,
     installRequests,
     connectionTests,
@@ -2076,7 +2101,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     machine,
     notifier,
     mrPoller: new MrPoller(() => mrs.poll(), options.mrPollMs),
-    trackers,
     processes,
     containers,
     autonomy,
@@ -2089,14 +2113,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outbound,
     outcomes,
     handoff,
-    economics,
-    growth,
-    business,
     agenda,
     captainTell: new CaptainTell({
       tasks,
       lanes,
       store,
+      keys: captainRepo,
+      lastTurn: (task, agent) => usageRepo.lastTurnId(task, agent),
       ...(options.runClock === undefined ? {} : { now: options.runClock }),
     }),
     lanes,
@@ -2104,7 +2127,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       captainDispatch = dispatch;
     },
     automation,
-    e2e,
     cards,
     memory,
     extraction,
@@ -2127,6 +2149,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ops.close();
       idleWatch.stop();
       clearInterval(outcomeSweep);
+      clearInterval(retentionSweep);
+      clearTimeout(retentionFirst);
       clearInterval(chatSweep);
       clearInterval(limitSweep);
       clearInterval(agendaSweep);
@@ -2135,11 +2159,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       backup.stop();
       notifier.close();
       automation.scheduler.stop();
-      e2e?.close();
       cards.close();
       layaDocker?.close();
       await runs.closeAll();
-      await trackers.stop();
       // Hooks already running (rewriting TASK.md at review, a restack) end before the stores close.
       // After the runs: a hook can wait on a lock a turn holds.
       await settled;

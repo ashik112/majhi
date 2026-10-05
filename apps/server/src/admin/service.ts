@@ -12,19 +12,20 @@ import {
   isDestructiveCommand,
   McpInstallResultSchema,
   PERMISSION_COMMANDS,
+  PRIVATE,
   type RoomItem,
+  type ShipFix,
+  scriptProblem,
   type TaskId,
 } from "@majhi/shared";
 import { z } from "zod";
 import { auditDetail } from "../audit.ts";
 import type { AutonomyVerdict } from "../autonomy/policy.ts";
-import { BUSINESS_TOOL_COMMANDS } from "../business/handlers.ts";
 import { authorityOf, keptRowOf } from "../captain/levels.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
 import type { ChangeRecord, ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import { FINDINGS_TOOL_COMMANDS } from "../findings/handlers.ts";
-import { GROWTH_TOOL_COMMANDS } from "../growth/handlers.ts";
 import { HANDOFF_TOOL_COMMANDS } from "../handoff/handlers.ts";
 import { OUTCOMES_TOOL_COMMANDS } from "../outcomes/handlers.ts";
 import { PLAYBOOK_TOOL_COMMANDS, playbookLimitRefusal } from "../playbooks/handlers.ts";
@@ -33,6 +34,14 @@ import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
 import { startingBranches } from "../tasks/brief.ts";
 import type { TaskService } from "../tasks/service.ts";
+import {
+  fetchedValue,
+  SAVE_FROM_SCRIPT_TOOL,
+  SaveFromScriptInputSchema,
+  type ScriptFetch,
+  WITHDRAW_SECRET_TOOL,
+  WithdrawSecretInputSchema,
+} from "./fetch-secret.ts";
 import { decide as decideMode, matchRule, redact, redactOutput, redactText, sameRule } from "./policy.ts";
 import { summarize } from "./summary.ts";
 import type { AdminCaller } from "./tokens.ts";
@@ -56,6 +65,12 @@ const LINE_MAX = 240;
 
 type ApprovalItem = Extract<RoomItem, { type: "approval" }>;
 type SecretRequestItem = Extract<RoomItem, { type: "secret-request" }>;
+
+/** Who ends a secret request without an answer, and the one line they gave. */
+export interface Dismissal {
+  by: "owner" | "captain";
+  reason?: string | undefined;
+}
 
 export interface AdminDeps {
   config: ConfigService;
@@ -163,6 +178,7 @@ export class AdminService {
   private readonly ownerCards = new Set<string>();
   private readonly tools = new Map(adminTools().map((t) => [t.name, t]));
   private autonomy: AutonomyGate | undefined;
+  private script: ScriptFetch | undefined;
 
   constructor(private readonly deps: AdminDeps) {}
 
@@ -174,6 +190,11 @@ export class AdminService {
   /** Autonomous mode is built after this service, which it decides for. */
   useAutonomy(gate: AutonomyGate): void {
     this.autonomy = gate;
+  }
+
+  /** The runner a captain's secret fetch uses: built after this service, from the connections. */
+  useScript(script: ScriptFetch): void {
+    this.script = script;
   }
 
   // ---------------------------------------------------------------------------
@@ -189,6 +210,8 @@ export class AdminService {
   ): Promise<ToolResult> {
     try {
       if (tool === REQUEST_SECRET_TOOL) return this.requestSecret(caller, args);
+      if (tool === SAVE_FROM_SCRIPT_TOOL) return await this.saveFromScript(caller, args);
+      if (tool === WITHDRAW_SECRET_TOOL) return await this.withdrawRequest(caller, args);
       const spec = this.tools.get(tool);
       if (spec?.command === undefined) return error(`Unknown tool: ${tool}`);
       const { ownerAsked, reason, ...input } = args;
@@ -202,10 +225,8 @@ export class AdminService {
       // Findings stay in the caller's own workspace (the handler scopes them), so no card waits for them.
       if (
         FINDINGS_TOOL_COMMANDS.has(spec.command) ||
-        BUSINESS_TOOL_COMMANDS.has(spec.command) ||
         PLAYBOOK_TOOL_COMMANDS.has(spec.command) ||
         OUTCOMES_TOOL_COMMANDS.has(spec.command) ||
-        GROWTH_TOOL_COMMANDS.has(spec.command) ||
         HANDOFF_TOOL_COMMANDS.has(spec.command)
       ) {
         const checked = commands[spec.command].input.safeParse(input);
@@ -247,7 +268,10 @@ export class AdminService {
     const refused = await this.autonomy.refusal(caller, "tasks.tell", input, why);
     if (refused !== undefined) return error(refused);
     const done = await this.execute("tasks.tell", input, metaFor(caller.agent, why, caller.task));
-    this.autonomy.ran(caller, "tasks.tell", input, why, done);
+    // A note that was not sent (a repeat) is no decision: nothing is logged as sent.
+    if (!(done.ok && NotTold.safeParse(done.output).success)) {
+      this.autonomy.ran(caller, "tasks.tell", input, why, done);
+    }
     return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
   }
 
@@ -559,6 +583,117 @@ export class AdminService {
     };
   }
 
+  /** The workspace the captain's lane works in, or why the caller is no captain in a lane. */
+  private async laneOf(caller: AdminCaller, tool: string): Promise<{ org: string } | { problem: string }> {
+    if ((await this.autonomy?.callerKind(caller)) !== "boss") {
+      return { problem: `${tool} is the captain's tool, in its workspace lane.` };
+    }
+    return { org: this.deps.store.tasks.get(caller.task)?.org ?? PRIVATE };
+  }
+
+  /**
+   * Fetches a secret through the workspace's connections: a read-only script runs in the runner with
+   * them, and what it prints goes straight into the secret store. The value is never returned, put in
+   * the room, the audit log or an error. The script is shown in the room and kept in the audit log.
+   */
+  private async saveFromScript(caller: AdminCaller, args: Record<string, unknown>): Promise<ToolResult> {
+    const lane = await this.laneOf(caller, SAVE_FROM_SCRIPT_TOOL);
+    if ("problem" in lane) return error(lane.problem);
+    const parsed = SaveFromScriptInputSchema.safeParse(args);
+    if (!parsed.success) {
+      const details = parsed.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`);
+      return error(`Invalid input.\n${details.join("\n")}`);
+    }
+    const input = parsed.data;
+    const script = this.script;
+    if (script === undefined) return error("majhi problem: Docker is not available, so a script cannot run.");
+    let request: SecretRequestItem | undefined;
+    if (input.task !== undefined && input.item !== undefined) {
+      const found = this.deps.room.get(input.task as TaskId, input.item);
+      if (found?.type !== "secret-request" || found.state !== "pending") {
+        return error("That request is not waiting for a secret.");
+      }
+      if ((this.deps.store.tasks.get(found.task)?.org ?? PRIVATE) !== lane.org) {
+        return error("That request belongs to another workspace. Only its own captain fetches for it.");
+      }
+      if (found.bind !== undefined) {
+        return error("That secret goes into a connection's own entry. The owner gives it on the card.");
+      }
+      request = found;
+    }
+    const name = request?.name ?? input.name;
+    if (name === undefined) return error("Give the request or a name.");
+    if ((await this.deps.secrets.get(name)) !== undefined) {
+      return error(`secret:${name} exists already. Use it, or pick another name.`);
+    }
+    const guard = scriptProblem(input.script, input.network);
+    if (guard !== undefined) return error(guard.replace("A watch only reads", "A fetch only reads"));
+    for (const id of input.connections) {
+      if (!(await script.holds(lane.org, id))) {
+        return error(
+          `This workspace has no connection ${id}. Only its own connections and Global ones are used.`,
+        );
+      }
+    }
+    let out: string;
+    try {
+      out = await script.run({
+        org: lane.org,
+        script: input.script,
+        connections: input.connections,
+        network: input.network,
+      });
+    } catch (err) {
+      return error(`The script failed: ${redactText(errorMessage(err)).slice(0, 300)}`);
+    }
+    const got = fetchedValue(out);
+    if ("problem" in got) return error(got.problem);
+    const used = input.connections.length === 0 ? "" : ` with ${input.connections.join(", ")}`;
+    this.log(
+      caller.task,
+      caller.agent,
+      "secrets.saveFromScript",
+      `fetch secret:${name}${used}`,
+      "allow",
+      "captain",
+      input.script,
+    );
+    this.deps.room.post(caller.task as TaskId, `info:${randomUUID()}`, {
+      type: "system",
+      level: "info",
+      text: `Fetched secret:${name} with a script${used}. The value was saved, not shown. Script:\n${redactText(input.script)}`,
+    });
+    if (request !== undefined) {
+      await this.answerSecret(
+        request.task,
+        request.id,
+        got.value,
+        "the captain fetched it through a connection",
+      );
+    } else {
+      await this.deps.secrets.set(name, got.value);
+    }
+    return { text: `Saved as secret:${name}. The value is not shown.`, isError: false };
+  }
+
+  /** The captain withdraws a pending secret request of its workspace, and the asking agent hears why. */
+  private async withdrawRequest(caller: AdminCaller, args: Record<string, unknown>): Promise<ToolResult> {
+    const lane = await this.laneOf(caller, WITHDRAW_SECRET_TOOL);
+    if ("problem" in lane) return error(lane.problem);
+    const parsed = WithdrawSecretInputSchema.safeParse(args);
+    if (!parsed.success) return error("Give task, item and reason.");
+    const { task, item, reason } = parsed.data;
+    const found = this.deps.room.get(task as TaskId, item);
+    if (found?.type !== "secret-request" || found.state !== "pending") {
+      return error("That request is not waiting for a secret.");
+    }
+    if ((this.deps.store.tasks.get(found.task)?.org ?? PRIVATE) !== lane.org) {
+      return error("That request belongs to another workspace.");
+    }
+    await this.cancelSecret(found, "reject", { by: "captain", reason });
+    return { text: `Withdrew the request for secret:${found.name}.`, isError: false };
+  }
+
   // ---------------------------------------------------------------------------
   // The owner's answers
 
@@ -568,9 +703,10 @@ export class AdminService {
     itemId: string,
     decision: "approve" | "reject",
     always?: { scope: "task" | "org"; change: ChangeRecord },
+    dismissal: Dismissal = { by: "owner" },
   ): Promise<RoomItem> {
     const item = this.deps.room.get(taskId, itemId);
-    if (item?.type === "secret-request") return this.cancelSecret(item, decision);
+    if (item?.type === "secret-request") return this.cancelSecret(item, decision, dismissal);
     if (item?.type !== "approval") throw new UserError("That is not something to approve.", 409);
     if (item.state !== "pending" || this.deciding.has(item.id)) {
       throw new UserError("That request was already decided.", 409);
@@ -666,14 +802,19 @@ export class AdminService {
   async captainDecide(
     taskId: string,
     itemId: string,
-    verdict: { decision: "approved" | "left"; why: string },
+    verdict: { decision: "approved" | "left"; why: string; fix?: ShipFix | undefined },
     captain: string,
   ): Promise<{ ok: boolean; error?: string; commit?: string }> {
     const item = this.deps.room.get(taskId, itemId);
     if (item?.type !== "approval" || item.state !== "pending" || this.deciding.has(item.id)) {
       return { ok: false, error: "The card is no longer waiting" };
     }
-    const marker = { decision: verdict.decision, why: verdict.why, by: "captain" as const };
+    const marker = {
+      decision: verdict.decision,
+      why: verdict.why,
+      by: "captain" as const,
+      ...(verdict.fix === undefined ? {} : { fix: verdict.fix }),
+    };
     if (verdict.decision === "left") {
       this.update(item, { autonomy: marker });
       return { ok: true };
@@ -725,6 +866,31 @@ export class AdminService {
   }
 
   /**
+   * The captain answers a card with something that does what it was for (a merge card, answered by
+   * opening the merge request): the card settles with the line, and the lead is told.
+   */
+  async captainInstead(taskId: string, itemId: string, line: string, captain: string): Promise<void> {
+    const item = this.deps.room.get(taskId, itemId);
+    if (item?.type !== "approval" || item.state !== "pending" || this.deciding.has(item.id)) return;
+    this.pending.delete(item.id);
+    this.update(item, {
+      state: "applied",
+      autonomy: { decision: "approved", why: line, by: "captain" },
+      result: line,
+    });
+    this.log(item.task, captain, item.command, item.summary, "allow", "captain", line);
+    await this.notify(
+      item.task,
+      item.agent,
+      {
+        text: `The captain did not run: ${item.summary}. ${line}. Do not push or ask to merge again: say when the work is done and the checks pass.`,
+        shown: `Captain: ${line}`,
+      },
+      captain,
+    );
+  }
+
+  /**
    * Saves "always allow" for the agent and command of this card, as a config commit. Refused for a
    * destructive command, which only the owner's click approves, and for an org rule on a task with
    * no org. Runs before the command, so a refusal leaves the card pending.
@@ -751,7 +917,13 @@ export class AdminService {
   }
 
   /** Stores the pasted value under the requested name, marks the card saved and tells the agent. */
-  async answerSecret(taskId: TaskId, itemId: string, value: string): Promise<RoomItem> {
+  async answerSecret(
+    taskId: TaskId,
+    itemId: string,
+    value: string,
+    /** Set when the captain fetched the value through a connection: the owner gave nothing. */
+    fetchedBy?: string,
+  ): Promise<RoomItem> {
     const item = this.deps.room.get(taskId, itemId);
     if (item?.type !== "secret-request" || item.state !== "pending") {
       throw new UserError("That request is not waiting for a secret.", 409);
@@ -759,10 +931,18 @@ export class AdminService {
     if (item.bind !== undefined) return this.answerBound(item, item.bind, value);
     await this.deps.secrets.set(item.name, value);
     this.deps.room.post(item.task, item.id, secretPayload(item, "saved"));
-    await this.notify(item.task, item.agent, {
-      text: `Saved as secret:${item.name}`,
-      shown: `You gave ${item.label}, kept as secret:${item.name}`,
-    });
+    await this.notify(
+      item.task,
+      item.agent,
+      {
+        text: `Saved as secret:${item.name}`,
+        shown:
+          fetchedBy === undefined
+            ? `You gave ${item.label}, kept as secret:${item.name}`
+            : `Saved ${item.label} as secret:${item.name}: ${fetchedBy}`,
+      },
+      fetchedBy === undefined ? "owner" : "captain",
+    );
     return this.mustGet(item.task, item.id);
   }
 
@@ -867,13 +1047,21 @@ export class AdminService {
     });
   }
 
-  private async cancelSecret(item: SecretRequestItem, decision: "approve" | "reject"): Promise<RoomItem> {
+  /** Dismiss (the owner) or withdraw (the captain's upkeep) a secret request, and tell the asking agent so it stops waiting. */
+  private async cancelSecret(
+    item: SecretRequestItem,
+    decision: "approve" | "reject",
+    dismissal: Dismissal,
+  ): Promise<RoomItem> {
     if (decision === "approve") throw new UserError("Paste the secret into the field and press Save.", 409);
     if (item.state !== "pending") throw new UserError("That request was already answered.", 409);
     this.deps.room.post(item.task, item.id, secretPayload(item, "cancelled"));
+    const reason = redactText(dismissal.reason?.trim() ?? "");
+    const tail = reason === "" ? "" : `: ${reason}`;
+    const owner = dismissal.by === "owner";
     await this.notify(item.task, item.agent, {
-      text: `The owner did not provide ${item.name}.`,
-      shown: `You did not provide ${item.label}`,
+      text: `${owner ? "The owner dismissed" : "The captain withdrew"} the request for ${item.name}${tail}. Do not wait for it: find another way.`,
+      shown: owner ? `You dismissed ${item.label}${tail}` : `Withdrawn: ${item.label}${tail}`,
     });
     return this.mustGet(item.task, item.id);
   }
@@ -1092,6 +1280,9 @@ function textOf(output: unknown): string {
   const text = JSON.stringify(redactOutput(reposFirst(output)), null, 2) ?? "ok";
   return text.length > RESULT_MAX ? `${text.slice(0, RESULT_MAX)}\n... (cut)` : text;
 }
+
+/** The output of `tasks.tell` when nothing was sent. */
+const NotTold = z.object({ told: z.literal(false) });
 
 /** A result that is one task with repos (tasks.create, tasks.update). */
 const TaskWithRepos = z.object({

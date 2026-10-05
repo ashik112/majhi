@@ -85,6 +85,8 @@ export const AutonomyNowSchema = z.object({
   agents: z.array(z.object({ id: IdSchema, nowDoing: z.string().optional() })),
   /** The captain's one-line reason for taking it on, when the call that started or created it gave one. */
   why: z.string().optional(),
+  /** When autonomous mode took the task on (UTC ISO): the start of its elapsed time. */
+  since: z.string().optional(),
   /** For a paused task: who paused it, in words, and whether the captain may resume it now. */
   pause: z.object({ label: z.string(), mayResume: z.boolean(), stays: z.string().optional() }).optional(),
 });
@@ -149,6 +151,8 @@ export const AutonomyWaitingSchema = z.object({
   text: z.string(),
   /** Why autonomous mode did not decide it, one line. */
   why: z.string(),
+  /** When the card appeared (UTC ISO), to show how long it waits. */
+  at: z.string().optional(),
 });
 export type AutonomyWaiting = z.infer<typeof AutonomyWaitingSchema>;
 
@@ -241,7 +245,7 @@ export const AutonomySummarySchema = z.object({
   /** Decisions it marked unsure, and calls a hard limit refused. */
   unsure: z.array(z.object({ text: z.string(), task: TaskIdSchema.optional(), item: z.string().optional() })),
   /** Cards still waiting for the owner when it was made. */
-  waiting: z.array(AutonomyWaitingSchema),
+  waiting: z.array(AutonomyWaitingSchema).default([]),
   /** What waits in the owner's Decisions inbox when it was made: the count and the oldest three. */
   needs: z
     .object({
@@ -293,6 +297,9 @@ export const AutonomyLaneSchema = z.object({
 });
 export type AutonomyLane = z.infer<typeof AutonomyLaneSchema>;
 
+/** `autonomy.status` input: `detail` adds the task lists, the backlog and the waiting cards. */
+export const AutonomyStatusInputSchema = z.object({ detail: z.boolean().default(false) });
+
 /** `autonomy.status`. */
 export const AutonomyStatusSchema = z.object({
   mode: AutonomyModeSchema,
@@ -315,10 +322,12 @@ export const AutonomyStatusSchema = z.object({
   /** Each workspace where the captain starts work, in the order of the workspaces. */
   lanes: z.array(AutonomyLaneSchema).default([]),
   /** Autonomous tasks that are not done, running ones first. */
-  now: z.array(AutonomyNowSchema),
+  now: z.array(AutonomyNowSchema).default([]),
+  /** Autonomous tasks that are running now, always sent. */
+  running: z.array(TaskIdSchema).default([]),
   queue: z.array(QueueItemSchema),
   /** Inbox and ready tasks in the order the captain reads them, each with its size and whether the rules leave it out. */
-  backlog: z.array(AutonomyBacklogItemSchema),
+  backlog: z.array(AutonomyBacklogItemSchema).default([]),
   /** When the captain last set the queue, UTC ISO. */
   queuedAt: z.string().optional(),
   holds: z.array(AutonomyHoldSchema),
@@ -355,6 +364,35 @@ export const AutonomyEventsInputSchema = z.object({
 /** `autonomy.report`: the charts of the Auto-pilot dashboard. `days` is how far back finished tasks go. */
 export const AutonomyReportInputSchema = z.object({ days: z.number().int().min(1).max(30).default(14) });
 
+/** Why a task shows in the dashboard's Stuck list: a running task or one in review that has gone quiet. */
+export const StuckKindSchema = z.enum(["idle", "waiting"]);
+export type StuckKind = z.infer<typeof StuckKindSchema>;
+
+export const StuckTaskSchema = z.object({
+  task: TaskIdSchema,
+  title: z.string(),
+  org: z.string().optional(),
+  kind: StuckKindSchema,
+  /** Since when it has not moved (UTC ISO). */
+  since: z.string(),
+  /** One line: what it is quiet about. */
+  text: z.string(),
+});
+export type StuckTask = z.infer<typeof StuckTaskSchema>;
+
+/** The owner's computer and majhi's containers, as the machine sensor last read them. */
+export const AutonomyMachineSchema = z.object({
+  cores: z.number().int().positive(),
+  load1: z.number().nonnegative(),
+  idleCpuPct: z.number().optional(),
+  memFreePct: z.number().optional(),
+  diskFreeGb: z.number().optional(),
+  containers: z.number().int().nonnegative(),
+  /** Why new work does not start: the machine is busy. */
+  busy: z.string().optional(),
+});
+export type AutonomyMachine = z.infer<typeof AutonomyMachineSchema>;
+
 /** `autonomy.report`: today's spend by hour and the tasks the captain finished, by day and workspace. */
 export const AutonomyReportSchema = z.object({
   tz: z.string(),
@@ -369,6 +407,30 @@ export const AutonomyReportSchema = z.object({
       orgs: z.array(z.object({ org: z.string(), count: z.number().int().positive() })),
     }),
   ),
+  /** Auto-pilot spend per day and workspace over the same days, oldest first. */
+  spend: z
+    .array(
+      z.object({
+        day: z.string(),
+        orgs: z.array(z.object({ org: z.string(), cost: z.number().positive() })),
+      }),
+    )
+    .default([]),
+  /** Tasks started, finished and paused per day over the same days, oldest first. A task counts once per day and kind. */
+  flow: z
+    .array(
+      z.object({
+        day: z.string(),
+        started: z.number().int().nonnegative(),
+        finished: z.number().int().nonnegative(),
+        paused: z.number().int().nonnegative(),
+      }),
+    )
+    .default([]),
+  /** Autonomous tasks and cards that are not moving, longest first. */
+  stuck: z.array(StuckTaskSchema).default([]),
+  /** Absent while the host helper is not connected. */
+  machine: AutonomyMachineSchema.optional(),
 });
 export type AutonomyReport = z.infer<typeof AutonomyReportSchema>;
 

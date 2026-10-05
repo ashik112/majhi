@@ -52,7 +52,7 @@ describe("the repos of a new task", () => {
     expect(await notes(task.id)).toContain(
       "Named in the text but not part of this task: acme-web, acme-ops. Agents can read them; nothing there gets a branch or ships.",
     );
-    expect(await git(w.repo("web"), "branch", "--list", "task/*")).toBe("");
+    expect(await git(w.repo("web"), "branch", "--list", "*/acm-*")).toBe("");
   });
 
   it("no repos listed: names in the text attach nothing", async () => {
@@ -85,7 +85,7 @@ describe("the repos of a new task", () => {
       ["acme-ops", "develop", true],
       ["acme-api", "main", true],
     ]);
-    for (const r of task.repos) expect(r.branch).toMatch(/^task\/acm-1-/);
+    for (const r of task.repos) expect(r.branch).toMatch(/^[a-z]+\/acm-1-/);
   });
 
   // Real briefs that once gave a bogus branch or base (PRV-87, PRV-68). Keywords are split on purpose.
@@ -104,7 +104,7 @@ describe("the repos of a new task", () => {
     const task = res.body as Task;
     expect(task.kind).toBe(kind);
     expect(task.repos.map((r) => [r.project, r.base, r.createdBranch])).toEqual([["acme-api", "main", true]]);
-    expect(task.repos[0]?.branch).toMatch(/^task\/acm-1-/);
+    expect(task.repos[0]?.branch).toMatch(/^[a-z]+\/acm-1-/);
   });
 
   // Whole briefs the way leads write them, with the title given apart (PRV-64, PRV-66).
@@ -112,17 +112,17 @@ describe("the repos of a new task", () => {
     {
       title: "Add screenshots to the api docs",
       text: "Take the screenshots with the Playwright tool, the ones taken with Playwright last week are stale.\nWork on main later, once the docs build is green.",
-      slug: "task/acm-1-add-screenshots-to-the-api-docs",
+      slug: "feat/acm-1-add-screenshots-to-the-api-docs",
     },
     {
       title: "Task text picks the base branch by mistake",
       text: "In api, the parser reads the base branch from prose. It should use the default branch.\nMention the branch field in the docs.",
-      slug: "task/acm-1-task-text-picks-the-base-branch-by-mista",
+      slug: "feat/acm-1-task-text-picks-the-base-branch-by",
     },
     {
       title: "Move the login off staging",
       text: "Product names like Acme Cloud, GitHub and Docker appear here.\nThe api branch protection stays as it is. Rebase on develop is not needed.",
-      slug: "task/acm-1-move-the-login-off-staging",
+      slug: "refactor/acm-1-move-the-login-off-staging",
     },
   ])(
     "a brief with prose about branches keeps the base and every title word: $title",
@@ -215,16 +215,16 @@ describe("changing the starting branch", () => {
 });
 
 describe("the repos of a new task, refusals", () => {
-  it("refuses a working branch that already exists", async () => {
+  it("never takes a working branch that already exists: the new one gets a number", async () => {
     await world();
-    await git(w.repo("api"), "branch", "task/acm-1-fix-api", "main");
+    await git(w.repo("api"), "branch", "fix/acm-1-fix-api", "main");
     const res = await cmd("tasks.create", {
       text: "fix api",
       repos: [{ project: "acme-api" }],
       start: false,
     });
-    expect(res.status).toBe(409);
-    expect(res.body.error).toContain("acme-api already has a branch task/acm-1-fix-api.");
+    expect(res.status).toBe(200);
+    expect((res.body as Task).repos[0]?.branch).toBe("fix/acm-1-fix-api-2");
   });
 
   it("refuses a project that is not registered", async () => {

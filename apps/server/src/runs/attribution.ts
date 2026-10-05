@@ -40,7 +40,8 @@ const HOOKS = [
  * branches (main, release/*), another task's branch, the remote-tracking refs majhi reads to tell
  * what is merged or pushed, tags, notes or the shared stash. With the locks taken ("prepared", where a
  * non-zero exit aborts the whole change) and `MAJHI_TASK` set, it allows only:
- * - the task's branches: `task/<id>`, `task/<id>-*` and the branches named in `MAJHI_BRANCHES`,
+ * - the task's branches: the ones named in `MAJHI_BRANCHES` (`feat/<id>-<slug>`), and `task/<id>` and
+ *   `task/<id>-*` of older tasks,
  *   except a deletion or rename of a branch majhi tracks (`MAJHI_BRANCHES`): git renames by deleting
  *   first, and a rename the guard then stops halfway would lose the branch;
  * - the worktree's own HEAD (detached, or switched to one of those branches) and the refs git keeps
@@ -110,7 +111,7 @@ refusal() {
         *[!0]*) ;;
         *) is_tracked "$2" && echo "1 majhi tracks \${2#refs/heads/} as the branch of $MAJHI_TASK, so it cannot be deleted or renamed." && return ;;
       esac
-      is_own "$2" || echo "1 \${2#refs/heads/} is not a branch of $MAJHI_TASK. A run changes only its own branches (\${own#refs/heads/} and \${own#refs/heads/}-<name>). The owner merges and pushes from Ship." ;;
+      is_own "$2" || echo "1 \${2#refs/heads/} is not a branch of $MAJHI_TASK. A run changes only its own branches (\${MAJHI_BRANCHES:-\${own#refs/heads/}}). The owner merges and pushes from Ship." ;;
     refs/bisect/* | refs/worktree/* | refs/rewritten/*) ;;
     refs/remotes/*)
       echo "1 $2 is majhi's copy of what the remote has. A run does not fetch, pull or move it; majhi fetches when it ships." ;;
@@ -136,6 +137,10 @@ if [ "$name" = reference-transaction ]; then
       exit 1
     fi
   fi
+fi
+if [ "$name" = pre-push ] && guarded; then
+  echo "majhi: a run does not push: its container has no sign-in to the host. Do not retry and do not ask to merge. Say in your final report that the work is done and the checks pass: majhi pushes and opens the merge request, or merges, by the workspace's rules." >&2
+  exit 1
 fi
 if [ "$name" = post-checkout ] && [ "$3" = 1 ] && guarded; then
   head=$(git symbolic-ref -q HEAD)

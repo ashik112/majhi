@@ -86,7 +86,7 @@ describe("outcomes and the trust ladder in a real captain turn", { timeout: 120_
     expect(upkeep?.note).toBe("Dropped to You by the trust ladder");
 
     // The row went back to You by itself, and one Decisions item says why, with the evidence.
-    const settings = (await h.cmd("autonomy.status")).body.settings.orgs.acme.authority;
+    const settings = (await h.cmd("autonomy.status", { detail: true })).body.settings.orgs.acme.authority;
     expect(settings.upkeep).toBe("ask");
     expect(settings.start).toBe("decide");
     const trust = (await decisions(w)).filter((d) => d.kind === "trust");
@@ -135,11 +135,11 @@ describe("outcomes and the trust ladder in a real captain turn", { timeout: 120_
     // The owner gives the row back: the old record does not demote it again.
     const id = trust[0]?.id ?? "";
     expect((await h.cmd("decisions.answer", { id, option: "restore" })).status).toBe(200);
-    const after = (await h.cmd("autonomy.status")).body.settings.orgs.acme.authority;
+    const after = (await h.cmd("autonomy.status", { detail: true })).body.settings.orgs.acme.authority;
     expect(after.upkeep).toBe("decide");
     clock.at = new Date("2026-10-06T18:00:00.000Z");
     await outcomes.sweep();
-    expect((await h.cmd("autonomy.status")).body.settings.orgs.acme.authority.upkeep).toBe("decide");
+    expect((await h.cmd("autonomy.status", { detail: true })).body.settings.orgs.acme.authority.upkeep).toBe("decide");
     expect((await decisions(w)).filter((d) => d.kind === "trust")).toEqual([]);
   });
 
@@ -161,7 +161,7 @@ describe("outcomes and the trust ladder in a real captain turn", { timeout: 120_
     clock.at = new Date(clock.at.getTime() + 60_000);
     expect(await autonomy.laneRest("acme", "claude-acme")).toMatch(/monthly ceiling of \$10\.00 is reached/);
     // It is not one of the day or workspace holds: nothing that runs is paused by it.
-    expect((await h.cmd("autonomy.status")).body.holds).toEqual([]);
+    expect((await h.cmd("autonomy.status", { detail: true })).body.holds).toEqual([]);
     // The owner is asked as a Money decision, and raising lifts it for the month.
     const ask = (await decisions(w)).find((d) => d.id === "ceiling:2026-10");
     expect(ask).toMatchObject({ kind: "budget" });

@@ -41,6 +41,8 @@ export interface UpdateInput {
   commits?: CommitsPatch | null | undefined;
   /** Absent: keep. */
   protected?: boolean | undefined;
+  /** Absent: keep. null: remove. */
+  branch_pattern?: string | null | undefined;
 }
 
 /** A registered project with everything a task needs from it. */
@@ -59,6 +61,8 @@ export interface ProjectInfo {
   commits: CommitsPatch | undefined;
   /** Infra or otherwise sensitive: see ProjectConfig.protected. */
   protected: boolean;
+  /** How new task branches are named: the project's `branch_pattern`, else the org's. */
+  branchPattern: string | undefined;
 }
 
 /** Projects in majhi.yaml: registering, changing, and resolving each one's base branch. */
@@ -107,6 +111,7 @@ export class ProjectService {
           links: project.links ?? [],
           commits: project.commits,
           protected: project.protected === true,
+          branchPattern: project.branch_pattern ?? sections.orgs[project.org]?.branch_pattern,
         };
         return info;
       }),
@@ -187,6 +192,8 @@ export class ProjectService {
       if (input.commits === null || Object.keys(input.commits).length === 0) delete project.commits;
       else project.commits = input.commits;
     }
+    if (input.branch_pattern === null) delete project.branch_pattern;
+    else if (input.branch_pattern !== undefined) project.branch_pattern = input.branch_pattern;
     if (input.protected === true) project.protected = true;
     else if (input.protected === false) delete project.protected;
     await this.config.change({ command, meta, summary: `updated project ${input.id}` }, () =>

@@ -36,10 +36,10 @@ async function bossOnly(ctx: CommandContext): Promise<never> {
 /** The `autonomy.*` commands (PRV-74). The command table spreads these in. */
 export function autonomyHandlers(autonomy: AutonomyService): Pick<CommandHandlers, AutonomyCommand> {
   return {
-    "autonomy.status": async () => {
+    "autonomy.status": async (input) => {
       // The page lists each backlog task's size: the ones not rated yet are rated in the background.
-      autonomy.fillSizes();
-      return autonomy.status();
+      if (input.detail) autonomy.fillSizes();
+      return autonomy.status(input.detail);
     },
     "autonomy.events": async (input) => autonomy.events(input),
     "autonomy.report": async (input) => autonomy.report(input.days),

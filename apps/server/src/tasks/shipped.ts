@@ -17,7 +17,10 @@ const MAX_SQUASH_FILES = 500;
  * - every file it changed reads the same in the base (squash-merged).
  * Read in the project's own checkout; nothing is written.
  */
-export async function unshippedCommits(repo: TaskRepo): Promise<number> {
+export async function unshippedCommits(
+  repo: TaskRepo,
+  taskBranches: ReadonlySet<string> = new Set(),
+): Promise<number> {
   if (repo.mr?.state === "open" || repo.mr?.state === "merged") return 0;
   const cwd = repo.source;
   await git(cwd, ["rev-parse", "--git-dir"]);
@@ -34,7 +37,9 @@ export async function unshippedCommits(repo: TaskRepo): Promise<number> {
     .filter((ref) => ref !== "" && ref !== own);
   const base = `refs/heads/${repo.base}`;
   // Another task's branch stacked on this one does not ship it.
-  if (holders.some((ref) => ref === base || !ref.startsWith("refs/heads/task/"))) return 0;
+  const isTask = (ref: string) =>
+    ref.startsWith("refs/heads/task/") || taskBranches.has(ref.slice("refs/heads/".length));
+  if (holders.some((ref) => ref === base || !isTask(ref))) return 0;
 
   if (repo.pushedAt !== undefined) {
     // Whole seconds: a commit in the same second as the push counts as after it.
@@ -101,11 +106,15 @@ async function squashed(cwd: string, upstream: string, tip: string): Promise<boo
 }
 
 /** The repos of a task whose work is not shipped. A repo git cannot read counts as not shipped. */
-export async function unshippedWork(repos: readonly TaskRepo[]): Promise<UnshippedRepo[]> {
+export async function unshippedWork(
+  repos: readonly TaskRepo[],
+  /** The branches of every task in a repo (by its path), so a task's branch stacked on this one does not ship it. */
+  taskBranchesIn: (source: string) => ReadonlySet<string> = () => new Set(),
+): Promise<UnshippedRepo[]> {
   const out: UnshippedRepo[] = [];
   for (const repo of repos) {
     try {
-      const commits = await unshippedCommits(repo);
+      const commits = await unshippedCommits(repo, taskBranchesIn(repo.source));
       if (commits > 0) out.push({ project: repo.project, branch: repo.branch, commits });
     } catch (err) {
       out.push({ project: repo.project, branch: repo.branch, commits: 0, problem: errorMessage(err) });
@@ -114,7 +123,7 @@ export async function unshippedWork(repos: readonly TaskRepo[]): Promise<Unshipp
   return out;
 }
 
-/** "acme-api: 1 commit on task/acm-1-fix is not merged, pushed or in a pull request." One sentence per repo. */
+/** "acme-api: 1 commit on feat/acm-1-fix is not merged, pushed or in a pull request." One sentence per repo. */
 export function unshippedText(list: readonly UnshippedRepo[]): string {
   return list
     .map((r) =>

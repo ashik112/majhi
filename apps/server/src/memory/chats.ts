@@ -72,41 +72,37 @@ export class ChatMemory {
   private async sweepDue(): Promise<void> {
     const { store } = this.deps;
     const idleMs = (await this.deps.settings()).chat_idle_minutes * 60_000;
-    const chats = store.tasks.list(true).filter((s) => s.chat === true);
-    for (const summary of chats) {
-      const task = store.tasks.get(summary.id);
-      if (task === undefined || this.reading.has(task.id)) continue;
+    const chats = store.tasks.getMany(store.tasks.chatIds());
+    for (const task of chats) {
+      if (this.reading.has(task.id)) continue;
       const failed = this.failedAt.get(task.id);
       if (failed !== undefined && this.now().getTime() - failed < RETRY_MS) continue;
-      const items = said(store.room.page(task.id, 400).items);
       const { extractedAt } = store.chats.get(task.id);
+      // Nothing written since the last read: skip the room read. Most chats are like this, every minute.
+      if (extractedAt !== undefined && !store.room.hasItemAfter(task.id, extractedAt)) continue;
+      const items = said(store.room.page(task.id, 400).items);
       const fresh = items.filter((i) => extractedAt === undefined || i.at > extractedAt);
       // Something to read needs both sides: a lone message is not a conversation yet.
       if (!fresh.some((i) => i.type === "owner") || !fresh.some((i) => i.type === "agent")) continue;
       const last = fresh[fresh.length - 1];
       if (last === undefined) continue;
       const quiet = this.now().getTime() - Date.parse(last.at) >= idleMs && !this.deps.working(task.id);
-      if (!quiet && !this.replaced(task)) continue;
+      if (!quiet && !this.replaced(task, chats)) continue;
       await this.read(task, fresh, last.at);
     }
   }
 
   /** True when the owner has written in a newer chat with the same agent. */
-  private replaced(task: Task): boolean {
+  private replaced(task: Task, chats: readonly Task[]): boolean {
     const { store } = this.deps;
-    return store.tasks
-      .list(true)
-      .filter((s) => s.chat === true && s.id !== task.id)
-      .some((s) => {
-        const other = store.tasks.get(s.id);
-        return (
-          other !== undefined &&
-          other.team[0] === task.team[0] &&
-          other.org === task.org &&
-          other.createdAt > task.createdAt &&
-          store.room.page(other.id, 400).items.some((i) => i.type === "owner")
-        );
-      });
+    return chats.some(
+      (other) =>
+        other.id !== task.id &&
+        other.team[0] === task.team[0] &&
+        other.org === task.org &&
+        other.createdAt > task.createdAt &&
+        store.room.page(other.id, 400).items.some((i) => i.type === "owner"),
+    );
   }
 
   private async read(task: Task, fresh: readonly RoomItem[], upTo: string): Promise<void> {

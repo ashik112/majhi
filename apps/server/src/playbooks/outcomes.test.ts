@@ -5,11 +5,10 @@ import { createChores } from "../captain/chores.ts";
 import type { CaptainPorts } from "../captain/ports.ts";
 import { CaptainRepo } from "../captain/repo.ts";
 import { ChoreRunner, type Workspace } from "../captain/runner.ts";
-import { type FindingSpec, file, reporterOf } from "../sensors/ports.ts";
 import { Store } from "../store/index.ts";
 import { Catalog } from "./catalog.ts";
 import { PlaybookRepo } from "./repo.ts";
-import { isRuleOn, type RulesContext } from "./rules.ts";
+import { isRuleOn } from "./rules.ts";
 import { PlaybookService } from "./service.ts";
 
 /** An outcome rule the owner switched off really stops its action, and a made playbook starts off. */
@@ -21,6 +20,7 @@ function ship(merge: "decide" | "ask", off: string[]) {
   // Only the ports the ship chore reads; the rest is never called by it.
   const ports = {
     typing: () => false,
+    answerTasks: async () => [],
     reviewTasks: async () => [{ id: "ACM-1", title: "Add export", heads: "abc" }],
     shipCheck: async () => ({
       ready: true,
@@ -53,7 +53,6 @@ function ship(merge: "decide" | "ask", off: string[]) {
     workspace: async () => ws(),
     stopped: () => false,
     tellOwner: () => undefined,
-    caused: () => undefined,
     laneTokens: () => 0,
     chores: createChores(ports, now),
   });
@@ -90,7 +89,7 @@ describe("outcome rules of Ship finished work", () => {
 
 /** One chore run with the given ports and switches off, and the lines it wrote to the captain's log. */
 async function choreRun(
-  chore: "ship" | "cards" | "stuck" | "triage" | "cleanup" | "questions" | "projects",
+  chore: "ship" | "cards" | "triage" | "cleanup" | "questions" | "projects",
   ports: Record<string, unknown>,
   off: string[],
   authority: Authority = RUNS,
@@ -98,7 +97,11 @@ async function choreRun(
   const store = new Store(":memory:");
   const repo = new CaptainRepo(store.raw);
   const now = () => new Date("2026-10-04T10:00:00.000Z");
-  const all = { typing: () => false, signInStalls: async () => [], ...ports } as unknown as CaptainPorts;
+  const all = {
+    typing: () => false,
+    answerTasks: async () => [],
+    ...ports,
+  } as unknown as CaptainPorts;
   const runner = new ChoreRunner({
     repo,
     now,
@@ -114,7 +117,6 @@ async function choreRun(
     }),
     stopped: () => false,
     tellOwner: () => undefined,
-    caused: () => undefined,
     laneTokens: () => 0,
     chores: createChores(all, now),
   });
@@ -174,23 +176,6 @@ describe("outcome rules of the other chores", () => {
     expect(decided).toHaveLength(2);
   });
 
-  it("restarts a stuck run once, then tells the owner, each by its own switch", async () => {
-    const calls: string[] = [];
-    const ports = {
-      stalled: () => [{ id: "ACM-1", lead: "dev", quietSince: "2026-10-04T08:00:00.000Z" }],
-      wakeLead: () => void calls.push("wake"),
-      pauseForOwner: async () => void calls.push("pause"),
-    };
-    await choreRun("stuck", ports, []);
-    expect(calls).toEqual(["wake"]);
-    calls.length = 0;
-    await choreRun("stuck", ports, ["stuck-wake"]);
-    expect(calls).toEqual(["pause"]);
-    calls.length = 0;
-    await choreRun("stuck", ports, ["stuck-wake", "stuck-tell"]);
-    expect(calls).toEqual([]);
-  });
-
   it("proposes splitting a big task, not when its rule is off", async () => {
     const ports = {
       triageTasks: () => [
@@ -243,9 +228,11 @@ describe("outcome rules of the other chores", () => {
           options: [{ id: "a", label: "Allow once", effect: "allow" }],
         },
       ],
-      answeredRecently: () => [],
       laneRest: async () => "resting",
-      answer: async (_o: string, _c: unknown, option: string) => void answered.push(option),
+      answer: async (_o: string, _c: unknown, option: string) => {
+        answered.push(option);
+        return { answered: true as const };
+      },
     };
     const wanted = { ...RUNS, own: "ask", questions: "decide" } as Authority;
     await choreRun("questions", ports, [], wanted);
@@ -255,55 +242,12 @@ describe("outcome rules of the other chores", () => {
   });
 });
 
-describe("outcome rules of the code health playbooks", () => {
-  const spec: FindingSpec = {
-    project: "acme-api",
-    source: "ci",
-    key: "ci:acme-api:main",
-    title: "CI is failing on main",
-    detail: "",
-    evidence: [],
-    severity: "medium",
-  };
-  /** A findings store that counts what is filed and what is made a task. */
-  function sensorRun(off: string[]) {
-    const calls = { filed: 0, tasks: 0 };
-    const findings = {
-      report: async () => {
-        calls.filed += 1;
-        return { result: "created", finding: { id: 7, status: "open" } };
-      },
-      toTask: async () => {
-        calls.tasks += 1;
-        return { task: "ACM-9" };
-      },
-    };
-    const playbook = new Catalog().get("eng-ci-health");
-    if (playbook === undefined) throw new Error("no CI playbook");
-    const ctx = { org: "acme", playbook, findings, rulesOff: new Set(off) } as unknown as RulesContext;
-    return { calls, r: reporterOf(ctx) };
-  }
+describe("outcome rules of the upkeep playbooks", () => {
   const defaults = (id: string) =>
     (new Catalog().get(id)?.outcomes ?? []).filter((o) => !isRuleOn(o, {})).map((o) => o.id);
 
-  it("files a finding by default and proposes no task, since the task rule starts off", async () => {
-    expect(defaults("eng-ci-health")).toEqual(["ci-task"]);
+  it("proposes no task by default, since the task rule starts off", () => {
     expect(defaults("upkeep-followups")).toEqual(["fu-task"]);
-    const t = sensorRun(defaults("eng-ci-health"));
-    expect(await file(t.r, spec)).toBe("created");
-    expect(t.calls).toEqual({ filed: 1, tasks: 0 });
-  });
-
-  it("files nothing when the finding rule is off and no task is wanted", async () => {
-    const t = sensorRun(["ci-finding", "ci-task"]);
-    expect(await file(t.r, spec)).toBe("skipped");
-    expect(t.calls).toEqual({ filed: 0, tasks: 0 });
-  });
-
-  it("proposes a task from the finding when the task rule is on", async () => {
-    const t = sensorRun([]);
-    await file(t.r, spec);
-    expect(t.calls).toEqual({ filed: 1, tasks: 1 });
   });
 });
 

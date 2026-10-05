@@ -41,7 +41,6 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "captain.undo",
   "captain.choreOn",
   "captain.runChore",
-  "captain.answerCap",
   "captain.answerBudget",
   // The decisions inbox answers for the owner: the owner's click only.
   "decisions.answer",
@@ -51,15 +50,6 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "backup.cancelRestore",
   // Where backups are written is the owner's choice: a synced folder carries them off this computer.
   "backup.setDestination",
-  // Business memory: the owner verifies, removes, merges and decides; an agent only proposes (5.19).
-  "kb.verify",
-  "kb.remove",
-  "kb.restore",
-  "voice.set",
-  "voice.decide",
-  "crm.merge",
-  "crm.remove",
-  "deadlines.remove",
   // Git sign-in happens in the owner's browser or with a token the owner pastes: the owner's alone.
   "git.oauthApps.set",
   "git.signIn.start",
@@ -332,7 +322,6 @@ const LABELS: Partial<Record<CommandName, string>> = {
   "settings.set": "Change hub settings",
   "cleanup.preview": "Preview a cleanup",
   "health.fix": "Run a health fix",
-  "e2e.runNow": "Run background e2e now",
   "projects.cardRefresh": "Refresh a project card",
   "system.update": "Rebuild and restart majhi",
   "decisions.correct": "Correct a decision",
@@ -451,7 +440,6 @@ export const PERMISSION_COMMANDS: ReadonlySet<string> = new Set([
   "captain.stop",
   "captain.resume",
   "captain.choreOn",
-  "captain.answerCap",
   "captain.answerBudget",
   "money.set",
   "trust.unmute",

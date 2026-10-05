@@ -15,7 +15,6 @@ import { type LinkOptions, pollLoop, sendProgress, sendReply } from "./client.ts
 import { CliLogins } from "./cliLogin.ts";
 import { CliToolLogins } from "./cliTools.ts";
 import { parseHostConfig } from "./config.ts";
-import { createE2eRunner } from "./e2e.ts";
 import { createEditorOpener, pathKind } from "./editor.ts";
 import { errorMessage } from "./errors.ts";
 import { ensureAskpass, gitAuthEnv } from "./gitAuth.ts";
@@ -202,15 +201,6 @@ async function main(): Promise<void> {
     kind: pathKind,
     isExecutable: async (file) => (await findExecutable(basename(file), dirname(file))) !== undefined,
   });
-  const e2eRun = createE2eRunner({
-    run: deps.run,
-    majhiHome: config.majhiHome,
-    home: config.home,
-    path,
-    platform: nodePlatform,
-    find: findExecutable,
-    log,
-  });
   const laya = createLaya({
     majhiHome: config.majhiHome,
     home: config.home,
@@ -323,7 +313,6 @@ async function main(): Promise<void> {
     },
     sshReload: () => ssh.reload(),
     editorOpen,
-    e2eRun,
     machineRead: () => readMachine({ os, exec, home: config.home, env: { ...process.env, PATH: path } }),
     versionChanges: async (params: { from: string }) => {
       if (gitContext === undefined) throw new Error("This helper has no majhi checkout to read.");

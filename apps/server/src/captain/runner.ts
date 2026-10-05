@@ -2,7 +2,6 @@ import type {
   Authority,
   AutonomyMode,
   AutonomyOrg,
-  CaptainCapAsk,
   CaptainCause,
   CaptainChore,
   CaptainRunStatus,
@@ -11,17 +10,16 @@ import type {
 import { CHORE_LABEL } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
 import { choresNow } from "./levels.ts";
-import { NEAR_SAME_MS, type PastAnswer } from "./question-loop.ts";
 import type { CaptainRepo } from "./repo.ts";
-import { capAskText, dailyCaps, FAILURES_OFF, RAISE_FACTOR, RUN_CAPS, runActions } from "./rules.ts";
+import { FAILURES_OFF, PASS_BOUND } from "./rules.ts";
 
 /**
  * The guards every upkeep chore runs under (SPEC 5.18, "No runaway, no loops"). Structural, so a chore
- * cannot skip them: one run per chore and workspace (a trigger during a run joins it), hard caps per
- * run on actions, tokens and minutes, daily caps per chore, triggers the captain caused never start a
- * run, every action has a key so doing it twice changes nothing, the rules are read again right before
- * an irreversible step, two failures in a row turn the chore off and tell the owner, and the stop
- * switch ends everything.
+ * cannot skip them: one run per chore and workspace (a trigger during a run joins it), one bound per
+ * pass (`PASS_BOUND`: minutes or tokens), triggers the captain caused never start a run, every action
+ * has a key of the state it acts on so doing it twice changes nothing (G1), the rules are read again
+ * right before an irreversible step, two failures in a row turn the chore off and tell the owner, and
+ * the stop switch ends everything.
  */
 
 /** The workspace as the captain sees it right now. */
@@ -50,8 +48,6 @@ export interface RunnerDeps {
   stopped(): boolean;
   /** Tells the owner through the bell. */
   tellOwner(org: string, text: string): void;
-  /** Marks a subject (a task) as touched by the captain, so the events it causes start nothing. */
-  caused(subject: string): void;
   /** Tokens the workspace's lane spent since `since`. */
   laneTokens(org: string, since: string): number;
   chores: Record<CaptainChore, (run: ChoreRun) => Promise<void>>;
@@ -61,33 +57,6 @@ export interface RunnerDeps {
   changed?: () => void;
   /** A run ended: the chore did `did` things. The playbook's "Or do this" follows. */
   afterRun?: (org: string, chore: CaptainChore, did: number) => void;
-  /** A chore reached a daily cap with work left, and the owner is asked whether to raise it today. */
-  capAsked?: (ask: CaptainCapAsk) => void;
-}
-
-/**
- * A chore reached a daily cap while it had work: the owner is asked once that day whether to raise
- * it. After a raise the raised cap holds for the rest of the day, with no second question.
- */
-export function askToRaise(
-  deps: Pick<RunnerDeps, "repo" | "now" | "capAsked">,
-  ws: Workspace,
-  chore: CaptainChore,
-  kind: CaptainCapAsk["kind"],
-  cap: number,
-): void {
-  if (deps.repo.capRaised(ws.org, chore, ws.day)) return;
-  const ask: CaptainCapAsk = {
-    org: ws.org,
-    chore,
-    day: ws.day,
-    kind,
-    cap,
-    raiseTo: cap * RAISE_FACTOR,
-    text: capAskText(ws.name, chore, kind, cap),
-    at: deps.now().toISOString(),
-  };
-  if (deps.repo.addCapAsk(ask)) deps.capAsked?.(ask);
 }
 
 /** Why a run ended before its chore finished. */
@@ -123,6 +92,8 @@ export interface StepResult {
   /** Why Undo is not possible. */
   undoNote?: string | undefined;
   evidence?: string | undefined;
+  /** The state was acted on already (another path answered the card first): no line, a repeat. */
+  repeat?: true | undefined;
 }
 
 export type ActOutcome = "done" | "asked" | "repeat" | "blocked" | "failed";
@@ -143,8 +114,6 @@ export class ChoreRun {
     public ws: Workspace,
     private readonly deps: RunnerDeps,
     readonly startedAt: string,
-    /** The owner asked for this run: today's cap on actions does not end it (the per-run caps still do). */
-    private readonly manual = false,
   ) {
     this.started = Date.parse(startedAt);
   }
@@ -157,38 +126,18 @@ export class ChoreRun {
     return this.actions;
   }
 
-  /** Ends the run when it reached a cap or the captain was stopped. */
+  /** Ends the run when it reached the pass bound or the captain was stopped. */
   check(): void {
     if (this.deps.stopped()) throw new RunEnd("stopped", "majhi is shutting down");
-    const actions = runActions(this.chore);
-    if (this.actions >= actions) {
-      throw new RunEnd("capped", `reached its cap of ${actions} actions in one run`);
-    }
     const minutes = (this.deps.now().getTime() - this.started) / 60_000;
-    if (minutes >= RUN_CAPS.minutes) {
-      throw new RunEnd("capped", `reached its cap of ${RUN_CAPS.minutes} minutes in one run`);
+    if (minutes >= PASS_BOUND.minutes) {
+      throw new RunEnd("capped", `reached its bound of ${PASS_BOUND.minutes} minutes in one run`);
     }
     const tokens = this.deps.laneTokens(this.org, this.startedAt);
-    if (tokens >= RUN_CAPS.tokens) {
+    if (tokens >= PASS_BOUND.tokens) {
       throw new RunEnd(
         "capped",
-        `reached its cap of ${RUN_CAPS.tokens.toLocaleString("en-US")} tokens in one run`,
-      );
-    }
-    const daily = dailyCaps(
-      this.chore,
-      this.deps.repo.capRaised(this.org, this.chore, this.ws.day),
-      this.ws,
-    ).actions;
-    if (
-      !this.manual &&
-      daily !== undefined &&
-      this.deps.repo.actionsToday(this.org, this.chore, this.ws.day) >= daily
-    ) {
-      askToRaise(this.deps, this.ws, this.chore, "actions", daily);
-      throw new RunEnd(
-        "capped",
-        `reached today's cap of ${daily} for ${CHORE_LABEL[this.chore].toLowerCase()}`,
+        `reached its bound of ${PASS_BOUND.tokens.toLocaleString("en-US")} tokens in one run`,
       );
     }
   }
@@ -198,15 +147,9 @@ export class ChoreRun {
     return this.deps.repo.hasAction(key);
   }
 
-  /** What the captain answered to `agent` in `task` in the last ten minutes, oldest first. */
-  answeredRecently(task: string, agent: string): PastAnswer[] {
-    const since = new Date(this.deps.now().getTime() - NEAR_SAME_MS).toISOString();
-    const prefix = `Answered @${agent} in ${task}: `;
-    return this.deps.repo.answersSince(this.org, task, agent, since).map((a) => ({
-      at: a.at,
-      question: a.evidence ?? "",
-      answer: a.text.startsWith(prefix) ? a.text.slice(prefix.length) : undefined,
-    }));
+  /** How many times a key starting with `prefix` was acted on, in any run. */
+  times(prefix: string): number {
+    return this.deps.repo.countActions(prefix);
   }
 
   /** Takes one step under every guard. */
@@ -220,12 +163,14 @@ export class ChoreRun {
         return "blocked";
       }
     }
-    if (a.task !== undefined) this.deps.caused(a.task);
     const at = this.deps.now().toISOString();
+    // The key is taken before the step, in one insert: the lane may be shipping the same state now.
+    if (this.deps.repo.claimKey("chore", a.key, a.task, at) !== "taken") return "repeat";
     let result: StepResult;
     try {
       result = await a.do();
     } catch (err) {
+      this.deps.repo.releaseKey(a.key);
       const error = errorMessage(err);
       this.deps.repo.addAction({
         key: `${a.key}:failed:${at}`,
@@ -253,6 +198,10 @@ export class ChoreRun {
       }
       return "failed";
     }
+    if (result.repeat === true) {
+      this.deps.repo.releaseKey(a.key);
+      return "repeat";
+    }
     this.deps.repo.succeeded(this.org, this.chore);
     const outcome = result.outcome ?? "done";
     const added = this.deps.repo.addAction({
@@ -270,6 +219,8 @@ export class ChoreRun {
       undo: result.undo,
       undoNote: result.undoNote,
     });
+    // The log line holds the key now.
+    this.deps.repo.releaseKey(a.key);
     if (added === undefined) return "repeat";
     this.actions += 1;
     this.deps.repo.countRunAction(this.id);
@@ -351,24 +302,22 @@ export class ChoreRunner {
     why: string,
     subject?: string,
   ): Promise<CaptainRunStatus | undefined> {
-    const begun = await this.begin(org, chore, why, subject, false);
+    const begun = await this.begin(org, chore, why, subject);
     if (begun.run === undefined) return undefined;
     return this.drive(begun.key, begun.run);
   }
 
   /**
    * The owner's "Review now": one run now, whatever the schedule. It still stops for a run that is
-   * going, a chore turned off, a rest and the per-run caps. Today's cap on runs and on actions does
-   * not stop it: the owner's click runs once more, and `overCap` says it went past the cap.
-   * `done` settles when the run ends.
+   * going, a chore turned off, a rest and the pass bound. `done` settles when the run ends.
    */
   async startNow(
     org: string,
     chore: CaptainChore,
-  ): Promise<{ ran: false; why: string } | { ran: true; overCap: boolean; done: Promise<CaptainRunStatus> }> {
-    const begun = await this.begin(org, chore, "The owner asked for it", undefined, true);
+  ): Promise<{ ran: false; why: string } | { ran: true; done: Promise<CaptainRunStatus> }> {
+    const begun = await this.begin(org, chore, "The owner asked for it", undefined);
     if (begun.run === undefined) return { ran: false, why: begun.why ?? "It did not start." };
-    return { ran: true, overCap: begun.overCap, done: this.drive(begun.key, begun.run) };
+    return { ran: true, done: this.drive(begun.key, begun.run) };
   }
 
   private async begin(
@@ -376,11 +325,10 @@ export class ChoreRunner {
     chore: CaptainChore,
     why: string,
     subject: string | undefined,
-    manual: boolean,
-  ): Promise<{ key: string; run?: ChoreRun; why?: string; overCap: boolean }> {
+  ): Promise<{ key: string; run?: ChoreRun; why?: string }> {
     const { deps } = this;
     const key = `${org}:${chore}`;
-    const no = (reason: string) => ({ key, why: reason, overCap: false });
+    const no = (reason: string) => ({ key, why: reason });
     if (deps.stopped()) return no("majhi is shutting down");
     const active = this.active.get(key);
     if (active !== undefined) {
@@ -391,7 +339,6 @@ export class ChoreRunner {
     if (this.starting.has(key)) return no(`${CHORE_LABEL[chore]} is already starting here.`);
     this.starting.add(key);
     let run: ChoreRun | undefined;
-    let overCap = false;
     try {
       const ws = await deps.workspace(org);
       if (ws === undefined) return no("There is no such workspace, or no captain yet.");
@@ -405,24 +352,16 @@ export class ChoreRunner {
       const off = deps.repo.chore(org, chore).offAt;
       if (off !== undefined)
         return no(`${CHORE_LABEL[chore]} was turned off after failures. Turn it on first.`);
-      const runs = dailyCaps(chore, deps.repo.capRaised(org, chore, ws.day), ws).runs;
-      if (runs !== undefined && deps.repo.runsToday(org, chore, ws.day) >= runs) {
-        if (!manual) {
-          askToRaise(deps, ws, chore, "runs", runs);
-          return no("It reached today's cap of runs.");
-        }
-        overCap = true;
-      }
       const at = deps.now().toISOString();
       const id = deps.repo.openRun({ org, chore, day: ws.day, at, trigger: why });
       if (id === undefined) return no(`${CHORE_LABEL[chore]} is already running here.`);
-      run = new ChoreRun(id, chore, ws, deps, at, manual);
+      run = new ChoreRun(id, chore, ws, deps, at);
       if (subject !== undefined) run.joined.add(subject);
       this.active.set(key, run);
     } finally {
       this.starting.delete(key);
     }
-    return { key, run, overCap };
+    return { key, run };
   }
 
   private async drive(key: string, run: ChoreRun): Promise<CaptainRunStatus> {
@@ -460,23 +399,15 @@ export class ChoreRunner {
     deps.repo.setRunTokens(run.id, deps.laneTokens(run.org, run.startedAt));
     deps.repo.closeRun(run.id, status, at, note);
     if (status === "capped" || status === "stopped" || status === "failed") {
-      // A daily cap says so once a day, with the question to the owner when one waits; the runs a
-      // busy workspace keeps starting after it add no more lines.
-      const daily = status === "capped" && note?.startsWith("reached today's cap") === true;
-      const asking = deps.repo
-        .pendingCapAsks()
-        .some((a) => a.org === run.org && a.chore === run.chore && a.day === run.ws.day);
       deps.repo.addAction({
-        key: daily
-          ? `cap:${run.org}:${run.chore}:${run.ws.day}:${note?.match(/cap of (\d+)/)?.[1]}`
-          : `run:${run.id}:end`,
+        key: `run:${run.id}:end`,
         run: run.id,
         org: run.org,
         chore: run.chore,
         day: run.ws.day,
         at,
-        text: `${CHORE_LABEL[run.chore]} stopped: ${note ?? status}${daily && asking ? ". You are asked whether to raise it for today" : ""}`,
-        reason: status === "capped" ? "Every run stops at its cap" : (note ?? status),
+        text: `${CHORE_LABEL[run.chore]} stopped: ${note ?? status}`,
+        reason: status === "capped" ? "Every run stops at its bound" : (note ?? status),
         outcome: "skipped",
       });
     }

@@ -6,7 +6,7 @@ import { Store } from "../store/index.ts";
 import type { Lanes } from "./lanes.ts";
 import { laneOfScope, laneScopes } from "./memory-scopes.ts";
 import type { CaptainPorts } from "./ports.ts";
-import { DAILY_CAPS, MEMORY_WAITING } from "./rules.ts";
+import { MEMORY_WAITING } from "./rules.ts";
 import { type AutonomyLink, CaptainService } from "./service.ts";
 import { captainWorld, type WorldDeps } from "./world.ts";
 
@@ -178,49 +178,41 @@ describe("the memory chore when memories pile up", () => {
     expect(t.runs("acme")).toHaveLength(1);
   });
 
-  it("holds the daily cap of memory runs", async () => {
+  it("runs each time a pile of memories waits: no daily cap on runs, the pile is the bound", async () => {
     const t = setup();
     for (let round = 0; round < 7; round++) {
       for (let i = 0; i < MEMORY_WAITING; i++) await t.waiting(t.add("org:acme"));
       await t.captain.settled();
     }
-    expect(t.runs("acme")).toHaveLength(DAILY_CAPS.memory.runs ?? 0);
-    expect(DAILY_CAPS.memory.runs).toBe(4);
-    // The rest waits for tomorrow.
-    expect(t.facts.filter((f) => f.status === "pending")).toHaveLength(3 * MEMORY_WAITING);
+    expect(t.runs("acme")).toHaveLength(7);
+    expect(t.facts.filter((f) => f.status === "pending")).toEqual([]);
   });
 });
 
 describe("Review now", () => {
-  it("runs the memory chore past today's cap once, says so, and refuses a second run while one goes", async () => {
+  it("runs the memory chore on the owner's click, and refuses a second run while one goes", async () => {
     const t = setup();
-    for (let round = 0; round < 7; round++) {
-      for (let i = 0; i < MEMORY_WAITING; i++) await t.waiting(t.add("org:acme"));
-      await t.captain.settled();
-    }
-    expect(t.runs("acme")).toHaveLength(4);
-    const waiting = t.facts.filter((f) => f.status === "pending").length;
-    expect(waiting).toBe(3 * MEMORY_WAITING);
+    for (let i = 0; i < MEMORY_WAITING; i++) await t.waiting(t.add("org:acme"));
+    await t.captain.settled();
+    for (let i = 0; i < 5; i++) t.add("org:acme");
 
     t.block();
     const first = await t.captain.runChore("acme", "memory");
-    expect(first).toMatchObject({ started: true, overCap: true });
-    expect(first.text).toMatch(/goes past it because you asked/);
+    expect(first).toEqual({ started: true, text: "Started memory." });
     await until(() => t.captain.runner.running("acme", "memory"));
     const second = await t.captain.runChore("acme", "memory");
-    expect(second).toEqual({ started: false, overCap: false, text: "Memory is already running here." });
+    expect(second).toEqual({ started: false, text: "Memory is already running here." });
     t.free();
     await t.captain.settled();
-    expect(t.runs("acme")).toHaveLength(5);
+    expect(t.runs("acme")).toHaveLength(2);
     expect(t.facts.filter((f) => f.status === "pending")).toEqual([]);
   });
 
-  it("starts under the cap without saying anything about it, and says why when a workspace is unknown", async () => {
+  it("starts with one plain line, and says why when a workspace is unknown", async () => {
     const t = setup();
     t.add("org:acme");
     expect(await t.captain.runChore("acme", "memory")).toEqual({
       started: true,
-      overCap: false,
       text: "Started memory.",
     });
     await t.captain.settled();

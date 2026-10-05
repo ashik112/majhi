@@ -2,13 +2,12 @@ import { DECISION_KIND_LABEL, type OwnerDecision } from "@majhi/shared";
 import { useRunAttention } from "@/components/shell/banner";
 import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
-import { useToast } from "@/components/ui/toast";
-import { useAnswerDecision } from "@/lib/decision-queries";
-import { describeError } from "@/lib/errors";
+import { SecretAnswer } from "@/features/room/secret-answer";
 import { formatAgo } from "@/lib/format";
 import { useNow } from "@/lib/use-now";
 import { WorkspaceName } from "./decision-list";
-import { actionOf, openLabel, workspaceOf } from "./model";
+import { actionOf, openLabel, secretCardOf, workspaceOf } from "./model";
+import { useHeldOption, useSendDecision } from "./use-send-decision";
 
 export { workspaceOf };
 
@@ -46,20 +45,16 @@ export function DecisionRow({
   onOpen?: () => void;
 }) {
   const run = useRunAttention();
-  const toast = useToast();
-  const answer = useAnswerDecision();
+  const { send: sendDecision, busy } = useSendDecision();
+  const held = useHeldOption(decision.id);
   const now = useNow(60_000);
   const workspace = workspaceOf(decision);
-  const busy = answer.isPending;
+  const secret = secretCardOf(decision);
   // Work to ship has several answers on its page; here the main one is enough.
   const options = decision.options.filter(
     (o) => o.text !== true && (decision.kind !== "ship" || o.primary === true),
   );
-  const send = (option: string) =>
-    answer.mutate(
-      { id: decision.id, option },
-      { onError: (error) => toast("Could not answer it", { detail: describeError(error), tone: "error" }) },
-    );
+  const send = (option: string) => sendDecision(decision, option);
   const decide = () => {
     onOpen?.();
     run({ kind: "page", to: "/decisions", search: { id: decision.id } });
@@ -87,24 +82,27 @@ export function DecisionRow({
         {decision.kind === "ship" && decision.taskTitle !== undefined ? decision.taskTitle : decision.title}
       </button>
       <Suggestion decision={decision} dense={dense} />
+      {secret !== undefined && (
+        <SecretAnswer task={secret.task} item={secret.item} label={decision.title} compact />
+      )}
       <div className="flex min-w-0 flex-wrap items-center gap-2 pt-0.5">
         {options.map((option) => (
           <Button
             key={option.id}
             size="sm"
             variant={option.primary === true ? "primary" : "secondary"}
-            disabled={busy}
+            disabled={busy || held !== undefined}
             className="h-auto min-h-7 max-w-full py-1 text-left whitespace-normal"
             onClick={() => send(option.id)}
           >
-            {option.label}
+            {held === option.id ? "Sending..." : option.label}
           </Button>
         ))}
         <Button
           size="sm"
-          variant={options.length === 0 ? "primary" : "ghost"}
+          variant={options.length === 0 && secret === undefined ? "primary" : "ghost"}
           data-notice=""
-          className={options.length === 0 ? undefined : "ml-auto px-2"}
+          className={options.length === 0 && secret === undefined ? undefined : "ml-auto px-2"}
           onClick={() => {
             onOpen?.();
             run(actionOf(decision.link));

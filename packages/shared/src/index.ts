@@ -12,15 +12,8 @@ export * from "./automation.ts";
 export * from "./autonomy.ts";
 export * from "./backup.ts";
 export * from "./budgets.ts";
-export * from "./business.ts";
 export * from "./captain.ts";
-export {
-  type ChoreCap,
-  ChoreCapSchema,
-  type ChoreCaps,
-  ChoreCapsSchema,
-  DAILY_CHORE_CAPS,
-} from "./chores.ts";
+export * from "./chores.ts";
 export * from "./cleanup.ts";
 export * from "./cli-tools.ts";
 export * from "./commands.ts";
@@ -30,15 +23,15 @@ export * from "./connections.ts";
 export * from "./containers.ts";
 export * from "./decision-learning.ts";
 export * from "./decisions.ts";
-export * from "./e2e.ts";
-export * from "./economics.ts";
 export * from "./emoji.ts";
 export * from "./findings.ts";
+export * from "./event-seq.ts";
 export * from "./git-accounts.ts";
 export * from "./git-signin.ts";
 export * from "./handoff.ts";
 export * from "./host.ts";
 export * from "./inbox.ts";
+export * as lifecycle from "./lifecycle/index.ts";
 export * from "./machine.ts";
 export * from "./mcp-servers.ts";
 export * from "./media.ts";
@@ -48,6 +41,7 @@ export * from "./notify.ts";
 export * from "./onboarding.ts";
 export * from "./ops.ts";
 export * from "./paths.ts";
+export * from "./permission-labels.ts";
 export * from "./plain-text.ts";
 export * from "./playbooks.ts";
 export * from "./processes.ts";
@@ -65,7 +59,7 @@ export * from "./skills.ts";
 export * from "./task-parse.ts";
 export * from "./tasks.ts";
 export * from "./tiers.ts";
-export * from "./trackers.ts";
+export * from "./tools.ts";
 export * from "./triggers.ts";
 export * from "./usage.ts";
 export * from "./watch-formula.ts";

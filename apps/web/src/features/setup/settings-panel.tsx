@@ -132,7 +132,7 @@ function NumberField({
 /** Context budget, agent limits, resume and commits: four sections, each saved on its own. */
 export function ContextSection({ settings }: { settings: Settings }) {
   const context = useSettingsDraft(settings, ["contextCap", "compactAt", "compactTarget", "maxTurns"]);
-  const limits = useSettingsDraft(settings, ["agentsMax", "perAccount", "perTask", "idleTimeout"]);
+  const limits = useSettingsDraft(settings, ["agentsMax", "runsTotal", "perAccount", "perTask", "idleTimeout"]);
   const resume = useSettingsDraft(settings, ["resumeAuto", "resumeHandoff"]);
   const commits = useSettingsDraft(settings, ["commitsAttribution"]);
   return (
@@ -158,6 +158,12 @@ export function ContextSection({ settings }: { settings: Settings }) {
       <Section title="Limits" note="How many agents run at once" draft={limits}>
         <div className="grid gap-3 @[480px]:grid-cols-2">
           <NumberField label="Agents at once" name="agentsMax" draft={limits} />
+          <NumberField
+            label="Runs on this computer"
+            hint="Empty: a third of the CPU cores. Extra runs wait in line."
+            name="runsTotal"
+            draft={limits}
+          />
           <NumberField label="Per account" name="perAccount" draft={limits} />
           <NumberField label="Per task" name="perTask" draft={limits} />
           <Field label="Stop idle agents after" hint="Like 10m or 1h" error={limits.error("idleTimeout")}>

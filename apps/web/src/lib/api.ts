@@ -55,16 +55,34 @@ export async function cmd<N extends CommandName>(
 ): Promise<CommandOutput<N>> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (meta) headers[COMMAND_META_HEADER] = JSON.stringify(meta);
-  const body = await request(name, `/api/cmd/${name}`, {
+  const payload = JSON.stringify(input);
+  const key = `${name} ${payload}`;
+  const text = await requestText(name, `/api/cmd/${name}`, {
     method: "POST",
     headers,
-    body: JSON.stringify(input),
+    body: payload,
   });
+  // The same answer as last time is the same object: no parse, no schema check, and every screen that
+  // holds it sees no change. Only big answers are kept, they are the ones that cost.
+  const seen = lastAnswers.get(key);
+  if (seen?.text === text) return seen.value as CommandOutput<N>;
+  const body = parseBody(name, `/api/cmd/${name}`, text);
   // TypeScript cannot correlate `commands[N]["output"]` with `CommandOutput<N>` for a generic N.
   // The value was parsed with exactly that command's output schema, so the cast is sound.
   const schema: z.ZodType = commands[name].output;
-  return parseWith(name, schema, body) as CommandOutput<N>;
+  const value = parseWith(name, schema, body) as CommandOutput<N>;
+  if (text.length >= REUSE_MIN_BYTES) {
+    lastAnswers.delete(key);
+    lastAnswers.set(key, { text, value });
+    if (lastAnswers.size > REUSE_MAX) lastAnswers.delete(lastAnswers.keys().next().value ?? key);
+  }
+  return value;
 }
+
+/** Answers at least this long are kept for `cmd` to hand back when the next answer is the same text. */
+const REUSE_MIN_BYTES = 2048;
+const REUSE_MAX = 40;
+const lastAnswers = new Map<string, { text: string; value: unknown }>();
 
 /** Reads `GET /health`. `signal` lets a caller give up on a server that accepts but never answers. */
 export async function getHealth(signal?: AbortSignal): Promise<Health> {
@@ -89,6 +107,11 @@ export async function uploadFile(file: File, purpose?: "connection"): Promise<At
 }
 
 async function request(target: string, url: string, init: RequestInit): Promise<unknown> {
+  return parseBody(target, url, await requestText(target, url, init));
+}
+
+/** The answer's text. A failed request throws here, with the server's error. */
+async function requestText(target: string, url: string, init: RequestInit): Promise<string> {
   let res: Response;
   try {
     res = await fetch(url, init);
@@ -98,23 +121,25 @@ async function request(target: string, url: string, init: RequestInit): Promise<
   }
 
   const text = await res.text();
-  let body: unknown;
-  try {
-    body = text === "" ? undefined : JSON.parse(text);
-  } catch {
-    throw new ApiRequestError(target, res.status, `Expected JSON from ${url}, got something else`, [
-      text.slice(0, 200),
-    ]);
-  }
-
   if (!res.ok) {
+    const body = parseBody(target, url, text, res.status);
     const parsed = ApiErrorSchema.safeParse(body);
     if (parsed.success) {
       throw new ApiRequestError(target, res.status, parsed.data.error, parsed.data.details ?? []);
     }
     throw new ApiRequestError(target, res.status, `${url} failed with HTTP ${res.status}`);
   }
-  return body;
+  return text;
+}
+
+function parseBody(target: string, url: string, text: string, status = 200): unknown {
+  try {
+    return text === "" ? undefined : JSON.parse(text);
+  } catch {
+    throw new ApiRequestError(target, status, `Expected JSON from ${url}, got something else`, [
+      text.slice(0, 200),
+    ]);
+  }
 }
 
 function parseWith<T>(target: string, schema: z.ZodType<T>, body: unknown): T {

@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { CliToolIdSchema } from "./cli-tools.ts";
 import { LayaStatusSchema } from "./decisions.ts";
-import { E2eRunResultSchema } from "./e2e.ts";
 import { GitHostNameSchema, SignInIdSchema } from "./git-signin.ts";
 import { IdSchema } from "./ids.ts";
 import { MachineHostSchema } from "./machine.ts";
@@ -385,29 +384,6 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     }),
   }),
   /**
-   * Run the project's Playwright suite in the helper's own worktree at `commit`, at low priority, and
-   * answer when it ends (the call waits up to `timeoutMs`). `repo` is the project's path, the same on
-   * this computer and in the container. Never touches that checkout, ~/.majhi/majhi.db or port 7070.
-   */
-  z.object({
-    id: z.string(),
-    method: z.literal("e2e.run"),
-    params: z.object({
-      runId: z
-        .string()
-        .min(1)
-        .max(64)
-        .regex(/^[A-Za-z0-9-]+$/),
-      repo: z.string().min(1).max(EDITOR_PATH_MAX),
-      commit: CommitSchema,
-      timeoutMs: z
-        .number()
-        .int()
-        .min(60_000)
-        .max(6 * 60 * 60_000),
-    }),
-  }),
-  /**
    * Show a macOS notification. `path` is where a click leads in majhi, like `/t/ACM-12`; the helper
    * joins it to majhi's own address and only opens it when it can carry a click.
    */
@@ -612,7 +588,6 @@ export const HostResultSchemas = {
   }),
   "machine.read": MachineHostSchema,
   "editor.open": z.object({ opened: z.literal(true) }),
-  "e2e.run": E2eRunResultSchema,
   /** `clickable`: a click on the notification opens majhi. */
   notify: z.object({ shown: z.literal(true), clickable: z.boolean() }),
   "git.logins": GitLoginsResultSchema,

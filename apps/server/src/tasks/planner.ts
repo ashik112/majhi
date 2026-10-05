@@ -57,10 +57,7 @@ export class TaskPlanner {
 
   /** The tasks running now, other than `except`. */
   running(except: string): Task[] {
-    return this.deps.store.tasks
-      .list(false)
-      .filter((t) => t.status === "running" && t.id !== except)
-      .flatMap((t) => this.deps.store.tasks.get(t.id) ?? []);
+    return this.deps.store.tasks.runningTasks(except);
   }
 
   /** The task's parent, its parent's parent and so on. A subtask never waits for the work it is part of. */

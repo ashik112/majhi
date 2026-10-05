@@ -43,6 +43,8 @@ function world(
     off: new Set<string>(),
     active: 0,
     maxActive: 0,
+    env: "commit-1|image-1",
+    skewMs: 0,
   };
   const tasks = new Map<string, HandoffTask>();
   const add = (id: string, org = "acme") =>
@@ -99,6 +101,8 @@ function world(
       calls.holds.push(line);
     },
     changed: () => undefined,
+    environment: () => state.env,
+    now: () => new Date(Date.now() + state.skewMs),
   };
   const service = new HandoffService(ports, new HandoffRepo(db), over.commands === undefined ? {} : {});
   return { service, calls, state, add, tasks, db };
@@ -123,6 +127,79 @@ const BIG: DiffFacts = {
   ],
   commits: ["feat: total"],
 };
+
+describe("a failed check that an update may have fixed", () => {
+  const testRuns = (w: ReturnType<typeof world>) => w.calls.exec.filter((c) => c === "pnpm test").length;
+
+  it("runs again once when majhi's commit changed, and a pass clears the failure", async () => {
+    const w = world();
+    w.state.exec = (c) => (c === "pnpm test" ? bad("exit 127: docker: not found") : ok());
+    expect((await w.service.ensure("ACM-1", { force: false })).verdict).toBe("red");
+    const first = testRuns(w);
+    // Nothing changed: the kept failure stands.
+    expect((await w.service.ensure("ACM-1", { force: false })).cached).toBe(true);
+    expect(testRuns(w)).toBe(first);
+    // A new majhi fixed the runner.
+    w.state.env = "commit-2|image-1";
+    w.state.exec = () => ok(" Tests  4 passed (4)");
+    const again = await w.service.ensure("ACM-1", { force: false });
+    expect(again.verdict).toBe("green");
+    expect(again.cached).toBe(false);
+    expect((await w.service.state("ACM-1")).strikes).toBe(0);
+    const runs = w.calls.exec.length;
+    await w.service.ensure("ACM-1", { force: false });
+    expect(w.calls.exec).toHaveLength(runs);
+  });
+
+  it("runs again when the runner image changed or six hours passed, three attempts at most", async () => {
+    const w = world();
+    w.state.exec = (c) => (c === "pnpm test" ? bad() : ok());
+    await w.service.ensure("ACM-1", { force: false });
+    expect(testRuns(w)).toBe(2);
+    w.state.env = "commit-1|image-2";
+    expect((await w.service.ensure("ACM-1", { force: false })).verdict).toBe("red");
+    expect(testRuns(w)).toBe(4);
+    w.state.skewMs = 7 * 3_600_000;
+    await w.service.ensure("ACM-1", { force: false });
+    expect(testRuns(w)).toBe(6);
+    // The third attempt was the last one for this state of the work.
+    w.state.env = "commit-3|image-3";
+    w.state.skewMs = 20 * 3_600_000;
+    await w.service.ensure("ACM-1", { force: false });
+    expect(testRuns(w)).toBe(6);
+  });
+
+  it("does not retry a failure after less than six hours when nothing changed", async () => {
+    const w = world();
+    w.state.exec = (c) => (c === "pnpm test" ? bad() : ok());
+    await w.service.ensure("ACM-1", { force: false });
+    w.state.skewMs = 5 * 3_600_000;
+    await w.service.ensure("ACM-1", { force: false });
+    expect(testRuns(w)).toBe(2);
+  });
+});
+
+describe("a check that runs out of time", () => {
+  it("runs with the project's own caps and names the setting to change", async () => {
+    const w = world();
+    const seen: unknown[] = [];
+    const ports = (w.service as unknown as { ports: HandoffPorts }).ports;
+    ports.limits = async () => ({ cpus: 2, memory: "4g", minutes: 10 });
+    const exec = ports.exec;
+    ports.exec = async (task, cwd, command, ms, limits) => {
+      seen.push([ms, limits]);
+      return command === "pnpm test"
+        ? { code: null, timedOut: true, output: "", ms: ms }
+        : exec(task, cwd, command, ms, limits);
+    };
+    const res = await w.service.ensure("ACM-1", { force: false });
+    expect(seen).toContainEqual([600_000, { cpus: 2, memory: "4g" }]);
+    expect(seen).toContainEqual([300_000, { cpus: 2, memory: "4g" }]);
+    expect(res.failures[0]).toBe(
+      "`pnpm test` did not finish in 600 s, so it was stopped. To allow more, set containers.handoff_minutes.acme-api (now 10) or containers.handoff_cpus (now 2)",
+    );
+  });
+});
 
 describe("a green hand-off", () => {
   it("runs lint, build and tests once, says what ran, and does not run the same head twice", async () => {

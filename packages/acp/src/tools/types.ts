@@ -63,6 +63,13 @@ export interface ToolDef extends ToolSpec {
    * plugins' MCP servers) out of agent sessions: an agent gets only the tools majhi attaches.
    */
   runEnv?: Record<string, string>;
+  /**
+   * The CLI is started with the session's MCP servers on its command line, and expands `${NAME}`
+   * in them from its environment. majhi then puts header and variable values in the environment
+   * instead (`mcpValuesToEnv`), so no token shows in a process list. Absent when the CLI keeps
+   * them in its own memory (Codex).
+   */
+  mcpOnArgv?: boolean;
   /** How the adapter's per-prompt `usage` counts (see turn-usage.ts). */
   turnUsage: UsageMode;
   /**

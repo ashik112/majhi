@@ -20,7 +20,7 @@ import { IdSchema } from "./ids.ts";
 // ---------------------------------------------------------------------------
 // Packs
 
-export const PLAYBOOK_PACKS = ["upkeep", "engineering", "ops", "business", "growth"] as const;
+export const PLAYBOOK_PACKS = ["upkeep", "engineering", "ops", "business"] as const;
 export const PlaybookPackSchema = z.enum(PLAYBOOK_PACKS);
 export type PlaybookPack = z.infer<typeof PlaybookPackSchema>;
 
@@ -29,18 +29,15 @@ export const PLAYBOOK_PACK_LABEL: Record<PlaybookPack, string> = {
   engineering: "Engineering",
   ops: "Ops watch",
   business: "Business",
-  growth: "Growth",
 };
 
 /** One line under a pack's name. */
 export const PLAYBOOK_PACK_NOTE: Record<PlaybookPack, string> = {
   upkeep: "The captain's standing chores: shipping, cards, questions, memory, projects, triage, cleanup.",
-  engineering: "Health checks that file findings. They need sensors that are not built yet.",
+  engineering: "Health checks that file findings.",
   ops: "Checks that a service is up. A failure files an incident and wakes the captain.",
   business:
     "What each client costs and earns, and a weekly update drafted for them. Nothing is sent without you.",
-  growth:
-    "Ideas and openings: opportunities from your own work, and hackathons and grants from feeds you list.",
 };
 
 // ---------------------------------------------------------------------------
@@ -223,8 +220,8 @@ export const PlaybookStateSchema = z.object({
   outcomes: z.record(IdSchema, z.boolean()).optional(),
   /** "Or do this": what the captain does after a run. */
   orDo: z.string().max(500).nullable().optional(),
-  /** Actions per day for a chore. `null`: no cap. Absent: majhi's default. */
-  dailyLimit: z.number().int().min(1).max(1000).nullable().optional(),
+  /** Removed in D9, kept so old config loads. */
+  dailyLimit: z.unknown().optional(),
   /** A clock playbook: its next run (UTC ISO), whether a one-off has run, its last run record and last edit. */
   next: z.string().nullable().optional(),
   done: z.boolean().optional(),
@@ -307,8 +304,6 @@ export const PlaybookViewSchema = z.object({
   /** Each outcome rule with its switch. */
   outcomes: z.array(z.object({ id: IdSchema, text: z.string(), on: z.boolean() })).default([]),
   orDo: z.string().optional(),
-  /** Actions per day for a chore; null is no cap. Absent for a playbook that is not a chore. */
-  dailyLimit: z.number().int().nullable().optional(),
   /** The last run in plain words ("freed 31 GB", "2 failing: x, y"). */
   result: z.string().optional(),
   needsLook: z.boolean().default(false),
@@ -338,7 +333,6 @@ export const PlaybookUpdateInputSchema = z.object({
   settings: z.record(IdSchema, z.array(z.string().trim().min(1).max(500)).max(50)).optional(),
   outcomes: z.record(IdSchema, z.boolean()).optional(),
   orDo: z.string().trim().max(500).nullable().optional(),
-  dailyLimit: z.number().int().min(1).max(1000).nullable().optional(),
   /** A clock playbook: change its name, time, action or overlap rule. Give `spec` or `phrase`, not both. */
   clock: z
     .object({
@@ -447,14 +441,13 @@ export const GoalRemoveInputSchema = z.object({ id: IdSchema });
 // The outbound gate
 
 /** What leaves the machine. Each kind is a channel per workspace. */
-export const OUTBOUND_CHANNELS = ["email", "post", "tracker-comment", "form", "message"] as const;
+export const OUTBOUND_CHANNELS = ["email", "post", "form", "message"] as const;
 export const OutboundChannelSchema = z.enum(OUTBOUND_CHANNELS);
 export type OutboundChannel = z.infer<typeof OutboundChannelSchema>;
 
 export const OUTBOUND_CHANNEL_LABEL: Record<OutboundChannel, string> = {
   email: "Email",
   post: "Social post",
-  "tracker-comment": "Public tracker comment",
   form: "Form submit",
   message: "Message",
 };

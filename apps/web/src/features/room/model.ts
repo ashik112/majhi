@@ -183,6 +183,15 @@ export function roomReducer(state: RoomState, action: RoomAction): RoomState {
           if (state.newer && !state.items.some((i) => i.id === item.id)) return state;
           return { ...state, items: withStored(state.items, [item]) };
         }
+        case "delta": {
+          const at = state.items.findIndex((i) => i.id === message.id);
+          const held = state.items[at];
+          if (held === undefined || (held.type !== "agent" && held.type !== "thought")) return state;
+          if (held.text.length !== message.offset) return state;
+          const items = state.items.slice();
+          items[at] = { ...held, text: held.text + message.append };
+          return { ...state, items };
+        }
         case "agent":
           return { ...state, agents: upsertAgent(state.agents, message.agent) };
         case "processes":
@@ -262,13 +271,6 @@ export function trimOutput(text: string, max = 40): { text: string; hidden: numb
   const lines = text.replace(/\s+$/, "").split("\n");
   if (lines.length <= max) return { text: lines.join("\n"), hidden: 0 };
   return { text: lines.slice(0, max).join("\n"), hidden: lines.length - max };
-}
-
-/** What majhi does with each option kind, in the owner's words. Adapters name them "Always allow" and "Reject". */
-export function permissionOptionLabel(option: PermissionItem["options"][number]): string {
-  if (option.kind === "allow_always") return "Allow for this task";
-  if (option.kind === "reject_once") return "Deny";
-  return option.name;
 }
 
 export type PermissionSummary =

@@ -2,11 +2,12 @@ import type { AccountStatus, AutonomyEvent, AutonomyStatus, Task } from "@majhi/
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { RUNS } from "./authority-fixtures.ts";
+import { seedStatus } from "../testing/status.ts";
 
 /**
  * A day at the captain's desk, in two workspaces (Acme and Globex), with the fake agent runtime so no
  * token is spent. The owner turns Autonomous off and on, pauses a task by hand, an account signs out
- * and in again, an agent keeps asking the same thing, and the chores that may run while Autonomous
+ * and in again, an agent asks again and again, and the chores that may run while Autonomous
  * is off do. Everything is asserted on what the owner can see: task states, the log, the queue.
  */
 
@@ -54,7 +55,9 @@ async function desk() {
   await w.addRepo("web");
   must(await h.cmd("projects.register", { id: "globex-web", org: "globex", path: "~/Work/web" }));
   must(
-    await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS }, globex: { authority: RUNS } } }),
+    await h.cmd("autonomy.configure", {
+      orgs: { acme: { authority: RUNS, tasksAtOnce: 2 }, globex: { authority: RUNS, tasksAtOnce: 2 } },
+    }),
   );
 
   // The globex account's health, as the test sets it (a real sign-in needs a browser).
@@ -73,7 +76,7 @@ async function desk() {
   const make = async (text: string, project: string, team: string[]) =>
     (must(await h.cmd("tasks.create", { text, repos: [{ project }], team, start: false })) as Task).id;
   const task = (id: string) => store.tasks.get(id);
-  const status = async () => must(await h.cmd("autonomy.status")) as AutonomyStatus;
+  const status = async () => must(await h.cmd("autonomy.status", { detail: true })) as AutonomyStatus;
   const events = async () =>
     (must(await h.cmd("autonomy.events", { limit: 100 })) as { events: AutonomyEvent[] }).events.map(
       (e) => e.text,
@@ -157,7 +160,7 @@ describe("a day at the captain's desk", () => {
     // A Globex task stopped on a sign-in: the captain cannot resume it while the account is signed out,
     // plans around the account instead, and is woken when it works again.
     const g2 = await d.make("Add the VAT field", "globex-web", ["globex-builder"]);
-    d.store.tasks.setStatus(g2, "paused", "signed-out", new Date().toISOString());
+    seedStatus(d.store, g2, "paused", "signed-out", new Date().toISOString());
     d.setGlobexAccount("needs-login");
     const refused = await globex("majhi_tasks_start", { id: g2 });
     expect(refused.isError).toBe(true);
@@ -198,23 +201,18 @@ describe("a day at the captain's desk", () => {
     expect(stale.text).toContain("claude-globex is signed in right now");
   });
 
-  it("catches an agent that keeps asking the same thing, and raises a capped chore on the owner's word", async () => {
+  it("pauses a task for the owner after three answers with no progress in it", async () => {
     const d = await desk();
     must(await d.h.cmd("autonomy.start"));
     const globex = await d.lane("globex");
     const g1 = await d.make("Fix the invoice export", "globex-web", ["globex-builder"]);
-    const told: string[] = [];
-    d.runs.notify = (_task, agent, text) => {
-      told.push(`${agent}: ${text}`);
-    };
 
-    // The agent asks the same question five times; the captain answers the first and no more.
-    const outcomes: boolean[] = [];
-    for (let i = 1; i <= 5; i++) {
+    // The agent asks five times; no commit and no status change come in between.
+    for (let i = 1; i <= 3; i++) {
       d.room.post(g1, `q${i}`, {
         type: "choice",
         agent: "globex-builder",
-        question: "Should I go on with the export?",
+        question: `Should I go on with step ${i} of the export?`,
         options: [
           { id: "yes", label: "Yes" },
           { id: "no", label: "No" },
@@ -222,49 +220,17 @@ describe("a day at the captain's desk", () => {
         state: "pending",
       });
       const res = await globex("majhi_autonomy_answer", { task: g1, item: `q${i}`, option: "yes" });
-      outcomes.push(res.isError);
-      if (i > 1) {
-        expect(res.text).toBe(
-          `@globex-builder keeps asking in ${g1} (2 times in 10 minutes); it may be stuck. It is left for the owner. Do not answer it.`,
-        );
-      }
+      expect(res.isError).toBe(false);
     }
-    expect(outcomes).toEqual([false, true, true, true, true]);
-    expect(told).toHaveLength(1);
-    expect(told[0]).toContain("do not ask it again");
-
-    // The ship chore reaches its daily cap: the owner is asked, and "Raise for today" runs it again.
-    const repo = d.captain.repo;
-    const ws = await d.captain.status();
-    const day = ws.day;
-    for (let i = 0; i < 5; i++) {
-      repo.addAction({
-        key: `ship:seed:${i}`,
-        org: "globex",
-        chore: "ship",
-        day,
-        at: new Date().toISOString(),
-        text: `Shipped GLX-${i + 40}`,
-        reason: "seed",
-        outcome: "done",
-      });
-    }
-    d.store.tasks.setStatus(g1, "review", undefined, new Date().toISOString());
-    expect(await d.captain.runner.start("globex", "ship", "ready for review")).toBe("capped");
-    const asks = (await d.captain.asks()).asks;
-    expect(asks).toEqual([
-      expect.objectContaining({
-        org: "globex",
-        chore: "ship",
-        text: "Globex: the captain shipped its 5 tasks for today. Raise the limit for today?",
-      }),
-    ]);
-    await d.captain.answerCap("globex", "ship", "raise");
-    expect(repo.capRaised("globex", "ship", day)).toBe(true);
-    expect((await d.captain.asks()).asks).toEqual([]);
+    const pausedLine = () =>
+      d.store.room
+        .page(g1, 50, undefined)
+        .items.some((i) => i.type === "system" && i.text.includes("3 times with no progress"));
+    for (let tries = 0; tries < 50 && !pausedLine(); tries++) await new Promise((r) => setTimeout(r, 20));
+    expect(pausedLine()).toBe(true);
   });
 
-  it("holds up when things go wrong: a resume racing a pause, a restart, a flapping account, a new question inside a loop, injected text", async () => {
+  it("holds up when things go wrong: a resume racing a pause, a restart, a flapping account, injected text", async () => {
     const d = await desk();
     must(await d.h.cmd("autonomy.start"));
     const acme = await d.lane("acme");
@@ -294,7 +260,7 @@ describe("a day at the captain's desk", () => {
 
     // An account that flips back to signed out: the item is ready, then waiting again, then ready again.
     const g1 = await d.make("Fix the invoice export", "globex-web", ["globex-builder"]);
-    d.store.tasks.setStatus(g1, "paused", "signed-out", new Date().toISOString());
+    seedStatus(d.store, g1, "paused", "signed-out", new Date().toISOString());
     d.setGlobexAccount("needs-login");
     const wait = {
       items: [
@@ -321,7 +287,7 @@ describe("a day at the captain's desk", () => {
     );
     expect(lines).toHaveLength(2);
 
-    // A loop with a genuine new question inside it: the repeat is left, the new one is answered.
+    // Two questions in one task are both answered: no count of words decides.
     const g2 = await d.make("Add the VAT field", "globex-web", ["globex-builder"]);
     const post = (id: string, question: string) =>
       d.room.post(g2, id, {
@@ -337,8 +303,6 @@ describe("a day at the captain's desk", () => {
     const answer = (id: string) => globex("majhi_autonomy_answer", { task: g2, item: id, option: "yes" });
     post("q1", "Should I go on with the export?");
     expect((await answer("q1")).isError).toBe(false);
-    post("q2", "Should I go on with the export?");
-    expect((await answer("q2")).text).toContain("keeps asking");
     post("q3", "Which currency does the VAT field use?");
     expect((await answer("q3")).isError).toBe(false);
 

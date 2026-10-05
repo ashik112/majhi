@@ -1,3 +1,5 @@
+import { SKILL_NAME } from "@majhi/shared";
+
 /**
  * What the self-upkeep chores (discover, tidy, health, checklist) read and do in majhi. The real ports
  * are built in `upkeep-world.ts` from majhi's own commands; tests play them.
@@ -14,6 +16,19 @@ export interface Candidate {
   source?: string | undefined;
   installs?: number | undefined;
   installed: boolean;
+  /** For a skill: what skills.search says to pass to skills.install. */
+  install?: { source: string; skill?: string | undefined } | undefined;
+}
+
+/**
+ * What skills.install takes for a searched skill: the search's own install pair, when its skill name
+ * is a valid local name (a registry id like `react:components` is not one). Undefined otherwise, so the
+ * captain proposes the skill instead of failing to install it.
+ */
+export function skillInstallInput(c: Candidate): { source: string; skill: string } | undefined {
+  const pair = c.install;
+  if (pair?.skill === undefined || !SKILL_NAME.test(pair.skill)) return undefined;
+  return { source: pair.source, skill: pair.skill };
 }
 
 export type Severity = "info" | "low" | "medium" | "high";
@@ -38,6 +53,15 @@ export interface AccountSlots {
   headroom: boolean;
 }
 
+/** A secret request that waited for the owner past the stale limit, and whether anything still needs it. */
+export interface StaleSecret {
+  task: string;
+  item: string;
+  label: string;
+  /** Why it is no longer needed. Absent while the task is open and the secret is not saved. */
+  obsolete?: string | undefined;
+}
+
 export interface HealthCheckView {
   id: string;
   group: string;
@@ -56,6 +80,18 @@ export interface UpkeepPorts {
 
   /** Stale inbox items, old previews, dead watches, items that wait for the owner too long. */
   tidy(org: string): Promise<Signal[]>;
+  /**
+   * Pending secret requests of the workspace's tasks that are no longer needed: a duplicate of an
+   * older pending request for the same secret (at once), or one that waited more than 3 days and
+   * whose task closed or whose secret was saved another way.
+   */
+  staleSecrets(org: string): Promise<StaleSecret[]>;
+  /** Ids of the workspace's pending secret requests (`task/item`), oldest first. The captain's lane tries to fetch them through a connection. */
+  pendingSecrets?(org: string): Promise<string[]>;
+  /** Wakes the workspace's captain lane with a line; its digest lists the requests. */
+  wakeCaptain?(org: string, line: string): void;
+  /** Ends a stale secret request: the asking agent is told it was withdrawn and why. */
+  withdrawSecret(task: string, item: string, reason: string): Promise<void>;
   /** Connections whose last test failed. */
   failingConnections(org: string): Promise<{ id: string; name: string }[]>;
   /** Tests it again: true when it passes now. */

@@ -4,12 +4,14 @@ import type {
   AutonomyStatus,
   CommandInput,
   CommandOutput,
+  SlotCapacity,
 } from "@majhi/shared";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
 
 const statusKey = [...queryKeys.autonomy, "status"] as const;
+const detailKey = [...queryKeys.autonomy, "status", "detail"] as const;
 
 /** True when the server has no autonomous mode to offer: the command is not built (501) or not there (404). */
 export function autonomyMissing(error: unknown): boolean {
@@ -17,13 +19,14 @@ export function autonomyMissing(error: unknown): boolean {
 }
 
 /**
- * `autonomy.status`. The `autonomy` topic refetches it on every change; while the mode is not off
+ * `autonomy.status`. Without `detail` it is the small status every page reads; the Captain page asks for
+ * the task lists, the backlog and the waiting cards too. The `autonomy` topic refetches it on every change; while the mode is not off
  * it is also read every 30 s, since spend moves with every turn and turns emit no `autonomy` event.
  */
-export function useAutonomyStatus() {
+export function useAutonomyStatus(detail = false) {
   return useQuery<AutonomyStatus, ApiRequestError>({
-    queryKey: statusKey,
-    queryFn: () => cmd("autonomy.status", {}),
+    queryKey: detail ? detailKey : statusKey,
+    queryFn: () => cmd("autonomy.status", { detail }),
     retry: (count, error) => !autonomyMissing(error) && count < 2,
     refetchInterval: (query) => (query.state.data && query.state.data.mode !== "off" ? 30_000 : false),
     refetchIntervalInBackground: false,
@@ -37,6 +40,17 @@ export function useAutonomyReport(days = 14) {
     queryFn: () => cmd("autonomy.report", { days }),
     retry: (count, error) => !autonomyMissing(error) && count < 2,
     refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
+/** `tasks.slots`: agent slots in use per account. Read every 15 s while a page shows it. */
+export function useSlots() {
+  return useQuery<SlotCapacity, ApiRequestError>({
+    queryKey: [...queryKeys.tasks, "slots"],
+    queryFn: () => cmd("tasks.slots", {}),
+    retry: false,
+    refetchInterval: 15_000,
     refetchIntervalInBackground: false,
   });
 }
@@ -83,6 +97,7 @@ export function useAutonomyCommand<N extends StatusCommand>(name: N) {
     mutationFn: ({ input, reason }) => cmd(name, input, { reason }),
     onSuccess: (status) => {
       client.setQueryData(statusKey, status);
+      client.setQueryData(detailKey, status);
       return Promise.all([
         client.invalidateQueries({ queryKey: queryKeys.autonomy }),
         // A task's mark Not for autonomous mode shows on its card and in its header.

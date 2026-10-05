@@ -1,11 +1,11 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  BudgetStatusSchema,
   BackupListSchema,
+  BudgetStatusSchema,
   type CommandName,
-  commands,
   ConnectionViewSchema,
+  commands,
   DecisionListSchema,
   McpSearchResultSchema,
   PRIVATE,
@@ -17,7 +17,15 @@ import {
 } from "@majhi/shared";
 import { z } from "zod";
 import type { Store } from "../store/index.ts";
-import type { AccountSlots, Candidate, HealthCheckView, Signal, UpkeepPorts } from "./upkeep-ports.ts";
+import {
+  type AccountSlots,
+  type Candidate,
+  type HealthCheckView,
+  type Signal,
+  type StaleSecret,
+  skillInstallInput,
+  type UpkeepPorts,
+} from "./upkeep-ports.ts";
 
 /**
  * The self-upkeep chores' ports over majhi's own commands. Reads only, plus the few steps the chores
@@ -39,6 +47,8 @@ const BACKUP_STALE_DAYS = 2;
 const VERIFY_STALE_DAYS = 14;
 /** A weekly budget this used is near its cap. */
 const BUDGET_NEAR = 80;
+/** A secret request unanswered this long is checked again. */
+const STALE_SECRET_DAYS = 3;
 const DAY_MS = 86_400_000;
 
 /** Frameworks and services worth a search, by the dependency that shows them. */
@@ -83,7 +93,8 @@ export async function projectTerms(path: string): Promise<string[]> {
         })
         .parse(JSON.parse(pkg));
       const names = Object.keys({ ...parsed.dependencies, ...parsed.devDependencies });
-      for (const k of KNOWN) if (names.some((n) => n === k || n.startsWith(`${k}-`) || n.includes(`/${k}`))) terms.push(k);
+      for (const k of KNOWN)
+        if (names.some((n) => n === k || n.startsWith(`${k}-`) || n.includes(`/${k}`))) terms.push(k);
     } catch {
       // A package.json that does not parse is left to the project's own checks.
     }
@@ -105,6 +116,7 @@ export function upkeepWorld(deps: {
   store: Store;
   now: () => Date;
   machineBusy?: (() => string | undefined) | undefined;
+  wake?: ((org: string, line: string) => void) | undefined;
 }): UpkeepPorts {
   const daysSince = (at: string) => (deps.now().getTime() - Date.parse(at)) / DAY_MS;
 
@@ -153,11 +165,13 @@ export function upkeepWorld(deps: {
         source: s.source,
         installs: s.installs,
         installed: s.installed,
+        install: s.install,
       }));
     },
 
     async installSkill(_org, skill) {
-      const input = { source: skill.source ?? skill.id, skill: skill.title };
+      const input = skillInstallInput(skill);
+      if (input === undefined) throw new Error(`${skill.title} has no valid local skill name`);
       const preview = SkillInstallResultSchema.parse(
         (await deps.run("skills.install", input, `Upkeep: preview ${skill.title}`)).output,
       );
@@ -221,6 +235,65 @@ export function upkeepWorld(deps: {
         }
       }
       return out;
+    },
+
+    async staleSecrets(org) {
+      const saved = new Set(
+        z
+          .array(z.object({ name: z.string() }))
+          .parse((await deps.run("secrets.list", {}, "Upkeep: secrets")).output)
+          .map((s) => s.name),
+      );
+      const out: StaleSecret[] = [];
+      // The oldest pending request for a secret name stays; later ones for the same name collapse into it.
+      const first = new Map<string, { task: string; item: string }>();
+      for (const item of deps.store.room.waitingDecisions()) {
+        if (item.type !== "secret-request") continue;
+        const task = deps.store.tasks.get(item.task);
+        if ((task?.org ?? PRIVATE) !== org) continue;
+        const older = first.get(item.name);
+        if (older === undefined) first.set(item.name, { task: item.task, item: item.id });
+        if (older !== undefined) {
+          out.push({
+            task: item.task,
+            item: item.id,
+            label: item.label,
+            obsolete: `${older.task} already asks for the same secret:${item.name}, so one request is enough`,
+          });
+          continue;
+        }
+        if (daysSince(item.at) < STALE_SECRET_DAYS) continue;
+        const obsolete =
+          task === undefined || task.status === "done"
+            ? "Its task is closed"
+            : saved.has(item.name)
+              ? `${item.name} was saved another way`
+              : undefined;
+        out.push({ task: item.task, item: item.id, label: item.label, obsolete });
+      }
+      return out;
+    },
+
+    async pendingSecrets(org) {
+      return deps.store.room
+        .waitingDecisions()
+        .flatMap((item) =>
+          item.type === "secret-request" && (deps.store.tasks.get(item.task)?.org ?? PRIVATE) === org
+            ? [`${item.task}/${item.id}`]
+            : [],
+        );
+    },
+
+    wakeCaptain(org, line) {
+      deps.wake?.(org, line);
+    },
+
+    async withdrawSecret(task, item, reason) {
+      await deps.run(
+        "room.approve",
+        { task, item, decision: "reject", reason: `no longer needed (${reason.toLowerCase()})` },
+        "Upkeep: withdraw a stale secret request",
+      );
     },
 
     async failingConnections(org) {
@@ -292,7 +365,9 @@ export function upkeepWorld(deps: {
           severity: verified?.ok === false ? "high" : "medium",
         });
       }
-      const budgets = BudgetStatusSchema.parse((await deps.run("budgets.status", {}, "Upkeep: budgets")).output);
+      const budgets = BudgetStatusSchema.parse(
+        (await deps.run("budgets.status", {}, "Upkeep: budgets")).output,
+      );
       for (const row of budgets.rows) {
         if (row.percent >= BUDGET_NEAR) {
           out.push({
@@ -322,7 +397,9 @@ export function upkeepWorld(deps: {
     machineBusy: () => deps.machineBusy?.(),
     async slots(): Promise<AccountSlots[]> {
       const cap = SlotCapacitySchema.parse((await deps.run("tasks.slots", {}, "Upkeep: slots")).output);
-      const budgets = BudgetStatusSchema.parse((await deps.run("budgets.status", {}, "Upkeep: budgets")).output);
+      const budgets = BudgetStatusSchema.parse(
+        (await deps.run("budgets.status", {}, "Upkeep: budgets")).output,
+      );
       return cap.accounts.map((a) => {
         const row = budgets.rows.find((r) => r.scope === "account" && r.id === a.account);
         return { ...a, headroom: row === undefined || (row.percent < BUDGET_NEAR && !row.paused) };

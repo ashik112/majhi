@@ -1,7 +1,6 @@
 import {
   type AutonomyMode,
   type AutonomySettings,
-  type CaptainCapAsk,
   type CaptainChore,
   CaptainChoreSchema,
   type CaptainOrg,
@@ -12,7 +11,6 @@ import {
   type CommandMeta,
   type CommandName,
   commands,
-  DAILY_CHORE_CAPS,
   type Fact,
   PRIVATE,
   type RoomItem,
@@ -31,21 +29,17 @@ import type { Lanes } from "./lanes.ts";
 import { authorityOf, choresNow, effectiveAuthority, migratePickOrgs, workspaceIds } from "./levels.ts";
 import { laneOfScope } from "./memory-scopes.ts";
 import type { CaptainPorts } from "./ports.ts";
+import { type RelayDeps, RootRelay } from "./relay.ts";
 import { CaptainRepo, type StoredAction } from "./repo.ts";
-import { dailyCaps, MEMORY_WAITING, restWhy } from "./rules.ts";
+import { MEMORY_WAITING, restWhy } from "./rules.ts";
 import { ChoreRunner, type Workspace } from "./runner.ts";
 import { summaryOf } from "./summary.ts";
 import { type Identity, revertMerge } from "./undo.ts";
-
-const CHORES = CaptainChoreSchema.options;
-const DAILY_CAPS = DAILY_CHORE_CAPS;
 
 /** How often the daily chores, the hourly checks and the daily summary are looked at. */
 export const CAPTAIN_SWEEP_MS = 60_000;
 /** Chores that run when something happens also look once an hour, for what a restart missed. */
 const HOURLY_MS = 60 * 60_000;
-/** Events about a task the captain just acted in count as the captain's for this long. */
-const CAUSED_MS = 2 * 60_000;
 /** A burst of triggers is looked at once. */
 const TRIGGER_MS = 1_500;
 
@@ -78,8 +72,12 @@ export interface CaptainDeps {
   identity: (org: string) => Promise<Identity>;
   /** Runs a command as the owner, for Undo through majhi's own paths. */
   ownerCommand: (command: string, input: unknown, meta: CommandMeta) => Promise<void>;
+  /** How many open owner cards the workspace has: the Needs you count, so the lane and the list agree. */
+  ownerCards?: (org: string) => Promise<number>;
   /** The workspace of a task, `undefined` when it is unknown or a chat. Default: majhi's tasks. */
   taskOrg?: (task: string) => string | undefined;
+  /** What the relay of a lane captain's message into the root chat reads and writes. Without it, no relay. */
+  relay?: Pick<RelayDeps, "bossChat" | "post">;
   /** How long a burst of triggers is batched. Default `TRIGGER_MS`. */
   triggerMs?: number;
   now?: () => Date;
@@ -96,7 +94,6 @@ export class CaptainService {
   /** What the lane's ships and repo registrations are held to: the chores' own rules (SPEC 5.18, One rule set). */
   readonly laneGate: LaneGate;
   private sweep: NodeJS.Timeout | undefined;
-  private readonly caused = new Map<string, number>();
   /** The captain as last read, so a room write can tell the captain's own cards at once. */
   private boss: string | undefined;
   private closed = false;
@@ -104,20 +101,26 @@ export class CaptainService {
   private plays: ChorePlaybooks;
   /** The rest of the playbook scheduler, run in the same minute sweep. */
   private playbookSweep: (() => Promise<void>) | undefined;
+  private readonly relay: RootRelay | undefined;
   private readonly pending = new Map<string, { timer: NodeJS.Timeout; why: string; subject?: string }>();
 
   constructor(private readonly deps: CaptainDeps) {
     this.plays = new DefaultChorePlays(undefined, () => this.now());
     this.repo = new CaptainRepo(deps.store.raw);
+    this.relay =
+      deps.relay === undefined
+        ? undefined
+        : new RootRelay({
+            ...deps.relay,
+            config: deps.config,
+            lanes: deps.lanes,
+            now: () => this.now(),
+          });
     this.laneGate = new LaneGate({
       repo: this.repo,
       ports: deps.ports,
       workspace: (org) => this.workspace(org),
       now: () => this.now(),
-      capAsked: (ask) => {
-        this.deps.tell(`captain-cap:${ask.org}:${ask.chore}:${ask.day}`, ask.text);
-        this.deps.events.emit(["captain"]);
-      },
     });
     this.runner = new ChoreRunner({
       repo: this.repo,
@@ -125,7 +128,6 @@ export class CaptainService {
       workspace: (org) => this.workspace(org),
       stopped: () => this.stopped(),
       tellOwner: (org, text) => this.deps.tell(`captain:${org}:${this.now().toISOString()}`, text),
-      caused: (subject) => this.markCaused(subject),
       laneTokens: (org, since) => {
         const chat = this.repo.lane(org);
         return chat === undefined ? 0 : this.repo.laneSpend(chat, since).tokens;
@@ -134,10 +136,6 @@ export class CaptainService {
       enabled: (org, chore) => this.plays.enabled(org, chore),
       afterRun: (org, chore, did) => this.plays.afterRun(org, chore, did),
       changed: () => this.deps.events.emit(["captain"]),
-      capAsked: (ask) => {
-        this.deps.tell(`captain-cap:${ask.org}:${ask.chore}:${ask.day}`, ask.text);
-        this.deps.events.emit(["captain"]);
-      },
     });
   }
 
@@ -232,21 +230,6 @@ export class CaptainService {
   // ---------------------------------------------------------------------------
   // What happens in majhi
 
-  /** The captain acted in this task: events about it count as its own for a while. */
-  markCaused(subject: string): void {
-    this.caused.set(subject, this.now().getTime() + CAUSED_MS);
-    if (this.caused.size > 2_000) {
-      const now = this.now().getTime();
-      for (const [k, until] of this.caused) if (until < now) this.caused.delete(k);
-    }
-  }
-
-  /** Whether the captain caused events about this subject now. */
-  causedByCaptain(subject: string): boolean {
-    const until = this.caused.get(subject);
-    return until !== undefined && until >= this.now().getTime();
-  }
-
   /**
    * A trigger from an event: tagged with its cause, batched for a moment, then handed to the runner,
    * which drops the captain's own and joins a run that is going.
@@ -306,12 +289,24 @@ export class CaptainService {
   reviewReached(task: string): void {
     const org = this.orgOfTask(task);
     if (org === undefined) return;
-    const cause = this.causedByCaptain(task) ? "captain" : "agent";
-    this.trigger(org, "ship", `${task} reached review`, cause, task);
+    this.trigger(org, "ship", `${task} reached review`, "agent", task);
+  }
+
+  /** A turn ended: a workspace captain's message to the owner is relayed to the root chat. */
+  turnEnded(turn: { task: string; agent: string; text: string }): void {
+    if (this.relay === undefined || turn.agent !== this.boss) return;
+    void this.relay.relay(turn.task, turn.text).catch(() => undefined);
   }
 
   /** A room item was written: a new card or question wakes the chore that answers it. */
   roomWrote(task: string, item: RoomItem, captain: string | undefined = this.boss): void {
+    // Most items (tool calls, text, plans) wake nothing: decide that before any task lookup.
+    const card = item.type === "approval" && item.state === "pending" && item.autonomy === undefined;
+    const question =
+      (item.type === "ask" || item.type === "choice" || item.type === "owner-question") &&
+      item.state === "pending";
+    const prompt = item.type === "permission" && item.state === "pending" && item.connection === undefined;
+    if (!card && !question && !prompt) return;
     let org: string | undefined;
     try {
       // The captain's own lanes start nothing.
@@ -323,16 +318,29 @@ export class CaptainService {
     if (org === undefined) return;
     const agent = "agent" in item && typeof item.agent === "string" ? item.agent : undefined;
     const cause = agent !== undefined && agent === captain ? "captain" : "agent";
-    if (item.type === "approval" && item.state === "pending" && item.autonomy === undefined) {
+    if (card) {
       this.trigger(org, "cards", `A card arrived in ${task}`, cause, `${task}:${item.id}`);
       return;
     }
-    const question =
-      (item.type === "ask" || item.type === "choice" || item.type === "owner-question") &&
-      item.state === "pending";
-    const prompt = item.type === "permission" && item.state === "pending" && item.connection === undefined;
     if (question || prompt)
       this.trigger(org, "questions", `An agent asks in ${task}`, cause, `${task}:${item.id}`);
+  }
+
+  /** An org's git accounts or MR tokens changed: cards left for a missing sign-in are looked at again. */
+  /**
+   * A new majhi version may unblock what waited: a fixed check, a new tool, a higher cap. Every
+   * workspace's cards, ship and tidy chores run once right away instead of at the next hourly check.
+   */
+  afterUpdate(orgs: readonly string[]): void {
+    for (const org of new Set(orgs)) {
+      for (const chore of ["cards", "ship", "tidy"] as const)
+        this.trigger(org, chore, "majhi was updated", "majhi");
+    }
+  }
+
+  gitChanged(org: string): void {
+    this.trigger(org, "cards", "A git account changed", "majhi");
+    this.trigger(org, "ship", "A git account changed", "majhi");
   }
 
   /** The repo scan found repos: a new one wakes the projects chore of the workspace whose folder holds it. */
@@ -348,8 +356,7 @@ export class CaptainService {
   async memoryWaiting(fact: Pick<Fact, "scope" | "task">): Promise<void> {
     // Not by agent: the Housekeeper is the captain's agent unless the owner picked another.
     const task = fact.task;
-    const own =
-      task !== undefined && (this.causedByCaptain(task) || this.deps.lanes.orgOf(task) !== undefined);
+    const own = task !== undefined && this.deps.lanes.orgOf(task) !== undefined;
     const org = laneOfScope(fact.scope, (await this.deps.config.sections()).projects);
     if (org === undefined) return;
     this.trigger(org, "memory", "Memories wait", own ? "captain" : "agent", undefined, async () => {
@@ -391,24 +398,13 @@ export class CaptainService {
     const tz = zoneOr(rules?.tz ?? autonomy.tz);
     const now = this.now();
     const rest = restWhy(rules, now, tz);
-    // The daily limits the owner set on the playbooks come before the ones in Limits.
-    let limited = rules;
-    for (const chore of CHORES) {
-      const limit = this.plays.limit(org, chore);
-      if (limit === undefined) continue;
-      const key = DAILY_CAPS[chore].actions !== undefined ? "actions" : "runs";
-      limited = {
-        ...limited,
-        chores: { ...limited?.chores, [chore]: { ...limited?.chores?.[chore], [key]: limit } },
-      };
-    }
     const off = this.plays.rulesOff(org);
     return {
       org,
       name: name ?? (org === PRIVATE ? "Private" : org),
       mode: this.deps.autonomy.mode(),
       authority: effectiveAuthority(authorityOf(autonomy, org), this.deps.autonomy.mode()),
-      rules: limited,
+      rules,
       ...(off.length === 0 ? {} : { rulesOff: new Set(off) }),
       tz,
       day: localDay(now, tz),
@@ -436,7 +432,8 @@ export class CaptainService {
       const ws = this.workspaceOf(org, settings.autonomy, sections.orgs[org]?.name);
       if (org === PRIVATE) day = ws.day;
       const authority = authorityOf(settings.autonomy, org);
-      const { line, forYou } = summaryOf(this.repo.dayActions(org, ws.day));
+      const forYou = await this.deps.ownerCards?.(org) ?? 0;
+      const line = summaryOf(this.repo.dayActions(org, ws.day), forYou);
       const spend = { used: spends.of(org) };
       const lane = this.deps.lanes.chat(org);
       const cap = settings.autonomy.orgs[org]?.cap;
@@ -455,17 +452,12 @@ export class CaptainService {
         thread: lane === undefined ? "idle" : (threadOf?.(lane, org) ?? "idle"),
         chores: choresNow(authority, mode).map((chore) => {
           const c = this.repo.chore(org, chore);
-          const caps = dailyCaps(chore, this.repo.capRaised(org, chore, ws.day), ws);
           const last = this.repo.lastRun(org, chore);
           return {
             chore,
             ...(this.runner.running(org, chore) ? { running: true as const } : {}),
             ...(c.offWhy === undefined ? {} : { off: c.offWhy }),
-            today:
-              caps.actions !== undefined
-                ? this.repo.actionsToday(org, chore, ws.day)
-                : this.repo.runsToday(org, chore, ws.day),
-            cap: caps.actions ?? caps.runs ?? 1,
+            today: this.repo.actionsToday(org, chore, ws.day),
             ...(last === undefined ? {} : { lastRun: last }),
           };
         }),
@@ -529,60 +521,17 @@ export class CaptainService {
    */
   async runChore(org: string, chore: CaptainRunnableChore): Promise<CaptainRunChoreResult> {
     const started = await this.runner.startNow(org, chore);
-    if (!started.ran) return { started: false, text: started.why, overCap: false };
+    if (!started.ran) return { started: false, text: started.why };
     this.deps.events.emit(["captain"]);
     void started.done.catch(() => undefined).finally(() => this.deps.events.emit(["captain"]));
     const label = CHORE_LABEL[chore].toLowerCase();
-    return {
-      started: true,
-      overCap: started.overCap,
-      text: started.overCap
-        ? `Started ${label}. Today's limit was reached, and this run goes past it because you asked.`
-        : `Started ${label}.`,
-    };
+    return { started: true, text: `Started ${label}.` };
   }
 
   async choreOn(org: string, chore: CaptainChore): Promise<CaptainStatus> {
     this.repo.turnOn(org, chore);
     this.deps.events.emit(["captain"]);
     return this.status();
-  }
-
-  /** The questions about daily caps that wait for the owner, of each workspace's today only. */
-  async asks(): Promise<{ asks: CaptainCapAsk[] }> {
-    const settings = (await this.deps.config.settings()).autonomy;
-    const today = (org: string) => localDay(this.now(), zoneOr(settings.orgs[org]?.tz ?? settings.tz));
-    return { asks: this.repo.pendingCapAsks().filter((a) => a.day === today(a.org)) };
-  }
-
-  /**
-   * The owner's answer about a chore that reached its daily cap today. Raise doubles the chore's caps
-   * for that day only, and the chore looks again at once; Leave it keeps them.
-   */
-  async answerCap(
-    org: string,
-    chore: CaptainChore,
-    answer: "raise" | "leave",
-  ): Promise<{ asks: CaptainCapAsk[] }> {
-    const ask = (await this.asks()).asks.find((a) => a.org === org && a.chore === chore);
-    if (ask === undefined) {
-      throw new UserError(
-        `The captain is not asking about ${CHORE_LABEL[chore].toLowerCase()} in ${org} today.`,
-        409,
-      );
-    }
-    this.repo.answerCapAsk(
-      org,
-      chore,
-      ask.day,
-      answer === "raise" ? "raised" : "left",
-      this.now().toISOString(),
-    );
-    this.deps.events.emit(["captain"]);
-    if (answer === "raise") {
-      void this.runner.start(org, chore, "The owner raised today's limit").catch(() => undefined);
-    }
-    return this.asks();
   }
 
   /** Undo one action of the log through majhi's own paths. */
@@ -663,7 +612,7 @@ export class CaptainService {
     const yesterday = addDays(today, -1);
     const lines: string[] = [];
     for (const org of workspaceIds(sections.orgs)) {
-      const { line } = summaryOf(this.repo.dayActions(org, yesterday));
+      const line = summaryOf(this.repo.dayActions(org, yesterday));
       if (line !== "")
         lines.push(`${org === PRIVATE ? "Private" : (sections.orgs[org]?.name ?? org)}: ${line}`);
     }

@@ -216,7 +216,7 @@ describe("the daily summary", () => {
       to: "2026-10-02T00:00:00.000Z",
     });
     expect(await autonomy.dailySummary()).toBe(undefined);
-    expect((await h.cmd("autonomy.status")).body.summary).toEqual(made);
+    expect((await h.cmd("autonomy.status", { detail: true })).body.summary).toEqual(made);
 
     // A restart the same day makes no second one.
     extra = h.restart();
@@ -338,6 +338,6 @@ describe("the daily summary", () => {
     const made = (await autonomy.dailySummary()) as AutonomySummary;
     expect(made.day).toBe("2026-10-01");
     expect(made.spent.total.used.cost).toBe(3.5);
-    expect((await h.cmd("autonomy.status")).body.mode).toBe("off");
+    expect((await h.cmd("autonomy.status", { detail: true })).body.mode).toBe("off");
   });
 });

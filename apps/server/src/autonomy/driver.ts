@@ -5,9 +5,8 @@ import type { RoomService } from "../room/service.ts";
 import type { RunManager } from "../runs/manager.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
-import { answerableText, type DigestInput, digest, type Facts, factsKey, factsOf } from "./digest.ts";
+import { answerableText, type DigestInput, digest, factsKey } from "./digest.ts";
 import type { AutonomyService } from "./service.ts";
-import { diffFacts, type WakeGate } from "./wake-gate.ts";
 
 /**
  * The driver (PRV-74, rule 8; 5.18 lanes): wakes the captain with a tick in the lane of each
@@ -18,15 +17,13 @@ import { diffFacts, type WakeGate } from "./wake-gate.ts";
  *
  * A tick carries news only (SPEC 5.18, "Wakes carry news"). Each wake is `news` (a task finished, a
  * finding or backlog task appeared, a cap lifted, an account changed) or `soft` (a stall alarm, a
- * restart, the hourly check). Just before a tick goes, the facts it would show are keyed
+ * restart). Just before a tick goes, the facts it would show are keyed
  * (`factsKey`) and compared with the facts of the captain's last turn in the lane: a batch of soft
  * wakes goes only when the facts changed, and a batch of news only when a line is new or the facts
  * changed. Wakes that arrive together are one tick with all their reasons, repeats counted.
  */
 
 export const DEBOUNCE_MS = 20_000;
-/** A check while nothing autonomous runs in a workspace, so the captain picks the next work. */
-export const HEARTBEAT_MS = 60 * 60_000;
 /** A burst of task changes is looked at once. */
 const WATCH_MS = 1_000;
 const REASONS_MAX = 50;
@@ -52,16 +49,12 @@ export interface DriverDeps {
    * slot, a cap, or the owner. Absent: nothing is explained.
    */
   explained?: (task: string) => string | undefined;
-  /** Whether a workspace has work, a finding or a decision waiting. Absent: it always does. */
-  pendingWork?: (org: string) => Promise<boolean>;
   /** One line per open finding of a workspace for the digest. */
   findingLines?: (org: string) => string[];
   /** One line per open incident or failing watch of a workspace, unacknowledged first. */
   incidentLines?: (org: string) => string[];
   /** One line per project of a workspace for the digest: its knowledge card in brief. */
   projectLines?: (org: string) => string[];
-  /** Laya's say on whether a soft wake over changed facts is worth a captain turn. Absent: every one is. */
-  wakeGate?: Pick<WakeGate, "check" | "settle">;
   store: Store;
   events: EventHub;
   now?: () => Date;
@@ -78,21 +71,15 @@ interface Lane {
   news: Set<string>;
   /** The facts and the news lines of the last tick, or of the captain's last turn after it. */
   lastFacts: string | undefined;
-  /** The same facts as data, so a soft wake can be compared with them (the wake gate). */
-  lastFactsData: Facts | undefined;
-  /** The wake gate asked about the turn that is going: its outcome labels that decision. */
-  turnRef: string | undefined;
   lastNews: Set<string>;
   timer: NodeJS.Timeout | undefined;
   /** A tick waits for the captain's turn in this lane to end. */
   afterTurn: boolean;
   sending: Promise<void> | undefined;
-  lastTickAt: number;
 }
 
 export class AutonomyDriver {
   private readonly lanes = new Map<string, Lane>();
-  private readonly firstTick: number;
   /** Each autonomous task's status as last seen, to tell what changed. */
   private readonly statuses = new Map<string, string>();
   private readonly seenCards = new Set<string>();
@@ -105,8 +92,6 @@ export class AutonomyDriver {
   private generation = 0;
 
   constructor(private readonly deps: DriverDeps) {
-    const last = deps.autonomy.repo.state().lastTick;
-    this.firstTick = last === undefined ? 0 : Date.parse(last);
     deps.room.onWrite((task, item) => this.cardWritten(task, item));
   }
 
@@ -122,13 +107,10 @@ export class AutonomyDriver {
         counts: new Map(),
         news: new Set(),
         lastFacts: undefined,
-        lastFactsData: undefined,
-        turnRef: undefined,
         lastNews: new Set(),
         timer: undefined,
         afterTurn: false,
         sending: undefined,
-        lastTickAt: this.firstTick,
       };
       this.lanes.set(org, lane);
     }
@@ -317,10 +299,26 @@ export class AutonomyDriver {
       findings: this.deps.findingLines?.(org) ?? [],
       incidents: this.deps.incidentLines?.(org) ?? [],
       ...this.deskTasks(org, new Set(status.now.map((t) => t.task))),
+      secretRequests: this.secretLines(org),
       starts: authorityOf(status.settings, org).start === "decide",
       machine: machineOf(autonomy),
     };
     return { input, boss };
+  }
+
+  /** Pending secret requests of the workspace's tasks, one line each, oldest first. */
+  private secretLines(org: string): string[] {
+    try {
+      return this.deps.store.room
+        .waitingDecisions()
+        .flatMap((item) =>
+          item.type === "secret-request" && (this.deps.store.tasks.get(item.task)?.org ?? PRIVATE) === org
+            ? [`${item.task} item ${item.id}: @${item.agent} asks for ${item.label} (as secret:${item.name})`]
+            : [],
+        );
+    } catch {
+      return [];
+    }
   }
 
   /** The workspace's tasks in review and paused that the digest's own task list does not show. */
@@ -349,13 +347,7 @@ export class AutonomyDriver {
     const built = await this.build(org, [], false);
     if (built === undefined) return;
     const after = factsKey(built.input);
-    // A turn the wake gate was asked about: whether the facts moved is whether it was worth taking.
-    if (lane.turnRef !== undefined) {
-      this.deps.wakeGate?.settle(lane.turnRef, after !== lane.lastFacts);
-      lane.turnRef = undefined;
-    }
     lane.lastFacts = after;
-    lane.lastFactsData = factsOf(built.input);
   }
 
   private async send(
@@ -379,21 +371,6 @@ export class AutonomyDriver {
       autonomy.skipped?.(reasons, org);
       return;
     }
-    // A soft wake over changed facts: Laya says whether the change is worth a turn. Any doubt takes it.
-    const data = factsOf(built.input);
-    let turnRef: string | undefined;
-    if (news.size === 0 && this.deps.wakeGate !== undefined && lane.lastFactsData !== undefined) {
-      const verdict = await this.deps.wakeGate.check({
-        org,
-        reasons,
-        diff: diffFacts(lane.lastFactsData, data),
-      });
-      if (verdict.skip) {
-        autonomy.skipped?.(reasons, org);
-        return;
-      }
-      turnRef = verdict.ref;
-    }
     const text = digest(built.input);
     await this.deps.tasks.tellAgent({
       task: chat,
@@ -402,42 +379,14 @@ export class AutonomyDriver {
       settled: "Auto-pilot mode woke the captain",
       by: "majhi",
     });
-    lane.lastTickAt = this.now().getTime();
     lane.lastFacts = facts;
-    lane.lastFactsData = data;
-    lane.turnRef = turnRef;
     lane.lastNews = new Set(news);
     autonomy.ticked(reasons, org, chat);
   }
 
-  /** The minute sweep: the hourly heartbeat per lane while nothing autonomous runs there, and missed task changes. */
+  /** The minute sweep: task changes the watch missed. */
   sweep(): void {
     this.checkTasks();
-    if (this.deps.autonomy.mode() !== "on") return;
-    const now = this.now().getTime();
-    void this.deps.autonomy
-      .runsOrgs()
-      .then((orgs) => {
-        for (const org of orgs) {
-          if (now - this.lane(org).lastTickAt < HEARTBEAT_MS) continue;
-          const chat = this.deps.autonomy.laneChats().find((c) => this.deps.autonomy.laneOrg(c) === org);
-          const busy = [
-            ...this.deps.autonomy
-              .openTasks()
-              .filter((t) => (t.org ?? PRIVATE) === org)
-              .map((t) => t.id),
-            ...(chat === undefined ? [] : [chat]),
-          ].some((id) => this.deps.runs.working(id).length > 0);
-          if (busy) continue;
-          // No work, no finding and no decision waiting: a bare check would only say nothing changed.
-          void (this.deps.pendingWork?.(org) ?? Promise.resolve(true))
-            .then((work) => {
-              if (work) this.wakeLane(org, "Hourly check: nothing autonomous is running here", "soft");
-            })
-            .catch(() => undefined);
-        }
-      })
-      .catch(() => undefined);
   }
 
   private scheduleWatch(): void {

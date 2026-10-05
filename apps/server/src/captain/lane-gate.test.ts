@@ -1,10 +1,9 @@
-import { ALL_ASK, type CaptainCapAsk } from "@majhi/shared";
+import { ALL_ASK } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
 import { LaneGate } from "./lane-gate.ts";
 import type { CaptainPorts, ShipCheck } from "./ports.ts";
 import { CaptainRepo } from "./repo.ts";
-import { DAILY_CAPS } from "./rules.ts";
 import type { Workspace } from "./runner.ts";
 
 /** The lane's ships and repo registrations are held to the chores' rules, over a database in memory. */
@@ -23,7 +22,6 @@ function setup(rules?: Workspace["rules"]) {
     inReview: true,
     repos: [{ path: "/Users/owner/Work/acme/web" }] as { path: string }[],
   };
-  const asked: CaptainCapAsk[] = [];
   const ports = {
     reviewTasks: async () => (state.inReview ? [{ id: "ACM-1", title: "Fix", heads: state.heads }] : []),
     shipCheck: async () => state.check,
@@ -37,15 +35,13 @@ function setup(rules?: Workspace["rules"]) {
       name: "Acme",
       mode: "on",
       authority: { ...ALL_ASK, merge: "decide" },
-      // The owner's ship cap: where the captain decides merges, ships have no default cap.
-      rules: { ...rules, chores: { ship: { actions: DAILY_CAPS.ship.actions ?? 5 }, ...rules?.chores } },
+      rules,
       tz: "UTC",
       day: DAY,
     }),
     now: () => new Date(`${DAY}T12:00:00.000Z`),
-    capAsked: (a) => asked.push(a),
   });
-  return { repo, state, gate, asked };
+  return { repo, state, gate };
 }
 
 const merge = (id = "ACM-1") => ({ id, into: "main" });
@@ -67,41 +63,16 @@ describe("the lane's ships and the chore's are one rule set", () => {
     expect(await t.gate.check("acme", "tasks.merge", merge())).toBeUndefined();
   });
 
-  it("stops at the chore's daily cap of ships, counting the chore's own, and asks the owner once", async () => {
+  it("has no daily cap on ships: many different states ship, each once", async () => {
     const t = setup();
-    const cap = DAILY_CAPS.ship.actions ?? 0;
-    for (let i = 0; i < cap - 1; i++) {
-      // The chore's own ships.
-      t.repo.addAction({
-        key: `ship:ACM-${100 + i}:x`,
-        org: "acme",
-        chore: "ship",
-        day: DAY,
-        at: `${DAY}T10:00:00.000Z`,
-        text: "Shipped",
-        reason: "chore",
-        outcome: "done",
-      });
+    for (let i = 0; i < 60; i++) {
+      t.state.heads = `acme-api@h${i}`;
+      expect(await t.gate.check("acme", "tasks.merge", merge())).toBeUndefined();
+      await t.gate.ran("acme", "tasks.merge", merge(), "", { ok: true });
     }
-    expect(await t.gate.check("acme", "tasks.merge", merge())).toBeUndefined();
-    await t.gate.ran("acme", "tasks.merge", merge(), "", { ok: true });
-    t.state.heads = "acme-api@next";
-    const refused = await t.gate.check("acme", "tasks.merge", merge());
-    expect(refused).toContain(`today's cap of ${cap}`);
-    expect(await t.gate.check("acme", "tasks.resolveShip", merge())).toContain("cap");
-    expect(t.asked).toHaveLength(1);
-    // Yesterday's ships do not count.
-    t.repo.addAction({
-      key: "ship:old",
-      org: "acme",
-      chore: "ship",
-      day: "2026-10-02",
-      at: "2026-10-02T10:00:00.000Z",
-      text: "Shipped",
-      reason: "chore",
-      outcome: "done",
-    });
-    expect(t.repo.actionsToday("acme", "ship", DAY)).toBe(cap);
+    expect(t.repo.actionsToday("acme", "ship", DAY)).toBe(60);
+    // The same state again is refused whatever the count.
+    expect(await t.gate.check("acme", "tasks.merge", merge())).toContain("already");
   });
 
   it("holds the lane to the chore's checks: not ready, a branch the workspace does not ship to", async () => {

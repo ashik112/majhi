@@ -45,9 +45,6 @@ describe("host jobs", () => {
     },
     suggestRoots: async () => [{ path: "/Users/a/Work", repoCount: 2 }],
     sshReload: async () => SSH_OK,
-    e2eRun: async () => {
-      throw new Error("An e2e run is already in progress on this computer.");
-    },
     secretsKeySave: async () => {
       throw new Error(
         "The key at /Users/a/.config/majhi/secrets.key is not the key majhi uses, so it was not saved.",

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   AUTHORITY_ROWS,
   type Authority,
@@ -88,6 +89,16 @@ export interface OutcomesDeps {
   changed?: () => void;
 }
 
+/** A hash of what a pass derived (not when it ran), to tell whether the next pass found anything new. */
+function derivedMarker(derived: readonly Derived[]): string {
+  const hash = createHash("sha1");
+  for (const d of derived)
+    hash.update(
+      `${d.subject}|${d.kind}|${d.org}|${d.key ?? ""}|${d.playbook ?? ""}|${d.task ?? ""}|${d.at}|${d.result ?? ""}\n`,
+    );
+  return hash.digest("hex");
+}
+
 /** The newest facts the money gate reads, kept a few seconds so a gate checked on every wake stays cheap. */
 const MONEY_TTL_MS = 15_000;
 
@@ -95,6 +106,8 @@ export class OutcomesService {
   readonly repo: OutcomesRepo;
   private queue: Promise<unknown> = Promise.resolve();
   private lastSweep = 0;
+  /** What the last pass derived, as a hash: a pass that derives the same writes nothing. */
+  private lastMarker: string | undefined;
   private tzCache = "UTC";
   private moneyCache: { at: number; spent: number; month: string } | undefined;
 
@@ -139,12 +152,18 @@ export class OutcomesService {
       ...(this.deps.playbookOfChore === undefined ? {} : { playbookOfChore: this.deps.playbookOfChore }),
     });
     const at = now.toISOString();
-    this.deps.db.transaction(() => {
-      for (const d of derived) this.repo.upsert(d, at);
-    })();
+    const marker = derivedMarker(derived);
     this.lastSweep = now.getTime();
+    // Derived the same as last pass: nothing to write and nothing for the UI to refetch. Otherwise only
+    // the rows that differ are written. The ladder always runs: it also reads the owner's settings and
+    // the clock, and the notices it writes announce themselves.
+    let written = 0;
+    if (marker !== this.lastMarker) {
+      written = this.repo.upsertChanged(derived, at);
+      this.lastMarker = marker;
+    }
     await this.runLadder(now);
-    this.deps.changed?.();
+    if (written > 0) this.deps.changed?.();
   }
 
   /** A sweep for a read, unless one ran in the last minute. */
@@ -230,7 +249,10 @@ export class OutcomesService {
     const proposes = shouldPropose(rows.slice(0, n), n, recent);
     if (open !== undefined) {
       // The record changed under an open proposal: withdraw it.
-      if (!proposes) this.repo.closeNotice(open.id, "dismissed", now.toISOString());
+      if (!proposes) {
+        this.repo.closeNotice(open.id, "dismissed", now.toISOString());
+        this.deps.changed?.();
+      }
       return;
     }
     if (!proposes) return;

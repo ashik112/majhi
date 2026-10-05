@@ -1,5 +1,9 @@
 import {
   type Attachment,
+  AUTONOMY_CHAT_BRIEF,
+  BOSS_CHAT_BRIEF,
+  CAPTAIN_LANE_BRIEF,
+  CHAT_BRIEF,
   type CoordinationMode,
   CoordinationModeSchema,
   DaySchema,
@@ -8,8 +12,6 @@ import {
   isOwnerChat,
   type MrReview,
   MrReviewSchema,
-  type PausedBy,
-  type PausedReason,
   type PendingShip,
   PendingShipSchema,
   type ReadMount,
@@ -27,12 +29,16 @@ import {
   type TeamOverride,
   TeamOverrideSchema,
 } from "@majhi/shared";
-import { and, asc, desc, eq, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { parseRoomState, type RoomState } from "../rooms/state.ts";
 import { type LinkRow, parentIsComplete, unmetDependencies } from "../tasks/relations.ts";
 import type { Db } from "./db.ts";
 import { attachments, autonomyTasks, taskCounters, taskLinks, taskRepos, tasks } from "./schema.ts";
+import { parseRows } from "./tolerant.ts";
+
+/** The briefs that make a `chat` task the owner's chat or a captain lane (see `isOwnerChat`). */
+const OWNER_CHAT_BRIEFS = [CHAT_BRIEF, BOSS_CHAT_BRIEF, AUTONOMY_CHAT_BRIEF, CAPTAIN_LANE_BRIEF];
 
 const TeamSchema = z.array(z.string());
 const OverridesSchema = z.record(z.string(), TeamOverrideSchema);
@@ -92,8 +98,15 @@ function parseOverrides(json: string): Record<string, TeamOverride> {
 /** A task row with its repos, links and attachments, as the store keeps it. */
 export class TaskRepo {
   private subjectQueries: ReturnType<typeof subjectStatements> | undefined;
+  private prepared: ReturnType<typeof taskStatements> | undefined;
 
   constructor(private readonly db: Db) {}
+
+  /** The hot queries, built and prepared once (Drizzle builds and prepares a plain query on every call). */
+  private get q(): ReturnType<typeof taskStatements> {
+    this.prepared ??= taskStatements(this.db);
+    return this.prepared;
+  }
 
   /**
    * What a notice or a decision names a task by: id, title, kind, brief, workspace, status and how many
@@ -113,6 +126,48 @@ export class TaskRepo {
       status: TaskSchema.shape.status.parse(row.status),
       repos,
     };
+  }
+
+  /**
+   * `subjectInfo` and `openSubtasks` of many tasks in three queries however many ids there are. A task
+   * that does not exist is left out.
+   */
+  subjectsMany(ids: readonly string[]): Map<string, TaskSubjectInfo & { open: number; newest?: string }> {
+    const out = new Map<string, TaskSubjectInfo & { open: number; newest?: string }>();
+    if (ids.length === 0) return out;
+    this.subjectQueries ??= subjectStatements(this.db);
+    const params = { ids: JSON.stringify(ids) };
+    const repos = new Map(this.subjectQueries.reposIn.all(params).map((r) => [r.task, r.n]));
+    const open = new Map(this.subjectQueries.openIn.all(params).map((r) => [r.parent, r]));
+    for (const row of this.subjectQueries.rowsIn.all(params)) {
+      const kids = open.get(row.id);
+      out.set(row.id, {
+        id: row.id,
+        title: row.title,
+        kind: TaskSchema.shape.kind.parse(row.kind),
+        brief: row.brief,
+        ...(row.org === null ? {} : { org: row.org }),
+        status: TaskSchema.shape.status.parse(row.status),
+        repos: repos.get(row.id) ?? 0,
+        open: kids?.n ?? 0,
+        ...(kids?.newest == null ? {} : { newest: kids.newest }),
+      });
+    }
+    return out;
+  }
+
+  /**
+   * The subtasks of a parent that are not done, and when the newest one was made. A parent with open
+   * subtasks waits on them, not on the owner.
+   */
+  openSubtasks(parent: string): { open: number; newest?: string } {
+    const row = this.db
+      .select({ n: sql<number>`count(*)`, newest: sql<string | null>`max(${tasks.createdAt})` })
+      .from(taskLinks)
+      .innerJoin(tasks, eq(tasks.id, taskLinks.task))
+      .where(and(eq(taskLinks.type, "parent"), eq(taskLinks.other, parent), ne(tasks.status, "done")))
+      .get();
+    return { open: row?.n ?? 0, ...(row?.newest == null ? {} : { newest: row.newest }) };
   }
 
   /** Hands out the next id for a key prefix: `GLX-1`, `GLX-2`, ... Numbers are never reused. */
@@ -194,26 +249,13 @@ export class TaskRepo {
 
   /** Whether the task exists: one cheap query where `get` runs four. */
   has(id: string): boolean {
-    return this.db.select({ id: tasks.id }).from(tasks).where(eq(tasks.id, id)).get() !== undefined;
+    return this.q.has.get({ id }) !== undefined;
   }
 
   get(id: string): Task | undefined {
-    const row = this.db.select().from(tasks).where(eq(tasks.id, id)).get();
+    const row = this.q.row.get({ id });
     if (row === undefined) return undefined;
-    const repos = this.db
-      .select()
-      .from(taskRepos)
-      .where(eq(taskRepos.task, id))
-      .orderBy(asc(taskRepos.pos))
-      .all();
-    const links = this.db.select().from(taskLinks).where(eq(taskLinks.task, id)).all();
-    const files = this.db
-      .select()
-      .from(attachments)
-      .where(eq(attachments.task, id))
-      .orderBy(asc(attachments.pos))
-      .all();
-    return buildTask(row, repos, links, files);
+    return buildTask(row, this.q.repos.all({ id }), this.q.links.all({ id }), this.q.files.all({ id }));
   }
 
   /**
@@ -221,54 +263,57 @@ export class TaskRepo {
    * exist are left out; the rest keep the order asked for.
    */
   getMany(ids: readonly string[]): Task[] {
+    if (ids.length === 0) return [];
+    const params = { ids: JSON.stringify(ids) };
+    const rows = this.q.rowsIn.all(params);
+    const repos = groupBy(this.q.reposIn.all(params), (r) => r.task);
+    const links = groupBy(this.q.linksIn.all(params), (r) => r.task);
+    const files = groupBy(this.q.filesIn.all(params), (r) => r.task);
     const found = new Map<string, Task>();
-    for (let from = 0; from < ids.length; from += MANY_CHUNK) {
-      const chunk = ids.slice(from, from + MANY_CHUNK);
-      const rows = this.db.select().from(tasks).where(inArray(tasks.id, chunk)).all();
-      const repos = groupBy(
-        this.db
-          .select()
-          .from(taskRepos)
-          .where(inArray(taskRepos.task, chunk))
-          .orderBy(asc(taskRepos.pos))
-          .all(),
-        (r) => r.task,
-      );
-      const links = groupBy(
-        this.db.select().from(taskLinks).where(inArray(taskLinks.task, chunk)).all(),
-        (r) => r.task,
-      );
-      const files = groupBy(
-        this.db
-          .select()
-          .from(attachments)
-          .where(inArray(attachments.task, chunk))
-          .orderBy(asc(attachments.pos))
-          .all(),
-        (r) => r.task,
-      );
-      for (const row of rows)
-        found.set(
-          row.id,
-          buildTask(row, repos.get(row.id) ?? [], links.get(row.id) ?? [], files.get(row.id) ?? []),
-        );
-    }
+    // A task that does not parse is left out and logged once, so one bad row cannot fail the whole read.
+    for (const task of parseRows(
+      "tasks",
+      rows,
+      (r) => r.id,
+      (row) => buildTask(row, repos.get(row.id) ?? [], links.get(row.id) ?? [], files.get(row.id) ?? []),
+    ))
+      found.set(task.id, task);
     return ids.flatMap((id) => found.get(id) ?? []);
   }
 
+  /**
+   * Tasks that wait to start (inbox or ready, with start-when-ready on), oldest first, loaded in one
+   * pass. The orchestrator asks on every sweep, so it must not load every task to find them.
+   */
+  waitingToStart(): Task[] {
+    return this.getMany(this.q.waitingIds.all().map((r) => r.id));
+  }
+
+  /** The tasks running now other than `except`, newest first, loaded in one pass. */
+  runningTasks(except: string): Task[] {
+    return this.getMany(
+      this.q.runningIds
+        .all()
+        .map((r) => r.id)
+        .filter((id) => id !== except),
+    );
+  }
+
+  /** Ids of the owner's chats and the captain's lanes. */
+  chatIds(): string[] {
+    return this.q.chatIds.all().map((r) => r.id);
+  }
+
   /** Newest first. Two queries however many tasks there are. `working` is filled by the caller. */
-  list(includeDone: boolean): Omit<TaskSummary, "working">[] {
-    const rows = this.db
-      .select()
-      .from(tasks)
-      .where(includeDone ? undefined : ne(tasks.status, "done"))
-      .orderBy(desc(tasks.updatedAt), desc(tasks.id))
-      .all();
-    const repos = this.db
-      .select({ task: taskRepos.task, project: taskRepos.project, branch: taskRepos.branch })
-      .from(taskRepos)
-      .orderBy(asc(taskRepos.pos))
-      .all();
+  list(includeDone: boolean, only?: readonly string[]): Omit<TaskSummary, "working">[] {
+    const rows =
+      only !== undefined
+        ? this.q.rowsIn.all({ ids: JSON.stringify(only) }).filter((r) => includeDone || r.status !== "done")
+        : includeDone
+          ? this.q.listAll.all()
+          : this.q.listOpen.all();
+    // `pos` orders a task's repos; sorting here saves SQLite a temp sort of every repo row on each call.
+    const repos = this.q.repoSummaries.all().sort((a, b) => a.pos - b.pos);
     const byTask = new Map<string, { project: string; branch: string }[]>();
     for (const r of repos) {
       const list = byTask.get(r.task) ?? [];
@@ -278,13 +323,7 @@ export class TaskRepo {
     const linkRows = this.allLinks();
     const statuses = this.statuses();
     const unmerged = this.unmergedMrs();
-    const autonomous = new Set(
-      this.db
-        .select({ task: autonomyTasks.task })
-        .from(autonomyTasks)
-        .all()
-        .map((r) => r.task),
-    );
+    const autonomous = new Set(this.q.autonomous.all().map((r) => r.task));
     const linksBy = new Map<string, LinkRow[]>();
     const childStatuses = new Map<string, TaskStatus[]>();
     for (const l of linkRows) {
@@ -298,38 +337,43 @@ export class TaskRepo {
         childStatuses.set(l.other, kids);
       }
     }
-    return rows.map((row) => {
-      const own = linksBy.get(row.id) ?? [];
-      const kids = childStatuses.get(row.id);
-      const summary: Omit<TaskSummary, "working"> = {
-        id: TaskIdSchema.parse(row.id),
-        title: row.title,
-        kind: TaskSchema.shape.kind.parse(row.kind),
-        status: TaskSchema.shape.status.parse(row.status),
-        team: TeamSchema.parse(JSON.parse(row.team)),
-        mode: CoordinationModeSchema.catch("lead").parse(row.mode),
-        updatedAt: row.updatedAt,
-        repos: byTask.get(row.id) ?? [],
-        links: own.map(toLink),
-        waitingOn: unmetDependencies(
-          own,
-          (id) => statuses.get(id),
-          (id) => unmerged.has(id),
-        ),
-      };
-      if (kids !== undefined)
-        summary.children = { total: kids.length, done: kids.filter((k) => k === "done").length };
-      if (row.org !== null) summary.org = row.org;
-      if (isOwnerChat({ kind: summary.kind, brief: row.brief })) summary.chat = true;
-      if (isCaptainLane({ kind: summary.kind, brief: row.brief })) summary.lane = true;
-      if (row.pausedReason !== null)
-        summary.pausedReason = TaskSchema.shape.pausedReason.unwrap().parse(row.pausedReason);
-      if (row.pausedBy !== null) summary.pausedBy = TaskSchema.shape.pausedBy.unwrap().parse(row.pausedBy);
-      Object.assign(summary, priorityAndDue(row));
-      if (row.noAutonomy) summary.noAutonomy = true;
-      if (autonomous.has(row.id)) summary.autonomous = true;
-      return summary;
-    });
+    return parseRows(
+      "tasks",
+      rows,
+      (r) => r.id,
+      (row) => {
+        const own = linksBy.get(row.id) ?? [];
+        const kids = childStatuses.get(row.id);
+        const summary: Omit<TaskSummary, "working"> = {
+          id: TaskIdSchema.parse(row.id),
+          title: row.title,
+          kind: TaskSchema.shape.kind.parse(row.kind),
+          status: TaskSchema.shape.status.parse(row.status),
+          team: TeamSchema.parse(JSON.parse(row.team)),
+          mode: CoordinationModeSchema.catch("lead").parse(row.mode),
+          updatedAt: row.updatedAt,
+          repos: byTask.get(row.id) ?? [],
+          links: own.map(toLink),
+          waitingOn: unmetDependencies(
+            own,
+            (id) => statuses.get(id),
+            (id) => unmerged.has(id),
+          ),
+        };
+        if (kids !== undefined)
+          summary.children = { total: kids.length, done: kids.filter((k) => k === "done").length };
+        if (row.org !== null) summary.org = row.org;
+        if (isOwnerChat({ kind: summary.kind, brief: row.brief })) summary.chat = true;
+        if (isCaptainLane({ kind: summary.kind, brief: row.brief })) summary.lane = true;
+        if (row.pausedReason !== null)
+          summary.pausedReason = TaskSchema.shape.pausedReason.unwrap().parse(row.pausedReason);
+        if (row.pausedBy !== null) summary.pausedBy = TaskSchema.shape.pausedBy.unwrap().parse(row.pausedBy);
+        Object.assign(summary, priorityAndDue(row));
+        if (row.noAutonomy) summary.noAutonomy = true;
+        if (autonomous.has(row.id)) summary.autonomous = true;
+        return summary;
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -337,26 +381,28 @@ export class TaskRepo {
 
   /** Every link, one query. */
   allLinks(): LinkRow[] {
-    return this.db
-      .select()
-      .from(taskLinks)
-      .all()
-      .map((l) => ({
+    return parseRows(
+      "task_links",
+      this.q.allLinks.all(),
+      (l) => `${l.task}/${l.type}/${l.other}`,
+      (l) => ({
         task: l.task,
         type: TaskLinkTypeSchema.parse(l.type),
         other: l.other,
         when: l.when === null ? undefined : (l.when as "merged" | "ready"),
-      }));
+      }),
+    );
   }
 
   /** Status of every task, one query. */
   statuses(): Map<string, TaskStatus> {
     return new Map(
-      this.db
-        .select({ id: tasks.id, status: tasks.status })
-        .from(tasks)
-        .all()
-        .map((r) => [r.id, TaskSchema.shape.status.parse(r.status)]),
+      parseRows(
+        "tasks",
+        this.q.statusRows.all(),
+        (r) => r.id,
+        (r): [string, TaskStatus] => [r.id, TaskSchema.shape.status.parse(r.status)],
+      ),
     );
   }
 
@@ -405,14 +451,7 @@ export class TaskRepo {
 
   /** Tasks with a merge request that is not merged: open, or closed without merging. */
   unmergedMrs(): Set<string> {
-    return new Set(
-      this.db
-        .selectDistinct({ task: taskRepos.task })
-        .from(taskRepos)
-        .where(and(isNotNull(taskRepos.mrState), ne(taskRepos.mrState, "merged")))
-        .all()
-        .map((r) => r.task),
-    );
+    return new Set(this.q.unmerged.all().map((r) => r.task));
   }
 
   /** Done tasks that still have an open merge request, so their merge can be noticed. */
@@ -455,31 +494,11 @@ export class TaskRepo {
   }
 
   startWhenReady(id: string): boolean {
-    return this.db.select({ v: tasks.startWhenReady }).from(tasks).where(eq(tasks.id, id)).get()?.v === true;
+    return this.q.startWhenReady.get({ id })?.v === 1;
   }
 
   setStartWhenReady(id: string, value: boolean): void {
     this.db.update(tasks).set({ startWhenReady: value }).where(eq(tasks.id, id)).run();
-  }
-
-  /** `pausedBy` is kept only while the task is paused; any other change clears it. */
-  setStatus(
-    id: string,
-    status: TaskStatus,
-    pausedReason: PausedReason | undefined,
-    at: string,
-    pausedBy?: PausedBy,
-  ): void {
-    this.db
-      .update(tasks)
-      .set({
-        status,
-        pausedReason: pausedReason ?? null,
-        pausedBy: status === "paused" ? (pausedBy ?? null) : null,
-        updatedAt: at,
-      })
-      .where(eq(tasks.id, id))
-      .run();
   }
 
   /** The owner's priority and deadline (PRV-74). Null clears one; undefined leaves it. */
@@ -756,6 +775,16 @@ export class TaskRepo {
   }
 
   /** Ids of tasks that are not done and use the project. */
+  /** The working branches of every task in the repo at `source`, whatever their names. */
+  branchesIn(source: string): Set<string> {
+    const rows = this.db
+      .select({ branch: taskRepos.branch })
+      .from(taskRepos)
+      .where(eq(taskRepos.source, source))
+      .all();
+    return new Set(rows.map((r) => r.branch));
+  }
+
   openTasksUsing(project: string): string[] {
     return this.db
       .select({ id: taskRepos.task })
@@ -823,6 +852,88 @@ export interface TaskSubjectInfo {
   repos: number;
 }
 
+const ID = sql.placeholder("id");
+/** The ids of a `json_each` list, so one prepared query serves any number of ids. */
+const IDS = sql`(select value from json_each(${sql.placeholder("ids")}))`;
+
+function taskStatements(db: Db) {
+  return {
+    has: db.select({ id: tasks.id }).from(tasks).where(eq(tasks.id, ID)).prepare(),
+    row: db.select().from(tasks).where(eq(tasks.id, ID)).prepare(),
+    repos: db.select().from(taskRepos).where(eq(taskRepos.task, ID)).orderBy(asc(taskRepos.pos)).prepare(),
+    links: db.select().from(taskLinks).where(eq(taskLinks.task, ID)).prepare(),
+    files: db
+      .select()
+      .from(attachments)
+      .where(eq(attachments.task, ID))
+      .orderBy(asc(attachments.pos))
+      .prepare(),
+    rowsIn: db.select().from(tasks).where(inArray(tasks.id, IDS)).prepare(),
+    reposIn: db
+      .select()
+      .from(taskRepos)
+      .where(inArray(taskRepos.task, IDS))
+      .orderBy(asc(taskRepos.pos))
+      .prepare(),
+    linksIn: db.select().from(taskLinks).where(inArray(taskLinks.task, IDS)).prepare(),
+    filesIn: db
+      .select()
+      .from(attachments)
+      .where(inArray(attachments.task, IDS))
+      .orderBy(asc(attachments.pos))
+      .prepare(),
+    listAll: db.select().from(tasks).orderBy(desc(tasks.updatedAt), desc(tasks.id)).prepare(),
+    listOpen: db
+      .select()
+      .from(tasks)
+      .where(ne(tasks.status, "done"))
+      .orderBy(desc(tasks.updatedAt), desc(tasks.id))
+      .prepare(),
+    repoSummaries: db
+      .select({
+        task: taskRepos.task,
+        project: taskRepos.project,
+        branch: taskRepos.branch,
+        pos: taskRepos.pos,
+      })
+      .from(taskRepos)
+      .prepare(),
+    autonomous: db.select({ task: autonomyTasks.task }).from(autonomyTasks).prepare(),
+    allLinks: db.select().from(taskLinks).prepare(),
+    statusRows: db.select({ id: tasks.id, status: tasks.status }).from(tasks).prepare(),
+    unmerged: db
+      .selectDistinct({ task: taskRepos.task })
+      .from(taskRepos)
+      // Literal text, so SQLite sees the same condition as the partial index (migration 153).
+      .where(sql`mr_state IS NOT NULL AND mr_state != 'merged'`)
+      .prepare(),
+    // Raw column text, so the start-when-ready lifecycle column keeps its one reader and one writer.
+    startWhenReady: db
+      .select({ v: sql<number>`start_when_ready` })
+      .from(tasks)
+      .where(eq(tasks.id, ID))
+      .prepare(),
+    waitingIds: db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(and(inArray(tasks.status, ["inbox", "ready"]), sql`start_when_ready = 1`))
+      .orderBy(asc(tasks.updatedAt), asc(tasks.id))
+      .prepare(),
+    runningIds: db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(eq(tasks.status, "running"))
+      .orderBy(desc(tasks.updatedAt), desc(tasks.id))
+      .prepare(),
+    chatIds: db
+      .select({ id: tasks.id })
+      .from(tasks)
+      // Literal kind, so SQLite sees the same condition as the partial index (migration 153).
+      .where(and(sql`kind = 'chat'`, inArray(tasks.brief, OWNER_CHAT_BRIEFS)))
+      .prepare(),
+  };
+}
+
 function subjectStatements(db: Db) {
   return {
     row: db
@@ -841,6 +952,31 @@ function subjectStatements(db: Db) {
       .select({ n: sql<number>`count(*)` })
       .from(taskRepos)
       .where(eq(taskRepos.task, sql.placeholder("id")))
+      .prepare(),
+    rowsIn: db
+      .select({
+        id: tasks.id,
+        title: tasks.title,
+        kind: tasks.kind,
+        brief: tasks.brief,
+        org: tasks.org,
+        status: tasks.status,
+      })
+      .from(tasks)
+      .where(inArray(tasks.id, IDS))
+      .prepare(),
+    reposIn: db
+      .select({ task: taskRepos.task, n: sql<number>`count(*)` })
+      .from(taskRepos)
+      .where(inArray(taskRepos.task, IDS))
+      .groupBy(taskRepos.task)
+      .prepare(),
+    openIn: db
+      .select({ parent: taskLinks.other, n: sql<number>`count(*)`, newest: sql<string | null>`max(${tasks.createdAt})` })
+      .from(taskLinks)
+      .innerJoin(tasks, eq(tasks.id, taskLinks.task))
+      .where(and(eq(taskLinks.type, "parent"), inArray(taskLinks.other, IDS), ne(tasks.status, "done")))
+      .groupBy(taskLinks.other)
       .prepare(),
   };
 }
@@ -910,8 +1046,6 @@ function buildTask(
     updatedAt: row.updatedAt,
   });
 }
-
-const MANY_CHUNK = 400;
 
 function groupBy<T>(rows: readonly T[], key: (row: T) => string): Map<string, T[]> {
   const out = new Map<string, T[]>();

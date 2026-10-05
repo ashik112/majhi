@@ -1,7 +1,7 @@
 import { ALL_ASK, type Authority, AutonomySettingsSchema } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { authorityOf, choresNow, choresOf, effectiveAuthority, migratePickOrgs } from "./levels.ts";
-import { branchAllowed, DAILY_CAPS, dailyCaps, providerAllowed, restWhy, typingWhy } from "./rules.ts";
+import { branchAllowed, PASS_BOUND, providerAllowed, restWhy, typingWhy } from "./rules.ts";
 
 const settings = (raw: unknown) => AutonomySettingsSchema.parse(raw);
 
@@ -79,15 +79,15 @@ describe("the authority table per workspace", () => {
     const only = (row: keyof Authority): Authority => ({ ...ALL_ASK, [row]: "decide" });
     expect(choresOf(ALL_ASK)).toEqual([]);
     expect(choresOf(only("approvals"))).toEqual(["cards"]);
-    expect(choresOf(only("questions"))).toEqual(["questions"]);
+    expect(choresOf(only("questions"))).toEqual(["ship", "questions"]);
     expect(choresOf(only("merge"))).toEqual(["ship"]);
+    expect(choresOf(only("push"))).toEqual(["ship"]);
     expect(choresOf(only("upkeep"))).toEqual([
       "ship",
       "memory",
       "projects",
       "triage",
       "cleanup",
-      "stuck",
       "followups",
       "discover",
       "tidy",
@@ -163,44 +163,15 @@ describe("the rules that always hold", () => {
   });
 });
 
-describe("daily chore caps", () => {
-  const ask = { merge: "ask" as const };
-  const decide = { merge: "decide" as const };
-
-  it("uses majhi's defaults when the owner set nothing, doubled on a raised day", () => {
-    expect(dailyCaps("ship", false, { authority: ask })).toEqual({ actions: DAILY_CAPS.ship.actions });
-    expect(dailyCaps("ship", true, { authority: ask })).toEqual({
-      actions: (DAILY_CAPS.ship.actions ?? 0) * 2,
-    });
-    expect(dailyCaps("memory", false)).toEqual({ runs: DAILY_CAPS.memory.runs });
+describe("the pass bound and the removed daily caps", () => {
+  it("bounds a pass at 45 minutes or 60,000 tokens", () => {
+    expect(PASS_BOUND).toEqual({ minutes: 45, tokens: 60_000 });
   });
 
-  it("does not cap ships where the captain decides merges, unless the owner set a cap", () => {
-    expect(dailyCaps("ship", false, { authority: decide })).toEqual({});
-    expect(
-      dailyCaps("ship", false, { authority: decide, rules: { chores: { ship: { actions: 12 } } } }),
-    ).toEqual({
-      actions: 12,
+  it("still loads a config that holds the chore caps removed in D9", () => {
+    const parsed = AutonomySettingsSchema.safeParse({
+      orgs: { acme: { chores: { ship: { actions: 12 }, projects: { runs: null } } } },
     });
-  });
-
-  it("takes the owner's number, and null as no cap for that count only", () => {
-    const rules = { chores: { projects: { runs: null, actions: 50 }, ship: { actions: null } } };
-    expect(dailyCaps("projects", false, { rules, authority: ask })).toEqual({ actions: 50 });
-    expect(dailyCaps("projects", true, { rules, authority: ask })).toEqual({ actions: 100 });
-    expect(dailyCaps("ship", true, { rules, authority: ask })).toEqual({});
-    // Another chore keeps its default.
-    expect(dailyCaps("cards", false, { rules, authority: ask })).toEqual({
-      actions: DAILY_CAPS.cards.actions,
-    });
-  });
-
-  it("refuses a cap of zero or a negative one in settings", () => {
-    const parse = (chores: unknown) =>
-      AutonomySettingsSchema.safeParse({ orgs: { acme: { chores } } }).success;
-    expect(parse({ ship: { actions: 0 } })).toBe(false);
-    expect(parse({ ship: { actions: -3 } })).toBe(false);
-    expect(parse({ ship: { actions: null } })).toBe(true);
-    expect(parse({ nope: { actions: 3 } })).toBe(false);
+    expect(parsed.success).toBe(true);
   });
 });

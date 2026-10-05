@@ -136,6 +136,22 @@ export class FindingsService {
       .filter((f) => f.dedupeKey.startsWith(prefix));
   }
 
+  /**
+   * Resolves the open findings of a source in a workspace whose dedupe key starts with `prefix` and is
+   * not in `stillTrue`: the condition they reported is gone. They become fixed (and reopen under the same
+   * key if it comes back). Keys are structured, never read from text. Returns how many it resolved.
+   */
+  settle(org: string, source: FindingSource, prefix: string, stillTrue: ReadonlySet<string>): number {
+    let n = 0;
+    for (const f of this.repo.list({ org, source, statuses: ["open"], limit: 5_000 })) {
+      if (!f.dedupeKey.startsWith(prefix) || stillTrue.has(f.dedupeKey)) continue;
+      this.repo.patch(f.id, { at: this.at(), status: "fixed" });
+      n += 1;
+    }
+    if (n > 0) this.deps.changed?.();
+    return n;
+  }
+
   /** How many findings a playbook filed, and how many were taken up or dismissed. */
   statsOf(org: string, playbook: string): { total: number; accepted: number; dismissed: number } {
     return this.repo.statsByPlaybook(org, playbook);
@@ -144,11 +160,6 @@ export class FindingsService {
   /** How many findings a playbook filed or refreshed since a time. */
   countSince(org: string, playbook: string, since: string): number {
     return this.repo.countSince(org, playbook, since);
-  }
-
-  /** Whether a finding exists, for a deadline that links to one. */
-  exists(id: number): boolean {
-    return this.repo.get(id) !== undefined;
   }
 
   get(id: number): Finding {

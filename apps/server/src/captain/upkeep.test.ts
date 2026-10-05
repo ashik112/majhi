@@ -19,10 +19,26 @@ function fakeFindings(dismissed: string[] = []) {
       filed.set(input.dedupeKey ?? input.title, "open");
       return {};
     },
+    settle: (_org: string, _source: string, prefix: string, stillTrue: ReadonlySet<string>) => {
+      let n = 0;
+      for (const [k, v] of filed) {
+        if (v === "open" && k.startsWith(prefix) && !stillTrue.has(k)) {
+          filed.set(k, "fixed");
+          n += 1;
+        }
+      }
+      return n;
+    },
   };
 }
 
-const mcp = (id: string): Candidate => ({ kind: "mcp", id, title: id, description: "A server", installed: false });
+const mcp = (id: string): Candidate => ({
+  kind: "mcp",
+  id,
+  title: id,
+  description: "A server",
+  installed: false,
+});
 const skill = (id: string, installs: number): Candidate => ({
   kind: "skill",
   id,
@@ -31,6 +47,7 @@ const skill = (id: string, installs: number): Candidate => ({
   source: `acme/${id}`,
   installs,
   installed: false,
+  install: { source: `acme/${id}`, skill: id.split("/").pop() as string },
 });
 
 function setup(opts: {
@@ -62,10 +79,8 @@ function setup(opts: {
     }),
     stopped: () => false,
     tellOwner: () => {},
-    caused: () => {},
     laneTokens: () => 0,
     chores: createChores(ports, () => NOW) as RunnerDeps["chores"],
-    capAsked: () => {},
   });
   return { repo, runner, findings };
 }
@@ -107,13 +122,80 @@ describe("discover", () => {
     expect(full.repo.allActions().map((a) => a.text)).toContain("Installed the skill acme/lint");
     expect(full.findings.filed.has("discover:mcp:io.acme/postgres")).toBe(true);
   });
+
+  it("a skill that fails to install fails once with its reason and is never tried again", async () => {
+    const installSkill = vi.fn(async () => {
+      throw new Error("The description is longer than 1024 characters.");
+    });
+    const full = setup({
+      upkeep: { profile: async () => ["x"], search, installSkill },
+      rules: { fullAccess: true } as AutonomyOrg,
+    });
+    for (const day of [1, 2, 3]) {
+      await full.runner.start("acme", "discover", `daily${day}`);
+    }
+    expect(installSkill).toHaveBeenCalledTimes(1);
+    expect(full.findings.filed.get("discover:skill:acme/lint")).toBe("open");
+    expect(full.repo.allActions().map((a) => a.text)).toContain(
+      "Could not install the skill acme/lint: The description is longer than 1024 characters.",
+    );
+  });
+
+  it("proposes a skill whose registry id is not a valid local name, and never installs it", async () => {
+    const installSkill = vi.fn(async () => {});
+    const odd = {
+      ...skill("acme/react:components", 900),
+      install: { source: "acme/ui", skill: "react:components" },
+    };
+    const full = setup({
+      upkeep: {
+        profile: async () => ["x"],
+        search: async (kind) => (kind === "skill" ? [odd] : []),
+        installSkill,
+      },
+      rules: { fullAccess: true } as AutonomyOrg,
+    });
+    await full.runner.start("acme", "discover", "daily");
+    expect(installSkill).not.toHaveBeenCalled();
+    expect(full.findings.filed.size).toBe(1);
+  });
+});
+
+describe("tidy stale secret requests", () => {
+  it("withdraws a request that is no longer needed and leaves one that is", async () => {
+    const pending = new Map([
+      ["secret:a", "waiting"],
+      ["secret:b", "waiting"],
+    ]);
+    const withdrawn: string[] = [];
+    const t = setup({
+      upkeep: {
+        failingConnections: async () => [],
+        tidy: async () => [],
+        staleSecrets: async () =>
+          [...pending.keys()].map((item) => ({
+            task: "ACM-1",
+            item,
+            label: "A key",
+            obsolete: item === "secret:a" ? "Its task is closed" : undefined,
+          })),
+        withdrawSecret: async (_task, item, reason) => {
+          withdrawn.push(`${item}: ${reason}`);
+          pending.delete(item);
+        },
+      },
+    });
+    await t.runner.start("acme", "tidy", "daily");
+    expect(withdrawn).toEqual(["secret:a: Its task is closed"]);
+    expect([...pending.keys()]).toEqual(["secret:b"]);
+  });
 });
 
 describe("tidy", () => {
   it("never removes a worktree with uncommitted changes, and names it for the owner", async () => {
     const clean = vi.fn(async () => ({ removed: [], kept: [] }));
     const t = setup({
-      upkeep: { failingConnections: async () => [], tidy: async () => [] },
+      upkeep: { failingConnections: async () => [], staleSecrets: async () => [], tidy: async () => [] },
       ports: {
         clean,
         cleanable: async () => [
@@ -125,15 +207,29 @@ describe("tidy", () => {
     expect(clean).not.toHaveBeenCalled();
     expect(t.findings.filed.get("tidy:dirty:ACM-1")).toBe("open");
   });
+
+  it("resolves the dirty-worktree finding once the worktree is clean, and keeps one finding per task", async () => {
+    let dirty = ["src/a.ts has changes"];
+    const t = setup({
+      upkeep: { failingConnections: async () => [], staleSecrets: async () => [], tidy: async () => [] },
+      ports: { cleanable: async () => [{ id: "ACM-1", title: "Done", steps: [], dirty }] },
+    });
+    await t.runner.start("acme", "tidy", "daily");
+    await t.runner.start("acme", "tidy", "daily");
+    expect([...t.findings.filed.entries()]).toEqual([["tidy:dirty:ACM-1", "open"]]);
+    dirty = [];
+    await t.runner.start("acme", "tidy", "daily");
+    expect(t.findings.filed.get("tidy:dirty:ACM-1")).toBe("fixed");
+  });
 });
 
-describe("the caps and the upkeep row", () => {
+describe("the upkeep row", () => {
   const quiet: Partial<UpkeepPorts> = { profile: async () => [], search: async () => [] };
 
-  it("runs once a day", async () => {
+  it("finds the same state on a second run and adds no second line", async () => {
     const t = setup({ upkeep: quiet });
     expect(await t.runner.start("acme", "discover", "daily")).toBe("done");
-    expect(await t.runner.start("acme", "discover", "daily")).toBeUndefined();
+    expect(await t.runner.start("acme", "discover", "daily")).toBe("done");
     expect(t.repo.allActions().map((a) => a.text)).toEqual(["Discover tools: nothing new fits"]);
   });
 
@@ -174,7 +270,11 @@ describe("agent slots", () => {
   it("never raises while the machine is busy", async () => {
     const setAccountSlots = vi.fn(async () => {});
     const t = setup({
-      upkeep: { ...slots(2), setAccountSlots, machineBusy: () => "the machine is busy: load 30.0 on 10 cores" },
+      upkeep: {
+        ...slots(2),
+        setAccountSlots,
+        machineBusy: () => "the machine is busy: load 30.0 on 10 cores",
+      },
       rules: { fullAccess: true } as AutonomyOrg,
     });
     await t.runner.start("acme", "checklist", "daily");

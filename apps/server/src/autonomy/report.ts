@@ -1,4 +1,5 @@
-import { type AutonomyEvent, type AutonomyReport, PRIVATE } from "@majhi/shared";
+import { type AutonomyEvent, type AutonomyReport, type MachineReading, PRIVATE } from "@majhi/shared";
+import { busyReason } from "../machine/busy.ts";
 import { addDays, localDay } from "../usage/ranges.ts";
 
 /** The charts of the Auto-pilot dashboard: pure sums over turns and feed events. */
@@ -82,4 +83,77 @@ export function finishedByDay(
       .map(([org, count]) => ({ org, count }))
       .sort((a, b) => b.count - a.count || a.org.localeCompare(b.org)),
   }));
+}
+
+/** The report's machine line, or nothing while the host helper is not connected. */
+export function machineOf(reading: MachineReading | undefined): Pick<AutonomyReport, "machine"> {
+  const host = reading?.host;
+  if (reading === undefined || host === undefined) return {};
+  const busy = busyReason(host);
+  return {
+    machine: {
+      cores: host.cores,
+      load1: host.load1,
+      containers: reading.containers.length,
+      ...(host.idleCpuPct === undefined ? {} : { idleCpuPct: host.idleCpuPct }),
+      ...(host.memAvailableBytes === undefined || host.memTotalBytes <= 0
+        ? {}
+        : { memFreePct: (host.memAvailableBytes / host.memTotalBytes) * 100 }),
+      ...(host.diskFreeBytes === undefined ? {} : { diskFreeGb: host.diskFreeBytes / 1_000_000_000 }),
+      ...(busy === undefined ? {} : { busy }),
+    },
+  };
+}
+
+/** Auto-pilot spend per day and workspace, `days` days ending with `today` (oldest first). */
+export function spendByDay(
+  turns: readonly (SpendTurn & { org: string })[],
+  today: string,
+  days: number,
+  tz: string,
+): AutonomyReport["spend"] {
+  const list = Array.from({ length: days }, (_, i) => addDays(today, i - days + 1));
+  const sums = new Map<string, Map<string, number>>(list.map((d) => [d, new Map()]));
+  for (const t of turns) {
+    const orgs = sums.get(localDay(t.at, tz));
+    if (orgs !== undefined) orgs.set(t.org, (orgs.get(t.org) ?? 0) + t.cost);
+  }
+  return list.map((day) => ({
+    day,
+    orgs: [...(sums.get(day) ?? [])]
+      .map(([org, cost]) => ({ org, cost: money(cost) }))
+      .filter((o) => o.cost > 0)
+      .sort((a, b) => b.cost - a.cost || a.org.localeCompare(b.org)),
+  }));
+}
+
+/** Tasks started, finished and paused per day. A task counts once per day and kind. */
+export function flowByDay(
+  events: readonly AutonomyEvent[],
+  today: string,
+  days: number,
+  tz: string,
+): AutonomyReport["flow"] {
+  const list = Array.from({ length: days }, (_, i) => addDays(today, i - days + 1));
+  const rows = new Map(list.map((day) => [day, { day, started: 0, finished: 0, paused: 0 }]));
+  const seen = new Set<string>();
+  for (const e of events) {
+    if (e.kind !== "task" || e.task === undefined || e.status === undefined) continue;
+    const kind =
+      e.status === "running"
+        ? "started"
+        : e.status === "paused"
+          ? "paused"
+          : finishes(e)
+            ? "finished"
+            : undefined;
+    if (kind === undefined) continue;
+    const day = localDay(e.at, tz);
+    const row = rows.get(day);
+    const key = `${day}|${e.task}|${kind}`;
+    if (row === undefined || seen.has(key)) continue;
+    seen.add(key);
+    row[kind] += 1;
+  }
+  return list.map((d) => rows.get(d) ?? { day: d, started: 0, finished: 0, paused: 0 });
 }

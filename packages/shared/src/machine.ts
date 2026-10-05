@@ -22,6 +22,8 @@ export const MachineContainerSchema = z.object({
   name: z.string(),
   cpuPct: z.number().nonnegative(),
   memBytes: z.number().nonnegative(),
+  /** The container's memory limit, when docker reports one. */
+  memLimitBytes: z.number().positive().optional(),
 });
 export type MachineContainer = z.infer<typeof MachineContainerSchema>;
 

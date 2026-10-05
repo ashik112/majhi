@@ -70,7 +70,6 @@ const ownersLine = (what: string) => `${what} is the owner's, on the Playbooks p
  */
 export function playbookLimitRefusal(command: string, input: Record<string, unknown>): string | undefined {
   if (command === "playbooks.update") {
-    if (input.dailyLimit !== undefined) return ownersLine("A chore's daily limit");
     const outcomes = (input.outcomes ?? {}) as Record<string, unknown>;
     if (Object.values(outcomes).some((on) => on === true)) return ownersLine("Turning an outcome rule on");
     const clock = input.clock as { action?: { kind?: unknown } } | undefined;
