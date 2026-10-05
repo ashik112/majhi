@@ -1,5 +1,15 @@
 # Progress
 
+## Secret scan and package store fixes (built, not merged)
+
+Branch `fix/scan-and-store`.
+
+- **Scan.** `field_name=COUNTER_AUTO_DELIVER_LOG_FIELD` was flagged as a `token`: the generic pattern includes `=`, so the whole `name=VALUE` text scored as one random string. Now a bare code name (all upper or all lower case, words split by `_`, dotted paths such as `settings.API_TOKEN`) is skipped by the token and `assigned` rules. A random blob mixes digits inside its letters, so it still counts. Added: a hex value of 32+ characters after `api_key`, `token` and the like is flagged, and a quoted literal of 8+ characters (`password="hunter2xyz9"`). Vendor rules are unchanged.
+- **Store.** Agent runs and background processes already got the shared store. The hand-off checks and the task terminal did not, so a check's `pnpm install` created `.pnpm-store/` in the worktree (which the hand-off then refused as uncommitted, and agents committed). Both now get the workspace store mount and `npm_config_store_dir`, `PNPM_STORE_DIR` and the cache variables through the environment. No repo file is edited.
+- **Hand-off check.** Uses structured `git status --porcelain=v1 -z`. Ignored files, and untracked `.pnpm-store` and `node_modules` at any depth, do not count. Modified tracked files and untracked source files still block.
+- **Verified.** Unit tests for the detector, the status filter against real git, and the hand-off run environment. Typecheck clean.
+- **Left.** A store already committed to a branch stays in its history; the owner or the lead must remove it from the branch.
+
 ## Faster test suite (built, not merged)
 
 Branch `perf/test-speed`. No test was deleted, skipped or weakened.
