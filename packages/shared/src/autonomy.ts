@@ -462,12 +462,17 @@ export const AutonomyAnswerInputSchema = z
   });
 
 /** `autonomy.guide`: the owner's message from the chat box. `keep` saves it as a standing instruction. */
-export const AutonomyGuideInputSchema = z.object({
-  text: z.string().trim().min(1).max(2000),
-  keep: z.boolean().default(false),
-  /** The workspace whose lane hears it. Default: the first workspace where the captain starts work. */
-  org: z.string().min(1).max(63).optional(),
-});
+export const AutonomyGuideInputSchema = z
+  .object({
+    text: z.string().trim().max(2000),
+    /** Upload ids, the same as `room.send`. A kept instruction is its text only. */
+    attachments: z.array(z.string()).max(20).default([]),
+    keep: z.boolean().default(false),
+    /** The workspace whose lane hears it. Default: the first workspace where the captain starts work. */
+    org: z.string().min(1).max(63).optional(),
+  })
+  .refine((v) => v.text !== "" || v.attachments.length > 0, { message: "Write a message or attach a file" })
+  .refine((v) => !v.keep || v.text !== "", { message: "A standing instruction needs text" });
 export const AutonomyGuideResultSchema = z.object({
   /** The autonomy chat the message went to. */
   chat: TaskIdSchema,

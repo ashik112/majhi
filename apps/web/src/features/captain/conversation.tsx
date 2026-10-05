@@ -234,7 +234,7 @@ function Thread({ org }: { org: CaptainOrg }) {
           <ChatLog chat={lane} />
         )}
         {autonomyStatus ? (
-          <ChatBox status={autonomyStatus} lane={org.org} />
+          <ChatBox status={autonomyStatus} lane={org.org} chat={lane} />
         ) : (
           <div className="p-3">
             <RowsSkeleton rows={1} height={72} />

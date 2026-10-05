@@ -1,5 +1,15 @@
 # Progress
 
+## Captain chat box: attachments, model, Enter (built, not merged)
+
+Branch `fix/captain-chat-composer`.
+
+- **Changed.** A workspace thread's box on the Captain Chat tab now attaches files and images (button, paste, drop), has the room's model and effort picker for the captain, and sends on Enter (Shift Enter adds a line). "Keep as standing instruction" stays. `autonomy.guide` takes `attachments` (same upload ids as `room.send`, same ownership check) and passes them to the lane's turn. The All tab already used the room composer.
+- **Repeated "moved to a fresh session" rows.** Cause: the once-per-version fresh start of every captain thread wrote its version file only after all threads passed, so one failing thread made every restart refresh the earlier threads again, each adding a row. The file now records each finished thread, a failing thread no longer stops the others, and done threads are never repeated. Consecutive identical context lines and warnings also show once with "x12".
+- **Owner will notice.** The attach button, model picker and Enter in the thread box; one row with a count instead of a dozen.
+- **Verified.** Typecheck, `fresh-after-update.test.ts`. Browser, isolated e2e server at 1440 and 1100: attach by file input and paste, model pick (Sonnet 5.5), Enter sends with the attachment id, Shift Enter keeps a line, message with attachment shows in the thread, no console errors or failed requests.
+- **Left.** The exact trigger on the live server was not inspected (read-only rule); the loop above is the code path that repeats.
+
 ## Removing a task no longer times out (built, not merged)
 
 Branch `fix/task-remove-timeout`.

@@ -1,11 +1,17 @@
 import type { RoomItem } from "@majhi/shared";
+import { contextLine } from "./model";
 import { ownerNotice, type Quiet, quietGroup, sameMoment } from "./system-lines";
 
 type SystemItem = Extract<RoomItem, { type: "system" }>;
 
 /** What the log draws: one item, or plain system notes from one moment as a single line. */
 export type Row =
-  | { kind: "item"; key: string; item: RoomItem }
+  | {
+      kind: "item";
+      key: string;
+      item: RoomItem /** Identical lines in a row, drawn once with "x12". */;
+      repeat: number;
+    }
   | { kind: "notes"; key: string; items: SystemItem[]; quiet: Quiet }
   | { kind: "steps"; key: string; items: RoomItem[]; count: number };
 
@@ -109,8 +115,23 @@ export function rowsOf(items: readonly RoomItem[]): Row[] {
       continue;
     }
     flush();
-    rows.push({ kind: "item", key: item.id, item });
+    const last = rows[rows.length - 1];
+    if (last?.kind === "item" && sameLine(last.item, item)) last.repeat += 1;
+    else rows.push({ kind: "item", key: item.id, item, repeat: 1 });
   }
   flush();
   return rows;
+}
+
+/** The text of a line that says the same thing each time it repeats: a context line, a warning or an error. */
+function lineText(item: RoomItem): string | undefined {
+  if (item.type === "context") return contextLine(item);
+  if (item.type === "system") return `${item.level}:${item.text}`;
+  return undefined;
+}
+
+/** Two lines in a row with the same text, like the same move to a fresh session posted again and again. */
+function sameLine(a: RoomItem, b: RoomItem): boolean {
+  const text = lineText(a);
+  return text !== undefined && text === lineText(b) && a.type === b.type;
 }

@@ -2082,7 +2082,7 @@ export class AutonomyService {
    * `keep` it is also a standing instruction for that workspace's lane, as a config commit.
    */
   async guide(
-    input: { text: string; keep: boolean; org?: string | undefined },
+    input: { text: string; keep: boolean; attachments?: string[] | undefined; org?: string | undefined },
     change: { command: string; meta: CommandMeta },
   ): Promise<{ chat: TaskId; instruction?: AutonomyInstruction }> {
     if (detectSecrets(input.text).length > 0) {
@@ -2118,9 +2118,14 @@ export class AutonomyService {
       );
       this.event({ kind: "guide", text: `New standing instruction: ${input.text}` });
     } else {
-      this.event({ kind: "guide", text: `The owner said: ${input.text}` });
+      this.event({ kind: "guide", text: `The owner said: ${input.text === "" ? "(a file)" : input.text}` });
     }
-    await this.deps.tasks.send({ task: chat.id, text: input.text, attachments: [], mode: "queue" });
+    await this.deps.tasks.send({
+      task: chat.id,
+      text: input.text,
+      attachments: input.attachments ?? [],
+      mode: "queue",
+    });
     return { chat: chat.id, ...(instruction === undefined ? {} : { instruction }) };
   }
 
