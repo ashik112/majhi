@@ -124,7 +124,7 @@ export interface LaunchDeps {
   /** Where connections keep their files (5.14). Undefined: runs get no connections. */
   connectionFiles?: Pick<RunFilesDeps, "connectionDir" | "browsersPath" | "oauth" | "gitToken"> | undefined;
   /** The skills store (SPEC 5.2): each run gets read-only copies of its agent's enabled skills. */
-  skills?: Pick<SkillStore, "get" | "pathOf"> | undefined;
+  skills?: Pick<SkillStore, "get" | "pathOf" | "effectiveFor"> | undefined;
 }
 
 export interface Launched {
@@ -180,12 +180,13 @@ export async function launch(
   const skills =
     deps.skills === undefined
       ? undefined
-      : await prepareRunSkills({ store: deps.skills, majhiHome: deps.majhiHome }, fm.skills).catch(
-          async (err) => {
-            if (held !== undefined) await removeRunFiles(held.dir);
-            throw err;
-          },
-        );
+      : await prepareRunSkills(
+          { store: deps.skills, majhiHome: deps.majhiHome },
+          await deps.skills.effectiveFor(fm.id, fm.skills),
+        ).catch(async (err) => {
+          if (held !== undefined) await removeRunFiles(held.dir);
+          throw err;
+        });
   const gated = gateTools(fm, {
     boss,
     teamSize: task.team.length,

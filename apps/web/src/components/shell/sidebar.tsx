@@ -21,6 +21,7 @@ import {
   MessagesSquare,
   Radar,
   Settings,
+  Sparkles,
   Users,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -193,6 +194,7 @@ function FootNav() {
         : (accounts?.length ?? 0) > 0
           ? { text: String(accounts?.length ?? 0) }
           : undefined,
+    skills: undefined,
     usage: toFix > 0 ? { text: `${toFix} to fix`, tone: "check" } : undefined,
   };
   return (
@@ -240,7 +242,12 @@ const MAIN_ICON: Record<Exclude<SidebarMainPage, "captain" | "watch">, LucideIco
   chats: MessagesSquare,
   playbooks: BookOpen,
 };
-const FOOT_ICON: Record<SidebarFootPage, LucideIcon> = { agents: Users, accounts: KeyRound, usage: Activity };
+const FOOT_ICON: Record<SidebarFootPage, LucideIcon> = {
+  agents: Users,
+  skills: Sparkles,
+  accounts: KeyRound,
+  usage: Activity,
+};
 
 function NavRow({
   page,

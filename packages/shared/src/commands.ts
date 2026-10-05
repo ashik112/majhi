@@ -323,6 +323,7 @@ import {
   SkillAgentInputSchema,
   SkillInstallInputSchema,
   SkillInstallResultSchema,
+  SkillNameInputSchema,
   SkillNameSchema,
   SkillSchema,
   SkillSearchResultSchema,
@@ -2649,7 +2650,7 @@ export const commands = {
   "skills.install": {
     risk: "change",
     summary:
-      "Install skills from a source (owner/repo, a repo or tree URL, a git URL, a SKILL.md or archive URL, a folder) or an uploaded zip. The first call only fetches and returns a preview (name, description, files, source) with a previewId; nothing is installed. Show the owner the preview, and after they agree call again with confirm set to the previewId. An installed skill is not enabled for any agent: use skills.enable",
+      "Install skills from a source (owner/repo, a repo or tree URL, a git URL, a SKILL.md or archive URL, a folder) or an uploaded zip. The first call only fetches and returns a preview (name, description, files, source) with a previewId; nothing is installed. Show the owner the preview, and after they agree call again with confirm set to the previewId. A new skill is on for every agent; skills.disable turns it off for one",
     input: SkillInstallInputSchema,
     output: SkillInstallResultSchema,
   },
@@ -2683,13 +2684,21 @@ export const commands = {
   "skills.enable": {
     risk: "change",
     summary:
-      "Turn an installed skill on for one agent: adds it to the agent file's skills list. Its next run gets the skill",
+      "Turn an installed skill on for one agent: adds it to the agent file's skills list and clears the agent's opt-out. Its next run gets the skill",
     input: SkillAgentInputSchema,
+    output: SkillSchema,
+  },
+  "skills.enableAll": {
+    risk: "change",
+    summary:
+      "Turn an installed skill on for every agent, now and for agents created later. Agents that opted out get it back",
+    input: SkillNameInputSchema,
     output: SkillSchema,
   },
   "skills.disable": {
     risk: "change",
-    summary: "Turn a skill off for one agent: takes it off the agent file's skills list",
+    summary:
+      "Turn a skill off for one agent: takes it off the agent file's skills list and records an opt-out when the skill is on for all agents",
     input: SkillAgentInputSchema,
     output: SkillSchema,
   },

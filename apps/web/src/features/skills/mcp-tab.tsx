@@ -8,32 +8,27 @@ import type {
   McpSearchResult,
   OrgView,
 } from "@majhi/shared";
-import { Download, Link2, Plus, Search, X } from "lucide-react";
+import { Download, Plus, Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { PageLink } from "@/components/ui/page-link";
 import { Segmented } from "@/components/ui/segmented";
 import { Select, Textarea } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/components/ui/toast";
 import { orgLabel } from "@/features/accounts/model";
-import { WorkspaceTag } from "@/features/connections/scope-picker";
 import { SecretInput } from "@/features/connections/value-controls";
-import { cn } from "@/lib/cn";
 import { useConnectionCommand, useConnections } from "@/lib/connection-queries";
 import { describeError } from "@/lib/errors";
 import { plural } from "@/lib/format";
 import { useMcpSearch, useSkillsCommand } from "@/lib/skills-queries";
-import { useAgents, useOrgs } from "@/lib/studio-queries";
-import { agentChoices, Block, ErrorLine, NameList, SourceLink } from "./parts";
+import { Block, ErrorLine, NameList, SourceLink } from "./parts";
 
 type Mode = "registry" | "url" | "command" | "json";
 type Request = Omit<McpInstallInput, "confirm" | "values">;
 
-interface Review {
+export interface Review {
   preview: McpPreview;
   request: Request;
 }
@@ -50,90 +45,6 @@ const MODES = [
   { value: "command", label: "Command" },
   { value: "json", label: "Pasted JSON" },
 ] as const;
-
-/** The MCP servers tab: install box, a card to review before anything is created, the registry, and what is installed. */
-export function McpTab() {
-  const connections = useConnections();
-  const _agents = agentChoices(useAgents().data);
-  const orgs = useOrgs().data ?? [];
-  const [org, setOrg] = useState("");
-  const [review, setReview] = useState<Review>();
-  const [installed, setInstalled] = useState<Extract<McpInstallResult, { status: "installed" }>>();
-  const chosen = org !== "" ? org : orgs.length > 1 ? (orgs[0]?.id ?? "") : "";
-  const mcp = (connections.data ?? []).filter((c) => c.type === "mcp");
-
-  const [adding, setAdding] = useState(false);
-  const [picked, setPicked] = useState<"installed" | "discover">();
-  const view = picked ?? (!connections.isPending && mcp.length === 0 ? "discover" : "installed");
-  const show = (next: Review) => {
-    setInstalled(undefined);
-    setAdding(false);
-    setReview(next);
-  };
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <Segmented
-          label="MCP servers view"
-          value={view}
-          onChange={setPicked}
-          segments={[
-            { value: "installed", label: "Installed", count: mcp.length },
-            { value: "discover", label: "Discover" },
-          ]}
-        />
-        {orgs.length > 1 && (
-          <span className="flex items-center gap-2 text-sm text-fg-muted">
-            Installs go to
-            <Select
-              aria-label="Workspace new servers go to"
-              className="w-[180px]"
-              value={chosen}
-              onChange={(e) => setOrg(e.target.value)}
-            >
-              {orgs.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </Select>
-          </span>
-        )}
-        <Button className="ml-auto" onClick={() => setAdding(!adding)} aria-expanded={adding}>
-          <Link2 aria-hidden="true" />
-          Add by URL or command
-        </Button>
-      </div>
-      {adding && <InstallBox orgs={orgs} org={chosen} onOrg={setOrg} onPreview={show} />}
-      {review && (
-        <PreviewCard
-          key={review.preview.previewId}
-          review={review}
-          orgs={orgs}
-          onPreview={(next) => setReview(next)}
-          onCancel={() => setReview(undefined)}
-          onInstalled={(result) => {
-            setReview(undefined);
-            setPicked("installed");
-            setInstalled(result);
-          }}
-        />
-      )}
-      {installed && <JustInstalled result={installed} />}
-      {view === "discover" ? (
-        <Browse org={chosen} onPreview={show} />
-      ) : (
-        <InstalledServers
-          servers={connections.isPending ? undefined : mcp}
-          error={connections.isError ? describeError(connections.error) : undefined}
-          orgs={orgs}
-          onDiscover={() => setPicked("discover")}
-        />
-      )}
-    </div>
-  );
-}
 
 function InstallBox({
   orgs,
@@ -795,105 +706,9 @@ function Browse({ org, onPreview }: { org: string; onPreview: (review: Review) =
   );
 }
 
-function InstalledServers({
-  servers,
-  error,
-  orgs,
-  onDiscover,
-}: {
-  servers: readonly ConnectionView[] | undefined;
-  error: string | undefined;
-  orgs: readonly OrgView[];
-  onDiscover: () => void;
-}) {
-  const test = useConnectionCommand("connections.test");
-  const toast = useToast();
-  const [testing, setTesting] = useState<string>();
-  const runTest = (server: ConnectionView) => {
-    setTesting(server.id);
-    test.mutate(
-      { id: server.id },
-      {
-        onError: (e) => toast(`Could not test ${server.name}`, { detail: describeError(e), tone: "error" }),
-        onSettled: () => setTesting(undefined),
-      },
-    );
-  };
-
-  return (
-    <Block
-      title={servers === undefined ? "Installed" : plural(servers.length, "MCP server")}
-      note="Every agent of a server's workspace gets it. Open one to switch it off for an agent."
-    >
-      {error && <ErrorLine>Could not load MCP servers: {error}</ErrorLine>}
-      {servers === undefined && !error && <Skeleton className="h-16 rounded-md" aria-busy="true" />}
-      {servers?.length === 0 && (
-        <div className="flex flex-col items-start gap-2 py-2">
-          <p className="text-base text-fg-muted">No MCP servers yet.</p>
-          <Button variant="primary" onClick={onDiscover}>
-            <Search aria-hidden="true" />
-            Discover MCP servers
-          </Button>
-        </div>
-      )}
-      <ul aria-label="Installed MCP servers" className="flex flex-col divide-y divide-line">
-        {servers?.map((server) => {
-          const tools = server.lastTest?.tools?.length;
-          return (
-            <li
-              key={server.id}
-              className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3 first:pt-0 last:pb-0"
-            >
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <PageLink
-                  page="connections"
-                  search={{ connection: server.id }}
-                  className="truncate text-base font-semibold text-fg underline-offset-2 hover:underline"
-                >
-                  {server.name}
-                </PageLink>
-                <span className="truncate text-sm text-fg-muted">
-                  {server.description ||
-                    server.fields.url?.value ||
-                    server.fields.command?.value ||
-                    server.id}
-                </span>
-              </div>
-              <WorkspaceTag org={server.org} orgs={orgs} className="text-sm text-fg-muted" />
-              <span className="w-[90px] text-sm text-fg-muted">{plural(server.agents.length, "agent")}</span>
-              <span
-                className={cn(
-                  "w-[110px] text-sm",
-                  server.problems.length > 0 || server.lastTest?.ok === false
-                    ? "text-red"
-                    : server.lastTest
-                      ? "text-fg-muted"
-                      : "text-amber",
-                )}
-              >
-                {server.problems.length > 0
-                  ? "Not set up"
-                  : server.lastTest === undefined
-                    ? "Not tested"
-                    : server.lastTest.ok
-                      ? tools === undefined
-                        ? "Works"
-                        : plural(tools, "tool")
-                      : "Test failed"}
-              </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={testing !== undefined}
-                onClick={() => runTest(server)}
-                aria-label={`Test ${server.name}`}
-              >
-                {testing === server.id ? "Testing" : "Test"}
-              </Button>
-            </li>
-          );
-        })}
-      </ul>
-    </Block>
-  );
-}
+export {
+  Browse as McpBrowse,
+  InstallBox as McpInstallBox,
+  JustInstalled as McpJustInstalled,
+  PreviewCard as McpPreviewCard,
+};

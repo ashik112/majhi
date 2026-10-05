@@ -1,5 +1,15 @@
 # Progress
 
+## Skills & MCP page, and skills on for every agent by default
+
+Branch `feat/skills-mcp-page`.
+
+- **What changed.** Skills and MCP servers are one sidebar page, "Skills & MCP" (`/skills`, `g k`), under Agents. Skills left the Settings list; MCP servers left Connections. Old links redirect: `/setup?section=skills` to `/skills`, `/setup?section=mcp...` and `/connections?tab=mcp` to `/skills?tab=mcp`. Screens map, palette, shortcuts table and `?` help are updated.
+- **The page.** One-line rows (mark, name and description, workspace, avatars with "N of M", lamp with the one-line reason, one button for the row's state: Enable for all, Fix, Sign in, Test, Retry). Problems sort first. A row opens a right-side detail (full description, source and version, files, last error with the fix, per-agent switches grouped by workspace, Update, Test, Remove). One Add dialog searches the directory or registry, takes a pasted link or command, and shows the preview before installing; the new row is highlighted. Keys: j/k, Enter, `/`, `a`. The install and review cards are the existing ones, moved into the dialog.
+- **Default on.** A skill's lock entry has `defaultOn` and `optOut`. A new skill is on for every agent, including agents created later, because the run reads `effectiveFor(agent, listed)` at launch instead of anyone writing the skill into agent files. `skills.disable` records an opt-out; `skills.enable` clears it; `skills.enableAll` (new, "Enable for all agents" in the page) turns the rule on and clears opt-outs. Skills installed before this read as off until the owner applies Enable for all. Updating a skill keeps its flags. Skills are global (one store), so "all agents" means every agent; there is no workspace-scoped skill to narrow it.
+- **Verified.** Typecheck clean; `skills.test.ts` (new test: install enables for all, an agent created later has it, an opt-out sticks, enable-all clears it), `admin/screens.test.ts`, census guard. Browser, isolated e2e server, 1440 and 1100, 16 skills, 10 MCP servers, 4 workspaces, failing, unconfigured and needs-sign-in servers, plus the empty state; no console errors or failed requests. PNGs in the branch report.
+- **Left.** An open agent session does not restart when a default-on skill lands (it does when the agent file changes); the next run has it. The install progress path through a real source was not driven in the browser (no network in e2e); the dialog opens and its cards are the previous ones.
+
 ## Nothing merges unless the checks are green for the exact commit (built, not merged)
 
 Branch `feat/merge-needs-green`.

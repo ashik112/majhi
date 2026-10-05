@@ -41,6 +41,7 @@ const PINNED: ReadonlySet<string> = new Set([
   PAGE_PATH.chats,
   PAGE_PATH.agents,
   PAGE_PATH.connections,
+  PAGE_PATH.skills,
   PAGE_PATH.usage,
   PAGE_PATH.audit,
   PAGE_PATH.orgs,
