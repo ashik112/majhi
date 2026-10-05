@@ -1,4 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
+import { X } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 import type { Banner, BannerAction } from "@/features/shell/model";
@@ -42,7 +43,13 @@ export function useRunAttention(): (action: BannerAction) => void {
  * The strip above the page: the one thing that needs the owner most. It appears only then, and
  * slides in. "And 3 more" opens the notifications panel with the rest.
  */
-export function AttentionBanner({ banner }: { banner: Banner | null }) {
+export function AttentionBanner({
+  banner,
+  onClose,
+}: {
+  banner: Banner | null;
+  onClose: (key: string) => void;
+}) {
   const run = useRunAttention();
   // The banner shows the first; `more` counts the rest that are not drawn on the page.
   const more = banner?.more ?? 0;
@@ -91,11 +98,20 @@ export function AttentionBanner({ banner }: { banner: Banner | null }) {
               type="button"
               onClick={() => run(banner.action)}
               className={cn(
-                "ml-auto h-[30px] shrink-0 cursor-pointer rounded-sm border border-current bg-transparent px-3 text-sm transition-colors duration-150",
+                "ml-auto h-[30px] shrink-0 cursor-pointer rounded-sm border border-current bg-transparent px-3 text-sm transition-colors duration-150 focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-current",
                 TONE[banner.tone].hover,
               )}
             >
               {banner.actionLabel}
+            </button>
+            <button
+              type="button"
+              aria-label="Close"
+              title="Close until something new needs you"
+              onClick={() => onClose(banner.key)}
+              className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-sm opacity-70 hover:opacity-100 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-current"
+            >
+              <X aria-hidden="true" className="size-4" />
             </button>
           </div>
         </m.div>

@@ -75,7 +75,10 @@ export function Brief({ text, task }: { text: string; task: Task }) {
   }
 
   return (
-    <section aria-label="Task brief" className="flex min-w-0 items-center gap-3">
+    <section
+      aria-label="Task brief"
+      className={cn("flex min-w-0 gap-x-3 gap-y-1", open ? "flex-col items-start" : "items-center")}
+    >
       <div
         ref={body}
         className={cn(
@@ -86,15 +89,15 @@ export function Brief({ text, task }: { text: string; task: Task }) {
       >
         <Markdown text={source} task={files} />
       </div>
-      <div className="flex shrink-0 items-center gap-0.5 pb-px">
+      <div className={cn("flex shrink-0 items-center gap-1", open ? "-ml-1.5" : "")}>
         {(folds || open) && (
           <button
             type="button"
             aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
-            className="h-6 cursor-pointer rounded-sm px-1.5 text-sm text-fg-muted hover:bg-raised hover:text-fg"
+            className="h-6 cursor-pointer rounded-sm px-1.5 text-sm text-blue hover:underline focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2"
           >
-            {open ? "less" : "more"}
+            {open ? "Show less" : "Show all"}
           </button>
         )}
         <button
@@ -103,7 +106,7 @@ export function Brief({ text, task }: { text: string; task: Task }) {
             setValue(text);
             setEditing(true);
           }}
-          className="h-6 cursor-pointer rounded-sm px-1.5 text-sm text-fg-muted hover:bg-raised hover:text-fg"
+          className="h-6 cursor-pointer rounded-sm px-1.5 text-sm text-blue hover:underline focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2"
         >
           Edit
         </button>

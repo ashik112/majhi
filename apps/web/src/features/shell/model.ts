@@ -179,9 +179,14 @@ export function deriveBanner(input: {
   onScreen?: ReadonlySet<string> | undefined;
   /** The task page the owner has open: what is about that task is already in front of them. */
   openTask?: string | undefined;
+  /** Decisions the owner closed the banner for, this session. */
+  dismissed?: ReadonlySet<string> | undefined;
 }): Banner | null {
   const all = (input.decisions ?? []).filter(
-    (d) => input.onScreen?.has(d.id) !== true && (input.openTask === undefined || d.task !== input.openTask),
+    (d) =>
+      input.onScreen?.has(d.id) !== true &&
+      input.dismissed?.has(d.id) !== true &&
+      (input.openTask === undefined || d.task !== input.openTask),
   );
   const first = all.toSorted((a, b) => bannerRank(a) - bannerRank(b))[0];
   if (first === undefined) return null;
@@ -189,7 +194,7 @@ export function deriveBanner(input: {
   const here = input.permission;
   if (first.kind === "approval" && here !== undefined && first.task === here.task) {
     return {
-      key: `permission:${here.task}`,
+      key: first.id,
       tone: "amber",
       lamp: "needs",
       text: `@${here.agent} is waiting for your answer in ${here.task}.`,

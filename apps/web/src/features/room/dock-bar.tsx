@@ -64,7 +64,7 @@ export function DockBar({
               aria-label={open ? "Hide details" : "Show details"}
               title={open ? "Hide details" : "Show details"}
               onClick={() => setOpen((v) => !v)}
-              className="grid size-7 cursor-pointer place-items-center rounded-md text-fg-muted hover:bg-raised hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+              className="grid size-7 cursor-pointer place-items-center rounded-md text-fg-muted hover:bg-raised hover:text-fg focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2"
             >
               <ChevronDown
                 aria-hidden="true"

@@ -1,7 +1,7 @@
 import { PAGE_PATH } from "@majhi/shared";
 import { Outlet, useRouterState, useSearch } from "@tanstack/react-router";
 import * as m from "motion/react-m";
-import { Suspense, useMemo } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { InShellContext } from "@/components/centered-page";
 import { AttentionBanner } from "@/components/shell/banner";
 import { CaptainTicker } from "@/components/shell/captain-ticker";
@@ -87,6 +87,8 @@ function Frame() {
     },
   });
   const { org } = useOrgFilter();
+  // A closed banner stays closed, across reloads; a new decision shows again.
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(readClosedBanners);
   // Home draws every decision as a row: its banner only says what is not on the screen.
   const banner = useMemo(
     () =>
@@ -95,8 +97,9 @@ function Frame() {
         permission,
         onScreen: onHome ? homeRowIds(decisions, org) : undefined,
         openTask,
+        dismissed,
       }),
-    [decisions, permission, onHome, org, openTask],
+    [decisions, permission, onHome, org, openTask, dismissed],
   );
   useAttentionBadge(useNeedsYou() ?? 0);
   // The Captain drawer's code is read when it opens (the sidebar warms it when the pointer reaches its button).
@@ -122,7 +125,16 @@ function Frame() {
       <main id="main" tabIndex={-1} className="flex h-full min-w-0 flex-1 flex-col outline-none">
         <StaleBuildBar />
         <NotifyPrompt />
-        <AttentionBanner banner={banner} />
+        <AttentionBanner
+          banner={banner}
+          onClose={(key) =>
+            setDismissed((prev) => {
+              const next = new Set([...prev, key].slice(-CLOSED_KEEP));
+              writeClosedBanners(next);
+              return next;
+            })
+          }
+        />
         {openTask === undefined && <CaptainTicker />}
         <m.div
           key={settings ? "settings" : section}
@@ -160,4 +172,25 @@ function Frame() {
       {paletteOpen && <Palette onClose={() => setPaletteOpen(false)} />}
     </div>
   );
+}
+
+const CLOSED_KEY = "majhi.closedBanners";
+/** Enough to cover every open decision; older ids are long settled. */
+const CLOSED_KEEP = 200;
+
+function readClosedBanners(): ReadonlySet<string> {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(CLOSED_KEY) ?? "[]");
+    return new Set(Array.isArray(raw) ? raw.filter((v): v is string => typeof v === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeClosedBanners(ids: ReadonlySet<string>): void {
+  try {
+    localStorage.setItem(CLOSED_KEY, JSON.stringify([...ids]));
+  } catch {
+    // Storage blocked: the banner stays closed until the page reloads.
+  }
 }
