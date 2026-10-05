@@ -1727,7 +1727,11 @@ export const commands = {
     risk: "change",
     summary:
       "Create the worktrees if needed and start the task's agent. Also resumes a paused task. The captain may resume what it or Autonomous paused, and what stopped for a cause that is gone, never what the owner paused",
-    input: z.object({ id: TaskIdSchema }),
+    input: z.object({
+      id: TaskIdSchema,
+      /** The owner's words, delivered to the agent as it starts. */
+      message: z.string().trim().min(1).max(4000).optional(),
+    }),
     output: TaskSchema,
   },
   "tasks.slots": {

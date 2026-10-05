@@ -638,8 +638,19 @@ export function createHandlers({
       );
       return { ...report, content: redactSecrets(report.content, secrets) };
     },
-    "tasks.start": (input, ctx) =>
-      services.tasks.start(input.id, ctx.meta.actor.kind === "agent" ? `@${ctx.meta.actor.id}` : "owner"),
+    "tasks.start": async (input, ctx) => {
+      const by = ctx.meta.actor.kind === "agent" ? `@${ctx.meta.actor.id}` : "owner";
+      if (input.message === undefined) return services.tasks.start(input.id, by);
+      // The message starts the task and reaches its agent, in order: wait until it was delivered.
+      await services.tasks.send({
+        task: input.id,
+        text: input.message,
+        attachments: [],
+        mode: "queue",
+      });
+      await services.runs.idleDeliveries(input.id);
+      return services.tasks.get(input.id);
+    },
     "tasks.slots": async () =>
       services.runs.capacity(Object.keys((await services.config.sections()).accounts)),
     "tasks.stop": async (input, ctx) => {

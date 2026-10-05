@@ -1,5 +1,13 @@
 # Progress
 
+## Start runs the agent (fix, not merged)
+
+Branch `fix/start-runs-nothing`.
+
+- **Cause.** `tasks.start` on a task paused `blocked` lifted the hold and set `running`, then asked the run manager to start the agent. The brief had been sent long before, so nothing was queued, and an empty queue starts no turn. The task said `running` with no run, no container and no room line. The command also dropped `message` (not in its schema).
+- **Fix.** `startTask` queues a resume prompt when nothing is queued (not when the caller delivers an owner message itself). `tasks.start` takes an optional `message` and sends it through the normal owner-message path. If a start still leaves no agent with work, the task gets an `idle` hold with a room line instead of staying `running`. `tasks.send` now awaits its start check.
+- **Verified.** `apps/server/src/tasks/start-runs.test.ts`.
+
 ## Connections v2: every service connects, and "connected" means a real call passed (built, not merged)
 
 Branch `feat/connections-v2`.

@@ -859,7 +859,11 @@ export class TaskService {
   // Start, stop, close, remove
 
   /** Creates the missing worktrees, marks the task running and starts its agent. Safe to repeat. */
-  async start(id: string, by = "owner", options: { gateReleased?: boolean } = {}): Promise<Task> {
+  async start(
+    id: string,
+    by = "owner",
+    options: { gateReleased?: boolean; wake?: boolean } = {},
+  ): Promise<Task> {
     const task = this.get(id);
     await this.checkStartable(task);
     this.starting.add(id);
@@ -875,7 +879,7 @@ export class TaskService {
     id: string,
     task: Task,
     by: string,
-    options: { gateReleased?: boolean },
+    options: { gateReleased?: boolean; wake?: boolean },
   ): Promise<Task> {
     await this.ensureWorktrees(task);
     const lifted = await this.enter(id, by, options);
@@ -896,9 +900,29 @@ export class TaskService {
     }
     first.forEach((agent, i) => {
       // The first agent gets the task's brief; others that start with it get their own, once.
-      this.deps.runs.startTask(started, agent, { ownBrief: i > 0 });
+      this.deps.runs.startTask(started, agent, { ownBrief: i > 0, wake: options.wake !== false });
     });
+    // A task never says running with no agent at work: if nothing was queued and nothing runs, it
+    // holds with the reason, which shows on the board and in the room.
+    if (options.wake !== false && !isBossChat(started) && !first.some((a) => this.deps.runs.hasWork(id, a))) {
+      await this.holdIdle(id, by, "Starting it gave the agent nothing to do.");
+      return this.get(id);
+    }
     return started;
+  }
+
+  private async holdIdle(id: string, by: string, why: string): Promise<void> {
+    const out = await this.lifecycle.apply(
+      id,
+      { type: "holdPlaced", hold: { cause: "idle", at: this.now().toISOString(), why } },
+      { ctx: { by, why, reason: "blocked" } },
+    );
+    if (wasRefused(out)) return;
+    this.deps.room.post(id as TaskId, `error:${randomUUID()}`, {
+      type: "system",
+      level: "warn",
+      text: `${id} did not start: ${why}`,
+    });
   }
 
   /** Starts the agents a task begins with: the lead, or the mode's first step. Safe to repeat. */
@@ -3373,7 +3397,7 @@ export class TaskService {
     if (agent === undefined) throw new UserError(`Task ${task.id} has no agent.`, 409);
     // A task that cannot start says so now, before the message is stored.
     const starts = task.status !== "running";
-    if (starts) this.checkStartable(task);
+    if (starts) await this.checkStartable(task);
     this.nameChat(task, input.text);
     const planned = await planAttachments(
       this.deps.uploads,
@@ -3447,7 +3471,7 @@ export class TaskService {
     const task = this.get(id);
     if (task.status === "done") throw new UserError(`Task ${id} is done.`, 409);
     // A task that was never started, or was stopped, starts with the message.
-    if (task.status !== "running") await this.start(id);
+    if (task.status !== "running") await this.start(id, "owner", { wake: false });
     await this.deps.runs.deliver(task.id, agent, itemId, input.mode, also);
     this.deps.events.emitTask(task.id);
   }
@@ -3474,7 +3498,7 @@ export class TaskService {
       return;
     }
     this.cards.settle(task.id, "review", input.settled, input.by ?? "owner");
-    if (task.status !== "running") await this.start(task.id);
+    if (task.status !== "running") await this.start(task.id, "owner", { wake: false });
     const state = this.deps.store.tasks.roomState(task.id);
     if (state.agentTurns > 0 || state.nudged === true)
       this.deps.store.tasks.setRoomState(task.id, {
@@ -3503,7 +3527,7 @@ export class TaskService {
     }
     this.cards.settle(task.id, "review", `Message from scheduler "${input.from}"`, "majhi");
     // A schedule is not the owner: it resumes no pause of a budget or of autonomous mode by hand.
-    if (task.status !== "running") await this.start(task.id, "majhi");
+    if (task.status !== "running") await this.start(task.id, "majhi", { wake: false });
     this.deps.runs.notify(task.id, lead, `Scheduled message from "${input.from}": ${input.text}`);
     this.deps.store.tasks.touch(task.id, this.now().toISOString());
     this.deps.events.emitTask(task.id, true);
