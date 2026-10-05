@@ -4,6 +4,7 @@ import { memo, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
+import { OrgBadge } from "@/components/ui/org-badge";
 import { rowTitle } from "@/features/decisions/model";
 import { useHeldOption } from "@/features/decisions/use-send-decision";
 import { cn } from "@/lib/cn";
@@ -43,6 +44,25 @@ interface RowProps extends Pick<RowHandlers, "onFocus" | "onAct" | "onOpen"> {
   focused: boolean;
   selected: boolean;
   now: number;
+}
+
+/** A workspace as its colored tile and name; below 1280px only the tile. */
+export interface OrgTag {
+  name: string;
+  letters: string;
+  color: string | undefined;
+}
+
+function OrgChip({ org }: { org: OrgTag }) {
+  return (
+    <span
+      title={org.name}
+      className="flex shrink-0 items-center gap-1.5 text-xs text-fg-soft min-[1280px]:w-[104px]"
+    >
+      <OrgBadge label={org.letters} color={org.color} size="xs" />
+      <span className="min-w-0 truncate max-[1279px]:hidden">{org.name}</span>
+    </span>
+  );
 }
 
 export function rowDomId(key: string): string {
@@ -92,7 +112,7 @@ function Row({
   chipTone?: LampState | undefined;
   id: string | undefined;
   title: string;
-  org: string | undefined;
+  org: OrgTag | undefined;
   detail: ReactNode;
   wait: string;
   actions: readonly ActionSpec[];
@@ -135,14 +155,7 @@ function Row({
       >
         {title}
       </button>
-      {org !== undefined && (
-        <span
-          title={org}
-          className="w-[88px] shrink-0 truncate rounded-sm border border-line px-1.5 text-center text-xs leading-[18px] text-fg-soft"
-        >
-          {org}
-        </span>
-      )}
+      {org !== undefined ? <OrgChip org={org} /> : <span className="w-[18px] shrink-0 min-[1280px]:w-[104px]" />}
       <span
         className={cn(
           "flex min-w-0 flex-[3] items-center gap-2",
@@ -200,7 +213,7 @@ const NeedsRow = memo(function NeedsRow({
   org,
   entryKey,
   ...rest
-}: { item: NeedsItem; org: string | undefined } & RowProps) {
+}: { item: NeedsItem; org: OrgTag | undefined } & RowProps) {
   const d = item.decision;
   const ship = d.kind === "ship";
   const detail = useDecisionDetail(ship ? d.id : undefined).data;
@@ -261,7 +274,7 @@ const RunningRow = memo(function RunningRow({
   org,
   entryKey,
   ...rest
-}: { item: RunningItem; org: string | undefined } & RowProps) {
+}: { item: RunningItem; org: OrgTag | undefined } & RowProps) {
   const { task, doing, paused } = item;
   const kids = task.children === undefined ? "" : ` · ${task.children.done} of ${task.children.total} done`;
   const who = task.autonomous === true ? "captain" : "you";
@@ -294,7 +307,7 @@ const ShippingRow = memo(function ShippingRow({
   org,
   entryKey,
   ...rest
-}: { item: ShippingItem; org: string | undefined } & RowProps) {
+}: { item: ShippingItem; org: OrgTag | undefined } & RowProps) {
   const { task, mr, extra } = item;
   const ci = mr?.ci;
   const lamp: LampState = ci === "failing" ? "needs" : ci === "pending" ? "working" : ci === "passing" ? "done" : "idle";
@@ -338,7 +351,7 @@ const QueuedRow = memo(function QueuedRow({
   type,
   orgName,
   ...rest
-}: { item: QueuedItem; org: string | undefined; type: "next" | "triage"; orgName: (id: string) => string } & RowProps) {
+}: { item: QueuedItem; org: OrgTag | undefined; type: "next" | "triage"; orgName: (id: string) => string } & RowProps) {
   const { task, blocker } = item;
   const due = openDue(task, rest.now);
   const priority = task.priority !== undefined && task.priority !== "normal" ? task.priority : undefined;
@@ -379,7 +392,7 @@ const CaptainRow = memo(function CaptainRow({
   org,
   entryKey,
   ...rest
-}: { item: Extract<RowEntry, { type: "captain" }>["item"]; org: string | undefined } & RowProps) {
+}: { item: Extract<RowEntry, { type: "captain" }>["item"]; org: OrgTag | undefined } & RowProps) {
   return (
     <Row
       {...rest}
@@ -401,7 +414,7 @@ const DoneRow = memo(function DoneRow({
   org,
   entryKey,
   ...rest
-}: { item: DoneItem; org: string | undefined } & RowProps) {
+}: { item: DoneItem; org: OrgTag | undefined } & RowProps) {
   return (
     <Row
       {...rest}
@@ -529,7 +542,7 @@ export function EntryView({
   focusKey: string | undefined;
   selectedKeys: ReadonlySet<string>;
   now: number;
-  orgLabel: (entry: Entry) => string | undefined;
+  orgLabel: (entry: Entry) => OrgTag | undefined;
   orgName: (id: string) => string;
   handlers: RowHandlers;
 }) {

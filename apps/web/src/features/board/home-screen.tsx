@@ -13,6 +13,8 @@ import { SpendToday, useAutonomousSwitch } from "@/features/autonomy/switch";
 import { summaryLine } from "@/features/captain/summary";
 import { workspaceOf } from "@/features/decisions/model";
 import { useCaptainLog } from "@/lib/captain-queries";
+import { OrgBadge } from "@/components/ui/org-badge";
+import { badgeLetters } from "@/lib/format";
 import { cn } from "@/lib/cn";
 import { useDecisions } from "@/lib/decision-queries";
 import { GLASS } from "@/lib/glass";
@@ -36,7 +38,7 @@ import {
   type SectionId,
   stepFocus,
 } from "./home-model";
-import { EntryView, type RowHandlers, rowDomId } from "./home-rows";
+import { EntryView, type OrgTag, type RowHandlers, rowDomId } from "./home-rows";
 
 /** A list longer than this draws only the rows in view (and a few around them). */
 const WINDOW_FROM = 60;
@@ -110,26 +112,34 @@ export function BoardScreen() {
 
   const orgNames = useMemo(() => new Map((orgs ?? []).map((o) => [o.id, o.name])), [orgs]);
   const orgName = useCallback((id: string) => orgNames.get(id) ?? id, [orgNames]);
+  const orgTags = useMemo(
+    () => new Map((orgs ?? []).map((o): [string, OrgTag] => [o.id, { name: o.name, letters: badgeLetters(o.key), color: o.color }])),
+    [orgs],
+  );
+  const tagOf = useCallback(
+    (id: string): OrgTag => orgTags.get(id) ?? { name: id, letters: badgeLetters(id), color: undefined },
+    [orgTags],
+  );
   const orgLabel = useCallback(
-    (entry: Entry): string | undefined => {
+    (entry: Entry): OrgTag | undefined => {
       switch (entry.type) {
         case "needs": {
           const id = workspaceOf(entry.item.decision);
-          return id === undefined ? undefined : orgName(id);
+          return id === undefined ? undefined : tagOf(id);
         }
         case "running":
         case "shipping":
         case "next":
         case "triage":
         case "done":
-          return orgName(entry.item.task.org ?? PRIVATE);
+          return tagOf(entry.item.task.org ?? PRIVATE);
         case "captain":
-          return orgName(entry.item.org);
+          return tagOf(entry.item.org);
         default:
           return undefined;
       }
     },
-    [orgName],
+    [tagOf],
   );
 
   // The mode switch changes what a waiting task says ("Auto-pilot is off"): read the reasons again.
@@ -439,11 +449,13 @@ function TopBar({
             <button
               key={o.id}
               type="button"
+              title={o.name}
               aria-pressed={org === o.id}
               onClick={() => setOrg(org === o.id ? undefined : o.id)}
               className={chip(org === o.id)}
             >
-              <span className="max-w-[110px] truncate max-[1279px]:max-w-[64px]">{o.name}</span>
+              <OrgBadge label={badgeLetters(o.key)} color={o.color} size="xs" />
+              <span className="max-w-[110px] truncate max-[1279px]:hidden">{o.name}</span>
               <span className="tnum font-mono text-xs text-fg-muted">{c?.rows ?? 0}</span>
               {c?.needs === true && <Lamp state="needs" size={6} />}
             </button>
@@ -554,7 +566,7 @@ function List({
   focusKey: string | undefined;
   selected: ReadonlySet<string>;
   now: number;
-  orgLabel: (entry: Entry) => string | undefined;
+  orgLabel: (entry: Entry) => OrgTag | undefined;
   orgName: (id: string) => string;
   handlers: RowHandlers;
 }) {
