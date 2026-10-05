@@ -12,7 +12,7 @@ interface Guard {
     gateways: string[];
     hostAddresses: string[];
     allow?: string[];
-    server?: { address: string; port: number };
+    server?: { address: string; port: number } | undefined;
     dns?: string[];
   }): Rule[];
   guardRules6(input: { hostAddresses?: string[]; dns?: string[] }): Rule[];

@@ -178,11 +178,11 @@ describe("ContainerService", () => {
       expect(docker.guards).toEqual(["majhi-run-aaa: 192.168.171.0/24 majhi-server:7070"]);
     });
 
-    it("gives a preview's holder the subnets without the server, and a run of another task nothing", async () => {
+    it("starts a preview's holder on the task network, which it makes first, and names it preview there", async () => {
       docker.images.add("majhi-preview-acm-1");
-      await service.serviceStart("ACM-1", "acme-builder", db);
-      docker.guards.length = 0;
-      await service.previewRun("ACM-1", "acme-builder", { port: 7070, scratch: "/preview" });
+      const info = await service.previewRun("ACM-1", "acme-builder", { port: 7070, scratch: "/preview" });
+      expect(info.url).toBe("http://preview:7070");
+      expect(service.taskSubnets("ACM-1")).toEqual(["192.168.171.0/24"]);
       const holder = [...docker.containers.values()].find(
         (c) => c.labels["majhi.container"] === "previewhold",
       );

@@ -56,7 +56,7 @@ const preview = () =>
     scratch: "/preview",
     env: { MODE: "test" },
   });
-const holder = (subnets?: string[]) =>
+const holder = (subnets: string[] = ["192.168.171.0/24"]) =>
   previewHoldRunArgs(safety, limits, { port: 7070, image: "majhi-runner:dev", taskSubnets: subnets });
 const service = () =>
   serviceRunArgs(safety, limits, {
@@ -248,23 +248,31 @@ describe("assertSafe refuses", () => {
       expect(refused(replaced(preview(), "--network", net))).toThrow(ContainerRefused);
     }
     expect(refused(plus(preview(), "--network", "majhi-runners"))).toThrow(ContainerRefused);
-    for (const net of ["host", "container:abc", "majhi-acm-2", "bridge"]) {
+    for (const net of [
+      "host",
+      "container:abc",
+      "majhi-acm-2",
+      "bridge",
+      "majhi-acm-1",
+      "name=majhi-acm-1,alias=db",
+    ]) {
       expect(refused(replaced(holder(), "--network", net))).toThrow(ContainerRefused);
     }
+    expect(refused(plus(holder(), "--network", "majhi-acm-2"))).toThrow(ContainerRefused);
   });
 
   it("a preview publishes nothing, and its holder publishes one loopback port", () => {
     expect(() => assertSafe(preview(), safety)).not.toThrow();
     expect(refused(plus(preview(), "--publish", "127.0.0.1::7070"))).toThrow(ContainerRefused);
     expect(() => assertSafe(holder(), safety)).not.toThrow();
-    expect(() => assertSafe(holder(["192.168.171.0/24"]), safety)).not.toThrow();
+    expect(values(holder(), "--network")).toEqual(["majhi-runners", "name=majhi-acm-1,alias=preview"]);
     for (const publish of ["7070:7070", "0.0.0.0::7070", "127.0.0.1:8080:7070", "127.0.0.1::70000"]) {
       expect(refused(replaced(holder(), "--publish", publish))).toThrow(ContainerRefused);
     }
   });
 
   it("a holder runs only the network guard, with NET_ADMIN and nothing else, and no mount, host name or environment", () => {
-    const h = holder(["192.168.171.0/24"]);
+    const h = holder();
     expect(values(h, "--cap-add")).toEqual(["NET_ADMIN"]);
     expect(refused(plus(h, "--cap-add", "NET_RAW"))).toThrow(ContainerRefused);
     expect(refused(plus(h, "--mount", "type=volume,target=/x"))).toThrow(ContainerRefused);
@@ -275,6 +283,7 @@ describe("assertSafe refuses", () => {
       ["sh", "-c", "sleep 1"],
       ["node", "/other.mjs", "--hold"],
       ["node", "/usr/local/lib/majhi/netguard.mjs"],
+      ["node", "/usr/local/lib/majhi/netguard.mjs", "--hold"],
       ["node", "/usr/local/lib/majhi/netguard.mjs", "--hold", "--allow", "10.0.0.0/4"],
       ["node", "/usr/local/lib/majhi/netguard.mjs", "--hold", "--server", "majhi-server:7070"],
     ]) {

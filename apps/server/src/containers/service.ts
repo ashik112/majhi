@@ -27,6 +27,7 @@ import {
   isIpv4Cidr,
   type Limits,
   networkCreateArgs,
+  PREVIEW_ALIAS,
   previewHoldRunArgs,
   previewRunArgs,
   type Safety,
@@ -264,17 +265,19 @@ export class ContainerService {
         if (image === undefined) throw new UserError("majhi does not know the runner image.", 501);
         const limits = limitsOf(settings);
         // The holder owns the network and the port and holds the guard; the preview runs inside its network.
+        // The task's runners reach the preview on the task's network, so it exists before the holder joins it.
+        await this.ensureNetwork(docker, safety);
         const holdParts = previewHoldRunArgs(safety, limits, {
           port: input.port,
           image,
-          taskSubnets: this.networks.has(task) ? this.taskSubnets(task) : undefined,
+          taskSubnets: this.taskSubnets(task),
         });
         const parts = previewRunArgs(safety, limits, {
           env: input.env,
           command: input.command,
           scratch: input.scratch,
         });
-        const url = `http://${names.previewContainer}:${input.port}`;
+        const url = `http://${PREVIEW_ALIAS}:${input.port}`;
         const container: ProcessContainer = {
           kind: "preview",
           name: "preview",
@@ -1195,8 +1198,7 @@ export class ContainerService {
       "--filter",
       `label=majhi.task=${task}`,
     ]);
-    for (const id of [...runners, names.previewContainer]) {
-      const isPreview = id === names.previewContainer;
+    for (const id of runners) {
       try {
         await docker.connect(names.network, id);
       } catch (err) {
@@ -1205,9 +1207,7 @@ export class ContainerService {
         continue;
       }
       // It started before this network: its guard learns the one private range it may now reach.
-      await this.quietly(() =>
-        docker.guard(id, this.taskSubnets(task), isPreview ? undefined : this.deps.guardServer?.()),
-      );
+      await this.quietly(() => docker.guard(id, this.taskSubnets(task), this.deps.guardServer?.()));
     }
   }
 

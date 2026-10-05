@@ -424,6 +424,9 @@ function checkRun(parts: DockerParts, s: Safety): void {
   }
 }
 
+/** The name a task's runners reach its preview by, on the task's network only. */
+export const PREVIEW_ALIAS = "preview";
+
 /** Where a holder runs netguard from: the script in the runner image (docker/netguard.mjs). */
 export const GUARD_SCRIPT = "/usr/local/lib/majhi/netguard.mjs";
 
@@ -456,15 +459,17 @@ function checkPreviewHold(
   if (all(flags, "--env").length > 0) refuse("A preview's holder takes no environment.");
   if (is(flags, "--add-host") || is(flags, "--tmpfs"))
     refuse("A preview's holder takes no host name or scratch folder.");
-  const allowed = [s.runnerNetwork, names.network];
+  // The runner network (the route for the published port) and the task's network under `preview`: that is
+  // where the task's runners reach it, by one name that no other network of theirs answers to.
   const [first, second, ...more] = found.networks;
   if (
     first !== s.runnerNetwork ||
-    (second !== undefined && second !== names.network) ||
-    more.length > 0 ||
-    found.networks.some((n) => !allowed.includes(n))
+    second !== `name=${names.network},alias=${PREVIEW_ALIAS}` ||
+    more.length > 0
   ) {
-    refuse(`A preview's holder joins ${s.runnerNetwork}, and ${names.network} when the task has services.`);
+    refuse(
+      `A preview's holder joins ${s.runnerNetwork} and ${names.network} as ${PREVIEW_ALIAS}, and no other network.`,
+    );
   }
   const published = PUBLISH.exec(found.publishes[0] ?? "")?.[1];
   if (found.publishes.length !== 1 || published === undefined || Number(published) > 65_535) {
@@ -474,6 +479,7 @@ function checkPreviewHold(
   const [node, script, hold, ...rest] = parts.command;
   if (node !== "node" || script !== GUARD_SCRIPT || hold !== "--hold")
     refuse("A preview's holder runs only majhi's network guard.");
+  if (rest.length === 0) refuse("A preview's holder is told the task network's subnet.");
   for (let i = 0; i < rest.length; i += 2) {
     if (rest[i] !== "--allow" || !isIpv4Cidr(rest[i + 1] ?? ""))
       refuse("A preview's holder may be told only the task network's subnets.");
@@ -810,20 +816,19 @@ export interface PreviewRunSpec {
 
 export interface PreviewHoldSpec {
   port: number;
-  /** The task network's subnets when it exists: the holder joins it and lets the preview reach it. */
-  taskSubnets?: readonly string[] | undefined;
+  /** The task network's subnets: the holder joins that network as `preview` and lets the preview reach it. */
+  taskSubnets: readonly string[];
   /** The runner image, which holds netguard. */
   image: string;
 }
 
 /**
- * The holder of a preview: on the runner network (and the task's), the one port on 127.0.0.1 for the
- * owner, and the network guard. It is named like the preview always was, so the server reaches it the
- * same way; the preview app runs in its network namespace (`previewRunArgs`).
+ * The holder of a preview: on the runner network (the route for its published port), on the task's network
+ * as `preview` (where runners reach it), the one port on 127.0.0.1 for the owner, and the network guard.
+ * The preview app runs in its network namespace (`previewRunArgs`).
  */
 export function previewHoldRunArgs(s: Safety, limits: Limits, spec: PreviewHoldSpec): DockerParts {
   const names = containerNames(s.task);
-  const joined = spec.taskSubnets !== undefined;
   return safe(
     {
       verb: ["run"],
@@ -849,12 +854,13 @@ export function previewHoldRunArgs(s: Safety, limits: Limits, spec: PreviewHoldS
         "never",
         "--network",
         s.runnerNetwork,
-        ...(joined ? ["--network", names.network] : []),
+        "--network",
+        `name=${names.network},alias=${PREVIEW_ALIAS}`,
         "--publish",
         `127.0.0.1::${spec.port}`,
       ],
       image: spec.image,
-      command: ["node", GUARD_SCRIPT, "--hold", ...(spec.taskSubnets ?? []).flatMap((c) => ["--allow", c])],
+      command: ["node", GUARD_SCRIPT, "--hold", ...spec.taskSubnets.flatMap((c) => ["--allow", c])],
     },
     s,
   );
