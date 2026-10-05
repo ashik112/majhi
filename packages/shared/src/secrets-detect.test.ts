@@ -82,3 +82,27 @@ describe("deriveSecretName", () => {
     expect(kindOfSecret("hello")).toBeUndefined();
   });
 });
+
+describe("detectSecrets and code identifiers", () => {
+  it.each([
+    "field_name=COUNTER_AUTO_DELIVER_LOG_FIELD",
+    "transaction_type__in=COUNTER_SETTLED_TRANSACTION_TYPES",
+    "MAX_RETRIES=SOME_CONSTANT",
+    "token=settings.API_TOKEN",
+    "password = DEFAULT_ADMIN_PASSWORD_VALUE",
+    "secret: some_long_config_name_here",
+  ])("does not flag %s", (text) => expect(detectSecrets(text), text).toEqual([]));
+
+  it.each([
+    ["github", `token = "ghp_${"k3J9m2P7q1".repeat(4)}"`],
+    ["openai", `OPENAI=sk-proj-${"Qw7Er1".repeat(8)}`],
+    ["aws", "aws_key=AKIAIOSFODNN7EXAMPLE"],
+    ["assigned", "api_key=9fceb02d0ae598e95dc970b74767f19372d61af8"],
+    ["token", "blob=Zk3j9Xq2LmN8vB4tR7yU1cW6eH5aS0dFgHjK+9Xw=="],
+    ["token", "key is Zk3j9Xq2LmN8vB4tR7yU1cW6eH5aS0dF"],
+    ["assigned", 'password="hunter2xyz9"'],
+    ["assigned", "password='hunter2xyz9'"],
+  ] as const)("still flags a %s in %s", (kind, text) => {
+    expect(detectSecrets(text).map((m) => m.kind)).toContain(kind);
+  });
+});
