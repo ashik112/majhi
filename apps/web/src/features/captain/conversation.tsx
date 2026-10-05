@@ -214,7 +214,7 @@ function ThreadActions({ org }: { org: CaptainOrg }) {
 }
 
 /** One workspace's thread: the conversation and the box. */
-function Thread({ org }: { org: CaptainOrg }) {
+export function Thread({ org }: { org: CaptainOrg }) {
   const autonomyStatus = useAutonomyStatus().data;
   const lane = org.lane;
   return (

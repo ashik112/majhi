@@ -28,7 +28,12 @@ describe("what a feed event asks the board to read", () => {
   it("reads the lists when no task is named", () => {
     const plan = planEvent(changed({}));
     expect(plan.tasks).toEqual([]);
-    expect(plan.keys).toEqual([queryKeys.tasks, queryKeys.decisions, queryKeys.agenda]);
+    expect(plan.keys).toEqual([
+      queryKeys.tasks,
+      queryKeys.decisions,
+      queryKeys.agenda,
+      queryKeys.conversations,
+    ]);
   });
 });
 

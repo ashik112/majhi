@@ -4,6 +4,7 @@ import { LifecycleRows } from "../tasks/lifecycle/rows.ts";
 import { UsageEvents } from "../usage/events.ts";
 import { ChatStateRepo } from "./chat-state.ts";
 import { ConnectionHealthRepo } from "./connection-health.ts";
+import { ConversationsRepo } from "./conversations.ts";
 import { createDb, type SqliteBaseline } from "./db.ts";
 import { PlanRepo } from "./plans.ts";
 import { RoomRepo } from "./room.ts";
@@ -28,6 +29,8 @@ export class Store {
   readonly plans: PlanRepo;
   readonly chats: ChatStateRepo;
   readonly connectionHealth: ConnectionHealthRepo;
+  /** The chat dock: the owner's conversations and what they have read. */
+  readonly conversations: ConversationsRepo;
   /** What majhi put into contexts, for the token receipts. */
   readonly usageEvents: UsageEvents;
   /** The SQLite version and pragmas the connection runs with. */
@@ -46,6 +49,7 @@ export class Store {
     this.plans = new PlanRepo(db);
     this.chats = new ChatStateRepo(sqlite);
     this.connectionHealth = new ConnectionHealthRepo(sqlite);
+    this.conversations = new ConversationsRepo(db);
     this.usageEvents = new UsageEvents(sqlite);
   }
 
