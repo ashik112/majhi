@@ -43,6 +43,12 @@ const KNOWN: { kind: SecretKind; pattern: RegExp; group?: number }[] = [
       /\b(?:api[_-]?key|access[_-]?key|secret|token|password|passwd|pwd)\s*[:=]\s*["']?([^\s"',;]{12,})/gi,
     group: 1,
   },
+  {
+    // A quoted literal can be short: `password = "hunter2xyz9"`.
+    kind: "assigned",
+    pattern: /\b(?:api[_-]?key|access[_-]?key|secret|token|password|passwd|pwd)\s*[:=]\s*["']([^\s"',;]{8,})["']/gi,
+    group: 1,
+  },
 ];
 
 const GENERIC = /[A-Za-z0-9+_=-]{32,}/g;
@@ -67,6 +73,20 @@ function classes(text: string): number {
   return [/[a-z]/, /[A-Z]/, /[0-9]/, /[+_=-]/].filter((re) => re.test(text)).length;
 }
 
+/**
+ * A bare name in code: `COUNTER_LOG_FIELD`, `max_retries`, `settings.API_TOKEN`. Each dotted part is
+ * all upper case or all lower case, with words split by `_`, and each word is letters with at most
+ * three trailing digits (`v2`, `int64`) or only digits. A random blob mixes digits in the middle of
+ * its letters, so it never passes.
+ */
+export function isCodeIdentifier(value: string): boolean {
+  return value.split(".").every((part) => {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(part)) return false;
+    if (/[a-z]/.test(part) && /[A-Z]/.test(part)) return false;
+    return part.split("_").every((word) => /^(?:[A-Za-z]+[0-9]{0,3}|[0-9]+)?$/.test(word));
+  });
+}
+
 function looksRandom(token: string, minEntropy: number, minClasses: number): boolean {
   if (REFERENCE.test(token)) return false;
   const bare = token.replaceAll("-", "");
@@ -88,7 +108,10 @@ export function detectSecrets(text: string): SecretMatch[] {
       if (value === "" || REFERENCE.test(value)) continue;
       const start = (m.index ?? 0) + (group === undefined ? 0 : m[0].lastIndexOf(value));
       const end = start + value.length;
-      if (kind === "assigned" && (/^secret:\S/i.test(m[0]) || !looksRandom(value, 3, 2))) continue;
+      if (kind === "assigned" && (/^secret:\S/i.test(m[0]) || isCodeIdentifier(value))) continue;
+      // A hash-length hex value is a secret only when a keyword such as `api_key` points at it.
+      const hexBlob = HEX_ONLY.test(value) && value.length >= 32;
+      if (kind === "assigned" && !hexBlob && !looksRandom(value, 3, 2)) continue;
       if (!overlaps(found, start, end)) found.push({ kind, start, end, value });
     }
   }
@@ -100,6 +123,8 @@ export function detectSecrets(text: string): SecretMatch[] {
     const before = text[start - 1];
     const after = text[end];
     if (before === "/" || before === "." || after === "/" || after === ".") continue;
+    // `field_name=SOME_CONSTANT`: the `=` is in the pattern, so judge each part of an assignment.
+    if (value.split("=").every((part) => part === "" || isCodeIdentifier(part))) continue;
     if (!looksRandom(value, 4.2, 3)) continue;
     if (!overlaps(found, start, end)) found.push({ kind: "token", start, end, value });
   }
