@@ -17,7 +17,7 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
     case "projects":
       return [queryKeys.projects, queryKeys.onboarding];
     case "tasks":
-      return [queryKeys.tasks, queryKeys.decisions, queryKeys.agenda];
+      return [queryKeys.tasks, queryKeys.decisions, queryKeys.agenda, queryKeys.conversations];
     case "secrets":
       return [queryKeys.secrets];
     case "usage":
@@ -83,7 +83,8 @@ export function planEvent(event: ServerEvent): EventPlan {
   };
   const tasks: string[] = [];
   const waits: string[] = [];
-  if (event.type === "hello") return { keys: [], tasks, waits };
+  // A conversation event is applied to the cached list as it is (see `patchConversation`): nothing to read.
+  if (event.type === "hello" || event.type === "conversation") return { keys: [], tasks, waits };
   if (event.type === "attention") {
     // The item is new: the lists that count it must show it at once.
     add(topicQueryKeys("tasks"));

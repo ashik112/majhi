@@ -70,6 +70,8 @@ export const queryKeys = {
   agenda: ["agenda"],
   /** `decisions.list`: the owner's inbox. Every topic that changes what waits for them refetches it. */
   decisions: ["decisions"],
+  /** `conversations.list`: the chat dock. The events feed patches it row by row. */
+  conversations: ["conversations"],
   /** `git.signIn.poll` for each flow. */
   signins: ["signins"],
   /** `projects.cloneStatus`. */
