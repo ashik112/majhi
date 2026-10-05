@@ -72,9 +72,7 @@ export async function runImageCheck(
       if (code === 0) finish();
       else if (code === 125)
         finish(new ImageCheckFailed("majhi problem: Docker could not start or pull the client image."));
-      else if (code === 126 || code === 127)
-        finish(new ImageCheckFailed("majhi problem: the client program is missing from the image."));
-      else finish(new ImageCheckFailed(failureLine(code, hideValues(err, Object.values(env)))));
+      else finish(new ImageCheckFailed(exitMessage(code, hideValues(err, Object.values(env)))));
     });
   });
 }
@@ -87,6 +85,18 @@ export function hideValues(text: string, values: readonly string[]): string {
   let out = text;
   for (const v of values) if (v.length >= 6) out = out.split(v).join("[redacted]");
   return redactText(out);
+}
+
+/**
+ * Why a run that did not exit 0 or 125 failed. A script that calls a program the runner lacks (`doctl`
+ * not installed) exits 127 inside its own shell, so when the program said something, that names the
+ * program; the bare "missing from the image" line is only for an exit with nothing to show.
+ */
+export function exitMessage(code: number | null, stderr: string): string {
+  if ((code === 126 || code === 127) && stderr.trim() === "") {
+    return "majhi problem: the client program is missing from the image.";
+  }
+  return failureLine(code, stderr);
 }
 
 /** "The program exited 1: <its last error line>", trimmed to one short line. */
