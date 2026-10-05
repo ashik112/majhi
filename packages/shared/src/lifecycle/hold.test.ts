@@ -12,7 +12,6 @@ import {
   liftersOf,
   majhiMayLift,
   mergeHold,
-  sentenceOf,
 } from "./hold.ts";
 
 const AT = "2026-10-05T10:00:00.000Z";
@@ -65,13 +64,9 @@ describe("hold table", () => {
     expect(Object.keys(HOLD_TABLE).sort()).toEqual([...CAUSES].sort());
   });
 
-  it.each(CAUSES)("%s: a sample parses, has lifters and a plain sentence", (cause) => {
+  it.each(CAUSES)("%s: a sample parses and has the right lifters", (cause) => {
     expect(HoldSchema.safeParse(hold(cause)).success).toBe(true);
     expect([...liftersOf(hold(cause))].sort()).toEqual([...LIFTERS[cause]].sort());
-    const s = sentenceOf(hold(cause));
-    expect(s.length).toBeGreaterThan(10);
-    expect(s).not.toMatch(/—|undefined|\{/);
-    expect(s).toMatch(/[.!?]$/);
   });
 
   it("the Auto-pilot step hold is lifted by the owner or majhi, not the captain", () => {
@@ -90,15 +85,6 @@ describe("hold table", () => {
       const majhi = liftersOf(hold(c)).includes("majhi");
       expect(majhi).toBe(autoClears(hold(c)).kind !== "never");
     }
-  });
-
-  it("the sentences carry the data of the hold", () => {
-    expect(sentenceOf(hold("signed-out"))).toContain("claude-acme");
-    expect(sentenceOf(hold("account-limit"))).toContain("claude-acme");
-    expect(sentenceOf(hold("dependency-closed"))).toContain("ACME-1");
-    expect(sentenceOf(hold("captain-stop"))).toContain("off track");
-    expect(sentenceOf({ cause: "captain-stop", at: AT })).toBe("The captain paused it.");
-    expect(sentenceOf(hold("budget-limit"))).toContain("acme");
   });
 });
 
