@@ -377,7 +377,12 @@ export class HandoffService {
   /** A task that changed no code (a report-only task): green, with no tests or build to run and nothing to ship. */
   private async runEmpty(task: HandoffTask, head: string, started: number): Promise<HandoffResult> {
     const steps = [step("ready", { status: "none", detail: "No code changes" })];
-    const review: HandoffReview = { by: "skipped", why: "there is no change to review", notes: [], tokens: 0 };
+    const review: HandoffReview = {
+      by: "skipped",
+      why: "there is no change to review",
+      notes: [],
+      tokens: 0,
+    };
     const result: HandoffResult = {
       task: task.id,
       head,
