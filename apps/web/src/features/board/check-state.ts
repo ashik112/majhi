@@ -43,6 +43,8 @@ export function checkState(fact: HomeCheck): CheckState {
       return state("running", "wait");
     case "stale":
       return state("stale", "check-again");
+    case "blocked":
+      return state("failed", "see-failure");
     case "failed": {
       if (verdict.check === "secret") return state("secret", "see-failure");
       const status = fact.failedStep?.status;
