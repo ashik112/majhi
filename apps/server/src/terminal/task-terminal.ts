@@ -4,6 +4,7 @@ import { isAbsolute, relative, sep } from "node:path";
 import type { BaseEnv, RunMount, SpawnRequest, TtyLaunch } from "@majhi/acp";
 import type { Task } from "@majhi/shared";
 import { UserError } from "../errors.ts";
+import type { PackageStoreFor } from "../runs/package-cache.ts";
 import type { Terminal, TerminalManager, TerminalSpec } from "./manager.ts";
 
 /** A task's shell is killed after this long, so a forgotten one does not run for days. */
@@ -21,6 +22,8 @@ export interface TaskTerminalDeps {
   base: BaseEnv;
   /** Each task repo's `.git`, as a run mounts them. */
   repoMounts: (task: Task) => Promise<RunMount[]>;
+  /** The workspace's shared package store, so an install in the shell stays out of the worktree. */
+  packages?: PackageStoreFor | undefined;
   /** Starts the shell in a runner container. Absent without a runner: the shell runs next to majhi. */
   tty?: ((req: SpawnRequest) => Promise<TtyLaunch>) | undefined;
 }
@@ -66,7 +69,8 @@ export async function openTaskTerminal(deps: TaskTerminalDeps, taskId: string): 
 
   const task = deps.task(taskId);
   const cwd = await taskFolder(task, await deps.tasksDir());
-  const env = taskTerminalEnv(deps.base);
+  const store = await deps.packages?.(task);
+  const env = { ...store?.env, ...taskTerminalEnv(deps.base) };
   let spec: TerminalSpec;
   if (deps.tty === undefined) {
     const shell = existsSync("/bin/bash") ? "/bin/bash" : "/bin/sh";
@@ -77,7 +81,7 @@ export async function openTaskTerminal(deps: TaskTerminalDeps, taskId: string): 
       env,
       cwd,
       task: taskId,
-      mounts: [{ path: task.folder }, ...(await deps.repoMounts(task))],
+      mounts: [{ path: task.folder }, ...(await deps.repoMounts(task)), ...(store?.mounts ?? [])],
     });
     spec = {
       key,
