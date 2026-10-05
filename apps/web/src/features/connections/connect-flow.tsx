@@ -90,7 +90,9 @@ export function ConnectFlowCard({
                 ? "The page timed out"
                 : view.state === "cancelled"
                   ? "Cancelled"
-                  : "Not connected";
+                  : view.test !== undefined
+                    ? "Signed in, but not connected"
+                    : "Not connected";
   return (
     <div role="status" aria-live="polite" className="flex max-w-[620px] flex-col gap-3">
       <p className={cn("flex items-center gap-2 text-md font-semibold", LAMP_TEXT[lampState])}>
@@ -146,10 +148,8 @@ export function ConnectFlowCard({
       {view.state === "connected" && (
         <>
           <ScopeList scopes={view.scopes} />
-          {view.test && (
-            <p className={cn("text-base text-pretty", view.test.ok ? "text-fg-muted" : "text-amber")}>
-              {view.test.ok ? `Test passed: ${view.test.detail}` : `Test failed: ${view.test.detail}`}
-            </p>
+          {view.test?.ok === true && (
+            <p className="text-base text-fg-muted text-pretty">Verified: {view.test.detail}</p>
           )}
           {view.message.includes("less access") && (
             <p className="text-base text-amber text-pretty">{view.message}</p>
@@ -194,7 +194,15 @@ export function ConnectFlowCard({
           view.state === "failed" ||
           view.state === "cancelled") && (
           <>
-            <Button variant="primary" onClick={onRetry}>
+            {view.connection !== undefined && view.state === "failed" && (
+              <Button variant="primary" onClick={() => onDone(view.connection)}>
+                See the fix
+              </Button>
+            )}
+            <Button
+              variant={view.connection !== undefined && view.state === "failed" ? "secondary" : "primary"}
+              onClick={onRetry}
+            >
               Try again
             </Button>
             <Button variant="ghost" onClick={() => onDone(undefined)}>

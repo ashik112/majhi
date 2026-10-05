@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
 import { PageLink } from "@/components/ui/page-link";
 import { Segmented } from "@/components/ui/segmented";
 import { Select, Textarea } from "@/components/ui/select";
@@ -21,6 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { orgLabel } from "@/features/accounts/model";
 import { WorkspaceTag } from "@/features/connections/scope-picker";
+import { rowStatus } from "@/features/connections/status";
 import { SecretInput } from "@/features/connections/value-controls";
 import { cn } from "@/lib/cn";
 import { useConnectionCommand, useConnections } from "@/lib/connection-queries";
@@ -696,7 +698,7 @@ function TestResult({ outcome }: { outcome: NonNullable<ConnectionView["lastTest
   return (
     <div className="flex flex-col gap-2">
       <p className="flex flex-wrap items-center gap-2 text-base">
-        <Badge tone={outcome.ok ? "green" : "red"}>{outcome.ok ? "Test passed" : "Test failed"}</Badge>
+        <Badge tone={outcome.ok ? "green" : "red"}>{outcome.ok ? "Verified" : "Failed"}</Badge>
         <span className="text-fg-muted text-pretty">{outcome.detail}</span>
       </p>
       {outcome.warnings.map((w) => (
@@ -839,6 +841,7 @@ function InstalledServers({
       <ul aria-label="Installed MCP servers" className="flex flex-col divide-y divide-line">
         {servers?.map((server) => {
           const tools = server.lastTest?.tools?.length;
+          const status = rowStatus(server.health, testing === server.id, Date.now());
           return (
             <li
               key={server.id}
@@ -861,25 +864,16 @@ function InstalledServers({
               </div>
               <WorkspaceTag org={server.org} orgs={orgs} className="text-sm text-fg-muted" />
               <span className="w-[90px] text-sm text-fg-muted">{plural(server.agents.length, "agent")}</span>
+              {/* The one status: a connection is connected only when a real call passed. */}
               <span
-                className={cn(
-                  "w-[110px] text-sm",
-                  server.problems.length > 0 || server.lastTest?.ok === false
-                    ? "text-red"
-                    : server.lastTest
-                      ? "text-fg-muted"
-                      : "text-amber",
-                )}
+                className={cn("flex w-[150px] items-center gap-2 text-sm", LAMP_TEXT[status.lamp])}
+                title={`${status.word}: ${status.line}`}
               >
-                {server.problems.length > 0
-                  ? "Not set up"
-                  : server.lastTest === undefined
-                    ? "Not tested"
-                    : server.lastTest.ok
-                      ? tools === undefined
-                        ? "Works"
-                        : plural(tools, "tool")
-                      : "Test failed"}
+                <Lamp state={status.lamp} size={7} />
+                {status.word}
+                {tools !== undefined && server.health?.state === "connected" && (
+                  <span className="text-fg-faint">{plural(tools, "tool")}</span>
+                )}
               </span>
               <Button
                 size="sm"
@@ -888,7 +882,7 @@ function InstalledServers({
                 onClick={() => runTest(server)}
                 aria-label={`Test ${server.name}`}
               >
-                {testing === server.id ? "Testing" : "Test"}
+                {testing === server.id ? "Checking" : "Check now"}
               </Button>
             </li>
           );

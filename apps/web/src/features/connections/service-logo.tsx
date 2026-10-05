@@ -4,15 +4,15 @@ import { cn } from "@/lib/cn";
 
 const LOGOS: Readonly<Record<string, string>> = {
   linear: "linear",
-  "linear-api": "linear",
+  "linear-key": "linear",
   sentry: "sentry",
-  "sentry-cli": "sentry",
+  "sentry-token": "sentry",
   notion: "notion",
   atlassian: "atlassian",
   vercel: "vercel",
   "vercel-cli": "vercel",
+  cloudflare: "cloudflare",
   "cloudflare-observability": "cloudflare",
-  wrangler: "cloudflare",
   stripe: "stripe",
   "stripe-cli": "stripe",
   posthog: "posthog",
@@ -20,17 +20,24 @@ const LOGOS: Readonly<Record<string, string>> = {
   datadog: "datadog",
   betterstack: "betterstack",
   gitlab: "gitlab",
-  outlook: "microsoftoutlook",
-  x: "x",
+  "gitlab-git": "gitlab",
   github: "github",
+  bitbucket: "bitbucket",
+  paypal: "paypal",
+  intercom: "intercom",
+  canva: "canva",
+  webflow: "webflow",
+  zapier: "zapier",
+  outlook: "microsoftoutlook",
   gmail: "gmail",
+  google: "gmail",
   "google-calendar": "googlecalendar",
   "google-drive": "googledrive",
-  linkedin: "linkedin",
   slack: "slack",
   discord: "discord",
   aws: "amazonaws",
   gcloud: "googlecloud",
+  az: "microsoftazure",
 };
 
 /** Local SVG marks, with a neutral backing so brand colors work in both themes. */
@@ -44,6 +51,9 @@ export function ServiceLogo({
   className?: string;
 }) {
   const slug = service?.startsWith("digitalocean") ? "digitalocean" : LOGOS[service ?? ""];
+  // A service with no mark of its own gets its first letter, not a plug: the name beside it says which.
+  const letter =
+    slug === undefined && service !== undefined && type === undefined ? service.charAt(0) : undefined;
   const Fallback =
     type === "ssh"
       ? Server
@@ -73,6 +83,8 @@ export function ServiceLogo({
           height={28}
           className="size-[64%] object-contain"
         />
+      ) : letter !== undefined ? (
+        <span className="font-mono text-base font-semibold uppercase">{letter}</span>
       ) : (
         <Fallback className="size-[50%]" />
       )}
@@ -94,6 +106,13 @@ export function serviceOf(view: ConnectionView): string | undefined {
     const hosts: Record<string, string> = {
       "mcp.linear.app": "linear",
       "mcp.sentry.dev": "sentry",
+      "mcp.cloudflare.com": "cloudflare",
+      "mcp.neon.tech": "neon",
+      "mcp.paypal.com": "paypal",
+      "mcp.intercom.com": "intercom",
+      "mcp.canva.com": "canva",
+      "mcp.webflow.com": "webflow",
+      "mcp.zapier.com": "zapier",
       "mcp.notion.com": "notion",
       "mcp.atlassian.com": "atlassian",
       "mcp.vercel.com": "vercel",

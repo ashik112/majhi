@@ -7,7 +7,7 @@ import {
   PRIVATE,
 } from "@majhi/shared";
 import { ArrowLeft } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -19,22 +19,37 @@ import { ConnectionFields } from "./connection-fields";
 import { createInput, emptyDraft, entryNameProblem, filledFields } from "./model";
 import { ScopePicker } from "./scope-picker";
 
+/** The page's glass frame with the workspace picker, or a plain box inside the Add dialog. */
+function Frame({ bare, head, children }: { bare: boolean; head: ReactNode; children: ReactNode }) {
+  return bare ? (
+    <div>{children}</div>
+  ) : (
+    <DetailPane label="Custom setup" head={head}>
+      {children}
+    </DetailPane>
+  );
+}
+
 /** A new connection: its org, type, name and description, and the text values. Secrets and files come next. */
 export function NewConnection({
   orgs,
   defaultOrg,
   initialType = "mcp",
+  bare = false,
   onCreated,
   onClose,
 }: {
   initialType?: ConnectionType;
+  /** Inside the Add dialog: no frame and no workspace picker, the dialog's own picker decides. */
+  bare?: boolean;
   orgs: readonly OrgView[];
   defaultOrg: string | undefined;
   onCreated: (id: string) => void;
   onClose: () => void;
 }) {
   const create = useConnectionCommand("connections.create");
-  const [org, setOrg] = useState(defaultOrg ?? PRIVATE);
+  const [chosen, setOrg] = useState(defaultOrg ?? PRIVATE);
+  const org = bare ? (defaultOrg ?? PRIVATE) : chosen;
   const type = initialType;
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -52,12 +67,12 @@ export function NewConnection({
     });
   };
   return (
-    <DetailPane
-      label="Custom setup"
+    <Frame
+      bare={bare}
       head={<ScopePicker orgs={orgs} value={org} onChange={setOrg} disabled={create.isPending} />}
     >
       <form
-        className="flex max-w-[640px] flex-col gap-4 pt-5"
+        className={bare ? "flex max-w-[640px] flex-col gap-4" : "flex max-w-[640px] flex-col gap-4 pt-5"}
         onSubmit={(e) => {
           e.preventDefault();
           submit();
@@ -132,6 +147,6 @@ export function NewConnection({
           <span className="text-sm text-fg-faint">Next, add the credentials and test the connection.</span>
         </div>
       </form>
-    </DetailPane>
+    </Frame>
   );
 }

@@ -91,11 +91,23 @@ export class McpUrlService {
 
   async probe(input: ProbeMcpInput): Promise<ProbeMcpResult> {
     const allowPrivate = input.allowPrivate === true;
-    const url = mcpAddress(input.url, allowPrivate);
-    await assertHostAllowed(url.host, {
-      allowPrivate,
-      ...(this.deps.lookup === undefined ? {} : { lookup: this.deps.lookup }),
-    });
+    // An address majhi will not call is an answer, with the exact reason, not a failure of the page.
+    let url: URL;
+    try {
+      url = mcpAddress(input.url, allowPrivate);
+    } catch (err) {
+      if (!(err instanceof UserError)) throw err;
+      return { method: "unreachable", url: input.url, failure: { reason: "unexpected", fix: err.message } };
+    }
+    try {
+      await assertHostAllowed(url.host, {
+        allowPrivate,
+        ...(this.deps.lookup === undefined ? {} : { lookup: this.deps.lookup }),
+      });
+    } catch (err) {
+      if (!(err instanceof UserError)) throw err;
+      return { method: "unreachable", url: input.url, failure: { reason: "blocked-host", fix: err.message } };
+    }
     const fetchFn = this.guard(url, allowPrivate);
     const address = url.toString();
     let status: number;

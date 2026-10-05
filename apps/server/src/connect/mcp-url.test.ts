@@ -123,23 +123,31 @@ describe("probing an MCP server by address", () => {
     });
   });
 
-  it("refuses private, loopback and metadata addresses before any request, unless the owner confirms a private one", async () => {
+  it("answers private, loopback and metadata addresses with a blocked-host reason before any request, unless the owner confirms a private one", async () => {
     const t = service({}, async () => ["10.0.0.9"]);
     for (const url of ["https://localhost/mcp", "https://192.168.1.5/mcp", "https://mcp.acme.test/mcp"]) {
-      await expect(t.svc.probe({ url })).rejects.toBeInstanceOf(UserError);
+      expect(await t.svc.probe({ url })).toMatchObject({
+        method: "unreachable",
+        failure: { reason: "blocked-host" },
+      });
     }
-    await expect(t.svc.probe({ url: "https://169.254.169.254/mcp", allowPrivate: true })).rejects.toThrow(
-      /metadata/,
-    );
+    expect(await t.svc.probe({ url: "https://169.254.169.254/mcp", allowPrivate: true })).toMatchObject({
+      method: "unreachable",
+      failure: { reason: "blocked-host", fix: expect.stringContaining("metadata") },
+    });
     expect(t.calls).toEqual([]);
   });
 
-  it("refuses http for a public server and a sign-in written into the address", async () => {
+  it("refuses http for a public server and a sign-in written into the address, with the reason", async () => {
     const t = service({});
-    await expect(t.svc.probe({ url: "http://mcp.acme.test/mcp" })).rejects.toThrow(/https/);
-    await expect(t.svc.probe({ url: "https://user:pass@mcp.acme.test/mcp" })).rejects.toThrow(
-      /Leave the sign-in out/,
-    );
+    expect(await t.svc.probe({ url: "http://mcp.acme.test/mcp" })).toMatchObject({
+      method: "unreachable",
+      failure: { reason: "unexpected", fix: expect.stringContaining("https") },
+    });
+    expect(await t.svc.probe({ url: "https://user:pass@mcp.acme.test/mcp" })).toMatchObject({
+      method: "unreachable",
+      failure: { fix: expect.stringContaining("Leave the sign-in out") },
+    });
   });
 
   it("does not send the owner's address anywhere but the address, and no credential on the first look", async () => {

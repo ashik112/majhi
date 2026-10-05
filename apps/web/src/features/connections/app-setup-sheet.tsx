@@ -198,48 +198,50 @@ export function AppSetupSheet({
       </section>
 
       <ol aria-label="Steps" className="flex flex-col gap-4">
-        {view.steps.map((step) => (
-          <li key={step.n} className="flex gap-3">
-            <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border border-line-strong font-mono text-xs text-fg-muted">
-              {step.n}
-            </span>
-            <div className="flex min-w-0 flex-1 flex-col gap-2">
-              <p className="text-base font-medium text-fg">{step.title}</p>
-              {step.body !== "" && <p className="text-base text-fg-muted text-pretty">{step.body}</p>}
-              {step.links.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {step.links.map((link) => (
-                    <Button key={link.url} size="sm" asChild>
-                      <a href={link.url} target="_blank" rel="noreferrer noopener">
-                        <ExternalLink aria-hidden="true" />
-                        {link.label}
-                      </a>
-                    </Button>
-                  ))}
-                </div>
-              )}
-              {step.values.map((v) => (
-                <CopyValue key={v.label} label={v.label} value={v.value} />
-              ))}
-              {step.n === 1 && view.manifest !== undefined && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="self-start"
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(view.manifest?.json ?? "").then(() => {
-                      setCopiedManifest(true);
-                      setTimeout(() => setCopiedManifest(false), 1500);
-                    });
-                  }}
-                >
-                  {copiedManifest ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-                  {copiedManifest ? "Manifest copied" : "Copy the manifest"}
-                </Button>
-              )}
-            </div>
-          </li>
-        ))}
+        {view.steps
+          .filter((s) => s.check !== "apis" && s.check !== "published")
+          .map((step) => (
+            <li key={step.n} className="flex gap-3">
+              <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border border-line-strong font-mono text-xs text-fg-muted">
+                {step.n}
+              </span>
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <p className="text-base font-medium text-fg">{step.title}</p>
+                {step.body !== "" && <p className="text-base text-fg-muted text-pretty">{step.body}</p>}
+                {step.links.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {step.links.map((link) => (
+                      <Button key={link.url} size="sm" asChild>
+                        <a href={link.url} target="_blank" rel="noreferrer noopener">
+                          <ExternalLink aria-hidden="true" />
+                          {link.label}
+                        </a>
+                      </Button>
+                    ))}
+                  </div>
+                )}
+                {step.values.map((v) => (
+                  <CopyValue key={v.label} label={v.label} value={v.value} />
+                ))}
+                {step.n === 1 && view.manifest !== undefined && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="self-start"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(view.manifest?.json ?? "").then(() => {
+                        setCopiedManifest(true);
+                        setTimeout(() => setCopiedManifest(false), 1500);
+                      });
+                    }}
+                  >
+                    {copiedManifest ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                    {copiedManifest ? "Manifest copied" : "Copy the manifest"}
+                  </Button>
+                )}
+              </div>
+            </li>
+          ))}
       </ol>
 
       <form

@@ -1,105 +1,112 @@
 import {
+  type ConnectionHealth,
   type ConnectionView,
   connectionType,
+  FAILURE_LINE,
   GLOBAL_CONNECTIONS,
   type OrgView,
   type ServiceProduct,
+  scopesAt,
+  serviceById,
   serviceByUrl,
 } from "@majhi/shared";
-import { useState } from "react";
+import { Check, ExternalLink, Wrench } from "lucide-react";
+import { type FormEvent, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
-import { DetailPane, DetailSection } from "@/components/ui/list-detail";
+import { DetailSection } from "@/components/ui/list-detail";
 import { PageLink } from "@/components/ui/page-link";
 import { SaveSection, type SaveState } from "@/components/ui/save-section";
 import { Textarea } from "@/components/ui/select";
+import { Sheet } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
+import { SignIn } from "@/features/git-signin/sign-in";
 import { cn } from "@/lib/cn";
+import { useConnectCommand } from "@/lib/connect-queries";
 import { useConnectionCommand } from "@/lib/connection-queries";
 import { describeError, errorDetails } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 import { useAgents } from "@/lib/studio-queries";
-import { ConnectSection, isOauth } from "./connect-section";
+import { ConnectFlowCard, ScopeList } from "./connect-flow";
+import { isOauth, useReconnect } from "./connect-section";
 import { ConnectionFields } from "./connection-fields";
-import { type ConnectionDraft, connectionStatus, draftOf, updateInput } from "./model";
+import { type ConnectionDraft, draftOf, updateInput } from "./model";
 import { ProductPicker } from "./product-picker";
-import { scopeName, WorkspaceTag } from "./scope-picker";
-import { ServiceLogo, serviceOf } from "./service-logo";
+import { scopeAudience, scopeName, WorkspaceTag } from "./scope-picker";
+import { fixOf, rowStatus } from "./status";
+import { TokenForm } from "./token-form";
 
-/** The picked connection: how its last Test went, then its details, its values and what it may change unasked. */
-export function ConnectionDetail({
+/**
+ * The picked connection, in a side panel: its one status and what to do about it, what agents can do
+ * with it, who shares it, then its settings. Remove is last.
+ */
+export function ConnectionPanel({
   view,
   orgs,
-  testing,
+  checking,
   now,
-  onTest,
+  onCheck,
+  onClose,
   onRemoved,
 }: {
   view: ConnectionView;
   orgs: readonly OrgView[];
-  testing: boolean;
+  checking: boolean;
   now: number;
-  onTest: () => void;
+  onCheck: () => void;
+  onClose: () => void;
   onRemoved: () => void;
 }) {
   const def = connectionType(view.type);
   const service = serviceByUrl(view.fields.url?.value ?? "");
   const [removing, setRemoving] = useState(false);
   const remove = useConnectionCommand("connections.remove");
+  const disconnect = useConnectCommand("connect.disconnect");
+  const managed = isOauth(view);
+  const busy = remove.isPending || disconnect.isPending;
+  const failure = remove.error ?? disconnect.error;
   return (
-    <DetailPane
-      label="Connection details"
-      head={
-        <div className="flex min-w-0 items-center gap-3">
-          <ServiceLogo service={serviceOf(view)} type={view.type} />
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <h2 className="truncate text-md leading-6 font-semibold">{view.name}</h2>
-            <p className="flex min-w-0 items-center gap-1.5 text-sm text-fg-muted">
-              <WorkspaceTag org={view.org} orgs={orgs} className="font-medium text-fg-soft" />
-              <span aria-hidden="true" className="text-fg-dim">
-                ·
-              </span>
-              <span className="shrink-0">
-                {view.org === GLOBAL_CONNECTIONS ? "Shared with every workspace" : def.label}
-              </span>
-            </p>
-          </div>
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={testing}
-              onClick={onTest}
-              aria-label={`Test ${view.name}`}
-            >
-              {testing ? "Testing" : "Test"}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setRemoving(true)}
-              aria-label={`Remove ${view.name}`}
-            >
-              Remove
-            </Button>
-          </div>
+    <Sheet
+      title={view.name}
+      subtitle={
+        <span className="flex items-center gap-1.5">
+          <WorkspaceTag org={view.org} orgs={orgs} className="text-xs" />
+          <span aria-hidden="true">·</span>
+          <span>{view.org === GLOBAL_CONNECTIONS ? "Every workspace" : def.label}</span>
+        </span>
+      }
+      onClose={onClose}
+      footer={
+        <div className="flex items-center gap-3">
+          <p className="min-w-0 flex-1 truncate text-sm text-fg-faint">
+            {managed
+              ? "Removing asks the service to end majhi's access."
+              : "Removing deletes its secrets and files."}
+          </p>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setRemoving(true)}
+            aria-label={`Remove ${view.name}`}
+          >
+            Remove
+          </Button>
         </div>
       }
     >
-      {isOauth(view) && <ConnectSection view={view} now={now} />}
-      <StatusSection view={view} testing={testing} now={now} />
+      <StatusBlock view={view} orgs={orgs} checking={checking} now={now} onCheck={onCheck} />
+      <UsageSection view={view} />
+      <SharingSection view={view} orgs={orgs} />
       {service?.products !== undefined && (
         <ProductsSection key={`products-${view.id}`} view={view} products={service.products} />
       )}
       <AgentsSection view={view} orgs={orgs} />
       <DetailsSection key={`details-${view.id}`} view={view} />
-      {!isOauth(view) && (
-        <ValuesSection key={`values-${view.id}`} view={view} title={`${def.label} settings`} />
-      )}
+      {!managed && <ValuesSection key={`values-${view.id}`} view={view} title={`${def.label} settings`} />}
       <AllowSection key={`allow-${view.id}`} view={view} />
       {removing && (
         <ConfirmDialog
@@ -115,57 +122,325 @@ export function ConnectionDetail({
             </>
           }
           confirmLabel="Remove"
-          busy={remove.isPending}
-          error={remove.error ? describeError(remove.error) : undefined}
+          busy={busy}
+          error={failure ? describeError(failure) : undefined}
           onCancel={() => setRemoving(false)}
-          onConfirm={() =>
-            remove.mutate(
-              { id: view.id },
-              {
-                onSuccess: () => {
-                  setRemoving(false);
-                  onRemoved();
-                },
+          onConfirm={() => {
+            const done = {
+              onSuccess: () => {
+                setRemoving(false);
+                onRemoved();
               },
-            )
-          }
+            };
+            // A sign-in through Connect is ended at the service when it can; anything else is deleted here.
+            if (managed) disconnect.mutate({ connection: view.id }, done);
+            else remove.mutate({ id: view.id }, done);
+          }}
         />
       )}
-    </DetailPane>
+    </Sheet>
   );
 }
 
-function StatusSection({ view, testing, now }: { view: ConnectionView; testing: boolean; now: number }) {
-  const status = connectionStatus(view, testing);
-  const test = view.lastTest;
+/** The word for how long ago, with the time itself for a title. */
+function Ago({ iso, now }: { iso: string; now: number }) {
   return (
-    <DetailSection title="Status" className={isOauth(view) ? "" : "border-t-0"}>
-      <div className="flex min-w-0 flex-col gap-2">
-        <span className={cn("flex items-center gap-2 text-base font-medium", LAMP_TEXT[status.lamp])}>
-          <Lamp state={status.lamp} size={8} />
-          {status.label}
-          {test && !testing && (
-            <span className="font-normal text-fg-faint">tested {formatAgo(test.at, now)}</span>
+    <time dateTime={iso} title={new Date(iso).toLocaleString()}>
+      {formatAgo(iso, now)}
+    </time>
+  );
+}
+
+/**
+ * The one status: a lamp and a word, why in one line, what was checked, and the fix with the one
+ * action that does it. There is no second status anywhere else on the panel.
+ */
+function StatusBlock({
+  view,
+  orgs,
+  checking,
+  now,
+  onCheck,
+}: {
+  view: ConnectionView;
+  orgs: readonly OrgView[];
+  checking: boolean;
+  now: number;
+  onCheck: () => void;
+}) {
+  const health = view.health;
+  const status = rowStatus(health, checking, now);
+  const fix = fixOf(health);
+  const re = useReconnect(view);
+  const [other, setOther] = useState(false);
+  const failed = health?.state === "failed" || health?.state === "needs-attention";
+  return (
+    <section aria-label="Status" className="flex min-w-0 flex-col gap-3 pb-5">
+      <p className={cn("flex items-center gap-2 text-md font-semibold", LAMP_TEXT[status.lamp])}>
+        <Lamp state={status.lamp} size={9} />
+        {status.word}
+      </p>
+      {health?.state === "connected" && <Verified health={health} now={now} />}
+      {failed && health !== undefined && (
+        <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-line-strong bg-sunken p-3">
+          <p className="text-base font-medium text-fg">{FAILURE_LINE[health.reason]}.</p>
+          {fix !== undefined && <p className="text-base text-fg-muted text-pretty">{fix.text}</p>}
+          {health.state === "needs-attention" && (
+            <p className="text-sm text-fg-faint">
+              It last worked <Ago iso={health.lastVerifiedAt} now={now} />.
+            </p>
           )}
-        </span>
-        {view.problems.length > 0 && (
-          <ul aria-label="Not set up" className="flex flex-col gap-0.5">
-            {view.problems.map((p) => (
-              <li key={p} className="text-base text-red text-pretty">
-                {p}.
+          {health.status !== undefined && (
+            <p className="font-mono text-xs text-fg-faint">The service answered {health.status}.</p>
+          )}
+        </div>
+      )}
+      {re.flow !== undefined ? (
+        <ConnectFlowCard flow={re.flow} onRetry={re.reconnect} onDone={re.clear} />
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          {failed && fix?.url !== undefined && (
+            <Button size="sm" asChild>
+              <a href={fix.url} target="_blank" rel="noreferrer noopener">
+                <ExternalLink aria-hidden="true" />
+                Open the page
+              </a>
+            </Button>
+          )}
+          {status.action === "reconnect" && re.canReconnect && (
+            <Button variant="primary" disabled={re.pending} onClick={re.reconnect}>
+              {re.pending ? "Opening" : "Reconnect"}
+            </Button>
+          )}
+          {status.action === "reconnect" && !re.canReconnect && view.type === "git" && (
+            <Button variant="primary" onClick={() => setOther((v) => !v)}>
+              <Wrench aria-hidden="true" />
+              Sign in again
+            </Button>
+          )}
+          <Button variant={failed ? "secondary" : "primary"} disabled={checking} onClick={onCheck}>
+            {checking ? "Checking" : "Check now"}
+          </Button>
+        </div>
+      )}
+      {re.error !== undefined && re.error !== null && (
+        <p role="alert" className="text-base text-red text-pretty">
+          {describeError(re.error)}
+        </p>
+      )}
+      {failed && view.type === "git" && (other || status.action === "fix") && (
+        <GitFix view={view} orgs={orgs} />
+      )}
+      {failed && view.type === "env" && view.fields.service?.value !== undefined && (
+        <TokenReplace view={view} />
+      )}
+      {failed && view.type === "mcp" && view.fields.auth?.value !== "oauth" && (
+        <p className="text-sm text-fg-faint text-pretty">
+          Replace the token under MCP server settings below, then check again.
+        </p>
+      )}
+    </section>
+  );
+}
+
+/** What the passing check did, and who the service says it is. */
+function Verified({
+  health,
+  now,
+}: {
+  health: Extract<ConnectionHealth, { state: "connected" }>;
+  now: number;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <p className="text-base text-fg-muted">
+        Verified <Ago iso={health.verifiedAt} now={now} />
+        {health.account !== undefined && (
+          <>
+            {" "}
+            as <span className="font-mono text-fg">{health.account}</span>
+          </>
+        )}
+        .
+      </p>
+      <ul aria-label="What was checked" className="flex flex-col gap-0.5">
+        {health.checked.map((line) => (
+          <li key={line} className="flex items-start gap-2 text-sm text-fg-muted">
+            <Check aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-green" />
+            <span className="text-pretty">{line}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Signing a workspace in to its git host again: the host's own page, or a pasted token. */
+function GitFix({ view, orgs }: { view: ConnectionView; orgs: readonly OrgView[] }) {
+  const kind = (view.fields.provider?.value ?? "gitlab") as "github" | "gitlab" | "bitbucket";
+  const host = view.fields.host?.value;
+  const [paste, setPaste] = useState(host !== undefined || kind === "bitbucket");
+  const name = scopeName(view.org, orgs);
+  return (
+    <div className="flex min-w-0 flex-col gap-3 border-t border-line pt-3">
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant={paste ? "ghost" : "secondary"}
+          onClick={() => setPaste(false)}
+          disabled={host !== undefined || kind === "bitbucket"}
+        >
+          Sign in on this Mac
+        </Button>
+        <Button size="sm" variant={paste ? "secondary" : "ghost"} onClick={() => setPaste(true)}>
+          Paste a token
+        </Button>
+      </div>
+      {paste ? (
+        <TokenForm
+          org={view.org}
+          git={{ kind, ...(host === undefined ? {} : { host }) }}
+          onDone={() => undefined}
+        />
+      ) : (
+        <SignIn
+          workspace={{ id: view.org, name }}
+          kind={kind}
+          names={new Map(orgs.map((o) => [o.id, o.name]))}
+          onClose={() => undefined}
+        />
+      )}
+    </div>
+  );
+}
+
+/** A token service whose token stopped working: paste the new one. It is stored, then checked. */
+function TokenReplace({ view }: { view: ConnectionView }) {
+  const entry = serviceById(view.fields.service?.value ?? "");
+  const method = entry?.token;
+  const setSecret = useConnectionCommand("connections.setSecret");
+  const test = useConnectionCommand("connections.test");
+  const [token, setToken] = useState("");
+  if (method === undefined) return null;
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (token.trim() === "") return;
+    setSecret.mutate(
+      { id: view.id, list: "vars", field: method.variable, value: token.trim() },
+      {
+        onSuccess: () => {
+          setToken("");
+          test.mutate({ id: view.id });
+        },
+      },
+    );
+  };
+  return (
+    <form
+      onSubmit={submit}
+      className="flex min-w-0 flex-col gap-2 border-t border-line pt-3"
+      aria-label="New token"
+    >
+      <Field
+        label={`New ${entry?.name ?? "service"} token`}
+        hint={`Make one at ${new URL(method.page.url).host}.`}
+      >
+        {(p) => (
+          <Input
+            {...p}
+            type="password"
+            autoComplete="new-password"
+            spellCheck={false}
+            className="font-mono"
+            placeholder="Paste the token"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+          />
+        )}
+      </Field>
+      {(setSecret.error || test.error) && (
+        <p role="alert" className="text-base text-red text-pretty">
+          {describeError(setSecret.error ?? test.error)}
+        </p>
+      )}
+      <div className="flex items-center gap-2">
+        <Button
+          type="submit"
+          variant="primary"
+          size="sm"
+          disabled={token.trim() === "" || setSecret.isPending || test.isPending}
+        >
+          {setSecret.isPending || test.isPending ? "Checking" : "Save and check"}
+        </Button>
+        <Button size="sm" asChild>
+          <a href={method.page.url} target="_blank" rel="noreferrer noopener">
+            <ExternalLink aria-hidden="true" />
+            {method.page.label}
+          </a>
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** What agents can do with it, in plain words, and which agents have it. */
+function UsageSection({ view }: { view: ConnectionView }) {
+  const re = useReconnect(view);
+  const entry = serviceById(view.fields.service?.value ?? "") ?? serviceByUrl(view.fields.url?.value ?? "");
+  const lines =
+    re.mine !== undefined && re.mine.scopes.length > 0
+      ? re.mine.scopes
+      : entry === undefined
+        ? []
+        : scopesAt(entry, "readwrite").map((s) => ({ access: s.access, sentence: s.sentence }));
+  const sign = re.mine;
+  return (
+    <DetailSection title="What agents can do" className="border-t border-line">
+      <div className="flex min-w-0 flex-col gap-3">
+        {lines.length > 0 ? (
+          <ScopeList scopes={lines} />
+        ) : (
+          <p className="text-base text-fg-muted text-pretty">
+            {(view.description !== "" ? view.description : connectionType(view.type).summary).replace(
+              /\.$/,
+              "",
+            )}
+            .
+          </p>
+        )}
+        <p className="text-sm text-fg-faint text-pretty">
+          Anything that changes something asks you first, unless the exact action is allowed below.
+          {sign?.account !== undefined && (
+            <>
+              {" "}
+              Signed in as <span className="font-mono text-fg-muted">{sign.account}</span>
+              {sign.renews ? ", renewed by majhi" : ""}.
+            </>
+          )}
+        </p>
+      </div>
+    </DetailSection>
+  );
+}
+
+/** Which workspaces share it. */
+function SharingSection({ view, orgs }: { view: ConnectionView; orgs: readonly OrgView[] }) {
+  const global = view.org === GLOBAL_CONNECTIONS;
+  return (
+    <DetailSection title="Shared with">
+      <div className="flex min-w-0 flex-col gap-2">
+        {global ? (
+          <ul aria-label="Workspaces" className="flex flex-wrap gap-x-4 gap-y-1.5">
+            {orgs.map((o) => (
+              <li key={o.id}>
+                <WorkspaceTag org={o.id} orgs={orgs} className="text-base text-fg-soft" />
               </li>
             ))}
           </ul>
+        ) : (
+          <WorkspaceTag org={view.org} orgs={orgs} className="text-base font-medium text-fg-soft" />
         )}
-        {test && !testing && view.problems.length === 0 && (
-          <p className={cn("text-base text-pretty", test.ok ? "text-fg-muted" : "text-red")}>{test.detail}</p>
-        )}
-        {test?.ok &&
-          test.warnings.map((w) => (
-            <p key={w} className="text-base text-amber text-pretty">
-              {w}
-            </p>
-          ))}
+        <p className="text-sm text-fg-faint text-pretty">{scopeAudience(view.org, orgs)}</p>
       </div>
     </DetailSection>
   );
