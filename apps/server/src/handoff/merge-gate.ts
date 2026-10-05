@@ -43,6 +43,9 @@ export function decideMerge(facts: MergeFacts): MergeVerdict {
   if (!atHead && (facts.state?.running === true || facts.state?.queued === true)) return { kind: "running" };
   if (current === undefined) return { kind: "stale", ran: false };
   if (!atHead) return { kind: "stale", ran: true };
+  // The cheap checks failed first (a conflict, uncommitted work, a waiting card): running again changes nothing.
+  const ready = current.steps.find((s) => s.id === "ready");
+  if (ready?.status === "fail") return { kind: "blocked", why: ready.detail ?? "the first checks failed" };
   for (const [id, check] of KINDS) {
     const step = current.steps.find((s) => s.id === id);
     if (step !== undefined && FAILED.has(step.status)) return { kind: "failed", check };
