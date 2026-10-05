@@ -34,6 +34,13 @@ const EXTRA_PROPERTIES = {
 export const OWNER_ONLY_INPUTS: Partial<Record<CommandName, readonly string[]>> = {
   "tasks.merge": ["push"],
   "tasks.remove": ["force", "confirm"],
+  // Reaching a private network address is the owner's choice: agents never see or set it.
+  "git.signIn.start": ["allowPrivate"],
+  "git.signIn.token": ["allowPrivate"],
+  "connections.connectToken": ["allowPrivate"],
+  "connections.probeMcp": ["allowPrivate"],
+  "connections.connectMcpUrl": ["allowPrivate"],
+  "connect.start": ["allowPrivate"],
 };
 
 function commandSchema(command: CommandName): AdminTool["inputSchema"] {
