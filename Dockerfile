@@ -117,8 +117,8 @@ RUN apt-get update \
 RUN set -eu; \
   DOCTL_VERSION=1.177.0; \
   case "$TARGETARCH" in \
-    amd64) DOCTL_SHA=34d3954721bfb8cdb42032e78d98274f157426fa6332511ae356edcce59dade3 ;; \
-    arm64) DOCTL_SHA=3adfe5bb667c2cdee15eb3501d53b57d8f04dfa945ddd4584f6f760834506992 ;; \
+    amd64) DOCTL_SHA="34d3954721bfb8cdb42032e78d98274f157426fa6332511ae356edcce59dade3" ;; \
+    arm64) DOCTL_SHA="3adfe5bb667c2cdee15eb3501d53b57d8f04dfa945ddd4584f6f760834506992" ;; \
     *) echo "doctl is not pinned for $TARGETARCH" >&2; exit 1 ;; \
   esac; \
   mkdir /out /dl; cd /dl; \
