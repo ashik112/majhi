@@ -215,6 +215,22 @@ describe("a red hand-off", () => {
   });
 });
 
+describe("a task that changed no code", () => {
+  it("is green with no failed checks, runs nothing and tells nobody", async () => {
+    const w = world();
+    w.state.ready = { ok: false, why: "nothing changed since it started", empty: true };
+    const r = await w.service.ensure("ACM-1", { force: false });
+    expect(r.verdict).toBe("green");
+    expect(r.failures).toEqual([]);
+    expect(r.held).toEqual([]);
+    expect(r.steps.map((s) => s.status)).toEqual(["none"]);
+    expect(r.summary).toBe("No code changes. Nothing to check or ship.");
+    expect(w.calls.exec).toEqual([]);
+    expect(w.calls.tell).toEqual([]);
+    expect((await w.service.state("ACM-1")).strikes).toBe(0);
+  });
+});
+
 describe("three strikes", () => {
   it("tells the lead twice, then goes to the owner with the history, and a green hand-off clears it", async () => {
     const w = world();

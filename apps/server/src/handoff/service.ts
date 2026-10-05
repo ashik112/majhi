@@ -48,7 +48,9 @@ export interface HandoffTask {
 export type ReadyResult =
   | { ok: true; evidence: string }
   /** `owner`: only the owner can clear it (a card waits, a protected repo), so the lead is not told. */
-  | { ok: false; why: string; owner?: boolean };
+  | { ok: false; why: string; owner?: boolean; empty?: undefined }
+  /** No repo changed since the task started: there is nothing to check or ship, which is not a failure. */
+  | { ok: false; why: string; empty: true; owner?: undefined };
 
 export interface ExecResult {
   /** The exit code, or null when it was killed. */
@@ -284,6 +286,7 @@ export class HandoffService {
     const started = this.now().getTime();
     this.stage.set(task.id, { step: "ready", since: started });
     const ready = await this.ports.ready(task.id);
+    if (!ready.ok && ready.empty === true) return this.runEmpty(task, head, started);
     const readyStep: HandoffStep = ready.ok
       ? step("ready", { status: "pass", detail: ready.evidence })
       : step("ready", {
@@ -367,6 +370,29 @@ export class HandoffService {
     };
     this.latest.set(task.id, result);
     await this.judge(task, result, force || retried);
+    this.ports.changed(task.id);
+    return result;
+  }
+
+  /** A task that changed no code (a report-only task): green, with no tests or build to run and nothing to ship. */
+  private async runEmpty(task: HandoffTask, head: string, started: number): Promise<HandoffResult> {
+    const steps = [step("ready", { status: "none", detail: "No code changes" })];
+    const review: HandoffReview = { by: "skipped", why: "there is no change to review", notes: [], tokens: 0 };
+    const result: HandoffResult = {
+      task: task.id,
+      head,
+      at: this.now().toISOString(),
+      verdict: "green",
+      steps,
+      review,
+      failures: [],
+      held: [],
+      ms: this.now().getTime() - started,
+      cached: false,
+      summary: handoffSummary(steps, review),
+    };
+    this.latest.set(task.id, result);
+    await this.judge(task, result, false);
     this.ports.changed(task.id);
     return result;
   }

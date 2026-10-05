@@ -94,6 +94,7 @@ export function createHandoff(w: HandoffWiring): HandoffService {
       }
       const r = await shipReadiness(w, id);
       if (r.ready) return { ok: true, evidence: r.evidence };
+      if (r.unmergeable === "empty") return { ok: false, why: r.why, empty: true };
       // Resolving a conflict follows the Merge row: where the owner decides, it is the owner's.
       const org = w.store.tasks.get(id)?.org ?? PRIVATE;
       const owner = r.owner === true || (r.conflict === true && !(await w.mergeDecides(org)));
