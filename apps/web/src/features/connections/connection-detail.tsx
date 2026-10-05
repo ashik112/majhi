@@ -108,7 +108,7 @@ export function ConnectionPanel({
       <AgentsSection view={view} orgs={orgs} />
       <DetailsSection key={`details-${view.id}`} view={view} />
       {!managed && <ValuesSection key={`values-${view.id}`} view={view} title={`${def.label} settings`} />}
-      <AllowSection key={`allow-${view.id}`} view={view} />
+      {view.type !== "host" && <AllowSection key={`allow-${view.id}`} view={view} />}
       {removing && (
         <ConfirmDialog
           title={`Remove ${view.name}?`}

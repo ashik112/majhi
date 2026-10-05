@@ -402,7 +402,10 @@ export class ConnectionTester {
     }
     return {
       ok: true,
-      detail: `Port${ports.length === 1 ? "" : "s"} ${ports.join(", ")} of this computer answer.`,
+      detail:
+        ports.length === 1
+          ? `Port ${ports[0]} of this computer answers.`
+          : `Ports ${ports.join(", ")} of this computer answer.`,
       warnings: [],
       checked: ports.map((p) => `Opened a connection to port ${p} of this computer`),
     };

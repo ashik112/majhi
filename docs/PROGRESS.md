@@ -1,5 +1,15 @@
 # Progress
 
+## Service on this computer, and runs cannot reach the computer (built, not merged)
+
+Branch `feat/host-services`.
+
+- **Found first.** From the runner network, `host.docker.internal:7070` answered: `GET /` gave 200 where `majhi-server:7070` gives 403, and any host port was open (`0.250.250.254` on OrbStack). The runner guard exempts the gateway, which is where host traffic arrives from. Fixed in the first commit: every run starts through `majhi-netguard` (iptables rejects for the host aliases, gateways and magic ranges, then `setpriv` to the owner's uid with no capabilities). Args test in `packages/acp/src/runner/docker.test.ts`, rule test in `netguard.test.ts`.
+- **Changed.** New connection type `host` ("Service on this computer"): name, ports, one workspace. Saving checks each port; connected only if all answer. The workspace's runs get `<id>.host:<port>` through a forwarder container on the task's network that forwards only the declared ports to the computer and answers only that network. TASK.md and `majhi-connections list` say `kilby.host: ports 8000, 5432`; the room gets one line. Owner only (service, attach, task create), never Global, never majhi's own ports. Card on the Connections page.
+- **Owner will notice.** The runner image has to be rebuilt (Update does it): an older one fails with "older than this majhi". Agents can no longer reach anything bound to the computer's `127.0.0.1`, which they could before without anyone meaning it.
+- **Verified.** Typecheck, tests of the files touched (`containers/args.test.ts`, `connections/host-service.test.ts`, `connections/service.test.ts`, `packages/acp/src/runner`). Real docker on OrbStack with a throwaway home, runner network and containers: a runner reaches `kilby.host:<port>` and gets the host server's page; an undeclared port, `7070`, `host.docker.internal` and `0.250.250.254` are refused; another task's runner gets no name and is dropped by the forwarder by address. Isolated e2e server (temp home, port 7191): add open and closed ports, own port, Global and agent refused over HTTP; browser at 1440 and 1100: add through the dialog, Connected, detail text, scroll, Check now fails and recovers when the host service stops and returns.
+- **Left.** A session already running when the connection is added gets it at its next session start. Previews run on the runner network and are not behind `majhi-netguard`. IPv6 is not filtered. The computer's LAN address still answers for ports bound to `0.0.0.0`. On OrbStack any container reaches another network's addresses by IP (task services of one task are reachable from another task's runner); the forwarder defends itself, services do not.
+
 ## Home tree view (built, not merged)
 
 Branch `fix/home-tree`.
