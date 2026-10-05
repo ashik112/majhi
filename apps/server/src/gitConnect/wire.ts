@@ -78,6 +78,10 @@ export interface GitConnectWiring {
   hostHome: string;
   tokens: GitTokens;
   fetch: Fetch;
+  /** Refuses a self-hosted host majhi must not send a token to. Undefined: every host is allowed. */
+  checkHost?: ((host: string, options: { allowPrivate: boolean }) => Promise<void>) | undefined;
+  /** A workspace signed in to a host (any way): its connection is made and checked. Never carries a token. */
+  onSignedIn?: ((done: { org: string; kind: MrHost; host: string }) => void) | undefined;
 }
 
 /** The tokens reader, made early so Ship and MRs read refreshed tokens. */
@@ -126,7 +130,11 @@ export function createGitConnect(w: GitConnectWiring): GitConnect {
     writeOrg: async (id, patch, change) => {
       await w.orgs.update({ id, ...patch }, change.command, change.meta);
     },
-    changed: (_flow, ended) => w.events.emit(ended ? ["signins", "orgs", "config", "secrets"] : ["signins"]),
+    ...(w.checkHost === undefined ? {} : { checkHost: w.checkHost }),
+    changed: (flow, ended) => {
+      w.events.emit(ended ? ["signins", "orgs", "config", "secrets"] : ["signins"]);
+      if (flow.state === "done") w.onSignedIn?.({ org: flow.org, kind: flow.kind, host: flow.host });
+    },
   });
   const aliases = async (): Promise<ReadonlyMap<string, string>> => {
     const list = await sshConfigHosts(w.hostHome).catch(() => []);

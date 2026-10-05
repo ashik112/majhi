@@ -224,7 +224,7 @@ const CHECKED =
 const CHECKED_2 =
   "Checked 2026-10-05: the address answers 401 with protected resource metadata, and sign-in accepts dynamic registration.";
 
-const TOOLS_TEST =(what: string) => ({ kind: "mcp-tools" as const, sentence: what });
+const TOOLS_TEST = (what: string) => ({ kind: "mcp-tools" as const, sentence: what });
 
 /** Remote MCP services with OAuth, from the integration research and a live check of each address. */
 export const SERVICE_CATALOG: readonly ServiceEntry[] = z.array(ServiceEntrySchema).parse([
@@ -536,7 +536,11 @@ export const SERVICE_CATALOG: readonly ServiceEntry[] = z.array(ServiceEntrySche
     verifiedNote: CHECKED_2,
     scopes: [
       { id: "read", access: "read", sentence: "Read projects, branches and run read queries." },
-      { id: "write", access: "write", sentence: "Create branches and run schema changes. Each asks you first." },
+      {
+        id: "write",
+        access: "write",
+        sentence: "Create branches and run schema changes. Each asks you first.",
+      },
     ],
     test: TOOLS_TEST("Lists Neon's tools."),
     docs: "https://neon.com/docs/ai/neon-mcp-server",

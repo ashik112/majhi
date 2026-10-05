@@ -214,7 +214,10 @@ const DEFS: Readonly<Record<string, Def>> = {
         "Open each page and press Enable, for the services you connected. majhi then calls each one with your sign-in and shows which answers. A page that is still off shows the exact link to turn on.",
         [
           { label: "Gmail API", url: `${GOOGLE_CONSOLE}/apis/library/gmail.googleapis.com` },
-          { label: "Google Calendar API", url: `${GOOGLE_CONSOLE}/apis/library/calendar-json.googleapis.com` },
+          {
+            label: "Google Calendar API",
+            url: `${GOOGLE_CONSOLE}/apis/library/calendar-json.googleapis.com`,
+          },
           { label: "Google Drive API", url: `${GOOGLE_CONSOLE}/apis/library/drive.googleapis.com` },
         ],
         [],

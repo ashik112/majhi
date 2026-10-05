@@ -88,7 +88,8 @@ export const EXTRA_SERVICES: readonly unknown[] = [
       {
         id: "repo",
         access: "write",
-        sentence: "Read and change repositories, issues and pull requests the account can. Pushes and merges ask you first.",
+        sentence:
+          "Read and change repositories, issues and pull requests the account can. Pushes and merges ask you first.",
       },
     ],
     test: { kind: "api", sentence: "Asks GitHub who the token belongs to, then lists one repository." },
@@ -114,7 +115,8 @@ export const EXTRA_SERVICES: readonly unknown[] = [
       {
         id: "api",
         access: "write",
-        sentence: "Read and change projects, merge requests and pipelines the account can. Pushes and merges ask you first.",
+        sentence:
+          "Read and change projects, merge requests and pipelines the account can. Pushes and merges ask you first.",
       },
     ],
     test: { kind: "api", sentence: "Asks GitLab who the token belongs to, then lists one project." },
@@ -140,7 +142,8 @@ export const EXTRA_SERVICES: readonly unknown[] = [
       {
         id: "repo",
         access: "write",
-        sentence: "Read and change repositories and pull requests the token can. Pushes and merges ask you first.",
+        sentence:
+          "Read and change repositories and pull requests the token can. Pushes and merges ask you first.",
       },
     ],
     test: { kind: "api", sentence: "Asks Bitbucket who the token belongs to, then lists one repository." },
@@ -214,9 +217,7 @@ export const EXTRA_SERVICES: readonly unknown[] = [
       },
       hosts: ["sentry.io"],
     },
-    scopes: [
-      { id: "read", access: "read", sentence: "Read organizations, projects, issues and events." },
-    ],
+    scopes: [{ id: "read", access: "read", sentence: "Read organizations, projects, issues and events." }],
     test: { kind: "token", sentence: "Lists one organization with the token." },
     docs: "https://docs.sentry.io/api/auth/",
     note: "For Sentry on sentry.io. Self-hosted Sentry is added as an MCP server by URL.",
@@ -233,7 +234,10 @@ export const EXTRA_SERVICES: readonly unknown[] = [
     packs: ["Ops watch"],
     token: {
       variable: "DIGITALOCEAN_ACCESS_TOKEN",
-      page: { label: "Open DigitalOcean's tokens page", url: "https://cloud.digitalocean.com/account/api/tokens/new" },
+      page: {
+        label: "Open DigitalOcean's tokens page",
+        url: "https://cloud.digitalocean.com/account/api/tokens/new",
+      },
       steps: [
         "Open DigitalOcean's new token page, signed in as the account this workspace uses.",
         "Choose a custom scope with read access, set an expiry and generate the token.",
@@ -419,7 +423,14 @@ export const EXTRA_SERVICES: readonly unknown[] = [
     test: { kind: "token", sentence: "Asks Discord who the bot is." },
     docs: "https://discord.com/developers/docs/topics/oauth2#bot-users",
   },
-  ...cli("vercel-cli", "Vercel CLI", "Projects and deployments", ["Ops watch", "Engineering"], "vercel", "vercel"),
+  ...cli(
+    "vercel-cli",
+    "Vercel CLI",
+    "Projects and deployments",
+    ["Ops watch", "Engineering"],
+    "vercel",
+    "vercel",
+  ),
   ...cli(
     "stripe-cli",
     "Stripe CLI",

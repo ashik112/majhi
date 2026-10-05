@@ -111,16 +111,42 @@ export interface HostIssue {
 export function canonicalHost(input: string): { hostname: string; port: string } | undefined {
   const text = input.trim().toLowerCase();
   if (text === "" || text.length > 255 || /[\s/\\@?#%]/.test(text)) return undefined;
-  try {
-    const url = new URL(`https://${text}`);
-    if (url.username !== "" || url.password !== "" || url.pathname !== "/" || url.search !== "") {
-      return undefined;
-    }
-    const hostname = url.hostname.replace(/^\[|\]$/g, "");
-    return hostname === "" ? undefined : { hostname, port: url.port };
-  } catch {
-    return undefined;
+  let hostname: string;
+  let port = "";
+  if (text.startsWith("[")) {
+    const m = /^\[([0-9a-f:.]+)\](?::(\d{1,5}))?$/.exec(text);
+    if (m === null) return undefined;
+    hostname = m[1] ?? "";
+    port = m[2] ?? "";
+    return classifyAddress(hostname) === undefined ? undefined : { hostname, port };
   }
+  const m = /^([a-z0-9]([a-z0-9._-]*[a-z0-9])?)(?::(\d{1,5}))?$/.exec(text);
+  if (m === null) return undefined;
+  hostname = m[1] ?? "";
+  port = m[3] ?? "";
+  if (port !== "" && Number(port) > 65535) return undefined;
+  const dotted = inetAton(hostname);
+  return { hostname: dotted ?? hostname, port };
+}
+
+/**
+ * How a connection reads a name made of numbers (inet_aton): `2130706433`, `0x7f.1` and `0177.0.0.1`
+ * all mean 127.0.0.1. Returns the dotted quad, or undefined when the text is a name.
+ */
+function inetAton(text: string): string | undefined {
+  if (!/^(0x[0-9a-f]+|\d+)(\.(0x[0-9a-f]+|\d+)){0,3}$/.test(text)) return undefined;
+  const parts = text.split(".").map((p) => {
+    if (p.startsWith("0x")) return Number.parseInt(p.slice(2), 16);
+    if (p.length > 1 && p.startsWith("0")) return /^[0-7]+$/.test(p) ? Number.parseInt(p, 8) : Number.NaN;
+    return Number.parseInt(p, 10);
+  });
+  if (parts.some((n) => !Number.isFinite(n))) return undefined;
+  const last = parts[parts.length - 1] ?? 0;
+  const head = parts.slice(0, -1);
+  if (head.some((n) => n > 255) || last >= 256 ** (4 - head.length)) return undefined;
+  const bytes = [...head];
+  for (let i = 4 - head.length - 1; i >= 0; i--) bytes.push(Math.floor(last / 256 ** i) % 256);
+  return bytes.join(".");
 }
 
 /**
@@ -128,10 +154,17 @@ export function canonicalHost(input: string): { hostname: string; port: string }
  * saying "this server is on my own network": it lets private, loopback and reserved addresses
  * through. A cloud metadata address is never allowed.
  */
-export function selfHostIssue(input: string, options: { allowPrivate?: boolean } = {}): HostIssue | undefined {
+export function selfHostIssue(
+  input: string,
+  options: { allowPrivate?: boolean } = {},
+): HostIssue | undefined {
   const parsed = canonicalHost(input);
   if (parsed === undefined) {
-    return { kind: "invalid", message: "Use a host name like git.acme.test, without https:// or a path.", allowable: false };
+    return {
+      kind: "invalid",
+      message: "Use a host name like git.acme.test, without https:// or a path.",
+      allowable: false,
+    };
   }
   const { hostname } = parsed;
   const address = classifyAddress(hostname);

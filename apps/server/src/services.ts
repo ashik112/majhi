@@ -6,8 +6,11 @@ import { join } from "node:path";
 import { type Command, dockerTty, localSpawner } from "@majhi/acp";
 import {
   BUILT_IN_CONNECT_APPS,
+  DEFAULT_GIT_HOST,
+  failureFromError,
   GLOBAL_CONNECTIONS,
   isOwnerChat,
+  type MrHost,
   NotificationsSettingsSchema,
   PRIVATE,
   type ServiceEntry,
@@ -56,8 +59,12 @@ import { ConfigService } from "./config/service.ts";
 import { AppClientStore } from "./connect/app-client.ts";
 import { hostCli } from "./connect/cli-connect.ts";
 import { GrantStore } from "./connect/grant.ts";
+import { McpUrlService } from "./connect/mcp-url.ts";
+import { assertHostAllowed, type Lookup } from "./connect/self-host.ts";
 import { ConnectService } from "./connect/service.ts";
 import { type BrowserServer, RUNNER_BROWSERS_PATH } from "./connections/browser.ts";
+import { GitLink } from "./connections/git-link.ts";
+import { ConnectionHealthService } from "./connections/health.ts";
 import { listTools, remoteTransport } from "./connections/mcp-client.ts";
 import { type GitProvider, type PlanDeps, planConnections } from "./connections/plan.ts";
 import { redactSecrets } from "./connections/redact.ts";
@@ -90,8 +97,9 @@ import { FindingsService } from "./findings/service.ts";
 import { triageFinding } from "./findings/triage.ts";
 import { git } from "./git/git.ts";
 import { GitLoginService } from "./git/logins.ts";
+import { checkGitToken } from "./gitConnect/check.ts";
 import type { Fetch } from "./gitConnect/http.ts";
-import { whoAmI } from "./gitConnect/oauth.ts";
+import { TokenRefused } from "./gitConnect/http.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
 import { DEFAULT_HANDOFF_MEMORY, defaultHandoffCpus } from "./handoff/limits.ts";
 import { MergeGate } from "./handoff/merge-gate.ts";
@@ -246,6 +254,8 @@ export interface ServiceOptions {
   connectFetch?: Fetch;
   /** Replaces the service catalog, so tests connect to a fake server. */
   connectCatalog?: readonly ServiceEntry[];
+  /** Replaces the DNS lookup of the self-hosted host check, so tests never resolve a real name. */
+  hostLookup?: Lookup;
   /** Replaces the `skills` program, so tests never run the real CLI or reach a git host. */
   skillsCommand?: Command;
   /** Replaces `fetch` for the skills.sh directory, so tests never reach it. */
@@ -268,6 +278,14 @@ export interface Services {
   connect: ConnectService;
   /** The Test of each connection, for connections.test and the Health page. */
   connectionTests: ConnectionTester;
+  /** The one state of every connection: connecting, connected, failed or needs-attention (5.14). */
+  connectionHealth: ConnectionHealthService;
+  /** A workspace's git host sign-in as a connection. */
+  gitLink: GitLink;
+  /** MCP servers by address: how they sign in, and connecting with a header token. */
+  mcpUrl: McpUrlService;
+  /** Starts the checks of connections: a connection for every git sign-in, one check of each connection never checked, then every few hours. */
+  startConnectionChecks: () => void;
   /** Installed skills and the per-agent switches (5.2). */
   skills: SkillService;
   /** The skills store, for runs to copy from. */
@@ -608,6 +626,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   // Where runs find their connections' files (5.14). In a runner, the image keeps the browsers.
   // Bearer tokens of connections signed in through Connect (5.14); bound once that service exists.
   const oauth: { bearer?: (id: string) => Promise<{ token: string } | { problem: string }> } = {};
+  // A workspace signed in to a git host: bound once the git link exists.
+  const gitLinkRef: { signedIn?: (done: { org: string; kind: MrHost; host: string }) => void } = {};
   // The workspaces' own git sign-ins, for `git` connections; bound once the git tokens exist.
   const gitSignIn: { token?: NonNullable<PlanDeps["gitToken"]> } = {};
   const connectionFiles = {
@@ -1750,8 +1770,46 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     hostHome: env.hostHome,
     tokens: gitTokens,
     fetch: options.gitFetch ?? fetch,
+    checkHost: (host, o) =>
+      assertHostAllowed(host, {
+        allowPrivate: o.allowPrivate,
+        ...(options.hostLookup === undefined ? {} : { lookup: options.hostLookup }),
+      }),
+    onSignedIn: (done) => gitLinkRef.signedIn?.(done),
+  });
+  // Where each connection stands (5.14). Its check is the connection tester, made below.
+  const testerRef: { current?: ConnectionTester } = {};
+  const reportAttention = (item: { org: string; key: string; title: string; detail: string }) => {
+    void findings
+      .report(
+        {
+          org: item.org,
+          source: "setup",
+          title: item.title,
+          detail: item.detail,
+          evidence: [],
+          severity: "medium",
+          dedupeKey: item.key,
+        },
+        { kind: "owner" },
+      )
+      .catch(() => undefined);
+  };
+  const connectionHealth = new ConnectionHealthService({
+    repo: store.connectionHealth,
+    list: async () =>
+      Object.entries(connectionScopes(await config.sections())).flatMap(([org, entry]) =>
+        Object.entries(entry.connections ?? {}).map(([id, c]) => ({ id, org, name: c.name })),
+      ),
+    check: async (id) => {
+      if (testerRef.current === undefined) throw new Error("Connection checks are not ready.");
+      return testerRef.current.test(id);
+    },
+    changed: () => events.emit(["connections"]),
+    attention: reportAttention,
   });
   const connections = new ConnectionService({
+    health: (id) => connectionHealth.get(id),
     config,
     secrets,
     secretService,
@@ -1798,26 +1856,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.connectFetch === undefined ? {} : { fetch: options.connectFetch }),
     ...(options.connectCatalog === undefined ? {} : { catalog: options.connectCatalog }),
     changed: () => events.emit(["connections"]),
+    health: connectionHealth,
+    ...(options.hostLookup === undefined ? {} : { lookup: options.hostLookup }),
     listTools: (url, token) =>
       listTools(remoteTransport(url, { Authorization: `Bearer ${token}` }, "http"), 30_000),
     inUse: (id) => runs.holdsConnection(id),
     remount: (id) => runs.remountConnection(id),
-    attention: (item) => {
-      void findings
-        .report(
-          {
-            org: item.org,
-            source: "setup",
-            title: item.title,
-            detail: item.detail,
-            evidence: [],
-            severity: "medium",
-            dedupeKey: item.key,
-          },
-          { kind: "owner" },
-        )
-        .catch(() => undefined);
-    },
+    attention: reportAttention,
   });
   oauth.bearer = (id) => connect.bearer(id);
   connect.startSweeper();
@@ -1857,19 +1902,44 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const connectionTests = new ConnectionTester({
     oauth: connect,
-    gitWhoAmI: async (org, provider, host) => {
+    gitCheck: async (org, provider, host, privateNetwork) => {
       const fetchFn = options.gitFetch ?? fetch;
+      if (host !== DEFAULT_GIT_HOST[provider]) {
+        try {
+          await assertHostAllowed(host, {
+            allowPrivate: privateNetwork,
+            ...(options.hostLookup === undefined ? {} : { lookup: options.hostLookup }),
+          });
+        } catch (err) {
+          const fix = err instanceof Error ? err.message : "majhi refuses this address.";
+          return { ok: false, failure: { reason: "blocked-host", fix } };
+        }
+      }
+      let last: Awaited<ReturnType<typeof checkGitToken>> | undefined;
       const used = await gitTokens
-        .withToken(org, provider, host, (token) => whoAmI(fetchFn, provider, host, token))
-        .catch((err: unknown) => ({ state: "error" as const, message: errorMessage(err) }));
-      if (used.state === "ok") return { account: used.value };
-      if (used.state === "signed-out") return { problem: signedOut(org, host) };
-      if (used.state === "refused")
-        return {
-          problem: `${host} refused the workspace's sign-in. Sign it in again on the Workspaces page.`,
-        };
-      return { problem: used.message };
+        .withToken(org, provider, host, async (token) => {
+          last = await checkGitToken(fetchFn, provider, host, token);
+          // A refused token of a sign-in that renews is tried once more with a fresh one.
+          if (!last.ok && last.failure.reason === "rejected") throw new TokenRefused("refused");
+          return last;
+        })
+        .catch((err: unknown) => ({ state: "error" as const, err }));
+      if (used.state === "ok") return used.value;
+      if (used.state === "signed-out") return { problem: "signed-out" as const };
+      if (used.state === "refused") {
+        return last !== undefined && !last.ok
+          ? last
+          : {
+              ok: false,
+              failure: {
+                reason: "rejected",
+                fix: `${host} refused the workspace's sign-in. Sign it in again.`,
+              },
+            };
+      }
+      return { ok: false, failure: { reason: failureFromError(used.err) } };
     },
+    health: connectionHealth,
     connections,
     secrets,
     spawner: sessionOptions.spawner ?? localSpawner,
@@ -1886,6 +1956,52 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       ? { browserCommand: (server: BrowserServer) => ({ command: server.command, args: [] }) }
       : {}),
   });
+  testerRef.current = connectionTests;
+  connections.onRemoved(async (id) => connectionHealth.remove(id));
+  const gitLink = new GitLink({
+    connections: {
+      list: () => connections.list(),
+      create: (input, command, meta) => connections.create(input as never, command, meta),
+      update: (input, command, meta) => connections.update(input as never, command, meta),
+    },
+    orgs: async () => (await config.sections()).orgs,
+    kindOf: (host) => {
+      const kind = classifyHost(host);
+      return kind === "other" ? undefined : mrKindOf(kind);
+    },
+    check: (id) => connectionTests.test(id),
+    health: connectionHealth,
+  });
+  gitLinkRef.signedIn = (done) => void gitLink.signedIn(done).catch(() => undefined);
+  const mcpUrl = new McpUrlService({
+    fetch: options.connectFetch,
+    lookup: options.hostLookup,
+    connections: {
+      create: (input, command, meta) => connections.create(input as never, command, meta),
+      setSecret: (input, command, meta) => connections.setSecret(input, command, meta),
+      remove: (id, command, meta) => connections.remove(id, command, meta),
+    },
+    connectionIds: async () =>
+      Object.values(connectionScopes(await config.sections())).flatMap((entry) =>
+        Object.keys(entry.connections ?? {}).map((id) => ({ id })),
+      ),
+    orgExists: async (org) => org === GLOBAL_CONNECTIONS || (await config.sections()).orgs[org] !== undefined,
+    check: async (id) => {
+      const result = await connectionTests.test(id);
+      return { ok: result.ok, failure: result.failure };
+    },
+    health: connectionHealth,
+    changed: () => events.emit(["connections"]),
+  });
+  const startConnectionChecks = () => {
+    background.run(
+      async () => {
+        await gitLink.syncAll();
+        connectionHealth.startSchedule();
+      },
+      (err) => console.error(`Could not start the connection checks: ${errorMessage(err)}`),
+    );
+  };
   const tools = new ToolInstaller({
     majhiHome: env.majhiHome,
     fetch: (url, init) => fetch(url, init),
@@ -2080,6 +2196,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     secretService,
     connections,
     connect,
+    connectionHealth,
+    gitLink,
+    mcpUrl,
+    startConnectionChecks,
     skills: skills,
     skillStore,
     tools,

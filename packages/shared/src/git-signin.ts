@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { IdSchema, MrHostSchema } from "./accounts.ts";
+import { ConnectionFailureSchema } from "./connection-health.ts";
 
 /**
  * Git sign-in per workspace (org in code). The owner signs a workspace in to GitHub, GitLab or
@@ -59,6 +60,17 @@ export const GLAB_CLIENT_ID = "41d48f9422ebd655dd9cf2947d6979681dfaddc6d0c56f762
 export const GITHUB_TOKEN_SCOPES = ["repo", "read:org", "workflow"] as const;
 /** The scopes a pasted GitLab personal access token needs. */
 export const GITLAB_TOKEN_SCOPES = ["api", "read_user", "write_repository"] as const;
+/**
+ * The repository permissions a GitHub fine-grained token is prefilled with: read and write code, pull
+ * requests, issues and workflows, plus the metadata every token carries.
+ */
+export const GITHUB_FINE_GRAINED = {
+  metadata: "read",
+  contents: "write",
+  pull_requests: "write",
+  issues: "write",
+  workflows: "write",
+} as const;
 /** The scopes of a Bitbucket API token. `admin:repository:bitbucket` only to let majhi make repos. */
 export const BITBUCKET_TOKEN_SCOPES = [
   "read:user:bitbucket",
@@ -93,7 +105,7 @@ export const OAuthClientIdSchema = z
  * ```
  */
 export const GitAppsConfigSchema = z.strictObject({
-  /** github.com only. GitHub Enterprise Server is not covered yet. */
+  /** github.com. GitHub Enterprise signs in with a token or its CLI, not a device flow. */
   github: z.strictObject({ client_id: OAuthClientIdSchema }).optional(),
   /** By host. gitlab.com and any self-hosted GitLab the owner registered an application on. */
   gitlab: z.record(GitHostNameSchema, z.strictObject({ client_id: OAuthClientIdSchema })).optional(),
@@ -168,6 +180,8 @@ export const GitTokenHelpSchema = z.object({
   host: z.string(),
   /** The host page that makes the token, prefilled where the host allows it. */
   link: z.object({ label: z.string(), url: z.url() }),
+  /** A second page for the same host, like GitHub's classic token page. */
+  altLink: z.object({ label: z.string(), url: z.url() }).optional(),
   /** Plain sentences, in order. */
   steps: z.array(z.string()).min(1),
   /** Scope names to tick, when the page does not tick them itself. */
@@ -221,20 +235,27 @@ export function gitTokenHelp(
       ? { install: { label: `Install ${CLI_NAME[kind]}`, url: CLI_INSTALL[kind] } }
       : {};
   if (kind === "github") {
+    const perms = Object.entries(GITHUB_FINE_GRAINED)
+      .map(([k, v]) => `${k}=${v}`)
+      .join("&");
     return {
       kind,
       host,
       link: {
-        label: "Open GitHub's new token page",
-        url: `https://github.com/settings/tokens/new?description=${name}&scopes=${GITHUB_TOKEN_SCOPES.join(",")}`,
+        label: `Open ${host}'s new fine-grained token page`,
+        url: `https://${host}/settings/personal-access-tokens/new?name=${name}&description=${name}&expires_in=90&${perms}`,
+      },
+      altLink: {
+        label: "Use a classic token instead",
+        url: `https://${host}/settings/tokens/new?description=${name}&scopes=${GITHUB_TOKEN_SCOPES.join(",")}`,
       },
       steps: [
-        "Open GitHub's new token page, signed in as the account this workspace uses. majhi fills in the name and the scopes.",
-        "Pick an expiration.",
-        "Click Generate token at the bottom of the page.",
+        `Open ${host}'s new fine-grained token page, signed in as the account this workspace uses. majhi fills in the name and the permissions.`,
+        "Under Repository access, choose the repositories this workspace works on (or All repositories).",
+        "Check the permissions below, then click Generate token.",
         "Copy the token and paste it here. GitHub shows it only once.",
       ],
-      scopes: [...GITHUB_TOKEN_SCOPES],
+      scopes: Object.entries(GITHUB_FINE_GRAINED).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`),
       fields: ["token"],
       ...(cliNote === undefined ? {} : { note: cliNote }),
       ...install,
@@ -259,6 +280,25 @@ export function gitTokenHelp(
       fields: ["token"],
       ...(cliNote === undefined ? {} : { note: cliNote }),
       ...install,
+    };
+  }
+  if (host !== DEFAULT_GIT_HOST.bitbucket) {
+    return {
+      kind,
+      host,
+      link: {
+        label: `Open HTTP access tokens on ${host}`,
+        url: `https://${host}/plugins/servlet/access-tokens/manage`,
+      },
+      steps: [
+        `Open your account's HTTP access tokens page on ${host}, signed in as the account this workspace uses.`,
+        "Click Create token.",
+        `Name it ${tokenName(workspace)}, set the permissions below, and an expiry.`,
+        "Click Create. Copy the token and paste it here. Bitbucket shows it only once.",
+      ],
+      scopes: ["Project: Read", "Repository: Write"],
+      fields: ["token"],
+      note: "Bitbucket Server and Data Center take an HTTP access token. It needs no email.",
     };
   }
   return {
@@ -293,8 +333,10 @@ export const SignInStartInputSchema = z.object({
   /** The workspace the token is for. Only this workspace gets it. */
   org: IdSchema,
   kind: MrHostSchema,
-  /** Default: `DEFAULT_GIT_HOST[kind]`. A self-hosted GitLab answers `paste`. */
+  /** Default: `DEFAULT_GIT_HOST[kind]`. A self-hosted server (Enterprise, self-managed, Server) answers `paste`. */
   host: GitHostNameSchema.optional(),
+  /** The owner confirms that a self-hosted `host` is on their own network. See `SignInTokenInputSchema`. */
+  allowPrivate: z.boolean().optional(),
 });
 
 /**
@@ -387,7 +429,12 @@ export const SignInStatusSchema = z.discriminatedUnion("state", [
   SignInBase.extend({ state: z.literal("denied") }),
   SignInBase.extend({ state: z.literal("expired") }),
   SignInBase.extend({ state: z.literal("cancelled") }),
-  SignInBase.extend({ state: z.literal("failed"), reason: z.string() }),
+  SignInBase.extend({
+    state: z.literal("failed"),
+    reason: z.string(),
+    /** Why, as a typed reason read from the host's status, and the exact fix. */
+    failure: ConnectionFailureSchema.optional(),
+  }),
 ]);
 export type SignInStatus = z.infer<typeof SignInStatusSchema>;
 export type SignInState = SignInStatus["state"];
@@ -448,11 +495,22 @@ export const SignInTokenInputSchema = z
       .regex(/^\S+$/, "A token has no spaces"),
     /** Bitbucket only: the Atlassian account email the API token belongs to. */
     email: z.email("Use the email of your Atlassian account").max(320).optional(),
+    /**
+     * The owner confirms that a self-hosted `host` is on their own network (a private or loopback
+     * address). Without it majhi refuses such a host. Only the owner may set it.
+     */
+    allowPrivate: z.boolean().optional(),
   })
-  .refine((v) => v.kind !== "bitbucket" || v.email !== undefined, {
-    message: "Bitbucket needs the email of your Atlassian account",
-    path: ["email"],
-  });
+  .refine(
+    (v) =>
+      v.kind !== "bitbucket" ||
+      (v.host !== undefined && v.host !== DEFAULT_GIT_HOST.bitbucket) ||
+      v.email !== undefined,
+    {
+      message: "Bitbucket Cloud needs the email of your Atlassian account",
+      path: ["email"],
+    },
+  );
 export type SignInTokenInput = z.infer<typeof SignInTokenInputSchema>;
 
 /** majhi's address when nothing else is known: the default port on loopback. */

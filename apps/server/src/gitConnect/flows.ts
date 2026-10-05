@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { CommandMeta, GitCli, MrHost, OAuthGrant, SignInStatus } from "@majhi/shared";
+import type { CommandMeta, ConnectionFailure, GitCli, MrHost, OAuthGrant, SignInStatus } from "@majhi/shared";
 
 /** A sign-in never waits longer than this, whatever the host says. */
 export const MAX_FLOW_MS = 15 * 60_000;
@@ -184,8 +184,8 @@ export class SignInFlows {
   }
 
   /** `reason` is a plain sentence that never holds a token or a code. */
-  failed(id: string, reason: string): boolean {
-    return this.end(id, { state: "failed", reason });
+  failed(id: string, reason: string, failure?: ConnectionFailure): boolean {
+    return this.end(id, { state: "failed", reason, ...(failure === undefined ? {} : { failure }) });
   }
 
   private isOpen(flow: Flow): boolean {
@@ -197,7 +197,7 @@ export class SignInFlows {
     outcome:
       | { state: "done"; account: string; alsoUsedBy: string[]; replaced?: string }
       | { state: "denied" | "expired" | "cancelled" }
-      | { state: "failed"; reason: string },
+      | { state: "failed"; reason: string; failure?: ConnectionFailure },
   ): boolean {
     const flow = this.flows.get(id);
     if (flow === undefined || !this.isOpen(flow)) return false;
