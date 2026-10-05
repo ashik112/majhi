@@ -54,6 +54,8 @@ describe("uncommitted work at hand-off", () => {
   });
 
   it("blocks a tracked file under node_modules that changed", () => {
-    expect(uncommittedFromStatus(" M node_modules/pkg/index.js\0").files).toEqual(["node_modules/pkg/index.js"]);
+    expect(uncommittedFromStatus(" M node_modules/pkg/index.js\0").files).toEqual([
+      "node_modules/pkg/index.js",
+    ]);
   });
 });
