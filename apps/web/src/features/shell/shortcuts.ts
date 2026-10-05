@@ -114,7 +114,12 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   },
   { id: "queue", keys: ["Enter"], what: "Send, or queue for the next turn", group: "Message box" },
   { id: "newline", keys: ["Shift", "Enter"], what: "New line", group: "Message box" },
-  { id: "board-move", keys: ["j", "k", "h", "l"], what: "Move between cards (arrows too)", group: "Board" },
+  { id: "board-move", keys: ["j", "k"], what: "Move through the rows of Home (arrows too)", group: "Board" },
+  { id: "board-section", keys: ["Shift", "J", "K"], what: "Jump to the next or previous section", group: "Board" },
+  { id: "board-act", keys: ["1", "2", "3"], what: "Run the row's numbered action", group: "Board" },
+  { id: "board-select", keys: ["x"], what: "Select a row; 1 then runs on all selected", group: "Board" },
+  { id: "board-triage", keys: ["t"], what: "Open To triage", group: "Board" },
+  { id: "board-filter", keys: ["/"], what: "Filter the rows", group: "Board" },
   {
     id: "decisions-move",
     keys: ["j", "k"],
@@ -139,7 +144,7 @@ export const SHORTCUT_TABLE: readonly ShortcutDef[] = [
   { id: "today-move", keys: ["j", "k"], what: "Next or previous item (arrows too)", group: "Today" },
   { id: "today-open", keys: ["Enter"], what: "Take the item's action", group: "Today" },
   { id: "today-done", keys: ["e"], what: "Dismiss a finding or close a date", group: "Today" },
-  { id: "board-open", keys: ["Enter"], what: "Open the card you are on", group: "Board" },
+  { id: "board-open", keys: ["Enter"], what: "Open the row, or a section", group: "Board" },
 ];
 
 /** The table row with this id. */

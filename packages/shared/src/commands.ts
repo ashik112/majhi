@@ -331,6 +331,7 @@ import {
   CardActionSchema,
   ChangeBranchInputSchema,
   ChangeBranchResultSchema,
+  CiStateSchema,
   MergeMethodSchema,
   ProjectConfigSchema,
   ProjectViewSchema,
@@ -344,6 +345,7 @@ import {
   TaskSchema,
   TaskSummarySchema,
 } from "./tasks.ts";
+import { BlockerSchema } from "./lifecycle/blocker.ts";
 import {
   TriggerCreateInputSchema,
   TriggerIdSchema,
@@ -1583,6 +1585,39 @@ export const commands = {
       tasks: z.array(TaskSummarySchema),
       counts: BoardCountsSchema,
       decisions: z.array(OwnerDecisionSchema).optional(),
+    }),
+  },
+  "tasks.blockers": {
+    risk: "read",
+    summary:
+      "Why each ready or inbox task is not running, as a typed reason (dependency, account signed out or at its limit, machine busy, no free slot, workspace at its tasks-at-once limit, budget hold, not triaged, or nobody started it), in the order the checks run. A task with no entry, or a null blocker, is not waiting to start. Read it before starting work: it says which check holds a task back",
+    input: Empty,
+    output: z.array(z.object({ task: TaskIdSchema, blocker: BlockerSchema.nullable() })),
+  },
+  "tasks.homeFacts": {
+    risk: "read",
+    summary:
+      "What Home shows beyond the task list, in one read: the open merge requests with their CI state, and what each agent that is in a turn now is doing",
+    input: Empty,
+    output: z.object({
+      mrs: z.array(
+        z.object({
+          task: TaskIdSchema,
+          project: IdSchema,
+          number: z.number().int().positive(),
+          url: z.string(),
+          ci: CiStateSchema,
+        }),
+      ),
+      doing: z.array(
+        z.object({
+          task: TaskIdSchema,
+          agent: IdSchema,
+          text: z.string().optional(),
+          /** When the turn started (UTC ISO). */
+          since: z.string().optional(),
+        }),
+      ),
     }),
   },
   "tasks.get": {

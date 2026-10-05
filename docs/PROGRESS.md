@@ -1,5 +1,17 @@
 # Progress
 
+## Home as one list by who holds the ball (built, not merged)
+
+Branch `feat/home-flow`.
+
+- **What changed.** Home is no longer four columns. It is one list of one-line rows in sections: Needs you, Running now, Shipping, Up next, To triage, Captain handled, Done today. Empty sections are not drawn; an all-quiet Home says so and offers New task. Every row has a primary verb button that fixes its reason (Answer, Review, Resume, Watch, Fix with agent, Merge, Start now, Sign in, Raise limit, Verify, Undo).
+- **Up next reasons.** New `lifecycle.blockerOf` in `packages/shared/src/lifecycle/blocker.ts` returns a typed reason for a ready or inbox task (dependency, account signed out or at limit, machine busy, no free slot, tasks at once, budget hold, not triaged, nobody started it), in the order of the lifecycle design section 5. Read through the new command `tasks.blockers`. `tasks.homeFacts` gives open merge requests with CI state and what working agents do now.
+- **Keys.** j/k and arrows move through all rows, Shift+J/K jump sections, Enter opens, 1 to 3 run the row's numbered actions, x selects (then 1 runs on all selected), / filters, t opens To triage. `g` then a letter still goes to pages; Cmd J, Cmd K and Esc are untouched.
+- **What the owner will notice.** Needs you is exactly `decisions.list`, so it matches the bell. At 1100px the detail and the other numbered actions drop to a second line of the focused row; the wait and the main button stay at the right.
+- **Not sourced.** Per-row cost, step progress, the CI failure reason (shows "CI failed"), and why a paused task paused when no decision exists (shows "Paused, no agent is working on it").
+- **Also fixed.** `guardMounts` wrote `refs/heads/task/.keep`, which fails for any branch not under `task/`, so tasks could not start. It now writes into the branch's own folder (separate commit).
+- **Verified.** Typecheck clean. Tests: `blocker.test.ts`, `home-model.test.ts`. Browser on isolated e2e servers at 1440x900 and 1100x800 with about 50 tasks and live fake agents, an empty home, and a 200-task seed; keyboard flow checked; no console errors or failed requests.
+
 ## Overnight 2026-10-05: summary for the owner (deployed, ff22e3dd)
 
 Live majhi runs ff22e3dd. A backup was taken before the update. All server, web, host and shared tests pass (3,951), typecheck is clean, and a final browser smoke test on an isolated server passed. Since yesterday afternoon: 29 merges, 28,268 lines removed and 14,293 added.

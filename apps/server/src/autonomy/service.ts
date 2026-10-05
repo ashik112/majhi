@@ -33,6 +33,7 @@ import {
   detectSecrets,
   type GitLoginsResult,
   isCaptainLane,
+  lifecycle,
   type MachineReading,
   PRIVATE,
   type QueueItem,
@@ -62,7 +63,7 @@ import type { ConfigSections } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import type { EventHub } from "../events/hub.ts";
-import { busyReason, machineLine, upperFirst } from "../machine/busy.ts";
+import { busyKind, busyReason, machineLine, upperFirst } from "../machine/busy.ts";
 import { CalmWake } from "../machine/calm-wake.ts";
 import type { RoomService } from "../room/service.ts";
 import { noRoomLine } from "../runs/limits.ts";
@@ -971,6 +972,105 @@ export class AutonomyService {
     if (full !== undefined) return full;
     const accounts = await this.teamAccountIds(task);
     return noRoomLine(await this.deps.runs.capacity(accounts), accounts);
+  }
+
+  /**
+   * Why each ready or inbox task is not running, as typed facts (`lifecycle.blockerOf`): the start
+   * checks read once for all of them. Chats and the captain's lanes are not tasks to the owner.
+   */
+  async blockers(): Promise<{ task: string; blocker: lifecycle.Blocker | null }[]> {
+    const waiting = this.deps.store.tasks
+      .list(false)
+      .filter(
+        (t) =>
+          (t.status === "ready" || t.status === "inbox") &&
+          t.kind !== "chat" &&
+          this.deps.lanes.orgOf(t.id) === undefined,
+      );
+    if (waiting.length === 0) return [];
+    const accountOf = new Map(
+      (await this.deps.agents.list()).flatMap((s) =>
+        s.ok ? [[s.id, s.agent.frontmatter.account] as const] : [],
+      ),
+    );
+    const accountsOf = (team: readonly string[]) => [...new Set(team.flatMap((a) => accountOf.get(a) ?? []))];
+    const ids = [...new Set(waiting.flatMap((t) => accountsOf(t.team)))];
+    const [capacity, views, settings] = await Promise.all([
+      this.deps.runs.capacity(ids),
+      this.deps.accounts.list().catch(() => [] as AccountView[]),
+      this.deps.config.settings(),
+    ]);
+    const room = (r: { inUse: number; limit: number; free: number }) => ({
+      inUse: r.inUse,
+      limit: r.limit,
+      free: r.free,
+    });
+    const trouble = new Map<string, "signed-out" | "limit">();
+    for (const v of views) {
+      if (v.status === "needs-login") trouble.set(v.id, "signed-out");
+      else if (v.status === "at-limit") trouble.set(v.id, "limit");
+    }
+    const running = this.deps.store.tasks
+      .list(false)
+      .filter(
+        (t) =>
+          t.status === "running" &&
+          t.kind !== "chat" &&
+          this.isLive(t.id) &&
+          this.deps.lanes.orgOf(t.id) === undefined,
+      );
+    const atOnce = new Map<string, { running: string[]; max: number }>();
+    for (const org of new Set(waiting.map((t) => t.org ?? PRIVATE))) {
+      atOnce.set(org, {
+        running: running.filter((t) => (t.org ?? PRIVATE) === org).map((t) => t.id),
+        max: settings.autonomy.orgs[org]?.tasksAtOnce ?? TASKS_AT_ONCE,
+      });
+    }
+    const on = this.repo.state().mode === "on";
+    const budgets: Extract<lifecycle.Blocker, { gate: "budget" }>[] = [];
+    if (on) {
+      for (const h of this.holds) {
+        const until = h.until === undefined ? {} : { until: h.until };
+        if (h.kind === "day-cap") budgets.push({ gate: "budget", scope: "all", period: "day", ...until });
+        else if (h.id !== undefined)
+          budgets.push({
+            gate: "budget",
+            scope: h.kind === "org-cap" ? "org" : "reserve",
+            scopeId: h.id,
+            period: "day",
+            ...until,
+          });
+      }
+      if (this.deps.ceilingHeld?.() !== undefined) budgets.push({ gate: "budget", scope: "all", period: "month" });
+    }
+    const world: lifecycle.BlockerWorld = {
+      autopilot: on ? "on" : "off",
+      machine: busyKind(this.deps.machine?.()?.host),
+      slots: {
+        agents: room(capacity.agents),
+        accounts: new Map(capacity.accounts.map((a) => [a.account, room(a)])),
+      },
+      atOnce,
+      accountTrouble: trouble,
+      budgets,
+    };
+    return waiting.map((t) => {
+      const blocker = lifecycle.blockerOf(
+        {
+          id: t.id,
+          status: t.status,
+          kind: t.kind,
+          org: t.org ?? PRIVATE,
+          priority: t.priority,
+          due: t.due,
+          repos: t.repos.length,
+          waitingOn: t.waitingOn,
+          accounts: accountsOf(t.team),
+        },
+        world,
+      );
+      return { task: t.id, blocker: blocker ?? null };
+    });
   }
 
   /** Whether each account a queue item waits for has no free slot now: a full slot is a reason to wait. */
