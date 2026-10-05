@@ -9,7 +9,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventHub } from "../events/hub.ts";
 import { estimateText } from "../runs/context.ts";
 import type { Store } from "../store/index.ts";
-import { backlogOrder, DIGEST_MAX_CHARS, type DigestInput, digest } from "./digest.ts";
+import {
+  type BacklogTask,
+  backlogOrder,
+  DIGEST_MAX_CHARS,
+  type DigestInput,
+  digest,
+  type StartGate,
+} from "./digest.ts";
 import { AutonomyDriver, changeOf, DEBOUNCE_MS } from "./driver.ts";
 import type { AutonomyService } from "./service.ts";
 
@@ -69,6 +76,9 @@ function fakes() {
     /** Every task of the store, any workspace. */
     all: [] as Record<string, unknown>[],
     incidents: {} as Record<string, string[]>,
+    /** The start gates holding tasks of Acme's backlog, by task id. */
+    gates: {} as Record<string, StartGate>,
+    backlog: [] as BacklogTask[],
   };
   const ticks: string[][] = [];
   const tickOrgs: string[] = [];
@@ -86,7 +96,8 @@ function fakes() {
     laneOrg: (task: string) => Object.entries(lanes).find(([, chat]) => chat === task)?.[0],
     laneChat: async (org: string) =>
       state.mode !== "on" ? undefined : org === "acme" ? state.chat : lanes[org],
-    pickable: async () => ({ backlog: [], leftOut: 0, rules: ["Task size: Any size."] }),
+    startGates: async () => state.gates,
+    pickable: async () => ({ backlog: state.backlog, leftOut: 0, rules: ["Task size: Any size."] }),
     isAutonomous: (task: string) => task === "ACM-1",
     dayCapped: () => state.capped,
     openTasks: () => [],
@@ -222,6 +233,48 @@ describe("the driver per lane", () => {
     f.driver.loopEnded(CHAT);
     await vi.advanceTimersByTimeAsync(0);
     expect(f.toldIn).toEqual(["LOCAL-9", "LOCAL-1"]);
+  });
+});
+
+const FULL: StartGate = {
+  kind: "workspace",
+  text: "Acme works on 1 task at once and ACM-1 is running.",
+  key: "1:ACM-1",
+};
+
+describe("start gates", () => {
+  const waiting = (id: string): BacklogTask => ({ id, title: `Work on ${id}`, createdAt: "2026-10-01" });
+
+  it("names the gate that holds a backlog task, before the captain decides", async () => {
+    const f = fakes();
+    f.state.backlog = [waiting("ACM-2")];
+    f.state.gates = { "ACM-2": FULL };
+    f.driver.wake("New in the backlog: ACM-2", "acme");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.told[0]).toContain(
+      "ACM-2 [size not known] waits: Acme works on 1 task at once and ACM-1 is running.",
+    );
+  });
+
+  it("does not wake again for a refusal by the same gate, and wakes once when the gate clears", async () => {
+    const f = fakes();
+    f.state.backlog = [waiting("ACM-2")];
+    f.state.gates = { "ACM-2": FULL };
+    f.driver.wake("New in the backlog: ACM-2", "acme");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.ticks).toHaveLength(1);
+    // The start is refused again and again: stalls of the held task are soft and change no fact.
+    for (let i = 0; i < 5; i++) {
+      f.driver.wake("ACM-2 is running, but no agent is working on it", "acme", "soft");
+      await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    }
+    expect(f.ticks).toHaveLength(1);
+    // The running task finished: the gate clears, one wake.
+    f.state.gates = {};
+    f.driver.wake("ACM-2 is running, but no agent is working on it", "acme", "soft");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(f.ticks).toHaveLength(2);
+    expect(f.told[1]).not.toContain("waits:");
   });
 });
 

@@ -7,6 +7,7 @@ import { InShellContext } from "@/components/centered-page";
 import { AttentionBanner } from "@/components/shell/banner";
 import { CaptainTicker } from "@/components/shell/captain-ticker";
 import { NotifyPrompt } from "@/components/shell/notify-prompt";
+import { StaleBuildBar } from "@/components/shell/stale-build";
 import { ShortcutsDialog } from "@/components/shell/shortcuts-dialog";
 import { Sidebar } from "@/components/shell/sidebar";
 import { AgentDrawer } from "@/features/agent-drawer/agent-drawer";
@@ -109,6 +110,7 @@ function Frame() {
     <div className="flex min-h-0 flex-1 gap-3 p-3">
       <Sidebar />
       <main id="main" tabIndex={-1} className="flex h-full min-w-0 flex-1 flex-col outline-none">
+        <StaleBuildBar />
         <NotifyPrompt />
         <AttentionBanner banner={banner} />
         <CaptainTicker />

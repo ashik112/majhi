@@ -552,8 +552,8 @@ export async function guardMounts(
     await mkdir(dir, { recursive: true });
   }
   // `git pack-refs --prune` (run by `git gc --auto` on the host) removes empty ref folders, and the
-  // run's writable mount would go with `refs/heads/task`. Git skips dot-files when it reads loose
-  // refs and prunes only empty folders, so this file keeps the folder alive.
+  // run's writable mount (the branch's own folder, such as `refs/heads/feat`) would go with it. Git skips
+  // dot-files when it reads loose refs and prunes only empty folders, so this file keeps the folder alive.
   await writeFile(join(own, ".keep"), "");
   return [
     { path: join(refs, "heads"), readOnly: true },

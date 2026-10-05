@@ -2,6 +2,7 @@ import type { BaseEnv, RunMount, Spawner } from "@majhi/acp";
 import { detectSecrets, type Task } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
 import { taskTerminalEnv } from "../terminal/task-terminal.ts";
+import { HANDOFF_CPU_SHARES } from "./limits.ts";
 import type { ExecLimits, ExecResult } from "./service.ts";
 
 /** The most output kept while a command runs. The end of it is what a failure is read from. */
@@ -62,7 +63,15 @@ export function execInTask(deps: ExecDeps) {
         env: { ...taskTerminalEnv(deps.base), ...shim?.env },
         cwd,
         task: taskId,
-        ...(limits === undefined ? {} : { limits: { cpus: String(limits.cpus), memory: limits.memory } }),
+        ...(limits === undefined
+          ? {}
+          : {
+              limits: {
+                cpus: String(limits.cpus),
+                memory: limits.memory,
+                cpuShares: HANDOFF_CPU_SHARES,
+              },
+            }),
         mounts: [{ path: task.folder }, ...(await deps.repoMounts(task))],
       });
     } catch (err) {

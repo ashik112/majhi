@@ -24,6 +24,8 @@ export interface AppDeps {
   version: string;
   /** Git commit the image was built from. `/health` reports it so a browser can tell a new server from the old one. */
   commit?: string;
+  /** Id of the web bundle served from `webDist`. `/health` reports it so an open tab can tell it is out of date. */
+  build?: string | undefined;
   /** Built web app. When it has no index.html, `/` explains that instead. */
   webDist: string;
   dispatch: Dispatch;
@@ -68,7 +70,12 @@ export function createApp(deps: AppDeps): Hono {
   }
 
   app.get("/health", (c) =>
-    c.json({ status: "ok", version: deps.version, commit: deps.commit ?? "dev" } satisfies Health),
+    c.json({
+      status: "ok",
+      version: deps.version,
+      commit: deps.commit ?? "dev",
+      ...(deps.build === undefined ? {} : { build: deps.build }),
+    } satisfies Health),
   );
 
   app.post("/api/cmd/:name", async (c) => {

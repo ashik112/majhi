@@ -11,6 +11,26 @@ Branch `feat/home-flow`.
 - **Not sourced.** Per-row cost, step progress, the CI failure reason (shows "CI failed"), and why a paused task paused when no decision exists (shows "Paused, no agent is working on it").
 - **Also fixed.** `guardMounts` wrote `refs/heads/task/.keep`, which fails for any branch not under `task/`, so tasks could not start. It now writes into the branch's own folder (separate commit).
 - **Verified.** Typecheck clean. Tests: `blocker.test.ts`, `home-model.test.ts`. Browser on isolated e2e servers at 1440x900 and 1100x800 with about 50 tasks and live fake agents, an empty home, and a 200-task seed; keyboard flow checked; no console errors or failed requests.
+## fix/autopilot-load: Auto-pilot made majhi slow (not merged)
+
+Three causes of "slow with Auto-pilot on, captain chats do not load".
+
+- **Stale tab after an update.** The web build writes a build id into index.html (a hash of the hashed file names). The server reports it on `/health` (`build`) and in a `hello` first frame of `/api/events`. A tab on another build reloads itself at once when no text box holds unsent text. Otherwise it shows "majhi was updated. Reload to use the new version." with a Reload button, and reloads by itself once the text is sent. At most one self-reload a minute per server build, so a stale cache cannot loop. The rule is `reloadDecision` in `packages/shared/src/build-id.ts` (test: same build, different build, unsent text, no id).
+- **Hand-off checks starved the Mac.** Default CPUs per check are `max(2, floor(cores/6))`, and at most `clamp(floor(cores/3 / cpus), 1, 2)` checks run at once. On 10 cores that is one check of 2 CPUs, not two of 5. Hand-off containers run with `--cpu-shares 256`, so agent runs and the server win any contention. `containers.handoff_cpus` still overrides. See DECISIONS.
+- **Captain retried what the gates refuse.** The wake digest now says which gate holds each backlog task and each resumable paused task ("ACM-3 waits: This workspace works on 1 task at once and ACM-2 is running."), with a line telling the captain not to start them. Gates (`StartGate`: machine busy, workspace at tasks-at-once, no free agent slot) are typed, read live, and part of the facts key. A refusal only writes events and never wakes the captain, so the same gate in the same state is the same fact: no new wake until it changes. A refused resume says its line once, not every minute. A task that waits for room no longer raises the "running, but no agent is working" alarm.
+
+**Measured** on the in-process world (real services, fake agent, `bossWorld`; Acme with one running task, tasks-at-once 1, three waiting tasks, a captain that tries every task its digest does not mark as waiting, a news wake every 25 s for 150 s, scaled to 10 minutes):
+
+| | captain turns / 10 min | refused starts / 10 min |
+|---|---|---|
+| before | 16 | 32 |
+| after | 16 | 0 |
+
+Turns stay equal here because the test sends the wakes itself. What changes is that no turn is spent on a start the gates refuse. I found no path where a refusal wakes the captain: refusals write `decision` events, and the facts key does not read events. The paid retries were the captain choosing to try gated tasks on wakes it got for other reasons, which the digest now prevents.
+
+**How verified.** Typecheck clean. Tests: `autonomy/driver.test.ts` (digest names the gate; a refusal by the same gate does not wake again; one wake when the gate clears), `handoff/limits.test.ts`, `packages/shared/src/build-id.test.ts`. Browser (isolated e2e server, 1440x900 and 1100x800): with unsent text and a different server build the bar shows and the tab reloads once the text is gone; with nothing unsent it reloads once. No console errors. Shots: `scratchpad/fix-autopilot-load/bar-1440.png`, `bar-1100.png`.
+
+**Left.** The repo rule (two tasks on one repo) is not a typed gate yet, so the digest does not name it. `autonomy/live-state.test.ts` (2 tests) and `autonomy/slots.test.ts` (1 test) fail the same way on main in this checkout: the test world's git lacks `refs/heads/task` (`ENOENT ... .git/refs/heads/task/.keep`), so the first started task pauses with an error and no gate holds. Not caused by this branch.
 
 ## Overnight 2026-10-05: summary for the owner (deployed, ff22e3dd)
 
