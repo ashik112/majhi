@@ -10,6 +10,7 @@ import {
   failureFromError,
   GLOBAL_CONNECTIONS,
   isOwnerChat,
+  MAP_BRIEF_LINES,
   type MrHost,
   NotificationsSettingsSchema,
   PRIVATE,
@@ -117,6 +118,9 @@ import { InstallRequests } from "./installs/service.ts";
 import { busyReason } from "./machine/busy.ts";
 import { MemoryWatch } from "./machine/memwatch.ts";
 import { MachineSensor } from "./machine/sensor.ts";
+import { housekeeperPrice } from "./map/price.ts";
+import { MapRepo } from "./map/repo.ts";
+import { MapService } from "./map/service.ts";
 import { McpRegistry } from "./mcp-servers/registry.ts";
 import { McpService } from "./mcp-servers/service.ts";
 import { ChatMemory } from "./memory/chats.ts";
@@ -379,6 +383,8 @@ export interface Services {
   homeChecks: HomeChecks;
   /** The owner's agenda and the morning brief (5.18). */
   agenda: AgendaService;
+  /** The project map of each workspace (5.20). */
+  map: MapService;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
   captainTell: CaptainTell;
   /** The captain's chat per workspace (5.18). */
@@ -910,6 +916,45 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     majhiHome: env.majhiHome,
     usage: usageRecorder,
   });
+  // The project map (5.20). Its code pass is a Housekeeper question per project: the smallest model, no tools.
+  const map = new MapService({
+    repo: new MapRepo(store.raw),
+    projects: async () =>
+      (await projects.infos()).map((p) => ({ id: p.id, org: p.org, path: p.path, exists: p.exists })),
+    tasks: () =>
+      store.tasks.list(false).map((t) => ({
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        org: t.org ?? PRIVATE,
+        repos: t.repos,
+        chat: t.chat,
+        lane: t.lane,
+      })),
+    ask: (task, prompt, parse) => housekeeper.ask(task, prompt, parse),
+    unavailable: async (org) => {
+      try {
+        await housekeeper.resolve(org);
+        return undefined;
+      } catch (err) {
+        return err instanceof NoHousekeeper
+          ? "No model is set, so the update reads config files only. Choose a captain to turn the code pass on."
+          : `The code pass cannot run here: ${errorMessage(err)}`;
+      }
+    },
+    price: async (org) => {
+      try {
+        const { account } = await housekeeper.resolve(org);
+        const owner = await readPrices(config.file).catch(() => ({}));
+        return housekeeperPrice((await config.settings()).memory.housekeeper_model, account.tool, owner);
+      } catch {
+        return undefined;
+      }
+    },
+    spent: (task, since) => usageRepo.totals({ filters: { task }, start: since }).costUsd,
+    changed: () => events.emit(["map"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+  });
   // The owner's outcome switches, by workspace and rule id. Bound below, once the playbooks exist.
   const ruleSwitches: {
     off: (org: string, rule: string) => boolean;
@@ -976,6 +1021,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const tasks = new TaskService({
     mergeGate,
+    mapNotes: (task) =>
+      map.briefLines(
+        task.org ?? PRIVATE,
+        task.repos.map((r) => r.project),
+        MAP_BRIEF_LINES,
+      ),
     protectedPaths: [env.secretsKeyFile],
     onCaptainAnswer: (task) => void loopGuard?.answered(task).catch(() => undefined),
     onOwnerResumedLimit: (task) => budgets.exempt(task),
@@ -1661,6 +1712,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       decisions,
       memory,
       findings,
+      map,
       curate: (fact, off) => curator.review(fact, off === undefined ? {} : { off }),
       scanner: new RepoScanner(),
       cleanup,
@@ -2397,6 +2449,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       },
     }),
     agenda,
+    map,
     captainTell: new CaptainTell({
       tasks,
       lanes,

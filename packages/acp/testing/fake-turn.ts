@@ -681,6 +681,17 @@ export function serveAcp(o: ServeOptions): void {
             content: { type: "text", text: agentText },
           });
           stopReason = "end_turn";
+        } else if (text.includes("fake-reply:")) {
+          // A prompt that carries `fake-reply: <text>` (a line of a file it quotes, say) gets that text as the
+          // whole answer, so a test can play a model that answers a question with exact JSON.
+          const at = text.indexOf("fake-reply:") + "fake-reply:".length;
+          const end = text.indexOf("\n", at);
+          agentText = text.slice(at, end < 0 ? undefined : end).trim();
+          await update(params.sessionId, {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: agentText },
+          });
+          stopReason = "end_turn";
         } else if (text.includes("self-compact:") || text.includes("usage-drop:")) {
           // The CLI compacts on its own inside the turn: usage climbs to 160k, then falls to 40k.
           // `self-compact:` reports it like the adapters do (a "Compact conversation" tool call,

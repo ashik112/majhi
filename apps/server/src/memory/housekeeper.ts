@@ -455,11 +455,11 @@ export class Housekeeper {
     return this.background.track(this.run(task, prompt, parse));
   }
 
-  private async run<T>(
-    task: { id: string; org?: string | undefined },
-    prompt: string,
-    parse: (reply: string) => Parsed<T>,
-  ): Promise<{ value: T; agent: string }> {
+  /**
+   * The agent and account that would answer for `org`, or the error `ask` would throw: `NoHousekeeper`
+   * when none is set, a `UserError` when it may not work for the org.
+   */
+  async resolve(org: string | undefined) {
     const { deps } = this;
     const id = await this.agentId();
     if (id === undefined)
@@ -470,9 +470,9 @@ export class Housekeeper {
     }
     const fm = stored.agent.frontmatter;
     // A client's work is never read on another org's account.
-    if (!canWorkIn(fm, task.org)) {
+    if (!canWorkIn(fm, org)) {
       throw new UserError(
-        `The Housekeeper @${id} cannot work in ${task.org === undefined ? "a task without an org" : `"${task.org}"`}, so nothing was read. Set memory.housekeeper to an agent that can.`,
+        `The Housekeeper @${id} cannot work in ${org === undefined ? "a task without an org" : `"${org}"`}, so nothing was read. Set memory.housekeeper to an agent that can.`,
         409,
       );
     }
@@ -480,12 +480,22 @@ export class Housekeeper {
     const account = accounts[fm.account];
     if (account === undefined) throw new Error(`Account "${fm.account}" is not in majhi.yaml.`);
     // Nor on another org's account: a workspace's account only pays for that workspace's work.
-    if (account.org !== PRIVATE && account.org !== task.org) {
+    if (account.org !== PRIVATE && account.org !== org) {
       throw new UserError(
-        `The Housekeeper's account ${fm.account} belongs to another workspace, so it does not work for ${task.org ?? "this"}. Set memory.housekeeper to an agent on a private account or one of ${task.org ?? "this workspace"}.`,
+        `The Housekeeper's account ${fm.account} belongs to another workspace, so it does not work for ${org ?? "this"}. Set memory.housekeeper to an agent on a private account or one of ${org ?? "this workspace"}.`,
         409,
       );
     }
+    return { id, fm, account };
+  }
+
+  private async run<T>(
+    task: { id: string; org?: string | undefined },
+    prompt: string,
+    parse: (reply: string) => Parsed<T>,
+  ): Promise<{ value: T; agent: string }> {
+    const { deps } = this;
+    const { fm, account } = await this.resolve(task.org);
     let apiKey: string | undefined;
     if (account.auth === "api-key" && account.key !== undefined) {
       apiKey = await deps.secrets.get(secretName(account.key));

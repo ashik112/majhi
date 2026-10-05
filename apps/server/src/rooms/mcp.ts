@@ -4,6 +4,10 @@ import {
   canWorkIn,
   commands,
   DEFAULT_LEAD_START,
+  type DiagramSpec,
+  DiagramSpecSchema,
+  type ProjectMap,
+  ShowMapInputSchema,
   TaskDockerRequestSchema,
   type TeamPlan,
   TeamPlanSchema,
@@ -52,6 +56,7 @@ import {
   type ToolTokens,
 } from "./access.ts";
 import type { RoomCoordinator } from "./coordinator.ts";
+import { drawDiagram, drawMap } from "./diagram.ts";
 
 type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
 const ok = (text: string): Result => ({ content: [{ type: "text", text }] });
@@ -124,7 +129,22 @@ const ROOM_TOOLS: Tool[] = [
       "Record your plan for this task: who does what, in which order, and why that is cheaper or faster. The room shows it as a plan line, and majhi keeps it on the task with the tokens each agent used, so later plans can be compared. Call it again when the plan changes, for example after the owner replies.",
     input: TeamPlanSchema,
   },
+  {
+    name: "show_diagram",
+    description:
+      "Draw any diagram in the chat for the owner: a flow, steps, a sequence between actors, a timeline, a tree or mind map, a state machine, or how services connect. Prefer this over ASCII art. Give a title, nodes (id, label, optional sub line, kind tag, group = the id of the box it sits inside, tone) and edges (from, to, optional label, type http|queue|data|lib|step, style solid|dashed|dotted, tone, arrow end|both|none). layout: flow (left to right, the default), top-down, tree (a hierarchy), radial (a mind map around focus), sequence (one lane per actor, edges in the order given are the messages; actors sets the lane order), timeline (events in the order given along one axis) or state (a state machine with transitions). At most 40 nodes, 80 edges and 60 characters per label. Everything you write is shown as plain text.",
+    input: DiagramSpecSchema,
+  },
+  {
+    name: "show_map",
+    description:
+      "Draw the stored map of how this workspace's projects connect in the chat for the owner: projects, libraries, databases, queues and outside services with the lines between them. Give around (a project id) to draw only what is within depth lines of it (1 or 2). Your own workspace only. Say so if the workspace has no map yet.",
+    input: ShowMapInputSchema,
+  },
 ];
+
+/** The tools a chat is offered from majhi-room. */
+const DRAWING_TOOLS: ReadonlySet<string> = new Set(["show_diagram", "show_map"]);
 
 // ---------------------------------------------------------------------------
 // majhi-tasks (5.4a, 5.10)
@@ -266,6 +286,8 @@ export interface RoomMcpDeps {
   memory: MemoryMcpDeps;
   /** `majhi-skills`: look up a run's own skills. */
   skills: SkillsMcpDeps;
+  /** `show_map`: the stored map of the workspace a task belongs to. Never another workspace's. */
+  maps: { forTask(task: string): { org: string; map: ProjectMap } };
   /** `majhi-connections` (5.14). Absent: there is no `/mcp/connections`. */
   connections?: ConnectionsMcpDeps;
 }
@@ -410,9 +432,15 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
   const server = new Server({ name: ROOM_SERVER_NAME, version: "1" }, { capabilities: { tools: {} } });
   // Only the lead records the plan, so only the lead is offered the tool.
   const isLead = () => deps.store.tasks.get(caller.task)?.team[0] === caller.agent;
-  server.setRequestHandler(ListToolsRequestSchema, () => ({
-    tools: listed(isLead() ? ROOM_TOOLS : ROOM_TOOLS.filter((t) => t.name !== "record_plan"), false),
-  }));
+  // A chat (the owner's chats and the captain's threads) has no team: it is offered the drawing tools only.
+  const isChat = () => deps.store.tasks.get(caller.task)?.kind === "chat";
+  const offered = () =>
+    isChat()
+      ? ROOM_TOOLS.filter((t) => DRAWING_TOOLS.has(t.name))
+      : isLead()
+        ? ROOM_TOOLS
+        : ROOM_TOOLS.filter((t) => t.name !== "record_plan");
+  server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: listed(offered(), false) }));
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<Result> => {
     const tool = ROOM_TOOLS.find((t) => t.name === request.params.name);
     if (tool === undefined) return fail(`There is no tool ${request.params.name}.`);
