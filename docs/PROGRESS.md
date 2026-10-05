@@ -1,5 +1,13 @@
 # Progress
 
+## Captain resumes after a sign-in: checked, no bug (not merged)
+
+Branch `fix/captain-resume-after-signin`.
+
+- **Question.** Does the captain fail to resume a task paused on a sign-in once the account is healthy again?
+- **Answer.** No. The deleted desk test failed because of its own setup: three tasks were already running, so `majhi_tasks_start` returned "No free agent slot: 3 of 3 in use", the intended machine slot limit. The sign-in refusal and the resume after the account is healthy work.
+- **Change.** A focused test, `autonomy/resume-signin.test.ts`: refused while the account is signed out, starts once it is healthy.
+
 ## Home says what is running and what the checks found (built, not merged)
 
 Branch `fix/home-state`.
