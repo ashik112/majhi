@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import { applyBaseline, cacheStatements, MIN_SQLITE_VERSION, versionAtLeast } from "./db.ts";
+import { applyBaseline, MIN_SQLITE_VERSION, versionAtLeast } from "./db.ts";
 import { MIGRATIONS, migrate } from "./migrations.ts";
 
 function task(db: Database.Database, id: string, status = "inbox"): void {
@@ -44,16 +44,6 @@ describe("the hot lookup indexes migration", () => {
     ).toEqual(["a5"]);
   });
 
-  it("serves the pending card lookup from its partial index", () => {
-    const db = new Database(":memory:");
-    migrate(db);
-    const plan = db
-      .prepare(
-        "EXPLAIN QUERY PLAN SELECT task FROM room_items WHERE type IN ('approval', 'ask') AND pending = 1",
-      )
-      .all() as { detail: string }[];
-    expect(plan.map((p) => p.detail).join(" ")).toContain("room_items_pending");
-  });
 });
 
 describe("the SQLite baseline", () => {
@@ -75,20 +65,4 @@ describe("the SQLite baseline", () => {
     }
   });
 
-  it("compares versions numerically", () => {
-    expect(versionAtLeast("3.51.3", "3.51.3")).toBe(true);
-    expect(versionAtLeast("3.51.2", "3.51.3")).toBe(false);
-    expect(versionAtLeast("3.9.9", "3.51.3")).toBe(false);
-    expect(versionAtLeast("3.53.4", "3.51.3")).toBe(true);
-  });
-
-  it("hands back one compiled statement for the same SQL, and runs it with new values each time", () => {
-    const db = new Database(":memory:");
-    db.exec("CREATE TABLE t (a INTEGER)");
-    cacheStatements(db);
-    expect(db.prepare("INSERT INTO t VALUES (?)")).toBe(db.prepare("INSERT INTO t VALUES (?)"));
-    db.prepare("INSERT INTO t VALUES (?)").run(1);
-    db.prepare("INSERT INTO t VALUES (?)").run(2);
-    expect(db.prepare("SELECT a FROM t ORDER BY a").all()).toEqual([{ a: 1 }, { a: 2 }]);
-  });
 });

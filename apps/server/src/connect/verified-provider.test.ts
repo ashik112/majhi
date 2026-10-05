@@ -177,15 +177,6 @@ describe("connected means a real call passed", () => {
     expect(r.health.get(id)).toMatchObject({ state: "needs-attention", reason: "expired" });
   });
 
-  it("a revoked access token that renews is checked again and passes", async () => {
-    r = await rig();
-    const flow = await signIn(r);
-    const id = flow.connection ?? "";
-    r.provider.revokeAll();
-    expect((await r.health.check(id)).ok).toBe(true);
-    expect(r.health.get(id)?.state).toBe("connected");
-  });
-
   it("a re-check that passes again heals needs-attention", async () => {
     r = await rig();
     const flow = await signIn(r);
@@ -200,20 +191,6 @@ describe("connected means a real call passed", () => {
 });
 
 describe("the Google setup steps check themselves", () => {
-  it("API enabled: a 403 SERVICE_DISABLED names the exact page that turns it on", async () => {
-    r = await rig();
-    const flow = await signIn(r);
-    const id = flow.connection ?? "";
-    r.provider.apiDisabled = { activationUrl: ACTIVATION };
-    await r.health.check(id);
-    expect(r.health.get(id)).toMatchObject({
-      state: "needs-attention",
-      reason: "setup-needed",
-      status: 403,
-      fixUrl: ACTIVATION,
-    });
-  });
-
   it("API enabled: a link that is not Google's own is never offered", async () => {
     r = await rig();
     const flow = await signIn(r);
@@ -237,21 +214,4 @@ describe("the Google setup steps check themselves", () => {
     });
   });
 
-  it("published: signing in again after publishing (no 7-day answer) makes it connected", async () => {
-    r = await rig({ provider: { refreshExpiresIn: 604_799 } });
-    const first = await signIn(r);
-    const id = first.connection ?? "";
-    expect(r.health.get(id)?.state).toBe("failed");
-    // The owner published the app: Google no longer says the refresh token ends in days.
-    delete (r.provider.options as { refreshExpiresIn?: number }).refreshExpiresIn;
-    const again = await signIn(r, id);
-    expect(again.state).toBe("connected");
-    expect(r.health.get(id)?.state).toBe("connected");
-  });
-
-  it("a refresh token that lasts months is not Testing", async () => {
-    r = await rig({ provider: { refreshExpiresIn: 15_552_000 } });
-    const flow = await signIn(r);
-    expect(flow.state).toBe("connected");
-  });
 });

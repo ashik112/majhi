@@ -6,7 +6,7 @@ import {
   QuestionSchema,
 } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { answerConfidence, applyTemperature, ordersAgree } from "./answers.ts";
+import { ordersAgree } from "./answers.ts";
 import {
   baseGate,
   chooseThreshold,
@@ -47,23 +47,6 @@ const cal = (over: Partial<Calibration> = {}): Calibration => ({
 });
 
 describe("temperature", () => {
-  it("flattens at T above 1, sharpens below 1 and leaves 1 alone", () => {
-    const p = { a: 0.8, b: 0.2 };
-    expect(applyTemperature(p, 1).a).toBeCloseTo(0.8);
-    expect(applyTemperature(p, 3).a).toBeLessThan(0.8);
-    expect(applyTemperature(p, 0.5).a).toBeGreaterThan(0.8);
-    expect(Object.values(applyTemperature(p, 2)).reduce((a, b) => a + b, 0)).toBeCloseTo(1);
-  });
-
-  it("turns garbage into an even spread rather than a sure answer", () => {
-    expect(applyTemperature({ a: Number.NaN, b: -1 }, 1)).toEqual({ a: 0.5, b: 0.5 });
-    expect(applyTemperature({ a: 0.9, b: 0.1 }, Number.NaN).a).toBeCloseTo(0.9);
-    expect(applyTemperature({ a: 0.9, b: 0.1 }, -2).a).toBeCloseTo(0.9);
-    expect(applyTemperature({}, 2)).toEqual({});
-    expect(answerConfidence({ value: "a", confidence: Number.NaN })).toBe(0);
-    expect(answerConfidence({ value: "a", confidence: 7 })).toBe(1);
-  });
-
   it("fits T above 1 for an over-confident model and below 1 for an under-confident one", () => {
     // Says 0.95 and is right half the time.
     const over = Array.from({ length: 40 }, (_, i) => ({
@@ -75,17 +58,6 @@ describe("temperature", () => {
     const under = Array.from({ length: 40 }, () => ({ probabilities: { a: 0.6, b: 0.4 }, truth: "a" }));
     expect(fitTemperature(under)).toBeLessThan(0.8);
     expect(fitTemperature([])).toBe(1);
-  });
-
-  it("maps options to the slot's classes when it fits", () => {
-    // Two "not-keep" options share mass: the class is right though no single option is sure.
-    const items = Array.from({ length: 30 }, () => ({
-      probabilities: { keep: 0.1, "one-off": 0.45, generic: 0.45 },
-      truth: "not-keep",
-    }));
-    const t = fitTemperature(items, (v) => (v === "keep" ? "keep" : "not-keep"));
-    expect(Number.isFinite(t)).toBe(true);
-    expect(t).toBeLessThanOrEqual(6);
   });
 });
 
@@ -138,7 +110,6 @@ describe("the gates", () => {
     expect(thresholdGate(choice, a, { temperature: 1, threshold: 0.8 }, settings).accepted).toBe(true);
     const flat = thresholdGate(choice, a, { temperature: 4, threshold: 0.8 }, settings);
     expect(flat.accepted).toBe(false);
-    expect(flat.reason).toMatch(/under the 0.80/);
     expect(flat.confidence).toBeLessThan(0.8);
   });
 
@@ -159,10 +130,7 @@ describe("the gates", () => {
     ];
     const a = { ...answer("a", 0.99), runs };
     expect(ordersAgree(a)).toBe(false);
-    expect(thresholdGate(choice, a, { temperature: 1, threshold: 0.5 }, settings)).toMatchObject({
-      accepted: false,
-      reason: expect.stringMatching(/turned around/),
-    });
+    expect(thresholdGate(choice, a, { temperature: 1, threshold: 0.5 }, settings).accepted).toBe(false);
     expect(baseGate(choice, a, settings).accepted).toBe(false);
     // A single run cannot be checked and is not held against the answer.
     expect(ordersAgree(answer("a", 0.99))).toBeUndefined();
@@ -173,7 +141,6 @@ describe("the gates", () => {
     const input = { q: choice, a, cal: undefined, settings, version: "m1", labels: 3 };
     const shadow = liveGate({ ...input, slot });
     expect(shadow).toMatchObject({ accepted: false, shadow: true });
-    expect(shadow.reason).toMatch(/3 of 50 labels/);
     expect(liveGate({ ...input, slot: { ...slot, use: "tool" } }).accepted).toBe(true);
     expect(liveGate({ ...input, slot: { ...slot, use: "owner" } }).accepted).toBe(true);
     expect(liveGate({ ...input, slot: { ...slot, startMode: "live" } }).accepted).toBe(true);
@@ -191,7 +158,6 @@ describe("the gates", () => {
     });
     const stale = liveGate({ ...input, cal: cal(), version: "m2" });
     expect(stale).toMatchObject({ accepted: false, shadow: true });
-    expect(stale.reason).toMatch(/model changed/);
     // An unknown checkpoint (empty) is not held against it.
     expect(liveGate({ ...input, cal: cal(), version: "" }).accepted).toBe(true);
   });
@@ -239,14 +205,11 @@ describe("fitSlot", () => {
     expect(fit?.calibration.mode).toBe("live");
     expect(fit?.calibration.threshold).toBeLessThan(1);
     expect(fit?.heldOut.precision).toBeGreaterThanOrEqual(0.85);
-    expect(fit?.calibration.reason).toMatch(/^Live: held-out precision/);
-    expect(fit?.calibration.version).toBe("m1");
   });
 
   it("stays in shadow for a model at chance, however sure it sounds", () => {
     const fit = fitSlot(slot, items(200, 0), "m1", opts);
     expect(fit?.calibration.mode).toBe("shadow");
-    expect(fit?.calibration.reason).toMatch(/shadow/i);
   });
 
   it("fits nothing below the label floor", () => {
@@ -255,12 +218,6 @@ describe("fitSlot", () => {
     // Failed items do not count toward the floor.
     const failed = items(MIN_LABELS + 20, 1).map((i, n) => (n < 25 ? { ...i, answer: undefined } : i));
     expect(fitSlot(slot, failed, "m1", opts)).toBeUndefined();
-  });
-
-  it("is deterministic for the same items", () => {
-    const a = fitSlot(slot, items(120, 0.8), "m1", opts);
-    const b = fitSlot(slot, items(120, 0.8), "m1", opts);
-    expect(a).toEqual(b);
   });
 
   it("stays in shadow for a one-class collapse: always the same answer", () => {

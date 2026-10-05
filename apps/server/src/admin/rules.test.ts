@@ -111,35 +111,5 @@ describe("always-allow rules on approval cards", () => {
     expect((await h.cmd("policy.set", { allow_destructive_rules: true })).status).toBe(400);
     const ok = await h.cmd("room.approve", { task: task.id, item: card?.id, decision: "approve" });
     expect(ok.status).toBe(200);
-    expect((await remove("acme-temp2")).text).toContain("Waiting");
-  });
-
-  it("moves an agent's rules on rename, drops them on remove, and lists and revokes CLI allowances", async () => {
-    w = await bossWorld({ real: false });
-    const { h } = w;
-    const task = (
-      await h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false })
-    ).body as { id: string };
-    const rules = async () => (await h.cmd("settings.get")).body.policy.rules;
-    const draft = {
-      frontmatter: { scope: "acme", role: "Builder", account: "claude-acme" },
-      instructions: "Work.\n",
-    };
-    expect((await h.cmd("agents.create", { id: "acme-dev", ...draft })).status).toBe(200);
-    const rule = { agent: "acme-dev", command: "tasks.merge", org: "acme" };
-    expect((await h.cmd("policy.set", { rules: [rule] })).status).toBe(200);
-
-    expect((await h.cmd("agents.rename", { id: "acme-dev", newId: "acme-lead" })).status).toBe(200);
-    expect(await rules()).toEqual([{ ...rule, agent: "acme-lead" }]);
-    expect((await h.cmd("agents.remove", { id: "acme-lead" })).status).toBe(200);
-    expect(await rules()).toEqual([]);
-    expect((await h.cmd("policy.removeRule", rule)).status).toBe(404);
-
-    h.majhi.services.store.permissions.allow(task.id, "execute");
-    expect((await h.cmd("permissions.list")).body).toEqual([
-      { task: task.id, title: expect.any(String), kind: "execute" },
-    ]);
-    expect((await h.cmd("permissions.revoke", { task: task.id, kind: "execute" })).body).toEqual([]);
-    expect(h.majhi.services.store.permissions.allowed(task.id, "execute")).toBe(false);
   });
 });

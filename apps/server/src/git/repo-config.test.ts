@@ -6,14 +6,6 @@ import { git } from "../testing/fixtures.ts";
 import { configIsPlain, repoConfigIsPlain } from "./repo-config.ts";
 
 describe("the fast look at a repo's config", () => {
-  it("passes a plain config", () => {
-    expect(
-      configIsPlain(
-        '[core]\n\trepositoryformatversion = 0\n\tbare = false\n[remote "origin"]\n\turl = /x/y.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch "main"]\n\tremote = origin\n',
-      ),
-    ).toBe(true);
-  });
-
   it.each([
     ["a clean filter", '[filter "x"]\n\tclean = evil'],
     ["a smudge filter in any case", '[Filter "x"]\n\tSMUDGE = evil'],

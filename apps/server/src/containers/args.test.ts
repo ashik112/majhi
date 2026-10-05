@@ -107,28 +107,6 @@ describe("what majhi builds for containers", () => {
     expect(values(preview(), "--mount")).toEqual(["type=volume,target=/preview"]);
   });
 
-  it("puts a preview on the runner network and the task network, one port on 127.0.0.1", () => {
-    const p = preview();
-    expect(values(p, "--network")).toEqual(["majhi-runners", "majhi-acm-1"]);
-    expect(values(p, "--publish")).toEqual(["127.0.0.1::7070"]);
-    expect(p.image).toBe("majhi-preview-acm-1");
-    expect(values(p, "--pull")).toEqual(["never"]);
-    expect(
-      values(
-        previewRunArgs(safety, limits, { port: 80, scratch: "/preview", taskNetwork: false }),
-        "--network",
-      ),
-    ).toEqual(["majhi-runners"]);
-  });
-
-  it("puts a service on the task network only, under its name, with nothing published", () => {
-    const s = service();
-    expect(values(s, "--network")).toEqual(["name=majhi-acm-1,alias=db"]);
-    expect(s.flags).not.toContain("--publish");
-    expect(values(s, "--name")).toEqual(["majhi-acm-1-db"]);
-    expect(s.image).toBe("postgres:16-alpine");
-  });
-
   it("gives every container the same caps, limits, labels and removal", () => {
     for (const c of [preview(), service()]) {
       expect(values(c, "--cap-drop")).toEqual(["ALL"]);

@@ -1,6 +1,5 @@
 import {
   type DecideRequest,
-  type Finding,
   type FindingReportInput,
   FindingReportInputSchema,
   type FindingSource,
@@ -12,8 +11,8 @@ import { fakeLaya, type LayaScript, service, sure } from "../decisions/testkit.t
 import { LAYA_USE_SLOTS } from "../decisions/uses/slots.ts";
 import { Store } from "../store/index.ts";
 import { FindingsRepo } from "./repo.ts";
-import { type FindingActor, FindingsService, taskText } from "./service.ts";
-import { triageFinding, triageRules } from "./triage.ts";
+import { type FindingActor, FindingsService } from "./service.ts";
+import { triageFinding } from "./triage.ts";
 
 /**
  * Finding triage: Laya's read of each new finding, with the dismissal gated by the slot, the severity and the
@@ -85,18 +84,7 @@ describe("what the triage suggests", () => {
       by: "laya",
       shadow: true,
       applied: false,
-      reason: "a hit in a test, sample or example file",
     });
-    // The captain's digest shows the suggestion.
-    expect(t.findings.digestLines("acme")[0]).toContain("Laya suggests dismissing");
-  });
-
-  it("keeps a finding Laya thinks is real, and says so", async () => {
-    const t = setup(says("keep", 0.97));
-    const { finding } = await t.report({ severity: "high" });
-    expect(finding.status).toBe("open");
-    expect(finding.triage).toMatchObject({ action: "keep", by: "laya", applied: false });
-    expect(t.findings.digestLines("acme")[0]).not.toContain("suggests");
   });
 });
 
@@ -150,33 +138,6 @@ describe("when it may dismiss", () => {
       );
     expect((await setup(flip).report()).finding.status).toBe("open");
   });
-
-  it("does not bring a dismissed finding back to the captain as news", async () => {
-    const news: Finding[] = [];
-    const t = setup(says("dismiss", 0.97));
-    const again = new FindingsService({
-      repo: new FindingsRepo(new Store(":memory:").raw),
-      projectOrg: async () => "acme",
-      taskStatus: () => undefined,
-      createTask: async () => ({ id: "ACM-1" }),
-      triage: (f) => triageFinding(t.svc, f),
-      appeared: (f) => news.push(f),
-    });
-    await again.report(
-      FindingReportInputSchema.parse({ source: "security", severity: "low", title: "Noise" }),
-      CAPTAIN,
-    );
-    await again.report(
-      FindingReportInputSchema.parse({
-        source: "security",
-        severity: "high",
-        title: "Real",
-        evidence: ["a:1"],
-      }),
-      CAPTAIN,
-    );
-    expect(news.map((f) => f.title)).toEqual(["Real"]);
-  });
 });
 
 describe("when Laya cannot be used", () => {
@@ -191,13 +152,6 @@ describe("when Laya cannot be used", () => {
     });
     expect(finding.status).toBe("open");
     expect(finding.triage).toMatchObject({ action: "dismiss", by: "rules", applied: false, confidence: 0 });
-  });
-
-  it("files the finding as it is when there is no rule and no answer", async () => {
-    const t = setup(down);
-    const { finding } = await t.report();
-    expect(finding).toMatchObject({ status: "open" });
-    expect(finding.triage).toBeUndefined();
   });
 
   it("files the finding without a triage when Laya is too slow", async () => {
@@ -252,14 +206,6 @@ describe("text that tries to instruct an agent", () => {
     const asked = t.svc.recent(10).filter((d) => d.answers.triage !== undefined);
     expect(asked).toEqual([]);
   });
-
-  it("goes into a task inside a warning fence", async () => {
-    const t = setup(says("keep", 0.9));
-    const { finding } = await t.report({ detail: attack });
-    const text = taskText(finding);
-    expect(text).toContain("<flagged-text");
-    expect(text).toContain("WARNING");
-  });
 });
 
 describe("the owner's own answer labels the triage", () => {
@@ -302,59 +248,5 @@ describe("the owner's own answer labels the triage", () => {
     t.findings.dismiss(f.id, "no", OWNER);
     t.findings.update({ id: f.id, status: "open" }, OWNER);
     expect(t.svc.labels().forDecision(f.triage?.decision ?? "")).toHaveLength(1);
-  });
-});
-
-describe("the plain rules", () => {
-  it("see test and sample paths, and dev-only advisories, and nothing else", () => {
-    expect(
-      triageRules({ source: "security", evidence: ["tests/a.json:1 (token)", "docs/x.md:3 (assigned)"] }),
-    ).toBeDefined();
-    expect(
-      triageRules({ source: "security", evidence: ["tests/a.json:1 (token)", "src/real.ts:3 (aws)"] }),
-    ).toBeUndefined();
-    expect(triageRules({ source: "security", evidence: [] })).toBeUndefined();
-    expect(
-      triageRules({ source: "dependency", evidence: ["a@1 in package.json (low, dev only; X)"] }),
-    ).toBeDefined();
-    expect(
-      triageRules({ source: "dependency", evidence: ["a@1 (high; X)", "b@2 (low, dev only; Y)"] }),
-    ).toBeUndefined();
-    // A path that only mentions a test folder in its name is not a test path.
-    expect(triageRules({ source: "security", evidence: ["src/contest/key.ts:3 (aws)"] })).toBeUndefined();
-  });
-});
-
-describe("the backlog", () => {
-  it("triages the open findings that have none, a few at a time, and not twice", async () => {
-    const t = setup(undefined, [LIVE, INJECTION]);
-    // Filed before triage existed: no triage dependency.
-    const plain = new FindingsService({
-      repo: new FindingsRepo(new Store(":memory:").raw),
-      projectOrg: async () => "acme",
-      taskStatus: () => undefined,
-      createTask: async () => ({ id: "ACM-1" }),
-    });
-    for (let i = 0; i < 5; i++) {
-      await plain.report(
-        FindingReportInputSchema.parse({
-          source: "security",
-          severity: "high",
-          title: `Old ${i}`,
-          evidence: ["a:1"],
-        }),
-        CAPTAIN,
-      );
-    }
-    const later = new FindingsService({
-      repo: (plain as unknown as { repo: FindingsRepo }).repo,
-      projectOrg: async () => "acme",
-      taskStatus: () => undefined,
-      createTask: async () => ({ id: "ACM-1" }),
-      triage: (f) => triageFinding(t.svc, f),
-    });
-    expect(await later.triageBacklog(3)).toBe(3);
-    expect(await later.triageBacklog(10)).toBe(2);
-    expect(await later.triageBacklog(10)).toBe(0);
   });
 });

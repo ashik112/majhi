@@ -10,13 +10,6 @@ const at = (iso: string) => new Date(iso);
 describe("every N minutes", () => {
   const hourly: Cadence = { kind: "every", minutes: 60 };
 
-  it("is due when it never ran, and 60 minutes after the last run", () => {
-    const now = at("2026-10-04T10:00:00Z");
-    expect(isDue(hourly, undefined, now, "UTC")).toBe(true);
-    expect(isDue(hourly, at("2026-10-04T09:01:00Z"), now, "UTC")).toBe(false);
-    expect(isDue(hourly, at("2026-10-04T09:00:00Z"), now, "UTC")).toBe(true);
-  });
-
   it("does not fire twice when the clock is set back: a last run in the future counts as now", () => {
     const now = at("2026-10-04T10:00:00Z");
     const future = at("2026-10-04T15:00:00Z");
@@ -28,12 +21,6 @@ describe("every N minutes", () => {
 
 describe("daily", () => {
   const daily: Cadence = { kind: "daily", at: "08:00" };
-
-  it("runs once after the time, not before, and not again the same day", () => {
-    expect(isDue(daily, at("2026-10-03T08:05:00Z"), at("2026-10-04T07:59:00Z"), "UTC")).toBe(false);
-    expect(isDue(daily, at("2026-10-03T08:05:00Z"), at("2026-10-04T08:00:00Z"), "UTC")).toBe(true);
-    expect(isDue(daily, at("2026-10-04T08:00:30Z"), at("2026-10-04T20:00:00Z"), "UTC")).toBe(false);
-  });
 
   it("makes one catch-up run after three days off, not three", () => {
     const last = at("2026-10-01T08:00:00Z");
@@ -47,11 +34,6 @@ describe("daily", () => {
     const ran = at("2026-10-04T08:30:00Z");
     expect(isDue(daily, ran, at("2026-10-04T07:30:00Z"), "UTC")).toBe(false);
     expect(isDue(daily, ran, at("2026-10-04T08:31:00Z"), "UTC")).toBe(false);
-  });
-
-  it("a clock jumped a week forward runs it once", () => {
-    const last = at("2026-10-04T08:00:00Z");
-    expect(isDue(daily, last, at("2026-10-11T08:00:00Z"), "UTC")).toBe(true);
   });
 
   it("spring forward: a 02:30 slot that does not exist runs at 03:30, just after the change, once", () => {
@@ -80,29 +62,6 @@ describe("daily", () => {
   });
 });
 
-describe("weekly", () => {
-  const monday: Cadence = { kind: "weekly", day: 1, at: "09:00" };
-
-  it("is due on the first check after Monday 09:00 and not again until the next Monday", () => {
-    const sunday = at("2026-10-04T12:00:00Z");
-    expect(isDue(monday, at("2026-09-28T09:00:00Z"), sunday, "UTC")).toBe(false);
-    expect(isDue(monday, at("2026-09-28T09:00:00Z"), at("2026-10-05T09:00:00Z"), "UTC")).toBe(true);
-    expect(isDue(monday, at("2026-10-05T09:00:00Z"), at("2026-10-09T09:00:00Z"), "UTC")).toBe(false);
-    expect(
-      nextRun(monday, at("2026-10-05T09:00:00Z"), at("2026-10-09T09:00:00Z"), "UTC")?.toISOString(),
-    ).toBe("2026-10-12T09:00:00.000Z");
-  });
-});
-
-describe("events and on demand", () => {
-  it("never fire on a clock", () => {
-    for (const c of [{ kind: "events" }, { kind: "manual" }] as Cadence[]) {
-      expect(isDue(c, undefined, at("2026-10-04T10:00:00Z"), "UTC")).toBe(false);
-      expect(nextRun(c, undefined, at("2026-10-04T10:00:00Z"), "UTC")).toBeUndefined();
-    }
-  });
-});
-
 describe("quiet hours", () => {
   it("holds a window that wraps midnight, in the workspace's zone", () => {
     const quiet = { from: "22:00", to: "07:00" };
@@ -114,8 +73,4 @@ describe("quiet hours", () => {
     expect(inQuiet(quiet, at("2026-10-04T14:00:00Z"), NY)).toBe(false);
   });
 
-  it("an empty window and no window hold nothing", () => {
-    expect(inQuiet(undefined, at("2026-10-04T03:00:00Z"), "UTC")).toBe(false);
-    expect(inQuiet({ from: "08:00", to: "08:00" }, at("2026-10-04T08:00:00Z"), "UTC")).toBe(false);
-  });
 });

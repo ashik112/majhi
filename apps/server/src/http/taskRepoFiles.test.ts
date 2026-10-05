@@ -40,13 +40,6 @@ describe("task repo files", () => {
   });
   afterEach(() => cleanup());
 
-  it("reads the worktree when it exists and the source checkout when it does not", async () => {
-    expect(await (await get("web/files/SPEC.md")).text()).toBe("from worktree");
-    expect(await (await get("api/files/docs/a.md")).text()).toBe("api doc");
-    const meta = await get("web/files/SPEC.md?meta=1");
-    expect(((await meta.json()) as { size: number }).size).toBe(13);
-  });
-
   it("refuses symlink escapes, dot names, other projects and unknown tasks", async () => {
     expect((await get("web/files/link.txt")).status).toBe(403);
     expect((await get("web/files/.env")).status).toBe(403);

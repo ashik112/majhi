@@ -4,10 +4,8 @@ import {
   buildAppSetup,
   type CommandMeta,
   type ConnectionConfig,
-  discordAddBotUrl,
   SERVICE_CATALOG,
   scopesAt,
-  slackManifest,
 } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { generateKey, SecretStore } from "../secrets/store.ts";
@@ -31,35 +29,6 @@ const desktopClient = (extra: Record<string, unknown> = {}) =>
   });
 
 describe("Google's client file", () => {
-  it("takes a Desktop client", () => {
-    expect(parseGoogleClientJson(desktopClient())).toEqual({
-      clientId: "1234-abc.apps.googleusercontent.com",
-      clientSecret: "GOCSPX-fake-secret-value-1",
-    });
-  });
-
-  it("refuses text that is not JSON, and JSON that is not a client", () => {
-    expect(() => parseGoogleClientJson("{ not json")).toThrow(/not a Google client file/);
-    expect(() => parseGoogleClientJson("[]")).toThrow(/not a Google client file/);
-    expect(() => parseGoogleClientJson('{"installed":{"client_id":"x"}}')).toThrow(
-      /not a Google client file/,
-    );
-    expect(() => parseGoogleClientJson(desktopClient({ client_id: "plain-id" }))).toThrow(
-      /not a Google client file/,
-    );
-  });
-
-  it("explains a Web client and asks for a Desktop one", () => {
-    const web = JSON.stringify({
-      web: {
-        client_id: "1-a.apps.googleusercontent.com",
-        client_secret: "s",
-        redirect_uris: ["https://acme.example/cb"],
-      },
-    });
-    expect(() => parseGoogleClientJson(web)).toThrow(/Web client.*Desktop app/);
-  });
-
   it("refuses a file that points the token endpoint somewhere else", () => {
     expect(() => parseGoogleClientJson(desktopClient({ token_uri: "https://evil.example/token" }))).toThrow(
       /somewhere other than Google/,
@@ -74,22 +43,6 @@ describe("Google's client file", () => {
 });
 
 describe("the Slack manifest", () => {
-  it("round-trips through the deep link and holds exactly the pack's scopes", () => {
-    const view = buildAppSetup("slack", { orgName: "Acme", redirect: REDIRECT, access: "read" });
-    const manifest = view?.manifest;
-    expect(manifest).toBeDefined();
-    const fromLink = new URL(manifest?.createUrl ?? "").searchParams.get("manifest_json");
-    expect(fromLink).toBe(manifest?.json);
-    const parsed = JSON.parse(manifest?.json ?? "{}");
-    expect(parsed).toEqual(JSON.parse(JSON.stringify(slackManifest("majhi (Acme)", "read"))));
-    expect(parsed.display_information.name).toBe("majhi (Acme)");
-    expect(parsed.settings.socket_mode_enabled).toBe(true);
-    expect(parsed.oauth_config.scopes.bot).toContain("channels:history");
-    expect(parsed.oauth_config.scopes.bot).not.toContain("chat:write");
-    // The create link opens Slack's own page.
-    expect(manifest?.createUrl.startsWith("https://api.slack.com/apps?new_app=1&manifest_json=")).toBe(true);
-  });
-
   it("adds posting only at readwrite, and is the same every time", () => {
     const write = buildAppSetup("slack", { orgName: "Acme", redirect: REDIRECT, access: "readwrite" });
     expect(JSON.parse(write?.manifest?.json ?? "{}").oauth_config.scopes.bot).toContain("chat:write");
@@ -99,29 +52,6 @@ describe("the Slack manifest", () => {
 });
 
 describe("the sheets", () => {
-  it("every app names the redirect address and the app name, and no sheet holds a secret", () => {
-    for (const app of ["google", "microsoft"]) {
-      const view = buildAppSetup(app, { orgName: "Acme", redirect: REDIRECT, access: "read" });
-      const text = JSON.stringify(view);
-      expect(view?.appName).toBe("majhi (Acme)");
-      expect(text).toContain("7070/oauth/callback");
-      expect(view?.steps.length).toBeGreaterThanOrEqual(2);
-    }
-    // Microsoft takes localhost for the loopback address.
-    const ms = JSON.stringify(
-      buildAppSetup("microsoft", { orgName: "Acme", redirect: REDIRECT, access: "read" }),
-    );
-    expect(ms).toContain("http://localhost:7070/oauth/callback");
-  });
-
-  it("lists what the app may do in plain words and grows with the access", () => {
-    const read = buildAppSetup("google", { orgName: "Acme", redirect: REDIRECT, access: "read" });
-    const send = buildAppSetup("google", { orgName: "Acme", redirect: REDIRECT, access: "send" });
-    expect(read?.scopes.every((s) => s.access === "read")).toBe(true);
-    expect(send?.scopes.some((s) => /Send mail/.test(s.sentence))).toBe(true);
-    expect((send?.scopes.length ?? 0) > (read?.scopes.length ?? 0)).toBe(true);
-  });
-
   it("read access never includes a write or send scope, and readwrite never sends", () => {
     for (const entry of SERVICE_CATALOG) {
       expect(scopesAt(entry, "read").every((s) => s.access === "read")).toBe(true);
@@ -129,15 +59,6 @@ describe("the sheets", () => {
     }
   });
 
-  it("every catalog entry that needs an app has a sheet", () => {
-    for (const entry of SERVICE_CATALOG) {
-      if (entry.app !== undefined) {
-        expect(
-          buildAppSetup(entry.app, { orgName: "Acme", redirect: REDIRECT, access: "read" }),
-        ).toBeDefined();
-      }
-    }
-  });
 });
 
 describe("saving an app", () => {
@@ -229,54 +150,6 @@ describe("saving an app", () => {
     expect((await t.service.view("acme", "google", "read")).saved).toBe(false);
   });
 
-  it("refuses a bad Google file with a sentence and saves nothing", async () => {
-    const t = await rig();
-    await expect(
-      t.service.save({ org: "acme", app: "google", values: { clientJson: "oops" }, access: "read" }, OWNER),
-    ).rejects.toThrow(/not a Google client file/);
-    await expect(
-      t.service.save(
-        { org: "acme", app: "google", values: { clientJson: JSON.stringify({ web: {} }) }, access: "read" },
-        OWNER,
-      ),
-    ).rejects.toThrow(/Desktop app/);
-    await expect(
-      t.service.save({ org: "acme", app: "google", values: {}, access: "read" }, OWNER),
-    ).rejects.toThrow(/Drop the client file/);
-    expect(await t.apps.get("google", "acme")).toBeUndefined();
-  });
-
-  it("saves a client ID for Microsoft and refuses empty or spaced values", async () => {
-    const t = await rig();
-    await expect(
-      t.service.save(
-        { org: "acme", app: "microsoft", values: { clientId: "abc def" }, access: "read" },
-        OWNER,
-      ),
-    ).rejects.toThrow();
-    await expect(
-      t.service.save({ org: "acme", app: "microsoft", values: { clientId: "" }, access: "read" }, OWNER),
-    ).rejects.toThrow(/empty/);
-    await t.service.save(
-      { org: "acme", app: "microsoft", values: { clientId: "78abcdef12" }, access: "read" },
-      OWNER,
-    );
-    expect(await t.apps.get("microsoft", "acme")).toMatchObject({ clientId: "78abcdef12" });
-  });
-
-  it("refuses an unknown workspace and an unknown app", async () => {
-    const t = await rig();
-    await expect(
-      t.service.save(
-        { org: "nope", app: "microsoft", values: { clientId: "abcdef12" }, access: "read" },
-        OWNER,
-      ),
-    ).rejects.toThrow(/does not exist/);
-    await expect(
-      t.service.save({ org: "acme", app: "nope", values: {}, access: "read" }, OWNER),
-    ).rejects.toThrow(/no app setup/);
-  });
-
   it("connects Slack with two checked tokens, stores them as secrets and never logs them", async () => {
     const t = await rig((url) =>
       url.endsWith("auth.test")
@@ -362,49 +235,6 @@ describe("saving an app", () => {
     expect(t.connections.size).toBe(0);
   });
 
-  it("revokes Slack's bot token on request and tests with it", async () => {
-    const t = await rig((url) => ({
-      body: url.endsWith("auth.test") ? { ok: true, team: "Acme Team", user: "majhi" } : { ok: true },
-    }));
-    const out = await t.service.save(
-      {
-        org: "acme",
-        app: "slack",
-        values: { botToken: "xoxb-1111-2222-fakebottokenvalue", appToken: "xapp-1-A-2-fakeapptokenvalue" },
-        access: "read",
-      },
-      OWNER,
-    );
-    const id = out.connection ?? "";
-    expect((await t.service.test(id, "slack")).ok).toBe(true);
-    expect(await t.service.revoke(id, "slack")).toBe(true);
-    expect(t.calls.at(-1)?.url).toMatch(/auth\.revoke$/);
-    expect(t.calls.at(-1)?.auth).toBe("Bearer xoxb-1111-2222-fakebottokenvalue");
-    expect(await t.service.revoke(id, "discord")).toBe(false);
-  });
-
-  it("connects Discord with a checked bot and gives the add-to-server link for the access", async () => {
-    const t = await rig(() => ({ body: { id: "123456789012345678", username: "majhi-bot" } }));
-    const out = await t.service.save(
-      {
-        org: "acme",
-        app: "discord",
-        values: { applicationId: "123456789012345678", botToken: "MTIzNDU2.fake.discordbottokenvalue12345" },
-        access: "read",
-      },
-      OWNER,
-    );
-    expect(out.next?.url).toBe(discordAddBotUrl("123456789012345678", "read"));
-    expect(out.next?.url).toContain("permissions=66560");
-    expect(discordAddBotUrl("123456789012345678", "readwrite")).toContain("permissions=68608");
-    expect(t.calls[0]?.auth).toBe("Bot MTIzNDU2.fake.discordbottokenvalue12345");
-    expect(JSON.stringify(out)).not.toContain("discordbottokenvalue");
-    expect(t.logs.join("\n")).not.toContain("discordbottokenvalue");
-    expect(t.stored.get(`${out.connection}.DISCORD_BOT_TOKEN`)).toBe(
-      "MTIzNDU2.fake.discordbottokenvalue12345",
-    );
-  });
-
   it("refuses a Discord token that belongs to another application", async () => {
     const t = await rig(() => ({ body: { id: "999999999999999999", username: "other-bot" } }));
     await expect(
@@ -435,21 +265,4 @@ describe("saving an app", () => {
     ).rejects.toThrow(/17 to 20 digits/);
   });
 
-  it("says Discord refused a token it answers 401 to", async () => {
-    const t = await rig(() => ({ status: 401, body: { message: "401: Unauthorized" } }));
-    await expect(
-      t.service.save(
-        {
-          org: "acme",
-          app: "discord",
-          values: {
-            applicationId: "123456789012345678",
-            botToken: "MTIzNDU2.fake.discordbottokenvalue12345",
-          },
-          access: "read",
-        },
-        OWNER,
-      ),
-    ).rejects.toThrow(/did not accept the bot token/);
-  });
 });

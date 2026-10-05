@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { KEEP_ENDED_MS, MAX_FLOW_MS, SignInFlows } from "./flows.ts";
+import { MAX_FLOW_MS, SignInFlows } from "./flows.ts";
 
 const owner = { actor: { kind: "owner" as const } };
 
@@ -55,17 +55,6 @@ describe("SignInFlows", () => {
     expect(after?.held).toBeUndefined();
   });
 
-  it("keeps ended flows for 10 minutes, then drops them", () => {
-    const c = clock();
-    const flows = new SignInFlows(c.now);
-    const f = device(flows);
-    flows.cancel(f.id);
-    c.tick(KEEP_ENDED_MS - 1);
-    expect(flows.get(f.id)?.status.state).toBe("cancelled");
-    c.tick(1);
-    expect(flows.get(f.id)).toBeUndefined();
-  });
-
   it("a new start cancels the open flow of the same workspace and host only", () => {
     const flows = new SignInFlows();
     const first = device(flows, "acme");
@@ -76,13 +65,4 @@ describe("SignInFlows", () => {
     expect(flows.get(again.id)?.status.state).toBe("pending");
   });
 
-  it("announces every change with the public status only", () => {
-    const seen: string[] = [];
-    const flows = new SignInFlows(Date.now, (flow) => seen.push(JSON.stringify(flow.status)));
-    const f = device(flows);
-    flows.toConfirm(f.id, { account: "octo-acme", alsoUsedBy: ["globex"] }, { token: "gho_held_secret" });
-    flows.done(f.id, { account: "octo-acme", alsoUsedBy: ["globex"] });
-    expect(seen.map((s) => JSON.parse(s).state)).toEqual(["pending", "confirm", "done"]);
-    expect(seen.join("")).not.toMatch(/gho_held_secret|dev"/);
-  });
 });

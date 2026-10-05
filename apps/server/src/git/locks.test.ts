@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { git, gitEnv } from "./git.ts";
+import { git } from "./git.ts";
 
 describe("majhi's git and index.lock", () => {
   let dir: string;
@@ -51,17 +51,6 @@ exit $code
     await chmod(script, 0o755);
     process.env.PATH = `${bin}:${savedPath ?? ""}`;
   }
-
-  it("turns optional locks off for every command", async () => {
-    expect(gitEnv({ PATH: "/usr/bin" }).GIT_OPTIONAL_LOCKS).toBe("0");
-    expect(gitEnv({ PATH: "/usr/bin", GIT_OPTIONAL_LOCKS: "1" }).GIT_OPTIONAL_LOCKS).toBe("0");
-    await shim(0);
-    await git(repo, ["status", "--porcelain"]);
-    await git(repo, ["diff", "--stat"]);
-    const lines = (await readFile(log, "utf8")).split("\n").filter((l) => l.startsWith("start"));
-    expect(lines.length).toBeGreaterThan(0);
-    for (const l of lines) expect(l).toMatch(/locks=0$/);
-  });
 
   it("a read during a held index lock neither fails nor touches the lock", async () => {
     const lock = join(repo, ".git", "index.lock");

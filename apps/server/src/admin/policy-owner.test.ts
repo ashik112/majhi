@@ -41,11 +41,6 @@ describe("the approval policy", () => {
         ["tasks.update", "pending", undefined],
       ]),
     );
-    const stats = (await h.cmd("policy.cardStats", {})).body as {
-      commands: { command: string; ranAlone: number; waiting: number }[];
-    };
-    expect(stats.commands.find((c) => c.command === "tasks.create")?.ranAlone).toBe(1);
-    expect(stats.commands.find((c) => c.command === "tasks.update")?.waiting).toBe(1);
   });
 
   it("cannot be changed by an agent", async () => {

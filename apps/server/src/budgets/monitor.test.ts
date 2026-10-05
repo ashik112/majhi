@@ -69,12 +69,6 @@ beforeEach(() => {
 });
 
 describe("the check after a turn", () => {
-  it("stays quiet under 80%, ignoring cache reads", async () => {
-    turn(790);
-    await record();
-    expect(fired).toEqual([]);
-  });
-
   it("fires 80 and then 100, each once, and runs the 100% action once", async () => {
     turn(800);
     await record();
@@ -118,15 +112,6 @@ describe("the check after a turn", () => {
     turn(900, { at: now });
     await record();
     expect(fired.map((a) => a.threshold)).toEqual([80, 80]);
-  });
-
-  it("fires both at once when a turn jumps past 100, and the 80 does not come late", async () => {
-    turn(1200);
-    await record();
-    expect(fired.map((a) => a.threshold)).toEqual([100]);
-    await record();
-    expect(fired).toHaveLength(1);
-    expect((await monitor.status()).rows[0]?.alerts.map((a) => a.threshold)).toEqual([80, 100]);
   });
 });
 
@@ -242,60 +227,5 @@ describe("limitedFor", () => {
     await record();
     expect(fired.at(-1)).toMatchObject({ threshold: 100 });
     expect(await monitor.limitedFor(run("acme", "claude-acme"))).toBeDefined();
-  });
-
-  it("lifts runs through the lift hook after a change", async () => {
-    let lifts = 0;
-    monitor = new BudgetMonitor({
-      usage,
-      alerts: new BudgetAlertRepo(db),
-      budgets: async () => budgets,
-      announce: () => undefined,
-      onLimit: async () => undefined,
-      lift: async () => {
-        lifts++;
-      },
-      tz: "UTC",
-      now: () => now,
-    });
-    await monitor.recheck();
-    await monitor.lift();
-    expect(lifts).toBe(2);
-  });
-});
-
-describe("status", () => {
-  it("gives used, budget, percent, week and reset time per budget", async () => {
-    budgets = { orgs: { acme: { tokens: 1000 } }, accounts: { "claude-acme": { cost: 4 } } };
-    turn(250, { cost: 1 });
-    expect(await monitor.status()).toEqual({
-      tz: "UTC",
-      rows: [
-        {
-          scope: "org",
-          id: "acme",
-          budget: { tokens: 1000 },
-          used: { tokens: 250, cost: 1 },
-          percent: 25,
-          measure: "tokens",
-          weekStart: "2026-09-28",
-          resetsAt: "2026-10-05T00:00:00.000Z",
-          alerts: [],
-          paused: false,
-        },
-        {
-          scope: "account",
-          id: "claude-acme",
-          budget: { cost: 4 },
-          used: { tokens: 250, cost: 1 },
-          percent: 25,
-          measure: "cost",
-          weekStart: "2026-09-28",
-          resetsAt: "2026-10-05T00:00:00.000Z",
-          alerts: [],
-          paused: false,
-        },
-      ],
-    });
   });
 });

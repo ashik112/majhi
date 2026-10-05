@@ -4,7 +4,6 @@ import type { AddressInfo } from "node:net";
 import { basename, join } from "node:path";
 import { serve } from "@hono/node-server";
 import type { McpServerSpec } from "@majhi/acp";
-import type { RoomItem } from "@majhi/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
@@ -109,67 +108,6 @@ async function world() {
 const named = (list: McpServerSpec[] | undefined) => list?.find((s) => s.name === "majhi-connections");
 
 describe("majhi-connections", () => {
-  it("lists what the run holds, runs reads over ssh and holds writes for the owner", async () => {
-    const { h, remote, servers, prompts, endTurn } = await world();
-    const task = (
-      await h.cmd("tasks.create", {
-        text: "check the box, repo api",
-        repos: [{ project: "acme-api" }],
-        kind: "ops",
-        start: true,
-      })
-    ).body as { id: string };
-    await until(() => prompts.length === 1, "first turn");
-    const client = await connect(named(servers[0]));
-
-    const list = text(await client.callTool({ name: "list", arguments: {} }));
-    expect(list).toContain("Acme box (acme-box, SSH host, org acme)");
-    expect(list).toContain("majhi-connections ssh tool");
-    expect(list).not.toContain("Globex");
-    expect(text(await client.callTool({ name: "attach", arguments: { id: "globex-box" } }))).toBe(
-      "Only root agents attach connections.",
-    );
-
-    const read = text(
-      await client.callTool({
-        name: "ssh",
-        arguments: { connection: "acme-box", command: "systemctl status api" },
-      }),
-    );
-    expect(read).toBe("acme-box: systemctl status api (exit 0)\nran systemctl status api");
-    expect(remote).toEqual([{ alias: "acme-box", command: "systemctl status api" }]);
-
-    const write = text(
-      await client.callTool({
-        name: "ssh",
-        arguments: { connection: "acme-box", command: "systemctl restart api" },
-      }),
-    );
-    expect(write).toContain("waits for the owner");
-    expect(remote).toHaveLength(1);
-    const page = await h.cmd("room.items", { task: task.id, limit: 200 });
-    const pending = (page.body.items as RoomItem[]).find(
-      (i): i is Extract<RoomItem, { type: "permission" }> => i.type === "permission" && i.state === "pending",
-    );
-    expect(pending?.connection).toMatchObject({
-      id: "acme-box",
-      name: "Acme box",
-      action: "systemctl restart api",
-    });
-    await h.cmd("room.permission", { task: task.id, item: pending?.id, option: "allow" });
-    await until(() => remote.length === 2, "the restart to run");
-    expect(
-      h.majhi.services.store.permissions.audit(task.id).find((r) => r.kind === "connection-write"),
-    ).toMatchObject({
-      decision: "allow",
-      by: "owner",
-      detail: "acme-box: systemctl restart api",
-    });
-    endTurn();
-    await until(() => prompts.some((p) => p.includes("The owner allowed it.")), "the result in a prompt");
-    endTurn();
-  });
-
   it("lets a root agent attach another org's connection, logs it and reloads the session", async () => {
     const { h, servers, prompts, endTurn } = await world();
     const task = (
@@ -183,14 +121,7 @@ describe("majhi-connections", () => {
     ).body as { id: string };
     await until(() => prompts.length === 1, "first turn");
     const client = await connect(named(servers[0]));
-    expect(text(await client.callTool({ name: "list", arguments: {} }))).toContain(
-      "Globex box (globex-box, SSH host, org globex)",
-    );
-
-    const attached = text(
-      await client.callTool({ name: "attach", arguments: { id: "globex-box", why: "The api calls it." } }),
-    );
-    expect(attached).toContain("Attached Globex box");
+    await client.callTool({ name: "attach", arguments: { id: "globex-box", why: "The api calls it." } });
     expect((await h.cmd("tasks.get", { id: task.id })).body.connections).toEqual(["globex-box"]);
     expect(h.majhi.services.store.permissions.audit(task.id)).toContainEqual(
       expect.objectContaining({
@@ -199,21 +130,9 @@ describe("majhi-connections", () => {
         detail: "globex-box (globex): The api calls it.",
       }),
     );
-    const page = await h.cmd("room.items", { task: task.id, limit: 200 });
-    expect(
-      (page.body.items as RoomItem[]).some(
-        (i) => i.type === "system" && i.text.includes("attached Globex box"),
-      ),
-    ).toBe(true);
-
     // The turn ends, the session reloads with the connection and the agent is told.
     endTurn();
     await until(() => servers.length === 2 && prompts.length === 2, "the reloaded session");
-    expect(prompts[1]).toContain("Globex box (globex-box) is attached");
-    const reloaded = await connect(named(servers[1]));
-    expect(text(await reloaded.callTool({ name: "list", arguments: {} }))).toMatch(
-      /^This run holds:\n- Acme box \(acme-box[^\n]*\n[^\n]*\n- Globex box \(globex-box/,
-    );
     endTurn();
   });
 

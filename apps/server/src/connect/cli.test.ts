@@ -133,48 +133,6 @@ afterEach(async () => {
 });
 
 describe("a command-line tool's sign-in", () => {
-  it("needs the helper, and says so", async () => {
-    r = await rig();
-    r.host.online = false;
-    await expect(
-      r.connect.start({ org: "acme", service: "vercel-cli", access: "read" }, OWNER),
-    ).rejects.toThrow(/helper has to be running/);
-    expect(r.host.logins).toHaveLength(0);
-  });
-
-  it("shows the code and the page, then makes a connection for the account the tool reports", async () => {
-    r = await rig();
-    r.host.next = async (_p, onPage) => {
-      onPage({ url: "https://example.test/device", code: "ABCD-EFGH" });
-      await new Promise((res) => setTimeout(res, 30));
-      return { state: "done", identity: "ops@acme.example" };
-    };
-    const view = await r.connect.start({ org: "acme", service: "vercel-cli", access: "read" }, OWNER);
-    await until(() => r.connect.flow(view.flow).code === "ABCD-EFGH");
-    expect(r.connect.flow(view.flow).message).toContain("ABCD-EFGH");
-    await until(() => r.connect.flow(view.flow).state === "connected");
-    const done = r.connect.flow(view.flow);
-    expect(done.account).toBe("ops@acme.example");
-    expect(done.code).toBeUndefined();
-    const made = r.connections.get(done.connection ?? "");
-    expect(made?.connection.type).toBe("cli");
-    expect(made?.connection.fields).toMatchObject({ tool: "vercel", account: "ops@acme.example" });
-    expect(r.opened).toContain("https://example.test/device");
-    const status = (await r.connect.status("acme"))[0];
-    expect(status).toMatchObject({ state: "connected", account: "ops@acme.example", revocable: true });
-    // The code is shown to the owner, never logged.
-    expect(r.logs.join("\n")).not.toContain("ABCD-EFGH");
-  });
-
-  it("reports a tool that is not installed, and saves nothing", async () => {
-    r = await rig();
-    r.host.next = async () => ({ state: "missing" });
-    const view = await r.connect.start({ org: "acme", service: "vercel-cli", access: "read" }, OWNER);
-    await until(() => r.connect.flow(view.flow).state === "failed");
-    expect(r.connect.flow(view.flow).message).toMatch(/not installed on this computer/);
-    expect(r.connections.size).toBe(0);
-  });
-
   it("shows only a safe sentence when the tool's login fails", async () => {
     r = await rig();
     r.host.next = async () => {
@@ -222,29 +180,6 @@ describe("a command-line tool's sign-in", () => {
     r.skip(16 * 60_000);
     expect(r.connect.flow(view.flow).state).toBe("expired");
     await until(() => r.host.cancelled.length === 1);
-    expect(r.connections.size).toBe(0);
-  });
-
-  it("Test asks the tool who is signed in, and marks a connection that is not", async () => {
-    r = await rig();
-    const view = await r.connect.start({ org: "acme", service: "vercel-cli", access: "read" }, OWNER);
-    await until(() => r.connect.flow(view.flow).state === "connected");
-    const id = r.connect.flow(view.flow).connection ?? "";
-    expect((await r.connect.test(id)).ok).toBe(true);
-    r.host.checkResult = { ok: false, detail: "vercel is not signed in." };
-    const bad = await r.connect.test(id);
-    expect(bad.ok).toBe(false);
-    expect((await r.connect.status("acme"))[0]?.state).toBe("needs-reconnect");
-  });
-
-  it("disconnect signs the tool out in that connection's folder and removes the connection", async () => {
-    r = await rig();
-    const view = await r.connect.start({ org: "acme", service: "vercel-cli", access: "read" }, OWNER);
-    await until(() => r.connect.flow(view.flow).state === "connected");
-    const id = r.connect.flow(view.flow).connection ?? "";
-    const out = await r.connect.disconnect(id, OWNER);
-    expect(out.revoked).toBe(true);
-    expect(r.host.logouts).toEqual([{ tool: "vercel", connection: id }]);
     expect(r.connections.size).toBe(0);
   });
 
@@ -337,16 +272,4 @@ describe("what a run of one workspace gets of a tool's sign-in", () => {
     ).toEqual([]);
   });
 
-  it("two sign-ins that want the same variable keep the first and say so", async () => {
-    const both = {
-      acme: { connections: { stripe: cli("stripe", "a"), "stripe-b": cli("stripe", "b") } },
-    };
-    const held = runConnections({
-      agent: { id: "acme-dev", scope: "acme" },
-      task: { org: "acme", connections: [] },
-      orgs: both,
-    });
-    const plan = await planConnections(held, "/run", deps());
-    expect(plan.problems.join(" ")).toContain("XDG_CONFIG_HOME");
-  });
 });

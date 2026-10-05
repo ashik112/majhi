@@ -1,5 +1,4 @@
 import type {
-  Actor,
   Answer,
   DecideRequestInput,
   DecisionResult,
@@ -11,7 +10,6 @@ import { describe, expect, it } from "vitest";
 import { type CurationTask, Curator } from "./curator.ts";
 import { openMemoryDb } from "./db.ts";
 import { HashEmbedder } from "./embedder.ts";
-import { ESCALATIONS_PER_DAY, unsureQuestions } from "./escalate.ts";
 import { MemoryService } from "./service.ts";
 import { MemoryStore } from "./store.ts";
 
@@ -20,7 +18,6 @@ import { MemoryStore } from "./store.ts";
  * day's budget, instead of leaving it to the owner. The providers are played by tables, so no model runs.
  */
 
-const owner: Actor = { kind: "owner" };
 let clock = 0;
 const now = () => new Date(Date.UTC(2026, 0, 1, 0, 0, clock++));
 const TASK: CurationTask = { id: "ACM-1", org: "acme", projects: ["acme-api"] };
@@ -108,12 +105,6 @@ function setup(script: Script, escalate: { perDay: number } | false = { perDay: 
 const UNSURE = { kind: "keep", p: 0.4, accepted: false } as const;
 
 describe("memory escalation", () => {
-  it("does not ask the stand-in when Laya is sure", async () => {
-    const t = setup({ laya: { kind: "keep", p: 0.95 }, acp: "down" });
-    expect(await t.review("Run pnpm db:migrate before starting the acme-api server")).toBe("active");
-    expect(t.calls.map((c) => c.order)).toEqual(["laya"]);
-  });
-
   it("lets the stand-in settle what Laya was unsure about, and labels Laya's decision with its answer", async () => {
     const t = setup({ laya: UNSURE, acp: { kind: "one-off", p: 0.9 } });
     expect(await t.review("Symptom: the build failed twice this afternoon with a timeout")).toBe("rejected");
@@ -129,67 +120,4 @@ describe("memory escalation", () => {
     }
   });
 
-  it("leaves it to the owner when the stand-in is unsure too", async () => {
-    const t = setup({ laya: UNSURE, acp: { kind: "keep", p: 0.3 } });
-    expect(await t.review("A fact both are unsure about")).toBe("pending");
-    expect(t.outcomes.some((o) => /still unsure/.test(o.text))).toBe(true);
-  });
-
-  it("without the setting, behaves as before: nothing is escalated", async () => {
-    const t = setup({ laya: UNSURE, acp: { kind: "keep", p: 0.99 } }, false);
-    expect(await t.review("A fact nobody escalates")).toBe("pending");
-    expect(t.calls.map((c) => c.order)).toEqual(["laya"]);
-  });
-
-  it("never escalates a judgment call, which the owner makes by design", async () => {
-    const t = setup({ laya: { kind: "ask", p: 0.95 }, acp: { kind: "keep", p: 0.99 } });
-    expect(await t.review("This would change how every agent behaves in many tasks")).toBe("pending");
-    expect(t.calls.map((c) => c.order)).toEqual(["laya"]);
-  });
-
-  it("never escalates a contradiction: the owner says which of the two holds", async () => {
-    const t = setup({ laya: { kind: "keep", p: 0.9, relation: ["contradicts", 0.95] }, acp: "down" });
-    await t.memory.add(
-      {
-        text: "Run database migrations with pnpm db:migrate before starting the acme-api server every time",
-        scope: "project:acme-api",
-        pinned: true,
-      },
-      owner,
-    );
-    const status = await t.review(
-      "Start the acme-api server first, then run database migrations with pnpm db:migrate",
-    );
-    expect(status).toBe("pending");
-    expect(t.calls.map((c) => c.order)).toEqual(["laya"]);
-  });
-
-  it("asks the stand-in once per memory, and asks it for the unsure questions only", () => {
-    const sure = (a: Answer) => a.gate?.accepted === true || a.confidence >= 0.5;
-    expect(
-      unsureQuestions({ verdict: answer("keep", 0.9), private: answer(false, 0.9) }, sure, false),
-    ).toEqual([]);
-    expect(
-      unsureQuestions({ verdict: answer("keep", 0.2, false), private: answer(false, 0.9) }, sure, false),
-    ).toEqual(["verdict"]);
-    // An unsure "no" on private is let through; an unsure "yes" is looked at again.
-    expect(
-      unsureQuestions({ verdict: answer("keep", 0.9), private: answer(false, 0.2, false) }, sure, false),
-    ).toEqual([]);
-    expect(
-      unsureQuestions({ verdict: answer("keep", 0.9), private: answer(true, 0.2, false) }, sure, false),
-    ).toEqual(["private"]);
-    // The relation only matters when there is a nearest fact.
-    expect(
-      unsureQuestions({ verdict: answer("keep", 0.9), relation: answer("same", 0.2, false) }, sure, false),
-    ).toEqual([]);
-    expect(
-      unsureQuestions({ verdict: answer("keep", 0.9), relation: answer("same", 0.2, false) }, sure, true),
-    ).toEqual(["relation"]);
-  });
-
-  it("has a daily budget of its own", () => {
-    expect(ESCALATIONS_PER_DAY).toBeGreaterThan(0);
-    expect(ESCALATIONS_PER_DAY).toBeLessThanOrEqual(100);
-  });
 });

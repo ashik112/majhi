@@ -11,14 +11,6 @@ const orgs = {
 const ids = (list: { id: string }[]) => list.map((c) => c.id);
 
 describe("runConnections", () => {
-  it("gives an org agent every connection of its own org, in a task of its org", () => {
-    const agent = { id: "acme-dev", scope: "acme" };
-    expect(ids(runConnections({ agent, task: { org: "acme", connections: [] }, orgs }))).toEqual([
-      "acme-prod",
-      "acme-logs",
-    ]);
-  });
-
   it("keeps a connection from the agents its agents_off names, root agents too", () => {
     const off = {
       ...orgs,

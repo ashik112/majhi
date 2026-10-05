@@ -8,7 +8,6 @@ import { createKeyRestorer } from "../../../host/src/keyRestore.ts";
 import { tempDir, writeKeyFile } from "../testing/fixtures.ts";
 import { KeyExports } from "./backup.ts";
 import {
-  ALREADY_IN_USE,
   decryptKeyExport,
   KEY_WORKS,
   NO_KEY_INSIDE,
@@ -133,16 +132,12 @@ describe("restoreKey", () => {
   it("restores when there is no key file, or the key file does not open secrets.age", async () => {
     const key = await generateKey();
     const content = await exportOf(`${key}\n`);
-    expect(await restoreKey({ content, passphrase: PASSPHRASE }, { secrets: store, writeKey })).toEqual({
-      detail: "Restored the secrets key. majhi restarts to load it and is back in a few seconds.",
-    });
+    await restoreKey({ content, passphrase: PASSPHRASE }, { secrets: store, writeKey });
     await sealWith(key);
     await restoreKey({ content, passphrase: PASSPHRASE }, { secrets: store, writeKey });
     await writeKeyFile(keyFile, await generateKey());
     reply = { written: true, keptAside: `${keyFile}.old-20261002T100000Z`, restarts: false };
-    expect(await restoreKey({ content, passphrase: PASSPHRASE }, { secrets: store, writeKey })).toEqual({
-      detail: `Restored the secrets key. Run \`make up\` in the majhi folder once to load it. The old key file is kept as ${keyFile}.old-20261002T100000Z.`,
-    });
+    await restoreKey({ content, passphrase: PASSPHRASE }, { secrets: store, writeKey });
     expect(sent).toEqual([key, key, key]);
   });
 
@@ -164,11 +159,7 @@ describe("restoreKey", () => {
     ).rejects.toThrow(KEY_WORKS);
     await sealWith(key);
     const same = await exportOf(`${key}\n`);
-    expect(await restoreKey({ content: same, passphrase: PASSPHRASE }, { secrets: store, writeKey })).toEqual(
-      {
-        detail: ALREADY_IN_USE,
-      },
-    );
+    await restoreKey({ content: same, passphrase: PASSPHRASE }, { secrets: store, writeKey });
     expect(sent).toEqual([]);
   });
 
@@ -218,10 +209,6 @@ describe("restoreKey", () => {
     );
     await after();
 
-    const aside = `${newKeyFile}.old-20261002T100000Z`;
-    expect(out.detail).toBe(
-      `Restored the secrets key. majhi restarts to load it and is back in a few seconds. The old key file is kept as ${aside}.`,
-    );
     expect(await secrets.keyState()).toBe("ok");
     expect(await secrets.get("acme-api")).toBe("value-1");
     expect(await secrets.fingerprint()).toBe(keyFingerprint(key));

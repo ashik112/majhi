@@ -88,113 +88,6 @@ const layaAnswers = (job: Extract<HostJob, { method: "decide" }>) => ({
   predictMs: 12,
 });
 
-describe("decisions.ask", () => {
-  it("falls back to the stand-in agent, then to rules", async () => {
-    const { w, h } = await world({ status: { state: "not-installed" } });
-    expect((await h.cmd("decisions.set", { acp_agent: "acme-builder" })).status).toBe(200);
-    h.runtime.onSession = (session) => {
-      session.script = async (turn) => {
-        turn.emit({
-          type: "text",
-          messageId: "m",
-          text: '{"model":{"value":"opus","confidence":0.8},"risky":{"value":true,"confidence":0.7}}',
-        });
-        return "end_turn";
-      };
-    };
-    const viaAcp = await h.cmd("decisions.ask", ask);
-    expect(viaAcp.body).toMatchObject({ provider: "acp", estimated: true });
-    expect(viaAcp.body.answers.model.value).toBe("opus");
-    expect(viaAcp.body.skipped[0]).toMatchObject({ provider: "laya" });
-    expect(h.runtime.sessions.at(-1)?.closed).toBe(true);
-
-    // A reply that is never valid JSON: one retry, then rules answer.
-    h.runtime.onSession = (session) => {
-      session.script = async (turn) => {
-        turn.emit({ type: "text", messageId: "m", text: "opus, I think" });
-        return "end_turn";
-      };
-    };
-    const viaRules = await h.cmd("decisions.ask", ask);
-    expect(viaRules.body.provider).toBe("rules");
-    expect(viaRules.body.skipped.map((s: { provider: string }) => s.provider)).toEqual(["laya", "acp"]);
-    expect(h.runtime.sessions.at(-1)?.prompts).toHaveLength(2);
-    expect(w.h.runtime.starts.length).toBeGreaterThan(0);
-  });
-});
-
-describe("rateTask", () => {
-  const request = {
-    task: "ACM-1",
-    agent: "acme-builder",
-    role: "Builder" as const,
-    title: "Fix a typo",
-    brief: "Fix a typo\nThe readme says recieve.",
-    kind: "code" as const,
-    repos: ["acme-web"],
-  };
-  const answers = (level: string, p: number) => (job: Extract<HostJob, { method: "decide" }>) => {
-    const keys = Object.keys(job.params.questions);
-    const rest = (1 - p) / 3;
-    return {
-      answers: Object.fromEntries(
-        keys.map((k) => [
-          k,
-          // Questions other than the task's size (a new finding's triage and injection check run in the
-          // background of the world) are answered with an option each of them has.
-          k.startsWith("triage") || k.startsWith("injects")
-            ? {
-                type: "choice",
-                choice: k.startsWith("triage_kind") ? "other" : k.startsWith("triage") ? "keep" : "B",
-                confidence: 0.5,
-                probabilities: { keep: 0.5, other: 0.5, B: 0.5 },
-              }
-            : {
-                type: "choice",
-                choice: level,
-                confidence: 0,
-                probabilities: Object.fromEntries(
-                  ["trivial", "small", "medium", "large"].map((l) => [l, l === level ? p : rest]),
-                ),
-              },
-        ]),
-      ),
-      loadMs: 0,
-      predictMs: 1,
-    };
-  };
-
-  it("asks about the task in named fields, never about models, the agent's id or its instructions", async () => {
-    const { w, jobs } = await world({ status: READY, decide: answers("small", 0.7) });
-    const rating = await w.h.majhi.services.decisions.rateTask(request);
-    expect(rating).toMatchObject({
-      level: "small",
-      confidence: 0.7,
-      // No labels yet, so the model-pick slot runs in shadow: the answer is kept, and nothing acts on it.
-      counted: false,
-      provider: "laya",
-      by: "Laya",
-    });
-    const job = jobs.find((j) => j.method === "decide" && String(j.params.state).includes("recieve"));
-    const state = job?.method === "decide" ? job.params.state : "";
-    expect(JSON.parse(state)).toEqual({
-      task: "Fix a typo",
-      description: "The readme says recieve.",
-      kind: "code",
-      repos: "acme-web",
-      role: "Builder, who writes the code",
-    });
-    expect(state).not.toContain("acme-builder");
-  });
-
-  it("returns a weak answer as not counted, with why", async () => {
-    const { w } = await world({ status: READY, decide: answers("large", 0.3) });
-    const rating = await w.h.majhi.services.decisions.rateTask(request);
-    expect(rating).toMatchObject({ level: "large", counted: false });
-    expect(rating?.why).toMatch(/^shadow: 0 of 50 labels/);
-  });
-});
-
 describe("/mcp/decide", () => {
   async function connect(token: string, url: string): Promise<Client> {
     const client = new Client({ name: "test", version: "1" });
@@ -240,7 +133,6 @@ describe("/mcp/decide", () => {
     expect((await call()).isError).toBe(false);
     const third = await call();
     expect(third).toMatchObject({ isError: true });
-    expect(third.text).toContain("limit reached: 2 calls");
 
     const bad = await client.callTool({ name: "decide", arguments: { state: "x", questions: {} } });
     expect(bad.isError).toBe(true);

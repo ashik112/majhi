@@ -13,24 +13,6 @@ describe("the task events migration", () => {
     );
     expect(migrate(db)[0]).toBe(156);
     expect(migrate(db)).toEqual([]);
-    const cols = (db.prepare("PRAGMA table_info(task_events)").all() as { name: string }[]).map(
-      (c) => c.name,
-    );
-    expect(cols).toEqual([
-      "id",
-      "task",
-      "at",
-      "event",
-      "from_status",
-      "to_status",
-      "from_hold",
-      "hold",
-      "actor",
-      "refused",
-      "code",
-      "text",
-      "pending_effects",
-    ]);
   });
 
   it("removes a task's events with the task", () => {

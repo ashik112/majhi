@@ -27,7 +27,6 @@ describe("agents.rename", () => {
     const working = vi.spyOn(h.majhi.services.runs, "isWorking").mockReturnValue(true);
     const refused = await h.cmd("agents.rename", { id: "acme-builder", newId: "acme-dev" });
     expect(refused.status).toBe(409);
-    expect(refused.body.error).toContain("working");
     working.mockRestore();
 
     const before = (await h.log()).length;

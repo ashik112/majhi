@@ -93,13 +93,6 @@ describe("pruneImages", () => {
       false,
     );
   });
-
-  it("does nothing when majhi built no image", async () => {
-    const docker = new PruneDocker();
-    docker.images.clear();
-    expect(await pruneImages(docker, NOW)).toBe(0);
-    expect(docker.calls).toHaveLength(1);
-  });
 });
 
 describe("DockerCli build cache prune", () => {

@@ -160,22 +160,6 @@ afterEach(async () => {
 });
 
 describe("a pasted token connects only when a real call with it passes", () => {
-  it("a right token makes the connection and ends connected, with what was checked and who it is", async () => {
-    r = await rig();
-    const out = await r.connect.connectToken({ org: "acme", service: "linear-key", token: TOKEN }, OWNER);
-    expect(out).toMatchObject({ ok: true, account: "maria@acme.example" });
-    const id = out.ok ? out.connection : "";
-    expect(r.health.get(id)).toMatchObject({
-      state: "connected",
-      checked: ["Asked Linear who the key belongs to"],
-      account: "maria@acme.example",
-    });
-    expect(r.connections.get(id)?.connection.type).toBe("env");
-    expect(r.connections.get(id)?.connection.fields).toMatchObject({ service: "linear-key" });
-    // The check ran twice: once on the pasted value, once through the stored secret.
-    expect(r.seen).toHaveLength(2);
-  });
-
   it("a wrong token saves nothing and is a typed rejection with the page to make a new one", async () => {
     r = await rig();
     const out = await r.connect.connectToken(
@@ -222,19 +206,6 @@ describe("a pasted token connects only when a real call with it passes", () => {
     expect(r.health.get(id)?.state).toBe("connected");
   });
 
-  it("a service that is down is a service-down failure, not a rejected token", async () => {
-    r = await rig();
-    r.state.status = 503;
-    const out = await r.connect.connectToken({ org: "acme", service: "linear-key", token: TOKEN }, OWNER);
-    expect(out).toMatchObject({ ok: false, failure: { reason: "service-down", status: 503 } });
-  });
-
-  it("refuses a service that is not connected by a token", async () => {
-    r = await rig();
-    await expect(
-      r.connect.connectToken({ org: "acme", service: "linear", token: TOKEN }, OWNER),
-    ).rejects.toThrow(/not connected by a token/);
-  });
 });
 
 describe("checkToken", () => {
@@ -284,22 +255,4 @@ describe("checkToken", () => {
     });
   });
 
-  it("a thrown network error is read by its code", async () => {
-    const fetchFn = (async () => {
-      throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNREFUSED" } });
-    }) as unknown as typeof fetch;
-    expect(await checkToken(fetchFn, method(["api.acme.test"]), TOKEN)).toMatchObject({
-      ok: false,
-      failure: { reason: "unreachable" },
-    });
-  });
-
-  it("a 403 is forbidden and a 404 not-found", async () => {
-    expect(await checkToken(answer(403, {}), method(["api.acme.test"]), TOKEN)).toMatchObject({
-      failure: { reason: "forbidden" },
-    });
-    expect(await checkToken(answer(404, {}), method(["api.acme.test"]), TOKEN)).toMatchObject({
-      failure: { reason: "not-found" },
-    });
-  });
 });

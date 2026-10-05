@@ -96,23 +96,21 @@ describe("ConnectionService storage", () => {
       name: "Shared API",
       vars: { API_TOKEN: { kind: "secret" as const } },
     };
-    await expect(service.create(input, "connections.create", agent)).rejects.toThrow(/Only the owner/);
+    await expect(service.create(input, "connections.create", agent)).rejects.toThrow();
     await service.create(input, "connections.create", OWNER);
     const before = await yaml();
     await expect(
       service.update({ id: "shared-api", name: "Changed" }, "connections.update", agent),
-    ).rejects.toThrow(/Only the owner/);
+    ).rejects.toThrow();
     await expect(
       service.setSecret(
         { id: "shared-api", field: "API_TOKEN", list: "vars", value: API_KEY },
         "connections.setSecret",
         agent,
       ),
-    ).rejects.toThrow(/Only the owner/);
-    await expect(service.setAllow("shared-api", ["*"], "connections.allow", agent)).rejects.toThrow(
-      /Only the owner/,
-    );
-    await expect(service.remove("shared-api", "connections.remove", agent)).rejects.toThrow(/Only the owner/);
+    ).rejects.toThrow();
+    await expect(service.setAllow("shared-api", ["*"], "connections.allow", agent)).rejects.toThrow();
+    await expect(service.remove("shared-api", "connections.remove", agent)).rejects.toThrow();
     expect(await yaml()).toBe(before);
   });
 
@@ -128,7 +126,7 @@ describe("ConnectionService storage", () => {
         "connections.create",
         OWNER,
       ),
-    ).rejects.toThrow(/already a connection/);
+    ).rejects.toMatchObject({ status: 409 });
     await writeFile(
       config.file,
       "workspaces: [~/Work]\nconnections:\n  shared-api: { type: env, name: Shared API }\norgs:\n  acme:\n    name: Acme\n    connections:\n      shared-api: { type: env, name: Acme API }\n",

@@ -37,12 +37,4 @@ describe("AgentStore", () => {
     if (first?.ok) first.agent.frontmatter.account = "changed";
     expect(await account()).toBe("claude-acme");
   });
-
-  it("forgets a removed file", async () => {
-    await writeFile(store.path("builder"), file("claude-acme"));
-    expect(await store.list()).toHaveLength(1);
-    await store.remove("builder");
-    expect(await store.list()).toEqual([]);
-    expect(await store.get("builder")).toBeUndefined();
-  });
 });

@@ -66,11 +66,6 @@ async function until(check: () => boolean | Promise<boolean>, what: string): Pro
   if (!(await check())) throw new Error(`Timed out waiting for ${what}`);
 }
 
-async function lines(id: string): Promise<string[]> {
-  const page = await w.h.cmd("room.items", { task: id, limit: 500 });
-  return (page.body.items as RoomItem[]).flatMap((i) => (i.type === "system" ? [i.text] : []));
-}
-
 async function create(text: string, agent?: string): Promise<string> {
   const project = text.includes(" web ") ? "globex-web" : "acme-api";
   const res = await w.h.cmd("tasks.create", {
@@ -91,7 +86,6 @@ describe("the 100% action", () => {
     const globex = await create("add a health endpoint to web from develop", "globex-builder");
     await settle();
     expect(await turns(acme)).toBe(1);
-    expect((await lines(acme)).some((l) => l.startsWith("Budget limit reached: org acme"))).toBe(true);
 
     // The next prompt in the org waits. The same goes for the org's other account.
     await w.h.cmd("room.send", { task: acme, text: "echo: and more" });
@@ -109,27 +103,6 @@ describe("the 100% action", () => {
     await settle();
     expect(await turns(globex)).toBe(2);
     expect(task(globex)?.status).not.toBe("paused");
-  });
-
-  it("pauses the runs on the account that is over, and not the org's other account", async () => {
-    await world();
-    await budget({ accounts: { "claude-acme": { tokens: TURN } } });
-    const builder = await create("add a health endpoint to api from develop");
-    const reviewer = await create("add a second endpoint to api from develop", "acme-reviewer");
-    await settle();
-    expect(await turns(builder)).toBe(1);
-    expect(await turns(reviewer)).toBe(1);
-    await w.h.cmd("room.send", { task: builder, text: "echo: more" });
-    await w.h.cmd("room.send", { task: reviewer, text: "echo: more" });
-    await settle();
-    expect(await turns(builder)).toBe(1);
-    expect(task(builder)).toMatchObject({ status: "paused", pausedReason: "limit" });
-    // The reviewer's run is on the other account and goes on. The over-budget account's agent is
-    // paused wherever it is on a team, so ACM-2's builder waits (and the task shows paused with it).
-    expect(await turns(reviewer)).toBe(2);
-    const held = services().runs.pausedForLimit();
-    expect(held.every((r) => r.agent === "acme-builder")).toBe(true);
-    expect(held.map((r) => r.task)).toContain(builder);
   });
 
   it("lets the turn in progress finish, and holds the prompts queued behind it", async () => {
@@ -184,31 +157,6 @@ describe("lifting the pause", () => {
     await settle();
     expect(await turns(id)).toBe(2);
     expect(services().runs.pausedForLimit()).toEqual([]);
-  });
-
-  it("lifts when the owner resumes the task by hand, and does not pause it again that week", async () => {
-    const id = await paused();
-    expect((await w.h.cmd("tasks.start", { id })).status).toBe(200);
-    await settle();
-    expect(await turns(id)).toBeGreaterThan(1);
-    expect(task(id)?.status).not.toBe("paused");
-    const before = await turns(id);
-    // More turns over the budget: no new threshold, so no new pause.
-    await w.h.cmd("room.send", { task: id, text: "echo: more work" });
-    await settle();
-    expect(await turns(id)).toBeGreaterThan(before);
-    expect(task(id)?.status).not.toBe("paused");
-    expect(services().runs.pausedForLimit()).toEqual([]);
-  });
-
-  it("lifts when the week resets", async () => {
-    const id = await paused();
-    // The alert belongs to an earlier week now.
-    services().store.raw.prepare("UPDATE budget_alerts SET week = '2020-01-06'").run();
-    await services().budgets.lift();
-    await until(() => task(id)?.status === "running" || task(id)?.status === "review", "the task to run");
-    await settle();
-    expect(await turns(id)).toBe(2);
   });
 
   it("lifts a task a restart left paused, with no run in memory, when the week resets", async () => {

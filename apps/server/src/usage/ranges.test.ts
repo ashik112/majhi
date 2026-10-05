@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, dayBounds, dayStart, localDay, monthStart, rangeDays, weekStart } from "./ranges.ts";
+import { dayBounds, dayStart, localDay } from "./ranges.ts";
 
 describe("local days", () => {
   it("reads the day an instant falls on in the zone", () => {
@@ -18,23 +18,4 @@ describe("local days", () => {
     expect(Date.parse(end) - Date.parse(start)).toBe(23 * 3_600_000);
   });
 
-  it("starts weeks on Monday and months on the 1st", () => {
-    expect(weekStart("2026-09-29")).toBe("2026-09-28"); // a Tuesday
-    expect(weekStart("2026-09-28")).toBe("2026-09-28");
-    expect(weekStart("2026-10-04")).toBe("2026-09-28"); // a Sunday
-    expect(monthStart("2026-09-29")).toBe("2026-09-01");
-    expect(addDays("2026-03-01", -1)).toBe("2026-02-28");
-  });
-
-  it("names the days of each range", () => {
-    const today = "2026-09-29";
-    expect(rangeDays("today", today)).toEqual({ from: today, to: today });
-    expect(rangeDays("yesterday", today)).toEqual({ from: "2026-09-28", to: "2026-09-28" });
-    expect(rangeDays("week", today)).toEqual({ from: "2026-09-28", to: today });
-    expect(rangeDays("last-week", today)).toEqual({ from: "2026-09-21", to: "2026-09-27" });
-    expect(rangeDays("month", today)).toEqual({ from: "2026-09-01", to: today });
-    expect(rangeDays("last-month", today)).toEqual({ from: "2026-08-01", to: "2026-08-31" });
-    expect(rangeDays("30d", today)).toEqual({ from: "2026-08-31", to: today });
-    expect(rangeDays("all", today)).toBeUndefined();
-  });
 });

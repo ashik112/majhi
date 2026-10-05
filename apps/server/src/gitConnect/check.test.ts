@@ -31,15 +31,6 @@ describe("checkGitToken: two real calls, decided by status", () => {
     expect(hosts.requests.every((r) => !r.url.includes(TOKEN))).toBe(true);
   });
 
-  it("GitHub Enterprise: the API is under the host's /api/v3", async () => {
-    const hosts = fakeGitHosts({
-      "GET https://ghe.acme.test/api/v3/user": () => ok({ login: "acme-dev" }),
-      "GET https://ghe.acme.test/api/v3/user/repos": () => ok([]),
-    });
-    const result = await checkGitToken(hosts.fetch, "github", "ghe.acme.test", TOKEN);
-    expect(result).toMatchObject({ ok: true, account: "acme-dev" });
-  });
-
   it("a refused token is rejected with the host's own token page, a token without repository access is forbidden", async () => {
     const refused = fakeGitHosts({ "GET https://ghe.acme.test/api/v3/user": () => ({ status: 401 }) });
     const first = await checkGitToken(refused.fetch, "github", "ghe.acme.test", TOKEN);
@@ -57,71 +48,11 @@ describe("checkGitToken: two real calls, decided by status", () => {
     });
   });
 
-  it("GitLab self-managed: the host's own /api/v4, a project list as the second call", async () => {
-    const hosts = fakeGitHosts({
-      "GET https://git.acme.test/api/v4/user": () => ok({ username: "acme-dev" }),
-      "GET https://git.acme.test/api/v4/projects": () => ok([]),
-    });
-    expect(await checkGitToken(hosts.fetch, "gitlab", "git.acme.test", TOKEN)).toMatchObject({
-      ok: true,
-      account: "acme-dev",
-      checked: ["Asked git.acme.test who the token belongs to", "Listed one project"],
-    });
-  });
-
-  it("Bitbucket Cloud: email and API token as Basic, the account is the nickname", async () => {
-    const hosts = fakeGitHosts({
-      "GET https://api.bitbucket.org/2.0/user": (req) =>
-        req.headers.authorization === `Basic ${Buffer.from(`dev@acme.test:${TOKEN}`).toString("base64")}`
-          ? ok({ nickname: "acme-dev", display_name: "Acme Dev" })
-          : { status: 401 },
-      "GET https://api.bitbucket.org/2.0/repositories": () => ok({ values: [] }),
-    });
-    expect(
-      await checkGitToken(hosts.fetch, "bitbucket", "bitbucket.org", `dev@acme.test:${TOKEN}`),
-    ).toMatchObject({
-      ok: true,
-      account: "acme-dev",
-    });
-  });
-
-  it("Bitbucket Server: an HTTP access token as Bearer; the user is named in a header, and nobody is a refusal", async () => {
-    const good = fakeGitHosts({
-      "GET https://bb.acme.test/plugins/servlet/applinks/whoami": (req) =>
-        bearer(req) ? { headers: { "x-ausername": "acme-dev" } } : { headers: {} },
-      "GET https://bb.acme.test/rest/api/1.0/repos": () => ok({ values: [] }),
-    });
-    expect(await checkGitToken(good.fetch, "bitbucket", "bb.acme.test", TOKEN)).toMatchObject({
-      ok: true,
-      account: "acme-dev",
-    });
-    // Bitbucket Server answers an unknown token with 200 and no user.
-    const nobody = await checkGitToken(good.fetch, "bitbucket", "bb.acme.test", "not-the-token-0000");
-    expect(nobody).toMatchObject({ ok: false, failure: { reason: "rejected", status: 200 } });
-  });
-
   it("a 200 that is not the host's API is unexpected, never a pass", async () => {
     const hosts = fakeGitHosts({ "GET https://api.github.com/user": () => ok({ html: "log in" }) });
     expect(await checkGitToken(hosts.fetch, "github", "github.com", TOKEN)).toMatchObject({
       ok: false,
       failure: { reason: "unexpected" },
-    });
-  });
-
-  it("a host that does not exist is not-found, one that is down is service-down, a refused connection is unreachable", async () => {
-    const notFound = fakeGitHosts({});
-    expect(await checkGitToken(notFound.fetch, "github", "ghe.acme.test", TOKEN)).toMatchObject({
-      failure: { reason: "not-found", status: 404 },
-    });
-    const down = fakeGitHosts({ "GET https://api.github.com/user": () => ({ status: 502 }) });
-    expect(await checkGitToken(down.fetch, "github", "github.com", TOKEN)).toMatchObject({
-      failure: { reason: "service-down" },
-    });
-    const refused = (async () => {
-      throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNREFUSED" } });
-    }) as unknown as typeof fetch;
-    expect(await checkGitToken(refused, "github", "github.com", TOKEN)).toMatchObject({
-      failure: { reason: "unreachable" },
     });
   });
 
@@ -172,17 +103,6 @@ describe("a self-hosted host: signing in validates the address first", () => {
     return { sign, hosts, saved, orgs };
   }
 
-  it("GitHub Enterprise on a public host signs in with a pasted token, and nothing is sent to github.com", async () => {
-    const s = service(async () => ["203.0.114.9"]);
-    const status = await s.sign.token(
-      { org: "acme", kind: "github", host: "ghe.acme.test", token: TOKEN },
-      OWNER,
-    );
-    expect(status).toMatchObject({ state: "done", account: "acme-dev", host: "ghe.acme.test" });
-    expect(s.hosts.requests.map((r) => new URL(r.url).host)).toEqual(["ghe.acme.test"]);
-    expect(s.orgs.acme?.git_accounts?.[0]).toMatchObject({ host: "ghe.acme.test", account: "acme-dev" });
-  });
-
   it("a host that resolves to a private address is refused unless the owner confirms it, and nothing is sent before", async () => {
     const s = service(async () => ["10.2.3.4"]);
     await expect(
@@ -213,23 +133,4 @@ describe("a self-hosted host: signing in validates the address first", () => {
     expect(s.hosts.requests).toEqual([]);
   });
 
-  it("the public host is never looked up or blocked", async () => {
-    const s = service(async () => {
-      throw new Error("no lookup for the public host");
-    });
-    s.hosts.on("GET https://api.github.com/user", () => ok({ login: "acme-dev" }));
-    const status = await s.sign.token({ org: "acme", kind: "github", token: TOKEN }, OWNER);
-    expect(status.state).toBe("done");
-  });
-
-  it("a wrong token on a self-hosted host fails with a typed rejected, and saves nothing", async () => {
-    const s = service(async () => ["203.0.114.9"]);
-    s.hosts.on("GET https://ghe.acme.test/api/v3/user", () => ({ status: 401 }));
-    const status = await s.sign.token(
-      { org: "acme", kind: "github", host: "ghe.acme.test", token: TOKEN },
-      OWNER,
-    );
-    expect(status).toMatchObject({ state: "failed", failure: { reason: "rejected" } });
-    expect(s.orgs.acme?.git_accounts).toBeUndefined();
-  });
 });

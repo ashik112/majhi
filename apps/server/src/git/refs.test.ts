@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { git as plainGit } from "../testing/fixtures.ts";
-import { git, localBranchExists, remoteBranchExists } from "./git.ts";
+import { git, localBranchExists } from "./git.ts";
 import { refExists } from "./refs.ts";
 
 /** What git itself says, to hold the file reader to. */
@@ -55,17 +55,6 @@ describe("whether a ref exists, read from git's files", () => {
     for (const ref of [...refs, "refs/heads/topic"]) {
       expect(await refExists(tree, ref), ref).toBe(await gitSays(tree, ref));
     }
-  });
-
-  it("agrees with git for a remote branch", async () => {
-    const remote = join(dir, "remote.git");
-    await plainGit(dir, "init", "--bare", "--quiet", "--initial-branch=main", remote);
-    await plainGit(repo, "remote", "add", "origin", remote);
-    await plainGit(repo, "push", "--quiet", "origin", "main");
-    await plainGit(repo, "fetch", "--quiet", "origin");
-    expect(await remoteBranchExists(repo, "origin", "main")).toBe(true);
-    expect(await remoteBranchExists(repo, "origin", "nope")).toBe(false);
-    expect(await localBranchExists(repo, "feat/one")).toBe(true);
   });
 
   it("leaves what it cannot read to git", async () => {

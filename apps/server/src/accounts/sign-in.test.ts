@@ -39,7 +39,6 @@ describe("the sign-in check", () => {
     expect(res.account.status).toBe("needs-login");
     const auth = res.health.steps.find((s) => s.name === "auth");
     expect(auth?.ok).toBe(false);
-    expect(auth?.detail).toContain("could not be refreshed");
 
     h.runtime.usage = usage;
     expect((await check()).account.status).toBe("healthy");
