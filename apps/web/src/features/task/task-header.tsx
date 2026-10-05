@@ -12,7 +12,6 @@ import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
 import { useUpdateTask } from "@/lib/task-queries";
 import { useUsageSummary } from "@/lib/usage-queries";
-import { ScheduleButton } from "../tasks/schedule-editor";
 import { CostText } from "../usage/cost";
 import { Brief } from "./brief";
 import { TaskAction } from "./task-action";
@@ -82,7 +81,6 @@ export function TaskHeader({
           <OrgBadge label={badgeLetters(org?.key ?? prefix)} color={org?.color} size="sm" />
           <span className="truncate">{org?.name ?? "No workspace"}</span>
         </span>
-        {task.kind !== "chat" && <ScheduleButton task={task} />}
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <TaskCost taskId={task.id} />
           <TaskAction task={task} yourTurn={yourTurn} cardAsks={cardAsks} />

@@ -1,7 +1,7 @@
 import type { Task } from "@majhi/shared";
 import { useNavigate } from "@tanstack/react-router";
 import { EllipsisVertical } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Menu } from "@/components/ui/menu";
@@ -9,21 +9,28 @@ import { useToast } from "@/components/ui/toast";
 import { ApiRequestError } from "@/lib/api";
 import { useEditorLabel, useOpenInEditor } from "@/lib/editor-queries";
 import { useCloseTask, useRemoveTask, useReopenTask, useShipOptions } from "@/lib/task-queries";
+import { SchedulePanel } from "../tasks/schedule-editor";
 import { unshippedBody } from "./unshipped";
 
-/** The task's "..." menu: close it (moves to Done) or remove it with its folder and worktrees. */
+/** The task's "..." menu: priority and due date, close it (moves to Done) or remove it with its folder and worktrees. */
 export function TaskMenu({ task }: { task: Task }) {
   const [confirm, setConfirm] = useState<"close" | "remove" | null>(null);
   const reopen = useReopenTask();
   const toast = useToast();
   const open = useOpenInEditor();
   const editor = useEditorLabel();
+  const [scheduling, setScheduling] = useState(false);
+  const anchor = useRef<HTMLSpanElement>(null);
+  const closeSchedule = useCallback(() => setScheduling(false), []);
   return (
-    <>
+    <span ref={anchor} className="flex shrink-0">
       <Menu
         label="Task menu"
         icon={<EllipsisVertical aria-hidden="true" />}
         items={[
+          ...(task.kind === "chat"
+            ? []
+            : [{ label: "Priority and due", onSelect: () => setScheduling(true) }]),
           task.status === "done"
             ? {
                 label: "Reopen task",
@@ -47,9 +54,10 @@ export function TaskMenu({ task }: { task: Task }) {
           { label: "Remove task", onSelect: () => setConfirm("remove"), tone: "danger" },
         ]}
       />
+      <SchedulePanel task={task} open={scheduling} close={closeSchedule} anchor={anchor} align="right" />
       {confirm === "close" && <CloseDialog task={task} onDone={() => setConfirm(null)} />}
       {confirm === "remove" && <RemoveDialog task={task} onDone={() => setConfirm(null)} />}
-    </>
+    </span>
   );
 }
 
