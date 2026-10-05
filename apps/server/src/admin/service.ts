@@ -35,6 +35,13 @@ import type { Store } from "../store/index.ts";
 import { startingBranches } from "../tasks/brief.ts";
 import type { TaskService } from "../tasks/service.ts";
 import {
+  CLIPBOARD_COPY_TOOL,
+  type ClipboardCopier,
+  ClipboardCopyInputSchema,
+  pickValue,
+  readInRoots,
+} from "./clipboard-copy.ts";
+import {
   fetchedValue,
   SAVE_FROM_SCRIPT_TOOL,
   SaveFromScriptInputSchema,
@@ -182,6 +189,7 @@ export class AdminService {
   private readonly tools = new Map(adminTools().map((t) => [t.name, t]));
   private autonomy: AutonomyGate | undefined;
   private script: ScriptFetch | undefined;
+  private clipboard: ClipboardCopier | undefined;
 
   constructor(private readonly deps: AdminDeps) {}
 
@@ -200,6 +208,11 @@ export class AdminService {
     this.script = script;
   }
 
+  /** The host helper's clipboard: built after this service, from the helper link and the config. */
+  useClipboard(clipboard: ClipboardCopier): void {
+    this.clipboard = clipboard;
+  }
+
   // ---------------------------------------------------------------------------
   // Agent calls
 
@@ -214,6 +227,7 @@ export class AdminService {
     try {
       if (tool === REQUEST_SECRET_TOOL) return this.requestSecret(caller, args);
       if (tool === SAVE_FROM_SCRIPT_TOOL) return await this.saveFromScript(caller, args);
+      if (tool === CLIPBOARD_COPY_TOOL) return await this.copyToClipboard(caller, args);
       if (tool === WITHDRAW_SECRET_TOOL) return await this.withdrawRequest(caller, args);
       const spec = this.tools.get(tool);
       if (spec?.command === undefined) return error(`Unknown tool: ${tool}`);
@@ -681,6 +695,62 @@ export class AdminService {
       await this.deps.secrets.set(name, got.value);
     }
     return { text: `Saved as secret:${name}. The value is not shown.`, isError: false };
+  }
+
+  /**
+   * Puts a saved secret, or one line of a file in the workspace's projects, on the owner's clipboard
+   * through the host helper. The value is never returned, put in the room, the audit log or an error.
+   */
+  private async copyToClipboard(caller: AdminCaller, args: Record<string, unknown>): Promise<ToolResult> {
+    const lane = await this.laneOf(caller, CLIPBOARD_COPY_TOOL);
+    if ("problem" in lane) return error(lane.problem);
+    const parsed = ClipboardCopyInputSchema.safeParse(args);
+    if (!parsed.success) {
+      const details = parsed.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`);
+      return error(`Invalid input.\n${details.join("\n")}`);
+    }
+    const input = parsed.data;
+    if (input.ownerAsked !== true) {
+      return error("Copy to the clipboard only when the owner asked for it in the conversation.");
+    }
+    const clipboard = this.clipboard;
+    if (clipboard === undefined || !clipboard.available()) {
+      return error("majhi problem: the host helper is not connected, so there is no clipboard to copy to.");
+    }
+    let value: string;
+    let from: string;
+    if (input.secret !== undefined) {
+      const name = input.secret.replace(/^secret:/, "");
+      const secret = await this.deps.secrets.get(name);
+      if (secret === undefined) return error(`There is no secret:${name}.`);
+      value = secret;
+      from = `secret:${name}`;
+    } else {
+      const file = input.file as string;
+      const line = input.line as number;
+      const read = await readInRoots(file, await clipboard.roots(lane.org));
+      if ("problem" in read) return error(read.problem);
+      const picked = pickValue(read.text, line, input.part);
+      if ("problem" in picked) return error(picked.problem);
+      value = picked.value;
+      from = `${file} line ${line}`;
+    }
+    const copied = await clipboard.copy(value).catch(() => false);
+    if (!copied) {
+      return error(
+        "majhi problem: no clipboard program worked on the owner's computer, so nothing was copied.",
+      );
+    }
+    this.log(caller.task, caller.agent, "clipboard.copy", `copy ${from}`, "allow", "captain");
+    this.deps.room.post(caller.task as TaskId, `info:${randomUUID()}`, {
+      type: "system",
+      level: "info",
+      text: `Copied ${from} to the owner's clipboard. The value was not shown.`,
+    });
+    return {
+      text: `Copied ${from} (${value.length} characters) to the owner's clipboard. The value is not shown.`,
+      isError: false,
+    };
   }
 
   /** The captain withdraws a pending secret request of its workspace, and the asking agent hears why. */

@@ -2180,6 +2180,19 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return sections.orgs[org]?.connections?.[id] !== undefined || sections.connections?.[id] !== undefined;
     },
   });
+  admin.useClipboard({
+    roots: async (org) => {
+      const { projects } = await config.sections();
+      return Object.values(projects ?? {})
+        .filter((project) => project.org === org)
+        .map((project) => resolvePath(project.path, config.paths.hostHome));
+    },
+    available: () => options.hostLink?.isConnected() ?? false,
+    copy: async (text) => {
+      if (options.hostLink === undefined) return false;
+      return (await options.hostLink.call("clipboard.copy", { text }, 10_000)).copied;
+    },
+  });
   opsWatch = ops.watch;
   opsEngine = ops.engine;
   Object.assign(rulesTable, opsRunners(ops.watch));

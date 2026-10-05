@@ -339,6 +339,7 @@ async function main(): Promise<void> {
       readGitToken(gitDeps, params.via, params.host),
     gitPush: (params: Parameters<typeof gitPush>[1]) => gitPush(gitPushDeps, params),
     openUrl: (params: { url: string }) => platform.openUrl(params.url),
+    clipboardCopy: (params: { text: string }) => platform.clipboardCopy(params.text),
     gitClone: (params: Parameters<typeof gitClone>[1], progress: Parameters<typeof gitClone>[2]) =>
       gitClone(gitCloneDeps, params, progress),
     gitLsRemote: (params: Parameters<typeof gitLsRemote>[1]) => gitLsRemote(gitCloneDeps, params),

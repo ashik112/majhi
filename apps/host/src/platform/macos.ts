@@ -5,6 +5,7 @@
  */
 import { join } from "node:path";
 import type { EditorApp } from "@majhi/shared";
+import { clipboardCopy, MAC_CLIPBOARD } from "./clipboard.ts";
 import { macNotifier } from "./macNotifier.ts";
 import { openUrl } from "./openUrl.ts";
 import { type NotifierRelease, TERMINAL_NOTIFIER } from "./terminalNotifier.ts";
@@ -205,5 +206,7 @@ export function macosPlatform(
     folders: { skippedAtHome: SKIPPED_AT_HOME },
     desktopEnv,
     openUrl: (url) => openUrl({ run: deps.run, find: deps.find, env: desktopEnv }, ["open"], url),
+    clipboardCopy: (text) =>
+      clipboardCopy({ run: deps.run, find: deps.find, env: desktopEnv }, MAC_CLIPBOARD, text),
   };
 }

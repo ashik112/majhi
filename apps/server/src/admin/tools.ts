@@ -1,5 +1,6 @@
 import { AGENT_BLOCKED_COMMANDS, type CommandName, commands, type RiskClass } from "@majhi/shared";
 import { z } from "zod";
+import { CLIPBOARD_COPY_TOOL } from "./clipboard-copy.ts";
 import { SAVE_FROM_SCRIPT_TOOL, WITHDRAW_SECRET_TOOL } from "./fetch-secret.ts";
 
 /** Commands an agent must never call: they approve, answer or reach outside majhi for the owner. */
@@ -116,6 +117,36 @@ export function adminTools(): AdminTool[] {
           },
         },
         required: ["script", "connections"],
+      },
+    },
+    {
+      name: CLIPBOARD_COPY_TOOL,
+      command: undefined,
+      risk: undefined,
+      description:
+        "The captain in its lane only, and only when the owner asked for it in the conversation. Put a value on the owner's own clipboard on their computer, so they can paste it without it appearing in chat: the value of a saved secret (secret), or one line of a file in this workspace's projects (file and line, with part value to take what follows the = or : of a KEY=value line). The value is read by majhi and goes only to the clipboard: you never get it back, and it is not put in the room. Say what you copied by its name or its file and line, never by its value.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          secret: { type: "string", description: "The name of a saved secret, like newrelic-acme" },
+          file: {
+            type: "string",
+            description: "Without a secret: the absolute path of a file in a project of this workspace",
+          },
+          line: { type: "number", description: "With file: the 1-based line to copy" },
+          part: {
+            type: "string",
+            enum: ["whole", "value"],
+            description:
+              "whole (default): the line. value: what follows the = or : of a KEY=value line, without quotes",
+          },
+          ownerAsked: {
+            type: "boolean",
+            description: "true only if the owner asked for this in the conversation",
+          },
+          reason: EXTRA_PROPERTIES.reason,
+        },
+        required: ["ownerAsked", "reason"],
       },
     },
     {

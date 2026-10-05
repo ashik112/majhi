@@ -43,6 +43,7 @@ const parseResult: { [M in HostMethod]: (value: unknown) => z.ZodSafeParseResult
   "git.push": (value) => HostResultSchemas["git.push"].safeParse(value),
   "git.credential": (value) => HostResultSchemas["git.credential"].safeParse(value),
   openUrl: (value) => HostResultSchemas.openUrl.safeParse(value),
+  "clipboard.copy": (value) => HostResultSchemas["clipboard.copy"].safeParse(value),
   "git.clone": (value) => HostResultSchemas["git.clone"].safeParse(value),
   "git.lsRemote": (value) => HostResultSchemas["git.lsRemote"].safeParse(value),
   "git.cliLogin": (value) => HostResultSchemas["git.cliLogin"].safeParse(value),

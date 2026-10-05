@@ -4,6 +4,7 @@
  * helper cannot start.
  */
 import { isAbsolute, join, resolve } from "node:path";
+import { clipboardCopy, LINUX_CLIPBOARD } from "./clipboard.ts";
 import { openUrl } from "./openUrl.ts";
 import { createSecretService } from "./secretService.ts";
 import { reachable, serveAgent } from "./sshForwarder.ts";
@@ -195,5 +196,7 @@ export function linuxPlatform(
     folders: { skippedAtHome: SKIPPED_AT_HOME },
     desktopEnv,
     openUrl: (url) => openUrl({ run: deps.run, find: deps.find, env: desktopEnv }, ["xdg-open"], url),
+    clipboardCopy: (text) =>
+      clipboardCopy({ run: deps.run, find: deps.find, env: desktopEnv }, LINUX_CLIPBOARD, text),
   };
 }

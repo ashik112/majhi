@@ -463,6 +463,16 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     params: z.object({ url: z.url({ protocol: /^https?$/ }).max(4096) }),
   }),
   /**
+   * Put text on the owner's clipboard: macOS `pbcopy`, Linux `wl-copy`, `xclip` or `xsel`, WSL
+   * `clip.exe`. The text is the job's only copy: it goes to the program's stdin, never to its
+   * arguments, the log or the reply. `copied` is false when no clipboard program worked.
+   */
+  z.object({
+    id: z.string(),
+    method: z.literal("clipboard.copy"),
+    params: z.object({ text: z.string().min(1).max(8192) }),
+  }),
+  /**
    * Sign a workspace in to a git host with the host's own CLI in the browser: `gh auth login --web`
    * or `glab auth login --web`. The CLI runs with a config folder of the workspace's own
    * (`<MAJHI_HOME>/git/<org>/<cli>`, mode 700, never the owner's own CLI login), stores the token
@@ -617,6 +627,7 @@ export const HostResultSchemas = {
   "git.token": z.object({ token: z.string().min(1) }),
   "git.push": z.object({ pushed: z.literal(true) }),
   openUrl: z.object({ opened: z.boolean() }),
+  "clipboard.copy": z.object({ copied: z.boolean() }),
   /** `head`: the commit checked out. `branch`: the branch checked out, the remote's default unless one was named. */
   "git.clone": z.object({ head: CommitSchema, branch: z.string() }),
   /** `empty`: the remote has no branches. `defaultBranch`: where its HEAD points, when it has one. */

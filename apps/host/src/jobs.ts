@@ -66,6 +66,8 @@ export interface JobHandlers {
   notifyOpenSettings?: () => Promise<boolean>;
   /** Opens an http(s) page in the owner's browser (`Platform.openUrl`). False when nothing could open it. */
   openUrl?: (params: Extract<HostJob, { method: "openUrl" }>["params"]) => Promise<boolean>;
+  /** Puts the text on the owner's clipboard (`Platform.clipboardCopy`). False when no program could. */
+  clipboardCopy?: (params: Extract<HostJob, { method: "clipboard.copy" }>["params"]) => Promise<boolean>;
   /**
    * Clones with the job's credential through majhi's own askpass, into a temporary sibling that is
    * renamed to `path` when done and removed on failure. Calls `progress` as git reports phases.
@@ -213,6 +215,12 @@ export async function runJob(
           return;
         }
         await reply({ id: job.id, ok: true, result: { opened: await handlers.openUrl(job.params) } });
+        return;
+      }
+      case "clipboard.copy": {
+        const copied =
+          handlers.clipboardCopy === undefined ? false : await handlers.clipboardCopy(job.params);
+        await reply({ id: job.id, ok: true, result: { copied } });
         return;
       }
       case "git.clone": {
