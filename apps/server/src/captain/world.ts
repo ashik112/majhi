@@ -3,6 +3,7 @@ import {
   type CommandName,
   commands,
   type Fact,
+  mergeVerdictLine,
   OpenMrsResultSchema,
   PRIVATE,
   type RoomItem,
@@ -230,6 +231,9 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         const first = [...checked.failures, ...checked.held][0] ?? "the check did not pass";
         return { ready: false, why: `the hand-off check failed: ${first.split("\n")[0]}` };
       }
+      // The merge rule itself: the same verdict `tasks.merge` will read, so the chore never tries what it refuses.
+      const rule = await deps.tasks.mergeChecks(id);
+      if (rule.verdict.kind !== "ok") return { ready: false, why: mergeVerdictLine(rule.verdict) };
       return { ...base, checked: checked.summary.replace(/^Checked: /, "") };
     },
 

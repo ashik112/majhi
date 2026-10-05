@@ -37,6 +37,7 @@ export * from "./machine.ts";
 export * from "./mcp-servers.ts";
 export * from "./media.ts";
 export * from "./memory.ts";
+export * from "./merge-checks.ts";
 export * from "./mrs.ts";
 export * from "./notify.ts";
 export * from "./onboarding.ts";

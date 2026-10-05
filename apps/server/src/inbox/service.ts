@@ -9,6 +9,7 @@ import {
   type DecisionDetail,
   type DecisionRecommendInput,
   type Draft,
+  mergeVerdictLine,
   type OutboundChannel,
   type OwnerDecision,
   PRIVATE,
@@ -532,6 +533,10 @@ export class InboxService {
     }
     const offers = (id: string) => decision.options.some((o) => o.id === id);
     if (offers("merge") && !ship.merge.ok) blocked.merge = ship.merge.why ?? "It cannot merge now.";
+    // The merge rule: no Merge from a list while the checks are not green for this commit. The task's Ship panel has the buttons.
+    else if (offers("merge") && ship.checks !== undefined && ship.checks.verdict.kind !== "ok") {
+      blocked.merge = `${mergeVerdictLine(ship.checks.verdict)} Open the task to run the checks or fix them.`;
+    }
     if (offers("done")) {
       const left = ship.done.unshipped ?? [];
       if (!ship.done.ok) blocked.done = ship.done.why ?? "It cannot be marked done now.";

@@ -15,7 +15,9 @@ import {
   isOwnerChat,
   LOCAL_TASK_PREFIX,
   lifecycle,
+  type MergeChecks,
   MODE_LABELS,
+  mergeCanBeOverridden,
   OWNER_HANDLE,
   type ParsedTask,
   type PendingNotice,
@@ -44,7 +46,7 @@ import {
 import type { AccountService } from "../accounts/service.ts";
 import { isBossChat } from "../admin/boss.ts";
 import type { AgentStore } from "../agents/store.ts";
-import { logShip } from "../audit.ts";
+import { auditActor, auditDetail, logShip } from "../audit.ts";
 import { connectionScopes } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
 import { runConnections } from "../connections/access.ts";
@@ -129,6 +131,7 @@ import {
 } from "./lifecycle/apply.ts";
 import type { EffectContext } from "./lifecycle/types.ts";
 import { fetchLinks, type LinkOptions } from "./links.ts";
+import { MergeRefused } from "./merge-refused.ts";
 import { Orchestrator } from "./orchestrator.ts";
 import { type PickedRepo, withPickedRepos } from "./picked-repos.ts";
 import { TaskPlanner } from "./planner.ts";
@@ -156,7 +159,16 @@ import { unshippedText, unshippedWork } from "./shipped.ts";
 import { type TeamFacts, wakeFacts } from "./team-facts.ts";
 import { TeamFactsSource } from "./team-facts-source.ts";
 
+/**
+ * The merge rule (nothing merges unless the hand-off checks are green for the exact commit). Required,
+ * so no way to build the task service leaves a merge unchecked.
+ */
+export interface MergeGatePort {
+  checks(task: Task, repos: readonly TaskRepo[]): Promise<MergeChecks>;
+}
+
 export interface TaskDeps {
+  mergeGate: MergeGatePort;
   /** The owner resumed a task that a budget paused: budget alerts so far no longer hold it. */
   onOwnerResumedLimit?: (task: string) => void;
   /** The owner resumed a paused task by hand: autonomous mode's pause no longer holds it (PRV-74). */
@@ -1837,6 +1849,8 @@ export class TaskService {
     project?: string | undefined;
     /** The owner typed this protected repo's name to ship it alone. */
     confirmProtected?: string | undefined;
+    /** The owner merges past a failed check by sending the head of this merge. Callers pass it only for the owner. */
+    confirmChecks?: string | undefined;
     done: boolean;
     by?: string | undefined;
     /** False: the caller settles the review card itself (a merge that also pushes). */
@@ -1852,6 +1866,7 @@ export class TaskService {
       );
     }
     const plan = await this.shipPlan(task, input);
+    await this.enforceChecks(task, plan, input.confirmChecks, input.by ?? "owner");
     if (input.deleteAfter === true) await this.assertDeletable(plan.ship.map((s) => s.repo));
     const org = (await this.deps.config.sections()).orgs[task.org ?? "private"];
     const identity = org?.identity ?? DEFAULT_IDENTITY;
@@ -2001,6 +2016,40 @@ export class TaskService {
       ],
       task: this.get(task.id),
     };
+  }
+
+  /**
+   * The merge rule. Refuses (typed) unless the hand-off checks are green for the exact heads being
+   * merged. Only a failed test, build or lint check can be merged past, and only with the head typed
+   * as `confirmChecks`; the secret scan never. The override is written to the task's audit trail.
+   */
+  private async enforceChecks(
+    task: Task,
+    plan: ShipPlan,
+    confirm: string | undefined,
+    by: string,
+  ): Promise<void> {
+    const checks = await this.deps.mergeGate.checks(
+      task,
+      plan.ship.map((s) => s.repo),
+    );
+    const { verdict, head } = checks;
+    if (verdict.kind === "ok") return;
+    if (mergeCanBeOverridden(verdict) && confirm === head) {
+      const what = verdict.kind === "failed" ? verdict.check : "checks";
+      this.deps.store.permissions.log({
+        task: task.id,
+        ...auditActor(by),
+        kind: "merge-override",
+        title: `Merged past a failed ${what} check`,
+        decision: "allow",
+        at: this.now().toISOString(),
+        detail: auditDetail(head),
+      });
+      this.note(task.id, `Merged past a failed ${what} check, as the owner confirmed for ${head}.`);
+      return;
+    }
+    throw new MergeRefused(verdict, head, confirm !== undefined);
   }
 
   /**
@@ -2344,14 +2393,27 @@ export class TaskService {
   // ---------------------------------------------------------------------------
   // Owner cards: review, paused, plain-text questions
 
+  /** The merge rule's verdict for all repos of the task now. A merge reads the same answer. */
+  mergeChecks(id: string): Promise<MergeChecks> {
+    const task = this.get(id);
+    return this.deps.mergeGate.checks(task, task.repos);
+  }
+
   /** What the review card's buttons may do now, with the reason when not. */
-  async reviewOptions(id: string): Promise<{ base?: string; merge: ShipOption; done: DoneOption }> {
+  async reviewOptions(
+    id: string,
+  ): Promise<{ base?: string; merge: ShipOption; done: DoneOption; checks?: MergeChecks }> {
     const task = this.get(id);
     const base = task.repos[0]?.base;
+    const checks =
+      task.repos.length === 0
+        ? undefined
+        : await this.deps.mergeGate.checks(task, task.repos).catch(() => undefined);
     return {
       ...(base === undefined ? {} : { base }),
       merge: await this.mergeOption(task),
       done: await this.doneOption(task),
+      ...(checks === undefined ? {} : { checks }),
     };
   }
 

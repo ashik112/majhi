@@ -1,5 +1,18 @@
 # Progress
 
+## Nothing merges unless the checks are green for the exact commit (built, not merged)
+
+Branch `feat/merge-needs-green`.
+
+- **Cause.** The merge decision answer (`decisions.answer` merge, `inbox/service.ts`) and the review card buttons (`room.cardAction`) call `tasks.merge` as the owner with no look at the hand-off. `TaskService.merge` itself checked only conflicts and uncommitted files. The captain's ship chore (`shipCheck`) did wait for the hand-off, but the other paths never asked. The owner's merge also ran no secret scan; only the ship readiness did.
+- **The rule, in one place.** `MergeGate.checks` (`handoff/merge-gate.ts`) reads the task's head commits and the hand-off result recorded for that head, and `decideMerge` returns a typed `MergeVerdict` (`ok`, `running`, `failed` with the check, `stale`). `TaskService.merge` is the only function that merges a task branch, and it calls the gate before anything is touched. So the owner, the captain, decision answers, the ship chore, push after merge, a ship that waited for its lead and any agent tool all go through it. The gate is a required dependency of `TaskService`. Refusals are `MergeRefused` (typed, 409), and `tasks.shipOptions` returns `checks: { verdict, head }`.
+- **Overrides.** Only the owner, with `confirmChecks: "<head>"` on `tasks.merge` or `room.cardAction`, and only for a failed test, build or lint check. Agents and the captain are refused up front (`refuseForAgents`, the command handlers and the card action). A wrong head is refused. The override is written to the audit trail (`merge-override`) and a room note. The secret scan is a hard block with no override, and now applies to every merge path, not only the ship readiness.
+- **No checks set up** (no test, build or lint command on the project card): merges as before, and the Ship panel says "No checks set up for this project."
+- **UI.** The Ship panel shows the verdict line. A stale or never-run verdict shows "Run checks"; a failed one shows "Fix with agent" (sends the failure to the lead) and "Merge anyway (checks failed: test)"; running shows a disabled "Checks running" and polls. The Needs you list blocks Merge with the verdict sentence and sends the owner to the task.
+- **Also.** A done task can now be checked (its review-state checks do not apply), so its unshipped work can still be merged. The ship chore's `shipCheck` also reads the gate verdict.
+- **Verified.** Typecheck clean. Tests: `handoff/merge-gate.test.ts` (running, failed test, stale, green, agent and captain refused and cannot confirm, wrong sha, owner override recorded, no-checks project), plus handoff, captain ship, mrs, inbox, admin and tasks suites. Browser on an isolated e2e server at 1440x900 and 1100x800: failed, stale, run checks, merge anyway; no console errors or failed requests.
+- **Left.** MRs merged on the host by CI (`mrs.merge`, `tasks.mergeMrs`) follow the host's own CI, not this rule: they do not merge a task branch locally. Typecheck is not a separate hand-off step, so it is not in the verdict.
+
 ## Home as one list by who holds the ball (built, not merged)
 
 Branch `feat/home-flow`.

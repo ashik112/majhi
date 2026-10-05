@@ -81,6 +81,11 @@ export function createHandoff(w: HandoffWiring): HandoffService {
       return t === undefined ? "" : taskHeads(t);
     },
     ready: async (id) => {
+      // A done task can still be merged (its work was never shipped): its tests and build must run
+      // for the merge rule, and the review-state checks below do not apply to it.
+      if (w.store.tasks.get(id)?.status === "done") {
+        return { ok: true, evidence: "the task is done: the review-state checks do not apply" };
+      }
       const r = await shipReadiness(w, id);
       if (r.ready) return { ok: true, evidence: r.evidence };
       // Resolving a conflict follows the Merge row: where the owner decides, it is the owner's.

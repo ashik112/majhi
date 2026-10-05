@@ -1,4 +1,12 @@
-import { type MergeMethod, type ShipFix, type ShipOption, shipWords, type Task } from "@majhi/shared";
+import {
+  type MergeMethod,
+  mergeCanBeOverridden,
+  mergeVerdictLine,
+  type ShipFix,
+  type ShipOption,
+  shipWords,
+  type Task,
+} from "@majhi/shared";
 import { ArrowRight, ChevronDown, GitBranch, GitMerge, LoaderCircle, Lock, Wrench } from "lucide-react";
 import {
   type CSSProperties,
@@ -44,6 +52,8 @@ export interface ShipChoices {
   pushLocalCommits?: boolean | undefined;
   /** For mergePush: the owner confirmed creating the target branch on the remote. */
   createRemoteBranch?: boolean | undefined;
+  /** For merge and mergePush: the owner merges past a failed check by sending the head the options name. */
+  confirmChecks?: string | undefined;
 }
 /** Runs one Ship action: straight through its command, or through a review card's button. */
 export type RunShip = (
@@ -115,7 +125,11 @@ function placeNear(button: HTMLElement, align: "left" | "right"): CSSProperties 
  */
 export function useDirectShip(task: Task): RunShip {
   const after = useAfterTaskChange();
-  return async (action, target, { method, deleteAfter, pushLocalCommits, createRemoteBranch }) => {
+  return async (
+    action,
+    target,
+    { method, deleteAfter, pushLocalCommits, createRemoteBranch, confirmChecks },
+  ) => {
     if (action === "merge" || action === "mergePush") {
       const out = await cmd("tasks.merge", {
         id: task.id,
@@ -126,6 +140,7 @@ export function useDirectShip(task: Task): RunShip {
         deleteAfter,
         pushLocalCommits: pushLocalCommits === true,
         createRemoteBranch: createRemoteBranch === true,
+        ...(confirmChecks === undefined ? {} : { confirmChecks }),
       });
       await after(out.task);
       return out;
@@ -347,6 +362,16 @@ function ShipPanel({
   const closes = task.status === "review";
   const branch = [...new Set(changed.map((r) => r.branch))].join(", ");
   const created = task.repos.some((r) => r.createdBranch);
+  // The merge rule: a local merge goes through only when the checks are green for this exact commit.
+  const checks = options.data?.checks;
+  const verdict = checks?.verdict;
+  const running = verdict?.kind === "running";
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only the running state starts the polling
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => void options.refetch(), 2_000);
+    return () => clearInterval(timer);
+  }, [running]);
 
   const verb = method === "squash" ? "Squash" : method === "rebase" ? "Rebase" : "Merge";
   const how =
@@ -411,7 +436,11 @@ function ShipPanel({
     return o;
   }
 
-  async function confirm(action: ShipAction, confirmed?: { extra: boolean; create: boolean }) {
+  async function confirm(
+    action: ShipAction,
+    confirmed?: { extra: boolean; create: boolean },
+    confirmChecks?: string,
+  ) {
     setBusy(true);
     setError(undefined);
     setBehind(undefined);
@@ -423,6 +452,7 @@ function ShipPanel({
         deleteAfter: deleting,
         pushLocalCommits: confirmed?.extra,
         createRemoteBranch: confirmed?.create,
+        confirmChecks,
       });
       const list = out.results ?? [];
       // A clean run closes; the room says what merged and, with "delete after", what was deleted.
@@ -437,6 +467,40 @@ function ShipPanel({
       if (remote === undefined && (extra || create)) setAsks({ extra, create });
       setError(message);
     } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Runs the hand-off checks for the head now: the verdict turns to running, then green or red. */
+  async function runChecks() {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await cmd(
+        "handoff.check",
+        { task: task.id, force: false },
+        { reason: "Owner asked to run the checks before merging" },
+      );
+      await options.refetch();
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Sends the failed check back to the task's agent. */
+  async function fixWithAgent(check: string) {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await cmd("room.send", {
+        task: task.id,
+        text: `The ${check} check failed on your latest commit, so it cannot merge. Read the failure with the hand-off tool, fix it and commit.`,
+      });
+      onClose();
+    } catch (err) {
+      setError(describeError(err));
       setBusy(false);
     }
   }
@@ -572,6 +636,19 @@ function ShipPanel({
           {describeError(options.error)}
         </p>
       )}
+      {others && verdict !== undefined && (
+        <p
+          className={cn(
+            "flex items-start gap-1.5 text-xs text-pretty",
+            verdict.kind === "ok" ? "text-fg-faint" : "text-amber",
+          )}
+        >
+          {verdict.kind === "running" && (
+            <LoaderCircle aria-hidden="true" className="mt-0.5 size-3 shrink-0 animate-spin" />
+          )}
+          <span>{mergeVerdictLine(verdict)}</span>
+        </p>
+      )}
       {others && (
         <ul className="m-0 flex list-none flex-col gap-1 p-0">
           {ACTIONS.map((action, i) => {
@@ -676,15 +753,55 @@ function ShipPanel({
             <Button size="sm" variant="ghost" disabled={busy} onClick={() => setChosen(undefined)}>
               Back
             </Button>
-            <Button
-              size="sm"
-              variant={behind === undefined && asks === undefined ? "primary" : "secondary"}
-              disabled={busy}
-              onClick={() => void confirm(chosen)}
-            >
-              {busy && <LoaderCircle aria-hidden="true" className="animate-spin" />}
-              {busy ? "Working" : labels[chosen].confirm}
-            </Button>
+            {MERGES.includes(chosen) &&
+            verdict !== undefined &&
+            checks !== undefined &&
+            verdict.kind !== "ok" ? (
+              <>
+                {verdict.kind === "stale" && (
+                  <Button size="sm" variant="primary" disabled={busy} onClick={() => void runChecks()}>
+                    {busy && <LoaderCircle aria-hidden="true" className="animate-spin" />}
+                    Run checks
+                  </Button>
+                )}
+                {verdict.kind === "failed" && (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={busy}
+                    onClick={() => void fixWithAgent(verdict.check)}
+                  >
+                    Fix with agent
+                  </Button>
+                )}
+                {verdict.kind === "running" && (
+                  <Button size="sm" disabled>
+                    <LoaderCircle aria-hidden="true" className="animate-spin" />
+                    Checks running
+                  </Button>
+                )}
+                {mergeCanBeOverridden(verdict) && verdict.kind === "failed" && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => void confirm(chosen, undefined, checks.head)}
+                  >
+                    Merge anyway (checks failed: {verdict.check})
+                  </Button>
+                )}
+              </>
+            ) : (
+              <Button
+                size="sm"
+                variant={behind === undefined && asks === undefined ? "primary" : "secondary"}
+                disabled={busy}
+                onClick={() => void confirm(chosen)}
+              >
+                {busy && <LoaderCircle aria-hidden="true" className="animate-spin" />}
+                {busy ? "Working" : labels[chosen].confirm}
+              </Button>
+            )}
             {asks !== undefined && !busy && (
               <Button size="sm" variant="primary" onClick={() => void confirm(chosen, asks)}>
                 {asks.extra && asks.create

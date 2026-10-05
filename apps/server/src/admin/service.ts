@@ -1265,6 +1265,9 @@ export function refuseForAgents(command: CommandName, input: Record<string, unkn
   if (command === "tasks.merge" && input.push !== undefined && input.push !== false) {
     return "Agents never push. Merge without push; the owner pushes from Ship.";
   }
+  if (command === "tasks.merge" && input.confirmChecks !== undefined) {
+    return "Agents cannot merge past a failed check. Fix the check and merge again.";
+  }
   if (command === "tasks.remove" && (input.force !== undefined || input.confirm !== undefined)) {
     return "Agents cannot remove a task with force. Say in the room what should go; the owner removes it.";
   }
