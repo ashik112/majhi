@@ -360,8 +360,8 @@ export function McpDetail({
       )}
       {server.lastTest?.ok === false && server.problems.length === 0 && (
         <p className="pt-2 text-sm text-fg-muted text-pretty">
-          Fix: check the address or command in connection settings and that the server is reachable, then
-          Test again.
+          Fix: check the address or command in connection settings and that the server is reachable, then Test
+          again.
         </p>
       )}
       <Section title="About">
