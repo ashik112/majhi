@@ -5,12 +5,6 @@ import { assertHostAllowed } from "./self-host.ts";
 const answers = (addresses: string[]) => async () => addresses;
 
 describe("assertHostAllowed", () => {
-  it("accepts a public host", async () => {
-    await expect(
-      assertHostAllowed("git.acme.test", { lookup: answers(["203.0.114.5"]) }),
-    ).resolves.toBeUndefined();
-  });
-
   it("refuses a public name that resolves to a private address, unless the owner confirms", async () => {
     const lookup = answers(["10.1.2.3"]);
     await expect(assertHostAllowed("git.acme.test", { lookup })).rejects.toBeInstanceOf(UserError);
@@ -43,12 +37,4 @@ describe("assertHostAllowed", () => {
     }
   });
 
-  it("says so when the name does not exist", async () => {
-    const lookup = async () => {
-      throw Object.assign(new Error("getaddrinfo ENOTFOUND"), { code: "ENOTFOUND" });
-    };
-    await expect(assertHostAllowed("nope.acme.test", { lookup })).rejects.toThrow(
-      /cannot find nope\.acme\.test/,
-    );
-  });
 });

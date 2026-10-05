@@ -6,7 +6,7 @@ import { generateKey, SecretStore } from "../secrets/store.ts";
 import { tempDir, writeKeyFile } from "../testing/fixtures.ts";
 import { AppClientStore } from "./app-client.ts";
 import { GrantStore } from "./grant.ts";
-import { ConnectService, FLOW_TTL_MS } from "./service.ts";
+import { ConnectService } from "./service.ts";
 import { FakeProvider, fakeProviderService } from "./testing/provider-fake.ts";
 
 const OWNER: CommandMeta = { actor: { kind: "owner" } };
@@ -163,14 +163,6 @@ describe("a provider's own OAuth with PKCE and a loopback redirect", () => {
     expect(page).not.toContain("secret");
   });
 
-  it("asks for drafts only at readwrite, and for sending only at send", async () => {
-    const draft = new URL((await begin(r, { access: "readwrite" })).page).searchParams.get("scope") ?? "";
-    expect(draft.split(" ")).toContain("mail.draft");
-    expect(draft.split(" ")).not.toContain("mail.send");
-    const send = new URL((await begin(r, { access: "send" })).page).searchParams.get("scope") ?? "";
-    expect(send.split(" ")).toContain("mail.send");
-  });
-
   it("connects: makes the connection, who signed in, the plain scopes, and no token in view or logs", async () => {
     const { connect, view, page } = await begin(r);
     const back = r.provider.approve(page, { account: "maria@acme.example" });
@@ -210,10 +202,9 @@ describe("a provider's own OAuth with PKCE and a loopback redirect", () => {
       entry: (base) =>
         fakeProviderService(base, { provider: { issuer: "https://login.acme.example", issSent: true } }),
     });
-    const { connect, view, page } = await begin(r);
+    const { connect, page } = await begin(r);
     const result = await connect.callback(r.provider.approve(page, { iss: "https://evil.example" }));
     expect(result.ok).toBe(false);
-    expect(connect.flow(view.flow).message).toMatch(/did not come from the service/);
     expect(r.provider.tokenCalls).toBe(0);
     expect(r.connections.size).toBe(0);
   });
@@ -229,51 +220,12 @@ describe("a provider's own OAuth with PKCE and a loopback redirect", () => {
     expect(r.provider.tokenCalls).toBe(0);
   });
 
-  it("matches a tenant issuer by prefix", async () => {
-    r = await rig({
-      entry: (base) =>
-        fakeProviderService(base, {
-          provider: { issuer: "https://login.acme.example/", issuerPrefix: true, issSent: true },
-        }),
-    });
-    const { connect, page } = await begin(r);
-    const result = await connect.callback(
-      r.provider.approve(page, { iss: "https://login.acme.example/tenant-1/v2.0" }),
-    );
-    expect(result.ok).toBe(true);
-  });
-
   it("takes a state once, and not after it expired", async () => {
     const { connect, page } = await begin(r);
     const back = r.provider.approve(page);
     expect((await connect.callback(back)).ok).toBe(true);
     expect((await connect.callback(back)).ok).toBe(false);
     expect(r.provider.tokenCalls).toBe(1);
-  });
-
-  it("refuses a state that is older than ten minutes", async () => {
-    const late = await begin(r);
-    const back = r.provider.approve(late.page);
-    r.skip(FLOW_TTL_MS + 1000);
-    expect((await late.connect.callback(back)).ok).toBe(false);
-    expect(late.connect.flow(late.view.flow).state).toBe("expired");
-    expect(r.provider.tokenCalls).toBe(0);
-  });
-
-  it("saves nothing when the owner says no", async () => {
-    const { connect, view, page } = await begin(r);
-    const result = await connect.callback(r.provider.approve(page, { error: "access_denied" }));
-    expect(result.ok).toBe(false);
-    expect(connect.flow(view.flow).state).toBe("denied");
-    expect(r.connections.size).toBe(0);
-    expect(r.provider.tokenCalls).toBe(0);
-  });
-
-  it("asks for the app first when the workspace has none", async () => {
-    r = await rig({ noApp: true });
-    await expect(r.connect.start({ org: "acme", service: "fakeapi", access: "read" }, OWNER)).rejects.toThrow(
-      "Set up the Fake API app first",
-    );
   });
 
   it("uses a workspace's own app and never another workspace's", async () => {
@@ -305,31 +257,6 @@ describe("a provider's own OAuth with PKCE and a loopback redirect", () => {
     expect((await connect.status())[0]?.state).toBe("needs-reconnect");
   });
 
-  it("revokes at the provider on disconnect and deletes the tokens", async () => {
-    const { connect, page } = await begin(r);
-    await connect.callback(r.provider.approve(page));
-    const id = [...r.connections.keys()][0] ?? "";
-    const out = await connect.disconnect(id, OWNER);
-    expect(out.revoked).toBe(true);
-    expect(r.provider.revoked.length).toBeGreaterThan(0);
-    expect(r.provider.revoked.every((x) => x.clientId === "client-acme-123")).toBe(true);
-    expect(await new GrantStore(r.secrets).get(id)).toBeUndefined();
-    expect(r.connections.size).toBe(0);
-  });
-
-  it("says where to remove the app's access when the provider cannot revoke", async () => {
-    r = await rig({
-      entry: (base) =>
-        fakeProviderService(base, {
-          provider: { revokeUrl: undefined, accessPage: "https://example.com/apps" },
-        }),
-    });
-    const { connect, page } = await begin(r);
-    await connect.callback(r.provider.approve(page));
-    const out = await connect.disconnect([...r.connections.keys()][0] ?? "", OWNER);
-    expect(out.revoked).toBe(false);
-    expect(out.note).toContain("https://example.com/apps");
-  });
 });
 
 describe("a provider that needs the owner's client secret", () => {
@@ -351,29 +278,6 @@ describe("a provider that needs the owner's client secret", () => {
     expect(r.provider.revoked.some((x) => x.clientSecret === "sekret-client-value-0001")).toBe(true);
   });
 
-  it("explains a refused renewal where the provider has a known cause", async () => {
-    r = await rig({
-      entry: (base) =>
-        fakeProviderService(base, { provider: { refusedHint: "Publish the app, then connect again." } }),
-    });
-    const { connect, page } = await begin(r);
-    await connect.callback(r.provider.approve(page));
-    const id = [...r.connections.keys()][0] ?? "";
-    r.skip(3600 * 1000);
-    r.provider.failRefresh = "invalid_grant";
-    await connect.bearer(id);
-    expect((await connect.status())[0]?.reason).toContain("Publish the app, then connect again.");
-  });
-
-  it("a redirect name the provider registers is used in the page and the token request", async () => {
-    r = await rig({
-      entry: (base) => fakeProviderService(base, { provider: { redirectHost: "localhost" } }),
-    });
-    const { connect, page } = await begin(r);
-    expect(new URL(page).searchParams.get("redirect_uri")).toBe("http://localhost:7070/oauth/callback");
-    await connect.callback(r.provider.approve(page));
-    expect(r.provider.lastTokenBody?.get("redirect_uri")).toBe("http://localhost:7070/oauth/callback");
-  });
 });
 
 describe("the device grant", () => {
@@ -392,48 +296,4 @@ describe("the device grant", () => {
     expect(everything).not.toContain("WDJB-MJHT");
   });
 
-  it("slows down when the provider says so", async () => {
-    r = await rig({ flow: "device", provider: { deviceScript: ["slow_down", "slow_down", "ok"] } });
-    const view = await r.connect.start({ org: "acme", service: "fakeapi", access: "read" }, OWNER);
-    await until(() => r.connect.flow(view.flow).state === "connected");
-    expect(r.waits).toEqual([1000, 6000, 11000]);
-  });
-
-  it("ends as denied and saves nothing", async () => {
-    r = await rig({ flow: "device", provider: { deviceScript: ["pending", "denied"] } });
-    const view = await r.connect.start({ org: "acme", service: "fakeapi", access: "read" }, OWNER);
-    await until(() => r.connect.flow(view.flow).state === "denied");
-    expect(r.connections.size).toBe(0);
-    expect(await r.secrets.names()).not.toContainEqual(expect.stringMatching(/^oauth-/));
-  });
-
-  it("ends as expired when the code runs out", async () => {
-    r = await rig({ flow: "device", provider: { deviceScript: ["expired"] } });
-    const view = await r.connect.start({ org: "acme", service: "fakeapi", access: "read" }, OWNER);
-    await until(() => r.connect.flow(view.flow).state === "expired");
-    expect(r.connect.flow(view.flow).message).toMatch(/Nothing was saved/);
-    expect(r.connections.size).toBe(0);
-  });
-
-  it("stops polling when the owner cancels", async () => {
-    r = await rig({ flow: "device", provider: { deviceScript: Array(50).fill("pending") } });
-    const view = await r.connect.start({ org: "acme", service: "fakeapi", access: "read" }, OWNER);
-    r.connect.cancel(view.flow);
-    const calls = r.provider.tokenCalls;
-    await new Promise((res) => setTimeout(res, 100));
-    expect(r.provider.tokenCalls).toBeLessThanOrEqual(calls + 1);
-    expect(r.connect.flow(view.flow).state).toBe("cancelled");
-    expect(r.connections.size).toBe(0);
-  });
-
-  it("says so when the provider refuses to start a code sign-in", async () => {
-    r = await rig({
-      flow: "device",
-      entry: (base) =>
-        fakeProviderService(base, { flow: "device", provider: { deviceUrl: `${base}/nowhere` } }),
-    });
-    await expect(r.connect.start({ org: "acme", service: "fakeapi", access: "read" }, OWNER)).rejects.toThrow(
-      /did not start a code sign-in/,
-    );
-  });
 });

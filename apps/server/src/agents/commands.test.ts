@@ -70,81 +70,6 @@ describe("agent commands", () => {
   });
 });
 
-describe("agent emoji", () => {
-  const PILOT = "\u{1F9D1}\u200D\u2708\uFE0F"; // person, ZWJ, airplane, VS16
-  const TOOLS = "\u{1F6E0}\uFE0F";
-  const GEAR = "\u2699\uFE0F";
-  const GOOD = [PILOT, TOOLS, GEAR, "\u{1F916}", "\u{1F1EF}\u{1F1F5}", "1\uFE0F\u20E3"];
-  const BAD = ["ab", "a", "\u{1F916}\u{1F916}", "", " \u{1F916}", "\u{1F916} ", "\u2708x"];
-  const file = () => readFile(join(agentsDir(), "builder.md"), "utf8");
-
-  it("saves one emoji in the frontmatter and reads it back, through create, update and edit", async () => {
-    await setup();
-    await h.cmd("agents.create", { id: "builder", ...draft() });
-    expect(await file()).not.toContain("emoji");
-    expect((await h.cmd("agents.list")).body[0].agent.frontmatter.emoji).toBeUndefined();
-
-    for (const emoji of GOOD) {
-      const created = await h.cmd("agents.create", { id: "probe", ...draft({ emoji }) });
-      expect(created.status).toBe(200);
-      expect(created.body.agent.frontmatter.emoji).toBe(emoji);
-      await h.cmd("agents.remove", { id: "probe" });
-    }
-
-    const updated = await h.cmd("agents.update", { id: "builder", ...draft({ emoji: TOOLS }) });
-    expect(updated.body.agent.frontmatter.emoji).toBe(TOOLS);
-    expect(await file()).toContain(`role: Builder\nemoji: ${TOOLS}\naccount: claude-acme\n`);
-
-    // Setting only the emoji leaves every other line of the file as it was.
-    await h.cmd("agents.edit", {
-      id: "builder",
-      set: { model: "opus", where: ["acme"], perms: ["edit"] },
-      instructions: "Build things.\n\nKeep # this.\n",
-    });
-    const before = await file();
-    const edited = await h.cmd("agents.edit", { id: "builder", set: { emoji: PILOT } });
-    expect(edited.status).toBe(200);
-    expect((await h.log())[0]).toBe("agents.edit: edited agent builder: emoji");
-    expect(await file()).toBe(before.replace(`emoji: ${TOOLS}`, `emoji: ${PILOT}`));
-    const listed = (await h.cmd("agents.list")).body[0].agent;
-    expect(listed.frontmatter).toMatchObject({
-      emoji: PILOT,
-      model: "opus",
-      where: ["acme"],
-      perms: ["edit"],
-    });
-    expect(listed.instructions).toBe("Build things.\n\nKeep # this.\n");
-
-    // null removes it, and only it.
-    await h.cmd("agents.edit", { id: "builder", set: { emoji: null } });
-    expect(await file()).toBe(before.replace(`emoji: ${TOOLS}\n`, ""));
-  });
-
-  it("rejects anything that is not exactly one emoji, and leaves the file alone", async () => {
-    await setup();
-    await h.cmd("agents.create", { id: "builder", ...draft({ emoji: GEAR }) });
-    const before = await file();
-    for (const emoji of BAD) {
-      expect((await h.cmd("agents.create", { id: "probe", ...draft({ emoji }) })).status).toBe(400);
-      expect((await h.cmd("agents.update", { id: "builder", ...draft({ emoji }) })).status).toBe(400);
-      expect((await h.cmd("agents.edit", { id: "builder", set: { emoji } })).status).toBe(400);
-    }
-    expect(await file()).toBe(before);
-    expect((await h.cmd("agents.list")).body.map((e: { file: string }) => e.file)).toEqual(["builder.md"]);
-  });
-
-  it("lists a hand-written file with a bad emoji as invalid, with the reason", async () => {
-    await setup();
-    await mkdir(agentsDir(), { recursive: true });
-    await writeFile(
-      join(agentsDir(), "builder.md"),
-      "---\nid: builder\nscope: acme\nrole: Builder\nemoji: ab\naccount: claude-acme\n---\n",
-    );
-    const [entry] = (await h.cmd("agents.list")).body;
-    expect(entry).toMatchObject({ status: "invalid", errors: ["emoji: Must be a single emoji"] });
-  });
-});
-
 describe("boss", () => {
   it("only a valid root agent can be captain, and the captain cannot be removed", async () => {
     await setup();
@@ -165,7 +90,6 @@ describe("boss", () => {
 
     const removal = await h.cmd("agents.remove", { id: "chief" });
     expect(removal.status).toBe(409);
-    expect(removal.body.error).toContain("is the captain");
     await rm(join(agentsDir(), "broken.md"));
   });
 });

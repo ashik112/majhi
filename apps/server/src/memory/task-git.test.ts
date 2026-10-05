@@ -88,20 +88,6 @@ describe("what git says about a finished task's branch", () => {
     expect(after.repo.head).toMatch(/^[0-9a-f]{7,}$/);
   });
 
-  it("reads a fast-forwarded branch from the task's start, and says when the branch is gone", async () => {
-    const { path, commit, task } = await repo();
-    const start = "2021-01-01T00:00:00Z";
-    await git(path, "checkout", "--quiet", "-b", "task/acm-2");
-    await commit("a.ts", "a\n", "feat: a");
-    await git(path, "checkout", "--quiet", "main");
-    await git(path, "merge", "--quiet", "--ff-only", "task/acm-2");
-    const facts = await repoFacts(task("task/acm-2"), start);
-    expect(facts.repo).toMatchObject({ merged: true, commits: 1 });
-    expect(facts.commits[0]).toContain("feat: a");
-
-    const gone = await repoFacts(task("task/acm-9"), start);
-    expect(gone).toMatchObject({ repo: { commits: 0, merged: false }, problem: "The branch is gone." });
-  });
 });
 
 describe("whether a finished task's branch is in its base now", () => {

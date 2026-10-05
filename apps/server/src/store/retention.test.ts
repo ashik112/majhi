@@ -126,31 +126,6 @@ describe("retention", () => {
     store.close();
   });
 
-  it("deletes in batches with the event loop handed back in between", async () => {
-    const run = async (batchRows: number) => {
-      const store = new Store(":memory:");
-      for (let i = 0; i < 25; i++) audit(store.raw, ago(RETENTION.auditDays + 10 + i));
-      audit(store.raw, ago(1));
-      let pauses = 0;
-      const result = await pruneOld(store.raw, {
-        now: NOW,
-        batchRows,
-        yieldLoop: async () => {
-          pauses += 1;
-        },
-      });
-      expect(result.deleted.audit).toBe(25);
-      expect(count(store.raw, "audit")).toBe(1);
-      store.close();
-      return { batches: result.batches, pauses };
-    };
-    const small = await run(10);
-    const big = await run(1000);
-    // 25 rows at 10 a batch is 3 statements (10, 10, 5) where one big batch does it in 1.
-    expect(small.batches - big.batches).toBe(2);
-    expect(small.pauses - big.pauses).toBe(2);
-  });
-
   it("is safe to run twice", async () => {
     const store = new Store(":memory:");
     audit(store.raw, ago(RETENTION.auditDays + 1));

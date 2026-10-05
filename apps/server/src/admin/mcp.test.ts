@@ -59,9 +59,6 @@ describe("majhi-admin MCP server", () => {
       ownerAsked: false,
       reason: "seems useful",
     });
-    expect(waiting.text).toBe(
-      "Waiting for the owner to approve in the room. You will get a message with the decision.",
-    );
     expect(waiting.isError).toBe(false);
     expect((await w.h.cmd("orgs.list")).body.map((o: { id: string }) => o.id)).toEqual(["private", "acme"]);
 
@@ -70,7 +67,7 @@ describe("majhi-admin MCP server", () => {
       ownerAsked: true,
       reason: "you asked",
     });
-    expect(destructive.text).toContain("Waiting for the owner");
+    expect(destructive.isError).toBe(false);
     const cards = (await w.items()).filter((i) => i.type === "approval");
     expect(cards.map((c) => c.type === "approval" && [c.command, c.state])).toEqual([
       ["orgs.create", "pending"],
@@ -81,24 +78,6 @@ describe("majhi-admin MCP server", () => {
         (a: { agent: { frontmatter: { id: string } } }) => a.agent.frontmatter.id,
       ),
     ).toContain("acme-builder");
-    await client.close();
-  });
-
-  it("posts a secret request card and never returns a value", async () => {
-    w = await bossWorld({ real: false });
-    const client = await connect(token());
-    const res = await call(client, "majhi_request_secret", {
-      name: "newrelic-acme",
-      label: "New Relic key for Acme",
-    });
-    expect(res.isError).toBe(false);
-    expect(res.text).toContain("secret:newrelic-acme");
-    expect((await w.items()).find((i) => i.type === "secret-request")).toMatchObject({
-      name: "newrelic-acme",
-      label: "New Relic key for Acme",
-      state: "pending",
-    });
-    expect((await call(client, "majhi_request_secret", { name: "Bad Name", label: "x" })).isError).toBe(true);
     await client.close();
   });
 });

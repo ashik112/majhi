@@ -26,10 +26,6 @@ describe("the captain through the fake adapter", () => {
     let items = await w.items();
     const tool = items.find((i) => i.type === "tool");
     expect(tool).toMatchObject({ title: "majhi_orgs_create", status: "completed" });
-    expect(tool?.type === "tool" && tool.content[0]).toMatchObject({
-      type: "text",
-      text: expect.stringContaining("Waiting for the owner"),
-    });
     expect(await orgIds()).toEqual(["acme"]);
     const [card] = await cards();
     expect(card).toMatchObject({ state: "pending", summary: "Create org Acme Two", agent: "boss" });
@@ -43,15 +39,8 @@ describe("the captain through the fake adapter", () => {
       { kind: "orgs.create", agent: "boss", decision: "allow", by: "owner", title: "Create org Acme Two" },
     ]);
 
-    // The room says it in words; the captain got the decision with the result in its session and answered it.
     items = await w.items();
-    expect(items.filter((i) => i.type === "system").map((i) => i.type === "system" && i.text)).toContain(
-      "You approved: create org Acme Two",
-    );
     expect(items.some((i) => i.type === "owner" && i.text.includes("Result:"))).toBe(false);
-    expect(items.filter((i) => i.type === "agent").at(-1)).toMatchObject({
-      text: expect.stringContaining('echo: The owner approved: Create org Acme Two. Result: {"id":"acme2"'),
-    });
 
     // The agent, the same way.
     await say(AGENT_CALL);

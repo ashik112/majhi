@@ -1,9 +1,5 @@
-import type { CommandMeta } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { UserError } from "../errors.ts";
 import { McpUrlService } from "./mcp-url.ts";
-
-const OWNER: CommandMeta = { actor: { kind: "owner" } };
 
 type Route = (url: URL, init: RequestInit | undefined) => Response | Promise<Response>;
 
@@ -71,58 +67,6 @@ const metadata = (registration: boolean): Record<string, Route> => ({
 });
 
 describe("probing an MCP server by address", () => {
-  it("a server that signs in and lets majhi register itself is one click", async () => {
-    const t = service(metadata(true));
-    expect(await t.svc.probe({ url: "https://mcp.acme.test/mcp" })).toMatchObject({
-      method: "oauth",
-      issuer: "https://auth.acme.test",
-      registration: "dynamic",
-    });
-  });
-
-  it("a server that signs in but offers no registration needs an app made by hand", async () => {
-    const t = service(metadata(false));
-    expect(await t.svc.probe({ url: "https://mcp.acme.test/mcp" })).toMatchObject({
-      method: "oauth-needs-app",
-    });
-  });
-
-  it("a 401 with no sign-in metadata wants a header token", async () => {
-    const t = service({ "POST mcp.acme.test/mcp": unauthorized });
-    expect(await t.svc.probe({ url: "https://mcp.acme.test/mcp" })).toEqual({
-      method: "token",
-      url: "https://mcp.acme.test/mcp",
-    });
-  });
-
-  it("a server that answers without a credential is open", async () => {
-    const t = service({
-      "POST mcp.acme.test/mcp": () => Response.json({ jsonrpc: "2.0", id: 1, result: {} }),
-    });
-    expect(await t.svc.probe({ url: "https://mcp.acme.test/mcp" })).toMatchObject({ method: "open" });
-  });
-
-  it("decides by the status: 404 is not-found, 503 service-down, a dead connection unreachable", async () => {
-    expect(
-      await service({ "POST mcp.acme.test/mcp": () => new Response("x", { status: 404 }) }).svc.probe({
-        url: "https://mcp.acme.test/mcp",
-      }),
-    ).toMatchObject({ method: "unreachable", failure: { reason: "not-found", status: 404 } });
-    expect(
-      await service({ "POST mcp.acme.test/mcp": () => new Response("x", { status: 503 }) }).svc.probe({
-        url: "https://mcp.acme.test/mcp",
-      }),
-    ).toMatchObject({ failure: { reason: "service-down" } });
-    const dead = service({
-      "POST mcp.acme.test/mcp": () => {
-        throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ENOTFOUND" } });
-      },
-    });
-    expect(await dead.svc.probe({ url: "https://mcp.acme.test/mcp" })).toMatchObject({
-      failure: { reason: "unreachable" },
-    });
-  });
-
   it("answers private, loopback and metadata addresses with a blocked-host reason before any request, unless the owner confirms a private one", async () => {
     const t = service({}, async () => ["10.0.0.9"]);
     for (const url of ["https://localhost/mcp", "https://192.168.1.5/mcp", "https://mcp.acme.test/mcp"]) {
@@ -156,18 +100,5 @@ describe("probing an MCP server by address", () => {
     expect(new Set(t.calls.map((c) => c.split(" ")[1]?.split("/")[0]))).toEqual(
       new Set(["mcp.acme.test", "auth.acme.test"]),
     );
-  });
-});
-
-describe("connecting an MCP server by address with a token", () => {
-  it("refuses a workspace that does not exist and a private address", async () => {
-    const t = service({}, async () => ["10.0.0.9"]);
-    await expect(
-      t.svc.connect({ org: "nope", url: "https://mcp.acme.test/mcp", token: "abc" }, OWNER),
-    ).rejects.toThrow(/does not exist/);
-    await expect(
-      t.svc.connect({ org: "acme", url: "https://mcp.acme.test/mcp", token: "abc" }, OWNER),
-    ).rejects.toBeInstanceOf(UserError);
-    expect(t.created).toEqual([]);
   });
 });

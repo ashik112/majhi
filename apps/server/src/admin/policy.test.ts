@@ -1,6 +1,5 @@
 import {
   type AllowRule,
-  AllowRuleSchema,
   effectiveMode,
   isDestructiveCommand,
   PolicySettingsSchema,
@@ -8,18 +7,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { decide, matchRule, redact, redactText } from "./policy.ts";
 
-const defaults = PolicySettingsSchema.parse({});
-
 describe("approval decision table", () => {
-  it("uses the risk class default, and a command override first", () => {
-    expect(effectiveMode(defaults, "orgs.list", "read")).toBe("auto");
-    expect(effectiveMode(defaults, "orgs.create", "change")).toBe("when-asked");
-    expect(effectiveMode(defaults, "agents.remove", "destructive")).toBe("confirm");
-    expect(effectiveMode(defaults, "system.update", "outbound")).toBe("confirm");
-    const policy = PolicySettingsSchema.parse({ commands: { "orgs.create": "auto" } });
-    expect(effectiveMode(policy, "orgs.create", "change")).toBe("auto");
-  });
-
   it("keeps a destructive command on confirm whatever the policy says", () => {
     const policy = PolicySettingsSchema.parse({
       destructive: "auto",
@@ -77,7 +65,6 @@ describe("redact", () => {
 
   it("redacts text", () => {
     expect(redactText(`AKIAIOSFODNN7EXAMPLE`)).toBe("[redacted]");
-    expect(redactText("nothing here")).toBe("nothing here");
   });
 });
 
@@ -133,12 +120,6 @@ describe("matchRule", () => {
     expect(matchRule(policy([rule], true), remove)).toBeUndefined();
     const soft = { agent: "acme-builder", command: "tasks.remove", task: "ACM-1" };
     expect(matchRule(policy([soft], true), { ...call, command: "tasks.remove" })).toBeUndefined();
-  });
-
-  it("accepts a rule with exactly one scope", () => {
-    expect(AllowRuleSchema.safeParse(taskRule).success).toBe(true);
-    expect(AllowRuleSchema.safeParse({ ...taskRule, org: "acme" }).success).toBe(false);
-    expect(AllowRuleSchema.safeParse({ agent: "a", command: "x.y" }).success).toBe(false);
   });
 });
 

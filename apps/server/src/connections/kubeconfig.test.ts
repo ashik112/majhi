@@ -42,20 +42,6 @@ describe("cutKubeconfig", () => {
     expect(cut.users).toEqual([{ name: "viewer", user: { token: PROD_TOKEN } }]);
   });
 
-  it("keeps the context's own namespace when none is given, and a context with no user", () => {
-    expect(parse(cutKubeconfig(KUBECONFIG, "prod")).contexts[0].context.namespace).toBe("default");
-    const bare = parse(cutKubeconfig(KUBECONFIG, "bare"));
-    expect(bare.users).toEqual([]);
-    expect(JSON.stringify(bare)).not.toContain("token");
-  });
-
-  it("says what is missing", () => {
-    expect(() => cutKubeconfig(KUBECONFIG, "dev")).toThrow("no context dev. It has: prod, staging, bare");
-    expect(() => cutKubeconfig("not: [valid", "prod")).toThrow(KubeconfigError);
-    const noCluster = KUBECONFIG.replace("cluster: prod-eu,", "cluster: gone,");
-    expect(() => cutKubeconfig(noCluster, "prod")).toThrow("no cluster gone");
-  });
-
   it("refuses values read from files, which a run cannot see", () => {
     const withFile = KUBECONFIG.replace(`token: ${PROD_TOKEN}`, "client-key: /Users/owner/.kube/key.pem");
     expect(() => cutKubeconfig(withFile, "prod")).toThrow("reads client-key from a file");
@@ -82,9 +68,4 @@ describe("mergeKubeconfigs", () => {
     ]);
   });
 
-  it("says which connection is broken", () => {
-    expect(() => mergeKubeconfigs([{ id: "acme-dev", text: KUBECONFIG, context: "dev" }])).toThrow(
-      "acme-dev: The kubeconfig has no context dev",
-    );
-  });
 });

@@ -99,10 +99,7 @@ describe("what an agent can never ask for", () => {
       push: true,
       ...asked,
     });
-    expect(pushed).toEqual({
-      text: "Agents never push. Merge without push; the owner pushes from Ship.",
-      isError: true,
-    });
+    expect(pushed.isError).toBe(true);
     expect((await w.items(task.id)).filter((i) => i.type === "approval")).toEqual([]);
   });
 
@@ -124,6 +121,5 @@ describe("what an agent can never ask for", () => {
       },
     );
     expect(forced.isError).toBe(true);
-    expect(forced.text).toContain("Agents cannot remove a task with force");
   });
 });

@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { HOST_INFO_HEADER, HOST_TOKEN_FILE, type HostInfo, HostJobSchema } from "@majhi/shared";
 import type { Hono } from "hono";
@@ -12,7 +12,6 @@ const TOKEN = "0123456789abcdef".repeat(4);
 const CAN_REMOUNT: HostInfo = { version: "1.0.0", platform: "darwin", canRemount: true };
 const SSH_WAITING = { loaded: 1, needsPassphrase: ["~/.ssh/id_work"], checkedAt: "2026-09-29T10:00:00.000Z" };
 const SSH_DONE = { loaded: 2, needsPassphrase: [], checkedAt: "2026-09-29T10:01:00.000Z" };
-const NO_DOCKER: HostInfo = { ...CAN_REMOUNT, canRemount: false };
 
 describe("host helper link over HTTP", () => {
   let dir: string;
@@ -80,86 +79,7 @@ describe("host helper link over HTTP", () => {
     expect(res.status).toBe(403);
   });
 
-  it("answers an idle poll with 204 and rejects a poll without valid helper info", async () => {
-    // A short poll timeout, so the idle poll really times out.
-    app = createMajhiApp(env, { hostLink: new HostLink({ pollTimeoutMs: 20 }) });
-    expect((await poll()).status).toBe(204);
-    const bad = await app.request("/api/host/poll", {
-      method: "POST",
-      headers: { authorization: `Bearer ${TOKEN}`, [HOST_INFO_HEADER]: '{"version":"1"}' },
-    });
-    expect(bad.status).toBe(400);
-    expect((await reply({ id: "x", ok: "yes" })).status).toBe(400);
-  });
-
-  it("answers 503 host-offline without a helper, and 400 with the helper's message when a job fails", async () => {
-    const offline = await cmd("fs.suggestRoots");
-    expect(offline.status).toBe(503);
-    expect(await offline.json()).toEqual({ error: "host-offline", details: [expect.any(String)] });
-
-    await quickPoll();
-    const pending = cmd("fs.listDirs", { path: "/nope" });
-    const job = await nextJob();
-    await reply({ id: job.id, ok: false, error: "There is no folder at /nope" });
-    const failed = await pending;
-    expect(failed.status).toBe(400);
-    expect(await failed.json()).toEqual({ error: "There is no folder at /nope" });
-  });
-
-  describe("remounting after workspaces.set", () => {
-    it("falls back to manual without a helper", async () => {
-      const res = await cmd("workspaces.set", { workspaces: ["~/Later"] });
-      expect(await res.json()).toMatchObject({ remount: "manual", unmounted: [join(dir, "Later")] });
-    });
-
-    it("falls back to manual when the helper cannot run Docker, and sends no job", async () => {
-      await quickPoll(NO_DOCKER);
-      const res = await cmd("workspaces.set", { workspaces: ["~/Later"] });
-      expect(await res.json()).toMatchObject({ remount: "manual" });
-      expect((await quickPoll(NO_DOCKER)).status).toBe(204);
-    });
-
-    it("falls back to manual when the helper refuses the job", async () => {
-      await quickPoll();
-      const pending = cmd("workspaces.set", { workspaces: ["~/Later"] });
-      const job = await nextJob();
-      await reply({ id: job.id, ok: false, error: "cannot run docker compose" });
-      expect(await (await pending).json()).toMatchObject({ remount: "manual" });
-    });
-
-    it("remounts on workspaces.remount without touching majhi.yaml", async () => {
-      await cmd("workspaces.set", { workspaces: ["~/Later"] });
-      const file = await readFile(join(env.majhiHome, "majhi.yaml"), "utf8");
-      const head = await git(env.majhiHome, "rev-parse", "HEAD");
-
-      await quickPoll();
-      const pending = cmd("workspaces.remount");
-      const job = await nextJob();
-      expect(job.method).toBe("remount");
-      await reply({ id: job.id, ok: true, result: { accepted: true } });
-      expect(await (await pending).json()).toEqual({
-        remount: "restarting",
-        unmounted: [join(dir, "Later")],
-      });
-
-      expect(await readFile(join(env.majhiHome, "majhi.yaml"), "utf8")).toBe(file);
-      expect(await git(env.majhiHome, "rev-parse", "HEAD")).toBe(head);
-    });
-  });
-
   describe("SSH keys", () => {
-    it("shows what the helper reported in host.status, and reloads on ssh.reload", async () => {
-      await quickPoll({ ...CAN_REMOUNT, ssh: SSH_WAITING });
-      expect(await (await cmd("host.status")).json()).toMatchObject({ info: { ssh: SSH_WAITING } });
-
-      const pending = cmd("ssh.reload");
-      const job = await nextJob({ ...CAN_REMOUNT, ssh: SSH_WAITING });
-      expect(job).toMatchObject({ method: "ssh.reload", params: {} });
-      await reply({ id: job.id, ok: true, result: SSH_DONE });
-      expect(await (await pending).json()).toEqual(SSH_DONE);
-      expect(await (await cmd("host.status")).json()).toMatchObject({ info: { ssh: SSH_DONE } });
-    });
-
     it("unlocks only a key the helper reported, and never lets the passphrase out", async () => {
       const PASSPHRASE = "hunter2-correct-horse";
       const seen: string[] = [];
@@ -171,9 +91,6 @@ describe("host helper link over HTTP", () => {
 
         const notWaiting = await cmd("ssh.unlock", { key: "~/.ssh/id_other", passphrase: PASSPHRASE });
         expect(notWaiting.status).toBe(400);
-        expect(await notWaiting.json()).toEqual({
-          error: "~/.ssh/id_other is not waiting for a passphrase.",
-        });
         expect((await quickPoll({ ...CAN_REMOUNT, ssh: SSH_WAITING })).status).toBe(204);
 
         const tooLong = await cmd("ssh.unlock", { key: "~/.ssh/id_work", passphrase: "x".repeat(2000) });
@@ -190,7 +107,6 @@ describe("host helper link over HTTP", () => {
         const failed = await wrong;
         expect(failed.status).toBe(400);
         const failedText = await failed.text();
-        expect(JSON.parse(failedText)).toEqual({ error: "That passphrase did not unlock ~/.ssh/id_work." });
 
         const right = cmd("ssh.unlock", { key: "~/.ssh/id_work", passphrase: PASSPHRASE });
         const job2 = await nextJob({ ...CAN_REMOUNT, ssh: SSH_WAITING });

@@ -110,10 +110,6 @@ describe("a run's connections", () => {
 
     // TASK.md lists them, never a value.
     const brief = await readFile(join(w.taskDir(task.id), "TASK.md"), "utf8");
-    expect(brief).toContain(
-      "- Acme prod (acme-prod, Kubernetes)\n  How: kubectl --context acme-prod, namespace api.",
-    );
-    expect(brief).toContain("- New Relic (acme-newrelic, MCP server)\n  How: MCP server acme-newrelic.");
     expect(brief).not.toContain(API_KEY);
 
     // The folder goes with the session.

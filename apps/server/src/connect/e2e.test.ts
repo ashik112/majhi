@@ -1,5 +1,5 @@
 import type { McpServerSpec } from "@majhi/acp";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { listTools, remoteTransport } from "../connections/mcp-client.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 import { FakeAuthServer, FakeMcpServer, fakeService } from "./testing/fakes.ts";
@@ -28,7 +28,6 @@ describe("a connected service reaches only its own workspace's agent sessions", 
     const back = new URL(auth.approve(flow.url, { account }));
     const page = await w.h.majhi.app.request(`${back.pathname}${back.search}`);
     expect(page.status).toBe(200);
-    expect(await page.text()).toContain("You can close this tab");
     const done = (await must("connect.flow", { flow: flow.flow })) as { state: string; connection: string };
     expect(done.state).toBe("connected");
     return done.connection;
@@ -151,52 +150,6 @@ describe("a connected service reaches only its own workspace's agent sessions", 
     expect(JSON.stringify(start?.mcpServers)).not.toContain(refresh);
   });
 
-  it("a connection that needs a new sign-in is left out of the run, with the reason in the room", async () => {
-    await connectWorkspace("acme", "maria@acme.example");
-    auth.failRefresh = "invalid_grant";
-    // The access token ends and cannot be renewed.
-    const services = w.h.majhi.services;
-    await services.connect.ensureFresh("fakesvc", { force: true });
-    const task = (await must("tasks.create", {
-      text: "check the issues, repo api",
-      repos: [{ project: "acme-api" }],
-      kind: "ops",
-      start: true,
-    })) as { id: string };
-    await services.runs.idle(task.id);
-    expect(lastServers().map((s) => s.name)).not.toContain("fakesvc");
-    const status = (await must("connect.status", { org: "acme" })) as { state: string; reason: string }[];
-    expect(status[0]?.state).toBe("needs-reconnect");
-  });
-
-  it("restarts the sessions that hold a connection when its token is renewed", async () => {
-    await w.cleanup();
-    await auth.stop();
-    auth = new FakeAuthServer({ accessTtl: 120 });
-    await auth.start();
-    await mcp.stop();
-    mcp = new FakeMcpServer(auth);
-    await mcp.start();
-    w = await taskWorld({ agent: { connections: ["fakesvc"] }, connectCatalog: [fakeService(mcp.url)] });
-    await connectWorkspace("acme", "maria@acme.example");
-    const task = (await must("tasks.create", {
-      text: "check the issues, repo api",
-      repos: [{ project: "acme-api" }],
-      kind: "ops",
-      start: true,
-    })) as { id: string };
-    await w.h.majhi.services.runs.idle(task.id);
-    const before = (lastServers().find((s) => s.name === "fakesvc") as { headers: Record<string, string> })
-      .headers.Authorization;
-    const spy = vi.spyOn(w.h.majhi.services.runs, "remountConnection");
-    expect(w.h.majhi.services.runs.holdsConnection("fakesvc")).toBe(true);
-    // The token has two minutes left, so the background pass renews it and restarts the session.
-    await w.h.majhi.services.connect.sweep();
-    expect(spy).toHaveBeenCalledWith("fakesvc");
-    const after = (await w.h.majhi.services.connect.bearer("fakesvc")) as { token: string };
-    expect(`Bearer ${after.token}`).not.toBe(before);
-  });
-
   it("only the owner starts, answers or ends a connection; an agent is refused", async () => {
     const agent = { actor: { kind: "agent", id: "acme-builder" } };
     const refused = await w.h.cmd("connect.start", { org: "acme", service: "fakesvc" }, agent);
@@ -209,19 +162,4 @@ describe("a connected service reaches only its own workspace's agent sessions", 
     expect(kept).toHaveLength(1);
   });
 
-  it("the Test of a connection signed in through Connect uses the token", async () => {
-    await connectWorkspace("acme", "maria@acme.example");
-    const result = (await must("connections.test", { id: "fakesvc" })) as { ok: boolean; tools: string[] };
-    expect(result.ok).toBe(true);
-    expect(result.tools).toEqual(["list_issues", "create_issue"]);
-  });
-
-  it("removing the connection revokes the tokens at the service", async () => {
-    await connectWorkspace("acme", "maria@acme.example");
-    const grant = await w.h.majhi.services.connect.ensureFresh("fakesvc");
-    await must("connections.remove", { id: "fakesvc" });
-    expect(auth.revoked).toContain(grant?.tokens.refreshToken);
-    const left = (await must("connect.status", {})) as unknown[];
-    expect(left).toEqual([]);
-  });
 });

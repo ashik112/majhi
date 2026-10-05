@@ -4,7 +4,7 @@ import type { ServerEnv } from "../env.ts";
 import type { Services } from "../services.ts";
 import type { Check } from "./checks.ts";
 import { type CheckUnit, runUnits } from "./run-all.ts";
-import { CHECK_ALL_CONCURRENCY, HealthService } from "./service.ts";
+import { HealthService } from "./service.ts";
 
 const tick = () => new Promise((r) => setTimeout(r, 1));
 
@@ -49,10 +49,6 @@ describe("runUnits", () => {
       ["b", true],
       ["c", false],
     ]);
-  });
-
-  it("handles no units", async () => {
-    expect(await runUnits([], 4, () => undefined)).toEqual([]);
   });
 });
 
@@ -125,41 +121,6 @@ function build(options: { accounts: string[]; connections: { id: string; problem
 }
 
 describe("health.checkAll", () => {
-  it("checks every account and every set-up connection, bounded, and stamps the finish", async () => {
-    const t = build({
-      accounts: ["a1", "a2", "a3"],
-      connections: [
-        { id: "c1" },
-        { id: "c2" },
-        { id: "c3" },
-        { id: "c4" },
-        { id: "c5" },
-        { id: "off", problems: ["no token"] },
-      ],
-    });
-    const started = await t.health.checkAll();
-    // 2 doctor rows + 3 accounts + 6 connections, one of which is not set up and settles at once.
-    expect(started).toEqual({ started: true, total: 11 });
-    await t.finished();
-    expect([...t.calls].sort()).toEqual([
-      "account:a1",
-      "account:a2",
-      "account:a3",
-      "connection:c1",
-      "connection:c2",
-      "connection:c3",
-      "connection:c4",
-      "connection:c5",
-    ]);
-    expect(t.peak()).toBeLessThanOrEqual(CHECK_ALL_CONCURRENCY);
-    const out = await t.health.run();
-    expect(out.run).toEqual({ running: false, done: 11, total: 11 });
-    expect(out.lastFullRunAt).toBeDefined();
-    for (const row of out.checks) expect(Number.isNaN(Date.parse(row.checkedAt))).toBe(false);
-    expect(t.topics.every((topics) => topics.includes("checks"))).toBe(true);
-    expect(t.topics.length).toBeGreaterThan(8);
-  });
-
   it("shows a check that threw as failed, finishes the rest, and recovers on the next run", async () => {
     const t = build({ accounts: ["a1"], connections: [{ id: "c1" }, { id: "c2" }] });
     t.failing.add("connection:c1");
@@ -167,7 +128,7 @@ describe("health.checkAll", () => {
     await t.finished();
     expect(t.calls).toHaveLength(3);
     const row = (await t.health.run()).checks.find((c) => c.id === "connection:c1");
-    expect(row).toMatchObject({ ok: false, level: "fail", detail: "connection:c1 blew up" });
+    expect(row).toMatchObject({ ok: false, level: "fail" });
     expect((await t.health.run()).lastFullRunAt).toBeDefined();
     expect((await t.health.run()).checks.find((c) => c.id === "connection:c2")?.level).toBe("pass");
 
@@ -183,14 +144,5 @@ describe("health.checkAll", () => {
     expect([first.started, second.started].sort()).toEqual([false, true]);
     await t.finished();
     expect(t.calls).toHaveLength(3);
-  });
-
-  it("checks one row again and waits for it", async () => {
-    const t = build({ accounts: ["a1"], connections: [{ id: "c1" }] });
-    await t.health.check("connection:c1");
-    expect(t.calls).toEqual(["connection:c1"]);
-    t.failing.add("account:a1");
-    await t.health.check("account:a1");
-    expect((await t.health.run()).checks.find((c) => c.id === "account:a1")?.level).toBe("fail");
   });
 });

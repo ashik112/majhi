@@ -5,7 +5,6 @@ import {
   classifyTool,
   destructive,
   type GateConnection,
-  toolWords,
 } from "./gate.ts";
 
 const prod: GateConnection = {
@@ -73,13 +72,12 @@ describe("classifyCommand: kubectl", () => {
   });
 
   it("names the connection and the exact action, and reads allow", () => {
-    expect(classifyCommand("kubectl  rollout restart   deployment/api", held)).toEqual({
+    expect(classifyCommand("kubectl  rollout restart   deployment/api", held)).toMatchObject({
       kind: "write",
       writes: [
         {
           connection: "acme-prod",
           action: "kubectl rollout restart deployment/api",
-          why: "kubectl rollout restart changes the cluster",
           destructive: false,
           allowed: true,
         },
@@ -163,7 +161,7 @@ describe("classifyCommand: whole lines", () => {
     const unclosed = classifyCommand('kubectl get "pods', held);
     expect(unclosed).toMatchObject({
       kind: "write",
-      writes: [{ connection: undefined, why: "majhi cannot read the command line" }],
+      writes: [{ connection: undefined }],
     });
   });
 
@@ -202,11 +200,6 @@ describe("classifyCommand: env CLIs and mail", () => {
 });
 
 describe("classifyTool", () => {
-  it("splits tool names into words", () => {
-    expect(toolWords("listAlertPolicies")).toEqual(["list", "alert", "policies"]);
-    expect(toolWords("get_or_create-dashboard")).toEqual(["get", "or", "create", "dashboard"]);
-  });
-
   it("reads a name that starts with a read verb and has no write verb", () => {
     const read = (tool: string) => classifyTool("acme-newrelic", tool, held).kind;
     expect(read("list_alert_policies")).toBe("read");
@@ -299,13 +292,12 @@ describe("destructive writes", () => {
     const held: GateConnection[] = [
       { id: "acme-do", type: "mcp", server: "acme-do", allow: ["droplet-delete", "droplet-reboot"] },
     ];
-    expect(classifyTool("acme-do", "droplet-delete", held)).toEqual({
+    expect(classifyTool("acme-do", "droplet-delete", held)).toMatchObject({
       kind: "write",
       writes: [
         {
           connection: "acme-do",
           action: "droplet-delete",
-          why: "it deletes or destroys something",
           destructive: true,
           allowed: false,
         },

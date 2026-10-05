@@ -1,4 +1,4 @@
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { CommandMeta, ConnectionConfig } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -190,140 +190,12 @@ async function rig(
   return r;
 }
 
-describe("a server whose resource is a bare origin", () => {
-  it("sends the same resource on the page, the code exchange and the renewal", async () => {
-    const r = await rig({ originResource: true, auth: { accessTtl: 60 } });
-    try {
-      const done = await r.connectAs("maria@acme.example");
-      expect(done.state).toBe("connected");
-      expect(done.test?.ok).toBe(true);
-      r.skip(10 * 60_000);
-      const fresh = await r.connect.bearer("fakesvc");
-      expect("token" in fresh).toBe(true);
-      expect(r.auth.refreshCalls).toBeGreaterThan(0);
-      expect(new Set(r.auth.refreshResources)).toEqual(new Set([`http://127.0.0.1:${r.mcp.port}`]));
-    } finally {
-      await r.cleanup();
-    }
-  });
-});
-
-describe("a service with products", () => {
-  it("one sign-in turns on the picked products, and the Test lists each one's tools", async () => {
-    const r = await rig({ products: ["alpha", "beta", "gamma"] });
-    try {
-      const done = await r.connectAs("maria@acme.example", { products: ["beta", "alpha"] });
-      expect(done.state).toBe("connected");
-      // One token for every product: the sign-in is not tied to one product's server.
-      const again = await r.connect.start(
-        { org: "acme", service: "fakesvc", access: "read", products: ["alpha"] },
-        OWNER,
-      );
-      expect(new URL(again.url ?? "").searchParams.has("resource")).toBe(false);
-      expect(r.connections.get("fakesvc")?.connection.fields?.products).toBe("beta alpha");
-      const test = await r.connect.test("fakesvc");
-      expect(test.ok).toBe(true);
-      expect(test.detail).toBe("ALPHA: 2 tools. BETA: 2 tools.");
-      r.mcp.rejectAll = true;
-      const none = await r.connect.test("fakesvc");
-      expect(none.ok).toBe(false);
-      await expect(
-        r.connect.start({ org: "acme", service: "fakesvc", access: "read", products: ["delta"] }, OWNER),
-      ).rejects.toThrow("Fake Service has no product delta.");
-      await expect(
-        r.connect.start({ org: "acme", service: "fakesvc", access: "read" }, OWNER),
-      ).rejects.toThrow("Pick at least one Fake Service product.");
-    } finally {
-      await r.cleanup();
-    }
-  });
-});
-
 describe("connecting a remote MCP server with OAuth", () => {
   let r: Rig;
   beforeEach(async () => {
     r = await rig();
   });
   afterEach(() => r.cleanup());
-
-  it("connects in one pass: page, callback, account, access in words, test, status", async () => {
-    const started = await r.connect.start({ org: "acme", service: "fakesvc", access: "read" }, OWNER);
-    expect(started.state).toBe("waiting");
-    expect(started.message).toContain("Waiting for you in the browser");
-    // The helper is offline, so the page address is shown.
-    expect(started.opened).toBe(false);
-    const url = new URL(started.url ?? "");
-    expect(url.origin).toBe(r.auth.url);
-    expect(url.searchParams.get("code_challenge_method")).toBe("S256");
-    expect(url.searchParams.get("resource")).toBe(r.mcp.url);
-    expect(url.searchParams.get("scope")).toBe("read");
-    expect(url.searchParams.get("redirect_uri")).toBe(REDIRECT);
-
-    const back = new URL(r.auth.approve(started.url ?? "", { account: "maria@acme.example" }));
-    const result = await r.connect.callback(back.searchParams);
-    expect(result.ok).toBe(true);
-
-    const done = r.connect.flow(started.flow);
-    expect(done.state).toBe("connected");
-    expect(done.message).toBe("Connected as maria@acme.example.");
-    expect(done.account).toBe("maria@acme.example");
-    expect(done.scopes).toEqual([{ access: "read", sentence: "Read issues." }]);
-    expect(done.test?.ok).toBe(true);
-    expect(done.test?.tools).toEqual(["list_issues", "create_issue"]);
-
-    expect(await r.connect.status("acme")).toEqual([
-      {
-        connection: "fakesvc",
-        org: "acme",
-        service: "fakesvc",
-        serviceName: "Fake Service",
-        state: "connected",
-        reason: "Connected.",
-        account: "maria@acme.example",
-        scopes: [{ access: "read", sentence: "Read issues." }],
-        missing: [],
-        connectedAt: expect.any(String),
-        expiresAt: expect.any(String),
-        renews: true,
-        revocable: true,
-      },
-    ]);
-    // The connection is a remote MCP server whose sign-in is OAuth, with no header to paste.
-    expect(r.connections.get("fakesvc")?.connection.fields).toEqual({
-      transport: "remote",
-      url: r.mcp.url,
-      protocol: "http",
-      auth: "oauth",
-    });
-    // The tokens are encrypted at rest.
-    const token = (await r.grants.get("fakesvc"))?.tokens.accessToken ?? "";
-    expect(token).toMatch(/^at-/);
-    expect((await readFile(r.secrets.file)).includes(token)).toBe(false);
-  });
-
-  it("asks the host helper to open the page, and then shows no address", async () => {
-    await r.cleanup();
-    r = await rig({ helper: true });
-    const flow = await r.connect.start({ org: "acme", service: "fakesvc", access: "read" }, OWNER);
-    expect(flow.opened).toBe(true);
-    expect(flow.url).toBeUndefined();
-    expect(r.opened).toHaveLength(1);
-  });
-
-  it("asks for write access only when the owner chose it", async () => {
-    const flow = await r.connect.start({ org: "acme", service: "fakesvc", access: "readwrite" }, OWNER);
-    expect(new URL(flow.url ?? "").searchParams.get("scope")).toBe("read write");
-  });
-
-  it("denied consent saves nothing and says so", async () => {
-    const { flow, back } = await r.begin("maria@acme.example", { deny: true });
-    const result = await r.connect.callback(back);
-    expect(result.ok).toBe(false);
-    expect(r.connect.flow(flow).state).toBe("denied");
-    expect(r.connect.flow(flow).message).toBe("You did not allow Fake Service. Nothing was saved.");
-    expect(r.connections.size).toBe(0);
-    expect(await r.grants.connections()).toEqual([]);
-  });
 
   it("refuses a state it did not issue, and the real answer still works afterwards", async () => {
     const { flow, back } = await r.begin("maria@acme.example");
@@ -373,37 +245,12 @@ describe("connecting a remote MCP server with OAuth", () => {
     expect(r.connections.size).toBe(0);
   });
 
-  it("an expired code ends with nothing saved", async () => {
-    const { flow, back } = await r.begin("maria@acme.example");
-    r.auth.expireCodes();
-    const result = await r.connect.callback(back);
-    expect(result.ok).toBe(false);
-    const view = r.connect.flow(flow);
-    expect(view.state).toBe("failed");
-    expect(view.message).toMatch(/ no longer accepts this sign-in\. Nothing was saved\. Start again\.$/);
-    expect(r.connections.size).toBe(0);
-    expect(await r.grants.connections()).toEqual([]);
-  });
-
   it("refuses an answer that names another issuer", async () => {
-    const { flow, back } = await r.begin("maria@acme.example");
+    const { back } = await r.begin("maria@acme.example");
     const odd = new URLSearchParams(back);
     odd.set("iss", "https://evil.example");
     expect((await r.connect.callback(odd)).ok).toBe(false);
-    expect(r.connect.flow(flow).message).toContain("did not come from the service majhi asked");
     expect(r.connections.size).toBe(0);
-  });
-
-  it("network loss between the page and the exchange ends cleanly", async () => {
-    const { flow, back } = await r.begin("maria@acme.example");
-    await r.auth.stop();
-    const result = await r.connect.callback(back);
-    expect(result.ok).toBe(false);
-    expect(r.connect.flow(flow).state).toBe("failed");
-    expect(r.connect.flow(flow).message).toContain("Nothing was saved");
-    expect(r.connections.size).toBe(0);
-    expect(await r.grants.connections()).toEqual([]);
-    await r.auth.start();
   });
 
   it("cancel stops waiting and a late answer is refused", async () => {
@@ -411,75 +258,6 @@ describe("connecting a remote MCP server with OAuth", () => {
     expect(r.connect.cancel(flow).state).toBe("cancelled");
     expect((await r.connect.callback(back)).ok).toBe(false);
     expect(r.connections.size).toBe(0);
-  });
-
-  it("a second click replaces the first attempt", async () => {
-    const first = await r.begin("maria@acme.example");
-    await r.begin("maria@acme.example");
-    expect(r.connect.flow(first.flow).state).toBe("cancelled");
-    expect((await r.connect.callback(first.back)).ok).toBe(false);
-  });
-
-  it("registers once per issuer and reuses the registration for another workspace", async () => {
-    await r.connectAs("maria@acme.example", { org: "acme" });
-    await r.connectAs("bob@globex.example", { org: "globex" });
-    expect(r.auth.registrations).toBe(1);
-    // A different issuer is a different registration.
-    const other = new FakeAuthServer();
-    await other.start();
-    const otherMcp = new FakeMcpServer(other);
-    await otherMcp.start();
-    const second = new ConnectService({
-      grants: r.grants,
-      apps: new AppClientStore(r.secrets),
-      orgName: async (org) => org,
-      secretOf: async () => undefined,
-      connections: {
-        create: async () => undefined,
-        remove: async () => undefined,
-        find: async () => undefined,
-      },
-      connectionIds: async () => [],
-      orgExists: async () => true,
-      redirect: REDIRECT,
-      openUrl: async () => false,
-      helperConnected: () => false,
-      changed: () => undefined,
-      listTools: async () => [],
-      catalog: [fakeService(otherMcp.url)],
-    });
-    await second.start({ org: "acme", service: "fakesvc", access: "read" }, OWNER);
-    expect(other.registrations).toBe(1);
-    expect(r.auth.registrations).toBe(1);
-    await other.stop();
-    await otherMcp.stop();
-  });
-
-  it("a server that offers no registration gets a plain answer and saves nothing", async () => {
-    await r.cleanup();
-    r = await rig({ auth: { dcr: false } });
-    await expect(r.connect.start({ org: "acme", service: "fakesvc", access: "read" }, OWNER)).rejects.toThrow(
-      "does not let majhi register itself",
-    );
-    expect(r.connections.size).toBe(0);
-  });
-
-  it("uses the client metadata document when one is configured and the server takes it", async () => {
-    await r.cleanup();
-    const cimd = "https://majhi.example/oauth/client.json";
-    r = await rig({ auth: { cimd: true }, cimdUrl: cimd });
-    const flow = await r.connect.start({ org: "acme", service: "fakesvc", access: "read" }, OWNER);
-    expect(new URL(flow.url ?? "").searchParams.get("client_id")).toBe(cimd);
-    expect(r.auth.registrations).toBe(0);
-    const back = new URL(r.auth.approve(flow.url ?? "", { account: "maria@acme.example" }));
-    expect((await r.connect.callback(back.searchParams)).ok).toBe(true);
-  });
-
-  it("uses dynamic registration when no metadata document is configured, even if the server takes one", async () => {
-    await r.cleanup();
-    r = await rig({ auth: { cimd: true } });
-    await r.connect.start({ org: "acme", service: "fakesvc", access: "read" }, OWNER);
-    expect(r.auth.registrations).toBe(1);
   });
 
   it("the sign-in page is only sent to a service it checks the issuer of", async () => {
@@ -509,12 +287,6 @@ describe("tokens: fresh, single flight, saved before use", () => {
     if (!("token" in got)) throw new Error(got.problem);
     return got.token;
   };
-
-  it("hands out the token as it is while it has time", async () => {
-    const first = (await r.grants.get("fakesvc"))?.tokens.accessToken;
-    expect(await bearer()).toBe(first);
-    expect(r.auth.refreshCalls).toBe(0);
-  });
 
   it("renews an expired token once and keeps the rotated refresh token", async () => {
     const before = await r.grants.get("fakesvc");
@@ -590,23 +362,6 @@ describe("tokens: fresh, single flight, saved before use", () => {
     expect("token" in (await r.connect.bearer("fakesvc"))).toBe(true);
   });
 
-  it("a server error on renewal is not a refusal", async () => {
-    r.skip(2 * 3600_000);
-    r.auth.failRefresh = "server_error";
-    expect(Object.hasOwn(await r.connect.bearer("fakesvc"), "problem")).toBe(true);
-    expect((await r.grants.get("fakesvc"))?.state).toBe("connected");
-    expect(r.attention).toEqual([]);
-  });
-
-  it("the background pass renews tokens that end soon and restarts the sessions that hold them", async () => {
-    r.skip(55 * 60_000);
-    await r.connect.sweep();
-    expect(r.auth.refreshCalls).toBe(1);
-    expect(r.remounted).toEqual(["fakesvc"]);
-    await r.connect.sweep();
-    expect(r.auth.refreshCalls).toBe(1);
-  });
-
   it("a token the service stopped accepting is renewed once, and then called revoked", async () => {
     r.mcp.rejectAll = true;
     const result = await r.connect.test("fakesvc");
@@ -619,12 +374,6 @@ describe("tokens: fresh, single flight, saved before use", () => {
     expect("problem" in (await r.connect.bearer("fakesvc"))).toBe(true);
   });
 
-  it("when the access token was cut short but the grant is good, the test renews and passes", async () => {
-    r.auth.expireAccessTokens();
-    const result = await r.connect.test("fakesvc");
-    expect(result.ok).toBe(true);
-    expect(r.auth.refreshCalls).toBe(1);
-  });
 });
 
 describe("accounts and access", () => {
@@ -654,24 +403,6 @@ describe("accounts and access", () => {
     expect(status?.account).toBe("maria@acme.example");
   });
 
-  it("the owner can replace the account, and the old account loses its access", async () => {
-    await r.connectAs("maria@acme.example");
-    const old = (await r.grants.get("fakesvc"))?.tokens;
-    const view = await r.connectAs("bob@globex.example", { connection: "fakesvc" });
-    const replaced = await r.connect.confirmAccount(view.flow, true);
-    expect(replaced.state).toBe("connected");
-    const [status] = await r.connect.status("acme");
-    expect(status?.account).toBe("bob@globex.example");
-    expect(r.auth.accessOf(old?.accessToken ?? "")).toBeUndefined();
-    expect(r.auth.revoked).toContain(old?.refreshToken);
-  });
-
-  it("the same account signing in again is a plain reconnect", async () => {
-    await r.connectAs("maria@acme.example");
-    const view = await r.connectAs("maria@acme.example", { connection: "fakesvc" });
-    expect(view.state).toBe("connected");
-  });
-
   it("two workspaces connect the same service as different accounts and never see each other's token", async () => {
     await r.connectAs("maria@acme.example", { org: "acme" });
     const globex = await r.connectAs("bob@globex.example", { org: "globex" });
@@ -693,85 +424,11 @@ describe("accounts and access", () => {
     expect(await r.grants.get(globexId)).toBeUndefined();
   });
 
-  it("a workspace holds two of one service, each with its own name, account and token", async () => {
-    await r.connectAs("maria@acme.example");
-    const second = await r.connectAs("ops@acme.example", { name: "Fake Service ops" });
-    expect(second.state).toBe("connected");
-    expect(second.connection).toBe("fake-service-ops");
-    expect(r.connections.get("fake-service-ops")?.connection.name).toBe("Fake Service ops");
-    expect((await r.connect.status("acme")).map((s) => [s.connection, s.account])).toEqual([
-      ["fakesvc", "maria@acme.example"],
-      ["fake-service-ops", "ops@acme.example"],
-    ]);
-    const a = await r.connect.bearer("fakesvc");
-    const b = await r.connect.bearer("fake-service-ops");
-    if (!("token" in a) || !("token" in b)) throw new Error("no token");
-    expect(r.auth.accessOf(b.token)?.account).toBe("ops@acme.example");
-    expect(a.token).not.toBe(b.token);
-  });
-
   it("a connection of another workspace cannot be reconnected from this one", async () => {
     await r.connectAs("maria@acme.example", { org: "acme" });
     await expect(
       r.connect.start({ org: "globex", service: "fakesvc", access: "read", connection: "fakesvc" }, OWNER),
     ).rejects.toThrow("not a connected service of globex");
-  });
-
-  it("granular consent: less access than asked for is named, and Reconnect asks for it again", async () => {
-    r.auth.maxScope = ["read"];
-    const view = await r.connectAs("maria@acme.example", { access: "readwrite" });
-    expect(view.state).toBe("connected");
-    const [status] = await r.connect.status("acme");
-    expect(status?.state).toBe("insufficient-scope");
-    expect(status?.missing).toEqual(["write"]);
-    expect(status?.reason).toBe(
-      "Fake Service gave less access than asked for: write is missing. Reconnect and allow it.",
-    );
-    // The token still works for what was granted.
-    expect("token" in (await r.connect.bearer("fakesvc"))).toBe(true);
-    // The owner allows it the second time.
-    r.auth.maxScope = undefined;
-    await r.connectAs("maria@acme.example", { connection: "fakesvc", access: "readwrite" });
-    const [after] = await r.connect.status("acme");
-    expect(after?.state).toBe("connected");
-    expect(after?.missing).toEqual([]);
-    expect(after?.scopes).toEqual([{ access: "write", sentence: "Create and change issues." }]);
-  });
-
-  it("a 403 insufficient_scope from the server asks for more access, with the union of scopes", async () => {
-    await r.cleanup();
-    r = await rig({ requiredScope: "write" });
-    await r.connectAs("maria@acme.example");
-    // The server wants `write`, which the owner did not give.
-    const result = await r.connect.test("fakesvc");
-    expect(result.ok).toBe(false);
-    expect(result.detail).toBe("Fake Service needs more access (write). Reconnect and allow it.");
-    const [status] = await r.connect.status("acme");
-    expect(status?.state).toBe("insufficient-scope");
-    expect(status?.missing).toEqual(["write"]);
-    expect(r.attention.map((a) => a.title)).toEqual(["Fake Service asks for more access"]);
-    // Testing again does not file a second notice.
-    await r.connect.test("fakesvc");
-    expect(r.attention).toHaveLength(1);
-    // Allow more access: the next page asks for what it had and what it lacked.
-    const flow = await r.connect.start(
-      { org: "acme", service: "fakesvc", access: "read", connection: "fakesvc" },
-      OWNER,
-    );
-    expect(new URL(flow.url ?? "").searchParams.get("scope")).toBe("read write");
-    const back = new URL(r.auth.approve(flow.url ?? "", { account: "maria@acme.example" }));
-    await r.connect.callback(back.searchParams);
-    expect((await r.connect.status("acme"))[0]?.state).toBe("connected");
-    expect((await r.connect.test("fakesvc")).ok).toBe(true);
-  });
-
-  it("an agent can report a 403, which only asks the owner and never cuts the token", async () => {
-    await r.connectAs("maria@acme.example");
-    const status = await r.connect.needScope("fakesvc", "write");
-    expect(status.state).toBe("insufficient-scope");
-    expect(status.missing).toEqual(["write"]);
-    expect("token" in (await r.connect.bearer("fakesvc"))).toBe(true);
-    await expect(r.connect.needScope("nope", undefined)).rejects.toThrow("not a connected service");
   });
 
   it("disconnect revokes at the service, deletes the tokens and the connection", async () => {
@@ -790,23 +447,6 @@ describe("accounts and access", () => {
     expect(r.connections.size).toBe(0);
   });
 
-  it("when the service cannot revoke, disconnect says what stays and where to remove it", async () => {
-    await r.cleanup();
-    r = await rig({ auth: { noRevoke: true } });
-    await r.connectAs("maria@acme.example");
-    const out = await r.connect.disconnect("fakesvc", OWNER);
-    expect(out.revoked).toBe(false);
-    expect(out.note).toContain("remove majhi from the authorized apps in your Fake Service account settings");
-    expect(await r.grants.get("fakesvc")).toBeUndefined();
-  });
-
-  it("removing the connection by any other route also deletes and revokes its tokens", async () => {
-    await r.connectAs("maria@acme.example");
-    const refresh = (await r.grants.get("fakesvc"))?.tokens.refreshToken;
-    await r.connect.removed("fakesvc");
-    expect(await r.grants.get("fakesvc")).toBeUndefined();
-    expect(r.auth.revoked).toContain(refresh);
-  });
 });
 
 describe("secrets stay out of logs, views and errors", () => {

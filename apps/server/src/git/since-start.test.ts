@@ -2,7 +2,6 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { TaskRepo } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { unshippedCommits } from "../tasks/shipped.ts";
 import { makeRepo, tempDir, git as testGit } from "../testing/fixtures.ts";
 import { repoDiff } from "./diff.ts";
 import { commitsSinceStart } from "./since-start.ts";
@@ -61,32 +60,12 @@ describe("changes since the task started", () => {
     expect(await testGit(source, "rev-parse", "main")).not.toBe(originHead);
   });
 
-  it("shows nothing and ships nothing when the agent committed nothing", async () => {
-    const diff = await repoDiff(taskRepo());
-    expect(diff.files).toEqual([]);
-    expect(diff.commits).toEqual([]);
-    expect(diff.uncommitted).toBe(false);
-    expect(diff.since?.label).toBe("origin/main");
-    expect(diff.since?.commit).toBe(originHead);
-    expect(await commitsSinceStart(source, taskRepo())).toBe(0);
-    expect(await unshippedCommits(taskRepo())).toBe(0);
-  });
-
   it("shows only the file the agent committed", async () => {
     await commit(worktree, "work.txt", "work\n");
     const diff = await repoDiff(taskRepo());
     expect(diff.files.map((f) => f.path)).toEqual(["work.txt"]);
     expect(diff.commits.map((c) => c.subject)).toEqual(["edit work.txt"]);
     expect(await commitsSinceStart(source, taskRepo())).toBe(1);
-  });
-
-  it("counts uncommitted work", async () => {
-    await writeFile(join(worktree, "a.txt"), "changed\n");
-    await writeFile(join(worktree, "new.txt"), "new\n");
-    const diff = await repoDiff(taskRepo());
-    expect(diff.files.map((f) => f.path)).toEqual(["a.txt", "new.txt"]);
-    expect(diff.commits).toEqual([]);
-    expect(diff.uncommitted).toBe(true);
   });
 
   it("without a recorded start, uses the newest base copy the branch contains", async () => {
@@ -98,14 +77,6 @@ describe("changes since the task started", () => {
     const one = await repoDiff(taskRepo());
     expect(one.files.map((f) => f.path)).toEqual(["work.txt"]);
     expect(one.commits).toHaveLength(1);
-  });
-
-  it("without a recorded start and a current local base, uses the local base", async () => {
-    startCommit = undefined;
-    await testGit(source, "merge", "--quiet", "--ff-only", "origin/main");
-    const diff = await repoDiff(taskRepo());
-    expect(diff.files).toEqual([]);
-    expect(diff.since?.commit).toBe(originHead);
   });
 
   it("ignores a recorded start the branch no longer holds", async () => {

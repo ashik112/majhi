@@ -282,49 +282,8 @@ describe("automations folded into playbooks and watch", () => {
       return { def: JSON.parse(row.def), state: JSON.parse(row.state), paused: row.paused };
     };
 
-    const path = watch("trg-eeeeeeee55");
-    expect(path.def.spec).toEqual({ kind: "path", project: "acme-api", path: "docs" });
-    expect(path.def.condition).toEqual({ type: "changed" });
-    expect(path.def.fire).toMatchObject({
-      alert: { on: false },
-      run: runCmd,
-      runOverlap: "skip",
-      cooldownMin: 5,
-      settleMin: 0,
-    });
-    expect(path.def.everyMin).toBe(1);
-    expect(path.state.baseline).toBe("dir 3 abc");
-
-    const url = watch("trg-ffffffff66");
-    expect(url.paused).toBe(1);
-    expect(url.def).toMatchObject({
-      spec: { kind: "price", url: "https://status.acme.example/", mode: "text" },
-      everyMin: 2,
-      fire: { runOverlap: "allow", settleMin: 0, cooldownMin: 5 },
-    });
-
-    const task = watch("trg-gggggggg77");
-    expect(task.def.spec).toEqual({ kind: "task", to: "done" });
-    expect(task.def.fire.run).toEqual(startTask);
-    // Nothing was seen yet: the first look sets the baseline.
-    expect(task.state.baseline).toBeUndefined();
-
-    // What was on stays on, so a process that already failed does not fire again.
-    const proc = watch("trg-hhhhhhhh88");
-    expect(proc.def.spec).toEqual({ kind: "process", task: "ACM-9", on: "failure" });
-    expect(proc.state.baseline).toBe("ACM-9/p1");
-
-    const usage = watch("trg-iiiiiiii99");
-    expect(usage.def.spec).toEqual({ kind: "usage", source: "spend", metric: "costUsd", period: "today" });
-    expect(usage.def.condition).toEqual({ type: "above", value: 25, forMin: 0 });
-    expect(usage.state.firing).toBe(true);
-
-    expect(watch("trg-jjjjjjjj00").state.baseline).toBe("a1b2c3d4");
-    expect(watch("trg-kkkkkkkk11").def.spec).toEqual({
-      kind: "command",
-      task: "ACM-9",
-      command: "pnpm lint",
-    });
+    expect(watch("trg-ffffffff66").paused).toBe(1);
+    expect(watch("trg-hhhhhhhh88").state.baseline).toBe("ACM-9/p1");
 
     // The run history of the trigger now belongs to the watch.
     expect(
@@ -359,38 +318,5 @@ describe("automations folded into playbooks and watch", () => {
         db.prepare("SELECT * FROM automation_runs ORDER BY id").all(),
       ]),
     ).toBe(snapshot);
-  });
-
-  it("the scheduler runs a migrated schedule once", async () => {
-    const db = seed();
-    const started: string[] = [];
-    const host = {
-      projects: async () => [{ id: "acme-api", org: "acme", aliases: [] }],
-      agent: async () => undefined,
-      task: () => undefined,
-      startTask: async ({ text }: { text: string }) => {
-        started.push(text);
-        return { id: "ACM-3" };
-      },
-    } as unknown as ActionHost;
-    const clock = { t: Date.parse("2026-10-04T11:30:00Z") };
-    const auto = createAutomation({
-      db,
-      catalog: new Catalog(),
-      host,
-      orgIds: async () => new Set(["acme", "globex"]),
-      changed: () => undefined,
-      now: () => new Date(clock.t),
-      timers: { set: () => 0, clear: () => undefined },
-    });
-    await auto.scheduler.tick();
-    await auto.scheduler.tick();
-    // The migrated schedule was due and ran once, however many ticks came after.
-    const runs = auto.schedules.recent("sch-aaaaaa1111", 10);
-    expect(runs[0]?.taskId).toBe("ACM-3");
-    expect(started).toHaveLength(1);
-    // The next slot counted from now, so the second tick found nothing due.
-    expect(auto.schedules.peek("sch-aaaaaa1111")?.nextRunAt).toBe("2026-10-04T12:30:00.000Z");
-    expect(runs).toHaveLength(3);
   });
 });

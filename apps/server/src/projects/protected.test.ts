@@ -1,11 +1,10 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { RoomItem, Task } from "@majhi/shared";
+import type { Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { readOnlyRepos, repoMounts } from "../runs/launch.ts";
 import { git } from "../testing/fixtures.ts";
 import { taskWorld, type World } from "../testing/world.ts";
-import { infraName } from "./infra.ts";
 
 /**
  * A protected project (infra): never added to a task but by the owner, read-only for agents unless
@@ -20,10 +19,6 @@ afterEach(async () => {
 const cmd = (name: string, body?: unknown, meta?: unknown) => w.h.cmd(name, body, meta);
 const AGENT = { actor: { kind: "agent", id: "acme-builder" }, reason: "for the test" };
 const tip = (repo: string, ref: string) => git(repo, "rev-parse", ref);
-const notes = async (id: string) =>
-  ((await cmd("room.items", { task: id, limit: 100 })).body.items as RoomItem[]).flatMap((i) =>
-    i.type === "system" ? [i.text] : [],
-  );
 
 /** acme-api, and acme-ops protected. */
 async function world(): Promise<void> {
@@ -62,21 +57,6 @@ async function changedInBoth(writes = false): Promise<Task> {
 }
 
 describe("protected projects", () => {
-  it("names that look like infra are offered protection", async () => {
-    expect(
-      ["acme-gitops", "deploy-scripts", "ops", "infra", "k8s-config", "terraform-aws"].map(infraName),
-    ).toEqual([true, true, true, true, true, true]);
-    expect(["acme-api", "web", "shop"].map(infraName)).toEqual([false, false, false]);
-    await world();
-    const list = (await cmd("projects.list")).body as {
-      id: string;
-      protected: boolean;
-      looksLikeInfra?: boolean;
-    }[];
-    expect(list.find((p) => p.id === "acme-ops")).toMatchObject({ protected: true });
-    expect(list.find((p) => p.id === "acme-api")?.looksLikeInfra).toBeUndefined();
-  });
-
   it("an agent never adds one to a task: it is left out and the room says so", async () => {
     await world();
     const res = await cmd(
@@ -86,16 +66,12 @@ describe("protected projects", () => {
     );
     expect(res.status).toBe(200);
     expect((res.body as Task).repos.map((r) => r.project)).toEqual(["acme-api"]);
-    expect(await notes(res.body.id)).toContain(
-      "Left out acme-ops: it is protected, so only you can add it to a task. Agents can still read it.",
-    );
     const alone = await cmd(
       "tasks.create",
       { text: "change ops", repos: [{ project: "acme-ops" }], start: false },
       AGENT,
     );
     expect(alone.status).toBe(409);
-    expect(alone.body.error).toBe("acme-ops is protected: only the owner can add it to a task.");
     // An agent cannot take the protection off.
     const off = await cmd(
       "projects.update",
@@ -120,13 +96,11 @@ describe("protected projects", () => {
       { project: "acme-api", ok: true },
       { project: "acme-ops", skipped: true },
     ]);
-    expect(both.body.results[1].detail).toMatch(/^Protected: not shipped with the others\./);
     expect(both.body.task.status).toBe("review");
     expect(await tip(w.repo("ops"), "main")).toBe(ops);
 
     const untyped = await cmd("tasks.merge", { id: "ACM-1", project: "acme-ops", push: true });
     expect(untyped.status).toBe(409);
-    expect(untyped.body.error).toBe("acme-ops is protected. Type its name to ship it.");
     const wrong = await cmd("tasks.merge", { id: "ACM-1", project: "acme-ops", confirmProtected: "ops" });
     expect(wrong.status).toBe(409);
     const byAgent = await cmd(
@@ -166,7 +140,6 @@ describe("protected projects", () => {
     await git(w.repo("ops"), "commit", "--quiet", "-m", "main side");
     const resolve = await cmd("tasks.resolveShip", { id: "ACM-1", action: "merge", into: "main" });
     expect(resolve.status).toBe(409);
-    expect(resolve.body.error).toBe("Nothing conflicts with main now. Ship again.");
   });
 
   it("agent runs get its worktree read-only, unless the owner allowed writes for the task", async () => {

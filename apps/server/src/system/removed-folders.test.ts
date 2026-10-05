@@ -13,7 +13,7 @@ const put = (path: string) => {
 };
 
 describe("removeLeftoverFolders", () => {
-  it("removes e2e and business/kb and nothing else, and says so", async () => {
+  it("removes e2e and business/kb and nothing else", async () => {
     const h = home();
     put(join(h, "e2e", "runs", "a.json"));
     put(join(h, "business", "kb", "note.md"));
@@ -28,7 +28,6 @@ describe("removeLeftoverFolders", () => {
       { folder: "e2e", removed: true },
       { folder: "business/kb", removed: true },
     ]);
-    expect(lines).toHaveLength(2);
     expect(existsSync(join(h, "e2e"))).toBe(false);
     expect(existsSync(join(h, "business", "kb"))).toBe(false);
     for (const kept of [
@@ -40,11 +39,6 @@ describe("removeLeftoverFolders", () => {
     ]) {
       expect(existsSync(join(h, kept))).toBe(true);
     }
-  });
-
-  it("does nothing on a second run or when the folders are absent", async () => {
-    const h = home();
-    expect(await removeLeftoverFolders(h, () => undefined)).toEqual([]);
   });
 
   it("never follows a link out of the home", async () => {

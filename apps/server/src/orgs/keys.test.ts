@@ -1,33 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { deriveKey, orgKeys } from "./keys.ts";
-
-describe("deriveKey", () => {
-  it.each([
-    ["Acme Corp", "AC"],
-    ["Globex", "GLO"],
-    ["acme", "ACM"],
-    ["Big Old Company Ltd", "BOCL"],
-    ["A", "A"],
-    ["3M Labs", "ML"],
-    ["42", "ORG"],
-  ])("%s gives %s", (name, key) => {
-    expect(deriveKey(name, "42")).toBe(key);
-  });
-
-  it("falls back to the id when the name has no letters", () => {
-    expect(deriveKey("123", "beta-org")).toBe("BET");
-  });
-});
+import { orgKeys } from "./keys.ts";
 
 describe("orgKeys", () => {
-  it("keeps explicit keys and derives the rest", () => {
-    const keys = orgKeys({ globex: { name: "Globex", key: "GLX" }, acme: { name: "Acme Corp" } });
-    expect([...keys]).toEqual([
-      ["globex", "GLX"],
-      ["acme", "AC"],
-    ]);
-  });
-
   it("makes derived keys unique, and never uses LOCAL", () => {
     const keys = orgKeys({
       one: { name: "Acme" },

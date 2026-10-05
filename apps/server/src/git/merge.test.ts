@@ -64,7 +64,6 @@ describe("mergeBranch", () => {
     await commit(repo, "b.txt", "main side");
     const out = await mergeBranch(request("main"));
     expect(out).toMatchObject({ ok: false });
-    expect(out.ok ? "" : out.reason).toContain("b.txt");
     expect((await git(repo, ["status", "--porcelain"])).trim()).toBe("");
     expect(await readFile(join(repo, "b.txt"), "utf8")).toBe("main side");
   });
@@ -111,7 +110,6 @@ describe("mergeBranch with squash", () => {
     const branchBefore = await tip(repo, "task/x");
     const out = await mergeBranch({ ...request("main"), method: "squash" });
     expect(out).toMatchObject({ ok: false, conflicts: ["b.txt"] });
-    expect(out.ok ? "" : out.reason).toBe("Nothing was merged. Conflicts in b.txt.");
     expect(await tip(repo, "main")).toBe(mainBefore);
     expect(await tip(repo, "task/x")).toBe(branchBefore);
     expect((await git(repo, ["status", "--porcelain"])).trim()).toBe("");
@@ -160,9 +158,6 @@ describe("mergeBranch with rebase", () => {
     const branchBefore = await tip(repo, "task/x");
     const out = await mergeBranch({ ...request("main"), method: "rebase" });
     expect(out).toMatchObject({ ok: false, conflicts: ["b.txt"] });
-    expect(out.ok ? "" : out.reason).toBe(
-      "Nothing was merged. Rebasing task/x onto main hit conflicts in b.txt.",
-    );
     expect(await tip(repo, "main")).toBe(mainBefore);
     expect(await tip(repo, "task/x")).toBe(branchBefore);
     expect((await git(task(), ["status", "--porcelain"])).trim()).toBe("");

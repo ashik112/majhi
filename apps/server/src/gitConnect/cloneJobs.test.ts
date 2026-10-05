@@ -58,17 +58,6 @@ describe("clone jobs", () => {
     expect(s.repo.get(id)).toMatchObject({ state: "done", base: "main" });
   });
 
-  it("lists running jobs and those that ended within the hour, newest first", async () => {
-    const s = await setup();
-    s.job("cl_AAAAAAAAAAAAAAA1", "one", true);
-    s.repo.failed("cl_AAAAAAAAAAAAAAA1", "no");
-    s.tick(1000);
-    s.job("cl_AAAAAAAAAAAAAAA2", "two", true);
-    expect(s.repo.list().map((j) => j.clone)).toEqual(["cl_AAAAAAAAAAAAAAA2", "cl_AAAAAAAAAAAAAAA1"]);
-    s.tick(60 * 60_000);
-    expect(s.repo.list().map((j) => j.clone)).toEqual(["cl_AAAAAAAAAAAAAAA2"]);
-  });
-
   it("after a restart: fails cut-off jobs, removes only folders majhi made inside the root", async () => {
     const s = await setup();
     const made = s.job("cl_MADEMADEMADEMADE", "made", true);

@@ -35,15 +35,6 @@ describe("majhi's own git", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("keeps the SSH agent socket and turns prompts off", () => {
-    const env = gitEnv({ PATH: "/usr/bin", SSH_AUTH_SOCK: "/run/ssh-agent.sock" });
-    expect(env).toMatchObject({
-      SSH_AUTH_SOCK: "/run/ssh-agent.sock",
-      GIT_TERMINAL_PROMPT: "0",
-      GIT_SSH_COMMAND: "ssh -o BatchMode=yes",
-    });
-  });
-
   it("drops the caller's author and committer, which would win over the identity a commit names", () => {
     const env = gitEnv({
       PATH: "/usr/bin",

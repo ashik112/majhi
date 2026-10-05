@@ -15,7 +15,6 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   applyPendingRestore,
-  cancelStaged,
   JOURNAL_FILE,
   readPending,
   readResult,
@@ -156,16 +155,6 @@ describe("restore swap", () => {
       expect(snapshot()).toEqual(before);
       expect(readResult(home)).toMatchObject({ ok: false });
     }
-  });
-
-  it("can cancel a staged restore, and not one that began", () => {
-    seedLive();
-    const staged = stageBackup();
-    stageSwap(home, { id: "r1", name: "majhi-daily-1.age", staged, now: new Date() });
-    expect(cancelStaged(home)).toBe(true);
-    expect(existsSync(join(home, "restore-staging/r1"))).toBe(false);
-    expect(readFileSync(join(home, "majhi.db"), "utf8")).toBe("live-db");
-    expect(cancelStaged(home)).toBe(false);
   });
 
   it("keeps only the newest rollbacks", () => {

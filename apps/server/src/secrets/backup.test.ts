@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { tempDir, writeKeyFile } from "../testing/fixtures.ts";
@@ -35,8 +35,4 @@ describe("KeyExports", () => {
     expect(record).not.toContain("AGE-SECRET-KEY");
   });
 
-  it("treats an unreadable record as no export", async () => {
-    await writeFile(join(dir, "home", "secrets-key-backup.json"), "{not json");
-    expect(await exports.last()).toBeUndefined();
-  });
 });

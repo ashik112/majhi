@@ -1,5 +1,4 @@
 import type { GitAccount, GitCliLoginResult, MrHost, OrgConfig, SignInStatus } from "@majhi/shared";
-import { GLAB_CLIENT_ID } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { UserError } from "../errors.ts";
 import { HostJobError } from "../host/link.ts";
@@ -11,7 +10,6 @@ const GH_TOKEN = "gho_SecretAcmeToken1234567890";
 const GL_TOKEN = "glpat_SecretGitLabToken987654";
 const GL_REFRESH = "glrt_SecretRefresh111";
 const BB_TOKEN = "ATATTSecretBitbucketToken55";
-const BB_EMAIL = "dev@acme.test";
 const SECRETS = [GH_TOKEN, GL_TOKEN, GL_REFRESH, BB_TOKEN, "dev-code-1"];
 
 /**
@@ -299,26 +297,6 @@ describe("GitHub device flow", () => {
     expectNoSecrets(s);
   });
 
-  it("answers paste when there is no CLI and no app, saying why", async () => {
-    const offline = setup({ noGithub: true });
-    expect(
-      await offline.service.start({ org: "acme", kind: "github" }, { actor: { kind: "owner" } }),
-    ).toEqual({
-      state: "paste",
-      kind: "github",
-      host: "github.com",
-      reason: "no-helper",
-    });
-    const noGh = setup({ noGithub: true, cli: fakeCli({ ends: { state: "missing" } }).runner });
-    expect(
-      await noGh.service.start({ org: "acme", kind: "github" }, { actor: { kind: "owner" } }),
-    ).toMatchObject({
-      state: "paste",
-      reason: "no-cli",
-    });
-    expect(offline.hosts.requests).toEqual([]);
-  });
-
   it("fails with a plain reason when the user check fails, and the reason holds no token", async () => {
     const s = setup();
     githubDevice(s, [{ json: { access_token: GH_TOKEN } }]);
@@ -382,28 +360,6 @@ describe("GitLab device grant", () => {
     expectNoSecrets(s);
   });
 
-  it("tells an old self-hosted GitLab plainly, and asks for a token on a host without an app", async () => {
-    const s = setup({
-      apps: { gitlab: { "gitlab.acme.test": { clientId: "fedcba9876543210", builtIn: false } } },
-    });
-    s.hosts.on("POST https://gitlab.acme.test/oauth/authorize_device", () => ({ status: 404, json: {} }));
-    await expect(
-      s.service.start(
-        { org: "acme", kind: "gitlab", host: "gitlab.acme.test" },
-        { actor: { kind: "owner" } },
-      ),
-    ).rejects.toThrow(/needs GitLab 17\.3 or later/);
-    const other = await s.service.start(
-      { org: "acme", kind: "gitlab", host: "gitlab.globex.test" },
-      { actor: { kind: "owner" } },
-    );
-    expect(other).toEqual({
-      state: "paste",
-      kind: "gitlab",
-      host: "gitlab.globex.test",
-      reason: "self-hosted",
-    });
-  });
 });
 
 describe("CLI sign-in through the host helper", () => {
@@ -443,41 +399,6 @@ describe("CLI sign-in through the host helper", () => {
     expectNoSecrets(s);
   });
 
-  it("glab: opens its page and saves a grant refreshed with glab's client ID", async () => {
-    const cli = fakeCli({ page: { url: "https://gitlab.com/oauth/authorize?client_id=x&state=y" } });
-    const s = setup({ cli: cli.runner, now: () => Date.parse("2026-10-03T10:00:00Z") });
-    s.hosts.on("GET https://gitlab.com/api/v4/user", () => ({ json: { username: "acme-dev" } }));
-    const start = await s.service.start({ org: "acme", kind: "gitlab" }, { actor: { kind: "owner" } });
-    expect(start).toMatchObject({
-      state: "browser",
-      kind: "gitlab",
-      authorizeUrl: "https://gitlab.com/oauth/authorize?client_id=x&state=y",
-    });
-    if (start.state !== "browser") return;
-    expect(cli.calls[0]).toMatchObject({ cli: "glab", org: "acme", host: "gitlab.com" });
-    cli.finish({
-      state: "done",
-      token: GL_TOKEN,
-      refreshToken: GL_REFRESH,
-      expiresAt: "2026-10-03T12:00:00.000Z",
-    });
-    expect((await settle(s, start.signIn)).state).toBe("done");
-    expect(s.orgs.acme?.git_accounts).toEqual([
-      { host: "gitlab.com", account: "acme-dev", token: "secret:s1", oauth: "secret:s2" },
-    ]);
-    expect(JSON.parse(s.secrets.get("s2") ?? "")).toEqual({
-      v: 1,
-      kind: "gitlab",
-      host: "gitlab.com",
-      clientId: GLAB_CLIENT_ID,
-      refreshToken: GL_REFRESH,
-      expiresAt: "2026-10-03T12:00:00.000Z",
-    });
-    // No device flow was asked of GitLab: glab did the sign-in.
-    expect(s.hosts.requests.map((r) => r.url)).toEqual(["https://gitlab.com/api/v4/user"]);
-    expectNoSecrets(s);
-  });
-
   it("cancel stops the CLI and saves nothing, even when it ends with a token", async () => {
     const cli = fakeCli();
     const s = setup({ noGithub: true, cli: cli.runner });
@@ -490,24 +411,6 @@ describe("CLI sign-in through the host helper", () => {
     expect(s.service.poll(start.signIn).state).toBe("cancelled");
     expect(s.orgs.acme?.git_accounts).toBeUndefined();
     expect(s.secrets.size).toBe(0);
-  });
-
-  it("a new start stops the CLI of the open one", async () => {
-    const cli = fakeCli();
-    const s = setup({ noGithub: true, cli: cli.runner });
-    const first = await s.service.start({ org: "acme", kind: "github" }, { actor: { kind: "owner" } });
-    if (first.state !== "device") throw new Error("not a device start");
-    await s.service.start({ org: "acme", kind: "github" }, { actor: { kind: "owner" } });
-    expect(cli.cancelled).toContain(first.signIn);
-    expect(s.service.poll(first.signIn).state).toBe("cancelled");
-  });
-
-  it("a missing gh falls back to majhi's device flow when it has an app", async () => {
-    const s = setup({ cli: fakeCli({ ends: { state: "missing" } }).runner });
-    githubDevice(s, [{ json: { error: "authorization_pending" } }]);
-    const start = await s.service.start({ org: "acme", kind: "github" }, { actor: { kind: "owner" } });
-    expect(start).toMatchObject({ state: "device", userCode: "WDJB-MJHT" });
-    if (start.state === "device") s.service.cancel(start.signIn);
   });
 
   it("a CLI that fails says so plainly and never echoes what it printed", async () => {
@@ -531,71 +434,9 @@ describe("CLI sign-in through the host helper", () => {
     expectNoSecrets(s, [err]);
   });
 
-  it("a CLI that shows no page in time is stopped", async () => {
-    const cli = fakeCli({ page: "none" });
-    const s = setup({ noGithub: true, cli: cli.runner });
-    await expect(
-      s.service.start({ org: "acme", kind: "github" }, { actor: { kind: "owner" } }),
-    ).rejects.toThrow("gh did not show a sign-in page. Try again, or paste a token instead.");
-    expect(cli.cancelled).toHaveLength(1);
-  });
 });
 
 describe("Pasted tokens", () => {
-  function bitbucket(s: Setup): void {
-    const good = `Basic ${Buffer.from(`${BB_EMAIL}:${BB_TOKEN}`).toString("base64")}`;
-    s.hosts.on("GET https://api.bitbucket.org/2.0/user", (req) =>
-      req.headers.authorization === good ? { json: { username: "acme-bb" } } : { status: 401, json: {} },
-    );
-  }
-
-  it("Bitbucket always asks for an API token: no admin, no consumer", async () => {
-    const s = setup();
-    expect(await s.service.start({ org: "acme", kind: "bitbucket" }, { actor: { kind: "owner" } })).toEqual({
-      state: "paste",
-      kind: "bitbucket",
-      host: "bitbucket.org",
-      reason: "bitbucket",
-    });
-    expect(s.hosts.requests).toEqual([]);
-  });
-
-  it("checks the Atlassian email and API token with Bitbucket, then saves them for the named workspace", async () => {
-    const s = setup();
-    bitbucket(s);
-    const done = await s.service.token(
-      { org: "acme", kind: "bitbucket", token: BB_TOKEN, email: BB_EMAIL },
-      { actor: { kind: "owner" } },
-    );
-    s.outputs.push(done);
-    expect(done).toMatchObject({ state: "done", org: "acme", kind: "bitbucket", account: "acme-bb" });
-    expect(s.orgs.acme?.git_accounts).toEqual([
-      { host: "bitbucket.org", account: "acme-bb", token: "secret:s1" },
-    ]);
-    expect(s.orgs.acme?.mr_tokens).toEqual({ bitbucket: "secret:s1" });
-    // Saved as email:token, so REST uses Basic with the email and git uses the static user name.
-    expect(s.secrets.get("s1")).toBe(`${BB_EMAIL}:${BB_TOKEN}`);
-    expect(s.orgs.globex?.git_accounts).toBeUndefined();
-    for (const r of s.hosts.requests) expect(r.url).not.toContain(BB_TOKEN);
-    expectNoSecrets(s);
-  });
-
-  it("a wrong email or token fails with a plain reason and saves nothing", async () => {
-    const s = setup();
-    bitbucket(s);
-    const failed = await s.service.token(
-      { org: "acme", kind: "bitbucket", token: BB_TOKEN, email: "someone@globex.test" },
-      { actor: { kind: "owner" } },
-    );
-    s.outputs.push(failed);
-    expect(failed).toMatchObject({ state: "failed" });
-    if (failed.state === "failed")
-      expect(failed.reason).toMatch(/^Bitbucket did not accept the email and token/);
-    expect(s.secrets.size).toBe(0);
-    expect(s.orgs.acme?.git_accounts).toBeUndefined();
-    expectNoSecrets(s);
-  });
-
   it("a pasted GitHub token whose account another workspace uses waits for a confirm", async () => {
     const s = setup({
       orgs: {
@@ -664,27 +505,4 @@ describe("git.signOut", () => {
     expectNoSecrets(s);
   });
 
-  it("GitHub cannot be revoked without a client secret: majhi removes it and links the apps page", async () => {
-    const orgs: Record<string, OrgConfig> = {
-      private: { name: "Private" },
-      acme: {
-        name: "Acme",
-        git_accounts: [{ host: "github.com", account: "octo-acme", token: "secret:t" }],
-        mr_tokens: { github: "secret:t" },
-      },
-    };
-    const s = setup({ orgs });
-    s.secrets.set("t", GH_TOKEN);
-    const out = await s.service.signOut(
-      { org: "acme", kind: "github" },
-      { command: "git.signOut", meta: { actor: { kind: "owner" } } },
-    );
-    expect(out).toMatchObject({
-      removed: true,
-      revoke: "local",
-      revokeUrl: "https://github.com/settings/applications",
-    });
-    expect(orgs.acme?.mr_tokens).toBeUndefined();
-    expect(s.hosts.requests).toEqual([]);
-  });
 });

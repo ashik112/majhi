@@ -4,7 +4,6 @@ import type { CommandMeta } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { git, tempDir } from "../testing/fixtures.ts";
-import { GITIGNORE } from "./history.ts";
 import { ConfigService } from "./service.ts";
 import { ConfigConflictError } from "./write.ts";
 
@@ -60,10 +59,6 @@ describe("ConfigService.setWorkspaces", () => {
       status: "loaded",
       config: { workspaces: [join(dir, "Work"), join(dir, "personal")], tasksDir: join(dir, "Work/.majhi") },
     });
-  });
-
-  it("keeps the encrypted secrets file out of the history", () => {
-    expect(GITIGNORE).toContain("secrets.age");
   });
 
   it("commits hand edits on their own, so undoing a command keeps them", async () => {

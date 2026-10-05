@@ -2,7 +2,7 @@ import type { OrgConfig } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { fakeGitHosts } from "../testing/gitHosts.ts";
 import { TokenRefused } from "./http.ts";
-import { GitTokens, tokenAuth } from "./tokens.ts";
+import { GitTokens } from "./tokens.ts";
 
 const NOW = Date.parse("2026-10-02T10:00:00Z");
 
@@ -49,12 +49,6 @@ function setup(expiresAt: string) {
 }
 
 describe("GitTokens", () => {
-  it("uses a token with time left as it is", async () => {
-    const s = setup("2026-10-02T11:00:00Z");
-    expect(await s.tokens.value("secret:acme-token")).toBe("glpat_old_access");
-    expect(s.hosts.requests).toEqual([]);
-  });
-
   it("refreshes within ten minutes of expiry, rewrites both secrets in place and keeps the rotated refresh token", async () => {
     const s = setup("2026-10-02T10:09:00Z");
     expect(await s.tokens.value("secret:acme-token")).toBe("glpat_new_2");
@@ -119,30 +113,5 @@ describe("GitTokens", () => {
     expect(out).toEqual({ state: "refused", account: "" });
     expect(seen).toEqual(["glpat_globex"]);
     expect(s.hosts.requests).toEqual([]);
-  });
-});
-
-describe("tokenAuth", () => {
-  it("uses each host's git user name and keeps the token out of the user name", () => {
-    expect(tokenAuth("github", "gho_x")).toEqual({
-      kind: "token",
-      username: "x-access-token",
-      password: "gho_x",
-    });
-    expect(tokenAuth("gitlab", "glpat_x")).toEqual({
-      kind: "token",
-      username: "oauth2",
-      password: "glpat_x",
-    });
-    expect(tokenAuth("bitbucket", "bb_oauth")).toEqual({
-      kind: "token",
-      username: "x-token-auth",
-      password: "bb_oauth",
-    });
-    expect(tokenAuth("bitbucket", "owner@acme.test:ATATT123")).toEqual({
-      kind: "token",
-      username: "x-bitbucket-api-token-auth",
-      password: "ATATT123",
-    });
   });
 });

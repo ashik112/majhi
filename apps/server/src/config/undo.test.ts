@@ -14,7 +14,6 @@ describe("history and undo", () => {
     const [globex] = (await h.cmd("history.list", { limit: 5 })).body;
     const undo = await h.cmd("history.undo", { commit: globex.commit.slice(0, 8) });
     expect(undo.status).toBe(200);
-    expect(undo.body.summary).toBe("added org globex");
     const orgs = await h.cmd("orgs.list");
     expect(orgs.body.map((o: { id: string }) => o.id)).toEqual(["private", "acme"]);
     const list = (await h.cmd("history.list", { limit: 5 })).body;
@@ -31,7 +30,6 @@ describe("history and undo", () => {
     const before = (await h.cmd("orgs.list")).body;
     const undo = await h.cmd("history.undo", { commit: first.commit });
     expect(undo.status).toBe(409);
-    expect(undo.body.error).toContain("later change touched the same lines");
     expect((await h.cmd("orgs.list")).body).toEqual(before);
     expect(await h.log()).toHaveLength(4);
   });

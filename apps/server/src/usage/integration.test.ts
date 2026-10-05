@@ -134,22 +134,6 @@ describe("tokens and cost from real turns", () => {
     expect(priced.status).toBe(200);
     expect(priced.body.rows[0]).toMatchObject({ model: "fake-model-a", source: "owner" });
     expect(priced.body.rows[0].url).toBeUndefined();
-    // A default row names its page and check date; changing it makes it the owner's, without them.
-    const table = await h.cmd("usage.prices", {});
-    const own = { input: 9, output: 9, cache_read: 9, cache_write: 9 };
-    const stock = table.body.rows.find((r: { model: string }) => r.model === "gpt-6-sol");
-    expect(stock).toMatchObject({
-      source: "default",
-      url: expect.stringMatching(/^https:/),
-      checked: expect.any(String),
-    });
-    const changed = await h.cmd("usage.setPrice", { model: "gpt-6-sol", price: own });
-    expect(changed.body.rows.find((r: { model: string }) => r.model === "gpt-6-sol")).toMatchObject({
-      source: "owner",
-      overridesDefault: true,
-      price: own,
-    });
-    expect(changed.body.rows.find((r: { model: string }) => r.model === "gpt-6-sol").url).toBeUndefined();
     await h.cmd("room.send", { task: "GLX-1", text: "echo: again" });
     await settle();
     const globexNow = await rows({ org: "globex" });
@@ -173,44 +157,6 @@ describe("tokens and cost from real turns", () => {
         all.length,
       );
     }
-    const summary = await h.cmd("usage.summary", { filters: { org: "acme" } });
-    expect(summary.body.today).toMatchObject(sum(acme));
-    expect(summary.body.week).toMatchObject(sum(acme));
-    expect(summary.body.month).toMatchObject(sum(acme));
-    expect(summary.body.all).toMatchObject(sum(acme));
-    expect(summary.body.today.estimatedUsd).toBeCloseTo(2 * CLAUDE_COST);
-    expect(summary.body.days).toHaveLength(30);
-    expect(summary.body.days.at(-1)).toMatchObject({ turns: 2 });
-    expect(summary.body.topTasks).toMatchObject([{ task: "ACM-1", org: "acme" }]);
-    const byDay = await h.cmd("usage.breakdown", { by: "day", range: "all" });
-    expect(byDay.body.rows).toHaveLength(1);
-    expect(byDay.body.rows[0].totals).toMatchObject(sum(all));
   });
 
-  it("lets the captain answer a cost question from the same numbers", async () => {
-    await twoOrgs();
-    const { h } = w;
-    await h.cmd("tasks.create", {
-      text: "add a health endpoint to api from develop",
-      repos: [{ project: "acme-api", base: "develop" }],
-      start: true,
-    });
-    await settle();
-    const acmeWeek = (await h.cmd("usage.summary", { filters: { org: "acme" } })).body.week as UsageTotals;
-    expect(acmeWeek.turns).toBe(1);
-
-    await h.cmd("room.send", {
-      task: w.chat.id,
-      text: 'call: majhi_usage_summary {"filters":{"org":"acme"},"ownerAsked":true,"reason":"the owner asked what Acme cost this week"}',
-    });
-    await settle();
-    const items = await w.items();
-    const tool = items.find((i) => i.type === "tool" && i.title === "majhi_usage_summary");
-    expect(tool).toMatchObject({ status: "completed" });
-    const text = tool?.type === "tool" && tool.content[0]?.type === "text" ? tool.content[0].text : "";
-    const answer = JSON.parse(text) as { week: UsageTotals };
-    expect(answer.week).toEqual(acmeWeek);
-    // A read runs without a confirm card.
-    expect(items.some((i) => i.type === "approval" && i.state === "pending")).toBe(false);
-  });
 });

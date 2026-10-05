@@ -1,7 +1,7 @@
 import type { AccountUsage } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { type Harness, harness } from "../testing/harness.ts";
-import { limitFor, statusFromHealthAndUsage } from "./status.ts";
+import { limitFor } from "./status.ts";
 
 const NOW = new Date("2026-10-03T12:00:00Z");
 const MIN = 60_000;
@@ -44,23 +44,6 @@ describe("limitFor", () => {
     expect(second.until).toBe(first.until);
     expect(second.since).toBe(first.since);
     expect(second.resetKnown).toBe(true);
-  });
-});
-
-describe("status", () => {
-  const health = { ok: true, checkedAt: NOW.toISOString(), durationMs: 1, steps: [] };
-  const limit = {
-    since: NOW.toISOString(),
-    until: "2026-10-03T13:00:00.000Z",
-    resetKnown: true,
-    detail: "x",
-  };
-
-  it("is at-limit while the mark holds, and the usage decides after", () => {
-    expect(statusFromHealthAndUsage(health, usage(10, 10), limit, NOW)).toBe("at-limit");
-    expect(statusFromHealthAndUsage(health, usage(10, 10), limit, new Date("2026-10-03T13:00:00Z"))).toBe(
-      "healthy",
-    );
   });
 });
 

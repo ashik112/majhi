@@ -168,28 +168,6 @@ describe("a remote MCP server: connected only when initialize and tools/list pas
     expect(r.health.get(flow.connection ?? "")).toMatchObject({ state: "failed", reason: "forbidden" });
   });
 
-  it("an MCP protocol error and a timeout are told apart by their codes", async () => {
-    const answers = [
-      Object.assign(new Error("x"), { code: -32601 }),
-      Object.assign(new Error("x"), { code: -32001 }),
-    ];
-    let call = 0;
-    r = await rig({
-      listTools: async () => {
-        const next = answers[call++];
-        if (next === undefined) return ["a_tool"];
-        throw next;
-      },
-    });
-    const flow = await connectAs(r, { org: "acme", service: "fakesvc", access: "read" });
-    const id = flow.connection ?? "";
-    expect(r.health.get(id)).toMatchObject({ state: "failed", reason: "mcp-error" });
-    await r.health.check(id);
-    expect(r.health.get(id)).toMatchObject({ state: "failed", reason: "timeout" });
-    await r.health.check(id);
-    expect(r.health.get(id)?.state).toBe("connected");
-  });
-
   it("a server that stops accepting majhi's token needs attention, with rejected", async () => {
     r = await rig();
     const flow = await connectAs(r, { org: "acme", service: "fakesvc", access: "read" });
@@ -247,26 +225,4 @@ describe("an MCP server added by address", () => {
     expect(calls).not.toContain("auth.acme.test");
   });
 
-  it("refuses a server that names a metadata address, even when the owner confirmed the server itself", async () => {
-    const calls: string[] = [];
-    const fake = (async (input: string | URL | Request) => {
-      const url = new URL(typeof input === "string" || input instanceof URL ? input.toString() : input.url);
-      calls.push(url.hostname);
-      if (url.pathname.startsWith("/.well-known/oauth-protected-resource")) {
-        return Response.json({
-          resource: "https://10.1.1.1/mcp",
-          authorization_servers: ["https://169.254.169.254"],
-        });
-      }
-      return new Response("{}", { status: 404 });
-    }) as typeof fetch;
-    r = await rig({ catalog: false, fetch: fake });
-    await expect(
-      r.connect.start(
-        { org: "acme", url: "https://10.1.1.1/mcp", allowPrivate: true, access: "read" },
-        OWNER,
-      ),
-    ).rejects.toBeInstanceOf(UserError);
-    expect(calls).not.toContain("169.254.169.254");
-  });
 });

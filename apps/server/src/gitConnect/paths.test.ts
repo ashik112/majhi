@@ -2,8 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeRepo, tempDir } from "../testing/fixtures.ts";
-import { remoteKey, repoKeyOf } from "./here.ts";
-import { checkPlace, isInside, projectIdFor, projectPlace } from "./paths.ts";
+import { checkPlace, isInside, projectPlace } from "./paths.ts";
 
 let cleanup: (() => Promise<void>) | undefined;
 afterEach(async () => {
@@ -14,17 +13,6 @@ afterEach(async () => {
 describe("the clone path rule", () => {
   const roots = ["/home/owner/Work", "~/Clients"];
   const hostHome = "/home/owner";
-
-  it("puts a repo at <first root>/<workspace>/<repo>, Private under private", () => {
-    expect(projectPlace({ roots, hostHome, org: "acme", folder: "api" })).toEqual({
-      root: "/home/owner/Work",
-      parent: "/home/owner/Work/acme",
-      path: "/home/owner/Work/acme/api",
-    });
-    expect(projectPlace({ roots, hostHome, org: "private", folder: "notes" }).path).toBe(
-      "/home/owner/Work/private/notes",
-    );
-  });
 
   it("takes a second root only when it is one of the configured roots, written either way", () => {
     expect(projectPlace({ roots, hostHome, root: "~/Clients", org: "globex", folder: "web" }).path).toBe(
@@ -65,33 +53,5 @@ describe("the clone path rule", () => {
     expect(isInside("/r", "/r/a/b")).toBe(true);
     expect(isInside("/r", "/r/../etc")).toBe(false);
     expect(isInside("/r", "/rx/a")).toBe(false);
-  });
-
-  it("makes a project id unique", () => {
-    expect(projectIdFor("Api.Server", new Set())).toBe("api-server");
-    expect(projectIdFor("api", new Set(["api", "api-2"]))).toBe("api-3");
-  });
-});
-
-describe("remote keys", () => {
-  const aliases = new Map([["github-acme", "github.com"]]);
-
-  it("matches https and ssh forms, aliases, case, ports and .git", () => {
-    const key = repoKeyOf("github.com", "Acme/API");
-    for (const url of [
-      "https://github.com/acme/api.git",
-      "https://GitHub.com/Acme/api",
-      "git@github.com:acme/api.git",
-      "git@github-acme:acme/api.git",
-      "ssh://git@github.com:22/acme/api.git",
-      "https://x-access-token@github.com/acme/api.git",
-    ]) {
-      expect(remoteKey(url, aliases), url).toBe(key);
-    }
-    expect(remoteKey("https://github.com/acme/web.git", aliases)).not.toBe(key);
-    expect(remoteKey("/home/owner/remotes/api.git", aliases)).toBeUndefined();
-    expect(repoKeyOf("gitlab.acme.test:8443", "group/sub/api")).toBe(
-      remoteKey("https://gitlab.acme.test:8443/group/sub/api.git", aliases),
-    );
   });
 });

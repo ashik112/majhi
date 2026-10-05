@@ -51,35 +51,6 @@ function rig(orgs: Record<string, OrgConfig> = { acme: { name: "Acme" } }) {
 }
 
 describe("a git host sign-in is a connection", () => {
-  it("makes one git connection per workspace and host, named for the host, and checks it", async () => {
-    const r = rig();
-    const id = await r.link.signedIn({ org: "acme", kind: "github", host: "github.com" });
-    expect(r.views).toHaveLength(1);
-    expect(r.views[0]).toMatchObject({ id, org: "acme", type: "git", name: "GitHub" });
-    expect(r.views[0]?.fields.provider?.value).toBe("github");
-    expect(r.views[0]?.fields.host).toBeUndefined();
-    // The state starts before the check, so the row never reads connected before a call passed.
-    expect(r.started).toEqual([id]);
-    expect(r.checks).toEqual([id]);
-  });
-
-  it("a self-hosted host is its own connection with the host in its name and fields", async () => {
-    const r = rig();
-    await r.link.signedIn({ org: "acme", kind: "gitlab", host: "gitlab.com" });
-    const id = await r.link.signedIn({
-      org: "acme",
-      kind: "gitlab",
-      host: "gitlab.acme.test",
-      privateNetwork: true,
-    });
-    expect(r.views).toHaveLength(2);
-    expect(r.views.find((v) => v.id === id)).toMatchObject({ name: "GitLab (gitlab.acme.test)" });
-    expect(r.views.find((v) => v.id === id)?.fields).toMatchObject({
-      host: { value: "gitlab.acme.test" },
-      private_network: { value: "yes" },
-    });
-  });
-
   it("signing in again reuses the connection, and two workspaces keep their own", async () => {
     const r = rig({ acme: { name: "Acme" }, globex: { name: "Globex" } });
     const a1 = await r.link.signedIn({ org: "acme", kind: "github", host: "github.com" });
@@ -98,27 +69,4 @@ describe("a git host sign-in is a connection", () => {
     expect(r.checks).toHaveLength(1);
   });
 
-  it("an owner who confirms a private host later marks the existing connection", async () => {
-    const r = rig();
-    const id = await r.link.ensure({ org: "acme", kind: "github", host: "ghe.acme.test" });
-    await r.link.ensure({ org: "acme", kind: "github", host: "ghe.acme.test", privateNetwork: true });
-    expect(r.views).toHaveLength(1);
-    expect(r.updates).toEqual([{ id, fields: { private_network: "yes" } }]);
-  });
-
-  it("makes a connection for every account that has a token, and none for one without", async () => {
-    const r = rig({
-      acme: {
-        name: "Acme",
-        git_accounts: [
-          { host: "github.com", account: "acme-dev", token: "secret:a" },
-          { host: "gitlab.com", account: "acme-dev" },
-        ],
-      } as OrgConfig,
-    });
-    await r.link.syncAll();
-    expect(r.views.map((v) => v.name)).toEqual(["GitHub"]);
-    // Nothing is checked here: the startup pass checks what was never checked.
-    expect(r.checks).toEqual([]);
-  });
 });

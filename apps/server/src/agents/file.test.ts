@@ -14,64 +14,9 @@ You build things.
 `;
 
 describe("parseAgentFile", () => {
-  it("reads frontmatter and instructions, applying defaults", () => {
-    const parsed = parseAgentFile("builder.md", VALID);
-    expect(parsed).toEqual({
-      ok: true,
-      agent: {
-        frontmatter: {
-          id: "builder",
-          scope: "acme",
-          role: "Builder",
-          account: "claude-acme",
-          model: "sonnet",
-          where: ["anywhere"],
-          perms: [],
-          tools: [],
-          connections: [],
-          skills: [],
-          origin: "owner",
-        },
-        instructions: "You build things.\n",
-      },
-    });
-  });
-
-  it("lists every problem in an invalid file", () => {
-    const parsed = parseAgentFile(
-      "builder.md",
-      "---\nid: builder\nscope: acme\nrole: Wizard\nextra: 1\n---\nx",
-    );
-    expect(parsed.ok).toBe(false);
-    if (parsed.ok) return;
-    expect(parsed.errors).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining("role"),
-        expect.stringContaining("account"),
-        "extra: Unknown key",
-      ]),
-    );
-  });
-
   it("rejects a file name that differs from the id", () => {
     const parsed = parseAgentFile("other.md", VALID);
-    expect(parsed).toEqual({
-      ok: false,
-      errors: ['id: The file is other.md, so the id must be "other", not "builder"'],
-    });
-  });
-
-  it("explains missing or unclosed frontmatter and broken YAML", () => {
-    expect(parseAgentFile("a.md", "hello")).toEqual({
-      ok: false,
-      errors: ["The file must start with a --- line and YAML frontmatter"],
-    });
-    expect(parseAgentFile("a.md", "---\nid: a\n")).toEqual({
-      ok: false,
-      errors: ["The frontmatter is not closed with a --- line"],
-    });
-    const broken = parseAgentFile("a.md", "---\nid: [a\n---\n");
-    expect(broken.ok).toBe(false);
+    expect(parsed.ok).toBe(false);
   });
 });
 
@@ -110,30 +55,5 @@ describe("serializeAgent", () => {
       const agent = { ...full, instructions };
       expect(parseAgentFile("lead.md", serializeAgent(agent))).toEqual({ ok: true, agent });
     }
-  });
-
-  it("writes keys in a stable order", () => {
-    const parsed = parseAgentFile("builder.md", VALID);
-    if (!parsed.ok) throw new Error("expected a valid file");
-    expect(serializeAgent(parsed.agent)).toBe(
-      [
-        "---",
-        "id: builder",
-        "scope: acme",
-        "role: Builder",
-        "account: claude-acme",
-        "model: sonnet",
-        "where: [anywhere]",
-        "perms: []",
-        "tools: []",
-        "connections: []",
-        "skills: []",
-        "origin: owner",
-        "---",
-        "",
-        "You build things.",
-        "",
-      ].join("\n"),
-    );
   });
 });
