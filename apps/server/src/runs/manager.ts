@@ -616,6 +616,13 @@ export class RunManager {
     this.deliveries.set(task, next);
   }
 
+  /** Lets a run take what is queued: clears a hold and drives it unless it is paused. */
+  private letRunTake(run: AgentRun): void {
+    run.held = false;
+    this.live.refreshQueued(run);
+    if (run.paused === undefined) void this.drive(run);
+  }
+
   /**
    * Wakes an agent with a message from majhi, like a background process that ended (5.15): sent
    * now when it is idle, else on its next turn. Starts its session if needed.
@@ -623,9 +630,7 @@ export class RunManager {
   notify(task: string, agent: string, text: string): void {
     const run = this.runFor(task, agent);
     run.queue.push({ kind: "notice", text });
-    run.held = false;
-    this.live.refreshQueued(run);
-    if (run.paused === undefined) void this.drive(run);
+    this.letRunTake(run);
   }
 
   /**
@@ -646,9 +651,7 @@ export class RunManager {
     if (run.processEnds.some((e) => sameRun(e, p))) return;
     run.processEnds.push(p);
     if (!run.queue.some((e) => e.kind === "processes")) run.queue.push({ kind: "processes" });
-    run.held = false;
-    this.live.refreshQueued(run);
-    if (run.paused === undefined) void this.drive(run);
+    this.letRunTake(run);
   }
 
   /** The owner changed an agent's model or effort for this task: a live session switches now (5.15). */
@@ -688,16 +691,22 @@ export class RunManager {
     const item = this.deps.room.get(task.id, id);
     if (item === undefined) throw new Error("The handoff was not stored");
     run.queue.push({ kind: "handoff", itemId: id });
-    run.held = false;
-    this.live.refreshQueued(run);
-    if (run.paused === undefined) void this.drive(run);
+    this.letRunTake(run);
     return item;
   }
 
-  /** Closes one agent's session in a task, for a team change. Its queue is dropped. */
-  async remove(task: string, agent: string): Promise<void> {
+  /**
+   * Closes one agent's session in a task, for a team change. Its queue is dropped and returned,
+   * with the prompt of the turn it was in first, so a swap can hand them on (`handOn`).
+   */
+  async remove(task: string, agent: string): Promise<QueueEntry[]> {
     const run = this.runs.get(this.key(task, agent));
-    if (run === undefined) return;
+    if (run === undefined) return [];
+    const sending = run.sending;
+    const pending = [
+      ...(sending === undefined || run.queue.includes(sending) ? [] : [sending]),
+      ...run.queue,
+    ];
     run.closing = true;
     run.held = true;
     run.clearTimers();
@@ -714,6 +723,41 @@ export class RunManager {
     this.deps.store.runs.setInFlight(task, agent, 0, false);
     this.live.set(run, { status: "stopped", nowDoing: undefined, slot: undefined });
     this.runs.delete(this.key(task, agent));
+    return pending;
+  }
+
+  /**
+   * Gives `to` what `from` had pending when `remove` closed it for a swap. The brief and the
+   * messages for `from` go to `to`; work of its own that was cut (a resume, a notice, ended
+   * processes) becomes `note`, so `to` carries on. True when `to` got something and was woken.
+   */
+  handOn(task: string, from: string, to: string, pending: readonly QueueEntry[], note: string): boolean {
+    if (pending.length === 0) return false;
+    const next = this.runFor(task, to);
+    const carried: QueueEntry[] = [];
+    let cut = false;
+    for (const entry of pending) {
+      if (entry.kind === "brief") {
+        if (!next.queue.some((e) => e.kind === "brief") && !carried.some((e) => e.kind === "brief"))
+          carried.push(entry);
+      } else if (entry.kind === "owner" || entry.kind === "handoff") {
+        const id = entry.itemId;
+        if (
+          [...next.queue, ...carried].some((e) => e.kind === entry.kind && "itemId" in e && e.itemId === id)
+        )
+          continue;
+        this.retarget(task, id, from, to);
+        carried.push(entry);
+      } else if (entry.kind !== "fresh") {
+        cut = true;
+      }
+    }
+    // The brief already tells `to` to start; without it, the note says why it was woken.
+    if (cut && !carried.some((e) => e.kind === "brief")) carried.unshift({ kind: "notice", text: note });
+    if (carried.length === 0) return false;
+    next.queue = [...carried, ...next.queue];
+    this.letRunTake(next);
+    return true;
   }
 
   /** Stops the current turn of one agent, or of every agent in the task. Queued messages wait. */
@@ -1075,6 +1119,7 @@ export class RunManager {
       run.turning = false;
       run.settling = false;
       run.cancelBeforePrompt = false;
+      run.sending = undefined;
       run.drive = undefined;
       // Idle between turns: a waiting start may stop this process now.
       if (run.session !== undefined && run.live.status === "idle") {
@@ -1206,6 +1251,7 @@ export class RunManager {
       const session = run.session;
       const entry = run.queue.shift();
       if (session === undefined || entry === undefined) break;
+      run.sending = entry;
       this.live.refreshQueued(run);
       if (entry.kind === "fresh") {
         await this.compaction.fresh(run);
@@ -1250,6 +1296,7 @@ export class RunManager {
         session,
         this.withPreamble(run, this.withCarry(run, raw, entry.kind === "owner")),
       );
+      run.sending = undefined;
       const fired = run.limitHit;
       run.limitHit = undefined;
       if (stopReason === undefined) {

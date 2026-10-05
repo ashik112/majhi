@@ -48,7 +48,7 @@ describe("tasks.create", () => {
     expect(taskMd).toContain(
       `- acme-api: worktree \`${join(task.folder, "acme-api")}\`, branch \`feat/acm-1-add-a-health-endpoint-to-api-from\` (new, from \`develop\`)`,
     );
-    expect(taskMd).toContain("@acme-builder (Builder)");
+    expect(taskMd).toContain("@acme-builder (Lead)");
     expect(taskMd).toContain("Never push");
     for (const name of ["AGENTS.md", "CLAUDE.md"]) {
       expect(await readFile(join(task.folder, name), "utf8")).toContain("Read TASK.md in this folder first");

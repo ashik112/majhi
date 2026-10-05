@@ -1,6 +1,6 @@
 import { type AccountStatus, type AgentFrontmatter, canWorkIn } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { pickDefaultAgent } from "./agents.ts";
+import { pickDefaultAgent, roleIn } from "./agents.ts";
 
 function agent(
   id: string,
@@ -76,6 +76,24 @@ describe("pickDefaultAgent", () => {
     expect(pickDefaultAgent({ agents, org: "acme", boss: undefined, accountStatus: all })).toBe("acme-lead");
   });
 
+  it("skips an account a floor holds while another agent can take the task, then falls back to it", () => {
+    const held = new Set(["acct-acme-lead"]);
+    expect(pickDefaultAgent({ agents, org: "acme", boss: undefined, accountStatus: healthy, held })).toBe(
+      "acme-builder",
+    );
+    const all = new Set(agents.map((a) => a.account));
+    expect(
+      pickDefaultAgent({ agents, org: "acme", boss: undefined, accountStatus: healthy, held: all }),
+    ).toBe("acme-lead");
+    // A held account still beats one that cannot run at all.
+    const status = new Map<string, AccountStatus>(
+      agents.filter((a) => a.id !== "acme-lead").map((a) => [a.account, "at-limit"]),
+    );
+    expect(pickDefaultAgent({ agents, org: "acme", boss: undefined, accountStatus: status, held })).toBe(
+      "acme-lead",
+    );
+  });
+
   it("sends a task without an org to the captain", () => {
     expect(pickDefaultAgent({ agents, org: undefined, boss: "majhi-boss", accountStatus: healthy })).toBe(
       "majhi-boss",
@@ -94,5 +112,15 @@ describe("pickDefaultAgent", () => {
         accountStatus: healthy,
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("roleIn", () => {
+  it("shows the first of a lead-mode team as its lead, and every other member by its file", () => {
+    const task = { mode: "lead" as const, team: ["acme-builder", "acme-lead"] };
+    expect(roleIn(task, "acme-builder", "Builder")).toBe("Lead");
+    expect(roleIn(task, "acme-lead", "Lead")).toBe("Lead");
+    expect(roleIn({ mode: "pipeline", team: ["acme-builder"] }, "acme-builder", "Builder")).toBe("Builder");
+    expect(roleIn({ mode: "lead", team: ["majhi-boss"] }, "majhi-boss", "Root")).toBe("Root");
   });
 });

@@ -17,6 +17,7 @@ import {
   type Tier,
 } from "@majhi/shared";
 import { effortForTier, modelForTier, normalizeOffered, rankModels } from "../runs/model-options.ts";
+import { roleIn } from "./agents.ts";
 import type { Footprint, OverlapLevel } from "./planning.ts";
 
 /**
@@ -121,7 +122,7 @@ export function buildTeamFacts(input: FactsInput): TeamFacts {
   const byId = new Map(agents.map((a) => [a.id, a]));
   const members = task.team.flatMap((id) => {
     const fm = byId.get(id);
-    return fm === undefined ? [] : [memberFacts(fm, input)];
+    return fm === undefined ? [] : [{ ...memberFacts(fm, input), role: roleIn(task, id, fm.role) }];
   });
   const usable = (a: AgentFrontmatter) => {
     const status = input.accounts.get(a.account)?.status;
