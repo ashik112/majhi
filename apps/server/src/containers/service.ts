@@ -372,11 +372,26 @@ export class ContainerService {
         const wanted = service.ports.join(",");
         const existing = this.running(task, "service", alias);
         if (existing !== undefined && this.forwarded.get(names.hostForward(service.id)) === wanted) continue;
-        // Checked before any network exists.
-        const parts = hostForwardRunArgs(safety, limits, { id: service.id, ports: service.ports, image });
         if (existing !== undefined) await this.deps.processes.stop(task, existing.id, "task");
         await this.ensureNetwork(docker, safety);
         await this.ensureHostNetwork(docker, safety);
+        // The forwarder answers only this task's own network: another task's runner may reach its address.
+        const from =
+          (
+            await this.lines(docker, [
+              "network",
+              "inspect",
+              "--format",
+              "{{range .IPAM.Config}}{{.Subnet}} {{end}}",
+              names.network,
+            ])
+          )[0]?.split(" ")[0] ?? "";
+        const parts = hostForwardRunArgs(safety, limits, {
+          id: service.id,
+          ports: service.ports,
+          from,
+          image,
+        });
         await this.deps.processes.start({
           task,
           agent: "majhi",

@@ -469,10 +469,11 @@ function checkHostForward(
   }
   if (all(flags, "--add-host").some((h) => h !== `${HOST_TARGET}:host-gateway`))
     refuse(`A forwarder may only name ${HOST_TARGET}.`);
-  // The command is the script and the ports, nothing else.
-  const [node, script, ...ports] = parts.command;
-  if (node !== "node" || script !== HOST_FORWARD_SCRIPT)
+  // The command is the script, the task network's subnet it accepts connections from, and the ports: nothing else.
+  const [node, script, fromFlag, from, ...ports] = parts.command;
+  if (node !== "node" || script !== HOST_FORWARD_SCRIPT || fromFlag !== "--from")
     refuse("A forwarder runs only majhi's forwarding script.");
+  if (!isIpv4Cidr(from ?? "")) refuse("A forwarder accepts connections from the task network's subnet.");
   const reserved = [...MAJHI_OWN_PORTS, ...(s.ownPorts ?? [])];
   const issue = hostPortsIssue("A forwarder's ports", ports.join(" "));
   if (issue !== undefined || ports.some((p) => reserved.includes(Number(p)))) {
@@ -480,6 +481,21 @@ function checkHostForward(
   }
   if (ports.some((p) => String(Number(p)) !== p)) refuse("A forwarder's ports are plain numbers.");
   if (!matches(ImageRefSchema, parts.image ?? "")) refuse("A forwarder runs majhi's runner image.");
+}
+
+/** An IPv4 subnet like `192.168.171.0/24`: four octets and a prefix of 8 to 32. */
+export function isIpv4Cidr(text: string): boolean {
+  const [address = "", bits = "", ...rest] = text.split("/");
+  const octets = address.split(".");
+  const prefix = Number(bits);
+  const whole = (v: string, max: number) => v !== "" && String(Number(v)) === v && Number(v) <= max;
+  return (
+    rest.length === 0 &&
+    octets.length === 4 &&
+    octets.every((o) => whole(o, 255)) &&
+    whole(bits, 32) &&
+    prefix >= 8
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -799,6 +815,11 @@ export interface HostForwardSpec {
   /** The connection id: the forwarder is `<id>.host` on the task's network. */
   id: string;
   ports: readonly number[];
+  /**
+   * The task network's subnet, like `192.168.171.0/24`. The forwarder answers only peers inside it: on some
+   * runtimes (OrbStack) a container reaches another network's addresses, and another task's runner must not use this one.
+   */
+  from: string;
   /** The runner image, which holds the forwarding script. */
   image: string;
 }
@@ -837,7 +858,7 @@ export function hostForwardRunArgs(s: Safety, limits: Limits, spec: HostForwardS
         `${HOST_TARGET}:host-gateway`,
       ],
       image: spec.image,
-      command: ["node", HOST_FORWARD_SCRIPT, ...spec.ports.map(String)],
+      command: ["node", HOST_FORWARD_SCRIPT, "--from", spec.from, ...spec.ports.map(String)],
     },
     s,
   );

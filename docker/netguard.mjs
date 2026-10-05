@@ -25,6 +25,8 @@ export const HOST_NAMES = [
   "host.containers.internal",
 ];
 
+/** By path: a run's PATH is its own, and iptables lives in sbin. */
+const IPTABLES = "/usr/sbin/iptables";
 const BLOCKED_RANGES = ["0.0.0.0/8", "169.254.0.0/16"];
 
 /** A dotted IPv4 address as a number, or undefined when it is not exactly four octets. */
@@ -112,7 +114,7 @@ async function main() {
     gateways: routeGateways(readFileSync("/proc/net/route", "utf8")),
     hostAddresses: await resolveHosts(),
   });
-  for (const rule of rules) execFileSync("iptables", ["-w", ...rule], { stdio: "inherit" });
+  for (const rule of rules) execFileSync(IPTABLES, ["-w", ...rule], { stdio: "inherit" });
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {

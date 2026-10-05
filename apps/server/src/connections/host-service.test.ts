@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { type CommandMeta, type ConnectionConfig, GLOBAL_CONNECTIONS, hostPortsIssue } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { runConnections } from "./access.ts";
@@ -74,6 +75,26 @@ describe("a service on this computer: which tasks get it", () => {
     expect(
       ids(runConnections({ agent: root, task: { org: "globex", connections: ["kilby"] }, orgs })),
     ).toEqual(["kilby"]);
+  });
+});
+
+describe("the forwarder's source check", () => {
+  it("drops a peer outside the task's subnet, such as another task's runner", async () => {
+    const path = join(import.meta.dirname, "..", "..", "..", "..", "docker", "portforward.mjs");
+    const { parseSubnet, inside } = (await import(path)) as {
+      parseSubnet(text: string): unknown;
+      inside(subnet: unknown, address: string): boolean;
+    };
+    const task = parseSubnet("192.168.171.0/24");
+    expect(inside(task, "192.168.171.9")).toBe(true);
+    expect(inside(task, "::ffff:192.168.171.9")).toBe(true);
+    // The gateway is where traffic from another network arrives: OrbStack routes it across.
+    expect(inside(task, "192.168.171.1")).toBe(false);
+    expect(inside(task, "192.168.172.9")).toBe(false);
+    expect(inside(task, "192.168.165.4")).toBe(false);
+    expect(inside(task, "not an address")).toBe(false);
+    expect(parseSubnet("0.0.0.0/0")).toBeUndefined();
+    expect(parseSubnet("192.168.171.0")).toBeUndefined();
   });
 });
 
