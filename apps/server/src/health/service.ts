@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises";
-import { type CommandOutput, hostOsOf, keyringName, type Remount } from "@majhi/shared";
+import { type CommandOutput, type EventTopic, hostOsOf, keyringName, type Remount } from "@majhi/shared";
 import type { ConfigService } from "../config/service.ts";
 import type { ServerEnv } from "../env.ts";
 import { errorMessage } from "../errors.ts";
@@ -9,6 +9,7 @@ import type { Services } from "../services.ts";
 import type { SshHostProbe } from "../ssh/hosts.ts";
 import { sizeText } from "../tasks/folder-sweep.ts";
 import { type Check, collectChecks, type ToolCache } from "./checks.ts";
+import { type CheckUnit, runUnits } from "./run-all.ts";
 
 /** Loading keys and asking the Keychain or keyring can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
@@ -25,7 +26,13 @@ export interface HealthDeps {
   remount: (unmounted: readonly string[]) => Promise<Remount>;
   /** Rebuilds majhi through the host helper once no agent is working (`system.update`). */
   rebuild?: () => Promise<CommandOutput<"system.update">>;
+  /** Told after each check finishes, so the page shows rows as they settle. */
+  events?: { emit(topics: readonly EventTopic[]): void } | undefined;
+  now?: () => Date;
 }
+
+/** Checks of a full run that go at once. Connection checks may start a runner container each. */
+export const CHECK_ALL_CONCURRENCY = 4;
 
 type RunOutput = CommandOutput<"health.run">;
 type FixOutput = CommandOutput<"health.fix">;
@@ -50,20 +57,146 @@ export class HealthService {
     });
   }
 
+  private progress = { running: false, done: 0, total: 0 };
+  private lastFullRunAt: string | undefined;
+  /** An account or connection whose check threw: shown as failed until its next check works. */
+  private readonly failures = new Map<string, { detail: string; at: string }>();
+
+  private now(): Date {
+    return this.deps.now?.() ?? new Date();
+  }
+
+  private emit(...topics: EventTopic[]): void {
+    this.deps.events?.emit(["checks", ...topics]);
+  }
+
   async run(): Promise<RunOutput> {
     const checks = await this.checks();
+    const stamp = this.now().toISOString();
     return {
-      checkedAt: new Date().toISOString(),
-      checks: checks.map((c) => ({
-        id: c.id,
-        group: c.group,
-        label: c.name,
-        ok: c.status !== "fail",
-        level: c.status,
-        detail: c.detail,
-        ...(c.fix === undefined ? {} : { fix: c.fix }),
-      })),
+      checkedAt: stamp,
+      ...(this.lastFullRunAt === undefined ? {} : { lastFullRunAt: this.lastFullRunAt }),
+      run: { ...this.progress },
+      checks: checks.map((c) => {
+        const failure = this.failures.get(c.id);
+        if (failure !== undefined) {
+          return {
+            id: c.id,
+            group: c.group,
+            label: c.name,
+            ok: false,
+            level: "fail" as const,
+            detail: failure.detail,
+            checkedAt: failure.at,
+          };
+        }
+        return {
+          id: c.id,
+          group: c.group,
+          label: c.name,
+          ok: c.status !== "fail",
+          level: c.status,
+          detail: c.detail,
+          ...(c.fix === undefined ? {} : { fix: c.fix }),
+          checkedAt: c.checkedAt ?? stamp,
+        };
+      }),
     };
+  }
+
+  /** The check of one account or connection. Its result is stored by the service that ran it. */
+  private unitFor(id: string): CheckUnit | undefined {
+    const { services } = this.deps;
+    if (id.startsWith("account:")) {
+      const account = id.slice("account:".length);
+      return { id, weight: 1, run: () => this.settle(id, () => services.accounts.health(account, true)) };
+    }
+    if (id.startsWith("connection:")) {
+      const connection = id.slice("connection:".length);
+      return { id, weight: 1, run: () => this.settle(id, () => services.connectionTests.test(connection)) };
+    }
+    return undefined;
+  }
+
+  private async settle(id: string, check: () => Promise<unknown>): Promise<void> {
+    try {
+      await check();
+      this.failures.delete(id);
+    } catch (err) {
+      this.failures.set(id, {
+        detail: errorMessage(err).split("\n", 1)[0] ?? "Check failed",
+        at: this.now().toISOString(),
+      });
+      throw err;
+    }
+  }
+
+  /**
+   * Checks everything: the doctor checks (read live), then every account's health and every
+   * connection's real check, `CHECK_ALL_CONCURRENCY` at a time. Answers once the doctor checks are in and
+   * the rest is going; each check that finishes tells the page. One that fails never stops the others.
+   */
+  async checkAll(): Promise<CommandOutput<"health.checkAll">> {
+    if (this.progress.running) return { started: false, total: this.progress.total };
+    this.progress = { running: true, done: 0, total: 0 };
+    let units: CheckUnit[];
+    try {
+      this.toolCache.clear();
+      const doctor = (await this.checks()).filter((c) => c.group !== "accounts" && c.group !== "connections");
+      const { services } = this.deps;
+      const [accounts, connections] = await Promise.all([
+        services.accounts.list().catch(() => []),
+        services.connections.list().catch(() => []),
+      ]);
+      units = [
+        ...accounts.flatMap((a) => this.unitFor(`account:${a.id}`) ?? []),
+        // A connection that is not set up has nothing to call.
+        ...connections.flatMap((c) =>
+          c.problems.length > 0 ? [] : (this.unitFor(`connection:${c.id}`) ?? []),
+        ),
+      ];
+      const skipped = connections.filter((c) => c.problems.length > 0).length;
+      this.progress = {
+        running: true,
+        done: doctor.length + skipped,
+        total: doctor.length + skipped + units.length,
+      };
+    } catch (err) {
+      this.progress = { running: false, done: 0, total: 0 };
+      this.emit();
+      throw err;
+    }
+    this.emit();
+    void this.finish(units);
+    return { started: true, total: this.progress.total };
+  }
+
+  private async finish(units: readonly CheckUnit[]): Promise<void> {
+    try {
+      await runUnits(units, CHECK_ALL_CONCURRENCY, ({ unit }) => {
+        this.progress = { ...this.progress, done: this.progress.done + unit.weight };
+        this.emit(unit.id.startsWith("account:") ? "accounts" : "connections");
+      });
+      this.lastFullRunAt = this.now().toISOString();
+    } finally {
+      this.progress = { ...this.progress, running: false };
+      this.emit("accounts", "connections");
+    }
+  }
+
+  /** Checks one row again and waits: an account or connection, or (any other row) the doctor checks. */
+  async check(id: string): Promise<CommandOutput<"health.check">> {
+    const unit = this.unitFor(id);
+    if (unit === undefined) {
+      this.toolCache.clear();
+      await this.checks();
+    } else {
+      await unit.run().catch(() => undefined);
+    }
+    this.emit(
+      id.startsWith("account:") ? "accounts" : id.startsWith("connection:") ? "connections" : "checks",
+    );
+    return { checkedAt: this.now().toISOString() };
   }
 
   /** Runs the fix for one check. Answers with what happened in plain words. */

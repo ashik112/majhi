@@ -7,9 +7,10 @@ import type { BackupList } from "@majhi/shared";
 import {
   type AccountView,
   type ConfigState,
-  type ConnectionTestResult,
+  type ConnectionView,
   collapseHome,
   dockerRuntimeName,
+  FAILURE_LINE,
   type HostOs,
   type HostStatus,
   hostOsOf,
@@ -17,6 +18,7 @@ import {
   type SshHostCheck,
   type SshStatus,
   sshUnlockCommand,
+  TRANSIENT_FAILURES,
 } from "@majhi/shared";
 import type { ServerEnv } from "../env.ts";
 import { errorCode, errorMessage, exitCode } from "../errors.ts";
@@ -47,6 +49,8 @@ export interface Check {
   fix?: { label: string };
   /** The workspace the thing checked belongs to, when it belongs to one. */
   org?: string;
+  /** When the check last ran, for rows that keep their own result (accounts, connections). */
+  checkedAt?: string;
 }
 
 const GB = 1_000_000_000;
@@ -110,50 +114,71 @@ export async function collectChecks(ctx: CheckContext): Promise<Check[]> {
 const CONNECTION_TESTS_AT_ONCE = 3;
 
 /**
- * Each connection's Test (5.14). `doctor` tests every connection. The Health page and the sidebar,
- * which read the checks every few minutes, only show the last Test: testing would start runner
- * containers and sign in to clusters, mail and APIs on their own. A row offers its Test as the fix.
+ * Each connection's check (5.14). `doctor` tests every connection. The Health page and the sidebar
+ * read the last result; the page's "Run health check" (`health.checkAll`) makes it fresh first.
  */
 async function checkConnections(ctx: CheckContext): Promise<Check[]> {
   const views = await ctx.services.connections.list().catch(() => []);
-  const fresh = new Map<string, ConnectionTestResult>();
   if (ctx.accounts === "probe") {
     for (let i = 0; i < views.length; i += CONNECTION_TESTS_AT_ONCE) {
       const batch = views.slice(i, i + CONNECTION_TESTS_AT_ONCE);
       await Promise.all(
-        batch.map(async (view) => {
-          const result = await ctx.services.connectionTests.test(view.id).catch((err: unknown) => ({
-            ok: false,
-            detail: firstLine(errorMessage(err)),
-            warnings: [],
-            at: new Date().toISOString(),
-            durationMs: 0,
-          }));
-          fresh.set(view.id, result);
-        }),
+        batch.map((view) => ctx.services.connectionTests.test(view.id).catch(() => undefined)),
       );
     }
+    const fresh = await ctx.services.connections.list().catch(() => views);
+    return fresh.map(connectionCheck);
   }
-  return views.map((view): Check => {
-    const base = {
-      id: `connection:${view.id}`,
-      group: "connections" as const,
-      name: `${view.name} (${view.org})`,
-      org: view.org,
+  return views.map(connectionCheck);
+}
+
+/** One row for a connection, from its last check. A failure the owner cannot fix leaves out Reconnect. */
+export function connectionCheck(view: ConnectionView): Check {
+  const base = {
+    id: `connection:${view.id}`,
+    group: "connections" as const,
+    name: `${view.name} (${view.org})`,
+    org: view.org,
+  };
+  if (view.problems.length > 0) {
+    return {
+      ...base,
+      status: "warn",
+      detail: `Not set up: ${view.problems.join(". ")}.`,
+      fix: { label: "Open settings" },
     };
-    const result = fresh.get(view.id) ?? view.lastTest;
-    if (view.problems.length > 0) {
-      return { ...base, status: "warn", detail: `Not set up: ${view.problems.join(". ")}.` };
+  }
+  const result = view.lastTest;
+  if (result !== undefined) {
+    if (!result.ok) {
+      const transient = result.failure !== undefined && TRANSIENT_FAILURES.has(result.failure.reason);
+      return {
+        ...base,
+        status: "fail",
+        detail: result.detail,
+        checkedAt: result.at,
+        ...(transient ? {} : { fix: { label: "Reconnect" } }),
+      };
     }
-    if (result === undefined) {
-      return { ...base, status: "warn", detail: "Not tested since majhi started.", fix: { label: "Test" } };
-    }
-    if (!result.ok) return { ...base, status: "fail", detail: result.detail, fix: { label: "Test again" } };
     const warning = result.warnings[0];
     return warning === undefined
-      ? { ...base, status: "pass", detail: result.detail }
-      : { ...base, status: "warn", detail: warning, fix: { label: "Test again" } };
-  });
+      ? { ...base, status: "pass", detail: result.detail, checkedAt: result.at }
+      : { ...base, status: "warn", detail: warning, checkedAt: result.at };
+  }
+  const h = view.health;
+  if (h?.state === "connected") {
+    return { ...base, status: "pass", detail: h.checked[0] ?? "Connected", checkedAt: h.verifiedAt };
+  }
+  if (h?.state === "failed" || h?.state === "needs-attention") {
+    return {
+      ...base,
+      status: "fail",
+      detail: `${FAILURE_LINE[h.reason]}. ${h.fix}`,
+      checkedAt: h.at,
+      ...(TRANSIENT_FAILURES.has(h.reason) ? {} : { fix: { label: "Reconnect" } }),
+    };
+  }
+  return { ...base, status: "warn", detail: "Not checked yet." };
 }
 
 /** True when the helper is connected and can run Docker, so fixes that need it are on offer. */
@@ -688,10 +713,11 @@ async function checkAccounts(ctx: CheckContext): Promise<Check[]> {
   }
   return Promise.all(
     views.map(async (view): Promise<Check> => {
-      if (ctx.accounts === "cached") return accountCheck(view, view.lastHealth?.steps);
+      if (ctx.accounts === "cached")
+        return accountCheck(view, view.lastHealth?.steps, view.lastHealth?.checkedAt);
       try {
         const { health, account } = await services.accounts.health(view.id, true);
-        return accountCheck(account, health.steps);
+        return accountCheck(account, health.steps, health.checkedAt);
       } catch (err) {
         return {
           id: `account:${view.id}`,
@@ -699,7 +725,6 @@ async function checkAccounts(ctx: CheckContext): Promise<Check[]> {
           name: `Account ${view.id}`,
           status: "fail",
           detail: firstLine(errorMessage(err)),
-          fix: { label: "Check again" },
         };
       }
     }),
@@ -710,8 +735,14 @@ async function checkAccounts(ctx: CheckContext): Promise<Check[]> {
 export function accountCheck(
   view: Pick<AccountView, "id" | "status" | "signedInAs" | "auth">,
   steps: readonly { name: string; ok: boolean; detail: string }[] | undefined,
+  checkedAt?: string,
 ): Check {
-  const base = { id: `account:${view.id}`, group: "accounts", name: `Account ${view.id}` } as const;
+  const base = {
+    id: `account:${view.id}`,
+    group: "accounts",
+    name: `Account ${view.id}`,
+    ...(checkedAt === undefined ? {} : { checkedAt }),
+  } as const;
   const failed = steps?.find((s) => !s.ok);
   const who = view.signedInAs === undefined ? "" : ` as ${view.signedInAs}`;
   switch (view.status) {
@@ -734,10 +765,9 @@ export function accountCheck(
         ...base,
         status: "fail",
         detail: failed === undefined ? "Not answering" : `${failed.name}: ${failed.detail}`,
-        fix: { label: "Check again" },
       };
     case "unknown":
-      return { ...base, status: "warn", detail: "Not checked yet.", fix: { label: "Check now" } };
+      return { ...base, status: "warn", detail: "Not checked yet." };
   }
 }
 

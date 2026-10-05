@@ -1,4 +1,5 @@
 import { type EventTopic, type ServerEvent, ServerEventSchema, seqGap } from "@majhi/shared";
+import { opsKeys } from "./ops-queries";
 import { queryKeys } from "./queries";
 
 /** The query keys to refetch when a topic changes. Onboarding progress reads accounts, agents, orgs, projects, sign-ins and clones. */
@@ -55,6 +56,8 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
       return [queryKeys.signins, queryKeys.onboarding];
     case "clones":
       return [queryKeys.clones, queryKeys.onboarding];
+    case "checks":
+      return [opsKeys.checks];
   }
 }
 
@@ -134,6 +137,7 @@ export const ALL_TOPICS: readonly EventTopic[] = [
   "agenda",
   "signins",
   "clones",
+  "checks",
 ];
 
 /** Parses one WebSocket text frame. Anything that is not a known event is dropped. */

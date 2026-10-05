@@ -20,3 +20,20 @@ export function taskTotals(tasks: readonly CleanupTask[]): { removes: number; ro
     roomItems: tasks.reduce((n, t) => n + t.roomItems, 0),
   };
 }
+
+/** What a cleanup would free, in words: "3 worktrees, 2 branches, 4 caches and 12 room items in 5 tasks". */
+export function freeSummary(tasks: readonly CleanupTask[]): string {
+  const count = (kind: CleanupStep["kind"]) =>
+    tasks.reduce((n, t) => n + t.steps.filter((s) => s.kind === kind && s.action === "remove").length, 0);
+  const rooms = tasks.reduce((n, t) => n + t.roomItems, 0);
+  const parts = [
+    [count("worktree"), "worktree", "worktrees"],
+    [count("branch"), "branch", "branches"],
+    [count("cache"), "dependency cache", "dependency caches"],
+    [rooms, "room item", "room items"],
+  ] as const;
+  const named = parts.filter(([n]) => n > 0).map(([n, one, many]) => `${n} ${n === 1 ? one : many}`);
+  if (named.length === 0) return "";
+  const list = named.length === 1 ? named[0] : `${named.slice(0, -1).join(", ")} and ${named.at(-1)}`;
+  return `${list} in ${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`;
+}

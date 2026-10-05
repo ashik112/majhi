@@ -19,14 +19,17 @@ describe("accountCheck", () => {
     });
   });
 
-  it("offers Sign in for a signed-out account and Check again for an unreachable one", () => {
+  it("offers Sign in for a signed-out account and no fix for an unreachable one (the page offers Check again)", () => {
     expect(accountCheck(view("needs-login"), undefined)).toMatchObject({
       status: "warn",
       fix: { label: "Sign in" },
     });
+    expect(accountCheck(view("unreachable"), [{ name: "acp", ok: false, detail: "no session" }])).toEqual(
+      expect.objectContaining({ status: "fail", detail: "acp: no session" }),
+    );
     expect(
-      accountCheck(view("unreachable"), [{ name: "acp", ok: false, detail: "no session" }]),
-    ).toMatchObject({ status: "fail", detail: "acp: no session", fix: { label: "Check again" } });
+      accountCheck(view("unreachable"), [{ name: "acp", ok: false, detail: "no session" }]).fix,
+    ).toBeUndefined();
   });
 
   it("gives no fix to an account that is at its limit", () => {

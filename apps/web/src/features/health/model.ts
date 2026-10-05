@@ -68,8 +68,22 @@ export function openChecks(checks: readonly CheckRow[]): CheckRow[] {
   return checks.filter((c) => levelOf(c) !== "pass").toSorted((a, b) => rank[levelOf(a)] - rank[levelOf(b)]);
 }
 
-/** The worst level in a group, for the dot beside its name in the folded summary. */
-export function groupLevel(group: Pick<CheckGroup, "rows">): "pass" | "warn" | "fail" {
-  const levels = group.rows.map(levelOf);
-  return levels.includes("fail") ? "fail" : levels.includes("warn") ? "warn" : "pass";
+/** Checks that pass, in the order the server listed them. */
+export function passingChecks(checks: readonly CheckRow[]): CheckRow[] {
+  return checks.filter((c) => levelOf(c) === "pass");
+}
+
+/** "Checked 31: 28 ok, 3 need you". */
+export function runSummary(checks: readonly CheckRow[]): string {
+  const need = checks.filter((c) => levelOf(c) !== "pass").length;
+  return `Checked ${checks.length}: ${checks.length - need} ok, ${need} need you`;
+}
+
+/**
+ * The one button of a row that is not passing. A connection's fix opens its page (Reconnect or Open
+ * settings); any other fix runs `health.fix`. A row without a fix has no such button.
+ */
+export function rowFix(row: CheckRow): { label: string; kind: "fix" | "open-connection" } | undefined {
+  if (row.fix === undefined) return undefined;
+  return { label: row.fix.label, kind: row.id.startsWith("connection:") ? "open-connection" : "fix" };
 }
