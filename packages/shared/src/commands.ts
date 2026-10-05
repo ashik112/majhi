@@ -333,6 +333,7 @@ import {
   SkillInstallResultSchema,
   SkillNameInputSchema,
   SkillNameSchema,
+  SkillRunSchema,
   SkillSchema,
   SkillSearchResultSchema,
   SkillSetManyInputSchema,
@@ -2782,6 +2783,13 @@ export const commands = {
       "List installed skills with name, description, files, source, version and the agents that use each. With agent, only the ones that agent has enabled",
     input: z.object({ agent: IdSchema.optional() }),
     output: z.array(SkillSchema),
+  },
+  "skills.runs": {
+    risk: "read",
+    summary:
+      "The skills each agent's latest run in a task had at launch, and which of them it has used so far",
+    input: z.object({ task: z.string().min(1) }),
+    output: z.array(SkillRunSchema),
   },
   "skills.enable": {
     risk: "change",

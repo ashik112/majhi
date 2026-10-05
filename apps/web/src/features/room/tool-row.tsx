@@ -1,5 +1,7 @@
-import type { RoomItem, ToolContent } from "@majhi/shared";
+import { PAGE_PATH, type RoomItem, type ToolContent } from "@majhi/shared";
+import { Link } from "@tanstack/react-router";
 import {
+  BookOpen,
   Check,
   ChevronRight,
   CircleAlert,
@@ -48,17 +50,32 @@ export const ToolRow = memo(function ToolRow({ item, folder }: { item: ToolItem;
       </p>
     );
   }
-  const Icon = KIND_ICON[item.kind] ?? Wrench;
+  const Icon = item.skill === undefined ? (KIND_ICON[item.kind] ?? Wrench) : BookOpen;
   const full = toolTarget(item);
   const target = full === undefined ? undefined : shortPath(full, folder);
-  const expandable = hasToolDetail(item);
+  // A skill line holds a link, so it is not also a button.
+  const expandable = item.skill === undefined && hasToolDetail(item);
   const head = (
     <>
       <Icon aria-hidden="true" className="size-3.5 shrink-0 text-fg-faint" />
-      <span className="min-w-0 shrink truncate text-fg-muted" title={item.title}>
-        {oneLine(toolLabel(item.title))}
-      </span>
-      {target && target !== item.title && (
+      {item.skill === undefined ? (
+        <span className="min-w-0 shrink truncate text-fg-muted" title={item.title}>
+          {oneLine(toolLabel(item.title))}
+        </span>
+      ) : (
+        <span className="min-w-0 shrink truncate text-fg-muted">
+          Used skill:{" "}
+          <Link
+            to={PAGE_PATH.skills}
+            search={{ skill: item.skill }}
+            title={`Open ${item.skill} on the Skills page`}
+            className="font-mono text-xs text-blue hover:underline"
+          >
+            {item.skill}
+          </Link>
+        </span>
+      )}
+      {item.skill === undefined && target && target !== item.title && (
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg-faint" title={full}>
           {target}
         </span>

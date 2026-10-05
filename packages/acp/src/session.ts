@@ -69,6 +69,8 @@ export type SessionEvent =
       status?: "pending" | "in_progress" | "completed" | "failed";
       locations?: string[];
       content?: ToolContent[];
+      /** Claude Code's `Skill` tool call: the skill it loaded. */
+      skill?: string;
     } // create or patch
   | { type: "plan"; entries: { content: string; status: "pending" | "in_progress" | "completed" }[] }
   /** Context use, and the adapter's running session cost when it reports one. */

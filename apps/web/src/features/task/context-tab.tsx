@@ -1,4 +1,4 @@
-import type { AgentLive, RoomItem, Task } from "@majhi/shared";
+import { type AgentLive, PAGE_PATH, type RoomItem, type SkillRun, type Task } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, FileText } from "lucide-react";
@@ -16,7 +16,7 @@ import { useSettings } from "@/lib/boss-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { formatAgo, formatTokens, plural } from "@/lib/format";
-import { useSkills } from "@/lib/skills-queries";
+import { useSkillRuns } from "@/lib/skills-queries";
 import { useAgents, useOrgs } from "@/lib/studio-queries";
 import { useTaskReceipt } from "@/lib/usage-queries";
 import { useNow } from "@/lib/use-now";
@@ -333,7 +333,7 @@ function InContext({
   const files = filesRead(items, task.folder);
   const shownFiles = allFiles ? files : files.slice(0, FILES_SHOWN);
   const context = receipt.data?.context;
-  const skills = useTeamSkills(task.team);
+  const skills = useSkillRuns(task.id).data ?? [];
   const messages = roomMessages(items);
   return (
     <Card aria-labelledby="context-holds-heading" className="min-h-0 gap-0 px-0 py-3">
@@ -418,22 +418,12 @@ function InContext({
           )}
         </Row>
         <Row label="Skills">
-          {skills.length === 0 ? (
+          {skills.every((run) => run.had.length === 0) ? (
             <span className="text-fg-muted">None. A skill loads only its name until an agent uses it.</span>
           ) : (
-            <ul
-              aria-label="Skills of the team"
-              className="m-0 flex list-none flex-wrap gap-x-3 gap-y-0.5 p-0"
-            >
-              {skills.map((s) => (
-                <li key={s.skill} className="flex items-baseline gap-1">
-                  <span>{s.skill}</span>
-                  {s.agents.length < task.team.length && (
-                    <span className="font-mono text-xs text-fg-faint">
-                      {s.agents.map((a) => `@${a}`).join(" ")}
-                    </span>
-                  )}
-                </li>
+            <ul aria-label="Skills each run had" className="m-0 flex list-none flex-col gap-1 p-0">
+              {skills.map((run) => (
+                <RunSkills key={run.agent} run={run} single={skills.length === 1} />
               ))}
             </ul>
           )}
@@ -443,13 +433,47 @@ function InContext({
   );
 }
 
-/** The skills any team member has, each with the members that have it. */
-function useTeamSkills(team: readonly string[]) {
-  const installed = useSkills().data ?? [];
-  return installed.flatMap((s) => {
-    const agents = s.agents.filter((a) => team.includes(a));
-    return agents.length === 0 ? [] : [{ skill: s.name, agents }];
-  });
+/** The skills one agent's run had, as a count that opens to the names. The ones it used are marked. */
+function RunSkills({ run, single }: { run: SkillRun; single: boolean }) {
+  const [open, setOpen] = useState(false);
+  if (run.had.length === 0) return null;
+  const label = `Skills this run had: ${run.had.length}`;
+  return (
+    <li className="flex min-w-0 flex-col">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="flex cursor-pointer items-center gap-1 self-start text-left hover:text-fg"
+      >
+        <ChevronRight
+          aria-hidden="true"
+          className={cn("size-3 shrink-0 text-fg-faint", open && "rotate-90")}
+        />
+        <span>
+          {single ? label : `@${run.agent}: ${label}`}
+          {run.used.length > 0 && (
+            <span className="text-xs text-fg-faint">{`, ${run.used.length} used`}</span>
+          )}
+        </span>
+      </button>
+      {open && (
+        <ul
+          aria-label={`Skills of @${run.agent}`}
+          className="m-0 ml-4 flex list-none flex-wrap gap-x-3 gap-y-0.5 p-0"
+        >
+          {run.had.map((name) => (
+            <li key={name} className="flex items-baseline gap-1">
+              <Link to={PAGE_PATH.skills} search={{ skill: name }} className="hover:underline">
+                {name}
+              </Link>
+              {run.used.includes(name) && <span className="text-xs text-fg-faint">used</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
 }
 
 /** Opens a file of the task folder in the viewer over the task. */

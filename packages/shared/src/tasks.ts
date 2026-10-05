@@ -3,6 +3,7 @@ import { BranchPatternSchema, IdSchema, MrHostSchema, OrgIdSchema, SecretRefSche
 import { ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./rooms.ts";
 import { CommitsPatchSchema } from "./settings.ts";
+import { SkillNameSchema } from "./skills.ts";
 import { DaySchema } from "./usage.ts";
 
 /**
@@ -700,6 +701,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     status: z.enum(["pending", "in_progress", "completed", "failed"]),
     locations: z.array(z.string()),
     content: z.array(ToolContentSchema),
+    /** The tool call loaded this installed skill: the row reads "Used skill" and links to it. */
+    skill: SkillNameSchema.optional(),
   }),
   RoomItemBase.extend({
     type: z.literal("plan"),

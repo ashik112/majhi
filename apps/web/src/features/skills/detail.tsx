@@ -20,7 +20,7 @@ import { useToast } from "@/components/ui/toast";
 import { scopeAudience, scopeName, WorkspaceMark } from "@/features/connections/scope-picker";
 import { useConnectionCommand } from "@/lib/connection-queries";
 import { describeError } from "@/lib/errors";
-import { plural } from "@/lib/format";
+import { formatAgo, plural } from "@/lib/format";
 import { useSkillsCommand } from "@/lib/skills-queries";
 import { groupAgents, type Item } from "./catalog";
 import { groupName } from "./group-name";
@@ -240,6 +240,13 @@ export function SkillDetail({
       )}
       <Section title="About">
         <p className="text-base text-fg-soft text-pretty">{skill.description}</p>
+      </Section>
+      <Section title="Use">
+        <p className="text-sm text-fg-soft">
+          {skill.usage.lastUsedAt === undefined
+            ? "No agent has used it yet."
+            : `Last used ${formatAgo(skill.usage.lastUsedAt, Date.now())}. ${plural(skill.usage.uses30d, "use")} in the last 30 days.`}
+        </p>
       </Section>
       <Section title="Source" aside={`Version ${version}`}>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">

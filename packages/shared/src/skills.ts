@@ -39,6 +39,15 @@ export const SkillSourceSchema = z.object({
 });
 export type SkillSource = z.infer<typeof SkillSourceSchema>;
 
+/** How much agents used a skill, from the uses recorded in runs. */
+export const SkillUsageSchema = z.object({
+  /** When an agent last used it, ever. Absent when none has. */
+  lastUsedAt: z.string().optional(),
+  /** Uses in the last 30 days. */
+  uses30d: z.number().int().nonnegative(),
+});
+export type SkillUsage = z.infer<typeof SkillUsageSchema>;
+
 export const SkillSchema = z.object({
   name: SkillNameSchema,
   description: z.string(),
@@ -60,8 +69,18 @@ export const SkillSchema = z.object({
   optIn: z.array(IdSchema).default([]),
   /** Workspace rules: `on` or `off` for every agent of that workspace, agents created later included. */
   orgs: z.record(z.string(), z.enum(["on", "off"])).default({}),
+  usage: SkillUsageSchema.default({ uses30d: 0 }),
 });
 export type Skill = z.infer<typeof SkillSchema>;
+
+/** The skills one agent's latest run in a task had at launch, and the ones it has used since. */
+export const SkillRunSchema = z.object({
+  agent: IdSchema,
+  startedAt: z.string(),
+  had: z.array(SkillNameSchema),
+  used: z.array(SkillNameSchema),
+});
+export type SkillRun = z.infer<typeof SkillRunSchema>;
 
 /** The rules that decide who has a skill. The same fields as `Skill`. */
 export interface SkillRule {

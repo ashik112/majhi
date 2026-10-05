@@ -43,6 +43,7 @@ function typing(target: EventTarget | null): boolean {
  */
 export function SkillsView() {
   const [param, setTab] = useSearchParam("tab");
+  const [linked, setLinked] = useSearchParam("skill");
   const tab: ItemKind = param === "mcp" ? "mcp" : "skill";
   const skills = useSkills();
   const connections = useConnections();
@@ -84,6 +85,15 @@ export function SkillsView() {
     );
     return { skill: sortItems(skillItems), mcp: sortItems(mcpItems) };
   }, [skills.data, mcpServers, statuses.data, checks, testing, agents.length, agents]);
+  // A link from the room ("Used skill: name") opens that skill's detail once the list is read.
+  useEffect(() => {
+    if (linked === undefined || skills.data === undefined) return;
+    if (skills.data.some((s) => s.name === linked)) {
+      setFocusKey(`skill:${linked}`);
+      setOpenKey(`skill:${linked}`);
+    }
+    setLinked(undefined);
+  }, [linked, skills.data, setLinked]);
   const items = all[tab].filter((i) => matches(i, query));
   const loading = tab === "skill" ? skills.isPending : connections.isPending;
   const failed = tab === "skill" ? skills.error : connections.error;

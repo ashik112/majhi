@@ -225,9 +225,13 @@ async function scriptedTurn(s: Session, text: string): ReturnType<typeof matchRu
 /**
  * The steps a prompt asks for, in order: `call: <tool> {json}` calls an MCP tool (on majhi-admin, else
  * the first server; `call: <server>/<tool>` picks one), and `run: <command>` runs a shell command
- * after asking permission, like an agent's own shell.
+ * after asking permission, like an agent's own shell. `skill: <name>` loads a skill the way claude-agent-acp
+ * reports Claude Code's `Skill` tool.
  */
-type Step = { kind: "call"; tool: string; server?: string; args: unknown } | { kind: "run"; command: string };
+type Step =
+  | { kind: "call"; tool: string; server?: string; args: unknown }
+  | { kind: "run"; command: string }
+  | { kind: "skill"; name: string };
 
 function promptSteps(text: string): Step[] {
   const steps: Step[] = [];
@@ -235,6 +239,11 @@ function promptSteps(text: string): Step[] {
     const run = /^run:\s+(.+)$/.exec(line.trim());
     if (run?.[1] !== undefined) {
       steps.push({ kind: "run", command: run[1] });
+      continue;
+    }
+    const skill = /^skill:\s+(\S+)$/.exec(line.trim());
+    if (skill?.[1] !== undefined) {
+      steps.push({ kind: "skill", name: skill[1] });
       continue;
     }
     const m = /^call:\s+(\S+)\s*(.*)$/.exec(line.trim());
@@ -806,6 +815,36 @@ export function serveAcp(o: ServeOptions): void {
                 content: [{ type: "content", content: { type: "text", text: result.output } }],
               });
               lines.push(`${step.command}: ${result.output.split("\n", 1)[0] ?? ""}`);
+              continue;
+            }
+            if (step.kind === "skill") {
+              const toolCallId = `skill-${++n}`;
+              const meta = { claudeCode: { toolName: "Skill" } };
+              const title = `Load skill: ${step.name}`;
+              // Like the adapter: the first report has an empty input, the refinement the whole one.
+              await update(params.sessionId, {
+                sessionUpdate: "tool_call",
+                toolCallId,
+                title,
+                kind: "other",
+                status: "pending",
+                rawInput: {},
+                _meta: meta,
+              });
+              await update(params.sessionId, {
+                sessionUpdate: "tool_call_update",
+                toolCallId,
+                title,
+                rawInput: { skill: step.name },
+                _meta: meta,
+              });
+              await update(params.sessionId, {
+                sessionUpdate: "tool_call_update",
+                toolCallId,
+                status: "completed",
+                _meta: meta,
+              });
+              lines.push(title);
               continue;
             }
             const { tool, args } = step;

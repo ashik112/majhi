@@ -83,6 +83,7 @@ function toolEvent(u: {
   status?: string | null | undefined;
   locations?: readonly { path: string }[] | null | undefined;
   content?: readonly { type: string }[] | null | undefined;
+  rawInput?: unknown;
   _meta?: unknown;
 }): ToolEvent {
   const e: ToolEvent = { type: "tool", toolCallId: u.toolCallId };
@@ -92,7 +93,23 @@ function toolEvent(u: {
   if (u.locations) e.locations = u.locations.map((l) => l.path);
   const content = mapContent(u.content, u._meta);
   if (content) e.content = content;
+  const skill = skillOf(u);
+  if (skill !== undefined) e.skill = skill;
   return e;
+}
+
+/**
+ * claude-agent-acp 0.84.0 reports Claude Code's `Skill` tool with `_meta.claudeCode.toolName: "Skill"`
+ * and the skill's name in `rawInput.skill`; the first report may carry an empty input, a later one the
+ * whole input. Codex has no such tool: it reads a SKILL.md file, which the server sees as a location.
+ */
+const SkillMeta = z.object({ claudeCode: z.object({ toolName: z.literal("Skill") }) });
+const SkillInput = z.object({ skill: z.string().trim().min(1) });
+
+function skillOf(u: { rawInput?: unknown; _meta?: unknown }): string | undefined {
+  if (!SkillMeta.safeParse(u._meta).success) return undefined;
+  const input = SkillInput.safeParse(u.rawInput);
+  return input.success ? input.data.skill : undefined;
 }
 
 /**

@@ -6,6 +6,7 @@ import type {
   McpSearchResult,
   Skill,
   SkillInstallResult,
+  SkillRun,
   SkillSearchResult,
 } from "@majhi/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,6 +17,14 @@ export function useSkills() {
   return useQuery<Skill[], ApiRequestError>({
     queryKey: queryKeys.skills,
     queryFn: () => cmd("skills.list", {}),
+  });
+}
+
+/** The skills each agent's latest run in a task had at launch, and the ones it used. */
+export function useSkillRuns(task: string) {
+  return useQuery<SkillRun[], ApiRequestError>({
+    queryKey: [...queryKeys.skills, "runs", task],
+    queryFn: () => cmd("skills.runs", { task }),
   });
 }
 

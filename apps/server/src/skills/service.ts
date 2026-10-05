@@ -8,6 +8,7 @@ import {
   type SkillInstallInput,
   type SkillInstallResult,
   type SkillPreview,
+  type SkillRun,
   type SkillSearchResult,
   type SkillSetManyInput,
   type SkillSource,
@@ -47,6 +48,10 @@ export interface SkillServiceDeps {
   roots: () => Promise<string[]>;
   hostHome: string;
   now?: () => Date;
+  /** Per skill: when it was last used and how many uses are at or after `since`. */
+  usage: (since: string) => Map<string, { lastUsedAt: string; uses: number }>;
+  /** Each agent's newest run in a task: the skills it had and the ones it used. */
+  runsOf: (task: string) => SkillRun[];
   /** Agents whose skills changed in the lock only: their open sessions restart so the next turn has the change. */
   changed?: (agents: string[]) => void;
 }
@@ -82,8 +87,15 @@ export class SkillService {
 
   async list(agent?: string): Promise<Skill[]> {
     const [stored, lists] = await Promise.all([this.deps.store.list(), this.deps.agents.skillLists()]);
-    const skills = stored.map((s) => toSkill(s, lists));
+    const now = (this.deps.now ?? (() => new Date()))();
+    const usage = this.deps.usage(new Date(now.getTime() - USAGE_DAYS * 86_400_000).toISOString());
+    const skills = stored.map((s) => toSkill(s, lists, usage.get(s.name)));
     return agent === undefined ? skills : skills.filter((s) => s.agents.includes(agent));
+  }
+
+  /** The skills each agent's latest run in the task had, and which it used. */
+  async runs(task: string): Promise<SkillRun[]> {
+    return this.deps.runsOf(task);
   }
 
   async get(name: string): Promise<Skill> {
@@ -457,7 +469,14 @@ export class SkillService {
   }
 }
 
-function toSkill(s: StoredSkill, lists: { id: string; scope: string }[]): Skill {
+/** The window of "uses in the last N days" on a skill. */
+const USAGE_DAYS = 30;
+
+function toSkill(
+  s: StoredSkill,
+  lists: { id: string; scope: string }[],
+  used: { lastUsedAt: string; uses: number } | undefined,
+): Skill {
   return {
     name: s.name,
     description: s.description,
@@ -473,6 +492,7 @@ function toSkill(s: StoredSkill, lists: { id: string; scope: string }[]): Skill 
     optOut: s.optOut,
     optIn: s.optIn,
     orgs: s.orgs,
+    usage: used === undefined ? { uses30d: 0 } : { lastUsedAt: used.lastUsedAt, uses30d: used.uses },
   };
 }
 

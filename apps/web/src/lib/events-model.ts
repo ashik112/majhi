@@ -14,6 +14,8 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
     case "agents":
       // A connection lists the agents that use it.
       return [queryKeys.agents, queryKeys.connections, queryKeys.skills, queryKeys.onboarding];
+    case "skills":
+      return [queryKeys.skills];
     case "projects":
       return [queryKeys.projects, queryKeys.onboarding];
     case "tasks":

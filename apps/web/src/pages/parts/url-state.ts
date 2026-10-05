@@ -10,7 +10,8 @@ type SearchName =
   | "project"
   | "tab"
   | "section"
-  | "item";
+  | "item"
+  | "skill";
 
 /** A search param of the current URL, and a setter that keeps the others and replaces history. */
 export function useSearchParam(name: SearchName): [string | undefined, (value: string | undefined) => void] {
