@@ -29,11 +29,7 @@ export function TaskMenu({ task }: { task: Task }) {
                 label: "Reopen task",
                 onSelect: () =>
                   reopen.mutate(task.id, {
-                    onError: (e) =>
-                      toast("Could not reopen", {
-                        detail: e.message,
-                        tone: "error",
-                      }),
+                    onError: (e) => toast("Could not reopen", { detail: e.message, tone: "error" }),
                   }),
               }
             : { label: "Close task", onSelect: () => setConfirm("close") },
@@ -44,19 +40,11 @@ export function TaskMenu({ task }: { task: Task }) {
                 { path: task.folder },
                 {
                   onSuccess: (done) => toast(`Opened in ${editor}`, { detail: done.path }),
-                  onError: (e) =>
-                    toast(`Could not open in ${editor}`, {
-                      detail: e.message,
-                      tone: "error",
-                    }),
+                  onError: (e) => toast(`Could not open in ${editor}`, { detail: e.message, tone: "error" }),
                 },
               ),
           },
-          {
-            label: "Remove task",
-            onSelect: () => setConfirm("remove"),
-            tone: "danger",
-          },
+          { label: "Remove task", onSelect: () => setConfirm("remove"), tone: "danger" },
         ]}
       />
       {confirm === "close" && <CloseDialog task={task} onDone={() => setConfirm(null)} />}
@@ -104,11 +92,7 @@ function RemoveDialog({ task, onDone }: { task: Task; onDone: () => void }) {
   const remove = useRemoveTask();
   const toast = useToast();
   const navigate = useNavigate();
-  const [refusal, setRefusal] = useState<{
-    message: string;
-    changes: string[];
-    again: boolean;
-  } | null>(null);
+  const [refusal, setRefusal] = useState<{ message: string; changes: string[]; again: boolean } | null>(null);
   const [typed, setTyped] = useState("");
   const confirmed = typed.trim().toUpperCase() === task.id;
 
@@ -121,11 +105,7 @@ function RemoveDialog({ task, onDone }: { task: Task; onDone: () => void }) {
       );
     } catch (error) {
       if (error instanceof ApiRequestError && error.status === 409 && error.details.length > 0) {
-        setRefusal({
-          message: error.message,
-          changes: error.details,
-          again: refusal !== null,
-        });
+        setRefusal({ message: error.message, changes: error.details, again: refusal !== null });
         setTyped("");
         remove.reset();
       }
@@ -170,9 +150,7 @@ function RemoveDialog({ task, onDone }: { task: Task; onDone: () => void }) {
     <ConfirmDialog
       title={`Remove ${task.id}`}
       body={body}
-      confirmLabel={
-        remove.isPending ? "Removing..." : refusal === null ? "Remove task" : "Remove with changes"
-      }
+      confirmLabel={remove.isPending ? "Removing..." : refusal === null ? "Remove task" : "Remove with changes"}
       busy={remove.isPending}
       confirmDisabled={refusal !== null && !confirmed}
       error={remove.error ? [remove.error.message, ...remove.error.details].join(" ") : undefined}
