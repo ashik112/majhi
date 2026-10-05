@@ -2,6 +2,8 @@ import {
   type BoardCounts,
   type CaptainAction,
   type CiState,
+  type HomeBackground,
+  type HomeCheck,
   lifecycle,
   type OwnerDecision,
   PRIVATE,
@@ -10,6 +12,7 @@ import {
 } from "@majhi/shared";
 import { primaryOption, rowTitle, workspaceOf } from "../decisions/model";
 import type { BannerAction } from "../shell/model";
+import { type CheckState, checkState } from "./check-state";
 import { plainTitle, waitsOnSubtasks } from "./model";
 
 type Blocker = lifecycle.Blocker;
@@ -37,8 +40,8 @@ export const SECTION_LABEL: Record<SectionId, string> = {
   running: "Running now",
   shipping: "Shipping",
   next: "Up next",
-  triage: "To triage",
-  captain: "Captain handled",
+  triage: "Unsorted ideas",
+  captain: "Captain did today",
   done: "Done today",
 };
 
@@ -85,6 +88,10 @@ export interface HomeInput {
   /** Open merge requests per task beyond the first. */
   mrExtra: ReadonlyMap<string, number>;
   doing: ReadonlyMap<string, DoingFact>;
+  /** The merge gate verdict and hand-off state of each review task. */
+  checks: ReadonlyMap<string, HomeCheck>;
+  /** Hand-off checks, background processes and previews that run now. */
+  background: readonly HomeBackground[];
   captain: readonly CaptainAction[];
   /** Captain actions that merged a task and can be undone, by task. */
   undoOf: ReadonlyMap<string, number>;
@@ -130,6 +137,8 @@ export function sectionOf(
 
 export interface NeedsItem {
   decision: OwnerDecision;
+  /** The checks of the decision's task, for a ship decision. */
+  check: HomeCheck | undefined;
   /** How many open tasks wait for this decision's task. */
   blocks: number;
 }
@@ -138,6 +147,11 @@ export interface RunningItem {
   doing: DoingFact | undefined;
   /** Paused with no decision for the owner: the captain, Auto-pilot or a budget stopped it. */
   paused: boolean;
+}
+/** Work with no agent turn: a hand-off check, a process, a preview. One row each. */
+export interface BackgroundItem {
+  task: TaskSummary;
+  work: HomeBackground;
 }
 export interface ShippingItem {
   task: TaskSummary;
@@ -157,6 +171,8 @@ export interface DoneItem {
 export interface HomeSections {
   needs: NeedsItem[];
   running: RunningItem[];
+  /** Listed in Running now after the agents. */
+  background: BackgroundItem[];
   shipping: ShippingItem[];
   next: QueuedItem[];
   triage: QueuedItem[];
@@ -165,7 +181,10 @@ export interface HomeSections {
 }
 
 /** What the strip says: counts of the workspace filter, before the text filter narrows the rows. */
-export type HomeTotals = Record<SectionId, number> & { working: number };
+export type HomeTotals = Record<SectionId, number> & {
+  /** Agents in a turn now, plus the background work that runs. */
+  working: number;
+};
 
 const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, normal: 1, low: 2 };
 const priorityRank = (p: TaskPriority | undefined) => PRIORITY_RANK[p ?? "normal"];
@@ -279,6 +298,7 @@ export function buildHome(input: HomeInput): { sections: HomeSections; totals: H
   const needs: NeedsItem[] = decisions.map((decision) => ({
     decision,
     blocks: decision.task === undefined ? 0 : (blocks.get(decision.task) ?? 0),
+    check: decision.task === undefined ? undefined : input.checks.get(decision.task),
   }));
   needs.sort((a, b) =>
     needsOrder(a, b, (id) => priorityRank(id === undefined ? undefined : byId.get(id)?.priority)),
@@ -313,6 +333,12 @@ export function buildHome(input: HomeInput): { sections: HomeSections; totals: H
     }
   }
   running.sort(runningOrder);
+  const background: BackgroundItem[] = input.background
+    .flatMap((work) => {
+      const task = byId.get(work.task);
+      return task === undefined || !inScope(task) ? [] : [{ task, work }];
+    })
+    .toSorted((a, b) => a.work.since.localeCompare(b.work.since) || a.task.id.localeCompare(b.task.id));
   shipping.sort(shippingOrder);
   next.sort(queuedOrder);
   triage.sort(
@@ -332,13 +358,13 @@ export function buildHome(input: HomeInput): { sections: HomeSections; totals: H
 
   const totals: HomeTotals = {
     needs: needs.length,
-    running: running.length,
+    running: running.length + background.length,
     shipping: shipping.length,
     next: next.length,
     triage: triage.length,
     captain: captain.length,
     done: done.length,
-    working: running.filter((r) => !r.paused).length,
+    working: running.filter((r) => !r.paused).length + background.length,
   };
 
   const sections: HomeSections = {
@@ -346,6 +372,7 @@ export function buildHome(input: HomeInput): { sections: HomeSections; totals: H
       matches(query, n.decision.task, decisionTitle(n.decision), n.decision.sentence),
     ),
     running: running.filter((r) => matches(query, r.task.id, r.task.title)),
+    background: background.filter((b) => matches(query, b.task.id, b.task.title)),
     shipping: shipping.filter((s) => matches(query, s.task.id, s.task.title)),
     next: next.filter((q) => matches(query, q.task.id, q.task.title)),
     triage: triage.filter((q) => matches(query, q.task.id, q.task.title)),
@@ -443,6 +470,10 @@ export type ActionSpec =
   | { kind: "stop"; task: string; label: string }
   | { kind: "merge"; task: string; label: string }
   | { kind: "fix-ci"; task: string; label: string }
+  /** Run the task's hand-off checks again. */
+  | { kind: "recheck"; task: string; label: string }
+  /** Nothing to press: the row shows a spinner and the time. */
+  | { kind: "wait"; label: string }
   | { kind: "undo"; id: number; label: string };
 
 const open = (task: string, label: string): ActionSpec => ({
@@ -458,8 +489,13 @@ const MAX_ACTIONS = 3;
 export function needsActions(
   decision: OwnerDecision,
   blocked: Readonly<Record<string, string>> | undefined,
+  check?: HomeCheck | undefined,
 ): ActionSpec[] {
   const ship = decision.kind === "ship";
+  if (ship && check !== undefined && decision.task !== undefined) {
+    const staged = checkActions(decision, checkState(check));
+    if (staged !== undefined) return staged;
+  }
   const lead = primaryOption(decision, blocked);
   const options = decision.options
     .filter((o) => o.text !== true && blocked?.[o.id] === undefined && (!ship || o.primary === true))
@@ -469,6 +505,30 @@ export function needsActions(
   const answers: ActionSpec[] = options.map((o) => ({ kind: "answer", option: o.id, label: o.label }));
   // A question with typed answers only: the first action opens it, where the reply box is.
   return [...answers, open].slice(0, MAX_ACTIONS);
+}
+
+/**
+ * The buttons of a ship decision while its checks are not green: the verdict says which one leads.
+ * Undefined when the checks are green: the decision's own buttons stand.
+ */
+function checkActions(decision: OwnerDecision, state: CheckState): ActionSpec[] | undefined {
+  const task = decision.task;
+  if (task === undefined || state.button === "merge") return undefined;
+  const link: ActionSpec = { kind: "go", action: linkAction(decision), label: "Review" };
+  const anyway: ActionSpec[] = state.mergeAnyway
+    ? [{ kind: "go", action: linkAction(decision), label: "Merge anyway" }]
+    : [];
+  switch (state.button) {
+    case "wait":
+      return [{ kind: "wait", label: state.label }, link];
+    case "see-failure":
+      return [{ kind: "go", action: linkAction(decision), label: state.label }, ...anyway];
+    case "check-again":
+      return [{ kind: "recheck", task, label: state.label } satisfies ActionSpec, link, ...anyway].slice(
+        0,
+        MAX_ACTIONS,
+      );
+  }
 }
 
 function linkAction(decision: OwnerDecision): BannerAction {
@@ -491,6 +551,10 @@ function linkAction(decision: OwnerDecision): BannerAction {
     case "setup":
       return { kind: "page", to: "/setup", search: { section: link.section } };
   }
+}
+
+export function backgroundActions(item: BackgroundItem): ActionSpec[] {
+  return [open(item.task.id, "Watch")];
 }
 
 export function runningActions(item: RunningItem): ActionSpec[] {
@@ -576,6 +640,7 @@ export type Entry =
     }
   | { type: "needs"; key: string; section: "needs"; item: NeedsItem }
   | { type: "running"; key: string; section: "running"; item: RunningItem }
+  | { type: "background"; key: string; section: "running"; item: BackgroundItem }
   | { type: "shipping"; key: string; section: "shipping"; item: ShippingItem }
   | { type: "next"; key: string; section: "next"; item: QueuedItem }
   | { type: "triage"; key: string; section: "triage"; item: QueuedItem }
@@ -598,7 +663,8 @@ export function headerKey(section: SectionId): string {
 export function buildEntries(sections: HomeSections, view: ListView): Entry[] {
   const out: Entry[] = [];
   for (const section of SECTION_ORDER) {
-    const count = sections[section].length;
+    const count =
+      section === "running" ? sections.running.length + sections.background.length : sections[section].length;
     if (count === 0) continue;
     const collapsible = COLLAPSED_BY_DEFAULT.has(section);
     const open = !collapsible || view.opened.has(section);
@@ -627,7 +693,19 @@ function rowsOf(sections: HomeSections, section: SectionId): RowEntry[] {
     case "needs":
       return sections.needs.map((item) => ({ type: "needs", key: `d:${item.decision.id}`, section, item }));
     case "running":
-      return sections.running.map((item) => ({ type: "running", key: `t:${item.task.id}`, section, item }));
+      return [
+        ...sections.running.map(
+          (item): RowEntry => ({ type: "running", key: `t:${item.task.id}`, section, item }),
+        ),
+        ...sections.background.map(
+          (item): RowEntry => ({
+            type: "background",
+            key: `b:${item.task.id}:${item.work.kind}:${item.work.label}`,
+            section,
+            item,
+          }),
+        ),
+      ];
     case "shipping":
       return sections.shipping.map((item) => ({ type: "shipping", key: `t:${item.task.id}`, section, item }));
     case "next":
@@ -648,9 +726,11 @@ export function actionsOf(
 ): ActionSpec[] {
   switch (entry.type) {
     case "needs":
-      return needsActions(entry.item.decision, blockedOf(entry.item.decision.id));
+      return needsActions(entry.item.decision, blockedOf(entry.item.decision.id), entry.item.check);
     case "running":
       return runningActions(entry.item);
+    case "background":
+      return backgroundActions(entry.item);
     case "shipping":
       return shippingActions(entry.item);
     case "next":

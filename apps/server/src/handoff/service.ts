@@ -1,5 +1,6 @@
 import {
   HANDOFF_STRIKES,
+  type HandoffActivity,
   type HandoffHistoryItem,
   type HandoffResult,
   type HandoffReview,
@@ -201,6 +202,8 @@ export class HandoffService {
   /** The last result for each task, for what the card shows while it has not been judged. */
   private readonly latest = new Map<string, HandoffResult>();
   private readonly background = new Set<Promise<unknown>>();
+  /** The step each unfinished check is on, and since when (ms). Read by `activity`. */
+  private readonly stage = new Map<string, { step: HandoffStepId; since: number }>();
 
   constructor(
     private readonly ports: HandoffPorts,
@@ -263,13 +266,23 @@ export class HandoffService {
     const key = `${id}\u0000${head}\u0000${opts.force ? "f" : ""}`;
     const joined = this.inflight.get(key) ?? this.inflight.get(`${id}\u0000${head}\u0000f`);
     if (joined !== undefined) return joined;
-    const run = this.run(task, head, opts.force).finally(() => this.inflight.delete(key));
+    const run = this.run(task, head, opts.force).finally(() => {
+      this.inflight.delete(key);
+      this.stage.delete(id);
+    });
     this.inflight.set(key, run);
     return run;
   }
 
+  /** The check moved to a step: the rows that show it read it again. */
+  private enter(id: string, step: HandoffStepId): void {
+    this.stage.set(id, { step, since: this.now().getTime() });
+    this.ports.changed(id);
+  }
+
   private async run(task: HandoffTask, head: string, force: boolean): Promise<HandoffResult> {
     const started = this.now().getTime();
+    this.stage.set(task.id, { step: "ready", since: started });
     const ready = await this.ports.ready(task.id);
     const readyStep: HandoffStep = ready.ok
       ? step("ready", { status: "pass", detail: ready.evidence })
@@ -301,11 +314,13 @@ export class HandoffService {
         deep = { steps: kept.steps, review: kept.review, ms: kept.ms, cached: true };
       } else {
         this.waiting.add(task.id);
+        this.stage.set(task.id, { step: "ready", since: this.now().getTime() });
         this.ports.changed(task.id);
         try {
           const costly = await this.slots.run(task.org, () => {
             this.waiting.delete(task.id);
             this.running.add(task.id);
+            this.enter(task.id, "lint");
             return this.deepCheck(task, force);
           });
           deep = { ...costly, cached: false };
@@ -380,12 +395,16 @@ export class HandoffService {
   ): Promise<{ steps: HandoffStep[]; review: HandoffReview; ms: number }> {
     const started = this.now().getTime();
     const lint = await this.command(task, "lint");
+    this.enter(task.id, "build");
     const build = await this.command(task, "build");
     // A build that does not build makes the tests say nothing.
     const tests =
       build.status === "fail" || build.status === "timeout"
         ? step("tests", { status: "skipped", detail: "not run: the build failed" })
-        : await this.command(task, "tests");
+        : await (async () => {
+            this.enter(task.id, "tests");
+            return this.command(task, "tests");
+          })();
     const diff = await this.ports.diff(task.id).catch(() => undefined);
     const hasTests = (
       await Promise.all(
@@ -419,7 +438,10 @@ export class HandoffService {
               notes: [],
               tokens: 0,
             } satisfies HandoffReview)
-          : await this.review(task, diff, hasTests, force);
+          : await (async () => {
+              this.enter(task.id, "review");
+              return this.review(task, diff, hasTests, force);
+            })();
     const reviewStep = step("review", {
       status: review.by === "skipped" ? "skipped" : review.notes.length > 0 ? "note" : "pass",
       detail:
@@ -673,7 +695,21 @@ export class HandoffService {
       escalated,
       running: this.running.has(id) || this.asked.has(id),
       queued: this.waiting.has(id),
+      ...this.activityOf(id),
     };
+  }
+
+  /** What an unfinished check is doing: its place in the queue, or the step it is on. */
+  private activityOf(id: string): { activity?: HandoffActivity } {
+    const at = this.stage.get(id);
+    const since = new Date(at?.since ?? this.now().getTime()).toISOString();
+    if (this.waiting.has(id)) {
+      return { activity: { phase: "queued", since, position: [...this.waiting].indexOf(id) + 1 } };
+    }
+    if (this.running.has(id) || this.asked.has(id)) {
+      return { activity: { phase: "running", since, ...(at === undefined ? {} : { step: at.step }) } };
+    }
+    return {};
   }
 }
 

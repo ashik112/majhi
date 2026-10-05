@@ -1,5 +1,17 @@
 # Progress
 
+## Home says what is running and what the checks found (built, not merged)
+
+Branch `fix/home-state`.
+
+- **Cause.** Home rows for finished work read "@agent finished <title>" with an amber Merge button, whatever the merge gate or the hand-off said. Running checks, failed and timed-out checks, and background processes were not shown anywhere.
+- **Review rows.** `tasks.homeFacts` now also returns, in one read for every task in review, the merge gate verdict (`checks`), what the hand-off is doing (`activity`: step, start, place in the queue), the failed step with its timing, and the first sentence of the agent's last message. The detail column and the primary button come from that data only: "Ready to merge" with Merge; "Tests failed after 1m" with See failure; "Tests timed out at 30m" and "Checks not run on the latest commit" with Check again; "Checking: tests 4m" or "Queued for checks (2nd)" with a spinner and the time and no button. "Merge anyway" is a secondary action, only where the merge gate allows an override (a failed or timed-out check, never the secret scan); it opens the task, where the typed confirmation lives. The hand-off service emits a task event at each step, and the process manager when one starts or ends, so rows update through the feed with no per-row polling.
+- **Running now** lists hand-off checks (running and queued), background processes and previews/builds/services, one row each with the elapsed time. The strip's running count includes them.
+- **Banner.** On Home the banner no longer repeats a decision that is a row. `deriveBanner` takes `onScreen`; "and N more" counts only what is not on screen.
+- **Counts.** Each count in the strip has a hover line. "Captain handled" reads "captain did today", "to triage" reads "unsorted ideas". The account readout says "claude-x 91% of its 5h window" and shows only above 80% (or at its limit).
+- **Verified.** Pure tests: `check-state.test.ts` (verdict and hand-off state to text and button, button lists), `shell/banner.test.ts` (dedupe). Browser check on an isolated e2e server built from this worktree with a fake hand-off exec: tasks in review with ok, failed, timed out, stale, running and queued checks and a background process. Each primary button was clicked (Merge merged and the row left, See failure and Merge anyway opened the task, Check again queued a new check and the row switched to the spinner), the list was scrolled to the bottom with the wheel, 1440x900 and 1100x800, no console errors.
+- **Left.** The failing-file count ("Tests failed: 2 files") is not shown: the hand-off result has no structured count, and parsing test output is not allowed. Add one to the check result when a runner reports it.
+
 ## Hand-off check tests only the change (not merged)
 
 Branch `feat/handoff-changed-tests`.

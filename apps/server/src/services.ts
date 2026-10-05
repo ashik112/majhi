@@ -101,6 +101,7 @@ import { checkGitToken } from "./gitConnect/check.ts";
 import type { Fetch } from "./gitConnect/http.ts";
 import { TokenRefused } from "./gitConnect/http.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
+import { HomeChecks } from "./handoff/home-checks.ts";
 import { DEFAULT_HANDOFF_MEMORY, defaultHandoffCpus } from "./handoff/limits.ts";
 import { MergeGate } from "./handoff/merge-gate.ts";
 import { shipReadiness } from "./handoff/ready.ts";
@@ -368,6 +369,8 @@ export interface Services {
   outcomes: OutcomesService;
   /** The checked hand-off: tests, build, lint and a review before "Ready to ship" (5.18). */
   handoff: HandoffService;
+  /** The checks of every review task in one read, for Home. */
+  homeChecks: HomeChecks;
   /** The owner's agenda and the morning brief (5.18). */
   agenda: AgendaService;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
@@ -650,6 +653,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   };
   // No run is alive yet: every connection folder left from before goes.
   background.run(() => sweepRunFiles(env.majhiHome));
+  const runningProcesses = new Map<string, string>();
   const processes = new ProcessManager({
     spawner: sessionOptions.spawner ?? localSpawner,
     launch: async (task, agent) => {
@@ -673,6 +677,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     onChange: (task, list) => {
       room.setProcesses(task, list);
       if (list.some((p) => p.container !== undefined)) events.emit(["containers"]);
+      // Home lists what runs: tell it when one starts or ends, not for every line of output.
+      const running = list
+        .filter((p) => p.status === "running")
+        .map((p) => p.id)
+        .join(",");
+      if ((runningProcesses.get(task) ?? "") !== running) {
+        if (running === "") runningProcesses.delete(task);
+        else runningProcesses.set(task, running);
+        events.emitTask(task);
+      }
     },
     // Bound below, like the run manager's callbacks.
     onEnded: (p, wakes) => background.run(() => tasks.processEnded(p, wakes)),
@@ -2303,6 +2317,18 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outbound,
     outcomes,
     handoff,
+    homeChecks: new HomeChecks({
+      ids: () => store.tasks.idsWithStatus("review"),
+      mergeChecks: (id) => tasks.mergeChecks(id),
+      state: (id) => handoff.state(id),
+      lastMessage: (id) => {
+        room.flush(id);
+        for (const item of store.room.page(id, 60).items) {
+          if (item.type === "agent" && item.text.trim() !== "") return item.text;
+        }
+        return undefined;
+      },
+    }),
     agenda,
     captainTell: new CaptainTell({
       tasks,

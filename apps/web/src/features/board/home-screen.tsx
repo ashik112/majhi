@@ -9,13 +9,7 @@ import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { PageLink } from "@/components/ui/page-link";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  busiestAccount,
-  busiestText,
-  USAGE_FULL_PCT,
-  USAGE_HIGH_PCT,
-  usageTitle,
-} from "@/features/accounts/model";
+import { accountReadout, busiestAccount, USAGE_FULL_PCT, usageTitle } from "@/features/accounts/model";
 import { MODE_LAMP } from "@/features/autonomy/model";
 import { markSeen, useUnseenSummary } from "@/features/autonomy/summary-seen";
 import { SpendToday, useAutonomousSwitch } from "@/features/autonomy/switch";
@@ -52,6 +46,8 @@ import { EntryView, type OrgTag, type RowHandlers, rowDomId } from "./home-rows"
 const WINDOW_FROM = 60;
 const ROW_ESTIMATE = 37;
 const HEADER_ESTIMATE = 33;
+/** How often the clock of the rows moves: the elapsed time of a running check reads in seconds. */
+const NOW_TICK_MS = 15_000;
 
 function typing(target: EventTarget | null): boolean {
   return (
@@ -69,7 +65,7 @@ export function BoardScreen() {
   const decisions = useDecisions();
   const orgs = useOrgs().data;
   const { org, setOrg } = useOrgFilter();
-  const now = useNow(60_000);
+  const now = useNow(NOW_TICK_MS);
   const log = useCaptainLog(org);
   const blockers = useBlockers();
   const facts = useHomeFacts();
@@ -106,6 +102,8 @@ export function BoardScreen() {
         mrs: facts.mrs,
         mrExtra: facts.mrExtra,
         doing: facts.doing,
+        checks: facts.checks,
+        background: facts.background,
         captain: captainActions ?? [],
         undoOf,
         org,
@@ -142,6 +140,7 @@ export function BoardScreen() {
           return id === undefined ? undefined : tagOf(id);
         }
         case "running":
+        case "background":
         case "shipping":
         case "next":
         case "triage":
@@ -386,7 +385,7 @@ export function BoardScreen() {
             <Hint keys="Enter">open</Hint>
             <Hint keys="1 2 3">act</Hint>
             <Hint keys="x">select</Hint>
-            <Hint keys="t">triage</Hint>
+            <Hint keys="t">unsorted</Hint>
             <Hint keys="/">filter</Hint>
             <Hint keys="J K">section</Hint>
           </p>
@@ -544,6 +543,17 @@ function TopBar({
   );
 }
 
+/** What each count means, on hover. */
+const STRIP_HINT: Partial<Record<SectionId, string>> = {
+  needs: "Questions, approvals and finished work that wait for your answer.",
+  running: "Agents working now, plus checks, processes and previews that run in the background.",
+  shipping: "Tasks with an open merge request, waiting on CI or on a merge.",
+  next: "Tasks that can start, waiting for a slot, an account or another task.",
+  triage: "Ideas with no priority or repo yet. Sort them so work can start.",
+  captain: "What the captain finished by itself in the last 24 hours. Open one to check or undo it.",
+};
+const STRIP_HINT_FALLBACK = "";
+
 /** One line of counts: each is a jump to its section. */
 function Strip({
   totals,
@@ -555,12 +565,13 @@ function Strip({
   onJump: (section: SectionId) => void;
 }) {
   const { status } = useAutonomousSwitch();
-  const segment = (section: SectionId, n: number, label: string, tone?: LampState) => {
+  const segment = (section: SectionId, n: number, label: string, hint: string, tone?: LampState) => {
     if (n === 0 && section !== "needs") return null;
     return (
       <button
         key={section}
         type="button"
+        title={hint}
         onClick={() => onJump(section)}
         disabled={n === 0}
         className="tnum flex shrink-0 cursor-pointer items-baseline gap-1.5 hover:text-fg disabled:cursor-default"
@@ -574,12 +585,18 @@ function Strip({
   };
   return (
     <p className="flex h-9 shrink-0 items-baseline gap-4 overflow-hidden border-b border-line px-3 pt-2 text-sm whitespace-nowrap text-fg-muted">
-      {segment("needs", totals.needs, totals.needs === 1 ? "needs you" : "need you", "needs")}
-      {segment("running", totals.working, "running", "working")}
-      {segment("shipping", totals.shipping, "shipping")}
-      {segment("next", totals.next, "up next")}
-      {segment("triage", totals.triage, "to triage")}
-      {segment("captain", totals.captain, "captain handled")}
+      {segment(
+        "needs",
+        totals.needs,
+        totals.needs === 1 ? "needs you" : "need you",
+        STRIP_HINT.needs ?? STRIP_HINT_FALLBACK,
+        "needs",
+      )}
+      {segment("running", totals.working, "running", STRIP_HINT.running ?? STRIP_HINT_FALLBACK, "working")}
+      {segment("shipping", totals.shipping, "shipping", STRIP_HINT.shipping ?? STRIP_HINT_FALLBACK)}
+      {segment("next", totals.next, "up next", STRIP_HINT.next ?? STRIP_HINT_FALLBACK)}
+      {segment("triage", totals.triage, "unsorted ideas", STRIP_HINT.triage ?? STRIP_HINT_FALLBACK)}
+      {segment("captain", totals.captain, "captain did today", STRIP_HINT.captain ?? STRIP_HINT_FALLBACK)}
       <span className="ml-auto flex min-w-0 items-baseline gap-4">
         {status && <SpendToday status={status} className="text-sm text-fg-muted max-[1199px]:hidden" />}
         <AccountReadout org={org} />
@@ -696,8 +713,8 @@ function AccountReadout({ org }: { org: string | undefined }) {
   const accounts = useAccounts().data;
   const now = useNow(60_000);
   const busiest = accounts && busiestAccount(accounts, org);
-  if (!accounts || !busiest) return null;
-  const text = busiestText(busiest);
+  const text = accountReadout(busiest || undefined);
+  if (!accounts || !busiest || !text) return null;
   const full = busiest.limit !== undefined || busiest.pct >= USAGE_FULL_PCT;
   return (
     <PageLink
@@ -706,12 +723,7 @@ function AccountReadout({ org }: { org: string | undefined }) {
       className="tnum min-w-0 truncate rounded-xs text-sm text-fg-muted hover:text-fg"
     >
       <span className="font-mono text-sm text-fg">{text.head}</span>{" "}
-      <b
-        className={cn(
-          "ml-0.5 font-mono text-md font-medium",
-          full ? LAMP_TEXT.paused : busiest.pct >= USAGE_HIGH_PCT ? "text-amber" : "text-fg",
-        )}
-      >
+      <b className={cn("ml-0.5 font-mono text-md font-medium", full ? LAMP_TEXT.paused : "text-amber")}>
         {text.value}
       </b>
       {text.rest}

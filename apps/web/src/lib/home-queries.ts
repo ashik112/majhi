@@ -1,4 +1,4 @@
-import type { CommandOutput, lifecycle } from "@majhi/shared";
+import type { CommandOutput, HomeBackground, HomeCheck, lifecycle } from "@majhi/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { DoingFact, MrFact } from "@/features/board/home-model";
@@ -29,6 +29,10 @@ export interface HomeFacts {
   /** Open merge requests of a task beyond its first. */
   mrExtra: ReadonlyMap<string, number>;
   doing: ReadonlyMap<string, DoingFact>;
+  /** The merge gate verdict and hand-off state of each review task. */
+  checks: ReadonlyMap<string, HomeCheck>;
+  /** Hand-off checks, processes and previews that run now. */
+  background: readonly HomeBackground[];
 }
 
 /** The open merge requests and what each working agent does. The live line has no event, so it is read every few seconds. */
@@ -53,6 +57,7 @@ export function useHomeFacts(): HomeFacts {
     for (const d of data?.doing ?? []) {
       if (!doing.has(d.task)) doing.set(d.task, d);
     }
-    return { mrs, mrExtra, doing };
+    const checks = new Map((data?.checks ?? []).map((c) => [c.task, c]));
+    return { mrs, mrExtra, doing, checks, background: data?.background ?? [] };
   }, [data]);
 }

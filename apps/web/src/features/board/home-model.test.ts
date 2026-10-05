@@ -91,6 +91,8 @@ function input(over: Partial<HomeInput> = {}): HomeInput {
     mrs: new Map(),
     mrExtra: new Map(),
     doing: new Map(),
+    checks: new Map(),
+    background: [],
     captain: [],
     undoOf: new Map(),
     org: undefined,

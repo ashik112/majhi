@@ -83,6 +83,18 @@ export type HandoffHistoryItem = z.infer<typeof HandoffHistoryItemSchema>;
 /** After this many failed hand-offs in a row the task goes to the owner, not back to its lead. */
 export const HANDOFF_STRIKES = 3;
 
+/**
+ * What a check that has not ended is doing, for the Home rows: waiting for a free slot (`position`,
+ * 1 is next) or running one step (`step`), since `since` (UTC ISO, the start of the step).
+ */
+export const HandoffActivitySchema = z.object({
+  phase: z.enum(["queued", "running"]),
+  step: HandoffStepIdSchema.optional(),
+  since: z.string(),
+  position: z.number().int().positive().optional(),
+});
+export type HandoffActivity = z.infer<typeof HandoffActivitySchema>;
+
 export const HandoffStateSchema = z.object({
   task: z.string(),
   /** The check of the task's head now, when there is one. */
@@ -97,6 +109,8 @@ export const HandoffStateSchema = z.object({
   escalated: z.boolean(),
   running: z.boolean(),
   queued: z.boolean(),
+  /** Set while `running` or `queued`: which step runs, since when, and the place in the queue. */
+  activity: HandoffActivitySchema.optional(),
 });
 export type HandoffState = z.infer<typeof HandoffStateSchema>;
 

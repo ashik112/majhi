@@ -1,5 +1,5 @@
 import { DECISION_KIND_LABEL, type OwnerDecisionKind } from "@majhi/shared";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, LoaderCircle } from "lucide-react";
 import { memo, type ReactNode, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -10,9 +10,11 @@ import { useHeldOption } from "@/features/decisions/use-send-decision";
 import { cn } from "@/lib/cn";
 import { openDue, shortAgo } from "../tasks/schedule";
 import { DueChip, PriorityChip } from "../tasks/schedule-chips";
+import { backgroundChip, backgroundLine, checkElapsed, checkLine, checkState, duration } from "./check-state";
 import {
   type ActionSpec,
   actionsOf,
+  type BackgroundItem,
   blockerText,
   type DoneItem,
   decisionTitle,
@@ -103,6 +105,8 @@ function Row({
   actions,
   primaryTone = "secondary",
   busy = false,
+  elapsed: waited,
+  detailTitle,
   onFocus,
   onAct,
   onOpen,
@@ -118,6 +122,10 @@ function Row({
   actions: readonly ActionSpec[];
   primaryTone?: "primary" | "secondary";
   busy?: boolean;
+  /** For a first action that waits: the time the work has run. */
+  elapsed?: string;
+  /** Hover text of the detail. */
+  detailTitle?: string | undefined;
 }) {
   const [first, ...others] = actions;
   return (
@@ -169,7 +177,9 @@ function Row({
             : "max-[1279px]:hidden",
         )}
       >
-        <span className="min-w-0 truncate text-sm text-fg-soft">{detail}</span>
+        <span className="min-w-0 truncate text-sm text-fg-soft" title={detailTitle}>
+          {detail}
+        </span>
         {others.length > 0 && (
           <span
             className={cn(
@@ -194,7 +204,17 @@ function Row({
       </span>
       <span className="ml-auto flex shrink-0 items-center gap-3">
         <span className="tnum w-9 text-right font-mono text-xs text-fg-faint">{wait}</span>
-        {first !== undefined && (
+        {first?.kind === "wait" && (
+          <span
+            title="Checks are running"
+            data-testid="row-waiting"
+            className="tnum inline-flex h-7 min-w-[84px] items-center justify-center gap-1.5 text-sm text-fg-muted"
+          >
+            <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
+            {waited}
+          </span>
+        )}
+        {first !== undefined && first.kind !== "wait" && (
           <Button
             size="sm"
             variant={primaryTone}
@@ -229,11 +249,25 @@ const NeedsRow = memo(function NeedsRow({
     [d.blocked, d.options],
   );
   const actions = actionsOf({ type: "needs", key: entryKey, section: "needs", item }, () => blocked);
+  const check = item.check;
+  const state = check === undefined ? undefined : checkState(check);
   const text: ReactNode = ship ? (
-    d.blocked !== undefined ? (
+    check !== undefined && state !== undefined ? (
+      <span
+        className={cn(
+          state.kind === "ok"
+            ? "text-green"
+            : state.kind === "running" || state.kind === "queued"
+              ? undefined
+              : "text-caution",
+        )}
+      >
+        {checkLine(check, rest.now)}
+      </span>
+    ) : d.blocked !== undefined ? (
       <span className="text-caution">{d.blocked}</span>
     ) : (
-      (d.sentence ?? "Ready to ship")
+      "Ready to ship"
     )
   ) : d.kind === "question" || d.kind === "approval" ? (
     rowTitle(d)
@@ -254,6 +288,8 @@ const NeedsRow = memo(function NeedsRow({
       title={title}
       org={org}
       detail={text}
+      detailTitle={check?.outcome}
+      elapsed={check === undefined ? "" : checkElapsed(check, rest.now)}
       wait={shortAgo(d.at, rest.now)}
       actions={actions}
       primaryTone="primary"
@@ -266,6 +302,12 @@ const NeedsRow = memo(function NeedsRow({
 
 function elapsed(iso: string | undefined, now: number): string {
   return iso === undefined ? "" : shortAgo(iso, now);
+}
+
+/** How long background work has run: seconds in the first minute, so a fresh check does not read "now". */
+function runFor(iso: string, now: number): string {
+  const ms = now - Date.parse(iso);
+  return ms >= 0 && ms < 60_000 ? duration(ms) : shortAgo(iso, now);
 }
 
 const RunningRow = memo(function RunningRow({
@@ -293,6 +335,30 @@ const RunningRow = memo(function RunningRow({
       detail={text}
       wait={elapsed(doing?.since ?? task.updatedAt, rest.now)}
       actions={actionsOf({ type: "running", key: entryKey, section: "running", item })}
+    />
+  );
+});
+
+const BackgroundRow = memo(function BackgroundRow({
+  item,
+  org,
+  entryKey,
+  ...rest
+}: { item: BackgroundItem; org: OrgTag | undefined } & RowProps) {
+  const { task, work } = item;
+  return (
+    <Row
+      {...rest}
+      entryKey={entryKey}
+      lamp={work.kind === "queued-check" ? "idle" : "working"}
+      chip={backgroundChip(work.kind)}
+      chipTone={work.kind === "queued-check" ? undefined : "working"}
+      id={task.id}
+      title={plainTitle(task.title)}
+      org={org}
+      detail={backgroundLine(work)}
+      wait={runFor(work.since, rest.now)}
+      actions={actionsOf({ type: "background", key: entryKey, section: "running", item })}
     />
   );
 });
@@ -599,6 +665,8 @@ export function EntryView({
       return <NeedsRow {...common} item={entry.item} />;
     case "running":
       return <RunningRow {...common} item={entry.item} />;
+    case "background":
+      return <BackgroundRow {...common} item={entry.item} />;
     case "shipping":
       return <ShippingRow {...common} item={entry.item} />;
     case "next":

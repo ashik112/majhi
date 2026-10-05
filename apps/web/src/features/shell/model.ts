@@ -1,7 +1,7 @@
 import type { AccountView, OrgView, OwnerDecision, PagePath, TaskSummary } from "@majhi/shared";
 import type { AgentInfo } from "../../lib/agent-index";
 import { badgeLetters, formatAgo } from "../../lib/format";
-import { actionOf, openLabel } from "../decisions/model";
+import { actionOf, openLabel, workspaceOf } from "../decisions/model";
 
 // Organisations -------------------------------------------------------------
 
@@ -157,6 +157,16 @@ function bannerRank(d: OwnerDecision): number {
   }
 }
 
+/** The decisions Home draws as rows: all of them, narrowed to the workspace filter. */
+export function homeRowIds(
+  decisions: readonly OwnerDecision[] | undefined,
+  org: string | undefined,
+): ReadonlySet<string> {
+  return new Set(
+    (decisions ?? []).filter((d) => org === undefined || workspaceOf(d) === org).map((d) => d.id),
+  );
+}
+
 /**
  * The banner, from the decisions the server lists and nothing else, so it cannot name something the
  * Needs you page does not. The prompt waiting in the task the owner has open points at itself.
@@ -164,8 +174,10 @@ function bannerRank(d: OwnerDecision): number {
 export function deriveBanner(input: {
   decisions: readonly OwnerDecision[] | undefined;
   permission: PendingPermission | undefined;
+  /** Decisions the page already draws as rows: the banner never repeats them. */
+  onScreen?: ReadonlySet<string> | undefined;
 }): Banner | null {
-  const all = input.decisions ?? [];
+  const all = (input.decisions ?? []).filter((d) => input.onScreen?.has(d.id) !== true);
   const first = all.toSorted((a, b) => bannerRank(a) - bannerRank(b))[0];
   if (first === undefined) return null;
   const more = all.length - 1;

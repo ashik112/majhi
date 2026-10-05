@@ -17,7 +17,7 @@ import { AppGate } from "@/features/home/app-gate";
 import { NewTaskProvider, useNewTask } from "@/features/new-task/new-task-context";
 import { Palette } from "@/features/search/palette";
 import { isSettingsPath, SettingsFrame } from "@/features/settings/settings-frame";
-import { deriveBanner } from "@/features/shell/model";
+import { deriveBanner, homeRowIds } from "@/features/shell/model";
 import { useShortcuts } from "@/features/shell/use-shortcuts";
 import { TaskDrawer } from "@/features/task-drawer/task-drawer";
 import { UpdateOverlay } from "@/features/update/update-overlay";
@@ -26,7 +26,7 @@ import { usePendingPermission } from "@/lib/attention";
 import { useAttentionBadge } from "@/lib/browser-notify";
 import { cn } from "@/lib/cn";
 import { useDecisions } from "@/lib/decision-queries";
-import { useAdoptOrgParam } from "@/lib/org-filter";
+import { useAdoptOrgParam, useOrgFilter } from "@/lib/org-filter";
 import { useServerEvents } from "@/lib/use-server-events";
 import { useArrivalNewTask } from "@/onboarding/arrive";
 
@@ -77,7 +77,13 @@ function Frame() {
   const decisions = useDecisions().data?.decisions;
   const permission = usePendingPermission();
   const { task: drawerTask, peek } = useSearch({ from: "__root__" });
-  const banner = useMemo(() => deriveBanner({ decisions, permission }), [decisions, permission]);
+  const onHome = useRouterState({ select: (s) => s.location.pathname === "/" });
+  const { org } = useOrgFilter();
+  // Home draws every decision as a row: its banner only says what is not on the screen.
+  const banner = useMemo(
+    () => deriveBanner({ decisions, permission, onScreen: onHome ? homeRowIds(decisions, org) : undefined }),
+    [decisions, permission, onHome, org],
+  );
   useAttentionBadge(useNeedsYou() ?? 0);
   // The Captain drawer's code is read when it opens (the sidebar warms it when the pointer reaches its button).
   const { open: bossOpen } = useBoss();

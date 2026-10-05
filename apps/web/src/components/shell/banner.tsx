@@ -1,7 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { useNeedsYou } from "@/features/decisions/needs-you";
 import type { Banner, BannerAction } from "@/features/shell/model";
 import { cn } from "@/lib/cn";
 import { setNoticesOpen } from "@/lib/notices";
@@ -45,9 +44,8 @@ export function useRunAttention(): (action: BannerAction) => void {
  */
 export function AttentionBanner({ banner }: { banner: Banner | null }) {
   const run = useRunAttention();
-  // The banner shows the first; the rest is the shared count less that one.
-  const total = useNeedsYou();
-  const more = total === undefined ? (banner?.more ?? 0) : Math.max(0, total - 1);
+  // The banner shows the first; `more` counts the rest that are not drawn on the page.
+  const more = banner?.more ?? 0;
 
   return (
     <AnimatePresence initial={false}>
