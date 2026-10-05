@@ -50,6 +50,12 @@ export function runnerSetup(
   const spawner = dockerSpawner(config);
   return {
     sessionOptions: { ...env.runtime, spawner },
-    runner: { network, config, prune: () => spawner.prune(), live: () => spawner.live(), sweep: () => spawner.sweep() },
+    runner: {
+      network,
+      config,
+      prune: () => spawner.prune(),
+      live: () => spawner.live(),
+      sweep: () => spawner.sweep(),
+    },
   };
 }
