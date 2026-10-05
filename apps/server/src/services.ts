@@ -66,6 +66,7 @@ import { type BrowserServer, RUNNER_BROWSERS_PATH } from "./connections/browser.
 import { GitLink } from "./connections/git-link.ts";
 import { ConnectionHealthService } from "./connections/health.ts";
 import { probePort } from "./connections/host-probe.ts";
+import { LiveHostServices } from "./connections/live-host.ts";
 import { listTools, remoteTransport } from "./connections/mcp-client.ts";
 import { type GitProvider, type PlanDeps, planConnections } from "./connections/plan.ts";
 import { redactSecrets } from "./connections/redact.ts";
@@ -505,7 +506,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     renameCommands: (agent, newId) => room.renameCommands(agent, newId),
     toolsChanged: (agent) => runs.remountAgent(agent),
   });
-  const runner = runnerSetup(env, options.runnerInspect, (task) => containers.taskNetworks(task));
+  const runner = runnerSetup(env, options.runnerInspect, (task) => containers.taskNetworks(task), {
+    taskSubnets: (task) => containers.taskSubnets(task),
+    // Runners reach majhi by its name on their network, on the port it listens on (main.ts sets the MCP address).
+    server: () => ({ host: env.runner.mcpHost, port: Number(new URL(adminTokens.mcpUrl).port) || env.port }),
+  });
   const sessionOptions = runner.sessionOptions;
   const usageRepo = new UsageRepo(store.raw);
   const budgets = new BudgetMonitor({
@@ -729,6 +734,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     settings: async () => (await config.settings()).containers,
     runnerNetwork: env.runner.network,
     runnerImage: env.runner.image,
+    guardServer: () => ({
+      host: env.runner.mcpHost,
+      port: Number(new URL(adminTokens.mcpUrl).port) || env.port,
+    }),
     ownPorts,
     paths: { majhiHome: env.majhiHome, hostHome: env.hostHome, protectedPaths: [env.secretsKeyFile] },
     changed: () => events.emit(["containers"]),
@@ -1862,7 +1871,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       )
       .catch(() => undefined);
   };
+  // A service on this computer that connects while agents work reaches them at once (5.14). Bound below.
+  const liveHost: { current?: LiveHostServices } = {};
   const connectionHealth = new ConnectionHealthService({
+    moved: (id, connected) => {
+      if (connected) void liveHost.current?.connected(id);
+      else void liveHost.current?.ended(id, "Its check no longer passes.");
+    },
     repo: store.connectionHealth,
     list: async () =>
       Object.entries(connectionScopes(await config.sections())).flatMap(([org, entry]) =>
@@ -1888,12 +1903,38 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       for (const agent of list) runs.remountAgent(agent);
     },
     fieldsChanged: (id) => {
-      // A service on this computer changed ports: its old forwarders end now, sessions start new ones.
-      background.run(() => containers.hostForwardStop(id));
+      // A service on this computer changed ports: its old forwarders end now and new ones start for live sessions.
+      background.run(async () => {
+        await liveHost.current?.changed(id, connectionHealth.get(id)?.state === "connected");
+      });
       runs.remountConnection(id);
     },
   });
-  connections.onRemoved((id) => containers.hostForwardStop(id));
+  liveHost.current = new LiveHostServices({
+    connection: async (id) => {
+      for (const [org, entry] of Object.entries(connectionScopes(await config.sections()))) {
+        const c = entry.connections?.[id];
+        if (c !== undefined) {
+          return { org, type: c.type, ports: c.fields?.ports, agentsOff: c.agents_off ?? [] };
+        }
+      }
+      return undefined;
+    },
+    sessions: () => runs.openSessions(),
+    taskOrg: (task) => store.tasks.get(task as TaskId)?.org,
+    agentScope: async (agent) => {
+      const stored = await agentStore.get(agent);
+      return stored?.ok === true ? stored.agent.frontmatter.scope : undefined;
+    },
+    forward: (task, services) => containers.hostForward(task, services),
+    stop: (id) => containers.hostForwardStop(id),
+    say: (task, text) =>
+      room.post(task as TaskId, `host-service:${randomUUID()}`, { type: "system", level: "info", text }),
+    tell: (task, agent, text) => runs.note(task, agent, text),
+  });
+  connections.onRemoved(async (id) => {
+    await liveHost.current?.ended(id, "It was removed.");
+  });
   const connect = new ConnectService({
     grants: new GrantStore(secrets),
     apps: new AppClientStore(secrets),

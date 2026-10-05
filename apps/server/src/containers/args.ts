@@ -307,11 +307,19 @@ function checkRun(parts: DockerParts, s: Safety): void {
   // Every container: no capabilities but the few, no new privileges, limits, removal and labels.
   if (!is(flags, "--rm")) refuse("A container must run with --rm.");
   if (one(flags, "--cap-drop") !== "ALL") refuse("A container must drop all capabilities.");
-  // A forwarder adds only NET_BIND_SERVICE, which checkHostForward checks; every other container, the usual few.
-  const forwarder = all(flags, "--label").includes("majhi.container=hostfwd");
+  // A forwarder adds only NET_BIND_SERVICE and a preview's holder only NET_ADMIN, which their own checks
+  // hold to; every other container, the usual few.
+  const labelled = all(flags, "--label");
+  const forwarder = labelled.includes("majhi.container=hostfwd");
+  const holder = labelled.includes("majhi.container=previewhold");
   for (const cap of all(flags, "--cap-add")) {
-    if (!CAPS.includes(cap) && !(forwarder && cap === "NET_BIND_SERVICE"))
+    if (
+      !CAPS.includes(cap) &&
+      !(forwarder && cap === "NET_BIND_SERVICE") &&
+      !(holder && cap === "NET_ADMIN")
+    ) {
       refuse(`The capability ${shown(cap)} is not allowed.`);
+    }
   }
   const options = all(flags, "--security-opt");
   if (options.length !== 1 || options[0] !== "no-new-privileges") {
@@ -321,7 +329,7 @@ function checkRun(parts: DockerParts, s: Safety): void {
   if (!/^[1-9][0-9]{0,2}$/.test(pids) || Number(pids) > PIDS_LIMIT)
     refuse(`The process limit ${pids} is not allowed.`);
   checkLimits(flags);
-  const kind = checkLabels(flags, s, ["preview", "service", "dbcheck", "hostfwd"]);
+  const kind = checkLabels(flags, s, ["preview", "previewhold", "service", "dbcheck", "hostfwd"]);
   const name = one(flags, "--name");
   checkKeyValues(all(flags, "--env"), 32, 4_000, "environment variables");
   if (parts.command.length > 32 || parts.command.some((a) => a.length > 2_000 || a.includes("\u0000"))) {
@@ -359,36 +367,26 @@ function checkRun(parts: DockerParts, s: Safety): void {
     return;
   }
   // Naming an address for the container is how it would reach something of the computer: a forwarder only, and only the one name.
+  if (kind === "previewhold") {
+    checkPreviewHold(parts, flags, s, { name, networks, mounts, publishes, pull });
+    return;
+  }
   if (kind !== "hostfwd" && is(flags, "--add-host")) refuse("The docker flag --add-host is not allowed.");
   if (kind === "hostfwd") {
     checkHostForward(parts, flags, s, { name, networks, mounts, publishes, pull });
     return;
   }
   if (kind === "preview") {
-    if (name !== names.previewContainer)
-      refuse(`The preview container must be named ${names.previewContainer}.`);
+    if (name !== names.previewApp) refuse(`The preview container must be named ${names.previewApp}.`);
     if (image !== names.previewImage) refuse(`A preview runs ${names.previewImage}, not ${shown(image)}.`);
     // The image is the one majhi built. A missing one must not be pulled from a registry.
     if (pull !== "never") refuse("A preview must run with --pull never.");
-    const allowed = [s.runnerNetwork, names.network];
-    if (
-      networks.length < 1 ||
-      networks.length > 2 ||
-      networks[0] !== s.runnerNetwork ||
-      (networks[1] !== undefined && networks[1] !== names.network) ||
-      networks.some((n) => !allowed.includes(n))
-    ) {
-      refuse(
-        `A preview joins ${s.runnerNetwork}, and ${names.network} when the task has services. No other network.`,
-      );
+    // The preview shares the network of its holder (the guarded container that owns the port): no network
+    // of its own, so it cannot join the runner network or reach anything the holder's rules refuse.
+    if (networks.length !== 1 || networks[0] !== `container:${names.previewContainer}`) {
+      refuse(`A preview runs in the network of ${names.previewContainer}, and no other.`);
     }
-    if (
-      publishes.length !== 1 ||
-      !PUBLISH.test(publishes[0] ?? "") ||
-      Number(PUBLISH.exec(publishes[0] ?? "")?.[1]) > 65_535
-    ) {
-      refuse("A preview publishes one port, as 127.0.0.1::<port>.");
-    }
+    if (publishes.length > 0) refuse("A preview's port is published by its holder.");
     // The throwaway folder: one anonymous volume.
     if (mounts.length > 1) refuse("A preview has one throwaway folder and no other mount.");
     for (const mount of mounts) {
@@ -424,6 +422,69 @@ function checkRun(parts: DockerParts, s: Safety): void {
       );
     }
   }
+}
+
+/** The name a task's runners reach its preview by, on the task's network only. */
+export const PREVIEW_ALIAS = "preview";
+
+/** Where a holder runs netguard from: the script in the runner image (docker/netguard.mjs). */
+export const GUARD_SCRIPT = "/usr/local/lib/majhi/netguard.mjs";
+
+/**
+ * The holder of a preview (SPEC 6): the one container of a preview with the runner networks and the
+ * published port. It starts netguard, which closes every private network but the task's, and then
+ * only waits; the preview runs in its network namespace and holds no NET_ADMIN to undo the rules.
+ * Runner image, read-only, no mount, only NET_ADMIN.
+ */
+function checkPreviewHold(
+  parts: DockerParts,
+  flags: Flag[],
+  s: Safety,
+  found: {
+    name: string;
+    networks: string[];
+    mounts: string[];
+    publishes: string[];
+    pull: string | undefined;
+  },
+): void {
+  const names = containerNames(s.task);
+  if (found.name !== names.previewContainer)
+    refuse(`The preview's holder must be named ${names.previewContainer}.`);
+  if (found.pull !== "never") refuse("A preview's holder must run with --pull never.");
+  if (found.mounts.length > 0) refuse("A preview's holder has no mount.");
+  if (!is(flags, "--read-only")) refuse("A preview's holder runs with a read-only root.");
+  if (all(flags, "--cap-add").join() !== "NET_ADMIN")
+    refuse("A preview's holder adds NET_ADMIN, nothing else.");
+  if (all(flags, "--env").length > 0) refuse("A preview's holder takes no environment.");
+  if (is(flags, "--add-host") || is(flags, "--tmpfs"))
+    refuse("A preview's holder takes no host name or scratch folder.");
+  // The runner network (the route for the published port) and the task's network under `preview`: that is
+  // where the task's runners reach it, by one name that no other network of theirs answers to.
+  const [first, second, ...more] = found.networks;
+  if (
+    first !== s.runnerNetwork ||
+    second !== `name=${names.network},alias=${PREVIEW_ALIAS}` ||
+    more.length > 0
+  ) {
+    refuse(
+      `A preview's holder joins ${s.runnerNetwork} and ${names.network} as ${PREVIEW_ALIAS}, and no other network.`,
+    );
+  }
+  const published = PUBLISH.exec(found.publishes[0] ?? "")?.[1];
+  if (found.publishes.length !== 1 || published === undefined || Number(published) > 65_535) {
+    refuse("A preview publishes one port, as 127.0.0.1::<port>.");
+  }
+  // The command is the guard script, holding, and the task network's subnets it may reach: nothing else.
+  const [node, script, hold, ...rest] = parts.command;
+  if (node !== "node" || script !== GUARD_SCRIPT || hold !== "--hold")
+    refuse("A preview's holder runs only majhi's network guard.");
+  if (rest.length === 0) refuse("A preview's holder is told the task network's subnet.");
+  for (let i = 0; i < rest.length; i += 2) {
+    if (rest[i] !== "--allow" || !isIpv4Cidr(rest[i + 1] ?? ""))
+      refuse("A preview's holder may be told only the task network's subnets.");
+  }
+  if (!matches(ImageRefSchema, parts.image ?? "")) refuse("A preview's holder runs majhi's runner image.");
 }
 
 /**
@@ -645,7 +706,7 @@ export function assertSafe(parts: DockerParts, s: Safety): void {
 // Builders
 
 const labelFlags = (
-  kind: ContainerKind | "dbcheck" | "hostfwd" | "image" | "network" | "volume",
+  kind: ContainerKind | "dbcheck" | "hostfwd" | "previewhold" | "image" | "network" | "volume",
   task: string,
 ): string[] => ["--label", `majhi.container=${kind}`, "--label", `majhi.task=${task}`];
 
@@ -747,30 +808,76 @@ export function buildArgs(s: Safety, spec: BuildSpec): DockerParts {
 }
 
 export interface PreviewRunSpec {
-  port: number;
   env?: Record<string, string> | undefined;
   command?: string[] | undefined;
   /** The throwaway folder in the container. */
   scratch: string;
-  /** The task has services: join its network too. */
-  taskNetwork: boolean;
 }
 
-/** The preview: on the runner network, one port on 127.0.0.1 for the owner, one throwaway folder. */
+export interface PreviewHoldSpec {
+  port: number;
+  /** The task network's subnets: the holder joins that network as `preview` and lets the preview reach it. */
+  taskSubnets: readonly string[];
+  /** The runner image, which holds netguard. */
+  image: string;
+}
+
+/**
+ * The holder of a preview: on the runner network (the route for its published port), on the task's network
+ * as `preview` (where runners reach it), the one port on 127.0.0.1 for the owner, and the network guard.
+ * The preview app runs in its network namespace (`previewRunArgs`).
+ */
+export function previewHoldRunArgs(s: Safety, limits: Limits, spec: PreviewHoldSpec): DockerParts {
+  const names = containerNames(s.task);
+  return safe(
+    {
+      verb: ["run"],
+      flags: [
+        "--rm",
+        "--name",
+        names.previewContainer,
+        ...labelFlags("previewhold", s.task),
+        "--cap-drop",
+        "ALL",
+        "--cap-add",
+        "NET_ADMIN",
+        "--security-opt",
+        "no-new-privileges",
+        "--pids-limit",
+        "64",
+        "--memory",
+        "64m",
+        "--cpus",
+        String(Math.min(limits.cpus, 0.5)),
+        "--read-only",
+        "--pull",
+        "never",
+        "--network",
+        s.runnerNetwork,
+        "--network",
+        `name=${names.network},alias=${PREVIEW_ALIAS}`,
+        "--publish",
+        `127.0.0.1::${spec.port}`,
+      ],
+      image: spec.image,
+      command: ["node", GUARD_SCRIPT, "--hold", ...spec.taskSubnets.flatMap((c) => ["--allow", c])],
+    },
+    s,
+  );
+}
+
+/** The preview: the task's own image in its holder's network, one throwaway folder. */
 export function previewRunArgs(s: Safety, limits: Limits, spec: PreviewRunSpec): DockerParts {
   const names = containerNames(s.task);
   return safe(
     {
       verb: ["run"],
       flags: [
-        ...containerFlags("preview", names.previewContainer, limits, s),
+        ...containerFlags("preview", names.previewApp, limits, s),
         "--pull",
         "never",
         "--network",
-        s.runnerNetwork,
-        ...(spec.taskNetwork ? ["--network", names.network] : []),
-        "--publish",
-        `127.0.0.1::${spec.port}`,
+        `container:${names.previewContainer}`,
         "--mount",
         `type=volume,target=${spec.scratch}`,
         ...envFlags(spec.env),

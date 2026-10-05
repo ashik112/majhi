@@ -1,5 +1,14 @@
 # Progress
 
+## Network gaps: default-deny private destinations, guarded previews, live attach (built, not merged)
+
+Branch `fix/network-gaps`.
+
+- **Changed.** `majhi-netguard` is now default-deny for private IPv4 (`0/8`, `10/8`, `100.64/10`, `169.254/16`, `172.16/12`, `192.168/16`) and for IPv6 (`fc00::/7`, `fe80::/10`, mapped IPv4, the host's addresses); the internet stays open. A run is told its own task network's subnet and majhi-server's one port; a network made after the run started is added by a checked `docker exec` of the same script. Previews run in the network of a guarded holder container. A host connection that becomes connected starts its forwarder in live sessions at once, with a room line and a note to the agent; removal or a failed check stops it with a line.
+- **Owner will notice.** Agents cannot reach the LAN, a VPN or any private address any more. Use a service on this computer connection for those. Previews and runs look the same; a preview is two containers in Docker. The runner image must be rebuilt (Update does it).
+- **Verified.** Typecheck, tests of the files touched. Real docker on OrbStack with an image under a separate tag and throwaway networks: own task service open; another task's service, a peer runner, `host.docker.internal`, `0.250.250.254`, the Mac LAN address refused; majhi-server only on its port; internet open; agent process has no capabilities; the owner's browser reaches a preview through its published port and the server through the runner network; IPv6 filtering proven on an IPv6-enabled network; live attach with a runner already running. Scripts in the scratchpad `network-gaps` folder.
+- **Left.** Task service containers (third-party images) have no guard of their own; they rely on every sender being guarded. A container-mode e2e server was not run: live attach was driven through `ContainerService` and `LiveHostServices` with real docker.
+
 ## Service on this computer, and runs cannot reach the computer (built, not merged)
 
 Branch `feat/host-services`.

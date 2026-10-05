@@ -10,7 +10,9 @@ import {
   type DockerParts,
   dockerArgv,
   envByName,
+  GUARD_SCRIPT,
   type HostPaths,
+  isIpv4Cidr,
   type Safety,
 } from "./args.ts";
 import { assertTaskArgv } from "./task-docker.ts";
@@ -46,6 +48,9 @@ export interface DockerResult {
   stdout: string;
   stderr: string;
 }
+
+/** The guard script of the runner image, which `guard` runs as root in a container that holds NET_ADMIN. */
+const GUARD_NODE = "/usr/local/bin/node";
 
 const CONTAINER_ID = /^[0-9a-f]{12,64}$/;
 /** The network of a task, like `majhi-prv-53`. Not the runner network, not a preview. */
@@ -166,6 +171,36 @@ export class DockerCli {
       throw new ContainerRefused(`${container} cannot be connected.`);
     }
     return this.raw(["network", "connect", network, container]);
+  }
+
+  /**
+   * Sets the network guard of a running runner or preview holder again (docker/netguard.mjs
+   * `--refresh`): the task network it joined after it started is the one private network it may
+   * reach. The command is fixed; only the container, the subnets and majhi's own address vary.
+   */
+  guard(
+    container: string,
+    subnets: readonly string[],
+    server: { host: string; port: number } | undefined,
+  ): Promise<DockerResult> {
+    if (!OWN_NAME.test(container) && !CONTAINER_ID.test(container)) {
+      throw new ContainerRefused(`${container} has no network guard of majhi's.`);
+    }
+    if (!subnets.every(isIpv4Cidr)) throw new ContainerRefused("A guard takes IPv4 subnets only.");
+    if (server !== undefined && (!OWN_NAME.test(server.host) || !Number.isInteger(server.port))) {
+      throw new ContainerRefused("A guard names majhi's own server only.");
+    }
+    return this.raw([
+      "exec",
+      "--user",
+      "0",
+      container,
+      GUARD_NODE,
+      GUARD_SCRIPT,
+      "--refresh",
+      ...subnets.flatMap((cidr) => ["--allow", cidr]),
+      ...(server === undefined ? [] : ["--server", `${server.host}:${server.port}`]),
+    ]);
   }
 
   /** Makes a builder, a network or a volume, after `assertSafe`. */

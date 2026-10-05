@@ -13,7 +13,13 @@ export interface ContainerNames {
   previewImage: string;
   /** The task's own BuildKit builder. */
   builder: string;
+  /**
+   * The preview's holder (SPEC 6): it owns the network, the published port and the name the server
+   * reaches, and holds the netguard rules. The preview itself shares its network.
+   */
   previewContainer: string;
+  /** The preview app: the task's own image, in the holder's network namespace. */
+  previewApp: string;
   /** The internal network of the task's services. */
   network: string;
   /** A service container. Also its network alias is `name`. */
@@ -38,6 +44,7 @@ export function containerNames(task: string): ContainerNames {
     previewImage: `majhi-preview-${key}`,
     builder: `majhi-preview-${key}`,
     previewContainer: `majhi-preview-${key}`,
+    previewApp: `majhi-preview-${key}-app`,
     network: `majhi-${key}`,
     service: (name) => `majhi-${key}-${name}`,
     hostForward: (id) => `majhi-${key}-host-${id}`,

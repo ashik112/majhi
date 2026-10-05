@@ -23,6 +23,8 @@ function build(withDocker: ContainerDocker | undefined): ContainerService {
     openTasks: () => openTasks,
     settings: async () => settings,
     runnerNetwork: "majhi-runners",
+    runnerImage: "majhi-runner:dev",
+    guardServer: () => ({ host: "majhi-server", port: 7070 }),
     paths: {
       majhiHome: join(dir, "home", ".majhi"),
       hostHome: join(dir, "home"),
@@ -168,6 +170,35 @@ describe("ContainerService", () => {
     });
   });
 
+  describe("the network guard", () => {
+    it("tells a runner that was already up the task network's subnet when the network is made, and the server with it", async () => {
+      expect(service.taskSubnets("ACM-1")).toEqual([]);
+      await service.serviceStart("ACM-1", "acme-builder", db);
+      expect(service.taskSubnets("ACM-1")).toEqual(["192.168.171.0/24"]);
+      expect(docker.guards).toEqual(["majhi-run-aaa: 192.168.171.0/24 majhi-server:7070"]);
+    });
+
+    it("starts a preview's holder on the task network, which it makes first, and names it preview there", async () => {
+      docker.images.add("majhi-preview-acm-1");
+      const info = await service.previewRun("ACM-1", "acme-builder", { port: 7070, scratch: "/preview" });
+      expect(info.url).toBe("http://preview:7070");
+      expect(service.taskSubnets("ACM-1")).toEqual(["192.168.171.0/24"]);
+      const holder = [...docker.containers.values()].find(
+        (c) => c.labels["majhi.container"] === "previewhold",
+      );
+      expect(holder?.name).toBe("majhi-preview-acm-1");
+      expect(service.taskSubnets("ACM-2")).toEqual([]);
+    });
+
+    it("forgets the subnets, and clears them from a runner that is still up, when the task stops", async () => {
+      await service.serviceStart("ACM-1", "acme-builder", db);
+      docker.guards.length = 0;
+      await service.taskStopped("ACM-1");
+      expect(service.taskSubnets("ACM-1")).toEqual([]);
+      expect(docker.guards).toEqual(["majhi-run-aaa:  majhi-server:7070"]);
+    });
+  });
+
   describe("a task that stops running and runs again", () => {
     const withVolume = { ...db, volumes: [{ name: "pgdata", path: "/var/lib/postgresql/data" }] };
 
@@ -180,6 +211,7 @@ describe("ContainerService", () => {
         "majhi-acm-1-cache",
         "majhi-acm-1-db",
         "majhi-preview-acm-1",
+        "majhi-preview-acm-1-app",
       ]);
     }
 
@@ -198,6 +230,7 @@ describe("ContainerService", () => {
         "majhi-acm-1-cache",
         "majhi-acm-1-db",
         "majhi-preview-acm-1",
+        "majhi-preview-acm-1-app",
       ]);
       // The same volume, with its data, and the task network made again.
       expect(docker.calls.filter((c) => c === "volume create")).toHaveLength(1);

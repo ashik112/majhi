@@ -22,6 +22,8 @@ export interface HealthDeps {
   check: (id: string) => Promise<ConnectionTestResult>;
   /** A state changed: screens refetch. */
   changed: () => void;
+  /** A check passed (also when it was connected already), or a connected one stopped being connected. */
+  moved?: (id: string, connected: boolean) => void;
   /** The owner has to do something: a finding on the board. */
   attention?: (item: { org: string; key: string; title: string; detail: string }) => void;
   now?: () => Date;
@@ -110,6 +112,8 @@ export class ConnectionHealthService {
     this.states.set(id, next);
     this.deps.repo.set(id, next, this.now());
     if (changed(prev, next)) this.deps.changed();
+    if (next.state === "connected") this.deps.moved?.(id, true);
+    else if (prev?.state === "connected") this.deps.moved?.(id, false);
     if (
       next.state === "needs-attention" &&
       prev?.state === "connected" &&

@@ -15,6 +15,7 @@ import {
   hostNetworkCreateArgs,
   type Limits,
   networkCreateArgs,
+  previewHoldRunArgs,
   previewRunArgs,
   type Safety,
   serviceRunArgs,
@@ -52,11 +53,11 @@ afterEach(() => rm(root, { recursive: true, force: true }));
 const build = () => buildArgs(safety, { context: repo, dockerfile: "Dockerfile" });
 const preview = () =>
   previewRunArgs(safety, limits, {
-    port: 7070,
     scratch: "/preview",
-    taskNetwork: true,
     env: { MODE: "test" },
   });
+const holder = (subnets: string[] = ["192.168.171.0/24"]) =>
+  previewHoldRunArgs(safety, limits, { port: 7070, image: "majhi-runner:dev", taskSubnets: subnets });
 const service = () =>
   serviceRunArgs(safety, limits, {
     name: "db",
@@ -234,10 +235,65 @@ describe("assertSafe refuses", () => {
       expect(refused(replaced(service(), "--network", net))).toThrow(ContainerRefused);
     }
     expect(refused(plus(service(), "--network", "majhi-runners"))).toThrow(ContainerRefused);
-    for (const net of ["host", "container:abc", "majhi-acm-2", "bridge"]) {
+    // A preview has no network of its own: only its holder's, which holds the guard.
+    for (const net of [
+      "host",
+      "container:abc",
+      "majhi-acm-2",
+      "bridge",
+      "majhi-runners",
+      "majhi-acm-1",
+      "none",
+    ]) {
       expect(refused(replaced(preview(), "--network", net))).toThrow(ContainerRefused);
     }
-    expect(refused(replaced(preview(), "--network", "majhi-acm-1"))).toThrow(ContainerRefused);
+    expect(refused(plus(preview(), "--network", "majhi-runners"))).toThrow(ContainerRefused);
+    for (const net of [
+      "host",
+      "container:abc",
+      "majhi-acm-2",
+      "bridge",
+      "majhi-acm-1",
+      "name=majhi-acm-1,alias=db",
+    ]) {
+      expect(refused(replaced(holder(), "--network", net))).toThrow(ContainerRefused);
+    }
+    expect(refused(plus(holder(), "--network", "majhi-acm-2"))).toThrow(ContainerRefused);
+  });
+
+  it("a preview publishes nothing, and its holder publishes one loopback port", () => {
+    expect(() => assertSafe(preview(), safety)).not.toThrow();
+    expect(refused(plus(preview(), "--publish", "127.0.0.1::7070"))).toThrow(ContainerRefused);
+    expect(() => assertSafe(holder(), safety)).not.toThrow();
+    expect(values(holder(), "--network")).toEqual(["majhi-runners", "name=majhi-acm-1,alias=preview"]);
+    for (const publish of ["7070:7070", "0.0.0.0::7070", "127.0.0.1:8080:7070", "127.0.0.1::70000"]) {
+      expect(refused(replaced(holder(), "--publish", publish))).toThrow(ContainerRefused);
+    }
+  });
+
+  it("a holder runs only the network guard, with NET_ADMIN and nothing else, and no mount, host name or environment", () => {
+    const h = holder();
+    expect(values(h, "--cap-add")).toEqual(["NET_ADMIN"]);
+    expect(refused(plus(h, "--cap-add", "NET_RAW"))).toThrow(ContainerRefused);
+    expect(refused(plus(h, "--mount", "type=volume,target=/x"))).toThrow(ContainerRefused);
+    expect(refused(plus(h, "--add-host", "host.docker.internal:host-gateway"))).toThrow(ContainerRefused);
+    expect(refused(plus(h, "--env", "A=b"))).toThrow(ContainerRefused);
+    expect(refused(without(h, "--read-only"))).toThrow(ContainerRefused);
+    for (const command of [
+      ["sh", "-c", "sleep 1"],
+      ["node", "/other.mjs", "--hold"],
+      ["node", "/usr/local/lib/majhi/netguard.mjs"],
+      ["node", "/usr/local/lib/majhi/netguard.mjs", "--hold"],
+      ["node", "/usr/local/lib/majhi/netguard.mjs", "--hold", "--allow", "10.0.0.0/4"],
+      ["node", "/usr/local/lib/majhi/netguard.mjs", "--hold", "--server", "majhi-server:7070"],
+    ]) {
+      expect(refused({ ...h, command })).toThrow(ContainerRefused);
+    }
+  });
+
+  it("no other container may add NET_ADMIN", () => {
+    expect(refused(plus(preview(), "--cap-add", "NET_ADMIN"))).toThrow(ContainerRefused);
+    expect(refused(plus(service(), "--cap-add", "NET_ADMIN"))).toThrow(ContainerRefused);
   });
 
   it("a publish on all interfaces, a fixed host port, or any publish by a service", () => {
@@ -248,7 +304,7 @@ describe("assertSafe refuses", () => {
       "127.0.0.1:8080:7070",
       "127.0.0.1::70000",
     ]) {
-      expect(refused(replaced(preview(), "--publish", publish))).toThrow(ContainerRefused);
+      expect(refused(replaced(holder(), "--publish", publish))).toThrow(ContainerRefused);
     }
     expect(refused(plus(service(), "--publish", "127.0.0.1::5432"))).toThrow(ContainerRefused);
   });

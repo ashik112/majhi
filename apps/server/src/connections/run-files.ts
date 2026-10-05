@@ -64,7 +64,7 @@ export interface RunFilesDeps {
    * Starts the forwarder of the services on this computer a run reaches, on the task's own network,
    * before the run starts. Rejects with a plain message when it cannot.
    */
-  hostServices?: ((task: string, services: HostService[]) => Promise<void>) | undefined;
+  hostServices?: ((task: string, services: HostService[]) => Promise<unknown>) | undefined;
 }
 
 /**

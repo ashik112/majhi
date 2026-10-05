@@ -54,7 +54,14 @@ export class FakeDocker implements ContainerDocker {
     assertSafe(parts, safety);
     const verb = parts.verb.join(" ");
     this.calls.push(verb);
-    const child = spawn("sleep", ["30"], { detached: true, stdio: ["pipe", "pipe", "pipe"] });
+    // A preview's holder says its guard is set, like netguard --hold.
+    const holder = parts.flags.includes("majhi.container=previewhold");
+    const child = holder
+      ? spawn("sh", ["-c", "echo majhi-netguard ready; sleep 30"], {
+          detached: true,
+          stdio: ["pipe", "pipe", "pipe"],
+        })
+      : spawn("sleep", ["30"], { detached: true, stdio: ["pipe", "pipe", "pipe"] });
     if (verb === "buildx build") {
       this.images.add(parts.flags[parts.flags.indexOf("--tag") + 1] ?? "");
       setTimeout(() => killTree(child), 20);
@@ -119,6 +126,19 @@ export class FakeDocker implements ContainerDocker {
     }
   }
 
+  /** Guards set again with `guard`, as `container: subnets`. */
+  guards: string[] = [];
+
+  async guard(
+    container: string,
+    subnets: readonly string[],
+    server: { host: string; port: number } | undefined,
+  ): Promise<{ stdout: string; stderr: string }> {
+    const where = server === undefined ? "" : ` ${server.host}:${server.port}`;
+    this.guards.push(`${container}: ${subnets.join(",")}${where}`);
+    return { stdout: "", stderr: "" };
+  }
+
   async connect(network: string, container: string): Promise<{ stdout: string; stderr: string }> {
     this.calls.push(`network connect ${network} ${container}`);
     if (container === "majhi-preview-acm-1" && !this.containers.has(container))
@@ -165,6 +185,7 @@ export class FakeDocker implements ContainerDocker {
         return out([...this.builders].join("\n"));
       case "network inspect":
         if (!this.networks.has(last)) throw new Error("No such network");
+        if (args.some((a) => a.includes(".IPAM"))) return out("192.168.171.0/24 ");
         return out(args.includes("--format") ? [...(this.networks.get(last) ?? [])].join(" ") : "[]");
       case "network disconnect":
         this.networks.get(args.at(-2) ?? "")?.delete(last);
