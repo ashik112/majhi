@@ -11,7 +11,6 @@ import { formatAgo } from "@/lib/format";
 import { useHealthChecks } from "@/lib/ops-queries";
 import { useOrgFilter } from "@/lib/org-filter";
 import { useAccounts, useOrgs, useTools } from "@/lib/studio-queries";
-import { useMedia } from "@/lib/use-media";
 import { useNow } from "@/lib/use-now";
 import { AccountsUsage } from "./accounts-usage";
 import { ChecksPanel } from "./checks-panel";
