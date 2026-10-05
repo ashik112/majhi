@@ -44,43 +44,45 @@ export function TaskHeader({
   const repos = task.repos.map((r) => r.project);
 
   return (
-    <header className={cn("flex shrink-0 flex-col gap-1 rounded-2xl px-5 pt-2", GLASS)}>
-      <div className="flex min-h-8 items-center gap-2.5 text-sm">
-        <Link
-          to="/"
-          search={orgSearch(filter)}
-          aria-label="Back to board"
-          title="Back to board"
-          className="-ml-1 grid size-6 shrink-0 place-items-center rounded-sm text-fg-muted hover:bg-raised hover:text-fg"
-        >
-          <ArrowLeft aria-hidden="true" className="size-3.5" />
-        </Link>
-        <span className="shrink-0 font-mono whitespace-nowrap text-fg-muted">{task.id}</span>
-        <StatusBadge
-          status={task.status}
-          pausedReason={task.pausedReason}
-          pausedBy={task.pausedBy}
-          yourTurn={yourTurn}
-          className="shrink-0"
-        />
-
-        {repos.length > 0 ? (
-          <span
-            title={`Project: ${repos.join(", ")}`}
-            className="flex min-w-[4.5rem] shrink-[3] items-center gap-1 font-mono text-xs text-fg-soft"
+    <header className={cn("@container flex shrink-0 flex-col gap-1 rounded-2xl px-5 pt-2", GLASS)}>
+      <div className="flex min-h-8 flex-wrap items-center gap-x-2.5 gap-y-1 text-sm">
+        <div className="flex min-w-0 flex-1 basis-[19rem] items-center gap-2.5">
+          <Link
+            to="/"
+            search={orgSearch(filter)}
+            aria-label="Back to board"
+            title="Back to board"
+            className="-ml-1 grid size-6 shrink-0 place-items-center rounded-sm text-fg-muted hover:bg-raised hover:text-fg"
           >
-            <FolderGit2 aria-hidden="true" className="size-3.5 shrink-0 text-fg-faint" />
-            <span className="truncate">{repos.join(" + ")}</span>
+            <ArrowLeft aria-hidden="true" className="size-3.5" />
+          </Link>
+          <span className="shrink-0 font-mono whitespace-nowrap text-fg-muted">{task.id}</span>
+          <StatusBadge
+            status={task.status}
+            pausedReason={task.pausedReason}
+            pausedBy={task.pausedBy}
+            yourTurn={yourTurn}
+            className="shrink-0"
+          />
+
+          {repos.length > 0 ? (
+            <span
+              title={`Project: ${repos.join(", ")}`}
+              className="flex min-w-6 shrink-[3] items-center gap-1 font-mono text-xs text-fg-soft"
+            >
+              <FolderGit2 aria-hidden="true" className="size-3.5 shrink-0 text-fg-faint" />
+              <span className="truncate">{repos.join(" + ")}</span>
+            </span>
+          ) : (
+            <span className="shrink-0 text-xs whitespace-nowrap text-fg-faint">
+              {task.kind === "chat" ? "chat" : "no project"}
+            </span>
+          )}
+          <span className="flex max-w-[14rem] min-w-6 shrink items-center gap-1.5 overflow-hidden text-xs text-fg-muted">
+            <OrgBadge label={badgeLetters(org?.key ?? prefix)} color={org?.color} size="sm" />
+            <span className="truncate">{org?.name ?? "No workspace"}</span>
           </span>
-        ) : (
-          <span className="shrink-0 text-xs whitespace-nowrap text-fg-faint">
-            {task.kind === "chat" ? "chat" : "no project"}
-          </span>
-        )}
-        <span className="flex max-w-[14rem] min-w-[3.25rem] shrink items-center gap-1.5 overflow-hidden text-xs text-fg-muted">
-          <OrgBadge label={badgeLetters(org?.key ?? prefix)} color={org?.color} size="sm" />
-          <span className="truncate">{org?.name ?? "No workspace"}</span>
-        </span>
+        </div>
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <TaskCost taskId={task.id} />
           <TaskAction task={task} yourTurn={yourTurn} cardAsks={cardAsks} />
@@ -89,7 +91,7 @@ export function TaskHeader({
       </div>
       <EditableTitle task={task} />
       {brief !== "" && <Brief key={brief} text={brief} task={task} />}
-      <div className="-mx-5 mt-1.5 flex min-w-0 items-end gap-4 border-t border-line px-3">
+      <div className="-mx-5 mt-1.5 flex min-w-0 items-end gap-2 border-t border-line px-3">
         {tabs}
         <div className="ml-auto flex min-h-9 min-w-0 items-center py-1">
           <TaskLinks task={task} />
@@ -108,7 +110,7 @@ function TaskCost({ taskId }: { taskId: string }) {
     <span className="mr-2 flex items-baseline gap-1 text-sm text-fg-muted whitespace-nowrap">
       <span className="sr-only">Cost so far: </span>
       <CostText totals={all} className="text-fg-soft" />
-      <span className="tabular-nums">· {formatTokens(all.totalTokens)} tokens</span>
+      <span className="hidden tabular-nums @[40rem]:inline">· {formatTokens(all.totalTokens)} tokens</span>
     </span>
   );
 }
