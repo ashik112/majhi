@@ -124,7 +124,7 @@ describe("the captain copying to the owner's clipboard", () => {
     const t = await lane();
     const file = join(t.dir, ".env");
     expect((await t.call({ file, line: 1, ownerAsked: false })).isError).toBe(true);
-    expect((await t.call({ file: "/etc/hostname", line: 1 })).text).toContain("not in one of");
+    expect((await t.call({ file: import.meta.filename, line: 1 })).text).toContain("not in one of");
     expect((await t.call({ secret: "missing" })).text).toContain("no secret:missing");
     expect(
       (await t.call({ file, line: 1 }, { task: t.chat as TaskId, agent: "acme-builder" })).text,
