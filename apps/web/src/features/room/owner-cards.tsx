@@ -1,6 +1,7 @@
 import {
   type AccountView,
   type CardOutcome,
+  type HandoffState,
   plainAuthorityText,
   type RoomItem,
   type Task,
@@ -22,6 +23,7 @@ import { useHandoff } from "@/lib/handoff-queries";
 import { useFixCheck, useHealthChecks } from "@/lib/ops-queries";
 import { useAccounts, useOrgs, useTools } from "@/lib/studio-queries";
 import { useAfterTaskChange, useShipOptions } from "@/lib/task-queries";
+import { useNow } from "@/lib/use-now";
 import { DockBar } from "./dock-bar";
 import { questionLine } from "./question-line";
 
@@ -91,6 +93,7 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
   const toast = useToast();
   const after = useAfterTaskChange();
   const options = useShipOptions(task, true);
+  const now = useNow(15_000);
   const orgs = useOrgs().data;
   // Cards saved before the authority table name a retired level; show the plain rule instead.
   const workspace =
@@ -136,8 +139,10 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
 
   // The hand-off check is read here too, so the bar's lamp and title say whether it is ready.
   const handoff = useHandoff(task.id, task.repos.length > 0).data;
-  const red = handoff?.current?.verdict === "red" && !handoff.running && !handoff.queued;
-  const notReady = failed || red;
+  const checking = handoff?.running === true || handoff?.queued === true;
+  const red = handoff?.current?.verdict === "red" && !checking;
+  const notReady = (failed || red) && !checking;
+  const progress = checkProgress(handoff, now);
   // Loaded, and no repo changed: there is nothing to ship, whatever the checks said.
   const nothing = options.data !== undefined && !shipping;
   const why = item.why === undefined ? undefined : plainAuthorityText(item.why, workspace);
@@ -147,8 +152,9 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
       : doneOption?.ok === true && unshipped.length > 0
         ? `${unshippedCount(unshipped)}. Ship it, or mark it done to leave the commits on the branch.`
         : undefined;
-  const line =
-    why !== undefined && failed
+  const line = checking
+    ? progress
+    : why !== undefined && failed
       ? why
       : (note ??
         (notReady
@@ -161,8 +167,8 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
     <>
       <DockBar
         label={notReady ? "Done, checks failed" : nothing ? "No code changes" : "Ready to ship"}
-        lamp={notReady ? "needs" : "done"}
-        title={notReady ? "Not ready" : nothing ? "No code changes" : "Ready to ship"}
+        lamp={checking ? "working" : notReady ? "needs" : "done"}
+        title={checking ? "Checking" : notReady ? "Not ready" : nothing ? "No code changes" : "Ready to ship"}
         line={line}
         actions={
           <>
@@ -219,6 +225,25 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
       )}
     </>
   );
+}
+
+const STEP_NOW = {
+  ready: "Checking it can merge",
+  tests: "Running tests",
+  build: "Running the build",
+  lint: "Running lint",
+  acceptance: "Checking the brief",
+  review: "Reading the change",
+} as const;
+
+/** What a running hand-off check is doing now: its step and how long it has run, or its place in the queue. */
+function checkProgress(state: HandoffState | undefined, now: number): string {
+  const a = state?.activity;
+  if (a === undefined) return "Checking the new commit";
+  if (a.phase === "queued")
+    return `Waiting for a free slot${a.position === undefined ? "" : `, number ${a.position}`}`;
+  const mins = Math.max(0, Math.floor((now - new Date(a.since).getTime()) / 60_000));
+  return `${a.step === undefined ? "Checking the new commit" : STEP_NOW[a.step]} · ${mins < 1 ? "under 1 min" : `${mins} min`}`;
 }
 
 const PAUSE_WHY: Record<Of<"paused">["reason"], string> = {
