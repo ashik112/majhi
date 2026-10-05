@@ -2,8 +2,8 @@ import { stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { git, tempDir } from "../testing/fixtures.ts";
-import { taskWorld, type World } from "../testing/world.ts";
 import { seedStatus } from "../testing/status.ts";
+import { taskWorld, type World } from "../testing/world.ts";
 
 /** Ship's pushes against a local bare remote: never forced, and refused with the fix when they cannot work. */
 

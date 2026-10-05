@@ -14,12 +14,12 @@ import { Check, ChevronRight, MoreHorizontal, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { Lamp } from "@/components/ui/lamp";
 import { Menu } from "@/components/ui/menu";
 import { Modal } from "@/components/ui/modal";
 import { PageLink } from "@/components/ui/page-link";
 import { Segmented } from "@/components/ui/segmented";
+import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/sheet";
 import { useToast } from "@/components/ui/toast";
 import { useExclude } from "@/features/autonomy/desk";
@@ -274,7 +274,9 @@ function Grid({
             title="The captain decides everything here and acts without a card. It still asks before changing anyone's permissions, before anything destructive, and before merging or pushing when those rows are yours."
           >
             <span className="text-base text-fg">Full access</span>
-            <span className="text-xs text-fg-faint">No cards, except permissions, deletes, and Merge or Push when they are yours</span>
+            <span className="text-xs text-fg-faint">
+              No cards, except permissions, deletes, and Merge or Push when they are yours
+            </span>
           </div>
           {orgs.map((org) => (
             <div key={org.org} className={COLUMN}>

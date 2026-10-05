@@ -10,8 +10,9 @@ import type {
   ServiceStartInput,
   StoppedBy,
   Task,
+  TaskDockerRequest,
+  TaskDockerResult,
 } from "@majhi/shared";
-import type { TaskDockerRequest, TaskDockerResult } from "@majhi/shared";
 import { sameImage } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import type { ProcessManager } from "../processes/manager.ts";
@@ -29,6 +30,7 @@ import {
 } from "./args.ts";
 import type { DockerCli, TaskCallResult } from "./docker.ts";
 import { containerNames } from "./names.ts";
+import { lastPrune, PRUNE_EVERY_MS, pruneBuilderCache, pruneImages, savePrune } from "./prune.ts";
 import {
   ImageNotAllowed,
   showUserNames,
@@ -37,7 +39,6 @@ import {
   type TaskDockerPlan,
   translateTaskDocker,
 } from "./task-docker.ts";
-import { lastPrune, PRUNE_EVERY_MS, pruneBuilderCache, pruneImages, savePrune } from "./prune.ts";
 
 export const NOT_IN_DOCKER = "Containers need majhi running in Docker.";
 
@@ -565,7 +566,11 @@ export class ContainerService {
    * The container ids a script typed, kept only when the container is this task's own. An id of
    * another task's container (or of majhi's) is left out, so the script sees "no such container".
    */
-  private async ownIds(docker: ContainerDocker, task: string, argv: readonly string[]): Promise<Map<string, string>> {
+  private async ownIds(
+    docker: ContainerDocker,
+    task: string,
+    argv: readonly string[],
+  ): Promise<Map<string, string>> {
     const found = new Map<string, string>();
     for (const word of new Set(argv.filter((a) => TASK_CONTAINER_ID.test(a)))) {
       try {
@@ -578,7 +583,8 @@ export class ContainerService {
           ])
         ).stdout.trim();
         const [name, owner, kind] = row.split(" ");
-        if (name !== undefined && owner === task && kind === TASK_RUN_KIND) found.set(word, name.replace(/^\//, ""));
+        if (name !== undefined && owner === task && kind === TASK_RUN_KIND)
+          found.set(word, name.replace(/^\//, ""));
       } catch {
         // Not a container: the word is left alone.
       }

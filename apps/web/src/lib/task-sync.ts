@@ -33,7 +33,8 @@ export function patchTaskList(
 }
 
 /** The decision id of a room card is `room:<task>:<item>`: its task is the second part. */
-const taskOfDecision = (id: unknown): string | undefined => (typeof id === "string" ? id.split(":")[1] : undefined);
+const taskOfDecision = (id: unknown): string | undefined =>
+  typeof id === "string" ? id.split(":")[1] : undefined;
 
 /**
  * Puts what waits in the named tasks into the decisions list: their old decisions go, the ones the server
@@ -63,7 +64,10 @@ function readDetails(client: QueryClient, tasks: ReadonlySet<string>): void {
  * Reads the tasks an event named, together with the counts, in one request, and patches the task list
  * and the counts of the decisions list from the answer. Reads are batched per window.
  */
-export function taskSync(client: QueryClient): { touch: (ids: readonly string[], waits: readonly string[]) => void; stop: () => void } {
+export function taskSync(client: QueryClient): {
+  touch: (ids: readonly string[], waits: readonly string[]) => void;
+  stop: () => void;
+} {
   const pending = new Set<string>();
   const pendingWaits = new Set<string>();
   let last = Number.NEGATIVE_INFINITY;
@@ -91,7 +95,9 @@ export function taskSync(client: QueryClient): { touch: (ids: readonly string[],
       client.setQueryData<DecisionList>(queryKeys.decisions, (old) => {
         if (old === undefined) return old;
         const decisions =
-          answer.decisions === undefined ? old.decisions : patchDecisions(old.decisions, new Set(ids), answer.decisions);
+          answer.decisions === undefined
+            ? old.decisions
+            : patchDecisions(old.decisions, new Set(ids), answer.decisions);
         return { decisions, counts: answer.counts };
       });
       // An open task page reads its own task again; one nobody looks at is only marked stale.

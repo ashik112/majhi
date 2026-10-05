@@ -1,8 +1,8 @@
 import type { AccountStatus, AutonomyEvent, AutonomyStatus, Task } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
-import { RUNS } from "./authority-fixtures.ts";
 import { seedStatus } from "../testing/status.ts";
+import { RUNS } from "./authority-fixtures.ts";
 
 /**
  * A day at the captain's desk, in two workspaces (Acme and Globex), with the fake agent runtime so no

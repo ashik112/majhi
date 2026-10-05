@@ -153,7 +153,13 @@ export function formFromSettings(s: Settings): SettingsForm {
 
 export type SettingsPatch = {
   context?: { cap?: number; compact_at?: number; compact_target?: number; max_turns?: number };
-  limits?: { agents_max?: number; runs_total?: number; per_account?: number; per_task?: number; idle_timeout?: string };
+  limits?: {
+    agents_max?: number;
+    runs_total?: number;
+    per_account?: number;
+    per_task?: number;
+    idle_timeout?: string;
+  };
   resume?: { auto?: boolean; handoff?: boolean };
   commits?: { attribution?: boolean };
   rooms?: { max_agent_turns?: number; review_rounds?: number };

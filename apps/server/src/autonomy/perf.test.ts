@@ -43,9 +43,9 @@ describe("the Captain page's reads on a busy home", () => {
     seedPerfVolume(h.majhi.services.store.raw, { ...smallVolume, tasksPerOrg: 5 });
     const raw = h.majhi.services.store.raw;
     const waiting = async () =>
-      ((await h.cmd("autonomy.status", { detail: true })).body.waiting as { task: string; item: string }[]).map(
-        (x) => `${x.task}/${x.item}`,
-      );
+      (
+        (await h.cmd("autonomy.status", { detail: true })).body.waiting as { task: string; item: string }[]
+      ).map((x) => `${x.task}/${x.item}`);
     // Every fourth seeded open task ends with a pending approval; ACM-4 is autonomous (not a multiple of 3), ACM-3 is not.
     raw.prepare("UPDATE tasks SET status = 'running' WHERE id IN ('ACM-4', 'ACM-3')").run();
     const before = await waiting();

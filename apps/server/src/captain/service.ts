@@ -432,7 +432,7 @@ export class CaptainService {
       const ws = this.workspaceOf(org, settings.autonomy, sections.orgs[org]?.name);
       if (org === PRIVATE) day = ws.day;
       const authority = authorityOf(settings.autonomy, org);
-      const forYou = await this.deps.ownerCards?.(org) ?? 0;
+      const forYou = (await this.deps.ownerCards?.(org)) ?? 0;
       const line = summaryOf(this.repo.dayActions(org, ws.day), forYou);
       const spend = { used: spends.of(org) };
       const lane = this.deps.lanes.chat(org);

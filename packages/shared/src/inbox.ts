@@ -186,7 +186,10 @@ export function boardCounts(
 }
 
 /** The order of the list: incidents, then ship and budget, then the rest, oldest first within each. */
-export function compareDecisions(a: Pick<OwnerDecision, "kind" | "at">, b: Pick<OwnerDecision, "kind" | "at">): number {
+export function compareDecisions(
+  a: Pick<OwnerDecision, "kind" | "at">,
+  b: Pick<OwnerDecision, "kind" | "at">,
+): number {
   const rank = (d: Pick<OwnerDecision, "kind">) =>
     d.kind === "incident" ? -1 : d.kind === "ship" || d.kind === "budget" ? 0 : 1;
   return rank(a) - rank(b) || a.at.localeCompare(b.at);

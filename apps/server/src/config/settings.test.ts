@@ -28,7 +28,16 @@ describe("mergeSettings", () => {
       editor: { app: "vscode" },
       cleanup: { after_days: 30, free_after_hours: 24, worktree_after_days: 7 },
       notifications: { mac: true, browser: true, sound: false, muted: [] },
-      containers: { images: [], cpus: 1, memory: "512m", per_task: 3, total: 8, build_total: 1, build_cpus: 2, build_memory: "4g" },
+      containers: {
+        images: [],
+        cpus: 1,
+        memory: "512m",
+        per_task: 3,
+        total: 8,
+        build_total: 1,
+        build_cpus: 2,
+        build_memory: "4g",
+      },
       budgets: { orgs: {}, accounts: {} },
       autonomy: {
         day: { cost: 20 },

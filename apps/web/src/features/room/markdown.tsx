@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
-import type { TaskFiles } from "./media";
 import type { MarkdownSize } from "./markdown-view";
+import type { TaskFiles } from "./media";
 
 export { CopyButton } from "./copy-button";
 export type { MarkdownSize } from "./markdown-view";

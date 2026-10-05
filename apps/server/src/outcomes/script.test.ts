@@ -139,7 +139,9 @@ describe("outcomes and the trust ladder in a real captain turn", { timeout: 120_
     expect(after.upkeep).toBe("decide");
     clock.at = new Date("2026-10-06T18:00:00.000Z");
     await outcomes.sweep();
-    expect((await h.cmd("autonomy.status", { detail: true })).body.settings.orgs.acme.authority.upkeep).toBe("decide");
+    expect((await h.cmd("autonomy.status", { detail: true })).body.settings.orgs.acme.authority.upkeep).toBe(
+      "decide",
+    );
     expect((await decisions(w)).filter((d) => d.kind === "trust")).toEqual([]);
   });
 

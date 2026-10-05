@@ -185,7 +185,12 @@ export class RoomService {
       return;
     }
     if (text.length > before.sent.length) {
-      this.send(task, { type: "delta", id, offset: before.sent.length, append: text.slice(before.sent.length) });
+      this.send(task, {
+        type: "delta",
+        id,
+        offset: before.sent.length,
+        append: text.slice(before.sent.length),
+      });
       before.sent = text;
       before.payload = clean;
       before.dirty = true;

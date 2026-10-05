@@ -125,7 +125,10 @@ function report(v: Volume): AutonomyReport {
           ? []
           : spaces(v)
               .slice(0, 4)
-              .map((w, k) => ({ org: w.id, count: ((i * 5 + k * 3) % (v === "heavy" ? 9 : 4)) + (k === 0 ? 1 : 0) }))
+              .map((w, k) => ({
+                org: w.id,
+                count: ((i * 5 + k * 3) % (v === "heavy" ? 9 : 4)) + (k === 0 ? 1 : 0),
+              }))
               .filter((o) => o.count > 0),
     })),
     spend: Array.from({ length: 14 }, (_, i) => ({
@@ -135,7 +138,10 @@ function report(v: Volume): AutonomyReport {
           ? []
           : spaces(v)
               .slice(0, 4)
-              .map((w, k) => ({ org: w.id, cost: Math.round((3 + ((i * 7 + k * 5) % 11) * 2.1) * 100) / 100 })),
+              .map((w, k) => ({
+                org: w.id,
+                cost: Math.round((3 + ((i * 7 + k * 5) % 11) * 2.1) * 100) / 100,
+              })),
     })),
     flow: Array.from({ length: 14 }, (_, i) => ({
       day: new Date(Date.UTC(2026, 8, 21 + i)).toISOString().slice(0, 10),

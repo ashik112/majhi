@@ -65,12 +65,12 @@ import { sshConfigHosts } from "../scan/sshConfig.ts";
 import { restoreKey } from "../secrets/restore.ts";
 import type { Services } from "../services.ts";
 import { skillHandlers } from "../skills/handlers.ts";
-import { toolsHandlers } from "../tools/handlers.ts";
 import type { SshHostProbe } from "../ssh/hosts.ts";
 import type { SystemService } from "../system/service.ts";
 import { actorName } from "../tasks/cards.ts";
 import { changeTaskBranch } from "../tasks/change-branch.ts";
 import { readReport } from "../tasks/report.ts";
+import { toolsHandlers } from "../tools/handlers.ts";
 
 /** Loading keys and asking the Keychain or keyring can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
@@ -581,7 +581,8 @@ export function createHandlers({
     },
     "tasks.create": ({ requestId, ...input }, ctx) => {
       const now = Date.now();
-      for (const [key, seen] of recentCreates) if (now - seen.at > CREATE_DEDUPE_MS) recentCreates.delete(key);
+      for (const [key, seen] of recentCreates)
+        if (now - seen.at > CREATE_DEDUPE_MS) recentCreates.delete(key);
       const key = requestId === undefined ? undefined : `${ctx.meta.actor.kind}:${requestId}`;
       const earlier = key === undefined ? undefined : recentCreates.get(key);
       if (earlier !== undefined) return earlier.made;

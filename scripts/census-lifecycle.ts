@@ -39,24 +39,94 @@ interface Tracked {
 }
 
 const TRACKED: Tracked[] = [
-  { label: "status writes: LifecycleRows.commit", file: "apps/server/src/tasks/lifecycle/rows.ts", name: "commit", within: "LifecycleRows" },
-  { label: "Task.pausedReason", file: "packages/shared/src/tasks.ts", name: "pausedReason", within: "TaskSchema" },
+  {
+    label: "status writes: LifecycleRows.commit",
+    file: "apps/server/src/tasks/lifecycle/rows.ts",
+    name: "commit",
+    within: "LifecycleRows",
+  },
+  {
+    label: "Task.pausedReason",
+    file: "packages/shared/src/tasks.ts",
+    name: "pausedReason",
+    within: "TaskSchema",
+  },
   { label: "Task.pausedBy", file: "packages/shared/src/tasks.ts", name: "pausedBy", within: "TaskSchema" },
-  { label: "tasks.paused_reason column", file: "apps/server/src/store/schema.ts", name: "pausedReason", within: "tasks" },
-  { label: "tasks.paused_by column", file: "apps/server/src/store/schema.ts", name: "pausedBy", within: "tasks" },
-  { label: "tasks.start_when_ready column", file: "apps/server/src/store/schema.ts", name: "startWhenReady", within: "tasks" },
+  {
+    label: "tasks.paused_reason column",
+    file: "apps/server/src/store/schema.ts",
+    name: "pausedReason",
+    within: "tasks",
+  },
+  {
+    label: "tasks.paused_by column",
+    file: "apps/server/src/store/schema.ts",
+    name: "pausedBy",
+    within: "tasks",
+  },
+  {
+    label: "tasks.start_when_ready column",
+    file: "apps/server/src/store/schema.ts",
+    name: "startWhenReady",
+    within: "tasks",
+  },
   { label: "waitsForOwner()", file: "packages/shared/src/tasks.ts", name: "waitsForOwner" },
   { label: "resumeRefusal()", file: "apps/server/src/autonomy/resume.ts", name: "resumeRefusal" },
   { label: "pausedLabel()", file: "apps/server/src/autonomy/resume.ts", name: "pausedLabel" },
-  { label: "autonomy task held", file: "apps/server/src/autonomy/repo.ts", name: "held", within: "AutonomyTaskRow" },
-  { label: "autonomy task heldScope", file: "apps/server/src/autonomy/repo.ts", name: "heldScope", within: "AutonomyTaskRow" },
-  { label: "autonomy task resumedAt", file: "apps/server/src/autonomy/repo.ts", name: "resumedAt", within: "AutonomyTaskRow" },
-  { label: "autonomy_tasks.held column", file: "apps/server/src/store/schema.ts", name: "held", within: "autonomyTasks" },
-  { label: "autonomy_tasks.held_scope column", file: "apps/server/src/store/schema.ts", name: "heldScope", within: "autonomyTasks" },
-  { label: "autonomy_tasks.resumed_at column", file: "apps/server/src/store/schema.ts", name: "resumedAt", within: "autonomyTasks" },
-  { label: "AutonomyState.holds", file: "apps/server/src/autonomy/repo.ts", name: "holds", within: "AutonomyState" },
-  { label: "QueueItem.waitFor", file: "packages/shared/src/autonomy.ts", name: "waitFor", within: "QueueItemSchema" },
-  { label: "QueueItem.readyAt", file: "packages/shared/src/autonomy.ts", name: "readyAt", within: "QueueItemSchema" },
+  {
+    label: "autonomy task held",
+    file: "apps/server/src/autonomy/repo.ts",
+    name: "held",
+    within: "AutonomyTaskRow",
+  },
+  {
+    label: "autonomy task heldScope",
+    file: "apps/server/src/autonomy/repo.ts",
+    name: "heldScope",
+    within: "AutonomyTaskRow",
+  },
+  {
+    label: "autonomy task resumedAt",
+    file: "apps/server/src/autonomy/repo.ts",
+    name: "resumedAt",
+    within: "AutonomyTaskRow",
+  },
+  {
+    label: "autonomy_tasks.held column",
+    file: "apps/server/src/store/schema.ts",
+    name: "held",
+    within: "autonomyTasks",
+  },
+  {
+    label: "autonomy_tasks.held_scope column",
+    file: "apps/server/src/store/schema.ts",
+    name: "heldScope",
+    within: "autonomyTasks",
+  },
+  {
+    label: "autonomy_tasks.resumed_at column",
+    file: "apps/server/src/store/schema.ts",
+    name: "resumedAt",
+    within: "autonomyTasks",
+  },
+  {
+    label: "AutonomyState.holds",
+    file: "apps/server/src/autonomy/repo.ts",
+    name: "holds",
+    within: "AutonomyState",
+  },
+  {
+    label: "QueueItem.waitFor",
+    file: "packages/shared/src/autonomy.ts",
+    name: "waitFor",
+    within: "QueueItemSchema",
+  },
+  {
+    label: "QueueItem.readyAt",
+    file: "packages/shared/src/autonomy.ts",
+    name: "readyAt",
+    within: "QueueItemSchema",
+  },
   { label: "AgentRun.paused", file: "apps/server/src/runs/run.ts", name: "paused", within: "AgentRun" },
   { label: "AgentRun.held", file: "apps/server/src/runs/run.ts", name: "held", within: "AgentRun" },
   { label: "budget alert resumedAt()", file: "apps/server/src/budgets/repo.ts", name: "resumedAt" },
@@ -91,7 +161,10 @@ function locate(project: Project, t: Tracked): ast.Node | undefined {
 }
 
 const isTest = (file: string): boolean =>
-  file.endsWith(".test.ts") || file.endsWith(".test.tsx") || file.includes("/testing/") || file.includes("/e2e/");
+  file.endsWith(".test.ts") ||
+  file.endsWith(".test.tsx") ||
+  file.includes("/testing/") ||
+  file.includes("/e2e/");
 
 interface Site {
   label: string;
@@ -121,7 +194,10 @@ function collect(): Site[] {
           const key = `${t.label}|${ref.path}|${ref.index}`;
           if (seen.has(key)) continue;
           seen.add(key);
-          const file = ref.path.startsWith(ROOT.toLowerCase()) || ref.path.startsWith(ROOT) ? ref.path.slice(ROOT.length + 1) : ref.path;
+          const file =
+            ref.path.startsWith(ROOT.toLowerCase()) || ref.path.startsWith(ROOT)
+              ? ref.path.slice(ROOT.length + 1)
+              : ref.path;
           if (file.includes("node_modules") || isTest(file)) continue;
           sites.push({ label: t.label, file });
         }
@@ -142,7 +218,9 @@ const countBy = <K extends string>(rows: Site[], key: (s: Site) => K): Map<K, nu
 };
 const bySymbol = countBy(outside, (s) => s.label);
 const filesOf = (rows: Site[]): number => new Set(rows.map((r) => r.file)).size;
-const symbolCounts: Record<string, number> = Object.fromEntries(TRACKED.map((t) => [t.label, bySymbol.get(t.label) ?? 0]));
+const symbolCounts: Record<string, number> = Object.fromEntries(
+  TRACKED.map((t) => [t.label, bySymbol.get(t.label) ?? 0]),
+);
 
 const arg = (flag: string): string | undefined => {
   const i = process.argv.indexOf(flag);
@@ -150,11 +228,17 @@ const arg = (flag: string): string | undefined => {
 };
 
 if (process.argv.includes("--json")) {
-  console.log(JSON.stringify({ totalOutside: outside.length, filesOutside: filesOf(outside), symbolCounts }, null, 2));
+  console.log(
+    JSON.stringify({ totalOutside: outside.length, filesOutside: filesOf(outside), symbolCounts }, null, 2),
+  );
 } else {
   if (process.argv.includes("--files")) {
     const perFile = new Map<string, number>();
-    for (const s of sites) perFile.set(`${s.label}\t${s.file}${inLifecycle(s) ? " (lifecycle)" : ""}`, (perFile.get(`${s.label}\t${s.file}${inLifecycle(s) ? " (lifecycle)" : ""}`) ?? 0) + 1);
+    for (const s of sites)
+      perFile.set(
+        `${s.label}\t${s.file}${inLifecycle(s) ? " (lifecycle)" : ""}`,
+        (perFile.get(`${s.label}\t${s.file}${inLifecycle(s) ? " (lifecycle)" : ""}`) ?? 0) + 1,
+      );
     console.log("count  symbol                                file");
     for (const [k, n] of [...perFile].sort((a, b) => b[1] - a[1])) {
       const [label = "", file = ""] = k.split("\t");

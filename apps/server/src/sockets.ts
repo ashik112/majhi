@@ -79,7 +79,9 @@ export function attachSockets(
 function serveEvents(ws: WebSocket, events: EventHub, build: string | undefined): void {
   const seq = new EventSeq();
   // The first frame: which web build this server serves, so a tab from before an update reloads.
-  ws.send(JSON.stringify(ServerEventSchema.parse({ type: "hello", ...(build === undefined ? {} : { build }) })));
+  ws.send(
+    JSON.stringify(ServerEventSchema.parse({ type: "hello", ...(build === undefined ? {} : { build }) })),
+  );
   const stop = events.subscribe((event) => {
     if (ws.readyState !== ws.OPEN) return;
     // A frame dropped for a slow tab still takes its number, so the tab sees the gap and reads again.

@@ -166,14 +166,14 @@ import {
   UpdateStatusSchema,
 } from "./host.ts";
 import {
+  BoardCountsSchema,
   DecisionAnswerInputSchema,
   DecisionBatchInputSchema,
   DecisionBatchResultSchema,
   DecisionDetailSchema,
-  BoardCountsSchema,
   DecisionListSchema,
-  OwnerDecisionSchema,
   DecisionRecommendInputSchema,
+  OwnerDecisionSchema,
 } from "./inbox.ts";
 import {
   McpAgentInputSchema,
@@ -345,6 +345,13 @@ import {
   TaskSummarySchema,
 } from "./tasks.ts";
 import {
+  InstalledToolSchema,
+  ToolInstallInputSchema,
+  ToolRemoveInputSchema,
+  ToolsListInputSchema,
+  ToolsListSchema,
+} from "./tools.ts";
+import {
   TriggerCreateInputSchema,
   TriggerIdSchema,
   TriggerUpdateInputSchema,
@@ -365,13 +372,6 @@ import {
   UsageRangeSchema,
   UsageSummarySchema,
 } from "./usage.ts";
-import {
-  InstalledToolSchema,
-  ToolInstallInputSchema,
-  ToolRemoveInputSchema,
-  ToolsListInputSchema,
-  ToolsListSchema,
-} from "./tools.ts";
 import {
   WatchIdInputSchema,
   WatchOverviewInputSchema,
