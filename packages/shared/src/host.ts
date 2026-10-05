@@ -175,6 +175,13 @@ export const UpdateStatusSchema = z.object({
 });
 export type UpdateStatus = z.infer<typeof UpdateStatusSchema>;
 export const UPDATE_STATUS_FILE = "update.json";
+/**
+ * The task ids that are not done, written by the server just before it asks the helper to update.
+ * After the update the helper keeps their preview images and removes the rest. Missing or unreadable
+ * means the helper keeps every preview.
+ */
+export const OPEN_TASKS_FILE = "open-tasks.json";
+export const OpenTasksSchema = z.object({ tasks: z.array(z.string()) });
 
 /** A question in Laya's own format, as the Python service takes it. The server maps ours onto it. */
 export const LayaQuestionSchema = z.object({
