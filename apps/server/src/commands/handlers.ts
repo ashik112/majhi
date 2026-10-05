@@ -1024,6 +1024,8 @@ export function createHandlers({
         input.cachesOnly,
       ),
     "health.run": () => (health ? health.run() : notBuilt()),
+    "health.checkAll": () => (health ? health.checkAll() : notBuilt()),
+    "health.check": (input) => (health ? health.check(input.id) : notBuilt()),
     "health.fix": (input, ctx) =>
       health ? health.fix(input.id, ctx.meta.actor.kind === "owner" ? "owner" : "agent") : notBuilt(),
     "system.version": () => (system ? system.version() : notBuilt()),

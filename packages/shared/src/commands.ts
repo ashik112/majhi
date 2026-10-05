@@ -158,6 +158,7 @@ import {
   SignOutSchema,
 } from "./git-signin.ts";
 import { HandoffCheckInputSchema, HandoffGetInputSchema, HandoffStateSchema } from "./handoff.ts";
+import { HealthRunOutputSchema } from "./health-run.ts";
 import {
   DirListingSchema,
   EDITOR_PATH_MAX,
@@ -2922,24 +2923,23 @@ export const commands = {
   "health.run": {
     risk: "read",
     summary:
-      "Run every doctor check: config, mounts, SSH, CLIs, accounts, connections, disk, host helper. Connections show their last Test; connections.test tests one",
+      "Read every doctor check: config, mounts, SSH, CLIs, accounts, connections, disk, host helper, each with when it was checked. Accounts and connections show their last result; health.checkAll runs them all again",
     input: Empty,
-    output: z.object({
-      checkedAt: z.string(),
-      checks: z.array(
-        z.object({
-          id: z.string(),
-          group: z.enum(["majhi", "host", "ssh", "accounts", "connections", "disk"]),
-          label: z.string(),
-          /** False only for a failure. A warning is ok, with `level` "warn". */
-          ok: z.boolean(),
-          level: z.enum(["pass", "warn", "fail"]).optional(),
-          detail: z.string(),
-          /** A fix majhi can do itself, run with health.fix. */
-          fix: z.object({ label: z.string() }).optional(),
-        }),
-      ),
-    }),
+    output: HealthRunOutputSchema,
+  },
+  "health.checkAll": {
+    risk: "read",
+    summary:
+      "Check everything now, in the background: the doctor checks, every account's health and every connection's real check, a few at a time. Answers at once; the checks event and health.run show progress. Does nothing when a run is already going",
+    input: Empty,
+    output: z.object({ started: z.boolean(), total: z.number().int().nonnegative() }),
+  },
+  "health.check": {
+    risk: "read",
+    summary:
+      "Check one thing again and wait for it: an account (account:<id>), a connection (connection:<id>), or any other row, which runs the doctor checks again",
+    input: z.object({ id: z.string() }),
+    output: z.object({ checkedAt: z.string() }),
   },
   "health.fix": {
     risk: "change",

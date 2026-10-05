@@ -51,7 +51,7 @@ export function AccountsUsage({
           Limits belong to accounts, so agents on one account share its meters.
         </p>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 scroll-fade">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 scroll-fade">
         {error ? (
           <p role="alert" className="text-base text-red">
             Could not load accounts: {describeError(error)}

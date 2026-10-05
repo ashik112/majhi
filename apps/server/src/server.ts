@@ -60,6 +60,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     config,
     hostLink,
     sshHosts,
+    events: services.events,
     remount: (unmounted) => requestRemount(hostLink, unmounted),
     // `system` is made below; the fix only runs later, from a request.
     rebuild: () => system.update("idle"),

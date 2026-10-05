@@ -15,8 +15,25 @@ export function useHealthChecks(enabled = true) {
     queryFn: () => cmd("health.run", {}),
     enabled,
     staleTime: 60_000,
-    refetchInterval: 5 * 60_000,
+    // The checks event refreshes rows as they finish; polling while a run goes is the fallback for a lost frame.
+    refetchInterval: (query) => (query.state.data?.run.running ? 1500 : 5 * 60_000),
     refetchIntervalInBackground: false,
+  });
+}
+
+/** Checks one row again and waits for it, then reads the checks. */
+export function useCheckOne() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"health.check">, ApiRequestError, string>({
+    mutationFn: (id) =>
+      cmd("health.check", { id }, { reason: "Owner pressed Check again on a health check" }),
+    onSettled: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: opsKeys.checks }),
+        client.invalidateQueries({ queryKey: queryKeys.accounts }),
+        client.invalidateQueries({ queryKey: queryKeys.connections }),
+      ]);
+    },
   });
 }
 

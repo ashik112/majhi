@@ -565,6 +565,8 @@ export const EventTopicSchema = z.enum([
   "signins",
   /** A clone job moved (at most every 500 ms while it runs): refetch `projects.cloneStatus`. */
   "clones",
+  /** A health check finished, or a full run moved: refetch `health.run`. */
+  "checks",
 ]);
 export type EventTopic = z.infer<typeof EventTopicSchema>;
 /**

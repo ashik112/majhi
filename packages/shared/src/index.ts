@@ -31,6 +31,7 @@ export * from "./findings.ts";
 export * from "./git-accounts.ts";
 export * from "./git-signin.ts";
 export * from "./handoff.ts";
+export * from "./health-run.ts";
 export * from "./host.ts";
 export * from "./inbox.ts";
 export * as lifecycle from "./lifecycle/index.ts";

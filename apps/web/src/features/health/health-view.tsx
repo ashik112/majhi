@@ -1,10 +1,7 @@
-import { PAGE_PATH } from "@majhi/shared";
-import { useNavigate } from "@tanstack/react-router";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { PageLink } from "@/components/ui/page-link";
-import { healthCheckedAt } from "@/features/shell/model";
 import { CostChartPanel, SpendPanel } from "@/features/usage/spend-panel";
 import { cn } from "@/lib/cn";
 import { formatAgo } from "@/lib/format";
@@ -15,14 +12,15 @@ import { useNow } from "@/lib/use-now";
 import { AccountsUsage } from "./accounts-usage";
 import { ChecksPanel } from "./checks-panel";
 import { CleanupPanel } from "./cleanup-panel";
-import { checksHeadline } from "./model";
+import { levelOf, runSummary } from "./model";
 import { MoneyPanel } from "./money-panel";
 import { useCheckAll } from "./use-check-all";
 
 /**
- * Health and usage: one status line and the checks folded to a strip, then what the owner reads every
- * day, each account's usage windows beside tokens and cost. Wide screens fit it all without scrolling;
- * narrower ones stack the panels in one column that scrolls inside the page.
+ * Health and usage, in the order the owner needs it: what is failing (one button each), then each
+ * account's usage windows and spend, then cleanup and free space. One column that scrolls inside the
+ * fixed shell at every width. "Run health check" checks everything in one go, and the page runs it by
+ * itself when the last full run is old.
  */
 export function HealthView() {
   const accounts = useAccounts();
@@ -31,25 +29,31 @@ export function HealthView() {
   const checks = useHealthChecks();
   const now = useNow(30_000);
   const { org: orgFilter } = useOrgFilter();
-  const navigate = useNavigate();
-  const check = useCheckAll(accounts.data ?? []);
-  // Wide screens fit every panel; narrower ones stack them in one column that scrolls.
+  const check = useCheckAll(checks.data);
 
   const all = accounts.data ?? [];
   const rows = orgFilter === undefined ? all : all.filter((a) => a.org === orgFilter);
-  const headline = checks.data ? checksHeadline(checks.data.checks) : "Running the checks";
-  const bad = headline.endsWith("to fix");
-  const checkedAt = healthCheckedAt(all, checks.data?.checkedAt);
+  const list = checks.data?.checks ?? [];
+  const summary = checks.data ? runSummary(list) : "Reading the checks";
+  const bad = list.some((c) => levelOf(c) !== "pass");
+  const lastRun = checks.data?.lastFullRunAt;
+  const progress = check.total > 0 ? `Checking ${check.done} of ${check.total}` : "Checking";
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PageHeader
         title="Health & usage"
         subtitle={
-          <span>
-            <span className={cn(bad && "text-red")}>{headline}</span>
-            {checkedAt && <span className="text-fg-faint">. Checked {formatAgo(checkedAt, now)}.</span>}
-          </span>
+          check.running ? (
+            <span>{progress}</span>
+          ) : (
+            <span>
+              <span className={cn(bad && "text-red")}>{summary}</span>
+              <span className="text-fg-faint">
+                {lastRun ? `. Last run ${formatAgo(lastRun, now)}.` : ". Not run since majhi started."}
+              </span>
+            </span>
+          )
         }
       >
         <Button asChild size="lg">
@@ -58,14 +62,14 @@ export function HealthView() {
         <Button asChild size="lg">
           <PageLink page="accounts">Manage accounts</PageLink>
         </Button>
-        <Button size="lg" variant="primary" disabled={check.running} onClick={() => void check.run()}>
+        <Button size="lg" variant="primary" disabled={check.running} onClick={() => check.run()}>
           <RefreshCw aria-hidden="true" className={cn(check.running && "animate-spin")} />
-          {check.running ? `Checking ${check.done} of ${check.total}` : "Run health check"}
+          {check.running ? progress : "Run health check"}
         </Button>
       </PageHeader>
 
       <span role="status" className="sr-only">
-        {check.finished ? "Health check finished" : ""}
+        {check.finished ? summary : ""}
       </span>
       {check.error && (
         <p role="alert" className="mb-2 px-1 text-base text-red">
@@ -74,15 +78,11 @@ export function HealthView() {
       )}
 
       <div
-        className={cn(
-          // The checks, money and cleanup panels stack above the usage grid: the page scrolls inside the shell.
-          "flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain pb-6 scroll-fade",
-        )}
+        data-testid="health-scroll"
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain pb-6 scroll-fade"
       >
-        <ChecksPanel onSignIn={(id) => void navigate({ to: PAGE_PATH.accounts, search: { account: id } })} />
-        <MoneyPanel />
-        <CleanupPanel />
-        <div className="flex flex-col gap-3 min-[1280px]:grid min-[1280px]:min-h-[560px] min-[1280px]:shrink-0 min-[1280px]:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+        <ChecksPanel checking={check.running} />
+        <div className="flex shrink-0 flex-col gap-3 min-[1280px]:grid min-[1280px]:min-h-[560px] min-[1280px]:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
           <div className="flex min-h-0 flex-col gap-3">
             <AccountsUsage
               accounts={rows}
@@ -92,14 +92,19 @@ export function HealthView() {
               tools={tools.data}
               now={now}
               filtered={orgFilter !== undefined}
-              className="min-[1280px]:flex-1"
+              className="max-h-[720px] min-[1280px]:max-h-none min-[1280px]:flex-1"
             />
             <CostChartPanel org={orgFilter} />
           </div>
           <div className="flex min-h-0 flex-col gap-3">
-            <SpendPanel org={orgFilter} className="min-h-[420px] min-[1280px]:min-h-0 min-[1280px]:flex-1" />
+            <SpendPanel
+              org={orgFilter}
+              className="min-h-[420px] max-h-[720px] min-[1280px]:min-h-0 min-[1280px]:max-h-none min-[1280px]:flex-1"
+            />
           </div>
         </div>
+        <MoneyPanel />
+        <CleanupPanel />
       </div>
     </div>
   );

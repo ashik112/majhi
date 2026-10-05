@@ -124,7 +124,7 @@ export function SpendPanel({ org, className }: { org: string | undefined; classN
                 <X aria-hidden="true" />
               </Button>
             </div>
-            <div className="min-h-0 overflow-y-auto overscroll-contain p-4 pb-6 scroll-fade">
+            <div className="min-h-0 overflow-y-auto p-4 pb-6 scroll-fade">
               <PriceTable id="price-table" models={modelIds} className="border-0 bg-transparent p-0" />
             </div>
           </div>
@@ -177,7 +177,7 @@ function Breakdown({ org }: { org: string | undefined }) {
           ))}
         </Select>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-6 scroll-fade">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-6 scroll-fade">
         {breakdown.isError ? (
           <p role="alert" className="px-2 text-sm text-red">
             Could not load the breakdown: {describeError(breakdown.error)}

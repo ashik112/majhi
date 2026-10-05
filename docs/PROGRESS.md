@@ -1,5 +1,18 @@
 # Progress
 
+## Health & usage page that checks everything (built, not merged)
+
+Branch `fix/health-page`.
+
+- **Causes.** "Run health check" only ran each account's health, then re-read `health.run`, which shows each connection's last test and runs none. The owner had to press Test on every row. The page body was cut off on wide screens (patched in 08a38104), and two inner lists with `overscroll-contain` still swallowed the wheel, so scrolling stopped halfway on narrower screens.
+- **One action.** `health.checkAll` runs the doctor checks, every account's health and every set-up connection's real check, four at a time, in the background. A check that throws shows as failed and never stops the rest. Each finished check emits a `checks` event, so rows update live; the button reads "Checking 12 of 31", then the header says "Checked 31: 28 ok, 3 need you". `health.check` rechecks one row. `health.run` now carries `checkedAt` per row, `lastFullRunAt` and the run's progress.
+- **Fresh by default.** Opening the page starts a run when the last full run is older than 15 minutes (`healthRunDue` in `packages/shared/src/health-run.ts`). The last run time is kept in memory, so the first visit after a restart always runs.
+- **Failures first.** "Needs you" lists failing, then warning rows: what is wrong, one fix button (Sign in, Reconnect, Open settings, Restart helper, Free space now, and so on) and when it was checked. Passing rows fold into "All good". Every row has a small "Check again"; a failing row with no fix shows it as its one button. Connection rows now say Reconnect (opens that connection) or Open settings, and no longer offer "Test".
+- **Layout.** One column that scrolls inside the shell: checks, then accounts usage and spend, then money, then cleanup. Usage lists no longer trap the wheel.
+- **Cleanup.** The panel previews on open and says what it would free ("Would free 4680 room items in 156 tasks"), with one "Run cleanup" button and a confirm. "Choose tasks" and "Only dependency caches" stay as options.
+- **Verified.** Typecheck 0. Tests: check-all orchestration (all kinds run, concurrency bounded, one failure does not stop the rest, results carry timestamps, no second run), stale-run decision. In a real browser on an isolated e2e server at 1440x900, 1100x800 and 1440x1200 with fake accounts and env connections (passing and failing): auto-run on a stale page, no second run on reload, every row's time changes on Run, failing rows on top, no per-row Test, wheel scroll reaches the cleanup panel, preview then run, 0 console errors or failed requests. Log and PNGs in the scratchpad `health-page/`.
+- **Left.** Real sign-ins, real provider connections and a real helper are for the owner.
+
 ## Start runs the agent (fix, not merged)
 
 Branch `fix/start-runs-nothing`.
