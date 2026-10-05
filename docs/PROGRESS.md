@@ -1,5 +1,24 @@
 # Progress
 
+## Disk hygiene: caches after 1 day, old images removed after each update (built, not merged)
+
+Branch `feat/disk-hygiene`.
+
+- **Caches after 1 day.** New setting `cleanup.caches_after_days` (default 1). The captain's cleanup chore now runs a caches-only pass (`CleanupService.run(..., cachesOnly, cachesAfterDays)`, port `freeCaches`) for tasks done longer than that. It frees only ignored dependency and tool caches. Source, branches and room history stay. It skips a task that was reopened, was closed more recently, or has uncommitted changes in its worktree, and it re-checks each task when it runs. The 30-day full cleanup keeps `cleanup.after_days`. The owner's explicit "Preview dependency caches" button still works at once, as before. Settings row: "Free dependency caches of finished tasks after N days", above Free space in the Cleanup panel.
+- **Old images after each update.** After the new majhi is healthy the helper (`apps/host/src/diskHygiene.ts`) removes `majhi-server:previous` (and Laya's), preview images `majhi-preview-<task>` of tasks that are done or gone with their buildx builders and builder state volumes, and dangling images that carry a majhi label (`majhi.container=image` or the new `majhi.owned=build` that compose puts on the images it builds). Rollback only uses the previous tag inside the same update run, so none is kept afterwards. The server writes `open-tasks.json` just before the update; without it every preview is kept. What was removed, with sizes, is a line in the update notice.
+- **Removed on purpose.** The old clean-up ran an unfiltered `docker image prune -f` (it also removed other projects' dangling images) and trimmed the build cache with `builder prune`. Both are gone: the owner forbids touching the build cache and other projects' images.
+- **Verified.** Typecheck 0. Tests: `tasks/cleanup.test.ts` (2 days freed, 12 hours kept, reopened kept, uncommitted kept, source and history stay), `host/diskHygiene.test.ts` (filters select only majhi items, other project's image and volume never selected, open task's preview kept, no build cache prune in any docker args), `host/update.test.ts`.
+- **Left.** Volume sizes are not shown (docker does not list them cheaply). The first update after this one still leaves old unlabelled dangling images; they go the next time they are labelled builds.
+## Skills & MCP page, and skills on for every agent by default
+
+Branch `feat/skills-mcp-page`.
+
+- **What changed.** Skills and MCP servers are one sidebar page, "Skills & MCP" (`/skills`, `g k`), under Agents. Skills left the Settings list; MCP servers left Connections. Old links redirect: `/setup?section=skills` to `/skills`, `/setup?section=mcp...` and `/connections?tab=mcp` to `/skills?tab=mcp`. Screens map, palette, shortcuts table and `?` help are updated.
+- **The page.** One-line rows (mark, name and description, workspace, avatars with "N of M", lamp with the one-line reason, one button for the row's state: Enable for all, Fix, Sign in, Test, Retry). Problems sort first. A row opens a right-side detail (full description, source and version, files, last error with the fix, per-agent switches grouped by workspace, Update, Test, Remove). One Add dialog searches the directory or registry, takes a pasted link or command, and shows the preview before installing; the new row is highlighted. Keys: j/k, Enter, `/`, `a`. The install and review cards are the existing ones, moved into the dialog.
+- **Default on.** A skill's lock entry has `defaultOn` and `optOut`. A new skill is on for every agent, including agents created later, because the run reads `effectiveFor(agent, listed)` at launch instead of anyone writing the skill into agent files. `skills.disable` records an opt-out; `skills.enable` clears it; `skills.enableAll` (new, "Enable for all agents" in the page) turns the rule on and clears opt-outs. Skills installed before this read as off until the owner applies Enable for all. Updating a skill keeps its flags. Skills are global (one store), so "all agents" means every agent; there is no workspace-scoped skill to narrow it.
+- **Verified.** Typecheck clean; `skills.test.ts` (new test: install enables for all, an agent created later has it, an opt-out sticks, enable-all clears it), `admin/screens.test.ts`, census guard. Browser, isolated e2e server, 1440 and 1100, 16 skills, 10 MCP servers, 4 workspaces, failing, unconfigured and needs-sign-in servers, plus the empty state; no console errors or failed requests. PNGs in the branch report.
+- **Left.** An open agent session does not restart when a default-on skill lands (it does when the agent file changes); the next run has it. The install progress path through a real source was not driven in the browser (no network in e2e); the dialog opens and its cards are the previous ones.
+
 ## Nothing merges unless the checks are green for the exact commit (built, not merged)
 
 Branch `feat/merge-needs-green`.
@@ -12,6 +31,14 @@ Branch `feat/merge-needs-green`.
 - **Also.** A done task can now be checked (its review-state checks do not apply), so its unshipped work can still be merged. The ship chore's `shipCheck` also reads the gate verdict.
 - **Verified.** Typecheck clean. Tests: `handoff/merge-gate.test.ts` (running, failed test, stale, green, agent and captain refused and cannot confirm, wrong sha, owner override recorded, no-checks project), plus handoff, captain ship, mrs, inbox, admin and tasks suites. Browser on an isolated e2e server at 1440x900 and 1100x800: failed, stale, run checks, merge anyway; no console errors or failed requests.
 - **Left.** MRs merged on the host by CI (`mrs.merge`, `tasks.mergeMrs`) follow the host's own CI, not this rule: they do not merge a task branch locally. Typecheck is not a separate hand-off step, so it is not in the verdict.
+## Less web traffic (built, not merged)
+
+Branch `perf/web-traffic`.
+
+- **What changed.** Home reads no decision detail: a row shows what `decisions.list` carries (the diff stat and checks line on ship rows is gone). A detail is read only for the selected decision, under its own key (id and a version made from the list fields), so a list refetch never reads details again. `captain.log` takes `after`: a tab holding the log reads only newer lines and merges them, and reads it all again only when the catch-up filled its page. The `/health` poll runs every 30 s while the events socket is open and every 1.5 s only while it is down; the build-watch poll stops once the socket hello named the build. The server's 30 s ops tick tells the tabs only when it changed something (it used to refetch ops, decisions and findings every 30 s). The Captain drawer's code loads when it opens, and the idle prefetch of the Captain page is gone (hover still warms it), so room-pane, captain-page and decision-list no longer load on Home.
+- **What the owner will notice.** Fewer requests while Home is open; ship rows on Home no longer show "+n -n" or the checks line (open the decision for them).
+- **How verified.** Isolated e2e server with the new `team-api-volume` seed and running fake agents; 20 s idle on Home, Needs you and Captain, before and after. Unit tests for the topic to query-key mapping and the log merge.
+- **Left.** Under churn (a task created every 5 s) `tasks.list` and `decisions.list` are still read in full 3 times per 20 s: some server events (`services.ts` emits `tasks` without naming tasks) trigger full list reads. The Captain page still reads `autonomy.status` (28 KB) on each autonomy event.
 
 ## Home as one list by who holds the ball (built, not merged)
 

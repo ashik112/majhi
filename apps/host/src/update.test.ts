@@ -163,26 +163,6 @@ describe("update", () => {
     expect(s.exit).toEqual(["exit"]);
   });
 
-  it("removes the images and build cache it replaced once the new majhi runs, and a failed clean-up fails nothing", async () => {
-    const s = setup({ selfIsBundle: true });
-    expect((await s.run()).state).toBe("done");
-    const docker = s.calls.filter((c) => c.file === "/usr/bin/docker").map((c) => c.args);
-    const up = docker.findIndex((a) => a.startsWith("compose up -d --wait"));
-    const prune = docker.indexOf("image prune -f");
-    expect(prune).toBeGreaterThan(up);
-    expect(docker).toContain("builder prune -f --max-used-space 16gb");
-    // Never volumes, never everything: only dangling images and old cache.
-    expect(docker.some((a) => a.includes("volume") || a.includes("system prune") || a.includes("-a"))).toBe(
-      false,
-    );
-  });
-
-  it("finishes the update when the clean-up fails, trying the older Docker flag first", async () => {
-    const s = setup({ selfIsBundle: true, failOn: "builder prune" });
-    expect((await s.run()).state).toBe("done");
-    expect(s.calls.map((c) => c.args)).toContain("builder prune -f --keep-storage 16gb");
-  });
-
   it("cleans nothing when the build fails: the previous image may be needed to go back", async () => {
     const s = setup({ failOn: "compose --profile runner build" });
     expect((await s.run()).state).toBe("failed");

@@ -753,6 +753,26 @@ export function createChores(
       }
       // Code only: dependency folders and build output of done tasks. A second run finds nothing.
       if (ruleOff(run, "cleanup-caches")) return;
+      const freeable = await ports.freeCaches?.(org, true);
+      if (freeable !== undefined && freeable.length > 0) {
+        run.check();
+        await run.act({
+          key: `caches:${org}:${now().toISOString()}`,
+          text: `Frees dependency caches of ${freeable.length} done ${freeable.length === 1 ? "task" : "tasks"}`,
+          reason:
+            "Done tasks keep their source, branches and history. Caches come back with the next install",
+          do: async () => {
+            const freed = (await ports.freeCaches?.(org, false)) ?? [];
+            return {
+              text: `Freed dependency caches of ${freed.length} done ${freed.length === 1 ? "task" : "tasks"}: ${freed
+                .slice(0, 5)
+                .map((t) => t.id)
+                .join(", ")}${freed.length > 5 ? ", ..." : ""}`,
+              undoNote: "Deleted caches come back with the next install or build",
+            };
+          },
+        });
+      }
       const found = await ports.foldersFreeable?.(org);
       if (found === undefined || found.bytes <= 0) return;
       run.check();

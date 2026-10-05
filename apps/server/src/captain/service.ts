@@ -470,10 +470,16 @@ export class CaptainService {
     };
   }
 
-  log(q: { org?: string | undefined; before?: number | undefined; limit: number }) {
+  log(q: {
+    org?: string | undefined;
+    before?: number | undefined;
+    after?: number | undefined;
+    limit: number;
+  }) {
     return {
       actions: this.repo.actions(q).map(publicAction),
-      runs: this.repo.runs({ org: q.org, limit: Math.min(q.limit, 50) }),
+      // A catch-up read (`after`) carries only the newest runs: the tab merges them by id.
+      runs: this.repo.runs({ org: q.org, limit: q.after === undefined ? Math.min(q.limit, 50) : 5 }),
     };
   }
 

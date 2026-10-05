@@ -18,6 +18,10 @@ const LockEntrySchema = z.object({
   commit: z.string().optional(),
   computedHash: z.string(),
   installedAt: z.string(),
+  /** On for every agent unless it is in `optOut`. Entries from before this field read as off. */
+  defaultOn: z.boolean().optional(),
+  /** Agents that turned a default-on skill off. */
+  optOut: z.array(z.string()).optional(),
 });
 type LockEntry = z.infer<typeof LockEntrySchema>;
 
@@ -34,6 +38,9 @@ export interface StoredSkill {
   commit?: string | undefined;
   hash: string;
   installedAt: string;
+  /** One rule for every agent, including agents created later: on unless the agent is in `optOut`. */
+  defaultOn: boolean;
+  optOut: string[];
 }
 
 /**
@@ -94,7 +101,11 @@ export class SkillStore {
         await rm(target, { recursive: true, force: true });
         await rename(staged, target);
         const lock = await this.readLock();
+        const previous = lock.skills[name];
         lock.skills[name] = {
+          // A new skill is on for every agent; replacing one keeps what the owner chose for it.
+          defaultOn: previous === undefined ? true : (previous.defaultOn ?? false),
+          ...(previous?.optOut === undefined ? {} : { optOut: previous.optOut }),
           source: source.source,
           sourceType: source.sourceType,
           ...(source.ref === undefined ? {} : { ref: source.ref }),
@@ -109,6 +120,39 @@ export class SkillStore {
       const stored = await this.get(name);
       if (stored === undefined) throw new UserError(`Skill ${name} could not be installed.`);
       return stored;
+    });
+  }
+
+  /** Turns the all-agents rule on or off. Turning it on clears the opt-outs: every agent gets the skill. */
+  setDefault(name: string, on: boolean): Promise<void> {
+    return this.change(name, (entry) => ({ ...entry, defaultOn: on, ...(on ? { optOut: [] } : {}) }));
+  }
+
+  /** Records that one agent turned a default-on skill off (`out`) or back on. */
+  setOptOut(name: string, agent: string, out: boolean): Promise<void> {
+    return this.change(name, (entry) => {
+      const rest = (entry.optOut ?? []).filter((a) => a !== agent);
+      return { ...entry, optOut: out ? [...rest, agent].sort() : rest };
+    });
+  }
+
+  /** The skills an agent has: the ones its file lists, plus every default-on skill it has not opted out of. */
+  async effectiveFor(agent: string, listed: readonly string[]): Promise<string[]> {
+    const lock = await this.readLock();
+    const out = new Set(listed);
+    for (const [name, entry] of Object.entries(lock.skills)) {
+      if (entry.defaultOn === true && !(entry.optOut ?? []).includes(agent)) out.add(name);
+    }
+    return [...out];
+  }
+
+  private change(name: string, edit: (entry: LockEntry) => LockEntry): Promise<void> {
+    return this.serial(async () => {
+      const lock = await this.readLock();
+      const entry = lock.skills[name];
+      if (entry === undefined) throw new UserError(`There is no installed skill ${name}.`, 404);
+      lock.skills[name] = edit(entry);
+      await this.writeLock(lock);
     });
   }
 
@@ -140,6 +184,8 @@ export class SkillStore {
         commit: entry.commit,
         hash: folder.hash,
         installedAt: entry.installedAt,
+        defaultOn: entry.defaultOn ?? false,
+        optOut: entry.optOut ?? [],
       };
     } catch {
       // A folder that went missing or broke by hand: the lock entry stays, the skill is not listed.
