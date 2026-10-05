@@ -1,11 +1,4 @@
-import {
-  mkdir,
-  readdir,
-  readFile,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { errorCode } from "../errors.ts";
 import {
@@ -68,12 +61,9 @@ export function createWorktree(req: WorktreeRequest): Promise<WorktreeResult> {
 async function create(req: WorktreeRequest): Promise<WorktreeResult> {
   const { source, base, branch, path } = req;
   if (!(await isGitRepo(source)))
-    throw new WorktreeProblem(
-      `${source} is not a git repo the server can see.`,
-    );
+    throw new WorktreeProblem(`${source} is not a git repo the server can see.`);
 
-  if (await isWorktreeOf(path, branch))
-    return { createdBranch: false, warnings: [] };
+  if (await isWorktreeOf(path, branch)) return { createdBranch: false, warnings: [] };
   await requireFreePath(path);
 
   const warnings: string[] = [];
@@ -94,32 +84,20 @@ async function create(req: WorktreeRequest): Promise<WorktreeResult> {
     await lockFor(req);
     return { createdBranch: false, warnings };
   }
-  if (
-    remote !== undefined &&
-    (await remoteBranchExists(source, remote, branch))
-  ) {
-    await add(
-      source,
-      ["worktree", "add", "--track", "-b", branch, path, `${remote}/${branch}`],
-      branch,
-    );
+  if (remote !== undefined && (await remoteBranchExists(source, remote, branch))) {
+    await add(source, ["worktree", "add", "--track", "-b", branch, path, `${remote}/${branch}`], branch);
     await lockFor(req);
     return { createdBranch: false, warnings };
   }
   const baseRef = await resolveBase(source, remote, base);
-  await add(
-    source,
-    ["worktree", "add", "--no-track", "-b", branch, path, baseRef],
-    branch,
-  );
+  await add(source, ["worktree", "add", "--no-track", "-b", branch, path, baseRef], branch);
   await lockFor(req);
   const startCommit = (await git(path, ["rev-parse", "HEAD"])).trim();
   return { createdBranch: true, startCommit, warnings };
 }
 
 async function lockFor(req: WorktreeRequest): Promise<void> {
-  if (req.task !== undefined)
-    await lock(req.source, req.path, lockReason(req.task));
+  if (req.task !== undefined) await lock(req.source, req.path, lockReason(req.task));
 }
 
 /** ssh's way of saying no key it had was accepted, or the host could not be verified. */
@@ -138,21 +116,12 @@ async function fetchWithKeys(
   reloadKeys: (() => Promise<boolean>) | undefined,
 ): Promise<string | undefined> {
   const failed = await tryFetch(source, remote, ref);
-  if (
-    failed === undefined ||
-    reloadKeys === undefined ||
-    !isSshAuthFailure(failed)
-  )
-    return failed;
+  if (failed === undefined || reloadKeys === undefined || !isSshAuthFailure(failed)) return failed;
   if (!(await reloadKeys().catch(() => false))) return failed;
   return tryFetch(source, remote, ref);
 }
 
-async function tryFetch(
-  source: string,
-  remote: string,
-  ref: string,
-): Promise<string | undefined> {
+async function tryFetch(source: string, remote: string, ref: string): Promise<string | undefined> {
   try {
     await git(source, ["fetch", "--quiet", remote, ref], {
       timeoutMs: FETCH_TIMEOUT_MS,
@@ -168,10 +137,7 @@ async function tryFetch(
  * Whether a task could start from `base` in `source`: a remote or local branch, or a commit,
  * as this machine knows them now. No fetch, so it is fast enough to run on create.
  */
-export async function baseExists(
-  source: string,
-  base: string,
-): Promise<boolean> {
+export async function baseExists(source: string, base: string): Promise<boolean> {
   const remote = await remoteOf(source).catch(() => undefined);
   return resolveBase(source, remote, base).then(
     () => true,
@@ -182,40 +148,19 @@ export async function baseExists(
   );
 }
 
-async function resolveBase(
-  source: string,
-  remote: string | undefined,
-  base: string,
-): Promise<string> {
-  if (remote !== undefined && (await remoteBranchExists(source, remote, base)))
-    return `${remote}/${base}`;
+async function resolveBase(source: string, remote: string | undefined, base: string): Promise<string> {
+  if (remote !== undefined && (await remoteBranchExists(source, remote, base))) return `${remote}/${base}`;
   if (await localBranchExists(source, base)) return base;
-  if (
-    await gitOk(source, [
-      "rev-parse",
-      "--verify",
-      "--quiet",
-      `${base}^{commit}`,
-    ])
-  )
-    return base;
-  throw new WorktreeProblem(
-    `Base branch "${base}" was not found in ${source}.`,
-  );
+  if (await gitOk(source, ["rev-parse", "--verify", "--quiet", `${base}^{commit}`])) return base;
+  throw new WorktreeProblem(`Base branch "${base}" was not found in ${source}.`);
 }
 
-async function add(
-  source: string,
-  args: string[],
-  branch: string,
-): Promise<void> {
+async function add(source: string, args: string[], branch: string): Promise<void> {
   try {
     await git(source, args);
   } catch (err) {
     if (!(err instanceof GitError)) throw err;
-    const busy = /already (?:checked out|used by worktree) at '([^']+)'/.exec(
-      err.stderr,
-    );
+    const busy = /already (?:checked out|used by worktree) at '([^']+)'/.exec(err.stderr);
     if (busy?.[1] !== undefined) {
       const dirty = await uncommitted(busy[1]).then(
         (lines) => lines.length > 0,
@@ -226,9 +171,7 @@ async function add(
           "Switch that checkout to another branch, or name a different working branch.",
       );
     }
-    throw new WorktreeProblem(
-      `Could not add the worktree for "${branch}": ${err.message}`,
-    );
+    throw new WorktreeProblem(`Could not add the worktree for "${branch}": ${err.message}`);
   }
 }
 
@@ -236,9 +179,7 @@ async function requireFreePath(path: string): Promise<void> {
   try {
     const info = await stat(path);
     if (!info.isDirectory() || (await readdir(path)).length > 0) {
-      throw new WorktreeProblem(
-        `${path} already exists. Remove it or pick another task.`,
-      );
+      throw new WorktreeProblem(`${path} already exists. Remove it or pick another task.`);
     }
   } catch (err) {
     if (errorCode(err) !== "ENOENT") throw err;
@@ -248,9 +189,7 @@ async function requireFreePath(path: string): Promise<void> {
 /** True when `path` is already this branch's worktree, so starting twice does nothing. */
 async function isWorktreeOf(path: string, branch: string): Promise<boolean> {
   try {
-    const current = (
-      await git(path, ["symbolic-ref", "--short", "HEAD"])
-    ).trim();
+    const current = (await git(path, ["symbolic-ref", "--short", "HEAD"])).trim();
     const top = (await git(path, ["rev-parse", "--show-toplevel"])).trim();
     return current === branch && (await sameDir(top, path));
   } catch {
@@ -284,35 +223,17 @@ export async function restack(input: {
   identity: { name: string; email: string };
 }): Promise<RestackResult> {
   const { worktree, branch, onto, from } = input;
-  const who = [
-    "-c",
-    `user.name=${input.identity.name}`,
-    "-c",
-    `user.email=${input.identity.email}`,
-  ];
+  const who = ["-c", `user.name=${input.identity.name}`, "-c", `user.email=${input.identity.email}`];
   return queue.run(worktree, async () => {
     const tip = (await git(worktree, ["rev-parse", `${onto}^{commit}`])).trim();
     if (tip === from) return { status: "current" };
     const dirty = await uncommitted(worktree);
-    if (dirty.length > 0)
-      return { status: "skipped", reason: "it has uncommitted changes" };
+    if (dirty.length > 0) return { status: "skipped", reason: "it has uncommitted changes" };
     try {
-      await git(worktree, [
-        ...who,
-        "rebase",
-        "--quiet",
-        "--onto",
-        tip,
-        from,
-        branch,
-      ]);
+      await git(worktree, [...who, "rebase", "--quiet", "--onto", tip, from, branch]);
       return { status: "rebased", commit: tip };
     } catch (err) {
-      const files = (
-        await git(worktree, ["diff", "--name-only", "--diff-filter=U"]).catch(
-          () => "",
-        )
-      )
+      const files = (await git(worktree, ["diff", "--name-only", "--diff-filter=U"]).catch(() => ""))
         .split("\n")
         .map((l) => l.trim())
         .filter((l) => l !== "");
@@ -351,31 +272,32 @@ export async function dirtyWorktrees(
  * git refuses when there are uncommitted changes. The branch stays. A locked worktree is unlocked
  * first, and locked again with its old reason when git refuses to remove it.
  */
-export function removeWorktree(
-  source: string,
-  path: string,
-  force: boolean,
-): Promise<void> {
+export function removeWorktree(source: string, path: string, force: boolean): Promise<void> {
   return queue.run(source, async () => {
     if (await isGitRepo(source)) {
       const own = await entryFor(source, path).catch(() => undefined);
       const reason =
-        own === undefined
-          ? undefined
-          : await readFile(join(own, "locked"), "utf8").catch(() => undefined);
+        own === undefined ? undefined : await readFile(join(own, "locked"), "utf8").catch(() => undefined);
       // `git worktree remove` deletes the folder inside a 30 second git call, which a checkout with
       // node_modules or build output does not finish. majhi checks for uncommitted work itself,
       // deletes the folder with no time limit, then drops the entry.
       if (!force) {
-        const changes = await uncommitted(path).catch(() => undefined);
-        if (changes !== undefined && changes.length > 0) {
-          throw new WorktreeProblem(
-            `Uncommitted changes in ${path}: ${changes.slice(0, 3).join(", ")}`,
+        const changes = await uncommitted(path).catch(async (err: unknown) => {
+          const missing = await stat(path).then(
+            () => false,
+            () => true,
           );
+          // A folder that is gone has nothing to lose; one we cannot inspect is never deleted.
+          if (missing) return [];
+          throw new WorktreeProblem(
+            `Could not inspect ${path} safely: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
+        if (changes.length > 0) {
+          throw new WorktreeProblem(`Uncommitted changes in ${path}: ${changes.slice(0, 3).join(", ")}`);
         }
       }
-      if (reason !== undefined)
-        await git(source, ["worktree", "unlock", path]).catch(() => undefined);
+      if (reason !== undefined) await git(source, ["worktree", "unlock", path]).catch(() => undefined);
       await rm(path, { recursive: true, force: true });
       // Only this worktree's own entry. A `git worktree prune` would also drop the entry of a live
       // task whose folder is out of reach for a moment, and its checkout stops being a git repo.
@@ -394,26 +316,13 @@ export function lockReason(task: string): string {
  * Locks a task worktree, so no `git worktree prune` drops its entry while its folder is out of
  * sight of whoever runs it (the owner's checkout, a container, a host helper). Already locked is fine.
  */
-export function lockWorktree(
-  source: string,
-  path: string,
-  task: string,
-): Promise<void> {
+export function lockWorktree(source: string, path: string, task: string): Promise<void> {
   return queue.run(source, () => lock(source, path, lockReason(task)));
 }
 
-async function lock(
-  source: string,
-  path: string,
-  reason: string,
-): Promise<void> {
+async function lock(source: string, path: string, reason: string): Promise<void> {
   try {
-    await git(source, [
-      "worktree",
-      "lock",
-      ...(reason === "" ? [] : ["--reason", reason]),
-      path,
-    ]);
+    await git(source, ["worktree", "lock", ...(reason === "" ? [] : ["--reason", reason]), path]);
   } catch (err) {
     if (err instanceof GitError && /already locked/.test(err.stderr)) return;
     throw err;
@@ -431,17 +340,12 @@ export type RepairResult =
  * command in the folder fails until then. The entry is written as `git worktree add` writes it and
  * the index is rebuilt from the branch tip, so the files and uncommitted changes stay as they are.
  */
-export function repairWorktree(
-  source: string,
-  path: string,
-  branch: string,
-): Promise<RepairResult> {
+export function repairWorktree(source: string, path: string, branch: string): Promise<RepairResult> {
   return queue.run(source, async () => {
     const link = await readGitLink(path);
     if (link === undefined) return { status: "fine" };
     if (await pointsBack(link, path)) return { status: "fine" };
-    if (!(await isGitRepo(source)))
-      return { status: "skipped", reason: `${source} is not a git repo` };
+    if (!(await isGitRepo(source))) return { status: "skipped", reason: `${source} is not a git repo` };
     const entries = join(await commonDir(source), "worktrees");
     if (!(await samePath(dirname(link), entries)))
       return {
@@ -463,8 +367,7 @@ export function repairWorktree(
     await writeFile(join(entry, "gitdir"), `${join(resolve(path), ".git")}\n`);
     await writeFile(join(entry, "commondir"), "../..\n");
     await writeFile(join(entry, "HEAD"), `ref: refs/heads/${branch}\n`);
-    if (entry !== link)
-      await writeFile(join(path, ".git"), `gitdir: ${entry}\n`);
+    if (entry !== link) await writeFile(join(path, ".git"), `gitdir: ${entry}\n`);
     await git(path, ["reset", "--quiet"]);
     return { status: "repaired", entry };
   });
@@ -472,9 +375,7 @@ export function repairWorktree(
 
 /** Where the worktree's `.git` file points, absolute. Undefined when there is no such file. */
 async function readGitLink(path: string): Promise<string | undefined> {
-  const text = await readFile(join(path, ".git"), "utf8").catch(
-    () => undefined,
-  );
+  const text = await readFile(join(path, ".git"), "utf8").catch(() => undefined);
   const target = /^gitdir: (.+)$/m.exec(text ?? "")?.[1]?.trim();
   if (target === undefined || target === "") return undefined;
   return isAbsolute(target) ? target : resolve(path, target);
@@ -482,19 +383,12 @@ async function readGitLink(path: string): Promise<string | undefined> {
 
 /** True when the entry exists and records `path` as its worktree. */
 async function pointsBack(entry: string, path: string): Promise<boolean> {
-  const recorded = await readFile(join(entry, "gitdir"), "utf8").catch(
-    () => undefined,
-  );
-  return (
-    recorded !== undefined && (await samePath(dirname(recorded.trim()), path))
-  );
+  const recorded = await readFile(join(entry, "gitdir"), "utf8").catch(() => undefined);
+  return recorded !== undefined && (await samePath(dirname(recorded.trim()), path));
 }
 
 /** The entry in the source repo's `.git/worktrees` whose worktree is `path`. */
-async function entryFor(
-  source: string,
-  path: string,
-): Promise<string | undefined> {
+async function entryFor(source: string, path: string): Promise<string | undefined> {
   const entries = join(await commonDir(source), "worktrees");
   const names = await readdir(entries).catch(() => [] as string[]);
   for (const name of names) {
@@ -504,24 +398,13 @@ async function entryFor(
 }
 
 async function commonDir(source: string): Promise<string> {
-  return (
-    await git(source, [
-      "rev-parse",
-      "--path-format=absolute",
-      "--git-common-dir",
-    ])
-  ).trim();
+  return (await git(source, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).trim();
 }
 
 /** The worktree (or main checkout) that has `branch` checked out, if any. */
-async function checkedOutAt(
-  source: string,
-  branch: string,
-): Promise<string | undefined> {
+async function checkedOutAt(source: string, branch: string): Promise<string | undefined> {
   let current: string | undefined;
-  for (const line of (
-    await git(source, ["worktree", "list", "--porcelain"])
-  ).split("\n")) {
+  for (const line of (await git(source, ["worktree", "list", "--porcelain"])).split("\n")) {
     if (line.startsWith("worktree ")) current = line.slice("worktree ".length);
     else if (line === `branch refs/heads/${branch}`) return current;
   }

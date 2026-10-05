@@ -8,12 +8,7 @@ import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { ApiRequestError } from "@/lib/api";
 import { useEditorLabel, useOpenInEditor } from "@/lib/editor-queries";
-import {
-  useCloseTask,
-  useRemoveTask,
-  useReopenTask,
-  useShipOptions,
-} from "@/lib/task-queries";
+import { useCloseTask, useRemoveTask, useReopenTask, useShipOptions } from "@/lib/task-queries";
 import { unshippedBody } from "./unshipped";
 
 /** The task's "..." menu: close it (moves to Done) or remove it with its folder and worktrees. */
@@ -48,8 +43,7 @@ export function TaskMenu({ task }: { task: Task }) {
               open.mutate(
                 { path: task.folder },
                 {
-                  onSuccess: (done) =>
-                    toast(`Opened in ${editor}`, { detail: done.path }),
+                  onSuccess: (done) => toast(`Opened in ${editor}`, { detail: done.path }),
                   onError: (e) =>
                     toast(`Could not open in ${editor}`, {
                       detail: e.message,
@@ -65,12 +59,8 @@ export function TaskMenu({ task }: { task: Task }) {
           },
         ]}
       />
-      {confirm === "close" && (
-        <CloseDialog task={task} onDone={() => setConfirm(null)} />
-      )}
-      {confirm === "remove" && (
-        <RemoveDialog task={task} onDone={() => setConfirm(null)} />
-      )}
+      {confirm === "close" && <CloseDialog task={task} onDone={() => setConfirm(null)} />}
+      {confirm === "remove" && <RemoveDialog task={task} onDone={() => setConfirm(null)} />}
     </>
   );
 }
@@ -95,15 +85,12 @@ function CloseDialog({ task, onDone }: { task: Task; onDone: () => void }) {
       error={close.error?.message}
       onCancel={onDone}
       onConfirm={() =>
-        close.mutate(
-          keep ? { id: task.id, unshipped: "keep" } : { id: task.id },
-          {
-            onSuccess: () => {
-              toast("Task closed", { detail: task.id });
-              onDone();
-            },
+        close.mutate(keep ? { id: task.id, unshipped: "keep" } : { id: task.id }, {
+          onSuccess: () => {
+            toast("Task closed", { detail: task.id });
+            onDone();
           },
-        )
+        })
       }
     />
   );
@@ -130,16 +117,10 @@ function RemoveDialog({ task, onDone }: { task: Task; onDone: () => void }) {
   async function run() {
     try {
       await remove.mutateAsync(
-        refusal === null
-          ? { id: task.id }
-          : { id: task.id, force: true, confirm: typed.trim() },
+        refusal === null ? { id: task.id } : { id: task.id, force: true, confirm: typed.trim() },
       );
     } catch (error) {
-      if (
-        error instanceof ApiRequestError &&
-        error.status === 409 &&
-        error.details.length > 0
-      ) {
+      if (error instanceof ApiRequestError && error.status === 409 && error.details.length > 0) {
         setRefusal({
           message: error.message,
           changes: error.details,
@@ -173,9 +154,7 @@ function RemoveDialog({ task, onDone }: { task: Task; onDone: () => void }) {
           ))}
         </ul>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor={`remove-${task.id}`}>
-            Type {task.id} to remove the task and these changes.
-          </label>
+          <label htmlFor={`remove-${task.id}`}>Type {task.id} to remove the task and these changes.</label>
           <Input
             id={`remove-${task.id}`}
             value={typed}
@@ -192,19 +171,11 @@ function RemoveDialog({ task, onDone }: { task: Task; onDone: () => void }) {
       title={`Remove ${task.id}`}
       body={body}
       confirmLabel={
-        remove.isPending
-          ? "Removing..."
-          : refusal === null
-            ? "Remove task"
-            : "Remove with changes"
+        remove.isPending ? "Removing..." : refusal === null ? "Remove task" : "Remove with changes"
       }
       busy={remove.isPending}
       confirmDisabled={refusal !== null && !confirmed}
-      error={
-        remove.error
-          ? [remove.error.message, ...remove.error.details].join(" ")
-          : undefined
-      }
+      error={remove.error ? [remove.error.message, ...remove.error.details].join(" ") : undefined}
       onCancel={onDone}
       onConfirm={() => void run()}
     />
