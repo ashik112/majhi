@@ -109,6 +109,7 @@ import type { HandoffService } from "./handoff/service.ts";
 import { createHandoff, type HandoffWiring } from "./handoff/wire.ts";
 import type { HostLink } from "./host/link.ts";
 import { RecommendationRepo } from "./inbox/recommendations.ts";
+import { ConversationsService } from "./conversations/service.ts";
 import { InboxService } from "./inbox/service.ts";
 import { InstallRequests } from "./installs/service.ts";
 import { busyReason } from "./machine/busy.ts";
@@ -353,6 +354,8 @@ export interface Services {
   autonomy: AutonomyService;
   /** The owner's inbox of everything that waits for them (5.18). */
   inbox: InboxService;
+  /** The chat dock: task rooms and captain threads with their unread counts. */
+  conversations: ConversationsService;
   /** The captain per workspace (5.18): the choice, the upkeep chores, the lanes, the log and the stop switch. */
   captain: CaptainService;
   /** What playbooks and agents noticed, deduplicated (5.18, Findings). */
@@ -1103,6 +1106,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   room.onWrite((task, item) => notifier.observe(task, item));
   room.onWrite((task, item) => captain.roomWrote(task, item));
+  const conversations = new ConversationsService({ store, events });
+  room.onWrite((task, item) => conversations.observe(task, item));
   const updateWatch = setInterval(() => void watchUpdate(env.majhiHome, notifier), UPDATE_WATCH_MS);
   updateWatch.unref();
   const chatSweep = setInterval(() => background.run(async () => chatMemory?.sweep()), CHAT_SWEEP_MS);
@@ -2313,6 +2318,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     containers,
     autonomy,
     inbox,
+    conversations,
     captain,
     findings,
     playbooks,
@@ -2372,6 +2378,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       clearInterval(retentionSweep);
       clearTimeout(retentionFirst);
       clearInterval(chatSweep);
+      conversations.stop();
       clearInterval(limitSweep);
       clearInterval(agendaSweep);
       clearInterval(pruneSweep);

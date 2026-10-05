@@ -1594,6 +1594,29 @@ CREATE TABLE connection_health (
 );
 `,
   },
+  {
+    // The chat dock's read state (owner only): one row per conversation (a task room or a captain
+    // thread, both rooms keyed by task id) holding the `at` of the newest message the owner has seen.
+    // Unread is the agent messages after it, so nothing is stored per message. Every conversation
+    // that exists now starts fully read (its newest agent message), so the first badge counts only
+    // replies that arrive after this update. The index serves the per-conversation count and the
+    // newest agent message with one seek each.
+    id: 158,
+    name: "chat dock read marks",
+    sql: `
+CREATE TABLE read_marks (
+  id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+  read_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX room_items_task_type_at ON room_items (task, type, at);
+INSERT INTO read_marks (id, read_at, updated_at)
+  SELECT task, max(at), strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    FROM room_items
+   WHERE type = 'agent' AND task IN (SELECT id FROM tasks)
+   GROUP BY task;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

@@ -116,6 +116,7 @@ import {
   PreviewRunInputSchema,
   ServiceStartInputSchema,
 } from "./containers.ts";
+import { ConversationListSchema, ConversationMarkReadInputSchema } from "./conversations.ts";
 import {
   DecisionLabelSchema,
   EvalInputSchema,
@@ -1242,6 +1243,21 @@ export const commands = {
       "Dismiss the morning brief of a day on Today. The owner, or the captain through the owner's approval",
     input: AgendaDismissInputSchema,
     output: z.object({ day: z.string() }),
+  },
+  // The chat dock -----------------------------------------------------------------
+  "conversations.list": {
+    risk: "read",
+    summary:
+      "The owner's task rooms and workspace captain threads for the chat dock: title, newest line and how many agent messages the owner has not read, newest first. Owner only",
+    input: z.object({}),
+    output: ConversationListSchema,
+  },
+  "conversations.markRead": {
+    risk: "change",
+    summary:
+      "Mark a conversation read up to the newest message on screen. The mark never moves back and never passes the newest agent message. Owner only",
+    input: ConversationMarkReadInputSchema,
+    output: z.object({ ok: z.literal(true) }),
   },
   "notify.pending": {
     risk: "read",

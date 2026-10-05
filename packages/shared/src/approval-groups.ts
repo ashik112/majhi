@@ -25,6 +25,9 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "secrets.exportKey",
   "secrets.restoreKey",
   "boss.chat",
+  // Read state is the owner's: what they have seen is not for an agent to read or move.
+  "conversations.list",
+  "conversations.markRead",
   "chats.create",
   "chats.rename",
   // Autonomous mode is the owner's switch: the captain never turns it on, widens its limits or guides itself.
