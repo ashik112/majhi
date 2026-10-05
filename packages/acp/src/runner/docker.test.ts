@@ -105,11 +105,21 @@ describe("runner mounts", () => {
     expect(pairs("--security-opt")).toEqual(["no-new-privileges"]);
     expect(pairs("--network")).toEqual(["majhi-runners"]);
     expect(pairs("--workdir")).toEqual([join(home, "Work", ".majhi", "ACM-1")]);
-    expect(args.slice(-5)).toEqual(["majhi-runner:dev", "majhi-netguard", "501:20", "--", "claude-agent-acp"]);
+    expect(args.slice(-5)).toEqual([
+      "majhi-runner:dev",
+      "majhi-netguard",
+      "501:20",
+      "--",
+      "claude-agent-acp",
+    ]);
   });
 
   it("tells the guard the task's own subnets and majhi's server, and nothing else private", () => {
-    const withTask = { ...cfg, taskSubnets: () => ["192.168.171.0/24"], server: () => ({ host: "majhi-server", port: 7070 }) };
+    const withTask = {
+      ...cfg,
+      taskSubnets: () => ["192.168.171.0/24"],
+      server: () => ({ host: "majhi-server", port: 7070 }),
+    };
     const args = dockerRunArgs({ ...request(), task: "ACM-1" }, withTask, "majhi-run-test");
     expect(args.slice(args.indexOf("majhi-netguard"))).toEqual([
       "majhi-netguard",

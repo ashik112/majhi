@@ -236,7 +236,15 @@ describe("assertSafe refuses", () => {
     }
     expect(refused(plus(service(), "--network", "majhi-runners"))).toThrow(ContainerRefused);
     // A preview has no network of its own: only its holder's, which holds the guard.
-    for (const net of ["host", "container:abc", "majhi-acm-2", "bridge", "majhi-runners", "majhi-acm-1", "none"]) {
+    for (const net of [
+      "host",
+      "container:abc",
+      "majhi-acm-2",
+      "bridge",
+      "majhi-runners",
+      "majhi-acm-1",
+      "none",
+    ]) {
       expect(refused(replaced(preview(), "--network", net))).toThrow(ContainerRefused);
     }
     expect(refused(plus(preview(), "--network", "majhi-runners"))).toThrow(ContainerRefused);

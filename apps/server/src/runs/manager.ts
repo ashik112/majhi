@@ -885,6 +885,13 @@ export class RunManager {
     }
   }
 
+  /** The agents that have a session open now, with their task: the ones a new connection can reach at once. */
+  openSessions(): { task: string; agent: string }[] {
+    return [...this.runs.values()]
+      .filter((r) => r.session !== undefined && !r.closing)
+      .map((r) => ({ task: r.task, agent: r.agent }));
+  }
+
   /** What the agent's open session holds of its connections (5.14), or undefined. */
   connectionsOf(task: string, agent: string): RunConnections | undefined {
     return this.runs.get(this.key(task, agent))?.connections;

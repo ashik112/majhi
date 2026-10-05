@@ -41,7 +41,7 @@ const inCidr4 = (cidr: string, ip: string) => {
   const num = (a: string) => a.split(".").reduce((n, o) => n * 256 + Number(o), 0);
   const [base = "", bits = "32"] = cidr.split("/");
   const mask = bits === "0" ? 0 : (0xffffffff << (32 - Number(bits))) >>> 0;
-  return ((num(base) & mask) >>> 0) === ((num(ip) & mask) >>> 0);
+  return (num(base) & mask) >>> 0 === (num(ip) & mask) >>> 0;
 };
 
 const BASE = {
@@ -61,7 +61,16 @@ describe("network guard rules", () => {
     const { guardRules } = await load();
     const rules = guardRules(BASE);
     expect(rules[0]).toEqual(["-A", "OUTPUT", "-o", "lo", "-j", "ACCEPT"]);
-    expect(rules[1]).toEqual(["-A", "OUTPUT", "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"]);
+    expect(rules[1]).toEqual([
+      "-A",
+      "OUTPUT",
+      "-m",
+      "conntrack",
+      "--ctstate",
+      "ESTABLISHED,RELATED",
+      "-j",
+      "ACCEPT",
+    ]);
     const decide = (ip: string, port = 0) => {
       const rule = firstFor(rules, ip, inCidr4, port);
       return rule === undefined ? "ACCEPT" : verdict(rule);
@@ -83,7 +92,15 @@ describe("network guard rules", () => {
   it("refuses every private range, the LAN, the VPN and link-local ones included", async () => {
     const { guardRules } = await load();
     const rules = guardRules({ ...BASE, allow: [], server: undefined });
-    for (const ip of ["10.1.2.3", "172.16.0.9", "172.31.255.255", "192.168.1.20", "100.64.0.5", "169.254.169.254", "0.1.2.3"]) {
+    for (const ip of [
+      "10.1.2.3",
+      "172.16.0.9",
+      "172.31.255.255",
+      "192.168.1.20",
+      "100.64.0.5",
+      "169.254.169.254",
+      "0.1.2.3",
+    ]) {
       const rule = firstFor(rules, ip, inCidr4, 443);
       expect(rule === undefined ? "ACCEPT" : verdict(rule), ip).toBe("REJECT");
     }
@@ -98,8 +115,17 @@ describe("network guard rules", () => {
 
   it("ignores a subnet or server address that is not IPv4", async () => {
     const { guardRules } = await load();
-    const rules = guardRules({ ...BASE, allow: ["fd00::/8", "not a subnet", "10.0.0.0/4"], server: { address: "x", port: 1 } });
-    expect(rules.filter((r) => verdict(r) === "ACCEPT").map(dest).filter(Boolean)).not.toContain("fd00::/8");
+    const rules = guardRules({
+      ...BASE,
+      allow: ["fd00::/8", "not a subnet", "10.0.0.0/4"],
+      server: { address: "x", port: 1 },
+    });
+    expect(
+      rules
+        .filter((r) => verdict(r) === "ACCEPT")
+        .map(dest)
+        .filter(Boolean),
+    ).not.toContain("fd00::/8");
     expect(rules.some((r) => dest(r) === "10.0.0.0/4")).toBe(false);
   });
 
@@ -130,8 +156,22 @@ describe("network guard rules", () => {
   it("takes only IPv4 subnets and one server from the arguments, up to the run's own", async () => {
     const { parseArgs } = await load();
     expect(
-      parseArgs(["--allow", "192.168.166.0/24", "--server", "majhi-server:7070", "--", "claude", "--allow", "x"]),
-    ).toEqual({ allow: ["192.168.166.0/24"], server: { host: "majhi-server", port: 7070 }, refresh: false, hold: false });
+      parseArgs([
+        "--allow",
+        "192.168.166.0/24",
+        "--server",
+        "majhi-server:7070",
+        "--",
+        "claude",
+        "--allow",
+        "x",
+      ]),
+    ).toEqual({
+      allow: ["192.168.166.0/24"],
+      server: { host: "majhi-server", port: 7070 },
+      refresh: false,
+      hold: false,
+    });
     expect(() => parseArgs(["--allow", "10.0.0.0/4"])).toThrow();
     expect(() => parseArgs(["--allow", "fd00::/8"])).toThrow();
     expect(() => parseArgs(["--server", "majhi-server:0"])).toThrow();

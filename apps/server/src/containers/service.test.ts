@@ -183,7 +183,9 @@ describe("ContainerService", () => {
       await service.serviceStart("ACM-1", "acme-builder", db);
       docker.guards.length = 0;
       await service.previewRun("ACM-1", "acme-builder", { port: 7070, scratch: "/preview" });
-      const holder = [...docker.containers.values()].find((c) => c.labels["majhi.container"] === "previewhold");
+      const holder = [...docker.containers.values()].find(
+        (c) => c.labels["majhi.container"] === "previewhold",
+      );
       expect(holder?.name).toBe("majhi-preview-acm-1");
       expect(service.taskSubnets("ACM-2")).toEqual([]);
     });

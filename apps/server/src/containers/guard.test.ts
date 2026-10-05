@@ -25,6 +25,8 @@ describe("DockerCli.guard", () => {
     expect(() => cli.guard("majhi-run-aaa", [], { host: "evil.example.com", port: 7070 })).toThrow(
       ContainerRefused,
     );
-    expect(() => cli.guard("majhi-run-aaa", [], { host: "majhi-server", port: 1.5 })).toThrow(ContainerRefused);
+    expect(() => cli.guard("majhi-run-aaa", [], { host: "majhi-server", port: 1.5 })).toThrow(
+      ContainerRefused,
+    );
   });
 });

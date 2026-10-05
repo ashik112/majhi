@@ -247,7 +247,10 @@ async function main() {
     server,
     dns: resolv,
   });
-  execFileSync(IPTABLES_RESTORE, ["-w"], { input: restoreText(rules), stdio: ["pipe", "inherit", "inherit"] });
+  execFileSync(IPTABLES_RESTORE, ["-w"], {
+    input: restoreText(rules),
+    stdio: ["pipe", "inherit", "inherit"],
+  });
   const rules6 = guardRules6({ hostAddresses: await resolveNames(HOST_NAMES, 6), dns: resolv });
   try {
     execFileSync(IP6TABLES_RESTORE, ["-w"], {

@@ -451,9 +451,11 @@ function checkPreviewHold(
   if (found.pull !== "never") refuse("A preview's holder must run with --pull never.");
   if (found.mounts.length > 0) refuse("A preview's holder has no mount.");
   if (!is(flags, "--read-only")) refuse("A preview's holder runs with a read-only root.");
-  if (all(flags, "--cap-add").join() !== "NET_ADMIN") refuse("A preview's holder adds NET_ADMIN, nothing else.");
+  if (all(flags, "--cap-add").join() !== "NET_ADMIN")
+    refuse("A preview's holder adds NET_ADMIN, nothing else.");
   if (all(flags, "--env").length > 0) refuse("A preview's holder takes no environment.");
-  if (is(flags, "--add-host") || is(flags, "--tmpfs")) refuse("A preview's holder takes no host name or scratch folder.");
+  if (is(flags, "--add-host") || is(flags, "--tmpfs"))
+    refuse("A preview's holder takes no host name or scratch folder.");
   const allowed = [s.runnerNetwork, names.network];
   const [first, second, ...more] = found.networks;
   if (

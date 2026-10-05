@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import type { Spawned } from "@majhi/acp";
 import type {
   ContainerInfo,
   ContainersSettings,
@@ -13,7 +14,6 @@ import type {
   TaskDockerRequest,
   TaskDockerResult,
 } from "@majhi/shared";
-import type { Spawned } from "@majhi/acp";
 import { sameImage } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import type { ProcessManager } from "../processes/manager.ts";
@@ -113,8 +113,13 @@ function guardReady(holder: Spawned): Promise<void> {
       said = (said + d.toString()).slice(-400);
     };
     const onClose = () =>
-      done(new UserError(`The preview's network guard did not start.${said === "" ? "" : ` ${said.trim()}`}`));
-    const timer = setTimeout(() => done(new UserError("The preview's network guard did not start in time.")), GUARD_READY_MS);
+      done(
+        new UserError(`The preview's network guard did not start.${said === "" ? "" : ` ${said.trim()}`}`),
+      );
+    const timer = setTimeout(
+      () => done(new UserError("The preview's network guard did not start in time.")),
+      GUARD_READY_MS,
+    );
     holder.child.stdout.on("data", onOut);
     holder.child.stderr.on("data", onErr);
     holder.child.on("close", onClose);
@@ -414,11 +419,13 @@ export class ContainerService {
    * task reaches (SPEC 5.14): a container named `<id>.host` there that forwards only the declared
    * ports to the same ports of the computer. A forwarder that already runs with the same ports stays;
    * one with other ports is replaced. Nothing else of the computer is reachable through it.
+   * Returns the ids it started or replaced, so a live session is told only of what changed.
    */
   async hostForward(
     task: string,
     services: readonly { id: string; ports: readonly number[] }[],
-  ): Promise<void> {
+  ): Promise<string[]> {
+    const started: string[] = [];
     const docker = this.need();
     const image = this.deps.runnerImage;
     if (image === undefined) throw new UserError("majhi does not know the runner image.", 501);
@@ -467,24 +474,29 @@ export class ContainerService {
           },
         });
         this.forwarded.set(names.hostForward(service.id), wanted);
+        started.push(service.id);
       }
       this.deps.changed?.();
     });
+    return started;
   }
 
   /**
    * The owner removed or changed a service on this computer: its forwarders stop in every task, so
    * the old access ends at once. A session that still holds it starts a forwarder again with the
-   * new ports when it restarts.
+   * new ports when it restarts. Returns the tasks whose forwarder it stopped.
    */
-  async hostForwardStop(id: string): Promise<void> {
+  async hostForwardStop(id: string): Promise<string[]> {
     const alias = `${id}.host`;
+    const stopped: string[] = [];
     for (const p of this.deps.processes.listAll()) {
       if (p.status !== "running" || p.container?.kind !== "service" || p.container.name !== alias) continue;
       await this.deps.processes.stop(p.task, p.id, "task");
       this.forwarded.delete(containerNames(p.task).hostForward(id));
+      stopped.push(p.task);
     }
     this.deps.changed?.();
+    return stopped;
   }
 
   // ---------------------------------------------------------------------------
