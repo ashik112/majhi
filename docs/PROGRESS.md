@@ -1,5 +1,13 @@
 # Progress
 
+## Syncing from the remote needs no approval (built, not merged)
+
+Branch `fix/agents-sync-remote`.
+
+- **Changed.** `tasks.updateTarget` (fetch and fast-forward a local branch, never forced) moved from the Shipping group to Task bookkeeping, so Hands-off runs it without asking. Its summary no longer says agents ask. A startup migration turns a stored `confirm` for exactly this command (the old preset value) into `auto`; other stored modes stay. One config commit by majhi, shown in History with Undo.
+- **Agents' `git pull` / `git fetch`.** Already allowed by permission for an agent with shell (`neededPerm` gives shell; only `push` and `mr` are guarded), and a test now pins that. They fail for credentials: agents get no SSH agent (SPEC 5.1), so a remote that needs a key refuses them. Not changed.
+- **Captain's own-work approver** (`captain/own-work.ts`) still sends `git fetch` and `git pull` to the owner as "reaches a remote". Left as is: it is the captain's approval boundary.
+- **Left.** No command updates a task branch from its base (`restack` only follows stacked tasks). Credentialed fetch for task agents needs a majhi-side command.
 ## Captain chat box: attachments, model, Enter (built, not merged)
 
 Branch `fix/captain-chat-composer`.

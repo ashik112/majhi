@@ -131,6 +131,34 @@ export class ConfigService {
     return changed;
   }
 
+  /**
+   * Startup migration: `tasks.updateTarget` (a fast-forward from the remote) moved from the Hands-off
+   * preset's "confirm" to "auto". A stored `confirm` for exactly that command is the old preset value,
+   * so it becomes `auto`. Any other stored mode is the owner's own choice and stays. Returns whether it
+   * changed anything; a second run finds nothing and makes no commit.
+   */
+  async migrateUpdateTargetPolicy(): Promise<boolean> {
+    const COMMAND = "tasks.updateTarget";
+    const stale = async (): Promise<boolean> =>
+      (await readSettings(this.file)).policy.commands[COMMAND] === "confirm";
+    if (!(await stale())) return false;
+    let changed = false;
+    await this.change(
+      {
+        command: "config.migrate",
+        meta: { actor: { kind: "agent", id: "majhi" } },
+        summary: "Updating a local branch from its remote no longer asks",
+      },
+      async () => {
+        if (!(await stale())) return;
+        changed = true;
+        const { commands } = (await readSettings(this.file)).policy;
+        await writeSettings(this.file, { policy: { commands: { ...commands, [COMMAND]: "auto" } } });
+      },
+    );
+    return changed;
+  }
+
   /** Context budget, limits, resume and policy from majhi.yaml, with defaults applied. */
   settings(): Promise<Settings> {
     return this.cached("settings", () => readSettings(this.file));
