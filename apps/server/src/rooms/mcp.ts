@@ -27,6 +27,7 @@ import type { ProcessManager } from "../processes/manager.ts";
 import { processesServer } from "../processes/mcp.ts";
 import type { ProjectService } from "../projects/service.ts";
 import type { RoomService } from "../room/service.ts";
+import { type SkillsMcpDeps, skillsServer } from "../skills/mcp.ts";
 import type { Store } from "../store/index.ts";
 import { leadMayStart } from "../tasks/lead-start.ts";
 import type { TaskService } from "../tasks/service.ts";
@@ -43,6 +44,8 @@ import {
   ROOM_PATH,
   ROOM_SERVER_NAME,
   type RoomAccess,
+  SKILLS_PATH,
+  SKILLS_SERVER_NAME,
   TASKS_PATH,
   TASKS_SERVER_NAME,
   type ToolCaller,
@@ -261,6 +264,8 @@ export interface RoomMcpDeps {
   /** Absent when majhi cannot run containers: there is no `/mcp/containers` then. */
   containers?: ContainersMcpDeps;
   memory: MemoryMcpDeps;
+  /** `majhi-skills`: look up a run's own skills. */
+  skills: SkillsMcpDeps;
   /** `majhi-connections` (5.14). Absent: there is no `/mcp/connections`. */
   connections?: ConnectionsMcpDeps;
 }
@@ -344,6 +349,16 @@ export function roomMcpRoutes(deps: RoomMcpDeps): Hono {
       deps.access.memory,
       MEMORY_SERVER_NAME,
       (caller) => memoryServer(caller, deps.memory),
+    ),
+  );
+  app.all(SKILLS_PATH, (c) =>
+    serve(
+      c.req.raw,
+      c.req.header("origin"),
+      c.req.header("authorization"),
+      deps.access.skills,
+      SKILLS_SERVER_NAME,
+      (caller) => skillsServer(caller, deps.skills),
     ),
   );
   const connections = deps.connections;

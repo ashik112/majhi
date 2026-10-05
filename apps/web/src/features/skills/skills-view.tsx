@@ -18,6 +18,7 @@ import { useSkills, useSkillsCommand } from "@/lib/skills-queries";
 import { useAgents, useOrgs } from "@/lib/studio-queries";
 import { useSearchParam } from "@/pages/parts/url-state";
 import { AddDialog } from "./add-dialog";
+import { BulkBar } from "./bulk-bar";
 import { type ItemKind, matches, mcpItem, type RowAction, skillItem, sortItems } from "./catalog";
 import { McpDetail, SkillDetail } from "./detail";
 import { agentChoices } from "./parts";
@@ -66,6 +67,9 @@ export function SkillsView() {
   const [testing, setTesting] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
   const searchRef = useRef<HTMLInputElement>(null);
+  // Ticked skills (by row key), and the last tick for a shift-click range.
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const lastTick = useRef<string | undefined>(undefined);
 
   const mcpServers = useMemo(
     () => (connections.data ?? []).filter((c) => c.type === "mcp"),
@@ -196,6 +200,9 @@ export function SkillsView() {
       else if (event.key === "/") {
         event.preventDefault();
         searchRef.current?.focus();
+      } else if (event.key === "x" && current === "skill" && at !== undefined) {
+        event.preventDefault();
+        selectRef.current(at, false);
       } else if (event.key === "a") {
         event.preventDefault();
         setAdding({ kind: current });
@@ -215,6 +222,29 @@ export function SkillsView() {
     openItem?.kind === "skill" ? skills.data?.find((s) => `skill:${s.name}` === openKey) : undefined;
   const openServer = openItem?.kind === "mcp" ? mcpServers.find((c) => `mcp:${c.id}` === openKey) : undefined;
   const total = all[tab].length;
+  const select = (key: string, range: boolean) => {
+    const rows = live.current.items;
+    const from = lastTick.current === undefined ? -1 : rows.findIndex((r) => r.key === lastTick.current);
+    const to = rows.findIndex((r) => r.key === key);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (range && from >= 0 && to >= 0) {
+        const on = !prev.has(key);
+        for (const r of rows.slice(Math.min(from, to), Math.max(from, to) + 1)) {
+          if (on) next.add(r.key);
+          else next.delete(r.key);
+        }
+      } else if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+    lastTick.current = key;
+  };
+  const selectRef = useRef(select);
+  selectRef.current = select;
+  // Ticks of skills that were removed or filtered out do not count.
+  const ticked = items.filter((i) => i.kind === "skill" && selected.has(i.key)).map((i) => i.name);
+  const shown = items.filter((i) => i.kind === "skill").map((i) => i.name);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -247,6 +277,7 @@ export function SkillsView() {
           onChange={(next) => {
             setTab(next === "mcp" ? "mcp" : undefined);
             setFocusKey(undefined);
+            setSelected(new Set());
           }}
           segments={[
             { value: "skill", label: "Skills", count: all.skill.length },
@@ -257,6 +288,16 @@ export function SkillsView() {
           {EXPLAIN[tab]}
         </p>
       </div>
+      {tab === "skill" && (skills.data?.length ?? 0) > 0 && (
+        <BulkBar
+          names={ticked.length > 0 ? ticked : shown}
+          ticked={ticked.length}
+          filtered={query.trim() !== ""}
+          agents={agents}
+          orgs={orgs}
+          onClear={() => setSelected(new Set())}
+        />
+      )}
       <section
         aria-label={tab === "skill" ? "Skills" : "MCP servers"}
         className={cn("flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl", GLASS)}
@@ -296,6 +337,8 @@ export function SkillsView() {
                   orgs={orgs}
                   focused={focusKey === item.key}
                   highlighted={highlight === item.key}
+                  selected={selected.has(item.key)}
+                  onSelect={item.kind === "skill" ? select : undefined}
                   busy={busy.has(item.key) || (item.kind === "mcp" && testing.has(item.key.slice(4)))}
                   onFocus={setFocusKey}
                   onOpen={openDetail}

@@ -141,6 +141,8 @@ export interface RunDeps {
   connectionFiles?: LaunchDeps["connectionFiles"];
   /** The skills store: runs get their agent's enabled skills (5.2). */
   skills?: LaunchDeps["skills"];
+  /** Agents run in runner containers (Claude Code then lists the run's skills itself). */
+  containerRunner?: boolean;
   /** Records the tokens and cost of every turn, majhi's own prompts included. */
   usage?: UsageRecorder;
   /** Background processes (5.15): each prompt says what already runs, and an old result is not sent. */
@@ -807,6 +809,15 @@ export class RunManager {
    */
   remountAgent(agent: string): void {
     for (const run of [...this.runs.values()]) if (run.agent === agent) this.remount(run.task, agent);
+  }
+
+  /** The skills an open session has: the folder of copies and each skill's name and description. */
+  skillsOf(
+    task: string,
+    agent: string,
+  ): { dir: string; items: { name: string; description: string }[] } | undefined {
+    const skills = this.runs.get(this.key(task, agent))?.skills;
+    return skills === undefined ? undefined : { dir: skills.dir, items: skills.items };
   }
 
   /** True while an open session holds the connection (5.14), so Connect renews its token ahead of time. */
@@ -1818,6 +1829,7 @@ export class RunManager {
   private withSkills(run: AgentRun, blocks: PromptBlock[] | undefined): PromptBlock[] | undefined {
     const first = blocks?.[0];
     if (blocks === undefined || run.skills === undefined || !run.skills.due) return blocks;
+    if (run.skills.note === "") return blocks;
     if (first?.type === "text" && first.text.startsWith("/")) return blocks;
     run.skills.due = false;
     return [...blocks, { type: "text", text: run.skills.note }];

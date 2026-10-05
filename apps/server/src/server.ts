@@ -139,6 +139,12 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
         scopeOf: (task) => services.memoryScopes.agent(task),
         receipts: services.store.usageEvents,
       },
+      skills: {
+        forRun: async (caller) => {
+          const mine = services.runs.skillsOf(caller.task, caller.agent);
+          return mine === undefined ? undefined : { dir: mine.dir, skills: mine.items };
+        },
+      },
       connections: {
         runs: services.runs,
         config,

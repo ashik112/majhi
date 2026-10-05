@@ -182,6 +182,25 @@ describe("runner mounts", () => {
 });
 
 describe("runMounts and connection files", () => {
+  it("shows a run's skills folder at .claude/skills of its own folder, read-only, and nowhere else", async () => {
+    const own = join(majhiHome, MAJHI_RUN_CONNECTIONS_DIR, "skills-abc");
+    await mkdir(own, { recursive: true });
+    const cwd = request().cwd;
+    const target = join(cwd, ".claude", "skills");
+    const args = dockerRunArgs(request({ mounts: [{ path: own, readOnly: true, target }] }), cfg, "n");
+    expect(args).toContain(`type=bind,source=${own},target=${target},readonly`);
+    const refused = (extra: Partial<SpawnRequest>) => () => runMounts(request(extra), cfg);
+    // Writable, or any other target: the account's shared skills, a repo, the home.
+    expect(refused({ mounts: [{ path: own, target }] })).toThrow(MountRefused);
+    for (const bad of [join(majhiHome, "accounts", "claude-acme", "skills"), join(cwd, "x"), home]) {
+      expect(refused({ mounts: [{ path: own, readOnly: true, target: bad }] }), bad).toThrow(MountRefused);
+    }
+    // The source still has to be the run's own folder.
+    expect(refused({ mounts: [{ path: join(majhiHome, "agents"), readOnly: true, target }] })).toThrow(
+      MountRefused,
+    );
+  });
+
   it("mounts a run's own connection folder read-only and a browser profile, and nothing else of them", async () => {
     const own = join(majhiHome, MAJHI_RUN_CONNECTIONS_DIR, "session-abc");
     const profile = join(majhiHome, "connections", "acme-web", "profile");

@@ -8,6 +8,7 @@ type SkillCommand =
   | "skills.enable"
   | "skills.enableAll"
   | "skills.disable"
+  | "skills.setMany"
   | "skills.remove"
   | "skills.update";
 
@@ -20,6 +21,7 @@ export function skillHandlers(skills: SkillService): Pick<CommandHandlers, Skill
     "skills.enable": (input, ctx) => skills.enable(input.name, input.agent, ctx.command, ctx.meta),
     "skills.enableAll": (input, ctx) => skills.enableAll(input.name, ctx.meta),
     "skills.disable": (input, ctx) => skills.disable(input.name, input.agent, ctx.command, ctx.meta),
+    "skills.setMany": (input, ctx) => skills.setMany(input, ctx.meta),
     "skills.remove": (input, ctx) => skills.remove(input.name, ctx.command, ctx.meta),
     "skills.update": (input, ctx) => skills.update(input, ctx.meta),
   };

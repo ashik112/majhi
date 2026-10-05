@@ -54,8 +54,10 @@ export const SkillSchema = z.object({
   agents: z.array(IdSchema),
   /** On for every agent, including agents created later, unless the agent opted out. */
   defaultOn: z.boolean(),
-  /** Agents that turned it off while `defaultOn`. */
+  /** Agents that turned it off, whatever else would give it to them. */
   optOut: z.array(IdSchema),
+  /** Workspace rules: `on` or `off` for every agent of that workspace, agents created later included. */
+  orgs: z.record(z.string(), z.enum(["on", "off"])).default({}),
 });
 export type Skill = z.infer<typeof SkillSchema>;
 
@@ -136,3 +138,19 @@ export type SkillSearchResult = z.infer<typeof SkillSearchResultSchema>;
 
 export const SkillNameInputSchema = z.object({ name: SkillNameSchema });
 export const SkillAgentInputSchema = z.object({ name: SkillNameSchema, agent: IdSchema });
+
+/** Who a bulk skills change reaches: every agent, every agent of one workspace (also later ones), or these agents. */
+export const SkillTargetSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("all") }),
+  z.object({ kind: z.literal("workspace"), org: z.string().trim().min(1).max(64) }),
+  z.object({ kind: z.literal("agents"), agents: z.array(IdSchema).min(1).max(200) }),
+]);
+export type SkillTarget = z.infer<typeof SkillTargetSchema>;
+
+/** `skills.setMany`: turn several skills on or off for a target, in one change. */
+export const SkillSetManyInputSchema = z.object({
+  skills: z.array(SkillNameSchema).min(1).max(500),
+  target: SkillTargetSchema,
+  on: z.boolean(),
+});
+export type SkillSetManyInput = z.infer<typeof SkillSetManyInputSchema>;

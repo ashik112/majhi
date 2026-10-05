@@ -97,7 +97,9 @@ export class AgentRun {
   /** What this session holds of its connections (5.14). Its folder of files goes when the session ends. */
   connections: RunConnections | undefined;
   /** The session's folder of skill copies (removed when it ends), and the note still due in a prompt. */
-  skills: { dir: string; note: string; due: boolean } | undefined;
+  skills:
+    | { dir: string; note: string; items: { name: string; description: string }[]; due: boolean }
+    | undefined;
   /** The admin preamble goes in front of the session's first prompt. */
   preambleDue = false;
   drive: Promise<void> | undefined;

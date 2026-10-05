@@ -38,6 +38,8 @@ export function ItemRow({
   focused,
   highlighted,
   busy,
+  selected,
+  onSelect,
   onFocus,
   onOpen,
   onAction,
@@ -48,6 +50,9 @@ export function ItemRow({
   focused: boolean;
   highlighted: boolean;
   busy: boolean;
+  /** Skills only: whether the row is ticked for a bulk change. Undefined: no checkbox. */
+  selected?: boolean | undefined;
+  onSelect?: ((key: string, range: boolean) => void) | undefined;
   onFocus: (key: string) => void;
   onOpen: (key: string) => void;
   onAction: (key: string, action: RowAction) => void;
@@ -68,6 +73,16 @@ export function ItemRow({
         (focused || highlighted) && "before:bg-accent",
       )}
     >
+      {onSelect !== undefined && (
+        <input
+          type="checkbox"
+          aria-label={`Select ${item.name}`}
+          checked={selected === true}
+          onChange={() => undefined}
+          onClick={(event) => onSelect(item.key, event.shiftKey)}
+          className="size-4 shrink-0 cursor-pointer accent-[var(--accent)]"
+        />
+      )}
       <ItemMark item={item} server={server} />
       <button
         type="button"
