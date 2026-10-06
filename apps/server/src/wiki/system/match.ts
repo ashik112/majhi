@@ -42,15 +42,28 @@ export interface CallShape {
   segs: readonly Segment[];
 }
 
-/** The route's parts against the call's, same count: a parameter takes any part, a literal takes the same literal. A call's own parameter fits a route parameter only. */
+/** Literal parts that must agree, at least, for a route with parameters to count as the same route: one name in common is a coincidence. */
+const MIN_LITERALS = 2;
+
+/**
+ * The route's parts against the call's, same count: a parameter takes any part, a literal takes the same literal. A
+ * call's own parameter fits a route parameter only. A route that is all literals must equal the call; a route with
+ * parameters needs at least `MIN_LITERALS` literal parts that agree, so `/:org/:project/files/*` is not every
+ * four-part path with `files` in it.
+ */
 function fits(route: readonly Segment[], call: readonly Segment[]): boolean {
+  if (route.length !== call.length) return false;
+  let literals = 0;
+  for (const [i, r] of route.entries()) {
+    const c = call[i];
+    if (c === undefined) return false;
+    if (r.param) continue;
+    if (c.param || c.text !== r.text) return false;
+    literals += 1;
+  }
   return (
-    route.length === call.length &&
-    route.every((r, i) => {
-      const c = call[i];
-      if (c === undefined) return false;
-      return r.param || (!c.param && c.text === r.text);
-    })
+    literals >= Math.min(MIN_LITERALS, route.length) &&
+    (literals === route.length || literals >= MIN_LITERALS)
   );
 }
 

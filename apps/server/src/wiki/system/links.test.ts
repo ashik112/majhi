@@ -22,7 +22,7 @@ const source = (repo: string, path: string, line: number) => ({
 
 const route = (repo: string, method: string, path: string, line = 1): WikiFact =>
   WikiFactSchema.parse({
-    id: `${repo}:entry:http-${method}-${path.replaceAll("{", "_").replaceAll("}", "_")}@api.py:${line}`,
+    id: `${repo}:entry:http-${method}-${path.replaceAll("{", "_").replaceAll("}", "_").replaceAll("*", "S")}@api.py:${line}`,
     repo,
     kind: "entry",
     entry: { type: "http", method, path },
@@ -32,7 +32,7 @@ const route = (repo: string, method: string, path: string, line = 1): WikiFact =
 
 const call = (repo: string, method: string, path: string, line = 1, extra: object = {}): WikiFact =>
   WikiFactSchema.parse({
-    id: `${repo}:call:${method}-${path.replaceAll("{", "_").replaceAll("}", "_")}@client.ts:${line}`,
+    id: `${repo}:call:${method}-${path.replaceAll("{", "_").replaceAll("}", "_").replaceAll("*", "S")}@client.ts:${line}`,
     repo,
     kind: "call",
     method,
@@ -151,6 +151,20 @@ describe("calls link to a route only when the match is exact", () => {
       "acme-web>acme-api",
     ]);
     expect(out.unlinked.map((u) => u.project)).toEqual(["acme-job"]);
+  });
+
+  it("does not take a route with parameters for a path that only shares one name with it", () => {
+    const wiki = project("acme-wiki", [
+      route("acme-wiki", "GET", "/:org/:project/:commit/files/*", 1),
+      route("acme-wiki", "GET", "/{id}", 2),
+    ]);
+    const web = project("acme-web", [
+      call("acme-web", "GET", "/api/wiki/{}/files/readme.md", 1),
+      call("acme-web", "GET", "/42", 2),
+    ]);
+    const out = view([wiki, web]);
+    expect(out.links).toEqual([]);
+    expect(out.unlinked.map((u) => u.path)).toEqual(["/api/wiki/{}/files/readme.md", "/42"]);
   });
 
   it("does not count a call to the project's own route as a link", () => {

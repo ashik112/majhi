@@ -317,6 +317,41 @@ describe("the workspace wiki", () => {
   });
 });
 
+describe("updating one page", () => {
+  it("writes only that page and leaves the commit and the other stale pages as they were", async () => {
+    const { service } = world();
+    await service.update("acme");
+    const built = store.wiki.state("acme", "acme-api").builtCommit;
+    await put("acme-api", { "app/routes.py": `${API_ROUTES}# v2\n` });
+    const next = commit("acme-api", "touch the routes");
+
+    const [report] = await service.update("acme", "acme-api", { page: wikiPageId({ kind: "infra" }) });
+    expect(report?.written).toEqual(["infra"]);
+    expect(store.wiki.state("acme", "acme-api").builtCommit).toBe(built);
+    expect(store.wiki.page("acme", "acme-api", wikiPageId({ kind: "infra" }))?.page.builtFrom).toEqual({
+      "acme-api": next,
+    });
+    // The overview is still behind, so a full update writes it.
+    const again = await service.update("acme", "acme-api");
+    expect(again.flatMap((r) => r.written)).toContain("overview");
+    expect(store.wiki.state("acme", "acme-api").builtCommit).toBe(next);
+  });
+
+  it("writes one workspace page even when it is not stale, and refuses a project that was never built", async () => {
+    const { service } = world();
+    await expect(
+      service.update("acme", "acme-api", { page: wikiPageId({ kind: "overview" }) }),
+    ).rejects.toThrow(/no wiki yet/);
+    await service.update("acme");
+    const before = store.wiki.versionCount("acme", undefined, wikiPageId({ kind: "overview" }));
+    const reports = await service.update("acme", undefined, { page: wikiPageId({ kind: "overview" }) });
+    expect(reports.flatMap((r) => r.written)).toEqual(["overview"]);
+    expect(
+      store.wiki.versionCount("acme", undefined, wikiPageId({ kind: "overview" })),
+    ).toBeGreaterThanOrEqual(before);
+  });
+});
+
 describe("owner answers", () => {
   it("redraw the links at once, and still hold after the next update", async () => {
     const { service, handlers, owner } = world();

@@ -277,8 +277,13 @@ def py_sites(root, rel):
 
 PARAM = "{}"
 METHODS = {"get", "post", "put", "patch", "delete", "head", "options"}
-# A call on one of these is how a server declares a route (`app.get("/items", handler)`), not a request.
-SERVER_NAMES = {"app", "router", "server", "routes", "route", "fastify", "hono", "koa", "express", "bp", "blueprint"}
+# A call on one of these is how a server declares a route (`app.get("/items", handler)`), or a lookup in a map, a set or
+# a bag of settings (`cache.get("/x")`, `params.delete("/x")`): not a request.
+SERVER_NAMES = {
+    "app", "router", "server", "routes", "route", "fastify", "hono", "koa", "express", "bp", "blueprint",
+    "map", "set", "cache", "params", "searchparams", "headers", "storage", "localstorage", "sessionstorage",
+    "cookies", "environ", "args", "form", "config", "settings", "options", "kwargs", "query", "meta",
+}
 JS_FUNCTIONS = {"arrow_function", "function_expression", "function", "generator_function"}
 SECRET_MIN = 24
 
@@ -328,6 +333,9 @@ def split_request(raw):
             return None
         else:
             out.append(part)
+    # A path made only of parts filled in at run time (`${a}/${b}`, a key of a map) names nothing.
+    if out and all(part == PARAM for part in out):
+        return None
     return addr, "/" + "/".join(out)
 
 
