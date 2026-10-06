@@ -99,6 +99,10 @@ function needsLine(
   }
   if (d.kind === "question" || d.kind === "approval")
     return { text: rowTitle(d), tone: "needs", hover: undefined };
+  // A paused task says its hold, as the model states it, rather than the card's own words.
+  const hold = d.kind === "paused" && d.task !== undefined ? ctx.tasks.get(d.task)?.hold : undefined;
+  if (hold !== undefined)
+    return { text: `Held: ${hold.label}`, why: hold.sentence, tone: "needs", hover: undefined };
   return { text: d.blocked ?? d.sentence ?? d.title, tone: "needs", hover: undefined };
 }
 

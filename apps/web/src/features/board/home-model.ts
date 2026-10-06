@@ -367,12 +367,12 @@ export function buildHome(input: HomeInput): { sections: HomeSections; totals: H
   );
 
   const held: HeldItem[] = [];
-  const running: RunningItem[] = [];
-  const waiting: WaitingItem[] = [];
+  let running: RunningItem[] = [];
+  let waiting: WaitingItem[] = [];
   const shipping: ShippingItem[] = [];
-  const next: QueuedItem[] = [];
-  const triage: QueuedItem[] = [];
-  const done: DoneItem[] = [];
+  let next: QueuedItem[] = [];
+  let triage: QueuedItem[] = [];
+  let done: DoneItem[] = [];
   for (const task of tasks) {
     const section = sectionOf(task, { asking, working: input.working });
     const blocker = input.blockers.get(task.id);
@@ -429,11 +429,11 @@ export function buildHome(input: HomeInput): { sections: HomeSections; totals: H
     }
     const roots = new Set([...cards].filter((id) => !nestedOnce.has(id)));
     const keep = <T extends { task: TaskSummary }>(rows: T[]) => rows.filter((r) => !parentIn(r.task, roots));
-    running.splice(0, running.length, ...keep(running));
-    waiting.splice(0, waiting.length, ...keep(waiting));
-    next.splice(0, next.length, ...keep(next));
-    triage.splice(0, triage.length, ...keep(triage));
-    done.splice(0, done.length, ...keep(done));
+    running = keep(running);
+    waiting = keep(waiting);
+    next = keep(next);
+    triage = keep(triage);
+    done = keep(done);
   }
   held.sort((a, b) => a.task.updatedAt.localeCompare(b.task.updatedAt) || a.task.id.localeCompare(b.task.id));
   running.sort(runningOrder);

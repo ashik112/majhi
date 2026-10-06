@@ -1,11 +1,16 @@
 import { type OriginKind, TASK_TYPE_LABEL, TASK_TYPES, type TaskType } from "@majhi/shared";
 import { ChevronDown } from "lucide-react";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { Menu } from "@/components/ui/menu";
 import { cn } from "@/lib/cn";
 import { ORIGIN_KINDS, ORIGIN_LABEL, OriginIcon } from "../tasks-ui/origin-mark";
 import { TYPE_ICON, typeColor } from "../tasks-ui/type-meta";
 import type { SectionId } from "./home-model";
+
+/** A press with the mouse hands the keys back to the board (Enter, 1 to 3 skip a focused button); a key press keeps the focus. */
+const handBack = (event: MouseEvent<HTMLButtonElement>) => {
+  if (event.detail > 0) event.currentTarget.blur();
+};
 
 /** The three chip filters of the board. The workspace filter is the chips in the top bar. */
 export interface Chips {
@@ -102,7 +107,10 @@ export function FilterBar({
       <button
         type="button"
         aria-pressed={chips.type === undefined}
-        onClick={() => onChips({ ...chips, type: undefined })}
+        onClick={(event) => {
+          onChips({ ...chips, type: undefined });
+          handBack(event);
+        }}
         className={cn(CHIP, "px-2", chipTone(chips.type === undefined))}
       >
         All
@@ -117,7 +125,10 @@ export function FilterBar({
             aria-pressed={on}
             title={TASK_TYPE_LABEL[type]}
             aria-label={TASK_TYPE_LABEL[type]}
-            onClick={() => onChips({ ...chips, type: on ? undefined : type })}
+            onClick={(event) => {
+              onChips({ ...chips, type: on ? undefined : type });
+              handBack(event);
+            }}
             className={cn(CHIP, "px-[7px]", chipTone(on))}
           >
             <Icon
@@ -158,7 +169,10 @@ export function FilterBar({
       {chipsActive(chips) && (
         <button
           type="button"
-          onClick={() => onChips(NO_CHIPS)}
+          onClick={(event) => {
+            onChips(NO_CHIPS);
+            handBack(event);
+          }}
           className="h-7 cursor-pointer rounded-md px-2 text-sm text-fg-muted hover:text-fg"
         >
           Clear
@@ -170,7 +184,10 @@ export function FilterBar({
             key={t.section}
             type="button"
             aria-pressed={t.on}
-            onClick={() => onToggle(t.section)}
+            onClick={(event) => {
+              onToggle(t.section);
+              handBack(event);
+            }}
             className={cn(CHIP, chipTone(t.on))}
           >
             {t.label}

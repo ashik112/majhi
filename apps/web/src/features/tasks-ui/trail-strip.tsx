@@ -264,7 +264,7 @@ function TrailBar({
     <span
       className={cn(
         "flex min-w-0 items-center justify-end gap-0.5",
-        fit === "line" && "w-full justify-start",
+        fit === "line" && "w-full flex-wrap justify-start",
       )}
     >
       {views.map((v) => (

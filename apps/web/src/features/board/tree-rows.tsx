@@ -14,8 +14,6 @@ import { type EntryLine, lineOf, queuedMarks } from "./entry-text";
 import type { RowEntry, TreeInfo } from "./home-model";
 import { RelationChips } from "./relation-chips";
 
-export { rowDomId };
-
 /** Horizontal step of one tree level, in pixels. */
 const TREE_STEP = 18;
 
