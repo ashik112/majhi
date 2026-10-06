@@ -6,7 +6,7 @@
 set -eu
 
 REPO_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+. "$(dirname -- "$0")/lib.sh"
 cd "$REPO_DIR"
-. scripts/lib.sh
 compose_env
 exec docker compose "$@"

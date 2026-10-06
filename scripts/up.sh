@@ -9,8 +9,8 @@
 set -eu
 
 REPO_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+. "$(dirname -- "$0")/lib.sh"
 cd "$REPO_DIR"
-. scripts/lib.sh
 
 sh scripts/check.sh
 
@@ -76,7 +76,7 @@ if [ -n "$version" ]; then
     while read -r ref; do
       case $ref in
         */*:"$version" | */*:"$version"-* | *"<none>"*) ;;
-        */*) docker image rm "$ref" >/dev/null 2>&1 && echo "Removed the old image $ref" || true ;;
+        */*) if docker image rm "$ref" >/dev/null 2>&1; then echo "Removed the old image $ref"; fi ;;
       esac
     done
 fi
