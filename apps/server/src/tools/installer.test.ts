@@ -33,7 +33,7 @@ function setup(
       if (typeof f === "object" && "redirect" in f) {
         return new Response(null, { status: 302, headers: { location: f.redirect } });
       }
-      return new Response(f);
+      return new Response(typeof f === "string" ? f : new Uint8Array(f));
     },
   });
   return { home, installer, asked };

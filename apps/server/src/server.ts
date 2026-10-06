@@ -106,8 +106,10 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
     taskFiles: {
       folderOf: (id) => services.store.tasks.get(id)?.folder,
       reposOf: (id) => services.store.tasks.get(id)?.repos,
+      pdf: services.pdfPrinter,
     },
     wikiFiles: {
+      pdf: services.pdfPrinter,
       exportOf: wikiExportOf({
         config,
         enabled: wikiEnabledFrom(config),

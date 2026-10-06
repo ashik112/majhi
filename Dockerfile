@@ -34,6 +34,12 @@ RUN mkdir /pty && cp -rL apps/server/node_modules/node-pty /pty/node-pty
 RUN mkdir /sqlite \
   && cp -rL apps/server/node_modules/better-sqlite3 /sqlite/better-sqlite3 \
   && rm -rf /sqlite/better-sqlite3/deps /sqlite/better-sqlite3/src /sqlite/better-sqlite3/prebuilds/darwin-* /sqlite/better-sqlite3/prebuilds/win32-*
+# The fonts an exported document embeds (apps/server/src/export/fonts.ts): three Latin files, about 60 KB,
+# and the package.json and LICENSE that resolve them. Not the whole packages, which hold every cut.
+RUN F=apps/server/node_modules/@fontsource; \
+  for p in ibm-plex-sans ibm-plex-mono; do mkdir -p /fonts/$p/files && cp -L $F/$p/package.json $F/$p/LICENSE /fonts/$p/; done \
+  && cp -L $F/ibm-plex-sans/files/ibm-plex-sans-latin-400-normal.woff2 $F/ibm-plex-sans/files/ibm-plex-sans-latin-600-normal.woff2 /fonts/ibm-plex-sans/files/ \
+  && cp -L $F/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2 /fonts/ibm-plex-mono/files/
 
 # What the server and the runner share: Node, git, the agent CLIs and ACP adapters. The owner's
 # passwd entry comes last (`runtime`, `runner`), so these layers are the same on every computer.
@@ -246,6 +252,7 @@ RUN npm install --prefix /app --no-save --no-package-lock --omit=dev --no-audit 
 COPY --from=build /src/apps/server/dist ./dist
 COPY --from=build /pty/node-pty ./node_modules/node-pty
 COPY --from=build /sqlite/better-sqlite3 ./node_modules/better-sqlite3
+COPY --from=build /fonts ./node_modules/@fontsource
 # The memory store needs both native libraries to load in this image.
 RUN node -e "const D=require('/app/node_modules/better-sqlite3'),v=require('/app/node_modules/sqlite-vec');const db=new D(':memory:');v.load(db);console.log('sqlite-vec',db.prepare('select vec_version() v').get().v)"
 COPY --from=build /src/apps/web/dist ./web
