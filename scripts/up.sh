@@ -26,7 +26,8 @@ if [ "$MAJHI_LAYA_GPU" = nvidia ]; then
   echo "Laya gets the NVIDIA GPU: its image takes PyTorch for CUDA, a few GB more to download. LAYA_GPU=off keeps it on the CPU."
 fi
 
-version=$(dotenv MAJHI_VERSION)
+# As compose reads it: the environment wins over .env.
+version=${MAJHI_VERSION:-$(dotenv MAJHI_VERSION)}
 if [ -n "$version" ]; then
   echo "Getting the majhi $version images"
 else
