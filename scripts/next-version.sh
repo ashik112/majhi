@@ -30,11 +30,11 @@ footers() {
 
 next_version() {
   if subjects | grep -qE "$BREAKING" || [ -n "$(footers)" ]; then
-    bump=major
+    bump="major"
   elif subjects | grep -qE "$FEAT"; then
-    bump=minor
+    bump="minor"
   elif subjects | grep -qE "$FIX"; then
-    bump=patch
+    bump="patch"
   else
     return 0
   fi
