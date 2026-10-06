@@ -181,6 +181,8 @@ export class ContainerService {
   /** Preview builds running, by task. The builder stops when the last one ends. */
   private readonly builds = new Map<string, number>();
   private pendingStarts = 0;
+  /** The end of the queue of limit checks that reserve a name across all tasks. */
+  private globalTail: Promise<unknown> = Promise.resolve();
   /** Names of the task containers a script is starting or running in the foreground, by task. */
   private readonly scripted = new Map<string, Set<string>>();
 
@@ -732,6 +734,9 @@ export class ContainerService {
         case "text":
           return { code: 0, stdout: plan.stdout, stderr: "" };
         case "call": {
+          if (plan.args[0] === "start") {
+            await this.locked(task, () => this.checkStart(docker, safety, settings, plan.args));
+          }
           const out = this.scriptResult(
             task,
             await docker.task(plan.args, safety, this.allowed(task, settings)),
@@ -818,8 +823,11 @@ export class ContainerService {
     this.scripted.set(task, active);
     try {
       await this.locked(task, async () => {
-        await this.checkLimits(docker, task, settings);
-        active.add(plan.name);
+        // Check and reserve in one step across tasks, so parallel starts in different tasks cannot both pass.
+        await this.global(async () => {
+          await this.checkLimits(docker, task, settings);
+          active.add(plan.name);
+        });
         await this.ensureNetwork(docker, safety);
         for (const volume of plan.volumes) await this.ensureVolume(docker, safety, volume);
         await this.startHolder(docker, safety, settings, plan.holder);
@@ -839,6 +847,44 @@ export class ContainerService {
       if (active.size === 0 && this.scripted.get(task) === active) this.scripted.delete(task);
       // The container ended (`--rm`), or never started: its holder goes. A detached one keeps it.
       await this.locked(task, () => this.reapHolders(docker, task));
+    }
+  }
+
+  /**
+   * `docker start`: a container that ended cannot start again, because it joined the network of its
+   * holder and the holder went when it ended. A container that still has its holder counts under the
+   * limits like any start. Everything else is the script's to run again.
+   */
+  private async checkStart(
+    docker: ContainerDocker,
+    safety: Safety,
+    settings: ContainersSettings,
+    args: readonly string[],
+  ): Promise<void> {
+    const task = safety.task;
+    const names = containerNames(task);
+    // A holder whose container ended goes first, so what is left is what can really start.
+    await this.reapHolders(docker, task);
+    for (const container of args.slice(1)) {
+      const state = await this.stateOf(docker, container);
+      if (state === undefined || state === "running") continue;
+      const user = container.slice(names.containerPrefix.length);
+      if ((await this.stateOf(docker, names.holder(user))) !== "running") {
+        throw new ContainerRefused(
+          `${user} ended and its network holder went with it, so it cannot start again. Run it again with docker run.`,
+          "restart_not_available",
+        );
+      }
+      await this.checkLimits(docker, task, settings, 0);
+    }
+  }
+
+  /** `running`, `exited` and the like, or undefined when there is no such container. */
+  private async stateOf(docker: ContainerDocker, container: string): Promise<string | undefined> {
+    try {
+      return (await docker.exec(["inspect", "--format", "{{.State.Status}}", container])).stdout.trim();
+    } catch {
+      return undefined;
     }
   }
 
@@ -864,6 +910,7 @@ export class ContainerService {
         ids: new Map(),
       }),
       ask: (image, service) => options.ask(image, service),
+      checkLimits: (extra) => this.checkLimits(docker, task, settings, extra),
       build: (args) => this.scriptBuild(docker, safety, settings, args),
       launch: (plan) => this.scriptRun(docker, safety, settings, plan, options.signal),
       call: async (args) =>
@@ -957,7 +1004,9 @@ export class ContainerService {
     await this.quietly(async () => {
       const holders = await this.lines(docker, labelled("taskhold"));
       if (holders.length === 0) return;
-      const apps = new Set(await this.lines(docker, labelled(TASK_RUN_KIND)));
+      // Running ones only: a holder whose container ended (and stays, without --rm) cannot be used again, a
+      // container joined to a holder that is gone cannot start, so the holder goes.
+      const apps = new Set(await this.lines(docker, ["ps", ...labelled(TASK_RUN_KIND).slice(2)]));
       const starting = this.scripted.get(task) ?? new Set<string>();
       const stale = holders.filter((holder) => {
         const user = holder.startsWith(names.holderPrefix) ? holder.slice(names.holderPrefix.length) : "";
@@ -973,6 +1022,13 @@ export class ContainerService {
       reaped.push(...stale);
     });
     return reaped;
+  }
+
+  /** Runs `fn` after every earlier call of `global`, so a check and the reservation that follows it are one step. */
+  private global<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.globalTail.catch(() => undefined).then(fn);
+    this.globalTail = run;
+    return run;
   }
 
   /** Images this task built, as `repository:tag`. */
@@ -1391,9 +1447,11 @@ export class ContainerService {
    */
   private async containersOf(docker: ContainerDocker, task: string | undefined): Promise<Set<string>> {
     const found = new Set<string>();
+    // Every state: a container that ended and was not removed still counts until `docker rm` takes it.
     for (const kind of [TASK_RUN_KIND, "preview"]) {
       for (const name of await this.lines(docker, [
         "ps",
+        "-a",
         "--format",
         "{{.Names}}",
         "--filter",
@@ -1402,6 +1460,19 @@ export class ContainerService {
       ])) {
         found.add(name);
       }
+    }
+    // A holder counts as the container it belongs to, so one that outlived its container still takes its slot.
+    for (const name of await this.lines(docker, [
+      "ps",
+      "-a",
+      "--format",
+      "{{.Names}}",
+      "--filter",
+      "label=majhi.container=taskhold",
+      ...(task === undefined ? [] : ["--filter", `label=majhi.task=${task}`]),
+    ])) {
+      const at = name.indexOf("-h-");
+      if (at !== -1) found.add(`${name.slice(0, at)}-c-${name.slice(at + 3)}`);
     }
     const procs = task === undefined ? this.deps.processes.listAll() : this.all(task);
     for (const p of procs) {

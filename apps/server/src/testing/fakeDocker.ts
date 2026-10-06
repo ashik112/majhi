@@ -269,12 +269,12 @@ export class FakeDocker implements ContainerDocker {
         for (const name of args.slice(3)) this.volumes.delete(name);
         return out("");
       case "ps": {
-        if (this.psDelayMs > 0) await new Promise((r) => setTimeout(r, this.psDelayMs));
         if (args.includes("label=majhi.runner=1")) return out(this.runners.join("\n"));
         const labels = filter("label").map((f) => f.slice("label=".length));
         const all = args.includes("-a");
         const format = args[args.indexOf("--format") + 1];
-        return out(
+        // The answer is read now and delivered late, like a slow daemon: a start that lands meanwhile is not in it.
+        const answer = out(
           [...this.containers.values()]
             .filter((c) => all || !(c.status ?? "Up").startsWith("Exited"))
             .filter((c) =>
@@ -286,6 +286,8 @@ export class FakeDocker implements ContainerDocker {
             .map((c) => (args.includes("--format") && format !== undefined ? render(format, c) : c.name))
             .join("\n"),
         );
+        if (this.psDelayMs > 0) await new Promise((r) => setTimeout(r, this.psDelayMs));
+        return answer;
       }
       case "logs": {
         const c = this.containers.get(last);
@@ -295,6 +297,7 @@ export class FakeDocker implements ContainerDocker {
       case "inspect": {
         const c = [...this.containers.values()].find((x) => x.id === last || x.name === last);
         if (c === undefined) throw new Error("No such object");
+        if (args.includes("{{.State.Status}}")) return out((c.state ?? "running 0 none").split(" ")[0] ?? "");
         if (args.some((a) => a.includes(".State"))) return out(c.state ?? "running 0 none");
         return out(`/${c.name} ${c.labels["majhi.task"]} ${c.labels["majhi.container"]}`);
       }

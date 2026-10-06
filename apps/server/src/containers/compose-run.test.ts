@@ -155,7 +155,7 @@ describe("docker compose in a task", () => {
     settings = { ...settings, per_task: 2 };
     const out = await up();
     expect(out.error?.code).toBe("limit_reached");
-    expect(out.stderr).toContain("starts 3 containers");
+    expect(out.stderr).toContain("this starts 3 more");
     expect(docker.containers.size).toBe(0);
   });
 
@@ -322,6 +322,49 @@ describe("a script's own containers", () => {
     await call("ACM-1", repo, "ps");
     await call("ACM-1", repo, "rm", "-f", "nothing");
     expect(names()).toEqual([]);
+  });
+
+  /** Plays a container that ended on its own: its status says so and docker keeps it (no --rm). */
+  const ends = (name: string) => {
+    const c = docker.containers.get(`majhi-acm-1-c-${name}`);
+    if (c === undefined) throw new Error(`no ${name}`);
+    c.status = "Exited (0) 1 second ago";
+    c.state = "exited 0 none";
+  };
+
+  it("counts a container that ended and was not removed, so exited ones cannot pile up past the limit", async () => {
+    settings = { ...settings, per_task: 2 };
+    await run("-d", "--name", "a", "alpine:3");
+    await run("-d", "--name", "b", "alpine:3");
+    ends("a");
+    ends("b");
+    const third = await run("-d", "--name", "c", "alpine:3");
+    expect(third.error?.code).toBe("limit_reached");
+    // Removing one frees its slot.
+    await call("ACM-1", repo, "rm", "a");
+    expect((await run("-d", "--name", "c", "alpine:3")).code).toBe(0);
+  });
+
+  it("removes the holder of a container that ended, and refuses to start it again", async () => {
+    await run("-d", "--name", "a", "alpine:3");
+    expect(names()).toEqual(["majhi-acm-1-c-a", "majhi-acm-1-h-a"]);
+    ends("a");
+    const started = await call("ACM-1", repo, "start", "a");
+    expect(started.error?.code).toBe("restart_not_available");
+    expect(names()).toEqual(["majhi-acm-1-c-a"]);
+    expect(docker.taskCalls.filter((c) => c[0] === "start")).toEqual([]);
+  });
+
+  it("lets only as many starts through as the global limit allows when tasks start in parallel", async () => {
+    settings = { ...settings, total: 1 };
+    docker.psDelayMs = 25;
+    const results = await Promise.all([
+      call("ACM-1", repo, "run", "-d", "--name", "a", "alpine:3"),
+      call("ACM-2", join(dir, "tasks", "ACM-2", "shop"), "run", "-d", "--name", "b", "alpine:3"),
+      call("ACM-1", repo, "run", "-d", "--name", "c", "alpine:3"),
+    ]);
+    expect(results.map((r) => r.code).sort()).toEqual([0, 125, 125]);
+    expect([...docker.containers.keys()].filter((n) => n.includes("-c-"))).toHaveLength(1);
   });
 
   it("counts a container and its holder once against the task's limit", async () => {

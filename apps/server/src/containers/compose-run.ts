@@ -28,6 +28,8 @@ export interface ComposeHost {
   cwd: string;
   /** The checked context for a call from `dir`: allowed images, images built so far. */
   context(dir: string): Promise<TaskDockerContext>;
+  /** Throws `ContainerRefused` (`limit_reached`) unless the task may run `extra` more containers. */
+  checkLimits(extra: number): Promise<void>;
   /** Asks the owner for an image, naming the service. */
   ask(image: string, service?: string): Promise<"allowed" | "pending">;
   /** `docker buildx build`, as the plan of a `docker build` has it. */
@@ -182,13 +184,13 @@ async function up(
   const lines: string[] = [];
   const stderr = [...inv.notes, ...project.notes].map((n) => `docker: ${n}\n`);
   const all = await composeContainers(host, true);
-  const total = new Set([...all.filter((c) => !c.status.startsWith("Exited")).map((c) => c.name)]);
-  if (starting.length > 0 && total.size + starting.length > host.perTask) {
-    return fail(
-      host,
-      "limit_reached",
-      `docker compose up starts ${starting.length} container${starting.length === 1 ? "" : "s"} (${starting.map((s) => s.name).join(", ")}) and ${host.task} runs ${total.size} already. A task runs at most ${host.perTask}. Raise containers.per_task in Settings, or remove one.`,
-    );
+  if (starting.length > 0) {
+    try {
+      await host.checkLimits(starting.length);
+    } catch (err) {
+      if (err instanceof ContainerRefused) return fail(host, err.refusal, err.message);
+      throw err;
+    }
   }
   for (const service of project.services) {
     if (now.has(service.name)) {
