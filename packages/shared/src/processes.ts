@@ -17,6 +17,22 @@ export type ProcessStatus = z.infer<typeof ProcessStatusSchema>;
 export const StoppedBySchema = z.enum(["agent", "owner", "task"]);
 export type StoppedBy = z.infer<typeof StoppedBySchema>;
 
+/**
+ * The network name of a process: its name lowercased, anything that is not a letter, digit or dash
+ * turned into a dash, or its id when nothing is left. At most 40 characters, so it is a valid host name.
+ */
+export function processHost(name: string, id: string): string {
+  const out: string[] = [];
+  for (const c of name.toLowerCase().slice(0, 40)) {
+    const keep = (c >= "a" && c <= "z") || (c >= "0" && c <= "9");
+    // One dash for any run of other characters, and none at the start.
+    if (keep) out.push(c);
+    else if (out.length > 0 && out.at(-1) !== "-") out.push("-");
+  }
+  if (out.at(-1) === "-") out.pop();
+  return out.length === 0 ? id : out.join("");
+}
+
 export const ProcessInfoSchema = z.object({
   id: ProcessIdSchema,
   task: z.string(),
@@ -37,6 +53,12 @@ export const ProcessInfoSchema = z.object({
   endedAt: z.string().optional(),
   /** The first `localhost:NNNN` (or 127.0.0.1, 0.0.0.0) in its output. */
   port: z.number().int().positive().optional(),
+  /**
+   * The name the task's network answers to for this process, when it runs in a runner container:
+   * the agent's shell and the task's other containers reach what it serves at `<host>:<port>`
+   * (the process must listen on 0.0.0.0, not only on localhost).
+   */
+  host: z.string().optional(),
   /** The last lines of stdout and stderr together. */
   tail: z.array(z.string()),
   /** Set when majhi runs a container for the agent (a preview build, a preview or a service). */

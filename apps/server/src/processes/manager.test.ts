@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { localSpawner } from "@majhi/acp";
+import { localSpawner, type SpawnRequest } from "@majhi/acp";
 import type { ProcessInfo } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ProcessManager } from "./manager.ts";
@@ -82,5 +82,54 @@ describe("ProcessManager", () => {
     expect((await start("pwd", { cwd: join(folder, "api") })).cwd).toBe(join(folder, "api"));
     await until(() => manager.list("ACM-1")[0]?.status === "exited", "pwd to exit");
     expect(manager.list("ACM-1")).toHaveLength(1);
+  });
+});
+
+describe("a process on the task's network", () => {
+  function managerWith(network: ((task: string) => Promise<boolean>) | undefined, seen: SpawnRequest[]) {
+    return new ProcessManager({
+      spawner: (req) => {
+        seen.push(req);
+        return localSpawner(req);
+      },
+      launch: async () => ({
+        folder,
+        env: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
+        account: { tool: "claude", home: join(dir, "home") },
+        mounts: [],
+      }),
+      ...(network === undefined ? {} : { network }),
+      throttleMs: 10,
+    });
+  }
+
+  it("starts in a runner under its name on the task's network, so the agent's shell reaches what it serves", async () => {
+    const seen: SpawnRequest[] = [];
+    const m = managerWith(async () => true, seen);
+    const p = await m.start({
+      task: "ACM-1",
+      agent: "acme-builder",
+      command: "sleep 5",
+      name: "Web Server!",
+      wait: false,
+    });
+    expect(seen[0]?.networkAlias).toBe("web-server");
+    expect(p.host).toBe("web-server");
+    await m.stopAll();
+  });
+
+  it("has no name on a network when there is none or it could not be made", async () => {
+    for (const network of [
+      undefined,
+      async () => false,
+      async () => Promise.reject(new Error("no address pool")),
+    ]) {
+      const seen: SpawnRequest[] = [];
+      const m = managerWith(network, seen);
+      const p = await m.start({ task: "ACM-1", agent: "acme-builder", command: "sleep 5", wait: false });
+      expect(seen[0]?.networkAlias).toBeUndefined();
+      expect(p.host).toBeUndefined();
+      await m.stopAll();
+    }
   });
 });

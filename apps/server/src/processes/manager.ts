@@ -1,7 +1,7 @@
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { AccountRuntime, RunMount, Spawned, Spawner } from "@majhi/acp";
-import type { ProcessContainer, ProcessInfo, StoppedBy } from "@majhi/shared";
+import { type ProcessContainer, type ProcessInfo, processHost, type StoppedBy } from "@majhi/shared";
 import { classifyCommand, type GateConnection } from "../connections/gate.ts";
 import { redactSecrets } from "../connections/redact.ts";
 import { errorMessage, UserError } from "../errors.ts";
@@ -60,6 +60,11 @@ export interface ProcessDeps {
   /** The sessions' spawner: next to majhi, or a runner container of its own. */
   spawner: Spawner;
   launch: (task: string, agent: string) => Promise<ProcessLaunch>;
+  /**
+   * Makes sure the task's network exists before a process starts in a runner, so the process joins it
+   * under its name. Resolves false when there is no such network (majhi does not run in Docker).
+   */
+  network?: (task: string) => Promise<boolean>;
   /** Every process of the task, after any change. Output changes come at most every 500 ms. */
   onChange?: (task: string, processes: ProcessInfo[]) => void;
   /**
@@ -397,14 +402,19 @@ export class ProcessManager {
   }
 
   /** `/bin/sh -c <command>` through the sessions' spawner, with the session's environment and mounts. */
-  private spawnInRunner(proc: Proc, launch: ProcessLaunch | undefined): Promise<Spawned> {
+  private async spawnInRunner(proc: Proc, launch: ProcessLaunch | undefined): Promise<Spawned> {
     if (launch === undefined) throw new Error("A process needs its launch settings.");
     const { task, command, cwd } = proc.info;
+    // On the task's network under its name, so the agent's shell reaches what it serves.
+    const joined = (await this.deps.network?.(task).catch(() => false)) === true;
+    const host = processHost(proc.info.name, proc.info.id);
+    if (joined) proc.info = { ...proc.info, host };
     return this.deps.spawner({
       command: { command: "/bin/sh", args: ["-c", command] },
       env: launch.env,
       cwd,
       task,
+      ...(joined ? { networkAlias: host } : {}),
       account: launch.account,
       // The whole task folder, whatever the cwd, as the session sees it.
       mounts: [{ path: launch.folder }, ...launch.mounts],
