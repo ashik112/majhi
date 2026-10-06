@@ -1,6 +1,8 @@
 import type { TurnUsage } from "@majhi/acp";
 import { describe, expect, it } from "vitest";
-import { costTurn } from "./recorder.ts";
+import type { Store } from "../store/index.ts";
+import { costTurn, UsageRecorder } from "./recorder.ts";
+import type { UsageRepo } from "./repo.ts";
 
 const tokens = {
   inputTokens: 1_000_000,
@@ -47,5 +49,51 @@ describe("costTurn", () => {
     expect(costTurn(turn({ model: "claude-sonnet-5-5", reported: false }), "login", {}).costSource).toBe(
       "none",
     );
+  });
+});
+
+describe("UsageRecorder", () => {
+  /** A recorder over a store that knows task PRV-1 of org acme and nothing else. */
+  function recorder() {
+    const rows: { org: string | null; project: string | null }[] = [];
+    const checked: (string | null)[] = [];
+    const store = {
+      tasks: {
+        get: (id: string) => (id === "PRV-1" ? { org: "acme", repos: [{ project: "api" }] } : undefined),
+      },
+    } as unknown as Store;
+    const repo = {
+      insert: (row: { org: string | null; project: string | null }) => rows.push(row),
+    } as unknown as UsageRepo;
+    const rec = new UsageRecorder({
+      repo,
+      store,
+      prices: async () => ({}),
+      afterRecord: async (t) => {
+        checked.push(t.org);
+      },
+    });
+    return { rec, rows, checked };
+  }
+  const base = { agent: "writer", account: "main", tool: "claude", auth: "login" } as const;
+
+  it("counts a pseudo task for the workspace its caller names, in the row and in the budget check", async () => {
+    const { rec, rows, checked } = recorder();
+    await rec.record(
+      { ...base, task: "wiki:acme:api", org: "acme", project: "api" },
+      turn({ model: "claude-sonnet-5-5" }),
+    );
+    expect(rows).toEqual([expect.objectContaining({ org: "acme", project: "api" })]);
+    expect(checked).toEqual(["acme"]);
+  });
+
+  it("leaves a pseudo task with no named workspace without one, and lets a real task's own row win", async () => {
+    const { rec, rows } = recorder();
+    await rec.record({ ...base, task: "morning-brief" }, turn({}));
+    await rec.record({ ...base, task: "PRV-1", org: "globex" }, turn({}));
+    expect(rows).toEqual([
+      expect.objectContaining({ org: null, project: null }),
+      expect.objectContaining({ org: "acme", project: "api" }),
+    ]);
   });
 });
