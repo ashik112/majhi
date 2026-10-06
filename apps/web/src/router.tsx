@@ -163,6 +163,11 @@ const watchRoute = createRoute({
   path: PAGE_PATH.watch,
   component: lazyRouteComponent(() => import("@/pages/watch-page"), "WatchPage"),
 });
+const wikiRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: PAGE_PATH.wiki,
+  component: lazyRouteComponent(() => import("@/pages/wiki-page"), "WikiPage"),
+});
 const agentsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: PAGE_PATH.agents,
@@ -297,6 +302,7 @@ export const router = createRouter({
     autonomousRoute,
     captainRoute,
     playbooksRoute,
+    wikiRoute,
     watchRoute,
     limitsRoute,
     todayRoute,

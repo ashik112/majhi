@@ -7,6 +7,7 @@ export const SECTION_ABOUT: Record<SetupSection, string> = {
   ssh: "The keys majhi's git uses to reach your hosts. Passphrases stay on this computer.",
   decisions: "The small local model that makes cheap, frequent calls, and how well each one is doing.",
   memory: "Who writes each finished task's record, the project briefs and lessons, and how lessons are kept.",
+  wiki: "Architecture pages for each project, built from the code with the file and line behind every claim.",
   context: "When agent context is compacted, how many agents run at once, and resuming cut-off runs.",
   turns: "How long one agent turn may run, stay idle or call tools before it continues in a fresh session.",
   teams: "How long agents in a room may pass work around without you.",

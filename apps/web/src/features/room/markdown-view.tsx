@@ -6,6 +6,7 @@ import { TaskRef } from "@/features/task-drawer/task-ref";
 import { useAgentIndex } from "@/lib/agent-index";
 import { cn } from "@/lib/cn";
 import { useTaskIds } from "@/lib/task-queries";
+import { CITE_PROP, remarkCites } from "./cite-refs";
 import { CopyButton } from "./copy-button";
 import { useHighlight } from "./highlight";
 import { classifyTarget, presentFileLink, safeHref } from "./links";
@@ -14,9 +15,16 @@ import { AGENT_REF_PROP, remarkTaskRefs, TASK_REF_PROP } from "./task-refs";
 
 export type MarkdownSize = "chat" | "document";
 
+/** Numbered citations of a wiki page: the numbers that count, and what each one shows. */
+export interface Cites {
+  known: ReadonlySet<number>;
+  render: (n: number) => ReactNode;
+}
+
 interface Scope {
   task: TaskFiles | undefined;
   baseDir: string;
+  cites: Cites | undefined;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: hast nodes are walked structurally and only a few fields are read
@@ -61,7 +69,7 @@ function CodeBlock({ node, children }: { node: Hast; children?: ReactNode }) {
   );
 }
 
-function buildComponents({ task, baseDir }: Scope): Components {
+function buildComponents({ task, baseDir, cites }: Scope): Components {
   return {
     a({ href, children }) {
       const target =
@@ -140,6 +148,8 @@ function buildComponents({ task, baseDir }: Scope): Components {
       return <>{name}</>;
     },
     span({ node, children, ...rest }) {
+      const cite = node?.properties?.[CITE_PROP];
+      if (typeof cite === "string" && cites !== undefined) return <>{cites.render(Number(cite))}</>;
       const id = node?.properties?.[TASK_REF_PROP];
       if (typeof id === "string") return <TaskRef id={id}>{children}</TaskRef>;
       const agent = node?.properties?.[AGENT_REF_PROP];
@@ -172,21 +182,28 @@ export function Markdown({
   task,
   baseDir = "",
   size = "chat",
+  cites,
 }: {
   text: string;
   task?: TaskFiles | undefined;
   /** Folder of the document being shown, relative to the task folder, for relative links. */
   baseDir?: string;
   size?: MarkdownSize;
+  /** A wiki page's `[n]` citations. */
+  cites?: Cites | undefined;
 }) {
   const highlight = useHighlight();
-  const components = useMemo(() => buildComponents({ task, baseDir }), [task, baseDir]);
+  const components = useMemo(() => buildComponents({ task, baseDir, cites }), [task, baseDir, cites]);
   const known = useTaskIds();
   const index = useAgentIndex();
   const agents = useMemo(() => new Set(index.keys()), [index]);
   const remarkPlugins = useMemo<Options["remarkPlugins"]>(
-    () => [remarkGfm, [remarkTaskRefs, { known, agents }]],
-    [known, agents],
+    () => [
+      remarkGfm,
+      [remarkTaskRefs, { known, agents }],
+      ...(cites === undefined ? [] : [[remarkCites, { known: cites.known }] as [typeof remarkCites, object]]),
+    ],
+    [known, agents, cites],
   );
   return (
     <div className={cn("md", size === "document" && "md-doc")}>

@@ -716,6 +716,7 @@
 
 /* Source with line numbers in the file viewer */
 .code-lines {
+  position: relative;
   display: flex;
   min-width: max-content;
   font-family: var(--font-mono);
@@ -742,6 +743,17 @@
   flex: 1;
   padding: 10px 16px 10px 12px;
   color: var(--color-fg-soft);
+}
+/* The lines a wiki claim cites: a tint over the gutter and the code, under the text's own colors. */
+.code-mark {
+  position: absolute;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  pointer-events: none;
+  font-size: var(--text-sm);
+  background: color-mix(in oklab, var(--color-accent) 14%, transparent);
+  box-shadow: inset 3px 0 0 var(--color-accent);
 }
 .code-body code {
   padding: 0;

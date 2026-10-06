@@ -9,6 +9,7 @@ export const PAGE_KEYWORDS: Record<PageName, string> = {
   playbooks: "standing work packs upkeep goals outbound drafts gate cadence schedule timers uptime incidents",
   watch:
     "services uptime incidents down outage status ntfy phone push alerts escalation health certificate dns monitor",
+  wiki: "architecture how it works components flows roles frontend backend queue database sources docs pages update stale",
   limits: "budget budgets spend cost daily weekly floors safety money raise",
   decisions: "inbox needs you waiting questions approvals ship recommend answer",
   agents: "team roles models",

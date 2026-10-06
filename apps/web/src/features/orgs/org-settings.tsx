@@ -240,6 +240,22 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
               </Select>
             )}
           </Field>
+          <Field
+            label="Wiki"
+            hint="Architecture pages for each project of this workspace. Off: nothing runs and agents get no wiki tool."
+          >
+            {(p) => (
+              <Select
+                {...p}
+                value={draft.wiki}
+                onChange={(e) => set({ wiki: e.target.value as OrgDraft["wiki"] })}
+              >
+                <option value="default">Use majhi's setting</option>
+                <option value="on">On</option>
+                <option value="off">Off</option>
+              </Select>
+            )}
+          </Field>
           <MrSettings draft={draft} onChange={set} />
           <Field
             label="Leads can start tasks"

@@ -1,9 +1,9 @@
 import { lazy, Suspense } from "react";
-import type { MarkdownSize } from "./markdown-view";
+import type { Cites, MarkdownSize } from "./markdown-view";
 import type { TaskFiles } from "./media";
 
 export { CopyButton } from "./copy-button";
-export type { MarkdownSize } from "./markdown-view";
+export type { Cites, MarkdownSize } from "./markdown-view";
 
 /** The renderer (react-markdown, remark, highlighting) loads when the first message is shown, not with the app. */
 const MarkdownView = lazy(() => import("./markdown-view").then((m) => ({ default: m.Markdown })));
@@ -15,6 +15,8 @@ export function Markdown(props: {
   /** Folder of the document being shown, relative to the task folder, for relative links. */
   baseDir?: string;
   size?: MarkdownSize;
+  /** A wiki page's `[n]` citations. */
+  cites?: Cites | undefined;
 }) {
   return (
     <Suspense fallback={<div className="md whitespace-pre-wrap">{props.text}</div>}>

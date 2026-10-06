@@ -95,66 +95,78 @@ export function taskFileRoutes(deps: TaskFilesDeps): Hono {
     } catch {
       return refuse(c, 404, "Not found.");
     }
-    if (segments.some((s) => s.includes("\0") || s.includes("\\"))) return refuse(c, 404, "Not found.");
-    // Empty segments (a trailing slash) are dropped; `..` and dot names are refused outright.
-    segments = segments.filter((s) => s !== "");
-    if (segments.length === 0) return refuse(c, 404, "Not found.");
     const notes = prefix === PREFIX;
-    if (!(notes && isHandoffNote(segments)) && segments.some((s) => s.startsWith("."))) {
-      return refuse(c, 403, "Hidden files are not served.");
-    }
-
-    let root: string;
-    let target: string;
-    try {
-      root = await realpath(folder);
-      target = await realpath(join(root, ...segments));
-    } catch {
-      return refuse(c, 404, "Not found.");
-    }
-    const rel = relative(root, target);
-    const parts = rel.split(sep);
-    if (
-      rel === "" ||
-      rel.startsWith("..") ||
-      (!(notes && isHandoffNote(parts)) && parts.some((s) => s.startsWith(".")))
-    ) {
-      return refuse(c, 403, `That file is outside the ${what}.`);
-    }
-    const info = await stat(target).catch(() => undefined);
-    if (info === undefined || !info.isFile()) return refuse(c, 404, "Not found.");
-
-    // `?meta=1`: what the in-app viewer shows in its header. Same checks as above, no content.
-    if (c.req.query("meta") === "1") {
-      return c.json({ size: info.size, modified: info.mtime.toISOString() }, 200, {
-        "Cache-Control": "no-store",
-      });
-    }
-
-    const ext = extensionOf(target);
-    const headers = new Headers({
-      "Content-Type": TYPES[ext] ?? "application/octet-stream",
-      "X-Content-Type-Options": "nosniff",
-      "Cache-Control": "no-store",
-      "Accept-Ranges": "bytes",
-    });
-    if (SANDBOXED.has(ext)) headers.set("Content-Security-Policy", SANDBOX);
-    if (TYPES[ext] === undefined) headers.set("Content-Disposition", "attachment");
-
-    const range = parseRange(c.req.header("range"), info.size);
-    if (range === "unsatisfiable") {
-      headers.set("Content-Range", `bytes */${info.size}`);
-      return new Response(null, { status: 416, headers });
-    }
-    const [start, end] = range ?? [0, Math.max(0, info.size - 1)];
-    headers.set("Content-Length", String(info.size === 0 ? 0 : end - start + 1));
-    if (range !== undefined) headers.set("Content-Range", `bytes ${start}-${end}/${info.size}`);
-    if (c.req.method === "HEAD" || info.size === 0)
-      return new Response(null, { status: range ? 206 : 200, headers });
-    const stream = Readable.toWeb(createReadStream(target, { start, end })) as ReadableStream;
-    return new Response(stream, { status: range ? 206 : 200, headers });
+    return serveSegments(c, folder, segments, what, (parts) =>
+      notes && isHandoffNote(parts) ? false : parts.some((s) => s.startsWith(".")),
+    );
   }
   return app;
+}
+
+/**
+ * Serves one file of `folder` named by `segments` (still percent-decoded by the caller), with ranges and `?meta=1`.
+ * Nothing outside the folder is served, also through symlinks; `hidden` says which names are refused.
+ */
+export async function serveSegments(
+  c: Context,
+  folder: string,
+  segments: string[],
+  what: string,
+  /** True for a path that must not be served: checked on the asked path and again on the resolved one. */
+  hidden: (parts: readonly string[]) => boolean,
+): Promise<Response> {
+  const refuse = (status: 403 | 404, error: string) => c.json({ error } satisfies ApiError, status);
+  if (segments.some((s) => s.includes("\0") || s.includes("\\"))) return refuse(404, "Not found.");
+  // Empty segments (a trailing slash) are dropped; `..` and dot names are refused outright.
+  segments = segments.filter((s) => s !== "");
+  if (segments.length === 0) return refuse(404, "Not found.");
+  if (hidden(segments)) return refuse(403, "Hidden files are not served.");
+
+  let root: string;
+  let target: string;
+  try {
+    root = await realpath(folder);
+    target = await realpath(join(root, ...segments));
+  } catch {
+    return refuse(404, "Not found.");
+  }
+  const rel = relative(root, target);
+  const parts = rel.split(sep);
+  if (rel === "" || rel.startsWith("..") || hidden(parts)) {
+    return refuse(403, `That file is outside the ${what}.`);
+  }
+  const info = await stat(target).catch(() => undefined);
+  if (info === undefined || !info.isFile()) return refuse(404, "Not found.");
+
+  // `?meta=1`: what the in-app viewer shows in its header. Same checks as above, no content.
+  if (c.req.query("meta") === "1") {
+    return c.json({ size: info.size, modified: info.mtime.toISOString() }, 200, {
+      "Cache-Control": "no-store",
+    });
+  }
+
+  const ext = extensionOf(target);
+  const headers = new Headers({
+    "Content-Type": TYPES[ext] ?? "application/octet-stream",
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "no-store",
+    "Accept-Ranges": "bytes",
+  });
+  if (SANDBOXED.has(ext)) headers.set("Content-Security-Policy", SANDBOX);
+  if (TYPES[ext] === undefined) headers.set("Content-Disposition", "attachment");
+
+  const range = parseRange(c.req.header("range"), info.size);
+  if (range === "unsatisfiable") {
+    headers.set("Content-Range", `bytes */${info.size}`);
+    return new Response(null, { status: 416, headers });
+  }
+  const [start, end] = range ?? [0, Math.max(0, info.size - 1)];
+  headers.set("Content-Length", String(info.size === 0 ? 0 : end - start + 1));
+  if (range !== undefined) headers.set("Content-Range", `bytes ${start}-${end}/${info.size}`);
+  if (c.req.method === "HEAD" || info.size === 0)
+    return new Response(null, { status: range ? 206 : 200, headers });
+  const stream = Readable.toWeb(createReadStream(target, { start, end })) as ReadableStream;
+  return new Response(stream, { status: range ? 206 : 200, headers });
 }
 
 /** One `bytes=a-b`, `bytes=a-` or `bytes=-n` range. Anything else is served whole. */

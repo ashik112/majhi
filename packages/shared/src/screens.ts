@@ -22,6 +22,7 @@ export const PAGE_PATH = {
   captain: "/captain",
   playbooks: "/playbooks",
   watch: "/watch",
+  wiki: "/wiki",
   limits: "/limits",
   decisions: "/decisions",
 } as const;
@@ -37,6 +38,7 @@ export const PAGE_LABEL: Record<PageName, string> = {
   captain: "Captain",
   playbooks: "Playbooks",
   watch: "Watch",
+  wiki: "Wiki",
   limits: "Limits",
   decisions: "Decisions",
   agents: "Agents",
@@ -52,7 +54,7 @@ export const PAGE_LABEL: Record<PageName, string> = {
 };
 
 /** The sidebar's rows: the daily work at the top, the team and health at the foot, then Settings. */
-export const SIDEBAR_MAIN = ["board", "decisions", "chats", "captain", "playbooks", "watch"] as const;
+export const SIDEBAR_MAIN = ["board", "decisions", "chats", "captain", "playbooks", "wiki", "watch"] as const;
 export const SIDEBAR_FOOT = ["agents", "skills", "accounts", "usage"] as const;
 export type SidebarMainPage = (typeof SIDEBAR_MAIN)[number];
 export type SidebarFootPage = (typeof SIDEBAR_FOOT)[number];
@@ -70,6 +72,7 @@ export const SETUP_GROUPS = [
     sections: [
       "decisions",
       "memory",
+      "wiki",
       "context",
       "turns",
       "teams",
@@ -91,6 +94,7 @@ export const SECTION_TITLE: Record<SetupSection, string> = {
   ssh: "SSH keys",
   decisions: "Laya",
   memory: "Memory",
+  wiki: "Wiki",
   context: "Context and limits",
   turns: "Turns",
   teams: "Teams",
@@ -140,6 +144,7 @@ export const SETTINGS_GROUPS: readonly { label: string; items: readonly Settings
     items: [
       { kind: "page", page: "memory" },
       { kind: "section", section: "memory", label: "Memory rules" },
+      { kind: "section", section: "wiki" },
       { kind: "section", section: "teams" },
       { kind: "section", section: "turns" },
       { kind: "section", section: "context" },

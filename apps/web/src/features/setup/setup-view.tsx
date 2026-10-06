@@ -26,6 +26,8 @@ import { useBoss } from "@/features/boss/boss-context";
 import { EditRootsDialog } from "@/features/roots/edit-roots-dialog";
 import { useMountNow } from "@/features/roots/use-mount-now";
 import { useInSettingsFrame } from "@/features/settings/settings-frame";
+import { useWikiWorkspaces } from "@/features/wiki/use-wiki-switch";
+import { WikiSection } from "@/features/wiki/wiki-settings";
 import { ACCENT_LABEL, useAppearance } from "@/lib/appearance";
 import { useBackups } from "@/lib/backup-queries";
 import { useSettings } from "@/lib/boss-queries";
@@ -77,6 +79,7 @@ export function SetupView() {
   const decisions = useDecisionsStatus();
   const containers = useContainers();
   const backups = useBackups();
+  const wiki = useWikiWorkspaces();
   const appearance = useAppearance();
   const boss = useBoss();
   const [param, setParam] = useSearchParam("section");
@@ -176,6 +179,7 @@ export function SetupView() {
     ssh: <StateWord state={ssh} />,
     decisions: firstProvider(decisions.data),
     memory: s && (s.memory.housekeeper ? `Housekeeper @${s.memory.housekeeper}` : "Housekeeper: the captain"),
+    wiki: wikiStatus(wiki.workspaces),
     context:
       s &&
       `${s.context.cap > 0 ? `${s.context.cap / 1000}k cap` : "No cap"}, compact at ${Math.round(s.context.compact_at * 100)}%, ${s.limits.agents_max} agents at once`,
@@ -218,6 +222,7 @@ export function SetupView() {
       {section === "memory" && (
         <WithSettings settings={settings}>{(data) => <MemorySection saved={data.memory} />}</WithSettings>
       )}
+      {section === "wiki" && <WikiSection />}
       {section === "context" && (
         <WithSettings settings={settings}>{(data) => <ContextSection settings={data} />}</WithSettings>
       )}
@@ -308,6 +313,12 @@ export function SetupView() {
       )}
     </div>
   );
+}
+
+function wikiStatus(workspaces: readonly { enabled: boolean }[]): string | undefined {
+  if (workspaces.length === 0) return undefined;
+  const on = workspaces.filter((w) => w.enabled).length;
+  return on === 0 ? "Off" : `On in ${on} workspace${on === 1 ? "" : "s"}`;
 }
 
 function notificationsStatus(n: Settings["notifications"]): string {

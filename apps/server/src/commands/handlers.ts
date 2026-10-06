@@ -72,6 +72,7 @@ import { actorName } from "../tasks/cards.ts";
 import { changeTaskBranch } from "../tasks/change-branch.ts";
 import { readReport } from "../tasks/report.ts";
 import { toolsHandlers } from "../tools/handlers.ts";
+import { gitDrift } from "../wiki/drift.ts";
 import { wikiHandlers } from "../wiki/handlers.ts";
 import { wikiEnabledFrom } from "../wiki/switch.ts";
 
@@ -187,6 +188,7 @@ export function createHandlers({
     ...wikiHandlers({
       repo: services.store.wiki,
       enabled: wikiEnabledFrom(config),
+      drift: gitDrift(services.projects),
       lanes: services.lanes,
       store: services.store,
       orgs: async () => Object.keys((await config.sections()).orgs),
