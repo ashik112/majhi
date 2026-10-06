@@ -11,7 +11,6 @@ import {
   ContainerRefused,
   type DockerParts,
   dockerArgv,
-  envByName,
   hostForwardRunArgs,
   hostNetworkCreateArgs,
   type Limits,
@@ -21,6 +20,7 @@ import {
   type Safety,
   serviceRunArgs,
   taskHoldRunArgs,
+  takeEnv,
   volumeCreateArgs,
 } from "./args.ts";
 
@@ -599,44 +599,37 @@ describe("builds", () => {
 });
 
 describe("environment values stay off the command line", () => {
-  it("moves a service's variables to the CLI's environment and leaves only names", () => {
+  it("moves a service's variables into a file and leaves no value on the line", () => {
     const parts = serviceRunArgs(safety, limits, {
       name: "db",
       image: "postgres:16",
-      env: { POSTGRES_PASSWORD: "pg-secret-1234", PATH: "/custom" },
+      env: { POSTGRES_PASSWORD: "pg-secret-1234", PATH: "/custom", LD_PRELOAD: "/work/evil.so" },
     });
-    const moved = envByName(parts);
-    expect(dockerArgv(moved.parts).join(" ")).not.toContain("pg-secret-1234");
-    expect(moved.parts.flags).toContain("POSTGRES_PASSWORD");
-    expect(moved.env).toEqual({ POSTGRES_PASSWORD: "pg-secret-1234" });
-    // The CLI's own variable keeps its value on the line: passing it by name would give it the CLI's.
-    expect(moved.parts.flags).toContain("PATH=/custom");
+    const moved = takeEnv(parts);
+    const line = dockerArgv(moved.parts).join(" ");
+    for (const value of ["pg-secret-1234", "/custom", "/work/evil.so"]) expect(line).not.toContain(value);
+    // The file docker reads holds every one, verbatim: nothing in it is a variable of the CLI's own.
+    expect(moved.text.split("\n").sort()).toEqual([
+      "",
+      "LD_PRELOAD=/work/evil.so",
+      "PATH=/custom",
+      "POSTGRES_PASSWORD=pg-secret-1234",
+    ]);
     // The check runs on the call as built, before the values move.
     expect(() => assertSafe(parts, safety)).not.toThrow();
   });
 
-  it("never moves a variable the CLI or the loader reads for itself into majhi's own docker environment", () => {
-    const hostile = {
-      LD_PRELOAD: "/work/evil.so",
-      LD_LIBRARY_PATH: "/work",
-      DYLD_INSERT_LIBRARIES: "/work/evil.dylib",
-      DOCKER_HOST: "tcp://10.0.0.1:2375",
-      DOCKER_CONFIG: "/work/cfg",
-      BUILDX_BUILDER: "default",
-      BUILDKIT_HOST: "tcp://x",
-      COMPOSE_FILE: "/x",
-      NODE_OPTIONS: "--require /work/x.js",
-      GIT_SSH_COMMAND: "x",
-      HTTPS_PROXY: "http://evil",
-      ld_preload: "/work/evil.so",
-      POSTGRES_PASSWORD: "pw",
-    };
-    const parts = serviceRunArgs(safety, limits, { name: "db", image: "postgres:16", env: hostile });
-    const moved = envByName(parts);
-    expect(Object.keys(moved.env)).toEqual(["POSTGRES_PASSWORD"]);
-    // The rest stays on the command line, inside the container's own variables.
-    expect(moved.parts.flags).toContain("LD_PRELOAD=/work/evil.so");
-    expect(moved.parts.flags).toContain("DOCKER_HOST=tcp://10.0.0.1:2375");
+  it("leaves a value that a line of a file cannot hold on the command line, and changes nothing without variables", () => {
+    const parts = serviceRunArgs(safety, limits, {
+      name: "db",
+      image: "postgres:16",
+      env: { MULTI: "a\nb", PLAIN: "x" },
+    });
+    const moved = takeEnv(parts);
+    expect(moved.text).toBe("PLAIN=x\n");
+    expect(moved.parts.flags).toContain("MULTI=a\nb");
+    const none = serviceRunArgs(safety, limits, { name: "db", image: "postgres:16" });
+    expect(takeEnv(none)).toEqual({ parts: none, text: "" });
   });
 });
 

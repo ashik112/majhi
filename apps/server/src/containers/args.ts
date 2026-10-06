@@ -63,81 +63,27 @@ export const dockerArgv = (parts: DockerParts): string[] => [
   ...parts.command,
 ];
 
-/** Variables the docker CLI reads for itself: a container's own value for one of these stays on the line. */
-const CLI_OWNED = new Set([
-  "PATH",
-  "HOME",
-  "DOCKER_HOST",
-  "DOCKER_CONFIG",
-  "DOCKER_CONTEXT",
-  "DOCKER_CERT_PATH",
-  "DOCKER_TLS_VERIFY",
-]);
-
 /**
- * Names the docker CLI (or the dynamic loader, or the shell it runs under) reads from its own
- * environment. A container's variable of one of these stays on the command line: moved into the CLI's
- * environment it would change how majhi's own `docker` runs (`LD_PRELOAD` runs code in it).
+ * Moves each `--env NAME=value` of a run off the command line and into the text of an env file, which
+ * `docker run --env-file` reads: no password of a service or a database check shows in a process list,
+ * and no variable of a container, whatever its name, joins the environment of majhi's own `docker`
+ * (`LD_PRELOAD` or `OTEL_EXPORTER_OTLP_ENDPOINT` would change how that CLI runs). A value a line of
+ * the file cannot hold (a newline) stays where it is. `text` is empty when nothing moved.
  */
-const CLI_ENV_PREFIXES = [
-  "LD_",
-  "DYLD_",
-  "DOCKER_",
-  "BUILDX_",
-  "BUILDKIT_",
-  "COMPOSE_",
-  "NODE_",
-  "SSL_",
-  "CURL_",
-  "GIT_",
-  "SSH_",
-  "XDG_",
-];
-const CLI_ENV_NAMES = new Set([
-  "PATH",
-  "HOME",
-  "SHELL",
-  "IFS",
-  "BASH_ENV",
-  "ENV",
-  "TMPDIR",
-  "USER",
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "NO_PROXY",
-  "ALL_PROXY",
-  "http_proxy",
-  "https_proxy",
-  "no_proxy",
-  "all_proxy",
-  "KUBECONFIG",
-]);
-
-/** True when a container's variable may travel in the CLI's environment: a plain name that no program reads for itself. */
-export function mayTravelInCliEnv(name: string): boolean {
-  if (CLI_OWNED.has(name) || CLI_ENV_NAMES.has(name)) return false;
-  return !CLI_ENV_PREFIXES.some((prefix) => name.toUpperCase().startsWith(prefix));
-}
-
-/**
- * Moves each `--env NAME=value` of a run off the command line: the flag becomes `--env NAME`, which
- * the docker CLI fills from its own environment, and the value goes in `env` for that one CLI
- * process. A password a service or a database check holds then shows in no process list.
- */
-export function envByName(parts: DockerParts): { parts: DockerParts; env: Record<string, string> } {
-  const env: Record<string, string> = {};
-  const flags = [...parts.flags];
-  for (let i = 0; i < flags.length - 1; i++) {
-    if (flags[i] !== "--env") continue;
-    const pair = flags[i + 1] ?? "";
+export function takeEnv(parts: DockerParts): { parts: DockerParts; text: string } {
+  const flags: string[] = [];
+  let text = "";
+  for (let i = 0; i < parts.flags.length; i++) {
+    const flag = parts.flags[i] ?? "";
+    const pair = parts.flags[i + 1] ?? "";
     const at = pair.indexOf("=");
-    if (at <= 0) continue;
-    const name = pair.slice(0, at);
-    if (!mayTravelInCliEnv(name)) continue;
-    env[name] = pair.slice(at + 1);
-    flags[i + 1] = name;
+    const holds = at > 0 && !pair.includes("\n") && !pair.includes("\r");
+    if (flag === "--env" && holds) {
+      text += `${pair}\n`;
+      i++;
+    } else flags.push(flag);
   }
-  return { parts: { ...parts, flags }, env };
+  return text === "" ? { parts, text } : { parts: { ...parts, flags }, text };
 }
 
 /** Host places that no docker argument may name. */

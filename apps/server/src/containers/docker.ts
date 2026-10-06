@@ -9,12 +9,13 @@ import {
   ContainerRefused,
   type DockerParts,
   dockerArgv,
-  envByName,
   GUARD_SCRIPT,
   type HostPaths,
   isIpv4Cidr,
   type Safety,
+  takeEnv,
 } from "./args.ts";
+import { writePrivateFile } from "./private-file.ts";
 import { assertTaskArgv } from "./task-docker.ts";
 
 /** A short call, like `docker ps`, waits this long at most. */
@@ -291,13 +292,22 @@ export class DockerCli {
     const name = verb === "run" ? parts.flags[at + 1] : undefined;
     await mkdir(this.configDir, { recursive: true });
     if (name !== undefined) await this.removals.get(name);
-    // The values of `--env NAME=value` go in the CLI's environment, not on its command line.
-    const byName = envByName(parts);
-    const child = spawn(this.docker, dockerArgv(byName.parts), {
-      env: { ...byName.env, ...this.env },
+    // The values of `--env NAME=value` go in a file docker reads, not on its command line and not in its environment.
+    const moved = takeEnv(parts);
+    const envFile = moved.text === "" ? undefined : await writePrivateFile("majhi-env-", "env", moved.text);
+    const argv = dockerArgv(
+      envFile === undefined
+        ? moved.parts
+        : { ...moved.parts, flags: ["--env-file", envFile.file, ...moved.parts.flags] },
+    );
+    const child = spawn(this.docker, argv, {
+      env: this.env,
       detached: true,
       stdio: ["pipe", "pipe", "pipe"],
     });
+    // The CLI reads the file as it starts; it goes when the CLI ends, or never started.
+    child.once("exit", () => void envFile?.cleanup());
+    child.once("error", () => void envFile?.cleanup());
     let killed = false;
     return {
       child,
