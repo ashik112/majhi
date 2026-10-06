@@ -17,12 +17,14 @@ Runs in a runner container with no network, the export mounted read-only and onl
 Only names, paths and line numbers leave this script. A value of a setting, a password or a query string never does.
 Each tool that fails leaves its list empty and its message in `errors`, so one broken tool does not lose the rest.
 
-The graph pass is graphify's own incremental `update`: it reads only files that changed since the last graph in the
-cache folder. It is separate because the first run takes about a minute, and the facts do not wait for it.
+The graph pass keeps <cache folder>/graph up to date with graphify, rebuilding only the files whose content changed
+since the last pass. It is separate because the first run takes about a minute, and the facts do not wait for it.
 """
 
+import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -38,6 +40,8 @@ MAX_BYTES = 512 * 1024
 MAX_ROUTES = 20000
 MAX_ENTRIES = 20000
 MAX_CALLS = 2000
+MAX_GRAPH_FILES = 30000
+MAX_GRAPH_BYTES = 2 * 1024 * 1024
 NOIR_TIMEOUT = 180
 SKIPPED_DIRS = {
     ".git", "node_modules", "dist", "build", "out", "target", "vendor", ".venv", "venv", "__pycache__", ".next",
@@ -296,10 +300,23 @@ def facts_pass(src, cache):
     tmp.replace(cache / "reader.json")
 
 
-def graph_pass(src, cache):
-    """graphify's incremental update. It refuses a graph that would shrink, so a repo that lost files is read again whole."""
-    graph = cache / "graph"
-    graph.mkdir(parents=True, exist_ok=True)
+def hash_files(src):
+    """sha256 of every file graphify could read, by relative path: the picture of the export the graph was made from."""
+    out = {}
+    for root, dirs, names in os.walk(src):
+        dirs[:] = sorted(d for d in dirs if d not in SKIPPED_DIRS and not d.startswith("."))
+        for name in sorted(names):
+            path = Path(root) / name
+            if len(out) >= MAX_GRAPH_FILES:
+                return out
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_GRAPH_BYTES:
+                continue
+            out[path.relative_to(src).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return out
+
+
+def full_update(src, graph):
+    """graphify's own `update`. It refuses a graph that would shrink, so a repo that lost files is read again with `--force`."""
     env = {**os.environ, "GRAPHIFY_OUT": str(graph), "GRAPHIFY_NO_AUTO_REFRESH": "1"}
     binary = os.environ.get("MAJHI_GRAPHIFY_BIN", "/opt/graphify/bin/graphify")
 
@@ -312,8 +329,52 @@ def graph_pass(src, cache):
     if done.returncode != 0 or not (graph / "graph.json").is_file():
         sys.stderr.write((done.stdout + done.stderr)[-2000:])
         sys.exit(done.returncode or 1)
-    # The page it draws is large and nothing reads it.
+
+
+def incremental_update(src, graph, changed):
+    """graphify's incremental rebuild of the files that changed. False when it could not, and the caller reads everything."""
+    os.environ["GRAPHIFY_OUT"] = str(graph)
+    os.environ["GRAPHIFY_NO_AUTO_REFRESH"] = "1"
+    try:
+        from graphify.watch import _rebuild_code  # a private function: graphify is pinned in the Dockerfile
+
+        return bool(_rebuild_code(src, changed_paths=[src / rel for rel in changed], acquire_lock=False))
+    except Exception as err:  # noqa: BLE001 any failure means a full read
+        sys.stderr.write(f"incremental graph update failed: {type(err).__name__}\n")
+        return False
+
+
+def graph_pass(src, cache):
+    """
+    Updates the code graph in <cache>/graph. Every export is a new folder with new file times, so changes are found by
+    content: the hashes of the last pass (graph-state.json) against this export. Few changes are rebuilt incrementally
+    (about 15 s); a first run, a big change or a failure reads everything (about a minute).
+    """
+    graph = cache / "graph"
+    graph.mkdir(parents=True, exist_ok=True)
+    state_file = cache / "graph-state.json"
+    now = hash_files(src)
+    try:
+        before = json.loads(state_file.read_text())
+    except (OSError, ValueError):
+        before = None
+    done = False
+    if before is not None and (graph / "graph.json").is_file():
+        changed = sorted(p for p in now if before.get(p) != now[p]) + sorted(p for p in before if p not in now)
+        if not changed:
+            done = True
+        elif len(changed) <= max(50, len(now) // 4):
+            done = incremental_update(src, graph, changed)
+    if not done:
+        full_update(src, graph)
+    # The page it draws is large and nothing reads it; graphify also keeps a dated copy of the last graph.
     (graph / "graph.html").unlink(missing_ok=True)
+    for entry in graph.iterdir():
+        if entry.is_dir() and len(entry.name) == 10 and entry.name[4] == "-" and entry.name[7] == "-":
+            shutil.rmtree(entry, ignore_errors=True)
+    tmp = cache / "graph-state.json.tmp"
+    tmp.write_text(json.dumps(now))
+    tmp.replace(state_file)
 
 
 def main():
