@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { type GitAttribution, MAJHI_HOOKS_DIR } from "@majhi/acp";
 import { agentCommitter, attributionEnabled, TASK_TRAILER } from "@majhi/shared";
 import type { ConfigService } from "../config/service.ts";
+import { ensureWorktreeExcludes } from "../git/worktree-excludes.ts";
 import { DEFAULT_IDENTITY, type Identity } from "./checkpoint.ts";
 
 /**
@@ -242,7 +243,12 @@ export async function gitAttribution(
   task: {
     id: string;
     org?: string | undefined;
-    repos: readonly { project: string; branch?: string | undefined; source?: string | undefined }[];
+    repos: readonly {
+      project: string;
+      branch?: string | undefined;
+      source?: string | undefined;
+      worktree?: string | undefined;
+    }[];
   },
   agent: string,
 ): Promise<{ git: GitAttribution; hooks: string }> {
@@ -252,7 +258,17 @@ export async function gitAttribution(
     ensureHooks(deps.majhiHome),
   ]);
   const branches = task.repos.flatMap((r) => (r.branch === undefined ? [] : [r.branch]));
-  const scope = { task: task.id, branches, gitDirs: await gitDirsOf(task.repos), hooks };
+  // The run's git ignores package stores and caches, without any change to the repo's config.
+  const excludesFile = await ensureWorktreeExcludes(task.repos.flatMap((r) => r.worktree ?? [])).catch(
+    () => undefined,
+  );
+  const scope = {
+    task: task.id,
+    branches,
+    gitDirs: await gitDirsOf(task.repos),
+    hooks,
+    ...(excludesFile === undefined ? {} : { excludesFile }),
+  };
   if (!on.run) return { git: { author, committer: author, ...scope }, hooks };
   return { git: { author, committer: agentCommitter(agent), ...scope, trailer: true }, hooks };
 }

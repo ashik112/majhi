@@ -4,6 +4,7 @@ import { isAbsolute, relative, sep } from "node:path";
 import type { BaseEnv, RunMount, SpawnRequest, TtyLaunch } from "@majhi/acp";
 import type { Task } from "@majhi/shared";
 import { UserError } from "../errors.ts";
+import { withExcludes } from "../git/worktree-excludes.ts";
 import type { PackageStoreFor } from "../runs/package-cache.ts";
 import type { Terminal, TerminalManager, TerminalSpec } from "./manager.ts";
 
@@ -71,7 +72,10 @@ export async function openTaskTerminal(deps: TaskTerminalDeps, taskId: string): 
   const task = deps.task(taskId);
   const cwd = await taskFolder(task, await deps.tasksDir());
   const store = await deps.packages?.(task);
-  const env = { ...store?.env, ...taskTerminalEnv(deps.base) };
+  const env = await withExcludes(
+    { ...store?.env, ...taskTerminalEnv(deps.base) },
+    task.repos.flatMap((r) => r.worktree ?? []),
+  );
   let spec: TerminalSpec;
   if (deps.tty === undefined) {
     const shell = existsSync("/bin/bash") ? "/bin/bash" : "/bin/sh";

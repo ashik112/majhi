@@ -28,9 +28,11 @@ export function cacheRoot(majhiHome: string, org: string): string {
 export function cacheEnv(root: string): Record<string, string> {
   const pnpm = join(root, "pnpm-store");
   return {
-    // pnpm reads npm_config_store_dir; PNPM_STORE_DIR is for tools that read it directly.
+    // pnpm 11 reads only pnpm_config_store_dir and ignores npm_config_store_dir, so with just that one
+    // it fell back to its default store and, on another filesystem than the home folder, made
+    // `.pnpm-store` inside the worktree. pnpm 10 and older read the npm_ name.
+    pnpm_config_store_dir: pnpm,
     npm_config_store_dir: pnpm,
-    PNPM_STORE_DIR: pnpm,
     npm_config_cache: join(root, "npm"),
     YARN_CACHE_FOLDER: join(root, "yarn"),
     PIP_CACHE_DIR: join(root, "pip"),

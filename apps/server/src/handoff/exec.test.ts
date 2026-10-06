@@ -19,7 +19,7 @@ async function run(command: string, timeoutMs = 10_000, spawner: Spawner = local
   const exec = execInTask({
     spawner,
     base: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
-    task: () => ({ folder }) as Task,
+    task: () => ({ folder, repos: [] }) as unknown as Task,
     repoMounts: async () => [],
   });
   return exec("ACM-1", folder, command, timeoutMs);

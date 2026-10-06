@@ -1054,6 +1054,7 @@ export class TaskService {
   async ensureWorktrees(task: Task): Promise<void> {
     const { store } = this.deps;
     const id = task.id;
+    let made = false;
     for (const repo of task.repos) {
       if (repo.worktree !== undefined) continue;
       // Agents only ever commit on a task branch, never on a branch the owner works on.
@@ -1076,7 +1077,14 @@ export class TaskService {
           ...(stack === undefined ? {} : { localBase: true }),
           ...(this.deps.reloadKeys ? { reloadKeys: this.deps.reloadKeys } : {}),
         });
-        store.tasks.setWorktree(id, repo.project, path, result.createdBranch, result.startCommit);
+        store.tasks.setWorktree(
+          id,
+          repo.project,
+          path,
+          result.createdBranch,
+          result.startCommit,
+          result.startRef,
+        );
         if (stack !== undefined && result.createdBranch) {
           store.tasks.setBase(id, repo.project, stack.branch);
           store.tasks.setStack(id, repo.project, {
@@ -1086,11 +1094,14 @@ export class TaskService {
           this.note(id, `${repo.project}: stacked on ${stack.task}'s branch ${stack.branch}.`);
         }
         for (const w of result.warnings) this.warn(id, `${repo.project}: ${w}`);
+        made = true;
       } catch (err) {
         if (err instanceof WorktreeProblem) throw new UserError(`${repo.project}: ${err.message}`, 409);
         throw new UserError(`${repo.project}: ${err instanceof Error ? err.message : String(err)}`, 409);
       }
     }
+    // TASK.md was written before the branch had a start commit.
+    if (made) await this.refreshBriefs([id]);
   }
 
   /**

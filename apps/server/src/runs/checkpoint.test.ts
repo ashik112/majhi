@@ -1,6 +1,7 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createWorktree } from "../git/worktrees.ts";
 import { git, tempDir } from "../testing/fixtures.ts";
 import {
   type CheckpointRepo,
@@ -80,5 +81,103 @@ describe("checkpoints", () => {
     expect(result.skipped[0]).toContain(".store");
     expect(await git(a.worktree, "log", "-1", "--format=%s")).toBe("init");
     expect(await git(a.worktree, "diff", "--cached", "--name-only")).toBe("");
+  });
+
+  describe("in a task worktree", () => {
+    /** The owner's checkout, with `tracked` files committed on main, and a task worktree cut from it. */
+    async function taskWorktree(
+      tracked: Record<string, string> = {},
+      task = "ACM-1",
+    ): Promise<{
+      source: string;
+      repo: CheckpointRepo;
+      /** The owner's `.git/config` before the worktree was made. */
+      configBefore: string;
+    }> {
+      const source = join(dir, "owner", task, "api");
+      await mkdir(source, { recursive: true });
+      await git(source, "init", "--quiet", "--initial-branch=main");
+      await writeFile(join(source, "README.md"), "# r\n");
+      for (const [file, text] of Object.entries(tracked)) {
+        await mkdir(join(source, file, ".."), { recursive: true });
+        await writeFile(join(source, file), text);
+      }
+      await git(source, "add", ".");
+      await git(source, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "init");
+      const configBefore = await readFile(join(source, ".git", "config"), "utf8");
+      const path = join(dir, "tasks", task, "api");
+      await createWorktree({ source, base: "main", branch: "task/acm-1-fix", path });
+      return {
+        configBefore,
+        source,
+        repo: { project: "api", worktree: path, branch: "task/acm-1-fix", base: "main" },
+      };
+    }
+    const by = commitBy(DEFAULT_IDENTITY, "ACM-1");
+
+    it("never commits a package store or node_modules, even far under the file limit", async () => {
+      const { repo: a } = await taskWorktree();
+      for (const file of [
+        ".pnpm-store/v11/index.db",
+        "node_modules/left-pad/index.js",
+        "web/node_modules/x/y.js",
+      ]) {
+        await mkdir(join(a.worktree, file, ".."), { recursive: true });
+        await writeFile(join(a.worktree, file), "x");
+      }
+      await writeFile(join(a.worktree, "feature.ts"), "export {};\n");
+      expect(await commitCheckpoint([a], "ACM-1", 1, by)).toEqual({ committed: ["api"], skipped: [] });
+      expect((await git(a.worktree, "show", "--name-only", "--format=", "HEAD")).split("\n")).toEqual([
+        "feature.ts",
+      ]);
+    });
+
+    it("keeps committing a folder the repo tracks, new files included", async () => {
+      const { repo: a } = await taskWorktree({
+        "node_modules/kept/index.js": "1",
+        "coverage/lcov.info": "1",
+      });
+      await writeFile(join(a.worktree, "node_modules/kept/index.js"), "2");
+      await writeFile(join(a.worktree, "node_modules/kept/more.js"), "3");
+      await writeFile(join(a.worktree, "coverage/new.info"), "4");
+      await mkdir(join(a.worktree, ".venv"), { recursive: true });
+      await writeFile(join(a.worktree, ".venv/pyvenv.cfg"), "5");
+      expect(await commitCheckpoint([a], "ACM-1", 1, by)).toEqual({ committed: ["api"], skipped: [] });
+      expect((await git(a.worktree, "show", "--name-only", "--format=", "HEAD")).split("\n").sort()).toEqual([
+        "coverage/new.info",
+        "node_modules/kept/index.js",
+        "node_modules/kept/more.js",
+      ]);
+    });
+
+    it("leaves the owner's checkout alone", async () => {
+      const { source, repo: a, configBefore } = await taskWorktree();
+      const exclude = join(source, ".git", "info", "exclude");
+      const before = await readFile(exclude, "utf8");
+      await mkdir(join(a.worktree, "node_modules"), { recursive: true });
+      await writeFile(join(a.worktree, "node_modules/x.js"), "x");
+      await commitCheckpoint([a], "ACM-1", 1, by);
+      await mkdir(join(source, "node_modules"), { recursive: true });
+      await writeFile(join(source, "node_modules/x.js"), "x");
+      expect(await readFile(exclude, "utf8")).toBe(before);
+      expect(await readFile(join(source, ".git", "config"), "utf8")).toBe(configBefore);
+      expect(await git(source, "status", "--porcelain")).toBe("?? node_modules/");
+    });
+
+    it("excludes target only for a Rust or Java repo", async () => {
+      const plain = await taskWorktree();
+      const rust = await taskWorktree({ "Cargo.toml": "[package]\n" }, "ACM-2");
+      for (const { repo: r } of [plain, rust]) {
+        await mkdir(join(r.worktree, "target"), { recursive: true });
+        await writeFile(join(r.worktree, "target/notes.md"), "x");
+        await writeFile(join(r.worktree, "feature.ts"), "export {};\n");
+      }
+      await commitCheckpoint([plain.repo], "ACM-1", 1, by);
+      await commitCheckpoint([rust.repo], "ACM-2", 1, by);
+      expect(
+        (await git(plain.repo.worktree, "show", "--name-only", "--format=", "HEAD")).split("\n").sort(),
+      ).toEqual(["feature.ts", "target/notes.md"]);
+      expect(await git(rust.repo.worktree, "show", "--name-only", "--format=", "HEAD")).toBe("feature.ts");
+    });
   });
 });
