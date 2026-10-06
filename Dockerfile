@@ -68,6 +68,28 @@ RUN set -eu; \
   chmod 755 /kubectl; \
   /kubectl version --client
 
+# OWASP Noir for the wiki's facts (docs/design/wiki.md, step 1): finds the HTTP routes of a repo's clean source
+# export, in the sealed reader container, with no network and no model (`apps/server/src/wiki/facts/`). A static
+# binary, pinned by version and by the SHA-256 of each release asset, per CPU. To update, change the version
+# and take the sums from the release page (github.com/owasp-noir/noir/releases); raise `NOIR_VERSION` in
+# `apps/server/src/wiki/facts/run.ts` with it.
+FROM debian:bookworm-slim AS noir
+ARG TARGETARCH
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+RUN set -eu; \
+  NOIR_VERSION=v1.4.0; \
+  case "$TARGETARCH" in \
+    amd64) NOIR_ASSET=noir-${NOIR_VERSION}-linux-x86_64; NOIR_SHA=620e774f240be91b975ca0b2f04a5df568f0612ef1f74d182a43a25daf402001 ;; \
+    arm64) NOIR_ASSET=noir-${NOIR_VERSION}-linux-arm64; NOIR_SHA=17d6dd5be002fe49bc23189a1ec6788ec420eca3254cf6cca50817c8ffd2436a ;; \
+    *) echo "noir is not pinned for $TARGETARCH" >&2; exit 1 ;; \
+  esac; \
+  curl -fsSL -o /noir "https://github.com/owasp-noir/noir/releases/download/${NOIR_VERSION}/${NOIR_ASSET}"; \
+  echo "${NOIR_SHA}  /noir" | sha256sum -c -; \
+  chmod 755 /noir; \
+  /noir --version
+
 # Where agents run (Phase 2c): one container per run, started by the server, that mounts only the
 # task folder, its repos' .git and the account's home. It has the dev toolchain agents need for
 # real projects: build tools for native modules, pnpm, and Playwright's Chromium with its system
@@ -173,6 +195,8 @@ ENV GRAPHIFY_NO_AUTO_REFRESH=1
 COPY --chmod=0755 docker/map-extract.py /usr/local/lib/majhi/map-extract.py
 COPY --chmod=0644 docker/map_inside.py /usr/local/lib/majhi/map_inside.py
 COPY --from=kubectl /kubectl /usr/local/bin/kubectl
+# Noir, for the wiki's facts (see its stage above).
+COPY --from=noir /noir /usr/local/bin/noir
 # glab and gh for `git` connections (SPEC 5.14): the run gets the workspace's own sign-in as GITLAB_TOKEN or GH_TOKEN.
 COPY --from=host-clis /out/gh /out/glab /usr/local/bin/
 # doctl for `digitalocean` connections: the run, and majhi's script fetches and watches, get DIGITALOCEAN_ACCESS_TOKEN.
