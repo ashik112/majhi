@@ -26,7 +26,7 @@ function flow() {
   } as unknown as Store;
   const live = { set: () => {} } as unknown as RunLive;
   const run = {
-    task: "PYZ-8",
+    task: "ACM-8",
     agent: "acme-claude",
     runId: 4,
     permSeq: 0,
@@ -53,7 +53,7 @@ describe("the captain's Allow for this task", () => {
     const { permissions, run, ask, allowances, items } = flow();
     const signal = new AbortController().signal;
     const first = permissions.ask(run, ask("mcp__majhi-containers__service_start"), signal);
-    permissions.answer(run, "PYZ-8", "perm:4:1", "task", true);
+    permissions.answer(run, "ACM-8", "perm:4:1", "task", true);
     expect(await first).toBe("task");
     expect([...allowances]).toEqual(["tool:majhi-containers.service_start"]);
 

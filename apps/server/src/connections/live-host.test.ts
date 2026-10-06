@@ -12,7 +12,7 @@ function world(overrides: Partial<LiveHostDeps> = {}) {
   const running = new Set<string>();
   const deps: LiveHostDeps = {
     connection: async (id) =>
-      id === "kilby"
+      id === "northwind"
         ? { org: "acme", type: "host", ports: "8000, 5432", agentsOff: ["acme-reviewer"] }
         : id === "notes"
           ? { org: "acme", type: "env", ports: undefined, agentsOff: [] }
@@ -52,12 +52,12 @@ function world(overrides: Partial<LiveHostDeps> = {}) {
 describe("a service on this computer that connects while agents work", () => {
   it("starts a forwarder in every task of its workspace with a live session, and tells the agents allowed to use it", async () => {
     const { live, log } = world();
-    await live.connected("kilby");
+    await live.connected("northwind");
     // Not the other workspace, and not a task whose only agent is turned off for it (ACM-1 still has the builder).
     expect(log.forwarded).toEqual([
-      "ACM-1:kilby:8000,5432",
-      "ACM-2:kilby:8000,5432",
-      "ACM-3:kilby:8000,5432",
+      "ACM-1:northwind:8000,5432",
+      "ACM-2:northwind:8000,5432",
+      "ACM-3:northwind:8000,5432",
     ]);
     expect(log.said.map((l) => l.split(":")[0])).toEqual(["ACM-1", "ACM-2", "ACM-3"]);
     expect(log.told.map((l) => l.split(":")[0])).toEqual([
@@ -65,14 +65,14 @@ describe("a service on this computer that connects while agents work", () => {
       "ACM-2/acme-builder",
       "ACM-3/root-captain",
     ]);
-    expect(log.told[0]).toContain("kilby.host is now reachable");
+    expect(log.told[0]).toContain("northwind.host is now reachable");
   });
 
   it("changes nothing when the check passes again", async () => {
     const { live, log } = world();
-    await live.connected("kilby");
+    await live.connected("northwind");
     const said = log.said.length;
-    await live.connected("kilby");
+    await live.connected("northwind");
     expect(log.said).toHaveLength(said);
     expect(log.told).toHaveLength(3);
   });
@@ -93,19 +93,19 @@ describe("a service on this computer that connects while agents work", () => {
         return services.map((s) => s.id);
       },
     });
-    await live.connected("kilby");
+    await live.connected("northwind");
     expect(calls).toBe(3);
-    expect(log.said[0]).toBe("ACM-1: kilby.host could not start in this task: Docker is down");
+    expect(log.said[0]).toBe("ACM-1: northwind.host could not start in this task: Docker is down");
     expect(log.told.every((l) => !l.startsWith("ACM-1"))).toBe(true);
   });
 
   it("stops the forwarders and says so in each task that had one when it ends", async () => {
     const { live, log } = world();
-    await live.ended("kilby", "It was removed.");
-    expect(log.stopped).toEqual(["kilby"]);
+    await live.ended("northwind", "It was removed.");
+    expect(log.stopped).toEqual(["northwind"]);
     expect(log.said).toEqual([
-      "ACM-1: kilby.host is no longer reachable from this task. It was removed.",
-      "ACM-2: kilby.host is no longer reachable from this task. It was removed.",
+      "ACM-1: northwind.host is no longer reachable from this task. It was removed.",
+      "ACM-2: northwind.host is no longer reachable from this task. It was removed.",
     ]);
   });
 
@@ -121,10 +121,10 @@ describe("a service on this computer that connects while agents work", () => {
         return services.map((s) => s.id);
       },
     });
-    await live.changed("kilby", true);
+    await live.changed("northwind", true);
     expect(order.slice(0, 2)).toEqual(["stop", "forward"]);
     order.length = 0;
-    await live.changed("kilby", false);
+    await live.changed("northwind", false);
     expect(order).toEqual(["stop"]);
   });
 });

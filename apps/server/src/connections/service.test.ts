@@ -118,9 +118,9 @@ describe("ConnectionService storage", () => {
     const agent: CommandMeta = { actor: { kind: "agent", id: "captain" } };
     const input = {
       org: "acme",
-      id: "kilby",
+      id: "northwind",
       type: "host" as const,
-      name: "Kilby",
+      name: "Northwind",
       fields: { ports: "8000, 5432" },
     };
     await expect(service.create(input, "connections.create", agent)).rejects.toThrow("Only the owner");
@@ -138,13 +138,13 @@ describe("ConnectionService storage", () => {
     const before = await yaml();
     // An agent can neither widen the ports nor touch the connection at all.
     await expect(
-      service.update({ id: "kilby", fields: { ports: "8000, 5432, 22" } }, "connections.update", agent),
+      service.update({ id: "northwind", fields: { ports: "8000, 5432, 22" } }, "connections.update", agent),
     ).rejects.toThrow("Only the owner");
     await expect(
-      service.update({ id: "kilby", agentsOff: ["acme-dev"] }, "connections.update", agent),
+      service.update({ id: "northwind", agentsOff: ["acme-dev"] }, "connections.update", agent),
     ).rejects.toThrow("Only the owner");
     await expect(
-      service.update({ id: "kilby", fields: { ports: "7070" } }, "connections.update", OWNER),
+      service.update({ id: "northwind", fields: { ports: "7070" } }, "connections.update", OWNER),
     ).rejects.toThrow();
     expect(await yaml()).toBe(before);
   });

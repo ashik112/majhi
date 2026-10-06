@@ -8,9 +8,9 @@ import { assertHostService } from "./service.ts";
 const OWNER: CommandMeta = { actor: { kind: "owner" } };
 const AGENT: CommandMeta = { actor: { kind: "agent", id: "captain" } };
 
-const kilby: ConnectionConfig = { type: "host", name: "Kilby", fields: { ports: "8000, 5432" } };
+const northwind: ConnectionConfig = { type: "host", name: "Northwind", fields: { ports: "8000, 5432" } };
 const orgs = {
-  acme: { connections: { kilby } },
+  acme: { connections: { northwind } },
   globex: { connections: {} },
 };
 const ids = (list: { id: string }[]) => list.map((c) => c.id);
@@ -49,7 +49,9 @@ describe("a service on this computer: who may grant it", () => {
 describe("a service on this computer: which tasks get it", () => {
   it("reaches only agents working in its own workspace", () => {
     const task = { org: "acme", connections: [] };
-    expect(ids(runConnections({ agent: { id: "acme-dev", scope: "acme" }, task, orgs }))).toEqual(["kilby"]);
+    expect(ids(runConnections({ agent: { id: "acme-dev", scope: "acme" }, task, orgs }))).toEqual([
+      "northwind",
+    ]);
     // Another workspace's task, and another workspace's agent in this one's task, get nothing.
     expect(
       runConnections({
@@ -62,7 +64,7 @@ describe("a service on this computer: which tasks get it", () => {
     expect(
       runConnections({
         agent: { id: "acme-dev", scope: "acme" },
-        task: { org: "globex", connections: ["kilby"] },
+        task: { org: "globex", connections: ["northwind"] },
         orgs,
       }),
     ).toEqual([]);
@@ -73,8 +75,8 @@ describe("a service on this computer: which tasks get it", () => {
     expect(ids(runConnections({ agent: root, task: { org: "globex", connections: [] }, orgs }))).toEqual([]);
     expect(ids(runConnections({ agent: root, task: { org: undefined, connections: [] }, orgs }))).toEqual([]);
     expect(
-      ids(runConnections({ agent: root, task: { org: "globex", connections: ["kilby"] }, orgs })),
-    ).toEqual(["kilby"]);
+      ids(runConnections({ agent: root, task: { org: "globex", connections: ["northwind"] }, orgs })),
+    ).toEqual(["northwind"]);
   });
 });
 
@@ -99,7 +101,7 @@ describe("the forwarder's source check", () => {
 });
 
 describe("a service on this computer: the run's plan", () => {
-  const held = [{ id: "kilby", org: "acme", connection: kilby }];
+  const held = [{ id: "northwind", org: "acme", connection: northwind }];
   const deps = (connected: boolean) => ({
     secrets: { get: async () => undefined },
     connectionDir: (id: string) => `/tmp/${id}`,
@@ -108,8 +110,8 @@ describe("a service on this computer: the run's plan", () => {
 
   it("offers it, with its name and ports, only while its check passes", async () => {
     const on = await planConnections(held, "/tmp/run", deps(true));
-    expect(on.hostServices).toEqual([{ id: "kilby", ports: [8000, 5432] }]);
-    expect(on.uses[0]?.use).toContain("kilby.host: ports 8000, 5432");
+    expect(on.hostServices).toEqual([{ id: "northwind", ports: [8000, 5432] }]);
+    expect(on.uses[0]?.use).toContain("northwind.host: ports 8000, 5432");
     const off = await planConnections(held, "/tmp/run", deps(false));
     expect(off.hostServices).toEqual([]);
     expect(off.uses).toEqual([]);

@@ -4,9 +4,9 @@ The server, web, runners and agents already run in Docker. This work makes the h
 
 One task, one branch, one worktree. Three parts, built one after another, because a worktree takes one editor at a time:
 
-1. **Host helper per OS** (`apps/host`): @private-claude-idz-pm.
-2. **Install, update, compose and docs** (`scripts/`, `Makefile`, compose, `genOverride`, README, SPEC): @private-claude-idz-hardware.
-3. **Copy, and the server and web per OS** (`apps/server`, `apps/web`, `packages/shared` text): @private-claude-idz-pm.
+1. **Host helper per OS** (`apps/host`): @acme-claude-host.
+2. **Install, update, compose and docs** (`scripts/`, `Makefile`, compose, `genOverride`, README, SPEC): @acme-claude-install.
+3. **Copy, and the server and web per OS** (`apps/server`, `apps/web`, `packages/shared` text): @acme-claude-host.
 
 Then the lead reviews and does the Linux run. A part never edits a file another part owns without saying so in the room.
 
@@ -60,7 +60,7 @@ Record each in `docs/DECISIONS.md` in the part that builds it (Part 2 writes the
 9. **NVIDIA for Laya rides the same override.** `MAJHI_LAYA_GPU=nvidia` (set by `make up` when found, passed through the helper) makes `renderOverride` add a GPU reservation and `LAYA_DEVICE: cuda` to the `laya` service, and the build uses PyTorch's CUDA index. SPEC 5.12 plans CPU only today; Part 2 updates it.
 10. **`HostInfo.platform` stays Node's `process.platform`.** `os` is new and optional, because older helpers do not send it; read `hostOsOf(info)`.
 
-## Part 1: host helper per OS (@private-claude-idz-pm)
+## Part 1: host helper per OS (@acme-claude-host)
 
 You own `apps/host/src` except `remount.ts` (Part 2). Nothing outside `apps/host/src/platform/` may read `process.platform` or name an OS program when you are done, except `e2e.ts` (`taskpolicy` or `nice`) and `laya.ts` (native Laya is macOS only and stays as is).
 
@@ -88,7 +88,7 @@ Tests (vitest, next to the code), with each OS faked through `run`, `find`, `exi
 - Notifier: Linux args; WSL2 `-EncodedCommand` decodes to a script where hostile title, message and URL text stays inside the string.
 - `docker.start()` and `help()` per OS through `startup.test.ts`; editor candidates per OS; `detectOs` (done).
 
-## Part 2: install, update, compose and docs (@private-claude-idz-hardware)
+## Part 2: install, update, compose and docs (@acme-claude-install)
 
 You own `scripts/`, `Makefile`, `docker-compose.yml`, `docker/laya.Dockerfile`, `apps/server/src/cli/genOverride.ts` and its CLI entry, `apps/host/src/remount.ts` (only the `-e` flags), `apps/server/src/runner/check.ts` (one path), `README.md`, `SPEC.md`, `docs/DECISIONS.md` rows for these.
 
@@ -106,7 +106,7 @@ Build:
 
 Tests: `genOverride.test.ts` for each agent case and the GPU; a vitest in `apps/host/src` that runs `scripts/host.sh install` and `uninstall` with fake `uname`, `systemctl`, `loginctl`, `docker` and `node` on PATH and checks the unit files (quoting, a PATH with spaces) and the calls; `check.sh` with a fake `docker` for each fail line.
 
-## Part 3: copy, and the server and web per OS (@private-claude-idz-pm)
+## Part 3: copy, and the server and web per OS (@acme-claude-host)
 
 You own `apps/server/src` (except the files Part 2 owns), `apps/web/src`, and the text in `packages/shared/src` (command summaries, approval labels).
 

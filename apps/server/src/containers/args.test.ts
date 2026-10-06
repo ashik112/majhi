@@ -481,7 +481,8 @@ describe("environment values stay off the command line", () => {
 describe("the forwarder of a service on the owner's computer", () => {
   const image = "majhi-runner:dev";
   const from = "192.168.171.0/24";
-  const forward = () => hostForwardRunArgs(safety, limits, { id: "kilby", ports: [8000, 5432], from, image });
+  const forward = () =>
+    hostForwardRunArgs(safety, limits, { id: "northwind", ports: [8000, 5432], from, image });
   const pairs = (parts: DockerParts, flag: string) =>
     parts.flags.flatMap((f, i) => (parts.flags[i - 1] === flag ? [f] : []));
 
@@ -495,7 +496,7 @@ describe("the forwarder of a service on the owner's computer", () => {
       "8000",
       "5432",
     ]);
-    expect(pairs(parts, "--network")).toEqual(["name=majhi-acm-1,alias=kilby.host", "majhi-acm-1-host"]);
+    expect(pairs(parts, "--network")).toEqual(["name=majhi-acm-1,alias=northwind.host", "majhi-acm-1-host"]);
     expect(pairs(parts, "--publish")).toEqual([]);
     expect(pairs(parts, "--mount")).toEqual([]);
     expect(pairs(parts, "--env")).toEqual([]);
@@ -507,7 +508,7 @@ describe("the forwarder of a service on the owner's computer", () => {
 
   it("is refused when it names majhi's own port or one that is not a port", () => {
     const named = (ports: number[], s: Safety = safety) =>
-      hostForwardRunArgs(s, limits, { id: "kilby", ports, from: "192.168.171.0/24", image });
+      hostForwardRunArgs(s, limits, { id: "northwind", ports, from: "192.168.171.0/24", image });
     expect(() => named([7070])).toThrow(ContainerRefused);
     expect(() => named([8000, 0])).toThrow(ContainerRefused);
     expect(() => named([65536])).toThrow(ContainerRefused);
@@ -539,7 +540,7 @@ describe("the forwarder of a service on the owner's computer", () => {
 
   it("answers only the task's own subnet, never everyone", () => {
     const from = (cidr: string) =>
-      hostForwardRunArgs(safety, limits, { id: "kilby", ports: [8000], from: cidr, image });
+      hostForwardRunArgs(safety, limits, { id: "northwind", ports: [8000], from: cidr, image });
     expect(() => from("192.168.171.0/24")).not.toThrow();
     for (const wide of [
       "0.0.0.0/0",

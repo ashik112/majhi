@@ -289,7 +289,7 @@ export function busiestText(b: BusiestAccount): { head: string; value: string; r
 
 /**
  * What the Home readout says about the busiest account, in plain words, or undefined while it is at
- * or below 80%: "claude-private-idz-pm 91% of its 5h window", "acme-claude is at its limit".
+ * or below 80%: "acme-claude-pm 91% of its 5h window", "acme-claude is at its limit".
  */
 export function accountReadout(
   b: BusiestAccount | undefined,
