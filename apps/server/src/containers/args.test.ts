@@ -223,6 +223,37 @@ describe("the holder of a task's container", () => {
     expect(() => taskHolder("db", ["a", "b", "c", "d", "e", "f", "g", "h"])).toThrow(ContainerRefused);
   });
 
+  it("never answers to a name that belongs to something else: the preview, a forwarder, majhi's own, the computer", () => {
+    for (const name of [
+      "preview",
+      "Preview",
+      "localhost",
+      "db.host",
+      "host.docker.internal",
+      "gateway.docker.internal",
+      "majhi-server",
+      "majhi-acm-2-c-db",
+    ]) {
+      for (const make of [() => taskHolder("db", [name]), () => taskHolder(name)]) {
+        try {
+          make();
+          throw new Error(`${name} was allowed`);
+        } catch (err) {
+          expect(err).toBeInstanceOf(ContainerRefused);
+          expect((err as ContainerRefused).refusal, name).toBe("name_reserved");
+        }
+      }
+    }
+    // The checked call itself, whoever built it: a holder with an extra reserved alias is refused.
+    const good = taskHolder("db");
+    expect(
+      refused(replaced(good, "--network", "name=majhi-acm-1,alias=db,alias=majhi-acm-1-c-db,alias=preview")),
+    ).toThrow(ContainerRefused);
+    expect(
+      refused(replaced(good, "--network", "name=majhi-acm-1,alias=db,alias=majhi-acm-1-c-db,alias=x.host")),
+    ).toThrow(ContainerRefused);
+  });
+
   it("is the only container that may run detached", () => {
     expect(refused(plus(service(), "--detach"))).toThrow(ContainerRefused);
     expect(refused(plus(preview(), "--detach"))).toThrow(ContainerRefused);

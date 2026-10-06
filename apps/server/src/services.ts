@@ -703,10 +703,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   background.run(() => sweepRunFiles(env.majhiHome));
   const runningProcesses = new Map<string, string>();
   // The container service is built after the process manager, which it needs: a process asks for the task's network through this.
-  const taskNetwork: { ensure: (task: string) => Promise<boolean> } = { ensure: async () => false };
+  const taskNetwork: {
+    ensure: (task: string) => Promise<boolean>;
+    taken: (task: string, name: string) => Promise<boolean>;
+  } = { ensure: async () => false, taken: async () => false };
   const processes = new ProcessManager({
     spawner: sessionOptions.spawner ?? localSpawner,
     network: (task) => taskNetwork.ensure(task),
+    nameTaken: (task, name) => taskNetwork.taken(task, name),
     launch: async (task, agent) => {
       const launched = await processLaunch(
         {
@@ -771,6 +775,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     changed: () => events.emit(["containers"]),
   });
   taskNetwork.ensure = (task) => containers.ensureTaskNetwork(task);
+  taskNetwork.taken = (task, name) => containers.hostNameTaken(task, name);
   background.run(
     () => containers.startup(),
     (err) => console.error(`Could not clean up containers: ${errorMessage(err)}`),

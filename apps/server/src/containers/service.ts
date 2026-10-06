@@ -14,7 +14,7 @@ import type {
   TaskDockerRequest,
   TaskDockerResult,
 } from "@majhi/shared";
-import { sameImage, type TaskDockerErrorCode } from "@majhi/shared";
+import { reservedNameReason, sameImage, type TaskDockerErrorCode } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import type { ProcessManager } from "../processes/manager.ts";
 import {
@@ -431,6 +431,10 @@ export class ContainerService {
           volumes: input.volumes,
         });
         await this.ensureNetwork(docker, safety);
+        await this.assertNamesFree(docker, task, {
+          name: input.name,
+          aliases: taskAliases(task, input.name),
+        });
         for (const volume of input.volumes ?? []) await this.ensureVolume(docker, safety, volume.name);
         const container: ProcessContainer = {
           kind: "service",
@@ -830,6 +834,7 @@ export class ContainerService {
         });
         await this.ensureNetwork(docker, safety);
         for (const volume of plan.volumes) await this.ensureVolume(docker, safety, volume);
+        await this.assertNamesFree(docker, task, plan.holder);
         await this.startHolder(docker, safety, settings, plan.holder);
       });
       const stop = () => void this.quietly(() => docker.exec(["rm", "-f", "-v", plan.name]));
@@ -943,6 +948,55 @@ export class ContainerService {
   private allowed(task: string, settings: ContainersSettings): string[] {
     const org = this.task(task).org ?? "private";
     return [...settings.images, ...(settings.org_images[org] ?? [])];
+  }
+
+  /**
+   * Refuses a container whose name or alias is one a running process already answers to on the task's
+   * network (a dev server named `web`), and one whose name a container of the task already has: either
+   * would take the other's traffic, or its holder.
+   */
+  private async assertNamesFree(
+    docker: ContainerDocker,
+    task: string,
+    holder: { name: string; aliases: string[] },
+  ): Promise<void> {
+    const names = containerNames(task);
+    const mine = new Set(holder.aliases.filter((a) => a !== names.service(holder.name)));
+    for (const p of this.all(task)) {
+      if (p.status === "running" && p.host !== undefined && mine.has(p.host)) {
+        throw new ContainerRefused(
+          `${p.host} is the name of ${p.id} (a running process) on this task's network. Pick another name.`,
+          "name_reserved",
+        );
+      }
+    }
+    const existing = await this.lines(docker, [
+      "ps",
+      "-a",
+      "--format",
+      "{{.Names}}",
+      "--filter",
+      `label=majhi.task=${task}`,
+    ]);
+    if (existing.includes(names.service(holder.name))) {
+      throw new ContainerRefused(
+        `${holder.name} already exists in ${task}. Remove it first with docker rm.`,
+        "name_in_use",
+      );
+    }
+  }
+
+  /**
+   * True when `name` may not be the network name of a process of the task: a name majhi keeps, or a
+   * container of the task has it. The process then starts without a name on the network.
+   */
+  async hostNameTaken(task: string, name: string): Promise<boolean> {
+    const docker = this.docker;
+    if (reservedNameReason(name) !== undefined) return true;
+    if (docker === undefined) return false;
+    return (
+      await this.lines(docker, ["ps", "-a", "--format", "{{.Names}}", "--filter", `label=majhi.task=${task}`])
+    ).includes(containerNames(task).service(name));
   }
 
   /**

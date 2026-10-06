@@ -23,11 +23,11 @@ let asked: string[];
 const task = (id: string): Task =>
   ({ id, folder: join(dir, "tasks", id), team: [], repos: [], org: "acme" }) as unknown as Task;
 
-function build(): ContainerService {
-  return new ContainerService({
+function depsOf(): ConstructorParameters<typeof ContainerService>[0] {
+  return {
     docker,
     processes,
-    task: (id) => (id.startsWith("ACM-") ? task(id) : undefined),
+    task: (id: string) => (id.startsWith("ACM-") ? task(id) : undefined),
     openTasks: () => ["ACM-1", "ACM-2"],
     settings: async () => settings,
     runnerNetwork: "majhi-runners",
@@ -38,7 +38,11 @@ function build(): ContainerService {
       hostHome: join(dir, "home"),
       protectedPaths: [join(dir, "keys", "secrets.key")],
     },
-  });
+  };
+}
+
+function build(): ContainerService {
+  return new ContainerService(depsOf());
 }
 
 beforeEach(async () => {
@@ -365,6 +369,42 @@ describe("a script's own containers", () => {
     ]);
     expect(results.map((r) => r.code).sort()).toEqual([0, 125, 125]);
     expect([...docker.containers.keys()].filter((n) => n.includes("-c-"))).toHaveLength(1);
+  });
+
+  it("refuses a name a running process of the task already answers to, and one a container already has", async () => {
+    const running = {
+      id: "p1",
+      task: "ACM-1",
+      agent: "a",
+      name: "web",
+      command: "x",
+      cwd: repo,
+      wait: false,
+      status: "running",
+      startedAt: new Date().toISOString(),
+      tail: [],
+      host: "web",
+    };
+    const spy = {
+      list: (t: string) => (t === "ACM-1" ? [running] : []),
+      listAll: () => [running],
+      get: () => running,
+      stopAll: async () => undefined,
+    } as unknown as ProcessManager;
+    service = new ContainerService({ ...depsOf(), processes: spy });
+    const out = await run("-d", "--name", "web", "alpine:3");
+    expect(out.error?.code).toBe("name_reserved");
+    expect(out.stderr).toContain("p1");
+    expect(names()).toEqual([]);
+    expect(await service.hostNameTaken("ACM-1", "preview")).toBe(true);
+    expect(await service.hostNameTaken("ACM-1", "devserver")).toBe(false);
+    // A second container of a name that is taken is refused and the first keeps its holder.
+    service = build();
+    expect((await run("-d", "--name", "db", "alpine:3")).code).toBe(0);
+    const again = await run("-d", "--name", "db", "alpine:3");
+    expect(again.error?.code).toBe("name_in_use");
+    expect(names()).toEqual(["majhi-acm-1-c-db", "majhi-acm-1-h-db"]);
+    expect(await service.hostNameTaken("ACM-1", "db")).toBe(true);
   });
 
   it("counts a container and its holder once against the task's limit", async () => {

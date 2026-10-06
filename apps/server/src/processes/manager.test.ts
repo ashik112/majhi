@@ -86,7 +86,11 @@ describe("ProcessManager", () => {
 });
 
 describe("a process on the task's network", () => {
-  function managerWith(network: ((task: string) => Promise<boolean>) | undefined, seen: SpawnRequest[]) {
+  function managerWith(
+    network: ((task: string) => Promise<boolean>) | undefined,
+    seen: SpawnRequest[],
+    nameTaken?: (task: string, name: string) => Promise<boolean>,
+  ) {
     return new ProcessManager({
       spawner: (req) => {
         seen.push(req);
@@ -99,6 +103,7 @@ describe("a process on the task's network", () => {
         mounts: [],
       }),
       ...(network === undefined ? {} : { network }),
+      ...(nameTaken === undefined ? {} : { nameTaken }),
       throttleMs: 10,
     });
   }
@@ -115,6 +120,26 @@ describe("a process on the task's network", () => {
     });
     expect(seen[0]?.networkAlias).toBe("web-server");
     expect(p.host).toBe("web-server");
+    await m.stopAll();
+  });
+
+  it("joins the network without a name that a container or majhi already has", async () => {
+    const seen: SpawnRequest[] = [];
+    const m = managerWith(
+      async () => true,
+      seen,
+      async (_task, name) => name === "preview" || name === "db",
+    );
+    for (const name of ["preview", "db", "web"]) {
+      await m.start({
+        task: "ACM-1",
+        agent: "acme-builder",
+        command: `sleep 5 # ${name}`,
+        name,
+        wait: false,
+      });
+    }
+    expect(seen.map((r) => r.networkAlias)).toEqual([undefined, undefined, "web"]);
     await m.stopAll();
   });
 

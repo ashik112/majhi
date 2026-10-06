@@ -65,6 +65,8 @@ export interface ProcessDeps {
    * under its name. Resolves false when there is no such network (majhi does not run in Docker).
    */
   network?: (task: string) => Promise<boolean>;
+  /** True when another thing of the task already answers to this network name (a container, a name majhi keeps). */
+  nameTaken?: (task: string, name: string) => Promise<boolean>;
   /** Every process of the task, after any change. Output changes come at most every 500 ms. */
   onChange?: (task: string, processes: ProcessInfo[]) => void;
   /**
@@ -407,14 +409,16 @@ export class ProcessManager {
     const { task, command, cwd } = proc.info;
     // On the task's network under its name, so the agent's shell reaches what it serves.
     const joined = (await this.deps.network?.(task).catch(() => false)) === true;
-    const host = processHost(proc.info.name, proc.info.id);
-    if (joined) proc.info = { ...proc.info, host };
+    const wanted = processHost(proc.info.name, proc.info.id);
+    const named = joined && (await this.deps.nameTaken?.(task, wanted).catch(() => true)) !== true;
+    const host = named ? wanted : undefined;
+    proc.info = { ...proc.info, host };
     return this.deps.spawner({
       command: { command: "/bin/sh", args: ["-c", command] },
       env: launch.env,
       cwd,
       task,
-      ...(joined ? { networkAlias: host } : {}),
+      ...(host === undefined ? {} : { networkAlias: host }),
       account: launch.account,
       // The whole task folder, whatever the cwd, as the session sees it.
       mounts: [{ path: launch.folder }, ...launch.mounts],

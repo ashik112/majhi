@@ -178,6 +178,26 @@ describe("docker in a task: what it may do", () => {
   });
 });
 
+describe("docker in a task: names that are not its to take", () => {
+  it.each([
+    ["--name", "preview"],
+    ["--name", "localhost"],
+    ["--name", "majhi-server"],
+    ["--network-alias", "preview"],
+    ["--network-alias", "db.host"],
+    ["--network-alias", "host.docker.internal"],
+    ["--network-alias", "gateway.docker.internal"],
+    ["--network-alias", "majhi-run-abc"],
+  ])("refuses %s %s with a code", (flag, name) => {
+    try {
+      plan(["run", ...(flag === "--name" ? [] : ["--name", "web"]), flag, name, "nginx:1.27-alpine"]);
+      throw new Error("accepted");
+    } catch (err) {
+      expect((err as { refusal?: string }).refusal).toBe("name_reserved");
+    }
+  });
+});
+
 describe("docker in a task: what it may never do", () => {
   const refused: [string, string[]][] = [
     ["privileged", ["run", "--privileged", "nginx:1.27-alpine"]],

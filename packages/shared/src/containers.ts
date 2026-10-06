@@ -51,6 +51,30 @@ export const ContainerNameSchema = z
   .regex(/^[a-z][a-z0-9-]{0,30}$/, "Use lowercase letters, digits and dashes, starting with a letter");
 
 /**
+ * Names that answer on a task's network for something that is not a task container: the preview, a
+ * connection's forwarder (`<id>.host`), majhi's own containers (`majhi-*`) and the names a runtime gives the
+ * computer. A container, service, alias or process named one of these would take the place of that thing.
+ */
+export const RESERVED_HOST_NAMES = [
+  "preview",
+  "localhost",
+  "host.docker.internal",
+  "gateway.docker.internal",
+  "host.orb.internal",
+  "host.internal",
+  "host.containers.internal",
+] as const;
+
+/** Why `name` may not be a container's name or alias on a task's network, or undefined when it may. */
+export function reservedNameReason(name: string): string | undefined {
+  const lower = name.toLowerCase();
+  if ((RESERVED_HOST_NAMES as readonly string[]).includes(lower)) return `${name} is a name majhi keeps`;
+  if (lower.endsWith(".host")) return `${name} ends in .host, the name of a service on the owner's computer`;
+  if (lower.startsWith("majhi-")) return `${name} starts with majhi-, which is for majhi's own containers`;
+  return undefined;
+}
+
+/**
  * An absolute path inside a container. Only letters, digits and `._/@+-`: a comma or a quote would
  * let the path add keys to a `--mount` value.
  */

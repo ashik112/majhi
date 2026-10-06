@@ -10,6 +10,7 @@ import {
   IdSchema,
   ImageRefSchema,
   MAJHI_OWN_PORTS,
+  reservedNameReason,
   type TaskDockerErrorCode,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
@@ -552,6 +553,12 @@ function checkTaskHold(
       `A holder joins ${s.runnerNetwork} and ${names.network} under its own names, and no other network.`,
     );
   }
+  // Its own name and the container's docker name are the only reserved-looking names a holder answers to.
+  for (const alias of aliases.map((a) => a.slice("alias=".length))) {
+    if (alias !== names.service(user) && reservedNameReason(alias) !== undefined) {
+      refuse(`A holder cannot answer to ${alias}.`, "name_reserved");
+    }
+  }
   const [node, script, hold, ...rest] = parts.command;
   if (node !== "node" || script !== GUARD_SCRIPT || hold !== "--hold")
     refuse("A holder runs only majhi's network guard.");
@@ -999,6 +1006,12 @@ export interface TaskHoldSpec {
 /** The names a task container answers to on the task network: its own, its docker name and what it asked for, once each. */
 export function taskAliases(task: string, name: string, extra: readonly string[] = []): string[] {
   const names = containerNames(task);
+  for (const alias of [name, ...extra]) {
+    // The container's own docker name is the one name starting with majhi- it may answer to.
+    if (alias === names.service(name)) continue;
+    const why = reservedNameReason(alias);
+    if (why !== undefined) refuse(`${why}. Pick another name.`, "name_reserved");
+  }
   return [...new Set([name, names.service(name), ...extra])];
 }
 

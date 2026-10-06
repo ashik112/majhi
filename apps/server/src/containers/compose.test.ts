@@ -168,6 +168,27 @@ describe("compose: what a file may never ask for", () => {
     expect(await code(() => load(yaml))).toBe(expected);
   });
 
+  it.each([
+    ["a service named preview", "services:\n  preview:\n    image: alpine:3\n"],
+    ["a service named localhost", "services:\n  localhost:\n    image: alpine:3\n"],
+    ["a service named like majhi's", "services:\n  majhi-server:\n    image: alpine:3\n"],
+    ["a service named like a forwarder", "services:\n  db.host:\n    image: alpine:3\n"],
+    [
+      "a container_name of the preview",
+      "services:\n  x:\n    image: alpine:3\n    container_name: preview\n",
+    ],
+    [
+      "a network alias of the computer",
+      "services:\n  x:\n    image: alpine:3\n    networks:\n      default:\n        aliases: [host.docker.internal]\n",
+    ],
+  ])("refuses %s with name_reserved", async (_name, yaml) => {
+    const project = await load(yaml);
+    const planned = () => {
+      for (const s of project.services) buildRunPlan(s.spec, ctx());
+    };
+    expect(await code(planned)).toBe("name_reserved");
+  });
+
   it("refuses an --env-file and a -f file outside the task folder", async () => {
     const sub = join(repo, "flags");
     mkdirSync(sub, { recursive: true });
