@@ -33,7 +33,7 @@ const WHY: Record<WikiDropReason, string> = {
 const place = (d: WikiDroppedClaim): string =>
   d.cited.length === 0
     ? ""
-    : ` (${d.cited.map((c) => `\`${c.path}:${c.lines[0]}-${c.lines[1]}\``).join(", ")})`;
+    : ` Cited ${d.cited.map((c) => `\`${c.path}:${c.lines[0]}-${c.lines[1]}\``).join(", ")}.`;
 
 /**
  * The Gaps page, made without a model from what the other pages could not stand behind: claims the checker
@@ -51,11 +51,11 @@ export function buildGapsPage(input: GapsInput): WikiPage {
   };
   add(
     "Could not confirm",
-    dropped.map(({ d, page }) => `- ${d.text}${place(d)}: ${WHY[d.reason]}. On ${page}.`),
+    dropped.map(({ d, page }) => `- ${d.text} (${page}): ${WHY[d.reason]}.${place(d)}`),
   );
   add(
     "Guessed",
-    guessed.map(({ c, page }) => `- ${c.text} On ${page}.`),
+    guessed.map(({ c, page }) => `- ${c.text} (${page})`),
   );
   add(
     "Could not work out",
@@ -70,7 +70,7 @@ export function buildGapsPage(input: GapsInput): WikiPage {
   const summary =
     found === 0
       ? "Nothing to report: every claim was confirmed in the code."
-      : "What the wiki could not stand behind, so you can see where it is thin. Nothing here is on the other pages as fact.";
+      : "What the wiki could not stand behind, so you can see where it is thin.";
   return WikiPageSchema.parse({
     id: wikiPageId({ kind: "gaps" }),
     org: input.org,

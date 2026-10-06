@@ -1,4 +1,4 @@
-import { WikiKnownRoleSchema } from "@majhi/shared";
+import { type WikiKnownRole, WikiKnownRoleSchema } from "@majhi/shared";
 import type { WriterPage } from "./draft.ts";
 import { defang } from "./hints.ts";
 import { pageTitle } from "./reply.ts";
@@ -12,7 +12,7 @@ export interface Repo {
 }
 
 /** What each role means, for the writer. `unknown` is left out: it is the lack of a fact. */
-const ROLE_MEANING: Record<string, string> = {
+const ROLE_MEANING: Record<WikiKnownRole, string> = {
   frontend: "the code that runs in the user's browser",
   backend: "the server that answers the browser's requests",
   worker: "processes that run background jobs",
@@ -116,7 +116,7 @@ function task(page: WriterPage): string[] {
         "Write the Overview page of this repository.",
         "- summary: two to four sentences on what the system is for and what it is made of.",
         "- roles: one row for each role you can find, with where it lives, its technology and one sentence that says it. The roles are:",
-        ...WikiKnownRoleSchema.options.map((r) => `  - ${r}: ${ROLE_MEANING[r] ?? r}`),
+        ...WikiKnownRoleSchema.options.map((r) => `  - ${r}: ${ROLE_MEANING[r]}`),
         "  A role with two places gets two rows. Leave a role out when you cannot find it, and say why in could_not_determine.",
         "- items: up to six more claims worth knowing before touching the code, such as how the parts connect.",
         "- diagram: one box for each place in roles and a line for each call between them. A line names `claim`, the number of the item that shows it (counting from 1); a line without it is drawn as a guess.",
