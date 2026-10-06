@@ -378,6 +378,15 @@ export const WikiDroppedClaimSchema = z.object({
 });
 export type WikiDroppedClaim = z.infer<typeof WikiDroppedClaimSchema>;
 
+/** One tile of an overview's "Where things are": the role, where it lives, its technology, and the claim that proves it. */
+export const WikiRoleRowSchema = z.object({
+  role: WikiKnownRoleSchema,
+  where: z.string().min(1).max(200),
+  tech: z.string().min(1).max(120),
+  claim: z.number().int().positive(),
+});
+export type WikiRoleRow = z.infer<typeof WikiRoleRowSchema>;
+
 /** Pages with no project belong to the workspace: how its repos connect. */
 const WORKSPACE_PAGE_KINDS: readonly WikiPageKind[] = ["overview", "flow", "gaps"];
 
@@ -391,7 +400,10 @@ export const WikiPageSchema = z
     title: z.string().trim().min(1).max(120),
     /** Markdown. A citation is `[n]`, the `n` of one of `claims`. */
     body: z.string().max(60_000),
+    /** On a flow page the claims, in order, are its numbered steps. */
     claims: z.array(WikiClaimSchema).max(400),
+    /** Overview pages only: the role tiles. A role not found has no row; the page says "not found". */
+    roles: z.array(WikiRoleRowSchema).max(40).default([]),
     dropped: z.array(WikiDroppedClaimSchema).max(400).default([]),
     diagrams: z.array(DiagramSpecSchema).max(6).default([]),
     /** The commit of each repo the page was written from. A project page names its project only. */
@@ -428,6 +440,14 @@ export const WikiPageSchema = z
         ctx.addIssue({ code: "custom", path: ["claims", i, "n"], message: `Claim ${c.n} appears twice` });
       }
       numbers.add(c.n);
+    });
+    if (page.kind !== "overview" && page.roles.length > 0) {
+      ctx.addIssue({ code: "custom", path: ["roles"], message: "Only an overview page has role tiles" });
+    }
+    page.roles.forEach((r, i) => {
+      if (!numbers.has(r.claim)) {
+        ctx.addIssue({ code: "custom", path: ["roles", i, "claim"], message: `No claim ${r.claim} on this page` });
+      }
     });
   });
 export type WikiPage = z.infer<typeof WikiPageSchema>;
