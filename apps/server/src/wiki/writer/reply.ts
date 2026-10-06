@@ -76,6 +76,8 @@ export const PageReplySchema = z
               sub: z.string().trim().min(1).max(120).optional(),
               /** What the box is, from the same list as the roles. Draws its colored tag. */
               role: WikiKnownRoleSchema.optional(),
+              /** The row the box is drawn in, top to bottom (0 to 9). */
+              rank: z.number().int().min(0).max(9).optional(),
             }),
           )
           .min(1)

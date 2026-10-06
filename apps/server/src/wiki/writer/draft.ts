@@ -55,6 +55,8 @@ export interface DraftDiagram {
     sub?: string | undefined;
     /** What the box is: draws its colored tag. */
     role?: WikiKnownRole | undefined;
+    /** The row the box is drawn in: boxes of one tier share a row. */
+    rank?: number | undefined;
   }[];
   edges: readonly {
     from: string;

@@ -119,7 +119,12 @@ function boxes(diagram: DraftDiagram, kept: readonly KeptClaim[]): DiagramSpec |
   const parsed = DiagramSpecSchema.safeParse({
     title: diagram.title,
     layout: "flow",
-    nodes: diagram.nodes.map(({ role, ...n }) => ({ ...n, ...(role === undefined ? {} : { kind: role }) })),
+    // Rows only when every box has one: a partly ranked picture is laid out the plain way.
+    nodes: diagram.nodes.map(({ role, rank, ...n }) => ({
+      ...n,
+      ...(role === undefined ? {} : { kind: role }),
+      ...(rank === undefined || diagram.nodes.some((m) => m.rank === undefined) ? {} : { rank }),
+    })),
     edges: diagram.edges.map((e) => {
       const reached = roleOf.get(e.to);
       const type = e.type ?? (reached === undefined ? undefined : (REACHES[reached] ?? "http"));

@@ -3,6 +3,7 @@ import ELK, { type ElkExtendedEdge, type ElkNode } from "elkjs/lib/elk-api.js";
 import { fontsReady, labelSize, nodeSize } from "../measure";
 import type { Box, EdgePath, LayoutOptions, Point, Positioned } from "../types";
 import { routeEdges } from "./route";
+import { tiers, tiersApply } from "./tiers";
 
 export interface LayeredOptions {
   /** `AUTO` lays out across and down and hands both to the canvas: across when it fits the frame, else down. */
@@ -41,6 +42,8 @@ export async function layered(
 ): Promise<Positioned> {
   await fontsReady();
   if (options.direction !== "AUTO") return run(diagram, { ...options, direction: options.direction }, layout);
+  // Every box names its tier: the tiers are the rows, top to bottom, and there is nothing to compare.
+  if (tiersApply(diagram)) return tiers(diagram, layout);
   const [across, down] = await Promise.all([
     run(diagram, { ...options, direction: "RIGHT" }, layout),
     run(diagram, { ...options, direction: "DOWN" }, layout),

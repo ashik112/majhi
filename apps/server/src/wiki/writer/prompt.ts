@@ -82,8 +82,8 @@ function shapeFor(page: WriterPage): unknown {
         diagram: {
           title: "How the parts connect",
           nodes: [
-            { id: "web", label: "Web app", sub: "React", role: "frontend" },
-            { id: "api", label: "API", sub: "Django", role: "backend" },
+            { id: "web", label: "Web app", sub: "React", role: "frontend", rank: 0 },
+            { id: "api", label: "API", sub: "Django", role: "backend", rank: 1 },
           ],
           edges: [{ from: "web", to: "api", label: "REST calls", type: "http", claim: 1 }],
         },
@@ -120,14 +120,14 @@ function task(page: WriterPage): string[] {
         ...WikiKnownRoleSchema.options.map((r) => `  - ${r}: ${ROLE_MEANING[r]}`),
         "  A role with two places gets two rows. Leave a role out when you cannot find it, and say why in could_not_determine.",
         "- items: up to six more claims worth knowing before touching the code, such as how the parts connect.",
-        "- diagram: one box for each place in roles and a line for each call between them. A box gives its `role` from the list above (it is drawn as the box's colored tag; use `outside` for a third-party service). A line gives its `type`: `http` for a call over the network, `queue` for a job sent to a queue, `data` for reading and writing stored data. A line names `claim`, the number of the item that shows it (counting from 1); a line without it is drawn as a guess.",
+        "- diagram: one box for each place in roles and a line for each call between them. A box gives its `role` from the list above (it is drawn as the box's colored tag; use `outside` for a third-party service). A box also gives its `rank`, the row it is drawn in, by tier: 0 is what the user touches (the frontend, client apps), 1 is the entry services (the API, a gateway) and the outside services that talk to them, 2 is stores, caches and realtime servers, 3 is workers and the outside services they call. Boxes of one tier get the same rank. Give every box a rank or none. A line gives its `type`: `http` for a call over the network, `queue` for a job sent to a queue, `data` for reading and writing stored data. A line names `claim`, the number of the item that shows it (counting from 1); a line without it is drawn as a guess.",
       ];
     case "infra":
       return [
         "Write the Infra and deploy page of this repository: what runs where (units, images, ports), the data stores, how it is started and deployed, and the settings it needs (names only).",
         "- summary: two or three sentences.",
         "- items: one claim for each unit or store and for how it is deployed.",
-        "- diagram: the units and what depends on what, with `role`, `type` and `claim` as for the overview.",
+        "- diagram: the units and what depends on what, with `role`, `rank`, `type` and `claim` as for the overview.",
       ];
     case "component":
       return [

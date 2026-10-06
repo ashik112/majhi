@@ -43,7 +43,7 @@ function words(text: string, max: number): { w: number; h: number } {
 }
 
 /** The distance between the two lanes a message runs between, or the room to the right of its lane. */
-function laneSpan(d: Diagram, order: readonly string[], e: Diagram["edges"][number]): number {
+function laneSpan(order: readonly string[], e: Diagram["edges"][number]): number {
   const a = order.indexOf(e.from);
   const b = order.indexOf(e.to);
   return e.from === e.to ? LOOP_LABEL_W : Math.abs(b - a) * LANE;
@@ -67,7 +67,7 @@ export const sequence: Layout = (d: Diagram) => {
   const aboveFirst =
     firstLabel === undefined || d.edges[0] === undefined
       ? 0
-      : words(withoutStepNumber(firstLabel), Math.max(40, laneSpan(d, order, d.edges[0]) - 16)).h +
+      : words(withoutStepNumber(firstLabel), Math.max(40, laneSpan(order, d.edges[0]) - 16)).h +
         LABEL_LIFT +
         8;
   const first = head + Math.max(44, aboveFirst);
