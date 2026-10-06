@@ -3,18 +3,22 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/ashik112/majhi/main/install.sh | sh
 #
-# It keeps a checkout of the newest release tag in ~/.majhi/app, records the version in that
-# checkout's .env (MAJHI_VERSION, so compose takes that release's images from ghcr.io), then runs
-# scripts/up.sh from it, the same steps as `make up`. macOS, Linux and Windows through WSL2.
+# It asks GitHub for the latest release (the release workflow moves that pointer last), keeps a
+# checkout of its tag in ~/.majhi/app, records the version and the pointer in that checkout's .env
+# (MAJHI_VERSION, so compose takes that release's images from ghcr.io, and MAJHI_LATEST_URL, where
+# the host helper looks for updates), then runs scripts/up.sh from it, the same steps as `make up`.
+# macOS, Linux and Windows through WSL2.
 #
-# MAJHI_VERSION=v1.2.3 installs that release instead of the newest. MAJHI_APP_DIR and MAJHI_REPO_URL
-# change where the checkout lives and where it comes from.
+# MAJHI_VERSION=v1.2.3 installs that release instead of the latest. MAJHI_APP_DIR, MAJHI_REPO_URL and
+# MAJHI_LATEST_URL change where the checkout lives, where it comes from and where the latest is read.
 set -eu
 
-# Where this script is served from. Change it here (and in README.md) when majhi gets its own domain.
+# Where majhi is served from. Change these (and the line in README.md) when it gets its own domain.
 INSTALL_URL="https://raw.githubusercontent.com/ashik112/majhi/main/install.sh"
 REPO_URL=${MAJHI_REPO_URL:-https://github.com/ashik112/majhi.git}
+LATEST_URL=${MAJHI_LATEST_URL:-https://api.github.com/repos/ashik112/majhi/releases/latest}
 APP_DIR=${MAJHI_APP_DIR:-$HOME/.majhi/app}
+RELEASE='^v[0-9]+\.[0-9]+\.[0-9]+$'
 # What the checks in scripts/check.sh tell the owner to run again.
 MAJHI_RERUN="the install command (curl -fsSL $INSTALL_URL | sh)"
 export MAJHI_RERUN
@@ -53,12 +57,40 @@ detect_arch() {
   esac
 }
 
-need_git() {
-  command -v git >/dev/null 2>&1 && return 0
-  case $1 in
-    macos) fail "git is not installed. Run xcode-select --install (or brew install git), then run $MAJHI_RERUN again." ;;
-    *) fail "git is not installed. Install it (sudo apt install git, sudo dnf install git or sudo pacman -S git), then run $MAJHI_RERUN again." ;;
+# git for the checkout, curl for the latest release.
+need() {
+  command -v "$1" >/dev/null 2>&1 && return 0
+  case $2 in
+    macos) fail "$1 is not installed. Run xcode-select --install (or brew install $1), then run $MAJHI_RERUN again." ;;
+    *) fail "$1 is not installed. Install it (sudo apt install $1, sudo dnf install $1 or sudo pacman -S $1), then run $MAJHI_RERUN again." ;;
   esac
+}
+
+# The tag of the latest release, as GitHub's releases API names it (`tag_name`). The host helper
+# reads the same pointer for its updates (apps/host/src/release.ts).
+latest_version() {
+  out=$(curl -sSL -H 'Accept: application/vnd.github+json' -w '\n%{http_code}' "$LATEST_URL" 2>&1) ||
+    fail "Could not reach $LATEST_URL: $(printf '%s\n' "$out" | tail -n 1). Check your internet connection, then run $MAJHI_RERUN again."
+  # 000: a file:// address, which has no HTTP status.
+  case $(printf '%s\n' "$out" | tail -n 1) in
+    200 | 000) ;;
+    404) fail "majhi has no release yet. Install it from source: git clone $REPO_URL && cd majhi && make up" ;;
+    *) fail "$LATEST_URL answered $(printf '%s\n' "$out" | tail -n 1). Wait a few minutes, then run $MAJHI_RERUN again." ;;
+  esac
+  tag=$(printf '%s\n' "$out" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+  printf '%s\n' "$tag" | grep -qE "$RELEASE" || fail "$LATEST_URL names no majhi release."
+  printf '%s' "$tag"
+}
+
+# The release to run: MAJHI_VERSION when set, else the latest.
+pick_version() {
+  if [ -z "${MAJHI_VERSION:-}" ]; then
+    latest_version
+    return
+  fi
+  printf '%s\n' "$MAJHI_VERSION" | grep -qE "$RELEASE" ||
+    fail "MAJHI_VERSION=$MAJHI_VERSION is not a release: they look like v1.2.3. Leave it out for the latest."
+  printf '%s' "$MAJHI_VERSION"
 }
 
 # Clones the checkout, or fetches the new tags into it. A checkout with changes is never touched.
@@ -78,30 +110,17 @@ fetch_checkout() {
     [ -n "$(git -C "$APP_DIR" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
     fail "$APP_DIR has changes that are not committed, so it was left alone. Undo them (git -C $APP_DIR stash), then run $MAJHI_RERUN again."
   fi
-  say "Looking for a newer majhi"
+  say "Fetching the majhi releases"
   git -C "$APP_DIR" fetch --quiet --tags origin
 }
 
-# The release to run: MAJHI_VERSION when set, else the newest vX.Y.Z tag (the host helper's
-# updates pick it the same way, apps/host/src/release.ts).
-pick_version() {
-  if [ -n "${MAJHI_VERSION:-}" ]; then
-    git -C "$APP_DIR" rev-parse --quiet --verify "refs/tags/$MAJHI_VERSION" >/dev/null ||
-      fail "majhi has no release $MAJHI_VERSION. Leave MAJHI_VERSION out for the newest one."
-    printf '%s' "$MAJHI_VERSION"
-    return
-  fi
-  newest=$(git -C "$APP_DIR" tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)
-  [ -n "$newest" ] || fail "majhi has no release yet. Install it from source: git clone $REPO_URL && cd majhi && make up"
-  printf '%s' "$newest"
-}
-
-# Sets MAJHI_VERSION in the checkout's .env and keeps every other line (the owner's settings).
-record_version() {
+# Sets MAJHI_VERSION and MAJHI_LATEST_URL in the checkout's .env and keeps every other line (the
+# owner's settings).
+record_release() {
   env_file="$APP_DIR/.env"
   {
-    if [ -f "$env_file" ]; then grep -v '^[[:space:]]*MAJHI_VERSION[[:space:]]*=' "$env_file" || true; fi
-    printf 'MAJHI_VERSION=%s\n' "$1"
+    if [ -f "$env_file" ]; then grep -vE '^[[:space:]]*MAJHI_(VERSION|LATEST_URL)[[:space:]]*=' "$env_file" || true; fi
+    printf 'MAJHI_VERSION=%s\nMAJHI_LATEST_URL=%s\n' "$1" "$LATEST_URL"
   } >"$env_file.tmp"
   mv "$env_file.tmp" "$env_file"
 }
@@ -127,18 +146,21 @@ open_browser() {
 main() {
   os=$(detect_os)
   arch=$(detect_arch)
-  need_git "$os"
-  fetch_checkout
+  need git "$os"
+  need curl "$os"
   version=$(pick_version)
+  fetch_checkout
+  git -C "$APP_DIR" rev-parse --quiet --verify "refs/tags/$version" >/dev/null ||
+    fail "majhi has no release $version in $REPO_URL. Leave MAJHI_VERSION out for the latest."
   installed=$(sed -n 's/^[[:space:]]*MAJHI_VERSION[[:space:]]*=[[:space:]]*//p' "$APP_DIR/.env" 2>/dev/null | tail -n 1 | tr -d "\"'\r ")
   if [ "$installed" = "$version" ]; then
-    say "majhi $version is the newest. Starting it again"
+    say "majhi $version is installed already. Starting it again"
   else
     say "Installing majhi $version ($os, $arch)"
   fi
   # Every time: a first clone has no files yet, and a run cut short may have left HEAD elsewhere.
   git -C "$APP_DIR" -c advice.detachedHead=false checkout --quiet --detach "refs/tags/$version"
-  record_version "$version"
+  record_release "$version"
   [ -f "$APP_DIR/scripts/up.sh" ] || fail "majhi $version is older than this installer. Install a newer release."
   sh "$APP_DIR/scripts/up.sh"
 

@@ -35,8 +35,10 @@ describe("update", () => {
     env?: NodeJS.ProcessEnv;
     /** Whether the majhi-laya container exists. */
     layaContainer?: boolean;
-    /** The newest release tag the remote has, at NEWER. */
-    newestTag?: string;
+    /** The release the latest-release pointer names. A tag other than v1.0.0 is at NEWER, on the remote only. */
+    latestTag?: string;
+    /** The pointer cannot be read. */
+    latestFails?: boolean;
   }) {
     const calls: Array<{ file: string; args: string; env: NodeJS.ProcessEnv }> = [];
     const exit: string[] = [];
@@ -44,6 +46,8 @@ describe("update", () => {
     let failedOnce = false;
     let netFailed = 0;
     let head = HEAD;
+    let fetched = false;
+    const latestAsked: string[] = [];
     const exec: ExecFn = async (file, args, opts) => {
       const line = args.join(" ");
       calls.push({ file, args: line, env: opts.env });
@@ -79,16 +83,18 @@ describe("update", () => {
         if (options.failOn !== undefined && rest.join(" ").startsWith(options.failOn)) {
           throw Object.assign(new Error("Command failed"), { stderr: "fatal: unable to access" });
         }
-        if (rest.includes("checkout")) head = rest.at(-1) === `refs/tags/${options.newestTag}` ? NEWER : HEAD;
-        if (command === "tag") return { stdout: `${options.newestTag ?? ""}\nv0.1.0\n`, stderr: "" };
-        const tagged = command === "rev-parse" && rest.some((a) => a.startsWith("refs/tags/"));
+        if (command === "fetch") fetched = true;
+        if (rest.includes("checkout")) head = rest.at(-1) === `refs/tags/${options.latestTag}` ? NEWER : HEAD;
+        const tag = rest.find((a) => a.startsWith("refs/tags/"));
+        if (command === "rev-parse" && tag !== undefined) {
+          // The installed release's tag is here; a newer one only once fetched.
+          if (tag.startsWith("refs/tags/v1.0.0^")) return { stdout: `${HEAD}\n`, stderr: "" };
+          if (!fetched) throw Object.assign(new Error("Command failed"), { stderr: "" });
+          return { stdout: `${NEWER}\n`, stderr: "" };
+        }
         return {
           stdout:
-            command === "rev-parse"
-              ? `${tagged ? NEWER : head}\n`
-              : command === "status" && options.dirty
-                ? " M a\n"
-                : "",
+            command === "rev-parse" ? `${head}\n` : command === "status" && options.dirty ? " M a\n" : "",
           stderr: "",
         };
       }
@@ -132,6 +138,11 @@ describe("update", () => {
         log: () => undefined,
         exit: () => exit.push("exit"),
         sleep: async () => undefined,
+        latest: async (url) => {
+          latestAsked.push(url);
+          if (options.latestFails) throw new Error(`${url} answered 503`);
+          return options.latestTag ?? "v1.0.0";
+        },
       });
       expect(start()).toBe(true);
       // Wait for the background run to end.
@@ -149,7 +160,7 @@ describe("update", () => {
         return undefined;
       }
     };
-    return { calls, exit, run, bundle, key, ensured };
+    return { calls, exit, run, bundle, key, ensured, latestAsked };
   }
 
   it("builds with the commit baked in, regenerates the mounts, starts, and replaces the helper last", async () => {
@@ -265,26 +276,28 @@ describe("update", () => {
   });
 
   describe("on a release install", () => {
-    const dotenv = "MAJHI_PORT=7071\nMAJHI_VERSION=v1.0.0\n";
+    const LATEST = "https://api.github.example/repos/acme/majhi/releases/latest";
+    const dotenv = `MAJHI_PORT=7071\nMAJHI_VERSION=v1.0.0\nMAJHI_LATEST_URL=${LATEST}\n`;
     const env = () => readFile(join(dir, "repo", ".env"), "utf8");
     const git = (s: { calls: Array<{ file: string; args: string }> }) =>
       s.calls.filter((c) => c.file === "/usr/bin/git").map((c) => c.args);
     beforeEach(() => writeFile(join(dir, "repo", ".env"), dotenv));
 
-    it("moves the checkout and .env to the newest release before the build, which bakes its commit in", async () => {
-      const s = setup({ newestTag: "v1.1.0" });
+    it("moves the checkout and .env to the release the pointer names before the build, which bakes its commit in", async () => {
+      const s = setup({ latestTag: "v1.1.0" });
       const status = await s.run();
       expect(status.state).toBe("done");
+      expect(s.latestAsked).toEqual([LATEST]);
       expect(status.commit).toBe(NEWER);
       expect(status.lines).toContain("Getting the majhi v1.1.0 images");
-      expect(await env()).toBe("MAJHI_PORT=7071\nMAJHI_VERSION=v1.1.0\n");
-      const fetched = s.calls.findIndex((c) => c.args.includes("fetch --quiet --tags"));
+      expect(await env()).toBe(`MAJHI_PORT=7071\nMAJHI_LATEST_URL=${LATEST}\nMAJHI_VERSION=v1.1.0\n`);
+      const fetchedAt = s.calls.findIndex((c) => c.args.includes("fetch --quiet --tags"));
       const checkout = s.calls.findIndex((c) =>
         c.args.includes("checkout --quiet --detach refs/tags/v1.1.0"),
       );
       const build = s.calls.findIndex((c) => c.args === "compose --profile runner build");
-      expect(fetched).toBeGreaterThanOrEqual(0);
-      expect(checkout).toBeGreaterThan(fetched);
+      expect(fetchedAt).toBeGreaterThanOrEqual(0);
+      expect(checkout).toBeGreaterThan(fetchedAt);
       expect(build).toBeGreaterThan(checkout);
       expect(s.calls[build]?.env.MAJHI_COMMIT).toBe(NEWER);
       // The release before's images go once the new one runs.
@@ -292,7 +305,7 @@ describe("update", () => {
     });
 
     it("puts the checkout back when the release images cannot be had, and leaves majhi running", async () => {
-      const s = setup({ newestTag: "v1.1.0", failOn: "compose --profile runner build" });
+      const s = setup({ latestTag: "v1.1.0", failOn: "compose --profile runner build" });
       const status = await s.run();
       expect(status.state).toBe("failed");
       expect(status.lines).toContain("Back on majhi v1.0.0");
@@ -302,7 +315,7 @@ describe("update", () => {
     });
 
     it("puts the checkout back before it starts the previous majhi when the new one does not start", async () => {
-      const s = setup({ newestTag: "v1.1.0", failOnce: "compose up" });
+      const s = setup({ latestTag: "v1.1.0", failOnce: "compose up" });
       const status = await s.run();
       expect(status.state).toBe("failed");
       expect(status.lines.join("\n")).toContain("Went back to the previous version");
@@ -313,15 +326,25 @@ describe("update", () => {
       expect(lastUp).toBeGreaterThan(back);
     });
 
-    it("rebuilds the release it runs when it is the newest", async () => {
-      const s = setup({ newestTag: "v1.0.0" });
+    it("rebuilds the release it runs when the pointer names it, without fetching", async () => {
+      const s = setup({ latestTag: "v1.0.0" });
       expect((await s.run()).state).toBe("done");
+      expect(git(s).some((a) => a.includes("checkout") || a.includes("fetch"))).toBe(false);
+      expect(await env()).toBe(dotenv);
+    });
+
+    it("fails without touching anything when the pointer cannot be read", async () => {
+      const s = setup({ latestTag: "v1.1.0", latestFails: true });
+      const status = await s.run();
+      expect(status.state).toBe("failed");
+      expect(status.error).toContain("answered 503");
+      expect(s.calls.some((c) => c.file === "/usr/bin/docker" && c.args.includes("build"))).toBe(false);
       expect(git(s).some((a) => a.includes("checkout"))).toBe(false);
       expect(await env()).toBe(dotenv);
     });
 
-    it("fails without touching anything when the tags cannot be fetched", async () => {
-      const s = setup({ newestTag: "v1.1.0", failOn: "fetch" });
+    it("fails without touching anything when the release's tag cannot be fetched", async () => {
+      const s = setup({ latestTag: "v1.1.0", failOn: "fetch" });
       const status = await s.run();
       expect(status.state).toBe("failed");
       expect(s.calls.some((c) => c.file === "/usr/bin/docker" && c.args.includes("build"))).toBe(false);
@@ -329,9 +352,10 @@ describe("update", () => {
     });
   });
 
-  it("never fetches on a dev checkout", async () => {
-    const s = setup({ newestTag: "v1.1.0" });
+  it("never asks the pointer or fetches on a dev checkout", async () => {
+    const s = setup({ latestTag: "v1.1.0" });
     expect((await s.run()).state).toBe("done");
+    expect(s.latestAsked).toEqual([]);
     expect(s.calls.some((c) => c.args.includes("fetch"))).toBe(false);
   });
 

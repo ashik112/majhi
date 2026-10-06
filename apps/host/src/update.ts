@@ -5,7 +5,7 @@ import { removeOtherReleases, removeOwnLeftovers } from "./diskHygiene.ts";
 import { errorMessage } from "./errors.ts";
 import type { KeyBackup } from "./keyBackup.ts";
 import type { Logger } from "./log.ts";
-import { type Moved, moveBack, moveToNewest } from "./release.ts";
+import { type LatestFn, type Moved, moveBack, moveToLatest } from "./release.ts";
 import { dockerStep, OVERRIDE_FILE, type RemountOptions, regenerateAndUp } from "./remount.ts";
 import { type GitContext, readRepo } from "./repoInfo.ts";
 
@@ -43,13 +43,15 @@ export interface UpdateOptions {
   exit: () => void;
   /** Waits before exiting, so the last status write and log line reach disk. */
   sleep?: (ms: number) => Promise<void>;
+  /** Reads the latest-release pointer on a release install. Tests pass a fake. */
+  latest?: LatestFn;
 }
 
 /**
  * Returns a function that rebuilds majhi from the checkout and restarts it, as `make up` does:
  * build with the same environment and the commit baked in, keep the secrets key, regenerate the
  * mounts, `up -d --wait`, then install the helper from the new image and let the login service
- * restart it. On a release install it first moves the checkout to the newest release (release.ts),
+ * restart it. On a release install it first moves the checkout to the latest release (release.ts),
  * and the same build then takes that release's images instead of compiling: compose decides.
  * It reports to `update.json` because the server that would relay progress is replaced part-way.
  * It never throws. Returns false when an update is already running.
@@ -95,7 +97,7 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
     const before = await readRepo(git);
     if (before === undefined)
       throw new Error("The majhi folder is not a git checkout, so there is nothing to build.");
-    const moved = await moveToNewest(git, before.commit, say);
+    const moved = await moveToLatest(git, before.commit, say, options.latest);
     const repo = moved === undefined ? before : ((await readRepo(git)) ?? before);
     status.commit = repo.commit;
     if (repo.dirty) await say("The folder has changes you have not committed. They are part of this build.");

@@ -1,27 +1,62 @@
-# Release images: a version tag (vX.Y.Z) builds the server, runner and Laya images for linux/amd64
-# and linux/arm64 and pushes them to ghcr.io/<owner>/majhi-*:<tag>, where install.sh's checkouts take
-# them from (docker-compose.yml, docs/DECISIONS.md "Release images"). Each CPU builds on its own
-# runner, natively; a last job joins the two into one multi-arch tag.
+# Releases majhi on every push to main (docs/DECISIONS.md, "Automated releases"):
+#   1. version: the next version from the conventional commits since the last release
+#      (scripts/next-version.sh). No feat, fix, perf or breaking change: nothing else runs.
+#   2. build: the server, runner and Laya images for linux/amd64 and linux/arm64, each CPU on its own
+#      runner, natively, pushed by digest only: no version tag yet.
+#   3. release, only when every build passed: tags the images ghcr.io/<owner>/majhi-*:<version>,
+#      creates the git tag and the GitHub release with notes from the commits, then marks it latest.
+#      install.sh and the host helper read that latest release, so a failed run publishes nothing.
 #
 # Images without the owner's user: compose adds it on each computer (Dockerfile, docker/owner.sh).
-name: Release images
+name: Release
 
 on:
   push:
-    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+    branches: [main]
+
+# One release at a time, in push order. GitHub keeps one waiting run: a newer push replaces it, and
+# its release then covers both pushes' commits, so none is skipped.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 permissions:
   contents: read
-  packages: write
 
 env:
   REGISTRY: ghcr.io/${{ github.repository_owner }}
 
 jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+    steps:
+      # Every commit and tag, to find the last release and the commits since.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Next version
+        id: next
+        run: |
+          version=$(sh scripts/next-version.sh)
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          if [ -n "$version" ]; then
+            echo "Releasing $version"
+          else
+            echo "No feat, fix, perf or breaking change since the last release: nothing to release."
+          fi
+
   build:
-    name: ${{ matrix.image }} (${{ matrix.arch }})
+    name: build ${{ matrix.image }} (${{ matrix.arch }})
+    needs: version
+    if: needs.version.outputs.version != ''
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: true
       matrix:
@@ -53,15 +88,15 @@ jobs:
               TORCH_INDEX=https://download.pytorch.org/whl/cu130
               LAYA_DEVICE=cuda
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # The runner and CUDA images need more room than a fresh runner has free.
       - name: Free disk space
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -69,7 +104,7 @@ jobs:
 
       - name: Build and push by digest
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.file }}
@@ -81,10 +116,10 @@ jobs:
             ${{ matrix.args }}
           # majhi.release: up.sh and the host helper remove other versions' images after an update.
           labels: |
-            majhi.release=${{ github.ref_name }}
+            majhi.release=${{ needs.version.outputs.version }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.version=${{ needs.version.outputs.version }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ matrix.name }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
@@ -96,58 +131,89 @@ jobs:
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: digest-${{ matrix.image }}-${{ matrix.arch }}
           path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
           retention-days: 1
 
-  publish:
-    name: ${{ matrix.image }}
-    needs: build
+  release:
+    needs: [version, build]
+    if: needs.version.outputs.version != ''
     runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        include:
-          - image: server
-            name: majhi-server
-            tags: ${{ github.ref_name }}
-          - image: runner
-            name: majhi-runner
-            tags: ${{ github.ref_name }}
-          # docker-compose.yml asks for `<tag>` on the CPU, `<tag>-cpu` when the owner names the CPU,
-          # and `<tag>-cuda` with an NVIDIA GPU.
-          - image: laya
-            name: majhi-laya
-            tags: ${{ github.ref_name }} ${{ github.ref_name }}-cpu
-          - image: laya-cuda
-            name: majhi-laya
-            tags: ${{ github.ref_name }}-cuda
+    permissions:
+      contents: write
+      packages: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # A rerun of an older run must not put its images under a version a newer commit released.
+      - name: Check the version is still this commit's
+        run: |
+          if git rev-parse --quiet --verify "refs/tags/$VERSION" >/dev/null &&
+            [ "$(git rev-parse "$VERSION^{commit}")" != "$GITHUB_SHA" ]; then
+            echo "::error::$VERSION was released from another commit. Nothing to do for this one."
+            exit 1
+          fi
+
+      # One folder per build: digest-<image>-<arch>/<digest>.
+      - uses: actions/download-artifact@v8
         with:
           path: ${{ runner.temp }}/digests
-          pattern: digest-${{ matrix.image }}-*
-          merge-multiple: true
+          pattern: digest-*
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Join amd64 and arm64 under the version tag
+      # Joins each image's amd64 and arm64 builds under its version tags. docker-compose.yml asks for
+      # Laya's `<version>` on the CPU (or `<version>-cpu`) and `<version>-cuda` with an NVIDIA GPU.
+      - name: Tag the images
         working-directory: ${{ runner.temp }}/digests
-        env:
-          IMAGE: ${{ env.REGISTRY }}/${{ matrix.name }}
-          TAGS: ${{ matrix.tags }}
         run: |
           set -eu
-          tag_args=""
-          for tag in $TAGS; do tag_args="$tag_args -t $IMAGE:$tag"; done
-          # shellcheck disable=SC2046,SC2086
-          docker buildx imagetools create $tag_args $(printf "$IMAGE@sha256:%s " *)
-          for tag in $TAGS; do docker buildx imagetools inspect "$IMAGE:$tag"; done
+          publish() {
+            image=$1 name=$2
+            shift 2
+            tags=""
+            for tag in "$@"; do tags="$tags -t $REGISTRY/$name:$tag"; done
+            refs=""
+            for digest in "digest-$image-amd64"/* "digest-$image-arm64"/*; do
+              refs="$refs $REGISTRY/$name@sha256:$(basename "$digest")"
+            done
+            # Tags and refs hold no spaces: split on purpose.
+            # shellcheck disable=SC2086
+            docker buildx imagetools create $tags $refs
+            for tag in "$@"; do docker buildx imagetools inspect "$REGISTRY/$name:$tag" >/dev/null; done
+          }
+          publish server majhi-server "$VERSION"
+          publish runner majhi-runner "$VERSION"
+          publish laya majhi-laya "$VERSION" "$VERSION-cpu"
+          publish laya-cuda majhi-laya "$VERSION-cuda"
+
+      # The tag and the release in one call, at the commit the images were built from. A rerun after a
+      # failure past this step finds the release and goes on.
+      - name: Create the tag and the release
+        run: |
+          set -eu
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "$VERSION exists already"
+          else
+            sh scripts/next-version.sh notes >"$RUNNER_TEMP/notes.md"
+            gh release create "$VERSION" --target "$GITHUB_SHA" --title "majhi $VERSION" \
+              --notes-file "$RUNNER_TEMP/notes.md" --latest=false
+          fi
+
+      # Last: installs and updates follow this pointer (GitHub's latest release).
+      - name: Mark it latest
+        run: gh release edit "$VERSION" --latest
