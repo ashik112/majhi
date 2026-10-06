@@ -1,6 +1,15 @@
-import { flowOf, type InsideSpec, type InsideView, type JourneyView, type MapView } from "@majhi/shared";
+import {
+  flowOf,
+  type InsideEntry,
+  type InsideSpec,
+  type InsideStep,
+  type InsideView,
+  type JourneyView,
+  type MapView,
+  STEPS_SHOWN,
+} from "@majhi/shared";
 import { FileCode, Layers } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { useToast } from "@/components/ui/toast";
 import { useEditorLabel, useOpenInEditor } from "@/lib/editor-queries";
 import { useReadInside } from "@/lib/map-queries";
@@ -341,7 +350,7 @@ function ReadInside({
       <>
         <Head
           title={entry.label}
-          sub={`${entry.file}:${entry.line}`}
+          sub={`${entry.raw !== "" ? `${entry.raw} · ` : ""}${entry.file}:${entry.line}`}
           mono
           badge={
             <span className="bdg" style={{ marginLeft: "auto" }}>
@@ -360,22 +369,9 @@ function ReadInside({
             </div>
             <div className="blk">
               <div className="glabel">What happens</div>
-              {steps.map((st, i) => (
-                <button
-                  key={st.key}
-                  type="button"
-                  className={`stp ${s.istep === i ? "on" : ""}`}
-                  data-isel-step={i}
-                  onClick={() => acts.pickInsideStep(i)}
-                >
-                  <span className="num">{i + 1}</span>
-                  <span>
-                    {st.text}
-                    <span className="f">{st.where}</span>
-                  </span>
-                </button>
-              ))}
+              <Steps key={entry.id} steps={steps} cur={s.istep} onPick={(i) => acts.pickInsideStep(i)} />
             </div>
+            {entry.members.length > 1 && <Members entry={entry} />}
             {jn !== undefined && (
               <div className="blk">
                 <div className="glabel">Journey</div>
@@ -423,20 +419,7 @@ function ReadInside({
               </div>
             </div>
           )}
-          <div className="blk">
-            <div className="glabel">Entry points</div>
-            {spec.entries.length === 0 && <div className="sub">None found.</div>}
-            {spec.entries.map((e) => (
-              <Row
-                key={e.id}
-                icon={<TriggerIcon kind={e.kind} />}
-                name={e.label}
-                label={e.kind}
-                mono
-                onClick={() => acts.pickEntry(e.id)}
-              />
-            ))}
-          </div>
+          <EntryList spec={spec} acts={acts} />
           <div className="blk">
             <div className="glabel">Services</div>
             {spec.services.map((svc) => {
@@ -496,5 +479,134 @@ function ReadInside({
         </button>
       </div>
     </>
+  );
+}
+
+const KIND_WORDS: Record<InsideEntry["kind"], string> = {
+  HTTP: "Requests",
+  SOCKET: "Live connections",
+  TOOL: "Agent tools",
+  SCHEDULE: "Timers",
+  QUEUE: "Jobs",
+  COMMAND: "Command line",
+};
+const KIND_ORDER: readonly InsideEntry["kind"][] = ["HTTP", "SOCKET", "TOOL", "SCHEDULE", "QUEUE", "COMMAND"];
+
+/** The story of an entry point: a few steps between parts of the project, the rest behind "Show more". */
+function Steps({
+  steps,
+  cur,
+  onPick,
+}: {
+  steps: readonly InsideStep[];
+  cur: number | null;
+  onPick: (i: number) => void;
+}) {
+  const [all, setAll] = useState(false);
+  const shown = all ? steps : steps.slice(0, STEPS_SHOWN);
+  return (
+    <>
+      {shown.map((st, i) => (
+        <button
+          key={st.key}
+          type="button"
+          className={`stp ${cur === i ? "on" : ""}`}
+          data-isel-step={i}
+          onClick={() => onPick(i)}
+        >
+          <span className="num">{i + 1}</span>
+          <span>
+            <b>{st.part}</b> {st.text}
+            {cur === i && (
+              <>
+                <span className="f">{st.where}</span>
+                {st.fns.map((f) => (
+                  <span key={`${f.file}:${f.line}:${f.id}`} className="f">
+                    {f.id} · {f.file}:{f.line}
+                  </span>
+                ))}
+              </>
+            )}
+          </span>
+        </button>
+      ))}
+      {steps.length > STEPS_SHOWN && (
+        <button type="button" className="link" onClick={() => setAll(!all)}>
+          <span className="nm">
+            {all ? "Show fewer steps" : `Show ${steps.length - STEPS_SHOWN} more steps`}
+          </span>
+        </button>
+      )}
+    </>
+  );
+}
+
+/** The routes, commands or tools grouped under one entry point, collapsed. */
+function Members({ entry }: { entry: InsideEntry }) {
+  const [open, setOpen] = useState(false);
+  const shown = open ? entry.members.slice(0, 60) : [];
+  return (
+    <div className="blk">
+      <button type="button" className="link" onClick={() => setOpen(!open)}>
+        <span className="nm">{open ? "Hide the list" : `Show all ${entry.count}`}</span>
+      </button>
+      {shown.map((m) => (
+        <div key={`${m.label}:${m.line}`} className="link" style={{ cursor: "default" }}>
+          <span className="nm mono" style={{ fontSize: 12 }}>
+            {m.label}
+          </span>
+          <span className="lb">
+            {m.file.split("/").pop()}:{m.line}
+          </span>
+        </div>
+      ))}
+      {open && entry.members.length > shown.length && (
+        <div className="sub">{entry.members.length - shown.length} more in the code.</div>
+      )}
+    </div>
+  );
+}
+
+/** Entry points by kind with their counts: the drawn ones first, the rest behind "Show more". */
+function EntryList({ spec, acts }: { spec: InsideSpec; acts: InsideActs }) {
+  const [more, setMore] = useState(false);
+  return (
+    <div className="blk">
+      <div className="glabel">Entry points</div>
+      {spec.entries.length === 0 && spec.more.length === 0 && <div className="sub">None found.</div>}
+      {KIND_ORDER.map((kind) => {
+        const drawn = spec.entries.filter((e) => e.kind === kind);
+        const rest = more ? spec.more.filter((e) => e.kind === kind) : [];
+        if (drawn.length === 0 && rest.length === 0) return null;
+        return (
+          <div key={kind}>
+            <div className="sub" style={{ margin: "6px 0 2px" }}>
+              {KIND_WORDS[kind]} · {spec.totals[kind] ?? drawn.length}
+            </div>
+            {drawn.map((e) => (
+              <Row
+                key={e.id}
+                icon={<TriggerIcon kind={e.kind} />}
+                name={e.label}
+                label={e.count > 1 ? `${e.count}` : ""}
+                onClick={() => acts.pickEntry(e.id)}
+              />
+            ))}
+            {rest.map((e) => (
+              <div key={e.id} className="link" style={{ cursor: "default" }}>
+                <TriggerIcon kind={e.kind} />
+                <span className="nm">{e.label}</span>
+                <span className="lb">{e.count > 1 ? `${e.count}` : ""}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+      {spec.more.length > 0 && (
+        <button type="button" className="link" onClick={() => setMore(!more)}>
+          <span className="nm">{more ? "Show fewer" : `Show ${spec.more.length} more`}</span>
+        </button>
+      )}
+    </div>
   );
 }

@@ -117,7 +117,7 @@ export function InsideWorld({
                 <TriggerIcon kind={e.kind} />
                 {e.kind}
               </span>
-              {base(e.file)}:{e.line}
+              <span className="e-raw">{e.raw !== "" ? e.raw : `${base(e.file)}:${e.line}`}</span>
             </div>
           </div>
         );

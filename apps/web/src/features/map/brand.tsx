@@ -23,11 +23,13 @@ import type { CSSProperties } from "react";
 import { LOGOS } from "./logos.generated";
 
 /** What starts something: the four kinds of entry point. */
-export const TRIGGERS = ["HTTP", "SCHEDULE", "QUEUE", "COMMAND"] as const;
+export const TRIGGERS = ["HTTP", "SOCKET", "TOOL", "SCHEDULE", "QUEUE", "COMMAND"] as const;
 export type Trigger = (typeof TRIGGERS)[number];
 
 const TRIGGER_ICON: Record<Trigger, LucideIcon> = {
   HTTP: Globe,
+  SOCKET: Route,
+  TOOL: Sparkles,
   SCHEDULE: Clock,
   QUEUE: Inbox,
   COMMAND: Terminal,

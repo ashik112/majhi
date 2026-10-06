@@ -1480,6 +1480,11 @@
   color: var(--fg-faint);
   white-space: nowrap;
 }
+.mapx .entry .e-s .e-raw {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .mapx .entry .e-s .bdg {
   height: 18px;
   font-family: var(--sans);
