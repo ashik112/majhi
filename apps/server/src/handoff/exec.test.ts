@@ -32,7 +32,7 @@ async function runWithWorld(command: string) {
   const exec = execInTask({
     spawner: localSpawner,
     base: { PATH: process.env.PATH ?? "/usr/bin:/bin" },
-    task: () => ({ folder }) as Task,
+    task: () => ({ folder, repos: [] }) as unknown as Task,
     repoMounts: async () => [],
     packages: async () => ({ mounts: [], env: { npm_config_cache: "/store/npm" }, home: "/store/home" }),
     tools: async () => ({ mounts: [], env: { MAJHI_TOOLS: "/tools/acme" } }),
