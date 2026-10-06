@@ -13,6 +13,7 @@ import {
   uncommitted,
 } from "./git.ts";
 import { KeyedQueue } from "./keyed-queue.ts";
+import { ensureWorktreeExcludes } from "./worktree-excludes.ts";
 
 export interface WorktreeRequest {
   /** The project's own checkout. */
@@ -39,6 +40,8 @@ export interface WorktreeResult {
   createdBranch: boolean;
   /** The commit a new branch was cut from. Absent when the branch already existed. */
   startCommit?: string;
+  /** The ref it was cut from (`main` or `origin/main`), as git names it. Absent with `startCommit`. */
+  startRef?: string;
   /** Things the owner should know, like a fetch that failed while offline. */
   warnings: string[];
 }
@@ -82,18 +85,33 @@ async function create(req: WorktreeRequest): Promise<WorktreeResult> {
   if (await localBranchExists(source, branch)) {
     await add(source, ["worktree", "add", path, branch], branch);
     await lockFor(req);
+    await excludeCaches(path, warnings);
     return { createdBranch: false, warnings };
   }
   if (remote !== undefined && (await remoteBranchExists(source, remote, branch))) {
     await add(source, ["worktree", "add", "--track", "-b", branch, path, `${remote}/${branch}`], branch);
     await lockFor(req);
+    await excludeCaches(path, warnings);
     return { createdBranch: false, warnings };
   }
-  const baseRef = await resolveBase(source, remote, base);
-  await add(source, ["worktree", "add", "--no-track", "-b", branch, path, baseRef], branch);
+  const chosen = await resolveBase(source, remote, base);
+  await add(source, ["worktree", "add", "--no-track", "-b", branch, path, chosen.ref], branch);
   await lockFor(req);
   const startCommit = (await git(path, ["rev-parse", "HEAD"])).trim();
-  return { createdBranch: true, startCommit, warnings };
+  if (chosen.diverged !== undefined) warnings.push(divergedNote(base, chosen.ref, chosen.diverged));
+  await excludeCaches(path, warnings);
+  return { createdBranch: true, startCommit, startRef: chosen.ref, warnings };
+}
+
+/** Not fatal: the checkpoint sets the excludes again, and its file-count limit backs it up. */
+async function excludeCaches(path: string, warnings: string[]): Promise<void> {
+  try {
+    await ensureWorktreeExcludes([path]);
+  } catch (err) {
+    warnings.push(
+      `Could not set up the cache excludes (${err instanceof Error ? err.message : String(err)}).`,
+    );
+  }
 }
 
 async function lockFor(req: WorktreeRequest): Promise<void> {
@@ -132,7 +150,6 @@ async function tryFetch(source: string, remote: string, ref: string): Promise<st
   }
 }
 
-/** The remote copy of the base when there is one, else the local branch, tag or commit. */
 /**
  * Whether a task could start from `base` in `source`: a remote or local branch, or a commit,
  * as this machine knows them now. No fetch, so it is fast enough to run on create.
@@ -148,11 +165,48 @@ export async function baseExists(source: string, base: string): Promise<boolean>
   );
 }
 
-async function resolveBase(source: string, remote: string | undefined, base: string): Promise<string> {
-  if (remote !== undefined && (await remoteBranchExists(source, remote, base))) return `${remote}/${base}`;
-  if (await localBranchExists(source, base)) return base;
-  if (await gitOk(source, ["rev-parse", "--verify", "--quiet", `${base}^{commit}`])) return base;
+/** Commits each side of a base has that the other lacks. */
+interface Divergence {
+  /** On the local branch only. */
+  ahead: number;
+  /** On the remote branch only. */
+  behind: number;
+}
+
+interface BaseChoice {
+  ref: string;
+  /** Set when local and remote each have commits the other lacks, and local was taken. */
+  diverged?: Divergence;
+}
+
+/**
+ * Where a new branch starts: the newer of the local base branch and its remote-tracking branch. A
+ * local branch the owner merged into and did not push is ahead of its remote, and starting from the
+ * remote would drop that work. Equal or remote ahead: the remote. Local ahead or diverged: local.
+ * With only one of them, that one; else a tag or commit.
+ */
+async function resolveBase(source: string, remote: string | undefined, base: string): Promise<BaseChoice> {
+  const hasRemote = remote !== undefined && (await remoteBranchExists(source, remote, base));
+  const hasLocal = await localBranchExists(source, base);
+  if (hasRemote && hasLocal) {
+    const remoteRef = `${remote}/${base}`;
+    const counts = (await git(source, ["rev-list", "--left-right", "--count", `${base}...${remoteRef}`]))
+      .trim()
+      .split("\t")
+      .map(Number);
+    const [ahead = 0, behind = 0] = counts;
+    if (ahead === 0) return { ref: remoteRef };
+    return behind === 0 ? { ref: base } : { ref: base, diverged: { ahead, behind } };
+  }
+  if (hasRemote) return { ref: `${remote}/${base}` };
+  if (hasLocal) return { ref: base };
+  if (await gitOk(source, ["rev-parse", "--verify", "--quiet", `${base}^{commit}`])) return { ref: base };
   throw new WorktreeProblem(`Base branch "${base}" was not found in ${source}.`);
+}
+
+function divergedNote(base: string, local: string, d: Divergence): string {
+  const plural = (n: number) => `${n} commit${n === 1 ? "" : "s"}`;
+  return `${base} on this machine and on the remote have diverged: ${base} has ${plural(d.ahead)} the remote does not, and the remote has ${plural(d.behind)} ${base} does not. The task started from ${local}.`;
 }
 
 async function add(source: string, args: string[], branch: string): Promise<void> {

@@ -74,6 +74,8 @@ export const taskRepos = sqliteTable(
     shippedInto: text("shipped_into"),
     /** The commit the branch was cut from. Null on tasks made before it was recorded. */
     startCommit: text("start_commit"),
+    /** The ref that commit was taken from (`main` or `origin/main`). */
+    startRef: text("start_ref"),
     /** A protected project the owner let agents write in, for this task. */
     writes: integer("writes", { mode: "boolean" }).notNull().default(false),
   },

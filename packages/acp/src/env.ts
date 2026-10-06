@@ -26,6 +26,8 @@ export interface GitAttribution {
   trailer?: boolean;
   /** A folder of hooks that takes the place of the repo's (`core.hooksPath`, for this run only). */
   hooks?: string;
+  /** A file of ignore patterns for this run's git (`core.excludesFile`), as the run sees its path. */
+  excludesFile?: string;
 }
 
 /**
@@ -98,8 +100,29 @@ export function buildEnv(
         env[`GIT_CONFIG_VALUE_${i}`] = value;
       });
     }
+    if (git.excludesFile !== undefined) {
+      Object.assign(env, withGitConfig(env, [["core.excludesFile", git.excludesFile]]));
+    }
   }
   return env;
+}
+
+/**
+ * The environment with git settings added in the command-line scope, after any `GIT_CONFIG_COUNT`
+ * entries already in it, so they win over the repo's own and nothing already there is lost.
+ */
+export function withGitConfig(
+  env: Readonly<Record<string, string>>,
+  settings: readonly (readonly [key: string, value: string])[],
+): Record<string, string> {
+  const had = Number(env.GIT_CONFIG_COUNT ?? 0);
+  const start = Number.isInteger(had) && had > 0 ? had : 0;
+  const out: Record<string, string> = { ...env, GIT_CONFIG_COUNT: String(start + settings.length) };
+  settings.forEach(([key, value], i) => {
+    out[`GIT_CONFIG_KEY_${start + i}`] = key;
+    out[`GIT_CONFIG_VALUE_${start + i}`] = value;
+  });
+  return out;
 }
 
 /** Puts the workspace's tools folder (`MAJHI_TOOLS`, when the run has one) first on PATH. */

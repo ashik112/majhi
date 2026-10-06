@@ -1,5 +1,15 @@
 # Progress
 
+## Task base and caches (branch `fix/task-base-and-caches`, built, not merged)
+
+Cause: PYZ-16 branched from `origin/main` while local `main` was 3 commits ahead, and pnpm 11 ignored the store variables majhi set, so `.pnpm-store/` landed in the worktree and a checkpoint committed 789 of its files.
+
+- **Task base.** `resolveBase` in `git/worktrees.ts` takes the newer of local and remote base. Diverged: local, plus one room line with counts. TASK.md says which ref and commit the branch started from (`task_repos.start_ref`, migration 175).
+- **Caches.** `git/worktree-excludes.ts` writes a per-worktree exclude file (the owner's global ignore patterns, then majhi's rules) in the worktree's own git entry. It is applied from outside with no write to the repo config: majhi's git helper passes `core.excludesFile`, runs get it through `GitAttribution.excludesFile`, and hand-off checks and the task terminal through `withExcludes`. It is written at worktree creation, before each checkpoint and at run start. The owner's checkout, its `.git/config` and `info/exclude` are not touched. Tracked folders are never excluded. `MAX_NEW_FILES` stays.
+- **pnpm store.** `cacheEnv` sets `pnpm_config_store_dir`, the only name pnpm 11 reads. Runs, the task terminal and the hand-off checks all use it.
+- **Tests.** `git/worktrees.test.ts` (local ahead, remote ahead, diverged) and `runs/checkpoint.test.ts` (stores never committed, tracked folders kept, owner's checkout untouched, `target` by language).
+- **Left.** Existing worktrees get the excludes at their next checkpoint. Files already committed in a past checkpoint stay in that branch.
+
 ## Workspace wiki, server side (branch `feat/wiki-workspace`, built, not merged)
 
 Phase 3 of `docs/design/wiki.md`, pulled forward. Server only: the web branch builds the screens on `wiki.system`, `wiki.answer` and `wiki.setRole`.

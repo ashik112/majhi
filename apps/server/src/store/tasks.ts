@@ -232,6 +232,7 @@ export class TaskRepo {
             shippedHead: r.shipped?.head ?? null,
             shippedInto: r.shipped?.into ?? null,
             startCommit: r.startCommit ?? null,
+            startRef: r.startRef ?? null,
             writes: r.writes === true,
           })
           .run();
@@ -701,10 +702,16 @@ export class TaskRepo {
     worktree: string,
     createdBranch: boolean,
     startCommit?: string,
+    startRef?: string,
   ): void {
     this.db
       .update(taskRepos)
-      .set({ worktree, createdBranch, ...(startCommit === undefined ? {} : { startCommit }) })
+      .set({
+        worktree,
+        createdBranch,
+        ...(startCommit === undefined ? {} : { startCommit }),
+        ...(startRef === undefined ? {} : { startRef }),
+      })
       .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
       .run();
   }
@@ -1052,6 +1059,7 @@ function buildTask(
         ? {}
         : { shipped: { head: r.shippedHead, into: r.shippedInto } }),
       ...(r.startCommit === null ? {} : { startCommit: r.startCommit }),
+      ...(r.startRef === null ? {} : { startRef: r.startRef }),
       ...(r.writes ? { writes: true } : {}),
       ...(r.mrUrl === null || r.mrNumber === null || r.mrState === null
         ? {}

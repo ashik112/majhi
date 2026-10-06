@@ -1,6 +1,7 @@
 import type { BaseEnv, RunMount, Spawner } from "@majhi/acp";
 import { detectSecrets, type Task } from "@majhi/shared";
 import { errorMessage } from "../errors.ts";
+import { withExcludes } from "../git/worktree-excludes.ts";
 import type { PackageStoreFor } from "../runs/package-cache.ts";
 import { taskTerminalEnv } from "../terminal/task-terminal.ts";
 import { HANDOFF_CPU_SHARES } from "./limits.ts";
@@ -64,7 +65,10 @@ export function execInTask(deps: ExecDeps) {
       const store = await deps.packages?.(task);
       spawned = await deps.spawner({
         command: { command: "/bin/sh", args: ["-c", command] },
-        env: { ...store?.env, ...taskTerminalEnv(deps.base), ...shim?.env },
+        env: await withExcludes(
+          { ...store?.env, ...taskTerminalEnv(deps.base), ...shim?.env },
+          task.repos.flatMap((r) => r.worktree ?? []),
+        ),
         cwd,
         task: taskId,
         ...(limits === undefined

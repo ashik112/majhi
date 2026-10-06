@@ -283,6 +283,8 @@ export const TaskRepoSchema = z.object({
   shipped: z.object({ head: z.string(), into: z.string() }).optional(),
   /** The commit majhi cut the branch from. Absent on older tasks and on branches the owner named. */
   startCommit: z.string().optional(),
+  /** The ref that commit was taken from: the local base branch or its remote-tracking branch. */
+  startRef: z.string().optional(),
   /** A protected project the owner let agents write in, for this task. Else agents get it read-only. */
   writes: z.boolean().optional(),
   /** Set once the MR is open. */

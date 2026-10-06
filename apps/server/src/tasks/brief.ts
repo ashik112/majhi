@@ -98,7 +98,7 @@ export function renderTaskMd(
     for (const r of task.repos) {
       const worktree = r.worktree ?? join(task.folder, r.project);
       lines.push(
-        `- ${r.project}: worktree \`${worktree}\`, branch \`${r.branch}\` ${r.createdBranch ? "(new, from" : "(existing; base"} \`${r.base}\`)`,
+        `- ${r.project}: worktree \`${worktree}\`, branch \`${r.branch}\` ${r.createdBranch ? "(new, from" : "(existing; base"} \`${r.base}\`)${startedFrom(r)}`,
       );
     }
   }
@@ -312,6 +312,12 @@ export const BRIEF_PROMPT =
 
 /** Prepended to the first prompt of a session that has no earlier conversation. */
 export const CONTEXT_PROMPT = "First read TASK.md in this folder for the task and its rules.";
+
+/** `. Started from \`origin/main\` at \`abc1234\`.` once majhi has recorded where the branch was cut. */
+function startedFrom(r: Pick<Task["repos"][number], "startRef" | "startCommit">): string {
+  if (r.startRef === undefined || r.startCommit === undefined) return "";
+  return `. Started from \`${r.startRef}\` at \`${r.startCommit.slice(0, 12)}\`.`;
+}
 
 /** "Starting branch: main.", or with more repos "Starting branches: main (acme-api), develop (acme-web)." */
 export function startingBranches(repos: readonly Pick<Task["repos"][number], "project" | "base">[]): string {

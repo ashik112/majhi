@@ -1790,6 +1790,14 @@ CREATE TABLE wiki_answers (
 );
 `,
   },
+  {
+    // The ref a task's start commit was taken from (`main` or `origin/main`), so TASK.md can say which.
+    id: 175,
+    name: "task repo start ref",
+    sql: `
+ALTER TABLE task_repos ADD COLUMN start_ref TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

@@ -129,3 +129,18 @@ export async function repoConfigIsPlain(cwd: string, env: NodeJS.ProcessEnv): Pr
     return false;
   }
 }
+
+/** The file next to a linked worktree's own git entry that holds its cache excludes. */
+export const EXCLUDES_FILE = "majhi-exclude";
+
+/**
+ * The cache-excludes file of `cwd` when it is the top of a linked task worktree that has one. majhi's
+ * git passes it as `core.excludesFile`, so nothing is written into the repo's config. The owner's own
+ * checkout (git dir and common dir the same) never has one.
+ */
+export async function worktreeExcludes(cwd: string, env: NodeJS.ProcessEnv): Promise<string | undefined> {
+  const dirs = await gitDirsOf(cwd, env);
+  if (dirs === undefined || dirs.gitDir === dirs.commonDir) return undefined;
+  const file = join(dirs.gitDir, EXCLUDES_FILE);
+  return (await exists(file)) ? file : undefined;
+}
