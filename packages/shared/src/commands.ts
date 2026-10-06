@@ -326,6 +326,7 @@ import {
   RoomPatchSchema,
   SettingsSchema,
   TurnsPatchSchema,
+  WikiPatchSchema,
 } from "./settings.ts";
 import {
   SkillAgentInputSchema,
@@ -1325,7 +1326,7 @@ export const commands = {
   "orgs.update": {
     risk: "change",
     summary:
-      "Edit an org: name, color, task key, base branch, commit identity, agent attribution in commits, context threshold and cap, automatic resume, loop guard, turn limits, model and effort tiers, default team or which tasks leads may start. null clears an optional field",
+      "Edit an org: name, color, task key, base branch, commit identity, agent attribution in commits, whether it has a wiki, context threshold and cap, automatic resume, loop guard, turn limits, model and effort tiers, default team or which tasks leads may start. null clears an optional field",
     input: z.object({
       id: IdSchema,
       name: OrgConfigSchema.shape.name.optional(),
@@ -1339,6 +1340,8 @@ export const commands = {
       resume: OrgConfigSchema.shape.resume.nullable().optional(),
       /** Overrides majhi's `commits.attribution` for this org's commits. */
       commits: OrgConfigSchema.shape.commits.nullable().optional(),
+      /** Overrides majhi's `wiki.enabled` for this org. */
+      wiki: OrgConfigSchema.shape.wiki.nullable().optional(),
       /** Overrides majhi's `rooms.max_agent_turns` for this org's tasks. */
       rooms: OrgConfigSchema.shape.rooms.nullable().optional(),
       /** Overrides majhi's `turns` limits for this org's agents, field by field. */
@@ -2925,13 +2928,14 @@ export const commands = {
   "settings.set": {
     risk: "change",
     summary:
-      "Change context budget, limits, turn limits (turns.max_length and turns.idle like 2h, 25m or off; turns.max_tool_calls, 0 is off), resume, commits (agent attribution), room, memory, editor, cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, notifications (mac, browser, sound, muted kinds, quiet_from, quiet_to), container cpus, memory, per_task, weekly budgets: budgets.orgs.<org> or budgets.accounts.<account> as { tokens?, cost? }, null removes one). Policy changes use policy.set",
+      "Change context budget, limits, turn limits (turns.max_length and turns.idle like 2h, 25m or off; turns.max_tool_calls, 0 is off), resume, commits (agent attribution), wiki (enabled), room, memory, editor, cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, notifications (mac, browser, sound, muted kinds, quiet_from, quiet_to), container cpus, memory, per_task, weekly budgets: budgets.orgs.<org> or budgets.accounts.<account> as { tokens?, cost? }, null removes one). Policy changes use policy.set",
     input: z.object({
       context: ContextPatchSchema.optional(),
       limits: LimitsPatchSchema.optional(),
       turns: TurnsPatchSchema.optional(),
       resume: ResumePatchSchema.optional(),
       commits: CommitsPatchSchema.optional(),
+      wiki: WikiPatchSchema.optional(),
       rooms: RoomPatchSchema.optional(),
       memory: MemoryPatchSchema.optional(),
       editor: EditorPatchSchema.optional(),
