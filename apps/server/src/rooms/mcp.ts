@@ -343,7 +343,7 @@ export function roomMcpRoutes(deps: RoomMcpDeps): Hono {
       try {
         return c.json(
           await containers.containers.taskDocker(caller.task, body.data, {
-            ask: (image) => containers.askImage(caller, image),
+            ask: (image, service) => containers.askImage(caller, image, service),
             signal: c.req.raw.signal,
           }),
         );

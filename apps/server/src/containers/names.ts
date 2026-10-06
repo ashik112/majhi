@@ -22,8 +22,16 @@ export interface ContainerNames {
   previewApp: string;
   /** The internal network of the task's services. */
   network: string;
-  /** A service container. Also its network alias is `name`. */
+  /** A container of the task's own (a service, a script's or compose's), `majhi-<key>-c-<name>`. Its network alias is `name`. */
   service(name: string): string;
+  /** Prefix of every such container. */
+  containerPrefix: string;
+  /** The holder of that container: it owns the network namespace and the guard, `majhi-<key>-h-<name>`. */
+  holder(name: string): string;
+  /** Prefix of every holder. */
+  holderPrefix: string;
+  /** Prefix of every image a task's scripts built. */
+  imagePrefix: string;
   /** The forwarder container of a service on the owner's computer (SPEC 5.14), by connection id. */
   hostForward(id: string): string;
   /** The network that gives that forwarder its route to the computer: only forwarders join it, never a runner. */
@@ -46,7 +54,11 @@ export function containerNames(task: string): ContainerNames {
     previewContainer: `majhi-preview-${key}`,
     previewApp: `majhi-preview-${key}-app`,
     network: `majhi-${key}`,
-    service: (name) => `majhi-${key}-${name}`,
+    service: (name) => `majhi-${key}-c-${name}`,
+    containerPrefix: `majhi-${key}-c-`,
+    holder: (name) => `majhi-${key}-h-${name}`,
+    holderPrefix: `majhi-${key}-h-`,
+    imagePrefix: `majhi-${key}-img-`,
     hostForward: (id) => `majhi-${key}-host-${id}`,
     hostNetwork: `majhi-${key}-host`,
     volume: (name) => `majhi-${key}-data-${name}`,

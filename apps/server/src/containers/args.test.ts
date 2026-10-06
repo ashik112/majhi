@@ -19,6 +19,7 @@ import {
   previewRunArgs,
   type Safety,
   serviceRunArgs,
+  taskHoldRunArgs,
   volumeCreateArgs,
 } from "./args.ts";
 
@@ -58,6 +59,13 @@ const preview = () =>
   });
 const holder = (subnets: string[] = ["192.168.171.0/24"]) =>
   previewHoldRunArgs(safety, limits, { port: 7070, image: "majhi-runner:dev", taskSubnets: subnets });
+const taskHolder = (name = "db", aliases: string[] = []) =>
+  taskHoldRunArgs(safety, limits, {
+    name,
+    aliases,
+    taskSubnets: ["192.168.171.0/24"],
+    image: "majhi-runner:dev",
+  });
 const service = () =>
   serviceRunArgs(safety, limits, {
     name: "db",
@@ -162,6 +170,62 @@ describe("what majhi builds for containers", () => {
     });
     expect(s.flags).toContain("A=--privileged");
     expect(s.command).toEqual(["--privileged", "-v", "/:/host"]);
+  });
+});
+
+describe("the holder of a task's container", () => {
+  const refused = (parts: DockerParts) => () => assertSafe(parts, safety);
+  it("is the guarded way onto the task network: runner network for the route out, the task network under the container's names, nothing published", () => {
+    const h = taskHolder("db", ["pg"]);
+    expect(h.flags).toContain("--detach");
+    expect(values(h, "--name")).toEqual(["majhi-acm-1-h-db"]);
+    expect(values(h, "--network")).toEqual([
+      "majhi-runners",
+      "name=majhi-acm-1,alias=db,alias=majhi-acm-1-c-db,alias=pg",
+    ]);
+    expect(values(h, "--cap-add")).toEqual(["NET_ADMIN"]);
+    expect(h.flags).not.toContain("--publish");
+    expect(h.command).toEqual([
+      "node",
+      "/usr/local/lib/majhi/netguard.mjs",
+      "--hold",
+      "--allow",
+      "192.168.171.0/24",
+    ]);
+  });
+
+  it("puts the service in the holder's network namespace, so it can never run without the guard", () => {
+    expect(values(service(), "--network")).toEqual(["container:majhi-acm-1-h-db"]);
+    expect(values(service(), "--name")).toEqual(["majhi-acm-1-c-db"]);
+    expect(values(service(), "--label")).toContain("majhi.container=taskrun");
+  });
+
+  it("is refused when widened: another network, a published port, a mount, a capability, a command or another task's names", () => {
+    const h = taskHolder();
+    expect(() => assertSafe(h, safety)).not.toThrow();
+    for (const bad of [
+      plus(h, "--publish", "127.0.0.1::80"),
+      plus(h, "--mount", "type=volume,target=/x"),
+      plus(h, "--cap-add", "NET_RAW"),
+      plus(h, "--network", "majhi-acm-2"),
+      replaced(h, "--network", "host"),
+      replaced(h, "--name", "majhi-acm-2-h-db"),
+      replaced(h, "--name", "majhi-acm-1-c-db"),
+      without(h, "--read-only"),
+      { ...h, command: ["sh", "-c", "sleep 1"] },
+      { ...h, command: ["node", "/usr/local/lib/majhi/netguard.mjs", "--hold", "--allow", "10.0.0.0/8"] },
+      { ...h, command: ["node", "/usr/local/lib/majhi/netguard.mjs", "--hold"] },
+    ]) {
+      expect(refused(bad)).toThrow(ContainerRefused);
+    }
+    // An alias that is not a host name, or more names than a task container needs.
+    expect(() => taskHolder("db", ["Bad Name"])).toThrow(ContainerRefused);
+    expect(() => taskHolder("db", ["a", "b", "c", "d", "e", "f", "g", "h"])).toThrow(ContainerRefused);
+  });
+
+  it("is the only container that may run detached", () => {
+    expect(refused(plus(service(), "--detach"))).toThrow(ContainerRefused);
+    expect(refused(plus(preview(), "--detach"))).toThrow(ContainerRefused);
   });
 });
 

@@ -31,6 +31,20 @@ export function sameImage(a: string, b: string): boolean {
   return normalizeImage(a) === normalizeImage(b);
 }
 
+/**
+ * Allowing an image. `org` limits it to one workspace (`private` for tasks with no workspace); left
+ * out it holds everywhere. `service` is the container or compose service that asked: the owner's card names it.
+ */
+export const ContainerImageScopeSchema = z.object({
+  image: ImageRefSchema,
+  org: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]{0,62}$/)
+    .optional(),
+  service: z.string().max(60).optional(),
+});
+export type ContainerImageScope = z.infer<typeof ContainerImageScopeSchema>;
+
 /** A service or volume name. Part of docker names and network aliases, so lowercase and short. */
 export const ContainerNameSchema = z
   .string()
@@ -189,10 +203,45 @@ export const TaskDockerRequestSchema = z.strictObject({
 });
 export type TaskDockerRequest = z.infer<typeof TaskDockerRequestSchema>;
 
-/** What the shim prints and exits with. */
+/**
+ * Why majhi refused a task's `docker` call, for a script or an agent to read and act on. The shim
+ * prints it as `docker: [code] message`. `refused` is any other refusal, with its reason in the message.
+ */
+export const TaskDockerErrorCodeSchema = z.enum([
+  "refused",
+  "image_not_allowed",
+  "flag_not_allowed",
+  "privileged",
+  "host_network",
+  "network_not_allowed",
+  "namespace_not_allowed",
+  "device_not_allowed",
+  "capability_not_allowed",
+  "socket_mount",
+  "mount_outside",
+  "env_file_outside",
+  "limit_reached",
+  "command_not_available",
+  "compose_file_not_found",
+  "compose_invalid",
+  "compose_unsupported_key",
+  "compose_unsupported_flag",
+  "compose_privileged",
+  "compose_host_network",
+  "compose_device",
+  "compose_socket_mount",
+  "compose_mount_outside",
+  "compose_env_file_outside",
+  "compose_build_outside",
+  "compose_dependency_failed",
+]);
+export type TaskDockerErrorCode = z.infer<typeof TaskDockerErrorCodeSchema>;
+
+/** What the shim prints and exits with. `error` is set when majhi refused the call. */
 export const TaskDockerResultSchema = z.strictObject({
   code: z.number().int(),
   stdout: z.string(),
   stderr: z.string(),
+  error: z.strictObject({ code: TaskDockerErrorCodeSchema, message: z.string() }).optional(),
 });
 export type TaskDockerResult = z.infer<typeof TaskDockerResultSchema>;

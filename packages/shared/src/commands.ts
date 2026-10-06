@@ -109,6 +109,7 @@ import {
   VariableNameSchema,
 } from "./connections.ts";
 import {
+  ContainerImageScopeSchema,
   ContainerInfoSchema,
   ContainerNameSchema,
   ImageRefSchema,
@@ -2408,14 +2409,15 @@ export const commands = {
   },
   "containers.images.allow": {
     risk: "change",
-    summary: "Allow an image for service containers that majhi runs for agents",
-    input: z.object({ image: ImageRefSchema }),
+    summary:
+      "Allow an image for the containers that majhi runs for agents (services, scripts, compose). With org, only in that workspace",
+    input: ContainerImageScopeSchema,
     output: z.object({ images: z.array(ImageRefSchema) }),
   },
   "containers.images.remove": {
     risk: "change",
     summary: "Stop allowing an image for service containers. Running ones keep running until stopped",
-    input: z.object({ image: ImageRefSchema }),
+    input: z.object({ image: ImageRefSchema, org: ContainerImageScopeSchema.shape.org }),
     output: z.object({ images: z.array(ImageRefSchema) }),
   },
   "containers.preview.build": {

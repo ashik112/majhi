@@ -10,6 +10,7 @@ import {
   IdSchema,
   ImageRefSchema,
   MAJHI_OWN_PORTS,
+  type TaskDockerErrorCode,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import { containerNames } from "./names.ts";
@@ -28,10 +29,18 @@ import { containerNames } from "./names.ts";
  */
 
 /** A call majhi would make was refused. The message says why, for the agent. */
-export class ContainerRefused extends UserError {}
+export class ContainerRefused extends UserError {
+  constructor(
+    message: string,
+    /** What the script reads to tell this refusal from another. */
+    readonly refusal: TaskDockerErrorCode = "refused",
+  ) {
+    super(message);
+  }
+}
 
-export const refuse = (message: string): never => {
-  throw new ContainerRefused(message);
+export const refuse = (message: string, code: TaskDockerErrorCode = "refused"): never => {
+  throw new ContainerRefused(message, code);
 };
 
 /** A docker call split the way docker parses it: words, flags, then what follows. */
@@ -256,6 +265,7 @@ export function checkLimits(flags: Flag[]): void {
 
 const RUN_FLAGS: FlagTable = {
   "--rm": false,
+  "--detach": false,
   "--name": true,
   "--label": true,
   "--network": true,
@@ -311,7 +321,8 @@ function checkRun(parts: DockerParts, s: Safety): void {
   // hold to; every other container, the usual few.
   const labelled = all(flags, "--label");
   const forwarder = labelled.includes("majhi.container=hostfwd");
-  const holder = labelled.includes("majhi.container=previewhold");
+  const holder =
+    labelled.includes("majhi.container=previewhold") || labelled.includes("majhi.container=taskhold");
   for (const cap of all(flags, "--cap-add")) {
     if (
       !CAPS.includes(cap) &&
@@ -329,7 +340,9 @@ function checkRun(parts: DockerParts, s: Safety): void {
   if (!/^[1-9][0-9]{0,2}$/.test(pids) || Number(pids) > PIDS_LIMIT)
     refuse(`The process limit ${pids} is not allowed.`);
   checkLimits(flags);
-  const kind = checkLabels(flags, s, ["preview", "previewhold", "service", "dbcheck", "hostfwd"]);
+  const kind = checkLabels(flags, s, ["preview", "previewhold", "taskhold", "taskrun", "dbcheck", "hostfwd"]);
+  // Only a task container's holder runs detached: majhi waits for its guard, then starts the container in it.
+  if (is(flags, "--detach") && kind !== "taskhold") refuse("The docker flag --detach is not allowed here.");
   const name = one(flags, "--name");
   checkKeyValues(all(flags, "--env"), 32, 4_000, "environment variables");
   if (parts.command.length > 32 || parts.command.some((a) => a.length > 2_000 || a.includes("\u0000"))) {
@@ -371,6 +384,10 @@ function checkRun(parts: DockerParts, s: Safety): void {
     checkPreviewHold(parts, flags, s, { name, networks, mounts, publishes, pull });
     return;
   }
+  if (kind === "taskhold") {
+    checkTaskHold(parts, flags, s, { name, networks, mounts, publishes, pull });
+    return;
+  }
   if (kind !== "hostfwd" && is(flags, "--add-host")) refuse("The docker flag --add-host is not allowed.");
   if (kind === "hostfwd") {
     checkHostForward(parts, flags, s, { name, networks, mounts, publishes, pull });
@@ -397,8 +414,9 @@ function checkRun(parts: DockerParts, s: Safety): void {
     return;
   }
 
-  // A service: the task's own network only, nothing published, only the task's named volumes.
-  const prefix = `majhi-${names.key}-`;
+  // A service (a `taskrun` container started with service_start): it runs in its holder's network namespace (the holder owns the task network and the guard),
+  // publishes nothing, and mounts only the task's named volumes.
+  const prefix = names.containerPrefix;
   const service = name.startsWith(prefix) ? name.slice(prefix.length) : "";
   if (!matches(ContainerNameSchema, service) || service === "preview") {
     refuse(`A service container must be named ${prefix}<name>.`);
@@ -406,9 +424,8 @@ function checkRun(parts: DockerParts, s: Safety): void {
   if (pull !== undefined) refuse("A service cannot set --pull.");
   if (publishes.length > 0)
     refuse("A service port is never published. Runners reach it through the task network.");
-  const joined = SERVICE_NETWORK.exec(networks[0] ?? "");
-  if (networks.length !== 1 || joined === null || joined[1] !== names.network || joined[2] !== service) {
-    refuse(`A service joins ${names.network} as ${service}, and no other network.`);
+  if (networks.length !== 1 || networks[0] !== `container:${names.holder(service)}`) {
+    refuse(`A service runs in the network of ${names.holder(service)}, and no other.`);
   }
   if (mounts.length > 4) refuse("A service has at most 4 volumes.");
   for (const mount of mounts) {
@@ -485,6 +502,70 @@ function checkPreviewHold(
       refuse("A preview's holder may be told only the task network's subnets.");
   }
   if (!matches(ImageRefSchema, parts.image ?? "")) refuse("A preview's holder runs majhi's runner image.");
+}
+
+/** A network alias a task container is reached by. Lowercase, so it is a valid host name. */
+const ALIAS = /^[a-z0-9][a-z0-9_.-]{0,62}$/;
+const MAX_ALIASES = 8;
+
+/**
+ * The holder of a task's container (see docs/design/task-network.md): the same guard as a preview's
+ * holder, with the task network under the container's names and nothing published. It runs detached:
+ * majhi waits for its guard to say it is set, then starts the container in its network namespace.
+ */
+function checkTaskHold(
+  parts: DockerParts,
+  flags: Flag[],
+  s: Safety,
+  found: {
+    name: string;
+    networks: string[];
+    mounts: string[];
+    publishes: string[];
+    pull: string | undefined;
+  },
+): void {
+  const names = containerNames(s.task);
+  const user = found.name.startsWith(names.holderPrefix) ? found.name.slice(names.holderPrefix.length) : "";
+  if (!ALIAS.test(user)) refuse(`A holder is named ${names.holderPrefix}<name>.`);
+  if (found.pull !== "never") refuse("A holder must run with --pull never.");
+  if (found.mounts.length > 0 || found.publishes.length > 0)
+    refuse("A holder has no mount and publishes no port.");
+  if (!is(flags, "--read-only")) refuse("A holder runs with a read-only root.");
+  if (all(flags, "--cap-add").join() !== "NET_ADMIN") refuse("A holder adds NET_ADMIN, nothing else.");
+  if (all(flags, "--env").length > 0) refuse("A holder takes no environment.");
+  if (is(flags, "--add-host") || is(flags, "--tmpfs"))
+    refuse("A holder takes no host name or scratch folder.");
+  // The runner network is the one route out, guarded; the task network is where everything of the task reaches it.
+  const [first, second, ...more] = found.networks;
+  const [net, ...aliases] = (second ?? "").split(",");
+  if (
+    first !== s.runnerNetwork ||
+    more.length > 0 ||
+    net !== `name=${names.network}` ||
+    aliases.length === 0 ||
+    aliases.length > MAX_ALIASES ||
+    aliases[0] !== `alias=${user}` ||
+    aliases.some((a) => !a.startsWith("alias=") || !ALIAS.test(a.slice("alias=".length)))
+  ) {
+    refuse(
+      `A holder joins ${s.runnerNetwork} and ${names.network} under its own names, and no other network.`,
+    );
+  }
+  const [node, script, hold, ...rest] = parts.command;
+  if (node !== "node" || script !== GUARD_SCRIPT || hold !== "--hold")
+    refuse("A holder runs only majhi's network guard.");
+  if (rest.length === 0) refuse("A holder is told the task network's subnet.");
+  for (let i = 0; i < rest.length; i += 2) {
+    // A network of the task is a /16 or smaller: nothing as wide as 10.0.0.0/8 or 172.16.0.0/12 is one.
+    if (
+      rest[i] !== "--allow" ||
+      !isIpv4Cidr(rest[i + 1] ?? "") ||
+      Number((rest[i + 1] ?? "").split("/")[1]) < 16
+    )
+      refuse("A holder may be told only the task network's subnets.");
+  }
+  if (!matches(ImageRefSchema, parts.image ?? "")) refuse("A holder runs majhi's runner image.");
 }
 
 /**
@@ -573,11 +654,17 @@ function inside(child: string, parent: string): boolean {
  * A path a build reads: absolute, inside the task folder with its symlinks followed, and not
  * holding or inside majhi's config folder, the secrets key or the socket (the refusals of a runner's mounts).
  */
-export function assertReadable(path: string, s: Safety, what: string): void {
-  if (!isAbsolute(path)) refuse(`The ${what} must be an absolute path.`);
+export function assertReadable(
+  path: string,
+  s: Safety,
+  what: string,
+  outside: TaskDockerErrorCode = "refused",
+): void {
+  if (!isAbsolute(path)) refuse(`The ${what} must be an absolute path.`, outside);
   const roots = pathForms(s.taskFolder);
   for (const form of pathForms(path)) {
-    if (!roots.some((root) => inside(form, root))) refuse(`The ${what} must be inside the task folder.`);
+    if (!roots.some((root) => inside(form, root)))
+      refuse(`The ${what} must be inside the task folder.`, outside);
   }
   try {
     runMounts(
@@ -591,7 +678,7 @@ export function assertReadable(path: string, s: Safety, what: string): void {
       },
     );
   } catch (err) {
-    refuse(`The ${what} is not allowed: ${err instanceof Error ? err.message : String(err)}`);
+    refuse(`The ${what} is not allowed: ${err instanceof Error ? err.message : String(err)}`, outside);
   }
 }
 
@@ -706,7 +793,16 @@ export function assertSafe(parts: DockerParts, s: Safety): void {
 // Builders
 
 const labelFlags = (
-  kind: ContainerKind | "dbcheck" | "hostfwd" | "previewhold" | "image" | "network" | "volume",
+  kind:
+    | ContainerKind
+    | "taskrun"
+    | "dbcheck"
+    | "hostfwd"
+    | "previewhold"
+    | "taskhold"
+    | "image"
+    | "network"
+    | "volume",
   task: string,
 ): string[] => ["--label", `majhi.container=${kind}`, "--label", `majhi.task=${task}`];
 
@@ -717,7 +813,7 @@ function safe(parts: DockerParts, s: Safety): DockerParts {
 
 /** The flags every container has. */
 function containerFlags(
-  kind: "preview" | "service" | "dbcheck" | "hostfwd",
+  kind: "preview" | "taskrun" | "dbcheck" | "hostfwd",
   name: string,
   limits: Limits,
   s: Safety,
@@ -889,6 +985,63 @@ export function previewRunArgs(s: Safety, limits: Limits, spec: PreviewRunSpec):
   );
 }
 
+export interface TaskHoldSpec {
+  /** The container's own name: its holder is `majhi-<key>-h-<name>`, and it is reached as `name` on the task network. */
+  name: string;
+  /** More names the task network answers to (a compose `container_name` or network alias). */
+  aliases?: readonly string[] | undefined;
+  /** The task network's subnets. */
+  taskSubnets: readonly string[];
+  /** The runner image, which holds netguard. */
+  image: string;
+}
+
+/** The names a task container answers to on the task network: its own, its docker name and what it asked for, once each. */
+export function taskAliases(task: string, name: string, extra: readonly string[] = []): string[] {
+  const names = containerNames(task);
+  return [...new Set([name, names.service(name), ...extra])];
+}
+
+/** The holder of one task container: detached, on the runner network (the guarded route out) and the task network. */
+export function taskHoldRunArgs(s: Safety, limits: Limits, spec: TaskHoldSpec): DockerParts {
+  const names = containerNames(s.task);
+  const aliases = taskAliases(s.task, spec.name, spec.aliases);
+  return safe(
+    {
+      verb: ["run"],
+      flags: [
+        "--rm",
+        "--detach",
+        "--name",
+        names.holder(spec.name),
+        ...labelFlags("taskhold", s.task),
+        "--cap-drop",
+        "ALL",
+        "--cap-add",
+        "NET_ADMIN",
+        "--security-opt",
+        "no-new-privileges",
+        "--pids-limit",
+        "64",
+        "--memory",
+        "64m",
+        "--cpus",
+        String(Math.min(limits.cpus, 0.5)),
+        "--read-only",
+        "--pull",
+        "never",
+        "--network",
+        s.runnerNetwork,
+        "--network",
+        `name=${names.network},${aliases.map((a) => `alias=${a}`).join(",")}`,
+      ],
+      image: spec.image,
+      command: ["node", GUARD_SCRIPT, "--hold", ...spec.taskSubnets.flatMap((c) => ["--allow", c])],
+    },
+    s,
+  );
+}
+
 export interface ServiceRunSpec {
   name: string;
   image: string;
@@ -897,16 +1050,16 @@ export interface ServiceRunSpec {
   volumes?: { name: string; path: string }[] | undefined;
 }
 
-/** A service: only on the task's internal network under its own name, no published port, only the task's volumes. */
+/** A service: in its holder's network namespace (the task network under its own name, guarded), no published port, only the task's volumes. */
 export function serviceRunArgs(s: Safety, limits: Limits, spec: ServiceRunSpec): DockerParts {
   const names = containerNames(s.task);
   return safe(
     {
       verb: ["run"],
       flags: [
-        ...containerFlags("service", names.service(spec.name), limits, s),
+        ...containerFlags("taskrun", names.service(spec.name), limits, s),
         "--network",
-        `name=${names.network},alias=${spec.name}`,
+        `container:${names.holder(spec.name)}`,
         ...(spec.volumes ?? []).flatMap((v) => [
           "--mount",
           `type=volume,source=${names.volume(v.name)},target=${v.path}`,

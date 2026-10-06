@@ -14,7 +14,7 @@ import type {
   TaskDockerRequest,
   TaskDockerResult,
 } from "@majhi/shared";
-import { sameImage } from "@majhi/shared";
+import { sameImage, type TaskDockerErrorCode } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import type { ProcessManager } from "../processes/manager.ts";
 import {
@@ -32,8 +32,11 @@ import {
   previewRunArgs,
   type Safety,
   serviceRunArgs,
+  taskAliases,
+  taskHoldRunArgs,
   volumeCreateArgs,
 } from "./args.ts";
+import { type ComposeHost, composeCall } from "./compose-run.ts";
 import type { DockerCli, TaskCallResult } from "./docker.ts";
 import { containerNames } from "./names.ts";
 import { lastPrune, PRUNE_EVERY_MS, pruneBuilderCache, pruneImages, savePrune } from "./prune.ts";
@@ -42,6 +45,7 @@ import {
   showUserNames,
   TASK_CONTAINER_ID,
   TASK_RUN_KIND,
+  type TaskDockerContext,
   type TaskDockerPlan,
   translateTaskDocker,
 } from "./task-docker.ts";
@@ -49,7 +53,10 @@ import {
 export const NOT_IN_DOCKER = "Containers need majhi running in Docker.";
 
 /** The docker calls the service makes. A test gives it a fake. */
-export type ContainerDocker = Pick<DockerCli, "exec" | "connect" | "guard" | "create" | "attached" | "task">;
+export type ContainerDocker = Pick<
+  DockerCli,
+  "exec" | "connect" | "guard" | "create" | "attached" | "task" | "hold"
+>;
 
 export interface ContainerServiceDeps {
   /** Absent when majhi does not run in Docker: every call then says so. */
@@ -74,11 +81,20 @@ export interface ContainerServiceDeps {
   portWaitMs?: number;
 }
 
+/** A container a script started, as `list` shows it: the name the script gave it. */
+export interface ScriptContainer {
+  name: string;
+  image: string;
+  status: string;
+  /** True for a compose service. */
+  compose: boolean;
+}
+
 /** What `serviceStart` did: started it, or asked the owner for the image first. */
 export type ServiceStartResult = { status: "started"; container: ContainerInfo } | { status: "asked" };
 
 /** Asks for an image the owner has not allowed yet, through an approval card. */
-export type AskImage = (image: string) => Promise<"allowed" | "pending">;
+export type AskImage = (image: string, service?: string) => Promise<"allowed" | "pending">;
 
 /** A service or the preview as an agent started it, so majhi can start it again the same way. */
 type StartedSpec =
@@ -176,6 +192,19 @@ export class ContainerService {
     return this.networks.has(task) ? [containerNames(task).network] : [];
   }
 
+  /**
+   * Makes the task's network if it is not there, so a runner that starts now joins it. Resolves false
+   * when majhi does not run in Docker. A process of the task starts in a runner with a name on it.
+   */
+  async ensureTaskNetwork(task: string): Promise<boolean> {
+    const docker = this.docker;
+    const t = this.deps.task(task);
+    if (docker === undefined || t === undefined) return false;
+    await this.starting;
+    await this.locked(task, () => this.ensureNetwork(docker, this.safety(t)));
+    return true;
+  }
+
   /** The subnets of the task's network: the one private address range its runners and preview may reach. */
   taskSubnets(task: string): string[] {
     return this.subnets.get(task) ?? [];
@@ -259,7 +288,7 @@ export class ContainerService {
       }
       const old = this.running(task, "preview", "preview");
       if (old !== undefined) await this.deps.processes.stop(task, old.id, "agent");
-      return this.withContainerSlot(task, settings, async () => {
+      return this.withContainerSlot(docker, task, settings, async () => {
         const safety = this.safety(t);
         const image = this.deps.runnerImage;
         if (image === undefined) throw new UserError("majhi does not know the runner image.", 501);
@@ -351,15 +380,15 @@ export class ContainerService {
     const docker = this.need();
     const t = this.task(task);
     let settings = await this.deps.settings();
-    if (!settings.images.some((image) => sameImage(image, input.image))) {
+    if (!this.allowed(task, settings).some((image) => sameImage(image, input.image))) {
       if (ask === undefined) {
         throw new UserError(
           `${input.image} is not allowed yet. Allow it first with containers.images.allow, then start the service.`,
         );
       }
-      if ((await ask(input.image)) === "pending") return { status: "asked" };
+      if ((await ask(input.image, input.name)) === "pending") return { status: "asked" };
       settings = await this.deps.settings();
-      if (!settings.images.some((image) => sameImage(image, input.image))) {
+      if (!this.allowed(task, settings).some((image) => sameImage(image, input.image))) {
         throw new UserError(`${input.image} is not allowed.`);
       }
     }
@@ -379,7 +408,7 @@ export class ContainerService {
           409,
         );
       }
-      return this.withContainerSlot(task, settings, async () => {
+      return this.withContainerSlot(docker, task, settings, async () => {
         const safety = this.safety(t);
         const limits = limitsOf(settings);
         // Checked before the network and the volumes exist.
@@ -405,7 +434,28 @@ export class ContainerService {
           command: `docker run ${names.service(input.name)}`,
           cwd: t.folder,
           wait: false,
-          managed: { container, spawn: () => docker.attached(parts, safety, { cwd: t.folder }) },
+          managed: {
+            container,
+            // The holder first (it owns the network namespace and holds the guard), then the service inside it.
+            spawn: async () => {
+              const holder = { name: input.name, aliases: taskAliases(task, input.name) };
+              await this.startHolder(docker, safety, settings, holder);
+              try {
+                const spawned = await docker.attached(parts, safety, { cwd: t.folder });
+                spawned.child.once("close", () => this.dropHolder(docker, task, input.name));
+                return {
+                  ...spawned,
+                  kill: () => {
+                    spawned.kill();
+                    this.dropHolder(docker, task, input.name);
+                  },
+                };
+              } catch (err) {
+                this.dropHolder(docker, task, input.name);
+                throw err;
+              }
+            },
+          },
         });
         this.remember(task, input.name, { kind: "service", agent, input });
         this.deps.changed?.();
@@ -541,14 +591,86 @@ export class ContainerService {
   }
 
   // ---------------------------------------------------------------------------
+  // Containers started with `docker run` or compose
+
+  /**
+   * The task's containers that scripts started (`docker run`, compose), running or ended, by the
+   * names the script gave them. Services started with `service_start` are in `list`.
+   */
+  async scriptContainers(task: string): Promise<ScriptContainer[]> {
+    const docker = this.docker;
+    if (docker === undefined) return [];
+    this.task(task);
+    const names = containerNames(task);
+    const owned = new Set(
+      this.all(task).flatMap((p) =>
+        p.container?.kind === "service" ? [names.service(p.container.name)] : [],
+      ),
+    );
+    const rows = await this.lines(docker, [
+      "ps",
+      "-a",
+      "--filter",
+      `label=majhi.container=${TASK_RUN_KIND}`,
+      "--filter",
+      `label=majhi.task=${task}`,
+      "--format",
+      '{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Label "majhi.compose"}}',
+    ]);
+    return rows.flatMap((row) => {
+      const [name = "", image = "", status = "", compose = ""] = row.split("\t");
+      if (owned.has(name) || !name.startsWith(names.containerPrefix)) return [];
+      return [
+        {
+          name: name.slice(names.containerPrefix.length),
+          image: showUserNames(task, image),
+          status,
+          compose: compose !== "",
+        },
+      ];
+    });
+  }
+
+  /** The last lines of a script's container, by the name the script gave it. */
+  async scriptLogs(
+    task: string,
+    name: string,
+    lines: number,
+  ): Promise<{ container: ScriptContainer; lines: string[] } | undefined> {
+    const docker = this.need();
+    const container = (await this.scriptContainers(task)).find((c) => c.name === name);
+    if (container === undefined) return undefined;
+    const out = await docker.exec(["logs", "--tail", String(lines), containerNames(task).service(name)]);
+    return {
+      container,
+      lines: `${out.stdout}${out.stderr}`
+        .split("\n")
+        .filter((l) => l !== "")
+        .slice(-lines),
+    };
+  }
+
+  /** Removes a script's container, with its holder. */
+  async scriptStop(task: string, name: string): Promise<ScriptContainer | undefined> {
+    const docker = this.need();
+    const container = (await this.scriptContainers(task)).find((c) => c.name === name);
+    if (container === undefined) return undefined;
+    await docker.exec(["rm", "-f", "-v", containerNames(task).service(name)]);
+    await this.locked(task, () => this.reapHolders(docker, task));
+    this.deps.changed?.();
+    return container;
+  }
+
+  // ---------------------------------------------------------------------------
   // A task's own docker
 
   /**
    * A `docker` call from a script in this task's runner (a hand-off check, a test run), sent by the
    * shim with the run's token. `task-docker.ts` turns it into a call majhi allows or refuses. The
-   * container is the task's: labelled with it, named with its prefix, on its internal network, with
-   * the limits of the settings, and removed when the task stops. The script gets the exit code and
-   * output a real `docker` would give. An image the owner has not allowed asks through `ask`.
+   * container is the task's: labelled with it, named with its prefix, in the network namespace of a
+   * holder that joins the task's network behind netguard, with the limits of the settings, and
+   * removed when the task stops. The script gets the exit code and output a real `docker` would
+   * give. An image the owner has not allowed asks through `ask`, naming the container.
    */
   async taskDocker(
     task: string,
@@ -560,47 +682,71 @@ export class ContainerService {
     const settings = await this.deps.settings();
     await this.starting;
     const safety = this.safety(t);
-    const refused = (message: string): TaskDockerResult => ({
-      code: 125,
-      stdout: "",
-      stderr: `docker: ${showUserNames(task, message)}\n`,
+    const refused = (message: string, code: TaskDockerErrorCode = "refused"): TaskDockerResult => {
+      const shown = showUserNames(task, message);
+      return {
+        code: 125,
+        stdout: "",
+        stderr: `docker: [${code}] ${shown}\n`,
+        error: { code, message: shown },
+      };
+    };
+    const asked = async (err: ImageNotAllowed): Promise<TaskDockerResult> => {
+      const answer = await options.ask(err.image, err.service).catch(() => "pending" as const);
+      return refused(
+        answer === "allowed"
+          ? `${err.message} Run the script again.`
+          : `${err.message} majhi asked the owner in the room. Run the script again after the answer.`,
+        "image_not_allowed",
+      );
+    };
+    const context = async (cwd: string): Promise<TaskDockerContext> => ({
+      safety,
+      limits: limitsOf(settings),
+      cwd,
+      allowedImages: this.allowed(task, settings),
+      builtImages: await this.builtImages(docker, task),
+      ids: await this.ownIds(docker, task, request.argv),
     });
     let plan: TaskDockerPlan;
     try {
-      const first = request.argv[0] === "container" ? request.argv[1] : request.argv[0];
-      plan = translateTaskDocker(request.argv, {
-        safety,
-        limits: limitsOf(settings),
-        cwd: request.cwd,
-        allowedImages: settings.images,
-        builtImages: first === "run" ? await this.builtImages(docker, task) : new Set(),
-        ids: await this.ownIds(docker, task, request.argv),
-      });
+      plan = translateTaskDocker(request.argv, await context(request.cwd));
     } catch (err) {
-      if (err instanceof ImageNotAllowed) {
-        const answer = await options.ask(err.image).catch(() => "pending" as const);
-        return refused(
-          answer === "allowed"
-            ? `${err.message} Run the script again.`
-            : `${err.message} majhi asked the owner in the room. Run the script again after the answer.`,
-        );
-      }
-      if (err instanceof ContainerRefused || err instanceof UserError) return refused(err.message);
+      if (err instanceof ImageNotAllowed) return asked(err);
+      if (err instanceof ContainerRefused) return refused(err.message, err.refusal);
+      if (err instanceof UserError) return refused(err.message);
       throw err;
     }
     try {
       switch (plan.kind) {
         case "text":
           return { code: 0, stdout: plan.stdout, stderr: "" };
-        case "call":
-          return this.scriptResult(task, await docker.task(plan.args, safety, settings.images));
+        case "call": {
+          const out = this.scriptResult(
+            task,
+            await docker.task(plan.args, safety, this.allowed(task, settings)),
+          );
+          // `rm` and `stop` end a container: its holder goes with it.
+          await this.locked(task, () => this.reapHolders(docker, task));
+          return out;
+        }
         case "build":
           return await this.scriptBuild(docker, safety, settings, plan.args);
-        case "run":
-          return await this.scriptRun(docker, safety, settings, plan, options.signal);
+        case "run": {
+          const out = await this.scriptRun(docker, safety, settings, plan, options.signal);
+          return plan.notes.length === 0
+            ? out
+            : { ...out, stderr: `${plan.notes.map((n) => `docker: ${n}\n`).join("")}${out.stderr}` };
+        }
+        case "compose": {
+          const host = this.composeHost(docker, safety, settings, request.cwd, options, task);
+          return await composeCall(host, plan.invocation);
+        }
       }
     } catch (err) {
-      if (err instanceof ContainerRefused || err instanceof UserError) return refused(err.message);
+      if (err instanceof ImageNotAllowed) return asked(err);
+      if (err instanceof ContainerRefused) return refused(err.message, err.refusal);
+      if (err instanceof UserError) return refused(err.message);
       throw err;
     }
   }
@@ -636,12 +782,18 @@ export class ContainerService {
       }
     });
     try {
-      return this.scriptResult(task, await docker.task(args, safety, settings.images));
+      return this.scriptResult(task, await docker.task(args, safety, this.allowed(task, settings)));
     } finally {
       void this.buildEnded(task);
     }
   }
 
+  /**
+   * A script's container: its holder first (the guard is set before the container exists), then the
+   * container in the holder's network namespace. The name is counted from the moment the call is
+   * allowed until it returns, so parallel calls cannot overrun the limit and no sweep takes the
+   * holder of a container that is still being pulled.
+   */
   private async scriptRun(
     docker: ContainerDocker,
     safety: Safety,
@@ -652,18 +804,18 @@ export class ContainerService {
     const task = safety.task;
     const active = this.scripted.get(task) ?? new Set<string>();
     this.scripted.set(task, active);
-    // Counted from the moment it is allowed until the call returns, so parallel calls cannot overrun the limit.
     try {
       await this.locked(task, async () => {
-        await this.checkScriptedLimit(docker, task, settings);
+        await this.checkLimits(docker, task, settings);
         active.add(plan.name);
         await this.ensureNetwork(docker, safety);
         for (const volume of plan.volumes) await this.ensureVolume(docker, safety, volume);
+        await this.startHolder(docker, safety, settings, plan.holder);
       });
       const stop = () => void this.quietly(() => docker.exec(["rm", "-f", "-v", plan.name]));
       signal?.addEventListener("abort", stop, { once: true });
       try {
-        const out = await docker.task(plan.args, safety, settings.images);
+        const out = await docker.task(plan.args, safety, this.allowed(task, settings));
         // A run that hit the timeout leaves its container: it goes now.
         if (out.code === null) stop();
         return this.scriptResult(task, out);
@@ -673,43 +825,129 @@ export class ContainerService {
     } finally {
       active.delete(plan.name);
       if (active.size === 0 && this.scripted.get(task) === active) this.scripted.delete(task);
+      // The container ended (`--rm`), or never started: its holder goes. A detached one keeps it.
+      await this.locked(task, () => this.reapHolders(docker, task));
     }
   }
 
-  /** At most `per_task` containers in the task and `total` in all, counting the ones that are starting. */
-  private async checkScriptedLimit(
+  /** What compose needs from the service, so `compose-run.ts` holds no docker or lock logic of its own. */
+  private composeHost(
     docker: ContainerDocker,
-    task: string,
+    safety: Safety,
     settings: ContainersSettings,
+    cwd: string,
+    options: { ask: AskImage; signal?: AbortSignal | undefined },
+    task: string,
+  ): ComposeHost {
+    return {
+      task,
+      safety,
+      perTask: settings.per_task,
+      context: async (dir) => ({
+        safety,
+        limits: limitsOf(settings),
+        cwd: dir,
+        allowedImages: this.allowed(task, settings),
+        builtImages: await this.builtImages(docker, task),
+        ids: new Map(),
+      }),
+      ask: (image, service) => options.ask(image, service),
+      build: (args) => this.scriptBuild(docker, safety, settings, args),
+      launch: (plan) => this.scriptRun(docker, safety, settings, plan, options.signal),
+      call: async (args) =>
+        this.scriptResult(task, await docker.task(args, safety, this.allowed(task, settings))),
+      read: async (args) => (await docker.exec(args)).stdout,
+      removeVolumes: async (names) => {
+        if (names.length > 0) await docker.exec(["volume", "rm", "-f", ...names]);
+      },
+      reap: async () => {
+        await this.locked(task, () => this.reapHolders(docker, task));
+      },
+      cwd,
+    };
+  }
+
+  /** The images a task may run: the owner's list for every workspace and the one for the task's workspace. */
+  private allowed(task: string, settings: ContainersSettings): string[] {
+    const org = this.task(task).org ?? "private";
+    return [...settings.images, ...(settings.org_images[org] ?? [])];
+  }
+
+  /**
+   * Starts the holder of one task container, and returns when its guard is set. A holder of the same
+   * name that a crash or a restart left goes first.
+   */
+  private async startHolder(
+    docker: ContainerDocker,
+    safety: Safety,
+    settings: ContainersSettings,
+    holder: { name: string; aliases: string[] },
   ): Promise<void> {
-    const mine = new Set([
-      ...(await this.lines(docker, [
-        "ps",
-        "--format",
-        "{{.Names}}",
-        "--filter",
-        "label=majhi.container",
-        "--filter",
-        `label=majhi.task=${task}`,
-      ])),
-      ...(this.scripted.get(task) ?? []),
-    ]);
-    if (mine.size >= settings.per_task) {
-      throw new UserError(
-        `${task} already runs ${mine.size} container${mine.size === 1 ? "" : "s"}, the most it may (${settings.per_task}). Remove one first.`,
-        409,
+    const image = this.deps.runnerImage;
+    if (image === undefined) throw new UserError("majhi does not know the runner image.", 501);
+    const subnets = this.taskSubnets(safety.task);
+    if (subnets.length === 0)
+      throw new UserError(`The network of ${safety.task} has no address range yet.`, 409);
+    const names = containerNames(safety.task);
+    await this.quietly(() => docker.exec(["rm", "-f", "-v", names.holder(holder.name)]));
+    try {
+      await docker.hold(
+        taskHoldRunArgs(safety, limitsOf(settings), {
+          name: holder.name,
+          aliases: holder.aliases,
+          taskSubnets: subnets,
+          image,
+        }),
+        safety,
       );
+    } catch (err) {
+      if (err instanceof ContainerRefused) throw err;
+      throw new UserError(`majhi could not start ${holder.name}'s network guard: ${errorMessage(err)}`);
     }
-    const everywhere = new Set([
-      ...(await this.lines(docker, ["ps", "--format", "{{.Names}}", "--filter", "label=majhi.container"])),
-      ...[...this.scripted.values()].flatMap((names) => [...names]),
-    ]);
-    if (everywhere.size >= settings.total) {
-      throw new UserError(
-        `The container limit across all tasks (${settings.total}) is reached. Try again when one has ended.`,
-        409,
-      );
-    }
+  }
+
+  /** Removes a holder, quietly: its container ended or never ran. */
+  private dropHolder(docker: ContainerDocker, task: string, name: string): void {
+    void this.quietly(() => docker.exec(["rm", "-f", "-v", containerNames(task).holder(name)]));
+  }
+
+  /**
+   * Removes the holders whose container is gone, by label. A container that is starting (a script's
+   * call in flight, a service's process) keeps its holder. Idempotent: it removes what is stale and
+   * nothing else, so any number of calls, after a crash too, end in the same state. Call it under the task's lock.
+   */
+  private async reapHolders(docker: ContainerDocker, task: string): Promise<string[]> {
+    const names = containerNames(task);
+    const labelled = (kind: string) => [
+      "ps",
+      "-a",
+      "--format",
+      "{{.Names}}",
+      "--filter",
+      `label=majhi.container=${kind}`,
+      "--filter",
+      `label=majhi.task=${task}`,
+    ];
+    const reaped: string[] = [];
+    await this.quietly(async () => {
+      const holders = await this.lines(docker, labelled("taskhold"));
+      if (holders.length === 0) return;
+      const apps = new Set(await this.lines(docker, labelled(TASK_RUN_KIND)));
+      const starting = this.scripted.get(task) ?? new Set<string>();
+      const stale = holders.filter((holder) => {
+        const user = holder.startsWith(names.holderPrefix) ? holder.slice(names.holderPrefix.length) : "";
+        const app = names.service(user);
+        return (
+          user !== "" &&
+          !apps.has(app) &&
+          !starting.has(app) &&
+          this.running(task, "service", user) === undefined
+        );
+      });
+      if (stale.length > 0) await docker.exec(["rm", "-f", "-v", ...stale]);
+      reaped.push(...stale);
+    });
+    return reaped;
   }
 
   /** Images this task built, as `repository:tag`. */
@@ -1070,6 +1308,11 @@ export class ContainerService {
     );
   }
 
+  /** True when this name is the preview or a service majhi started itself (a process), not a script's container. */
+  has(task: string, name: string): boolean {
+    return this.latest(task, name) !== undefined;
+  }
+
   /** The newest container of this name: `preview` or a service. */
   private latest(task: string, name: string): ProcessInfo | undefined {
     const kind = name === "preview" ? "preview" : "service";
@@ -1077,38 +1320,82 @@ export class ContainerService {
     return same.find((p) => p.status === "running") ?? same.at(-1);
   }
 
-  private checkLimit(task: string, settings: ContainersSettings): void {
-    const total = this.deps.processes
-      .listAll()
-      .filter(
-        (p) => p.status === "running" && p.container !== undefined && p.container.kind !== "build",
-      ).length;
-    if (total + this.pendingStarts >= settings.total) {
-      throw new UserError(
-        `The container limit across all tasks (${settings.total}) is reached. Stop an unused preview or service first.`,
-        409,
+  /**
+   * The docker names of the containers a task runs or is starting, whoever started them: docker's
+   * own list (services, scripts' and compose's containers, previews), majhi's processes (one that
+   * has not shown up in docker yet) and the calls of scripts in flight. One count, so a limit
+   * means the same for `service_start`, `docker run` and compose.
+   */
+  private async containersOf(docker: ContainerDocker, task: string | undefined): Promise<Set<string>> {
+    const found = new Set<string>();
+    for (const kind of [TASK_RUN_KIND, "preview"]) {
+      for (const name of await this.lines(docker, [
+        "ps",
+        "--format",
+        "{{.Names}}",
+        "--filter",
+        `label=majhi.container=${kind}`,
+        ...(task === undefined ? [] : ["--filter", `label=majhi.task=${task}`]),
+      ])) {
+        found.add(name);
+      }
+    }
+    const procs = task === undefined ? this.deps.processes.listAll() : this.all(task);
+    for (const p of procs) {
+      if (p.status !== "running" || p.container === undefined || p.container.kind === "build") continue;
+      const names = containerNames(p.task);
+      found.add(
+        p.container.kind === "preview"
+          ? names.previewApp
+          : p.container.name.endsWith(".host")
+            ? names.hostForward(p.container.name.slice(0, -".host".length))
+            : names.service(p.container.name),
       );
     }
-    const running = this.all(task).filter(
-      (p) => p.status === "running" && p.container !== undefined && p.container.kind !== "build",
-    );
-    if (running.length >= settings.per_task) {
-      throw new UserError(
-        `${task} already runs ${running.length} container${running.length === 1 ? "" : "s"}, the most it may (${settings.per_task}): ${running.map((p) => p.container?.name).join(", ")}. Stop one first.`,
-        409,
+    for (const [, active] of task === undefined
+      ? this.scripted
+      : ([[task, this.scripted.get(task) ?? new Set<string>()]] as const)) {
+      for (const name of active) found.add(name);
+    }
+    return found;
+  }
+
+  /** At most `per_task` containers in the task and `total` in all, counting `extra` more that are about to start. */
+  private async checkLimits(
+    docker: ContainerDocker,
+    task: string,
+    settings: ContainersSettings,
+    extra = 1,
+    pending = this.pendingStarts,
+  ): Promise<void> {
+    const mine = await this.containersOf(docker, task);
+    if (mine.size + extra > settings.per_task) {
+      throw new ContainerRefused(
+        `${task} already runs ${mine.size} container${mine.size === 1 ? "" : "s"}${extra > 1 ? ` and this starts ${extra} more` : ""}, the most it may (${settings.per_task}): ${[...mine].map((n) => showUserNames(task, n)).join(", ")}. Remove one first.`,
+        "limit_reached",
+      );
+    }
+    const everywhere = await this.containersOf(docker, undefined);
+    if (everywhere.size + extra + pending > settings.total) {
+      throw new ContainerRefused(
+        `The container limit across all tasks (${settings.total}) is reached. Stop an unused container first, or try again when one has ended.`,
+        "limit_reached",
       );
     }
   }
 
   /** Reserve before any await so concurrent starts in different tasks cannot overrun the cap. */
   private async withContainerSlot<T>(
+    docker: ContainerDocker,
     task: string,
     settings: ContainersSettings,
     start: () => Promise<T>,
   ): Promise<T> {
-    this.checkLimit(task, settings);
+    // The starts in flight before this one: this one is counted by `extra`.
+    const others = this.pendingStarts;
     this.pendingStarts++;
     try {
+      await this.checkLimits(docker, task, settings, 1, others);
       return await start();
     } finally {
       this.pendingStarts--;

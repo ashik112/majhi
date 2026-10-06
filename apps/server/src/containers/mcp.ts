@@ -14,7 +14,7 @@ import { z } from "zod";
 import { errorMessage, formatIssues } from "../errors.ts";
 import { listLine } from "../processes/text.ts";
 import { CONTAINERS_SERVER_NAME, type ToolCaller } from "../rooms/access.ts";
-import type { AskImage, ContainerService } from "./service.ts";
+import type { AskImage, ContainerService, ScriptContainer } from "./service.ts";
 
 type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
 const ok = (text: string): Result => ({ content: [{ type: "text", text }] });
@@ -46,17 +46,20 @@ const TOOLS = [
   },
   {
     name: "service_stop",
-    description: "Stop a service container. Its named volumes keep their data until the task is done.",
+    description:
+      "Stop a service container, or remove a container a script started. Its named volumes keep their data until the task is done.",
     input: ServiceStopInputSchema,
   },
   {
     name: "list",
-    description: "List this task's previews and services, with their addresses.",
+    description:
+      "List this task's containers with their addresses: previews, services, and the containers its scripts started with docker run or docker compose. All of them are on the task's one network and reach each other by name.",
     input: ContainerListInputSchema,
   },
   {
     name: "logs",
-    description: 'The last lines of the output of the preview ("preview") or of a service, by its name.',
+    description:
+      'The last lines of the output of the preview ("preview"), of a service or of a container a script started, by its name.',
     input: ContainerLogsInputSchema,
   },
 ] as const;
@@ -82,10 +85,15 @@ function containerLine(c: ContainerInfo): string {
   return `${c.name} (${c.kind}, ${c.image}): ${c.status}${where === "" ? "" : `, ${where}`}, ${c.process}`;
 }
 
+/** One container a script started, as the `list` tool shows it. */
+function scriptLine(c: ScriptContainer): string {
+  return `${c.name} (${c.compose ? "compose" : "container"}, ${c.image}): ${c.status}, reach it as ${c.name} from this task`;
+}
+
 export interface ContainersMcpDeps {
   containers: ContainerService;
   /** Asks the owner, through an approval card, to allow an image for this caller's task. */
-  askImage: (caller: ToolCaller, image: string) => ReturnType<AskImage>;
+  askImage: (caller: ToolCaller, image: string, service?: string) => ReturnType<AskImage>;
 }
 
 /** `majhi-containers` (PRV-53): one agent session's view of its own task's previews and services. */
@@ -129,8 +137,8 @@ export function containersServer(caller: ToolCaller, deps: ContainersMcpDeps): S
           return ok(`Stopped ${containerLine(await containers.stop(task, "preview", "agent"))}.`);
         case "service_start": {
           const input = parsed.data as z.infer<typeof ServiceStartInputSchema>;
-          const result = await containers.serviceStart(task, agent, input, (image) =>
-            deps.askImage(caller, image),
+          const result = await containers.serviceStart(task, agent, input, (image, service) =>
+            deps.askImage(caller, image, service),
           );
           if (result.status === "asked") {
             return ok(
@@ -144,14 +152,28 @@ export function containersServer(caller: ToolCaller, deps: ContainersMcpDeps): S
         }
         case "service_stop": {
           const input = parsed.data as z.infer<typeof ServiceStopInputSchema>;
+          if (!containers.has(task, input.name)) {
+            const removed = await containers.scriptStop(task, input.name);
+            if (removed !== undefined) return ok(`Removed ${scriptLine(removed)}.`);
+          }
           return ok(`Stopped ${containerLine(await containers.stop(task, input.name, "agent"))}.`);
         }
         case "list": {
           const all = containers.list(task);
-          return ok(all.length === 0 ? "No previews or services." : all.map(containerLine).join("\n"));
+          const scripted = await containers.scriptContainers(task);
+          const lines = [...all.map(containerLine), ...scripted.map(scriptLine)];
+          return ok(lines.length === 0 ? "No containers." : lines.join("\n"));
         }
         case "logs": {
           const input = parsed.data as z.infer<typeof ContainerLogsInputSchema>;
+          if (!containers.has(task, input.name)) {
+            const scripted = await containers.scriptLogs(task, input.name, input.lines);
+            if (scripted !== undefined) {
+              return ok(
+                `${scriptLine(scripted.container)}\n\n${scripted.lines.length === 0 ? "(no output yet)" : scripted.lines.join("\n")}`,
+              );
+            }
+          }
           const out = containers.logs(task, input.name, input.lines);
           return ok(
             `${containerLine(out.container)}\n\n${out.lines.length === 0 ? "(no output yet)" : out.lines.join("\n")}`,

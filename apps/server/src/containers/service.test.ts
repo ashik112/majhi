@@ -101,7 +101,8 @@ describe("ContainerService", () => {
       ]);
       expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
       expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
-      expect(docker.containers.size).toBe(1);
+      // One service: its holder and its container.
+      expect(docker.containers.size).toBe(2);
       const live = processes.listAll().find((c) => c.status === "running");
       expect(live).toBeDefined();
       const runningTask = [...docker.containers.keys()][0]?.includes("acm-1") ? "ACM-1" : "ACM-2";
@@ -208,8 +209,10 @@ describe("ContainerService", () => {
       docker.images.add("majhi-preview-acm-1");
       await service.previewRun("ACM-1", "acme-builder", { port: 7070, scratch: "/preview" });
       expect([...docker.containers.keys()].sort()).toEqual([
-        "majhi-acm-1-cache",
-        "majhi-acm-1-db",
+        "majhi-acm-1-c-cache",
+        "majhi-acm-1-c-db",
+        "majhi-acm-1-h-cache",
+        "majhi-acm-1-h-db",
         "majhi-preview-acm-1",
         "majhi-preview-acm-1-app",
       ]);
@@ -227,8 +230,10 @@ describe("ContainerService", () => {
       const again = await service.taskRunning("ACM-1");
       expect(again).toEqual({ started: ["db", "cache", "preview"], failed: [] });
       expect([...docker.containers.keys()].sort()).toEqual([
-        "majhi-acm-1-cache",
-        "majhi-acm-1-db",
+        "majhi-acm-1-c-cache",
+        "majhi-acm-1-c-db",
+        "majhi-acm-1-h-cache",
+        "majhi-acm-1-h-db",
         "majhi-preview-acm-1",
         "majhi-preview-acm-1-app",
       ]);
@@ -244,7 +249,7 @@ describe("ContainerService", () => {
       await upWithPreview();
       // "cache" has no volume: stopping would lose its data.
       expect(await service.taskPaused("ACM-1", { keepUnsaved: true })).toEqual({ kept: ["cache"] });
-      expect([...docker.containers.keys()]).toEqual(["majhi-acm-1-cache"]);
+      expect([...docker.containers.keys()].sort()).toEqual(["majhi-acm-1-c-cache", "majhi-acm-1-h-cache"]);
       expect(docker.volumes.has("majhi-acm-1-data-pgdata")).toBe(true);
       expect(await service.taskRunning("ACM-1")).toEqual({ started: ["db", "preview"], failed: [] });
       // The owner's Stop still ends them all.
@@ -260,7 +265,7 @@ describe("ContainerService", () => {
       const started = await service.serviceStart("ACM-1", "acme-builder", db);
       await cleaning;
       expect(started.status).toBe("started");
-      expect(docker.containers.has("majhi-acm-1-db")).toBe(true);
+      expect(docker.containers.has("majhi-acm-1-c-db")).toBe(true);
     });
   });
 

@@ -6,10 +6,38 @@ import { assertTaskArgv } from "../containers/task-docker.ts";
 
 export interface FakeContainer {
   name: string;
+  /** The image it runs, as docker shows it. */
+  image?: string;
+  /** `Up` unless a test sets another, like `Exited (0)`. */
+  status?: string;
+  /** What `docker inspect` of its state shows: `running 0 none`. */
+  state?: string;
+  /** What `docker logs` prints. */
+  logs?: string;
   /** What `docker run -d` printed, and `inspect` takes. */
   id?: string;
   labels: Record<string, string>;
   child: ChildProcess | undefined;
+}
+
+/** `{{.Names}}`, `{{.Image}}`, `{{.Status}}` and `{{.Label "key"}}` of docker's `--format`, filled from the fake. */
+function render(format: string, c: FakeContainer): string {
+  let out = "";
+  let i = 0;
+  while (i < format.length) {
+    const open = format.indexOf("{{", i);
+    if (open === -1) return out + format.slice(i);
+    const close = format.indexOf("}}", open);
+    out += format.slice(i, open);
+    const expr = format.slice(open + 2, close).trim();
+    if (expr === ".Names") out += c.name;
+    else if (expr === ".Image") out += c.image ?? "";
+    else if (expr === ".Status") out += c.status ?? "Up 2 seconds";
+    else if (expr.startsWith(".Label "))
+      out += c.labels[expr.slice(".Label ".length).replaceAll('"', "")] ?? "";
+    i = close + 2;
+  }
+  return out;
 }
 
 /** Plays docker: keeps networks, volumes, builders, images and containers in memory, and runs `assertSafe` like the real CLI wrapper. */
@@ -26,6 +54,8 @@ export class FakeDocker implements ContainerDocker {
   prunedBuilders: string[] = [];
   /** Every call a task's script made, as docker got it. */
   taskCalls: string[][] = [];
+  /** Runs that fail before a container exists, by container name. */
+  runFails = new Set<string>();
   /** Makes `ps` answer late, to play a slow daemon. */
   psDelayMs = 0;
 
@@ -50,6 +80,24 @@ export class FakeDocker implements ContainerDocker {
     return { stdout: "", stderr: "" };
   }
 
+  /** Holders that did not come up, by name, for a test of the failure. */
+  failHolds = new Set<string>();
+  /** The holders started, with the arguments of their `docker run`. */
+  holds: string[][] = [];
+
+  async hold(parts: DockerParts, safety: Safety): Promise<void> {
+    assertSafe(parts, safety);
+    this.holds.push(dockerArgv(parts));
+    const name = parts.flags[parts.flags.indexOf("--name") + 1] ?? "";
+    if (this.failHolds.has(name)) throw new Error(`The network guard of ${name} did not start.`);
+    this.containers.set(name, {
+      name,
+      labels: this.labelsOf(parts),
+      child: undefined,
+      image: parts.image ?? "",
+    });
+  }
+
   async attached(parts: DockerParts, safety: Safety): Promise<Spawned> {
     assertSafe(parts, safety);
     const verb = parts.verb.join(" ");
@@ -68,7 +116,7 @@ export class FakeDocker implements ContainerDocker {
       return { child, cwd: "/", kill: () => killTree(child) };
     }
     const name = parts.flags[parts.flags.indexOf("--name") + 1] ?? "";
-    this.containers.set(name, { name, labels: this.labelsOf(parts), child });
+    this.containers.set(name, { name, labels: this.labelsOf(parts), child, image: parts.image ?? "" });
     return {
       child,
       cwd: "/",
@@ -99,11 +147,14 @@ export class FakeDocker implements ContainerDocker {
           labels[a.slice(0, eq)] = a.slice(eq + 1);
         });
         const id = Buffer.from(name).toString("hex").padEnd(64, "0").slice(0, 64);
+        const image =
+          args.find((a, i) => i > 0 && !a.startsWith("-") && !args[i - 1]?.startsWith("--")) ?? "";
+        if (this.runFails.has(name)) return { code: 125, stdout: "", stderr: "Unable to find image\n" };
         if (args.includes("--detach")) {
-          this.containers.set(name, { name, id, labels, child: undefined });
+          this.containers.set(name, { name, id, labels, child: undefined, image });
           return ok(`${id}\n`);
         }
-        if (!args.includes("--rm")) this.containers.set(name, { name, id, labels, child: undefined });
+        if (!args.includes("--rm")) this.containers.set(name, { name, id, labels, child: undefined, image });
         return ok(
           `ran ${args.find((a, i) => i > 0 && !a.startsWith("-") && !args[i - 1]?.startsWith("--")) ?? ""}\n`,
         );
@@ -219,24 +270,32 @@ export class FakeDocker implements ContainerDocker {
         return out("");
       case "ps": {
         if (this.psDelayMs > 0) await new Promise((r) => setTimeout(r, this.psDelayMs));
-        const task = filter("label")
-          .find((f) => f.startsWith("label=majhi.task="))
-          ?.slice("label=majhi.task=".length);
         if (args.includes("label=majhi.runner=1")) return out(this.runners.join("\n"));
+        const labels = filter("label").map((f) => f.slice("label=".length));
+        const all = args.includes("-a");
+        const format = args[args.indexOf("--format") + 1];
         return out(
           [...this.containers.values()]
-            .filter(
-              (c) =>
-                c.labels["majhi.container"] !== undefined &&
-                (task === undefined || c.labels["majhi.task"] === task),
+            .filter((c) => all || !(c.status ?? "Up").startsWith("Exited"))
+            .filter((c) =>
+              labels.every((l) => {
+                const at = l.indexOf("=");
+                return at === -1 ? c.labels[l] !== undefined : c.labels[l.slice(0, at)] === l.slice(at + 1);
+              }),
             )
-            .map((c) => c.name)
+            .map((c) => (args.includes("--format") && format !== undefined ? render(format, c) : c.name))
             .join("\n"),
         );
+      }
+      case "logs": {
+        const c = this.containers.get(last);
+        if (c === undefined) throw new Error("No such container");
+        return out(c.logs ?? "");
       }
       case "inspect": {
         const c = [...this.containers.values()].find((x) => x.id === last || x.name === last);
         if (c === undefined) throw new Error("No such object");
+        if (args.some((a) => a.includes(".State"))) return out(c.state ?? "running 0 none");
         return out(`/${c.name} ${c.labels["majhi.task"]} ${c.labels["majhi.container"]}`);
       }
       case "rm":

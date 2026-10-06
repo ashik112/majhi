@@ -72,7 +72,8 @@ describe("a task that ends", () => {
     const { h } = w;
     await h.cmd("containers.images.allow", { image: db.image });
     expect((await h.cmd("containers.services.start", { ...db, volumes })).status).toBe(200);
-    expect(docker.containers.size).toBe(1);
+    // The service and its holder.
+    expect(docker.containers.size).toBe(2);
     expect(docker.networks.has("majhi-acm-1")).toBe(true);
     expect(docker.volumes.has("majhi-acm-1-data-pgdata")).toBe(true);
     docker.images.add("majhi-preview-acm-1");
