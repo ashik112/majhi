@@ -1,5 +1,6 @@
 import {
   endpointId,
+  type InsideSpec,
   type MapEdge,
   type MapEndpoint,
   type MapEvidence,
@@ -7,6 +8,7 @@ import {
   type MapRole,
   type MapTask,
   type MapView,
+  STEPS_SHOWN,
 } from "@majhi/shared";
 
 /** The look of a box's state: its lamp class and the words beside it. */
@@ -319,4 +321,55 @@ export function usdWords(usd: number): string {
 /** `host` or `host:port` as the answer command takes it. */
 export function addressText(e: Pick<MapEndpoint, "host" | "port">): string {
   return e.port === undefined ? e.host : `${e.host}:${e.port}`;
+}
+
+/** Entry points drawn on the canvas before "Show more". */
+export const CANVAS_ENTRIES = 5;
+/** The same, in a narrow window, where the canvas is shorter and narrower. */
+export const CANVAS_ENTRIES_NARROW = 3;
+/** Steps of the picked story drawn in a narrow window. */
+export const CANVAS_STEPS_NARROW = 5;
+
+/**
+ * The part of an Inside spec the canvas draws: the first few entry points (all of them once asked), and
+ * for the one picked, only its own story: the functions, calls and data of its steps. Everything else
+ * stays in the panel, so the canvas is small enough to read at full size.
+ */
+export function focusInside(
+  spec: InsideSpec,
+  entryId: string | null,
+  all: boolean,
+  narrow = false,
+): { spec: InsideSpec; hidden: number } {
+  const first = all ? spec.entries : spec.entries.slice(0, narrow ? CANVAS_ENTRIES_NARROW : CANVAS_ENTRIES);
+  const picked = spec.entries.find((e) => e.id === entryId);
+  const entries = picked !== undefined && !first.includes(picked) ? [...first, picked] : first;
+  const hidden = spec.entries.length - entries.length;
+  if (picked === undefined)
+    return { spec: { ...spec, entries, fns: [], data: [], calls: [], uses: [], services: [] }, hidden };
+  // The canvas draws the steps the panel shows first, so it stays small enough to read.
+  const shownSteps = picked.steps.slice(0, narrow ? CANVAS_STEPS_NARROW : STEPS_SHOWN);
+  const keys = new Set(shownSteps.map((st) => st.key));
+  const fnIds = new Set<string>([picked.fn]);
+  for (const st of shownSteps) {
+    if (st.kind === "call") {
+      fnIds.add(st.from);
+      fnIds.add(st.to);
+    } else if (st.kind === "data") fnIds.add(st.from);
+  }
+  const fns = spec.fns.filter((f) => fnIds.has(f.id));
+  const uses = spec.uses.filter((u) => keys.has(`d:${u.fn}>${u.data}`));
+  const dataIds = new Set(uses.map((u) => u.data));
+  return {
+    spec: {
+      ...spec,
+      entries,
+      fns,
+      uses,
+      data: spec.data.filter((d) => dataIds.has(d.id)),
+      calls: spec.calls.filter((c) => keys.has(`c:${c.from}>${c.to}`)),
+      services: [...new Set(fns.map((f) => f.service))],
+    },
+    hidden,
+  };
 }

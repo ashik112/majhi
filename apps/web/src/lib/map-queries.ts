@@ -1,4 +1,5 @@
 import type {
+  InsideMember,
   InsideTrigger,
   InsideView,
   JourneyInner,
@@ -85,6 +86,16 @@ export function useInside(org: string, project: string | null) {
     enabled: project !== null,
     placeholderData: keepPreviousData,
     staleTime: 15_000,
+  });
+}
+
+/** The story of one command under a dispatcher route, read when its row is opened. */
+export function useInsideMember(org: string, project: string, entry: string, member: string | null) {
+  return useQuery<InsideMember, ApiRequestError>({
+    queryKey: [...queryKeys.map, "inside-member", org, project, entry, member ?? ""],
+    queryFn: () => cmd("map.insideMember", { org, project, entry, member: member ?? "" }),
+    enabled: member !== null,
+    staleTime: 60_000,
   });
 }
 

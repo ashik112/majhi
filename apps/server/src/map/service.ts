@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
+import { stat } from "node:fs/promises";
+import { join } from "node:path";
 import {
+  type InsideMember,
   type InsideSpec,
   type InsideTrigger,
   type InsideView,
@@ -38,7 +41,25 @@ import { answerOf, ownerOf, parseAddress } from "./endpoints.ts";
 import { ProjectFiles } from "./files.ts";
 import { graphEndpoints } from "./graph/facts.ts";
 import type { GraphRunner } from "./graph/run.ts";
-import { buildInside, readFacts, STORE_LABELS } from "./inside.ts";
+import {
+  buildInside,
+  factsStamp,
+  type MemberTracer,
+  readFacts,
+  STORE_LABELS,
+  type WordItem,
+} from "./inside.ts";
+import {
+  batchesOf,
+  parseWords,
+  pendingWords,
+  readWords,
+  WORDS_FILE,
+  wordsCost,
+  wordsOf,
+  wordsPrompt,
+  writeWords,
+} from "./inside-words.ts";
 import { assertJourneySteps } from "./journeys.ts";
 import { answerAddress, confirmEdge, mergeMap, removeEdge, setRole } from "./merge.ts";
 import type { MapRepo } from "./repo.ts";
@@ -128,7 +149,10 @@ export class MapService {
   /** Why the last background update of a workspace failed, until the next one starts. */
   private readonly failed = new Map<string, string>();
   /** The Inside spec of each project, kept while its facts file and the map stay as they were. */
-  private readonly insides = new Map<string, { key: string; spec: InsideSpec | undefined }>();
+  private readonly insides = new Map<
+    string,
+    { key: string; spec: InsideSpec | undefined; read: boolean; member?: MemberTracer | undefined }
+  >();
   private readonly reading = new Map<string, Promise<InsideView>>();
 
   constructor(private readonly deps: MapDeps) {}
@@ -215,14 +239,26 @@ export class MapService {
     } catch {
       folder = null;
     }
-    const got = folder === null ? undefined : await readFacts(folder);
-    if (got === undefined || got.facts.inside === undefined) return { project, state: "unread" };
+    const stamp = folder === null ? undefined : await factsStamp(folder);
+    if (folder === null || stamp === undefined) return { project, state: "unread" };
     const stored = map ?? this.deps.repo.get(org).map;
-    const key = `${got.stamp}|${stored.nodes.length}|${stored.edges.length}|${stored.resolutions.length}`;
+    const wordsAt = await stat(join(folder, WORDS_FILE)).then(
+      (i) => i.mtimeMs,
+      () => 0,
+    );
+    // The key is cheap to make: two stats and the map's size. The facts are read only when it changes.
+    const key = `${stamp}|${wordsAt}|${stored.nodes.length}|${stored.edges.length}|${stored.resolutions.length}`;
     const cacheKey = `${org}|${project}`;
     const kept = this.insides.get(cacheKey);
-    if (kept?.key === key)
+    if (kept?.key === key) {
+      if (!kept.read) return { project, state: "unread" };
       return { project, state: "ready", ...(kept.spec === undefined ? {} : { spec: kept.spec }) };
+    }
+    const got = await readFacts(folder);
+    if (got === undefined || got.facts.inside === undefined || got.facts.v < 3) {
+      this.insides.set(cacheKey, { key, spec: undefined, read: false });
+      return { project, state: "unread" };
+    }
     const info = (await this.deps.projects()).find((p) => p.org === org && p.id === project);
     const node = stored.nodes.find((n) => n.id === project);
     let services: string[] = [];
@@ -243,20 +279,109 @@ export class MapService {
       }
     }
     const label = (id: string) => stored.nodes.find((n) => n.id === id)?.label ?? id;
-    const spec = buildInside(got.facts, {
-      project,
-      dbs: (node?.stack ?? []).filter((c) => STORE_LABELS.has(c)),
-      services,
-      owner: (host, port) => {
-        const e = stored.endpoints.find((x) => x.host === host.toLowerCase() && x.port === port);
-        if (e === undefined) return undefined;
-        const owner = ownerOf(stored.resolutions, e);
-        if (owner !== undefined) return { kind: "proj", name: label(owner.project) };
-        return answerOf(stored.resolutions, e)?.kind === "outside" ? { kind: "out", name: host } : undefined;
+    const built = buildInside(
+      got.facts,
+      {
+        project,
+        dbs: (node?.stack ?? []).filter((c) => STORE_LABELS.has(c)),
+        services,
+        owner: (host, port) => {
+          const e = stored.endpoints.find((x) => x.host === host.toLowerCase() && x.port === port);
+          if (e === undefined) return undefined;
+          const owner = ownerOf(stored.resolutions, e);
+          if (owner !== undefined) return { kind: "proj", name: label(owner.project) };
+          return answerOf(stored.resolutions, e)?.kind === "outside"
+            ? { kind: "out", name: host }
+            : undefined;
+        },
       },
-    });
-    this.insides.set(cacheKey, { key, spec });
+      wordsOf(await readWords(folder)),
+    );
+    const spec = built?.spec;
+    this.insides.set(cacheKey, { key, spec, read: true, member: built?.member });
     return { project, state: "ready", ...(spec === undefined ? {} : { spec }) };
+  }
+
+  /** The story of one command under a dispatcher route, from the project's facts. */
+  async insideMember(org: string, project: string, entry: string, member: string): Promise<InsideMember> {
+    await this.insideOf(org, project);
+    const got = this.insides.get(`${org}|${project}`)?.member?.(entry, member);
+    if (got === undefined) throw new UserError(`"${member}" is not a command of that route.`, 404);
+    return got;
+  }
+
+  /** The sentences a project's Inside page could have a model write, and the code each is written from. */
+  private async wordsPending(org: string, project: string, root: string) {
+    const folder = (await this.deps.graphFolder?.(org, project)) ?? null;
+    if (folder === null) return undefined;
+    const got = await readFacts(folder);
+    if (got === undefined || got.facts.inside === undefined || got.facts.v < 3) return undefined;
+    const built = buildInside(got.facts, { project, dbs: [], services: [], owner: () => undefined });
+    if (built === undefined) return undefined;
+    const have = await readWords(folder);
+    return { folder, have, pending: await pendingWords(root, built.items as WordItem[], have) };
+  }
+
+  /** What writing the Inside sentences would cost now, for the update's estimate. */
+  private async wordsEstimate(org: string, projects: readonly ProjectInput[]) {
+    const price = await this.deps.price(org);
+    let tokens = 0;
+    let usd: number | undefined;
+    for (const p of projects) {
+      const got = await this.wordsPending(org, p.id, p.path).catch(() => undefined);
+      if (got === undefined || got.pending.length === 0) continue;
+      const c = wordsCost(got.pending, price);
+      tokens += c.tokens;
+      if (c.usd !== undefined) usd = (usd ?? 0) + c.usd;
+    }
+    return { tokens, ...(usd === undefined ? {} : { usd }) };
+  }
+
+  /**
+   * The words pass: a model writes the plain sentence of each step of each project's Inside stories, from the
+   * code of that step, once. Whatever it wrote before stays unless that code changed. Stops at the cost cap and
+   * never throws: the page keeps its template sentences for what is left.
+   */
+  private async wordsPass(
+    org: string,
+    projects: readonly ProjectInput[],
+    started: string,
+  ): Promise<string | undefined> {
+    const ask = this.deps.ask;
+    if ((await this.codeUnavailable(org, projects.length)) !== undefined || ask === undefined)
+      return undefined;
+    const cap = this.cap();
+    let done = 0;
+    for (const p of projects) {
+      done += 1;
+      try {
+        const got = await this.wordsPending(org, p.id, p.path);
+        if (got === undefined || got.pending.length === 0) continue;
+        this.progress(org, {
+          phase: "code",
+          text: `Writing what happens inside ${p.id} (${done} of ${projects.length})…`,
+          done: done - 1,
+          total: projects.length,
+        });
+        const next = { ...got.have, items: { ...got.have.items } };
+        for (const batch of batchesOf(got.pending)) {
+          if (this.deps.spent(usageTask(org), started) >= cap) {
+            await writeWords(got.folder, next);
+            return `Stopped at the cost cap of $${cap.toFixed(2)} while writing what happens inside ${p.id}.`;
+          }
+          const { value } = await ask<Map<string, { h: string; text: string }>>(
+            { id: usageTask(org), org },
+            wordsPrompt(p.id, batch),
+            (reply) => parseWords(reply, batch),
+          );
+          for (const [k, v] of value) next.items[k] = v;
+        }
+        await writeWords(got.folder, next);
+      } catch (err) {
+        return `The model could not describe the code of ${p.id}: ${oneLine(err instanceof Error ? err.message : String(err), 160)}`;
+      }
+    }
+    return undefined;
   }
 
   /**
@@ -311,11 +436,13 @@ export class MapService {
       });
       const files = this.unread(org, (await Promise.all(config.loaded.map((l) => selectFiles(l)))).flat());
       const plan = fitBudget(files, await this.deps.price(org), cap);
+      const words = await this.wordsEstimate(org, projects);
+      const usd = plan.usd === undefined ? undefined : plan.usd + (words.usd ?? 0);
       value = {
         projects: projects.length,
         files: plan.files.length,
-        tokens: plan.tokens,
-        ...(plan.usd === undefined ? {} : { usd: plan.usd }),
+        tokens: plan.tokens + words.tokens,
+        ...(usd === undefined ? {} : { usd }),
         cap,
         ...(plan.dropped > 0 ? { note: `${plan.dropped} files left out to stay under the cap.` } : {}),
       };
@@ -374,7 +501,8 @@ export class MapService {
       .filter((p) => config.nodes.some((n) => n.id === p.a) && config.nodes.some((n) => n.id === p.b));
 
     const { found, note: codeNote } = await this.codePass(org, config, started);
-    const note = [graph?.note, codeNote].filter((n) => n !== undefined).join(" ") || undefined;
+    const wordsNote = graph === undefined ? undefined : await this.wordsPass(org, projects, started);
+    const note = [graph?.note, codeNote, wordsNote].filter((n) => n !== undefined).join(" ") || undefined;
 
     this.progress(org, { phase: "saving", text: "Drawing the map…" });
     const stored = this.deps.repo.get(org);

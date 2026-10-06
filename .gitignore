@@ -22,3 +22,4 @@ apps/web/.impeccable/
 
 # Marketing art, screenshots and demo videos, kept locally only
 /marketing-assets/
+__pycache__/

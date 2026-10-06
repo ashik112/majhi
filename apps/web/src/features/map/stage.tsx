@@ -30,7 +30,7 @@ interface Props {
   children: ReactNode;
 }
 
-const INTERACTIVE = ".node,.edge,.jhead,[data-step],.pill,.badge";
+const INTERACTIVE = ".node,.edge,.jhead,[data-step],.pill,.badge,.entry-more";
 
 /**
  * Pan, wheel zoom and fit for one picture. The transform lives in refs and is written straight to the

@@ -160,7 +160,7 @@ export function Chrome({
                 </span>
               )}
               <span className="cnt">
-                <b>{inside.entries.length}</b>entries
+                <b>{Object.values(inside.totals).reduce((a, n) => a + n, 0)}</b>entry points
               </span>
               <span className="cnt">
                 <b>{inside.services.length}</b>services

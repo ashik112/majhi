@@ -1461,28 +1461,52 @@
   height: 12px;
 }
 .mapx .node.entry {
-  padding: 7px 10px;
+  padding: 5px 10px;
   gap: 4px;
   justify-content: center;
 }
 .mapx .entry .e-l {
-  font: 400 12px / 16px var(--mono);
+  font: 400 13px / 16px var(--mono);
   color: var(--fg);
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+}
+.mapx .node.entry.dim {
+  opacity: 0.78;
+}
+.mapx .entry-more {
+  position: absolute;
+  height: 30px;
+  border: 1px dashed var(--line-control);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: 400 12px / 16px var(--sans);
+  cursor: pointer;
+}
+.mapx .entry-more:hover {
+  color: var(--fg);
+  border-color: var(--line-hover);
 }
 .mapx .entry .e-s {
   display: flex;
   align-items: center;
   gap: 7px;
-  font: 400 12px / 16px var(--mono);
+  font: 400 13px / 16px var(--mono);
   color: var(--fg-faint);
   white-space: nowrap;
 }
+.mapx .entry .e-s .e-raw {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .mapx .entry .e-s .bdg {
-  height: 18px;
-  font-family: var(--sans);
+  height: 20px;
+  font: 400 13px / 1 var(--sans);
 }
 .mapx .node.fn {
   padding: 0 10px;
@@ -1496,9 +1520,15 @@
   gap: 7px;
   font: 400 13px / 18px var(--mono);
   color: var(--fg);
-  white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+.mapx .fn .fn-t {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 .mapx .fn .fn-n svg {
   width: 13px;
@@ -1527,7 +1557,14 @@
   line-height: 18px;
   font-weight: 500;
   color: var(--fg);
-  white-space: nowrap;
+}
+.mapx .dn .dn-t > span:not(.lg) {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 .mapx .dn .dn-t svg.i {
   width: 13px;
@@ -1535,7 +1572,7 @@
   color: var(--fg-muted);
 }
 .mapx .dn .n-sub {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 15px;
   padding-left: 20px;
 }

@@ -27,7 +27,15 @@ export function InsideWorld({
   entryId,
   acts,
   projectIds,
+  hidden,
+  allEntries,
+  narrow,
+  onMoreEntries,
 }: {
+  narrow: boolean;
+  hidden: number;
+  allEntries: boolean;
+  onMoreEntries: () => void;
   spec: InsideSpec;
   layout: InsideLayout;
   s: UiState;
@@ -117,7 +125,15 @@ export function InsideWorld({
                 <TriggerIcon kind={e.kind} />
                 {e.kind}
               </span>
-              {base(e.file)}:{e.line}
+              <span className="e-raw">
+                {narrow
+                  ? ""
+                  : e.raw !== "" && !e.label.includes(e.raw)
+                    ? e.raw
+                    : !narrow && (e.kind === "HTTP" || e.kind === "TOOL" || e.kind === "SOCKET")
+                      ? `${base(e.file)}:${e.line}`
+                      : ""}
+              </span>
             </div>
           </div>
         );
@@ -143,12 +159,24 @@ export function InsideWorld({
           >
             <div className="fn-n" title={f.id}>
               <FileCode aria-hidden="true" strokeWidth={1.6} />
-              {f.id}
+              <span className="fn-t" style={narrow ? { fontSize: 12 } : undefined}>
+                {f.id.split(".").slice(-2).join(".")}
+              </span>
             </div>
             {s.more && f.doc !== "" && <div className="n-sub">{f.doc}</div>}
           </div>
         );
       })}
+      {(hidden > 0 || allEntries) && (
+        <button
+          type="button"
+          className="entry-more"
+          style={{ left: 0, top: layout.moreAt, width: layout.entries.values().next().value?.w ?? 184 }}
+          onClick={onMoreEntries}
+        >
+          {allEntries ? "Show fewer entry points" : `Show ${hidden} more entry points`}
+        </button>
+      )}
       {spec.data.map((d) => {
         const p = layout.data.get(d.id);
         if (p === undefined) return null;
@@ -171,11 +199,13 @@ export function InsideWorld({
               if (ev.key === "Enter") acts.pickInside({ t: "dn", id: d.id });
             }}
           >
-            <div className="dn-t">
+            <div className="dn-t" style={narrow ? { fontSize: 12 } : undefined}>
               <DataIcon kind={d.kind} name={d.name} />
               <span>{d.name}</span>
             </div>
-            <div className="n-sub">{d.sub}</div>
+            <div className="n-sub" style={narrow ? { fontSize: 12, paddingLeft: 0 } : undefined}>
+              {d.sub}
+            </div>
           </div>
         );
       })}

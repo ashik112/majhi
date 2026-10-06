@@ -1,4 +1,4 @@
-import { type JourneyStep, type JourneyView, type OrgView, PRIVATE } from "@majhi/shared";
+import { type InsideEntry, type JourneyStep, type JourneyView, type OrgView, PRIVATE } from "@majhi/shared";
 import { Waypoints } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Problem } from "@/components/problem";
@@ -23,7 +23,7 @@ import {
   type OverviewLayout,
   overviewKey,
 } from "./layout";
-import { agoWords, buildGraph, usdWords } from "./model";
+import { agoWords, buildGraph, CANVAS_ENTRIES, CANVAS_ENTRIES_NARROW, focusInside, usdWords } from "./model";
 import { OverviewWorld } from "./overview-world";
 import { ProjectWorld } from "./project-world";
 import { Rail } from "./rail";
@@ -145,11 +145,36 @@ function MapFor({
   const insideQuery = useInside(org, insideFor);
   const inside = insideFor === null ? undefined : insideQuery.data;
   const spec = inside?.spec;
-  const insideLayout = useMemo(
-    () => (spec === undefined ? undefined : layoutInside(spec, s.more)),
-    [spec, s.more],
+  const [allEntries, setAllEntries] = useState(false);
+  // A narrow window gets a smaller picture, so its text stays at full size.
+  const [narrow, setNarrow] = useState(() => window.innerWidth < 1300);
+  useEffect(() => {
+    const onSize = () => setNarrow(window.innerWidth < 1300);
+    window.addEventListener("resize", onSize);
+    return () => window.removeEventListener("resize", onSize);
+  }, []);
+  // A new project starts with the few top entry points again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset exactly when the project on show changes
+  useEffect(() => setAllEntries(false), [s.focus]);
+  const entryId =
+    spec === undefined
+      ? null
+      : s.entry === undefined
+        ? (spec.entries
+            .slice(0, narrow ? CANVAS_ENTRIES_NARROW : CANVAS_ENTRIES)
+            .reduce<InsideEntry | undefined>(
+              (best, e) => (best === undefined || e.steps.length > best.steps.length ? e : best),
+              undefined,
+            )?.id ?? null)
+        : s.entry;
+  const focused = useMemo(
+    () => (spec === undefined ? undefined : focusInside(spec, entryId, allEntries, narrow)),
+    [spec, entryId, allEntries, narrow],
   );
-  const entryId = spec === undefined ? null : s.entry === undefined ? (spec.entries[0]?.id ?? null) : s.entry;
+  const insideLayout = useMemo(
+    () => (focused === undefined ? undefined : layoutInside(focused.spec, s.more, narrow)),
+    [focused, s.more, narrow],
+  );
   const projectLabels = useMemo(() => new Map(g.nodes.map((n) => [n.label, n.id])), [g]);
   const readInside = useReadInside(org);
   const journey = journeys.find((j) => j.id === s.journey);
@@ -291,7 +316,7 @@ function MapFor({
           top: 142,
           bottom: 70,
           maxScale: 1.12,
-          fitKey: `in:${s.focus}:${s.more}`,
+          fitKey: `in:${s.focus}:${s.more}:${entryId}:${allEntries}`,
         };
       }
       return { w: 360, h: 150, top: 142, bottom: 70, maxScale: 1.12, fitKey: `in0:${s.focus}` };
@@ -474,10 +499,14 @@ function MapFor({
                 )}
               {s.view === "project" &&
                 s.tab === "inside" &&
-                spec !== undefined &&
+                focused !== undefined &&
                 insideLayout !== undefined && (
                   <InsideWorld
-                    spec={spec}
+                    spec={focused.spec}
+                    hidden={focused.hidden}
+                    allEntries={allEntries}
+                    narrow={narrow}
+                    onMoreEntries={() => setAllEntries(!allEntries)}
                     layout={insideLayout}
                     s={s}
                     entryId={entryId}
@@ -589,6 +618,7 @@ function MapFor({
             </p>
           ) : (
             data?.report?.note !== undefined &&
+            s.view === "overview" &&
             running === undefined && (
               <p
                 className="float"

@@ -7,7 +7,7 @@ import { IdSchema } from "./accounts.ts";
  * graph and facts, with no model; every fact carries the file and line it was read at.
  */
 
-export const INSIDE_TRIGGERS = ["HTTP", "SCHEDULE", "QUEUE", "COMMAND"] as const;
+export const INSIDE_TRIGGERS = ["HTTP", "SOCKET", "TOOL", "SCHEDULE", "QUEUE", "COMMAND"] as const;
 export const InsideTriggerSchema = z.enum(INSIDE_TRIGGERS);
 export type InsideTrigger = z.infer<typeof InsideTriggerSchema>;
 
@@ -15,17 +15,64 @@ const Name = z.string().min(1).max(160);
 const File = z.string().min(1).max(400);
 const Line = z.number().int().positive();
 
+/** One step of what happens after an entry point: a part of the project taking over, or a part using data. */
+export const InsideStepSpecSchema = z.object({
+  /** `i:<entry id>`, `c:<from>><to>` or `d:<fn>><data id>`: the line this step lights on the canvas. */
+  key: z.string().min(1).max(400),
+  kind: z.enum(["entry", "call", "data"]),
+  /** One plain sentence. */
+  text: z.string().min(1).max(300),
+  /** The part of the project this step happens in ("Connections"), or "Database" for data. */
+  part: z.string().min(1).max(60),
+  from: Name,
+  to: Name,
+  file: File,
+  line: Line,
+  /** The functions of this part that did the work: shown only when the step is opened. */
+  fns: z.array(z.object({ id: Name, file: File, line: Line })).max(8),
+  /** Names the sentence by what it is about, so a model-written sentence can replace the template one. */
+  wordsKey: z.string().max(40).optional(),
+});
+export type InsideStepSpec = z.infer<typeof InsideStepSpecSchema>;
+
 export const InsideEntrySchema = z.object({
   /** Stable for the same kind, label and file, so a journey can point at it. */
   id: z.string().min(1).max(40),
   kind: InsideTriggerSchema,
+  /** What it is for ("Agents call majhi"), or the route itself when no purpose is known. */
   label: Name,
+  /** The route or timer as written in code, shown small. */
+  raw: z.string().max(200).default(""),
   file: File,
   line: Line,
   /** The function it runs. */
   fn: Name,
+  /** The routes, commands or tools grouped under this entry. */
+  count: z.number().int().positive().default(1),
+  members: z
+    .array(z.object({ label: Name, file: File, line: Line }))
+    .max(500)
+    .default([]),
+  /** Key of the sentence that names the group's purpose. */
+  wordsKey: z.string().max(40).optional(),
+  /** What happens, step by step, followed only through calls proved in code. */
+  steps: z.array(InsideStepSpecSchema).max(12).default([]),
+  /** What else happens when it goes wrong, one plain line each. Kept out of the numbered steps. */
+  ifFails: z.array(z.string().max(200)).max(6).default([]),
 });
 export type InsideEntry = z.infer<typeof InsideEntrySchema>;
+
+/** An entry point the canvas does not draw: listed under "Show more". */
+export const InsideMoreEntrySchema = z.object({
+  id: z.string().min(1).max(40),
+  kind: InsideTriggerSchema,
+  label: Name,
+  raw: z.string().max(200).default(""),
+  file: File,
+  line: Line,
+  count: z.number().int().positive().default(1),
+});
+export type InsideMoreEntry = z.infer<typeof InsideMoreEntrySchema>;
 
 export const InsideFnSchema = z.object({
   id: Name,
@@ -62,7 +109,11 @@ export type InsideUse = z.infer<typeof InsideUseSchema>;
 export const InsideSpecSchema = z.object({
   v: z.literal(1).default(1),
   project: IdSchema,
-  entries: z.array(InsideEntrySchema).max(200),
+  entries: z.array(InsideEntrySchema).max(40),
+  /** Entry points beyond those drawn: listed under "Show more". */
+  more: z.array(InsideMoreEntrySchema).max(400).default([]),
+  /** How many entry points there are of each kind, drawn or not. */
+  totals: z.record(z.string(), z.number().int().nonnegative()).default({}),
   fns: z.array(InsideFnSchema).max(300),
   data: z.array(InsideDataSchema).max(200),
   calls: z.array(InsideCallSchema).max(1000),
@@ -71,10 +122,30 @@ export const InsideSpecSchema = z.object({
   services: z.array(z.string().min(1).max(80)).max(40),
   /** Datastores the project uses, from its config (a Postgres chip), even when no function was seen using one. */
   dbs: z.array(z.string().min(1).max(60)).max(20),
+  /** Datastores named in dependencies or config that no code reached from an entry point uses. */
+  declared: z.array(z.string().min(1).max(60)).max(20).default([]),
   /** Functions left out because the project has more than the page shows. */
   hidden: z.number().int().nonnegative().default(0),
 });
 export type InsideSpec = z.infer<typeof InsideSpecSchema>;
+
+/** The story of one command of a dispatcher route. `followed` is false when its handler cannot be tied to code. */
+export const InsideMemberSchema = z.object({
+  label: Name,
+  file: File,
+  line: Line,
+  followed: z.boolean(),
+  steps: z.array(InsideStepSpecSchema).max(12),
+  ifFails: z.array(z.string().max(200)).max(6).default([]),
+});
+export type InsideMember = z.infer<typeof InsideMemberSchema>;
+
+export const InsideMemberInputSchema = z.object({
+  org: IdSchema,
+  project: z.string().min(1).max(120),
+  entry: z.string().min(1).max(40),
+  member: Name,
+});
 
 /** `unread`: majhi has not read the code of this project yet. `ready` with an empty spec: it read it and found nothing it knows. */
 export const InsideViewSchema = z.object({
@@ -89,7 +160,7 @@ export const InsideInputSchema = z.object({ org: IdSchema, project: z.string().m
 // ---------------------------------------------------------------------------
 // The story of one entry point, in plain words
 
-/** What a step is drawn on: the entry's own line, a call between two functions, or a function using data. */
+/** What a step is drawn on: the entry's own line, a call between two parts, or a function using data. */
 export interface InsideStep {
   /** `i:<entry id>`, `c:<from>><to>` or `d:<fn>><data id>`: the line this step lights on the canvas. */
   key: string;
@@ -101,108 +172,30 @@ export interface InsideStep {
   from: string;
   to: string;
   kind: "entry" | "call" | "data";
+  part: string;
+  fns: { id: string; file: string; line: number }[];
 }
 
-/** Known services: what a function does with them, in a few plain words after the function's name. */
-const PHRASE: Readonly<Record<string, string>> = {
-  "Hacker News": "reads the Hacker News front page",
-  Stripe: "creates a payment with Stripe",
-  OpenAI: "sends the request to OpenAI",
-  Anthropic: "sends the prompt to Anthropic",
-  Telegram: "talks to Telegram",
-  GitHub: "reads from GitHub",
-  Slack: "posts to Slack",
-  Sentry: "reports to Sentry",
-  Twilio: "sends through Twilio",
-  SendGrid: "sends the email through SendGrid",
-  Resend: "sends the email through Resend",
-  Exa: "searches the web with Exa",
-  Firecrawl: "scrapes the page with Firecrawl",
-  Replicate: "runs the model on Replicate",
-};
+/** Steps shown before "Show more". */
+export const STEPS_SHOWN = 6;
 
-const ENTRY_TEXT: Record<InsideTrigger, (label: string, fn: string) => string> = {
-  HTTP: (label, fn) => `A request to ${label} calls ${fn}.`,
-  SCHEDULE: (label, fn) => `On schedule (${label}) the scheduler starts ${fn}.`,
-  QUEUE: (label, fn) => `A job for ${label} starts ${fn}.`,
-  COMMAND: (label, fn) => `The command ${label} runs ${fn}.`,
-};
-
-/** The text of a function using data. Deterministic: the verb and the kind of data decide it, nothing else. */
-export function dataText(fn: string, data: InsideData, verb: InsideUse["verb"]): string {
-  if (data.kind === "out") {
-    const phrase = PHRASE[data.name];
-    return phrase === undefined ? `${fn} sends a request to ${data.name}.` : `${fn} ${phrase}.`;
-  }
-  if (data.kind === "proj") return `${fn} hands the work to ${data.name}.`;
-  const store = data.sub.endsWith("table") ? `the ${data.name} table` : data.name;
-  if (verb === "write") return `${fn} saves to ${store}.`;
-  if (verb === "read") return `${fn} reads from ${store}.`;
-  return `${fn} uses ${store}.`;
+/** The story of an entry point: what the server worked out, with each step's `where`. */
+export function flowOf(_spec: InsideSpec, entry: Pick<InsideEntry, "steps">): InsideStep[] {
+  return stepsOf(entry.steps);
 }
 
-/** How deep a story follows calls from the entry's function. */
-export const FLOW_DEPTH = 6;
-
-/**
- * The story of an entry point: the entry itself, then, in the order the code reads, each call to another
- * function and each use of data, following calls depth first. A function is told once.
- */
-export function flowOf(spec: InsideSpec, entry: InsideEntry): InsideStep[] {
-  const fnById = new Map(spec.fns.map((f) => [f.id, f]));
-  const dataById = new Map(spec.data.map((d) => [d.id, d]));
-  const steps: InsideStep[] = [
-    {
-      key: `i:${entry.id}`,
-      text: ENTRY_TEXT[entry.kind](entry.label, entry.fn),
-      where: `${entry.file}:${entry.line}`,
-      file: entry.file,
-      line: entry.line,
-      from: entry.label,
-      to: entry.fn,
-      kind: "entry",
-    },
-  ];
-  const seen = new Set<string>();
-  const walk = (fn: string, depth: number) => {
-    if (seen.has(fn) || depth > FLOW_DEPTH) return;
-    seen.add(fn);
-    const here = [
-      ...spec.calls.filter((c) => c.from === fn).map((c) => ({ line: c.line, call: c })),
-      ...spec.uses.filter((u) => u.fn === fn).map((u) => ({ line: u.line, use: u })),
-    ].toSorted((a, b) => a.line - b.line);
-    for (const item of here) {
-      if ("call" in item) {
-        const c = item.call;
-        if (!fnById.has(c.to)) continue;
-        steps.push({
-          key: `c:${c.from}>${c.to}`,
-          text: `${c.from} asks ${c.to}.`,
-          where: `${c.file}:${c.line}`,
-          file: c.file,
-          line: c.line,
-          from: c.from,
-          to: c.to,
-          kind: "call",
-        });
-        walk(c.to, depth + 1);
-      } else {
-        const u = item.use;
-        const d = dataById.get(u.data);
-        if (d === undefined) continue;
-        steps.push({
-          key: `d:${u.fn}>${u.data}`,
-          text: dataText(u.fn, d, u.verb),
-          where: `${u.file}:${u.line}`,
-          file: u.file,
-          line: u.line,
-          from: u.fn,
-          to: d.name,
-          kind: "data",
-        });
-      }
-    }
-  };
-  walk(entry.fn, 0);
-  return steps;
+/** The steps of a story as the page lists them. */
+export function stepsOf(steps: readonly InsideStepSpec[]): InsideStep[] {
+  return steps.map((s) => ({
+    key: s.key,
+    text: s.text,
+    where: `${s.file}:${s.line}`,
+    file: s.file,
+    line: s.line,
+    from: s.from,
+    to: s.to,
+    kind: s.kind,
+    part: s.part,
+    fns: s.fns,
+  }));
 }
