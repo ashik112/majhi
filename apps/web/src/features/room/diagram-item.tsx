@@ -4,6 +4,7 @@ import { type ComponentProps, useEffect, useMemo, useRef, useState } from "react
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import type { Selection } from "@/features/diagram/diagram-canvas";
+import { sequenceHeight } from "@/features/diagram/layouts/sequence";
 import { LazyScene } from "@/features/diagram/lazy-scene";
 import { cn } from "@/lib/cn";
 import { GLASS } from "@/lib/glass";
@@ -57,13 +58,14 @@ function captionOf(spec: DiagramSpec, selection: Selection): string | undefined 
 export function DiagramItem({
   spec,
   agent,
-  height = 320,
+  height,
   legend,
   fitMin,
 }: {
   spec: DiagramSpec;
   /** Who drew it. A wiki page's diagram has no author to name. */
   agent?: string;
+  /** The frame's height. Default: 320, and for a sequence its own height up to 520, since it is never scaled down. */
   height?: number;
   legend?: ComponentProps<typeof LazyScene>["legend"];
   /** The smallest zoom the first view may use; a wide diagram goes lower. */
@@ -74,6 +76,8 @@ export function DiagramItem({
   const [large, setLarge] = useState(false);
   const caption = captionOf(spec, selection);
   const diagram = useMemo(() => spec, [spec]);
+  const frame =
+    height ?? (spec.layout === "sequence" ? Math.min(520, sequenceHeight(spec.edges.length)) : 320);
   return (
     <div ref={ref} className="my-2 max-w-[860px]" data-diagram-item="">
       <div className={cn("overflow-hidden rounded-xl", GLASS)}>
@@ -85,7 +89,7 @@ export function DiagramItem({
             Open full size
           </Button>
         </div>
-        <div style={{ height }}>
+        <div style={{ height: frame }}>
           {seen ? (
             <LazyScene
               diagram={diagram}

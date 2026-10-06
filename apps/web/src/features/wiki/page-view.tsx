@@ -10,6 +10,7 @@ import { type ReactNode, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DetailPane, DetailSection } from "@/components/ui/list-detail";
+import { sequenceHeight } from "@/features/diagram/layouts/sequence";
 import { DiagramItem } from "@/features/room/diagram-item";
 import { type Cites, Markdown } from "@/features/room/markdown";
 import { cn } from "@/lib/cn";
@@ -207,16 +208,16 @@ function CiteButton({ n, claim, onOpen }: { n: number; claim: WikiClaim | undefi
 }
 
 /**
- * How tall a diagram's frame is. The canvas fits a diagram to the frame's width first, so a sequence of
- * many actors is drawn small and its height follows its width: about 290 px an actor and 58 px a message
- * before scaling. Other layouts use the height the page asks for.
+ * How tall a diagram's frame is. A sequence is drawn at a readable size, never scaled down, so its frame is
+ * as tall as its messages and the pane scrolls, not the frame. Other layouts use the height the page asks for.
  */
 function frameHeight(spec: DiagramSpec, fallback: number): number {
   if (spec.layout !== "sequence") return fallback;
-  const actors = Math.max(2, spec.actors?.length ?? spec.nodes.length);
-  const zoom = Math.min(1, 760 / (actors * 290));
-  return Math.round(Math.min(720, Math.max(280, (120 + 58 * spec.edges.length) * zoom + 80)));
+  return sequenceHeight(spec.edges.length) + LEGEND_BAR;
 }
+
+/** The bar of line kinds under a sequence. */
+const LEGEND_BAR = 34;
 
 function Diagrams({
   page,
