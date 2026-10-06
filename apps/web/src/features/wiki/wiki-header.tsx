@@ -2,63 +2,73 @@ import type { WikiStatus } from "@majhi/shared";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
+import { OrgBadge } from "@/components/ui/org-badge";
 import { PageHeader } from "@/components/ui/page-header";
-import { Select } from "@/components/ui/select";
-import { plural } from "@/lib/format";
+import { Pick, type PickOption } from "@/components/ui/pick";
+import { badgeLetters, plural } from "@/lib/format";
+import { COPY } from "./copy";
 import type { WikiWorkspace } from "./use-wiki-switch";
+
+/** What the project picker says about one project's wiki: not built, built, or how many commits behind. */
+export function projectState(status: WikiStatus | undefined): string {
+  if (status?.builtCommit === undefined) return COPY.workspace.notBuilt;
+  return status.behind !== undefined && status.behind > 0
+    ? COPY.workspace.behind(status.behind)
+    : COPY.workspace.built;
+}
+
+/** The value of the project picker that means the workspace's own wiki. */
+export const WHOLE = "*";
 
 interface Props {
   workspaces: readonly WikiWorkspace[];
   org: string;
   onOrg: (org: string) => void;
-  projects: readonly string[];
-  project: string | undefined;
-  onProject: (project: string) => void;
+  projects: readonly { id: string; status: WikiStatus | undefined }[];
+  /** A project, or `WHOLE` for the workspace's own pages. */
+  scope: string | undefined;
+  onScope: (scope: string) => void;
   status: WikiStatus | undefined;
   onUpdate: (() => void) | undefined;
 }
 
 /** The top bar: the workspace and project pickers, what the pages were built from, and Update. */
-export function WikiHeader({
-  workspaces,
-  org,
-  onOrg,
-  projects,
-  project,
-  onProject,
-  status,
-  onUpdate,
-}: Props) {
+export function WikiHeader({ workspaces, org, onOrg, projects, scope, onScope, status, onUpdate }: Props) {
+  const orgOptions: PickOption[] = workspaces.map((w) => ({
+    value: w.org.id,
+    label: w.org.name,
+    lead: <OrgBadge label={badgeLetters(w.org.key)} color={w.org.color} size="md" />,
+  }));
+  const projectOptions: PickOption[] = [
+    { value: WHOLE, label: COPY.workspace.option, detail: COPY.workspace.repoCount(projects.length) },
+    ...projects.map((p) => ({
+      value: p.id,
+      label: p.id,
+      detail: projectState(p.status),
+      group: COPY.workspace.projects,
+    })),
+  ];
   return (
     <PageHeader
       title="Wiki"
       subtitle={
         <span className="flex items-center gap-2">
-          <Select
-            aria-label="Workspace"
-            className="h-8 w-[150px] min-[1320px]:w-[190px]"
+          <Pick
+            label={COPY.picker.workspace}
             value={org}
-            onChange={(e) => onOrg(e.target.value)}
-          >
-            {workspaces.map((w) => (
-              <option key={w.org.id} value={w.org.id}>
-                {w.org.name}
-              </option>
-            ))}
-          </Select>
+            options={orgOptions}
+            onChange={onOrg}
+            className="w-[150px] min-[1320px]:w-[190px]"
+          />
           {projects.length > 0 && (
-            <Select
-              aria-label="Project"
-              className="h-8 w-[150px] min-[1320px]:w-[230px]"
-              value={project ?? ""}
-              onChange={(e) => onProject(e.target.value)}
-            >
-              {projects.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </Select>
+            <Pick
+              label={COPY.picker.project}
+              value={scope}
+              options={projectOptions}
+              onChange={onScope}
+              className="w-[150px] min-[1320px]:w-[230px]"
+              menuWidth={260}
+            />
           )}
         </span>
       }

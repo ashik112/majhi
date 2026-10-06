@@ -2,7 +2,6 @@ import type { WikiPageId } from "@majhi/shared";
 import { z } from "zod";
 import type { Housekeeper, Spend } from "../../memory/housekeeper.ts";
 import { NO_SPEND, parseJson } from "../../memory/housekeeper.ts";
-import type { DraftPage } from "./draft.ts";
 import { wikiSpendId } from "./write.ts";
 
 /** One sentence of a page, named so the reply can be matched to it: `s1`, `s2` for the opening, `c1`, `c2` for the claims. */
@@ -14,7 +13,14 @@ interface Sentence {
 const MAX_SENTENCE = 800;
 
 /** The sentences of a draft, and only them: no citation, status or fact id goes to the model. */
-export function sentencesOf(draft: DraftPage): Sentence[] {
+/** What the plain-words pass reads and rewrites of a draft: its sentences. A project page and a workspace page both have them. */
+export interface Worded<C extends { text: string } = { text: string }> {
+  id: WikiPageId;
+  summary: readonly string[];
+  claims: readonly C[];
+}
+
+export function sentencesOf(draft: Worded): Sentence[] {
   return [
     ...draft.summary.map((text, i) => ({ id: `s${i + 1}`, text })),
     ...draft.claims.map((c, i) => ({ id: `c${i + 1}`, text: c.text })),
@@ -57,11 +63,11 @@ export function parsePlainReply(sent: readonly Sentence[]) {
  * The draft with the sentences replaced by their rewording. Only text changes: a sentence that lost a code
  * name it had keeps its original wording, and every citation, status and fact stays as it was.
  */
-export function withSentences(
-  draft: DraftPage,
+export function withSentences<C extends { text: string }, D extends Worded<C>>(
+  draft: D,
   original: readonly Sentence[],
   reworded: readonly Sentence[],
-): DraftPage {
+): D {
   const text = new Map<string, string>();
   original.forEach((o, i) => {
     const r = reworded[i]?.text;
@@ -91,16 +97,17 @@ const PROMPT = [
  * their ids only, and its answer changes nothing else. A page whose answer is refused (twice) keeps its
  * own wording, and the pass goes on to the next.
  */
-export async function plainWords(input: {
+export async function plainWords<C extends { text: string }, D extends Worded<C>>(input: {
   housekeeper: Pick<Housekeeper, "session">;
   org: string;
-  project: string;
-  drafts: readonly DraftPage[];
-}): Promise<{ drafts: DraftPage[]; unchanged: WikiPageId[]; usage: Spend }> {
+  /** The project the spend is booked for; absent for a workspace page. */
+  project: string | undefined;
+  drafts: readonly D[];
+}): Promise<{ drafts: D[]; unchanged: WikiPageId[]; usage: Spend }> {
   if (input.drafts.length === 0) return { drafts: [], unchanged: [], usage: NO_SPEND };
   const task = { id: wikiSpendId(input.org, input.project), org: input.org, project: input.project };
   const { value, spent } = await input.housekeeper.session(task, { kind: "notes" }, async (session) => {
-    const out: DraftPage[] = [];
+    const out: D[] = [];
     const unchanged: WikiPageId[] = [];
     for (const draft of input.drafts) {
       const sent = sentencesOf(draft);

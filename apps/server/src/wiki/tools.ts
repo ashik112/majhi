@@ -6,7 +6,7 @@ import type { WikiEnabled } from "./switch.ts";
 
 export const WIKI_TOOL_DESCRIPTION =
   "How this project is built, written by majhi from the code with the file and lines behind every claim. " +
-  "list: the pages (overview, components, flows, infra, gaps). read: one page by id. search: the pieces of the pages that best match some words. " +
+  "list: the pages of each project (overview, components, flows, infra, gaps) and of the workspace (how the projects connect, cross-repo flows, gaps). read: one page by id, with workspace true for a workspace page. search: the pieces of the pages that best match some words. " +
   "sources: where a claim is shown in the code. It answers for this task's workspace only. A claim marked guessed was inferred, not proven: check it in the code before relying on it.";
 
 /** A page is cut to this many characters when an agent reads it: the rest is a `search` away. */
@@ -23,6 +23,8 @@ export interface WikiToolsDeps {
   index: Pick<WikiIndex, "search">;
 }
 
+/** The place of the workspace's own pages: they have no project. */
+const WORKSPACE = "";
 const short = (commit: string) => commit.slice(0, 7);
 const where = (s: { path: string; lines: readonly [number, number] }) =>
   `${s.path}:${s.lines[0]}-${s.lines[1]}`;
@@ -45,15 +47,22 @@ export class WikiTools {
     if (org === undefined) throw new WikiToolRefusal("This task has no workspace, so it has no wiki.");
     if (!(await this.deps.enabled(org))) throw new WikiToolRefusal("The wiki is off for this workspace.");
     const projects = this.projectsOf(scope, org, input.project);
+    // The workspace's own pages are stored with no project, and searched under the empty name.
+    const places =
+      input.workspace === true
+        ? [WORKSPACE]
+        : input.project === undefined
+          ? [...projects, WORKSPACE]
+          : projects;
     switch (input.action) {
       case "list":
-        return this.list(org, projects);
+        return this.list(org, projects, input.project === undefined);
       case "read":
-        return this.read(org, projects, input.page);
+        return this.read(org, input.workspace === true ? [WORKSPACE] : projects, input.page);
       case "search":
-        return this.search(org, projects, input.words);
+        return this.search(org, places, input.words);
       case "sources":
-        return this.sources(org, projects, input.claim);
+        return this.sources(org, places, input.claim);
     }
   }
 
@@ -74,16 +83,25 @@ export class WikiTools {
     return own.filter((p) => this.deps.repo.pages(org, p).length > 0).toSorted();
   }
 
-  private list(org: string, projects: readonly string[]): string {
-    if (projects.length === 0) return "No project of this workspace has a wiki yet.";
-    return projects
-      .map((p) => {
-        const pages = this.deps.repo.pages(org, p);
-        const built = this.deps.repo.state(org, p).builtCommit;
-        const head = `Wiki of ${p}${built === undefined ? "" : ` (built from ${short(built)})`}:`;
-        return [head, ...pages.map((x) => `- ${x.id}: ${x.title}`)].join("\n");
-      })
-      .join("\n\n");
+  private list(org: string, projects: readonly string[], withWorkspace: boolean): string {
+    const workspace = withWorkspace ? this.deps.repo.pages(org, undefined) : [];
+    if (projects.length === 0 && workspace.length === 0)
+      return "No project of this workspace has a wiki yet.";
+    const parts = projects.map((p) => {
+      const pages = this.deps.repo.pages(org, p);
+      const built = this.deps.repo.state(org, p).builtCommit;
+      const head = `Wiki of ${p}${built === undefined ? "" : ` (built from ${short(built)})`}:`;
+      return [head, ...pages.map((x) => `- ${x.id}: ${x.title}`)].join("\n");
+    });
+    if (workspace.length > 0) {
+      parts.push(
+        [
+          "Wiki of the workspace (how its projects connect; read with workspace true):",
+          ...workspace.map((x) => `- ${x.id}: ${x.title}`),
+        ].join("\n"),
+      );
+    }
+    return parts.join("\n\n");
   }
 
   /** The one project a read or lookup is about: the only one with pages, or the one the agent named. */
@@ -99,10 +117,12 @@ export class WikiTools {
   private read(org: string, projects: readonly string[], pageId: string | undefined): string {
     const id = WikiPageIdSchema.safeParse(pageId);
     if (!id.success) throw new WikiToolRefusal("Give the page id from list, like overview or flow:sign-in.");
-    const project = this.single(projects);
-    const stored = this.deps.repo.page(org, project, id.data);
-    if (stored === undefined) throw new WikiToolRefusal(`${project} has no wiki page ${id.data}. Use list.`);
-    return pageText(stored.page);
+    const project = projects.length === 1 && projects[0] === WORKSPACE ? WORKSPACE : this.single(projects);
+    const stored = this.deps.repo.page(org, project === WORKSPACE ? undefined : project, id.data);
+    const name = project === WORKSPACE ? "The workspace" : project;
+    if (stored === undefined) throw new WikiToolRefusal(`${name} has no wiki page ${id.data}. Use list.`);
+    // The owner's decisions about roles show here as they do on the page.
+    return pageText(this.deps.repo.shown(stored.page));
   }
 
   private async search(org: string, projects: readonly string[], words: string | undefined): Promise<string> {
@@ -134,7 +154,7 @@ export class WikiTools {
         const shown = found.sources.map((s) => `  - ${where(s)} at ${short(s.commit)} (${s.repo})`);
         return [
           `${found.text}`,
-          `  ${found.proven ? "proven" : "guessed"}, on ${h.project === "" ? "" : `${h.project}/`}${h.page}, claim ${found.n}`,
+          `  ${found.proven ? "proven" : "guessed"}, on ${h.project === "" ? "workspace/" : `${h.project}/`}${h.page}, claim ${found.n}`,
           ...(shown.length === 0 ? ["  no lines cited"] : shown),
         ].join("\n");
       })
@@ -142,7 +162,7 @@ export class WikiTools {
   }
 
   private hitText(h: ChunkHit, named: boolean): string {
-    const at = `${named && h.project !== "" ? `${h.project}/` : ""}${h.page}${h.n === undefined ? "" : ` claim ${h.n}`}`;
+    const at = `${h.project === "" ? "workspace/" : named ? `${h.project}/` : ""}${h.page}${h.n === undefined ? "" : ` claim ${h.n}`}`;
     const text = h.text.length > 600 ? `${h.text.slice(0, 599)}…` : h.text;
     return `${at}${h.detail === "" ? "" : ` (${h.detail})`}\n${text}`;
   }

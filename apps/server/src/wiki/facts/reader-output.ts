@@ -1,4 +1,4 @@
-import { RepoPathSchema } from "@majhi/shared";
+import { CallPathSchema, RepoPathSchema } from "@majhi/shared";
 import { z } from "zod";
 
 /**
@@ -44,6 +44,17 @@ export const CallRowSchema = z.object({
 });
 export type CallRow = z.infer<typeof CallRowSchema>;
 
+/** One HTTP call with its method and path. Names the address only when the call writes one; a path is checked again here before it can become a fact. */
+export const RequestRowSchema = z.object({
+  file: RepoPathSchema,
+  line: Line,
+  method: z.string().min(1).max(20),
+  path: CallPathSchema,
+  host: z.string().min(1).max(200).nullish(),
+  port: z.number().int().positive().max(65535).nullish(),
+});
+export type RequestRow = z.infer<typeof RequestRowSchema>;
+
 const Header = z.object({
   v: z.literal(READER_VERSION),
   files: z.number().int().nonnegative(),
@@ -51,6 +62,7 @@ const Header = z.object({
   routes: z.array(z.unknown()),
   entries: z.array(z.unknown()),
   calls: z.array(z.unknown()),
+  requests: z.array(z.unknown()).default([]),
 });
 
 export interface ReaderOutput {
@@ -58,6 +70,7 @@ export interface ReaderOutput {
   routes: RouteRow[];
   entries: EntryRow[];
   calls: CallRow[];
+  requests: RequestRow[];
   /** What each tool said when it failed, and rows left out because they did not fit. */
   errors: string[];
 }
@@ -83,6 +96,7 @@ export function parseReaderOutput(text: string): ReaderOutput {
     routes: rows(head.routes, RouteRowSchema, "route", errors),
     entries: rows(head.entries, EntryRowSchema, "entry", errors),
     calls: rows(head.calls, CallRowSchema, "call", errors),
+    requests: rows(head.requests, RequestRowSchema, "request", errors),
     errors,
   };
 }

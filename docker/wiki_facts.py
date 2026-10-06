@@ -12,6 +12,8 @@ Runs in a runner container with no network, the export mounted read-only and onl
   entries    queue consumers, timers, commands and sockets, from majhi's own entry pass (`map_inside.py`), plus
              Celery beat schedules and `cron:` fields
   calls      HTTP calls to an address written in a file (`wiki_calls.py`): scheme, host, port, file, line
+  requests   HTTP calls with their method and path (`wiki_calls.py`), the address when the call writes one: method,
+             path, file, line. The path has no query and `{}` for a part filled in at run time
   files      how many source files the entry pass read
 
 Only names, paths and line numbers leave this script. A value of a setting, a password or a query string never does.
@@ -40,6 +42,7 @@ MAX_BYTES = 512 * 1024
 MAX_ROUTES = 20000
 MAX_ENTRIES = 20000
 MAX_CALLS = 2000
+MAX_REQUESTS = 5000
 MAX_GRAPH_FILES = 30000
 MAX_GRAPH_BYTES = 2 * 1024 * 1024
 NOIR_TIMEOUT = 180
@@ -257,7 +260,7 @@ def js_cron_fields(root, rel):
 
 def read_files(src, errors):
     parsers = {}
-    entries, calls, scanned = [], [], 0
+    entries, calls, requests, scanned = [], [], [], 0
     for rel in source_files(src):
         path = inside(src, rel)
         suffix = Path(rel).suffix.lower()
@@ -280,10 +283,12 @@ def read_files(src, errors):
                     entries.append(got)
             entries.extend(js_cron_fields(root, rel) if kind[0] == "js" else py_schedules(root, rel))
             calls.extend(wiki_calls.js_sites(root, rel) if kind[0] == "js" else wiki_calls.py_sites(root, rel))
+            requests.extend(wiki_calls.js_request_sites(root, rel) if kind[0] == "js" else wiki_calls.py_request_sites(root, rel))
         except Exception as err:  # noqa: BLE001 one file the grammars choke on must not lose the rest
             if len(errors) < 20:
                 errors.append(f"{rel}: {type(err).__name__}")
-    return scanned, entries[:MAX_ENTRIES], sorted(calls, key=lambda c: (c["file"], c["line"]))[:MAX_CALLS]
+    by_place = lambda c: (c["file"], c["line"], c.get("method", ""), c.get("path", ""))  # noqa: E731
+    return scanned, entries[:MAX_ENTRIES], sorted(calls, key=by_place)[:MAX_CALLS], sorted(requests, key=by_place)[:MAX_REQUESTS]
 
 
 def facts_pass(src, cache):
@@ -293,8 +298,8 @@ def facts_pass(src, cache):
     except (RuntimeError, ValueError, OSError, subprocess.TimeoutExpired) as err:
         routes = []
         errors.append(f"noir: {err}")
-    scanned, entries, calls = read_files(src, errors)
-    out = {"v": READER_VERSION, "files": scanned, "routes": routes, "entries": entries, "calls": calls, "errors": errors}
+    scanned, entries, calls, requests = read_files(src, errors)
+    out = {"v": READER_VERSION, "files": scanned, "routes": routes, "entries": entries, "calls": calls, "requests": requests, "errors": errors}
     tmp = cache / "reader.json.tmp"
     tmp.write_text(json.dumps(out))
     tmp.replace(cache / "reader.json")

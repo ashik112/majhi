@@ -39,10 +39,20 @@ export function useWikiPages(
 }
 
 /** `wiki.estimate`: what Update would rewrite and cost. Read only when the owner asks. */
-export function useWikiEstimate(org: string, project: string | undefined, enabled: boolean) {
+export function useWikiEstimate(
+  org: string,
+  project: string | undefined,
+  enabled: boolean,
+  page?: WikiPageId,
+) {
   return useQuery<CommandOutput<"wiki.estimate">, ApiRequestError>({
-    queryKey: [...scopeKey(org, project), "estimate"],
-    queryFn: () => cmd("wiki.estimate", { org, ...(project === undefined ? {} : { project }) }),
+    queryKey: [...scopeKey(org, project), "estimate", page ?? ""],
+    queryFn: () =>
+      cmd("wiki.estimate", {
+        org,
+        ...(project === undefined ? {} : { project }),
+        ...(page === undefined ? {} : { page }),
+      }),
     enabled,
     retry: false,
     staleTime: 0,
@@ -53,6 +63,45 @@ export function useWikiUpdate() {
   const client = useQueryClient();
   return useMutation<CommandOutput<"wiki.update">, ApiRequestError, CommandInput<"wiki.update">>({
     mutationFn: (input) => cmd("wiki.update", input, { reason: "Owner updated the wiki" }),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.wiki }),
+  });
+}
+
+/** `wiki.ask`: a question in plain words, answered from the pages. */
+export function useWikiAsk() {
+  return useMutation<CommandOutput<"wiki.ask">, ApiRequestError, CommandInput<"wiki.ask">>({
+    mutationFn: (input) => cmd("wiki.ask", input),
+  });
+}
+
+/** `wiki.system`: how a workspace's projects connect, the calls that link nowhere and the addresses to ask the owner about. */
+export function useWikiSystem(org: string | undefined) {
+  return useQuery<CommandOutput<"wiki.system">, ApiRequestError>({
+    queryKey: [...scopeKey(org ?? "", undefined), "system"],
+    queryFn: () => cmd("wiki.system", { org: org ?? "" }),
+    enabled: org !== undefined,
+  });
+}
+
+/** `wiki.answer`: what the owner says an address or a call is. It answers the new system view, so the lists update at once. */
+export function useWikiAnswer() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"wiki.answer">, ApiRequestError, CommandInput<"wiki.answer">>({
+    mutationFn: (input) => cmd("wiki.answer", input, { reason: "Owner answered a wiki question" }),
+    // The system view is left as it is, so an answered question stays on the page with its Undo until the page is left.
+    onSuccess: () =>
+      client.invalidateQueries({
+        queryKey: queryKeys.wiki,
+        predicate: (q) => !q.queryKey.includes("system"),
+      }),
+  });
+}
+
+/** `wiki.setRole`: confirm a guessed role, change it, or take the choice back. */
+export function useWikiSetRole() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"wiki.setRole">, ApiRequestError, CommandInput<"wiki.setRole">>({
+    mutationFn: (input) => cmd("wiki.setRole", input, { reason: "Owner decided a role in the wiki" }),
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.wiki }),
   });
 }

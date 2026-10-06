@@ -850,6 +850,21 @@
   margin-top: 1.5em;
 }
 
+.md-inline {
+  font-size: var(--text-body);
+  line-height: 1.6;
+  color: var(--color-fg-soft);
+}
+.md-inline p {
+  white-space: normal;
+}
+.md-inline > * + * {
+  margin-top: 0.6em;
+}
+.md-inline :not(pre) > code {
+  background: var(--color-raised);
+}
+
 .md ul,
 .md ol {
   padding-left: 1.5em;

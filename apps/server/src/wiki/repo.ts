@@ -1,6 +1,11 @@
 import {
   CommitShaSchema,
+  type OwnerAnswer,
+  type OwnerCallAnswer,
+  type OwnerRoleAnswer,
   RepoPathSchema,
+  type WikiAnswer,
+  WikiAnswerSchema,
   type WikiPage,
   type WikiPageId,
   WikiPageIdSchema,
@@ -10,6 +15,8 @@ import {
 import type Database from "better-sqlite3";
 import { z } from "zod";
 import { WikiPlanSchema } from "./plan.ts";
+import { applyRoleChoices } from "./roles.ts";
+import { endpointId } from "./system/address.ts";
 
 export const WikiGapsSchema = z.object({
   couldNot: z
@@ -37,6 +44,21 @@ export const WikiStateSchema = z.object({
 export type WikiState = z.infer<typeof WikiStateSchema>;
 
 export const EMPTY_WIKI_STATE: WikiState = { sources: {}, rules: 0, gaps: { couldNot: [], failed: [] } };
+
+/** The `project` of the state row of a workspace's own pages. A project id is never empty, so it cannot be one. */
+export const WORKSPACE_STATE = "";
+
+/** One question the owner answered, as the row's key: a later answer to the same question has the same key. */
+export function answerKey(a: WikiAnswer): string {
+  switch (a.kind) {
+    case "address":
+      return `address:${endpointId(a.host, a.port, a.scope)}`;
+    case "call":
+      return `call:${a.repo}:${a.method} ${a.path}`;
+    case "role":
+      return `role:${a.project}:${a.role}:${a.where}`;
+  }
+}
 
 export interface StoredPage {
   page: WikiPage;
@@ -203,6 +225,59 @@ export class WikiRepo {
       n: number;
     };
     return count.n;
+  }
+
+  /** Everything the owner told the wiki of a workspace. A row that does not parse reads as absent. */
+  answers(org: string): WikiAnswer[] {
+    const rows = this.db.prepare("SELECT answer FROM wiki_answers WHERE org = ? ORDER BY key").all(org) as {
+      answer: string;
+    }[];
+    return rows.flatMap((row) => {
+      try {
+        const parsed = WikiAnswerSchema.safeParse(JSON.parse(row.answer));
+        return parsed.success ? [parsed.data] : [];
+      } catch {
+        return [];
+      }
+    });
+  }
+
+  addressAnswers(org: string): OwnerAnswer[] {
+    return this.answers(org).flatMap((a) =>
+      a.kind === "address" ? [{ host: a.host, port: a.port, scope: a.scope, to: a.to }] : [],
+    );
+  }
+
+  callAnswers(org: string): OwnerCallAnswer[] {
+    return this.answers(org).flatMap((a) =>
+      a.kind === "call" ? [{ repo: a.repo, method: a.method, path: a.path, to: a.to }] : [],
+    );
+  }
+
+  roleAnswers(org: string): OwnerRoleAnswer[] {
+    return this.answers(org).flatMap((a) =>
+      a.kind === "role" ? [{ project: a.project, role: a.role, where: a.where, choice: a.choice }] : [],
+    );
+  }
+
+  /** Replaces every answer of one kind in a workspace with `next`, in one transaction. Other kinds and other workspaces are untouched. */
+  replaceAnswers(org: string, kind: WikiAnswer["kind"], next: readonly WikiAnswer[]): void {
+    const rows = next.map((a) => WikiAnswerSchema.parse(a));
+    if (rows.some((a) => a.kind !== kind)) throw new Error(`Every answer to replace is a ${kind} answer.`);
+    this.transaction(() => {
+      this.db.prepare("DELETE FROM wiki_answers WHERE org = ? AND key LIKE ?").run(org, `${kind}:%`);
+      const insert = this.db.prepare(
+        "INSERT OR REPLACE INTO wiki_answers (org, key, answer, updated_at) VALUES (?, ?, ?, ?)",
+      );
+      for (const a of rows) insert.run(org, answerKey(a), JSON.stringify(a), this.now());
+    });
+  }
+
+  /** A page as the owner sees it: a project overview with the owner's role decisions applied. Stored pages are never changed by it. */
+  shown(page: WikiPage): WikiPage {
+    return page.kind === "overview" && page.project !== undefined
+      ? applyRoleChoices(page, this.roleAnswers(page.org))
+      : page;
   }
 
   /** A project's state. A project never updated, or a row that no longer parses, reads as never built. */

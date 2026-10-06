@@ -58,6 +58,16 @@ describe("the read-only permission handler", () => {
     expect(await decide(ask("read", [`${ROOT}/src/app.py`, "/etc/passwd"]))).toBe("no");
   });
 
+  it("reads the other exports of a workspace, and nothing beside them", async () => {
+    const web = "/Users/owner/.majhi/.wiki/acme/web/src-4567";
+    const both = readOnlyHandler(ROOT, [web]);
+    expect(await both(ask("read", [`${web}/src/main.tsx`]))).toBe("yes");
+    expect(await both(ask("read", [`${ROOT}/src/app.py`, `${web}/package.json`]))).toBe("yes");
+    expect(await both(ask("read", ["/Users/owner/.majhi/.wiki/acme/other/src-8910/app.py"]))).toBe("no");
+    expect(await both(ask("read", [`${web}/../../api/graph/graph.json`]))).toBe("no");
+    expect(await decide(ask("read", [`${web}/src/main.tsx`]))).toBe("no");
+  });
+
   it("cancels when the request offers no option to answer with", async () => {
     expect(await decide({ ...ask("execute"), options: OPTIONS.slice(0, 1) })).toBeUndefined();
   });

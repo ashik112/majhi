@@ -33,6 +33,8 @@ export function factText(f: WikiFact): string {
       return entryText(f.entry);
     case "endpoint":
       return `address ${f.host}${f.port === undefined ? "" : `:${f.port}`}${f.keys.length === 0 ? "" : ` set in ${f.keys.join(" ")}`}`;
+    case "call":
+      return `call ${f.method} ${f.path}${f.host === undefined ? "" : ` on ${f.host}${f.port === undefined ? "" : `:${f.port}`}`}`;
     case "link":
       return `${f.type} link ${f.from} -> ${f.to}`;
     case "component":
@@ -56,7 +58,8 @@ const BY_KIND: Record<WikiFact["kind"], number> = {
   link: 4,
   entry: 5,
   endpoint: 6,
-  step: 7,
+  call: 7,
+  step: 8,
 };
 
 /** The facts that are leads for `page`, most useful first. */
@@ -64,7 +67,7 @@ export function hintFacts(page: WriterPage, facts: readonly WikiFact[]): WikiFac
   const ranked = (list: readonly WikiFact[]) => [...list].sort((a, b) => BY_KIND[a.kind] - BY_KIND[b.kind]);
   switch (page.kind) {
     case "overview":
-      return ranked(facts.filter((f) => f.kind !== "step" && f.kind !== "endpoint"));
+      return ranked(facts.filter((f) => f.kind !== "step" && f.kind !== "endpoint" && f.kind !== "call"));
     case "infra":
       return ranked(
         facts.filter(

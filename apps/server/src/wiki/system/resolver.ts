@@ -1,31 +1,15 @@
-import { sep } from "node:path";
-
 /**
- * What the config pass knows about each registered project, and how a name, URL or path found in one
- * project's files is traced to another project. Every rule is an exact lookup on typed facts or on word
+ * Who owns a service name a repo writes in an address. Every rule is an exact lookup on typed facts or on word
  * sets: nothing here matches text.
  */
 
-export interface ProjectFacts {
+/** The service names one project's compose and Kubernetes files give: the ones it builds, and every one it defines. */
+export interface ProjectServices {
   id: string;
-  /** The checkout, absolute. */
-  path: string;
-  /** `name` in package.json. */
-  packageName?: string | undefined;
-  /** `project.name` in pyproject.toml, lower case with `-` for `_` and `.`. */
-  pythonName?: string | undefined;
-  /** Remote URLs as `host/owner/repo` (no scheme, no `.git`). */
-  remotes: string[];
-  /** Ports the project's Dockerfile or compose file exposes. */
-  ports: number[];
-  /** Compose service names that build this project: a URL host with that name means this project. */
-  services: Set<string>;
-  /** Words of the project id. */
-  words: Set<string>;
-  /** Has something that runs: a Dockerfile, a compose file, a start script, a deploy file. */
-  runnable: boolean;
-  /** Has a manifest that publishes it for others (`main` or `exports`, or a Python build backend). */
-  publishable: boolean;
+  /** Compose services built from this project's code (`build`): a URL host with that name means this project. */
+  builds: ReadonlySet<string>;
+  /** Every compose service and Kubernetes workload that is not a datastore. */
+  defines: ReadonlySet<string>;
 }
 
 /** Lower-case words of a name: the runs of letters and digits (`acme-api`, `ACME_API_URL`). */
@@ -45,65 +29,31 @@ export function wordsOf(name: string): string[] {
   return words;
 }
 
-/** `host/owner/repo` of a git remote in URL or scp form, without the scheme, the user and `.git`. */
-export function remoteKey(url: string): string | undefined {
-  let text = url.trim();
-  if (text.startsWith("git+")) text = text.slice(4);
-  const hash = text.indexOf("#");
-  if (hash >= 0) text = text.slice(0, hash);
-  let host: string;
-  let path: string;
-  if (text.includes("://")) {
-    try {
-      const u = new URL(text);
-      host = u.hostname;
-      path = u.pathname;
-    } catch {
-      return undefined;
-    }
-  } else {
-    // scp form: user@host:owner/repo.git
-    const at = text.indexOf("@");
-    const colon = text.indexOf(":", at + 1);
-    if (colon < 0) return undefined;
-    host = text.slice(at + 1, colon);
-    path = text.slice(colon + 1);
-  }
-  let clean = path.startsWith("/") ? path.slice(1) : path;
-  if (clean.endsWith(".git")) clean = clean.slice(0, -4);
-  if (host === "" || clean === "") return undefined;
-  return `${host.toLowerCase()}/${clean}`;
+/** How a service name is tied to a project: a compose file builds it (`declared`), or a file only defines it (`config`). */
+export interface ServiceOwner {
+  project: string;
+  basis: "declared" | "config";
 }
 
 export class Resolver {
-  constructor(private readonly projects: readonly ProjectFacts[]) {}
-
-  byPackage(name: string): ProjectFacts | undefined {
-    return this.projects.find((p) => p.packageName === name);
-  }
-
-  byPython(name: string): ProjectFacts | undefined {
-    return this.projects.find((p) => p.pythonName === name);
-  }
-
-  byRemote(url: string): ProjectFacts | undefined {
-    const key = remoteKey(url);
-    return key === undefined ? undefined : this.projects.find((p) => p.remotes.includes(key));
-  }
-
-  /** The project whose checkout is exactly this folder (or the one that holds it). */
-  byPath(abs: string): ProjectFacts | undefined {
-    return this.projects.find((p) => abs === p.path || abs.startsWith(p.path + sep));
-  }
+  constructor(private readonly projects: readonly ProjectServices[]) {}
 
   /**
-   * The project a host name belongs to, when a compose file proves it: the host is a service that one project's
-   * compose file builds, and no other project builds a service of that name. Nothing else counts: not the words of
-   * a variable name, not the domain, not a port. `undefined` when it is unknown or ambiguous.
+   * The project a host name belongs to, when the files prove it: a service that exactly one project's compose file
+   * builds, else a service that exactly one project defines. The project that wrote the address never counts (its
+   * own services are its own). Nothing else counts: not the words of a variable name, not the domain, not a port.
+   * `undefined` when it is unknown or ambiguous.
    */
-  ownerOfService(host: string): string | undefined {
+  ownerOfService(host: string, caller: string): ServiceOwner | undefined {
     const name = host.toLowerCase();
-    const owners = this.projects.filter((p) => p.services.has(name));
-    return owners.length === 1 ? owners[0]?.id : undefined;
+    const others = this.projects.filter((p) => p.id !== caller);
+    const builders = others.filter((p) => p.builds.has(name));
+    if (builders.length === 1 && builders[0] !== undefined)
+      return { project: builders[0].id, basis: "declared" };
+    if (builders.length > 1) return undefined;
+    const definers = others.filter((p) => p.defines.has(name));
+    return definers.length === 1 && definers[0] !== undefined
+      ? { project: definers[0].id, basis: "config" }
+      : undefined;
   }
 }

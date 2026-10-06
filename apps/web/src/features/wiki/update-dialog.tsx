@@ -1,4 +1,4 @@
-import { WIKI_COST_CAP_USD } from "@majhi/shared";
+import { WIKI_COST_CAP_USD, type WikiPageId } from "@majhi/shared";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { describeError } from "@/lib/errors";
 import { formatMoney, formatTokens, plural } from "@/lib/format";
@@ -12,13 +12,17 @@ import { useWikiEstimate, useWikiUpdate } from "@/lib/wiki-queries";
 export function UpdateDialog({
   org,
   project,
+  page,
   onClose,
 }: {
   org: string;
-  project: string;
+  /** Absent: the whole workspace. */
+  project?: string;
+  /** Rewrite only this page. */
+  page?: WikiPageId;
   onClose: () => void;
 }) {
-  const estimate = useWikiEstimate(org, project, true);
+  const estimate = useWikiEstimate(org, project, true, page);
   const update = useWikiUpdate();
   const data = estimate.data;
   const nothing = data !== undefined && data.pages === 0;
@@ -50,13 +54,18 @@ export function UpdateDialog({
       : undefined;
   return (
     <ConfirmDialog
-      title="Update the wiki"
+      title={page === undefined ? "Update the wiki" : "Update this page"}
       body={body}
       confirmLabel="Update"
       busy={update.isPending}
       confirmDisabled={estimate.isPending || estimate.isError || nothing}
       error={error}
-      onConfirm={() => update.mutate({ org, project }, { onSuccess: onClose })}
+      onConfirm={() =>
+        update.mutate(
+          { org, ...(project === undefined ? {} : { project }), ...(page === undefined ? {} : { page }) },
+          { onSuccess: onClose },
+        )
+      }
       onCancel={onClose}
     />
   );

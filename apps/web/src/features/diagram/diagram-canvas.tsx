@@ -26,35 +26,18 @@ import {
   useState,
 } from "react";
 import { Button } from "@/components/ui/button";
-import { Lamp, type LampState } from "@/components/ui/lamp";
 import { ROW_SELECTED } from "@/components/ui/list-detail";
 import { cn } from "@/lib/cn";
-import { GLASS } from "@/lib/glass";
 import { fitSequence, SEQUENCE_PAD } from "./layouts/sequence";
-import { EDGE_PRESETS, edgeLook, TONE_COLOR } from "./presets";
-import { type Box, CARD_H, type EdgePath, type Positioned, type Rule } from "./types";
+import { withoutStepNumber } from "./measure";
+import { EDGE_PRESETS, edgeLook, kindColor, type LegendKey } from "./presets";
+import type { Box, EdgePath, Point, Positioned, Rule } from "./types";
 
 export type Selection = { kind: "node"; id: string } | { kind: "edge"; id: string } | undefined;
 
-/** What a page adds to one box: it knows things the diagram does not (tasks, a week's changes). */
+/** What a page adds to one box: a link under its text, for a box that leads to another page. */
 export interface NodeDecor {
-  dim?: boolean;
-  lamp?: { state: LampState; word: string };
-  /** A short bold word after the kind tag, like CHANGED. */
-  tag?: string;
-  /** Replaces the sub line. */
-  caption?: string;
-  /** Small pills on a tall card: what the box is built with. */
-  chips?: readonly string[];
-  /** A line on a tall card: the outside services it uses. */
-  uses?: readonly string[];
-}
-
-export interface EdgeDecor {
-  dim?: boolean;
-  /** A short bold word after the label, like NEW. */
-  badge?: string;
-  hideLabel?: boolean;
+  action?: { label: string; onClick: () => void };
 }
 
 export interface DiagramCanvasProps {
@@ -62,13 +45,18 @@ export interface DiagramCanvasProps {
   /** From `usePositioned(diagram)` (the scene does it). Passed in so the canvas never lays out. */
   positioned: Positioned;
   node?: ((n: DiagramNode) => NodeDecor) | undefined;
-  edge?: ((key: string) => EdgeDecor) | undefined;
   selection?: Selection;
   onSelect?: ((selection: Selection) => void) | undefined;
-  /** Kinds of line to explain in a legend under the canvas. */
-  legend?: readonly (keyof typeof EDGE_PRESETS)[] | undefined;
-  /** The smallest zoom "fit" may use. A big picture (the map) goes lower than a chat diagram. */
+  /** What to explain in a bar under the drawing: kinds of line, guessed lines, a message's number. */
+  legend?: readonly LegendKey[] | undefined;
+  /** A control at the right end of the legend bar (Open full size). */
+  corner?: ReactNode;
+  /** The smallest zoom "fit" may use. A big picture goes lower than a chat diagram. */
   fitMin?: number | undefined;
+  /** Zoom and fit buttons over the drawing. */
+  controls?: boolean;
+  /** Drawn at its own size, never scaled: the frame is as tall as the drawing, and a wider drawing scrolls sideways inside it. */
+  autoHeight?: boolean;
   className?: string;
 }
 
@@ -77,7 +65,7 @@ interface BoxData extends Record<string, unknown> {
   box: Box;
   decor: NodeDecor;
   selected: boolean;
-  /** A sequence's actor: a narrower box, a smaller name. */
+  /** A sequence's actor: the name centred in a narrow box. */
   compact: boolean;
 }
 interface GroupData extends Record<string, unknown> {
@@ -93,10 +81,9 @@ interface RuleData extends Record<string, unknown> {
 interface LineData extends Record<string, unknown> {
   edge: Diagram["edges"][number];
   path: EdgePath;
-  decor: EdgeDecor;
   selected: boolean;
   hovered: boolean;
-  /** A message of a sequence: its number on the line, its label above the line. */
+  /** A message of a sequence: its number on the line, its words above the line. */
   step?: number;
 }
 
@@ -113,89 +100,75 @@ const Handles = () => (
   </>
 );
 
-/** One box: its kind tag, a lamp with its word when a page says so, its name and a short line under it. */
+const OUTSIDE = "outside";
+
+/**
+ * One box: a small colored word for what it is, its name, and a short line under it, all in the sans face. A
+ * box sized to its words wraps; a fixed-size box cuts a long text with an ellipsis. An outside service is
+ * dashed. A page may add a link under the text.
+ */
 const BoxView = memo(function BoxView({ data }: NodeProps<BoxNode>) {
   const { node, decor, selected, box, compact } = data;
-  const tall = box.h >= CARD_H;
-  const chips = decor.chips ?? [];
-  const uses = decor.uses ?? [];
+  const wrap = box.fit === true;
+  const outside = node.kind?.toLowerCase() === OUTSIDE;
   return (
     <div
       data-diagram-node={node.id}
       style={{ width: box.w, height: box.h }}
       className={cn(
-        "cursor-pointer rounded-xl border border-glass-line bg-glass-strong py-2 shadow-glass transition-opacity duration-150",
-        compact ? "px-2 text-center" : "px-3",
+        "flex cursor-pointer flex-col rounded-[10px] border bg-glass-strong shadow-glass transition-colors duration-150 hover:border-line-hover",
+        outside ? "border-dashed border-line-bright" : "border-glass-line",
+        compact ? "items-center px-2 py-2 text-center" : "px-3 py-2.5",
         selected && ROW_SELECTED,
-        decor.dim && "opacity-30",
       )}
     >
       <Handles />
-      <div className={cn("flex h-4 items-center gap-2", compact && "justify-center")}>
-        {node.kind !== undefined && (
-          <span
-            className={cn(
-              "min-w-0 truncate font-mono tracking-[0.06em] uppercase",
-              compact ? "text-sm" : "text-[10px]",
-            )}
-            style={{ color: TONE_COLOR[node.tone ?? "neutral"] }}
-          >
-            {node.kind}
-          </span>
-        )}
-        {decor.tag !== undefined && (
-          <span
-            className={cn("font-mono font-semibold text-accent-text", compact ? "text-sm" : "text-[10px]")}
-          >
-            {decor.tag}
-          </span>
-        )}
-        {decor.lamp !== undefined && (
-          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-fg-muted">
-            <Lamp state={decor.lamp.state} size={7} />
-            {decor.lamp.word}
-          </span>
-        )}
-      </div>
-      <div className="mt-0.5 truncate text-base font-medium text-fg" title={node.label}>
-        {node.label}
-      </div>
-      <div
-        className={cn("truncate font-mono text-fg-faint", compact ? "text-sm" : "text-xs")}
-        title={decor.caption ?? node.sub}
-      >
-        {decor.caption ?? node.sub ?? ""}
-      </div>
-      {tall && (
-        <div className="mt-1 flex h-[18px] items-center gap-1 overflow-hidden" data-card-chips="">
-          {chips.slice(0, 3).map((c) => (
-            <span
-              key={c}
-              className="shrink-0 rounded border border-line-strong px-1.5 font-mono text-[10px] leading-4 text-fg-soft"
-            >
-              {c}
-            </span>
-          ))}
-          {chips.length > 3 && (
-            <span className="shrink-0 text-[10px] text-fg-muted">+{chips.length - 3}</span>
-          )}
+      {node.kind !== undefined && !compact && (
+        <div
+          data-box-kind=""
+          className="min-w-0 text-[11px] leading-[15px] font-medium [overflow-wrap:anywhere]"
+          style={{ color: kindColor(node.kind, node.tone) }}
+        >
+          {node.kind}
         </div>
       )}
-      {tall && (
+      <div
+        data-box-title=""
+        title={node.label}
+        className={cn(
+          "text-[14px] leading-5 font-semibold text-fg",
+          wrap ? "[overflow-wrap:anywhere]" : "truncate",
+        )}
+      >
+        {node.label}
+      </div>
+      {node.sub !== undefined && (
         <div
-          className="mt-0.5 truncate text-[11px] leading-4 text-fg-muted"
-          title={uses.length === 0 ? undefined : uses.join(", ")}
+          data-box-sub=""
+          title={node.sub}
+          className={cn("text-sm leading-4 text-fg-muted", wrap ? "[overflow-wrap:anywhere]" : "truncate")}
         >
-          {uses.length === 0
-            ? ""
-            : `Uses ${uses.slice(0, 2).join(", ")}${uses.length > 2 ? ` +${uses.length - 2}` : ""}`}
+          {node.sub}
         </div>
+      )}
+      {decor.action !== undefined && (
+        <button
+          type="button"
+          data-box-action=""
+          onClick={(e) => {
+            e.stopPropagation();
+            decor.action?.onClick();
+          }}
+          className="nodrag mt-auto cursor-pointer self-start text-sm leading-4 text-fg-soft hover:text-fg hover:underline"
+        >
+          {decor.action.label}
+        </button>
       )}
     </div>
   );
 });
 
-/** The dashed frame around the boxes of a group, its name above it. */
+/** The dashed frame around the boxes of a group, its name inside at the top. */
 const GroupView = memo(function GroupView({ data }: NodeProps<GroupNode>) {
   return (
     <div
@@ -203,7 +176,7 @@ const GroupView = memo(function GroupView({ data }: NodeProps<GroupNode>) {
       className="relative rounded-2xl border border-dashed border-line-bright bg-raised/40"
     >
       <Handles />
-      <span className="absolute -top-5 left-3 max-w-full truncate font-mono text-xs text-fg-muted">
+      <span className="absolute top-2 left-3.5 max-w-[calc(100%-28px)] truncate text-xs font-medium text-fg-muted">
         {data.label}
       </span>
     </div>
@@ -228,14 +201,46 @@ const RuleView = memo(function RuleView({ data }: NodeProps<RuleNode>) {
   );
 });
 
-/** A line, an arrowhead each end the diagram asks for, and a small label that selects it when clicked. */
+/** The corners of a line rounded off, so a line at right angles reads as one stroke. */
+function roundedPath(points: readonly Point[], radius = 8): string {
+  const first = points[0];
+  if (first === undefined) return "";
+  let d = `M ${first.x} ${first.y}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1];
+    const here = points[i];
+    const next = points[i + 1];
+    if (prev === undefined || here === undefined || next === undefined) continue;
+    const before = Math.hypot(here.x - prev.x, here.y - prev.y) || 1;
+    const after = Math.hypot(next.x - here.x, next.y - here.y) || 1;
+    const r = Math.min(radius, before / 2, after / 2);
+    const ax = here.x - ((here.x - prev.x) / before) * r;
+    const ay = here.y - ((here.y - prev.y) / before) * r;
+    const bx = here.x + ((next.x - here.x) / after) * r;
+    const by = here.y + ((next.y - here.y) / after) * r;
+    d += ` L ${ax} ${ay} Q ${here.x} ${here.y} ${bx} ${by}`;
+  }
+  const last = points[points.length - 1];
+  return last === undefined || points.length < 2 ? d : `${d} L ${last.x} ${last.y}`;
+}
+
+const MARK = "nodrag nopan pointer-events-none absolute";
+
+/** A line, an arrowhead each end the diagram asks for, and its label: a pill on the line, or a message's words above it. */
 const LineView = memo(function LineView({ data, markerEnd, markerStart }: EdgeProps<LineEdge>) {
   if (data === undefined) return null;
-  const { edge, path, decor, selected, hovered, step } = data;
-  const loop = path.from.x === path.to.x;
+  const { edge, path, selected, hovered, step } = data;
   const look = edgeLook(edge);
-  const d = `M ${path.from.x} ${path.from.y} Q ${path.via.x} ${path.via.y} ${path.to.x} ${path.to.y}`;
-  const showLabel = edge.label !== undefined && (decor.hideLabel !== true || hovered || selected);
+  const d =
+    path.route === undefined
+      ? `M ${path.from.x} ${path.from.y} Q ${path.via.x} ${path.via.y} ${path.to.x} ${path.to.y}`
+      : roundedPath(path.route);
+  const guessed = edge.style === "dotted";
+  const lab = path.label;
+  const at =
+    lab === undefined
+      ? undefined
+      : { transform: `translate(${lab.x}px, ${lab.y}px)`, width: lab.w, height: lab.h };
   return (
     <>
       <BaseEdge
@@ -245,61 +250,58 @@ const LineView = memo(function LineView({ data, markerEnd, markerStart }: EdgePr
         interactionWidth={18}
         style={{
           stroke: look.color,
-          strokeWidth: selected || hovered ? 2.6 : 1.6,
+          strokeWidth: selected || hovered ? 2.4 : 1.6,
           strokeDasharray: look.dash,
-          opacity: decor.dim ? 0.15 : edge.type === "together" ? 0.7 : 1,
+          opacity: edge.type === "together" ? 0.7 : 1,
         }}
       />
       {step !== undefined && (
         <EdgeLabelRenderer>
-          <div
-            data-diagram-edge={edge.id ?? ""}
-            style={{ transform: `translate(${path.mid.x}px, ${path.mid.y}px)` }}
-            className={cn("nodrag nopan pointer-events-none absolute size-0", decor.dim && "opacity-30")}
-          >
-            <span
-              data-step={step}
-              className={cn(
-                "absolute grid size-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border bg-glass-strong font-mono text-sm leading-none text-fg",
-                selected ? "border-line-hover bg-selected" : "border-line-bright",
-              )}
-            >
-              {step}
-            </span>
-            {showLabel && (
-              <span
-                style={{ maxWidth: loop ? 180 : Math.max(168, Math.abs(path.to.x - path.from.x)) }}
-                className={cn(
-                  "absolute line-clamp-2 w-max rounded-md bg-glass-strong px-1 font-mono text-sm [overflow-wrap:anywhere] text-fg-soft",
-                  loop
-                    ? "top-0 left-3.5 -translate-y-1/2 text-left"
-                    : "bottom-3 left-0 -translate-x-1/2 text-center",
-                  selected && "text-fg",
-                )}
-              >
-                {edge.label}
-                {decor.badge !== undefined && (
-                  <span className="ml-1 font-semibold text-accent-text">{decor.badge}</span>
-                )}
-              </span>
-            )}
-          </div>
-        </EdgeLabelRenderer>
-      )}
-      {step === undefined && showLabel && (
-        <EdgeLabelRenderer>
-          <div
-            data-diagram-edge={edge.id ?? ""}
+          <span
+            data-step={step}
             style={{ transform: `translate(-50%, -50%) translate(${path.mid.x}px, ${path.mid.y}px)` }}
             className={cn(
-              "nodrag nopan pointer-events-auto absolute flex max-w-[260px] cursor-pointer items-center gap-1.5 rounded-md border bg-glass-strong px-1.5 py-0.5 font-mono text-xs whitespace-nowrap text-fg-soft",
-              selected ? "border-line-hover bg-selected text-fg" : "border-line-strong",
-              decor.dim && "opacity-30",
+              MARK,
+              "grid size-5 place-items-center rounded-full border bg-glass-strong font-mono text-[11px] leading-none text-fg",
+              guessed ? "border-dashed border-amber" : "border-line-bright",
+              selected && "bg-selected",
             )}
           >
-            <span className="truncate">{edge.label}</span>
-            {decor.badge !== undefined && (
-              <span className="font-semibold text-accent-text">{decor.badge}</span>
+            {step}
+          </span>
+          {edge.label !== undefined && at !== undefined && (
+            <span
+              data-edge-label=""
+              style={at}
+              className={cn(
+                MARK,
+                "flex items-center px-0.5 text-sm leading-4 [overflow-wrap:anywhere] text-fg-soft",
+                path.from.x === path.to.x ? "justify-start text-left" : "justify-center text-center",
+                selected && "text-fg",
+              )}
+            >
+              {edge.label}
+            </span>
+          )}
+        </EdgeLabelRenderer>
+      )}
+      {step === undefined && edge.label !== undefined && (
+        <EdgeLabelRenderer>
+          <div
+            data-edge-label=""
+            data-diagram-edge=""
+            style={at ?? { transform: `translate(-50%, -50%) translate(${path.mid.x}px, ${path.mid.y}px)` }}
+            className={cn(
+              "nodrag nopan pointer-events-auto absolute flex cursor-pointer flex-col items-center justify-center rounded-[5px] border bg-glass-strong px-1 text-center",
+              at === undefined && "max-w-[220px]",
+              selected ? "border-line-hover bg-selected" : "border-line-strong",
+            )}
+          >
+            <span className="text-sm leading-4 [overflow-wrap:anywhere] text-fg-soft">{edge.label}</span>
+            {edge.note !== undefined && (
+              <span className={cn("text-[11px] leading-[14px]", guessed ? "text-amber" : "text-fg-faint")}>
+                {edge.note}
+              </span>
             )}
           </div>
         </EdgeLabelRenderer>
@@ -336,13 +338,18 @@ function Controls({ fitMin }: { fitMin: number }) {
         size="icon-sm"
         aria-label="Fit the diagram"
         title="Fit the diagram"
-        onClick={() => void flow.fitView({ duration: 200, padding: 0.04, minZoom: fitMin, maxZoom: 1 })}
+        onClick={() => void flow.fitView({ duration: 200, padding: FIT_PAD, minZoom: fitMin, maxZoom: 1 })}
       >
         <Maximize2 />
       </Button>
     </div>
   );
 }
+
+/** How much of the frame a fit leaves empty, on each side, as a share of it. */
+const FIT_PAD = 0.04;
+/** Room kept around a drawing that is shown at its own size. */
+const NATURAL_PAD = 8;
 
 /**
  * Fits the diagram to the canvas when what is drawn changes shape, and again when the canvas itself changes
@@ -361,7 +368,7 @@ function Refit({
   // biome-ignore lint/correctness/useExhaustiveDependencies: `shape` is the trigger; the flow handle is stable.
   useEffect(() => {
     const frame = requestAnimationFrame(
-      () => void flow.fitView({ duration: 200, padding: 0.04, minZoom: fitMin, maxZoom: 1 }),
+      () => void flow.fitView({ duration: 0, padding: FIT_PAD, minZoom: fitMin, maxZoom: 1 }),
     );
     return () => cancelAnimationFrame(frame);
   }, [shape]);
@@ -372,7 +379,7 @@ function Refit({
     const watch = new ResizeObserver(() => {
       window.clearTimeout(timer);
       timer = window.setTimeout(
-        () => void flow.fitView({ duration: 0, padding: 0.04, minZoom: fitMin, maxZoom: 1 }),
+        () => void flow.fitView({ duration: 0, padding: FIT_PAD, minZoom: fitMin, maxZoom: 1 }),
         80,
       );
     });
@@ -394,31 +401,126 @@ function bounds(from: { x: number; y: number }, to: { x: number; y: number }): B
   };
 }
 
-/** What each kind of line means. On a canvas it floats at the bottom; under a sequence it is a bar of its own. */
-function Legend({ kinds, bar }: { kinds: readonly (keyof typeof EDGE_PRESETS)[]; bar: boolean }) {
+/** The box around everything drawn: boxes, frames, line corners and labels. */
+function extent(p: Positioned): { x: number; y: number; w: number; h: number } {
+  let l = Number.POSITIVE_INFINITY;
+  let t = Number.POSITIVE_INFINITY;
+  let r = Number.NEGATIVE_INFINITY;
+  let b = Number.NEGATIVE_INFINITY;
+  const grow = (x0: number, y0: number, x1 = x0, y1 = y0) => {
+    l = Math.min(l, x0);
+    t = Math.min(t, y0);
+    r = Math.max(r, x1);
+    b = Math.max(b, y1);
+  };
+  for (const box of [...p.nodes.values(), ...p.groups.values()])
+    grow(box.x, box.y, box.x + box.w, box.y + box.h);
+  for (const e of p.edges.values()) {
+    for (const pt of e.route ?? [e.from, e.via, e.to]) grow(pt.x, pt.y);
+    if (e.label !== undefined) grow(e.label.x, e.label.y, e.label.x + e.label.w, e.label.y + e.label.h);
+  }
+  if (l === Number.POSITIVE_INFINITY) return { x: 0, y: 0, w: 1, h: 1 };
+  return { x: l, y: t, w: Math.max(1, r - l), h: Math.max(1, b - t) };
+}
+
+/** The size of an element, kept up to date. Zero until it is measured. */
+function useSize(ref: RefObject<HTMLElement | null>): { w: number; h: number } {
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el === null) return;
+    const read = () =>
+      setSize((was) =>
+        was.w === el.clientWidth && was.h === el.clientHeight
+          ? was
+          : { w: el.clientWidth, h: el.clientHeight },
+      );
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const watch = new ResizeObserver(read);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [ref]);
+  return size;
+}
+
+/**
+ * How much wider than its frame a drawing may be and still be drawn across: a bit of sideways scroll beats
+ * a tall tower. It is the ratio of the name's 14px to the 12px under which text would be too small to read.
+ */
+const SCROLL_ALLOWANCE = 14 / 12;
+
+/**
+ * Which of a diagram's layouts to draw. Shown at its own size (`natural`, never scaled), the first that is no
+ * wider than the frame (and its allowance), else the narrowest, which the frame then scrolls sideways. Fitted into a frame, the one
+ * that fills it best, the first winning unless a later one is clearly larger.
+ */
+function pickLayout(p: Positioned, frame: { w: number; h: number }, natural: boolean): Positioned {
+  const all = [p, ...(p.variants ?? [])];
+  if (all.length === 1 || frame.w === 0) return p;
+  if (natural) {
+    const room = frame.w - 2 * NATURAL_PAD;
+    return (
+      all.find((q) => extent(q).w <= room * SCROLL_ALLOWANCE) ??
+      all.reduce((best, q) => (extent(q).w < extent(best).w ? q : best))
+    );
+  }
+  const reach = (q: Positioned) => {
+    const e = extent(q);
+    return Math.min(1, (frame.w * (1 - 2 * FIT_PAD)) / e.w, (frame.h * (1 - 2 * FIT_PAD)) / e.h);
+  };
+  return all.reduce((best, q) => (reach(q) > reach(best) * 1.12 ? q : best));
+}
+
+const LEGEND_MARK = { w: 26, h: 8 } as const;
+
+function LegendMark({ keyed }: { keyed: LegendKey }) {
+  if (keyed === "step") {
+    return (
+      <span
+        aria-hidden="true"
+        className="grid size-[14px] place-items-center rounded-full border border-line-bright font-mono text-[9px] leading-none text-fg"
+      >
+        1
+      </span>
+    );
+  }
+  const color = keyed === "proven" || keyed === "guessed" ? "var(--c-fg-muted)" : EDGE_PRESETS[keyed].color;
+  const dash = keyed === "guessed" ? "2 4" : keyed === "proven" ? undefined : EDGE_PRESETS[keyed].dash;
+  return (
+    <svg
+      width={LEGEND_MARK.w}
+      height={LEGEND_MARK.h}
+      viewBox="0 0 26 8"
+      overflow="visible"
+      aria-hidden="true"
+    >
+      <path d="M0 4H22" stroke={color} strokeWidth="1.6" strokeDasharray={dash} fill="none" />
+      <path d="M26 4l-5-3v6z" fill={color} />
+    </svg>
+  );
+}
+
+const LEGEND_WORD: Record<"proven" | "guessed" | "step", string> = {
+  proven: "proven",
+  guessed: "guessed",
+  step: "step number",
+};
+
+/** What each mark means: a bar under the drawing, with a control of the page at its right end. */
+function Legend({ kinds, corner }: { kinds: readonly LegendKey[]; corner?: ReactNode }) {
   return (
     <div
-      className={cn(
-        "pointer-events-none flex flex-wrap gap-4 px-3 py-1.5 text-sm text-fg-muted",
-        bar ? "shrink-0 border-t border-line" : cn("absolute bottom-3 left-3 z-10 rounded-lg", GLASS),
-      )}
+      data-diagram-legend=""
+      className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-t border-line px-3 py-1.5 text-sm text-fg-muted"
     >
-      {kinds.map((type) => (
-        <span key={type} className="flex items-center gap-1.5">
-          <svg width="22" height="6" aria-hidden="true">
-            <line
-              x1="0"
-              y1="3"
-              x2="22"
-              y2="3"
-              stroke={EDGE_PRESETS[type].color}
-              strokeWidth="2"
-              strokeDasharray={EDGE_PRESETS[type].dash}
-            />
-          </svg>
-          {EDGE_PRESETS[type].legend}
+      {kinds.map((k) => (
+        <span key={k} className="flex items-center gap-1.5 whitespace-nowrap">
+          <LegendMark keyed={k} />
+          {k === "proven" || k === "guessed" || k === "step" ? LEGEND_WORD[k] : EDGE_PRESETS[k].legend}
         </span>
       ))}
+      {corner !== undefined && <span className="ml-auto flex items-center">{corner}</span>}
     </div>
   );
 }
@@ -431,32 +533,27 @@ export function DiagramCanvas({
   diagram,
   positioned,
   node,
-  edge,
   selection,
   onSelect,
   legend,
+  corner,
   fitMin = 0.6,
+  controls = true,
+  autoHeight = false,
   className,
 }: DiagramCanvasProps): ReactNode {
   const sequence = diagram.layout === "sequence";
   const box = useRef<HTMLDivElement>(null);
-  const [frameW, setFrameW] = useState(0);
-  useLayoutEffect(() => {
-    const el = box.current;
-    if (!sequence || el === null) return;
-    const read = () => setFrameW(el.clientWidth);
-    read();
-    if (typeof ResizeObserver === "undefined") return;
-    const watch = new ResizeObserver(read);
-    watch.observe(el);
-    return () => watch.disconnect();
-  }, [sequence]);
+  const frame = useSize(box);
+  const frameW = frame.w;
   // A sequence is never scaled down to fit: its lanes spread over a wide frame, and a narrow one scrolls.
   const fitted = useMemo(
     () => (sequence ? fitSequence(positioned, frameW - 2 * SEQUENCE_PAD) : undefined),
     [sequence, positioned, frameW],
   );
-  const placed = fitted?.positioned ?? positioned;
+  const natural = sequence || autoHeight;
+  const chosen = useMemo(() => pickLayout(positioned, frame, natural), [positioned, frame, natural]);
+  const placed = fitted?.positioned ?? chosen;
 
   const flowNodes = useMemo(() => {
     const out: (BoxNode | GroupNode | RuleNode)[] = [];
@@ -527,9 +624,8 @@ export function DiagramCanvas({
         ...(look.arrowEnd ? { markerEnd: marker } : {}),
         ...(look.arrowStart ? { markerStart: marker } : {}),
         data: {
-          edge: e,
+          edge: sequence && e.label !== undefined ? { ...e, label: withoutStepNumber(e.label) } : e,
           path,
-          decor: edge?.(key) ?? {},
           selected: selection?.kind === "edge" && selection.id === key,
           hovered: hover === key,
           ...(sequence ? { step: i + 1 } : {}),
@@ -537,7 +633,7 @@ export function DiagramCanvas({
       });
     });
     return out;
-  }, [diagram, placed, sequence, edge, selection, hover]);
+  }, [diagram, placed, sequence, selection, hover]);
 
   const handlers = {
     onNodeClick: (_: unknown, n: Node) => {
@@ -548,16 +644,23 @@ export function DiagramCanvas({
     onEdgeMouseLeave: () => setHover(undefined),
     onPaneClick: () => onSelect?.(undefined),
   };
-  if (fitted !== undefined) {
+  const bar = legend !== undefined && legend.length > 0 ? <Legend kinds={legend} corner={corner} /> : null;
+  const loneCorner = bar === null && corner !== undefined;
+  if (natural) {
+    // Drawn at its own size: the frame is as tall as the drawing, and a drawing wider than the frame scrolls sideways.
+    const drawn = fitted === undefined ? extent(chosen) : { x: 0, y: 0, w: fitted.width, h: fitted.height };
+    const pad = fitted === undefined ? NATURAL_PAD : SEQUENCE_PAD;
+    const width = Math.max(frameW, drawn.w + 2 * pad);
+    const height = drawn.h + 2 * pad;
     return (
-      <div className={cn("flex h-full w-full flex-col", className)}>
-        <div ref={box} data-sequence-scroll="" className="min-h-0 flex-1 overflow-auto">
-          <div
-            style={{
-              width: Math.max(frameW, fitted.width + 2 * SEQUENCE_PAD),
-              height: fitted.height + 2 * SEQUENCE_PAD,
-            }}
-          >
+      <div className={cn("flex w-full flex-col", autoHeight ? "" : "h-full", className)}>
+        <div
+          ref={box}
+          data-sequence-scroll={sequence ? "" : undefined}
+          data-diagram-scroll=""
+          className={cn("min-h-0 flex-1", sequence ? "overflow-auto" : "overflow-x-auto overflow-y-hidden")}
+        >
+          <div style={{ width, height }}>
             <ReactFlowProvider>
               <ReactFlow
                 nodes={flowNodes}
@@ -568,7 +671,12 @@ export function DiagramCanvas({
                 nodesConnectable={false}
                 edgesFocusable
                 elementsSelectable={false}
-                defaultViewport={{ x: SEQUENCE_PAD, y: SEQUENCE_PAD, zoom: 1 }}
+                viewport={{
+                  x: fitted === undefined ? (width - drawn.w) / 2 - drawn.x : pad,
+                  y: fitted === undefined ? pad - drawn.y : pad,
+                  zoom: 1,
+                }}
+                onViewportChange={() => undefined}
                 minZoom={1}
                 maxZoom={1}
                 panOnDrag={false}
@@ -583,35 +691,39 @@ export function DiagramCanvas({
             </ReactFlowProvider>
           </div>
         </div>
-        {legend !== undefined && <Legend kinds={legend} bar />}
+        {bar}
+        {loneCorner && <div className="flex justify-end px-3 py-1.5">{corner}</div>}
       </div>
     );
   }
   return (
-    <div ref={box} className={cn("relative h-full w-full", className)}>
-      <ReactFlowProvider>
-        <ReactFlow
-          nodes={flowNodes}
-          edges={flowEdges}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          edgesFocusable
-          elementsSelectable={false}
-          minZoom={0.3}
-          maxZoom={1.6}
-          fitView
-          fitViewOptions={{ padding: 0.04, minZoom: fitMin, maxZoom: 1 }}
-          proOptions={{ hideAttribution: true }}
-          {...handlers}
-          className="!bg-transparent"
-        >
-          <Refit shape={positioned} box={box} fitMin={fitMin} />
-          <Controls fitMin={fitMin} />
-        </ReactFlow>
-      </ReactFlowProvider>
-      {legend !== undefined && <Legend kinds={legend} bar={false} />}
+    <div className={cn("flex h-full w-full flex-col", className)}>
+      <div ref={box} className="relative min-h-0 flex-1">
+        <ReactFlowProvider>
+          <ReactFlow
+            nodes={flowNodes}
+            edges={flowEdges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            edgesFocusable
+            elementsSelectable={false}
+            minZoom={0.3}
+            maxZoom={1.6}
+            fitView
+            fitViewOptions={{ padding: FIT_PAD, minZoom: fitMin, maxZoom: 1 }}
+            proOptions={{ hideAttribution: true }}
+            {...handlers}
+            className="!bg-transparent"
+          >
+            <Refit shape={chosen} box={box} fitMin={fitMin} />
+            {controls && <Controls fitMin={fitMin} />}
+          </ReactFlow>
+        </ReactFlowProvider>
+      </div>
+      {bar}
+      {loneCorner && <div className="flex justify-end px-3 py-1.5">{corner}</div>}
     </div>
   );
 }

@@ -1,11 +1,12 @@
-import { type DiagramSpec, edgeKey } from "@majhi/shared";
+import { type DiagramNode, type DiagramSpec, edgeKey } from "@majhi/shared";
 import { Maximize2, X } from "lucide-react";
-import { type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
-import type { Selection } from "@/features/diagram/diagram-canvas";
+import type { NodeDecor, Selection } from "@/features/diagram/diagram-canvas";
 import { sequenceHeight } from "@/features/diagram/layouts/sequence";
 import { LazyScene } from "@/features/diagram/lazy-scene";
+import { type LegendKey, legendOf } from "@/features/diagram/presets";
 import { cn } from "@/lib/cn";
 import { GLASS } from "@/lib/glass";
 
@@ -52,8 +53,12 @@ function captionOf(spec: DiagramSpec, selection: Selection): string | undefined 
 }
 
 /**
- * A diagram an agent drew, inline in the room: the diagram canvas at a fixed height, drawn
- * only once it scrolls into view. Click a box to read its sub line; "Open full size" shows it large.
+ * A diagram, inline: the diagram canvas, drawn only once it scrolls into view. Click a box to read its sub
+ * line; "Open full size" shows it large.
+ *
+ * In a room it is a glass card with the diagram's title and the agent that drew it, at a fixed height. A page
+ * that names the diagram itself (the wiki) passes `bare`: no title, no zoom buttons, a frame as tall as the
+ * drawing needs, the legend under it and "Open full size" in its corner.
  */
 export function DiagramItem({
   spec,
@@ -61,15 +66,23 @@ export function DiagramItem({
   height,
   legend,
   fitMin,
+  bare = false,
+  node,
+  onOpenNode,
 }: {
   spec: DiagramSpec;
   /** Who drew it. A wiki page's diagram has no author to name. */
   agent?: string;
   /** The frame's height. Default: 320, and for a sequence its own height up to 520, since it is never scaled down. */
   height?: number;
-  legend?: ComponentProps<typeof LazyScene>["legend"];
+  legend?: readonly LegendKey[];
   /** The smallest zoom the first view may use; a wide diagram goes lower. */
   fitMin?: number;
+  bare?: boolean;
+  /** What a page adds to a box. */
+  node?: (n: DiagramNode) => NodeDecor;
+  /** A click on a box opens something (a page) instead of showing its sub line. */
+  onOpenNode?: (id: string) => void;
 }) {
   const { ref, seen } = useSeen<HTMLDivElement>();
   const [selection, setSelection] = useState<Selection>();
@@ -77,36 +90,69 @@ export function DiagramItem({
   const caption = captionOf(spec, selection);
   const diagram = useMemo(() => spec, [spec]);
   const frame =
-    height ?? (spec.layout === "sequence" ? Math.min(520, sequenceHeight(spec.edges.length)) : 320);
+    height ??
+    (spec.layout === "sequence" ? Math.min(520, sequenceHeight(spec.edges.length, spec.nodes)) : 320);
+  const select = useCallback(
+    (next: Selection) => {
+      if (next?.kind === "node" && onOpenNode !== undefined) {
+        setLarge(false);
+        onOpenNode(next.id);
+        return;
+      }
+      setSelection(next);
+    },
+    [onOpenNode],
+  );
+  const marks = legend ?? (bare ? legendOf(spec) : undefined);
+  const open = (
+    <Button
+      size="sm"
+      variant="ghost"
+      className={bare ? "h-6 gap-1 px-1.5 text-xs" : "ml-auto"}
+      onClick={() => setLarge(true)}
+    >
+      <Maximize2 aria-hidden="true" className={bare ? "size-3" : undefined} />
+      Open full size
+    </Button>
+  );
+  const scene = (big: boolean) => (
+    <LazyScene
+      diagram={diagram}
+      selection={selection}
+      onSelect={select}
+      legend={marks}
+      fitMin={fitMin}
+      node={node}
+      {...(big ? {} : bare ? { autoHeight: true, controls: false, corner: open } : {})}
+    />
+  );
   return (
-    <div ref={ref} className="my-2 max-w-[860px]" data-diagram-item="">
-      <div className={cn("overflow-hidden rounded-xl", GLASS)}>
-        <div className="flex items-center gap-2 border-b border-line px-3 py-1.5">
-          <span className="min-w-0 truncate text-base font-medium text-fg">{spec.title}</span>
-          {agent !== undefined && <span className="shrink-0 text-xs text-fg-faint">drawn by @{agent}</span>}
-          <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setLarge(true)}>
-            <Maximize2 aria-hidden="true" />
-            Open full size
-          </Button>
-        </div>
-        <div style={{ height: frame }}>
+    <div ref={ref} className={cn(bare ? "" : "my-2 max-w-[860px]")} data-diagram-item="">
+      <div className={cn("overflow-hidden rounded-xl", bare ? "border border-line-strong bg-sunken" : GLASS)}>
+        {!bare && (
+          <div className="flex items-center gap-2 border-b border-line px-3 py-1.5">
+            <span className="min-w-0 truncate text-base font-medium text-fg">{spec.title}</span>
+            {agent !== undefined && <span className="shrink-0 text-xs text-fg-faint">drawn by @{agent}</span>}
+            {open}
+          </div>
+        )}
+        <div style={bare ? undefined : { height: frame }}>
           {seen ? (
-            <LazyScene
-              diagram={diagram}
-              selection={selection}
-              onSelect={setSelection}
-              legend={legend}
-              fitMin={fitMin}
-            />
+            scene(false)
           ) : (
-            <div className="grid h-full place-items-center text-sm text-fg-faint">
+            <div
+              className="grid place-items-center text-sm text-fg-faint"
+              style={{ height: bare ? Math.min(frame, 200) : "100%" }}
+            >
               Drawing when it scrolls into view
             </div>
           )}
         </div>
-        <p className="min-h-7 border-t border-line px-3 py-1 text-sm text-fg-muted" aria-live="polite">
-          {caption ?? "Click a box to read more about it."}
-        </p>
+        {caption !== undefined && (
+          <p className="min-h-7 border-t border-line px-3 py-1 text-sm text-fg-muted" aria-live="polite">
+            {caption}
+          </p>
+        )}
       </div>
       {large && (
         <Modal
@@ -126,18 +172,12 @@ export function DiagramItem({
               <X />
             </Button>
           </div>
-          <div className="min-h-0 flex-1">
-            <LazyScene
-              diagram={diagram}
-              selection={selection}
-              onSelect={setSelection}
-              legend={legend}
-              fitMin={fitMin}
-            />
-          </div>
-          <p className="min-h-8 shrink-0 border-t border-line px-4 py-1.5 text-sm text-fg-muted">
-            {caption ?? "Click a box to read more about it."}
-          </p>
+          <div className="min-h-0 flex-1">{scene(true)}</div>
+          {caption !== undefined && (
+            <p className="min-h-8 shrink-0 border-t border-line px-4 py-1.5 text-sm text-fg-muted">
+              {caption}
+            </p>
+          )}
         </Modal>
       )}
     </div>

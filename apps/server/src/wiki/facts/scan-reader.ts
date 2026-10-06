@@ -1,6 +1,6 @@
 import { WIKI_HTTP_METHODS, type WikiEntry } from "@majhi/shared";
 import { endpointId, isLoopbackHost } from "../system/address.ts";
-import type { CallRow, EntryRow, ReaderOutput, RouteRow } from "./reader-output.ts";
+import type { CallRow, EntryRow, ReaderOutput, RequestRow, RouteRow } from "./reader-output.ts";
 import type { FactSink } from "./sink.ts";
 
 /**
@@ -187,6 +187,7 @@ export function addReaderFacts(sink: FactSink, out: ReaderOutput): ReaderFacts {
     if (entry !== undefined) add(entry, row.file, row.line);
   }
   for (const call of out.calls) addCall(sink, call);
+  for (const request of out.requests) addRequest(sink, request);
   return { folded, routes: routes.length };
 }
 
@@ -206,5 +207,41 @@ function addCall(sink: FactSink, call: CallRow): void {
     basis: "declared",
     slug: endpointId(host, port, scope),
     cites: [{ path: call.file, lines: [call.line, call.line] }],
+  });
+}
+
+/** A path part of letters and digits only, long, with both: a token that sits in a URL, never a name. The reader drops these too. */
+const SECRET_MIN = 24;
+export function looksSecret(part: string): boolean {
+  if (part.length < SECRET_MIN) return false;
+  let digit = false;
+  let letter = false;
+  for (const ch of part) {
+    if (ch >= "0" && ch <= "9") digit = true;
+    else if ((ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z")) letter = true;
+    else return false;
+  }
+  return digit && letter;
+}
+
+/**
+ * A call with its method and path, as a `call` fact. Only the method, the path and the address the call writes are
+ * kept: the row is read field by field, so a header, a body or a value the reader should not have sent is never copied.
+ * A path with a token-like part is dropped (the reader drops it too; this is the second gate).
+ */
+function addRequest(sink: FactSink, row: RequestRow): void {
+  if (row.path.split("/").some(looksSecret)) return;
+  const method = WIKI_HTTP_METHODS.find((m) => m === row.method.toUpperCase()) ?? "ANY";
+  const host = row.host?.toLowerCase();
+  const port = row.port ?? undefined;
+  sink.add({
+    kind: "call",
+    method,
+    path: row.path,
+    ...(host === undefined ? {} : { host }),
+    ...(port === undefined ? {} : { port }),
+    basis: "declared",
+    slug: `${method}-${row.path}@${row.file}:${row.line}`,
+    cites: [{ path: row.file, lines: [row.line, row.line] }],
   });
 }

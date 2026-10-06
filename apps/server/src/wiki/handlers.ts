@@ -1,13 +1,31 @@
-import { WIKI_RULES, type WikiStatus } from "@majhi/shared";
+import {
+  type OwnerAnswer,
+  type OwnerCallAnswer,
+  type OwnerRoleAnswer,
+  WIKI_RULES,
+  type WikiStatus,
+  wikiPageId,
+  wikiPageKind,
+} from "@majhi/shared";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
 import { type FindingsHandlerDeps, findingActor } from "../findings/handlers.ts";
+import type { WikiAsk } from "./ask.ts";
 import type { DriftOf } from "./drift.ts";
 import type { WikiRepo } from "./repo.ts";
 import type { WikiService } from "./service.ts";
 import type { WikiEnabled } from "./switch.ts";
+import { answerAddress, answerCall, answerRole } from "./system/answers.ts";
 
-type WikiCommand = "wiki.get" | "wiki.page" | "wiki.estimate" | "wiki.update";
+type WikiCommand =
+  | "wiki.get"
+  | "wiki.page"
+  | "wiki.ask"
+  | "wiki.estimate"
+  | "wiki.update"
+  | "wiki.system"
+  | "wiki.answer"
+  | "wiki.setRole";
 
 export interface WikiHandlerDeps extends Pick<FindingsHandlerDeps, "lanes" | "store"> {
   repo: WikiRepo;
@@ -18,7 +36,8 @@ export interface WikiHandlerDeps extends Pick<FindingsHandlerDeps, "lanes" | "st
   projects: (org: string) => Promise<readonly string[]>;
   /** How far the code has moved past a built commit. Absent: the status leaves it out. */
   drift?: DriftOf;
-  service: Pick<WikiService, "start" | "estimate" | "progress">;
+  service: Pick<WikiService, "start" | "estimate" | "progress" | "system" | "redraw">;
+  asker: Pick<WikiAsk, "answer">;
 }
 
 /**
@@ -77,7 +96,89 @@ export function wikiHandlers(deps: WikiHandlerDeps): Pick<CommandHandlers, WikiC
       status: await Promise.all(projects.map((p) => statusOf(org, p))),
     };
   };
+  const inWorkspace = async (org: string, project: string): Promise<void> => {
+    if (!(await deps.projects(org)).includes(project)) {
+      throw new UserError(`"${project}" is not a project of workspace "${org}".`, 404);
+    }
+  };
+  /** Stores one kind of answer for the workspace, replacing every earlier answer of that kind. */
+  const keepAddresses = (org: string, next: readonly OwnerAnswer[]) =>
+    repo.replaceAnswers(
+      org,
+      "address",
+      next.map((a) => ({ ...a, kind: "address" as const })),
+    );
+  const keepCalls = (org: string, next: readonly OwnerCallAnswer[]) =>
+    repo.replaceAnswers(
+      org,
+      "call",
+      next.map((a) => ({ ...a, kind: "call" as const })),
+    );
+  const keepRoles = (org: string, next: readonly OwnerRoleAnswer[]) =>
+    repo.replaceAnswers(
+      org,
+      "role",
+      next.map((a) => ({ ...a, kind: "role" as const })),
+    );
   return {
+    "wiki.system": async (input, ctx) => {
+      await scope(ctx, input.org, false);
+      await requireOn(input.org);
+      return (await deps.service.system(input.org)).view;
+    },
+    "wiki.answer": async (input, ctx) => {
+      await scope(ctx, input.org, true);
+      await requireOn(input.org);
+      const { org, question } = input;
+      // An answer names a project of this workspace and no other: nothing crosses into another workspace.
+      if (input.to?.kind === "project") await inWorkspace(org, input.to.project);
+      const to = input.to ?? undefined;
+      if (question.kind === "address") {
+        const address = { host: question.host.toLowerCase(), port: question.port, scope: question.scope };
+        if (address.scope !== undefined) await inWorkspace(org, address.scope);
+        keepAddresses(org, answerAddress(repo.addressAnswers(org), address, to));
+      } else {
+        const call = (await deps.service.system(org)).facts.find(
+          (f) => f.kind === "call" && f.id === question.call,
+        );
+        if (call === undefined || call.kind !== "call") {
+          throw new UserError(`There is no call ${question.call} in workspace "${org}".`, 404);
+        }
+        keepCalls(
+          org,
+          answerCall(repo.callAnswers(org), { repo: call.repo, method: call.method, path: call.path }, to),
+        );
+      }
+      await deps.service.redraw(org);
+      return (await deps.service.system(org)).view;
+    },
+    "wiki.setRole": async (input, ctx) => {
+      await scope(ctx, input.org, true);
+      await requireOn(input.org);
+      const { org, project } = input;
+      await inWorkspace(org, project);
+      const id = wikiPageId({ kind: "overview" });
+      const stored = repo.page(org, project, id);
+      const tile =
+        stored === undefined
+          ? undefined
+          : repo.shown(stored.page).roles.find((r) => r.role === input.role && r.where === input.where);
+      if (stored === undefined || tile === undefined) {
+        throw new UserError(`The overview of ${project} has no ${input.role} tile at ${input.where}.`, 404);
+      }
+      const choice = input.choice === "undo" ? undefined : input.choice;
+      keepRoles(
+        org,
+        answerRole(repo.roleAnswers(org), { project, role: input.role, where: input.where }, choice),
+      );
+      await deps.service.redraw(org);
+      const now = repo.page(org, project, id) ?? stored;
+      return {
+        page: repo.shown(now.page),
+        updatedAt: now.updatedAt,
+        versions: repo.versionCount(org, project, id),
+      };
+    },
     "wiki.get": async (input, ctx) => {
       await scope(ctx, input.org, false);
       return view(input.org, input.project);
@@ -88,21 +189,38 @@ export function wikiHandlers(deps: WikiHandlerDeps): Pick<CommandHandlers, WikiC
       const stored = repo.page(input.org, input.project, input.id);
       if (stored === undefined) throw new UserError(`There is no wiki page ${input.id}.`, 404);
       return {
-        page: stored.page,
+        // The owner's decisions about role tiles show on read; the stored page is the writer's.
+        page: repo.shown(stored.page),
         updatedAt: stored.updatedAt,
         versions: repo.versionCount(input.org, input.project, input.id),
       };
     },
+    "wiki.ask": async (input, ctx) => {
+      await scope(ctx, input.org, false);
+      await requireOn(input.org);
+      return deps.asker.answer(input.org, input.project, input.question);
+    },
     "wiki.estimate": async (input, ctx) => {
       await scope(ctx, input.org, false);
       await requireOn(input.org);
-      return deps.service.estimate(input.org, input.project);
+      return deps.service.estimate(input.org, input.project, input.page);
     },
     "wiki.update": async (input, ctx) => {
       await scope(ctx, input.org, true);
       await requireOn(input.org);
+      // A workspace has an overview, flows and gaps. Name the mistake now: the run goes on after the answer.
+      if (input.page !== undefined && input.project === undefined) {
+        const kind = wikiPageKind(input.page);
+        if (kind !== "overview" && kind !== "flow" && kind !== "gaps") {
+          throw new UserError(
+            `A workspace has no ${kind} page. Name a project to update ${input.page}.`,
+            409,
+          );
+        }
+      }
       const { finished } = await deps.service.start(input.org, input.project, {
         ...(input.replan === undefined ? {} : { replan: input.replan }),
+        ...(input.page === undefined ? {} : { page: input.page }),
       });
       // The run goes on after the answer; its failure is the project's last error, which the page shows.
       void finished.catch(() => undefined);

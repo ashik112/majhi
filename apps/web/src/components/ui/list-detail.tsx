@@ -50,11 +50,14 @@ export function ListPane({
 export function DetailPane({
   label,
   head,
+  footer,
   children,
   className,
 }: {
   label: string;
   head?: ReactNode;
+  /** Pinned under the scrolling body (a page's own input). */
+  footer?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
@@ -67,6 +70,7 @@ export function DetailPane({
       <div className="@container min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-8 scroll-fade">
         {children}
       </div>
+      {footer && <div className="shrink-0 border-t border-line px-5 py-3">{footer}</div>}
     </section>
   );
 }

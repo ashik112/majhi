@@ -49,8 +49,23 @@ export interface DraftRole {
 /** A box-and-lines picture of a non-flow page. A line is solid only when the claim it names is proven. */
 export interface DraftDiagram {
   title: string;
-  nodes: readonly { id: string; label: string; sub?: string | undefined }[];
-  edges: readonly { from: string; to: string; label?: string | undefined; claim?: number | undefined }[];
+  nodes: readonly {
+    id: string;
+    label: string;
+    sub?: string | undefined;
+    /** What the box is: draws its colored tag. */
+    role?: WikiKnownRole | undefined;
+    /** The row the box is drawn in: boxes of one tier share a row. */
+    rank?: number | undefined;
+  }[];
+  edges: readonly {
+    from: string;
+    to: string;
+    label?: string | undefined;
+    /** How the two talk: draws the line's color. */
+    type?: "http" | "queue" | "data" | undefined;
+    claim?: number | undefined;
+  }[];
 }
 
 /** What the writer could not settle, and why. It goes to the Gaps page. */

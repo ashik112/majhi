@@ -1,8 +1,10 @@
-import type { WikiClaim, WikiSource } from "@majhi/shared";
-import { FileText } from "lucide-react";
-import type { ReactNode } from "react";
+import type { WikiClaim, WikiPage, WikiSource } from "@majhi/shared";
+import { ChevronRight, FileText } from "lucide-react";
+import { type ReactNode, useMemo } from "react";
+import { type Cites, Markdown } from "@/features/room/markdown";
 import { cn } from "@/lib/cn";
-import { baseName } from "./model";
+import { COPY } from "./copy";
+import { baseName, leadOf } from "./model";
 
 /** What the page does with a source: open it in the viewer. The view keeps the open one. */
 export type OpenSource = (source: WikiSource) => void;
@@ -43,7 +45,7 @@ export function SourceChip({
 export function BasisMark({ proven, className }: { proven: boolean; className?: string }) {
   return (
     <span
-      title={proven ? "Proven: the cited lines show it" : "Guessed: inferred, no file shows it"}
+      title={proven ? COPY.basis.provenTitle : COPY.basis.guessedTitle}
       className={cn(
         "inline-flex shrink-0 items-center gap-1.5 text-xs",
         proven ? "text-green" : "text-amber",
@@ -54,7 +56,7 @@ export function BasisMark({ proven, className }: { proven: boolean; className?: 
         aria-hidden="true"
         className={cn("size-1.5 rounded-full", proven ? "bg-green" : "border border-amber")}
       />
-      {proven ? "proven" : "guessed"}
+      {proven ? COPY.basis.proven : COPY.basis.guessed}
     </span>
   );
 }
@@ -64,12 +66,12 @@ export function StaleMark({ className }: { className?: string }) {
   return (
     <span className={cn("inline-flex items-center gap-1.5 text-xs text-fg-faint", className)}>
       <span aria-hidden="true" className="size-1.5 rounded-full bg-amber" />
-      out of date
+      {COPY.subline.outOfDate}
     </span>
   );
 }
 
-/** The chips of a claim's sources. A guessed claim with none says so. */
+/** The chips of a claim's sources. A guess with none says so. */
 export function Sources({
   claim,
   changed,
@@ -79,12 +81,12 @@ export function Sources({
   changed: ReadonlySet<string>;
   onOpen: OpenSource;
 }) {
-  if (claim.sources.length === 0) return <span className="text-xs text-fg-faint">no file shows it</span>;
+  if (claim.sources.length === 0) return <span className="text-xs text-fg-faint">{COPY.basis.noFile}</span>;
   return (
     <>
       {claim.sources.map((s) => (
         <SourceChip
-          key={`${s.path}:${s.lines[0]}-${s.lines[1]}`}
+          key={`${s.repo}:${s.path}:${s.lines[0]}-${s.lines[1]}`}
           source={s}
           moved={changed.has(s.path)}
           onOpen={onOpen}
@@ -100,5 +102,120 @@ export function Stat({ value, children }: { value: ReactNode; children: ReactNod
     <span className="whitespace-nowrap">
       <b className="font-medium text-fg">{value}</b> {children}
     </span>
+  );
+}
+
+/** A page's own sentence: Markdown, so a `code` name is drawn as code and never as raw backticks. */
+export function Text({ children, className }: { children: string; className?: string }) {
+  return (
+    <div className={cn("min-w-0 text-body text-pretty", className)}>
+      <Markdown text={children} size="inline" />
+    </div>
+  );
+}
+
+/**
+ * One section of a page: a hairline above, a 15px heading and the content. The first has no hairline. A
+ * heading never has a line of help under it; `note` is a count in the same row.
+ */
+export function Block({
+  title,
+  first = false,
+  note,
+  children,
+  className,
+}: {
+  title: string;
+  first?: boolean;
+  note?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      aria-label={title}
+      className={cn("flex min-w-0 flex-col gap-3 pt-4 pb-5", first ? "" : "border-t border-line", className)}
+    >
+      <div className="flex min-h-7 items-center gap-3">
+        <h3 className="text-md font-semibold text-fg">{title}</h3>
+        {note !== undefined && <span className="tnum min-w-0 text-sm text-fg-faint">{note}</span>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** A section that starts closed: its heading and a count, and the content once opened. */
+export function Fold({ title, note, children }: { title: string; note?: ReactNode; children: ReactNode }) {
+  return (
+    <section aria-label={title} className="min-w-0 border-t border-line pt-3 pb-5">
+      <details className="group">
+        <summary className="flex min-h-7 cursor-pointer list-none items-center gap-3 [&::-webkit-details-marker]:hidden">
+          <ChevronRight
+            aria-hidden="true"
+            className="size-4 shrink-0 text-fg-faint transition-transform duration-150 group-open:rotate-90"
+          />
+          <h3 className="text-md font-semibold text-fg">{title}</h3>
+          {note !== undefined && <span className="tnum text-sm text-fg-faint">{note}</span>}
+        </summary>
+        <div className="pt-3">{children}</div>
+      </details>
+    </section>
+  );
+}
+
+/** The page's own text, with `[n]` turned into a button that opens claim n's first source. */
+export function BodyText({
+  page,
+  onOpen,
+  leadOnly = false,
+}: {
+  page: WikiPage;
+  onOpen: OpenSource;
+  /** Only the opening, not the lists after it (those are drawn from the page's claims). */
+  leadOnly?: boolean;
+}) {
+  const cites = useMemo<Cites>(() => {
+    const byNumber = new Map(page.claims.map((c) => [c.n, c]));
+    return {
+      known: new Set(byNumber.keys()),
+      render: (n) => <CiteButton n={n} claim={byNumber.get(n)} onOpen={onOpen} />,
+    };
+  }, [page.claims, onOpen]);
+  const text = leadOnly ? leadOf(page.body) : page.body;
+  if (text.trim() === "") return null;
+  return (
+    <div className="min-w-0 max-w-[68ch] text-pretty">
+      <Markdown text={text} size="inline" cites={cites} />
+    </div>
+  );
+}
+
+function CiteButton({ n, claim, onOpen }: { n: number; claim: WikiClaim | undefined; onOpen: OpenSource }) {
+  const source = claim?.sources[0];
+  const name = source === undefined ? COPY.basis.noFile : `${source.path}:${source.lines[0]}`;
+  const style =
+    "mx-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-sm border px-1 align-baseline font-mono text-[10px] leading-none";
+  if (source === undefined) {
+    return (
+      <span title={name} className={cn(style, "border-dashed border-amber-line text-amber")}>
+        {n}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      title={name}
+      data-cite={n}
+      onClick={() => onOpen(source)}
+      className={cn(
+        style,
+        "cursor-pointer text-fg-soft hover:bg-raised hover:text-fg",
+        claim?.proven === false ? "border-dashed border-amber-line" : "border-line-control",
+      )}
+    >
+      {n}
+    </button>
   );
 }
