@@ -656,6 +656,9 @@ function spendOf(usage: TurnUsage, auth: AuthMode, prices: PricesConfig): Spend 
   };
 }
 
+/** The agent answered twice and neither answer was usable. The session itself is fine. */
+export class BadReply extends Error {}
+
 /** One question and, when the reply is not usable, one more. */
 async function askChecked<T>(
   session: AgentSession,
@@ -674,7 +677,7 @@ async function askChecked<T>(
       ),
     );
   }
-  if (!parsed.ok) throw new Error(`@${agent} did not give a valid answer: ${parsed.problem}`);
+  if (!parsed.ok) throw new BadReply(`@${agent} did not give a valid answer: ${parsed.problem}`);
   return parsed.value;
 }
 
