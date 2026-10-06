@@ -121,6 +121,10 @@ export interface Restarted {
 const PORT_POLL_MS = 400;
 /** The most docker calls of one task that may wait at once (`wait`, `exec`, a build, a compose up). */
 const MAX_WAITING_CALLS = 16;
+/** Calls of a task read at once: each starts `docker image ls` and up to `MAX_ID_LOOKUPS` `docker inspect`. */
+const MAX_PLANNING_CALLS = 16;
+/** Container ids of one call that are looked up: a script that types more gets "no such container" for the rest. */
+const MAX_ID_LOOKUPS = 8;
 /** How long a holder gets to set its network guard before the preview is given up on. */
 const GUARD_READY_MS = 30_000;
 
@@ -201,6 +205,8 @@ export class ContainerService {
   private readonly guardedBuilders = new Map<string, string>();
   /** Docker calls of scripts that are waiting right now, by task. */
   private readonly calls = new Map<string, number>();
+  /** Calls of a task that are being read before they are planned. */
+  private readonly planning = new Map<string, number>();
   /** The end of the queue of limit checks that reserve a name across all tasks. */
   private globalTail: Promise<unknown> = Promise.resolve();
   /** Names of the task containers a script is starting or running in the foreground, by task. */
@@ -804,6 +810,15 @@ export class ContainerService {
       ids: await this.ownIds(docker, task, request.argv),
       envFiles: await prefetchEnvFiles(request.argv, cwd, safety),
     });
+    // Reading a call starts docker CLIs of majhi's own, so a task has only so many reading at once.
+    const reading = this.planning.get(task) ?? 0;
+    if (reading >= MAX_PLANNING_CALLS) {
+      return refused(
+        `${task} already has ${reading} docker calls being read, the most it may. Try again in a moment.`,
+        "limit_reached",
+      );
+    }
+    this.planning.set(task, reading + 1);
     let plan: TaskDockerPlan;
     try {
       plan = translateTaskDocker(request.argv, await context(request.cwd));
@@ -812,6 +827,10 @@ export class ContainerService {
       if (err instanceof ContainerRefused) return refused(err.message, err.refusal);
       if (err instanceof UserError) return refused(err.message);
       throw err;
+    } finally {
+      const left = (this.planning.get(task) ?? 1) - 1;
+      if (left > 0) this.planning.set(task, left);
+      else this.planning.delete(task);
     }
     // Calls that wait on docker (a wait, an exec, a build, a stack coming up) hold the server's attention:
     // a task has a few at a time.
@@ -1288,7 +1307,7 @@ export class ContainerService {
     argv: readonly string[],
   ): Promise<Map<string, string>> {
     const found = new Map<string, string>();
-    for (const word of new Set(argv.filter((a) => TASK_CONTAINER_ID.test(a)))) {
+    for (const word of [...new Set(argv.filter((a) => TASK_CONTAINER_ID.test(a)))].slice(0, MAX_ID_LOOKUPS)) {
       try {
         const row = (
           await docker.exec([

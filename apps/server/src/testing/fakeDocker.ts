@@ -63,6 +63,8 @@ export class FakeDocker implements ContainerDocker {
   builtDockerfiles: { file: string; text: string }[] = [];
   /** Runs just before a build reads its Dockerfile, to play a change made after majhi checked it. */
   beforeBuild: (() => Promise<void>) | undefined;
+  /** `image ls` waits for this, to play a daemon that is slow to answer. */
+  imageListGate: Promise<void> | undefined;
   /** Makes `ps` answer late, to play a slow daemon. */
   psDelayMs = 0;
 
@@ -246,6 +248,7 @@ export class FakeDocker implements ContainerDocker {
         this.images.delete(last);
         return out("");
       case "image ls":
+        await this.imageListGate;
         return out([...this.images].join("\n"));
       case "port":
         return out("0.0.0.0:49153\n[::]:49153\n");

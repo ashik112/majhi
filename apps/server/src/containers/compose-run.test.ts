@@ -243,6 +243,27 @@ describe("docker compose in a task", () => {
   });
 });
 
+describe("the docker CLIs a call spawns before it is planned", () => {
+  it("looks at no more than 8 container ids of one call", async () => {
+    const ids = Array.from({ length: 20 }, (_, i) => i.toString(16).padStart(12, "a"));
+    await call("ACM-1", repo, "rm", "-f", ...ids);
+    expect(docker.calls.filter((c) => c === "inspect --format")).toHaveLength(8);
+  });
+
+  it("holds at most 16 calls of a task in that stage, and answers the next one with a refusal", async () => {
+    let open: () => void = () => undefined;
+    docker.imageListGate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const held = Array.from({ length: 16 }, () => call("ACM-1", repo, "ps"));
+    const over = await call("ACM-1", repo, "ps");
+    expect(over.error?.code).toBe("limit_reached");
+    open();
+    expect((await Promise.all(held)).every((r) => r.error === undefined)).toBe(true);
+    expect((await call("ACM-1", repo, "ps")).error).toBeUndefined();
+  });
+});
+
 describe("builds in a task", () => {
   const dockerfile = (text: string) => writeFile(join(repo, "Dockerfile"), text);
   const build = (...extra: string[]) => call("ACM-1", repo, "build", "-t", "web:test", ...extra, ".");
