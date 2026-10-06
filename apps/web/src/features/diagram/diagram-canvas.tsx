@@ -57,6 +57,8 @@ export interface DiagramCanvasProps {
   onSelect?: ((selection: Selection) => void) | undefined;
   /** Kinds of line to explain in a legend under the canvas. */
   legend?: readonly (keyof typeof EDGE_PRESETS)[] | undefined;
+  /** The smallest zoom "fit" may use. A big picture (the map) goes lower than a chat diagram. */
+  fitMin?: number | undefined;
   className?: string;
 }
 
@@ -248,7 +250,7 @@ const LineView = memo(function LineView({ data, markerEnd, markerStart }: EdgePr
 const nodeTypes = { box: BoxView, frame: GroupView, rule: RuleView };
 const edgeTypes = { line: LineView };
 
-function Controls() {
+function Controls({ fitMin }: { fitMin: number }) {
   const flow = useReactFlow();
   return (
     <div className="absolute top-3 right-3 z-10 flex flex-col gap-1.5">
@@ -272,7 +274,7 @@ function Controls() {
         size="icon-sm"
         aria-label="Fit the diagram"
         title="Fit the diagram"
-        onClick={() => void flow.fitView({ duration: 200, padding: 0.04, minZoom: 0.6, maxZoom: 1 })}
+        onClick={() => void flow.fitView({ duration: 200, padding: 0.04, minZoom: fitMin, maxZoom: 1 })}
       >
         <Maximize2 />
       </Button>
@@ -284,12 +286,20 @@ function Controls() {
  * Fits the diagram to the canvas when what is drawn changes shape, and again when the canvas itself changes
  * size (a dialog opens at zero size and grows, a panel is resized).
  */
-function Refit({ shape, box }: { shape: Positioned; box: RefObject<HTMLDivElement | null> }) {
+function Refit({
+  shape,
+  box,
+  fitMin,
+}: {
+  shape: Positioned;
+  box: RefObject<HTMLDivElement | null>;
+  fitMin: number;
+}) {
   const flow = useReactFlow();
   // biome-ignore lint/correctness/useExhaustiveDependencies: `shape` is the trigger; the flow handle is stable.
   useEffect(() => {
     const frame = requestAnimationFrame(
-      () => void flow.fitView({ duration: 200, padding: 0.04, minZoom: 0.6, maxZoom: 1 }),
+      () => void flow.fitView({ duration: 200, padding: 0.04, minZoom: fitMin, maxZoom: 1 }),
     );
     return () => cancelAnimationFrame(frame);
   }, [shape]);
@@ -300,7 +310,7 @@ function Refit({ shape, box }: { shape: Positioned; box: RefObject<HTMLDivElemen
     const watch = new ResizeObserver(() => {
       window.clearTimeout(timer);
       timer = window.setTimeout(
-        () => void flow.fitView({ duration: 0, padding: 0.04, minZoom: 0.6, maxZoom: 1 }),
+        () => void flow.fitView({ duration: 0, padding: 0.04, minZoom: fitMin, maxZoom: 1 }),
         80,
       );
     });
@@ -334,6 +344,7 @@ export function DiagramCanvas({
   selection,
   onSelect,
   legend,
+  fitMin = 0.6,
   className,
 }: DiagramCanvasProps): ReactNode {
   const flowNodes = useMemo(() => {
@@ -431,7 +442,7 @@ export function DiagramCanvas({
           minZoom={0.3}
           maxZoom={1.6}
           fitView
-          fitViewOptions={{ padding: 0.04, minZoom: 0.6, maxZoom: 1 }}
+          fitViewOptions={{ padding: 0.04, minZoom: fitMin, maxZoom: 1 }}
           proOptions={{ hideAttribution: true }}
           onNodeClick={(_, n) => {
             if (n.type === "box") onSelect?.({ kind: "node", id: n.id });
@@ -442,8 +453,8 @@ export function DiagramCanvas({
           onPaneClick={() => onSelect?.(undefined)}
           className="!bg-transparent"
         >
-          <Refit shape={positioned} box={box} />
-          <Controls />
+          <Refit shape={positioned} box={box} fitMin={fitMin} />
+          <Controls fitMin={fitMin} />
         </ReactFlow>
       </ReactFlowProvider>
       {legend !== undefined && (

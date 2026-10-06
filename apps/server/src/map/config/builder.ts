@@ -191,7 +191,13 @@ export class MapBuilder {
         });
       }
     }
-    for (const ref of this.storeRefs) if (!boxed.has(ref)) this.chip(ref.project, "stack", ref.store.label);
+    // A store a project reaches through a shared box is already drawn: no chip for the same one.
+    const drawn = new Set([...boxed].map((r) => `${r.project}|${r.store.slug}`));
+    for (const ref of this.storeRefs) {
+      if (!boxed.has(ref) && !drawn.has(`${ref.project}|${ref.store.slug}`)) {
+        this.chip(ref.project, "stack", ref.store.label);
+      }
+    }
   }
 
   edge(e: { from: string; to: string; type: MapEdgeType; label: string; proof?: Proof | undefined }): void {

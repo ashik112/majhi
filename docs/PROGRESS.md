@@ -1,5 +1,30 @@
 # Progress
 
+## Map accuracy (branch `fix/map-accuracy`, not merged)
+
+**Why.** The owner's real map was "random, mostly wrong, connects independent projects, no way to hide projects". Causes: lines were guessed from the words of a variable name, the domain or a port; every project's Postgres and Redis became one shared box; every outside service was a box; model-proposed lines were mixed in; the layout was a dagre dump.
+
+**What changed.**
+
+- **A project line needs proof.** The config pass no longer draws project-to-project HTTP lines. It collects every address a project calls (a URL's host and port) as an endpoint. A line exists only when a compose file proves the host is a service one project builds (tier "Found in code"), or when the owner answered "this address is that project" (tier "From your answer"). Values that are lists, variables named like origins, CORS, redirects, callbacks, the project's own site, and names with no URL are never endpoints. Known outside hosts (Stripe, OpenAI, Sentry) are chips. A local address (`localhost:8000`) belongs to the project that wrote it.
+- **Datastores are chips.** A driver, a compose image or a local connection URL is a chip on the project's card (Python, Postgres, Redis). A shared box appears only when two projects name the same remote host, port and database; it is a queue when a project runs jobs through it.
+- **Outside services are chips** ("Uses OpenAI, Sentry"), from SDKs, known hosts, and the addresses the owner called outside.
+- **Model proposals** now return only addresses (host, port, the line). A host must appear on the line it names. They never choose a project. A line made from one is tier "Needs a check": hidden until accepted in the Review tab (header says "N to review"). Confidence tiers: `extracted`, `inferred`, `ambiguous` (the three tiers of graphify's edges).
+- **Answers** (`map.answer`): an address becomes a project, outside, or ignored for the whole workspace and for every later update; "Forget" undoes it. `map.setRole` sets app, service or worker over what the dependencies show.
+- **Layout** (`lanes`, one more registered layout): linked projects form groups, each laid out in columns by role (app, service, worker, data), the best connected box in the middle with a HUB tag. Boxes with no line sit in a compact "Not connected" group. Groups are dealt into columns to fit a wide canvas. Line labels show on hover, on a picked box's lines, or when picked. Deployment view groups by where things run and draws no lines.
+- **Controls** in the side panel when nothing is picked: tabs Projects (checkbox per project, All, None, search above 8, Hide not connected), Review (accept or dismiss with proof), Addresses (name an address: project, Outside, Ignore; answers with Forget). Click a box to focus it and its neighbours, Esc clears. The project list is remembered per workspace.
+- **Migration** 168 adds `project_maps.extra` (addresses, answers, roles, rules version). A map drawn by older rules reads as never updated; the next Update draws it again. What the owner removed still holds.
+
+**Numbers on the eight-project Acme fixture** (`ACCURACY_FILES`): before 13 boxes and 12 lines (Postgres, Redis, OpenAI, Resend, Sentry as boxes; billing and api sharing "Postgres"; web to api and admin to api guessed by name). After the first update: 9 boxes (8 projects and one proven shared queue) and 3 lines (billing to api from compose, worker and jobs to the shared queue from the same URL); 4 addresses wait to be named. After naming `api.acme.test` as acme-api: 5 lines.
+
+**How verified.** Typecheck clean. Tests (crucial only): `map/config.test.ts` (addresses exclude origins, CORS and name-only variables; a line needs a known address; no shared datastore from drivers or local names), `map/service.test.ts` (an answer draws the line and the next update draws it again, plus the earlier cost, isolation and removed-line tests). Browser on an isolated e2e server (temp home, port 7191, `scratchpad/map-accuracy/`): update, address answers, Outside, hide a project, Hide not connected, focus and Esc, role change, reload keeps the list, second update keeps the answers, Review accept, deployment view, 1440 and 1100 wide, no console errors.
+
+**Left.**
+- graphify as the engine (tree-sitter call sites in a guarded runner container, Leiden communities, query tools for agents, an Inside view) is not built: installing the package on the host was not allowed in this session. Groups here are the linked components and hubs are by line count. The call-site input is one function (`parseProposal`) that already yields endpoints, so graph.json call sites can feed the same resolver.
+- At 1100 wide the canvas is about 510 px, so eight projects draw at about half size.
+- Chat `show_map` keeps its top-down layout and now leaves out lines that need a check.
+
+
 ## Project map and chat diagrams (built, not merged)
 
 Branch `feat/project-map`. SPEC 5.21.

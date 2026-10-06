@@ -196,7 +196,7 @@ function AddressList({ view, addresses }: { view: MapView; addresses: MapEndpoin
                 >
                   From {from.join(", ")}
                 </span>
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2">
                   <Select
                     aria-label={`Which project is ${addressText(e)}`}
                     value=""
@@ -204,7 +204,7 @@ function AddressList({ view, addresses }: { view: MapView; addresses: MapEndpoin
                     onChange={(ev) =>
                       ev.target.value !== "" && say(e, { kind: "project", project: ev.target.value })
                     }
-                    className="h-7 min-w-0 flex-1 text-sm"
+                    className="h-7 text-sm"
                   >
                     <option value="">Which project?</option>
                     {projects
@@ -215,12 +215,14 @@ function AddressList({ view, addresses }: { view: MapView; addresses: MapEndpoin
                         </option>
                       ))}
                   </Select>
-                  <Button size="sm" disabled={answer.isPending} onClick={() => say(e, { kind: "outside" })}>
-                    Outside
-                  </Button>
-                  <Button size="sm" disabled={answer.isPending} onClick={() => say(e, { kind: "ignore" })}>
-                    Ignore
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button size="sm" disabled={answer.isPending} onClick={() => say(e, { kind: "outside" })}>
+                      Outside
+                    </Button>
+                    <Button size="sm" disabled={answer.isPending} onClick={() => say(e, { kind: "ignore" })}>
+                      Ignore
+                    </Button>
+                  </div>
                 </div>
               </li>
             );

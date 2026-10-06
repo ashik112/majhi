@@ -237,7 +237,8 @@ export function shapeMap(view: MapView, options: { viewId: MapViewId; prefs: Map
           ...targets.map((t): DiagramNode => ({ id: `deploy:${t}`, label: t })),
           ...nodes.map((n) => toDiagram(n, `deploy:${n.deploy ?? "not known"}`)),
         ],
-        edges,
+        // This view is about where things run: lines would only cross the groups.
+        edges: [],
       },
     };
   }
@@ -270,7 +271,8 @@ export function shapeMap(view: MapView, options: { viewId: MapViewId; prefs: Map
       if (deg(n.id) >= 3 || (members.length >= 4 && deg(n.id) === top && top >= 2)) hubs.add(n.id);
     }
     const id = `system:${i}`;
-    frames.push({ id, label: `${best[0]?.label ?? "Group"} group` });
+    const named = best.find((n) => n.kind === "project") ?? best[0];
+    frames.push({ id, label: `${named?.label ?? "Group"} group` });
     for (const n of members) boxes.push(toDiagram(n, id));
   });
   const lonely = prefs.hideAlone ? [] : alone.flat();

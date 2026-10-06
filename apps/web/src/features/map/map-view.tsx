@@ -260,7 +260,10 @@ function MapFor({ org, name, switcher }: { org: string; name: string; switcher: 
               {toReview > 0 ? `${toReview} to review` : `${asks} to name`}
             </Button>
           )}
-          <span className="min-w-0 truncate text-sm text-fg-muted" data-map-fresh="">
+          <span
+            className="hidden min-w-0 truncate text-sm text-fg-muted min-[1280px]:inline"
+            data-map-fresh=""
+          >
             {ago === undefined ? `${name}: never updated` : `Updated ${ago}`}
             {data !== undefined && ago !== undefined && (
               <>
@@ -343,6 +346,7 @@ function MapFor({ org, name, switcher }: { org: string; name: string; switcher: 
               selection={selection}
               onSelect={setSelection}
               legend={LEGEND}
+              fitMin={0.3}
             />
           )}
           {failed !== undefined && (
