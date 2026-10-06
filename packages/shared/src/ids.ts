@@ -12,3 +12,9 @@ export const IdSchema = z
 /** Reference to an entry in `secrets.age`, like `secret:anthropic-personal`. */
 export const SecretRefSchema = z.string().regex(/^secret:[a-z0-9][a-z0-9-]{0,62}$/, "Use secret:<name>");
 export type SecretRef = z.infer<typeof SecretRefSchema>;
+
+/** `GLX-420`, `LOCAL-9`. The org's key prefix plus a number. Also the task folder name. */
+export const TaskIdSchema = z
+  .string()
+  .regex(/^[A-Z][A-Z0-9]{0,9}-[1-9][0-9]*$/, "Task ids look like GLX-420");
+export type TaskId = z.infer<typeof TaskIdSchema>;
