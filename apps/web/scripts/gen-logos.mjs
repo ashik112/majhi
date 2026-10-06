@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const icons = require("simple-icons");
-const version = JSON.parse(readFileSync(new URL("../node_modules/simple-icons/package.json", import.meta.url), "utf8")).version;
+const version = JSON.parse(
+  readFileSync(new URL("../node_modules/simple-icons/package.json", import.meta.url), "utf8"),
+).version;
 
 /** Display name (as majhi names a datastore, service or stack item) to the Simple Icons slug. */
 const NAMES = {
