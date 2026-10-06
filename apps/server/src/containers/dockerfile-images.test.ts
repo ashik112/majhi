@@ -51,4 +51,37 @@ describe("the images a Dockerfile pulls", () => {
       expect(() => dockerfileImages(text, none), text).toThrow(ContainerRefused);
     }
   });
+  it("reads lines the way BuildKit does, so no instruction hides from the check", () => {
+    // `# escape=` moves the continuation character: a backslash no longer joins the next line.
+    expect(images("# escape=`\nFROM alpine:3\nRUN echo \\\nFROM node:22\n")).toEqual(["alpine:3", "node:22"]);
+    expect(images("# escape=`\nFROM alpine:3\nCOPY --from=node:22 \\\n  /a /b\n")).toEqual([
+      "alpine:3",
+      "node:22",
+    ]);
+    // A backtick joins the next line under it, and the default does not.
+    expect(images("# escape=`\nFROM alpine:3\nRUN true `\nFROM node:22\n")).toEqual(["alpine:3"]);
+    // Trailing blanks after the continuation character still continue the line.
+    expect(images("FROM alpine:3\nRUN true \\  \nFROM node:22\n")).toEqual(["alpine:3"]);
+    // An empty line or a comment inside a continued instruction does not end it.
+    expect(images("FROM alpine:3\nRUN true \\\n\n# note\nFROM node:22\n")).toEqual(["alpine:3"]);
+    // A byte order mark in front of the first line, and directive keys in any case.
+    expect(images("\uFEFF# Escape = `\nFROM alpine:3\nRUN true \\\nFROM node:22\n")).toEqual([
+      "alpine:3",
+      "node:22",
+    ]);
+  });
+
+  it("refuses a parser directive other than syntax, escape and check, a repeated one, and a bad escape", () => {
+    for (const text of [
+      "# foo=bar\nFROM alpine:3\n",
+      "# escape=`\n# escape=\\\nFROM alpine:3\n",
+      "# escape=x\nFROM alpine:3\n",
+      "# syntax=docker/dockerfile:1\n# syntax=other/frontend:1\nFROM alpine:3\n",
+    ]) {
+      expect(() => images(text), text).toThrow(ContainerRefused);
+    }
+    expect(images("# check=skip=all\n# escape=`\nFROM alpine:3\n")).toEqual(["alpine:3"]);
+    // Once a comment, an empty line or an instruction has gone by, a `key=value` comment is only a comment.
+    expect(images("# note\n# foo=bar\nFROM alpine:3\n")).toEqual(["alpine:3"]);
+  });
 });
