@@ -84,6 +84,17 @@ describe("runner mounts", () => {
     expect(mountArgs(args).some((m) => m.includes(`source=${majhiHome},`))).toBe(false);
   });
 
+  it("mounts the folder once, read-only, when the run names it as a read-only mount (a clean export)", () => {
+    const exported = join(home, "Work", ".majhi", ".wiki", "acme", "api", "src-abc");
+    const args = dockerRunArgs(
+      request({ cwd: exported, mounts: [{ path: exported, readOnly: true }] }),
+      cfg,
+      "majhi-run-test",
+    );
+    const onExport = mountArgs(args).filter((m) => m.includes(`source=${exported},`));
+    expect(onExport).toEqual([`type=bind,source=${exported},target=${exported},readonly`]);
+  });
+
   it("passes the environment by name only, so secrets never show in a process list", () => {
     const args = dockerRunArgs(request(), cfg, "majhi-run-test");
     expect(args.join(" ")).not.toContain("sk-test-value-never-in-argv");

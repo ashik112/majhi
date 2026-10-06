@@ -25,6 +25,7 @@ export function buildAsk(req: RequestPermissionRequest): PermissionAsk {
   };
   if (tc.toolCallId) ask.toolCallId = tc.toolCallId;
   if (tc.kind) ask.kind = tc.kind;
+  if (tc.locations && tc.locations.length > 0) ask.locations = tc.locations.map((l) => l.path);
   if (tc.kind === "execute") {
     const command = commandOf(tc.rawInput);
     if (command) ask.command = command;

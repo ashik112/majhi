@@ -11,7 +11,7 @@ import {
   ResumePatchSchema,
   RoomPatchSchema,
   TurnsPatchSchema,
-  WikiPatchSchema,
+  WikiOrgPatchSchema,
 } from "./settings.ts";
 import { RoleSchema, TierPatchSchema, TiersPatchSchema } from "./tiers.ts";
 
@@ -213,7 +213,7 @@ export const OrgConfigSchema = z.looseObject({
   /** Overrides whether this org's commits name the agent and the task (5.7). */
   commits: CommitsPatchSchema.optional(),
   /** Overrides whether this org has a project wiki. Absent: majhi's `wiki.enabled`. */
-  wiki: WikiPatchSchema.optional(),
+  wiki: WikiOrgPatchSchema.optional(),
   /** How new task branches are named in this org's repos. Default: what the repo's own branches show, else `{type}/{id}-{slug}`. */
   branch_pattern: BranchPatternSchema.optional(),
   /** Overrides the loop guard for this org's tasks (5.3). */

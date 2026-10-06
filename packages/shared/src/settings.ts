@@ -130,9 +130,23 @@ export type CommitsPatch = z.infer<typeof CommitsPatchSchema>;
  * The project wiki (docs/design/wiki.md): off by default. A workspace can turn it on or off for itself;
  * the workspace's own value wins over this one (`wikiEnabled` in wiki.ts).
  */
-export const WikiSettingsSchema = z.strictObject({ enabled: z.boolean().default(false) });
+const wikiFields = {
+  enabled: z.boolean(),
+  /** The model that writes the pages. Default: the balanced model of the Housekeeper's account. */
+  writer_model: z.string().trim().min(1).max(100),
+};
+export const WikiSettingsSchema = z.strictObject({
+  enabled: wikiFields.enabled.default(false),
+  writer_model: wikiFields.writer_model.optional(),
+});
 export type WikiSettings = z.infer<typeof WikiSettingsSchema>;
-export const WikiPatchSchema = z.strictObject({ enabled: z.boolean() }).partial();
+/** What a workspace says about its own wiki: the switch only. The writer model is majhi-wide. */
+export const WikiOrgPatchSchema = z.strictObject({ enabled: wikiFields.enabled }).partial();
+export type WikiOrgPatch = z.infer<typeof WikiOrgPatchSchema>;
+/** `null` puts the default writer model back. */
+export const WikiPatchSchema = z
+  .strictObject({ enabled: wikiFields.enabled, writer_model: wikiFields.writer_model.nullable() })
+  .partial();
 export type WikiPatch = z.infer<typeof WikiPatchSchema>;
 
 /** Teams in a room (5.3). Orgs can override `max_agent_turns`. */
