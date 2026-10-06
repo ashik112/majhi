@@ -72,6 +72,8 @@ import { actorName } from "../tasks/cards.ts";
 import { changeTaskBranch } from "../tasks/change-branch.ts";
 import { readReport } from "../tasks/report.ts";
 import { toolsHandlers } from "../tools/handlers.ts";
+import { wikiHandlers } from "../wiki/handlers.ts";
+import { wikiEnabledFrom } from "../wiki/switch.ts";
 
 /** Loading keys and asking the Keychain or keyring can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
@@ -182,6 +184,17 @@ export function createHandlers({
       store: services.store,
     }),
     ...findingsHandlers({ findings: services.findings, lanes: services.lanes, store: services.store }),
+    ...wikiHandlers({
+      repo: services.store.wiki,
+      enabled: wikiEnabledFrom(config),
+      lanes: services.lanes,
+      store: services.store,
+      orgs: async () => Object.keys((await config.sections()).orgs),
+      projects: async (org) =>
+        Object.entries((await config.sections()).projects)
+          .filter(([, p]) => (p.org ?? PRIVATE) === org)
+          .map(([id]) => id),
+    }),
     ...playbookHandlers({
       findings: services.findings,
       lanes: services.lanes,

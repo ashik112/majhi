@@ -29,7 +29,10 @@ export interface FindingsHandlerDeps {
  * Who is calling: the owner, the captain (in a lane it is tied to the lane's workspace) or an agent
  * (tied to its task's workspace).
  */
-export async function findingActor(deps: FindingsHandlerDeps, ctx: CommandContext): Promise<FindingActor> {
+export async function findingActor(
+  deps: Pick<FindingsHandlerDeps, "lanes" | "store">,
+  ctx: CommandContext,
+): Promise<FindingActor> {
   const actor = ctx.meta.actor;
   if (actor.kind !== "agent") return { kind: "owner" };
   const task = ctx.meta.task;

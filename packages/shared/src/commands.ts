@@ -402,6 +402,13 @@ import {
   WatchTestResultSchema,
   WatchViewSchema,
 } from "./watches.ts";
+import {
+  WikiEstimateSchema,
+  WikiPageInputSchema,
+  WikiPageViewSchema,
+  WikiScopeInputSchema,
+  WikiViewSchema,
+} from "./wiki.ts";
 
 /**
  * Every change in majhi is a command (SPEC 5.16). The UI, the palette, the
@@ -1261,6 +1268,35 @@ export const commands = {
       "Dismiss the morning brief of a day on Today. The owner, or the captain through the owner's approval",
     input: AgendaDismissInputSchema,
     output: z.object({ day: z.string() }),
+  },
+  // The project wiki (docs/design/wiki.md) ---------------------------------------------
+  "wiki.get": {
+    risk: "read",
+    summary:
+      "The wiki of one workspace or project: whether it is on, its pages (id, kind, title) and, per project, the commit the pages were built from, how far behind it is, whether an update is running and the last error. Without `project` it is the workspace's own pages and every project's state. An agent reads its own workspace only",
+    input: WikiScopeInputSchema,
+    output: WikiViewSchema,
+  },
+  "wiki.page": {
+    risk: "read",
+    summary:
+      "One wiki page: its text with numbered citations, each claim with the file and lines that prove it (or marked guessed), the claims that could not be confirmed, its diagrams and the commit it was built from. An agent reads its own workspace only",
+    input: WikiPageInputSchema,
+    output: WikiPageViewSchema,
+  },
+  "wiki.estimate": {
+    risk: "read",
+    summary:
+      "What the next wiki update would rewrite and cost: the pages whose cited files changed, tokens, an estimate in dollars from the price table, and the cap one update never passes",
+    input: WikiScopeInputSchema,
+    output: WikiEstimateSchema,
+  },
+  "wiki.update": {
+    risk: "change",
+    summary:
+      "Update the wiki of a workspace or one project: read the code facts with no model, then rewrite only the pages whose cited files changed. It runs in the background and the page follows its progress. One run per workspace at a time. The owner and the captain, never another agent",
+    input: WikiScopeInputSchema,
+    output: WikiViewSchema,
   },
   // The chat dock -----------------------------------------------------------------
   "conversations.list": {
