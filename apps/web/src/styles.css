@@ -95,6 +95,16 @@
   --c-pink: #e7a0c8;
   --c-violet: #c3a6f5;
 
+  /* What a task is: one color per type, on the type tile and chip */
+  --c-type-bug: #f07b6b;
+  --c-type-incident: #e9a23b;
+  --c-type-feature: #8ab8f5;
+  --c-type-request: #c3a6f5;
+  --c-type-research: #4db6ac;
+  --c-type-design: #f58fb8;
+  --c-type-test: #9bd36a;
+  --c-type-chore: #8d98a8;
+
   /* Status lamps */
   --c-lamp-working: #3fd4f5;
   --c-lamp-needs: #ff6868;
@@ -225,6 +235,15 @@
   --c-coral-soft: #8f3d20;
   --c-pink: #a83c78;
   --c-violet: #6d4bc4;
+
+  --c-type-bug: #c8372b;
+  --c-type-incident: #b06a05;
+  --c-type-feature: #1f5fb8;
+  --c-type-request: #6d46c2;
+  --c-type-research: #0e7c74;
+  --c-type-design: #c0306f;
+  --c-type-test: #47790f;
+  --c-type-chore: #5d6b7e;
 
   --c-lamp-working: #0a7694;
   --c-lamp-needs: #cf2a2a;

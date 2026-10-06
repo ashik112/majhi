@@ -1,4 +1,12 @@
-import type { CommandInput, CommandOutput, ProjectView, Task, TaskSummary } from "@majhi/shared";
+import type {
+  CommandInput,
+  CommandOutput,
+  ProjectView,
+  Task,
+  TaskAreas,
+  TaskSummary,
+  TaskType,
+} from "@majhi/shared";
 import {
   keepPreviousData,
   type QueryClient,
@@ -103,6 +111,42 @@ export function useTask(id: string | undefined) {
     enabled: id !== undefined,
     retry: false,
   });
+}
+
+/**
+ * One task's origin, the parts of the system it touches and its whole trail (`tasks.detail`). Under the
+ * tasks key, so a change the owner makes refreshes it; the feed marks it stale with the task itself.
+ */
+export function useTaskDetail(id: string) {
+  return useQuery<CommandOutput<"tasks.detail">, ApiRequestError>({
+    queryKey: [...queryKeys.tasks, "detail", id],
+    queryFn: () => cmd("tasks.detail", { id }),
+    staleTime: 10_000,
+    retry: false,
+  });
+}
+
+/** `tasks.areas` takes at most this many ids. */
+const AREAS_MAX = 100;
+const AREAS_STALE_MS = 30_000;
+
+/**
+ * The parts of the system the tasks on screen touch. Every id costs a read of the task's worktree on the
+ * server, so the screen names only the tasks it draws (the first 100) and the answer is kept for 30 seconds,
+ * as long as the server keeps its own. The key is the ids, so an event on one task does not ask again.
+ */
+export function useAreas(ids: readonly string[]): ReadonlyMap<string, TaskAreas> {
+  const named = useMemo(() => [...new Set(ids)].toSorted().slice(0, AREAS_MAX), [ids]);
+  const data = useQuery<CommandOutput<"tasks.areas">, ApiRequestError>({
+    queryKey: ["task-areas", named.join(" ")],
+    queryFn: () => cmd("tasks.areas", { ids: named }),
+    enabled: named.length > 0,
+    staleTime: AREAS_STALE_MS,
+    refetchInterval: AREAS_STALE_MS * 2,
+    refetchIntervalInBackground: false,
+    placeholderData: keepPreviousData,
+  }).data;
+  return useMemo(() => new Map((data ?? []).map((a) => [a.task, a.areas])), [data]);
 }
 
 /**
@@ -274,6 +318,18 @@ export function useTeamCommand<N extends "team.add" | "team.remove" | "team.swap
   const client = useQueryClient();
   return useMutation<Task, ApiRequestError, CommandInput<N>>({
     mutationFn: (input) => cmd(name, input) as Promise<Task>,
+    onSuccess: (task) => {
+      setTaskInCache(client, task);
+      return refreshTasks(client);
+    },
+  });
+}
+
+/** Sets a task's type. The answer is the task, so the page and the lists follow at once. */
+export function useSetType() {
+  const client = useQueryClient();
+  return useMutation<Task, ApiRequestError, { id: string; type: TaskType }>({
+    mutationFn: (input) => cmd("tasks.setType", input),
     onSuccess: (task) => {
       setTaskInCache(client, task);
       return refreshTasks(client);
