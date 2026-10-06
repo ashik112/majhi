@@ -49,7 +49,7 @@ export class CodeGraphTools {
     const folder = graphFolder(await this.deps.root(), scope.org, project);
     const graph = folder === null ? undefined : await loadGraph(folder);
     if (graph === undefined) {
-      return `There is no code graph for ${project} yet. The owner builds it with Update map on the Map page; read the files meanwhile.`;
+      return `There is no code graph for ${project} yet. Read the files meanwhile.`;
     }
     switch (input.action) {
       case "search":

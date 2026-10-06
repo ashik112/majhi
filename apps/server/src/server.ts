@@ -1,6 +1,5 @@
 import { totalmem } from "node:os";
 import { join } from "node:path";
-import { PRIVATE } from "@majhi/shared";
 import type { Hono } from "hono";
 import { WAITING_TEXT } from "./admin/service.ts";
 import { destinationOf } from "./backup/state.ts";
@@ -137,12 +136,6 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
           }
         : {}),
       codeGraph: services.codeGraph,
-      maps: {
-        forTask: async (task) => {
-          const org = services.lanes.orgOf(task) ?? services.store.tasks.get(task)?.org ?? PRIVATE;
-          return { org, map: services.map.stored(org), journeys: await services.map.journeys(org) };
-        },
-      },
       memory: {
         memory: services.memory,
         scopeOf: (task) => services.memoryScopes.agent(task),

@@ -51,7 +51,7 @@ function captionOf(spec: DiagramSpec, selection: Selection): string | undefined 
 }
 
 /**
- * A diagram an agent drew, inline in the room: the same canvas as the Map page at a fixed height, drawn
+ * A diagram an agent drew, inline in the room: the diagram canvas at a fixed height, drawn
  * only once it scrolls into view. Click a box to read its sub line; "Open full size" shows it large.
  */
 export function DiagramItem({ spec, agent }: { spec: DiagramSpec; agent: string }) {

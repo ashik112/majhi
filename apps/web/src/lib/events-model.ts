@@ -42,8 +42,6 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
       return [queryKeys.captain, queryKeys.decisions, queryKeys.agenda];
     case "agenda":
       return [queryKeys.agenda];
-    case "map":
-      return [queryKeys.map];
     case "findings":
       return [queryKeys.findings, queryKeys.decisions, queryKeys.agenda];
     case "playbooks":

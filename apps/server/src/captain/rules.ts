@@ -37,7 +37,6 @@ export const DAILY_CHORES: readonly CaptainChore[] = [
   "tidy",
   "health",
   "checklist",
-  "map",
 ];
 
 /**

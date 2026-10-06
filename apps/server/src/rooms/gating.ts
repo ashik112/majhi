@@ -39,7 +39,7 @@ export interface GateContext {
   teamSize: number;
   /** The agent is the first of a lead-mode task that is not a chat. */
   soloLead: boolean;
-  /** A chat with an agent or a captain thread: it gets the room server for its drawing tools (`show_diagram`, `show_map`). */
+  /** A chat with an agent or a captain thread: it gets the room server for its drawing tools (`show_diagram`). */
   chat?: boolean;
   /** majhi can run containers (PRV-53). */
   containersOn: boolean;

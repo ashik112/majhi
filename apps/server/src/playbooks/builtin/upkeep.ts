@@ -263,21 +263,6 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     ],
     runner: { kind: "chore", chore: "checklist" },
   }),
-  upkeep({
-    id: "upkeep-map",
-    name: "Project map",
-    purpose: "Keeps the picture of how your projects connect current after work is merged.",
-    trigger: { cadence: DAILY, events: [] },
-    inputs: ["Projects of the workspace", "Tasks merged since the last update"],
-    steps:
-      "When tasks merged since the map was updated and it was not updated in the last day, run the map update: read each project's config files and task history with no model, then let the smallest model read a few code files for links the config misses. New lines wait for you to check. Never more than one update a day, never over the cost cap, never when the workspace's budget is used up.",
-    outputs: ["log"],
-    cost: { tier: "small", tokens: PASS_BOUND.tokens },
-    turnOn:
-      "Updates the Map once a day when work was merged, while Auto-pilot is on. It costs nothing on a day nothing was merged.",
-    outcomes: [{ id: "map-update", text: "Work was merged and the map is a day old: update it" }],
-    runner: { kind: "chore", chore: "map" },
-  }),
   // Runs once for the whole business, from Private. Pure code: it asks Laya, which is local, so it costs no tokens.
   {
     id: "upkeep-laya-eval",

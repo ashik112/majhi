@@ -77,8 +77,8 @@ export function renderTaskMd(
   connections: readonly BriefConnection[] = [],
   /** The commit style the repos ask for, when any does not use another. */
   commits?: CommitGuide,
-  /** How the task's repos connect to the workspace's other projects (the project map), one line each. */
-  map: readonly string[] = [],
+  /** How the task's project works (the wiki), one line each. Empty: no section. */
+  wiki: readonly string[] = [],
 ): string {
   const members = team ?? (agent === undefined ? [] : [agent]);
   const multi = members.length > 1;
@@ -128,7 +128,7 @@ export function renderTaskMd(
   if (leadFacts) lines.push(...leadPlanLines(leadFacts.lead), "");
   if (task.kind === "ops") lines.push(...opsLines(), "");
   if (connections.length > 0) lines.push(...connectionLines(connections, task.kind === "ops"), "");
-  if (map.length > 0) lines.push(...mapLines(map), "");
+  if (wiki.length > 0) lines.push(...wikiLines(wiki), "");
   if (task.kind === "chat") lines.push(...rememberLines(), "");
   if (task.attachments.length > 0) {
     lines.push("## Attachments", "", ...task.attachments.map(attachmentLine), "");
@@ -190,15 +190,9 @@ function connectionLines(connections: readonly BriefConnection[], ops: boolean):
   ];
 }
 
-/** The workspace's project map cut to the repos of this task (SPEC 5.21). */
-function mapLines(map: readonly string[]): string[] {
-  return [
-    "## How the projects connect",
-    "",
-    "From the workspace's project map. Before you change an API, message or package that another project uses, check that project.",
-    "",
-    ...map.map((l) => `- ${l}`),
-  ];
+/** The wiki's short account of how the task's project works. */
+function wikiLines(wiki: readonly string[]): string[] {
+  return ["## How this project works", "", ...wiki.map((l) => `- ${l}`)];
 }
 
 /** The fixed section of an `ops` task (SPEC 5.15). Same text every time, so it stays in the cached prefix. */

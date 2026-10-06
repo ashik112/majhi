@@ -24,7 +24,6 @@ import { autonomyHandlers } from "../autonomy/handlers.ts";
 import { backupHandlers } from "../backup/handlers.ts";
 import { captainHandlers } from "../captain/handlers.ts";
 import { answerOnce } from "../captain/keys.ts";
-import { workspaceIds } from "../captain/levels.ts";
 import type { ConfigService } from "../config/service.ts";
 import { connectHandlers } from "../connect/handlers.ts";
 import { connectionHandlers } from "../connections/handlers.ts";
@@ -41,7 +40,6 @@ import { handoffHandlers } from "../handoff/handlers.ts";
 import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import { inboxHandlers } from "../inbox/handlers.ts";
-import { mapHandlers } from "../map/handlers.ts";
 import { mcpHandlers } from "../mcp-servers/handlers.ts";
 import { hostNameOf } from "../mrs/remote.ts";
 import { TriggerAlias, triggerHandlers } from "../ops/anything/triggers.ts";
@@ -182,13 +180,6 @@ export function createHandlers({
       findings: services.findings,
       lanes: services.lanes,
       store: services.store,
-    }),
-    ...mapHandlers({
-      map: services.map,
-      findings: services.findings,
-      lanes: services.lanes,
-      store: services.store,
-      orgs: async () => workspaceIds((await services.config.sections()).orgs),
     }),
     ...findingsHandlers({ findings: services.findings, lanes: services.lanes, store: services.store }),
     ...playbookHandlers({

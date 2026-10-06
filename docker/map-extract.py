@@ -23,9 +23,6 @@ import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import map_inside  # noqa: E402
-import map_resolve  # noqa: E402
 import tree_sitter_javascript
 import tree_sitter_python
 import tree_sitter_typescript
@@ -316,7 +313,7 @@ def main():
     (out / "graph.html").unlink(missing_ok=True)
 
     parsers = {}
-    sites, scanned, inside = [], 0, []
+    sites, scanned = [], 0
     for rel in graph_files(out)[:MAX_FILES]:
         path = (src / rel)
         kind = LANGS.get(path.suffix.lower())
@@ -328,20 +325,13 @@ def main():
         try:
             data = path.read_bytes()
             tree = parser.parse(data)
-            nlines = data.count(b"\n") + 1
         except OSError:
             continue
         scanned += 1
         found = js_sites(tree.root_node, rel) if kind[0] == "js" else py_sites(tree.root_node, rel)
         sites.extend(found)
-        try:
-            inside.append(
-                map_inside.scan_js(tree.root_node, rel, nlines) if kind[0] == "js" else map_inside.scan_python(tree.root_node, rel, nlines)
-            )
-        except RecursionError:
-            pass
     sites.sort(key=lambda s: (s["file"], s["line"]))
-    facts = {"v": 3, "files": scanned, "calls": sites[:2000], "inside": map_resolve.assemble(inside, map_resolve.collect_meta(src))}
+    facts = {"v": 3, "files": scanned, "calls": sites[:2000]}
     tmp = out / "majhi-facts.json.tmp"
     tmp.write_text(json.dumps(facts))
     tmp.replace(out / "majhi-facts.json")

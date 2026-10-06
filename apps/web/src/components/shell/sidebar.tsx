@@ -23,7 +23,6 @@ import {
   Settings,
   Sparkles,
   Users,
-  Waypoints,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AppearanceButton } from "@/components/shell/appearance";
@@ -244,7 +243,6 @@ const MAIN_ICON: Record<Exclude<SidebarMainPage, "captain" | "watch">, LucideIco
   decisions: CircleAlert,
   chats: MessagesSquare,
   playbooks: BookOpen,
-  map: Waypoints,
 };
 const FOOT_ICON: Record<SidebarFootPage, LucideIcon> = {
   agents: Users,

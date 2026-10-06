@@ -22,7 +22,7 @@ import { ROW_SELECTED } from "@/components/ui/list-detail";
 import { cn } from "@/lib/cn";
 import { GLASS } from "@/lib/glass";
 import { EDGE_PRESETS, edgeLook, TONE_COLOR } from "./presets";
-import { BOX_W, type Box, CARD_H, type EdgePath, type Positioned, type Rule } from "./types";
+import { type Box, CARD_H, type EdgePath, type Positioned, type Rule } from "./types";
 
 export type Selection = { kind: "node"; id: string } | { kind: "edge"; id: string } | undefined;
 
@@ -333,8 +333,8 @@ function bounds(from: { x: number; y: number }, to: { x: number; y: number }): B
 }
 
 /**
- * The one canvas: draws a positioned diagram, with zoom, fit and click. The Map page and a chat diagram
- * are thin wrappers around it; they differ only in what they decorate and what a click does.
+ * The one canvas: draws a positioned diagram, with zoom, fit and click. A chat diagram is a thin wrapper
+ * around it; it differs only in what it decorates and what a click does.
  */
 export function DiagramCanvas({
   diagram,

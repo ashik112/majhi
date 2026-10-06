@@ -183,22 +183,7 @@ import {
   DecisionRecommendInputSchema,
   OwnerDecisionSchema,
 } from "./inbox.ts";
-import {
-  InsideInputSchema,
-  InsideMemberInputSchema,
-  InsideMemberSchema,
-  InsideViewSchema,
-} from "./inside.ts";
-import { JourneyInputSchema, JourneyRemoveInputSchema } from "./journeys.ts";
 import { BlockerSchema } from "./lifecycle/blocker.ts";
-import {
-  MapAnswerInputSchema,
-  MapEdgeInputSchema,
-  MapEstimateSchema,
-  MapOrgInputSchema,
-  MapRoleInputSchema,
-  MapViewSchema,
-} from "./map.ts";
 import {
   McpAgentInputSchema,
   McpInstallInputSchema,
@@ -1275,88 +1260,6 @@ export const commands = {
       "Dismiss the morning brief of a day on Today. The owner, or the captain through the owner's approval",
     input: AgendaDismissInputSchema,
     output: z.object({ day: z.string() }),
-  },
-  // The project map (5.21) --------------------------------------------------------
-  "map.get": {
-    risk: "read",
-    summary:
-      "How a workspace's projects connect: projects, libraries, databases, queues and outside services as boxes, and the lines between them with their proof (file and line), when it was updated and how many merges since. An agent reads its own workspace only",
-    input: MapOrgInputSchema,
-    output: MapViewSchema,
-  },
-  "map.estimate": {
-    risk: "read",
-    summary:
-      "What the next map update would read and cost: projects, files for the code pass, tokens and an estimate in dollars from the price table, and the cap one update never passes",
-    input: MapOrgInputSchema,
-    output: MapEstimateSchema,
-  },
-  "map.update": {
-    risk: "change",
-    summary:
-      "Update the workspace's project map: read each project's config files and majhi's own task history with no model, then let the cheapest model read a bounded set of code files for links the config misses (these land as new for the owner to check). The one action for the whole update; it runs in the background and the page follows its progress. The owner and the captain, never another agent",
-    input: MapOrgInputSchema,
-    output: MapViewSchema,
-  },
-  "map.confirmEdge": {
-    risk: "change",
-    summary: "Mark a new line on the map as right. The owner and the captain",
-    input: MapEdgeInputSchema,
-    output: MapViewSchema,
-  },
-  "map.removeEdge": {
-    risk: "change",
-    summary: "Remove a line from the map. No later update adds it again. The owner and the captain",
-    input: MapEdgeInputSchema,
-    output: MapViewSchema,
-  },
-  "map.answer": {
-    risk: "change",
-    summary:
-      "Say what an address the projects call is: one of the workspace's projects, an outside service, or not a call to show. The answer applies to the whole workspace and to every later update; without `to` it is forgotten. The owner and the captain",
-    input: MapAnswerInputSchema,
-    output: MapViewSchema,
-  },
-  "map.setRole": {
-    risk: "change",
-    summary:
-      "Set whether a project is an app, a service or a worker on the map, over what its dependencies show; without `role` it goes back to that. The owner and the captain",
-    input: MapRoleInputSchema,
-    output: MapViewSchema,
-  },
-  "map.inside": {
-    risk: "read",
-    summary:
-      "What is inside one project of the workspace: its entry points (routes, schedules, queue consumers, commands), the functions they run, and the datastores and outside services those functions use, each with its file and line. State `unread` when the project has not been read inside yet",
-    input: InsideInputSchema,
-    output: InsideViewSchema,
-  },
-  "map.insideMember": {
-    risk: "read",
-    summary:
-      "The story of one command of a dispatcher route of a project (for example `tasks.create` under `POST /api/cmd/:name`): the parts of the project it passes through and the data it touches, each with its file and line. `followed` is false when the code does not let majhi tie the command to its handler",
-    input: InsideMemberInputSchema,
-    output: InsideMemberSchema,
-  },
-  "map.readInside": {
-    risk: "change",
-    summary:
-      "Read one project's code now (free, no model, in a sealed container) so the map can show what is inside it. The owner and the captain",
-    input: InsideInputSchema,
-    output: InsideViewSchema,
-  },
-  "map.saveJourney": {
-    risk: "change",
-    summary:
-      "Name a journey on the map: ordered steps, each from one box to another with a label and the map line it follows (`edge`). Without `id` it makes a new journey (keeping one of majhi's examples is this too); with `id` it replaces that journey. Every box and line must be on this workspace's map. The owner and the captain",
-    input: JourneyInputSchema,
-    output: MapViewSchema,
-  },
-  "map.removeJourney": {
-    risk: "change",
-    summary: "Remove a journey the owner kept. The owner and the captain",
-    input: JourneyRemoveInputSchema,
-    output: MapViewSchema,
   },
   // The chat dock -----------------------------------------------------------------
   "conversations.list": {

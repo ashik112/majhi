@@ -67,7 +67,6 @@ export const queryKeys = {
   playbooks: ["playbooks"],
   ops: ["ops"],
   /** `map.get`, `map.estimate`: a workspace's project map and what the next update would cost. */
-  map: ["map"],
   /** `agenda.today`: the brief, the agenda, Watch and Plan. */
   agenda: ["agenda"],
   /** `decisions.list`: the owner's inbox. Every topic that changes what waits for them refetches it. */

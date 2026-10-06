@@ -10,7 +10,6 @@ import {
   failureFromError,
   GLOBAL_CONNECTIONS,
   isOwnerChat,
-  MAP_BRIEF_LINES,
   type MrHost,
   NotificationsSettingsSchema,
   PRIVATE,
@@ -118,11 +117,6 @@ import { InstallRequests } from "./installs/service.ts";
 import { busyReason } from "./machine/busy.ts";
 import { MemoryWatch } from "./machine/memwatch.ts";
 import { MachineSensor } from "./machine/sensor.ts";
-import { GraphRunner, graphFolder } from "./reader/run.ts";
-import { CodeGraphTools } from "./reader/tools.ts";
-import { housekeeperPrice } from "./map/price.ts";
-import { MapRepo } from "./map/repo.ts";
-import { MapService } from "./map/service.ts";
 import { McpRegistry } from "./mcp-servers/registry.ts";
 import { McpService } from "./mcp-servers/service.ts";
 import { ChatMemory } from "./memory/chats.ts";
@@ -168,6 +162,8 @@ import { suggestRepoAliases } from "./projectcard/scanner.ts";
 import type { ProjectCards } from "./projectcard/service.ts";
 import { createCards } from "./projectcard/wire.ts";
 import { ProjectService } from "./projects/service.ts";
+import { GraphRunner } from "./reader/run.ts";
+import { CodeGraphTools } from "./reader/tools.ts";
 import { RoomService } from "./room/service.ts";
 import { RoomAccess } from "./rooms/access.ts";
 import { RoomCoordinator } from "./rooms/coordinator.ts";
@@ -387,10 +383,10 @@ export interface Services {
   homeChecks: HomeChecks;
   /** The owner's agenda and the morning brief (5.18). */
   agenda: AgendaService;
-  /** The project map of each workspace (5.21). */
-  map: MapService;
   /** `code_graph`: agents ask a task's own repos' code graph (5.21). */
   codeGraph: CodeGraphTools;
+  /** The sealed reader runner: no network, read-only checkout. Absent unless agents run in containers. */
+  graphRunner: GraphRunner | undefined;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
   captainTell: CaptainTell;
   /** The captain's chat per workspace (5.18). */
@@ -922,7 +918,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     majhiHome: env.majhiHome,
     usage: usageRecorder,
   });
-  // Each project's code graph (5.21), read by graphify in a runner container with no network. In the tasks
+  // Each project's code graph, read by graphify in a runner container with no network. In the tasks
   // folder: runners can mount it, and it is never inside majhi's config folder.
   const graphRoot = async () => {
     const loaded = await config.load();
@@ -945,47 +941,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return { org: lanes.orgOf(task) ?? row.org ?? PRIVATE, repos: row.repos.map((r) => r.project) };
     },
     orgOf: async (project) => (await projects.infos()).find((p) => p.id === project)?.org,
-  });
-  // The project map (5.21). Its code pass is a Housekeeper question per project: the smallest model, no tools.
-  const map = new MapService({
-    graph: graphRunner,
-    graphFolder: async (o, p) => graphFolder(await graphRoot(), o, p),
-    repo: new MapRepo(store.raw),
-    projects: async () =>
-      (await projects.infos()).map((p) => ({ id: p.id, org: p.org, path: p.path, exists: p.exists })),
-    tasks: () =>
-      store.tasks.list(false).map((t) => ({
-        id: t.id,
-        title: t.title,
-        status: t.status,
-        org: t.org ?? PRIVATE,
-        repos: t.repos,
-        chat: t.chat,
-        lane: t.lane,
-      })),
-    ask: (task, prompt, parse) => housekeeper.ask(task, prompt, parse),
-    unavailable: async (org) => {
-      try {
-        await housekeeper.resolve(org);
-        return undefined;
-      } catch (err) {
-        return err instanceof NoHousekeeper
-          ? "No model is set, so the update reads config files only. Choose a captain to turn the code pass on."
-          : `The code pass cannot run here: ${errorMessage(err)}`;
-      }
-    },
-    price: async (org) => {
-      try {
-        const { account } = await housekeeper.resolve(org);
-        const owner = await readPrices(config.file).catch(() => ({}));
-        return housekeeperPrice((await config.settings()).memory.housekeeper_model, account.tool, owner);
-      } catch {
-        return undefined;
-      }
-    },
-    spent: (task, since) => usageRepo.totals({ filters: { task }, start: since }).costUsd,
-    changed: () => events.emit(["map"]),
-    ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
   // The owner's outcome switches, by workspace and rule id. Bound below, once the playbooks exist.
   const ruleSwitches: {
@@ -1053,12 +1008,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   const tasks = new TaskService({
     mergeGate,
-    mapNotes: (task) =>
-      map.briefLines(
-        task.org ?? PRIVATE,
-        task.repos.map((r) => r.project),
-        MAP_BRIEF_LINES,
-      ),
     protectedPaths: [env.secretsKeyFile],
     onCaptainAnswer: (task) => void loopGuard?.answered(task).catch(() => undefined),
     onOwnerResumedLimit: (task) => budgets.exempt(task),
@@ -1791,7 +1740,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       decisions,
       memory,
       findings,
-      map,
       curate: (fact, off) => curator.review(fact, off === undefined ? {} : { off }),
       scanner: new RepoScanner(),
       cleanup,
@@ -2529,8 +2477,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       },
     }),
     agenda,
-    map,
     codeGraph,
+    graphRunner,
     captainTell: new CaptainTell({
       tasks,
       lanes,
