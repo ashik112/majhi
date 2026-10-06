@@ -154,7 +154,7 @@ function StepRow({ task, step, busy }: { task: string; step: HandoffStep; busy: 
         step.status !== "none" && (
           <div className="flex flex-wrap items-center gap-1.5 sm:ml-[156px]">
             {step.log !== undefined && <LogLink task={task} log={step.log} />}
-            {isCommandStep(step.id) && (
+            {isCommandStep(step.id) && step.status !== "pass" && (
               <RerunButton task={task} step={step.id} label={step.label} busy={busy} />
             )}
           </div>
