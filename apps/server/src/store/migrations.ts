@@ -1685,6 +1685,51 @@ CREATE TABLE map_journeys (
     name: "queued merges",
     sql: `CREATE TABLE queued_merges (task TEXT PRIMARY KEY, body TEXT NOT NULL);`,
   },
+  {
+    // The project wiki (docs/design/wiki.md): one row per page (JSON, checked by zod when read; a row that no
+    // longer parses reads as absent), with the commits it was built from. A page with no project is the
+    // workspace's. Saving a changed page moves the row it replaces into wiki_page_versions, so no version is
+    // lost. wiki_state is one row per project: the commit its pages were built from, which files each page was
+    // written from (JSON) and the last error. The Map's tables stay, unused.
+    id: 171,
+    name: "project wiki pages",
+    sql: `
+CREATE TABLE wiki_pages (
+  n INTEGER PRIMARY KEY,
+  org TEXT NOT NULL,
+  project TEXT,
+  id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  page TEXT NOT NULL,
+  built_from TEXT NOT NULL,
+  v INTEGER NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX wiki_pages_key ON wiki_pages (org, ifnull(project, ''), id);
+CREATE TABLE wiki_page_versions (
+  page_n INTEGER NOT NULL,
+  seq INTEGER NOT NULL,
+  org TEXT NOT NULL,
+  project TEXT,
+  id TEXT NOT NULL,
+  page TEXT NOT NULL,
+  built_from TEXT NOT NULL,
+  v INTEGER NOT NULL,
+  saved_at TEXT NOT NULL,
+  PRIMARY KEY (page_n, seq)
+);
+CREATE TABLE wiki_state (
+  org TEXT NOT NULL,
+  project TEXT NOT NULL,
+  built_commit TEXT,
+  sources TEXT NOT NULL DEFAULT '{}',
+  rules INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  updated_at TEXT,
+  PRIMARY KEY (org, project)
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

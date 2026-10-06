@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { LifecycleRows } from "../tasks/lifecycle/rows.ts";
 import { UsageEvents } from "../usage/events.ts";
+import { WikiRepo } from "../wiki/repo.ts";
 import { ChatStateRepo } from "./chat-state.ts";
 import { ConnectionHealthRepo } from "./connection-health.ts";
 import { ConversationsRepo } from "./conversations.ts";
@@ -33,6 +34,8 @@ export class Store {
   readonly conversations: ConversationsRepo;
   /** What majhi put into contexts, for the token receipts. */
   readonly usageEvents: UsageEvents;
+  /** The project wiki's pages, their versions and each project's state. */
+  readonly wiki: WikiRepo;
   /** The SQLite version and pragmas the connection runs with. */
   readonly baseline: SqliteBaseline;
   private readonly sqlite: Database.Database;
@@ -51,6 +54,7 @@ export class Store {
     this.connectionHealth = new ConnectionHealthRepo(sqlite);
     this.conversations = new ConversationsRepo(db);
     this.usageEvents = new UsageEvents(sqlite);
+    this.wiki = new WikiRepo(sqlite);
   }
 
   static open(majhiHome: string): Store {
