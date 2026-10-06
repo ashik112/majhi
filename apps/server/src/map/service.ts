@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   isLoopbackHost,
+  type JourneyStep,
   type JourneyView,
   journeysOf,
   MAP_COST_CAP_USD,
@@ -11,7 +12,6 @@ import {
   type MapReport,
   type MapRole,
   type MapRunning,
-  type JourneyStep,
   type MapTask,
   type MapView,
   type Price,
@@ -31,10 +31,10 @@ import { LoadCache } from "./config/facts.ts";
 import { splitSpaces } from "./config/formats.ts";
 import { type ConfigResult, configPass, type ProjectInput } from "./config/pass.ts";
 import { parseAddress } from "./endpoints.ts";
-import { assertJourneySteps } from "./journeys.ts";
 import { ProjectFiles } from "./files.ts";
 import { graphEndpoints } from "./graph/facts.ts";
 import type { GraphRunner } from "./graph/run.ts";
+import { assertJourneySteps } from "./journeys.ts";
 import { answerAddress, confirmEdge, mergeMap, removeEdge, setRole } from "./merge.ts";
 import type { MapRepo } from "./repo.ts";
 

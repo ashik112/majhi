@@ -169,6 +169,9 @@ importers:
       clsx:
         specifier: 2.1.1
         version: 2.1.1
+      elkjs:
+        specifier: 0.12.0
+        version: 0.12.0
       frimousse:
         specifier: 0.4.0
         version: 0.4.0(react@19.3.0)(typescript@7.0.2)
@@ -1633,6 +1636,9 @@ packages:
 
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
+
+  elkjs@0.12.0:
+    resolution: {integrity: sha512-YZcKynxVxYoKIOEpywEPwCFdg+BTbxQRNf3pbwdDCvc8O3kQD8bmIwSxKU1eOTVc4Xo+VG9Te+575mlfvOrhEQ==}
 
   emojibase-data@17.0.0:
     resolution: {integrity: sha512-Yvgb5AWoHViHV/gq1qr5ZAarcBip+B27/ZLRsUJkbgAEaLlZ/fof9g882LTpmEpyhBNEC0m2SEmItljHsTygjA==}
@@ -3933,6 +3939,8 @@ snapshots:
       gopd: 1.2.0
 
   ee-first@1.1.1: {}
+
+  elkjs@0.12.0: {}
 
   emojibase-data@17.0.0(emojibase@17.0.0):
     dependencies:

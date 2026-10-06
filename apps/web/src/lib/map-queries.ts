@@ -1,4 +1,4 @@
-import type { MapAnswer, MapEstimate, MapRole, MapView } from "@majhi/shared";
+import type { JourneyStep, MapAnswer, MapEstimate, MapRole, MapView } from "@majhi/shared";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
@@ -65,6 +65,19 @@ export function useRemoveEdge(org: string) {
 export function useAnswerAddress(org: string) {
   return useMapCommand<{ address: string; scope?: string; to?: MapAnswer }>(org, (input) =>
     cmd("map.answer", { org, ...input }, { reason: "Owner answered what an address is" }),
+  );
+}
+
+/** Name a journey, or replace one (with `id`). Keeping one of majhi's examples is a save without an id. */
+export function useSaveJourney(org: string) {
+  return useMapCommand<{ id?: string; name: string; steps: JourneyStep[] }>(org, (input) =>
+    cmd("map.saveJourney", { org, ...input }, { reason: "Owner saved a journey" }),
+  );
+}
+
+export function useRemoveJourney(org: string) {
+  return useMapCommand(org, (id) =>
+    cmd("map.removeJourney", { org, id }, { reason: "Owner removed a journey" }),
   );
 }
 

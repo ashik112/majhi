@@ -114,7 +114,9 @@ export class MapRepo {
   /** A workspace's journeys, oldest first. A row that no longer parses is left out. */
   journeys(org: string): Journey[] {
     const rows = this.db
-      .prepare("SELECT id, name, steps, created_at FROM map_journeys WHERE org = ? ORDER BY created_at, rowid")
+      .prepare(
+        "SELECT id, name, steps, created_at FROM map_journeys WHERE org = ? ORDER BY created_at, rowid",
+      )
       .all(org) as { id: string; name: string; steps: string; created_at: string }[];
     return rows.flatMap((r) => {
       try {

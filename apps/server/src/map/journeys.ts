@@ -15,7 +15,8 @@ export function assertJourneySteps(map: ProjectMap, steps: readonly JourneyStep[
     }
     if (s.edge === undefined) return;
     const line = edges.get(s.edge);
-    if (line === undefined) throw new UserError(`Step ${i + 1}: that line is not on this workspace's map.`, 400);
+    if (line === undefined)
+      throw new UserError(`Step ${i + 1}: that line is not on this workspace's map.`, 400);
     if (line.from !== s.from || line.to !== s.to) {
       throw new UserError(`Step ${i + 1}: that line does not go from ${s.from} to ${s.to}.`, 400);
     }

@@ -1,42 +1,26 @@
-import { type DiagramNode, type MapEdge, type MapNode, type OrgView, PRIVATE } from "@majhi/shared";
-import { Loader, RefreshCw, Waypoints } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type JourneyStep, type JourneyView, type OrgView, PRIVATE } from "@majhi/shared";
+import { Waypoints } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Problem } from "@/components/problem";
-import { Button } from "@/components/ui/button";
-import { Segmented } from "@/components/ui/segmented";
-import { Select } from "@/components/ui/select";
-import { WorkspaceMark } from "@/features/connections/scope-picker";
-import type { EdgeDecor, NodeDecor, Selection } from "@/features/diagram/diagram-canvas";
-import { LazyScene, preloadScene } from "@/features/diagram/lazy-scene";
-import { cn } from "@/lib/cn";
+import { useNewTask } from "@/features/new-task/new-task-context";
 import { describeError } from "@/lib/errors";
-import { GLASS } from "@/lib/glass";
 import { useMap, useMapEstimate, useUpdateMap } from "@/lib/map-queries";
 import { useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
 import { useNow } from "@/lib/use-now";
-import {
-  agoWords,
-  edgeInView,
-  lampOf,
-  MAP_VIEWS,
-  type MapPrefs,
-  type MapViewId,
-  mergesWords,
-  needsReview,
-  nodeInView,
-  readPrefs,
-  shapeMap,
-  tasksOf,
-  unansweredAddresses,
-  usdWords,
-  usesOf,
-  writePrefs,
-} from "./model";
-import type { OverviewTab } from "./overview";
-import { MapPanel } from "./panel";
-
-const LEGEND = ["http", "queue", "data", "lib"] as const;
+import { AddressDialog } from "./address-dialog";
+import { Chrome } from "./chrome";
+import { Detail, type DetailActs } from "./detail";
+import { Ic } from "./icons";
+import { JourneyWorld } from "./journey-world";
+import { layoutJourney, layoutOverview, layoutProject, type OverviewLayout, overviewKey } from "./layout";
+import { agoWords, buildGraph, usdWords } from "./model";
+import { OverviewWorld } from "./overview-world";
+import { ProjectWorld } from "./project-world";
+import { Rail } from "./rail";
+import { Stage, type StageHandle } from "./stage";
+import { useMapState, type ViewId } from "./use-map-state";
+import "./map.css";
 
 const LAST_KEY = "majhi.map.workspace";
 
@@ -61,17 +45,23 @@ function rememberLast(org: string): void {
  * the one last shown here, else the first. Its picker is the page's own and leaves the sidebar alone.
  */
 export function MapScreen() {
-  useEffect(preloadScene, []);
   const { org: picked } = useOrgFilter();
   const orgs = useOrgs().data;
-  // The page's own choice: it never changes the sidebar's workspace. A new sidebar pick resets it.
   const [chosen, setChosen] = useState<string | undefined>();
   const [seen, setSeen] = useState(picked);
   if (seen !== picked) {
     setSeen(picked);
     setChosen(undefined);
   }
-  if (orgs === undefined) return <Header />;
+  if (orgs === undefined) {
+    return (
+      <div className="mapx">
+        <header className="top glass">
+          <h1>Map</h1>
+        </header>
+      </div>
+    );
+  }
   const known = (id: string | undefined) => id !== undefined && orgs.some((o) => o.id === id);
   const org = [chosen, picked, readLast()].find((id): id is string => known(id)) ?? orgs[0]?.id ?? PRIVATE;
   const choose = (id: string) => {
@@ -83,301 +73,455 @@ export function MapScreen() {
       key={org}
       org={org}
       name={orgs.find((o) => o.id === org)?.name ?? org}
-      switcher={<WorkspaceChips orgs={orgs} value={org} onChange={choose} />}
+      orgs={orgs}
+      onOrg={choose}
     />
   );
 }
 
-/** Which workspace the map shows: its tile, then a compact picker. */
-function WorkspaceChips({
+const VIEWS: readonly { id: ViewId; label: string }[] = [
+  { id: "overview", label: "Overview" },
+  { id: "project", label: "Project" },
+  { id: "journeys", label: "Journeys" },
+];
+
+function MapFor({
+  org,
+  name,
   orgs,
-  value,
-  onChange,
+  onOrg,
 }: {
+  org: string;
+  name: string;
   orgs: readonly OrgView[];
-  value: string;
-  onChange: (org: string) => void;
+  onOrg: (org: string) => void;
 }) {
-  return (
-    <div className="flex items-center gap-2">
-      <WorkspaceMark org={value} orgs={orgs} size="sm" />
-      <Select
-        aria-label="Workspace"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-8 min-w-[140px] text-sm"
-      >
-        {orgs.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.name}
-          </option>
-        ))}
-      </Select>
-    </div>
-  );
-}
-
-function Header({ children }: { children?: React.ReactNode }) {
-  return (
-    <header
-      className={cn(
-        "mb-3 flex min-h-11 shrink-0 flex-wrap items-center gap-x-4 gap-y-1.5 rounded-2xl px-4 py-2",
-        GLASS,
-      )}
-    >
-      <h1 className="text-md leading-5 font-semibold text-fg">Map</h1>
-      {children}
-    </header>
-  );
-}
-
-function MapFor({ org, name, switcher }: { org: string; name: string; switcher: React.ReactNode }) {
   const map = useMap(org);
   const estimate = useMapEstimate(org);
   const update = useUpdateMap(org);
+  const newTask = useNewTask();
   const now = useNow(30_000);
-  const [viewId, setViewId] = useState<MapViewId>("all");
-  const [selection, setSelection] = useState<Selection>();
   const data = map.data;
+  const graph = useMemo(() => (data === undefined ? undefined : buildGraph(data)), [data]);
+  const journeys = useMemo<readonly JourneyView[]>(() => data?.journeys ?? [], [data]);
+  const emptyGraph = useMemo(() => buildGraph({ ...EMPTY_VIEW, org }), [org]);
+  const g = graph ?? emptyGraph;
+  const { s, patch, act, togglePlay } = useMapState(g, journeys);
+  const stage = useRef<StageHandle>(null);
+  const [addresses, setAddresses] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
 
-  const changed = useMemo(() => new Set(data?.changedThisWeek ?? []), [data?.changedThisWeek]);
-  const nodes = data?.map.nodes;
-  const lines = data?.map.edges;
+  // The Overview's layout runs when the structure of the map changes, never for a hover or a pick.
+  const key = overviewKey(g);
+  const [ov, setOv] = useState<{ key: string; layout: OverviewLayout }>();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `key` stands for the structure of `g`
+  useEffect(() => {
+    if (g.connected.length === 0) return;
+    let alive = true;
+    void layoutOverview(g).then((layout) => alive && setOv({ key, layout }));
+    return () => {
+      alive = false;
+    };
+  }, [key]);
+  const overview = ov?.key === key ? ov.layout : undefined;
 
-  const [prefs, setPrefsState] = useState<MapPrefs>(() => readPrefs(org));
-  const setPrefs = (next: MapPrefs) => {
-    setPrefsState(next);
-    writePrefs(org, next);
+  const projectNode = s.focus === null ? undefined : g.byId.get(s.focus);
+  const projectLayout = useMemo(
+    () => (projectNode === undefined ? undefined : layoutProject(g, projectNode.id)),
+    [g, projectNode],
+  );
+  const journey = journeys.find((j) => j.id === s.journey);
+  const journeyLayout = useMemo(
+    () => (journey === undefined ? undefined : layoutJourney(journey.steps)),
+    [journey],
+  );
+
+  const detailActs: DetailActs = {
+    setDir: act.setDir,
+    selectEdge: act.selectEdge,
+    openProject: act.openProject,
+    clearAll: act.clearAll,
+    setView: act.setView,
+    stepGo: act.stepGo,
+    showOnMap: act.showOnMap,
+    pickJourney: act.pickJourney,
+    pickNode: act.pickNode,
+    newTask: (project) => newTask.openFor(project),
+    edit: (j) => {
+      act.setView("overview");
+      patch({
+        compose: {
+          id: j.id,
+          name: j.name,
+          steps: j.steps.map(({ check: _check, ...step }): JourneyStep => step),
+        },
+        trace: null,
+      });
+    },
+    setCompose: (compose) => patch({ compose }),
+    saved: (id) => {
+      patch({ compose: null, trace: null });
+      act.setView("journeys");
+      if (id !== undefined) act.pickJourney(id);
+    },
   };
-  const [tab, setTab] = useState<OverviewTab>("projects");
 
+  // Keys: / search, 1 2 3 views, Esc clear, F fit, L list, arrows through a journey, Enter opens the picked box.
+  const keys = useRef({ s, act, listOpen });
+  keys.current = { s, act, listOpen };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSelection(undefined);
+      const { s: cur, act: a, listOpen: open } = keys.current;
+      const el = e.target as HTMLElement;
+      const typing = el.tagName === "INPUT" || el.tagName === "SELECT" || el.tagName === "TEXTAREA";
+      if (document.querySelector("dialog[open]") !== null) return;
+      if (e.key === "Escape") {
+        if (typing) el.blur();
+        if (open) setListOpen(false);
+        else a.clearAll();
+        return;
+      }
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "/") {
+        e.preventDefault();
+        setListOpen(true);
+        requestAnimationFrame(() => document.getElementById("map-q")?.focus());
+      } else if (e.key === "1") a.setView("overview");
+      else if (e.key === "2") a.setView("project");
+      else if (e.key === "3") a.setView("journeys");
+      else if (e.key === "f" || e.key === "F") stage.current?.fit();
+      else if (e.key === "l" || e.key === "L") setListOpen((v) => !v);
+      else if (e.key === "ArrowRight" && cur.view === "journeys")
+        a.stepGo(cur.step === null ? 0 : cur.step + 1);
+      else if (e.key === "ArrowLeft" && cur.view === "journeys")
+        a.stepGo((cur.step === null ? 1 : cur.step) - 1);
+      else if (
+        e.key === "Enter" &&
+        cur.view === "overview" &&
+        cur.sel?.t === "node" &&
+        el.closest("[data-node]") === null
+      ) {
+        a.openProject(cur.sel.id);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const shape = useMemo(
-    () => (data === undefined ? undefined : shapeMap(data, { viewId, prefs })),
-    [data, viewId, prefs],
-  );
-  const diagram = shape?.diagram;
-
-  const byId = useMemo(() => new Map((nodes ?? []).map((n) => [n.id, n])), [nodes]);
-  const byKey = useMemo(() => new Map((lines ?? []).map((e) => [e.id, e])), [lines]);
-
-  // Focus: a picked box keeps itself and its direct neighbours bright and dims the rest.
-  const focus = useMemo(() => {
-    if (selection === undefined || data === undefined) return undefined;
-    if (selection.kind === "edge") {
-      const e = byKey.get(selection.id);
-      return e === undefined ? undefined : new Set([e.from, e.to]);
-    }
-    const keep = new Set([selection.id]);
-    for (const e of data.map.edges) {
-      if (e.type === "together" || needsReview(e)) continue;
-      if (e.from === selection.id) keep.add(e.to);
-      if (e.to === selection.id) keep.add(e.from);
-    }
-    return keep;
-  }, [selection, data, byKey]);
-
-  const nodeDecor = useMemo(() => {
-    if (data === undefined) return undefined;
-    return (n: DiagramNode): NodeDecor => {
-      const box = byId.get(n.id);
-      if (box === undefined) return {};
-      const lamp = lampOf(tasksOf(data, box));
-      const hub = shape?.hubs.has(box.id) === true;
-      const tag = viewId === "changed" && changed.has(box.id) ? "CHANGED" : hub ? "HUB" : undefined;
-      const uses = usesOf(data, box);
-      return {
-        dim: !nodeInView(viewId, box, data.map.edges, changed) || (focus !== undefined && !focus.has(box.id)),
-        ...(lamp === undefined ? {} : { lamp }),
-        ...(tag === undefined ? {} : { tag }),
-        ...(viewId === "deploy" && box.deploy !== undefined ? { caption: box.deploy } : {}),
-        chips: box.stack ?? [],
-        uses,
-      };
-    };
-  }, [data, byId, viewId, changed, focus, shape]);
-
-  const edgeDecor = useMemo(() => {
-    return (key: string): EdgeDecor => {
-      const e = byKey.get(key);
-      if (e === undefined) return {};
-      const touches = selection?.kind === "node" && (e.from === selection.id || e.to === selection.id);
-      const inView =
-        edgeInView(viewId, e, changed) && (focus === undefined || (focus.has(e.from) && focus.has(e.to)));
-      return {
-        dim: !inView,
-        ...(e.state === "new" ? { badge: "NEW" } : {}),
-        // A line says what it is when it is hovered, picked, or one of the picked box's.
-        hideLabel: !touches,
-      };
-    };
-  }, [byKey, viewId, changed, focus, selection]);
-
-  const running = data?.running;
   const usd = estimate.data?.usd;
   const ago = data?.updatedAt === undefined ? undefined : agoWords(data.updatedAt, now);
-  const toReview = (data?.map.edges ?? []).filter(needsReview).length;
-  const asks = data === undefined ? 0 : unansweredAddresses(data).length;
   const failed = data?.failed ?? (update.error === null ? undefined : update.error.message);
+  const running = data?.running;
 
   if (map.isError && data === undefined) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        <Header>{switcher}</Header>
+      <div className="mapx">
+        <header className="top glass">
+          <h1>Map</h1>
+        </header>
         <Problem icon={<Waypoints />} title="Could not load the map" body={describeError(map.error)} />
       </div>
     );
   }
 
   const empty = data !== undefined && data.map.nodes.length === 0;
+  const unlinked = g.unlinked;
+  const addStep = (edgeId: string) => {
+    const e = g.edgeById.get(edgeId);
+    if (e === undefined || s.compose === null) return;
+    patch({
+      compose: {
+        ...s.compose,
+        steps: [...s.compose.steps, { from: e.from, to: e.to, label: e.label.slice(0, 60), edge: e.id }],
+      },
+    });
+  };
+
+  const stageProps = (() => {
+    if (s.view === "overview" && overview !== undefined) {
+      return {
+        w: overview.w,
+        h: overview.h,
+        top: 90,
+        bottom: unlinked.length > 0 ? 118 : 70,
+        maxScale: 1.12,
+        fitKey: `o:${key}`,
+      };
+    }
+    if (s.view === "project" && projectLayout !== undefined) {
+      return {
+        w: projectLayout.w,
+        h: projectLayout.h,
+        top: 90,
+        bottom: 70,
+        maxScale: 1.12,
+        fitKey: `p:${s.focus}`,
+      };
+    }
+    if (s.view === "journeys" && journeyLayout !== undefined) {
+      return {
+        w: journeyLayout.w,
+        h: journeyLayout.h,
+        top: 64,
+        bottom: 70,
+        maxScale: 1,
+        fitKey: `j:${s.journey}`,
+      };
+    }
+    return undefined;
+  })();
+
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <Header>
-        {switcher}
-        <span aria-hidden="true" className="h-5 w-px bg-line-strong" />
-        <Segmented
-          label="View"
-          value={viewId}
-          onChange={setViewId}
-          segments={MAP_VIEWS.map((v) => ({ value: v.id, label: v.label }))}
-        />
-        <div className="ml-auto flex min-w-0 items-center gap-3">
-          {(toReview > 0 || asks > 0) && (
-            <Button
-              size="sm"
-              onClick={() => {
-                setSelection(undefined);
-                setTab(toReview > 0 ? "review" : "addresses");
-              }}
+    <div ref={root} className={`mapx ${listOpen ? "list-open" : ""}`} data-view={s.view}>
+      <header className="top glass">
+        <h1>Map</h1>
+        {orgs.length > 1 && (
+          <select
+            className="field"
+            style={{ width: 150, height: 32 }}
+            aria-label="Workspace"
+            value={org}
+            onChange={(e) => onOrg(e.target.value)}
+          >
+            {orgs.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        )}
+        <fieldset className="seg" aria-label="View">
+          {VIEWS.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              aria-pressed={s.view === v.id}
+              data-view={v.id}
+              onClick={() => act.setView(v.id)}
             >
-              {toReview > 0 ? `${toReview} to review` : `${asks} to name`}
-            </Button>
-          )}
-          <span
-            className="hidden min-w-0 truncate text-sm text-fg-muted min-[1280px]:inline"
-            data-map-fresh=""
-          >
-            {ago === undefined ? `${name}: never updated` : `Updated ${ago}`}
-            {data !== undefined && ago !== undefined && (
-              <>
-                {" · "}
-                <span className={data.mergesSince > 0 ? "font-medium text-accent-text" : undefined}>
-                  {mergesWords(data.mergesSince)}
-                </span>
-              </>
-            )}
-          </span>
-          <Button
-            variant="primary"
-            disabled={running !== undefined || update.isPending || data === undefined}
-            onClick={() => update.mutate("")}
-            title={estimate.data?.note}
-          >
-            {running === undefined ? (
-              <RefreshCw aria-hidden="true" />
-            ) : (
-              <Loader aria-hidden="true" className="animate-spin" />
-            )}
-            Update map
-            {usd !== undefined && <span className="font-normal opacity-75">{usdWords(usd)}</span>}
-          </Button>
+              {v.label}
+              {v.id === "journeys" && <span className="c">{journeys.length}</span>}
+            </button>
+          ))}
+        </fieldset>
+        <span className="vsep" />
+        <div className="tele">
+          <div>
+            <b>{g.totals.projects}</b>projects
+          </div>
+          <div>
+            <b>{g.totals.links}</b>links
+          </div>
+          <div className={g.totals.check > 0 ? "lit" : ""}>
+            <b>{g.totals.check}</b>to check
+          </div>
+          <div className="opt">
+            <b>{g.totals.notConnected}</b>not connected
+          </div>
         </div>
-      </Header>
-      <div className="flex min-h-0 flex-1 gap-3">
-        <section
-          aria-label="Map"
-          className={cn("relative min-w-0 flex-1 overflow-hidden rounded-2xl", GLASS)}
-        >
-          {running !== undefined && (
-            <div
-              role="status"
-              className="absolute top-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-accent-line bg-glass-strong px-3 py-1.5 text-sm text-fg shadow-pop"
-            >
-              <Loader aria-hidden="true" className="size-3.5 animate-spin text-accent-text" />
-              {running.text}
-            </div>
+        <div className="right">
+          <span className="upd" data-map-fresh="">
+            {ago === undefined ? `${name}: never updated` : `Updated ${ago}`}
+            {data !== undefined &&
+              ago !== undefined &&
+              data.mergesSince > 0 &&
+              ` · ${data.mergesSince} ${data.mergesSince === 1 ? "merge" : "merges"} since`}
+          </span>
+          <button
+            type="button"
+            className="btn pri"
+            data-act="update"
+            disabled={running !== undefined || update.isPending || data === undefined}
+            title={estimate.data?.note}
+            onClick={() => update.mutate("")}
+          >
+            <Ic n="refresh" />
+            Update map
+            {usd !== undefined && <span style={{ fontWeight: 400, opacity: 0.75 }}>{usdWords(usd)}</span>}
+          </button>
+        </div>
+      </header>
+      <div className="work">
+        <section className="panel glass rail" aria-label="Projects">
+          {data !== undefined && (
+            <Rail
+              graph={g}
+              journeys={journeys}
+              s={s}
+              onQuery={(q) => patch({ q })}
+              onRow={(id) => {
+                setListOpen(false);
+                if (s.view === "project") act.openProject(id);
+                else {
+                  if (s.view === "journeys") act.setView("overview");
+                  act.pickNode(id);
+                }
+              }}
+              onJourney={(id) => {
+                setListOpen(false);
+                act.pickJourney(id);
+              }}
+              onNewJourney={() => {
+                setListOpen(false);
+                act.setView("overview");
+                patch({ compose: { name: "", steps: [] }, sel: null, trace: null });
+              }}
+              onAddLink={() => setAddresses(true)}
+            />
           )}
+        </section>
+        <section className="canvas glass" aria-label="Map">
           {empty ? (
-            <div className="grid h-full place-items-center p-6">
-              <div className="flex max-w-[420px] flex-col items-start gap-3">
-                <h2 className="text-md font-semibold text-fg">No map yet</h2>
-                <p className="text-base text-fg-muted">
+            <div className="empty">
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12,
+                  maxWidth: 420,
+                  alignItems: "flex-start",
+                }}
+              >
+                <h2 style={{ fontSize: 15, fontWeight: 600 }}>No map yet</h2>
+                <p style={{ color: "var(--fg-muted)" }}>
                   {data.projects.length === 0
                     ? `${name} has no projects on this computer. Register one on Projects and links, then update the map.`
                     : `Update the map to read the ${data.projects.length} ${data.projects.length === 1 ? "project" : "projects"} of ${name} and draw how they connect.`}
                 </p>
                 {data.projects.length > 0 && (
-                  <Button
-                    variant="primary"
+                  <button
+                    type="button"
+                    className="btn pri"
                     disabled={running !== undefined}
                     onClick={() => update.mutate("")}
                   >
                     Update map
-                  </Button>
+                  </button>
                 )}
               </div>
             </div>
-          ) : data === undefined ? (
-            <div
-              role="status"
-              aria-busy="true"
-              className="grid h-full place-items-center text-sm text-fg-faint"
-            >
-              Reading the map
-            </div>
-          ) : diagram === undefined ? null : shape?.shownNodes === 0 ? (
-            <div className="grid h-full place-items-center p-6">
-              <p className="max-w-[360px] text-base text-fg-muted">
-                No project is shown. Pick some on the Projects tab.
-              </p>
+          ) : data === undefined || stageProps === undefined ? (
+            <div role="status" aria-busy="true" className="empty" style={{ color: "var(--fg-faint)" }}>
+              {data === undefined
+                ? "Reading the map"
+                : s.view === "overview" && g.connected.length === 0
+                  ? "No project is linked yet. Pick one in the list to see it."
+                  : "Drawing"}
             </div>
           ) : (
-            <LazyScene
-              diagram={diagram}
-              node={nodeDecor}
-              edge={edgeDecor}
-              selection={selection}
-              onSelect={setSelection}
-              legend={LEGEND}
-              fitMin={0.3}
+            <Stage ref={stage} {...stageProps} onBackground={act.clearAll}>
+              {s.view === "overview" && overview !== undefined && (
+                <OverviewWorld graph={g} layout={overview} s={s} acts={{ ...act, addStep }} />
+              )}
+              {s.view === "project" && projectNode !== undefined && projectLayout !== undefined && (
+                <ProjectWorld graph={g} node={projectNode} layout={projectLayout} s={s} acts={act} />
+              )}
+              {s.view === "journeys" && journey !== undefined && journeyLayout !== undefined && (
+                <JourneyWorld
+                  graph={g}
+                  journey={journey}
+                  layout={journeyLayout}
+                  step={s.step}
+                  play={s.play}
+                  onStep={act.stepGo}
+                />
+              )}
+            </Stage>
+          )}
+          {data !== undefined && !empty && (
+            <Chrome
+              graph={g}
+              s={s}
+              journey={journey}
+              unlinked={unlinked}
+              onCrumb={act.crumb}
+              onView={act.setView}
+              onClear={act.clearAll}
+              onFit={() => stage.current?.fit()}
+              onZoom={(f) => stage.current?.zoom(f)}
+              onList={() => setListOpen((v) => !v)}
+              onPickMini={act.pickNode}
+              onPlay={togglePlay}
+              onStep={act.stepGo}
+              onJourneys={() => act.setView("journeys")}
+              onComposeName={(n) => s.compose !== null && patch({ compose: { ...s.compose, name: n } })}
             />
           )}
-          {failed !== undefined && (
+          {running !== undefined && (
+            <div
+              role="status"
+              className="float"
+              style={{
+                position: "absolute",
+                top: 12,
+                left: "50%",
+                transform: "translateX(-50%)",
+                zIndex: 20,
+                padding: "6px 12px",
+                fontSize: 13,
+              }}
+            >
+              {running.text}
+            </div>
+          )}
+          {failed !== undefined ? (
             <p
               role="alert"
-              className="absolute right-3 bottom-3 z-20 max-w-[420px] rounded-md border border-red-line bg-glass-strong px-3 py-1.5 text-sm text-red"
+              className="float"
+              style={{
+                position: "absolute",
+                top: 12,
+                left: "50%",
+                transform: "translateX(-50%)",
+                zIndex: 20,
+                padding: "6px 12px",
+                fontSize: 13,
+                color: "var(--c-red)",
+                maxWidth: 420,
+              }}
             >
               {failed}
             </p>
-          )}
-          {data?.report?.note !== undefined && running === undefined && (
-            <p
-              className="absolute right-3 bottom-3 z-10 max-w-[420px] rounded-md border border-line-strong bg-glass-strong px-3 py-1.5 text-sm text-fg-muted"
-              hidden={failed !== undefined}
-            >
-              {data.report.note}
-            </p>
+          ) : (
+            data?.report?.note !== undefined &&
+            running === undefined && (
+              <p
+                className="float"
+                style={{
+                  position: "absolute",
+                  top: 56,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  zIndex: 5,
+                  padding: "6px 12px",
+                  fontSize: 12,
+                  color: "var(--fg-muted)",
+                  maxWidth: 420,
+                }}
+              >
+                {data.report.note}
+              </p>
+            )
           )}
         </section>
-        {data !== undefined && !empty && (
-          <MapPanel
-            view={data}
-            selection={selection}
-            onSelect={setSelection}
-            tab={tab}
-            onTab={setTab}
-            prefs={prefs}
-            onPrefs={setPrefs}
-          />
-        )}
+        <section className="panel glass" aria-label="Map details">
+          {data !== undefined && graph !== undefined && !empty && (
+            <Detail view={data} graph={graph} journeys={journeys} s={s} acts={detailActs} />
+          )}
+        </section>
       </div>
+      {addresses && data !== undefined && <AddressDialog view={data} onClose={() => setAddresses(false)} />}
     </div>
   );
 }
+
+const EMPTY_VIEW = {
+  org: "",
+  map: { v: 1 as const, nodes: [], edges: [], removed: [], endpoints: [], resolutions: [], roles: [] },
+  mergesSince: 0,
+  tasks: [],
+  changedThisWeek: [],
+  projects: [],
+  journeys: [],
+};
