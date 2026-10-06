@@ -229,7 +229,8 @@ export function buildSystem(input: SystemInput): WikiSystemView {
   return {
     org: input.org,
     links: ordered,
-    unlinked: unlinked.toSorted(
+    // With no other project read there is nothing to link to, so no call is "not linked" yet.
+    unlinked: (projects.length < 2 ? [] : unlinked).toSorted(
       (a, b) =>
         a.project.localeCompare(b.project) ||
         a.source.path.localeCompare(b.source.path) ||

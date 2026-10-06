@@ -167,6 +167,11 @@ describe("calls link to a route only when the match is exact", () => {
     expect(out.unlinked.map((u) => u.path)).toEqual(["/api/wiki/{}/files/readme.md", "/42"]);
   });
 
+  it("lists no unlinked call while there is no other project to link to", () => {
+    const alone = project("acme-web", [call("acme-web", "GET", "/api/v1/items", 1)]);
+    expect(view([alone]).unlinked).toEqual([]);
+  });
+
   it("does not count a call to the project's own route as a link", () => {
     const self = project("acme-api", [...api.facts, call("acme-api", "GET", "/api/v1/items", 9)]);
     expect(view([self]).links).toEqual([]);
