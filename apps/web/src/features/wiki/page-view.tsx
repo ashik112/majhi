@@ -1,4 +1,11 @@
-import type { WikiClaim, WikiPage, WikiPageId, WikiPageSummary, WikiRoleRow } from "@majhi/shared";
+import type {
+  DiagramSpec,
+  WikiClaim,
+  WikiPage,
+  WikiPageId,
+  WikiPageSummary,
+  WikiRoleRow,
+} from "@majhi/shared";
 import { type ReactNode, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -199,6 +206,18 @@ function CiteButton({ n, claim, onOpen }: { n: number; claim: WikiClaim | undefi
   );
 }
 
+/**
+ * How tall a diagram's frame is. The canvas fits a diagram to the frame's width first, so a sequence of
+ * many actors is drawn small and its height follows its width: about 290 px an actor and 58 px a message
+ * before scaling. Other layouts use the height the page asks for.
+ */
+function frameHeight(spec: DiagramSpec, fallback: number): number {
+  if (spec.layout !== "sequence") return fallback;
+  const actors = Math.max(2, spec.actors?.length ?? spec.nodes.length);
+  const zoom = Math.min(1, 760 / (actors * 290));
+  return Math.round(Math.min(720, Math.max(280, (120 + 58 * spec.edges.length) * zoom + 80)));
+}
+
 function Diagrams({
   page,
   title,
@@ -215,7 +234,13 @@ function Diagrams({
     <DetailSection title={title}>
       {children}
       {page.diagrams.map((spec) => (
-        <DiagramItem key={spec.title} spec={spec} height={height} legend={["http", "queue", "data"]} />
+        <DiagramItem
+          key={spec.title}
+          spec={spec}
+          height={frameHeight(spec, height)}
+          legend={["http", "queue", "data"]}
+          fitMin={0.4}
+        />
       ))}
     </DetailSection>
   );
@@ -305,7 +330,13 @@ function Tile({
     "block min-w-0 rounded-xl border bg-field p-3 text-left",
     proven ? "border-line-control" : "border-dashed border-amber-line",
   );
-  if (source === undefined) return <div className={style}>{inner}</div>;
+  if (source === undefined) {
+    return (
+      <div data-tile={row.role} className={style}>
+        {inner}
+      </div>
+    );
+  }
   return (
     <button
       type="button"
@@ -400,7 +431,7 @@ function Flow({ page, changed, onOpen }: Props) {
   const intro = page.body.trim() !== "";
   return (
     <>
-      <Diagrams page={page} title="How it moves" height={Math.min(640, 140 + page.claims.length * 56)}>
+      <Diagrams page={page} title="How it moves" height={420}>
         {intro && <Text page={page} onOpen={onOpen} />}
       </Diagrams>
       <DetailSection

@@ -59,12 +59,15 @@ export function DiagramItem({
   agent,
   height = 320,
   legend,
+  fitMin,
 }: {
   spec: DiagramSpec;
   /** Who drew it. A wiki page's diagram has no author to name. */
   agent?: string;
   height?: number;
   legend?: ComponentProps<typeof LazyScene>["legend"];
+  /** The smallest zoom the first view may use; a wide diagram goes lower. */
+  fitMin?: number;
 }) {
   const { ref, seen } = useSeen<HTMLDivElement>();
   const [selection, setSelection] = useState<Selection>();
@@ -84,7 +87,13 @@ export function DiagramItem({
         </div>
         <div style={{ height }}>
           {seen ? (
-            <LazyScene diagram={diagram} selection={selection} onSelect={setSelection} legend={legend} />
+            <LazyScene
+              diagram={diagram}
+              selection={selection}
+              onSelect={setSelection}
+              legend={legend}
+              fitMin={fitMin}
+            />
           ) : (
             <div className="grid h-full place-items-center text-sm text-fg-faint">
               Drawing when it scrolls into view
@@ -114,7 +123,13 @@ export function DiagramItem({
             </Button>
           </div>
           <div className="min-h-0 flex-1">
-            <LazyScene diagram={diagram} selection={selection} onSelect={setSelection} legend={legend} />
+            <LazyScene
+              diagram={diagram}
+              selection={selection}
+              onSelect={setSelection}
+              legend={legend}
+              fitMin={fitMin}
+            />
           </div>
           <p className="min-h-8 shrink-0 border-t border-line px-4 py-1.5 text-sm text-fg-muted">
             {caption ?? "Click a box to read more about it."}
