@@ -1,9 +1,9 @@
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { configPass } from "./config/pass.ts";
 import { ProjectFiles } from "./files.ts";
 import { ACCURACY_FILES, writeFixtures } from "./fixtures.ts";
+import { configPass } from "./pass.ts";
 
 const noRemotes = async () => [];
 

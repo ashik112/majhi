@@ -1,5 +1,5 @@
 import type { MapNodeKind, MapRole } from "@majhi/shared";
-import { wordsOf } from "./resolver.ts";
+import { wordsOf } from "../system/resolver.ts";
 
 /**
  * What the config pass knows by name. These are typed tables, not guesses over text: an image name, a

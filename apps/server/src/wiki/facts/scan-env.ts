@@ -1,9 +1,9 @@
 import { isLoopbackHost } from "@majhi/shared";
+import type { Resolver } from "../system/resolver.ts";
 import type { MapBuilder, Proof } from "./builder.ts";
 import type { Loaded } from "./facts.ts";
 import { splitSpaces } from "./formats.ts";
 import { keyIsNotACall, outsideOfHost, storeOfScheme } from "./known.ts";
-import type { Resolver } from "./resolver.ts";
 
 /**
  * Environment values that point at another service: a connection URL to a datastore, or the address of

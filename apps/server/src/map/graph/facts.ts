@@ -7,9 +7,9 @@ import {
   isLoopbackHost,
   type MapEndpoint,
 } from "@majhi/shared";
+import type { ProjectFiles } from "../../wiki/facts/files.ts";
+import { lineText } from "../../wiki/facts/located.ts";
 import { hideSecrets } from "../code.ts";
-import { lineText } from "../config/located.ts";
-import type { ProjectFiles } from "../files.ts";
 
 /** Most addresses one project adds, so a generated client cannot flood the map. */
 const ENDPOINTS_MAX = 100;

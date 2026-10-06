@@ -1,6 +1,7 @@
 import { parse as parseToml } from "smol-toml";
 import { z } from "zod";
-import { ProjectFiles } from "../files.ts";
+import { type ProjectFacts, remoteKey, wordsOf } from "../system/resolver.ts";
+import { ProjectFiles } from "./files.ts";
 import type { DotenvEntry, PythonRequirement } from "./formats.ts";
 import {
   exposedPorts,
@@ -11,7 +12,6 @@ import {
   parseRequirements,
 } from "./formats.ts";
 import { type Located, readAllLocated, readLocated } from "./located.ts";
-import { type ProjectFacts, remoteKey, wordsOf } from "./resolver.ts";
 
 /**
  * Everything the config pass reads from one project, once: the manifests and config files that exist,

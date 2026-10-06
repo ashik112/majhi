@@ -1,8 +1,8 @@
 import { z } from "zod";
+import type { Resolver } from "../system/resolver.ts";
 import type { MapBuilder } from "./builder.ts";
 import type { Loaded } from "./facts.ts";
 import { lineContaining } from "./located.ts";
-import type { Resolver } from "./resolver.ts";
 import { envExcerpt, linkFromValue } from "./scan-env.ts";
 
 /**

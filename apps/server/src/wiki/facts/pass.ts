@@ -1,10 +1,10 @@
 import type { MapEdge, MapEndpoint, MapNode } from "@majhi/shared";
 import { git } from "../../git/git.ts";
+import { Resolver } from "../system/resolver.ts";
 import { MapBuilder } from "./builder.ts";
 import { DEPLOY_MARKERS, type LoadCache, type Loaded, loadCached } from "./facts.ts";
 import { finalImage } from "./formats.ts";
 import { frameworkOf, roleOfDeps } from "./known.ts";
-import { Resolver } from "./resolver.ts";
 import { PRE_SCANS, PROJECT_SOURCES } from "./sources.ts";
 
 /**

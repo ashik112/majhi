@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { CHARS_PER_TOKEN, type Price } from "@majhi/shared";
 import { z } from "zod";
 import { type Parsed, parseJson } from "../memory/housekeeper.ts";
+import { ProjectFiles } from "../wiki/facts/files.ts";
 import { hideSecrets } from "./code.ts";
-import { ProjectFiles } from "./files.ts";
 import type { WordItem, Words } from "./inside.ts";
 
 /**

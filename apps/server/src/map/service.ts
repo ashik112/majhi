@@ -26,6 +26,13 @@ import {
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import type { Parsed } from "../memory/housekeeper.ts";
+import type { GraphRunner } from "../reader/run.ts";
+import { LoadCache, loadCached } from "../wiki/facts/facts.ts";
+import { ProjectFiles } from "../wiki/facts/files.ts";
+import { splitSpaces } from "../wiki/facts/formats.ts";
+import { type ConfigResult, configPass, type ProjectInput } from "../wiki/facts/pass.ts";
+import { answerAddress } from "../wiki/system/answers.ts";
+import { answerOf, ownerOf, parseAddress } from "../wiki/system/endpoints.ts";
 import {
   type CodeFile,
   fitBudget,
@@ -34,13 +41,7 @@ import {
   proposalPrompt,
   selectFiles,
 } from "./code.ts";
-import { LoadCache, loadCached } from "./config/facts.ts";
-import { splitSpaces } from "./config/formats.ts";
-import { type ConfigResult, configPass, type ProjectInput } from "./config/pass.ts";
-import { answerOf, ownerOf, parseAddress } from "./endpoints.ts";
-import { ProjectFiles } from "./files.ts";
 import { graphEndpoints } from "./graph/facts.ts";
-import type { GraphRunner } from "../reader/run.ts";
 import {
   buildInside,
   factsStamp,
@@ -61,7 +62,7 @@ import {
   writeWords,
 } from "./inside-words.ts";
 import { assertJourneySteps } from "./journeys.ts";
-import { answerAddress, confirmEdge, mergeMap, removeEdge, setRole } from "./merge.ts";
+import { confirmEdge, mergeMap, removeEdge, setRole } from "./merge.ts";
 import type { MapRepo } from "./repo.ts";
 
 const DAY_MS = 86_400_000;

@@ -11,9 +11,9 @@ import {
 import { init, parse as lexImports } from "es-module-lexer";
 import { z } from "zod";
 import type { Parsed } from "../memory/housekeeper.ts";
-import type { Loaded } from "./config/facts.ts";
-import { splitSpaces } from "./config/formats.ts";
-import { isClientModule, outsideOfHost } from "./config/known.ts";
+import type { Loaded } from "../wiki/facts/facts.ts";
+import { splitSpaces } from "../wiki/facts/formats.ts";
+import { isClientModule, outsideOfHost } from "../wiki/facts/known.ts";
 
 /**
  * The code pass: the cheapest model reads a bounded, budgeted set of files per project and proposes the

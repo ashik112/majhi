@@ -2,7 +2,7 @@ import { rm } from "node:fs/promises";
 import { EMPTY_MAP, type MapView } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
-import { ACCURACY_FILES, writeFixtures } from "./fixtures.ts";
+import { ACCURACY_FILES, writeFixtures } from "../wiki/facts/fixtures.ts";
 import { MapRepo } from "./repo.ts";
 import { type Ask, MapService } from "./service.ts";
 

@@ -1,6 +1,6 @@
+import type { Resolver } from "../system/resolver.ts";
 import type { MapBuilder } from "./builder.ts";
 import type { Loaded } from "./facts.ts";
-import type { Resolver } from "./resolver.ts";
 import { bindServices, scanCompose } from "./scan-docker.ts";
 import { scanDotenv } from "./scan-env.ts";
 import { scanKube } from "./scan-kube.ts";

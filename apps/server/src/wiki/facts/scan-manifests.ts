@@ -1,10 +1,10 @@
 import { resolve } from "node:path";
+import type { ProjectFacts, Resolver } from "../system/resolver.ts";
 import type { MapBuilder } from "./builder.ts";
 import type { Loaded } from "./facts.ts";
 import { normalizePython, pythonName } from "./formats.ts";
 import { outsideOfNpm, outsideOfPython, storeOfNpm, storeOfPython } from "./known.ts";
 import { lineContaining, lineText } from "./located.ts";
-import type { ProjectFacts, Resolver } from "./resolver.ts";
 
 /**
  * Dependencies. A dependency on another registered project (by package name, local path or git remote)

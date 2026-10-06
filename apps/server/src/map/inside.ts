@@ -14,7 +14,7 @@ import {
   type InsideTrigger,
   isLoopbackHost,
 } from "@majhi/shared";
-import { outsideOfHost } from "./config/known.ts";
+import { outsideOfHost } from "../wiki/facts/known.ts";
 import {
   callSentence,
   dataSentence,
