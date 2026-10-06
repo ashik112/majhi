@@ -51,6 +51,15 @@ async function world(): Promise<{ w: World; env: Record<string, Record<string, s
   }
   for (let i = 0; i < 600 && Object.keys(env).length < 2; i++) await new Promise((r) => setTimeout(r, 5));
   expect(Object.keys(env).sort()).toEqual(["ACM-1", "ACM-2"]);
+  // The fake agent ends its turn at once and the task moves to review, which stops the task's containers.
+  // Wait for that before a test starts one, or the move removes it mid-test.
+  for (const id of ["ACM-1", "ACM-2"]) {
+    for (let i = 0; i < 1000; i++) {
+      const status = (await h.cmd("tasks.get", { id })).body.status;
+      if (status !== "running" && status !== "queued") break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
   return { w, env };
 }
 
@@ -94,7 +103,7 @@ describe("docker through majhi", () => {
     const own = await docker_(one, w.taskDir("ACM-1"), "rm", "-f", id);
     expect(own.code).toBe(0);
     expect(docker.containers.has("majhi-acm-1-c-web")).toBe(false);
-  });
+  }, 60_000);
 
   it("refuses what could reach past the task and leaves nothing started", async () => {
     const { w, env } = await world();
@@ -113,7 +122,7 @@ describe("docker through majhi", () => {
     }
     expect(docker.taskCalls).toEqual([]);
     expect(docker.containers.size).toBe(0);
-  });
+  }, 60_000);
 
   it("stops at the task's container limit", async () => {
     const { w, env } = await world();
@@ -125,7 +134,7 @@ describe("docker through majhi", () => {
     }
     // containers.per_task is 3 by default.
     expect(made).toEqual([0, 0, 0, 125]);
-  });
+  }, 60_000);
 
   it("answers 401 without the run's token, and the token ends with the run", async () => {
     const { env } = await world();
@@ -141,5 +150,5 @@ describe("docker through majhi", () => {
     await w?.h.cmd("tasks.stop", { id: "ACM-1" });
     await w?.h.majhi.services.runs.idle();
     expect((await post(env["ACM-1"]?.MAJHI_DOCKER_TOKEN ?? "")).status).toBe(401);
-  });
+  }, 60_000);
 });

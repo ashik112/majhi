@@ -213,9 +213,10 @@ COPY --from=doctl /out/doctl /usr/local/bin/doctl
 COPY --chmod=0755 docker/docker-shim.mjs /usr/local/bin/docker
 # Every run starts through majhi-netguard (SPEC 6): as root with a few capabilities it closes the
 # container's route to services on the owner's own computer (iptables), then drops to the owner's
-# uid with no capabilities. See docker/netguard.mjs.
+# uid with no capabilities. See docker/netguard.mjs. psql and redis-cli (clients only) are for the services
+# a task starts: the agent's shell checks a database or a cache it reaches by name.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends iptables \
+  && apt-get install -y --no-install-recommends iptables postgresql-client redis-tools \
   && rm -rf /var/lib/apt/lists/*
 COPY --chmod=0755 docker/netguard.mjs /usr/local/lib/majhi/netguard.mjs
 COPY --chmod=0755 docker/majhi-netguard /usr/local/bin/majhi-netguard

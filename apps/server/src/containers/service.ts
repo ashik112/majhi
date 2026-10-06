@@ -36,6 +36,7 @@ import {
   taskHoldRunArgs,
   volumeCreateArgs,
 } from "./args.ts";
+import type { ComposeInvocation } from "./compose-cli.ts";
 import { type ComposeHost, composeCall } from "./compose-run.ts";
 import type { DockerCli, TaskCallResult } from "./docker.ts";
 import { containerNames } from "./names.ts";
@@ -167,6 +168,13 @@ export class ContainerService {
   private starting: Promise<void> = Promise.resolve();
   /** How each task's services and preview were last started, by name (`preview` or the service's). */
   private readonly specs = new Map<string, Map<string, StartedSpec>>();
+  /**
+   * The compose stacks a task started with `docker compose up`, by task and then by folder and files:
+   * what runs again when the task runs again. A `down` of the whole stack forgets it.
+   */
+  private readonly stacks = new Map<string, Map<string, ComposeInvocation>>();
+  /** The stacks that stopped with the task. */
+  private readonly parkedStacks = new Map<string, ComposeInvocation[]>();
   /** What ran when the task stopped running. It starts again when the task runs again. */
   private readonly parked = new Map<string, StartedSpec[]>();
   /** Preview builds running, by task. The builder stops when the last one ends. */
@@ -740,7 +748,9 @@ export class ContainerService {
         }
         case "compose": {
           const host = this.composeHost(docker, safety, settings, request.cwd, options, task);
-          return await composeCall(host, plan.invocation);
+          const out = await composeCall(host, plan.invocation);
+          this.rememberStack(task, plan.invocation, out.code === 0);
+          return out;
         }
       }
     } catch (err) {
@@ -865,6 +875,19 @@ export class ContainerService {
       },
       cwd,
     };
+  }
+
+  /** A stack that came up runs again when the task does; a `down` of all of it forgets it. */
+  private rememberStack(task: string, inv: ComposeInvocation, ok: boolean): void {
+    if (!ok) return;
+    if (inv.verb === "up") {
+      const stacks = this.stacks.get(task) ?? new Map<string, ComposeInvocation>();
+      stacks.set(`${inv.cwd}\0${inv.files.join("\0")}`, inv);
+      this.stacks.set(task, stacks);
+    } else if (inv.verb === "down" && inv.services.length === 0) {
+      this.stacks.delete(task);
+      this.parkedStacks.delete(task);
+    }
   }
 
   /** The images a task may run: the owner's list for every workspace and the one for the task's workspace. */
@@ -1035,8 +1058,14 @@ export class ContainerService {
       for (const p of running) {
         if (!kept.has(p.container?.name ?? "")) await this.deps.processes.stop(task, p.id, "task");
       }
-      if (kept.size === 0) await this.taskStopped(task);
-      else await this.stopBuilder(docker, containerNames(task).builder);
+      if (kept.size === 0) {
+        const stacks = this.stacks.get(task);
+        if (stacks !== undefined) {
+          this.parkedStacks.set(task, [...stacks.values()]);
+          this.stacks.delete(task);
+        }
+        await this.taskStopped(task);
+      } else await this.stopBuilder(docker, containerNames(task).builder);
       return { kept: [...kept] };
     });
   }
@@ -1055,8 +1084,7 @@ export class ContainerService {
       this.parked.delete(task);
       return found;
     });
-    if (parked === undefined) return done;
-    const order = parked
+    const order = (parked ?? [])
       .filter((s) => nameOf(s) !== except)
       .sort((a, b) => Number(a.kind === "preview") - Number(b.kind === "preview"));
     for (const spec of order) {
@@ -1067,6 +1095,37 @@ export class ContainerService {
         done.started.push(name);
       } catch (err) {
         done.failed.push(`${name}: ${errorMessage(err)}`);
+      }
+    }
+    // The compose stacks that stopped with the task come up again as they were asked for. They rely on
+    // images already allowed, so nothing here asks the owner.
+    const stacks = this.parkedStacks.get(task) ?? [];
+    this.parkedStacks.delete(task);
+    for (const inv of stacks) {
+      const where = `compose in ${basename(inv.cwd)}`;
+      try {
+        const docker = this.need();
+        const safety = this.safety(this.task(task));
+        const host = this.composeHost(
+          docker,
+          safety,
+          await this.deps.settings(),
+          inv.cwd,
+          { ask: async () => "pending" },
+          task,
+        );
+        const out = await composeCall(host, inv);
+        if (out.code === 0) {
+          done.started.push(where);
+          this.stacks.set(
+            task,
+            (this.stacks.get(task) ?? new Map()).set(`${inv.cwd}\0${inv.files.join("\0")}`, inv),
+          );
+        } else {
+          done.failed.push(`${where}: ${out.error?.message ?? out.stderr.trim()}`);
+        }
+      } catch (err) {
+        done.failed.push(`${where}: ${errorMessage(err)}`);
       }
     }
     return done;
@@ -1122,6 +1181,8 @@ export class ContainerService {
     await this.locked(task, async () => {
       this.parked.delete(task);
       this.specs.delete(task);
+      this.stacks.delete(task);
+      this.parkedStacks.delete(task);
     });
     await this.taskStopped(task);
     const docker = this.docker;
@@ -1457,8 +1518,16 @@ export class ContainerService {
   /** The task's internal network, made once, with the task's running runners (and preview) joined to it. */
   private async ensureNetwork(docker: ContainerDocker, safety: Safety): Promise<void> {
     const task = safety.task;
-    if (this.networks.has(task)) return;
     const names = containerNames(task);
+    // A network that majhi remembers may be gone (removed by hand, or by a sweep): look before relying on it.
+    if (this.networks.has(task)) {
+      try {
+        await docker.exec(["network", "inspect", names.network]);
+        return;
+      } catch {
+        this.networks.delete(task);
+      }
+    }
     try {
       await docker.exec(["network", "inspect", names.network]);
     } catch {

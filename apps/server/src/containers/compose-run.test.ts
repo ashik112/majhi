@@ -188,6 +188,26 @@ describe("docker compose in a task", () => {
     expect(again).toMatchObject({ code: 0, stdout: "Nothing to remove.\n" });
   });
 
+  it("stops a stack with the task and starts it again when the task runs, and forgets it after down or the end", async () => {
+    await up();
+    await service.taskPaused("ACM-1");
+    expect(names()).toEqual([]);
+    expect(await service.taskRunning("ACM-1")).toEqual({ started: ["compose in shop"], failed: [] });
+    expect(names()).toHaveLength(6);
+    // Once: a second resume starts nothing.
+    expect(await service.taskRunning("ACM-1")).toEqual({ started: [], failed: [] });
+    await call("ACM-1", repo, "compose", "down");
+    await service.taskPaused("ACM-1");
+    expect(await service.taskRunning("ACM-1")).toEqual({ started: [], failed: [] });
+    expect(names()).toEqual([]);
+    // A task that ends does not bring a stack back.
+    await up();
+    await service.taskPaused("ACM-1");
+    await service.taskEnded("ACM-1");
+    expect(await service.taskRunning("ACM-1")).toEqual({ started: [], failed: [] });
+    expect(names()).toEqual([]);
+  });
+
   it("keeps a task's compose containers invisible to every other task", async () => {
     await up();
     await writeFile(
