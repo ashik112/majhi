@@ -5,7 +5,7 @@ import type { LiveState } from "./entry-text";
 import { idList, type Relation } from "./home-model";
 
 const CHIP =
-  "inline-flex h-[22px] max-w-full min-w-0 shrink-0 items-center gap-1.5 rounded-md border px-1.5 text-xs whitespace-nowrap text-fg-muted";
+  "inline-flex h-[22px] max-w-full shrink-0 items-center gap-1.5 rounded-md border px-1.5 text-xs whitespace-nowrap text-fg-muted";
 
 /** The other task and what it is doing now: its lamp and a word. A task the board does not draw has neither. */
 function Live({ id, live }: { id: string; live: ReadonlyMap<string, LiveState> }) {
@@ -45,7 +45,7 @@ export function RelationChips({
   if (!waits && !blocks && !follows) return null;
   const first = rel.waitsOn[0];
   return (
-    <span className={cn("flex min-w-0 items-center gap-1.5", className)}>
+    <span className={cn("flex min-w-0 shrink-0 items-center gap-1.5", className)}>
       {waits && first !== undefined && (
         <span
           title={`Waits on ${rel.waitsOn.join(", ")}`}

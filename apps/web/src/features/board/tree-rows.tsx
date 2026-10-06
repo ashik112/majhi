@@ -140,7 +140,7 @@ const TreeRow = memo(function TreeRow({ entry, focused, selected, ctx }: RowProp
       )}
       <span
         className={cn(
-          "flex min-w-0 flex-[3] items-center gap-2 text-sm text-fg-soft",
+          "flex min-w-0 flex-[3] items-center gap-2 overflow-hidden text-sm text-fg-soft",
           "max-[1279px]:order-9 max-[1279px]:flex-1 max-[1279px]:pb-1",
           !hasDetail && "max-[1279px]:hidden",
         )}
@@ -184,7 +184,9 @@ const TreeRow = memo(function TreeRow({ entry, focused, selected, ctx }: RowProp
           </span>
         )}
         <OriginMark origin={task?.origin} named={task?.origin?.kind === "finding"} />
-        <span className="tnum w-9 text-right font-mono text-xs text-fg-faint">{line.age}</span>
+        <span className="tnum min-w-9 shrink-0 text-right font-mono text-xs whitespace-nowrap text-fg-faint">
+          {line.age}
+        </span>
         <span className="flex min-w-[84px] justify-end">
           {first?.kind === "wait" && (
             <span
