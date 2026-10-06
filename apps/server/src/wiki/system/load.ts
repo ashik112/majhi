@@ -28,25 +28,51 @@ export interface LoadedSystem {
   facts: readonly WikiFact[];
 }
 
+/** A number for each parsed facts file, so a result can be told to come from the same files. */
+const tokens = new WeakMap<object, number>();
+let lastToken = 0;
+function tokenOf(file: object): number {
+  let token = tokens.get(file);
+  if (token === undefined) {
+    lastToken += 1;
+    token = lastToken;
+    tokens.set(file, token);
+  }
+  return token;
+}
+
+/** The last result of each workspace and what it was made from: the same files, answers and declared links give the same links, so they are not matched again. */
+const memo = new Map<string, { key: string; loaded: LoadedSystem }>();
+
 /**
  * The workspace's links, drawn from the stored facts of its own projects and its own answers, with no model and no
- * reader. A project of another workspace is never read, and a declared link to one is dropped.
+ * reader. A project of another workspace is never read, and a declared link to one is dropped. Matching a big
+ * workspace takes seconds, so a result is kept until its files, answers or declared links change.
  */
 export async function loadSystem(org: string, sources: SystemSources): Promise<LoadedSystem> {
   const members = await sources.projects(org);
   const read = await Promise.all(members.map(async (m) => ({ m, file: await sources.facts(org, m.id) })));
+  const answers = sources.answers(org);
+  const key = JSON.stringify([
+    read.map(({ m, file }) => [m.id, m.declared, file === undefined ? 0 : tokenOf(file)]),
+    answers,
+  ]);
+  const had = memo.get(org);
+  if (had?.key === key) return had.loaded;
   const withFacts = read.flatMap(({ m, file }) => (file === undefined ? [] : [{ m, file }]));
   const view = buildSystem({
     org,
     projects: withFacts.map(({ m, file }) => ({ id: m.id, facts: file.facts, declared: m.declared })),
-    answers: sources.answers(org),
+    answers,
     missing: read.filter(({ file }) => file === undefined).map(({ m }) => m.id),
   });
-  return {
+  const loaded: LoadedSystem = {
     view,
     commits: Object.fromEntries(withFacts.map(({ m, file }) => [m.id, file.commit])),
     facts: withFacts.flatMap(({ file }) => file.facts),
   };
+  memo.set(org, { key, loaded });
+  return loaded;
 }
 
 /** The last facts file read of each cache folder, with the size and time that file had: a file that did not change is not parsed again. */

@@ -215,7 +215,10 @@ export class WikiService {
           // The projects' facts are stored now: the workspace pages follow them. A run of one project page changes
           // nothing across projects.
           if (project === undefined || options.page === undefined) {
-            reports.push(await this.runWorkspace(org, options));
+            // Choosing one project's flows again does not choose the workspace's.
+            reports.push(
+              await this.runWorkspace(org, project === undefined ? options : { ...options, replan: false }),
+            );
           }
         } finally {
           // Whatever happened, the links and the Gaps pages follow the facts that were stored. No model, seconds.

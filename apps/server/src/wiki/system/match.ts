@@ -91,20 +91,24 @@ export type Match =
  * as a router does). Routes left tied that are not one route (another project, method or shape) make it ambiguous.
  */
 export function matchRoute(call: CallShape, routes: readonly RouteRef[]): Match {
-  const usable = routes.filter((r) => methodFits(r.method, call.method));
-  let hits = usable.filter((r) => fits(r.segs, call.segs));
-  if (hits.length === 0) hits = usable.filter((r) => fitsUnderMount(r.segs, call.segs));
+  // One pass, no copy of the routes: the same path first, and the mount tier only when no route has it.
+  const same: RouteRef[] = [];
+  const mounted: RouteRef[] = [];
+  for (const r of routes) {
+    if (!methodFits(r.method, call.method)) continue;
+    if (fits(r.segs, call.segs)) same.push(r);
+    else if (same.length === 0 && fitsUnderMount(r.segs, call.segs)) mounted.push(r);
+  }
+  const hits = same.length > 0 ? same : mounted;
   if (hits.length === 0) return { kind: "none" };
   const rank = (r: RouteRef): [number, number] => [
     r.method === call.method ? 0 : 1,
     r.segs.filter((s) => s.param).length,
   ];
-  const [m0, p0] = rank(
-    hits.toSorted((a, b) => rank(a)[0] - rank(b)[0] || rank(a)[1] - rank(b)[1])[0] as RouteRef,
-  );
-  const best = hits.filter((r) => rank(r)[0] === m0 && rank(r)[1] === p0);
+  const ranked = hits.map((r) => ({ r, k: rank(r) })).toSorted((a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1]);
+  const [m0, p0] = (ranked[0] as (typeof ranked)[number]).k;
+  const best = ranked.filter((x) => x.k[0] === m0 && x.k[1] === p0).map((x) => x.r);
   const shapes = new Set(best.map((r) => `${r.project}|${r.method}|${signature(r.segs)}`));
-  const first = best[0] as RouteRef;
-  if (shapes.size === 1) return { kind: "one", route: first };
+  if (shapes.size === 1) return { kind: "one", route: best[0] as RouteRef };
   return { kind: "ambiguous", projects: [...new Set(best.map((r) => r.project))].toSorted() };
 }
