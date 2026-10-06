@@ -1,5 +1,6 @@
 import { type ApiError, CommitShaSchema, IdSchema } from "@majhi/shared";
 import { type Context, Hono } from "hono";
+import type { PdfPrinter } from "../export/pdf.ts";
 import { serveSegments } from "./taskFiles.ts";
 
 export interface WikiFilesDeps {
@@ -9,6 +10,8 @@ export interface WikiFilesDeps {
    * and checks the file path itself.
    */
   exportOf(org: string, project: string, commit: string): Promise<string | undefined>;
+  /** Prints exported documents to PDF; absent where runs have no runner container. */
+  pdf?: PdfPrinter | undefined;
 }
 
 /** What the wiki never serves from an export: git's own folder and env files, which hold values. */
@@ -38,7 +41,7 @@ export function wikiFileRoutes(deps: WikiFilesDeps): Hono {
     } catch {
       return refuse(404, "Not found.");
     }
-    return serveSegments(c, folder, segments, "source export", isWikiHidden);
+    return serveSegments(c, folder, segments, "source export", isWikiHidden, { pdf: deps.pdf });
   });
   return app;
 }

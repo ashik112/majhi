@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "MAJHI_RUNNER=${MAJHI_RUNNER:-local} tsx watch src/main.ts",
-    "build": "esbuild src/main.ts src/cli.ts --bundle --platform=node --format=esm --target=node22 --external:node-pty --external:better-sqlite3 --external:sqlite-vec --external:@huggingface/transformers --outdir=dist --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
+    "build": "esbuild src/main.ts src/cli.ts src/export/worker.ts --bundle --platform=node --format=esm --target=node22 --external:node-pty --external:better-sqlite3 --external:sqlite-vec --external:@huggingface/transformers --outdir=dist --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
     "start": "MALLOC_ARENA_MAX=2 node --max-semi-space-size=2 dist/main.js",
     "test": "vitest run --root ../.. apps/server/",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "@fontsource/ibm-plex-sans": "5.3.0",
     "@hono/node-server": "2.1.1",
     "@huggingface/transformers": "4.3.0",
     "@majhi/acp": "workspace:*",
@@ -18,24 +20,32 @@
     "@modelcontextprotocol/sdk": "1.31.0",
     "age-encryption": "0.3.1",
     "better-sqlite3": "13.0.3",
+    "docx": "9.8.1",
     "drizzle-orm": "0.45.3",
     "es-module-lexer": "3.0.2",
+    "hast-util-to-html": "9.0.5",
     "hono": "4.13.9",
     "mongodb": "7.7.0",
     "mysql2": "3.24.5",
     "node-pty": "1.1.0",
     "pg": "8.23.1",
+    "rehype-highlight": "7.0.2",
+    "remark-parse": "11.0.0",
+    "remark-rehype": "11.1.2",
     "smol-toml": "1.9.0",
     "sqlite-vec": "0.1.9",
+    "unified": "11.0.5",
     "ws": "8.22.0",
     "yaml": "2.9.1",
     "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/better-sqlite3": "9.6.0",
+    "@types/hast": "3.0.5",
     "@types/pg": "8.23.1",
     "@types/ws": "8.18.1",
     "esbuild": "0.28.2",
-    "tsx": "4.23.15"
+    "tsx": "4.23.15",
+    "unpdf": "1.8.1"
   }
 }

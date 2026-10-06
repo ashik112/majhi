@@ -1,6 +1,6 @@
+import { REMARK_PLUGINS } from "@majhi/shared/markdown";
 import { type ReactNode, useMemo } from "react";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { AgentRef } from "@/features/agent-drawer/agent-ref";
 import { TaskRef } from "@/features/task-drawer/task-ref";
 import { useAgentIndex } from "@/lib/agent-index";
@@ -200,7 +200,7 @@ export function Markdown({
   const agents = useMemo(() => new Set(index.keys()), [index]);
   const remarkPlugins = useMemo<Options["remarkPlugins"]>(
     () => [
-      remarkGfm,
+      ...REMARK_PLUGINS,
       [remarkTaskRefs, { known, agents }],
       ...(cites === undefined ? [] : [[remarkCites, { known: cites.known }] as [typeof remarkCites, object]]),
     ],

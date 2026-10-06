@@ -16,6 +16,7 @@ import { formatAgo, formatBytes } from "@/lib/format";
 import { useCopy } from "@/lib/use-copy";
 import type { AppSearch } from "@/router";
 import { CodeView } from "./code-view";
+import { DownloadMenu } from "./download-menu";
 import {
   type FileRef,
   fileEditStamp,
@@ -228,6 +229,7 @@ export function Viewer({
               Open in new tab
             </a>
           </Button>
+          <DownloadMenu url={url} path={path} kind={kind} />
           {fileRef.kind !== "wiki" && (
             <Button size="sm" variant="secondary" onClick={refresh} disabled={refreshing}>
               <RefreshCw aria-hidden="true" className={refreshing ? "animate-spin" : undefined} />

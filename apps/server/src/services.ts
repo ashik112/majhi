@@ -95,6 +95,7 @@ import type { ServerEnv } from "./env.ts";
 import { errorMessage, UserError } from "./errors.ts";
 import { EventHub } from "./events/hub.ts";
 import { HomeWatcher } from "./events/watcher.ts";
+import { type PdfPrinter, runnerPdfPrinter } from "./export/pdf.ts";
 import { FindingsRepo } from "./findings/repo.ts";
 import { FindingsService } from "./findings/service.ts";
 import { triageFinding } from "./findings/triage.ts";
@@ -396,6 +397,8 @@ export interface Services {
   codeGraph: CodeGraphTools;
   /** The sealed reader runner: no network, read-only checkout. Absent unless agents run in containers. */
   graphRunner: GraphRunner | undefined;
+  /** Prints exported documents to PDF in a sealed runner container. Absent unless agents run in containers. */
+  pdfPrinter: PdfPrinter | undefined;
   /** The project wiki: facts, plan, write, check, store, and what is behind. */
   wiki: WikiService;
   /** The `wiki` tool of `majhi-memory`. */
@@ -946,6 +949,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           spawner: sessionOptions.spawner ?? localSpawner,
           base: sessionOptions.base,
         })
+      : undefined;
+  const pdfPrinter =
+    env.runner.mode === "container"
+      ? runnerPdfPrinter({ spawner: sessionOptions.spawner ?? localSpawner, base: sessionOptions.base })
       : undefined;
   const codeGraph = new CodeGraphTools({
     root: graphRoot,
@@ -2566,6 +2573,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     agenda,
     codeGraph,
     graphRunner,
+    pdfPrinter,
     wiki,
     wikiTools,
     wikiAsk,

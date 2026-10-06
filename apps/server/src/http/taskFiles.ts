@@ -1,9 +1,21 @@
-import { createReadStream } from "node:fs";
-import { realpath, stat } from "node:fs/promises";
+import { createReadStream, type Stats } from "node:fs";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { Readable } from "node:stream";
-import { type ApiError, extensionOf } from "@majhi/shared";
+import {
+  type ApiError,
+  type DownloadFormat,
+  DownloadFormatSchema,
+  downloadName,
+  EXPORT_SOURCE_LIMIT,
+  extensionOf,
+  taskPathOf,
+  viewerKindOfPath,
+} from "@majhi/shared";
 import { type Context, Hono } from "hono";
+import { ExportRefused, exportMarkdown } from "../export/export.ts";
+import { IMAGE_LIMIT, type ImageReader } from "../export/images.ts";
+import type { PdfPrinter } from "../export/pdf.ts";
 
 /** By extension. Anything else is a download, so a browser never guesses. */
 const TYPES: Record<string, string> = {
@@ -52,6 +64,8 @@ export interface TaskFilesDeps {
   folderOf(taskId: string): string | undefined;
   /** The repos of a task (checkout and worktree), or undefined when there is no such task. */
   reposOf?(taskId: string): { project: string; source: string; worktree?: string | undefined }[] | undefined;
+  /** Prints exported documents to PDF; absent where runs have no runner container. */
+  pdf?: PdfPrinter | undefined;
 }
 
 const TASK_ID = /^[A-Z][A-Z0-9]{0,9}-[1-9][0-9]*$/;
@@ -96,31 +110,37 @@ export function taskFileRoutes(deps: TaskFilesDeps): Hono {
       return refuse(c, 404, "Not found.");
     }
     const notes = prefix === PREFIX;
-    return serveSegments(c, folder, segments, what, (parts) =>
-      notes && isHandoffNote(parts) ? false : parts.some((s) => s.startsWith(".")),
+    return serveSegments(
+      c,
+      folder,
+      segments,
+      what,
+      (parts) => (notes && isHandoffNote(parts) ? false : parts.some((s) => s.startsWith("."))),
+      { pdf: deps.pdf },
     );
   }
   return app;
 }
 
+/** Says which names under a root are never served: checked on the asked path and again on the resolved one. */
+export type HiddenRule = (parts: readonly string[]) => boolean;
+
 /**
- * Serves one file of `folder` named by `segments` (still percent-decoded by the caller), with ranges and `?meta=1`.
- * Nothing outside the folder is served, also through symlinks; `hidden` says which names are refused.
+ * The file `segments` (already percent-decoded) name under `folder`, or why it may not be read. The
+ * one access rule of the viewer: nothing outside the folder (also through symlinks), no hidden name.
+ * Serving a file, and every image an exported document inlines, goes through here.
  */
-export async function serveSegments(
-  c: Context,
+export async function resolveInside(
   folder: string,
   segments: string[],
   what: string,
-  /** True for a path that must not be served: checked on the asked path and again on the resolved one. */
-  hidden: (parts: readonly string[]) => boolean,
-): Promise<Response> {
-  const refuse = (status: 403 | 404, error: string) => c.json({ error } satisfies ApiError, status);
-  if (segments.some((s) => s.includes("\0") || s.includes("\\"))) return refuse(404, "Not found.");
+  hidden: HiddenRule,
+): Promise<{ target: string; info: Stats } | { status: 403 | 404; error: string }> {
+  if (segments.some((s) => s.includes("\0") || s.includes("\\"))) return { status: 404, error: "Not found." };
   // Empty segments (a trailing slash) are dropped; `..` and dot names are refused outright.
   segments = segments.filter((s) => s !== "");
-  if (segments.length === 0) return refuse(404, "Not found.");
-  if (hidden(segments)) return refuse(403, "Hidden files are not served.");
+  if (segments.length === 0) return { status: 404, error: "Not found." };
+  if (hidden(segments)) return { status: 403, error: "Hidden files are not served." };
 
   let root: string;
   let target: string;
@@ -128,21 +148,92 @@ export async function serveSegments(
     root = await realpath(folder);
     target = await realpath(join(root, ...segments));
   } catch {
-    return refuse(404, "Not found.");
+    return { status: 404, error: "Not found." };
   }
   const rel = relative(root, target);
   const parts = rel.split(sep);
   if (rel === "" || rel.startsWith("..") || hidden(parts)) {
-    return refuse(403, `That file is outside the ${what}.`);
+    return { status: 403, error: `That file is outside the ${what}.` };
   }
   const info = await stat(target).catch(() => undefined);
-  if (info === undefined || !info.isFile()) return refuse(404, "Not found.");
+  if (info === undefined || !info.isFile()) return { status: 404, error: "Not found." };
+  return { target, info };
+}
+
+/**
+ * Serves one file of `folder` named by `segments` (still percent-decoded by the caller), with ranges and `?meta=1`.
+ * Nothing outside the folder is served, also through symlinks; `hidden` says which names are refused.
+ * `?download=<format>` sends it as an attachment: `raw` as it is, and a markdown file as html, pdf or docx.
+ */
+export async function serveSegments(
+  c: Context,
+  folder: string,
+  segments: string[],
+  what: string,
+  /** True for a path that must not be served: checked on the asked path and again on the resolved one. */
+  hidden: HiddenRule,
+  options: { pdf?: PdfPrinter | undefined } = {},
+): Promise<Response> {
+  const refuse = (status: 400 | 403 | 404 | 413, error: string) =>
+    c.json({ error } satisfies ApiError, status);
+  const found = await resolveInside(folder, segments, what, hidden);
+  if ("error" in found) return refuse(found.status, found.error);
+  const { target, info } = found;
 
   // `?meta=1`: what the in-app viewer shows in its header. Same checks as above, no content.
   if (c.req.query("meta") === "1") {
     return c.json({ size: info.size, modified: info.mtime.toISOString() }, 200, {
       "Cache-Control": "no-store",
     });
+  }
+
+  const asked = segments.filter((s) => s !== "");
+  const name = asked[asked.length - 1] ?? "file";
+  let download: DownloadFormat | undefined;
+  const format = c.req.query("download");
+  if (format !== undefined) {
+    const parsed = DownloadFormatSchema.safeParse(format);
+    if (!parsed.success) return refuse(400, "Download as raw, html, pdf or docx.");
+    download = parsed.data;
+  }
+  if (download !== undefined && download !== "raw") {
+    if (viewerKindOfPath(name) !== "markdown")
+      return refuse(400, "Only a markdown file exports as html, pdf or docx.");
+    if (info.size > EXPORT_SOURCE_LIMIT) {
+      return refuse(413, "This file is too big to export. Download it as it is.");
+    }
+    const baseDir = asked.slice(0, -1).join("/");
+    const readImage: ImageReader = async (src) => {
+      const path = taskPathOf(src, folder, baseDir);
+      if (path === undefined) return undefined;
+      const image = await resolveInside(folder, path.split("/"), what, hidden);
+      const type = TYPES[extensionOf(path)];
+      if ("error" in image || type === undefined || !type.startsWith("image/")) return undefined;
+      if (image.info.size > IMAGE_LIMIT) return undefined;
+      return { bytes: await readFile(image.target), type };
+    };
+    try {
+      const file = await exportMarkdown(target, name, download, readImage, options.pdf);
+      const body = new Uint8Array(
+        file.body.buffer as ArrayBuffer,
+        file.body.byteOffset,
+        file.body.byteLength,
+      );
+      return new Response(body, {
+        status: 200,
+        headers: {
+          "Content-Type": file.type,
+          "Content-Length": String(file.body.length),
+          "Content-Disposition": attachment(downloadName(name, download)),
+          "X-Content-Type-Options": "nosniff",
+          "Cache-Control": "no-store",
+          ...(download === "html" ? { "Content-Security-Policy": SANDBOX } : {}),
+        },
+      });
+    } catch (err) {
+      if (err instanceof ExportRefused) return c.json({ error: err.message } satisfies ApiError, err.status);
+      throw err;
+    }
   }
 
   const ext = extensionOf(target);
@@ -153,7 +244,8 @@ export async function serveSegments(
     "Accept-Ranges": "bytes",
   });
   if (SANDBOXED.has(ext)) headers.set("Content-Security-Policy", SANDBOX);
-  if (TYPES[ext] === undefined) headers.set("Content-Disposition", "attachment");
+  if (download === "raw") headers.set("Content-Disposition", attachment(downloadName(name, "raw")));
+  else if (TYPES[ext] === undefined) headers.set("Content-Disposition", "attachment");
 
   const range = parseRange(c.req.header("range"), info.size);
   if (range === "unsatisfiable") {
@@ -167,6 +259,16 @@ export async function serveSegments(
     return new Response(null, { status: range ? 206 : 200, headers });
   const stream = Readable.toWeb(createReadStream(target, { start, end })) as ReadableStream;
   return new Response(stream, { status: range ? 206 : 200, headers });
+}
+
+/** `Content-Disposition` for a download named `name`, with an ASCII fallback for old clients. */
+function attachment(name: string): string {
+  const ascii = name.replace(/[^\x20-\x7e]|["\\]/g, "_");
+  const encoded = encodeURIComponent(name).replace(
+    /['()*]/g,
+    (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`;
 }
 
 /** One `bytes=a-b`, `bytes=a-` or `bytes=-n` range. Anything else is served whole. */
