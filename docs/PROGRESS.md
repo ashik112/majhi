@@ -14,6 +14,7 @@ Cause (owner): `docker compose`, `-p`, `--network`, `--env-file` were refused in
 - The image card reads `Allow image postgres:16 for db in acme` and allows it in the task's workspace; Setup shows the workspace rows. `majhi-containers` tools are trusted like the other majhi tools.
 - A `majhi-processes` process joins the task network under its name (`list` shows `name:port`).
 - A compose stack stops with the task and comes up again on resume. Cleanup by label at task end, task removal and startup, idempotent; a holder whose container is gone is removed.
+- Review fixes: files a task controls are read through one safe reader (a FIFO named `.env` no longer blocks the server); every container state counts toward the limits and a holder goes when its container is not running; reserved names (`preview`, `localhost`, `*.host`, `majhi-*`, the computer's names) are refused; a done task starts nothing and a start racing its end leaves nothing; at most 16 docker calls wait per task; hostile env names stay out of majhi's docker environment; a task's builder is closed like a holder (public internet only) and every image a Dockerfile pulls must be allowed.
 - The shim posts with `node:http` (no five minute wait for the first byte). `psql` and `redis-cli` are in the runner image.
 
 **How to try it.** In a task, in a folder with a `compose.yaml`: `docker compose up -d`, `docker compose ps`, then from the agent's shell `curl http://app:8000` (any service name). A bad file prints `docker: [compose_privileged] ...`. Tests: `npx vitest run apps/server/src/containers apps/server/src/processes packages/acp/src/runner/docker.test.ts`. The real-Docker test is `containers/network.docker.test.ts` (skipped without a daemon and the `majhi-runner:dev` image; throwaway tasks ZZT-911 and ZZT-912).
@@ -24,9 +25,31 @@ Cause (owner): `docker compose`, `-p`, `--network`, `--env-file` were refused in
 - Owner to check on the real install: update the runner image (shim, `psql`, `redis-cli`), start a compose stack in a real task, answer an image card in a real workspace.
 - Gap 10 is partly done: the runner has the clients and services work by name. A `postgres` or `mysql` connection type and an allowed private range per connection are not built.
 - `containers.per_task` defaults to 6 (owner decision).
+- `docker start` of a container that ended is refused (`restart_not_available`): its holder went with it. Run it again.
 - A script's own `docker run -d` containers are not remembered across a pause (compose stacks and services are). The Hub's "Running now" list shows services and previews, not scripts' containers.
 - A process that serves on `localhost` only is not reachable by name; it must listen on `0.0.0.0`.
 - Existing majhi startup logs `docker buildx rm failed` for builder node names (before this branch; harmless).
+
+## Hand-off check: full logs, a named failure, reruns and the agent's own world (branch `fix/handoff-full-failure`, built, not merged)
+
+Gaps 4 and 5 of the task-gaps audit. The check kept the last 25 lines of the failing step, told the lead only in Autonomous, gave agents no way to read or rerun it, and ran in a poorer world than the agent.
+
+**Plan.** Logs and typed fields first (shared schema, `handoff/logs.ts`, exec), then the service (install step, per-step limits, rerun, telling), then the agent's tools, then the web, checked in a browser on an isolated server.
+
+**What works.**
+- Every command step (install, lint, build, tests) saves its whole output, secrets masked, as `.checks/<run>/<step>.log` in the task folder, capped at 0.95 MB with a line that says where it was cut. The newest 5 runs are kept. The existing files route serves exactly those paths and the existing viewer opens them.
+- The result names the first failing step as typed fields (`failed`: step, exit code, time, log), and so does the room line. The review card shows "Failed: Tests, exit 1" with Full log (opens the viewer at the top of the tail the card shows) and Rerun Tests. Each step in the details has Full log, and Rerun when it did not pass.
+- `handoff.rerun { task, step? }` and the agent tools `handoff` and `handoff_rerun` (in `majhi-processes`, scoped to the session's own task) run one step or all through the same queue and limits, one check per task at a time. The lead is told how an agent-asked rerun ended.
+- The lead is told of a failure whether or not Autonomous is on, with the log paths in the note. The brief tells agents about the tools.
+- The check runs with the workspace's package caches and tools folder, a real `HOME`, and the project's install first when packages are missing. Per-step minutes are in Settings, Containers.
+
+**How to try it.** Finish a task whose tests fail. The review card says Failed: Tests. Press Full log, then Rerun Tests. In an agent's session, call `handoff` and `handoff_rerun` from `majhi-processes`.
+
+**Checked.** Isolated server (own home, port 7391) with a project whose test prints 244 lines and fails: the card, the room line, Full log (all of the output, the failing line, the marked line in view), Rerun Tests (lint log kept, new tests log), at 1440 dark and 1100 light, no console errors, the page does not scroll. Screenshots in `/private/tmp/claude-501/handoff-shots/`.
+
+**Left.** The first error line from a runner's structured output (see DECISIONS). A per-project environment for the agent and the check. The typecheck step the card already names (`PROGRESS` of the card unit) is still not run. A check that needs Docker for its own services is unchanged.
+
+**Known issues.** The room line's Full log button sits at the right edge of a wrapped line at 1100 px.
 
 ## Task base and caches (branch `fix/task-base-and-caches`, built, not merged)
 

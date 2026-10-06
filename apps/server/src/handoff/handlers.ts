@@ -4,10 +4,14 @@ import { UserError } from "../errors.ts";
 import { type FindingsHandlerDeps, findingActor } from "../findings/handlers.ts";
 import type { HandoffService } from "./service.ts";
 
-type HandoffCommand = "handoff.get" | "handoff.check";
+type HandoffCommand = "handoff.get" | "handoff.check" | "handoff.rerun";
 
 /** Agent tool calls that run without a card: a read, and a check the captain asks for. */
-export const HANDOFF_TOOL_COMMANDS: ReadonlySet<string> = new Set(["handoff.get", "handoff.check"]);
+export const HANDOFF_TOOL_COMMANDS: ReadonlySet<string> = new Set([
+  "handoff.get",
+  "handoff.check",
+  "handoff.rerun",
+]);
 
 export interface HandoffHandlerDeps extends FindingsHandlerDeps {
   handoff: HandoffService;
@@ -39,6 +43,12 @@ export function handoffHandlers(deps: HandoffHandlerDeps): Pick<CommandHandlers,
       await scope(input.task, ctx, true);
       // Tests can take minutes: the check runs in the background and the state says when it ends.
       deps.handoff.start(input.task, input.force === true);
+      return deps.handoff.state(input.task);
+    },
+    "handoff.rerun": async (input, ctx) => {
+      await scope(input.task, ctx, true);
+      // The same queue and limits as a check: the step runs in the background and the state says when.
+      deps.handoff.start(input.task, true, input.step === undefined ? {} : { only: [input.step] });
       return deps.handoff.state(input.task);
     },
   };

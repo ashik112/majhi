@@ -1,4 +1,5 @@
 import {
+  HandoffToolRerunSchema,
   ProcessListInputSchema,
   ProcessOutputInputSchema,
   ProcessRestartInputSchema,
@@ -9,6 +10,8 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { errorMessage, formatIssues } from "../errors.ts";
+import { stateText } from "../handoff/analysis.ts";
+import type { HandoffService } from "../handoff/service.ts";
 import { PROCESSES_SERVER_NAME, type ToolCaller } from "../rooms/access.ts";
 import type { ProcessManager } from "./manager.ts";
 import { listLine } from "./text.ts";
@@ -44,6 +47,18 @@ const TOOLS = [
     description: "Stop a process if it runs, then start the same command again under the same id.",
     input: ProcessRestartInputSchema,
   },
+  {
+    name: "handoff",
+    description:
+      "The majhi hand-off check of this task: how each step (install, tests, build, lint) ended on the latest commit, the first failure, and the log file of every step in the task folder. The check is run by majhi, not by you; this reads it. Only this task's.",
+    input: z.object({}),
+  },
+  {
+    name: "handoff_rerun",
+    description:
+      "Run this task's hand-off check again, one step (install, lint, build or tests) or all of them, on the latest commit. It runs in the background through the same queue and limits as majhi's own check, one at a time per task, and the lead is told how it ended. End your turn instead of waiting; read the result with handoff.",
+    input: HandoffToolRerunSchema,
+  },
 ] as const;
 
 function listed() {
@@ -57,7 +72,11 @@ function listed() {
 }
 
 /** `majhi-processes` (5.15): one agent session's view of its own task's processes. */
-export function processesServer(caller: ToolCaller, processes: ProcessManager): Server {
+export function processesServer(
+  caller: ToolCaller,
+  processes: ProcessManager,
+  handoff: Pick<HandoffService, "state" | "start">,
+): Server {
   const server = new Server({ name: PROCESSES_SERVER_NAME, version: "1" }, { capabilities: { tools: {} } });
   server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: listed() }));
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<Result> => {
@@ -98,6 +117,24 @@ export function processesServer(caller: ToolCaller, processes: ProcessManager): 
           const args = parse(ProcessRestartInputSchema, request.params.arguments);
           if (typeof args === "string") return fail(args);
           return ok(`Restarted ${listLine(await processes.restart(task, args.id, agent), now())}.`);
+        }
+        // The check of the task the token belongs to, never another: the tools take no task.
+        case "handoff":
+          return ok(stateText(await handoff.state(task)));
+        case "handoff_rerun": {
+          const args = parse(HandoffToolRerunSchema, request.params.arguments);
+          if (typeof args === "string") return fail(args);
+          const now = await handoff.state(task);
+          if (now.running || now.queued) {
+            return ok("A check of this task already runs. Read it with handoff when it ends.");
+          }
+          handoff.start(task, true, {
+            report: true,
+            ...(args.step === undefined ? {} : { only: [args.step] }),
+          });
+          return ok(
+            `Started the check${args.step === undefined ? "" : ` (${args.step} only)`}. It runs in the background; the lead is told how it ended. You can end your turn.`,
+          );
         }
       }
       return fail(`There is no tool ${request.params.name}.`);

@@ -14,7 +14,7 @@ import { PageLink } from "@/components/ui/page-link";
 import { useToast } from "@/components/ui/toast";
 import { SignInAgainDialog } from "@/features/accounts/account-dialogs";
 import { ChecksOnCommit } from "@/features/handoff/checks-on-commit";
-import { HandoffBlock } from "@/features/handoff/handoff-block";
+import { FailedStep, HandoffBlock } from "@/features/handoff/handoff-block";
 import { type RunShip, Ship, type ShipChoices, type ShipTarget } from "@/features/task/ship";
 import { CloseUnshippedDialog, unshippedCount } from "@/features/task/unshipped";
 import { useAgentIndex } from "@/lib/agent-index";
@@ -191,23 +191,26 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
         title={checking ? "Checking" : notReady ? "Not ready" : nothing ? "No code changes" : "Ready to ship"}
         line={line}
         below={
-          queuedMerge === undefined ? undefined : (
-            <p className="m-0 flex items-center gap-2 pl-4 text-sm text-fg-soft">
-              <span>
-                Will {queuedMerge.action === "mergePush" ? "merge and push" : "merge"} when checks pass
-              </span>
-              <span aria-hidden="true">·</span>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="-mx-1 px-2"
-                disabled={cancelQueued.isPending}
-                onClick={() => cancelQueued.mutate()}
-              >
-                Cancel
-              </Button>
-            </p>
-          )
+          <>
+            {notReady && task.repos.length > 0 && <FailedStep task={task.id} />}
+            {queuedMerge !== undefined && (
+              <p className="m-0 flex items-center gap-2 pl-4 text-sm text-fg-soft">
+                <span>
+                  Will {queuedMerge.action === "mergePush" ? "merge and push" : "merge"} when checks pass
+                </span>
+                <span aria-hidden="true">·</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="-mx-1 px-2"
+                  disabled={cancelQueued.isPending}
+                  onClick={() => cancelQueued.mutate()}
+                >
+                  Cancel
+                </Button>
+              </p>
+            )}
+          </>
         }
         actions={
           <>

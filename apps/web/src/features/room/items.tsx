@@ -12,11 +12,12 @@ import {
   ShieldQuestion,
   TriangleAlert,
 } from "lucide-react";
-import { memo, type ReactNode, useState } from "react";
+import { memo, type ReactNode, useContext, useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { WrongButton } from "@/features/decisions/wrong-button";
+import { LogLink } from "@/features/handoff/handoff-block";
 import { TaskRefText } from "@/features/task-drawer/task-ref";
 import { linkifyPaths } from "@/features/viewer/model";
 import { useAgentIndex } from "@/lib/agent-index";
@@ -30,7 +31,7 @@ import { PendingAsk } from "./ask-card";
 import { DiagramItem } from "./diagram-item";
 import { DockBar } from "./dock-bar";
 import { Markdown } from "./markdown";
-import { MediaView, TaskFileLink, type TaskFiles } from "./media";
+import { MediaView, RoomTaskContext, TaskFileLink, type TaskFiles } from "./media";
 import { contextLine, permissionSummary, toolLabel } from "./model";
 import { type OwnerContext, PausedCard, QuestionActions, ReviewCard } from "./owner-cards";
 import { ownerNotice, type Quiet, valueParts } from "./system-lines";
@@ -801,13 +802,21 @@ const SYSTEM_ICON = {
 
 /** A warning or an error from majhi. Plain notes come grouped as a NotesRow instead. */
 function SystemLine({ item, repeat }: { item: Of<"system">; repeat: number }) {
+  const task = useContext(RoomTaskContext);
+  const failed = item.failed;
   return (
     <QuietLine
       quiet={{ short: withCount(item.text, repeat) }}
       at={item.at}
       tone={item.level}
       icon={item.level === "info" ? undefined : SYSTEM_ICON[item.level]}
-      action={item.decision === undefined ? undefined : <WrongButton decision={item.decision} />}
+      action={
+        item.decision !== undefined ? (
+          <WrongButton decision={item.decision} />
+        ) : failed?.log !== undefined && task !== undefined ? (
+          <LogLink task={task} log={failed.log} />
+        ) : undefined
+      }
     />
   );
 }

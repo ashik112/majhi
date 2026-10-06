@@ -6,7 +6,7 @@ const FileViewer = lazy(() => import("./file-viewer").then((m) => ({ default: m.
 
 /** The file viewer on any page: a file link in any room opens it over the page the owner is on. */
 export function GlobalFileViewer() {
-  const { file, fileTask } = useSearch({ from: "__root__" });
+  const { file, fileTask, fileLine } = useSearch({ from: "__root__" });
   const task = useTask(file === undefined ? undefined : fileTask);
   if (file === undefined || fileTask === undefined || task.data === undefined) return null;
   return (
@@ -17,6 +17,7 @@ export function GlobalFileViewer() {
         path={file}
         items={[]}
         repos={task.data.repos}
+        line={fileLine}
       />
     </Suspense>
   );

@@ -13,6 +13,8 @@ import {
   chatTitleFrom,
   connectionType,
   DEFAULT_CHAT_TITLES,
+  type HandoffFailed,
+  handoffFailedFacts,
   isOwnerChat,
   LOCAL_TASK_PREFIX,
   lifecycle,
@@ -3624,7 +3626,11 @@ export class TaskService {
    * lead as majhi's own note, once per head commit. The review card settles and the task runs again,
    * as for an owner message; the text is data about the failure and grants no approval.
    */
-  async handoffTell(input: { task: string; text: string }): Promise<void> {
+  async handoffTell(input: {
+    task: string;
+    text: string;
+    failed?: HandoffFailed | undefined;
+  }): Promise<void> {
     const task = this.get(input.task);
     if (task.status !== "running" && task.status !== "review") {
       throw new UserError(`${task.id} is ${task.status}, so there is no lead working to tell.`, 409);
@@ -3632,7 +3638,18 @@ export class TaskService {
     const lead = task.team[0];
     if (lead === undefined) throw new UserError(`${task.id} has no agent.`, 409);
     const first = input.text.split("\n").slice(0, 3).join(" ").slice(0, 300);
-    this.note(task.id, `The hand-off check found a problem and sent it to @${lead}: ${first}`);
+    const f = input.failed;
+    if (f === undefined) {
+      this.note(task.id, `The hand-off check wrote to @${lead}: ${first}`);
+    } else {
+      const facts = handoffFailedFacts(f);
+      this.deps.room.post(task.id, `info:${randomUUID()}`, {
+        type: "system",
+        level: "warn",
+        text: `Failed: ${f.label}${facts.length === 0 ? "" : ` (${facts.join(", ")})`}. The hand-off check sent it to @${lead}.`,
+        failed: f,
+      });
+    }
     await this.tellAgent({
       task: task.id,
       agent: lead,

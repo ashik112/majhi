@@ -21,7 +21,8 @@ export const TOOL_CATALOG = [
   },
   {
     name: "majhi-processes",
-    summary: "Run long commands and servers so majhi wakes the agent when they end",
+    summary:
+      "Run long commands and servers so majhi wakes the agent when they end; read and rerun this task's hand-off check",
     rule: "On for every agent",
   },
   {

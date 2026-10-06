@@ -133,6 +133,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       agents: services.agentStore,
       projects: services.projects,
       processes: services.processes,
+      handoff: services.handoff,
       ...(services.containers.available()
         ? {
             containers: {

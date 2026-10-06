@@ -83,6 +83,7 @@ export function ordinal(n: number): string {
 
 const STEP_WORD: Record<HandoffStepId, string> = {
   ready: "starting",
+  install: "install",
   tests: "tests",
   build: "build",
   lint: "lint",

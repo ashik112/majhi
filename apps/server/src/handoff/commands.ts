@@ -2,6 +2,7 @@ import type { HandoffCommands } from "@majhi/shared";
 
 /** The commands a hand-off check runs for one project, before `{base}` is filled in. */
 export interface CheckCommands {
+  install?: string | undefined;
   test?: string | undefined;
   build?: string | undefined;
   lint?: string | undefined;
@@ -14,7 +15,7 @@ export function effectiveCommands(
   override: HandoffCommands | undefined,
 ): CheckCommands {
   const out: CheckCommands = { ...card };
-  for (const key of ["test", "build", "lint", "typecheck"] as const) {
+  for (const key of ["install", "test", "build", "lint", "typecheck"] as const) {
     const line = override?.[key];
     if (line !== undefined && line.trim() !== "") out[key] = line;
   }
