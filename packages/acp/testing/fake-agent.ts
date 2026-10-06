@@ -42,6 +42,8 @@ const Flags = z.object({
   /** Dollars per prompt in the running cost; absent reports no cost. */
   turnCost: z.number().nonnegative().optional(),
   usageModel: z.string().min(1).optional(),
+  /** A JSON file of scripted answers (`--replies <file>`), read on every prompt. */
+  replies: z.string().min(1).optional(),
   /** Canned usage for the Claude `usage` argv and the Codex app-server. */
   usage: z.object({
     fiveHourPct: z.number(),
@@ -70,6 +72,7 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
     turnTokens?: { input: number; output: number; thought: number; cacheRead: number; cacheWrite: number };
     turnCost?: number;
     usageModel?: string;
+    replies?: string;
     usage: {
       fiveHourPct: number;
       weekPct: number;
@@ -122,6 +125,7 @@ function parseFlags(argv: string[]): { flags: Flags; rest: string[] } {
       if (v === "none") delete raw.turnCost;
       else raw.turnCost = Number(v);
     } else if (a === "--usage-model") raw.usageModel = argv[++i] ?? "";
+    else if (a === "--replies") raw.replies = argv[++i] ?? "";
     else if (a === "--five-hour-pct") raw.usage.fiveHourPct = Number(argv[++i]);
     else if (a === "--week-pct") raw.usage.weekPct = Number(argv[++i]);
     else if (a === "--opus-pct") raw.usage.opusPct = Number(argv[++i]);
@@ -349,6 +353,7 @@ function serve(flags: Flags): void {
     turnTokens: flags.turnTokens,
     turnCost: flags.turnCost,
     usageModel: flags.usageModel,
+    replies: flags.replies,
     signedIn: () => isSignedIn(flags),
     expired: flags.expired,
   });

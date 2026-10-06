@@ -123,6 +123,8 @@ export interface ServeOptions {
   turnCost: number | undefined;
   /** Sent as `_meta["_claude/model"]` with the cost, like claude-agent-acp. */
   usageModel: string | undefined;
+  /** A JSON file of `{rules:[{when, flags?, say}]}` read on every prompt: the first rule whose `when` matches gives the whole answer. */
+  replies: string | undefined;
 }
 
 interface McpEntry {
@@ -214,6 +216,20 @@ async function isBossChat(s: Session): Promise<boolean> {
     return /## Brief\n\n(?:Captain chat|Chat)\n/.test(await readFile(join(s.cwd, "TASK.md"), "utf8"));
   } catch {
     return false;
+  }
+}
+
+const RepliesSchema = z.object({
+  rules: z.array(z.object({ when: z.string(), flags: z.string().default(""), say: z.string() })),
+});
+
+/** The scripted answer for a prompt from the replies file, or undefined when the file is missing or no rule matches. */
+async function repliedTo(file: string, prompt: string): Promise<string | undefined> {
+  try {
+    const { rules } = RepliesSchema.parse(JSON.parse(await readFile(file, "utf8")) as unknown);
+    return rules.find((r) => new RegExp(r.when, r.flags).test(prompt))?.say;
+  } catch {
+    return undefined;
   }
 }
 
@@ -641,6 +657,7 @@ export function serveAcp(o: ServeOptions): void {
         stored.messages.push({ role: "user", text });
         let stopReason: StopReason;
         let agentText: string | undefined;
+        let reply: string | undefined;
         // `limit:<message>` fails the prompt with that error, like a CLI that is out of usage.
         if (text.startsWith("limit:")) {
           throw new RequestError(-32603, text.slice("limit:".length).trim());
@@ -676,6 +693,16 @@ export function serveAcp(o: ServeOptions): void {
           stopReason = "end_turn";
         } else if (text.includes("Reply with a handoff note")) {
           agentText = FAKE_NOTE;
+          await update(params.sessionId, {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: agentText },
+          });
+          stopReason = "end_turn";
+        } else if (
+          (reply = o.replies === undefined ? undefined : await repliedTo(o.replies, text)) !== undefined
+        ) {
+          // A scripted answer for any session, whatever its folder or servers: a test plays a model that writes exact JSON.
+          agentText = reply;
           await update(params.sessionId, {
             sessionUpdate: "agent_message_chunk",
             content: { type: "text", text: agentText },
