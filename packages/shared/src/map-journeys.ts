@@ -123,6 +123,8 @@ export function proposeJourneys(map: ProjectMap, kept: readonly JourneyView[]): 
 
 const ENTRY_WORDS: Record<InsideTrigger, string> = {
   HTTP: "Request arrives",
+  SOCKET: "Live connection opens",
+  TOOL: "Tool is called",
   SCHEDULE: "Wake up",
   QUEUE: "Job arrives",
   COMMAND: "Run command",
@@ -130,13 +132,9 @@ const ENTRY_WORDS: Record<InsideTrigger, string> = {
 
 /** A few words for one step of a story: "Build digest", "Save to notes". The full sentence is the proof text. */
 function shortLabel(s: InsideStep, kind: InsideTrigger): string {
-  const words = (id: string) => {
-    const t = id.split("_").join(" ").trim();
-    return t.slice(0, 1).toUpperCase() + t.slice(1);
-  };
   if (s.kind === "entry") return ENTRY_WORDS[kind];
-  if (s.kind === "call") return words(s.to);
-  return `${s.text.includes(" saves to ") ? "Save to" : s.text.includes(" reads from ") ? "Read from" : "Call"} ${s.to}`;
+  if (s.kind === "call") return s.part;
+  return `${s.part === "Database" ? "Use" : "Call"} ${s.to}`;
 }
 
 /** The part of a project's code a step end is: the entry that starts it, a function, a datastore or an outside service. */

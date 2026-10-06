@@ -71,7 +71,16 @@ export const GraphifyInsideSchema = z.object({
     .max(3000),
   calls: z
     .array(
-      z.object({ from: z.string().max(160), to: z.string().max(160), line: z.number().int().positive() }),
+      z.object({
+        from: z.string().max(160),
+        to: z.string().max(160),
+        line: z.number().int().positive(),
+        /**
+         * How the call was proved: `same-file` (defined in the same file) or `import` (the file imports it).
+         * `name` is a match by name alone; it is never followed.
+         */
+        how: z.enum(["same-file", "import", "name"]).default("name"),
+      }),
     )
     .max(20000),
   uses: z
@@ -89,20 +98,44 @@ export const GraphifyInsideSchema = z.object({
   entries: z
     .array(
       z.object({
-        kind: z.enum(["HTTP", "SCHEDULE", "QUEUE", "COMMAND"]),
+        kind: z.enum(["HTTP", "SOCKET", "TOOL", "SCHEDULE", "QUEUE", "COMMAND"]),
         label: z.string().min(1).max(160),
         file: z.string().min(1).max(400),
         line: z.number().int().positive(),
         fn: z.string().min(1).max(160),
+        /** A route that dispatches to a table of handlers: the table's keys. */
+        members: z
+          .array(
+            z.object({
+              label: z.string().min(1).max(160),
+              file: z.string().min(1).max(400),
+              line: z.number().int().positive(),
+            }),
+          )
+          .max(500)
+          .optional(),
+        count: z.number().int().nonnegative().optional(),
       }),
     )
     .max(2000),
+  /** Datastores from the project's dependencies and imports, with the tables its code or schema names. */
+  stores: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(60),
+        kind: z.literal("db"),
+        via: z.array(z.string().max(80)).max(6).default([]),
+        tables: z.array(z.string().max(80)).max(60).optional(),
+      }),
+    )
+    .max(20)
+    .default([]),
 });
 export type GraphifyInside = z.infer<typeof GraphifyInsideSchema>;
 
 export const GraphifyFactsSchema = z.object({
-  /** 2 adds `inside`; a project read before that has 1 and shows as "not read inside yet". */
-  v: z.union([z.literal(1), z.literal(2)]),
+  /** 2 adds `inside`, 3 proves calls by file and import; an older read shows as "not read inside yet". */
+  v: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   files: z.number().int().nonnegative(),
   calls: z.array(GraphifyCallSchema).max(2000),
   inside: GraphifyInsideSchema.optional(),
