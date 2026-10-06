@@ -1,3 +1,4 @@
+import { HIGHLIGHT_OPTIONS } from "@majhi/shared";
 import { useEffect, useState } from "react";
 import type { Options } from "react-markdown";
 
@@ -9,7 +10,7 @@ let pending: Promise<Plugins> | undefined;
 function load(): Promise<Plugins> {
   // highlight.js and its languages are a chunk of their own: text shows first, colors follow.
   pending ??= import("rehype-highlight").then((m) => {
-    loaded = [[m.default, { detect: false }]];
+    loaded = [[m.default, HIGHLIGHT_OPTIONS]];
     return loaded;
   });
   return pending;

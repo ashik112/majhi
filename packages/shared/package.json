@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./markdown": "./src/markdown.ts"
   },
   "scripts": {
     "test": "vitest run --root ../.. packages/shared/",
@@ -12,6 +13,7 @@
   },
   "dependencies": {
     "croner": "10.0.1",
+    "remark-gfm": "4.0.1",
     "zod": "4.6.5"
   }
 }
