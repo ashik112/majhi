@@ -21,6 +21,10 @@ export interface CardsWiring {
   log?: (message: string) => void;
   /** The owner switched an outcome rule of the Projects playbook off. */
   ruleOff?: ((org: string, rule: string) => boolean) | undefined;
+  /** Whether a workspace has the wiki on: it owns architecture, so a seeded brief points to it. */
+  wikiOn?: ((org: string) => Promise<boolean>) | undefined;
+  /** The base branch of a project moved and stood: the wiki's pages may now be behind it. */
+  onBaseMoved?: ((project: CardProject, tip: string) => void) | undefined;
   /** Readiness gaps become findings (source setup), one per project and missing item. */
   reportGap?: (project: CardProject, gap: ReadinessItem) => Promise<void>;
 }
@@ -77,17 +81,18 @@ export function createCards(w: CardsWiring): ProjectCards {
       exists: p.exists,
     }));
   const { housekeeper } = w;
-  const seedBrief = (card: ProjectCard): void => {
+  const seedBrief = async (card: ProjectCard): Promise<void> => {
     // A brief that says "Nothing yet." for what it is and its architecture gets them from the card.
     const current = w.memory.project.currentBrief(card.project);
     const sections = current === undefined ? undefined : parseBrief(current.body);
     const empty = (s: string | undefined) => s === undefined || s === "" || /^nothing yet\.?$/i.test(s);
     if (!empty(sections?.["What it is"]) || !empty(sections?.Architecture)) return;
     if (card.whatItIs === "" && card.structure.length === 0) return;
+    const wiki = (await w.wikiOn?.(card.org)) === true;
     const next = Object.fromEntries(BRIEF_SECTIONS.map((s) => [s, sections?.[s] ?? ""]));
     next["What it is"] = card.whatItIs;
     next.Architecture = card.structure.map((s) => `- ${s.path}: ${s.note}`).join("\n");
-    w.memory.project.setBrief(card.project, next, "scan");
+    w.memory.project.setBrief(card.project, next, "scan", wiki);
   };
   return new ProjectCards({
     repo: new CardRepo(w.store.raw),
@@ -130,12 +135,11 @@ export function createCards(w: CardsWiring): ProjectCards {
           },
         }),
     onCard: (_project, card) => {
-      try {
-        seedBrief(card);
-      } catch (err) {
-        w.log?.(`cards: ${card.project}: the brief was not filled: ${String(err)}`);
-      }
+      void seedBrief(card).catch((err: unknown) =>
+        w.log?.(`cards: ${card.project}: the brief was not filled: ${String(err)}`),
+      );
     },
+    ...(w.onBaseMoved === undefined ? {} : { onBaseMoved: w.onBaseMoved }),
     onGaps: (project, gaps) => {
       for (const gap of gaps) {
         void (w.reportGap?.(project, gap) ?? Promise.resolve()).catch((err: unknown) =>

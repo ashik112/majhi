@@ -8,7 +8,7 @@ import type {
   ThreadStatus,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
-import { applyPatch } from "./brief-doc.ts";
+import { applyPatch, withWikiArchitecture } from "./brief-doc.ts";
 import type { RecordStore } from "./record-store.ts";
 import { CANDIDATES, fuse } from "./search.ts";
 
@@ -187,9 +187,11 @@ export class ProjectMemory {
     project: string,
     patch: Readonly<Record<string, string>>,
     from: { task: string; agent?: string | undefined },
+    /** The workspace has the wiki on: Architecture is a pointer to it, whatever the patch says. */
+    wiki = false,
   ): ProjectBrief | undefined {
     const current = this.store.brief(project);
-    const body = applyPatch(current?.body, patch);
+    const body = applyPatch(current?.body, wiki ? withWikiArchitecture(patch) : patch);
     if (body === undefined) return undefined;
     const brief = this.store.addBrief({
       project,
@@ -208,8 +210,10 @@ export class ProjectMemory {
     project: string,
     sections: Readonly<Record<string, string>>,
     agent: string | undefined,
+    /** The workspace has the wiki on: Architecture is a pointer to it, whatever the sections say. */
+    wiki = false,
   ): ProjectBrief {
-    const body = applyPatch(undefined, sections);
+    const body = applyPatch(undefined, wiki ? withWikiArchitecture(sections) : sections);
     if (body === undefined) throw new UserError("The Housekeeper wrote an empty brief.", 409);
     const brief = this.store.addBrief({
       project,

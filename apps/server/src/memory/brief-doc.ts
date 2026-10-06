@@ -51,6 +51,18 @@ export function firstWords(text: string, max: number): string {
   return out;
 }
 
+/**
+ * What a brief's Architecture section says while the workspace has the wiki: a pointer, because the wiki owns
+ * how the project is built. A brief written before the wiki keeps its old text in its older versions.
+ */
+export const WIKI_ARCHITECTURE =
+  "- See the project wiki for how it is built: the wiki tool (list, read, search).";
+
+/** The patch with Architecture pointing to the wiki, for a workspace that has it. */
+export function withWikiArchitecture(patch: Readonly<Record<string, string>>): Record<string, string> {
+  return { ...patch, Architecture: WIKI_ARCHITECTURE };
+}
+
 /** A bullet is one line of at most about this many words. */
 export const BULLET_WORDS = 32;
 
