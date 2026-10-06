@@ -1,4 +1,5 @@
-import type { MapNodeKind } from "@majhi/shared";
+import type { MapNodeKind, MapRole } from "@majhi/shared";
+import { wordsOf } from "./resolver.ts";
 
 /**
  * What the config pass knows by name. These are typed tables, not guesses over text: an image name, a
@@ -160,18 +161,98 @@ const HOSTS: Readonly<Record<string, Outside>> = {
   "api.github.com": GITHUB,
 };
 
-/** A word of an environment variable name (`STRIPE_SECRET_KEY` has STRIPE) that names a service. */
-const KEY_WORDS: Readonly<Record<string, Outside>> = {
-  STRIPE: STRIPE,
-  OPENAI: OPENAI,
-  ANTHROPIC: ANTHROPIC,
-  REPLICATE: REPLICATE,
-  SENTRY: SENTRY,
-  TWILIO: TWILIO,
-  SENDGRID: SENDGRID,
-  SLACK: SLACK,
-  RESEND: RESEND,
-};
+/**
+ * Words of a variable name that say its value is not a call: a list of allowed origins, a CORS or CSRF
+ * setting, a redirect or callback address, the project's own public address. A value under such a name is
+ * never an endpoint. (A typed table of roles; the name is split into words, never matched as text.)
+ */
+const NOT_A_CALL_WORDS: ReadonlySet<string> = new Set([
+  "origin",
+  "origins",
+  "cors",
+  "csrf",
+  "allowed",
+  "allow",
+  "allowlist",
+  "whitelist",
+  "trusted",
+  "redirect",
+  "redirects",
+  "callback",
+  "callbacks",
+  "frontend",
+  "site",
+  "domain",
+  "domains",
+  "canonical",
+  "sitemap",
+]);
+
+/** Whether a variable's role is "who may call me" or "my own address", not "whom I call". */
+export function keyIsNotACall(key: string): boolean {
+  return wordsOf(key).some((w) => NOT_A_CALL_WORDS.has(w));
+}
+
+/** Packages that run a user interface in a browser or on a phone. */
+const APP_DEPS: ReadonlySet<string> = new Set([
+  "next",
+  "nuxt",
+  "@sveltejs/kit",
+  "vite",
+  "react",
+  "vue",
+  "svelte",
+  "@angular/core",
+  "react-native",
+  "expo",
+  "flutter",
+]);
+const SERVICE_DEPS: ReadonlySet<string> = new Set([
+  "django",
+  "fastapi",
+  "flask",
+  "express",
+  "@nestjs/core",
+  "fastify",
+  "koa",
+  "hono",
+  "aiohttp",
+  "starlette",
+  "uvicorn",
+  "gunicorn",
+]);
+const WORKER_DEPS: ReadonlySet<string> = new Set([
+  "celery",
+  "rq",
+  "bullmq",
+  "bull",
+  "dramatiq",
+  "huey",
+  "arq",
+  "kafkajs",
+  "pika",
+]);
+/** Frameworks that serve pages: they make an app even when a server library sits beside them. */
+const PAGE_FRAMEWORKS: ReadonlySet<string> = new Set([
+  "next",
+  "nuxt",
+  "@sveltejs/kit",
+  "react-native",
+  "expo",
+]);
+
+/**
+ * What a project is, from its dependencies and its script names: a page framework is an app, else a server
+ * framework is a service, else a job library or a `worker` script is a worker, else a UI library is an app.
+ */
+export function roleOfDeps(deps: ReadonlySet<string>, scripts: readonly string[]): MapRole {
+  const has = (set: ReadonlySet<string>) => [...deps].some((d) => set.has(d));
+  if ([...deps].some((d) => PAGE_FRAMEWORKS.has(d))) return "app";
+  if (has(SERVICE_DEPS)) return "service";
+  if (has(WORKER_DEPS) || scripts.some((s) => wordsOf(s).includes("worker"))) return "worker";
+  if (has(APP_DEPS)) return "app";
+  return "service";
+}
 
 const FRAMEWORKS: readonly (readonly [string, string])[] = [
   ["next", "Next.js"],
@@ -245,13 +326,4 @@ export function isClientModule(name: string, python: boolean): boolean {
   return python
     ? storeOfPython(name) !== undefined || outsideOfPython(name) !== undefined
     : storeOfNpm(name) !== undefined || outsideOfNpm(name) !== undefined;
-}
-
-/** The service an environment variable name points to, by its words. */
-export function outsideOfKey(key: string): Outside | undefined {
-  for (const word of key.toUpperCase().split("_")) {
-    const hit = KEY_WORDS[word];
-    if (hit !== undefined) return hit;
-  }
-  return undefined;
 }

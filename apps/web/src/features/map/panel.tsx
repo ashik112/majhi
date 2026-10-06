@@ -1,4 +1,13 @@
-import { MAP_EDGE_LABEL, type MapEdge, type MapNode, type MapView } from "@majhi/shared";
+import {
+  MAP_CONFIDENCE_LABEL,
+  MAP_EDGE_LABEL,
+  MAP_ROLE_LABEL,
+  MAP_ROLES,
+  type MapEdge,
+  type MapNode,
+  type MapRole,
+  type MapView,
+} from "@majhi/shared";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import type { ReactNode } from "react";
@@ -7,14 +16,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
 import { SectionLabel } from "@/components/ui/section-label";
+import { Select } from "@/components/ui/select";
 import type { Selection } from "@/features/diagram/diagram-canvas";
 import { EDGE_PRESETS } from "@/features/diagram/presets";
 import { useNewTask } from "@/features/new-task/new-task-context";
 import { cn } from "@/lib/cn";
 import { GLASS } from "@/lib/glass";
-import { useConfirmEdge, useRemoveEdge } from "@/lib/map-queries";
+import { useConfirmEdge, useRemoveEdge, useSetRole } from "@/lib/map-queries";
 import type { AppSearch } from "@/router";
-import { KIND_LABEL, lampOf, tasksOf } from "./model";
+import type { MapPrefs } from "./model";
+import { KIND_LABEL, lampOf, roleOf, tasksOf } from "./model";
+import { Overview, type OverviewTab } from "./overview";
 
 const TASK_LAMP = { running: "working", review: "needs", paused: "needs", mr: "needs" } as const;
 
@@ -23,10 +35,18 @@ export function MapPanel({
   view,
   selection,
   onSelect,
+  tab,
+  onTab,
+  prefs,
+  onPrefs,
 }: {
   view: MapView;
   selection: Selection;
   onSelect: (selection: Selection) => void;
+  tab: OverviewTab;
+  onTab: (tab: OverviewTab) => void;
+  prefs: MapPrefs;
+  onPrefs: (prefs: MapPrefs) => void;
 }) {
   const node = selection?.kind === "node" ? view.map.nodes.find((n) => n.id === selection.id) : undefined;
   const edge = selection?.kind === "edge" ? view.map.edges.find((e) => e.id === selection.id) : undefined;
@@ -43,9 +63,7 @@ export function MapPanel({
       ) : edge !== undefined ? (
         <EdgePanel view={view} edge={edge} onSelect={onSelect} />
       ) : (
-        <p className="text-base text-fg-muted">
-          Click a box to see what it talks to and what uses it. Click a line to see the proof.
-        </p>
+        <Overview view={view} tab={tab} onTab={onTab} prefs={prefs} onPrefs={onPrefs} onSelect={onSelect} />
       )}
     </aside>
   );
@@ -87,6 +105,7 @@ function NodePanel({
     (e) => e.type === "together" && (e.from === node.id || e.to === node.id),
   );
   const isProject = node.kind === "project" || node.kind === "library";
+  const setRole = useSetRole(view.org);
   const dependents = [...new Set(usedBy.map((e) => labelOf(view, e.from)))];
 
   const row = (e: MapEdge, out: boolean) => (
@@ -123,6 +142,29 @@ function NodePanel({
           </p>
         )}
       </div>
+      {node.kind === "project" && (
+        <Group title="Role">
+          <Select
+            aria-label="Role"
+            value={view.map.roles.some((r) => r.project === node.id) ? roleOf(view, node) : ""}
+            disabled={setRole.isPending}
+            onChange={(e) =>
+              setRole.mutate({
+                project: node.id,
+                ...(e.target.value === "" ? {} : { role: e.target.value as MapRole }),
+              })
+            }
+            className="h-8 text-sm"
+          >
+            <option value="">{`Auto: ${MAP_ROLE_LABEL[node.role ?? "service"]}`}</option>
+            {MAP_ROLES.map((r) => (
+              <option key={r} value={r}>
+                {MAP_ROLE_LABEL[r]}
+              </option>
+            ))}
+          </Select>
+        </Group>
+      )}
       <Group title="Talks to">
         {talksTo.length === 0 ? (
           <p className="text-base text-fg-faint">Nothing</p>
@@ -213,6 +255,12 @@ const FOUND_BY = {
   agent: "The last map update read the code and found this. Check it once.",
 } as const;
 
+const TIER_WHY = {
+  extracted: "A file shows it outright.",
+  inferred: "An address in a file is the one you said belongs to that project.",
+  ambiguous: "Proposed from code. It is not drawn until you accept it.",
+} as const;
+
 function EdgePanel({
   view,
   edge,
@@ -278,8 +326,10 @@ function EdgePanel({
           })
         )}
       </Group>
-      <Group title="Found by">
-        <p className="text-base text-fg-muted">{FOUND_BY[edge.source]}</p>
+      <Group title={MAP_CONFIDENCE_LABEL[edge.confidence]}>
+        <p className="text-base text-fg-muted">
+          {TIER_WHY[edge.confidence]} {FOUND_BY[edge.source]}
+        </p>
       </Group>
       <div className="flex flex-wrap gap-2">
         {edge.state === "new" && (

@@ -1,12 +1,14 @@
+import { isLoopbackHost } from "@majhi/shared";
 import type { MapBuilder, Proof } from "./builder.ts";
 import type { Loaded } from "./facts.ts";
-import { outsideOfHost, outsideOfKey, storeOfScheme } from "./known.ts";
+import { splitSpaces } from "./formats.ts";
+import { keyIsNotACall, outsideOfHost, storeOfScheme } from "./known.ts";
 import type { Resolver } from "./resolver.ts";
 
 /**
- * Environment values that point at another service: a connection URL to a datastore, an address of another
- * project, a service's API host, or a variable named for a service. Shared by `.env.example`, compose
- * `environment` and Kubernetes `env`, which all hold the same kind of value.
+ * Environment values that point at another service: a connection URL to a datastore, or the address of
+ * something the project calls. Shared by `.env.example`, compose `environment` and Kubernetes `env`, which
+ * all hold the same kind of value.
  */
 
 /** A URL as text, without the user and password. */
@@ -35,9 +37,24 @@ function parseUrl(value: string): URL | undefined {
 
 const WEB_SCHEMES: ReadonlySet<string> = new Set(["http:", "https:", "ws:", "wss:"]);
 
+/** A value that holds several addresses (commas or spaces between them) is a setting, never one call. */
+function isList(value: string): boolean {
+  return value.includes(",") || splitSpaces(value).length > 1;
+}
+
+/** The remote host of a connection URL that two projects could share. A local or one-word name is each project's own. */
+function sharedAddress(url: URL): { host: string; port: number | undefined; db: string } | undefined {
+  const host = url.hostname.toLowerCase();
+  if (isLoopbackHost(host) || !host.includes(".") || host.includes(":")) return undefined;
+  const db = url.pathname.length > 1 ? url.pathname.slice(1) : "";
+  return { host, port: url.port === "" ? undefined : Number(url.port), db };
+}
+
 /**
- * Turns one environment value into a line from `from`. `self` is the project the value belongs to, so a
- * project never points at itself.
+ * Reads one environment value of a project. A datastore connection URL is a use of that store (a chip, or a
+ * shared box when another project names the same remote host and database). A web URL is an address the
+ * project calls: a known outside service becomes a chip; any other becomes an endpoint that needs an owner.
+ * Lists of origins, CORS settings, the project's own addresses and names with no URL are never calls.
  */
 export function linkFromValue(
   ctx: { resolver: Resolver; b: MapBuilder; self: string },
@@ -46,53 +63,41 @@ export function linkFromValue(
   value: string,
   proof: Proof,
 ): void {
-  const { resolver, b, self } = ctx;
-  const url = parseUrl(value);
-  if (url === undefined) {
-    const service = value === "" ? undefined : outsideOfKey(key);
-    if (service !== undefined) {
-      b.outside(service);
-      b.edge({ from, to: `outside:${service.slug}`, type: "http", label: "API", proof });
-    }
-    return;
-  }
-  const scheme = url.protocol.slice(0, -1);
-  const store = storeOfScheme(scheme);
+  const { resolver, b } = ctx;
+  if (value === "" || isList(value.trim())) return;
+  const url = parseUrl(value.trim());
+  if (url === undefined) return;
+  const store = storeOfScheme(url.protocol.slice(0, -1));
   if (store !== undefined) {
-    b.store(store);
-    const database = url.pathname.length > 1 ? url.pathname.slice(1) : "";
-    b.edge({
-      from,
-      to: `store:${store.slug}`,
-      type: store.kind === "queue" ? "queue" : "data",
-      label:
-        store.kind === "queue"
-          ? "jobs"
-          : store.kind === "cache"
-            ? "cache"
-            : database === ""
-              ? "data"
-              : database,
+    const address = sharedAddress(url);
+    b.storeRef({
+      project: from,
+      store,
+      via: store.kind === "queue" ? "queue" : "data",
       proof,
+      ...(address === undefined ? {} : { address }),
     });
     return;
   }
-  if (!WEB_SCHEMES.has(url.protocol)) return;
-  const outside = outsideOfHost(url.hostname);
+  if (!WEB_SCHEMES.has(url.protocol) || keyIsNotACall(key)) return;
+  const host = url.hostname.toLowerCase();
+  const outside = outsideOfHost(host);
   if (outside !== undefined) {
-    b.outside(outside);
-    b.edge({ from, to: `outside:${outside.slug}`, type: "http", label: "API", proof });
+    b.chip(from, "uses", outside.label);
     return;
   }
-  const target = resolver.byUrl(url, key, self);
-  if (target === undefined) return;
-  const path = url.pathname.endsWith("/") ? url.pathname.slice(0, -1) : url.pathname;
-  b.edge({
+  const local = isLoopbackHost(host);
+  // A local address with no port says nothing about where it leads.
+  if (local && url.port === "") return;
+  const known = local ? undefined : resolver.ownerOfService(host);
+  if (known === from) return;
+  b.endpoint({
+    host,
+    port: url.port === "" ? undefined : Number(url.port),
     from,
-    to: target.id,
-    type: "http",
-    label: path === "" ? "HTTP" : `HTTP ${path}`,
+    key,
     proof,
+    known,
   });
 }
 

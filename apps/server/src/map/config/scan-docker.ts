@@ -84,10 +84,8 @@ export function scanCompose(loaded: Loaded, ctx: { resolver: Resolver; b: MapBui
         continue;
       }
       const store = svc.image === undefined ? undefined : storeOfImage(svc.image);
-      if (store !== undefined) {
-        b.node({ id: `store:${store.slug}`, kind: store.kind, label: store.label, deploy: "Docker" });
-        nodeOf.set(name, `store:${store.slug}`);
-      }
+      // A datastore the project's own compose file runs is part of that project: a chip on its card.
+      if (store !== undefined) b.chip(loaded.facts.id, "stack", store.label);
     }
     const proofAt = (path: (string | number)[], fallback: string, excerpt?: string) => {
       const line = c.located.lineOf(path) ?? lineContaining(c.text, fallback) ?? 1;
@@ -95,24 +93,13 @@ export function scanCompose(loaded: Loaded, ctx: { resolver: Resolver; b: MapBui
     };
     for (const [name, svc] of Object.entries(services)) {
       const from = nodeOf.get(name);
-      if (from === undefined || from.startsWith("store:")) continue;
+      if (from === undefined) continue;
       const needs = Array.isArray(svc.depends_on) ? svc.depends_on : Object.keys(svc.depends_on ?? {});
       for (const dep of needs) {
         const to = nodeOf.get(dep);
         if (to === undefined || to === from) continue;
-        const target = b.get(to);
         const proof = proofAt(["services", name, "depends_on"], "depends_on");
-        if (target?.kind === "project" || target?.kind === "library") {
-          b.edge({ from, to, type: "deploy", label: "starts after", proof });
-        } else if (target !== undefined) {
-          b.edge({
-            from,
-            to,
-            type: target.kind === "queue" ? "queue" : "data",
-            label: target.kind === "queue" ? "jobs" : "data",
-            proof,
-          });
-        }
+        b.edge({ from, to, type: "deploy", label: "starts after", proof });
       }
       for (const e of environment(svc)) {
         linkFromValue({ resolver, b, self: from }, from, e.key, e.value, {

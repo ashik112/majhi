@@ -3,7 +3,14 @@ import { UserError } from "../errors.ts";
 import { type FindingsHandlerDeps, findingActor } from "../findings/handlers.ts";
 import type { MapService } from "./service.ts";
 
-type MapCommand = "map.get" | "map.estimate" | "map.update" | "map.confirmEdge" | "map.removeEdge";
+type MapCommand =
+  | "map.get"
+  | "map.estimate"
+  | "map.update"
+  | "map.confirmEdge"
+  | "map.removeEdge"
+  | "map.answer"
+  | "map.setRole";
 
 export interface MapHandlerDeps extends FindingsHandlerDeps {
   map: MapService;
@@ -52,6 +59,14 @@ export function mapHandlers(deps: MapHandlerDeps): Pick<CommandHandlers, MapComm
     "map.removeEdge": async (input, ctx) => {
       await scope(ctx, input.org, true);
       return map.removeEdge(input.org, input.id);
+    },
+    "map.answer": async (input, ctx) => {
+      await scope(ctx, input.org, true);
+      return map.answer(input.org, input.address, input.scope, input.to);
+    },
+    "map.setRole": async (input, ctx) => {
+      await scope(ctx, input.org, true);
+      return map.setRole(input.org, input.project, input.role);
     },
   };
 }

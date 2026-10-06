@@ -1,14 +1,28 @@
 import {
   EMPTY_MAP,
+  MAP_RULES,
+  MapEndpointSchema,
   type MapReport,
   MapReportSchema,
+  MapResolutionSchema,
+  MapRoleSettingSchema,
   PRIVATE,
   type ProjectMap,
   ProjectMapSchema,
 } from "@majhi/shared";
 import type Database from "better-sqlite3";
+import { z } from "zod";
+
+/** What the passes write beside the boxes and lines. `rules` says which version of the passes wrote it. */
+const ExtraSchema = z.object({
+  rules: z.number().int(),
+  endpoints: z.array(MapEndpointSchema),
+  resolutions: z.array(MapResolutionSchema),
+  roles: z.array(MapRoleSettingSchema),
+});
 
 interface MapRow {
+  extra: string | null;
   org: string;
   v: number;
   nodes: string;
@@ -33,11 +47,21 @@ export class MapRepo {
     const row = this.db.prepare("SELECT * FROM project_maps WHERE org = ?").get(org) as MapRow | undefined;
     if (row === undefined) return { map: EMPTY_MAP };
     try {
+      const extra = row.extra === null ? undefined : ExtraSchema.safeParse(JSON.parse(row.extra));
+      // A map drawn by older rules is shown as never updated; what the owner removed still holds.
+      if (extra?.success !== true || extra.data.rules !== MAP_RULES) {
+        return {
+          map: { ...EMPTY_MAP, removed: ProjectMapSchema.shape.removed.parse(JSON.parse(row.removed)) },
+        };
+      }
       const map = ProjectMapSchema.parse({
         v: row.v,
         nodes: JSON.parse(row.nodes),
         edges: JSON.parse(row.edges),
         removed: JSON.parse(row.removed),
+        endpoints: extra.data.endpoints,
+        resolutions: extra.data.resolutions,
+        roles: extra.data.roles,
       });
       const report = row.report === null ? undefined : MapReportSchema.safeParse(JSON.parse(row.report));
       return {
@@ -53,9 +77,10 @@ export class MapRepo {
   save(org: string, map: ProjectMap, updatedAt: string | undefined, report: MapReport | undefined): void {
     this.db
       .prepare(
-        `INSERT INTO project_maps (org, v, nodes, edges, removed, updated_at, report) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO project_maps (org, v, nodes, edges, removed, updated_at, report, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(org) DO UPDATE SET v = excluded.v, nodes = excluded.nodes, edges = excluded.edges,
-           removed = excluded.removed, updated_at = excluded.updated_at, report = excluded.report`,
+           removed = excluded.removed, updated_at = excluded.updated_at, report = excluded.report,
+           extra = excluded.extra`,
       )
       .run(
         org,
@@ -65,6 +90,12 @@ export class MapRepo {
         JSON.stringify(map.removed),
         updatedAt ?? null,
         report === undefined ? null : JSON.stringify(report),
+        JSON.stringify({
+          rules: MAP_RULES,
+          endpoints: map.endpoints,
+          resolutions: map.resolutions,
+          roles: map.roles,
+        }),
       );
   }
 

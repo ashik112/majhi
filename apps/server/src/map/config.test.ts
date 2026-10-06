@@ -3,59 +3,48 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { configPass } from "./config/pass.ts";
 import { ProjectFiles } from "./files.ts";
-import { writeFixtures } from "./fixtures.ts";
+import { ACCURACY_FILES, writeFixtures } from "./fixtures.ts";
 
 const noRemotes = async () => [];
 
 describe("config pass on the Acme fixtures", () => {
-  it("draws the lines the config files show, each with a file and a line as proof", async () => {
-    const { projects } = await writeFixtures();
-    const { nodes, edges } = await configPass(projects, { remotes: noRemotes });
-    const byId = new Map(edges.map((e) => [e.id, e]));
-    // web calls the API (a URL in .env.example whose variable name says which project)
-    expect(byId.get("acme-web>acme-api:http")).toMatchObject({
-      label: "HTTP /v2",
-      source: "config",
-      state: "confirmed",
-      evidence: [
-        {
-          project: "acme-web",
-          file: ".env.example",
-          line: 2,
-          excerpt: "ACME_API_URL=https://api.acme.test/v2",
-        },
-      ],
-    });
-    // worker calls the API (a compose service name as the host)
-    expect(byId.get("acme-worker>acme-api:http")?.evidence[0]).toMatchObject({
-      file: ".env.example",
-      line: 1,
-    });
-    // worker uses the shared library, found in package.json at its line
-    expect(byId.get("acme-worker>worker-kit:lib")?.evidence[0]).toMatchObject({
-      file: "package.json",
-      line: 8,
-      excerpt: '"worker-kit": "^1.20.0"',
-    });
-    // the API reads a database and a cache from compose, and the worker takes jobs through bullmq
-    expect(byId.get("acme-api>store:postgres:data")?.evidence.map((p) => p.file)).toContain(
-      "docker-compose.yml",
-    );
-    expect(byId.get("acme-api>store:redis:data")).toBeDefined();
-    expect(byId.get("acme-worker>store:redis:queue")?.evidence[0]).toMatchObject({ file: "package.json" });
-    // web uses Stripe through its SDK
-    expect(byId.get("acme-web>outside:stripe:http")).toBeDefined();
-    // the compose service builds the API itself: it depends on its own database and cache, not on itself
-    expect(edges.some((e) => e.from === e.to)).toBe(false);
+  it("takes an address from a variable only when it is a call: not origins, CORS, a name with no URL or an outside API", async () => {
+    const { projects } = await writeFixtures({}, ACCURACY_FILES);
+    const { endpoints } = await configPass(projects, { remotes: noRemotes });
+    expect(endpoints.map((e) => e.id).toSorted()).toEqual([
+      "acme-api@localhost:8000",
+      "acme-billing@localhost:8000",
+      "api.acme.test",
+      "api.partsco.test",
+      "api:8000",
+    ]);
+  });
 
-    const kind = (id: string) => nodes.find((n) => n.id === id)?.kind;
-    expect(kind("acme-web")).toBe("project");
-    expect(kind("worker-kit")).toBe("library");
-    // a queue line makes a cache a queue
-    expect(kind("store:redis")).toBe("queue");
-    expect(kind("store:postgres")).toBe("database");
-    expect(nodes.find((n) => n.id === "acme-web")?.deploy).toBe("Vercel");
-    expect(nodes.find((n) => n.id === "acme-api")?.deploy).toBe("Docker");
+  it("draws a line between projects only for an address a file proves", async () => {
+    const { projects } = await writeFixtures({}, ACCURACY_FILES);
+    const { edges } = await configPass(projects, { remotes: noRemotes });
+    // `api` is a compose service that acme-api builds. api.acme.test, api.partsco.test and localhost:8000
+    // look like projects by name or port, and draw nothing until the owner answers.
+    const { endpoints } = await configPass(projects, { remotes: noRemotes });
+    expect(edges.filter((e) => e.type === "http")).toEqual([]);
+    expect(endpoints.find((e) => e.id === "api:8000")?.known).toBe("acme-api");
+    expect(endpoints.find((e) => e.id === "api.acme.test")?.known).toBeUndefined();
+  });
+
+  it("never makes a shared datastore from a driver or a local name; the same remote URL does", async () => {
+    const { projects } = await writeFixtures({}, ACCURACY_FILES);
+    const { nodes, edges } = await configPass(projects, { remotes: noRemotes });
+    const stores = nodes.filter((n) => n.id.startsWith("store:"));
+    // Two projects with their own Postgres at localhost, and both with a driver: no shared database.
+    expect(stores.map((n) => n.kind)).toEqual(["queue"]);
+    expect(
+      edges
+        .filter((e) => e.to === stores[0]?.id)
+        .map((e) => e.from)
+        .toSorted(),
+    ).toEqual(["acme-jobs", "acme-worker"]);
+    expect(nodes.find((n) => n.id === "acme-api")?.stack).toContain("Postgres");
+    expect(nodes.find((n) => n.id === "acme-billing")?.stack).toContain("Postgres");
   });
 
   it("is deterministic: the same checkouts give the same map", async () => {
@@ -67,11 +56,10 @@ describe("config pass on the Acme fixtures", () => {
 
   it("never writes a password or a secret value into proof", async () => {
     const { projects } = await writeFixtures();
-    const { edges } = await configPass(projects, { remotes: noRemotes });
-    const text = JSON.stringify(edges);
+    const { edges, endpoints, nodes } = await configPass(projects, { remotes: noRemotes });
+    const text = JSON.stringify({ edges, endpoints, nodes });
     expect(text).not.toContain("secretpw");
     expect(text).not.toContain("sk_test_abc");
-    expect(text).toContain("postgres://db:5432/orders");
   });
 
   it("finds a library by its git remote and a local path, not only by name", async () => {
@@ -98,34 +86,6 @@ describe("config pass on the Acme fixtures", () => {
       '"kit-by-git": "git+ssh://git@github.com/acme/worker-kit.git#v1",',
       '"kit-by-path": "file:../worker-kit"',
     ]);
-  });
-
-  it("reads Kubernetes env, Helm values and a pnpm style monorepo manifest with real parsers", async () => {
-    const { projects } = await writeFixtures({
-      "acme-worker": {
-        "k8s/deploy.yaml": [
-          "apiVersion: apps/v1",
-          "kind: Deployment",
-          "spec:",
-          "  template:",
-          "    spec:",
-          "      containers:",
-          "        - name: worker",
-          "          env:",
-          "            - name: BROKER_URL",
-          "              value: amqp://guest:guest@rabbit:5672",
-          "",
-        ].join("\n"),
-      },
-    });
-    const { edges, nodes } = await configPass(projects, { remotes: noRemotes });
-    const line = edges.find((e) => e.id === "acme-worker>store:rabbitmq:queue");
-    expect(line?.evidence[0]).toMatchObject({
-      file: "k8s/deploy.yaml",
-      line: 9,
-      excerpt: "BROKER_URL=amqp://rabbit:5672",
-    });
-    expect(nodes.find((n) => n.id === "acme-worker")?.deploy).toBe("Kubernetes");
   });
 
   it("does not read what it should not: broken files, and links out of the checkout", async () => {

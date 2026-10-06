@@ -12,7 +12,7 @@ function structure(d: Diagram): string {
     d.layout,
     d.focus ?? null,
     d.actors ?? null,
-    d.nodes.map((n) => [n.id, n.group ?? null]),
+    d.nodes.map((n) => [n.id, n.group ?? null, n.rank ?? null, n.kind === "pack"]),
     d.edges.map((e, i) => [edgeKey(e, i), e.from, e.to, e.type === "together" ? 1 : 0]),
   ]);
 }

@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 import {
+  isLoopbackHost,
   MAP_COST_CAP_USD,
   MAP_TOGETHER_MIN,
-  type MapEdge,
+  type MapAnswer,
+  type MapEndpoint,
   type MapEstimate,
-  type MapNode,
   type MapReport,
+  type MapRole,
   type MapRunning,
   type MapTask,
   type MapView,
@@ -25,7 +27,8 @@ import {
 import { LoadCache } from "./config/facts.ts";
 import { splitSpaces } from "./config/formats.ts";
 import { type ConfigResult, configPass, type ProjectInput } from "./config/pass.ts";
-import { confirmEdge, mergeMap, removeEdge } from "./merge.ts";
+import { parseAddress } from "./endpoints.ts";
+import { answerAddress, confirmEdge, mergeMap, removeEdge, setRole } from "./merge.ts";
 import type { MapRepo } from "./repo.ts";
 
 const DAY_MS = 86_400_000;
@@ -245,11 +248,11 @@ export class MapService {
       .togetherPairs(org, MAP_TOGETHER_MIN)
       .filter((p) => config.nodes.some((n) => n.id === p.a) && config.nodes.some((n) => n.id === p.b));
 
-    const { proposed, note } = await this.codePass(org, config, started);
+    const { found, note } = await this.codePass(org, config, started);
 
     this.progress(org, { phase: "saving", text: "Drawing the map…" });
     const stored = this.deps.repo.get(org);
-    const map: ProjectMap = mergeMap(stored.map, { config, together, proposed });
+    const map: ProjectMap = mergeMap(stored.map, { config, together, found });
     const before = new Set(stored.map.edges.map((e) => e.id));
     const newLines = map.edges.filter(
       (e) => e.source === "agent" && e.state === "new" && !before.has(e.id),
@@ -272,12 +275,11 @@ export class MapService {
     org: string,
     config: ConfigResult,
     started: string,
-  ): Promise<{ proposed: { nodes: MapNode[]; edges: MapEdge[] }; note?: string }> {
-    const proposed = { nodes: [] as MapNode[], edges: [] as MapEdge[] };
+  ): Promise<{ found: { endpoints: MapEndpoint[]; reread: Set<string> }; note?: string }> {
+    const found = { endpoints: [] as MapEndpoint[], reread: new Set<string>() };
     const why = await this.codeUnavailable(org, config.loaded.length);
     const ask = this.deps.ask;
-    if (why !== undefined || ask === undefined)
-      return { proposed, ...(why === undefined ? {} : { note: why }) };
+    if (why !== undefined || ask === undefined) return { found, ...(why === undefined ? {} : { note: why }) };
     const cap = this.cap();
     const all = (await Promise.all(config.loaded.map((l) => selectFiles(l)))).flat();
     const files = this.unread(org, all);
@@ -299,14 +301,13 @@ export class MapService {
         total,
       });
       try {
-        const nodes = [...config.nodes, ...proposed.nodes];
         const { value } = await ask<Proposal>(
           { id: usageTask(org), org },
-          proposalPrompt(project, nodes, list),
-          (reply) => parseProposal(reply, { project, nodes, files: list }),
+          proposalPrompt(project, list),
+          (reply) => parseProposal(reply, { project, files: list, services: config.services }),
         );
-        for (const n of value.nodes) if (!proposed.nodes.some((p) => p.id === n.id)) proposed.nodes.push(n);
-        proposed.edges.push(...value.edges);
+        found.endpoints.push(...value.endpoints);
+        found.reread.add(project);
         this.read.set(`${org}|${project}`, hashOf(list));
       } catch (err) {
         note = `The model could not read ${project}: ${oneLine(err instanceof Error ? err.message : String(err), 160)}`;
@@ -316,7 +317,7 @@ export class MapService {
     }
     if (plan.dropped > 0 && note === undefined)
       note = `${plan.dropped} files were left out to stay under the cost cap.`;
-    return { proposed, ...(note === undefined ? {} : { note }) };
+    return { found, ...(note === undefined ? {} : { note }) };
   }
 
   /** The files of projects whose files changed since the model last read them. An unchanged project costs nothing. */
@@ -354,6 +355,35 @@ export class MapService {
 
   removeEdge(org: string, id: string): Promise<MapView> {
     this.deps.repo.change(org, (map) => removeEdge(map, id));
+    this.deps.changed();
+    return this.view(org);
+  }
+
+  /** The owner says what an address is (or forgets the answer). The lines change at once and stay so on every update. */
+  answer(
+    org: string,
+    address: string,
+    scope: string | undefined,
+    to: MapAnswer | undefined,
+  ): Promise<MapView> {
+    const parsed = parseAddress(address);
+    if (parsed === undefined) {
+      throw new UserError(`"${address}" is not an address. Write a host, or a host and a port.`, 400);
+    }
+    this.deps.repo.change(org, (map) =>
+      answerAddress(
+        map,
+        { host: parsed.host, port: parsed.port, scope: isLoopbackHost(parsed.host) ? scope : undefined },
+        to,
+      ),
+    );
+    this.deps.changed();
+    return this.view(org);
+  }
+
+  /** The owner sets a project's role, or clears it. */
+  setRole(org: string, project: string, role: MapRole | undefined): Promise<MapView> {
+    this.deps.repo.change(org, (map) => setRole(map, project, role));
     this.deps.changed();
     return this.view(org);
   }

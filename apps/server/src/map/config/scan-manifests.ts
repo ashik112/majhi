@@ -54,21 +54,9 @@ export function scanPackageJson(loaded: Loaded, ctx: { resolver: Resolver; b: Ma
         continue;
       }
       const store = storeOfNpm(name);
-      if (store !== undefined) {
-        b.store(store.store);
-        b.edge({
-          from: facts.id,
-          to: `store:${store.store.slug}`,
-          type: store.via,
-          label: store.via === "queue" ? "jobs" : "data",
-          proof,
-        });
-      }
+      if (store !== undefined) b.storeRef({ project: facts.id, store: store.store, via: store.via, proof });
       const outside = outsideOfNpm(name);
-      if (outside !== undefined) {
-        b.outside(outside);
-        b.edge({ from: facts.id, to: `outside:${outside.slug}`, type: "http", label: "API", proof });
-      }
+      if (outside !== undefined) b.chip(facts.id, "uses", outside.label);
     }
   }
 }
@@ -130,20 +118,8 @@ export function scanPython(loaded: Loaded, ctx: { resolver: Resolver; b: MapBuil
       continue;
     }
     const store = storeOfPython(dep.name);
-    if (store !== undefined) {
-      b.store(store.store);
-      b.edge({
-        from: facts.id,
-        to: `store:${store.store.slug}`,
-        type: store.via,
-        label: store.via === "queue" ? "jobs" : "data",
-        proof,
-      });
-    }
+    if (store !== undefined) b.storeRef({ project: facts.id, store: store.store, via: store.via, proof });
     const outside = outsideOfPython(dep.name);
-    if (outside !== undefined) {
-      b.outside(outside);
-      b.edge({ from: facts.id, to: `outside:${outside.slug}`, type: "http", label: "API", proof });
-    }
+    if (outside !== undefined) b.chip(facts.id, "uses", outside.label);
   }
 }

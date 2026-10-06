@@ -1,4 +1,4 @@
-import { DiagramSpecSchema, type ProjectMap } from "@majhi/shared";
+import { DiagramSpecSchema, EMPTY_MAP, type ProjectMap } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import type { RoomService } from "../room/service.ts";
 import type { ToolCaller } from "./access.ts";
@@ -56,9 +56,13 @@ const map = (ids: string[]): ProjectMap => ({
     label: "calls",
     evidence: [],
     source: "config" as const,
+    confidence: "extracted" as const,
     state: "confirmed" as const,
   })),
   removed: [],
+  endpoints: [],
+  resolutions: [],
+  roles: [],
 });
 
 /** The ids of the boxes in a posted diagram, sorted. */
@@ -97,9 +101,7 @@ describe("show_map", () => {
         depth: 1,
       }),
     ).toThrow(/no project "globex-site"/);
-    expect(() =>
-      drawMap(t.room, t.caller("ACM-1"), "acme", { v: 1, nodes: [], edges: [], removed: [] }, { depth: 1 }),
-    ).toThrow(/no map yet/);
+    expect(() => drawMap(t.room, t.caller("ACM-1"), "acme", EMPTY_MAP, { depth: 1 })).toThrow(/no map yet/);
     expect(t.posts).toEqual([]);
   });
 
