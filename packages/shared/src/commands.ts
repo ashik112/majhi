@@ -183,6 +183,7 @@ import {
   DecisionRecommendInputSchema,
   OwnerDecisionSchema,
 } from "./inbox.ts";
+import { JourneyInputSchema, JourneyRemoveInputSchema } from "./journeys.ts";
 import { BlockerSchema } from "./lifecycle/blocker.ts";
 import {
   MapAnswerInputSchema,
@@ -1312,6 +1313,19 @@ export const commands = {
     summary:
       "Set whether a project is an app, a service or a worker on the map, over what its dependencies show; without `role` it goes back to that. The owner and the captain",
     input: MapRoleInputSchema,
+    output: MapViewSchema,
+  },
+  "map.saveJourney": {
+    risk: "change",
+    summary:
+      "Name a journey on the map: ordered steps, each from one box to another with a label and the map line it follows (`edge`). Without `id` it makes a new journey (keeping one of majhi's examples is this too); with `id` it replaces that journey. Every box and line must be on this workspace's map. The owner and the captain",
+    input: JourneyInputSchema,
+    output: MapViewSchema,
+  },
+  "map.removeJourney": {
+    risk: "change",
+    summary: "Remove a journey the owner kept. The owner and the captain",
+    input: JourneyRemoveInputSchema,
     output: MapViewSchema,
   },
   // The chat dock -----------------------------------------------------------------

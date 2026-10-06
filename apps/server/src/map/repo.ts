@@ -1,5 +1,7 @@
 import {
   EMPTY_MAP,
+  type Journey,
+  JourneySchema,
   MAP_RULES,
   MapEndpointSchema,
   type MapReport,
@@ -107,6 +109,40 @@ export class MapRepo {
       this.save(org, next, stored.updatedAt, stored.report);
       return { ...stored, map: next };
     })();
+  }
+
+  /** A workspace's journeys, oldest first. A row that no longer parses is left out. */
+  journeys(org: string): Journey[] {
+    const rows = this.db
+      .prepare("SELECT id, name, steps, created_at FROM map_journeys WHERE org = ? ORDER BY created_at, rowid")
+      .all(org) as { id: string; name: string; steps: string; created_at: string }[];
+    return rows.flatMap((r) => {
+      try {
+        const parsed = JourneySchema.safeParse({
+          id: r.id,
+          name: r.name,
+          steps: JSON.parse(r.steps),
+          createdAt: r.created_at,
+        });
+        return parsed.success ? [parsed.data] : [];
+      } catch {
+        return [];
+      }
+    });
+  }
+
+  saveJourney(org: string, journey: Journey): void {
+    this.db
+      .prepare(
+        `INSERT INTO map_journeys (org, id, name, steps, created_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(org, id) DO UPDATE SET name = excluded.name, steps = excluded.steps`,
+      )
+      .run(org, journey.id, journey.name, JSON.stringify(journey.steps), journey.createdAt);
+  }
+
+  /** Whether a journey of that workspace was removed. */
+  removeJourney(org: string, id: string): boolean {
+    return this.db.prepare("DELETE FROM map_journeys WHERE org = ? AND id = ?").run(org, id).changes > 0;
   }
 
   /**

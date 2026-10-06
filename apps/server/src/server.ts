@@ -140,7 +140,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       maps: {
         forTask: (task) => {
           const org = services.lanes.orgOf(task) ?? services.store.tasks.get(task)?.org ?? PRIVATE;
-          return { org, map: services.map.stored(org) };
+          return { org, map: services.map.stored(org), journeys: services.map.journeys(org) };
         },
       },
       memory: {

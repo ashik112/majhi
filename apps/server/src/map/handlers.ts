@@ -10,7 +10,9 @@ type MapCommand =
   | "map.confirmEdge"
   | "map.removeEdge"
   | "map.answer"
-  | "map.setRole";
+  | "map.setRole"
+  | "map.saveJourney"
+  | "map.removeJourney";
 
 export interface MapHandlerDeps extends FindingsHandlerDeps {
   map: MapService;
@@ -67,6 +69,14 @@ export function mapHandlers(deps: MapHandlerDeps): Pick<CommandHandlers, MapComm
     "map.setRole": async (input, ctx) => {
       await scope(ctx, input.org, true);
       return map.setRole(input.org, input.project, input.role);
+    },
+    "map.saveJourney": async (input, ctx) => {
+      await scope(ctx, input.org, true);
+      return map.saveJourney(input.org, input.id, input.name, input.steps);
+    },
+    "map.removeJourney": async (input, ctx) => {
+      await scope(ctx, input.org, true);
+      return map.removeJourney(input.org, input.id);
     },
   };
 }

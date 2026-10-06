@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import {
   isLoopbackHost,
+  type JourneyView,
+  journeysOf,
   MAP_COST_CAP_USD,
   MAP_TOGETHER_MIN,
   type MapAnswer,
@@ -9,6 +11,7 @@ import {
   type MapReport,
   type MapRole,
   type MapRunning,
+  type JourneyStep,
   type MapTask,
   type MapView,
   type Price,
@@ -28,6 +31,7 @@ import { LoadCache } from "./config/facts.ts";
 import { splitSpaces } from "./config/formats.ts";
 import { type ConfigResult, configPass, type ProjectInput } from "./config/pass.ts";
 import { parseAddress } from "./endpoints.ts";
+import { assertJourneySteps } from "./journeys.ts";
 import { ProjectFiles } from "./files.ts";
 import { graphEndpoints } from "./graph/facts.ts";
 import type { GraphRunner } from "./graph/run.ts";
@@ -163,12 +167,18 @@ export class MapService {
       tasks,
       changedThisWeek: this.deps.repo.changedSince(org, weekAgo).map((c) => c.project),
       projects: all.map((p) => ({ id: p.id, path: p.path, exists: p.exists })),
+      journeys: journeysOf(stored.map, this.deps.repo.journeys(org)),
     };
   }
 
   /** A workspace's stored map, as the chat's `show_map` draws it. */
   stored(org: string): ProjectMap {
     return this.deps.repo.get(org).map;
+  }
+
+  /** A workspace's journeys as shown (the owner's, then examples), for `show_map`. */
+  journeys(org: string): JourneyView[] {
+    return journeysOf(this.deps.repo.get(org).map, this.deps.repo.journeys(org));
   }
 
   /** Whether the map is out of date: it never ran, or tasks merged since it did. */
@@ -438,6 +448,35 @@ export class MapService {
         to,
       ),
     );
+    this.deps.changed();
+    return this.view(org);
+  }
+
+  /**
+   * The owner names a journey, or replaces one. Every box and line of its steps must be on this
+   * workspace's own map (another workspace's projects are refused).
+   */
+  async saveJourney(
+    org: string,
+    id: string | undefined,
+    name: string,
+    steps: readonly JourneyStep[],
+  ): Promise<MapView> {
+    assertJourneySteps(this.deps.repo.get(org).map, steps);
+    const known = id === undefined ? undefined : this.deps.repo.journeys(org).find((j) => j.id === id);
+    if (id !== undefined && known === undefined) throw new UserError("That journey does not exist.", 404);
+    this.deps.repo.saveJourney(org, {
+      id: known?.id ?? `journey-${crypto.randomUUID().slice(0, 8)}`,
+      name,
+      steps: [...steps],
+      createdAt: known?.createdAt ?? this.now().toISOString(),
+    });
+    this.deps.changed();
+    return this.view(org);
+  }
+
+  async removeJourney(org: string, id: string): Promise<MapView> {
+    if (!this.deps.repo.removeJourney(org, id)) throw new UserError("That journey does not exist.", 404);
     this.deps.changed();
     return this.view(org);
   }
