@@ -139,6 +139,20 @@ export class HandoffRepo {
     }
   }
 
+  /** The newest verdict kept for the task, whatever its head. */
+  lastResult(task: string): HandoffResult | undefined {
+    const row = this.db
+      .prepare("SELECT result FROM handoff_history WHERE task = ? ORDER BY id DESC LIMIT 1")
+      .get(task) as { result: string } | undefined;
+    if (row === undefined || row.result === "") return undefined;
+    try {
+      const parsed = HandoffResultSchema.safeParse(JSON.parse(row.result));
+      return parsed.success ? parsed.data : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   setAction(task: string, head: string, action: HandoffHistoryItem["action"]): void {
     this.db
       .prepare("UPDATE handoff_history SET action = ? WHERE task = ? AND head = ?")

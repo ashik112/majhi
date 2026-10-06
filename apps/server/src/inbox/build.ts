@@ -20,6 +20,10 @@ import {
 } from "@majhi/shared";
 import { oneLine, PAUSE_TEXT, type Subject } from "../notify/attention.ts";
 
+/** What "Fix with agent" says to the lead of a task whose checks failed. */
+export const FIX_CHECKS_TEXT =
+  "The hand-off check failed on your latest commit. Read the failure with the hand-off tool, fix it, commit, and say when it is done.";
+
 /** The captain's stored opinion on a decision. */
 export interface Recommendation {
   option: string;
@@ -224,6 +228,9 @@ function draftOf(
         : undefined;
     case "review": {
       if (item.state !== "pending" || (status !== undefined && status !== "review")) return undefined;
+      // The one gate: while the hand-off check of the head has no verdict, nothing is ready to ship.
+      // Alerts, the bell, the banner and Home all read decisions, so none of them says it either.
+      if (subject.checks === "running") return undefined;
       const who = item.lead === undefined ? "The team" : `@${item.lead}`;
       const name = `"${subject.title}"`;
       const repos = subject.repos ?? 1;
@@ -247,6 +254,19 @@ function draftOf(
           sentence: `${who} finished ${name}. It cannot be merged yet.`,
           blocked: why.slice(0, 300),
           options: withPrimary(rest, undefined),
+        };
+      }
+      if (subject.checks === "failed" && repos > 0) {
+        const fix: DecisionOption[] = item.lead === undefined ? [] : [{ id: "fix", label: "Fix with agent" }];
+        return {
+          kind: "ship",
+          title: `Checks failed: ${oneLine(subject.title, 120)}`,
+          sentence:
+            `${who} finished ${name}, but its checks failed.${item.why === undefined ? "" : ` ${item.why}`}`.slice(
+              0,
+              500,
+            ),
+          options: withPrimary([...fix, done, changes], fix.length > 0 ? "fix" : undefined),
         };
       }
       if (item.ready === undefined) {

@@ -740,7 +740,26 @@ export function createHandlers({
         // The task's own agent asks mid-turn; the clean-worktree check still guards its files.
         fromOwnTask: ctx.meta.actor.kind === "agent" && ctx.meta.task === input.id,
       }),
-    "tasks.shipOptions": (input) => services.mrs.shipOptions(input.id),
+    "tasks.shipOptions": async (input) => {
+      const queued = services.queuedMerges.get(input.id);
+      return { ...(await services.mrs.shipOptions(input.id)), ...(queued === undefined ? {} : { queued }) };
+    },
+    // Owner only: an agent or the captain never decides to merge ahead of a check.
+    "tasks.queueMerge": async ({ id, ...input }, ctx) => {
+      if (ctx.meta.actor.kind !== "owner") {
+        throw new UserError("Only the owner can queue a merge for when the checks pass.", 409);
+      }
+      return {
+        queued: await services.queuedMerges.request({ task: id, ...input, by: actorName(ctx.meta.actor) }),
+      };
+    },
+    "tasks.cancelQueuedMerge": async (input, ctx) => {
+      if (ctx.meta.actor.kind !== "owner") {
+        throw new UserError("Only the owner can cancel a queued merge.", 409);
+      }
+      services.queuedMerges.cancel(input.id);
+      return { ok: true as const };
+    },
     "tasks.push": (input, ctx) => services.mrs.push(input.id, input.deleteAfter, actorName(ctx.meta.actor)),
     "tasks.resolveShip": async (input, ctx) => ({
       task: await services.pendingShips.request({
