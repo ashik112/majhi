@@ -117,7 +117,9 @@ function realForms(path: string): string[] {
  */
 export function runMounts(req: SpawnRequest, cfg: RunnerConfig): RunMount[] {
   const mounts: RunMount[] = [];
-  if (!req.scratch) mounts.push({ path: req.cwd });
+  // The folder itself is mounted writable, unless the run names it in `mounts` (a clean export, read-only).
+  const cwdNamed = (req.mounts ?? []).some((m) => m.target === undefined && resolve(m.path) === resolve(req.cwd));
+  if (!req.scratch && !cwdNamed) mounts.push({ path: req.cwd });
   if (req.account !== undefined) mounts.push({ path: req.account.home });
   for (const m of req.mounts ?? []) mounts.push(m);
 

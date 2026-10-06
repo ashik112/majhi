@@ -11,9 +11,15 @@ import { errorMessage } from "../errors.ts";
 import type { Store } from "../store/index.ts";
 import type { UsageRepo } from "./repo.ts";
 
-/** Who ran the turn. The org and project come from the task. */
+/**
+ * Who ran the turn. The org and project come from the task. A pseudo task id (`card:acme-api`, a wiki
+ * update) has no task row, so a caller that knows the workspace names it here: the spend then counts
+ * against that workspace's budget. A real task's own row wins.
+ */
 export interface TurnContext {
   task: string;
+  org?: string | undefined;
+  project?: string | undefined;
   agent: string;
   account: string;
   tool: ToolId;
@@ -82,6 +88,7 @@ export class UsageRecorder {
       }
       const task = this.deps.store.tasks.get(ctx.task);
       const cost = costTurn(usage, ctx.auth, prices);
+      const org = task?.org ?? ctx.org ?? null;
       this.deps.repo.insert({
         at,
         task: ctx.task,
@@ -89,8 +96,8 @@ export class UsageRecorder {
         account: ctx.account,
         tool: ctx.tool,
         auth: ctx.auth,
-        org: task?.org ?? null,
-        project: task?.repos[0]?.project ?? null,
+        org,
+        project: task?.repos[0]?.project ?? ctx.project ?? null,
         runId: ctx.runId ?? null,
         model: usage.model ?? null,
         inputTokens: usage.inputTokens,
@@ -101,7 +108,7 @@ export class UsageRecorder {
         ...cost,
       });
       this.deps.onRecorded?.();
-      await this.deps.afterRecord?.({ org: task?.org ?? null, account: ctx.account, task: ctx.task });
+      await this.deps.afterRecord?.({ org, account: ctx.account, task: ctx.task });
     } catch (err) {
       console.error(`Could not record a turn of ${ctx.agent} in ${ctx.task}: ${errorMessage(err)}`);
     }

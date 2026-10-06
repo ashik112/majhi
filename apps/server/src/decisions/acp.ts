@@ -107,12 +107,16 @@ export class AcpProvider implements DecisionProvider {
   }
 }
 
-export async function ask(session: AgentSession, prompt: string): Promise<string> {
+export async function ask(
+  session: AgentSession,
+  prompt: string,
+  timeoutMs: number = TURN_TIMEOUT_MS,
+): Promise<string> {
   let text = "";
   const stop = session.onEvent((event) => {
     if (event.type === "text") text += event.text;
   });
-  const timer = setTimeout(() => void session.cancel(), TURN_TIMEOUT_MS);
+  const timer = setTimeout(() => void session.cancel(), timeoutMs);
   try {
     const { stopReason } = await session.prompt([{ type: "text", text: prompt }]);
     if (stopReason !== "end_turn") throw new Error(`The stand-in agent stopped early (${stopReason}).`);

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { DiagramSpecSchema } from "./diagram.ts";
 import { IdSchema } from "./ids.ts";
-import type { WikiPatch } from "./settings.ts";
+import type { WikiOrgPatch, WikiPatch } from "./settings.ts";
 
 /**
  * The project wiki (docs/design/wiki.md, section 4). Tools find facts with evidence; a read-only agent
@@ -540,8 +540,8 @@ export type WikiPageView = z.infer<typeof WikiPageViewSchema>;
  * on or back off for what is below it.
  */
 export function resolveWikiEnabled(levels: {
-  org?: WikiPatch | undefined;
-  global?: WikiPatch | undefined;
+  org?: WikiOrgPatch | undefined;
+  global?: Pick<WikiPatch, "enabled"> | undefined;
 }): boolean {
   return levels.org?.enabled ?? levels.global?.enabled ?? false;
 }

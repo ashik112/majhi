@@ -111,6 +111,8 @@ export interface PermissionAsk {
   title: string;
   kind?: string; // ACP tool kind, for auto-allow by perms
   command?: string; // for execute: the command line, when known
+  /** The files the tool call says it touches, when it says. */
+  locations?: string[];
   options: {
     id: string;
     name: string;
