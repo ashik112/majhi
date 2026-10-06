@@ -183,22 +183,7 @@ import {
   DecisionRecommendInputSchema,
   OwnerDecisionSchema,
 } from "./inbox.ts";
-import {
-  InsideInputSchema,
-  InsideMemberInputSchema,
-  InsideMemberSchema,
-  InsideViewSchema,
-} from "./inside.ts";
-import { JourneyInputSchema, JourneyRemoveInputSchema } from "./journeys.ts";
 import { BlockerSchema } from "./lifecycle/blocker.ts";
-import {
-  MapAnswerInputSchema,
-  MapEdgeInputSchema,
-  MapEstimateSchema,
-  MapOrgInputSchema,
-  MapRoleInputSchema,
-  MapViewSchema,
-} from "./map.ts";
 import {
   McpAgentInputSchema,
   McpInstallInputSchema,
@@ -341,6 +326,7 @@ import {
   RoomPatchSchema,
   SettingsSchema,
   TurnsPatchSchema,
+  WikiPatchSchema,
 } from "./settings.ts";
 import {
   SkillAgentInputSchema,
@@ -416,6 +402,14 @@ import {
   WatchTestResultSchema,
   WatchViewSchema,
 } from "./watches.ts";
+import {
+  WikiEstimateSchema,
+  WikiPageInputSchema,
+  WikiPageViewSchema,
+  WikiScopeInputSchema,
+  WikiUpdateInputSchema,
+  WikiViewSchema,
+} from "./wiki.ts";
 
 /**
  * Every change in majhi is a command (SPEC 5.16). The UI, the palette, the
@@ -1276,87 +1270,34 @@ export const commands = {
     input: AgendaDismissInputSchema,
     output: z.object({ day: z.string() }),
   },
-  // The project map (5.21) --------------------------------------------------------
-  "map.get": {
+  // The project wiki (docs/design/wiki.md) ---------------------------------------------
+  "wiki.get": {
     risk: "read",
     summary:
-      "How a workspace's projects connect: projects, libraries, databases, queues and outside services as boxes, and the lines between them with their proof (file and line), when it was updated and how many merges since. An agent reads its own workspace only",
-    input: MapOrgInputSchema,
-    output: MapViewSchema,
+      "The wiki of one workspace or project: whether it is on, its pages (id, kind, title) and, per project, the commit the pages were built from, how far behind it is, whether an update is running and the last error. Without `project` it is the workspace's own pages and every project's state. An agent reads its own workspace only",
+    input: WikiScopeInputSchema,
+    output: WikiViewSchema,
   },
-  "map.estimate": {
+  "wiki.page": {
     risk: "read",
     summary:
-      "What the next map update would read and cost: projects, files for the code pass, tokens and an estimate in dollars from the price table, and the cap one update never passes",
-    input: MapOrgInputSchema,
-    output: MapEstimateSchema,
+      "One wiki page: its text with numbered citations, each claim with the file and lines that prove it (or marked guessed), the claims that could not be confirmed, its diagrams and the commit it was built from. An agent reads its own workspace only",
+    input: WikiPageInputSchema,
+    output: WikiPageViewSchema,
   },
-  "map.update": {
-    risk: "change",
-    summary:
-      "Update the workspace's project map: read each project's config files and majhi's own task history with no model, then let the cheapest model read a bounded set of code files for links the config misses (these land as new for the owner to check). The one action for the whole update; it runs in the background and the page follows its progress. The owner and the captain, never another agent",
-    input: MapOrgInputSchema,
-    output: MapViewSchema,
-  },
-  "map.confirmEdge": {
-    risk: "change",
-    summary: "Mark a new line on the map as right. The owner and the captain",
-    input: MapEdgeInputSchema,
-    output: MapViewSchema,
-  },
-  "map.removeEdge": {
-    risk: "change",
-    summary: "Remove a line from the map. No later update adds it again. The owner and the captain",
-    input: MapEdgeInputSchema,
-    output: MapViewSchema,
-  },
-  "map.answer": {
-    risk: "change",
-    summary:
-      "Say what an address the projects call is: one of the workspace's projects, an outside service, or not a call to show. The answer applies to the whole workspace and to every later update; without `to` it is forgotten. The owner and the captain",
-    input: MapAnswerInputSchema,
-    output: MapViewSchema,
-  },
-  "map.setRole": {
-    risk: "change",
-    summary:
-      "Set whether a project is an app, a service or a worker on the map, over what its dependencies show; without `role` it goes back to that. The owner and the captain",
-    input: MapRoleInputSchema,
-    output: MapViewSchema,
-  },
-  "map.inside": {
+  "wiki.estimate": {
     risk: "read",
     summary:
-      "What is inside one project of the workspace: its entry points (routes, schedules, queue consumers, commands), the functions they run, and the datastores and outside services those functions use, each with its file and line. State `unread` when the project has not been read inside yet",
-    input: InsideInputSchema,
-    output: InsideViewSchema,
+      "What the next wiki update would rewrite and cost: the pages whose cited files changed, tokens, an estimate in dollars from the price table, and the cap one update never passes",
+    input: WikiScopeInputSchema,
+    output: WikiEstimateSchema,
   },
-  "map.insideMember": {
-    risk: "read",
-    summary:
-      "The story of one command of a dispatcher route of a project (for example `tasks.create` under `POST /api/cmd/:name`): the parts of the project it passes through and the data it touches, each with its file and line. `followed` is false when the code does not let majhi tie the command to its handler",
-    input: InsideMemberInputSchema,
-    output: InsideMemberSchema,
-  },
-  "map.readInside": {
+  "wiki.update": {
     risk: "change",
     summary:
-      "Read one project's code now (free, no model, in a sealed container) so the map can show what is inside it. The owner and the captain",
-    input: InsideInputSchema,
-    output: InsideViewSchema,
-  },
-  "map.saveJourney": {
-    risk: "change",
-    summary:
-      "Name a journey on the map: ordered steps, each from one box to another with a label and the map line it follows (`edge`). Without `id` it makes a new journey (keeping one of majhi's examples is this too); with `id` it replaces that journey. Every box and line must be on this workspace's map. The owner and the captain",
-    input: JourneyInputSchema,
-    output: MapViewSchema,
-  },
-  "map.removeJourney": {
-    risk: "change",
-    summary: "Remove a journey the owner kept. The owner and the captain",
-    input: JourneyRemoveInputSchema,
-    output: MapViewSchema,
+      "Update the wiki of a workspace or one project: read the code facts with no model, then rewrite only the pages whose cited files changed. It runs in the background and the page follows its progress. One run per workspace at a time. `replan` picks the main flows again. The owner and the captain, never another agent",
+    input: WikiUpdateInputSchema,
+    output: WikiViewSchema,
   },
   // The chat dock -----------------------------------------------------------------
   "conversations.list": {
@@ -1422,7 +1363,7 @@ export const commands = {
   "orgs.update": {
     risk: "change",
     summary:
-      "Edit an org: name, color, task key, base branch, commit identity, agent attribution in commits, context threshold and cap, automatic resume, loop guard, turn limits, model and effort tiers, default team or which tasks leads may start. null clears an optional field",
+      "Edit an org: name, color, task key, base branch, commit identity, agent attribution in commits, whether it has a wiki, context threshold and cap, automatic resume, loop guard, turn limits, model and effort tiers, default team or which tasks leads may start. null clears an optional field",
     input: z.object({
       id: IdSchema,
       name: OrgConfigSchema.shape.name.optional(),
@@ -1436,6 +1377,8 @@ export const commands = {
       resume: OrgConfigSchema.shape.resume.nullable().optional(),
       /** Overrides majhi's `commits.attribution` for this org's commits. */
       commits: OrgConfigSchema.shape.commits.nullable().optional(),
+      /** Overrides majhi's `wiki.enabled` for this org. */
+      wiki: OrgConfigSchema.shape.wiki.nullable().optional(),
       /** Overrides majhi's `rooms.max_agent_turns` for this org's tasks. */
       rooms: OrgConfigSchema.shape.rooms.nullable().optional(),
       /** Overrides majhi's `turns` limits for this org's agents, field by field. */
@@ -3022,13 +2965,14 @@ export const commands = {
   "settings.set": {
     risk: "change",
     summary:
-      "Change context budget, limits, turn limits (turns.max_length and turns.idle like 2h, 25m or off; turns.max_tool_calls, 0 is off), resume, commits (agent attribution), room, memory, editor, cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, notifications (mac, browser, sound, muted kinds, quiet_from, quiet_to), container cpus, memory, per_task, weekly budgets: budgets.orgs.<org> or budgets.accounts.<account> as { tokens?, cost? }, null removes one). Policy changes use policy.set",
+      "Change context budget, limits, turn limits (turns.max_length and turns.idle like 2h, 25m or off; turns.max_tool_calls, 0 is off), resume, commits (agent attribution), wiki (enabled), room, memory, editor, cleanup or container limit settings (loop guard, review rounds, auto_threshold, review_all, housekeeper, housekeeper_model, editor.app: vscode or cursor, cleanup after_days, notifications (mac, browser, sound, muted kinds, quiet_from, quiet_to), container cpus, memory, per_task, weekly budgets: budgets.orgs.<org> or budgets.accounts.<account> as { tokens?, cost? }, null removes one). Policy changes use policy.set",
     input: z.object({
       context: ContextPatchSchema.optional(),
       limits: LimitsPatchSchema.optional(),
       turns: TurnsPatchSchema.optional(),
       resume: ResumePatchSchema.optional(),
       commits: CommitsPatchSchema.optional(),
+      wiki: WikiPatchSchema.optional(),
       rooms: RoomPatchSchema.optional(),
       memory: MemoryPatchSchema.optional(),
       editor: EditorPatchSchema.optional(),

@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 /**
- * A diagram an agent draws in the chat (`show_diagram`, `show_map`): typed JSON, never code. One renderer
- * draws it (the same canvas as the Map page). Every string is data shown as text: a label is never read
+ * A diagram an agent draws in the chat (`show_diagram`): typed JSON, never code. One renderer
+ * draws it (the diagram canvas). Every string is data shown as text: a label is never read
  * as an instruction and never as HTML.
  */
 

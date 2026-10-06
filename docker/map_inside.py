@@ -1,7 +1,6 @@
-"""What is inside one project, for the map's Inside tab (SPEC 5.21). Imported by map-extract.py.
+"""What is inside one project's files, for the wiki's facts (docs/design/wiki.md). Kept for its entry pass.
 
-Reads source files with tree-sitter (no model, no network) and returns plain facts per file; `map_resolve.py`
-joins them. A file yields:
+Reads source files with tree-sitter (no model, no network) and returns plain facts per file. A file yields:
 
   defs     functions and methods: name, class, line, end line, the first line of the docstring or comment
   calls    a call site: a plain name, `this.name`, or `module.name`, with the line (resolved later, never by name alone)

@@ -20,7 +20,6 @@ import type { FindingsService } from "../findings/service.ts";
 import { defaultBranch, git } from "../git/git.ts";
 import { shipReadiness } from "../handoff/ready.ts";
 import type { HandoffService } from "../handoff/service.ts";
-import type { MapService } from "../map/service.ts";
 import type { MemoryService } from "../memory/service.ts";
 import { repoFacts } from "../memory/task-git.ts";
 import { HOST_LABEL, type MrService } from "../mrs/service.ts";
@@ -32,6 +31,8 @@ import { captainAnsweredLine } from "../tasks/cards.ts";
 import type { CleanupService } from "../tasks/cleanup.ts";
 import type { TaskFolderSweep } from "../tasks/folder-sweep.ts";
 import type { TaskService } from "../tasks/service.ts";
+import type { WikiService } from "../wiki/service.ts";
+import type { WikiEnabled } from "../wiki/switch.ts";
 import { isAnswerTask } from "./answer-check.ts";
 import { answerOnce } from "./keys.ts";
 import type { Lanes } from "./lanes.ts";
@@ -64,8 +65,9 @@ export interface WorldDeps {
   decisions: DecisionService;
   memory: MemoryService;
   findings: FindingsService;
-  /** The project map: the map chore asks if it is stale and runs the one update. */
-  map: MapService;
+  /** The project wiki: the wiki chore asks whether it is behind and runs the one update. */
+  wiki: WikiService;
+  wikiOn: WikiEnabled;
   curate: (fact: Fact, off?: ReadonlySet<string>) => Promise<{ reason?: string }>;
   scanner: RepoScanner;
   cleanup: CleanupService;
@@ -503,6 +505,16 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
     // Follow-ups and findings
 
     findings: deps.findings,
+    wiki: {
+      enabled: deps.wikiOn,
+      stale: async (org) => ({ projects: (await deps.wiki.stale(org)).projects }),
+      update: async (org) => {
+        const reports = await deps.wiki.update(org);
+        const pages = reports.reduce((n, r) => n + r.written.length, 0);
+        const usd = reports.reduce((n, r) => n + r.usd, 0);
+        return { summary: `${pages} ${pages === 1 ? "page" : "pages"} written, $${usd.toFixed(2)}` };
+      },
+    },
     upkeep: upkeepWorld({
       run,
       store,
@@ -510,18 +522,6 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       machineBusy: deps.machineBusy,
       wake: (org, line) => deps.autonomy.news(line, org),
     }),
-    map: {
-      stale: (org) => deps.map.stale(org),
-      update: async (org) => {
-        const view = await deps.map.update(org);
-        const r = view.report;
-        const lines =
-          r === undefined || r.fresh === 0
-            ? "no new lines"
-            : `${r.fresh} new ${r.fresh === 1 ? "line" : "lines"} to check`;
-        return { summary: `${lines}${r === undefined ? "" : `, $${r.cost.toFixed(2)}`}` };
-      },
-    },
     followUps: {
       openThreads: (org) =>
         deps.memory.project

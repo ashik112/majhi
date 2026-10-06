@@ -20,7 +20,7 @@ const VERBS: Record<CaptainChore, { done: (n: number) => string; asked: (n: numb
   tidy: { done: (n) => `tidied ${n}`, asked: (n) => `${n} for you` },
   health: { done: (n) => `fixed ${n}`, asked: (n) => `${n} for you` },
   checklist: { done: (n) => `fixed ${n}`, asked: (n) => `${n} for you` },
-  map: { done: () => "updated the map", asked: (n) => `${n} for you` },
+  wiki: { done: () => "updated the wiki", asked: (n) => `${n} for you` },
 };
 
 /** What a chore run did, from its log lines: "shipped 2, asked you about 1". Empty lines: "nothing to do". */

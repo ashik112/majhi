@@ -3,7 +3,6 @@ import { runFollowUps } from "../findings/followups.ts";
 import { sizeText } from "../tasks/folder-sweep.ts";
 import { answerGate, judgeReport, summaryLine } from "./answer-check.ts";
 import { shipState } from "./keys.ts";
-import { createMapChore } from "./map-chore.ts";
 import { classifyOwnWork } from "./own-work.ts";
 import { permissionVerdict } from "./permission-rules.ts";
 import type {
@@ -17,6 +16,7 @@ import type {
 import { branchAllowed, typingWhy } from "./rules.ts";
 import type { ChoreRun } from "./runner.ts";
 import { createUpkeepChores } from "./upkeep.ts";
+import { createWikiChore } from "./wiki-chore.ts";
 
 /** How many times the captain sends an answer task back before it leaves it for the owner. */
 const MAX_ANSWER_NUDGES = 2;
@@ -321,7 +321,7 @@ export function createChores(
 
   return {
     ...createUpkeepChores(ports),
-    ...createMapChore(ports, now),
+    ...createWikiChore(ports),
     async ship(run) {
       const { org, ws } = run;
       const answered = await answerChecks(run);

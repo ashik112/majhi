@@ -18,6 +18,7 @@ import {
   ResumePatchSchema,
   RoomPatchSchema,
   TurnsPatchSchema,
+  WikiPatchSchema,
 } from "./settings.ts";
 import { ProjectConfigSchema } from "./tasks.ts";
 import { PricesConfigSchema } from "./usage.ts";
@@ -45,6 +46,8 @@ export const MajhiConfigSchema = z
     resume: ResumePatchSchema.optional(),
     /** Agent attribution in commits (5.7). */
     commits: CommitsPatchSchema.optional(),
+    /** The project wiki switch: off unless turned on here or per workspace. */
+    wiki: WikiPatchSchema.optional(),
     /** Teams in a room: the loop guard and review rounds (5.3). */
     rooms: RoomPatchSchema.optional(),
     /** Memory curation: the auto threshold, review of every fact, the Housekeeper (5.6). */

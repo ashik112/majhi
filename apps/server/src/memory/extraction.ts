@@ -49,6 +49,8 @@ export interface ExtractionDeps {
   repoFacts?: (repo: TaskRepo, createdAt: string) => Promise<RepoFacts>;
   /** The registered orgs and projects, for the scopes the Housekeeper may give. Default: none. */
   registry?: () => Promise<Registry>;
+  /** Whether a workspace has the wiki on. It owns architecture, so the brief has no Architecture section there. */
+  wikiOn?: (org: string | undefined) => Promise<boolean>;
 }
 
 /** Share of a quote's content words that must be in the owner's own messages for it to count as theirs. */
@@ -163,7 +165,9 @@ export class Extraction {
         allowed: await deps.curator.scopesFor(curation),
         touched: projects,
       });
+      const wiki = (await deps.wikiOn?.(task.org)) === true;
       const prompt = recordPrompt({
+        wiki,
         task: sourceTask(task, curation),
         choices,
         handbacks,
@@ -194,7 +198,7 @@ export class Extraction {
         madeFrom.map((t) => t.id),
       );
       counts.threads_closed = this.closeThreads(task, reply);
-      counts.briefs = this.patchBriefs(task, reply, agent);
+      counts.briefs = this.patchBriefs(task, reply, agent, wiki);
       const found = checkOwner(replyFacts(reply), [task.brief, ...ownerLines(items)]);
       const lessons = await deps.curator.curateCandidates(curation, found, agent);
       const out = { ...lessons, ...pick(counts) };
@@ -235,12 +239,12 @@ export class Extraction {
   }
 
   /** Applies the brief patches to the task's own projects. Resolves the projects that got a new version. */
-  private patchBriefs(task: Task, reply: RecordReply, agent: string): string[] {
+  private patchBriefs(task: Task, reply: RecordReply, agent: string, wiki: boolean): string[] {
     const changed: string[] = [];
     for (const p of task.repos.map((r) => r.project)) {
       const patch = reply.brief[p];
       if (patch === undefined) continue;
-      if (this.deps.memory.project.patchBrief(p, patch, { task: task.id, agent }) !== undefined)
+      if (this.deps.memory.project.patchBrief(p, patch, { task: task.id, agent }, wiki) !== undefined)
         changed.push(p);
     }
     return changed;
@@ -294,6 +298,7 @@ export class Extraction {
       (h) => h.record,
     );
     const current = deps.memory.project.currentBrief(projectId);
+    const wiki = (await deps.wikiOn?.(project.org)) === true;
     try {
       const { value, agent } = await deps.housekeeper.ask(
         { id: records[0]?.task ?? `brief:${projectId}`, org: project.org },
@@ -302,10 +307,11 @@ export class Extraction {
           overview: await overview(project.path),
           records: records.map((r) => compactRecord(r, 900)).join("\n\n"),
           current: current?.body,
+          wiki,
         }),
         parseBriefReply,
       );
-      return deps.memory.project.setBrief(projectId, value, agent);
+      return deps.memory.project.setBrief(projectId, value, agent, wiki);
     } catch (err) {
       if (err instanceof UserError) throw err;
       throw new UserError(errorMessage(err), 409);

@@ -5,6 +5,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Copy, ExternalLink, RefreshCw, X } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { OpenInEditor } from "@/components/open-in-editor";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Segmented } from "@/components/ui/segmented";
@@ -23,6 +24,7 @@ import {
   findChange,
   parseFileRef,
   TEXT_LIMIT,
+  type ViewerCite,
 } from "./model";
 import { useFileMeta, useFileText, useResolvedRef } from "./use-task-file";
 
@@ -109,12 +111,14 @@ function Resolving({
   );
 }
 
-function Viewer({
+/** The viewer's content: the header and the file. A task's drawer and a wiki source both put it in a modal. */
+export function Viewer({
   taskId,
   folder,
   fileRef,
   items,
   repos,
+  cite,
   onClose,
 }: {
   taskId: string;
@@ -122,6 +126,8 @@ function Viewer({
   fileRef: FileRef;
   items: readonly RoomItem[];
   repos: readonly TaskRepo[];
+  /** A wiki source: the cited lines are marked and the view scrolls to them. */
+  cite?: ViewerCite;
   onClose: () => void;
 }) {
   const path = fileRef.path;
@@ -179,6 +185,7 @@ function Viewer({
                 </>
               )}
             </p>
+            {cite !== undefined && <CiteTags path={path} cite={cite} />}
           </div>
           <Button variant="ghost" size="icon-sm" aria-label="Close viewer" onClick={onClose}>
             <X aria-hidden="true" />
@@ -212,7 +219,7 @@ function Viewer({
             <Copy aria-hidden="true" />
             Copy path
           </Button>
-          {fileRef.kind !== "repo" && (
+          {fileRef.kind !== "repo" && fileRef.kind !== "wiki" && (
             <OpenInEditor path={path.startsWith("/") ? path : `${folder}/${path}`} />
           )}
           <Button asChild size="sm" variant="secondary">
@@ -221,12 +228,22 @@ function Viewer({
               Open in new tab
             </a>
           </Button>
-          <Button size="sm" variant="secondary" onClick={refresh} disabled={refreshing}>
-            <RefreshCw aria-hidden="true" className={refreshing ? "animate-spin" : undefined} />
-            Refresh
-          </Button>
+          {fileRef.kind !== "wiki" && (
+            <Button size="sm" variant="secondary" onClick={refresh} disabled={refreshing}>
+              <RefreshCw aria-hidden="true" className={refreshing ? "animate-spin" : undefined} />
+              Refresh
+            </Button>
+          )}
         </div>
       </header>
+      {cite?.changed === true && (
+        <p
+          role="status"
+          className="shrink-0 border-b border-amber-line bg-amber-wash px-5 py-2 text-sm text-fg-soft"
+        >
+          Changed in a newer commit. The lines may have moved.
+        </p>
+      )}
       <div className="flex min-h-0 flex-1 flex-col">
         {showingDiff ? (
           <Diffs diffs={change?.diffs ?? []} deleted={change?.change === "delete"} />
@@ -244,10 +261,29 @@ function Viewer({
             name={name}
             text={text.data}
             loading={wantsText ? text.isPending : meta.isPending}
+            mark={cite?.lines}
           />
         )}
       </div>
     </div>
+  );
+}
+
+/** The small tags under a wiki source's path: what it cites, at which commit, and that it is read only. */
+function CiteTags({ path, cite }: { path: string; cite: ViewerCite }) {
+  const language = codeLanguageOf(path);
+  return (
+    <p className="mt-2 flex flex-wrap items-center gap-1.5">
+      {language !== undefined && <Badge mono>{language}</Badge>}
+      <Badge mono>
+        {cite.lines[0] === cite.lines[1]
+          ? `line ${cite.lines[0]}`
+          : `lines ${cite.lines[0]}-${cite.lines[1]}`}{" "}
+        cited
+      </Badge>
+      <Badge mono>{cite.commit.slice(0, 7)}</Badge>
+      <Badge>read only</Badge>
+    </p>
   );
 }
 
@@ -292,6 +328,7 @@ function Body({
   name,
   text,
   loading,
+  mark,
 }: {
   taskId: string;
   folder: string;
@@ -303,10 +340,11 @@ function Body({
   name: string;
   text: ReturnType<typeof useFileText>["data"];
   loading: boolean;
+  mark?: readonly [number, number] | undefined;
 }) {
   // Links inside a file of a repo point into that repo, which the viewer does not follow.
   const task = useMemo(
-    () => (fileRef.kind === "repo" ? undefined : { id: taskId, folder }),
+    () => (fileRef.kind === "repo" || fileRef.kind === "wiki" ? undefined : { id: taskId, folder }),
     [taskId, folder, fileRef.kind],
   );
   if (kind === "image") {
@@ -377,7 +415,7 @@ function Body({
   const source = (
     <>
       {limited}
-      <CodeView text={text.text} lang={codeLanguageOf(path)} label={name} />
+      <CodeView text={text.text} lang={codeLanguageOf(path)} label={name} mark={mark} />
     </>
   );
   if (kind === "page") {

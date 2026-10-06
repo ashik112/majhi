@@ -171,8 +171,8 @@ export interface MergeGatePort {
 
 export interface TaskDeps {
   mergeGate: MergeGatePort;
-  /** The lines of the project map that touch a task's repos, for TASK.md (5.21). Absent: none. */
-  mapNotes?: (task: Task) => string[];
+  /** The wiki lines for a task's project, for TASK.md. Absent: none. */
+  wikiNotes?: (task: Task) => Promise<string[]>;
   /** The owner resumed a task that a budget paused: budget alerts so far no longer hold it. */
   onOwnerResumedLimit?: (task: string) => void;
   /** The owner resumed a paused task by hand: autonomous mode's pause no longer holds it (PRV-74). */
@@ -859,7 +859,7 @@ export class TaskService {
       await this.readableProjects(task),
       await this.briefConnections(task, agents),
       await this.commitGuide(task),
-      this.deps.mapNotes?.(task) ?? [],
+      (await this.deps.wikiNotes?.(task)) ?? [],
     );
     const pointer = renderPointer(task);
     await Promise.all([
@@ -2949,7 +2949,7 @@ export class TaskService {
         await this.readableProjects(task),
         await this.briefConnections(task, agents),
         await this.commitGuide(task),
-        this.deps.mapNotes?.(task) ?? [],
+        (await this.deps.wikiNotes?.(task)) ?? [],
       );
       // The folder can be gone by hand; the links still stand.
       await writeFileAtomic(join(task.folder, "TASK.md"), md).catch(() => undefined);

@@ -17,6 +17,7 @@ import {
   type Settings,
   SettingsSchema,
   TurnsPatchSchema,
+  WikiPatchSchema,
 } from "@majhi/shared";
 import { parseDocument } from "yaml";
 import { z } from "zod";
@@ -30,6 +31,7 @@ export const SettingsPatchSchema = z.object({
   turns: TurnsPatchSchema.optional(),
   resume: ResumePatchSchema.optional(),
   commits: CommitsPatchSchema.optional(),
+  wiki: WikiPatchSchema.optional(),
   rooms: RoomPatchSchema.optional(),
   policy: PolicyPatchSchema.optional(),
   decisions: DecisionPatchSchema.optional(),
@@ -51,6 +53,7 @@ export function mergeSettings(raw: SettingsPatch): Settings {
     turns: raw.turns ?? {},
     resume: raw.resume ?? {},
     commits: raw.commits ?? {},
+    wiki: raw.wiki ?? {},
     rooms: raw.rooms ?? {},
     policy: raw.policy ?? {},
     memory: raw.memory ?? {},
@@ -87,6 +90,7 @@ export async function readSettings(file: string): Promise<Settings> {
     turns: record.turns,
     resume: record.resume,
     commits: record.commits,
+    wiki: record.wiki,
     rooms: record.rooms,
     policy: record.policy,
     memory: record.memory,

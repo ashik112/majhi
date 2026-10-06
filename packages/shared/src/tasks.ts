@@ -918,7 +918,7 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     why: z.string(),
     how: z.array(PlanHowSchema),
   }),
-  /** A diagram an agent drew for the owner (`show_diagram`, `show_map`), drawn inline by the Map page's canvas. */
+  /** A diagram an agent drew for the owner (`show_diagram`), drawn inline by the diagram canvas. */
   RoomItemBase.extend({
     type: z.literal("diagram"),
     agent: IdSchema,

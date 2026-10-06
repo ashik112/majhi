@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { useHighlight } from "@/features/room/highlight";
 import { CopyButton } from "@/features/room/markdown";
@@ -7,7 +7,22 @@ import { fenceFor, HIGHLIGHT_LIMIT, lineNumbers } from "./model";
 const noPre = { pre: ({ children }: { children?: React.ReactNode }) => <>{children}</> };
 
 /** Source with line numbers and syntax colors. The numbers stay put while the code scrolls sideways. */
-export function CodeView({ text, lang, label }: { text: string; lang: string | undefined; label: string }) {
+export function CodeView({
+  text,
+  lang,
+  label,
+  mark,
+}: {
+  text: string;
+  lang: string | undefined;
+  label: string;
+  /** Lines to tint (1-based, both ends included); the view scrolls to the first of them once. */
+  mark?: readonly [number, number] | undefined;
+}) {
+  const markRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (mark !== undefined && text !== "") markRef.current?.scrollIntoView({ block: "center" });
+  }, [mark, text]);
   const plugins = useHighlight();
   const gutter = useMemo(() => lineNumbers(text), [text]);
   const colored = lang !== undefined && plugins !== undefined && text.length <= HIGHLIGHT_LIMIT;
@@ -28,6 +43,18 @@ export function CodeView({ text, lang, label }: { text: string; lang: string | u
       </div>
       <div className="min-h-0 flex-1 overflow-auto bg-sunken">
         <div className="code-lines">
+          {mark !== undefined && (
+            <div
+              ref={markRef}
+              aria-hidden="true"
+              data-cited-lines={`${mark[0]}-${mark[1]}`}
+              className="code-mark"
+              style={{
+                top: `calc(10px + ${mark[0] - 1} * 1.6em)`,
+                height: `calc(${mark[1] - mark[0] + 1} * 1.6em)`,
+              }}
+            />
+          )}
           <pre aria-hidden="true" className="code-gutter">
             {gutter}
           </pre>

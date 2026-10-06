@@ -6,9 +6,6 @@ import {
   DEFAULT_LEAD_START,
   type DiagramSpec,
   DiagramSpecSchema,
-  type JourneyView,
-  type ProjectMap,
-  ShowMapInputSchema,
   TaskDockerRequestSchema,
   type TeamPlan,
   TeamPlanSchema,
@@ -27,16 +24,16 @@ import { type ConnectionsMcpDeps, connectionsServer } from "../connections/mcp.t
 import { type ContainersMcpDeps, containersServer } from "../containers/mcp.ts";
 import { errorMessage, formatIssues } from "../errors.ts";
 import { isLoopbackOrigin } from "../http/origin.ts";
+import { type MemoryMcpDeps, memoryServer } from "../memory/mcp.ts";
+import type { ProcessManager } from "../processes/manager.ts";
+import { processesServer } from "../processes/mcp.ts";
+import type { ProjectService } from "../projects/service.ts";
 import {
   CODE_GRAPH_DESCRIPTION,
   type CodeGraphInput,
   CodeGraphInputSchema,
   type CodeGraphTools,
-} from "../map/graph/tools.ts";
-import { type MemoryMcpDeps, memoryServer } from "../memory/mcp.ts";
-import type { ProcessManager } from "../processes/manager.ts";
-import { processesServer } from "../processes/mcp.ts";
-import type { ProjectService } from "../projects/service.ts";
+} from "../reader/tools.ts";
 import type { RoomService } from "../room/service.ts";
 import { type SkillsMcpDeps, skillsServer } from "../skills/mcp.ts";
 import type { Store } from "../store/index.ts";
@@ -63,7 +60,7 @@ import {
   type ToolTokens,
 } from "./access.ts";
 import type { RoomCoordinator } from "./coordinator.ts";
-import { drawDiagram, drawMap } from "./diagram.ts";
+import { drawDiagram } from "./diagram.ts";
 
 type Result = { content: { type: "text"; text: string }[]; isError?: boolean };
 const ok = (text: string): Result => ({ content: [{ type: "text", text }] });
@@ -142,17 +139,11 @@ const ROOM_TOOLS: Tool[] = [
       "Draw any diagram in the chat for the owner: a flow, steps, a sequence between actors, a timeline, a tree or mind map, a state machine, or how services connect. Prefer this over ASCII art. Give a title, nodes (id, label, optional sub line, kind tag, group = the id of the box it sits inside, tone) and edges (from, to, optional label, type http|queue|data|lib|step, style solid|dashed|dotted, tone, arrow end|both|none). layout: flow (left to right, the default), top-down, tree (a hierarchy), radial (a mind map around focus), sequence (one lane per actor, edges in the order given are the messages; actors sets the lane order), timeline (events in the order given along one axis) or state (a state machine with transitions). At most 40 nodes, 80 edges and 60 characters per label. Everything you write is shown as plain text.",
     input: DiagramSpecSchema,
   },
-  {
-    name: "show_map",
-    description:
-      "Draw the stored map of how this workspace's projects connect in the chat for the owner: projects, libraries, databases, queues and outside services with the lines between them. Give around (a project id) to draw only what is within depth lines of it (1 or 2). Give journey (a journey's id or name) to draw one journey as a numbered sequence diagram instead. Your own workspace only. Say so if the workspace has no map yet.",
-    input: ShowMapInputSchema,
-  },
   { name: "code_graph", description: CODE_GRAPH_DESCRIPTION, input: CodeGraphInputSchema },
 ];
 
 /** The tools a chat is offered from majhi-room. */
-const DRAWING_TOOLS: ReadonlySet<string> = new Set(["show_diagram", "show_map"]);
+const DRAWING_TOOLS: ReadonlySet<string> = new Set(["show_diagram"]);
 
 // ---------------------------------------------------------------------------
 // majhi-tasks (5.4a, 5.10)
@@ -294,8 +285,6 @@ export interface RoomMcpDeps {
   memory: MemoryMcpDeps;
   /** `majhi-skills`: look up a run's own skills. */
   skills: SkillsMcpDeps;
-  /** `show_map`: the stored map of the workspace a task belongs to. Never another workspace's. */
-  maps: { forTask(task: string): Promise<{ org: string; map: ProjectMap; journeys: JourneyView[] }> };
   /** `code_graph`: the code graph of the task's own repos. Absent: the tool is not offered. */
   codeGraph?: CodeGraphTools | undefined;
   /** `majhi-connections` (5.14). Absent: there is no `/mcp/connections`. */
@@ -467,19 +456,6 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
           return ok(
             await (deps.codeGraph as CodeGraphTools).call(caller.task, parsed.data as CodeGraphInput),
           );
-        case "show_map": {
-          const { org, map, journeys } = await deps.maps.forTask(caller.task);
-          return ok(
-            drawMap(
-              deps.room,
-              caller,
-              org,
-              map,
-              args as { around?: string; depth: 1 | 2; journey?: string },
-              journeys,
-            ),
-          );
-        }
         case "read_recent":
           if (typeof args.item === "string") return ok(deps.coordinator.readItem(caller.task, args.item));
           return ok(

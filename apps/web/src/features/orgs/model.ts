@@ -29,6 +29,8 @@ export interface OrgDraft {
   contextCap: string;
   /** Agent attribution in commits: majhi's setting, or this org's own. */
   commits: "default" | "on" | "off";
+  /** Whether the org has a project wiki: majhi's setting, or this org's own. */
+  wiki: "default" | "on" | "off";
   /** When majhi merges the org's MRs. */
   merge: MergePolicy;
   /** Which tasks a lead may start without asking you. */
@@ -49,9 +51,15 @@ export function draftFromOrg(org: OrgView): OrgDraft {
     handoff: org.resume?.handoff === undefined ? "default" : org.resume.handoff ? "on" : "off",
     contextCap: capToField(org.context?.cap),
     commits: org.commits?.attribution === undefined ? "default" : org.commits.attribution ? "on" : "off",
+    wiki: wikiChoice(org),
     merge: org.merge,
     leadStart: org.leadStart,
   };
+}
+
+/** The org's own wiki switch as a choice: unset follows majhi's setting. */
+export function wikiChoice(org: Pick<OrgView, "wiki">): "default" | "on" | "off" {
+  return org.wiki?.enabled === undefined ? "default" : org.wiki.enabled ? "on" : "off";
 }
 
 /** A cap in tokens as the form shows it: thousands, blank when not set. */
@@ -132,6 +140,9 @@ export function checkOrgDraft(org: OrgView, draft: OrgDraft): OrgCheck {
   const commits = org.commits?.attribution === undefined ? "default" : org.commits.attribution ? "on" : "off";
   if (draft.commits !== commits)
     input.commits = draft.commits === "default" ? null : { attribution: draft.commits === "on" };
+
+  if (draft.wiki !== wikiChoice(org))
+    input.wiki = draft.wiki === "default" ? null : { enabled: draft.wiki === "on" };
 
   if (draft.merge !== org.merge) input.merge = draft.merge;
 

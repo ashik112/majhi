@@ -13,6 +13,7 @@ import {
   RECORD_SECTION_TITLES,
   RECORD_SECTIONS,
   type TaskRecord,
+  WikiToolInputSchema,
 } from "@majhi/shared";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
@@ -21,6 +22,7 @@ import { errorMessage, formatIssues } from "../errors.ts";
 import { MEMORY_SERVER_NAME, type ToolCaller } from "../rooms/access.ts";
 import { estimateText } from "../runs/context.ts";
 import type { UsageEvents } from "../usage/events.ts";
+import { WIKI_TOOL_DESCRIPTION, type WikiTools } from "../wiki/tools.ts";
 import { capFacts, factLine, TASK_MEMORY_CHARS } from "./recall.ts";
 import type { MemoryService } from "./service.ts";
 
@@ -40,6 +42,8 @@ export interface MemoryMcpDeps {
   scopeOf: (task: string) => Promise<AgentScope | undefined>;
   /** Where the size of each recall result goes, for the task's token receipt. */
   receipts?: Pick<UsageEvents, "recordRecall">;
+  /** The `wiki` tool. Absent: it is not offered. Present: offered only to tasks of a workspace that has the wiki on. */
+  wiki?: WikiTools | undefined;
 }
 
 const TOOLS = [
@@ -80,10 +84,11 @@ const TOOLS = [
     description: "Open threads: what finished tasks left to do, known issues and follow-ups, per project.",
     input: MemoryThreadsToolSchema,
   },
+  { name: "wiki", description: WIKI_TOOL_DESCRIPTION, input: WikiToolInputSchema },
 ] as const;
 
-function listed() {
-  return TOOLS.map((t) => {
+function listed(withWiki: boolean) {
+  return TOOLS.filter((t) => t.name !== "wiki" || withWiki).map((t) => {
     const { $schema: _dropped, ...rest } = z.toJSONSchema(t.input, { io: "input" }) as Record<
       string,
       unknown
@@ -95,10 +100,16 @@ function listed() {
 /** `majhi-memory` (5.6): one agent session's view of memory, limited to the scopes of its task's org. */
 export function memoryServer(caller: ToolCaller, deps: MemoryMcpDeps): Server {
   const server = new Server({ name: MEMORY_SERVER_NAME, version: "1" }, { capabilities: { tools: {} } });
-  server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: listed() }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    const scope = deps.wiki === undefined ? undefined : await deps.scopeOf(caller.task);
+    const withWiki = deps.wiki !== undefined && scope !== undefined && (await deps.wiki.offered(scope));
+    return { tools: listed(withWiki) };
+  });
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<Result> => {
     const tool = TOOLS.find((t) => t.name === request.params.name);
-    if (tool === undefined) return fail(`There is no tool ${request.params.name}.`);
+    if (tool === undefined || (tool.name === "wiki" && deps.wiki === undefined)) {
+      return fail(`There is no tool ${request.params.name}.`);
+    }
     const parsed = tool.input.safeParse(request.params.arguments ?? {});
     if (!parsed.success) return fail(`Invalid arguments:\n${formatIssues(parsed.error).join("\n")}`);
     const allowed = await deps.scopeOf(caller.task);
@@ -187,6 +198,8 @@ export function memoryServer(caller: ToolCaller, deps: MemoryMcpDeps): Server {
                   .join("\n"),
           );
         }
+        case "wiki":
+          return ok(await (deps.wiki as WikiTools).call(allowed, WikiToolInputSchema.parse(parsed.data)));
         default: {
           const args = MemoryListRecentToolSchema.parse(parsed.data);
           const scopes = pick(allowed, args.scope);

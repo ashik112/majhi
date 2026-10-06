@@ -264,19 +264,19 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     runner: { kind: "chore", chore: "checklist" },
   }),
   upkeep({
-    id: "upkeep-map",
-    name: "Project map",
-    purpose: "Keeps the picture of how your projects connect current after work is merged.",
+    id: "upkeep-wiki",
+    name: "Project wiki",
+    purpose: "Keeps the wiki of how each project is built current after work is merged.",
     trigger: { cadence: DAILY, events: [] },
-    inputs: ["Projects of the workspace", "Tasks merged since the last update"],
+    inputs: ["Workspaces with the wiki on", "Projects whose base branch moved past the built commit"],
     steps:
-      "When tasks merged since the map was updated and it was not updated in the last day, run the map update: read each project's config files and task history with no model, then let the smallest model read a few code files for links the config misses. New lines wait for you to check. Never more than one update a day, never over the cost cap, never when the workspace's budget is used up.",
+      "For a workspace whose wiki is on, when a project's base branch moved past the commit its pages were built from, run the wiki update: read the code facts with no model, then rewrite only the pages whose cited files changed. Never more than one update a day, never over the cost cap, never when the workspace's budget is used up. A project never built waits for your first Update.",
     outputs: ["log"],
     cost: { tier: "small", tokens: PASS_BOUND.tokens },
     turnOn:
-      "Updates the Map once a day when work was merged, while Auto-pilot is on. It costs nothing on a day nothing was merged.",
-    outcomes: [{ id: "map-update", text: "Work was merged and the map is a day old: update it" }],
-    runner: { kind: "chore", chore: "map" },
+      "Updates the wiki once a day when work was merged, while Auto-pilot is on and the workspace has the wiki on. It costs nothing on a day nothing changed.",
+    outcomes: [{ id: "wiki-update", text: "The code moved past the wiki: update the pages that changed" }],
+    runner: { kind: "chore", chore: "wiki" },
   }),
   // Runs once for the whole business, from Private. Pure code: it asks Laya, which is local, so it costs no tokens.
   {

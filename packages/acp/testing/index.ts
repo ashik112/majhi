@@ -38,6 +38,8 @@ export interface FakeAgentOptions {
   turnCost?: number | "none";
   /** The model named with the cost, like claude-agent-acp's `_claude/model`. */
   usageModel?: string;
+  /** A JSON file of scripted answers, `{rules:[{when, flags?, say}]}`, read on every prompt. The first rule whose `when` matches the prompt gives the whole answer. */
+  replies?: string;
   /** Numbers the fake reports for usage. Defaults: 5h 42 %, week 18 %, plan "max", resets in 3 hours and 3 days. */
   usage?: {
     fiveHourPct?: number;
@@ -78,6 +80,7 @@ export function fakeAdapter(tool: ToolId, options: FakeAgentOptions = {}): Comma
     );
   if (options.turnCost !== undefined) args.push("--turn-cost", String(options.turnCost));
   if (options.usageModel) args.push("--usage-model", options.usageModel);
+  if (options.replies) args.push("--replies", options.replies);
   const u = options.usage;
   if (u?.fiveHourPct !== undefined) args.push("--five-hour-pct", String(u.fiveHourPct));
   if (u?.weekPct !== undefined) args.push("--week-pct", String(u.weekPct));

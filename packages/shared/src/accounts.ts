@@ -11,6 +11,7 @@ import {
   ResumePatchSchema,
   RoomPatchSchema,
   TurnsPatchSchema,
+  WikiOrgPatchSchema,
 } from "./settings.ts";
 import { RoleSchema, TierPatchSchema, TiersPatchSchema } from "./tiers.ts";
 
@@ -211,6 +212,8 @@ export const OrgConfigSchema = z.looseObject({
   resume: ResumePatchSchema.optional(),
   /** Overrides whether this org's commits name the agent and the task (5.7). */
   commits: CommitsPatchSchema.optional(),
+  /** Overrides whether this org has a project wiki. Absent: majhi's `wiki.enabled`. */
+  wiki: WikiOrgPatchSchema.optional(),
   /** How new task branches are named in this org's repos. Default: what the repo's own branches show, else `{type}/{id}-{slug}`. */
   branch_pattern: BranchPatternSchema.optional(),
   /** Overrides the loop guard for this org's tasks (5.3). */
@@ -507,6 +510,8 @@ export const OrgViewSchema = z.object({
   resume: OrgConfigSchema.shape.resume,
   /** This org's own `commits.attribution`, when it overrides majhi's. */
   commits: OrgConfigSchema.shape.commits,
+  /** This org's own `wiki.enabled`, when it overrides majhi's. */
+  wiki: OrgConfigSchema.shape.wiki,
   /** This org's own loop guard, when it overrides majhi's. */
   rooms: OrgConfigSchema.shape.rooms,
   /** This org's own turn limits, when it overrides majhi's. */
@@ -563,14 +568,14 @@ export const EventTopicSchema = z.enum([
   "ops",
   /** The morning brief was made or dismissed, or the review budget changed (5.18): refetch `agenda.today`. */
   "agenda",
-  /** A workspace's project map changed or an update moved (5.21): refetch `map.get`. */
-  "map",
   /** A git sign-in flow changed state: refetch `git.signIn.poll`. Ending one also emits `orgs`. */
   "signins",
   /** A clone job moved (at most every 500 ms while it runs): refetch `projects.cloneStatus`. */
   "clones",
   /** A health check finished, or a full run moved: refetch `health.run`. */
   "checks",
+  /** A wiki page was stored, or an update started, moved or ended: refetch `wiki.*`. */
+  "wiki",
 ]);
 export type EventTopic = z.infer<typeof EventTopicSchema>;
 /**

@@ -123,6 +123,8 @@ export interface ServeOptions {
   turnCost: number | undefined;
   /** Sent as `_meta["_claude/model"]` with the cost, like claude-agent-acp. */
   usageModel: string | undefined;
+  /** A JSON file of `{rules:[{when, flags?, say}]}` read on every prompt: the first rule whose `when` matches gives the whole answer. */
+  replies: string | undefined;
 }
 
 interface McpEntry {
@@ -214,6 +216,20 @@ async function isBossChat(s: Session): Promise<boolean> {
     return /## Brief\n\n(?:Captain chat|Chat)\n/.test(await readFile(join(s.cwd, "TASK.md"), "utf8"));
   } catch {
     return false;
+  }
+}
+
+const RepliesSchema = z.object({
+  rules: z.array(z.object({ when: z.string(), flags: z.string().default(""), say: z.string() })),
+});
+
+/** The scripted answer for a prompt from the replies file, or undefined when the file is missing or no rule matches. */
+async function repliedTo(file: string, prompt: string): Promise<string | undefined> {
+  try {
+    const { rules } = RepliesSchema.parse(JSON.parse(await readFile(file, "utf8")) as unknown);
+    return rules.find((r) => new RegExp(r.when, r.flags).test(prompt))?.say;
+  } catch {
+    return undefined;
   }
 }
 
@@ -656,6 +672,7 @@ export function serveAcp(o: ServeOptions): void {
           throw new RequestError(-32603, accountLimit.trim());
         }
         const scripted = text.startsWith("echo:") ? undefined : await scriptedTurn(s, text);
+        const reply = o.replies === undefined ? undefined : await repliedTo(o.replies, text);
         if (text.startsWith("crash:")) {
           console.error("fake-agent: crashed on purpose");
           process.exit(3);
@@ -676,6 +693,14 @@ export function serveAcp(o: ServeOptions): void {
           stopReason = "end_turn";
         } else if (text.includes("Reply with a handoff note")) {
           agentText = FAKE_NOTE;
+          await update(params.sessionId, {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: agentText },
+          });
+          stopReason = "end_turn";
+        } else if (reply !== undefined) {
+          // A scripted answer for any session, whatever its folder or servers: a test plays a model that writes exact JSON.
+          agentText = reply;
           await update(params.sessionId, {
             sessionUpdate: "agent_message_chunk",
             content: { type: "text", text: agentText },

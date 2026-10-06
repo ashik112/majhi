@@ -38,6 +38,8 @@ export interface CardDeps {
   ruleOff?: ((org: string, rule: string) => boolean) | undefined;
   /** The card was written. */
   onCard?: ((project: CardProject, card: ProjectCard) => void) | undefined;
+  /** A base tip has stood long enough to count as moved (once per tip): the wiki looks at how far behind it is. */
+  onBaseMoved?: ((project: CardProject, tip: string) => void) | undefined;
   files?: (path: string) => RepoFiles;
   now?: () => Date;
   log?: (message: string) => void;
@@ -143,6 +145,7 @@ export class ProjectCards {
       }
       if (now - seen.since < wait) continue;
       this.pending.delete(p.id);
+      this.deps.onBaseMoved?.(p, tip);
       // "Refresh a project card when its base branch moves" is off: the card stays as it is until Refresh.
       if (this.deps.ruleOff?.(p.org, "proj-cards") === true) continue;
       await this.settle(p, have, tip).catch((err: unknown) => this.log(`cards: ${p.id}: ${String(err)}`));

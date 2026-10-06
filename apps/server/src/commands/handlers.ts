@@ -24,7 +24,6 @@ import { autonomyHandlers } from "../autonomy/handlers.ts";
 import { backupHandlers } from "../backup/handlers.ts";
 import { captainHandlers } from "../captain/handlers.ts";
 import { answerOnce } from "../captain/keys.ts";
-import { workspaceIds } from "../captain/levels.ts";
 import type { ConfigService } from "../config/service.ts";
 import { connectHandlers } from "../connect/handlers.ts";
 import { connectionHandlers } from "../connections/handlers.ts";
@@ -41,7 +40,6 @@ import { handoffHandlers } from "../handoff/handlers.ts";
 import type { HealthService } from "../health/service.ts";
 import { HostJobError, type HostLink, HostOfflineError } from "../host/link.ts";
 import { inboxHandlers } from "../inbox/handlers.ts";
-import { mapHandlers } from "../map/handlers.ts";
 import { mcpHandlers } from "../mcp-servers/handlers.ts";
 import { hostNameOf } from "../mrs/remote.ts";
 import { TriggerAlias, triggerHandlers } from "../ops/anything/triggers.ts";
@@ -74,6 +72,9 @@ import { actorName } from "../tasks/cards.ts";
 import { changeTaskBranch } from "../tasks/change-branch.ts";
 import { readReport } from "../tasks/report.ts";
 import { toolsHandlers } from "../tools/handlers.ts";
+import { gitDrift } from "../wiki/drift.ts";
+import { wikiHandlers } from "../wiki/handlers.ts";
+import { wikiEnabledFrom } from "../wiki/switch.ts";
 
 /** Loading keys and asking the Keychain or keyring can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
@@ -183,14 +184,20 @@ export function createHandlers({
       lanes: services.lanes,
       store: services.store,
     }),
-    ...mapHandlers({
-      map: services.map,
-      findings: services.findings,
+    ...findingsHandlers({ findings: services.findings, lanes: services.lanes, store: services.store }),
+    ...wikiHandlers({
+      repo: services.store.wiki,
+      enabled: wikiEnabledFrom(config),
+      drift: gitDrift(services.projects),
+      service: services.wiki,
       lanes: services.lanes,
       store: services.store,
-      orgs: async () => workspaceIds((await services.config.sections()).orgs),
+      orgs: async () => Object.keys((await config.sections()).orgs),
+      projects: async (org) =>
+        Object.entries((await config.sections()).projects)
+          .filter(([, p]) => (p.org ?? PRIVATE) === org)
+          .map(([id]) => id),
     }),
-    ...findingsHandlers({ findings: services.findings, lanes: services.lanes, store: services.store }),
     ...playbookHandlers({
       findings: services.findings,
       lanes: services.lanes,
@@ -1022,6 +1029,7 @@ export function createHandlers({
         ...(input.turns === undefined ? {} : { turns: input.turns }),
         ...(input.resume === undefined ? {} : { resume: input.resume }),
         ...(input.commits === undefined ? {} : { commits: input.commits }),
+        ...(input.wiki === undefined ? {} : { wiki: input.wiki }),
         ...(input.rooms === undefined ? {} : { rooms: input.rooms }),
         ...(input.memory === undefined ? {} : { memory: input.memory }),
         ...(input.editor === undefined ? {} : { editor: input.editor }),

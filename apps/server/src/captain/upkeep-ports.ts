@@ -110,11 +110,13 @@ export interface UpkeepPorts {
   setAccountSlots(limit: number): Promise<void>;
 }
 
-/** The project map as the map chore sees it (5.21). The real port is the map service's own `stale` and `update`. */
-export interface MapPorts {
-  /** Out of date: the workspace has projects and tasks merged since the last update. */
-  stale(org: string): Promise<{ stale: boolean; merges: number; updatedAt?: string | undefined }>;
-  /** The one update action. `summary` is the log line's tail. */
+/** The project wiki as the wiki chore sees it. The real port is the wiki service. */
+export interface WikiPorts {
+  /** The wiki is on for the workspace (`wikiEnabled`). */
+  enabled(org: string): Promise<boolean>;
+  /** The projects whose wiki was built and is behind the base branch now. */
+  stale(org: string): Promise<{ projects: string[] }>;
+  /** The one update action, waited for. `summary` is the log line's tail. */
   update(org: string): Promise<{ summary: string }>;
 }
 

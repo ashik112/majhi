@@ -1,6 +1,5 @@
 import { totalmem } from "node:os";
 import { join } from "node:path";
-import { PRIVATE } from "@majhi/shared";
 import type { Hono } from "hono";
 import { WAITING_TEXT } from "./admin/service.ts";
 import { destinationOf } from "./backup/state.ts";
@@ -20,6 +19,8 @@ import { attachSockets, type UpgradeSource } from "./sockets.ts";
 import { SshHostProbe, sshTargets } from "./ssh/hosts.ts";
 import { DB_FILE_NAME } from "./store/index.ts";
 import { SystemService } from "./system/service.ts";
+import { wikiExportOf } from "./wiki/export.ts";
+import { wikiEnabledFrom } from "./wiki/switch.ts";
 
 /** Unused uploads are looked for this often. */
 const UPLOAD_SWEEP_MS = 60 * 60 * 1000;
@@ -106,6 +107,17 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
       folderOf: (id) => services.store.tasks.get(id)?.folder,
       reposOf: (id) => services.store.tasks.get(id)?.repos,
     },
+    wikiFiles: {
+      exportOf: wikiExportOf({
+        config,
+        enabled: wikiEnabledFrom(config),
+        tasksDir: async () => {
+          const loaded = await config.load();
+          if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
+          return loaded.state.config.tasksDir;
+        },
+      }),
+    },
     mcp: { tokens: services.adminTokens, admin: services.admin },
     decideMcp: { tokens: services.decideTokens, decisions: services.decisions },
     roomMcp: {
@@ -137,16 +149,11 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
           }
         : {}),
       codeGraph: services.codeGraph,
-      maps: {
-        forTask: async (task) => {
-          const org = services.lanes.orgOf(task) ?? services.store.tasks.get(task)?.org ?? PRIVATE;
-          return { org, map: services.map.stored(org), journeys: await services.map.journeys(org) };
-        },
-      },
       memory: {
         memory: services.memory,
         scopeOf: (task) => services.memoryScopes.agent(task),
         receipts: services.store.usageEvents,
+        wiki: services.wikiTools,
       },
       skills: {
         forRun: async (caller) => {

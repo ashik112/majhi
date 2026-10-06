@@ -10,6 +10,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Bell,
   BookMarked,
+  BookText,
   Brain,
   Code,
   Container,
@@ -48,6 +49,7 @@ const SECTION_ICON: Record<SetupSection, LucideIcon> = {
   roots: FolderTree,
   ssh: KeyRound,
   memory: BookMarked,
+  wiki: BookText,
   teams: Users,
   turns: Repeat,
   context: Gauge,

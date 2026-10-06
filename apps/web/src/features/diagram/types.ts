@@ -3,7 +3,7 @@ import type { Diagram } from "@majhi/shared";
 /** Every box on the canvas is this size, so a longer label is cut, never wrapped, and layouts need no text measuring. */
 export const BOX_W = 190;
 export const BOX_H = 68;
-/** A card that carries chips (the Map page's projects) is taller. */
+/** A card that carries chips is taller. */
 export const CARD_H = 112;
 
 export interface Point {
