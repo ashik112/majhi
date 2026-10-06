@@ -164,6 +164,18 @@ RUN --mount=from=ghcr.io/astral-sh/uv:0.12.21,source=/uv,target=/usr/local/bin/u
   UV_COMPILE_BYTECODE=1 uv tool install -p 3.13 serena-agent==1.7.0 \
   && chmod -R a+rX /opt/serena \
   && /opt/serena/bin/serena --version
+# graphify (SPEC 5.21): reads a project's code into a graph for the map, with no model and no network, in a
+# throwaway runner container that sees the project read-only (`apps/server/src/map/graph/`). Installed with uv
+# into its own venv under /opt/graphify, on the Python that Serena installed above. Pinned: raise
+# `graphifyy` here and GRAPHIFY_VERSION in `apps/server/src/map/graph/run.ts` together. GRAPHIFY_NO_AUTO_REFRESH
+# stops its CLI from rewriting the agent skill folders of the home it runs in.
+RUN --mount=from=ghcr.io/astral-sh/uv:0.12.21,source=/uv,target=/usr/local/bin/uv \
+  UV_PYTHON_INSTALL_DIR=/opt/serena/python UV_COMPILE_BYTECODE=1 uv venv -p 3.13 /opt/graphify \
+  && UV_PYTHON_INSTALL_DIR=/opt/serena/python UV_COMPILE_BYTECODE=1 uv pip install --python /opt/graphify/bin/python graphifyy==0.9.77 \
+  && chmod -R a+rX /opt/graphify \
+  && GRAPHIFY_NO_AUTO_REFRESH=1 /opt/graphify/bin/graphify --help > /dev/null
+ENV GRAPHIFY_NO_AUTO_REFRESH=1
+COPY --chmod=0755 docker/map-extract.py /usr/local/lib/majhi/map-extract.py
 COPY --from=kubectl /kubectl /usr/local/bin/kubectl
 # glab and gh for `git` connections (SPEC 5.14): the run gets the workspace's own sign-in as GITLAB_TOKEN or GH_TOKEN.
 COPY --from=host-clis /out/gh /out/glab /usr/local/bin/

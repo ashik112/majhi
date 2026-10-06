@@ -2,7 +2,7 @@ import { chmod, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { SpawnRequest } from "../spawn.ts";
+import { localSpawner, type SpawnRequest } from "../spawn.ts";
 import {
   dockerRunArgs,
   dockerSpawner,
@@ -560,5 +560,43 @@ describe("a task terminal in a runner", () => {
       .split("\n")
       .map((l) => JSON.parse(l) as string[]);
     expect(calls).toEqual([["rm", "-f", launch.args[launch.args.indexOf("--name") + 1]]]);
+  });
+});
+
+describe("an isolated run (the map's code graph reader)", () => {
+  const checkout = () => join(home, "Work", "api");
+  const mapFolder = () => join(home, "Work", ".majhi", ".map", "acme", "api");
+  const reader = (extra: Partial<SpawnRequest> = {}): SpawnRequest => ({
+    command: { command: "/opt/graphify/bin/python", args: ["/usr/local/lib/majhi/map-extract.py"] },
+    env: { PATH: "/usr/bin", HOME: "/tmp" },
+    cwd: mapFolder(),
+    scratch: true,
+    isolated: true,
+    task: "ACM-1",
+    mounts: [{ path: checkout(), readOnly: true }, { path: mapFolder() }],
+    ...extra,
+  });
+  const values = (args: string[], flag: string) => args.flatMap((a, i) => (args[i - 1] === flag ? [a] : []));
+
+  it("has no network, a read-only root, the project read-only and one writable folder", () => {
+    const withNetworks = { ...cfg, taskNetworks: () => ["task-net"], taskSubnets: () => ["10.9.0.0/24"] };
+    const args = dockerRunArgs(reader(), withNetworks, "n");
+    expect(values(args, "--network")).toEqual(["none"]);
+    expect(args).toContain("--read-only");
+    expect(values(args, "--cap-drop")).toEqual(["ALL"]);
+    expect(values(args, "--mount")).toEqual([
+      `type=bind,source=${checkout()},target=${checkout()},readonly`,
+      `type=bind,source=${mapFolder()},target=${mapFolder()}`,
+    ]);
+    // No route to the owner's computer or majhi is opened for it either.
+    expect(args).not.toContain("--allow");
+    expect(args).not.toContain("--server");
+  });
+
+  it("refuses a second writable mount, and refuses to run next to majhi", async () => {
+    expect(() =>
+      dockerRunArgs(reader({ mounts: [{ path: checkout() }, { path: mapFolder() }] }), cfg, "n"),
+    ).toThrow(MountRefused);
+    await expect(localSpawner(reader())).rejects.toThrow("runner container");
   });
 });
