@@ -158,7 +158,12 @@ import {
   SignOutInputSchema,
   SignOutSchema,
 } from "./git-signin.ts";
-import { HandoffCheckInputSchema, HandoffGetInputSchema, HandoffStateSchema } from "./handoff.ts";
+import {
+  HandoffCheckInputSchema,
+  HandoffGetInputSchema,
+  HandoffRerunInputSchema,
+  HandoffStateSchema,
+} from "./handoff.ts";
 import { HealthRunOutputSchema } from "./health-run.ts";
 import { HomeBackgroundSchema, HomeCheckSchema } from "./home-facts.ts";
 import {
@@ -1245,6 +1250,13 @@ export const commands = {
     summary:
       "Check a task in review again: run its project card's tests, build and lint in its worktree and read the diff against the brief. The same head is not run twice unless force is set. Failures go back to the lead once per head; after three failed hand-offs in a row the owner decides",
     input: HandoffCheckInputSchema,
+    output: HandoffStateSchema,
+  },
+  "handoff.rerun": {
+    risk: "change",
+    summary:
+      "Run one step of a task's hand-off check again (install, lint, build or tests), or all of them, on its head commit now. It goes through the same queue and limits as a check; the full output of every step is kept as a log file in the task folder",
+    input: HandoffRerunInputSchema,
     output: HandoffStateSchema,
   },
   // The agenda and the morning brief (5.18) -----------------------------------

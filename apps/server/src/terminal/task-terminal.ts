@@ -33,10 +33,11 @@ const SHELL_SCRIPT = "if command -v bash >/dev/null 2>&1; then exec bash; else e
 
 /**
  * The shell's whole environment. Built from scratch: no account, no connection values and nothing
- * from majhi's own environment. HOME is `/tmp`, so the shell has no config home to read or write.
+ * from majhi's own environment. HOME is `/tmp` unless a home folder is given, so the shell has no
+ * account config to read. A hand-off check gives its workspace's own home, which holds no account.
  */
-export function taskTerminalEnv(base: BaseEnv): Record<string, string> {
-  return { PATH: base.PATH, HOME: "/tmp", TERM: "xterm-256color", LANG: base.LANG ?? "C.UTF-8" };
+export function taskTerminalEnv(base: BaseEnv, home = "/tmp"): Record<string, string> {
+  return { PATH: base.PATH, HOME: home, TERM: "xterm-256color", LANG: base.LANG ?? "C.UTF-8" };
 }
 
 /** The task folder, checked: it exists and, symlinks followed, sits inside the tasks folder. */

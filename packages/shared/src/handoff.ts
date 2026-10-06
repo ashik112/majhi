@@ -7,7 +7,15 @@ import { z } from "zod";
  * acceptance lines), then a small review pass that only adds notes.
  */
 
-export const HANDOFF_STEP_IDS = ["ready", "tests", "build", "lint", "acceptance", "review"] as const;
+export const HANDOFF_STEP_IDS = [
+  "ready",
+  "install",
+  "tests",
+  "build",
+  "lint",
+  "acceptance",
+  "review",
+] as const;
 export const HandoffStepIdSchema = z.enum(HANDOFF_STEP_IDS);
 export type HandoffStepId = z.infer<typeof HandoffStepIdSchema>;
 
@@ -19,6 +27,26 @@ export type HandoffStepId = z.infer<typeof HandoffStepIdSchema>;
 export const HandoffStatusSchema = z.enum(["pass", "fail", "timeout", "flaky", "none", "skipped", "note"]);
 export type HandoffStatus = z.infer<typeof HandoffStatusSchema>;
 
+/** The steps that run a shell line of the project: a person can rerun one of these on its own. */
+export const HANDOFF_COMMAND_STEPS = ["install", "lint", "build", "tests"] as const;
+export const HandoffCommandStepSchema = z.enum(HANDOFF_COMMAND_STEPS);
+export type HandoffCommandStep = z.infer<typeof HandoffCommandStepSchema>;
+
+/**
+ * The whole output of one step, kept as a file in the task folder (`.checks/<run>/<step>.log`) so
+ * the file viewer opens it. `path` is relative to the task folder.
+ */
+export const HandoffLogSchema = z.object({
+  path: z.string(),
+  bytes: z.number().int().nonnegative(),
+  lines: z.number().int().nonnegative(),
+  /** Set when the output was longer than the cap: how many characters were left out of the middle. */
+  cut: z.number().int().positive().optional(),
+  /** The line the viewer opens at: where the output the card shows begins (1-based). */
+  focus: z.number().int().positive(),
+});
+export type HandoffLog = z.infer<typeof HandoffLogSchema>;
+
 export const HandoffStepSchema = z.object({
   id: HandoffStepIdSchema,
   label: z.string(),
@@ -29,6 +57,10 @@ export const HandoffStepSchema = z.object({
   ms: z.number().int().nonnegative().optional(),
   /** The end of the command's output, secrets masked. Only for a step that failed. */
   output: z.string().optional(),
+  /** The command's exit code; null when it was stopped. Only for a step that ran a command and did not pass. */
+  code: z.number().int().nullable().optional(),
+  /** The whole output, saved as a file. Absent for a result saved before logs were kept. */
+  log: HandoffLogSchema.optional(),
   /** For the acceptance lines: each line of the brief and what matched it. */
   items: z.array(z.object({ text: z.string(), ok: z.boolean(), note: z.string().optional() })).optional(),
   /** Only the owner can clear it (a card waits, a protected repo): the lead is not told. */
@@ -49,6 +81,18 @@ export type HandoffReview = z.infer<typeof HandoffReviewSchema>;
 export const HandoffVerdictSchema = z.enum(["green", "red"]);
 export type HandoffVerdict = z.infer<typeof HandoffVerdictSchema>;
 
+/** The first step that failed for the lead to fix, as typed fields: nothing to read out of a message. */
+export const HandoffFailedSchema = z.object({
+  step: HandoffStepIdSchema,
+  label: z.string(),
+  status: HandoffStatusSchema,
+  code: z.number().int().nullable(),
+  /** How long the step ran, in milliseconds. */
+  ms: z.number().int().nonnegative(),
+  log: HandoffLogSchema.optional(),
+});
+export type HandoffFailed = z.infer<typeof HandoffFailedSchema>;
+
 export const HandoffResultSchema = z.object({
   task: z.string(),
   /** The task's head commits, one per repo: `project@sha`. The check holds for this state only. */
@@ -59,6 +103,8 @@ export const HandoffResultSchema = z.object({
   review: HandoffReviewSchema,
   /** What the lead is told to fix. */
   failures: z.array(z.string()),
+  /** The first step in `failures`, named: its exit code, duration and log. Absent when nothing failed, and in results saved before this was kept. */
+  failed: HandoffFailedSchema.optional(),
   /** What only the owner can clear. */
   held: z.array(z.string()),
   /** The whole check, in milliseconds. */
@@ -121,6 +167,13 @@ export const HandoffCheckInputSchema = z.object({
   force: z.boolean().optional(),
 });
 
+/** Run one step of the check again, or all of them: `handoff.rerun`. */
+export const HandoffRerunInputSchema = z.object({
+  task: z.string().min(1),
+  /** One step to run again. Left out: every step. */
+  step: HandoffCommandStepSchema.optional(),
+});
+
 /** "31 s" style duration. */
 export function handoffSeconds(ms: number): string {
   return ms < 950 ? `${Math.max(1, Math.round(ms / 100) / 10)} s` : `${Math.round(ms / 1000)} s`;
@@ -128,6 +181,7 @@ export function handoffSeconds(ms: number): string {
 
 const STEP_WORD: Record<HandoffStepId, string> = {
   ready: "ready",
+  install: "install",
   tests: "tests",
   build: "build",
   lint: "lint",
@@ -141,7 +195,7 @@ function stepWords(step: HandoffStep): string | undefined {
   const time = step.ms === undefined || step.ms < 1000 ? "" : ` (${handoffSeconds(step.ms)})`;
   switch (step.status) {
     case "pass":
-      return step.id === "ready" || step.id === "acceptance"
+      return step.id === "ready" || step.id === "acceptance" || step.id === "install"
         ? undefined
         : `${word} ${step.detail === "" ? "ok" : step.detail}${time}`;
     case "fail":

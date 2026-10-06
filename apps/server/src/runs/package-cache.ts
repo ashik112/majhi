@@ -41,6 +41,8 @@ export function cacheEnv(root: string): Record<string, string> {
 export interface PackageStore {
   mounts: RunMount[];
   env: Record<string, string>;
+  /** A home folder inside the mounted store, for a process that has no account home: tools keep their caches there. */
+  home: string;
 }
 
 /** Looks up the store for a task. Undefined when it cannot be made: the process then runs without. */
@@ -50,6 +52,7 @@ export type PackageStoreFor = (task: Task) => Promise<PackageStore | undefined>;
 export async function packageCache(majhiHome: string, task: Pick<Task, "org">): Promise<PackageStore> {
   const root = cacheRoot(majhiHome, cacheOrgOf(task));
   const env = cacheEnv(root);
-  await Promise.all(Object.values(env).map((dir) => mkdir(dir, { recursive: true })));
-  return { mounts: [{ path: root }], env };
+  const home = join(root, "home");
+  await Promise.all([...Object.values(env), home].map((dir) => mkdir(dir, { recursive: true })));
+  return { mounts: [{ path: root }], env, home };
 }

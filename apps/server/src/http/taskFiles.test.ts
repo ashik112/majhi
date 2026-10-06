@@ -58,6 +58,27 @@ describe("task files", () => {
     }
   });
 
+  it("serves a check's step logs, and nothing else under .checks, not even through a link", async () => {
+    const folder = join(dir, "ACM-1");
+    await mkdir(join(folder, ".checks", "mux3yqk1-a02329", "home"), { recursive: true });
+    await writeFile(join(folder, ".checks", "mux3yqk1-a02329", "tests.log"), "FAIL one\n");
+    await writeFile(join(folder, ".checks", "mux3yqk1-a02329", "home", "secret.log"), "x");
+    await writeFile(join(folder, ".checks", "mux3yqk1-a02329", "notes.log"), "x");
+    await symlink(join(dir, "outside.txt"), join(folder, ".checks", "mux3yqk1-a02329", "lint.log"));
+    const ok = await get(".checks/mux3yqk1-a02329/tests.log");
+    expect(ok.status).toBe(200);
+    expect(await ok.text()).toBe("FAIL one\n");
+    for (const path of [
+      ".checks/mux3yqk1-a02329/home/secret.log",
+      ".checks/mux3yqk1-a02329/notes.log",
+      ".checks/mux3yqk1-a02329/lint.log",
+      ".checks/mux3yqk1-a02329",
+      ".checks/..%2F.env",
+    ]) {
+      expect((await get(path)).status, path).not.toBe(200);
+    }
+  });
+
   it("sandboxes pages and svg, and downloads unknown types", async () => {
     const csp = "sandbox allow-scripts allow-forms allow-popups allow-downloads";
     const page = await get("media/report.html");

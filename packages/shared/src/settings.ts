@@ -332,6 +332,13 @@ const containersFields = {
   handoff_memory: ContainerMemorySchema,
   /** Minutes a project's hand-off tests and build may run before they are stopped, by project. A project left out gets 10. */
   handoff_minutes: z.record(z.string(), z.number().int().min(1).max(240)),
+  /** Minutes each step of a hand-off check may run before it is stopped. A step left out gets its default: install 10, lint 5, build 10, tests 10. */
+  handoff_step_minutes: z.strictObject({
+    install: z.number().int().min(1).max(240).optional(),
+    lint: z.number().int().min(1).max(240).optional(),
+    build: z.number().int().min(1).max(240).optional(),
+    tests: z.number().int().min(1).max(240).optional(),
+  }),
 };
 export const ContainersSettingsSchema = z.strictObject({
   images: containersFields.images.default([]),
@@ -345,6 +352,7 @@ export const ContainersSettingsSchema = z.strictObject({
   handoff_cpus: containersFields.handoff_cpus.optional(),
   handoff_memory: containersFields.handoff_memory.optional(),
   handoff_minutes: containersFields.handoff_minutes.optional(),
+  handoff_step_minutes: containersFields.handoff_step_minutes.optional(),
 });
 export type ContainersSettings = z.infer<typeof ContainersSettingsSchema>;
 /** What majhi.yaml may hold and what majhi writes: the limits and the image list. */

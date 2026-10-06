@@ -45,6 +45,7 @@ export type ProjectLink = z.infer<typeof ProjectLinkSchema>;
  * target (a sha it computed), so a project can test only what the task changed.
  */
 export const HandoffCommandsSchema = z.object({
+  install: z.string().trim().min(1).optional(),
   test: z.string().trim().min(1).optional(),
   build: z.string().trim().min(1).optional(),
   lint: z.string().trim().min(1).optional(),

@@ -16,6 +16,7 @@ import { type Context, Hono } from "hono";
 import { ExportRefused, exportMarkdown } from "../export/export.ts";
 import { IMAGE_LIMIT, type ImageReader } from "../export/images.ts";
 import type { PdfPrinter } from "../export/pdf.ts";
+import { isCheckLog } from "../handoff/logs.ts";
 
 /** By extension. Anything else is a download, so a browser never guesses. */
 const TYPES: Record<string, string> = {
@@ -115,7 +116,8 @@ export function taskFileRoutes(deps: TaskFilesDeps): Hono {
       folder,
       segments,
       what,
-      (parts) => (notes && isHandoffNote(parts) ? false : parts.some((s) => s.startsWith("."))),
+      (parts) =>
+        notes && (isHandoffNote(parts) || isCheckLog(parts)) ? false : parts.some((s) => s.startsWith(".")),
       { pdf: deps.pdf },
     );
   }
@@ -295,7 +297,7 @@ export function parseRange(
 }
 
 /**
- * The one hidden place the task folder serves: handoff notes, `.handoffs/<agent>-<n>.md` (5.13),
+ * Besides the hand-off check's logs (`.checks/<run>/<step>.log`), the one hidden place the task folder serves: handoff notes, `.handoffs/<agent>-<n>.md` (5.13),
  * so the room can open them. Nothing else under a dot name, and nothing deeper.
  */
 export function isHandoffNote(segments: readonly string[]): boolean {
