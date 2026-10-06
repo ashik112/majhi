@@ -14,6 +14,7 @@ import {
   Activity,
   Anchor,
   BookOpen,
+  BookText,
   CircleAlert,
   House,
   KeyRound,
@@ -44,6 +45,7 @@ import { limitNote } from "@/features/shell/limit-note";
 import { accountsNeedingYou, isOpen } from "@/features/shell/model";
 import { chordOf } from "@/features/shell/shortcuts";
 import { UpdateNotice } from "@/features/update/update-notice";
+import { useWikiInSidebar } from "@/features/wiki/use-wiki-switch";
 import { type AgentInfo, useAgentIndex } from "@/lib/agent-index";
 import { prefetchCaptain } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
@@ -153,11 +155,12 @@ const ICON = "size-4 shrink-0";
 function MainNav() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const waiting = useNeedsYou() ?? 0;
+  const wiki = useWikiInSidebar();
   const isActive = (to: string) =>
     to === "/" ? pathname === "/" || pathname.startsWith("/t/") : pathname.startsWith(to);
   return (
     <nav aria-label="Main" className="flex flex-col gap-px">
-      {SIDEBAR_MAIN.map((page) =>
+      {SIDEBAR_MAIN.filter((page) => page !== "wiki" || wiki).map((page) =>
         page === "captain" ? (
           <CaptainRow key={page} />
         ) : page === "watch" ? (
@@ -243,6 +246,7 @@ const MAIN_ICON: Record<Exclude<SidebarMainPage, "captain" | "watch">, LucideIco
   decisions: CircleAlert,
   chats: MessagesSquare,
   playbooks: BookOpen,
+  wiki: BookText,
 };
 const FOOT_ICON: Record<SidebarFootPage, LucideIcon> = {
   agents: Users,

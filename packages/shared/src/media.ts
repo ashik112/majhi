@@ -34,6 +34,12 @@ export function repoFileUrl(taskId: string, project: string, relPath: string): s
   return `/api/tasks/${taskId}/repo/${encodeURIComponent(project)}/files/${segments.map(encodeURIComponent).join("/")}`;
 }
 
+/** `GET` URL of a file in the clean source export a wiki page was built from, at that commit. */
+export function wikiFileUrl(org: string, project: string, commit: string, relPath: string): string {
+  const segments = relPath.split("/").filter((s) => s !== "" && s !== "." && s !== "..");
+  return `/api/wiki/${encodeURIComponent(org)}/${encodeURIComponent(project)}/${commit}/files/${segments.map(encodeURIComponent).join("/")}`;
+}
+
 /** How the in-app file viewer shows a file. */
 export type ViewerKind = "markdown" | "image" | "pdf" | "page" | "video" | "audio" | "text";
 

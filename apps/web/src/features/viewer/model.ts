@@ -1,16 +1,25 @@
-import { type RoomItem, repoFileUrl, taskFileUrl } from "@majhi/shared";
+import { type RoomItem, repoFileUrl, taskFileUrl, wikiFileUrl } from "@majhi/shared";
 import { taskPathOf } from "../room/links";
 import { type DiffContent, filesByRepo, touchedFiles } from "../room/model";
 
 /**
  * What `?file=` points at: a file of the task folder (`docs/a.md`), of one of its repos
  * (`repo:web/SPEC.md`), or a changed file shown with its diffs (`changes:web/src/a.ts`, a
- * task-relative path).
+ * task-relative path). A wiki source is a file of a project's clean export at one commit; it belongs to
+ * no task and is never in `?file=`.
  */
 export type FileRef =
   | { kind: "task"; path: string }
   | { kind: "repo"; project: string; path: string }
-  | { kind: "changes"; path: string };
+  | { kind: "changes"; path: string }
+  | { kind: "wiki"; org: string; project: string; commit: string; path: string };
+
+/** The lines a wiki claim cites in the file the viewer shows, and whether a newer commit changed the file. */
+export interface ViewerCite {
+  lines: readonly [number, number];
+  commit: string;
+  changed: boolean;
+}
 
 export function parseFileRef(param: string): FileRef {
   if (param.startsWith("changes:")) return { kind: "changes", path: param.slice("changes:".length) };
@@ -20,17 +29,19 @@ export function parseFileRef(param: string): FileRef {
 }
 
 export function fileRefParam(ref: FileRef): string {
+  if (ref.kind === "wiki") return `wiki:${ref.org}/${ref.project}@${ref.commit}/${ref.path}`;
   if (ref.kind === "repo") return `repo:${ref.project}/${ref.path}`;
   return ref.kind === "changes" ? `changes:${ref.path}` : ref.path;
 }
 
 export function fileRefUrl(taskId: string, ref: FileRef): string {
+  if (ref.kind === "wiki") return wikiFileUrl(ref.org, ref.project, ref.commit, ref.path);
   return ref.kind === "repo" ? repoFileUrl(taskId, ref.project, ref.path) : taskFileUrl(taskId, ref.path);
 }
 
 /** Where to look for a file, best first: the place it names, then the task's other places. */
 export function fileCandidates(ref: FileRef, projects: readonly string[]): FileRef[] {
-  if (ref.kind === "changes") return [ref];
+  if (ref.kind === "changes" || ref.kind === "wiki") return [ref];
   const repos: FileRef[] = projects
     .filter((p) => ref.kind !== "repo" || p !== ref.project)
     .map((project) => ({ kind: "repo", project, path: ref.path }));
