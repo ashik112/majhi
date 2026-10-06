@@ -68,7 +68,8 @@ Run in this order. W3, W4 and W6 may run in parallel after W2 lands, each on its
 - Agents: a `wiki` tool in `majhi-memory` with `list`, `read <page>`, `search <words>`, `sources <claim>`; the workspace comes from the task, never an argument. Search reuses `memory/search.ts` (`hybridSearch`, the local embedder) with wiki chunks in `memory.db` (next `MEMORY_MIGRATIONS` id). TASK.md gets a "How this project works" section of at most 10 lines (roles and flow page names) through the slot the map lines used.
 - Brief: when `wikiEnabled(org)`, the memory brief is written without the Architecture section and points to the wiki (decision 1). Old versions stay in history.
 - Commands: `wiki.*` handlers with the Map's scope rule (owner any workspace, captain its own, other agents read-only in their own).
-- Tests allowed: the `wiki` tool never returns another workspace's pages; switch off means no tool offered and no TASK.md section; the cost cap stops a run; a second update while one runs waits; a run on an unchanged commit writes nothing.
+- Migration (next free id after 171): rename stored captain rows so history keeps them. `chore 'map'` to `'wiki'` in `captain_runs`, `captain_actions` (and the `map:update:` key prefix), `captain_chores` and `captain_cap_asks`; `playbook 'upkeep-map'` to `'upkeep-wiki'` in `playbook_state`, `playbook_runs`, `findings`, `outcomes` and `outbound_drafts`. `UPDATE OR IGNORE`, then delete what is left under the old name. Test: renamed rows still parse and none is lost (see DECISIONS).
+- Tests allowed: the `wiki` tool never returns another workspace's pages; switch off means no tool offered and no TASK.md section; the cost cap stops a run; a second update while one runs waits; a run on an unchanged commit writes nothing; the captain row rename keeps every row.
 
 ### W6. Web UI (to the approved mockup)
 
