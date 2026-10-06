@@ -133,6 +133,7 @@ import {
 import { OwnerCards } from "./cards.ts";
 import { deleteAfterShip, deleteRefusal } from "./delete-after.ts";
 import { handoverNote } from "./handover.ts";
+import { holdViewOf } from "./hold-view.ts";
 import {
   type ApplyOptions,
   assertedReading,
@@ -373,11 +374,16 @@ export class TaskService {
   list(includeDone: boolean, only?: readonly string[]): TaskSummary[] {
     const rows = this.deps.store.tasks.list(includeDone, only);
     const waiting = this.deps.store.room.tasksWaitingOnOwner();
-    return rows.map((t) => ({
-      ...t,
-      working: this.deps.runs.working(t.id),
-      ...(t.status !== "done" && waiting.has(t.id) ? { asking: true } : {}),
-    }));
+    return rows.map((t) => {
+      // Only a paused task has a hold the board draws, so only those cost a read of the lifecycle.
+      const hold = t.status === "paused" ? this.lifecycle.state(t.id)?.hold : undefined;
+      return {
+        ...t,
+        working: this.deps.runs.working(t.id),
+        ...(t.status !== "done" && waiting.has(t.id) ? { asking: true } : {}),
+        ...(hold === undefined ? {} : { hold: holdViewOf(hold) }),
+      };
+    });
   }
 
   /** What waits for the owner in open tasks and chats, oldest first (`notify.pending`). */

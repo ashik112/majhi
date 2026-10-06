@@ -8,6 +8,7 @@ import { ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./rooms.ts";
 import { CommitsPatchSchema } from "./settings.ts";
 import { SkillNameSchema } from "./skills.ts";
+import { HoldViewSchema } from "./task-hold.ts";
 import { OriginViewSchema, StoredOriginSchema } from "./task-origin.ts";
 import { TrailSchema } from "./task-trail.ts";
 import { TaskTypingSchema } from "./task-type.ts";
@@ -524,6 +525,8 @@ export const TaskSummarySchema = TaskSchema.pick({
   waitingOn: z.array(TaskIdSchema),
   /** Where it came from, with the name to show (a parent's title, a watch's or schedule's name). */
   origin: OriginViewSchema.optional(),
+  /** Why a paused task waits and who ends it. Set only while the task is paused. */
+  hold: HoldViewSchema.optional(),
   /**
    * What the task produced so far: its children, the merge request or local merge. Derived on read.
    * The hand-off check joins in the single read (`tasks.detail`).

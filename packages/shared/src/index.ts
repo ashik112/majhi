@@ -67,6 +67,7 @@ export * from "./self-host.ts";
 export * from "./services.ts";
 export * from "./settings.ts";
 export * from "./skills.ts";
+export * from "./task-hold.ts";
 export * from "./task-origin.ts";
 export * from "./task-parse.ts";
 export * from "./task-trail.ts";
