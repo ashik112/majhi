@@ -26,6 +26,8 @@ export interface AppSearch {
   file?: string;
   /** The task whose file `file` is, when the viewer opens on another page (the Captain page, Chats). */
   fileTask?: string;
+  /** A line of `file` the viewer opens at (a hand-off check's log opens where its failure begins). */
+  fileLine?: number;
   /** A room item of the open task to scroll to, from a search match. */
   item?: string;
   /** A task shown in the task drawer, opened from a task id in a message. */
@@ -67,6 +69,8 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
   const create = text(search.create);
   const file = text(search.file);
   const fileTask = TaskIdSchema.safeParse(search.fileTask).data;
+  const lineNumber = Number(search.fileLine);
+  const fileLine = Number.isInteger(lineNumber) && lineNumber > 0 ? lineNumber : undefined;
   const task = TaskIdSchema.safeParse(search.task).data;
   const peek = text(search.peek);
   const item = text(search.item);
@@ -93,6 +97,7 @@ function validateSearch(search: Record<string, unknown>): AppSearch {
     ...(create ? { create } : {}),
     ...(file ? { file } : {}),
     ...(file && fileTask ? { fileTask } : {}),
+    ...(file && fileLine ? { fileLine } : {}),
     ...(task ? { task } : {}),
     ...(peek ? { peek } : {}),
     ...(item ? { item } : {}),

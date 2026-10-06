@@ -1,18 +1,22 @@
 import {
+  HANDOFF_COMMAND_STEPS,
   HANDOFF_STRIKES,
+  type HandoffCommandStep,
+  type HandoffLog,
   type HandoffResult,
   type HandoffState,
   type HandoffStep,
   handoffSeconds,
 } from "@majhi/shared";
-import { ChevronRight, RotateCw } from "lucide-react";
+import { Link, useRouterState } from "@tanstack/react-router";
+import { ChevronRight, FileText, RotateCw } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Lamp, type LampState } from "@/components/ui/lamp";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
-import { useCheckAgain, useHandoff } from "@/lib/handoff-queries";
+import { useCheckAgain, useHandoff, useRerunStep } from "@/lib/handoff-queries";
 
 const STATUS_WORD: Record<HandoffStep["status"], string> = {
   pass: "passed",
@@ -40,8 +44,99 @@ function lampOf(state: HandoffState, result: HandoffResult | undefined): LampSta
   return result.verdict === "green" ? "done" : "needs";
 }
 
+const COMMAND_STEPS: readonly string[] = HANDOFF_COMMAND_STEPS;
+const isCommandStep = (id: string): id is HandoffCommandStep => COMMAND_STEPS.includes(id);
+
+/** Opens a step's whole output in the file viewer, at the line where its failure begins. */
+export function LogLink({
+  task,
+  log,
+  label = "Full log",
+}: {
+  task: string;
+  log: HandoffLog;
+  label?: string;
+}) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // On the task's own page its viewer opens; anywhere else the app's viewer, told which task.
+  const own = pathname.startsWith(`/t/${task}`);
+  return (
+    <Button asChild size="sm" variant="secondary" className="shrink-0">
+      <Link
+        to="."
+        search={(prev: object) => ({
+          ...prev,
+          file: log.path,
+          fileLine: log.focus,
+          ...(own ? {} : { fileTask: task }),
+        })}
+        title={`${log.lines.toLocaleString("en")} lines${log.cut === undefined ? "" : ", cut in the middle"}`}
+      >
+        <FileText aria-hidden="true" />
+        {label}
+      </Link>
+    </Button>
+  );
+}
+
+/** "Rerun Tests": runs that one step again. The others keep their last result. */
+export function RerunButton({
+  task,
+  step,
+  label,
+  busy,
+}: {
+  task: string;
+  step: HandoffCommandStep;
+  label: string;
+  busy: boolean;
+}) {
+  const rerun = useRerunStep(task);
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="shrink-0"
+        disabled={busy || rerun.isPending}
+        title={`Run only ${label.toLowerCase()} again`}
+        onClick={() => rerun.mutate(step)}
+      >
+        <RotateCw aria-hidden="true" className={cn(rerun.isPending && "animate-spin")} />
+        Rerun {label}
+      </Button>
+      {rerun.isError && <span className="text-sm text-red">{describeError(rerun.error)}</span>}
+    </>
+  );
+}
+
+/**
+ * What failed, in typed fields: the step, its exit code and time, with its whole log and a rerun of
+ * just that step. Shown on the review card without opening anything. Nothing while a check runs.
+ */
+export function FailedStep({ task, className }: { task: string; className?: string }) {
+  const state = useHandoff(task).data;
+  const failed = state?.current?.failed;
+  if (state === undefined || failed === undefined || state.running || state.queued) return null;
+  if (state.current?.verdict !== "red") return null;
+  const facts = [
+    failed.status === "timeout" ? "timed out" : failed.code === null ? undefined : `exit ${failed.code}`,
+    failed.ms >= 1000 ? handoffSeconds(failed.ms) : undefined,
+  ].flatMap((f) => (f === undefined ? [] : [f]));
+  return (
+    <div className={cn("flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pl-4 text-sm", className)}>
+      <span className="font-medium text-red">Failed: {failed.label}</span>
+      {facts.length > 0 && <span className="tnum text-fg-faint">{facts.join(" · ")}</span>}
+      {failed.log !== undefined && <LogLink task={task} log={failed.log} />}
+      {isCommandStep(failed.step) && (
+        <RerunButton task={task} step={failed.step} label={failed.label} busy={false} />
+      )}
+    </div>
+  );
+}
+
 /** One step: its label, how it ended and what it said, and the end of a failing command's output. */
-function StepRow({ step }: { step: HandoffStep }) {
+function StepRow({ task, step, busy }: { task: string; step: HandoffStep; busy: boolean }) {
   return (
     <li className="flex min-w-0 flex-col gap-1 py-1">
       <p className="m-0 flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
@@ -56,6 +151,16 @@ function StepRow({ step }: { step: HandoffStep }) {
           {step.detail}
         </span>
       </p>
+      {(step.log !== undefined || isCommandStep(step.id)) &&
+        step.status !== "skipped" &&
+        step.status !== "none" && (
+          <div className="flex flex-wrap items-center gap-1.5 sm:ml-[156px]">
+            {step.log !== undefined && <LogLink task={task} log={step.log} />}
+            {isCommandStep(step.id) && (
+              <RerunButton task={task} step={step.id} label={step.label} busy={busy} />
+            )}
+          </div>
+        )}
       {step.output !== undefined && step.output !== "" && (
         <pre className="m-0 ml-0 max-h-40 overflow-auto rounded-md border border-line-strong bg-sunken p-2 font-mono text-xs leading-5 whitespace-pre-wrap break-words text-fg-muted sm:ml-[156px]">
           {step.output}
@@ -80,7 +185,17 @@ function StepRow({ step }: { step: HandoffStep }) {
   );
 }
 
-function Details({ state, result }: { state: HandoffState; result: HandoffResult | undefined }) {
+function Details({
+  task,
+  state,
+  result,
+  busy,
+}: {
+  task: string;
+  state: HandoffState;
+  result: HandoffResult | undefined;
+  busy: boolean;
+}) {
   const now = Date.now();
   return (
     <div className="flex min-w-0 flex-col gap-2 pl-4">
@@ -89,7 +204,7 @@ function Details({ state, result }: { state: HandoffState; result: HandoffResult
           {result.steps
             .filter((s) => s.id !== "review")
             .map((s) => (
-              <StepRow key={s.id} step={s} />
+              <StepRow key={s.id} task={task} step={s} busy={busy} />
             ))}
           <li className="flex min-w-0 flex-col gap-1 py-1">
             <p className="m-0 flex flex-wrap items-baseline gap-x-2 text-sm">
@@ -189,7 +304,7 @@ export function HandoffBlock({ task, className }: { task: string; className?: st
         </Button>
       </div>
       {again.isError && <p className="m-0 pl-4 text-sm text-red text-pretty">{describeError(again.error)}</p>}
-      {open && <Details state={state} result={result} />}
+      {open && <Details task={task} state={state} result={result} busy={busy} />}
     </section>
   );
 }
