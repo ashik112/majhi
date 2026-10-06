@@ -1,6 +1,9 @@
 import { execFile } from "node:child_process";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { serve } from "@hono/node-server";
@@ -80,6 +83,46 @@ async function docker_(
     return { code: e.code, stdout: e.stdout, stderr: e.stderr };
   }
 }
+
+describe("the shim", () => {
+  it("hands `--env-file` to majhi as an argument, and never lets node open it (a FIFO would hang node)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "majhi-shim-"));
+    await run("mkfifo", [join(dir, "run.env")]);
+    let seen: { argv: string[]; cwd: string } | undefined;
+    const stub = serve({
+      port: 0,
+      hostname: "127.0.0.1",
+      fetch: async (req) => {
+        seen = (await req.json()) as { argv: string[]; cwd: string };
+        return Response.json({ code: 0, stdout: "ok\n", stderr: "" });
+      },
+    }) as unknown as Server;
+    await new Promise<void>((resolve) => stub.once("listening", () => resolve()));
+    try {
+      // The shim's first line is what the kernel runs: `env -S "node --" docker-shim.mjs ...`.
+      const shebang = readFileSync(SHIM, "utf8").split("\n")[0];
+      expect(shebang).toBe("#!/usr/bin/env -S node --");
+      const out = await run(
+        "env",
+        ["-S", "node --", SHIM, "run", "--rm", "--env-file", "run.env", "alpine:3"],
+        {
+          cwd: dir,
+          env: {
+            PATH: process.env.PATH ?? "",
+            MAJHI_DOCKER_URL: `http://127.0.0.1:${(stub.address() as AddressInfo).port}/`,
+            MAJHI_DOCKER_TOKEN: "t",
+          },
+          timeout: 10_000,
+        },
+      );
+      expect(out.stdout).toBe("ok\n");
+      expect(seen?.argv).toEqual(["run", "--rm", "--env-file", "run.env", "alpine:3"]);
+    } finally {
+      stub.close();
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+});
 
 describe("docker through majhi", () => {
   it("keeps a container to its task: another task's token cannot see or remove it", async () => {

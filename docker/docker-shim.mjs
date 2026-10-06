@@ -1,4 +1,6 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S node --
+// `--` ends node's own options: node reads `--env-file` from anywhere in its arguments, so `docker run --env-file x`
+// would make node itself open x (and wait for ever if x is a FIFO) before this script runs.
 // The `docker` of a runner container. A runner has no Docker and never gets the socket. Scripts that
 // call `docker run` (a repo's hand-off check, a test) reach this task's own containers through majhi:
 // the arguments go to MAJHI_DOCKER_URL with the run's token, majhi checks them and runs them, and the
