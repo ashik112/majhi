@@ -33,7 +33,7 @@ export const MAP_EDGE_TYPES = ["http", "queue", "data", "lib", "deploy", "togeth
 export const MapEdgeTypeSchema = z.enum(MAP_EDGE_TYPES);
 export type MapEdgeType = z.infer<typeof MapEdgeTypeSchema>;
 
-export const MapEdgeSourceSchema = z.enum(["config", "history", "agent"]);
+export const MapEdgeSourceSchema = z.enum(["config", "history", "agent", "graph"]);
 export type MapEdgeSource = z.infer<typeof MapEdgeSourceSchema>;
 
 /**
@@ -141,7 +141,10 @@ export function endpointId(host: string, port: number | undefined, scope: string
 export const MapEndpointRefSchema = MapEvidenceSchema.extend({
   /** The variable or code the address was written in. */
   key: z.string().max(120),
-  source: z.enum(["config", "agent"]),
+  /** `graph`: an HTTP client call graphify's reader found in code (an address written in the file). */
+  source: z.enum(["config", "agent", "graph"]),
+  /** For `graph`: `extracted` when the address is in the file, `inferred` when it is the default of an environment read. */
+  confidence: MapConfidenceSchema.optional(),
 });
 export type MapEndpointRef = z.infer<typeof MapEndpointRefSchema>;
 
@@ -220,7 +223,7 @@ export type MapTask = z.infer<typeof MapTaskSchema>;
 
 /** What an update is doing now, for the progress line. */
 export const MapRunningSchema = z.object({
-  phase: z.enum(["config", "history", "code", "saving"]),
+  phase: z.enum(["config", "graph", "history", "code", "saving"]),
   text: z.string(),
   at: z.string(),
   /** Code pass: projects read so far. */

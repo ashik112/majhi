@@ -28,6 +28,9 @@ import { LoadCache } from "./config/facts.ts";
 import { splitSpaces } from "./config/formats.ts";
 import { type ConfigResult, configPass, type ProjectInput } from "./config/pass.ts";
 import { parseAddress } from "./endpoints.ts";
+import { ProjectFiles } from "./files.ts";
+import { graphEndpoints } from "./graph/facts.ts";
+import type { GraphRunner } from "./graph/run.ts";
 import { answerAddress, confirmEdge, mergeMap, removeEdge, setRole } from "./merge.ts";
 import type { MapRepo } from "./repo.ts";
 
@@ -72,6 +75,11 @@ export interface MapDeps {
   remotes?: (path: string) => Promise<string[]>;
   /** The most one update spends. Tests lower it. */
   cap?: number;
+  /**
+   * Reads each project's code with graphify in a runner container (free, no model). Absent when majhi
+   * does not run agents in containers: the update then has no graph pass.
+   */
+  graph?: GraphRunner | undefined;
 }
 
 const usageTask = (org: string) => `map:${org}`;
@@ -243,16 +251,24 @@ export class MapService {
       ...(this.deps.remotes === undefined ? {} : { remotes: this.deps.remotes }),
     });
 
+    const graph = await this.graphPass(org, projects);
+
     this.progress(org, { phase: "history", text: "Reading what tasks changed together…" });
     const together = this.deps.repo
       .togetherPairs(org, MAP_TOGETHER_MIN)
       .filter((p) => config.nodes.some((n) => n.id === p.a) && config.nodes.some((n) => n.id === p.b));
 
-    const { found, note } = await this.codePass(org, config, started);
+    const { found, note: codeNote } = await this.codePass(org, config, started);
+    const note = [graph?.note, codeNote].filter((n) => n !== undefined).join(" ") || undefined;
 
     this.progress(org, { phase: "saving", text: "Drawing the map…" });
     const stored = this.deps.repo.get(org);
-    const map: ProjectMap = mergeMap(stored.map, { config, together, found });
+    const map: ProjectMap = mergeMap(stored.map, {
+      config,
+      together,
+      found,
+      graph: graph === undefined ? undefined : { endpoints: graph.endpoints, read: graph.read },
+    });
     const before = new Set(stored.map.edges.map((e) => e.id));
     const newLines = map.edges.filter(
       (e) => e.source === "agent" && e.state === "new" && !before.has(e.id),
@@ -268,6 +284,51 @@ export class MapService {
     this.deps.repo.save(org, map, at, report);
     this.estimates.delete(org);
     return this.view(org);
+  }
+
+  /**
+   * The graph pass: graphify reads each project in a container with no network and no model, one project
+   * at a time, keeping its graph and cache in the project's map folder so the next read is incremental. A
+   * project it cannot read is named in the note and keeps what an earlier update found. Never throws.
+   */
+  private async graphPass(
+    org: string,
+    projects: readonly ProjectInput[],
+  ): Promise<{ endpoints: MapEndpoint[]; read: Set<string>; note?: string } | undefined> {
+    const runner = this.deps.graph;
+    if (runner === undefined) return undefined;
+    const out = { endpoints: [] as MapEndpoint[], read: new Set<string>() };
+    const failed: string[] = [];
+    let done = 0;
+    for (const p of projects) {
+      this.progress(org, {
+        phase: "graph",
+        text: `Reading the code graph of ${p.id} (${done + 1} of ${projects.length})…`,
+        done,
+        total: projects.length,
+      });
+      done += 1;
+      const run = await runner.extract(org, p.id, p.path);
+      if (!run.ok) {
+        failed.push(`${p.id}: ${oneLine(run.reason, 120)}`);
+        continue;
+      }
+      const endpoints = await graphEndpoints(run.folder, p.id, new ProjectFiles(p.path));
+      if (endpoints === undefined) {
+        failed.push(`${p.id}: the reader left no usable result`);
+        continue;
+      }
+      out.endpoints.push(...endpoints);
+      out.read.add(p.id);
+    }
+    return {
+      ...out,
+      ...(failed.length === 0
+        ? {}
+        : {
+            note: `The code graph could not read ${failed.slice(0, 3).join("; ")}${failed.length > 3 ? ` and ${failed.length - 3} more` : ""}.`,
+          }),
+    };
   }
 
   /** The code pass. Never throws: whatever stops it becomes the report's note. */

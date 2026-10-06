@@ -118,6 +118,8 @@ import { InstallRequests } from "./installs/service.ts";
 import { busyReason } from "./machine/busy.ts";
 import { MemoryWatch } from "./machine/memwatch.ts";
 import { MachineSensor } from "./machine/sensor.ts";
+import { GraphRunner } from "./map/graph/run.ts";
+import { CodeGraphTools } from "./map/graph/tools.ts";
 import { housekeeperPrice } from "./map/price.ts";
 import { MapRepo } from "./map/repo.ts";
 import { MapService } from "./map/service.ts";
@@ -385,6 +387,8 @@ export interface Services {
   agenda: AgendaService;
   /** The project map of each workspace (5.21). */
   map: MapService;
+  /** `code_graph`: agents ask a task's own repos' code graph (5.21). */
+  codeGraph: CodeGraphTools;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
   captainTell: CaptainTell;
   /** The captain's chat per workspace (5.18). */
@@ -916,8 +920,33 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     majhiHome: env.majhiHome,
     usage: usageRecorder,
   });
+  // Each project's code graph (5.21), read by graphify in a runner container with no network. In the tasks
+  // folder: runners can mount it, and it is never inside majhi's config folder.
+  const graphRoot = async () => {
+    const loaded = await config.load();
+    if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
+    return join(loaded.state.config.tasksDir, ".map");
+  };
+  const graphRunner =
+    env.runner.mode === "container"
+      ? new GraphRunner({
+          spawner: sessionOptions.spawner ?? localSpawner,
+          base: sessionOptions.base,
+          root: graphRoot,
+        })
+      : undefined;
+  const codeGraph = new CodeGraphTools({
+    root: graphRoot,
+    scope: (task) => {
+      const row = store.tasks.get(task);
+      if (row === undefined) return undefined;
+      return { org: lanes.orgOf(task) ?? row.org ?? PRIVATE, repos: row.repos.map((r) => r.project) };
+    },
+    orgOf: async (project) => (await projects.infos()).find((p) => p.id === project)?.org,
+  });
   // The project map (5.21). Its code pass is a Housekeeper question per project: the smallest model, no tools.
   const map = new MapService({
+    graph: graphRunner,
     repo: new MapRepo(store.raw),
     projects: async () =>
       (await projects.infos()).map((p) => ({ id: p.id, org: p.org, path: p.path, exists: p.exists })),
@@ -2450,6 +2479,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     }),
     agenda,
     map,
+    codeGraph,
     captainTell: new CaptainTell({
       tasks,
       lanes,

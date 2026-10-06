@@ -38,6 +38,7 @@ export * from "./home-facts.ts";
 export * from "./host.ts";
 export * from "./inbox.ts";
 export * as lifecycle from "./lifecycle/index.ts";
+export * from "./graphify.ts";
 export * from "./machine.ts";
 export * from "./map.ts";
 export * from "./mcp-servers.ts";
