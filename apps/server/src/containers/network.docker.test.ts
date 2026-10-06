@@ -298,6 +298,29 @@ describe.skipIf(!ready)("the task network on a real Docker daemon", () => {
     expect((await run(A, "build", "-t", "probe:2", ".")).error?.code).toBe("image_not_allowed");
   }, 300_000);
 
+  it("builds only what it checked: an escape directive cannot hide a FROM, BUILDKIT_SYNTAX is refused, an allowed build runs", async () => {
+    if (docker("buildx", "version").status !== 0 || docker("image", "inspect", "alpine:3").status !== 0)
+      return;
+    const dockerfile = (text: string) => writeFileSync(join(folderOf(A), "Dockerfile"), text);
+    const build = (...extra: string[]) => run(A, "build", "-t", "probe:3", ...extra, ".");
+    // With `# escape=` a backslash joins nothing: BuildKit starts a second stage from node:22.
+    dockerfile("# escape=`\nFROM alpine:3\nRUN echo \\\nFROM node:22\n");
+    expect((await build()).error?.code).toBe("image_not_allowed");
+    // A directive that is not syntax, escape or check.
+    dockerfile("# foo=bar\nFROM alpine:3\n");
+    expect((await build()).error?.code).toBe("refused");
+    // The frontend named by a build argument is never loaded.
+    dockerfile("FROM alpine:3\n");
+    expect((await build("--build-arg", "BUILDKIT_SYNTAX=evil/frontend:1")).error?.code).toBe(
+      "flag_not_allowed",
+    );
+    expect(docker("image", "inspect", "evil/frontend:1").status).not.toBe(0);
+    // An allowed build still works.
+    const out = await build("--no-cache");
+    expect(out.code, `${out.stdout}${out.stderr}`).toBe(0);
+    expect(docker("image", "inspect", "majhi-zzt-911-img-probe:3").status).toBe(0);
+  }, 300_000);
+
   it("removes everything a task started when it ends, and everything after a restart", async () => {
     await run(A, "run", "-d", "--name", "x", IMAGE, "sleep", "600");
     await run(B, "run", "-d", "--name", "y", IMAGE, "sleep", "600");
