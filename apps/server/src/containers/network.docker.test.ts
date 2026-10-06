@@ -1,8 +1,8 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ContainersSettings, ContainersSettingsSchema, type Task } from "@majhi/shared";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -97,7 +97,13 @@ beforeAll(() => {
   );
   execFileSync("docker", ["network", "create", runners]);
   execFileSync("docker", ["tag", RUNNER, IMAGE]);
-  settings = ContainersSettingsSchema.parse({ images: [IMAGE], per_task: 6 });
+  settings = ContainersSettingsSchema.parse({ images: [IMAGE, "alpine:3"] });
+  // The docker CLI majhi runs keeps its own config folder; buildx lives in the user's plugin folder here.
+  const plugins = join(homedir(), ".docker", "cli-plugins");
+  if (existsSync(plugins)) {
+    mkdirSync(join(dir, "home", ".majhi", "cache", "docker"), { recursive: true });
+    symlinkSync(plugins, join(dir, "home", ".majhi", "cache", "docker", "cli-plugins"));
+  }
   processes = new ProcessManager({
     spawner: async () => {
       throw new Error("unused");
@@ -251,6 +257,46 @@ describe.skipIf(!ready)("the task network on a real Docker daemon", () => {
     expect(down.code).toBe(0);
     expect(names(A)).toEqual([]);
   }, 240_000);
+
+  it("closes the builder's network: RUN steps reach the public internet and nothing private", async () => {
+    if (docker("buildx", "version").status !== 0 || docker("image", "inspect", "alpine:3").status !== 0)
+      return;
+    const gateway = docker(
+      "network",
+      "inspect",
+      "-f",
+      "{{range .IPAM.Config}}{{.Gateway}}{{end}}",
+      "bridge",
+    ).stdout.trim();
+    writeFileSync(
+      join(folderOf(A), "Dockerfile"),
+      [
+        "FROM alpine:3",
+        ...[
+          ["PUBLIC", "http://1.1.1.1"],
+          ["GATEWAY", `http://${gateway}`],
+          ["HOST", "http://host.docker.internal"],
+          ["METADATA", "http://169.254.169.254"],
+          ["LAN", "http://192.168.1.1"],
+          ["TENX", "http://10.0.0.1"],
+        ].map(
+          ([label, url]) =>
+            `RUN wget -T3 -qO- ${url} >/dev/null 2>&1 && echo ${label}-REACHED || echo ${label}-BLOCKED`,
+        ),
+      ].join("\n"),
+    );
+    const out = await run(A, "build", "-t", "probe:1", "--no-cache", ".");
+    // The probes print to the build log, which is the call's output.
+    const text = `${out.stdout}${out.stderr}`;
+    expect(out.code, text).toBe(0);
+    expect(text).toMatch(/PUBLIC-(REACHED|BLOCKED)/);
+    for (const label of ["GATEWAY", "HOST", "METADATA", "LAN", "TENX"]) {
+      expect(text, label).toContain(`${label}-BLOCKED`);
+    }
+    // A build that pulls an image nobody allowed does not start.
+    writeFileSync(join(folderOf(A), "Dockerfile"), "FROM node:22\n");
+    expect((await run(A, "build", "-t", "probe:2", ".")).error?.code).toBe("image_not_allowed");
+  }, 300_000);
 
   it("removes everything a task started when it ends, and everything after a restart", async () => {
     await run(A, "run", "-d", "--name", "x", IMAGE, "sleep", "600");
