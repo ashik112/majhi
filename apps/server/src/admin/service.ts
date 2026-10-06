@@ -22,6 +22,7 @@ import { z } from "zod";
 import { auditDetail } from "../audit.ts";
 import type { AutonomyVerdict } from "../autonomy/policy.ts";
 import { authorityOf, keptRowOf } from "../captain/levels.ts";
+import { isRootChat } from "../captain/tell.ts";
 import type { Dispatch } from "../commands/dispatch.ts";
 import type { ChangeRecord, ConfigService } from "../config/service.ts";
 import { errorMessage, UserError } from "../errors.ts";
@@ -256,7 +257,7 @@ export class AdminService {
       }
       // The captain's note to a lead: no card waits for it. The handler checks who and where, and the
       // limit per task; the autonomy limits (workspace, secrets) hold for the captain first.
-      if (spec.command === "tasks.tell") return await this.tell(caller, input, why);
+      if (spec.command === "tasks.tell") return await this.tell(caller, input, why, ownerAsked === true);
       const refused = refuseForAgents(spec.command, input);
       if (refused !== undefined) return error(refused);
       return await this.callCommand(caller, spec.command, input, {
@@ -269,17 +270,39 @@ export class AdminService {
     }
   }
 
-  /** `tasks.tell` from an agent's tool call. Only the captain in its lane gets as far as the handler. */
-  private async tell(caller: AdminCaller, input: Record<string, unknown>, why: string): Promise<ToolResult> {
+  /**
+   * `tasks.tell` from an agent's tool call. Only the captain in its lane, or in its root chat when the
+   * owner asked for the note, gets as far as the handler.
+   */
+  private async tell(
+    caller: AdminCaller,
+    input: Record<string, unknown>,
+    why: string,
+    ownerAsked: boolean,
+  ): Promise<ToolResult> {
     const checked = commands["tasks.tell"].input.safeParse(input);
     if (!checked.success) {
       const details = checked.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`);
       return error(`Invalid input for tasks.tell.\n${details.join("\n")}`);
     }
     const auto = this.autonomy === undefined ? undefined : await this.autonomy.callerKind(caller);
+    // The root chat (the All chip) is the owner's own conversation: the captain writes to a lead of
+    // any workspace there, but only a note the owner asked for. No lane limit applies: no lane runs it.
+    if (auto === undefined && (await this.inRootChat(caller))) {
+      if (!ownerAsked) {
+        return error(
+          "From the root chat, tasks.tell sends only a note the owner asked for in this conversation: set ownerAsked true when they did.",
+        );
+      }
+      const done = await this.execute("tasks.tell", input, metaFor(caller.agent, why, caller.task));
+      if (done.ok && !NotTold.safeParse(done.output).success) {
+        this.log(caller.task, caller.agent, "tasks.tell", summarize("tasks.tell", input), "allow", "captain", why);
+      }
+      return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
+    }
     if (auto !== "boss" || this.autonomy === undefined) {
       return error(
-        "tasks.tell is the captain's tool, in its workspace lane. Tell the lead through your own room instead.",
+        "tasks.tell is the captain's tool, from its workspace lane or its root chat (the All chip). Tell the lead through your own room instead, or ask the captain.",
       );
     }
     const refused = await this.autonomy.refusal(caller, "tasks.tell", input, why);
@@ -602,6 +625,13 @@ export class AdminService {
       text: `Asked the owner for ${label}. You will get a message when it is saved as secret:${name.data}.`,
       isError: false,
     };
+  }
+
+  /** Whether the caller is the captain in its root chat (the All chip). */
+  private async inRootChat(caller: AdminCaller): Promise<boolean> {
+    const { boss } = await this.deps.config.sections();
+    const task = this.deps.store.tasks.get(caller.task);
+    return boss !== undefined && caller.agent === boss && task !== undefined && isRootChat(task, boss);
   }
 
   /** The workspace the captain's lane works in, or why the caller is no captain in a lane. */
