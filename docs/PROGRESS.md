@@ -13,6 +13,8 @@ Phase 3 of `docs/design/wiki.md`, pulled forward. Server only: the web branch bu
 - `wiki.update` with no project, or after any project, writes the workspace overview (picture drawn from the links), up to five cross-repo flows and Gaps. `page` writes one page.
 - Every project's Gaps page lists "Not linked calls" with `path:line`. The `wiki` tool reads the workspace pages (`workspace: true`). TASK.md has one line on the links that touch the task's repos.
 
+**Checked on real data.** In scratch, with the real reader in a container and the fake agent for the writer: a FastAPI and React template split into two repos (24 of its 26 client calls link by an exact route, 1 call has no route, 1 address is a question), and majhi with a small client repo (2 exact links, 2 unlinked calls, 2 questions).
+
 **How to try it.** With the wiki on for a workspace that has two or more projects, press Update on the whole workspace (or call `wiki.update { org }`), then `wiki.system { org }`.
 
 **Left.** The screens (web branch). A call to a route behind a nested router whose mount prefix the facts never saw stays unlinked until the owner answers it. A first build of a workspace is the owner's click, as for a project.
