@@ -190,6 +190,7 @@ export function createHandlers({
       enabled: wikiEnabledFrom(config),
       drift: gitDrift(services.projects),
       service: services.wiki,
+      asker: services.wikiAsk,
       lanes: services.lanes,
       store: services.store,
       orgs: async () => Object.keys((await config.sections()).orgs),

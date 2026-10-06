@@ -2,12 +2,13 @@ import { WIKI_RULES, type WikiStatus } from "@majhi/shared";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
 import { type FindingsHandlerDeps, findingActor } from "../findings/handlers.ts";
+import type { WikiAsk } from "./ask.ts";
 import type { DriftOf } from "./drift.ts";
 import type { WikiRepo } from "./repo.ts";
 import type { WikiService } from "./service.ts";
 import type { WikiEnabled } from "./switch.ts";
 
-type WikiCommand = "wiki.get" | "wiki.page" | "wiki.estimate" | "wiki.update";
+type WikiCommand = "wiki.get" | "wiki.page" | "wiki.ask" | "wiki.estimate" | "wiki.update";
 
 export interface WikiHandlerDeps extends Pick<FindingsHandlerDeps, "lanes" | "store"> {
   repo: WikiRepo;
@@ -19,6 +20,7 @@ export interface WikiHandlerDeps extends Pick<FindingsHandlerDeps, "lanes" | "st
   /** How far the code has moved past a built commit. Absent: the status leaves it out. */
   drift?: DriftOf;
   service: Pick<WikiService, "start" | "estimate" | "progress">;
+  asker: Pick<WikiAsk, "answer">;
 }
 
 /**
@@ -92,6 +94,11 @@ export function wikiHandlers(deps: WikiHandlerDeps): Pick<CommandHandlers, WikiC
         updatedAt: stored.updatedAt,
         versions: repo.versionCount(input.org, input.project, input.id),
       };
+    },
+    "wiki.ask": async (input, ctx) => {
+      await scope(ctx, input.org, false);
+      await requireOn(input.org);
+      return deps.asker.answer(input.org, input.project, input.question);
     },
     "wiki.estimate": async (input, ctx) => {
       await scope(ctx, input.org, false);
