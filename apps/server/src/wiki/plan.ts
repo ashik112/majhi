@@ -13,6 +13,9 @@ import { kebab } from "./facts/context.ts";
 import type { WriterPage } from "./writer/draft.ts";
 import { defang, factLine } from "./writer/hints.ts";
 
+/** The topic of the Gaps line that says the main flows were not chosen. */
+export const PLAN_TOPIC = "Main flows";
+
 /** The most component pages a project gets. A bigger project is split by its biggest parts; the rest fold into their parent. */
 export const MAX_COMPONENTS = 12;
 /** The most flow pages a project gets. */

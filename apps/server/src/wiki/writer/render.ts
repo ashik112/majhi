@@ -31,7 +31,7 @@ function line(c: WikiClaim): string {
  * overview what was not found. The tiles of an overview carry their own claims, so those are not repeated.
  */
 export function bodyOf(
-  draft: DraftPage,
+  draft: Pick<DraftPage, "kind" | "couldNot">,
   kept: readonly KeptClaim[],
   summary: readonly string[],
   tiles: ReadonlySet<number>,
@@ -53,6 +53,9 @@ export function bodyOf(
   return parts.join("\n\n");
 }
 
+/** What a diagram is drawn from: the page's kind, title and claims, and the picture the writer drew when it drew one. */
+export type DrawnPage = Pick<DraftPage, "kind" | "title" | "claims" | "diagram">;
+
 const slug = (label: string): string => {
   let out = "";
   for (const ch of label.toLowerCase()) {
@@ -67,7 +70,7 @@ const slug = (label: string): string => {
  * A flow's sequence diagram: one actor per process, one arrow per step from its actor to the next step's
  * actor. A step that is a guess is dashed. Undefined when a step names no actor or the picture does not fit.
  */
-function sequence(draft: DraftPage, kept: readonly KeptClaim[]): DiagramSpec | undefined {
+function sequence(draft: DrawnPage, kept: readonly KeptClaim[]): DiagramSpec | undefined {
   const steps = kept.map((k) => ({
     claim: k.claim,
     actor: draft.claims[k.at]?.actor,
@@ -133,7 +136,7 @@ function boxes(diagram: DraftDiagram, kept: readonly KeptClaim[]): DiagramSpec |
 }
 
 /** The diagrams of a page: a flow's from its steps, any other page's from what the writer drew. A picture that does not parse is left out. */
-export function diagramsOf(draft: DraftPage, kept: readonly KeptClaim[]): DiagramSpec[] {
+export function diagramsOf(draft: DrawnPage, kept: readonly KeptClaim[]): DiagramSpec[] {
   const spec =
     draft.kind === "flow"
       ? sequence(draft, kept)

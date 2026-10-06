@@ -12,7 +12,7 @@ import {
   type WikiSource,
 } from "@majhi/shared";
 import { ExportReader, hashLines } from "../source.ts";
-import type { DraftClaim, DraftPage, RawCitation } from "./draft.ts";
+import type { DraftPage, DraftRole, RawCitation } from "./draft.ts";
 import { bodyOf, diagramsOf, type KeptClaim } from "./render.ts";
 
 export type CitationCheck = { ok: true; source: WikiSource } | { ok: false; reason: WikiDropReason };
@@ -71,14 +71,26 @@ type Kept = { text: string; facts: WikiFactId[] } & (
   | { proven: true; sources: [WikiSource, ...WikiSource[]] }
   | { proven: false; sources: WikiSource[] }
 );
-type ClaimCheck = { kept: Kept } | { dropped: WikiDroppedClaim };
+export type ClaimCheck = { kept: Kept } | { dropped: WikiDroppedClaim };
+
+/** What a claim has, whichever repo its citations point into. */
+export interface ClaimToCheck<K extends RawCitation = RawCitation> {
+  text: string;
+  proven: boolean;
+  facts: readonly WikiFactId[];
+  citations: readonly K[];
+}
 
 /**
  * A proven claim keeps only if it cites something and every citation holds. A guess keeps with the
- * citations that hold, and may have none.
+ * citations that hold, and may have none. `check` looks at one citation: against one repo's export for a project
+ * page, against the export of the repo each citation names for a workspace page.
  */
-async function checkClaim(files: ExportReader, c: DraftClaim, at: CitedAt): Promise<ClaimCheck> {
-  const checks = await Promise.all(c.citations.map((x) => checkCitation(files, x, at)));
+export async function checkClaim<K extends RawCitation>(
+  c: ClaimToCheck<K>,
+  check: (citation: K) => Promise<CitationCheck>,
+): Promise<ClaimCheck> {
+  const checks = await Promise.all(c.citations.map(check));
   const sources = checks.flatMap((k) => (k.ok ? [k.source] : []));
   const failed = checks.flatMap((k) => (k.ok ? [] : [k.reason]));
   if (!c.proven) return { kept: { text: c.text, facts: [...c.facts], proven: false, sources } };
@@ -90,16 +102,11 @@ async function checkClaim(files: ExportReader, c: DraftClaim, at: CitedAt): Prom
   return { kept: { text: c.text, facts: [...c.facts], proven: true, sources: [first, ...others] } };
 }
 
-/**
- * Step 5 of the pipeline: confirms every claim of a draft against the export, drops the ones that do not
- * hold (listed on the page and on the Gaps page), numbers the rest from 1 in order, and makes the page.
- * Roles whose claim was dropped lose their tile. The result is a page that parses as a `WikiPage`.
- */
-export async function checkPage(draft: DraftPage, exportDir: string): Promise<WikiPage> {
-  const files = new ExportReader(exportDir);
-  const at = { repo: draft.project, commit: draft.commit };
-  const checked = await Promise.all(draft.claims.map((c) => checkClaim(files, c, at)));
-
+/** The claims that held, numbered from 1 in order, the ones that did not, and the role tiles whose claim held. */
+export function settle(
+  checked: readonly ClaimCheck[],
+  draftRoles: readonly DraftRole[],
+): { kept: KeptClaim[]; dropped: WikiDroppedClaim[]; roles: WikiRoleRow[]; tiles: Set<number> } {
   const kept: KeptClaim[] = [];
   const dropped: WikiDroppedClaim[] = [];
   const numberOf = new Map<number, number>();
@@ -112,12 +119,25 @@ export async function checkPage(draft: DraftPage, exportDir: string): Promise<Wi
     numberOf.set(index, n);
     kept.push({ at: index, claim: { ...result.kept, n } });
   });
-
-  const roles: WikiRoleRow[] = draft.roles.flatMap((r) => {
+  const roles: WikiRoleRow[] = draftRoles.flatMap((r) => {
     const claim = numberOf.get(r.claim);
     return claim === undefined ? [] : [{ role: r.role, where: r.where, tech: r.tech, claim }];
   });
-  const tiles = new Set(roles.map((r) => r.claim));
+  return { kept, dropped, roles, tiles: new Set(roles.map((r) => r.claim)) };
+}
+
+/**
+ * Step 5 of the pipeline: confirms every claim of a draft against the export, drops the ones that do not
+ * hold (listed on the page and on the Gaps page), numbers the rest from 1 in order, and makes the page.
+ * Roles whose claim was dropped lose their tile. The result is a page that parses as a `WikiPage`.
+ */
+export async function checkPage(draft: DraftPage, exportDir: string): Promise<WikiPage> {
+  const files = new ExportReader(exportDir);
+  const at = { repo: draft.project, commit: draft.commit };
+  const checked = await Promise.all(
+    draft.claims.map((c) => checkClaim(c, (x) => checkCitation(files, x, at))),
+  );
+  const { kept, dropped, roles, tiles } = settle(checked, draft.roles);
 
   return WikiPageSchema.parse({
     id: draft.id,

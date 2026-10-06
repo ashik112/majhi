@@ -81,6 +81,7 @@ export const WIKI_FACT_KINDS = [
   "store",
   "entry",
   "endpoint",
+  "call",
   "link",
   "component",
   "step",
@@ -210,6 +211,26 @@ export const WIKI_LINK_TYPES = ["http", "queue", "data", "lib", "deploy"] as con
 export const WikiLinkTypeSchema = z.enum(WIKI_LINK_TYPES);
 export type WikiLinkType = z.infer<typeof WikiLinkTypeSchema>;
 
+/** The path of a call: starts with `/`, no query, no empty part, no `..`, and `{}` where the code fills a part in. */
+export const CallPathSchema = z
+  .string()
+  .min(1)
+  .max(400)
+  .refine(
+    (p) =>
+      p.startsWith("/") &&
+      !p.includes("?") &&
+      !p.includes("#") &&
+      !p.includes("\\") &&
+      !p.includes("\0") &&
+      (p === "/" ||
+        p
+          .slice(1)
+          .split("/")
+          .every((part) => part !== "" && part !== "." && part !== "..")),
+    "Use an absolute path without a query",
+  );
+
 export const WIKI_BOUNDARIES = ["database", "queue", "outside", "repo"] as const;
 
 const factBase = {
@@ -234,6 +255,8 @@ export const WikiFactSchema = z
       ports: z.array(z.number().int().min(1).max(65535)).max(20).default([]),
       /** Names of the units it waits for. */
       dependsOn: z.array(z.string().min(1).max(120)).max(40).default([]),
+      /** Built from this repo's code (a compose `build`), as opposed to started from a published image. */
+      builds: z.boolean().optional(),
     }),
     /** A role the stack shows: Postgres is a database, Celery is a worker. `where` is a folder or a unit name. */
     z.object({
@@ -266,6 +289,20 @@ export const WikiFactSchema = z
       known: IdSchema.optional(),
       /** The names of the settings the address was written in. Never their values. */
       keys: z.array(z.string().min(1).max(120)).max(12).default([]),
+    }),
+    /**
+     * One HTTP call a client makes: the method and the path it asks for, the call site as the source. A path is
+     * absolute (`/api/v1/items/{}`), without its query, and a part the code fills in at run time is `{}`. Never a
+     * header, a body or a value of a setting: the call carries no more than a route does.
+     */
+    z.object({
+      ...factBase,
+      kind: z.literal("call"),
+      method: z.enum(WIKI_HTTP_METHODS),
+      path: CallPathSchema,
+      /** The address the call names, when the code writes one in the call itself. Absent: the base is set elsewhere. */
+      host: z.string().min(1).max(200).optional(),
+      port: z.number().int().positive().max(65535).optional(),
     }),
     /** One part of the system calls another. A `link` with basis `owner` is the owner's answer. */
     z.object({
@@ -314,11 +351,19 @@ export const WikiFactSchema = z
 export type WikiFact = z.infer<typeof WikiFactSchema>;
 export type WikiFactOf<K extends WikiFactKind> = Extract<WikiFact, { kind: K }>;
 
+/**
+ * What the sealed reader finds, as a number. Raised when the reader learns to find a new kind of fact (2: HTTP calls with
+ * their method and path), so a repo already read at its commit is read again, with no model, and no page is rewritten.
+ */
+export const FACTS_READER = 2;
+
 /** What one fact run of a repo leaves in `facts.json`. */
 export const WikiFactsFileSchema = z.object({
   repo: IdSchema,
   commit: CommitShaSchema,
   rules: z.number().int(),
+  /** The `FACTS_READER` it was read by. A file from before the number existed is reader 1. */
+  reader: z.number().int().default(1),
   facts: z.array(WikiFactSchema).max(50_000),
 });
 export type WikiFactsFile = z.infer<typeof WikiFactsFileSchema>;
@@ -331,7 +376,7 @@ export const OwnerAnswerTargetSchema = z.discriminatedUnion("kind", [
 ]);
 export type OwnerAnswerTarget = z.infer<typeof OwnerAnswerTargetSchema>;
 
-/** One answer of the owner, kept for the workspace: every later update applies it. */
+/** One answer of the owner about an address, kept for the workspace: every later update applies it. */
 export const OwnerAnswerSchema = z.object({
   host: z.string().min(1).max(200),
   port: z.number().int().positive().max(65535).optional(),
@@ -339,6 +384,127 @@ export const OwnerAnswerSchema = z.object({
   to: OwnerAnswerTargetSchema,
 });
 export type OwnerAnswer = z.infer<typeof OwnerAnswerSchema>;
+
+/** An answer about one call a repo makes: its method and path, which survive a change of line. */
+export const OwnerCallAnswerSchema = z.object({
+  repo: IdSchema,
+  method: z.enum(WIKI_HTTP_METHODS),
+  path: CallPathSchema,
+  to: OwnerAnswerTargetSchema,
+});
+export type OwnerCallAnswer = z.infer<typeof OwnerCallAnswerSchema>;
+
+/** What the owner can say about a role the wiki guessed: yes it is that, or it is this one instead. */
+export const RoleChoiceSchema = z.union([z.literal("confirm"), WikiKnownRoleSchema]);
+export type RoleChoice = z.infer<typeof RoleChoiceSchema>;
+
+/** The owner's decision about one role tile of a project's overview. `role` and `where` name the tile as the writer gave it. */
+export const OwnerRoleAnswerSchema = z.object({
+  project: IdSchema,
+  role: WikiKnownRoleSchema,
+  where: z.string().min(1).max(200),
+  choice: RoleChoiceSchema,
+});
+export type OwnerRoleAnswer = z.infer<typeof OwnerRoleAnswerSchema>;
+
+/** Everything the owner told the wiki of a workspace, as stored. */
+export const WikiAnswerSchema = z.discriminatedUnion("kind", [
+  OwnerAnswerSchema.extend({ kind: z.literal("address") }),
+  OwnerCallAnswerSchema.extend({ kind: z.literal("call") }),
+  OwnerRoleAnswerSchema.extend({ kind: z.literal("role") }),
+]);
+export type WikiAnswer = z.infer<typeof WikiAnswerSchema>;
+
+// Links between a workspace's projects: made from the facts, never by the model ---------------
+
+/** One side of a link: the project, the fact that shows it and the lines. A declared link has no lines. */
+export const WikiLinkEndSchema = z.object({
+  project: IdSchema,
+  fact: WikiFactIdSchema.optional(),
+  sources: z.array(WikiSourceSchema).max(12),
+});
+export type WikiLinkEnd = z.infer<typeof WikiLinkEndSchema>;
+
+/**
+ * A line between two projects of one workspace, with the evidence of both sides and how it is known (strongest
+ * first: declared, exact, config, owner). `label` names what it is, like `POST /api/v1/login`.
+ */
+export const WikiSystemLinkSchema = z.object({
+  id: z.string().min(1).max(400),
+  type: WikiLinkTypeSchema,
+  basis: WikiFactBasisSchema,
+  from: WikiLinkEndSchema,
+  to: WikiLinkEndSchema,
+  label: z.string().min(1).max(200),
+});
+export type WikiSystemLink = z.infer<typeof WikiSystemLinkSchema>;
+
+/** A call that links to no other project, with where it is and why. */
+export const WikiUnlinkedCallSchema = z.object({
+  call: WikiFactIdSchema,
+  project: IdSchema,
+  method: z.enum(WIKI_HTTP_METHODS),
+  path: CallPathSchema,
+  source: WikiSourceSchema,
+  /** `no-route`: no route of another project has it. `ambiguous`: more than one has. */
+  why: z.enum(["no-route", "ambiguous"]),
+  /** The projects whose routes it matched, when it is ambiguous. */
+  matches: z.array(IdSchema).max(20).default([]),
+});
+export type WikiUnlinkedCall = z.infer<typeof WikiUnlinkedCallSchema>;
+
+/** An address no compose file, no environment URL and no answer places. The owner says what it is. */
+export const WikiQuestionSchema = z.object({
+  host: z.string().min(1).max(200),
+  port: z.number().int().positive().max(65535).optional(),
+  scope: IdSchema.optional(),
+  /** The projects that call it, and the names of the settings it was written in. */
+  projects: z.array(IdSchema).max(40),
+  keys: z.array(z.string().min(1).max(120)).max(24),
+  sources: z.array(WikiSourceSchema).max(12),
+});
+export type WikiQuestion = z.infer<typeof WikiQuestionSchema>;
+
+/** What the workspace's facts say about how its projects connect. */
+export const WikiSystemViewSchema = z.object({
+  org: IdSchema,
+  links: z.array(WikiSystemLinkSchema).max(2000),
+  unlinked: z.array(WikiUnlinkedCallSchema).max(2000),
+  questions: z.array(WikiQuestionSchema).max(500),
+  /** Projects with no facts yet, so no link to or from them can show. */
+  missing: z.array(IdSchema).max(200),
+});
+export type WikiSystemView = z.infer<typeof WikiSystemViewSchema>;
+
+/** What the owner asks `wiki.answer` about: an address, or one call (by the id of its fact). */
+export const WikiQuestionRefSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("address"),
+    host: z.string().min(1).max(200),
+    port: z.number().int().positive().max(65535).optional(),
+    scope: IdSchema.optional(),
+  }),
+  z.object({ kind: z.literal("call"), call: WikiFactIdSchema }),
+]);
+export type WikiQuestionRef = z.infer<typeof WikiQuestionRefSchema>;
+
+export const WikiAnswerInputSchema = z.object({
+  org: IdSchema,
+  question: WikiQuestionRefSchema,
+  /** One of the workspace's projects, outside, or ignore. `null` forgets an answer given before. */
+  to: OwnerAnswerTargetSchema.nullable(),
+});
+export type WikiAnswerInput = z.infer<typeof WikiAnswerInputSchema>;
+
+export const WikiSetRoleInputSchema = z.object({
+  org: IdSchema,
+  project: IdSchema,
+  role: WikiKnownRoleSchema,
+  where: z.string().min(1).max(200),
+  /** `confirm` keeps the role and marks it the owner's; a role replaces it; `undo` removes the choice. */
+  choice: z.union([RoleChoiceSchema, z.literal("undo")]),
+});
+export type WikiSetRoleInput = z.infer<typeof WikiSetRoleInputSchema>;
 
 // Pages: written from facts, checked against the code ----------------------------------------
 
@@ -392,6 +558,8 @@ export const WikiRoleRowSchema = z.object({
   claim: z.number().int().positive(),
   /** The component page that covers this role, when the plan has one. The tile opens it; without it the tile opens its proof. */
   page: WikiPageIdSchema.refine((id) => wikiPageKind(id) === "component", "Use a component page").optional(),
+  /** `owner`: the owner confirmed this role or changed it, so it stands as proven whatever the claim says. */
+  basis: z.literal("owner").optional(),
 });
 export type WikiRoleRow = z.infer<typeof WikiRoleRowSchema>;
 
@@ -555,9 +723,18 @@ export const WikiViewSchema = z.object({
 });
 export type WikiView = z.infer<typeof WikiViewSchema>;
 
-/** `replan` picks the flows again instead of keeping the ones chosen at the first build. */
-export const WikiUpdateInputSchema = WikiScopeInputSchema.extend({ replan: z.boolean().optional() });
+/**
+ * `replan` picks the flows again instead of keeping the ones chosen at the first build. `page` writes only that page
+ * (of `project`, or of the workspace when there is none), with the same caps and the same checks.
+ */
+export const WikiUpdateInputSchema = WikiScopeInputSchema.extend({
+  replan: z.boolean().optional(),
+  page: WikiPageIdSchema.optional(),
+});
 export type WikiUpdateInput = z.infer<typeof WikiUpdateInputSchema>;
+
+export const WikiEstimateInputSchema = WikiScopeInputSchema.extend({ page: WikiPageIdSchema.optional() });
+export type WikiEstimateInput = z.infer<typeof WikiEstimateInputSchema>;
 
 export const WikiPageInputSchema = WikiScopeInputSchema.extend({ id: WikiPageIdSchema });
 export const WikiPageViewSchema = z.object({
@@ -613,6 +790,12 @@ export const WikiToolInputSchema = z.object({
   project: IdSchema.optional().describe(
     "One of this workspace's projects. Leave out when there is one wiki.",
   ),
+  workspace: z
+    .boolean()
+    .optional()
+    .describe(
+      "true: the workspace's own pages (how its projects connect, the cross-repo flows, the gaps) instead of one project's. For read and search.",
+    ),
   page: z
     .string()
     .max(80)

@@ -27,16 +27,22 @@ async function realOr(path: string): Promise<string> {
  * must name where it reads: one that names no place is refused, since the runner also mounts the
  * agent's own account home and a repo can hold links that lead there.
  */
-export async function readOnlyDecision(ask: PermissionAsk, root: string): Promise<ReadOnlyDecision> {
+export async function readOnlyDecision(
+  ask: PermissionAsk,
+  root: string,
+  also: readonly string[] = [],
+): Promise<ReadOnlyDecision> {
   if (ask.kind === undefined || !READ_ONLY_KINDS.includes(ask.kind)) {
     return { allow: false, why: `A read-only session may not use a ${ask.kind ?? "tool of no kind"} tool.` };
   }
   const locations = ask.locations ?? [];
   if (locations.length === 0) return { allow: false, why: "Name the file or folder to read." };
-  const base = await realOr(resolve(root));
+  const bases = await Promise.all([root, ...also].map((r) => realOr(resolve(r))));
   for (const l of locations) {
-    if (!isInside(await realOr(resolve(root, l)), base)) {
-      return { allow: false, why: `${l} is outside the folder it may read.` };
+    // A relative location is the session's folder; an absolute one may be any of the folders it may read. It is judged by where it really leads.
+    const real = await realOr(resolve(root, l));
+    if (!bases.some((b) => isInside(real, b))) {
+      return { allow: false, why: `${l} is outside the folders it may read.` };
     }
   }
   return { allow: true };
@@ -47,9 +53,12 @@ export async function readOnlyDecision(ask: PermissionAsk, root: string): Promis
  * rejects everything else, so the agent is told no and carries on. An ask with no option of the right
  * kind is cancelled.
  */
-export function readOnlyHandler(root: string): (ask: PermissionAsk) => Promise<string | undefined> {
+export function readOnlyHandler(
+  root: string,
+  also: readonly string[] = [],
+): (ask: PermissionAsk) => Promise<string | undefined> {
   return async (ask) => {
-    const wanted = (await readOnlyDecision(ask, root)).allow
+    const wanted = (await readOnlyDecision(ask, root, also)).allow
       ? ["allow_once"]
       : ["reject_once", "reject_always"];
     for (const kind of wanted) {

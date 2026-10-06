@@ -1,5 +1,26 @@
 # Progress
 
+## Workspace wiki, server side (branch `feat/wiki-workspace`, built, not merged)
+
+Phase 3 of `docs/design/wiki.md`, pulled forward. Server only: the web branch builds the screens on `wiki.system`, `wiki.answer` and `wiki.setRole`.
+
+**Plan.** Calls with method and path in the reader, then the links per workspace, then owner answers, then the workspace pages, then the tool and TASK.md. Checked with the tests CLAUDE.md allows and with two real workspaces in scratch.
+
+**What works.**
+- The reader finds HTTP client calls (method, path, never a header, body or token) as `call` facts. A repo already read is read again with no model (`FACTS_READER`).
+- `wiki.system { org }` gives the links between the workspace's projects, each with both sides' lines and its basis, the calls that fit no route (file and line), and the addresses nobody placed. Exact matches only.
+- `wiki.answer { org, question, to }` stores the owner's answer (migration 174) and draws the links and Gaps pages again with no model. `wiki.setRole` confirms or changes a guessed role and survives updates.
+- `wiki.update` with no project, or after any project, writes the workspace overview (picture drawn from the links), up to five cross-repo flows and Gaps. `page` writes one page.
+- Every project's Gaps page lists "Not linked calls" with `path:line`. The `wiki` tool reads the workspace pages (`workspace: true`). TASK.md has one line on the links that touch the task's repos.
+
+**Checked on real data.** In scratch, with the real reader in a container and the fake agent for the writer: a FastAPI and React template split into two repos (24 of its 26 client calls link by an exact route, 1 call has no route, 1 address is a question), and majhi with a small client repo (2 exact links, 2 unlinked calls, 2 questions).
+
+**How to try it.** With the wiki on for a workspace that has two or more projects, press Update on the whole workspace (or call `wiki.update { org }`), then `wiki.system { org }`.
+
+**Left.** The screens (web branch). A call to a route behind a nested router whose mount prefix the facts never saw stays unlinked until the owner answers it. A first build of a workspace is the owner's click, as for a project.
+
+**Known issues.** The estimate for a workspace whose projects have never been read leaves out the workspace pages, because there are no facts to count them from yet.
+
 ## Wiki, phase 1: project wiki in place of the Map (branch `feat/wiki`, built, not merged)
 
 **What changed.** The Map is gone (page, Inside, Journeys, `show_map`, `map.*` commands, the map chore and `upkeep-map`, `docker/map_resolve.py`) and each project can have a wiki instead. Design: `docs/design/wiki.md`; choices the design did not cover: the W rows at the end of `docs/DECISIONS.md`; SPEC 5.21 describes the result. The sealed reader and the config scanners were moved, not rebuilt (`apps/server/src/reader/`, `wiki/facts/`, `wiki/system/`).

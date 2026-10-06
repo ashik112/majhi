@@ -403,12 +403,16 @@ import {
   WatchViewSchema,
 } from "./watches.ts";
 import {
+  WikiAnswerInputSchema,
   WikiAskInputSchema,
   WikiAskOutputSchema,
+  WikiEstimateInputSchema,
   WikiEstimateSchema,
   WikiPageInputSchema,
   WikiPageViewSchema,
   WikiScopeInputSchema,
+  WikiSetRoleInputSchema,
+  WikiSystemViewSchema,
   WikiUpdateInputSchema,
   WikiViewSchema,
 } from "./wiki.ts";
@@ -1298,15 +1302,36 @@ export const commands = {
     risk: "read",
     summary:
       "What the next wiki update would rewrite and cost: the pages whose cited files changed, tokens, an estimate in dollars from the price table, and the cap one update never passes",
-    input: WikiScopeInputSchema,
+    input: WikiEstimateInputSchema,
     output: WikiEstimateSchema,
   },
   "wiki.update": {
     risk: "change",
     summary:
-      "Update the wiki of a workspace or one project: read the code facts with no model, then rewrite only the pages whose cited files changed. It runs in the background and the page follows its progress. One run per workspace at a time. `replan` picks the main flows again. The owner and the captain, never another agent",
+      "Update the wiki of a workspace or one project: read the code facts with no model, then rewrite only the pages whose cited files changed. It runs in the background and the page follows its progress. One run per workspace at a time. Without `project` it also writes the workspace pages (how the projects connect, the cross-repo flows, the gaps). `replan` picks the main flows again. `page` writes only that page. The owner and the captain, never another agent",
     input: WikiUpdateInputSchema,
     output: WikiViewSchema,
+  },
+  "wiki.system": {
+    risk: "read",
+    summary:
+      "How a workspace's projects connect, from the facts of each: the links (with both sides' evidence and how each is known), the calls that match no route of another project, and the addresses nobody has placed. An agent reads its own workspace only",
+    input: z.object({ org: IdSchema }),
+    output: WikiSystemViewSchema,
+  },
+  "wiki.answer": {
+    risk: "change",
+    summary:
+      "Tell the wiki what an address or one call is: one of the workspace's projects, an outside service, or not a call to show (`to: null` forgets the answer). The links are drawn again at once with no model, and the answer applies to every later update. The owner (any workspace) and the captain (its own); another agent reads only",
+    input: WikiAnswerInputSchema,
+    output: WikiSystemViewSchema,
+  },
+  "wiki.setRole": {
+    risk: "change",
+    summary:
+      "Confirm a role the wiki guessed on a project's overview, or change it to another role (`choice: undo` removes the choice). It applies on read and to every later update, and the Gaps page stops listing it. The owner (any workspace) and the captain (its own)",
+    input: WikiSetRoleInputSchema,
+    output: WikiPageViewSchema,
   },
   // The chat dock -----------------------------------------------------------------
   "conversations.list": {
