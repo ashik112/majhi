@@ -96,7 +96,14 @@ export class RoomCoordinator {
     const handedByTool = this.toolHandoffs.get(`${turn.task}\u0000${turn.agent}`) ?? new Set<string>();
     this.toolHandoffs.delete(`${turn.task}\u0000${turn.agent}`);
     let task = store.tasks.get(turn.task);
-    if (task === undefined || task.status !== "running" || isBossChat(task)) return;
+    if (task === undefined || isBossChat(task)) return;
+    if (task.status !== "running") {
+      // In review or paused nothing is handed on, but a question the agent did not ask again no
+      // longer waits: a stale card would hold the ship, and the agent cannot see or answer it.
+      const again = parseMentions(turn.text, []).includes(OWNER_HANDLE) || asksOwner(turn.text);
+      if (!again) this.movedOn(task.id, turn.agent);
+      return;
+    }
     // Taken off the team: what it still says is posted, but it hands nothing on.
     if (!task.team.includes(turn.agent)) return;
     const text = turn.text.trim();
@@ -561,7 +568,6 @@ function members(task: Task, agents: readonly AgentFrontmatter[]): Member[] {
   return task.team.map((id) => ({ id, role: agents.find((a) => a.id === id)?.role ?? "Builder" }));
 }
 
-/** A message in the room for read_recent, or undefined for items that are not conversation. */
 /** A long read_recent line cut in the middle, with a marker that says how to read it whole. */
 function cutLine(line: string, id: string): string {
   if (line.length <= READ_ITEM_MAX) return line;
@@ -570,7 +576,8 @@ function cutLine(line: string, id: string): string {
   return `${line.slice(0, head)}${marker}${line.slice(line.length - (READ_ITEM_MAX - head))}`;
 }
 
-function readLine(item: RoomItem): string | undefined {
+/** A message in the room for read_recent, or undefined for items that are not conversation. */
+export function readLine(item: RoomItem): string | undefined {
   switch (item.type) {
     case "owner":
       return `Owner${item.to === undefined ? "" : ` to @${item.to}`}: ${item.text}`;
@@ -586,6 +593,15 @@ function readLine(item: RoomItem): string | undefined {
       return `majhi: ${item.text}`;
     case "approval":
       return `@${item.agent} asked to run ${item.command}: ${item.state}`;
+    // A card that still waits for the owner: agents see what holds the task. Settled ones say nothing.
+    case "owner-question":
+      return item.state === "pending"
+        ? `@${item.agent} asked the owner (card waits for an answer): ${item.text ?? ""}`.trimEnd()
+        : undefined;
+    case "ask":
+      return item.state === "pending"
+        ? `@${item.agent} asked the owner (card waits for an answer): ${item.questions.map((q) => q.question).join(" | ")}`
+        : undefined;
     default:
       return undefined;
   }

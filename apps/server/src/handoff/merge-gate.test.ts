@@ -1,6 +1,12 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { HandoffResult, HandoffState, HandoffStep, Task } from "@majhi/shared";
+import {
+  type HandoffResult,
+  type HandoffState,
+  type HandoffStep,
+  mergeVerdictAction,
+  type Task,
+} from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { ASK } from "../captain/authority-fixtures.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
@@ -55,6 +61,25 @@ describe("decideMerge", () => {
         state: { ...idle, current: result("api@a1", [ready, ...skipped]) },
       }),
     ).toEqual({ kind: "blocked", why: "it conflicts with main in docs/PROGRESS.md" });
+  });
+
+  it("keeps a block only the owner can clear away from the lead, and sends the lead one it can fix", () => {
+    const skipped = [step("tests", "skipped"), step("build", "skipped"), step("lint", "skipped")];
+    const verdictFor = (ready: HandoffStep) =>
+      decideMerge({
+        configured: true,
+        head: "api@a1",
+        state: { ...idle, current: result("api@a1", [ready, ...skipped]) },
+      });
+    const card = verdictFor({
+      ...step("ready", "fail"),
+      detail: "an owner question card waits for you",
+      owner: true,
+    });
+    expect(card).toEqual({ kind: "blocked", why: "an owner question card waits for you", owner: true });
+    expect(mergeVerdictAction(card)).toBe("none");
+    const conflict = verdictFor({ ...step("ready", "fail"), detail: "it conflicts with main in a.ts" });
+    expect(mergeVerdictAction(conflict)).toBe("fix-with-agent");
   });
 
   it("is stale when the checks ran on an older head or never ran", () => {

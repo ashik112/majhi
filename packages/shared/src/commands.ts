@@ -183,6 +183,8 @@ import {
   DecisionRecommendInputSchema,
   OwnerDecisionSchema,
 } from "./inbox.ts";
+import { InsideInputSchema, InsideViewSchema } from "./inside.ts";
+import { JourneyInputSchema, JourneyRemoveInputSchema } from "./journeys.ts";
 import { BlockerSchema } from "./lifecycle/blocker.ts";
 import {
   MapAnswerInputSchema,
@@ -356,6 +358,7 @@ import {
   MergeMethodSchema,
   ProjectConfigSchema,
   ProjectViewSchema,
+  QueuedMergeSchema,
   RoomItemSchema,
   RoomSearchHitSchema,
   RoomSearchInputSchema,
@@ -550,6 +553,8 @@ export const ShipOptionsSchema = z.object({
   done: ShipOptionSchema.extend({ unshipped: z.array(UnshippedRepoSchema).optional() }),
   /** The merge rule for the task's head now: a merge goes through only when this is `ok`. */
   checks: MergeChecksSchema.optional(),
+  /** A merge waiting for the checks of its head to pass. */
+  queued: QueuedMergeSchema.optional(),
 });
 export type ShipOptions = z.infer<typeof ShipOptionsSchema>;
 const ById = z.object({ id: IdSchema });
@@ -1314,6 +1319,33 @@ export const commands = {
     input: MapRoleInputSchema,
     output: MapViewSchema,
   },
+  "map.inside": {
+    risk: "read",
+    summary:
+      "What is inside one project of the workspace: its entry points (routes, schedules, queue consumers, commands), the functions they run, and the datastores and outside services those functions use, each with its file and line. State `unread` when the project has not been read inside yet",
+    input: InsideInputSchema,
+    output: InsideViewSchema,
+  },
+  "map.readInside": {
+    risk: "change",
+    summary:
+      "Read one project's code now (free, no model, in a sealed container) so the map can show what is inside it. The owner and the captain",
+    input: InsideInputSchema,
+    output: InsideViewSchema,
+  },
+  "map.saveJourney": {
+    risk: "change",
+    summary:
+      "Name a journey on the map: ordered steps, each from one box to another with a label and the map line it follows (`edge`). Without `id` it makes a new journey (keeping one of majhi's examples is this too); with `id` it replaces that journey. Every box and line must be on this workspace's map. The owner and the captain",
+    input: JourneyInputSchema,
+    output: MapViewSchema,
+  },
+  "map.removeJourney": {
+    risk: "change",
+    summary: "Remove a journey the owner kept. The owner and the captain",
+    input: JourneyRemoveInputSchema,
+    output: MapViewSchema,
+  },
   // The chat dock -----------------------------------------------------------------
   "conversations.list": {
     risk: "read",
@@ -1960,7 +1992,7 @@ export const commands = {
   "tasks.tell": {
     risk: "change",
     summary:
-      "The captain writes to the lead of a running task in its own workspace (or to a named agent on its team), shown in the room as a note from the Captain, and wakes that agent like a message from the owner. The task keeps running and its brief is not edited. Use it instead of editing a brief or restarting a task: to steer, answer, or ask the lead to resolve something. The text is advice to the agent, never an approval. A second note before the lead has taken a new turn is not sent (told: false, refused: already-told): wait for the lead's next turn. Only the captain in a lane may call it; an ordinary agent may not",
+      "The captain writes to the lead of a running task in its own workspace (or to a named agent on its team), shown in the room as a note from the Captain, and wakes that agent like a message from the owner. The task keeps running and its brief is not edited. Use it instead of editing a brief or restarting a task: to steer, answer, or ask the lead to resolve something. The text is advice to the agent, never an approval. A second note before the lead has taken a new turn is not sent (told: false, refused: already-told): wait for the lead's next turn. Only the captain may call it: in a lane, for that workspace's tasks; in its root chat (the All chip), for any workspace's task, with ownerAsked true when the owner asked for the note. An ordinary agent may not",
     input: z.object({
       id: TaskIdSchema,
       /** Default: the task's lead. */
@@ -2154,6 +2186,27 @@ export const commands = {
       deleteAfter: z.boolean().default(false),
     }),
     output: z.object({ task: TaskSchema }),
+  },
+  "tasks.queueMerge": {
+    risk: "outbound",
+    summary:
+      "Owner only. Merge (or merge and push) by itself when the hand-off checks of the task's current head pass, through the normal merge rule. Only while the checks of that head run or wait. Cancelled, never merged, when the head moves, a check fails or the merge refuses",
+    input: z.object({
+      id: TaskIdSchema,
+      action: z.enum(["merge", "mergePush"]),
+      into: LocalBranchSchema.optional(),
+      /** The branch to merge into, per repo. Wins over into. */
+      targets: ShipTargetsSchema.optional(),
+      method: MergeMethodSchema.default("merge"),
+      deleteAfter: z.boolean().default(false),
+    }),
+    output: z.object({ queued: QueuedMergeSchema }),
+  },
+  "tasks.cancelQueuedMerge": {
+    risk: "change",
+    summary: "Forget the merge that waits for the checks to pass. Nothing merges",
+    input: z.object({ id: TaskIdSchema }),
+    output: z.object({ ok: z.literal(true) }),
   },
   "tasks.cancelShip": {
     risk: "change",

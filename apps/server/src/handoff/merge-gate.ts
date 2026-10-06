@@ -45,7 +45,12 @@ export function decideMerge(facts: MergeFacts): MergeVerdict {
   if (!atHead) return { kind: "stale", ran: true };
   // The cheap checks failed first (a conflict, uncommitted work, a waiting card): running again changes nothing.
   const ready = current.steps.find((s) => s.id === "ready");
-  if (ready?.status === "fail") return { kind: "blocked", why: ready.detail ?? "the first checks failed" };
+  if (ready?.status === "fail")
+    return {
+      kind: "blocked",
+      why: ready.detail ?? "the first checks failed",
+      ...(ready.owner === true ? { owner: true as const } : {}),
+    };
   for (const [id, check] of KINDS) {
     const step = current.steps.find((s) => s.id === id);
     if (step !== undefined && FAILED.has(step.status)) return { kind: "failed", check };

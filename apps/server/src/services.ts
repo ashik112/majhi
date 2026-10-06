@@ -118,7 +118,7 @@ import { InstallRequests } from "./installs/service.ts";
 import { busyReason } from "./machine/busy.ts";
 import { MemoryWatch } from "./machine/memwatch.ts";
 import { MachineSensor } from "./machine/sensor.ts";
-import { GraphRunner } from "./map/graph/run.ts";
+import { GraphRunner, graphFolder } from "./map/graph/run.ts";
 import { CodeGraphTools } from "./map/graph/tools.ts";
 import { housekeeperPrice } from "./map/price.ts";
 import { MapRepo } from "./map/repo.ts";
@@ -203,6 +203,7 @@ import { CleanupService } from "./tasks/cleanup.ts";
 import { TaskFolderSweep } from "./tasks/folder-sweep.ts";
 import type { LinkOptions } from "./tasks/links.ts";
 import { PendingShips } from "./tasks/pending-ship.ts";
+import { QueuedMerges } from "./tasks/queued-merge.ts";
 import { TaskService } from "./tasks/service.ts";
 import { TerminalManager, type TerminalTimers } from "./terminal/manager.ts";
 import { openTaskTerminal } from "./terminal/task-terminal.ts";
@@ -345,6 +346,7 @@ export interface Services {
   /** The buttons on review and paused cards. */
   cardActions: CardActions;
   pendingShips: PendingShips;
+  queuedMerges: QueuedMerges;
   /** Worktrees, merged branches and room logs of tasks done for a while. */
   cleanup: CleanupService;
   /** Frees dependency folders and build output of done tasks (5.18 Cleanup). */
@@ -947,6 +949,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   // The project map (5.21). Its code pass is a Housekeeper question per project: the smallest model, no tools.
   const map = new MapService({
     graph: graphRunner,
+    graphFolder: async (o, p) => graphFolder(await graphRoot(), o, p),
     repo: new MapRepo(store.raw),
     projects: async () =>
       (await projects.infos()).map((p) => ({ id: p.id, org: p.org, path: p.path, exists: p.exists })),
@@ -1130,6 +1133,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       // No label this time; the next review tries again.
     }
   };
+  /** Whether the hand-off check of a task in review has a verdict: the gate every screen's "ready" follows. */
+  const checksOf = (id: string, status: string): Pick<Subject, "checks"> => {
+    const gate = status === "review" ? handoffService?.gate(id) : undefined;
+    return gate === undefined ? {} : { checks: gate };
+  };
   /** The task an item belongs to, as notifications and the Decisions inbox name it. */
   const subjectOf = (id: string): Subject | undefined => {
     const task = store.tasks.subjectInfo(id);
@@ -1142,6 +1150,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           ...(task.org === undefined ? {} : { org: task.org }),
           repos: task.repos,
           status: task.status,
+          ...checksOf(id, task.status),
           ...(() => {
             const kids = store.tasks.openSubtasks(id);
             return {
@@ -1163,6 +1172,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         ...(task.org === undefined ? {} : { org: task.org }),
         repos: task.repos,
         status: task.status,
+        ...checksOf(id, task.status),
         openSubtasks: task.open,
         ...(task.newest === undefined ? {} : { newestSubtask: task.newest }),
       });
@@ -1197,6 +1207,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return authorityOf(settings, subject.org ?? PRIVATE)[row] === "decide";
     },
     item: (task, id) => store.room.get(task, id),
+    pendingReview: (task) => store.room.pendingOfType(task, "review"),
     settings: async () => {
       try {
         return (await config.settings()).notifications;
@@ -1262,6 +1273,38 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.reloadKeys === undefined ? {} : { reloadKeys: options.reloadKeys }),
   });
   const pendingShips = new PendingShips({ store, tasks, mrs, room, events, now: () => new Date() });
+  const queuedMerges = new QueuedMerges(store.raw, {
+    task: (id) => {
+      const t = store.tasks.get(id);
+      return t === undefined ? undefined : { id: t.id, status: t.status, repos: t.repos.length };
+    },
+    checks: (id) => {
+      const t = tasks.get(id);
+      return mergeGate.checks(t, t.repos);
+    },
+    run: async (q) => {
+      const input = {
+        id: q.task,
+        ...(q.targets === undefined ? { into: q.into } : { targets: q.targets }),
+        done: true,
+        by: q.by,
+        method: q.method,
+        deleteAfter: q.deleteAfter,
+      };
+      const out = q.action === "mergePush" ? await mrs.mergeAndPush(input) : await tasks.merge(input);
+      const failed = out.results.filter((r) => !r.ok);
+      return failed.length === 0 ? undefined : failed.map((r) => `${r.project}: ${r.detail}`).join(" ");
+    },
+    say: (id, text) =>
+      room.post(id as TaskId, `info:${randomUUID()}`, { type: "system", level: "info", text }),
+    refuse: (id, text) => {
+      const t = tasks.get(id);
+      if (t.status === "review") tasks.cards.review(t, text);
+      else room.post(id as TaskId, `warn:${randomUUID()}`, { type: "system", level: "warn", text });
+    },
+    changed: (id) => events.emitTask(id),
+    now: () => new Date(),
+  });
   const resumeLimited = async (org: string): Promise<string[]> => {
     const resumed: string[] = [];
     for (const t of store.tasks.list(false)) {
@@ -1693,11 +1736,18 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     autonomous: () => autonomy.mode() === "on",
     ruleOff: (org, rule) => ruleSwitches.off(org, rule),
     ceilingHeld: () => outcomesService?.ceilingHeld(),
-    changed: (task) => events.emitTask(task),
+    changed: (task) => {
+      events.emitTask(task);
+      // A verdict may have landed: a review card that waited for it can alert, a queued merge can run.
+      notifier.recheck(task);
+      void queuedMerges.evaluate(task).catch(() => undefined);
+    },
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
     ...(options.handoff === undefined ? {} : options.handoff),
   });
   handoffService = handoff;
+  // A merge queued before a restart keeps waiting for its checks.
+  queuedMerges.start();
   /** Bound when the server made the dispatcher: the captain's chores run commands as the captain. */
   let captainDispatch: Dispatch | undefined;
   const captain = new CaptainService({
@@ -2447,6 +2497,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     gitConnect,
     cardActions,
     pendingShips,
+    queuedMerges,
     cleanup,
     folderSweep,
     machine,
@@ -2525,6 +2576,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       clearInterval(updateWatch);
       backup.stop();
       notifier.close();
+      queuedMerges.stop();
       automation.scheduler.stop();
       cards.close();
       layaDocker?.close();

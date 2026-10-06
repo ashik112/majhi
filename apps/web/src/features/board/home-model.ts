@@ -320,6 +320,8 @@ export function buildHome(input: HomeInput): { sections: HomeSections; totals: H
         shipping.push({ task, mr: input.mrs.get(task.id), extra: input.mrExtra.get(task.id) ?? 0 });
         break;
       case "next":
+        // A task in review whose checks run is shown once, as the Checking row in Running now.
+        if (task.status === "review" && input.checks.get(task.id)?.activity !== undefined) break;
         next.push({ task, blocker });
         break;
       case "triage":

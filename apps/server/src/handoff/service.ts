@@ -201,6 +201,12 @@ export class HandoffService {
   private readonly waiting = new Set<string>();
   /** Checks someone asked for that have not ended: the card shows them as running at once. */
   private readonly asked = new Set<string>();
+  /**
+   * Tasks whose check for the current head has no verdict yet: from the moment the task reached
+   * review (or a check was asked for) until the verdict is recorded. The owner is not told that
+   * such a task is ready: it is still being checked (`gate`).
+   */
+  private readonly busy = new Set<string>();
   /** The last result for each task, for what the card shows while it has not been judged. */
   private readonly latest = new Map<string, HandoffResult>();
   private readonly background = new Set<Promise<unknown>>();
@@ -233,21 +239,39 @@ export class HandoffService {
 
   /** The task reached review: check it in the background. A failure here never touches the task. */
   reviewReached(id: string): void {
+    this.busy.add(id);
     const work = this.ensure(id, { force: false }).catch(() => undefined);
     this.background.add(work);
-    void work.finally(() => this.background.delete(work));
+    void work.finally(() => {
+      this.background.delete(work);
+      this.busy.delete(id);
+    });
   }
 
   /** The owner or the captain asks for a check now: it runs in the background, the state says when. */
   start(id: string, force: boolean): void {
     if (this.ports.task(id) === undefined) throw new UserError(`There is no task ${id}.`, 404);
     this.asked.add(id);
+    this.busy.add(id);
     const work = this.ensure(id, { force }).catch(() => undefined);
     this.background.add(work);
     void work.finally(() => {
       this.background.delete(work);
       this.asked.delete(id);
+      this.busy.delete(id);
     });
+  }
+
+  /**
+   * What the owner's screens may say about a task in review, read without waiting: `running` while
+   * the check of its head has no verdict (nothing is "ready" yet), `failed` when the last verdict was
+   * red with failures the lead can fix, else undefined (green, no check, or not judged: ready as before).
+   * The one gate the decisions, alerts, bell, banner and Home all follow.
+   */
+  gate(id: string): "running" | "failed" | undefined {
+    if (this.busy.has(id)) return "running";
+    const last = this.latest.get(id) ?? this.repo.lastResult(id);
+    return last !== undefined && last.verdict === "red" && last.failures.length > 0 ? "failed" : undefined;
   }
 
   /** A task left the board for good: its checks go. */
@@ -369,6 +393,8 @@ export class HandoffService {
       summary: handoffSummary(steps, deep.review),
     };
     this.latest.set(task.id, result);
+    // The verdict is in: the judgment below may put a line on the card, which must read as judged.
+    this.busy.delete(task.id);
     await this.judge(task, result, force || retried);
     this.ports.changed(task.id);
     return result;
@@ -397,6 +423,7 @@ export class HandoffService {
       summary: handoffSummary(steps, review),
     };
     this.latest.set(task.id, result);
+    this.busy.delete(task.id);
     await this.judge(task, result, false);
     this.ports.changed(task.id);
     return result;

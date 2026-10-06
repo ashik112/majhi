@@ -23,10 +23,12 @@ import { PageLink } from "@/components/ui/page-link";
 import { Segmented } from "@/components/ui/segmented";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { ChecksOnCommit } from "@/features/handoff/checks-on-commit";
 import { GitLoginOffer } from "@/features/orgs/git-login-offer";
 import { cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
+import { useHandoff } from "@/lib/handoff-queries";
 import { useAfterTaskChange, useShipOptions, useTaskBranches } from "@/lib/task-queries";
 
 export type ShipAction = "merge" | "mergePush" | "push" | "mr";
@@ -327,6 +329,8 @@ function ShipPanel({
   onClose: () => void;
 }) {
   const options = useShipOptions(task, true);
+  const after = useAfterTaskChange();
+  const handoff = useHandoff(task.id, task.repos.length > 0).data;
   const branches = useTaskBranches(task.id, true);
   const base = options.data?.base ?? task.repos[0]?.base ?? "main";
   // Ship sends only the repos the task changed; the rest are skipped and listed.
@@ -466,6 +470,35 @@ function ShipPanel({
       const create = message.includes(ASKS_NEW);
       if (remote === undefined && (extra || create)) setAsks({ extra, create });
       setError(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Merge by itself when the checks of this exact commit pass, through the same merge rule. */
+  async function mergeWhenChecksPass(action: ShipAction) {
+    if (action !== "merge" && action !== "mergePush") return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await cmd("tasks.queueMerge", { id: task.id, action, ...target, method, deleteAfter });
+      await after();
+      onClose();
+    } catch (err) {
+      setError(describeError(err));
+      setBusy(false);
+    }
+  }
+
+  async function cancelQueued() {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await cmd("tasks.cancelQueuedMerge", { id: task.id });
+      await after();
+      await options.refetch();
+    } catch (err) {
+      setError(describeError(err));
     } finally {
       setBusy(false);
     }
@@ -646,7 +679,16 @@ function ShipPanel({
           {verdict.kind === "running" && (
             <LoaderCircle aria-hidden="true" className="mt-0.5 size-3 shrink-0 animate-spin" />
           )}
-          <span>{mergeVerdictLine(verdict)}</span>
+          {verdict.kind === "running" ? (
+            <span>
+              <ChecksOnCommit
+                step={handoff?.activity?.phase === "running" ? handoff.activity.step : undefined}
+              />
+              . Not ready to merge until they pass.
+            </span>
+          ) : (
+            <span>{mergeVerdictLine(verdict)}</span>
+          )}
         </p>
       )}
       {others && (
@@ -778,7 +820,11 @@ function ShipPanel({
                     Fix with agent
                   </Button>
                 )}
-                {verdict.kind === "blocked" && (
+                {/* Only the owner clears it (a card waits for them): the lead is not asked to fix it. */}
+                {verdict.kind === "blocked" && verdict.owner === true && (
+                  <p className="self-center text-xs text-amber text-pretty">{mergeVerdictLine(verdict)}</p>
+                )}
+                {verdict.kind === "blocked" && verdict.owner !== true && (
                   <Button
                     size="sm"
                     variant="primary"
@@ -792,10 +838,24 @@ function ShipPanel({
                     Fix with agent
                   </Button>
                 )}
-                {verdict.kind === "running" && (
-                  <Button size="sm" disabled>
-                    <LoaderCircle aria-hidden="true" className="animate-spin" />
-                    Checks running
+                {verdict.kind === "running" && options.data?.queued !== undefined && (
+                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => void cancelQueued()}>
+                    Cancel: will merge when checks pass
+                  </Button>
+                )}
+                {verdict.kind === "running" && options.data?.queued === undefined && (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={busy}
+                    onClick={() => void mergeWhenChecksPass(chosen)}
+                  >
+                    {busy ? (
+                      <LoaderCircle aria-hidden="true" className="animate-spin" />
+                    ) : (
+                      <GitMerge aria-hidden="true" />
+                    )}
+                    {chosen === "mergePush" ? "Merge and push when checks pass" : "Merge when checks pass"}
                   </Button>
                 )}
                 {mergeCanBeOverridden(verdict) && verdict.kind === "failed" && (
