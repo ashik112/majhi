@@ -155,7 +155,7 @@ export function InsideWorld({
           >
             <div className="fn-n" title={f.id}>
               <FileCode aria-hidden="true" strokeWidth={1.6} />
-              <span className="fn-t">{f.id}</span>
+              <span className="fn-t">{f.id.split(".").slice(-2).join(".")}</span>
             </div>
             {s.more && f.doc !== "" && <div className="n-sub">{f.doc}</div>}
           </div>
