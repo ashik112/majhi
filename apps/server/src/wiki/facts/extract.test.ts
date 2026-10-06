@@ -29,7 +29,12 @@ async function put(files: Record<string, string>): Promise<void> {
 }
 
 /** A reader that returns what the sealed reader would have written, so no container is needed. */
-const readerWith = (reader: { routes?: unknown[]; entries?: unknown[]; calls?: unknown[] }): FactsReader => ({
+const readerWith = (reader: {
+  routes?: unknown[];
+  entries?: unknown[];
+  calls?: unknown[];
+  requests?: unknown[];
+}): FactsReader => ({
   async readFacts(_export, cache) {
     const out = { v: 1, files: 3, routes: [], entries: [], calls: [], errors: [], ...reader };
     await writeFile(join(cache, "reader.json"), JSON.stringify(out));
