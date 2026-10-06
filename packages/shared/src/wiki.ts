@@ -446,7 +446,11 @@ export const WikiPageSchema = z
     }
     page.roles.forEach((r, i) => {
       if (!numbers.has(r.claim)) {
-        ctx.addIssue({ code: "custom", path: ["roles", i, "claim"], message: `No claim ${r.claim} on this page` });
+        ctx.addIssue({
+          code: "custom",
+          path: ["roles", i, "claim"],
+          message: `No claim ${r.claim} on this page`,
+        });
       }
     });
   });
@@ -467,6 +471,8 @@ const statusBase = {
   builtAt: z.string().optional(),
   /** Commits the base branch has past the built one. Absent: not built, or not counted. */
   behind: z.number().int().nonnegative().optional(),
+  /** Files that changed between the built commit and the base tip. A page that cites one may be out of date. */
+  changed: z.array(RepoPathSchema).max(5000).default([]),
   /** The pages were written by older rules and the next update rewrites them. */
   oldRules: z.boolean().default(false),
   lastError: z.string().max(500).optional(),

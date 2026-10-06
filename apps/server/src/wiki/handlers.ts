@@ -2,6 +2,7 @@ import { WIKI_RULES, type WikiStatus } from "@majhi/shared";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
 import { type FindingsHandlerDeps, findingActor } from "../findings/handlers.ts";
+import type { DriftOf } from "./drift.ts";
 import type { WikiRepo } from "./repo.ts";
 import type { WikiEnabled } from "./switch.ts";
 
@@ -14,6 +15,8 @@ export interface WikiHandlerDeps extends Pick<FindingsHandlerDeps, "lanes" | "st
   orgs: () => Promise<readonly string[]>;
   /** Ids of a workspace's registered projects. */
   projects: (org: string) => Promise<readonly string[]>;
+  /** How far the code has moved past a built commit. Absent: the status leaves it out. */
+  drift?: DriftOf;
 }
 
 /**
@@ -40,8 +43,10 @@ export function wikiHandlers(deps: WikiHandlerDeps): Pick<CommandHandlers, WikiC
   const requireOn = async (org: string): Promise<void> => {
     if (!(await deps.enabled(org))) throw new UserError(`The wiki is off for workspace "${org}".`, 409);
   };
-  const statusOf = (org: string, project: string): WikiStatus => {
+  const statusOf = async (org: string, project: string): Promise<WikiStatus> => {
     const state = repo.state(org, project);
+    const drift =
+      state.builtCommit === undefined ? undefined : await deps.drift?.(org, project, state.builtCommit);
     return {
       org,
       project,
@@ -50,6 +55,8 @@ export function wikiHandlers(deps: WikiHandlerDeps): Pick<CommandHandlers, WikiC
       ...(state.updatedAt === undefined || state.builtCommit === undefined
         ? {}
         : { builtAt: state.updatedAt }),
+      ...(drift === undefined ? {} : { behind: drift.behind }),
+      changed: drift?.changed ?? [],
       oldRules: state.builtCommit !== undefined && state.rules !== WIKI_RULES,
       ...(state.lastError === undefined ? {} : { lastError: state.lastError }),
     };
@@ -67,7 +74,7 @@ export function wikiHandlers(deps: WikiHandlerDeps): Pick<CommandHandlers, WikiC
         ...(project === undefined ? {} : { project }),
         enabled: true,
         pages: repo.pages(org, project),
-        status: projects.map((p) => statusOf(org, p)),
+        status: await Promise.all(projects.map((p) => statusOf(org, p))),
       };
     },
     "wiki.page": async (input, ctx) => {
