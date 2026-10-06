@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { BranchPatternSchema, IdSchema, MrHostSchema, OrgIdSchema, SecretRefSchema } from "./accounts.ts";
 import { DiagramSpecSchema } from "./diagram.ts";
+import { HandoffFailedSchema } from "./handoff.ts";
 import { ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./rooms.ts";
 import { CommitsPatchSchema } from "./settings.ts";
@@ -932,6 +933,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     agent: IdSchema.optional(),
     /** The decision this line reports, so the owner can say it was wrong (5.12). */
     decision: z.string().max(40).optional(),
+    /** The hand-off check step this line reports as failed: the room shows its log and a rerun beside it. */
+    failed: HandoffFailedSchema.optional(),
   }),
 ]);
 export type RoomItem = z.infer<typeof RoomItemSchema>;

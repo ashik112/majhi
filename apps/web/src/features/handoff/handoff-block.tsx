@@ -6,6 +6,7 @@ import {
   type HandoffResult,
   type HandoffState,
   type HandoffStep,
+  handoffFailedFacts,
   handoffSeconds,
 } from "@majhi/shared";
 import { Link, useRouterState } from "@tanstack/react-router";
@@ -119,10 +120,7 @@ export function FailedStep({ task, className }: { task: string; className?: stri
   const failed = state?.current?.failed;
   if (state === undefined || failed === undefined || state.running || state.queued) return null;
   if (state.current?.verdict !== "red") return null;
-  const facts = [
-    failed.status === "timeout" ? "timed out" : failed.code === null ? undefined : `exit ${failed.code}`,
-    failed.ms >= 1000 ? handoffSeconds(failed.ms) : undefined,
-  ].flatMap((f) => (f === undefined ? [] : [f]));
+  const facts = handoffFailedFacts(failed);
   return (
     <div className={cn("flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pl-4 text-sm", className)}>
       <span className="font-medium text-red">Failed: {failed.label}</span>

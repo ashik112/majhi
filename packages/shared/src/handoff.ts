@@ -27,6 +27,14 @@ export type HandoffStepId = z.infer<typeof HandoffStepIdSchema>;
 export const HandoffStatusSchema = z.enum(["pass", "fail", "timeout", "flaky", "none", "skipped", "note"]);
 export type HandoffStatus = z.infer<typeof HandoffStatusSchema>;
 
+/** What a failed step says besides its name: how it ended and how long it ran, like "exit 1" and "24 s". */
+export function handoffFailedFacts(failed: Pick<HandoffFailed, "status" | "code" | "ms">): string[] {
+  return [
+    failed.status === "timeout" ? "timed out" : failed.code === null ? undefined : `exit ${failed.code}`,
+    failed.ms >= 1000 ? handoffSeconds(failed.ms) : undefined,
+  ].flatMap((f) => (f === undefined ? [] : [f]));
+}
+
 /** The steps that run a shell line of the project: a person can rerun one of these on its own. */
 export const HANDOFF_COMMAND_STEPS = ["install", "lint", "build", "tests"] as const;
 export const HandoffCommandStepSchema = z.enum(HANDOFF_COMMAND_STEPS);

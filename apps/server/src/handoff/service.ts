@@ -128,7 +128,7 @@ export interface HandoffPorts {
   /** Why the model may not be used now (the monthly ceiling), or undefined. */
   modelBlocked(org: string): string | undefined;
   /** Writes to the task's lead as majhi's check. Rejects when the task has no lead to tell. */
-  tell(id: string, text: string): Promise<void>;
+  tell(id: string, text: string, failed?: HandoffFailed): Promise<void>;
   /** Puts a line on the task's review card for the owner, or clears the check's line. */
   hold(id: string, line: string | undefined): void;
   changed(id: string): void;
@@ -300,7 +300,9 @@ export class HandoffService {
     result: HandoffResult,
     only: readonly HandoffCommandStep[] | undefined,
   ): Promise<void> {
-    await this.ports.tell(id, rerunNote(result, only)).catch(() => undefined);
+    await this.ports
+      .tell(id, rerunNote(result, only), result.failures.length > 0 ? result.failed : undefined)
+      .catch(() => undefined);
   }
 
   /**
@@ -925,7 +927,7 @@ export class HandoffService {
 
   private async tellLead(task: HandoffTask, result: HandoffResult, attempt: number): Promise<void> {
     try {
-      await this.ports.tell(task.id, failureNote(result, attempt, HANDOFF_STRIKES));
+      await this.ports.tell(task.id, failureNote(result, attempt, HANDOFF_STRIKES), result.failed);
       this.repo.setAction(task.id, result.head, "told");
     } catch (err) {
       // No lead to tell (paused, done, no agent): the owner sees the failure on the card.

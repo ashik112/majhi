@@ -158,7 +158,7 @@ export function createHandoff(w: HandoffWiring): HandoffService {
     autonomous: w.autonomous,
     ruleOff: (org, rule) => w.ruleOff?.(org, rule) === true,
     modelBlocked: () => w.ceilingHeld(),
-    tell: (id, text) => w.tasks.handoffTell({ task: id, text }),
+    tell: (id, text, failed) => w.tasks.handoffTell({ task: id, text, failed }),
     hold: (id, line) => {
       w.tasks.cards.checkHeld(id, line);
     },

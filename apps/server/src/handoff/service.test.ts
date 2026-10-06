@@ -36,7 +36,7 @@ function world(
   const calls = {
     exec: [] as string[],
     review: [] as string[],
-    tell: [] as { id: string; text: string }[],
+    tell: [] as { id: string; text: string; failed?: unknown }[],
     holds: [] as (string | undefined)[],
     logs: [] as { task: string; run: string; step: string; text: string }[],
   };
@@ -110,9 +110,9 @@ function world(
     autonomous: () => state.autonomous,
     ruleOff: (_org, rule) => state.off.has(rule),
     modelBlocked: () => state.modelBlocked,
-    tell: async (id, text) => {
+    tell: async (id, text, failed) => {
       if (state.tellFails) throw new Error("it is paused");
-      calls.tell.push({ id, text });
+      calls.tell.push({ id, text, failed });
     },
     hold: (_id, line) => {
       calls.holds.push(line);
@@ -366,6 +366,8 @@ describe("the full log of a step", () => {
     expect(w.calls.tell).toHaveLength(1);
     expect(w.calls.tell[0]?.text).toContain(r.failed?.log?.path ?? "no log");
     expect(w.calls.tell[0]?.text).toContain("handoff_rerun");
+    // The room line gets the failing step as typed fields, not text to read.
+    expect(w.calls.tell[0]?.failed).toEqual(r.failed);
   });
 
   it("the owner's switch for sending failures to the lead still keeps the lead from being told", async () => {
