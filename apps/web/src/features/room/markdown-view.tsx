@@ -13,7 +13,8 @@ import { classifyTarget, presentFileLink, safeHref } from "./links";
 import { TaskFileLink, type TaskFiles, TaskFileView } from "./media";
 import { AGENT_REF_PROP, remarkTaskRefs, TASK_REF_PROP } from "./task-refs";
 
-export type MarkdownSize = "chat" | "document";
+/** `inline` is a wiki page's own text: body size, soft color, code spans as small chips. */
+export type MarkdownSize = "chat" | "document" | "inline";
 
 /** Numbered citations of a wiki page: the numbers that count, and what each one shows. */
 export interface Cites {
@@ -206,7 +207,7 @@ export function Markdown({
     [known, agents, cites],
   );
   return (
-    <div className={cn("md", size === "document" && "md-doc")}>
+    <div className={cn("md", size === "document" && "md-doc", size === "inline" && "md-inline")}>
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         rehypePlugins={highlight ?? []}
