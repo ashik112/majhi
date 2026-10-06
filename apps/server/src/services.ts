@@ -180,6 +180,7 @@ import { packageCache } from "./runs/package-cache.ts";
 import { Resilience } from "./runs/resilience.ts";
 import { SERENA_COMMAND } from "./runs/serena.ts";
 import { signedIn } from "./runs/start-failure.ts";
+import { toolsFolder } from "./runs/tools-folder.ts";
 import { type AcpRuntime, realRuntime } from "./runtime.ts";
 import { classifyHost } from "./scan/remote.ts";
 import { RepoScanner } from "./scan/scanner.ts";
@@ -1756,6 +1757,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     base: sessionOptions.base,
     repoMounts: (task) => repoMounts(task),
     packages: (task) => packageCache(env.majhiHome, task).catch(() => undefined),
+    tools: (task) => toolsFolder(env.majhiHome, task).catch(() => undefined),
     // A hand-off check that starts containers (a repo's own test of its deploy files) reaches the task's through majhi.
     dockerShim: (task) => {
       const shim = roomAccess.attachDocker({ task, agent: store.tasks.get(task)?.team[0] ?? "handoff" });
@@ -1771,6 +1773,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         cpus: c.handoff_cpus ?? defaultHandoffCpus(),
         memory: c.handoff_memory ?? DEFAULT_HANDOFF_MEMORY,
         minutes: c.handoff_minutes?.[project],
+        stepMinutes: c.handoff_step_minutes,
       };
     },
     mergeDecides: async (org) => authorityOf((await config.settings()).autonomy, org).merge === "decide",

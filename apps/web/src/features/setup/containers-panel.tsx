@@ -32,6 +32,7 @@ export function ContainersSection() {
         <>
           <ImagesList images={settings.data.containers.images} />
           <LimitsForm saved={settings.data.containers} />
+          <HandoffTimeoutsForm saved={settings.data.containers} />
         </>
       )}
     </>
@@ -294,6 +295,99 @@ function LimitsForm({ saved }: { saved: ContainersSettings }) {
                 {...p}
                 className="font-mono"
                 value={value(key)}
+                onChange={(e) => {
+                  if (state.kind !== "saving") setState(IDLE);
+                  setEdits((prev) => ({ ...prev, [key]: e.target.value }));
+                }}
+              />
+            )}
+          </Field>
+        ))}
+        <button type="submit" hidden />
+      </form>
+    </SaveSection>
+  );
+}
+
+const HANDOFF_STEPS = [
+  { key: "install", label: "Install", fallback: 10 },
+  { key: "lint", label: "Lint", fallback: 5 },
+  { key: "build", label: "Build", fallback: 10 },
+  { key: "tests", label: "Tests", fallback: 10 },
+] as const;
+
+/** How long each step of the hand-off check may run before it is stopped. Today's values are the defaults. */
+function HandoffTimeoutsForm({ saved }: { saved: ContainersSettings }) {
+  const save = useSaveSettings();
+  const [edits, setEdits] = useState<Partial<Record<(typeof HANDOFF_STEPS)[number]["key"], string>>>({});
+  const [state, setState] = useState<SaveState>(IDLE);
+  const [showErrors, setShowErrors] = useState(false);
+  const current = (key: (typeof HANDOFF_STEPS)[number]["key"], fallback: number) =>
+    saved.handoff_step_minutes?.[key] ?? fallback;
+  const value = (key: (typeof HANDOFF_STEPS)[number]["key"], fallback: number) =>
+    edits[key] ?? String(current(key, fallback));
+  const dirty = HANDOFF_STEPS.some(
+    ({ key, fallback }) => value(key, fallback) !== String(current(key, fallback)),
+  );
+  const parsed = ContainersPatchSchema.safeParse({
+    handoff_step_minutes: Object.fromEntries(
+      HANDOFF_STEPS.map(({ key, fallback }) => [key, Number(value(key, fallback))]),
+    ),
+  });
+  const problem = parsed.success ? undefined : "Whole minutes, 1 to 240";
+
+  function submit() {
+    setShowErrors(true);
+    if (!parsed.success || !dirty) return;
+    setState({ kind: "saving" });
+    save.mutate(
+      { containers: parsed.data },
+      {
+        onSuccess: () => {
+          setEdits({});
+          setShowErrors(false);
+          setState({ kind: "saved" });
+        },
+        onError: (e) => setState({ kind: "error", message: e.message, details: e.details }),
+      },
+    );
+  }
+
+  return (
+    <SaveSection
+      title="Hand-off check"
+      note="Minutes each step may run before it is stopped. A project can set its own for tests and build in majhi.yaml"
+      dirty={dirty}
+      state={state}
+      onSave={submit}
+      onDiscard={() => {
+        setEdits({});
+        setShowErrors(false);
+        setState(IDLE);
+      }}
+    >
+      <form
+        aria-label="Hand-off check timeouts"
+        noValidate
+        className="grid max-w-[640px] gap-3 @[480px]:grid-cols-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+      >
+        {HANDOFF_STEPS.map(({ key, label, fallback }) => (
+          <Field
+            key={key}
+            label={`${label} (minutes)`}
+            hint={`Default ${fallback}`}
+            error={showErrors ? problem : undefined}
+          >
+            {(p) => (
+              <Input
+                {...p}
+                className="font-mono"
+                inputMode="numeric"
+                value={value(key, fallback)}
                 onChange={(e) => {
                   if (state.kind !== "saving") setState(IDLE);
                   setEdits((prev) => ({ ...prev, [key]: e.target.value }));

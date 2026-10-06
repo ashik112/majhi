@@ -44,6 +44,7 @@ export function FileViewer({
   path,
   items,
   repos,
+  line,
 }: {
   taskId: string;
   folder: string;
@@ -51,13 +52,15 @@ export function FileViewer({
   path: string;
   items: readonly RoomItem[];
   repos: readonly TaskRepo[];
+  /** The line to open at, from `?fileLine=`. */
+  line?: number | undefined;
 }) {
   const navigate = useNavigate();
   const close = () =>
     navigate({
       to: ".",
       search: (prev: AppSearch) => {
-        const { file: _open, fileTask: _task, ...rest } = prev;
+        const { file: _open, fileTask: _task, fileLine: _line, ...rest } = prev;
         return rest;
       },
     });
@@ -67,7 +70,15 @@ export function FileViewer({
       onClose={close}
       className="fixed top-3 right-3 bottom-3 left-auto m-0 h-[calc(100dvh-24px)] max-h-none w-[60vw] min-w-[min(560px,100vw)] max-w-[calc(100vw-24px)] flex-col open:flex rounded-2xl"
     >
-      <Resolving taskId={taskId} folder={folder} param={path} items={items} repos={repos} onClose={close} />
+      <Resolving
+        taskId={taskId}
+        folder={folder}
+        param={path}
+        items={items}
+        repos={repos}
+        line={line}
+        onClose={close}
+      />
     </Modal>
   );
 }
@@ -79,6 +90,7 @@ function Resolving({
   param,
   items,
   repos,
+  line,
   onClose,
 }: {
   taskId: string;
@@ -86,6 +98,7 @@ function Resolving({
   param: string;
   items: readonly RoomItem[];
   repos: readonly TaskRepo[];
+  line: number | undefined;
   onClose: () => void;
 }) {
   const requested = useMemo(() => parseFileRef(param), [param]);
@@ -107,6 +120,7 @@ function Resolving({
       fileRef={ref}
       items={items}
       repos={repos}
+      line={line}
       onClose={onClose}
     />
   );
@@ -120,6 +134,7 @@ export function Viewer({
   items,
   repos,
   cite,
+  line,
   onClose,
 }: {
   taskId: string;
@@ -129,6 +144,8 @@ export function Viewer({
   repos: readonly TaskRepo[];
   /** A wiki source: the cited lines are marked and the view scrolls to them. */
   cite?: ViewerCite;
+  /** One line to mark and scroll to, when a link names it. */
+  line?: number | undefined;
   onClose: () => void;
 }) {
   const path = fileRef.path;
@@ -263,7 +280,7 @@ export function Viewer({
             name={name}
             text={text.data}
             loading={wantsText ? text.isPending : meta.isPending}
-            mark={cite?.lines}
+            mark={cite?.lines ?? (line === undefined ? undefined : [line, line])}
           />
         )}
       </div>

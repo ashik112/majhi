@@ -1,6 +1,8 @@
 import {
   HANDOFF_STRIKES,
   type HandoffActivity,
+  type HandoffCommandStep,
+  type HandoffFailed,
   type HandoffHistoryItem,
   type HandoffResult,
   type HandoffReview,
@@ -22,10 +24,12 @@ import {
   outputTail,
   passedCount,
   patchBudget,
+  rerunNote,
   reviewPrompt,
   TRIVIAL_LINES,
 } from "./analysis.ts";
 import { substituteBase, usesBase } from "./commands.ts";
+import { logPath, newRunId, StepLog } from "./logs.ts";
 import type { DeepRow, HandoffRepo } from "./repo.ts";
 
 /**
@@ -58,6 +62,10 @@ export interface ExecResult {
   timedOut: boolean;
   /** The end of what it printed, secrets masked. */
   output: string;
+  /** What it printed, whole up to the log cap, secrets masked. */
+  log: string;
+  /** Characters left out of the middle of `log` when it passed the cap. */
+  cut?: number | undefined;
   ms: number;
   /** majhi could not start it (no runner, no agent to run it as): not the lead's fault. */
   error?: string | undefined;
@@ -71,10 +79,14 @@ export interface ExecLimits {
 
 /** The hand-off settings of a project: caps, and the minutes its tests and build may take (undefined: the default). */
 export interface HandoffLimits extends ExecLimits {
+  /** The project's own minutes for its tests and build. They win over `stepMinutes`. */
   minutes: number | undefined;
+  /** The minutes each step may take, from settings. A step left out gets its default. */
+  stepMinutes?: { [K in HandoffCommandStep]?: number | undefined } | undefined;
 }
 
 export interface CardCommands {
+  install?: string | undefined;
   test?: string | undefined;
   build?: string | undefined;
   lint?: string | undefined;
@@ -91,6 +103,10 @@ export interface HandoffPorts {
   /** The merge-base commit of a task's branch and its target in one project, as majhi computed it. */
   mergeBase?(task: string, project: string): Promise<string | undefined>;
   diff(id: string): Promise<DiffFacts>;
+  /** Whether a worktree lacks the packages its project installs (no `node_modules`, no virtualenv). Absent: never. */
+  needsInstall?(cwd: string): Promise<boolean>;
+  /** Saves one step's whole output as a file in the task folder (`logPath(run, step)`). Rejects when it cannot. */
+  saveLog?(task: string, run: string, step: HandoffStepId, text: string): Promise<void>;
   /** Runs one shell line in a task's worktree, in its runner, with a timeout. */
   exec(
     task: string,
@@ -112,7 +128,7 @@ export interface HandoffPorts {
   /** Why the model may not be used now (the monthly ceiling), or undefined. */
   modelBlocked(org: string): string | undefined;
   /** Writes to the task's lead as majhi's check. Rejects when the task has no lead to tell. */
-  tell(id: string, text: string): Promise<void>;
+  tell(id: string, text: string, failed?: HandoffFailed): Promise<void>;
   /** Puts a line on the task's review card for the owner, or clears the check's line. */
   hold(id: string, line: string | undefined): void;
   changed(id: string): void;
@@ -123,6 +139,7 @@ export interface HandoffOptions {
   testMs?: number;
   buildMs?: number;
   lintMs?: number;
+  installMs?: number;
   /** Checks that run at once across majhi, and per workspace. They take no agent slot: no agent runs. */
   parallel?: number;
   perOrg?: number;
@@ -136,6 +153,7 @@ const RETRY_AFTER_MS = 6 * 60 * MINUTE;
 export const TEST_TIMEOUT_MS = 10 * MINUTE;
 export const BUILD_TIMEOUT_MS = 10 * MINUTE;
 export const LINT_TIMEOUT_MS = 5 * MINUTE;
+export const INSTALL_TIMEOUT_MS = 10 * MINUTE;
 
 /** Keeps at most `limit` running and `perOrg` per workspace, in the order they asked. */
 class Slots {
@@ -180,6 +198,7 @@ class Slots {
 /** The step labels, as the card shows them. */
 const LABEL: Record<HandoffStepId, string> = {
   ready: "Merge checks",
+  install: "Install",
   tests: "Tests",
   build: "Build",
   lint: "Lint",
@@ -195,7 +214,7 @@ const step = (id: HandoffStepId, rest: Omit<HandoffStep, "id" | "label">): Hando
 
 export class HandoffService {
   private readonly slots: Slots;
-  private readonly timeouts: Record<"tests" | "build" | "lint", number>;
+  private readonly timeouts: Record<HandoffCommandStep, number>;
   private readonly inflight = new Map<string, Promise<HandoffResult>>();
   private readonly running = new Set<string>();
   private readonly waiting = new Set<string>();
@@ -223,6 +242,7 @@ export class HandoffService {
       tests: options.testMs ?? TEST_TIMEOUT_MS,
       build: options.buildMs ?? BUILD_TIMEOUT_MS,
       lint: options.lintMs ?? LINT_TIMEOUT_MS,
+      install: options.installMs ?? INSTALL_TIMEOUT_MS,
     };
   }
 
@@ -248,18 +268,41 @@ export class HandoffService {
     });
   }
 
-  /** The owner or the captain asks for a check now: it runs in the background, the state says when. */
-  start(id: string, force: boolean): void {
+  /**
+   * Someone asks for a check now: it runs in the background, the state says when. `only` runs those
+   * steps again and keeps the others as they were. `report`: when it ends, the task's lead is told
+   * how it went, because an agent asked and is waiting for the answer.
+   */
+  start(
+    id: string,
+    force: boolean,
+    extra: { only?: readonly HandoffCommandStep[]; report?: boolean } = {},
+  ): void {
     if (this.ports.task(id) === undefined) throw new UserError(`There is no task ${id}.`, 404);
     this.asked.add(id);
     this.busy.add(id);
-    const work = this.ensure(id, { force }).catch(() => undefined);
+    const work = this.ensure(id, { force, ...(extra.only === undefined ? {} : { only: extra.only }) })
+      .then(async (result) => {
+        if (extra.report === true) await this.report(id, result, extra.only);
+      })
+      .catch(() => undefined);
     this.background.add(work);
     void work.finally(() => {
       this.background.delete(work);
       this.asked.delete(id);
       this.busy.delete(id);
     });
+  }
+
+  /** An agent's rerun ended: its lead hears the result, green or red, with where the logs are. */
+  private async report(
+    id: string,
+    result: HandoffResult,
+    only: readonly HandoffCommandStep[] | undefined,
+  ): Promise<void> {
+    await this.ports
+      .tell(id, rerunNote(result, only), result.failures.length > 0 ? result.failed : undefined)
+      .catch(() => undefined);
   }
 
   /**
@@ -283,21 +326,38 @@ export class HandoffService {
   /**
    * The check of the task's head now: the cheap checks live, the costly part from the cache or run
    * once. Judges the head (history, a note to the lead, the strike count) the first time it is seen.
+   * `only` runs those steps again, whatever the cache says, and keeps the others from the last run.
+   * A task has one check at a time: a request that cannot share the one that runs waits for it.
    */
-  async ensure(id: string, opts: { force: boolean }): Promise<HandoffResult> {
+  async ensure(
+    id: string,
+    opts: { force: boolean; only?: readonly HandoffCommandStep[] },
+  ): Promise<HandoffResult> {
     const task = this.ports.task(id);
     if (task === undefined) throw new UserError(`There is no task ${id}.`, 404);
-    const head = await this.ports.heads(id);
-    // One run per task and head at a time: a second caller waits for the first and gets its result.
-    const key = `${id}\u0000${head}\u0000${opts.force ? "f" : ""}`;
-    const joined = this.inflight.get(key) ?? this.inflight.get(`${id}\u0000${head}\u0000f`);
-    if (joined !== undefined) return joined;
-    const run = this.run(task, head, opts.force).finally(() => {
-      this.inflight.delete(key);
-      this.stage.delete(id);
-    });
-    this.inflight.set(key, run);
-    return run;
+    const only =
+      opts.only === undefined || opts.only.length === 0 ? undefined : [...new Set(opts.only)].sort();
+    for (;;) {
+      const head = await this.ports.heads(id);
+      const kind = `${opts.force ? "f" : ""}\u0000${only?.join(",") ?? ""}`;
+      const key = `${id}\u0000${head}\u0000${kind}`;
+      // The same ask for the same head shares one run, and a plain check shares a forced one.
+      const joined =
+        this.inflight.get(key) ??
+        (only === undefined ? this.inflight.get(`${id}\u0000${head}\u0000f\u0000`) : undefined);
+      if (joined !== undefined) return joined;
+      const live = [...this.inflight].find(([k]) => k.startsWith(`${id}\u0000`));
+      if (live !== undefined) {
+        await live[1].catch(() => undefined);
+        continue;
+      }
+      const run = this.run(task, head, opts.force, only).finally(() => {
+        this.inflight.delete(key);
+        this.stage.delete(id);
+      });
+      this.inflight.set(key, run);
+      return run;
+    }
   }
 
   /** The check moved to a step: the rows that show it read it again. */
@@ -306,7 +366,12 @@ export class HandoffService {
     this.ports.changed(id);
   }
 
-  private async run(task: HandoffTask, head: string, force: boolean): Promise<HandoffResult> {
+  private async run(
+    task: HandoffTask,
+    head: string,
+    force: boolean,
+    only: readonly HandoffCommandStep[] | undefined,
+  ): Promise<HandoffResult> {
     const started = this.now().getTime();
     this.stage.set(task.id, { step: "ready", since: started });
     const ready = await this.ports.ready(task.id);
@@ -320,13 +385,14 @@ export class HandoffService {
         });
 
     let deep: { steps: HandoffStep[]; review: HandoffReview; ms: number; cached: boolean };
-    let kept = force ? undefined : this.repo.deep(task.id, head);
+    const prior = this.repo.deep(task.id, head);
+    let kept = force || only !== undefined ? undefined : prior;
     const environment = this.ports.environment?.() ?? "";
     // A failure that majhi's update or a changed runner may have fixed, or that is hours old, runs again.
     const previous = kept;
     const retried = previous !== undefined && this.worthRetrying(previous, environment);
     if (retried) kept = undefined;
-    const attempts = retried && previous !== undefined ? previous.attempts + 1 : 1;
+    const attempts = retried && previous !== undefined ? previous.attempts + 1 : (prior?.attempts ?? 1);
     if (!ready.ok && kept === undefined) {
       const skip = (id: HandoffStepId): HandoffStep =>
         step(id, { status: "skipped", detail: "not run until the first problem is fixed" });
@@ -348,7 +414,7 @@ export class HandoffService {
             this.waiting.delete(task.id);
             this.running.add(task.id);
             this.enter(task.id, "lint");
-            return this.deepCheck(task, force);
+            return this.deepCheck(task, force, newRunId(this.now().getTime()), only, prior);
           });
           deep = { ...costly, cached: false };
           // A step majhi could not run is not cached: the next look tries again.
@@ -379,6 +445,20 @@ export class HandoffService {
       const line = s.output === undefined || s.output === "" ? s.detail : `${s.detail}\n${s.output}`;
       (s.owner === true ? held : failures).push(line);
     }
+    const bad = steps.find(
+      (s) => s.owner !== true && (s.status === "fail" || s.status === "timeout" || s.status === "flaky"),
+    );
+    const failed: HandoffFailed | undefined =
+      bad === undefined
+        ? undefined
+        : {
+            step: bad.id,
+            label: bad.label,
+            status: bad.status,
+            code: bad.code ?? null,
+            ms: bad.ms ?? 0,
+            ...(bad.log === undefined ? {} : { log: bad.log }),
+          };
     const result: HandoffResult = {
       task: task.id,
       head,
@@ -387,6 +467,7 @@ export class HandoffService {
       steps,
       review: deep.review,
       failures,
+      ...(failed === undefined ? {} : { failed }),
       held,
       ms: this.now().getTime() - started,
       cached: deep.cached,
@@ -395,7 +476,7 @@ export class HandoffService {
     this.latest.set(task.id, result);
     // The verdict is in: the judgment below may put a line on the card, which must read as judged.
     this.busy.delete(task.id);
-    await this.judge(task, result, force || retried);
+    await this.judge(task, result, force || retried || only !== undefined);
     this.ports.changed(task.id);
     return result;
   }
@@ -447,22 +528,56 @@ export class HandoffService {
   // -------------------------------------------------------------------------
   // The costly part
 
+  /**
+   * The costly part. `only` runs just those steps and takes the rest from `prior`, the last run of
+   * this head, when there is one: a step that was skipped because another failed runs once that
+   * one passes.
+   */
   private async deepCheck(
     task: HandoffTask,
     force: boolean,
+    runId: string,
+    only: readonly HandoffCommandStep[] | undefined,
+    prior: DeepRow | undefined,
   ): Promise<{ steps: HandoffStep[]; review: HandoffReview; ms: number }> {
     const started = this.now().getTime();
-    const lint = await this.command(task, "lint");
+    const before = (id: HandoffStepId) => prior?.steps.find((s) => s.id === id);
+    const redo = (id: HandoffCommandStep) => only === undefined || prior === undefined || only.includes(id);
+    const stop = (s: HandoffStep | undefined) => s?.status === "fail" || s?.status === "timeout";
+
+    const asked = only?.includes("install") === true;
+    let install: HandoffStep | undefined = before("install");
+    if (redo("install")) {
+      this.enter(task.id, "install");
+      install = await this.command(task, "install", runId, asked);
+    }
+    const notInstalled = stop(install);
+    const skipped = (id: HandoffCommandStep): HandoffStep =>
+      step(id, { status: "skipped", detail: "not run: the install failed" });
+
+    this.enter(task.id, "lint");
+    const reuse = (id: HandoffCommandStep) => (redo(id) ? undefined : before(id));
+    const lint = notInstalled
+      ? skipped("lint")
+      : (reuse("lint") ?? (await this.command(task, "lint", runId)));
     this.enter(task.id, "build");
-    const build = await this.command(task, "build");
-    // A build that does not build makes the tests say nothing.
-    const tests =
-      build.status === "fail" || build.status === "timeout"
-        ? step("tests", { status: "skipped", detail: "not run: the build failed" })
-        : await (async () => {
-            this.enter(task.id, "tests");
-            return this.command(task, "tests");
-          })();
+    const build = notInstalled
+      ? skipped("build")
+      : (reuse("build") ?? (await this.command(task, "build", runId)));
+    // A build that does not build makes the tests say nothing, unless they were asked for by name.
+    const testsBefore = before("tests");
+    const asksTests = only?.includes("tests") === true;
+    const keepTests = !asksTests && !redo("tests") && !(testsBefore?.status === "skipped" && !stop(build));
+    const tests = notInstalled
+      ? skipped("tests")
+      : keepTests && testsBefore !== undefined
+        ? testsBefore
+        : stop(build) && !asksTests
+          ? step("tests", { status: "skipped", detail: "not run: the build failed" })
+          : await (async () => {
+              this.enter(task.id, "tests");
+              return this.command(task, "tests", runId);
+            })();
     const diff = await this.ports.diff(task.id).catch(() => undefined);
     const hasTests = (
       await Promise.all(
@@ -483,9 +598,12 @@ export class HandoffService {
                 : `${unmatched.length} of ${items.length} lines with no evidence`,
             items,
           });
-    const failed = [lint, build, tests].some(
-      (s) => s.status === "fail" || s.status === "timeout" || s.status === "flaky",
+    const failed = [install, lint, build, tests].some(
+      (s) => s?.status === "fail" || s?.status === "timeout" || s?.status === "flaky",
     );
+    // A step rerun alone does not spend on the model again: a review that was read stays.
+    const kept =
+      only !== undefined && prior !== undefined && prior.review.by !== "skipped" ? prior.review : undefined;
     const review =
       diff === undefined
         ? ({ by: "skipped", why: "the diff could not be read", notes: [], tokens: 0 } satisfies HandoffReview)
@@ -496,10 +614,11 @@ export class HandoffService {
               notes: [],
               tokens: 0,
             } satisfies HandoffReview)
-          : await (async () => {
+          : (kept ??
+            (await (async () => {
               this.enter(task.id, "review");
-              return this.review(task, diff, hasTests, force);
-            })();
+              return this.review(task, diff, hasTests, force && only === undefined);
+            })()));
     const reviewStep = step("review", {
       status: review.by === "skipped" ? "skipped" : review.notes.length > 0 ? "note" : "pass",
       detail:
@@ -510,19 +629,66 @@ export class HandoffService {
             : `${review.notes.length} ${review.notes.length === 1 ? "note" : "notes"}`,
     });
     return {
-      steps: [tests, build, lint, acceptance, reviewStep],
+      // Install shows only when it ran or failed: a project with its packages in place has no install step.
+      steps: [
+        ...(install === undefined || install.status === "none" ? [] : [install]),
+        tests,
+        build,
+        lint,
+        acceptance,
+        reviewStep,
+      ],
       review,
       ms: this.now().getTime() - started,
     };
   }
 
-  /** One kind of command over the task's repos. Tests that fail run once more: pass on retry is flaky. */
-  private async command(task: HandoffTask, kind: "tests" | "build" | "lint"): Promise<HandoffStep> {
+  /** What one step's timeout is: the project's own minutes for tests and build, then settings, then the default. */
+  private async timeoutOf(
+    project: string,
+    kind: HandoffCommandStep,
+  ): Promise<{ ms: number; caps: HandoffLimits | undefined }> {
+    const caps = await this.ports.limits?.(project);
+    const own = kind === "tests" || kind === "build" ? caps?.minutes : undefined;
+    const minutes = own ?? caps?.stepMinutes?.[kind];
+    return { ms: minutes === undefined ? this.timeouts[kind] : minutes * MINUTE, caps };
+  }
+
+  /** The whole output of the step, saved as a file the viewer opens. A log that could not be saved leaves the step without one. */
+  private async withLog(
+    task: HandoffTask,
+    runId: string,
+    kind: HandoffCommandStep,
+    log: StepLog,
+    result: HandoffStep,
+  ): Promise<HandoffStep> {
+    const saved = this.ports.saveLog;
+    if (saved === undefined) return result;
+    try {
+      const { text, log: facts } = log.finish(logPath(runId, kind));
+      await saved(task.id, runId, kind, text);
+      return { ...result, log: facts };
+    } catch {
+      return result;
+    }
+  }
+
+  /**
+   * One kind of command over the task's repos. Tests that fail run once more: pass on retry is
+   * flaky. `install` runs only in a repo whose packages are missing, unless `always`.
+   */
+  private async command(
+    task: HandoffTask,
+    kind: HandoffCommandStep,
+    runId: string,
+    always = false,
+  ): Promise<HandoffStep> {
     const key = kind === "tests" ? "test" : kind;
     const runs: { project: string; cwd: string; command: string }[] = [];
     for (const r of task.repos) {
       const command = (await this.ports.commands(r.project))[key];
       if (command === undefined || command.trim() === "" || r.worktree === undefined) continue;
+      if (kind === "install" && !always && (await this.ports.needsInstall?.(r.worktree)) !== true) continue;
       let line = command;
       if (usesBase(command)) {
         const base = await this.ports.mergeBase?.(task.id, r.project).catch(() => undefined);
@@ -544,22 +710,25 @@ export class HandoffService {
         detail:
           kind === "tests"
             ? "the project card has no test command, so nothing was tested"
-            : `the project card has no ${kind} command`,
+            : kind === "install"
+              ? "the packages are in place"
+              : `the project card has no ${kind} command`,
       });
     }
     const many = task.repos.length > 1;
+    const log = new StepLog();
     let total = 0;
     let counted = 0;
     let countedAny = false;
+    const header = (r: { project: string; command: string }, res: ExecResult, note = "") =>
+      `==> ${r.command} in ${r.project}${note}: ${res.timedOut ? "stopped, it did not finish" : `exit ${res.code ?? "none"}`} after ${handoffSeconds(res.ms)}`;
     for (const r of runs) {
       const where = many ? ` in ${r.project}` : "";
-      const caps = await this.ports.limits?.(r.project);
-      const timeoutMs =
-        kind !== "lint" && caps?.minutes !== undefined ? caps.minutes * MINUTE : this.timeouts[kind];
+      const { ms: timeoutMs, caps } = await this.timeoutOf(r.project, kind);
       const more =
         kind === "lint"
           ? ""
-          : `. To allow more, set containers.handoff_minutes.${r.project} (now ${Math.round(timeoutMs / MINUTE)}) or containers.handoff_cpus${caps === undefined ? "" : ` (now ${caps.cpus})`}`;
+          : `. To allow more, set containers.handoff_step_minutes.${kind} or containers.handoff_minutes.${r.project} (now ${Math.round(timeoutMs / MINUTE)}) or containers.handoff_cpus${caps === undefined ? "" : ` (now ${caps.cpus})`}`;
       const limits = caps === undefined ? undefined : { cpus: caps.cpus, memory: caps.memory };
       const run = () => this.ports.exec(task.id, r.cwd, r.command, timeoutMs, limits);
       let res = await run();
@@ -573,47 +742,82 @@ export class HandoffService {
         });
       }
       if (res.timedOut) {
-        return step(kind, {
-          status: "timeout",
-          detail: `\`${r.command}\` did not finish in ${handoffSeconds(timeoutMs)}${where}, so it was stopped${more}`,
-          ms: total,
-          output: outputTail(res.output),
-        });
+        const tail = outputTail(res.output);
+        log.add(header(r, res), res.log, tail);
+        return this.withLog(
+          task,
+          runId,
+          kind,
+          log,
+          step(kind, {
+            status: "timeout",
+            detail: `\`${r.command}\` did not finish in ${handoffSeconds(timeoutMs)}${where}, so it was stopped${more}`,
+            ms: total,
+            output: tail,
+            code: null,
+          }),
+        );
       }
       if (res.code !== 0) {
         const first = res;
         if (kind === "tests") {
+          log.add(header(r, first, " (first run)"), first.log, outputTail(first.output));
           res = await run();
           total += res.ms;
           if (res.error === undefined && !res.timedOut && res.code === 0) {
-            return step(kind, {
-              status: "flaky",
-              detail: `\`${r.command}\` failed, then passed on a retry${where}: flaky, so not green`,
-              ms: total,
-              output: outputTail(first.output),
-            });
+            log.add(header(r, res, " (retry)"), res.log);
+            return this.withLog(
+              task,
+              runId,
+              kind,
+              log,
+              step(kind, {
+                status: "flaky",
+                detail: `\`${r.command}\` failed, then passed on a retry${where}: flaky, so not green`,
+                ms: total,
+                output: outputTail(first.output),
+                code: first.code,
+              }),
+            );
           }
         }
-        return step(kind, {
-          status: res.timedOut ? "timeout" : "fail",
-          detail: res.timedOut
-            ? `\`${r.command}\` did not finish in ${handoffSeconds(timeoutMs)} on its retry${where}${more}`
-            : `\`${r.command}\` failed${where} (exit ${res.code ?? "none"}, ${handoffSeconds(res.ms)}${kind === "tests" ? ", also on a retry" : ""})`,
-          ms: total,
-          output: outputTail(res.output),
-        });
+        const tail = outputTail(res.output);
+        log.add(header(r, res, kind === "tests" ? " (retry)" : ""), res.log, tail);
+        return this.withLog(
+          task,
+          runId,
+          kind,
+          log,
+          step(kind, {
+            status: res.timedOut ? "timeout" : "fail",
+            detail: res.timedOut
+              ? `\`${r.command}\` did not finish in ${handoffSeconds(timeoutMs)} on its retry${where}${more}`
+              : `\`${r.command}\` failed${where} (exit ${res.code ?? "none"}, ${handoffSeconds(res.ms)}${kind === "tests" ? ", also on a retry" : ""})`,
+            ms: total,
+            output: tail,
+            code: res.code,
+          }),
+        );
       }
+      log.add(header(r, res), res.log);
       const n = passedCount(res.output);
       if (n !== undefined) {
         counted += n;
         countedAny = true;
       }
     }
-    return step(kind, {
-      status: "pass",
-      detail: kind === "tests" && countedAny ? `${counted} passed` : "ok",
-      ms: total,
-    });
+    return this.withLog(
+      task,
+      runId,
+      kind,
+      log,
+      step(kind, {
+        status: "pass",
+        detail: kind === "tests" && countedAny ? `${counted} passed` : "ok",
+        ms: total,
+        code: 0,
+      }),
+    );
   }
 
   private async review(
@@ -683,11 +887,12 @@ export class HandoffService {
 
     const existing = this.repo.historyOf(task.id, head);
     const state = this.repo.state(task.id);
-    // "Checks fail: send the failures to the lead" is switched off: the lead is not told, and the card says why.
-    const tells = this.ports.autonomous() && this.ports.ruleOff?.(task.org, "ship-checks") !== true;
+    // The lead is told of a failure whether or not Autonomous is on. Only the owner's switch for
+    // "Checks fail: send the failures to the lead" stops it: then the card says why.
+    const tells = this.ports.ruleOff?.(task.org, "ship-checks") !== true;
     if (existing !== undefined) {
       if (force) this.repo.replaceHistory(task.id, item(existing.action), result);
-      // Failed with Autonomous off before and it is on now: the lead is told, once, with no new strike.
+      // Failed while the switch was off and it is on now: the lead is told, once, with no new strike.
       if (existing.action === "none" && !state.escalated && tells) {
         await this.tellLead(task, result, Math.max(1, state.strikes));
         return;
@@ -703,7 +908,7 @@ export class HandoffService {
     }
     const strikes = state.strikes + 1;
     this.repo.addHistory(task.id, item("none"), result);
-    if (!tells && this.ports.autonomous()) {
+    if (!tells) {
       this.ports.hold(task.id, `Checks failed: ${firstLine(result.failures)}`);
       return;
     }
@@ -717,13 +922,12 @@ export class HandoffService {
       return;
     }
     this.repo.setState(task.id, strikes, false);
-    if (tells) await this.tellLead(task, result, strikes);
-    else this.ports.hold(task.id, `Checks failed: ${firstLine(result.failures)}`);
+    await this.tellLead(task, result, strikes);
   }
 
   private async tellLead(task: HandoffTask, result: HandoffResult, attempt: number): Promise<void> {
     try {
-      await this.ports.tell(task.id, failureNote(result.failures, attempt, HANDOFF_STRIKES, result.head));
+      await this.ports.tell(task.id, failureNote(result, attempt, HANDOFF_STRIKES), result.failed);
       this.repo.setAction(task.id, result.head, "told");
     } catch (err) {
       // No lead to tell (paused, done, no agent): the owner sees the failure on the card.

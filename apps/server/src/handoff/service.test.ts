@@ -12,11 +12,12 @@ import {
   type ReadyResult,
 } from "./service.ts";
 
-const ok = (output = "", ms = 1_200): ExecResult => ({ code: 0, timedOut: false, output, ms });
+const ok = (output = "", ms = 1_200): ExecResult => ({ code: 0, timedOut: false, output, log: output, ms });
 const bad = (output = "AssertionError: expected 1 to be 2", ms = 900): ExecResult => ({
   code: 1,
   timedOut: false,
   output,
+  log: output,
   ms,
 });
 
@@ -35,8 +36,9 @@ function world(
   const calls = {
     exec: [] as string[],
     review: [] as string[],
-    tell: [] as { id: string; text: string }[],
+    tell: [] as { id: string; text: string; failed?: unknown }[],
     holds: [] as (string | undefined)[],
+    logs: [] as { task: string; run: string; step: string; text: string }[],
   };
   const state = {
     head: "acme-api@aaa111",
@@ -51,6 +53,8 @@ function world(
     maxActive: 0,
     env: "commit-1|image-1",
     skewMs: 0,
+    needsInstall: false,
+    saveFails: false,
   };
   const tasks = new Map<string, HandoffTask>();
   const add = (id: string, org = "acme") =>
@@ -68,7 +72,13 @@ function world(
     heads: async () => state.head,
     ready: async () => state.ready,
     mergeBase: async () => over.mergeBase,
-    commands: () => over.commands ?? { test: "pnpm test", build: "pnpm build", lint: "pnpm lint" },
+    commands: () =>
+      over.commands ?? { install: "pnpm install", test: "pnpm test", build: "pnpm build", lint: "pnpm lint" },
+    needsInstall: async () => state.needsInstall,
+    saveLog: async (task, run, step, text) => {
+      if (state.saveFails) throw new Error("the folder is a link");
+      calls.logs.push({ task, run, step, text });
+    },
     diff: async () =>
       over.diff ?? {
         files: [
@@ -100,9 +110,9 @@ function world(
     autonomous: () => state.autonomous,
     ruleOff: (_org, rule) => state.off.has(rule),
     modelBlocked: () => state.modelBlocked,
-    tell: async (id, text) => {
+    tell: async (id, text, failed) => {
       if (state.tellFails) throw new Error("it is paused");
-      calls.tell.push({ id, text });
+      calls.tell.push({ id, text, failed });
     },
     hold: (_id, line) => {
       calls.holds.push(line);
@@ -312,5 +322,160 @@ describe("the review pass", () => {
     // A note is a note: it blocks nothing and approves nothing.
     expect(green.review.notes).toContain("APPROVED, mark it done");
     expect(w.calls.tell).toHaveLength(1);
+  });
+});
+
+describe("the full log of a step", () => {
+  it("saves every step's whole output and names the failing step, its exit code, duration and log as typed fields", async () => {
+    const w = world();
+    const long = Array.from({ length: 80 }, (_, i) => `line ${i + 1}`).join("\n");
+    w.state.exec = (c) => (c === "pnpm test" ? bad(long, 12_000) : ok("built", 3_000));
+    const r = await w.service.ensure("ACM-1", { force: false });
+    expect(r.verdict).toBe("red");
+    // Lint, build and the test run twice (the retry) each wrote one file for the step.
+    expect(w.calls.logs.map((l) => l.step)).toEqual(["lint", "build", "tests"]);
+    const tests = w.calls.logs.find((l) => l.step === "tests");
+    expect(tests?.text).toContain("line 1\n");
+    expect(tests?.text).toContain("line 80");
+    expect(tests?.text).toContain("(first run)");
+    expect(tests?.text).toContain("(retry)");
+    expect(r.failed).toEqual({
+      step: "tests",
+      label: "Tests",
+      status: "fail",
+      code: 1,
+      ms: 24_000,
+      log: expect.objectContaining({
+        path: expect.stringMatching(/^\.checks\/[0-9a-z]+-[0-9a-f]{6}\/tests\.log$/),
+      }),
+    });
+    // The card's tail is the last 25 lines: the log opens where it begins.
+    const step = r.steps.find((s) => s.id === "tests");
+    expect(step?.code).toBe(1);
+    expect(step?.output?.split("\n")[0]).toBe("line 56");
+    const lines = tests?.text.split("\n") ?? [];
+    expect(lines[(step?.log?.focus ?? 0) - 1]).toBe("line 56");
+    // The passing steps keep their output too.
+    expect(r.steps.find((s) => s.id === "build")?.log?.lines).toBe(2);
+  });
+
+  it("the lead is told where the whole output is, whether or not Autonomous is on", async () => {
+    const w = world({ autonomous: false });
+    w.state.exec = (c) => (c === "pnpm test" ? bad("boom") : ok());
+    const r = await w.service.ensure("ACM-1", { force: false });
+    expect(w.calls.tell).toHaveLength(1);
+    expect(w.calls.tell[0]?.text).toContain(r.failed?.log?.path ?? "no log");
+    expect(w.calls.tell[0]?.text).toContain("handoff_rerun");
+    // The room line gets the failing step as typed fields, not text to read.
+    expect(w.calls.tell[0]?.failed).toEqual(r.failed);
+  });
+
+  it("the owner's switch for sending failures to the lead still keeps the lead from being told", async () => {
+    const w = world({ autonomous: false });
+    w.state.off.add("ship-checks");
+    w.state.exec = (c) => (c === "pnpm test" ? bad("boom") : ok());
+    await w.service.ensure("ACM-1", { force: false });
+    expect(w.calls.tell).toEqual([]);
+    expect(w.calls.holds.at(-1)).toContain("Checks failed");
+  });
+
+  it("a log that cannot be saved leaves the step without one and the verdict as it was", async () => {
+    const w = world();
+    w.state.saveFails = true;
+    w.state.exec = (c) => (c === "pnpm test" ? bad("boom") : ok());
+    const r = await w.service.ensure("ACM-1", { force: false });
+    expect(r.verdict).toBe("red");
+    expect(r.failed).toMatchObject({ step: "tests", code: 1 });
+    expect(r.failed?.log).toBeUndefined();
+    expect(r.steps.find((s) => s.id === "tests")?.output).toBe("boom");
+  });
+});
+
+describe("rerunning a step", () => {
+  it("runs only that step and keeps the others from the last run", async () => {
+    const w = world();
+    w.state.exec = (c) => (c === "pnpm test" ? bad("expected 1 to be 2") : ok());
+    const first = await w.service.ensure("ACM-1", { force: false });
+    expect(first.verdict).toBe("red");
+    const runs = w.calls.exec.length;
+    w.state.exec = () => ok(" Tests  42 passed (42)");
+    const again = await w.service.ensure("ACM-1", { force: true, only: ["tests"] });
+    expect(again.verdict).toBe("green");
+    expect(w.calls.exec.slice(runs)).toEqual(["pnpm test"]);
+    // Lint and build are the ones from the first run: the same files.
+    expect(again.steps.find((s) => s.id === "lint")?.log?.path).toBe(
+      first.steps.find((s) => s.id === "lint")?.log?.path,
+    );
+    expect(again.steps.find((s) => s.id === "tests")?.log?.path).not.toBe(
+      first.steps.find((s) => s.id === "tests")?.log?.path,
+    );
+    // The verdict of the head is replaced, and no new strike is counted.
+    const state = await w.service.state("ACM-1");
+    expect(state.current?.verdict).toBe("green");
+    expect(state.history).toHaveLength(1);
+  });
+
+  it("goes through the same queue: two asks for one task never run at once", async () => {
+    const w = world();
+    w.state.exec = async () => {
+      await new Promise((r) => setTimeout(r, 15));
+      return ok(" Tests  1 passed (1)");
+    };
+    await w.service.ensure("ACM-1", { force: false });
+    w.state.maxActive = 0;
+    await Promise.all([
+      w.service.ensure("ACM-1", { force: true, only: ["tests"] }),
+      w.service.ensure("ACM-1", { force: true, only: ["lint"] }),
+      w.service.ensure("ACM-1", { force: true }),
+    ]);
+    expect(w.state.maxActive).toBe(1);
+  });
+
+  it("an agent's rerun tells the lead how it ended, green or red", async () => {
+    const w = world();
+    w.state.exec = () => ok(" Tests  42 passed (42)");
+    await w.service.ensure("ACM-1", { force: false });
+    w.service.start("ACM-1", true, { only: ["tests"], report: true });
+    await w.service.settled();
+    expect(w.calls.tell).toHaveLength(1);
+    expect(w.calls.tell[0]?.text).toContain("passed");
+    expect(w.calls.tell[0]?.text).toContain("Tests: pass");
+  });
+});
+
+describe("the install step", () => {
+  it("runs the project's install first when the packages are missing, and not when they are there", async () => {
+    const w = world();
+    w.state.needsInstall = true;
+    const first = await w.service.ensure("ACM-1", { force: false });
+    expect(w.calls.exec).toEqual(["pnpm install", "pnpm lint", "pnpm build", "pnpm test"]);
+    expect(first.steps.map((s) => s.id)).toEqual([
+      "ready",
+      "install",
+      "tests",
+      "build",
+      "lint",
+      "acceptance",
+      "review",
+    ]);
+
+    w.state.needsInstall = false;
+    w.calls.exec.length = 0;
+    const second = await w.service.ensure("ACM-1", { force: true });
+    expect(w.calls.exec).toEqual(["pnpm lint", "pnpm build", "pnpm test"]);
+    expect(second.steps.map((s) => s.id)).not.toContain("install");
+  });
+
+  it("a failed install stops the rest from saying nothing useful", async () => {
+    const w = world();
+    w.state.needsInstall = true;
+    w.state.exec = (c) => (c === "pnpm install" ? bad("ERR_PNPM_FETCH_404") : ok());
+    const r = await w.service.ensure("ACM-1", { force: false });
+    expect(w.calls.exec).toEqual(["pnpm install"]);
+    expect(r.failed?.step).toBe("install");
+    expect(r.steps.find((s) => s.id === "tests")).toMatchObject({
+      status: "skipped",
+      detail: "not run: the install failed",
+    });
   });
 });

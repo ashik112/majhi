@@ -12,7 +12,9 @@ import type { TaskService } from "../tasks/service.ts";
 import { type DiffFacts, parseReview, tokensOf } from "./analysis.ts";
 import { effectiveCommands } from "./commands.ts";
 import { type ExecDeps, execInTask } from "./exec.ts";
+import { dependenciesMissing } from "./install.ts";
 import { defaultHandoffParallel } from "./limits.ts";
+import { pruneRuns, writeStepLog } from "./logs.ts";
 import { shipReadiness } from "./ready.ts";
 import { HandoffRepo } from "./repo.ts";
 import { type HandoffLimits, type HandoffOptions, type HandoffPorts, HandoffService } from "./service.ts";
@@ -31,6 +33,8 @@ export interface HandoffWiring {
   repoMounts: (task: Task) => Promise<RunMount[]>;
   /** The workspace's shared package store for a check: see `ExecDeps.packages`. */
   packages?: ExecDeps["packages"];
+  /** The workspace's tools folder: see `ExecDeps.tools`. */
+  tools?: ExecDeps["tools"];
   /** The check's `docker` shim: see `ExecDeps.dockerShim`. */
   dockerShim?: ExecDeps["dockerShim"];
   /** The workspace's Merge row is Captain: only then does the captain have a lead resolve a conflict. */
@@ -127,6 +131,13 @@ export function createHandoff(w: HandoffWiring): HandoffService {
         commits: diffs.flatMap((d) => d.commits.map((c) => c.subject)),
       };
     },
+    needsInstall: dependenciesMissing,
+    saveLog: async (id, run, step, text) => {
+      const folder = w.store.tasks.get(id)?.folder;
+      if (folder === undefined) throw new Error("the task is gone");
+      await writeStepLog(folder, run, step, text);
+      await pruneRuns(folder);
+    },
     ...(w.environment === undefined ? {} : { environment: w.environment }),
     ...(w.limits === undefined ? {} : { limits: w.limits }),
     exec:
@@ -137,6 +148,7 @@ export function createHandoff(w: HandoffWiring): HandoffService {
         task: (id) => w.store.tasks.get(id),
         repoMounts: w.repoMounts,
         packages: w.packages,
+        tools: w.tools,
         dockerShim: w.dockerShim,
       }),
     review: async (task, prompt) => {
@@ -146,7 +158,7 @@ export function createHandoff(w: HandoffWiring): HandoffService {
     autonomous: w.autonomous,
     ruleOff: (org, rule) => w.ruleOff?.(org, rule) === true,
     modelBlocked: () => w.ceilingHeld(),
-    tell: (id, text) => w.tasks.handoffTell({ task: id, text }),
+    tell: (id, text, failed) => w.tasks.handoffTell({ task: id, text, failed }),
     hold: (id, line) => {
       w.tasks.cards.checkHeld(id, line);
     },
