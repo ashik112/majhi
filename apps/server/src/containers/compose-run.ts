@@ -278,7 +278,7 @@ async function down(host: ComposeHost, inv: ComposeInvocation): Promise<TaskDock
     const names = containerNames(host.task);
     try {
       const ctx = await host.context(inv.cwd);
-      const project = loadCompose(inv, ctx);
+      const project = await loadCompose(inv, ctx);
       await host.removeVolumes(project.volumes.map((v) => names.volume(v)));
       for (const v of project.volumes) lines.push(` Volume ${v}  Removed`);
     } catch (err) {
@@ -358,7 +358,7 @@ export async function composeCall(host: ComposeHost, inv: ComposeInvocation): Pr
   switch (inv.verb) {
     case "up": {
       const ctx = await host.context(inv.cwd);
-      return up(host, inv, loadCompose(inv, ctx));
+      return up(host, inv, await loadCompose(inv, ctx));
     }
     case "down":
       return down(host, inv);

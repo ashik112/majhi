@@ -1,10 +1,11 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ContainerRefused, type Safety } from "./args.ts";
-import { parseEnvFile, readEnvFile } from "./env-file.ts";
+import { parseEnvFile, prefetchEnvFiles, readEnvFile } from "./env-file.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "majhi-env-file-"));
 const folder = join(dir, "tasks", "ACM-1");
@@ -36,8 +37,28 @@ describe("env files", () => {
     expect(() => parseEnvFile("A B=x")).toThrow(ContainerRefused);
   });
 
-  it("reads a file of the task, and refuses one outside it, through a symlink, or of majhi's", () => {
-    expect(readEnvFile(".env", join(folder, "api"), safety)).toEqual(["A=1", "B=two words"]);
+  it("never waits on a FIFO, a directory or a huge file named as an env file", async () => {
+    execFileSync("mkfifo", [join(folder, "api", "fifo.env")]);
+    mkdirSync(join(folder, "api", "dir.env"), { recursive: true });
+    writeFileSync(join(folder, "api", "huge.env"), `A=${"x".repeat(200 * 1024)}\n`);
+    const started = Date.now();
+    for (const name of ["fifo.env", "dir.env", "huge.env"]) {
+      await expect(readEnvFile(name, join(folder, "api"), safety), name).rejects.toBeInstanceOf(
+        ContainerRefused,
+      );
+    }
+    // Through `docker run --env-file` too: the prefetch keeps the refusal for the call that uses it.
+    const read = await prefetchEnvFiles(
+      ["run", "--env-file", "fifo.env", "alpine"],
+      join(folder, "api"),
+      safety,
+    );
+    expect([...read.values()].map((r) => "refused" in r)).toEqual([true]);
+    expect(Date.now() - started).toBeLessThan(3_000);
+  }, 15_000);
+
+  it("reads a file of the task, and refuses one outside it, through a symlink, or of majhi's", async () => {
+    expect(await readEnvFile(".env", join(folder, "api"), safety)).toEqual(["A=1", "B=two words"]);
     for (const path of [
       join(dir, "other.env"),
       "link.env",
@@ -45,7 +66,7 @@ describe("env files", () => {
       join(dir, "home", ".majhi", "secrets.env"),
     ]) {
       try {
-        readEnvFile(path, join(folder, "api"), safety);
+        await readEnvFile(path, join(folder, "api"), safety);
         throw new Error(`${path} was read`);
       } catch (err) {
         expect(err).toBeInstanceOf(ContainerRefused);

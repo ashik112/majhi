@@ -1,7 +1,7 @@
-import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import type { TaskDockerErrorCode } from "@majhi/shared";
-import { assertReadable, refuse, type Safety, shown } from "./args.ts";
+import { ContainerRefused, refuse, type Safety, shown } from "./args.ts";
+import { readTaskFile } from "./safe-file.ts";
 
 /** A `.env` file of a repo is a few lines. Anything bigger is not one. */
 const MAX_ENV_FILE_BYTES = 128 * 1024;
@@ -56,22 +56,47 @@ export function parseEnvFile(text: string): string[] {
 
 /**
  * The pairs of an env file of the task: a path inside the task folder (symlinks followed), never
- * majhi's config folder or a protected file. A file outside is refused with `code`.
+ * majhi's config folder or a protected file, and a regular file (`readTaskFile`). A file outside is
+ * refused with `code`.
  */
-export function readEnvFile(
+export async function readEnvFile(
   path: string,
   from: string,
   safety: Safety,
   outside: TaskDockerErrorCode = "env_file_outside",
-): string[] {
-  const absolute = resolve(from, path);
-  assertReadable(absolute, safety, "env file", outside);
-  let size: number;
-  try {
-    size = statSync(absolute).size;
-  } catch {
-    return refuse(`The env file ${shown(path)} does not exist.`);
+): Promise<string[]> {
+  const text = await readTaskFile(resolve(from, path), safety, "env file", outside, {
+    maxBytes: MAX_ENV_FILE_BYTES,
+  });
+  return parseEnvFile(text);
+}
+
+/** What reading an env file gave: its pairs, or why it was refused. */
+export type EnvFileRead = { pairs: string[] } | { refused: ContainerRefused };
+
+/**
+ * Reads every file a script names with `--env-file`, before its call is translated (translation is
+ * synchronous and must never wait on a file). A word after the image is not a flag, so a read that
+ * fails is kept as a refusal and only thrown when the call really uses that file.
+ */
+export async function prefetchEnvFiles(
+  argv: readonly string[],
+  cwd: string,
+  safety: Safety,
+): Promise<Map<string, EnvFileRead>> {
+  const named: string[] = [];
+  argv.forEach((word, i) => {
+    if (word === "--env-file" && argv[i + 1] !== undefined) named.push(argv[i + 1] ?? "");
+    else if (word.startsWith("--env-file=")) named.push(word.slice("--env-file=".length));
+  });
+  const found = new Map<string, EnvFileRead>();
+  for (const file of new Set(named)) {
+    try {
+      found.set(resolve(cwd, file), { pairs: await readEnvFile(file, cwd, safety) });
+    } catch (err) {
+      if (!(err instanceof ContainerRefused)) throw err;
+      found.set(resolve(cwd, file), { refused: err });
+    }
   }
-  if (size > MAX_ENV_FILE_BYTES) return refuse(`The env file ${shown(path)} is too big.`);
-  return parseEnvFile(readFileSync(absolute, "utf8"));
+  return found;
 }

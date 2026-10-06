@@ -31,7 +31,7 @@ import {
   taskAliases,
 } from "./args.ts";
 import { type ComposeInvocation, parseCompose } from "./compose-cli.ts";
-import { readEnvFile } from "./env-file.ts";
+import type { EnvFileRead } from "./env-file.ts";
 import { containerNames } from "./names.ts";
 import { flag, has, type Parsed, parseFlagsOf, single, type UserTable, values } from "./user-flags.ts";
 
@@ -80,6 +80,8 @@ export interface TaskDockerContext {
   allowedImages: readonly string[];
   /** Container ids the script typed that really are this task's, by id to name. */
   ids: ReadonlyMap<string, string>;
+  /** The env files the script named, read before translation (`prefetchEnvFiles`), by absolute path. */
+  envFiles?: ReadonlyMap<string, EnvFileRead> | undefined;
 }
 
 /** The image is not on the owner's list and the task did not build it. The caller may ask the owner. */
@@ -448,7 +450,13 @@ function translateRun(argv: readonly string[], ctx: TaskDockerContext): TaskDock
       `Nothing is published on the computer. From this task, reach it at ${[...new Set(published.map(publishedTarget))].map((port) => `${userName}:${port}`).join(", ")}.`,
     );
   }
-  const envFiles = values(parsed, "env-file").flatMap((file) => readEnvFile(file, ctx.cwd, ctx.safety));
+  const envFiles = values(parsed, "env-file").flatMap((file) => {
+    const read = ctx.envFiles?.get(resolve(ctx.cwd, file));
+    if (read === undefined)
+      return refuse(`The env file ${shown(file)} could not be read.`, "env_file_outside");
+    if ("refused" in read) throw read.refused;
+    return read.pairs;
+  });
   const health = single(parsed, "health-cmd");
   const spec: RunSpec = {
     name: userName,

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { TaskDockerErrorCode } from "@majhi/shared";
 import { parse } from "yaml";
@@ -7,6 +7,7 @@ import { formatIssues } from "../errors.ts";
 import { assertReadable, ContainerRefused, refuse, shown } from "./args.ts";
 import type { ComposeInvocation } from "./compose-cli.ts";
 import { isEnvName, readEnvFile } from "./env-file.ts";
+import { readTaskFile } from "./safe-file.ts";
 import {
   type Health,
   localImage,
@@ -302,13 +303,13 @@ export function composeFiles(
   );
 }
 
-function readYaml(file: string, ctx: TaskDockerContext): unknown {
-  assertReadable(file, ctx.safety, "compose file", "compose_mount_outside");
-  if (statSync(file).size > MAX_FILE_BYTES)
-    return refuse(`${shown(basename(file))} is too big for a compose file.`, "compose_invalid");
+async function readYaml(file: string, ctx: TaskDockerContext): Promise<unknown> {
+  const text = await readTaskFile(file, ctx.safety, "compose file", "compose_mount_outside", {
+    maxBytes: MAX_FILE_BYTES,
+  });
   try {
     // `merge` reads `<<:` merge keys, which real compose files use for shared service settings.
-    return parse(readFileSync(file, "utf8"), { merge: true, maxAliasCount: 200 });
+    return parse(text, { merge: true, maxAliasCount: 200 });
   } catch (err) {
     return refuse(
       `${shown(basename(file))} is not valid YAML: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`,
@@ -420,11 +421,15 @@ function interpolateAll(value: unknown, vars: ReadonlyMap<string, string>): unkn
 }
 
 /** The variables a compose file may read: `.env` of the project directory, or `--env-file`, both inside the task folder. Never an environment. */
-function variables(inv: ComposeInvocation, dir: string, ctx: TaskDockerContext): Map<string, string> {
+async function variables(
+  inv: ComposeInvocation,
+  dir: string,
+  ctx: TaskDockerContext,
+): Promise<Map<string, string>> {
   const vars = new Map<string, string>();
   const path = inv.envFile === undefined ? join(dir, ".env") : resolve(inv.cwd, inv.envFile);
   if (inv.envFile === undefined && !existsSync(path)) return vars;
-  for (const pair of readEnvFile(path, inv.cwd, ctx.safety, "compose_env_file_outside")) {
+  for (const pair of await readEnvFile(path, inv.cwd, ctx.safety, "compose_env_file_outside")) {
     const at = pair.indexOf("=");
     vars.set(pair.slice(0, at), pair.slice(at + 1));
   }
@@ -736,12 +741,12 @@ function ordered(services: ComposeService[]): ComposeService[] {
  * to the ones named (and what they depend on) and to the active profiles. Throws `ContainerRefused`
  * with a `compose_*` code for anything the allow list does not cover.
  */
-export function loadCompose(inv: ComposeInvocation, ctx: TaskDockerContext): ComposeProject {
+export async function loadCompose(inv: ComposeInvocation, ctx: TaskDockerContext): Promise<ComposeProject> {
   const { files, dir } = composeFiles(inv, ctx);
   assertReadable(dir, ctx.safety, "project directory", "compose_mount_outside");
-  const vars = variables(inv, dir, ctx);
+  const vars = await variables(inv, dir, ctx);
   let merged: unknown;
-  for (const file of files) merged = mergeCompose(merged, interpolateAll(readYaml(file, ctx), vars));
+  for (const file of files) merged = mergeCompose(merged, interpolateAll(await readYaml(file, ctx), vars));
   const document = isRecord(merged)
     ? Object.fromEntries(Object.entries(merged).filter(([k]) => !k.startsWith("x-")))
     : merged;
@@ -787,7 +792,7 @@ export function loadCompose(inv: ComposeInvocation, ctx: TaskDockerContext): Com
     seen.add(name);
     const file = parseService(rawName, raw);
     profileOf.set(name, file.profiles ?? []);
-    all.push(serviceOf(name, file, dir, declared, ctx, notes));
+    all.push(await serviceOf(name, file, dir, declared, ctx, notes));
   }
   const requested = new Set(inv.services.map((s) => s.toLowerCase()));
   for (const wanted of requested) {
@@ -819,14 +824,14 @@ export function loadCompose(inv: ComposeInvocation, ctx: TaskDockerContext): Com
   return { dir, files, services: chosen, volumes: [...declared], notes };
 }
 
-function serviceOf(
+async function serviceOf(
   name: string,
   file: ServiceFile,
   dir: string,
   declared: ReadonlySet<string>,
   ctx: TaskDockerContext,
   notes: string[],
-): ComposeService {
+): Promise<ComposeService> {
   const ignored = Object.keys(file).filter(
     (k) =>
       (IGNORED_KEYS as readonly string[]).includes(k) && (file as Record<string, unknown>)[k] !== undefined,
@@ -853,15 +858,14 @@ function serviceOf(
     image = tag;
   }
   if (image === undefined) return refuse(`${name} has neither image nor build.`, "compose_invalid");
-  const envFiles = (typeof file.env_file === "string" ? [file.env_file] : (file.env_file ?? [])).flatMap(
-    (e) => {
-      const path = typeof e === "string" ? e : e.path;
-      const optional = typeof e !== "string" && e.required === false;
-      const absolute = resolve(dir, path);
-      if (optional && !existsSync(absolute)) return [];
-      return readEnvFile(absolute, dir, ctx.safety, "compose_env_file_outside");
-    },
-  );
+  const envFiles: string[] = [];
+  for (const e of typeof file.env_file === "string" ? [file.env_file] : (file.env_file ?? [])) {
+    const path = typeof e === "string" ? e : e.path;
+    const optional = typeof e !== "string" && e.required === false;
+    const absolute = resolve(dir, path);
+    if (optional && !existsSync(absolute)) continue;
+    envFiles.push(...(await readEnvFile(absolute, dir, ctx.safety, "compose_env_file_outside")));
+  }
   const health = healthOf(file.healthcheck);
   const spec: RunSpec = {
     name,

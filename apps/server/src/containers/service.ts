@@ -39,6 +39,7 @@ import {
 import type { ComposeInvocation } from "./compose-cli.ts";
 import { type ComposeHost, composeCall } from "./compose-run.ts";
 import type { DockerCli, TaskCallResult } from "./docker.ts";
+import { prefetchEnvFiles } from "./env-file.ts";
 import { containerNames } from "./names.ts";
 import { lastPrune, PRUNE_EVERY_MS, pruneBuilderCache, pruneImages, savePrune } from "./prune.ts";
 import {
@@ -715,6 +716,7 @@ export class ContainerService {
       allowedImages: this.allowed(task, settings),
       builtImages: await this.builtImages(docker, task),
       ids: await this.ownIds(docker, task, request.argv),
+      envFiles: await prefetchEnvFiles(request.argv, cwd, safety),
     });
     let plan: TaskDockerPlan;
     try {

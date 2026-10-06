@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -62,9 +63,9 @@ function load(yaml: string, flags: string[] = [], files: Record<string, string> 
   return loadCompose(inv, { ...ctx(), cwd: sub });
 }
 
-function code(run: () => unknown): string {
+async function code(run: () => unknown): Promise<string> {
   try {
-    run();
+    await run();
   } catch (err) {
     if (err instanceof ContainerRefused) return err.refusal;
     throw err;
@@ -163,26 +164,53 @@ describe("compose: what a file may never ask for", () => {
       "compose_unsupported_key",
     ],
   ];
-  it.each(refused)("refuses %s", (_name, yaml, expected) => {
-    expect(code(() => load(yaml))).toBe(expected);
+  it.each(refused)("refuses %s", async (_name, yaml, expected) => {
+    expect(await code(() => load(yaml))).toBe(expected);
   });
 
-  it("refuses an --env-file and a -f file outside the task folder", () => {
+  it("refuses an --env-file and a -f file outside the task folder", async () => {
     const sub = join(repo, "flags");
     mkdirSync(sub, { recursive: true });
     writeFileSync(join(sub, "compose.yaml"), "services:\n  x:\n    image: alpine:3\n");
     const env = parseCompose(["--env-file", join(dir, "outside", "secret.env"), "up"], sub);
-    expect(code(() => loadCompose(env, { ...ctx(), cwd: sub }))).toBe("compose_env_file_outside");
+    expect(await code(() => loadCompose(env, { ...ctx(), cwd: sub }))).toBe("compose_env_file_outside");
     const file = parseCompose(["-f", join(dir, "outside", "x.yaml"), "up"], sub);
-    expect(code(() => loadCompose(file, { ...ctx(), cwd: sub }))).toBe("compose_mount_outside");
+    expect(await code(() => loadCompose(file, { ...ctx(), cwd: sub }))).toBe("compose_mount_outside");
   });
 
-  it("does not read a compose file above the task folder", () => {
+  it("never waits on a compose file, .env or env_file that is a FIFO, and reads no file that is not a regular file", async () => {
+    const sub = join(repo, "fifo");
+    mkdirSync(sub, { recursive: true });
+    writeFileSync(join(sub, "compose.yaml"), "services:\n  x:\n    image: alpine:3\n    env_file: .env\n");
+    execFileSync("mkfifo", [join(sub, ".env")]);
+    const started = Date.now();
+    const inv = parseCompose(["up"], sub);
+    await expect(loadCompose(inv, { ...ctx(), cwd: sub })).rejects.toThrow(/not a regular file/);
+    // The compose file itself as a FIFO.
+    const other = join(repo, "fifo2");
+    mkdirSync(other, { recursive: true });
+    execFileSync("mkfifo", [join(other, "compose.yaml")]);
+    await expect(loadCompose(parseCompose(["up"], other), { ...ctx(), cwd: other })).rejects.toThrow(
+      /not a regular file/,
+    );
+    // A directory where a file is expected, and a file over the cap.
+    mkdirSync(join(repo, "fifo3", "compose.yaml"), { recursive: true });
+    await expect(
+      loadCompose(parseCompose(["up"], join(repo, "fifo3")), { ...ctx(), cwd: join(repo, "fifo3") }),
+    ).rejects.toThrow(/not a regular file/);
+    writeFileSync(join(repo, "big.yaml"), `x: "${"a".repeat(600 * 1024)}"\n`);
+    await expect(
+      loadCompose(parseCompose(["-f", "big.yaml", "up"], repo), { ...ctx(), cwd: repo }),
+    ).rejects.toThrow(/too big/);
+    expect(Date.now() - started).toBeLessThan(4_000);
+  }, 15_000);
+
+  it("does not read a compose file above the task folder", async () => {
     const stray = parseCompose(["up"], dir);
-    expect(code(() => loadCompose(stray, { ...ctx(), cwd: dir }))).toBe("compose_file_not_found");
+    expect(await code(() => loadCompose(stray, { ...ctx(), cwd: dir }))).toBe("compose_file_not_found");
   });
 
-  it("refuses flags that would stream or reach past the file, with a code a script can read", () => {
+  it("refuses flags that would stream or reach past the file, with a code a script can read", async () => {
     for (const argv of [
       ["up", "--abort-on-container-exit"],
       ["logs", "-f"],
@@ -190,17 +218,16 @@ describe("compose: what a file may never ask for", () => {
       ["run", "x"],
       ["-f", "-", "up"],
     ]) {
-      expect(
-        code(() => parseCompose(argv, repo)),
-        argv.join(" "),
-      ).toMatch(/^(compose_unsupported_flag|command_not_available)$/);
+      expect(await code(() => parseCompose(argv, repo)), argv.join(" ")).toMatch(
+        /^(compose_unsupported_flag|command_not_available)$/,
+      );
     }
   });
 });
 
 describe("compose: what a file becomes", () => {
-  it("publishes nothing: a service is reached by name inside the task", () => {
-    const project = load(
+  it("publishes nothing: a service is reached by name inside the task", async () => {
+    const project = await load(
       `services:
   web:
     image: alpine:3
@@ -217,8 +244,8 @@ describe("compose: what a file becomes", () => {
     expect(plan.args).toEqual(expect.arrayContaining(["--label", "majhi.compose=web", "--cap-drop", "ALL"]));
   });
 
-  it("keeps binds inside the task folder and turns named volumes into the task's own", () => {
-    const project = load(
+  it("keeps binds inside the task folder and turns named volumes into the task's own", async () => {
+    const project = await load(
       `services:
   db:
     image: postgres:16-alpine
@@ -241,8 +268,8 @@ volumes:
     expect(project.volumes).toEqual(["pg-data"]);
   });
 
-  it("starts what a service depends on first, and waits on the condition it names", () => {
-    const project = load(
+  it("starts what a service depends on first, and waits on the condition it names", async () => {
+    const project = await load(
       `services:
   app:
     image: alpine:3
@@ -274,10 +301,10 @@ volumes:
     });
   });
 
-  it("reads variables from the project's .env only, never from an environment", () => {
+  it("reads variables from the project's .env only, never from an environment", async () => {
     process.env.COMPOSE_TEST_LEAK = "from-majhi";
     try {
-      const project = load(
+      const project = await load(
         `services:
   x:
     image: \${IMG:-alpine:3}
@@ -308,8 +335,8 @@ volumes:
     );
   });
 
-  it("builds from a context inside the task folder and tags the image with the service's name", () => {
-    const project = load("services:\n  app:\n    build: ./api\n", [], {
+  it("builds from a context inside the task folder and tags the image with the service's name", async () => {
+    const project = await load("services:\n  app:\n    build: ./api\n", [], {
       "api/Dockerfile": "FROM alpine:3\n",
     });
     const build = project.services[0]?.build;
@@ -317,7 +344,7 @@ volumes:
     expect(build?.context).toMatch(/\/p\d+\/api$/);
   });
 
-  it("starts only the named services and what they need, and skips profiles that are not on", () => {
+  it("starts only the named services and what they need, and skips profiles that are not on", async () => {
     const yaml = `services:
   web:
     image: alpine:3
@@ -328,13 +355,13 @@ volumes:
     image: alpine:3
     profiles: [debug]
 `;
-    expect(load(yaml).services.map((s) => s.name)).toEqual(["db", "web"]);
+    expect((await load(yaml)).services.map((s) => s.name)).toEqual(["db", "web"]);
     const sub = join(repo, "profiles");
     mkdirSync(sub, { recursive: true });
     writeFileSync(join(sub, "compose.yaml"), yaml);
-    const on = loadCompose(parseCompose(["--profile", "debug", "up"], sub), { ...ctx(), cwd: sub });
+    const on = await loadCompose(parseCompose(["--profile", "debug", "up"], sub), { ...ctx(), cwd: sub });
     expect(on.services.map((s) => s.name)).toEqual(["db", "web", "tools"]);
-    const only = loadCompose(parseCompose(["up", "db"], sub), { ...ctx(), cwd: sub });
+    const only = await loadCompose(parseCompose(["up", "db"], sub), { ...ctx(), cwd: sub });
     expect(only.services.map((s) => s.name)).toEqual(["db"]);
   });
 });
