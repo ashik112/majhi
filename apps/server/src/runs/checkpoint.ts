@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 import { agentCommitter, withTaskTrailer } from "@majhi/shared";
 import { git } from "../git/git.ts";
+import { ensureWorktreeExcludes } from "../git/worktree-excludes.ts";
 
 /**
  * Checkpoints (SPEC 5.7): after every turn that changed files, a WIP commit on the task branch
@@ -80,8 +81,17 @@ function asEnv(by: CommitBy): { env: Record<string, string> } {
   };
 }
 
+/**
+ * Keeps package stores and caches out of what is about to be staged. A failure here never stops a
+ * commit: `MAX_NEW_FILES` still refuses a checkpoint full of cache files.
+ */
+async function excludeCaches(worktree: string): Promise<void> {
+  await ensureWorktreeExcludes(worktree).catch(() => undefined);
+}
+
 /** One commit of everything changed in a worktree, for a change majhi makes itself. Not a checkpoint. */
 export async function commitAll(worktree: string, message: string, by: CommitBy): Promise<void> {
+  await excludeCaches(worktree);
   await git(worktree, [...quiet(), "add", "--all"]);
   await git(
     worktree,
@@ -130,6 +140,7 @@ export async function commitCheckpoint(
   for (const repo of repos) {
     const repoBy = repo.attribution === false ? unattributed(by) : by;
     try {
+      await excludeCaches(repo.worktree);
       const status = await git(repo.worktree, ["status", "--porcelain"]);
       if (status.trim() === "") continue;
       const head = (

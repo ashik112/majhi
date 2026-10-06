@@ -13,6 +13,7 @@ import {
   uncommitted,
 } from "./git.ts";
 import { KeyedQueue } from "./keyed-queue.ts";
+import { ensureWorktreeExcludes } from "./worktree-excludes.ts";
 
 export interface WorktreeRequest {
   /** The project's own checkout. */
@@ -84,11 +85,13 @@ async function create(req: WorktreeRequest): Promise<WorktreeResult> {
   if (await localBranchExists(source, branch)) {
     await add(source, ["worktree", "add", path, branch], branch);
     await lockFor(req);
+    await excludeCaches(path, warnings);
     return { createdBranch: false, warnings };
   }
   if (remote !== undefined && (await remoteBranchExists(source, remote, branch))) {
     await add(source, ["worktree", "add", "--track", "-b", branch, path, `${remote}/${branch}`], branch);
     await lockFor(req);
+    await excludeCaches(path, warnings);
     return { createdBranch: false, warnings };
   }
   const chosen = await resolveBase(source, remote, base);
@@ -96,7 +99,19 @@ async function create(req: WorktreeRequest): Promise<WorktreeResult> {
   await lockFor(req);
   const startCommit = (await git(path, ["rev-parse", "HEAD"])).trim();
   if (chosen.diverged !== undefined) warnings.push(divergedNote(base, chosen.ref, chosen.diverged));
+  await excludeCaches(path, warnings);
   return { createdBranch: true, startCommit, startRef: chosen.ref, warnings };
+}
+
+/** Not fatal: the checkpoint sets the excludes again, and its file-count limit backs it up. */
+async function excludeCaches(path: string, warnings: string[]): Promise<void> {
+  try {
+    await ensureWorktreeExcludes(path);
+  } catch (err) {
+    warnings.push(
+      `Could not set up the cache excludes (${err instanceof Error ? err.message : String(err)}).`,
+    );
+  }
 }
 
 async function lockFor(req: WorktreeRequest): Promise<void> {
