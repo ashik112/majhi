@@ -216,6 +216,9 @@ export function guardArgs(
   ];
 }
 
+/** The only writable place of an isolated run besides its one output mount. */
+export const ISOLATED_TMP = "/tmp:rw,noexec,nosuid,nodev,size=512m,mode=1777";
+
 /** The `docker run` arguments for one run. Environment values are passed by name only. */
 export function dockerRunArgs(
   req: SpawnRequest,
@@ -234,9 +237,13 @@ export function dockerRunArgs(
     "majhi.runner=1",
     ...(options.spawner === undefined ? [] : ["--label", `${SPAWNER_LABEL}=${options.spawner}`]),
     ...(req.task === undefined ? [] : ["--label", `majhi.task=${req.task}`]),
+    // An isolated run has no network at all, so neither the runner network nor a task's is joined.
     "--network",
-    cfg.network,
-    ...(req.task === undefined ? [] : (cfg.taskNetworks?.(req.task) ?? []).flatMap((n) => ["--network", n])),
+    req.isolated === true ? "none" : cfg.network,
+    ...(req.task === undefined || req.isolated === true
+      ? []
+      : (cfg.taskNetworks?.(req.task) ?? []).flatMap((n) => ["--network", n])),
+    ...(req.isolated === true ? ["--read-only", "--tmpfs", ISOLATED_TMP] : []),
     "--cap-drop",
     "ALL",
     ...NETGUARD_CAPS.flatMap((c) => ["--cap-add", c]),
@@ -252,7 +259,11 @@ export function dockerRunArgs(
     ...(req.limits?.cpuShares === undefined ? [] : ["--cpu-shares", req.limits.cpuShares]),
   ];
   args.push("--workdir", req.scratch ? "/tmp" : req.cwd);
-  for (const m of runMounts(req, cfg)) {
+  const mounts = runMounts(req, cfg);
+  if (req.isolated === true && mounts.filter((m) => m.readOnly !== true).length > 1) {
+    throw new MountRefused("An isolated run may write to one folder only.");
+  }
+  for (const m of mounts) {
     const p = resolve(m.path);
     const target = m.target === undefined ? p : resolve(m.target);
     args.push("--mount", `type=bind,source=${p},target=${target}${m.readOnly ? ",readonly" : ""}`);
@@ -264,12 +275,12 @@ export function dockerRunArgs(
   // The run starts as root only inside majhi-netguard, which closes the route to the owner's own
   // computer and every private network but the task's own, and drops to the owner's uid with no
   // capabilities before the agent starts.
-  const subnets = req.task === undefined ? [] : (cfg.taskSubnets?.(req.task) ?? []);
+  const subnets = req.task === undefined || req.isolated === true ? [] : (cfg.taskSubnets?.(req.task) ?? []);
   args.push(
     cfg.image,
     NETGUARD,
     cfg.user ?? "0:0",
-    ...guardArgs(subnets, cfg.server?.()),
+    ...guardArgs(subnets, req.isolated === true ? undefined : cfg.server?.()),
     "--",
     req.command.command,
     ...req.command.args,

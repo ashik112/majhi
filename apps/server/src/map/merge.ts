@@ -25,6 +25,11 @@ export interface Passes {
   together: readonly { a: string; b: string; tasks: number }[];
   /** The code pass: addresses the model found in code, with proof, and the projects it read. */
   found: { endpoints: readonly MapEndpoint[]; reread: ReadonlySet<string> };
+  /**
+   * The graph pass: addresses HTTP client calls use in code (graphify's reader), and the projects whose
+   * graph was read this time. A project not read keeps what an earlier update found.
+   */
+  graph?: { endpoints: readonly MapEndpoint[]; read: ReadonlySet<string> } | undefined;
 }
 
 export function togetherEdge(pair: { a: string; b: string; tasks: number }): MapEdge {
@@ -61,7 +66,8 @@ export function mergeMap(prev: ProjectMap, passes: Passes): ProjectMap {
   const projects = new Set(passes.config.nodes.filter((n) => n.project !== undefined).map((n) => n.id));
 
   const endpoints = mergeEndpoints({
-    config: passes.config.endpoints,
+    config: [...passes.config.endpoints, ...(passes.graph?.endpoints ?? [])],
+    graphRead: passes.graph?.read ?? new Set<string>(),
     previous: prev.endpoints,
     found: passes.found.endpoints,
     reread: passes.found.reread,

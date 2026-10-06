@@ -81,6 +81,8 @@ export function mergeEndpoints(input: {
   found: readonly MapEndpoint[];
   /** Projects the model read this time: what it found earlier in them is replaced by `found`. */
   reread: ReadonlySet<string>;
+  /** Projects whose code graph was read this time: their earlier `graph` refs are replaced by `config`'s. */
+  graphRead?: ReadonlySet<string>;
   projects: ReadonlySet<string>;
   /** Host names a compose file proves belong to one project. */
   services: ReadonlyMap<string, string>;
@@ -105,13 +107,22 @@ export function mergeEndpoints(input: {
     add(
       e,
       e.refs.filter(
-        (r) => r.source === "agent" && input.projects.has(r.project) && !input.reread.has(r.project),
+        (r) =>
+          input.projects.has(r.project) &&
+          ((r.source === "agent" && !input.reread.has(r.project)) ||
+            (r.source === "graph" && input.graphRead?.has(r.project) !== true)),
       ),
     );
   }
   for (const e of input.found) add(e, e.refs);
   return [...out.values()].filter((e) => e.known === undefined || input.projects.has(e.known));
 }
+
+const TIER_ORDER: readonly MapConfidence[] = ["extracted", "inferred", "ambiguous"];
+
+/** The less sure of two tiers: a line is only as sure as its weakest proof. */
+const weaker = (a: MapConfidence, b: MapConfidence): MapConfidence =>
+  TIER_ORDER[Math.max(TIER_ORDER.indexOf(a), TIER_ORDER.indexOf(b))] as MapConfidence;
 
 /** The lines the addresses make with what is known now. A line back to the project itself is not drawn. */
 export function deriveLines(
@@ -126,7 +137,8 @@ export function deriveLines(
     for (const ref of e.refs) {
       if (ref.project === owner.project || !projects.has(ref.project)) continue;
       const proof = { project: ref.project, file: ref.file, line: ref.line, excerpt: ref.excerpt };
-      const fromConfig = ref.source === "config";
+      // A file says it (config, or a call the code graph read): proven, not proposed.
+      const fromFiles = ref.source !== "agent";
       const id = edgeId(ref.project, owner.project, "http");
       const had = lines.get(id);
       if (had === undefined) {
@@ -137,9 +149,9 @@ export function deriveLines(
           type: "http",
           label: "HTTP",
           evidence: [proof],
-          source: fromConfig ? "config" : "agent",
-          state: fromConfig ? "confirmed" : "new",
-          confidence: fromConfig ? owner.confidence : "ambiguous",
+          source: ref.source,
+          state: fromFiles ? "confirmed" : "new",
+          confidence: fromFiles ? weaker(owner.confidence, ref.confidence ?? "extracted") : "ambiguous",
         });
         continue;
       }
@@ -147,13 +159,18 @@ export function deriveLines(
         ? had.evidence
         : [...had.evidence, proof].slice(0, REFS_MAX);
       // A file that says it outright beats a proposal; the stronger tier wins.
-      const better = fromConfig && had.source === "agent";
+      const better = fromFiles && had.source === "agent";
+      const tier = weaker(owner.confidence, ref.confidence ?? "extracted");
+      // A line several files show is as sure as its surest proof.
+      const surer = fromFiles && TIER_ORDER.indexOf(tier) < TIER_ORDER.indexOf(had.confidence);
       lines.set(id, {
         ...had,
         evidence,
         ...(better
-          ? { source: "config" as const, state: "confirmed" as const, confidence: owner.confidence }
-          : {}),
+          ? { source: ref.source, state: "confirmed" as const, confidence: tier }
+          : surer
+            ? { confidence: tier }
+            : {}),
       });
     }
   }

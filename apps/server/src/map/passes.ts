@@ -7,7 +7,7 @@
  * list: it is one file in `config/` that implements `ProjectSource` and one line in `config/sources.ts`.
  */
 export interface MapPass {
-  id: "config" | "history" | "code";
+  id: "config" | "graph" | "history" | "code";
   cost: "free" | "model";
   /** What the progress line says while it runs. */
   doing: string;
@@ -15,6 +15,7 @@ export interface MapPass {
 
 export const MAP_PASSES: readonly MapPass[] = [
   { id: "config", cost: "free", doing: "Reading config files" },
+  { id: "graph", cost: "free", doing: "Reading the code graph" },
   { id: "history", cost: "free", doing: "Reading what tasks changed together" },
   { id: "code", cost: "model", doing: "Reading code for links the config misses" },
 ];

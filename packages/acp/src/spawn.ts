@@ -24,6 +24,12 @@ export interface SpawnRequest {
    * (`majhi.task`) and joins the task's own networks, where its service containers run.
    */
   task?: string;
+  /**
+   * A throwaway reader of files, not an agent (the map's graphify extraction): no network at all, a read-only
+   * root filesystem with a small scratch `/tmp`, and at most one writable mount. Only a runner container
+   * can honor this; a local spawner refuses it.
+   */
+  isolated?: boolean;
   /** Resource caps for this run only, in place of the runner's own (a hand-off check is short and runs alone). */
   limits?: { cpus?: string; memory?: string; cpuShares?: string };
 }
@@ -53,6 +59,7 @@ export type Spawner = (request: SpawnRequest) => Promise<Spawned>;
 
 /** Starts the adapter as a child of majhi, in its own process group. */
 export const localSpawner: Spawner = async (req) => {
+  if (req.isolated === true) throw new Error("An isolated run needs a runner container.");
   const child = spawn(req.command.command, req.command.args, {
     env: req.env,
     cwd: req.cwd,

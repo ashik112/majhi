@@ -253,6 +253,7 @@ const FOUND_BY = {
   config: "Reading the project's config files.",
   history: "Tasks in majhi that changed both projects.",
   agent: "The last map update read the code and found this. Check it once.",
+  graph: "The code graph shows a call to that address.",
 } as const;
 
 const TIER_WHY = {

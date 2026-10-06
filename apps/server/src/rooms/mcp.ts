@@ -26,6 +26,12 @@ import { type ConnectionsMcpDeps, connectionsServer } from "../connections/mcp.t
 import { type ContainersMcpDeps, containersServer } from "../containers/mcp.ts";
 import { errorMessage, formatIssues } from "../errors.ts";
 import { isLoopbackOrigin } from "../http/origin.ts";
+import {
+  CODE_GRAPH_DESCRIPTION,
+  type CodeGraphInput,
+  CodeGraphInputSchema,
+  type CodeGraphTools,
+} from "../map/graph/tools.ts";
 import { type MemoryMcpDeps, memoryServer } from "../memory/mcp.ts";
 import type { ProcessManager } from "../processes/manager.ts";
 import { processesServer } from "../processes/mcp.ts";
@@ -141,6 +147,7 @@ const ROOM_TOOLS: Tool[] = [
       "Draw the stored map of how this workspace's projects connect in the chat for the owner: projects, libraries, databases, queues and outside services with the lines between them. Give around (a project id) to draw only what is within depth lines of it (1 or 2). Your own workspace only. Say so if the workspace has no map yet.",
     input: ShowMapInputSchema,
   },
+  { name: "code_graph", description: CODE_GRAPH_DESCRIPTION, input: CodeGraphInputSchema },
 ];
 
 /** The tools a chat is offered from majhi-room. */
@@ -288,6 +295,8 @@ export interface RoomMcpDeps {
   skills: SkillsMcpDeps;
   /** `show_map`: the stored map of the workspace a task belongs to. Never another workspace's. */
   maps: { forTask(task: string): { org: string; map: ProjectMap } };
+  /** `code_graph`: the code graph of the task's own repos. Absent: the tool is not offered. */
+  codeGraph?: CodeGraphTools | undefined;
   /** `majhi-connections` (5.14). Absent: there is no `/mcp/connections`. */
   connections?: ConnectionsMcpDeps;
 }
@@ -437,9 +446,11 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
   const offered = () =>
     isChat()
       ? ROOM_TOOLS.filter((t) => DRAWING_TOOLS.has(t.name))
-      : isLead()
-        ? ROOM_TOOLS
-        : ROOM_TOOLS.filter((t) => t.name !== "record_plan");
+      : ROOM_TOOLS.filter(
+          (t) =>
+            (t.name !== "code_graph" || deps.codeGraph !== undefined) &&
+            (t.name !== "record_plan" || isLead()),
+        );
   server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: listed(offered(), false) }));
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<Result> => {
     const tool = offered().find((t) => t.name === request.params.name);
@@ -451,6 +462,10 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
       switch (tool.name) {
         case "show_diagram":
           return ok(drawDiagram(deps.room, caller, parsed.data as DiagramSpec));
+        case "code_graph":
+          return ok(
+            await (deps.codeGraph as CodeGraphTools).call(caller.task, parsed.data as CodeGraphInput),
+          );
         case "show_map": {
           const { org, map } = deps.maps.forTask(caller.task);
           return ok(drawMap(deps.room, caller, org, map, args as { around?: string; depth: 1 | 2 }));

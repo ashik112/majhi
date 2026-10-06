@@ -136,6 +136,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
             },
           }
         : {}),
+      codeGraph: services.codeGraph,
       maps: {
         forTask: (task) => {
           const org = services.lanes.orgOf(task) ?? services.store.tasks.get(task)?.org ?? PRIVATE;
