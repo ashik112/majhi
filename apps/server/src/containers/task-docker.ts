@@ -312,8 +312,25 @@ const DURATION = /^[0-9]{1,5}(ms|s|m|h)$/;
 const RETRIES = /^[0-9]{1,3}$/;
 const MAX_ENV = 128;
 
+const UNIT_MS: Record<string, number> = { ms: 1, s: 1_000, m: 60_000, h: 3_600_000 };
+/** A health check runs a command in the container on every beat: never faster than once a second. */
+const MIN_BEAT_MS = 1_000;
+
+function durationMs(text: string): number {
+  const unit = text.endsWith("ms") ? "ms" : text.slice(-1);
+  return Number(text.slice(0, text.length - unit.length)) * (UNIT_MS[unit] ?? 1);
+}
+
 function checkHealth(health: Health | undefined): void {
   if (health === undefined) return;
+  for (const [value, what] of [
+    [health.interval, "--health-interval"],
+    [health.timeout, "--health-timeout"],
+  ] as const) {
+    if (value !== undefined && DURATION.test(value) && durationMs(value) < MIN_BEAT_MS) {
+      refuse(`The value of ${what} is too short. A health check runs at most once a second.`);
+    }
+  }
   if (health.cmd.length === 0 || health.cmd.length > 2_000 || health.cmd.includes("\u0000"))
     refuse("The health check command is empty, too long or holds NUL.");
   for (const [value, pattern, what] of [

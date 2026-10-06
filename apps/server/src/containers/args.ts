@@ -75,6 +75,51 @@ const CLI_OWNED = new Set([
 ]);
 
 /**
+ * Names the docker CLI (or the dynamic loader, or the shell it runs under) reads from its own
+ * environment. A container's variable of one of these stays on the command line: moved into the CLI's
+ * environment it would change how majhi's own `docker` runs (`LD_PRELOAD` runs code in it).
+ */
+const CLI_ENV_PREFIXES = [
+  "LD_",
+  "DYLD_",
+  "DOCKER_",
+  "BUILDX_",
+  "BUILDKIT_",
+  "COMPOSE_",
+  "NODE_",
+  "SSL_",
+  "CURL_",
+  "GIT_",
+  "SSH_",
+  "XDG_",
+];
+const CLI_ENV_NAMES = new Set([
+  "PATH",
+  "HOME",
+  "SHELL",
+  "IFS",
+  "BASH_ENV",
+  "ENV",
+  "TMPDIR",
+  "USER",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+  "ALL_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "no_proxy",
+  "all_proxy",
+  "KUBECONFIG",
+]);
+
+/** True when a container's variable may travel in the CLI's environment: a plain name that no program reads for itself. */
+export function mayTravelInCliEnv(name: string): boolean {
+  if (CLI_OWNED.has(name) || CLI_ENV_NAMES.has(name)) return false;
+  return !CLI_ENV_PREFIXES.some((prefix) => name.toUpperCase().startsWith(prefix));
+}
+
+/**
  * Moves each `--env NAME=value` of a run off the command line: the flag becomes `--env NAME`, which
  * the docker CLI fills from its own environment, and the value goes in `env` for that one CLI
  * process. A password a service or a database check holds then shows in no process list.
@@ -88,7 +133,7 @@ export function envByName(parts: DockerParts): { parts: DockerParts; env: Record
     const at = pair.indexOf("=");
     if (at <= 0) continue;
     const name = pair.slice(0, at);
-    if (CLI_OWNED.has(name)) continue;
+    if (!mayTravelInCliEnv(name)) continue;
     env[name] = pair.slice(at + 1);
     flags[i + 1] = name;
   }

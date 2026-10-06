@@ -571,6 +571,30 @@ describe("environment values stay off the command line", () => {
     // The check runs on the call as built, before the values move.
     expect(() => assertSafe(parts, safety)).not.toThrow();
   });
+
+  it("never moves a variable the CLI or the loader reads for itself into majhi's own docker environment", () => {
+    const hostile = {
+      LD_PRELOAD: "/work/evil.so",
+      LD_LIBRARY_PATH: "/work",
+      DYLD_INSERT_LIBRARIES: "/work/evil.dylib",
+      DOCKER_HOST: "tcp://10.0.0.1:2375",
+      DOCKER_CONFIG: "/work/cfg",
+      BUILDX_BUILDER: "default",
+      BUILDKIT_HOST: "tcp://x",
+      COMPOSE_FILE: "/x",
+      NODE_OPTIONS: "--require /work/x.js",
+      GIT_SSH_COMMAND: "x",
+      HTTPS_PROXY: "http://evil",
+      ld_preload: "/work/evil.so",
+      POSTGRES_PASSWORD: "pw",
+    };
+    const parts = serviceRunArgs(safety, limits, { name: "db", image: "postgres:16", env: hostile });
+    const moved = envByName(parts);
+    expect(Object.keys(moved.env)).toEqual(["POSTGRES_PASSWORD"]);
+    // The rest stays on the command line, inside the container's own variables.
+    expect(moved.parts.flags).toContain("LD_PRELOAD=/work/evil.so");
+    expect(moved.parts.flags).toContain("DOCKER_HOST=tcp://10.0.0.1:2375");
+  });
 });
 
 describe("the forwarder of a service on the owner's computer", () => {

@@ -54,6 +54,8 @@ export class FakeDocker implements ContainerDocker {
   prunedBuilders: string[] = [];
   /** Every call a task's script made, as docker got it. */
   taskCalls: string[][] = [];
+  /** `docker wait` returns when this resolves, to play a container that runs on. */
+  waitGate: Promise<void> | undefined;
   /** Runs that fail before a container exists, by container name. */
   runFails = new Set<string>();
   /** Makes `ps` answer late, to play a slow daemon. */
@@ -135,6 +137,7 @@ export class FakeDocker implements ContainerDocker {
   ): Promise<{ code: number | null; stdout: string; stderr: string }> {
     assertTaskArgv(args, safety, allowedImages);
     this.taskCalls.push([...args]);
+    if (args[0] === "wait" && this.waitGate !== undefined) await this.waitGate;
     const ok = (stdout: string) => ({ code: 0, stdout, stderr: "" });
     const at = (flag: string) => args[args.indexOf(flag) + 1] ?? "";
     switch (args[0]) {

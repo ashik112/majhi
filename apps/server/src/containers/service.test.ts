@@ -48,7 +48,7 @@ beforeEach(async () => {
   await mkdir(join(folder, "api"), { recursive: true });
   await mkdir(join(dir, "tasks", "ACM-2", "api"), { recursive: true });
   docker = new FakeDocker();
-  openTasks = ["ACM-1"];
+  openTasks = ["ACM-1", "ACM-2"];
   settings = ContainersSettingsSchema.parse({ images: ["postgres:16-alpine", "redis:7-alpine"] });
   processes = new ProcessManager({
     spawner: async () => {
@@ -271,6 +271,7 @@ describe("ContainerService", () => {
 
   describe("cleanup", () => {
     it("startup removes leftovers, and the volumes, builders and images of tasks that are done or gone only", async () => {
+      openTasks = ["ACM-1"];
       docker.containers.set("majhi-acm-1-db", {
         name: "majhi-acm-1-db",
         labels: { "majhi.container": "service", "majhi.task": "ACM-1" },

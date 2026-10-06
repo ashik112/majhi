@@ -110,6 +110,8 @@ export interface Restarted {
 }
 
 const PORT_POLL_MS = 400;
+/** The most docker calls of one task that may wait at once (`wait`, `exec`, a build, a compose up). */
+const MAX_WAITING_CALLS = 16;
 /** How long a holder gets to set its network guard before the preview is given up on. */
 const GUARD_READY_MS = 30_000;
 
@@ -181,6 +183,8 @@ export class ContainerService {
   /** Preview builds running, by task. The builder stops when the last one ends. */
   private readonly builds = new Map<string, number>();
   private pendingStarts = 0;
+  /** Docker calls of scripts that are waiting right now, by task. */
+  private readonly calls = new Map<string, number>();
   /** The end of the queue of limit checks that reserve a name across all tasks. */
   private globalTail: Promise<unknown> = Promise.resolve();
   /** Names of the task containers a script is starting or running in the foreground, by task. */
@@ -212,6 +216,8 @@ export class ContainerService {
     const t = this.deps.task(task);
     if (docker === undefined || t === undefined) return false;
     await this.starting;
+    // A task that is done gets no network: a process that starts as it ends runs without one.
+    if (!this.deps.openTasks().includes(task)) return false;
     await this.locked(task, () => this.ensureNetwork(docker, this.safety(t)));
     return true;
   }
@@ -232,6 +238,7 @@ export class ContainerService {
     const settings = await this.deps.settings();
     await this.starting;
     return this.locked(task, async () => {
+      this.assertOpen(task);
       const building = this.all(task).find((p) => p.container?.kind === "build" && p.status === "running");
       if (building !== undefined) {
         throw new UserError(
@@ -292,6 +299,7 @@ export class ContainerService {
     // A preview may need the task's services: what stopped with the task starts first.
     await this.taskRunning(task, "preview");
     return this.locked(task, async () => {
+      this.assertOpen(task);
       try {
         await docker.exec(["image", "inspect", names.previewImage]);
       } catch {
@@ -408,6 +416,7 @@ export class ContainerService {
     // The task's other services that stopped with it start again; this one starts as asked now.
     await this.taskRunning(task, input.name);
     return this.locked(task, async () => {
+      this.assertOpen(task);
       const existing = this.running(task, "service", input.name);
       if (existing !== undefined) {
         const saved = this.specs.get(task)?.get(input.name);
@@ -501,6 +510,7 @@ export class ContainerService {
     const settings = await this.deps.settings();
     await this.starting;
     await this.locked(task, async () => {
+      this.assertOpen(task);
       const safety = this.safety(t);
       const limits = limitsOf(settings);
       const names = containerNames(task);
@@ -733,6 +743,16 @@ export class ContainerService {
       if (err instanceof UserError) return refused(err.message);
       throw err;
     }
+    // Calls that wait on docker (a wait, an exec, a build, a stack coming up) hold the server's attention:
+    // a task has a few at a time.
+    const waiting = this.calls.get(task) ?? 0;
+    if (plan.kind !== "text" && waiting >= MAX_WAITING_CALLS) {
+      return refused(
+        `${task} already has ${waiting} docker calls waiting, the most it may. Wait for one to end.`,
+        "limit_reached",
+      );
+    }
+    if (plan.kind !== "text") this.calls.set(task, waiting + 1);
     try {
       switch (plan.kind) {
         case "text":
@@ -763,12 +783,22 @@ export class ContainerService {
           this.rememberStack(task, plan.invocation, out.code === 0);
           return out;
         }
+        default: {
+          const unknown: never = plan;
+          return refused(`The docker call ${JSON.stringify(unknown)} is not known.`);
+        }
       }
     } catch (err) {
       if (err instanceof ImageNotAllowed) return asked(err);
       if (err instanceof ContainerRefused) return refused(err.message, err.refusal);
       if (err instanceof UserError) return refused(err.message);
       throw err;
+    } finally {
+      if (plan.kind !== "text") {
+        const left = (this.calls.get(task) ?? 1) - 1;
+        if (left > 0) this.calls.set(task, left);
+        else this.calls.delete(task);
+      }
     }
   }
 
@@ -788,6 +818,7 @@ export class ContainerService {
   ): Promise<TaskDockerResult> {
     const task = safety.task;
     await this.locked(task, async () => {
+      this.assertOpen(task);
       if ([...this.builds.values()].reduce((n, count) => n + count, 0) >= settings.build_total) {
         throw new UserError(
           `The build limit (${settings.build_total}) is reached. Wait for a build to finish.`,
@@ -827,6 +858,7 @@ export class ContainerService {
     this.scripted.set(task, active);
     try {
       await this.locked(task, async () => {
+        this.assertOpen(task);
         // Check and reserve in one step across tasks, so parallel starts in different tasks cannot both pass.
         await this.global(async () => {
           await this.checkLimits(docker, task, settings);
@@ -1176,7 +1208,7 @@ export class ContainerService {
           this.parkedStacks.set(task, [...stacks.values()]);
           this.stacks.delete(task);
         }
-        await this.taskStopped(task);
+        await this.removeTaskContainers(task);
       } else await this.stopBuilder(docker, containerNames(task).builder);
       return { kept: [...kept] };
     });
@@ -1251,6 +1283,12 @@ export class ContainerService {
    * paused task keeps its test data. Call after the task's processes were stopped.
    */
   async taskStopped(task: string): Promise<void> {
+    if (this.docker === undefined) return;
+    await this.locked(task, () => this.removeTaskContainers(task));
+  }
+
+  /** The body of `taskStopped`, for a caller that holds the task's lock already. */
+  private async removeTaskContainers(task: string): Promise<void> {
     const docker = this.docker;
     if (docker === undefined) return;
     const names = containerNames(task);
@@ -1290,13 +1328,19 @@ export class ContainerService {
 
   /** The task is done or removed: everything of it goes, volumes, builder and preview image too. */
   async taskEnded(task: string): Promise<void> {
+    // One step under the task's lock: a start that waits behind it finds the task closed and refuses.
     await this.locked(task, async () => {
       this.parked.delete(task);
       this.specs.delete(task);
       this.stacks.delete(task);
       this.parkedStacks.delete(task);
+      await this.removeTaskContainers(task);
+      await this.removeTaskState(task);
     });
-    await this.taskStopped(task);
+  }
+
+  /** What stays of an ended task after its containers: volumes, builder, preview image and built images. */
+  private async removeTaskState(task: string): Promise<void> {
     const docker = this.docker;
     if (docker === undefined) return;
     const names = containerNames(task);
@@ -1450,6 +1494,13 @@ export class ContainerService {
   private need(): ContainerDocker {
     if (this.docker === undefined) throw new UserError(NOT_IN_DOCKER, 501);
     return this.docker;
+  }
+
+  /** A task that is done starts no container: a start that was waiting for the lock finds it closed. */
+  private assertOpen(task: string): void {
+    if (!this.deps.openTasks().includes(task)) {
+      throw new ContainerRefused(`${task} is done, so it cannot start containers.`, "task_not_open");
+    }
   }
 
   private task(id: string): Task {

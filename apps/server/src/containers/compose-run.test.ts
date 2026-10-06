@@ -19,6 +19,7 @@ let processes: ProcessManager;
 let service: ContainerService;
 let settings: ContainersSettings;
 let asked: string[];
+let open: string[];
 
 const task = (id: string): Task =>
   ({ id, folder: join(dir, "tasks", id), team: [], repos: [], org: "acme" }) as unknown as Task;
@@ -28,7 +29,7 @@ function depsOf(): ConstructorParameters<typeof ContainerService>[0] {
     docker,
     processes,
     task: (id: string) => (id.startsWith("ACM-") ? task(id) : undefined),
-    openTasks: () => ["ACM-1", "ACM-2"],
+    openTasks: () => open,
     settings: async () => settings,
     runnerNetwork: "majhi-runners",
     runnerImage: "majhi-runner:dev",
@@ -66,6 +67,7 @@ beforeEach(async () => {
   });
   service = build();
   asked = [];
+  open = ["ACM-1", "ACM-2"];
 });
 afterEach(async () => {
   await processes.stopAll();
@@ -405,6 +407,40 @@ describe("a script's own containers", () => {
     expect(again.error?.code).toBe("name_in_use");
     expect(names()).toEqual(["majhi-acm-1-c-db", "majhi-acm-1-h-db"]);
     expect(await service.hostNameTaken("ACM-1", "db")).toBe(true);
+  });
+
+  it("starts nothing for a task that is done, and a start that was waiting when it ended leaves nothing behind", async () => {
+    open = ["ACM-2"];
+    const refusedStart = await run("-d", "--name", "late", "alpine:3");
+    expect(refusedStart.error?.code).toBe("task_not_open");
+    expect((await up()).error?.code).toBe("task_not_open");
+    expect(names()).toEqual([]);
+    // The task ends while a start is in flight (docker answers slowly): the end waits for it, then removes it.
+    open = ["ACM-1", "ACM-2"];
+    docker.psDelayMs = 30;
+    const inFlight = run("-d", "--name", "racing", "alpine:3");
+    await new Promise((r) => setTimeout(r, 10));
+    open = ["ACM-2"];
+    await service.taskEnded("ACM-1");
+    await inFlight;
+    docker.psDelayMs = 0;
+    expect(names()).toEqual([]);
+  });
+
+  it("caps the docker calls of a task that wait at once", async () => {
+    let release: () => void = () => undefined;
+    docker.waitGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const waits = Array.from({ length: 17 }, (_, i) => call("ACM-1", repo, "wait", `c${i}`));
+    await new Promise((r) => setTimeout(r, 30));
+    release();
+    const done = await Promise.all(waits);
+    expect(done.filter((r) => r?.error?.code === "limit_reached")).toHaveLength(1);
+    expect(done.filter((r) => r?.code === 0)).toHaveLength(16);
+    // Another task has its own allowance.
+    docker.waitGate = undefined;
+    expect((await call("ACM-2", join(dir, "tasks", "ACM-2", "shop"), "wait", "x")).code).toBe(0);
   });
 
   it("counts a container and its holder once against the task's limit", async () => {

@@ -178,6 +178,23 @@ describe("docker in a task: what it may do", () => {
   });
 });
 
+describe("docker in a task: health checks", () => {
+  const health = (...flags: string[]) => plan(["run", "--health-cmd", "true", ...flags, "nginx:1.27-alpine"]);
+
+  it("never beat faster than once a second", () => {
+    for (const flags of [
+      ["--health-interval", "500ms"],
+      ["--health-interval", "0s"],
+      ["--health-timeout", "1ms"],
+    ]) {
+      expect(() => health(...flags), flags.join(" ")).toThrow(/too short/);
+    }
+    expect(() =>
+      health("--health-interval", "1s", "--health-timeout", "3s", "--health-start-period", "0s"),
+    ).not.toThrow();
+  });
+});
+
 describe("docker in a task: names that are not its to take", () => {
   it.each([
     ["--name", "preview"],
