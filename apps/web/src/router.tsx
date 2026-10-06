@@ -45,7 +45,7 @@ export interface AppSearch {
   section?: string;
   /** On Decisions: the decision shown. */
   id?: string;
-  /** On the audit log: the org, the task, the agent, the kinds (comma separated), the decision and the days. */
+  /** On the audit log: the org, the task, the agent, the kinds (comma separated), the decision and the days. On the Wiki: `workspace` shows the whole workspace instead of a project. */
   scope?: string;
   about?: string;
   who?: string;
