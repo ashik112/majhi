@@ -23,6 +23,7 @@ import type { ConfigService } from "../config/service.ts";
 import { type ConnectionsMcpDeps, connectionsServer } from "../connections/mcp.ts";
 import { type ContainersMcpDeps, containersServer } from "../containers/mcp.ts";
 import { errorMessage, formatIssues } from "../errors.ts";
+import type { HandoffService } from "../handoff/service.ts";
 import { isLoopbackOrigin } from "../http/origin.ts";
 import { type MemoryMcpDeps, memoryServer } from "../memory/mcp.ts";
 import type { ProcessManager } from "../processes/manager.ts";
@@ -280,6 +281,8 @@ export interface RoomMcpDeps {
   agents: AgentStore;
   projects: ProjectService;
   processes: ProcessManager;
+  /** The hand-off check: `majhi-processes` lets an agent read and rerun its own task's. */
+  handoff: HandoffService;
   /** Absent when majhi cannot run containers: there is no `/mcp/containers` then. */
   containers?: ContainersMcpDeps;
   memory: MemoryMcpDeps;
@@ -325,7 +328,7 @@ export function roomMcpRoutes(deps: RoomMcpDeps): Hono {
       c.req.header("authorization"),
       deps.access.processes,
       PROCESSES_SERVER_NAME,
-      (caller) => processesServer(caller, deps.processes),
+      (caller) => processesServer(caller, deps.processes, deps.handoff),
     ),
   );
   const containers = deps.containers;

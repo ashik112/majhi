@@ -174,6 +174,16 @@ export const HandoffRerunInputSchema = z.object({
   step: HandoffCommandStepSchema.optional(),
 });
 
+/**
+ * What an agent's own tools take (`handoff`, `handoff_rerun` of majhi-processes). Neither names a
+ * task: the task is the one the agent runs in, from its token.
+ */
+export const HandoffToolRerunSchema = z.object({
+  step: HandoffCommandStepSchema.optional().describe(
+    "The step to run again: install, lint, build or tests. Leave it out to run every step.",
+  ),
+});
+
 /** "31 s" style duration. */
 export function handoffSeconds(ms: number): string {
   return ms < 950 ? `${Math.max(1, Math.round(ms / 100) / 10)} s` : `${Math.round(ms / 1000)} s`;
