@@ -1,11 +1,4 @@
-import {
-  type Diagram,
-  type DiagramNode,
-  type MapEdge,
-  type MapNode,
-  type OrgView,
-  PRIVATE,
-} from "@majhi/shared";
+import { type DiagramNode, type MapEdge, type MapNode, type OrgView, PRIVATE } from "@majhi/shared";
 import { Loader, RefreshCw, Waypoints } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Problem } from "@/components/problem";
@@ -25,16 +18,22 @@ import { useNow } from "@/lib/use-now";
 import {
   agoWords,
   edgeInView,
-  KIND_LABEL,
-  KIND_TONE,
   lampOf,
   MAP_VIEWS,
+  type MapPrefs,
   type MapViewId,
   mergesWords,
+  needsReview,
   nodeInView,
+  readPrefs,
+  shapeMap,
   tasksOf,
+  unansweredAddresses,
   usdWords,
+  usesOf,
+  writePrefs,
 } from "./model";
+import type { OverviewTab } from "./overview";
 import { MapPanel } from "./panel";
 
 const LEGEND = ["http", "queue", "data", "lib"] as const;
@@ -145,38 +144,45 @@ function MapFor({ org, name, switcher }: { org: string; name: string; switcher: 
   const nodes = data?.map.nodes;
   const lines = data?.map.edges;
 
-  const diagram = useMemo<Diagram>(() => {
-    const boxes: readonly MapNode[] = nodes ?? [];
-    const all: readonly MapEdge[] = lines ?? [];
-    // "Together" lines are weak: shown on Everything and on what changed, never in the way of the flow.
-    const shown = all.filter((e) => e.type !== "together" || viewId === "all" || viewId === "changed");
-    const byDeploy = viewId === "deploy";
-    const frames = byDeploy
-      ? [...new Set(boxes.map((n) => n.deploy ?? "not known"))].map(
-          (target): DiagramNode => ({ id: `deploy:${target}`, label: target }),
-        )
-      : [];
-    return {
-      layout: "top-down",
-      nodes: [
-        ...frames,
-        ...boxes.map(
-          (n): DiagramNode => ({
-            id: n.id,
-            label: n.label,
-            ...(n.sub === undefined ? {} : { sub: n.sub }),
-            kind: KIND_LABEL[n.kind],
-            tone: KIND_TONE[n.kind],
-            ...(byDeploy ? { group: `deploy:${n.deploy ?? "not known"}` } : {}),
-          }),
-        ),
-      ],
-      edges: shown,
+  const [prefs, setPrefsState] = useState<MapPrefs>(() => readPrefs(org));
+  const setPrefs = (next: MapPrefs) => {
+    setPrefsState(next);
+    writePrefs(org, next);
+  };
+  const [tab, setTab] = useState<OverviewTab>("projects");
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelection(undefined);
     };
-  }, [nodes, lines, viewId]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const shape = useMemo(
+    () => (data === undefined ? undefined : shapeMap(data, { viewId, prefs })),
+    [data, viewId, prefs],
+  );
+  const diagram = shape?.diagram;
 
   const byId = useMemo(() => new Map((nodes ?? []).map((n) => [n.id, n])), [nodes]);
   const byKey = useMemo(() => new Map((lines ?? []).map((e) => [e.id, e])), [lines]);
+
+  // Focus: a picked box keeps itself and its direct neighbours bright and dims the rest.
+  const focus = useMemo(() => {
+    if (selection === undefined || data === undefined) return undefined;
+    if (selection.kind === "edge") {
+      const e = byKey.get(selection.id);
+      return e === undefined ? undefined : new Set([e.from, e.to]);
+    }
+    const keep = new Set([selection.id]);
+    for (const e of data.map.edges) {
+      if (e.type === "together" || needsReview(e)) continue;
+      if (e.from === selection.id) keep.add(e.to);
+      if (e.to === selection.id) keep.add(e.from);
+    }
+    return keep;
+  }, [selection, data, byKey]);
 
   const nodeDecor = useMemo(() => {
     if (data === undefined) return undefined;
@@ -184,31 +190,41 @@ function MapFor({ org, name, switcher }: { org: string; name: string; switcher: 
       const box = byId.get(n.id);
       if (box === undefined) return {};
       const lamp = lampOf(tasksOf(data, box));
+      const hub = shape?.hubs.has(box.id) === true;
+      const tag = viewId === "changed" && changed.has(box.id) ? "CHANGED" : hub ? "HUB" : undefined;
+      const uses = usesOf(data, box);
       return {
-        dim: !nodeInView(viewId, box, data.map.edges, changed),
+        dim: !nodeInView(viewId, box, data.map.edges, changed) || (focus !== undefined && !focus.has(box.id)),
         ...(lamp === undefined ? {} : { lamp }),
-        ...(viewId === "changed" && changed.has(box.id) ? { tag: "CHANGED" } : {}),
+        ...(tag === undefined ? {} : { tag }),
         ...(viewId === "deploy" && box.deploy !== undefined ? { caption: box.deploy } : {}),
+        chips: box.stack ?? [],
+        uses,
       };
     };
-  }, [data, byId, viewId, changed]);
+  }, [data, byId, viewId, changed, focus, shape]);
 
   const edgeDecor = useMemo(() => {
     return (key: string): EdgeDecor => {
       const e = byKey.get(key);
       if (e === undefined) return {};
-      const inView = edgeInView(viewId, e, changed);
+      const touches = selection?.kind === "node" && (e.from === selection.id || e.to === selection.id);
+      const inView =
+        edgeInView(viewId, e, changed) && (focus === undefined || (focus.has(e.from) && focus.has(e.to)));
       return {
         dim: !inView,
         ...(e.state === "new" ? { badge: "NEW" } : {}),
-        ...(!inView && viewId !== "all" ? { hideLabel: true } : {}),
+        // A line says what it is when it is hovered, picked, or one of the picked box's.
+        hideLabel: !touches,
       };
     };
-  }, [byKey, viewId, changed]);
+  }, [byKey, viewId, changed, focus, selection]);
 
   const running = data?.running;
   const usd = estimate.data?.usd;
   const ago = data?.updatedAt === undefined ? undefined : agoWords(data.updatedAt, now);
+  const toReview = (data?.map.edges ?? []).filter(needsReview).length;
+  const asks = data === undefined ? 0 : unansweredAddresses(data).length;
   const failed = data?.failed ?? (update.error === null ? undefined : update.error.message);
 
   if (map.isError && data === undefined) {
@@ -233,6 +249,17 @@ function MapFor({ org, name, switcher }: { org: string; name: string; switcher: 
           segments={MAP_VIEWS.map((v) => ({ value: v.id, label: v.label }))}
         />
         <div className="ml-auto flex min-w-0 items-center gap-3">
+          {(toReview > 0 || asks > 0) && (
+            <Button
+              size="sm"
+              onClick={() => {
+                setSelection(undefined);
+                setTab(toReview > 0 ? "review" : "addresses");
+              }}
+            >
+              {toReview > 0 ? `${toReview} to review` : `${asks} to name`}
+            </Button>
+          )}
           <span className="min-w-0 truncate text-sm text-fg-muted" data-map-fresh="">
             {ago === undefined ? `${name}: never updated` : `Updated ${ago}`}
             {data !== undefined && ago !== undefined && (
@@ -302,6 +329,12 @@ function MapFor({ org, name, switcher }: { org: string; name: string; switcher: 
             >
               Reading the map
             </div>
+          ) : diagram === undefined ? null : shape?.shownNodes === 0 ? (
+            <div className="grid h-full place-items-center p-6">
+              <p className="max-w-[360px] text-base text-fg-muted">
+                No project is shown. Pick some on the Projects tab.
+              </p>
+            </div>
           ) : (
             <LazyScene
               diagram={diagram}
@@ -330,7 +363,15 @@ function MapFor({ org, name, switcher }: { org: string; name: string; switcher: 
           )}
         </section>
         {data !== undefined && !empty && (
-          <MapPanel view={data} selection={selection} onSelect={setSelection} />
+          <MapPanel
+            view={data}
+            selection={selection}
+            onSelect={setSelection}
+            tab={tab}
+            onTab={setTab}
+            prefs={prefs}
+            onPrefs={setPrefs}
+          />
         )}
       </div>
     </div>

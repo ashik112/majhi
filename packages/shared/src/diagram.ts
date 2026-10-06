@@ -14,6 +14,7 @@ export const DIAGRAM_LAYOUTS = [
   "sequence",
   "timeline",
   "state",
+  "lanes",
 ] as const;
 export const DiagramLayoutSchema = z.enum(DIAGRAM_LAYOUTS);
 export type DiagramLayout = z.infer<typeof DiagramLayoutSchema>;
@@ -41,6 +42,8 @@ export const DiagramNodeSchema = z.object({
   /** The id of the box this one sits inside (for grouping, like "runs on Kubernetes"). */
   group: Key.optional(),
   tone: DiagramToneSchema.optional(),
+  /** Lanes layout: the column inside the group the box sits in, left to right (0 is the first). */
+  rank: z.number().int().min(0).max(9).optional(),
 });
 export type DiagramNode = z.infer<typeof DiagramNodeSchema>;
 

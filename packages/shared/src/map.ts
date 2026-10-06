@@ -337,7 +337,10 @@ export function mapSlice(
   if (map.nodes.length === 0) {
     return { problem: "This workspace has no map yet. The owner updates it on the Map page." };
   }
-  const lines = map.edges.filter((e) => e.type !== "together");
+  // Weak lines and lines nobody has checked are not part of the picture an agent is shown.
+  const lines = map.edges.filter(
+    (e) => e.type !== "together" && !(e.state === "new" && e.confidence === "ambiguous"),
+  );
   const neighbours = (id: string) =>
     lines.flatMap((e) => (e.from === id ? [e.to] : e.to === id ? [e.from] : []));
   let keep: string[];

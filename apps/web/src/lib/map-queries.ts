@@ -1,4 +1,4 @@
-import type { MapEstimate, MapView } from "@majhi/shared";
+import type { MapAnswer, MapEstimate, MapRole, MapView } from "@majhi/shared";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
@@ -32,9 +32,9 @@ export function useMapEstimate(org: string | undefined) {
   });
 }
 
-function useMapCommand(org: string, run: (input: string) => Promise<MapView>) {
+function useMapCommand<I = string>(org: string, run: (input: I) => Promise<MapView>) {
   const client = useQueryClient();
-  return useMutation<MapView, ApiRequestError, string>({
+  return useMutation<MapView, ApiRequestError, I>({
     mutationFn: run,
     onSuccess: (view) => {
       client.setQueryData([...queryKeys.map, "view", org], view);
@@ -58,5 +58,18 @@ export function useConfirmEdge(org: string) {
 export function useRemoveEdge(org: string) {
   return useMapCommand(org, (id) =>
     cmd("map.removeEdge", { org, id }, { reason: "Owner removed a map line" }),
+  );
+}
+
+/** What an address is: one of the projects, an outside service, not a call to show; without `to`, forgotten. */
+export function useAnswerAddress(org: string) {
+  return useMapCommand<{ address: string; scope?: string; to?: MapAnswer }>(org, (input) =>
+    cmd("map.answer", { org, ...input }, { reason: "Owner answered what an address is" }),
+  );
+}
+
+export function useSetRole(org: string) {
+  return useMapCommand<{ project: string; role?: MapRole }>(org, (input) =>
+    cmd("map.setRole", { org, ...input }, { reason: "Owner set a project's role" }),
   );
 }

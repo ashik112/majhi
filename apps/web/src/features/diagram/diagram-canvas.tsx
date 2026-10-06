@@ -15,14 +15,14 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import { Maximize2, Minus, Plus } from "lucide-react";
-import { memo, type ReactNode, type RefObject, useEffect, useMemo, useRef } from "react";
+import { memo, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Lamp, type LampState } from "@/components/ui/lamp";
 import { ROW_SELECTED } from "@/components/ui/list-detail";
 import { cn } from "@/lib/cn";
 import { GLASS } from "@/lib/glass";
 import { EDGE_PRESETS, edgeLook, TONE_COLOR } from "./presets";
-import { BOX_H, BOX_W, type Box, type EdgePath, type Positioned, type Rule } from "./types";
+import { BOX_W, type Box, CARD_H, type EdgePath, type Positioned, type Rule } from "./types";
 
 export type Selection = { kind: "node"; id: string } | { kind: "edge"; id: string } | undefined;
 
@@ -34,6 +34,10 @@ export interface NodeDecor {
   tag?: string;
   /** Replaces the sub line. */
   caption?: string;
+  /** Small pills on a tall card: what the box is built with. */
+  chips?: readonly string[];
+  /** A line on a tall card: the outside services it uses. */
+  uses?: readonly string[];
 }
 
 export interface EdgeDecor {
@@ -58,6 +62,7 @@ export interface DiagramCanvasProps {
 
 interface BoxData extends Record<string, unknown> {
   node: DiagramNode;
+  box: Box;
   decor: NodeDecor;
   selected: boolean;
 }
@@ -76,6 +81,7 @@ interface LineData extends Record<string, unknown> {
   path: EdgePath;
   decor: EdgeDecor;
   selected: boolean;
+  hovered: boolean;
 }
 
 type BoxNode = Node<BoxData, "box">;
@@ -93,11 +99,14 @@ const Handles = () => (
 
 /** One box: its kind tag, a lamp with its word when a page says so, its name and a short line under it. */
 const BoxView = memo(function BoxView({ data }: NodeProps<BoxNode>) {
-  const { node, decor, selected } = data;
+  const { node, decor, selected, box } = data;
+  const tall = box.h >= CARD_H;
+  const chips = decor.chips ?? [];
+  const uses = decor.uses ?? [];
   return (
     <div
       data-diagram-node={node.id}
-      style={{ width: BOX_W, height: BOX_H }}
+      style={{ width: box.w, height: box.h }}
       className={cn(
         "cursor-pointer rounded-xl border border-glass-line bg-glass-strong px-3 py-2 shadow-glass transition-opacity duration-150",
         selected && ROW_SELECTED,
@@ -130,6 +139,31 @@ const BoxView = memo(function BoxView({ data }: NodeProps<BoxNode>) {
       <div className="truncate font-mono text-xs text-fg-faint" title={decor.caption ?? node.sub}>
         {decor.caption ?? node.sub ?? ""}
       </div>
+      {tall && (
+        <div className="mt-1 flex h-[18px] items-center gap-1 overflow-hidden" data-card-chips="">
+          {chips.slice(0, 3).map((c) => (
+            <span
+              key={c}
+              className="shrink-0 rounded border border-line-strong px-1.5 font-mono text-[10px] leading-4 text-fg-soft"
+            >
+              {c}
+            </span>
+          ))}
+          {chips.length > 3 && (
+            <span className="shrink-0 text-[10px] text-fg-muted">+{chips.length - 3}</span>
+          )}
+        </div>
+      )}
+      {tall && (
+        <div
+          className="mt-0.5 truncate text-[11px] leading-4 text-fg-muted"
+          title={uses.length === 0 ? undefined : uses.join(", ")}
+        >
+          {uses.length === 0
+            ? ""
+            : `Uses ${uses.slice(0, 2).join(", ")}${uses.length > 2 ? ` +${uses.length - 2}` : ""}`}
+        </div>
+      )}
     </div>
   );
 });
@@ -170,10 +204,10 @@ const RuleView = memo(function RuleView({ data }: NodeProps<RuleNode>) {
 /** A line, an arrowhead each end the diagram asks for, and a small label that selects it when clicked. */
 const LineView = memo(function LineView({ data, markerEnd, markerStart }: EdgeProps<LineEdge>) {
   if (data === undefined) return null;
-  const { edge, path, decor, selected } = data;
+  const { edge, path, decor, selected, hovered } = data;
   const look = edgeLook(edge);
   const d = `M ${path.from.x} ${path.from.y} Q ${path.via.x} ${path.via.y} ${path.to.x} ${path.to.y}`;
-  const showLabel = edge.label !== undefined && decor.hideLabel !== true;
+  const showLabel = edge.label !== undefined && (decor.hideLabel !== true || hovered || selected);
   return (
     <>
       <BaseEdge
@@ -183,7 +217,7 @@ const LineView = memo(function LineView({ data, markerEnd, markerStart }: EdgePr
         interactionWidth={18}
         style={{
           stroke: look.color,
-          strokeWidth: selected ? 2.6 : 1.6,
+          strokeWidth: selected || hovered ? 2.6 : 1.6,
           strokeDasharray: look.dash,
           opacity: decor.dim ? 0.15 : edge.type === "together" ? 0.7 : 1,
         }}
@@ -339,11 +373,12 @@ export function DiagramCanvas({
         id: n.id,
         type: "box",
         position: { x: box.x, y: box.y },
-        width: BOX_W,
-        height: BOX_H,
+        width: box.w,
+        height: box.h,
         draggable: false,
         data: {
           node: n,
+          box,
           decor: node?.(n) ?? {},
           selected: selection?.kind === "node" && selection.id === n.id,
         },
@@ -352,6 +387,7 @@ export function DiagramCanvas({
     return out;
   }, [diagram, positioned, node, selection]);
 
+  const [hover, setHover] = useState<string | undefined>();
   const flowEdges = useMemo(() => {
     const out: LineEdge[] = [];
     diagram.edges.forEach((e, i) => {
@@ -372,11 +408,12 @@ export function DiagramCanvas({
           path,
           decor: edge?.(key) ?? {},
           selected: selection?.kind === "edge" && selection.id === key,
+          hovered: hover === key,
         },
       });
     });
     return out;
-  }, [diagram, positioned, edge, selection]);
+  }, [diagram, positioned, edge, selection, hover]);
 
   const box = useRef<HTMLDivElement>(null);
   return (
@@ -400,6 +437,8 @@ export function DiagramCanvas({
             if (n.type === "box") onSelect?.({ kind: "node", id: n.id });
           }}
           onEdgeClick={(_, e) => onSelect?.({ kind: "edge", id: e.id })}
+          onEdgeMouseEnter={(_, e) => setHover(e.id)}
+          onEdgeMouseLeave={() => setHover(undefined)}
           onPaneClick={() => onSelect?.(undefined)}
           className="!bg-transparent"
         >

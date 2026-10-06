@@ -1,6 +1,7 @@
 import type { DiagramLayout } from "@majhi/shared";
 import type { Layout } from "../types";
 import { flow } from "./flow";
+import { lanes } from "./lanes";
 import { radial } from "./radial";
 import { sequence } from "./sequence";
 import { state } from "./state";
@@ -21,4 +22,5 @@ export const layouts: Record<DiagramLayout, Layout> = {
   sequence,
   timeline,
   state,
+  lanes,
 };
