@@ -496,10 +496,7 @@ function Flow({ page, changed, onOpen }: Props) {
       <Diagrams page={page} title="Sequence" height={420}>
         {intro && <Text page={page} onOpen={onOpen} />}
       </Diagrams>
-      <DetailSection
-        title="Steps"
-        className={page.diagrams.length === 0 && !intro ? FIRST : ""}
-      >
+      <DetailSection title="Steps" className={page.diagrams.length === 0 && !intro ? FIRST : ""}>
         <ol className="m-0 flex list-none flex-col gap-4 p-0">
           {page.claims.map((c, i) => (
             <ClaimRow key={c.n} claim={c} changed={changed} onOpen={onOpen} step={i + 1} />

@@ -214,7 +214,11 @@ export async function serveSegments(
     };
     try {
       const file = await exportMarkdown(target, name, download, readImage, options.pdf);
-      const body = new Uint8Array(file.body.buffer as ArrayBuffer, file.body.byteOffset, file.body.byteLength);
+      const body = new Uint8Array(
+        file.body.buffer as ArrayBuffer,
+        file.body.byteOffset,
+        file.body.byteLength,
+      );
       return new Response(body, {
         status: 200,
         headers: {
