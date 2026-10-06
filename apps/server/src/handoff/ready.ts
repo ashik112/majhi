@@ -36,8 +36,14 @@ export async function shipReadiness(deps: ReadyDeps, id: string, except?: string
     return { ready: false, why: "an agent is still working", owner: true };
   deps.room.flush(id);
   const waiting = WAITING.find((type) => store.room.pendingOfType(id, type).some((i) => i.id !== except));
-  if (waiting !== undefined)
-    return { ready: false, why: `a ${waiting.replace("-", " ")} card waits for you`, owner: true };
+  if (waiting !== undefined) {
+    const card = waiting.replace("-", " ");
+    return {
+      ready: false,
+      why: `${/^[aeiou]/.test(card) ? "an" : "a"} ${card} card waits for you`,
+      owner: true,
+    };
+  }
   const options = await deps.mrs.shipOptions(id);
   if ((options.protected ?? []).length > 0) {
     return { ready: false, why: "it changes a protected repo, which only you ship", owner: true };

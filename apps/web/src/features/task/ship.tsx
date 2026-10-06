@@ -778,7 +778,11 @@ function ShipPanel({
                     Fix with agent
                   </Button>
                 )}
-                {verdict.kind === "blocked" && (
+                {/* Only the owner clears it (a card waits for them): the lead is not asked to fix it. */}
+                {verdict.kind === "blocked" && verdict.owner === true && (
+                  <p className="self-center text-xs text-amber text-pretty">{mergeVerdictLine(verdict)}</p>
+                )}
+                {verdict.kind === "blocked" && verdict.owner !== true && (
                   <Button
                     size="sm"
                     variant="primary"
