@@ -12,6 +12,7 @@ import {
   type WikiRole,
   type WikiRoleRow,
   type WikiSource,
+  type WikiSystemView,
 } from "@majhi/shared";
 import { COPY } from "./copy";
 
@@ -289,4 +290,27 @@ export function openItems(pages: readonly { summary: WikiPageSummary; page: Wiki
  */
 export function leadOf(body: string): string {
   return body.split("\n\n## ")[0] ?? "";
+}
+
+/** How many things on the Gaps page need a look: guesses, claims the checker dropped, calls that link nowhere and open questions. */
+export function gapCount(
+  pages: readonly { summary: WikiPageSummary; page: WikiPage }[],
+  system: Pick<WikiSystemView, "unlinked" | "questions"> | undefined,
+  project: string | undefined,
+): number {
+  const { guessed, dropped } = openItems(pages);
+  const overview = pages.find((p) => p.page.kind === "overview")?.page;
+  const roleClaims = new Set(overview?.roles.map((r) => r.claim) ?? []);
+  const loose = guessed.filter((g) => !(g.page.id === overview?.id && roleClaims.has(g.claim.n)));
+  const unlinked = (system?.unlinked ?? []).filter((u) => project === undefined || u.project === project);
+  const questions = (system?.questions ?? []).filter(
+    (q) => project === undefined || q.projects.includes(project),
+  );
+  const rows =
+    project === undefined
+      ? 0
+      : (overview?.roles ?? []).filter(
+          (r) => r.basis !== "owner" && overview?.claims.find((c) => c.n === r.claim)?.proven === false,
+        ).length;
+  return loose.length + dropped.length + unlinked.length + questions.length + rows;
 }

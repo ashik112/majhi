@@ -1,6 +1,6 @@
 import type { CommandInput, CommandOutput, WikiPageId } from "@majhi/shared";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ApiRequestError, cmd } from "./api";
+import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
 
 /** The wiki (docs/design/wiki.md). The `wiki` topic refetches all of them. */
@@ -39,10 +39,20 @@ export function useWikiPages(
 }
 
 /** `wiki.estimate`: what Update would rewrite and cost. Read only when the owner asks. */
-export function useWikiEstimate(org: string, project: string | undefined, enabled: boolean) {
+export function useWikiEstimate(
+  org: string,
+  project: string | undefined,
+  enabled: boolean,
+  page?: WikiPageId,
+) {
   return useQuery<CommandOutput<"wiki.estimate">, ApiRequestError>({
-    queryKey: [...scopeKey(org, project), "estimate"],
-    queryFn: () => cmd("wiki.estimate", { org, ...(project === undefined ? {} : { project }) }),
+    queryKey: [...scopeKey(org, project), "estimate", page ?? ""],
+    queryFn: () =>
+      cmd("wiki.estimate", {
+        org,
+        ...(project === undefined ? {} : { project }),
+        ...(page === undefined ? {} : { page }),
+      }),
     enabled,
     retry: false,
     staleTime: 0,
@@ -64,37 +74,34 @@ export function useWikiAsk() {
   });
 }
 
-/** What a command that this build of majhi may not have yet answered. */
-export type Built = "done" | "not-built";
-
-/**
- * Runs a wiki command another branch is adding (`wiki.answer`, `wiki.setRole`, a page update). When the
- * server has no such command it answers 404 and the result is "not-built", so the screen says so instead of
- * showing a result nothing produced. Any other failure is an error as usual.
- */
-export async function runWhenBuilt(name: string, input: object): Promise<Built> {
-  let res: Response;
-  try {
-    res = await fetch(`/api/cmd/${name}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input),
-    });
-  } catch (cause) {
-    throw new ApiRequestError(name, 0, "majhi is not responding", [String(cause)]);
-  }
-  if (res.status === 404) return "not-built";
-  if (!res.ok) throw new ApiRequestError(name, res.status, `${name} failed with HTTP ${res.status}`);
-  return "done";
+/** `wiki.system`: how a workspace's projects connect, the calls that link nowhere and the addresses to ask the owner about. */
+export function useWikiSystem(org: string | undefined) {
+  return useQuery<CommandOutput<"wiki.system">, ApiRequestError>({
+    queryKey: [...scopeKey(org ?? "", undefined), "system"],
+    queryFn: () => cmd("wiki.system", { org: org ?? "" }),
+    enabled: org !== undefined,
+  });
 }
 
-/** A wiki command that may not exist yet, run as a mutation; the wiki refetches when it is done. */
-export function useWikiWhenBuilt(name: string) {
+/** `wiki.answer`: what the owner says an address or a call is. It answers the new system view, so the lists update at once. */
+export function useWikiAnswer() {
   const client = useQueryClient();
-  return useMutation<Built, ApiRequestError, object>({
-    mutationFn: (input) => runWhenBuilt(name, input),
-    onSuccess: (built) => {
-      if (built === "done") return client.invalidateQueries({ queryKey: queryKeys.wiki });
-    },
+  return useMutation<CommandOutput<"wiki.answer">, ApiRequestError, CommandInput<"wiki.answer">>({
+    mutationFn: (input) => cmd("wiki.answer", input, { reason: "Owner answered a wiki question" }),
+    // The system view is left as it is, so an answered question stays on the page with its Undo until the page is left.
+    onSuccess: () =>
+      client.invalidateQueries({
+        queryKey: queryKeys.wiki,
+        predicate: (q) => !q.queryKey.includes("system"),
+      }),
+  });
+}
+
+/** `wiki.setRole`: confirm a guessed role, change it, or take the choice back. */
+export function useWikiSetRole() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"wiki.setRole">, ApiRequestError, CommandInput<"wiki.setRole">>({
+    mutationFn: (input) => cmd("wiki.setRole", input, { reason: "Owner decided a role in the wiki" }),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.wiki }),
   });
 }

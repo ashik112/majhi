@@ -1,9 +1,8 @@
-import type { WikiClaim, WikiPage, WikiPageId, WikiPageSummary } from "@majhi/shared";
-import { type ReactNode, useMemo, useState } from "react";
+import type { WikiClaim, WikiPage, WikiPageId, WikiPageSummary, WikiSystemView } from "@majhi/shared";
+import { type ReactNode, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DetailPane } from "@/components/ui/list-detail";
-import { useWikiWhenBuilt } from "@/lib/wiki-queries";
 import { AskBar } from "./ask-bar";
 import { ComponentBody } from "./component-body";
 import { COPY } from "./copy";
@@ -13,8 +12,8 @@ import { InfraBody } from "./infra-body";
 import {
   countClaims,
   folderOf,
+  gapCount,
   movedFiles,
-  openItems,
   ROLE_LABEL,
   ROLE_TONE,
   roleRowOf,
@@ -40,12 +39,18 @@ export interface PageProps {
   behind: number | undefined;
   /** Every page of the scope, for what looks across pages (gaps, talks to, used in flows). */
   all: readonly LoadedPage[];
-  /** The workspace's projects, for the boxes of the workspace diagram. */
+  /** The workspace's projects, for the boxes of the workspace diagram and the answers to a question. */
   projects: readonly string[];
+  /** How the projects connect, from the workspace's facts; undefined until it is read. */
+  system: WikiSystemView | undefined;
   onOpen: OpenSource;
-  /** Go to a page of this scope, or of another project of the workspace. */
-  onGo: (id: WikiPageId, project?: string) => void;
+  /** Go to a page of this scope. */
+  onGo: (id: WikiPageId) => void;
+  /** Go to a page of any project of the workspace, or of the workspace itself (no project). */
+  onGoPage: (project: string | undefined, id: WikiPageId) => void;
   onGoProject: (project: string) => void;
+  /** Rewrite just this page: opens the update with what it would cost. */
+  onUpdatePage: (id: WikiPageId) => void;
 }
 
 /** The page on the right: its head, then the sections its kind has, then the Ask box. */
@@ -65,26 +70,23 @@ export function PageView(props: PageProps) {
           all={props.all}
           summaries={summaries}
           onOpen={props.onOpen}
-          onGo={props.onGo}
+          onGo={props.onGoPage}
         />
       }
     >
-      {moved.length > 0 && <StaleBanner moved={moved} behind={props.behind} page={page} scope={scope} />}
+      {moved.length > 0 && (
+        <StaleBanner moved={moved} behind={props.behind} page={page} onUpdatePage={props.onUpdatePage} />
+      )}
       <Body {...props} stale={moved.length > 0} />
     </DetailPane>
   );
 }
 
-function Head({ page, all, scope }: PageProps) {
+function Head({ page, all, scope, system }: PageProps) {
   const n = countClaims(page.claims);
   const built = Object.values(page.builtFrom)[0];
   const workspace = scope.project === undefined;
-  const open =
-    page.kind === "gaps"
-      ? openItems(all).guessed.length +
-        openItems(all).dropped.length +
-        page.questions.filter((q) => q.answer === undefined).length
-      : n.guessed + page.dropped.length;
+  const open = page.kind === "gaps" ? gapCount(all, system, scope.project) : n.guessed + page.dropped.length;
   const stats: ReactNode[] = [];
   if (built !== undefined && page.kind !== "gaps" && !workspace) {
     stats.push(
@@ -207,18 +209,15 @@ function StaleBanner({
   moved,
   behind,
   page,
-  scope,
+  onUpdatePage,
 }: {
   moved: readonly string[];
   behind: number | undefined;
   page: WikiPage;
-  scope: PageProps["scope"];
+  onUpdatePage: (id: WikiPageId) => void;
 }) {
-  const update = useWikiWhenBuilt("wiki.update");
-  const [asked, setAsked] = useState(false);
   const files = `${moved[0]}${moved.length > 1 ? ` and ${moved.length - 1} more` : ""}`;
   const since = behind === undefined ? COPY.stale.someNewer : COPY.stale.behind(behind);
-  const notBuilt = asked && update.data === "not-built";
   return (
     <p
       role="status"
@@ -229,19 +228,7 @@ function StaleBanner({
       <span className="min-w-[200px] flex-1 text-pretty">
         {since} <span className="font-mono text-xs">{files}</span>. {COPY.stale.outOfDate}
       </span>
-      {notBuilt && <span className="text-xs text-fg-muted">{COPY.notBuilt}</span>}
-      <Button
-        size="sm"
-        disabled={update.isPending}
-        onClick={() => {
-          setAsked(true);
-          update.mutate({
-            org: scope.org,
-            ...(scope.project === undefined ? {} : { project: scope.project }),
-            page: page.id,
-          });
-        }}
-      >
+      <Button size="sm" onClick={() => onUpdatePage(page.id)}>
         {COPY.stale.update}
       </Button>
     </p>

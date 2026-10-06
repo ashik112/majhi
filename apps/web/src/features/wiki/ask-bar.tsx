@@ -41,7 +41,8 @@ export function AskBar({
   all: readonly LoadedPage[];
   summaries: readonly WikiPageSummary[];
   onOpen: OpenSource;
-  onGo: (id: WikiPageId, project?: string) => void;
+  /** Open a page of a project, or of the workspace when `project` is undefined. */
+  onGo: (project: string | undefined, id: WikiPageId) => void;
 }) {
   const ask = useWikiAsk();
   const [text, setText] = useState("");
@@ -105,7 +106,7 @@ export function AskBar({
                         type="button"
                         data-ask-page={p.id}
                         title={p.project === undefined ? undefined : p.project}
-                        onClick={() => onGo(p.id, p.project)}
+                        onClick={() => onGo(p.project, p.id)}
                         className="inline-flex h-6 cursor-pointer items-center rounded-sm border border-line-strong px-2 text-xs text-fg-soft transition-colors duration-150 hover:border-line-hover hover:text-fg"
                       >
                         {titleOf(p.id)}

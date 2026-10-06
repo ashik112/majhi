@@ -10,10 +10,10 @@ import { RowsSkeleton } from "@/components/ui/skeleton";
 import { describeError } from "@/lib/errors";
 import { useOrgFilter } from "@/lib/org-filter";
 import { useProjects } from "@/lib/task-queries";
-import { useWiki, useWikiPages } from "@/lib/wiki-queries";
+import { useWiki, useWikiPages, useWikiSystem } from "@/lib/wiki-queries";
 import type { AppSearch } from "@/router";
 import { COPY } from "./copy";
-import { openItems } from "./model";
+import { gapCount } from "./model";
 import { type ListEntry, PageList } from "./page-list";
 import { type LoadedPage, PageView } from "./page-view";
 import { SourceViewer } from "./source-viewer";
@@ -116,7 +116,7 @@ function Scope({
     [summaries, reads],
   );
   const [open, setOpen] = useState<WikiSource>();
-  const [updating, setUpdating] = useState(false);
+  const [updating, setUpdating] = useState<{ page?: WikiPageId } | undefined>();
 
   /** Go to a project (or the whole workspace) and, when given, one of its pages. */
   const go = (to: { project: string | undefined; id?: WikiPageId }) =>
@@ -145,14 +145,8 @@ function Scope({
       }),
     [summaries, reads, changed],
   );
-  const items = useMemo(() => {
-    const { guessed, dropped } = openItems(loaded);
-    const questions = loaded.reduce(
-      (n, l) => n + l.page.questions.filter((q) => q.answer === undefined).length,
-      0,
-    );
-    return guessed.length + dropped.length + questions;
-  }, [loaded]);
+  const system = useWikiSystem(on ? org : undefined);
+  const items = useMemo(() => gapCount(loaded, system.data, project), [loaded, system.data, project]);
   const current = loaded.find((l) => l.summary.id === selected?.id);
   const scopeName = whole ? workspace.org.name : (project ?? "");
 
@@ -185,7 +179,7 @@ function Scope({
     body = (
       <ListDetail>
         <DetailPane label="Wiki page">
-          <NoPages name={scopeName} building={summaries.length > 0} onBuild={() => setUpdating(true)} />
+          <NoPages name={scopeName} building={summaries.length > 0} onBuild={() => setUpdating({})} />
         </DetailPane>
       </ListDetail>
     );
@@ -206,9 +200,12 @@ function Scope({
           behind={status?.behind}
           all={loaded}
           projects={projects}
+          system={system.data}
           onOpen={setOpen}
-          onGo={(id, to) => go({ project: to ?? project, id })}
+          onGo={(id) => go({ project, id })}
+          onGoPage={(to, id) => go({ project: to, id })}
           onGoProject={(p) => go({ project: p })}
+          onUpdatePage={(id) => setUpdating({ page: id })}
         />
       </ListDetail>
     );
@@ -224,7 +221,9 @@ function Scope({
         scope={whole ? WHOLE : project}
         onScope={(p) => go({ project: p === WHOLE ? undefined : p })}
         status={status}
-        onUpdate={on && (project !== undefined || whole) && summaries.length > 0 ? () => setUpdating(true) : undefined}
+        onUpdate={
+          on && (project !== undefined || whole) && summaries.length > 0 ? () => setUpdating({}) : undefined
+        }
       />
       {body}
       {open !== undefined && (
@@ -236,11 +235,12 @@ function Scope({
           onClose={() => setOpen(undefined)}
         />
       )}
-      {updating && (
+      {updating !== undefined && (
         <UpdateDialog
           org={org}
           {...(project === undefined ? {} : { project })}
-          onClose={() => setUpdating(false)}
+          {...(updating.page === undefined ? {} : { page: updating.page })}
+          onClose={() => setUpdating(undefined)}
         />
       )}
     </div>

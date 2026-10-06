@@ -3,9 +3,9 @@ import { useCallback, useMemo } from "react";
 import { cn } from "@/lib/cn";
 import { COPY } from "./copy";
 import { PageDiagrams } from "./diagrams";
-import { CORE_ROLES, isGuessed, pageOfNode, ROLE_LABEL } from "./model";
+import { CORE_ROLES, pageOfNode, ROLE_LABEL } from "./model";
 import type { PageProps } from "./page-view";
-import { BasisMark, Block, BodyText, type OpenSource, Text } from "./parts";
+import { BasisMark, Block, BodyText, type OpenSource, SourceChip, Text } from "./parts";
 import { TalkArrow } from "./talk-arrow";
 
 /** A project's overview: what it is, the stack as tiles, and the picture of how the parts connect. A workspace's: what it is, the repos and how they connect. */
@@ -79,13 +79,21 @@ function ProjectOverview({ page, all, onOpen, onGo, changed }: PageProps) {
   );
 }
 
-function WorkspaceOverview({ page, onOpen, projects, onGoProject }: PageProps) {
+function WorkspaceOverview({ page, system, onOpen, projects, onGoProject }: PageProps) {
   const pageOf = useCallback(
     (n: DiagramNode) => (projects.includes(n.id) ? () => onGoProject(n.id) : undefined),
     [projects, onGoProject],
   );
   const spec = page.diagrams[0];
-  const label = (id: string) => spec?.nodes.find((n) => n.id === id)?.label ?? id;
+  const links = (system?.links ?? []).map((l) => ({
+    id: l.id,
+    type: l.type,
+    label: l.label,
+    from: l.from.project,
+    to: l.to.project,
+    basis: COPY.linkBasis[l.basis],
+    sources: [...l.from.sources, ...l.to.sources],
+  }));
   return (
     <>
       <Block title={COPY.heading.about} first>
@@ -96,23 +104,31 @@ function WorkspaceOverview({ page, onOpen, projects, onGoProject }: PageProps) {
           <PageDiagrams specs={page.diagrams} pageOf={pageOf} withLinks />
         </Block>
       )}
-      {spec !== undefined && spec.edges.length > 0 && (
+      {links.length > 0 && (
         <Block title={COPY.heading.links}>
           <ul className="m-0 flex list-none flex-col p-0">
-            {spec.edges.map((e, i) => (
+            {links.map((l) => (
               <li
-                // biome-ignore lint/suspicious/noArrayIndexKey: a line has no id of its own
-                key={i}
-                className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 py-1.5 text-base"
+                key={l.id}
+                data-link={l.id}
+                className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-line py-2 text-base first:border-t-0 first:pt-0"
               >
-                <TalkArrow type={e.type} guessed={isGuessed(e)} />
-                <span className="font-semibold text-fg">{label(e.from)}</span>
+                <TalkArrow type={l.type} guessed={false} />
+                <span className="font-semibold text-fg">{l.from}</span>
                 <span className="text-fg-faint">to</span>
-                <span className="font-semibold text-fg">{label(e.to)}</span>
-                {e.label !== undefined && <Text className="text-fg-muted">{e.label}</Text>}
-                <span className="ml-auto flex items-center gap-2">
-                  {e.note !== undefined && <span className="text-sm text-fg-faint">{e.note}</span>}
-                  <BasisMark proven={!isGuessed(e)} />
+                <span className="font-semibold text-fg">{l.to}</span>
+                <Text className="text-fg-muted">{`\`${l.label}\``}</Text>
+                <span className="ml-auto flex flex-wrap items-center gap-2">
+                  {l.sources.map((s) => (
+                    <SourceChip
+                      key={`${s.repo}:${s.path}:${s.lines[0]}`}
+                      source={s}
+                      moved={false}
+                      onOpen={onOpen}
+                    />
+                  ))}
+                  <span className="text-sm text-fg-faint">{l.basis}</span>
+                  <BasisMark proven />
                 </span>
               </li>
             ))}
