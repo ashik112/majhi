@@ -66,6 +66,8 @@ export const GraphifyInsideSchema = z.object({
         line: z.number().int().positive(),
         end: z.number().int().positive(),
         doc: z.string().max(200).default(""),
+        /** The whole body is one call handed to another function: wiring, not work. */
+        fwd: z.boolean().optional(),
       }),
     )
     .max(60000),

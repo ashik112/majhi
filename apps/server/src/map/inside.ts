@@ -19,8 +19,8 @@ import {
   callSentence,
   dataSentence,
   entrySentence,
-  hasKnownVerb,
   outsideSentence,
+  plainFailure,
   tablesSentence,
 } from "./inside-text.ts";
 
@@ -313,11 +313,17 @@ function traceOf(
         const d = g.defs.get(to);
         if (d === undefined || visited.has(to)) continue;
         if (item.call.fail) {
-          if (fails.size < FAIL_LINES && hasKnownVerb(to)) fails.add(callSentence(to, d.doc));
+          if (fails.size < FAIL_LINES && plainFailure(to, d.doc)) fails.add(callSentence(to, d.doc));
           continue;
         }
         visited.add(to);
         const part = partOf(d.file);
+        // A function that only hands the work on (wiring in a composition root) is not a step: what it
+        // forwards to is, and shows as that.
+        if (d.fwd === true && part !== repStep.step.part) {
+          if (hops + 1 <= FOLD_HOPS) walk(to, rep, repStep, depth, hops + 1);
+          continue;
+        }
         const last = out[out.length - 1] as Traced;
         if (part === repStep.step.part || (last.step.kind !== "data" && part === last.step.part)) {
           if (hops + 1 > FOLD_HOPS) continue;
@@ -431,8 +437,25 @@ function traceOf(
   };
   walk(entry.fn, entry.fn, out[0] as Traced, 0, 0);
   out.forEach((t, i) => {
-    if (t.step.kind === "call") t.step.template = callSentence(t.step.to, g.defs.get(t.step.to)?.doc ?? "");
-    else if (t.step.kind === "entry") {
+    if (t.step.kind === "call") {
+      const tables = [
+        ...new Set(
+          t.step.fns.flatMap((f) =>
+            (g.uses.get(f.id) ?? [])
+              .filter((u) => u.kind === "db" && u.target !== undefined)
+              .map((u) => u.target as string),
+          ),
+        ),
+      ];
+      const writes = t.step.fns.some((f) => (g.uses.get(f.id) ?? []).some((u) => u.verb === "write"));
+      t.step.template = callSentence(
+        t.step.to,
+        g.defs.get(t.step.to)?.doc ?? "",
+        t.step.part,
+        tables,
+        writes,
+      );
+    } else if (t.step.kind === "entry") {
       const first = t.step.fns[1] ?? out[i + 1]?.step.fns[0];
       t.step.template = entrySentence(
         entry.kind,

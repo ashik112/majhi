@@ -289,7 +289,7 @@ def assemble(per_file, meta):
 
     for f, d, q in raw:
         fid = make_id(f, q, d["line"])
-        defs.append({"id": fid, "file": f.rel, "line": d["line"], "end": d["end"], "doc": d["doc"]})
+        defs.append({"id": fid, "file": f.rel, "line": d["line"], "end": d["end"], "doc": d["doc"], **({"fwd": True} if (d["line"], d["end"]) in f.fwd_spans else {})})
         if d["cls"]:
             meth[(f.rel, d["cls"], d["name"])] = fid
         else:
@@ -301,7 +301,7 @@ def assemble(per_file, meta):
         if key in synthetic:
             return synthetic[key]
         fid = make_id(f, name, start)
-        defs.append({"id": fid, "file": f.rel, "line": start, "end": end, "doc": ""})
+        defs.append({"id": fid, "file": f.rel, "line": start, "end": end, "doc": "", **({"fwd": True} if (start, end) in f.fwd_spans else {})})
         synthetic[key] = fid
         top.setdefault((f.rel, name), fid)
         return fid

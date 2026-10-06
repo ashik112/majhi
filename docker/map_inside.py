@@ -122,6 +122,7 @@ class FileFacts:
     def __init__(self, rel, nlines):
         self.rel = rel
         self.nlines = nlines
+        self.fwd_spans = set()  # (start line, end line) of functions whose whole body is one forwarded call
         self.fail_lines = set()  # lines inside a catch or except block, or an `if` that ends in a throw or a failed result
         self.defs = []  # {name,cls,line,end,doc}
         self.calls = []  # (line, kind, name, obj, cls)   kind: id | member | this
@@ -160,6 +161,49 @@ def has_failure_exit(block):
     return False
 
 
+FAILURE_WORDS = ("fail", "attention", "error", "denied", "expired", "refus", "invalid", "unreach", "revoked", "reject", "insufficient", "unauthorized", "forbidden", "offline", "blocked")
+FN_NODES = ("arrow_function", "function_expression", "function", "function_declaration", "method_definition", "function_definition")
+
+
+def tests_failure(cond):
+    """Whether an `if` condition asks about a failure: it names a failed state, or negates `ok`."""
+    for n in walk(cond):
+        if n.type in ("string", "string_content") and any(w in text_of(n).lower() for w in FAILURE_WORDS):
+            return True
+        if n.type == "unary_expression" and text_of(n).startswith("!") and text_of(n)[1:].strip() in ("ok", "success", "passed"):
+            return True
+        if n.type == "not_operator" and text_of(n).replace("not", "", 1).strip() in ("ok", "success", "passed"):
+            return True
+    return False
+
+
+def only_forwards(fn):
+    """Whether a function does nothing but hand the work to one other call: `(a) => svc.make(a)`, `{ return await svc.make(a); }`."""
+    body = fn.child_by_field_name("body")
+    if body is None:
+        return False
+
+    def is_call(node):
+        while node is not None and node.type in ("await_expression", "await", "parenthesized_expression", "non_null_expression", "unary_expression", "as_expression"):
+            node = node.named_child(0) if node.named_child_count else None
+        return node is not None and node.type in ("call_expression", "call")
+
+    if body.type not in ("statement_block", "block"):
+        return is_call(body)
+    stmts = [c for c in body.named_children if c.type != "comment"]
+    # A docstring is not a statement of work.
+    if stmts and stmts[0].type == "expression_statement" and stmts[0].named_child_count and stmts[0].named_child(0).type == "string":
+        stmts = stmts[1:]
+    if len(stmts) != 1:
+        return False
+    st = stmts[0]
+    if st.type == "return_statement":
+        return st.named_child_count > 0 and is_call(st.named_child(0))
+    if st.type == "expression_statement":
+        return st.named_child_count > 0 and is_call(st.named_child(0))
+    return False
+
+
 def mark_failures(facts, order):
     """Lines of the code that only runs when something went wrong: catch and except blocks, and `if` blocks that exit with a failure."""
     for n in order:
@@ -168,8 +212,11 @@ def mark_failures(facts, order):
             block = n
         elif n.type == "if_statement":
             cons = n.child_by_field_name("consequence")
-            if cons is not None and has_failure_exit(cons):
+            cond = n.child_by_field_name("condition")
+            if cons is not None and (has_failure_exit(cons) or (cond is not None and tests_failure(cond))):
                 block = cons
+        if n.type in FN_NODES and only_forwards(n):
+            facts.fwd_spans.add((n.start_point[0] + 1, n.end_point[0] + 1))
         if block is not None:
             facts.fail_lines.update(range(block.start_point[0] + 1, block.end_point[0] + 2))
 

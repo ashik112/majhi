@@ -209,6 +209,12 @@ export function verbClass(id: string): string | undefined {
   return w === undefined ? undefined : w;
 }
 
+/** A doc line is used when it is one whole sentence (ends in a full stop), short, free of code, and starts with an action. */
+function usableDoc(doc: string): boolean {
+  if (!doc.endsWith(".") || doc.length >= 88 || doc.includes("`")) return false;
+  return startsWithAction(doc.slice(0, -1));
+}
+
 /** Whether a doc line starts with what the function does ("Creates a finding"), not with a noun ("Every scope"). */
 function startsWithAction(text: string): boolean {
   const w = (text.split(" ")[0] ?? "").toLowerCase();
@@ -222,11 +228,15 @@ export function hasKnownVerb(id: string): boolean {
   return w !== undefined && VERBS[w] !== undefined && w !== "log";
 }
 
+/** Whether a failure line can say something plain about this function. */
+export function plainFailure(id: string, doc: string): boolean {
+  return hasKnownVerb(id) && !vague(id, doc);
+}
+
 /** What a function does, as a verb phrase without a capital or a full stop: "creates the connection". */
 export function describeFn(id: string, doc = ""): string {
   const text = doc.endsWith(".") ? doc.slice(0, -1) : doc;
-  if (text !== "" && doc.length < 88 && !text.includes("`") && startsWithAction(text))
-    return text.slice(0, 1).toLowerCase() + text.slice(1);
+  if (usableDoc(doc)) return text.slice(0, 1).toLowerCase() + text.slice(1);
   const last = (id.split(":")[0] ?? id).split(".").pop() ?? id;
   const words = splitName(last);
   const subject = subjectOf(id);
@@ -247,9 +257,53 @@ export function describeFn(id: string, doc = ""): string {
   return `${verb} the ${object}`;
 }
 
-/** The sentence of a step that hands the work to another part. */
-export function callSentence(id: string, doc: string): string {
-  return `${capital(describeFn(id, doc))}.`;
+/** Nouns that say nothing to the owner about what a step does. */
+const ABSTRACT = new Set([
+  "attention",
+  "chain",
+  "transport",
+  "connect",
+  "outcome",
+  "scope",
+  "scopes",
+  "check",
+  "remote",
+  "state",
+  "flow",
+  "thing",
+  "entries",
+]);
+
+const PREPOSITIONS = new Set(["with", "of", "by", "to", "for", "in", "on", "at", "from", "the", "and", "or"]);
+
+/** Whether the name of a function gives no action or only an abstract object. */
+export function vague(id: string, doc: string): boolean {
+  if (usableDoc(doc)) return false;
+  const last = (id.split(":")[0] ?? id).split(".").pop() ?? id;
+  const words = splitName(last);
+  if (words[0] === undefined || VERBS[words[0]] === undefined) return true;
+  const rest = words.slice(1);
+  if (rest.length > 0 && PREPOSITIONS.has(rest[rest.length - 1] ?? "")) return true;
+  const object = rest.length > 0 ? rest : splitName(subjectOf(id));
+  return object.length > 0 && object.every((w) => ABSTRACT.has(w) || ABSTRACT.has(singular(w)));
+}
+
+/**
+ * The sentence of a step that hands the work to another part. When the name says nothing plain (no action,
+ * or an abstract object such as "attention"), the sentence is about what the part keeps: its tables.
+ */
+export function callSentence(
+  id: string,
+  doc: string,
+  part = "",
+  tables: readonly string[] = [],
+  writes = false,
+): string {
+  if (!vague(id, doc)) return `${capital(describeFn(id, doc))}.`;
+  const noun = singular(tables[0] ?? part.toLowerCase());
+  if (tables.length > 0)
+    return `${writes ? "Records" : "Looks up"} ${noun === "" ? "its data" : `the ${noun}`}.`;
+  return part === "" ? "Does its part of the work." : `Does the ${part.toLowerCase()} part of the work.`;
 }
 
 /** The sentence of a step that goes out over the web: what the nearest meaningful caller does, "with an outside service". */
