@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import {
+  type InsideSpec,
+  type InsideTrigger,
+  type InsideView,
   isLoopbackHost,
+  type JourneyInner,
   type JourneyStep,
   type JourneyView,
   journeysOf,
@@ -27,13 +31,14 @@ import {
   proposalPrompt,
   selectFiles,
 } from "./code.ts";
-import { LoadCache } from "./config/facts.ts";
+import { LoadCache, loadCached } from "./config/facts.ts";
 import { splitSpaces } from "./config/formats.ts";
 import { type ConfigResult, configPass, type ProjectInput } from "./config/pass.ts";
-import { parseAddress } from "./endpoints.ts";
+import { answerOf, ownerOf, parseAddress } from "./endpoints.ts";
 import { ProjectFiles } from "./files.ts";
 import { graphEndpoints } from "./graph/facts.ts";
 import type { GraphRunner } from "./graph/run.ts";
+import { buildInside, readFacts, STORE_LABELS } from "./inside.ts";
 import { assertJourneySteps } from "./journeys.ts";
 import { answerAddress, confirmEdge, mergeMap, removeEdge, setRole } from "./merge.ts";
 import type { MapRepo } from "./repo.ts";
@@ -120,6 +125,9 @@ export class MapService {
   private readonly read = new Map<string, string>();
   /** Why the last background update of a workspace failed, until the next one starts. */
   private readonly failed = new Map<string, string>();
+  /** The Inside spec of each project, kept while its facts file and the map stay as they were. */
+  private readonly insides = new Map<string, { key: string; spec: InsideSpec | undefined }>();
+  private readonly reading = new Map<string, Promise<InsideView>>();
 
   constructor(private readonly deps: MapDeps) {}
 
@@ -167,7 +175,7 @@ export class MapService {
       tasks,
       changedThisWeek: this.deps.repo.changedSince(org, weekAgo).map((c) => c.project),
       projects: all.map((p) => ({ id: p.id, path: p.path, exists: p.exists })),
-      journeys: journeysOf(stored.map, this.deps.repo.journeys(org)),
+      journeys: journeysOf(stored.map, this.deps.repo.journeys(org), await this.insideSpecs(org, stored.map)),
     };
   }
 
@@ -177,8 +185,99 @@ export class MapService {
   }
 
   /** A workspace's journeys as shown (the owner's, then examples), for `show_map`. */
-  journeys(org: string): JourneyView[] {
-    return journeysOf(this.deps.repo.get(org).map, this.deps.repo.journeys(org));
+  async journeys(org: string): Promise<JourneyView[]> {
+    const map = this.deps.repo.get(org).map;
+    return journeysOf(map, this.deps.repo.journeys(org), await this.insideSpecs(org, map));
+  }
+
+  /** The Inside specs of every project of the map that has been read inside. */
+  private async insideSpecs(org: string, map: ProjectMap): Promise<InsideSpec[]> {
+    const specs: InsideSpec[] = [];
+    for (const n of map.nodes) {
+      if (n.project === undefined) continue;
+      const got = await this.insideOf(org, n.project, map);
+      if (got.spec !== undefined) specs.push(got.spec);
+    }
+    return specs;
+  }
+
+  /**
+   * What is inside one project: its entry points, the functions they run, the data and outside services
+   * they use, from the facts the graph pass left in the project's map folder. `unread` until the project
+   * was read by a build that knows how (the page then offers "Read inside").
+   */
+  async insideOf(org: string, project: string, map?: ProjectMap): Promise<InsideView> {
+    const runner = this.deps.graph;
+    const folder = runner === undefined ? null : await runner.folder(org, project);
+    const got = folder === null ? undefined : await readFacts(folder);
+    if (got === undefined || got.facts.inside === undefined) return { project, state: "unread" };
+    const stored = map ?? this.deps.repo.get(org).map;
+    const key = `${got.stamp}|${stored.nodes.length}|${stored.edges.length}|${stored.resolutions.length}`;
+    const cacheKey = `${org}|${project}`;
+    const kept = this.insides.get(cacheKey);
+    if (kept?.key === key)
+      return { project, state: "ready", ...(kept.spec === undefined ? {} : { spec: kept.spec }) };
+    const info = (await this.deps.projects()).find((p) => p.org === org && p.id === project);
+    const node = stored.nodes.find((n) => n.id === project);
+    let services: string[] = [];
+    if (info !== undefined) {
+      try {
+        const loaded = await loadCached(
+          { id: project, path: info.path },
+          this.deps.remotes ?? (async () => []),
+          this.cache,
+        );
+        services = loaded.compose.flatMap((c) =>
+          Object.entries(c.data.services ?? {})
+            .filter(([, s]) => s.build !== undefined)
+            .map(([name]) => name),
+        );
+      } catch {
+        services = [];
+      }
+    }
+    const label = (id: string) => stored.nodes.find((n) => n.id === id)?.label ?? id;
+    const spec = buildInside(got.facts, {
+      project,
+      dbs: (node?.stack ?? []).filter((c) => STORE_LABELS.has(c)),
+      services,
+      owner: (host, port) => {
+        const e = stored.endpoints.find((x) => x.host === host.toLowerCase() && x.port === port);
+        if (e === undefined) return undefined;
+        const owner = ownerOf(stored.resolutions, e);
+        if (owner !== undefined) return { kind: "proj", name: label(owner.project) };
+        return answerOf(stored.resolutions, e)?.kind === "outside" ? { kind: "out", name: host } : undefined;
+      },
+    });
+    this.insides.set(cacheKey, { key, spec });
+    return { project, state: "ready", ...(spec === undefined ? {} : { spec }) };
+  }
+
+  /**
+   * "Read inside": reads one project's code with the graph reader now, then returns what is inside it. A
+   * second ask while one runs waits for it. Throws a plain reason when the project cannot be read.
+   */
+  readInside(org: string, project: string): Promise<InsideView> {
+    const going = this.reading.get(`${org}|${project}`);
+    if (going !== undefined) return going;
+    const run = (async () => {
+      const runner = this.deps.graph;
+      if (runner === undefined)
+        throw new UserError(
+          "Agents do not run in containers on this computer, so majhi cannot read the code.",
+          409,
+        );
+      const info = (await this.deps.projects()).find((p) => p.org === org && p.id === project && p.exists);
+      if (info === undefined)
+        throw new UserError(`"${project}" is not a project of this workspace on this computer.`, 404);
+      const done = await runner.extract(org, project, info.path);
+      if (!done.ok) throw new UserError(`Could not read ${project}: ${oneLine(done.reason, 200)}`, 409);
+      this.insides.delete(`${org}|${project}`);
+      this.deps.changed();
+      return this.insideOf(org, project);
+    })().finally(() => this.reading.delete(`${org}|${project}`));
+    this.reading.set(`${org}|${project}`, run);
+    return run;
   }
 
   /** Whether the map is out of date: it never ran, or tasks merged since it did. */
@@ -461,14 +560,23 @@ export class MapService {
     id: string | undefined,
     name: string,
     steps: readonly JourneyStep[],
+    trigger?: InsideTrigger,
+    inner?: JourneyInner,
   ): Promise<MapView> {
-    assertJourneySteps(this.deps.repo.get(org).map, steps);
+    const map = this.deps.repo.get(org).map;
+    if (inner !== undefined) {
+      if (!map.nodes.some((n) => n.id === inner.project && n.project !== undefined)) {
+        throw new UserError(`"${inner.project}" is not a project on this workspace's map.`, 400);
+      }
+    } else assertJourneySteps(map, steps);
     const known = id === undefined ? undefined : this.deps.repo.journeys(org).find((j) => j.id === id);
     if (id !== undefined && known === undefined) throw new UserError("That journey does not exist.", 404);
     this.deps.repo.saveJourney(org, {
       id: known?.id ?? `journey-${crypto.randomUUID().slice(0, 8)}`,
       name,
       steps: [...steps],
+      ...(trigger === undefined ? {} : { trigger }),
+      ...(inner === undefined ? {} : { inner }),
       createdAt: known?.createdAt ?? this.now().toISOString(),
     });
     this.deps.changed();

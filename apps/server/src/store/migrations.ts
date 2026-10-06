@@ -1672,6 +1672,8 @@ CREATE TABLE map_journeys (
   name TEXT NOT NULL,
   steps TEXT NOT NULL,
   created_at TEXT NOT NULL,
+  -- What starts it and, for a journey inside one project, which project and entry point (JSON).
+  extra TEXT,
   PRIMARY KEY (org, id)
 );
 `,

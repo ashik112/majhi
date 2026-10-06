@@ -295,7 +295,7 @@ export interface RoomMcpDeps {
   /** `majhi-skills`: look up a run's own skills. */
   skills: SkillsMcpDeps;
   /** `show_map`: the stored map of the workspace a task belongs to. Never another workspace's. */
-  maps: { forTask(task: string): { org: string; map: ProjectMap; journeys: JourneyView[] } };
+  maps: { forTask(task: string): Promise<{ org: string; map: ProjectMap; journeys: JourneyView[] }> };
   /** `code_graph`: the code graph of the task's own repos. Absent: the tool is not offered. */
   codeGraph?: CodeGraphTools | undefined;
   /** `majhi-connections` (5.14). Absent: there is no `/mcp/connections`. */
@@ -468,7 +468,7 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
             await (deps.codeGraph as CodeGraphTools).call(caller.task, parsed.data as CodeGraphInput),
           );
         case "show_map": {
-          const { org, map, journeys } = deps.maps.forTask(caller.task);
+          const { org, map, journeys } = await deps.maps.forTask(caller.task);
           return ok(
             drawMap(
               deps.room,

@@ -176,6 +176,7 @@ RUN --mount=from=ghcr.io/astral-sh/uv:0.12.21,source=/uv,target=/usr/local/bin/u
   && GRAPHIFY_NO_AUTO_REFRESH=1 /opt/graphify/bin/graphify --help > /dev/null
 ENV GRAPHIFY_NO_AUTO_REFRESH=1
 COPY --chmod=0755 docker/map-extract.py /usr/local/lib/majhi/map-extract.py
+COPY --chmod=0644 docker/map_inside.py /usr/local/lib/majhi/map_inside.py
 COPY --from=kubectl /kubectl /usr/local/bin/kubectl
 # glab and gh for `git` connections (SPEC 5.14): the run gets the workspace's own sign-in as GITLAB_TOKEN or GH_TOKEN.
 COPY --from=host-clis /out/gh /out/glab /usr/local/bin/

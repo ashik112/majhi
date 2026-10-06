@@ -15,6 +15,7 @@ import {
   useSaveJourney,
   useSetRole,
 } from "@/lib/map-queries";
+import { RoleBadge, Tag } from "./brand";
 import { Ic } from "./icons";
 import { type Graph, LINE_KIND_LABEL, type PEdge, type PNode, TIER_LABEL, TIER_WHY } from "./model";
 import { ProjectInside } from "./project-inside";
@@ -213,7 +214,7 @@ function NodePanel({
       <div className="dhead">
         <div className="t">
           <span className="nm">{node.label}</span>
-          <span className={`bdg ${node.roleClass}`}>{node.roleLabel}</span>
+          <RoleBadge label={node.roleLabel} cls={node.roleClass} />
         </div>
         {path !== undefined && <div className="s">{path}</div>}
       </div>
@@ -301,11 +302,7 @@ function NodePanel({
             <div className="glabel">Built with</div>
             <div className="chips">
               {node.stack.length > 0 ? (
-                node.stack.map((c) => (
-                  <span key={c} className="chip">
-                    {c}
-                  </span>
-                ))
+                node.stack.map((c) => <Tag key={c} name={c} />)
               ) : (
                 <span className="sub">Nothing detected</span>
               )}
@@ -315,9 +312,7 @@ function NodePanel({
                 <div className="sub">Stores data in</div>
                 <div className="chips">
                   {node.stores.map((c) => (
-                    <span key={c} className="chip">
-                      {c}
-                    </span>
+                    <Tag key={c} name={c} />
                   ))}
                 </div>
               </>
@@ -327,9 +322,7 @@ function NodePanel({
                 <div className="sub">Outside services</div>
                 <div className="chips">
                   {node.outside.map((c) => (
-                    <span key={c} className="chip out">
-                      {c}
-                    </span>
+                    <Tag key={c} name={c} out />
                   ))}
                 </div>
               </>

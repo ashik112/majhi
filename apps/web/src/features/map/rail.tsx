@@ -1,4 +1,5 @@
 import type { JourneyView } from "@majhi/shared";
+import { RoleBadge } from "./brand";
 import { Ic } from "./icons";
 import type { Graph, PNode } from "./model";
 import type { UiState } from "./use-map-state";
@@ -46,9 +47,7 @@ export function Rail({
           </span>
         </div>
         <div className="l2">
-          <span className={`bdg ${n.roleClass}`} style={{ height: 18 }}>
-            {n.roleLabel}
-          </span>
+          <RoleBadge label={n.roleLabel} cls={n.roleClass} small />
           <span className={`st ${n.lamp !== "idle" ? n.lamp : ""}`}>{n.lampWord}</span>
         </div>
       </button>

@@ -33,11 +33,11 @@ const CHIP_GAP = 4;
 
 /** A box's width from its longest text, and its height from how many rows of chips it needs. */
 export function boxSize(n: PNode): { w: number; h: number } {
-  const chips = [...n.stores, ...n.outside].map((c) => c.length * 8.4 + 20 + CHIP_GAP);
+  const chips = [...n.stores, ...n.outside].map(() => 28 + CHIP_GAP);
   // The badge and the state word share the first row.
   const state =
     n.lamp === "idle" ? 0 : 18 + (n.lamp === "working" ? 7 : n.lampWord === "needs you" ? 9 : 8) * 8;
-  const head = n.roleLabel.length * 8.4 + 20 + state + 8;
+  const head = 28 + state + 8;
   const row = Math.min(MAX_W, chips.reduce((a, b) => a + b, 0) + 22);
   const widest = Math.max(n.label.length * CHAR_W + 24, head + 22, row);
   const w = Math.min(MAX_W, Math.max(MIN_W, Math.round(widest)));
@@ -50,7 +50,7 @@ export function boxSize(n: PNode): { w: number; h: number } {
     }
     used += cw;
   }
-  return { w, h: 80 + 28 * Math.min(rows, 3) };
+  return { w, h: 70 + 30 * Math.min(rows, 3) };
 }
 
 /** The structure the layout depends on. Two maps with the same key lay out the same. */

@@ -1,4 +1,5 @@
 import type { JourneyView } from "@majhi/shared";
+import { RoleBadge } from "./brand";
 import type { JourneyLayout } from "./layout";
 import type { Graph } from "./model";
 
@@ -94,9 +95,7 @@ export function JourneyWorld({
             className={`jhead ${step !== null && !active ? "dim" : ""}`}
             style={{ left: x(p) - hw / 2, top: 0, width: hw, height: head - 18 }}
           >
-            <span className={`bdg ${n?.roleClass ?? ""}`} style={{ height: 18 }}>
-              {n?.roleLabel ?? "Gone"}
-            </span>
+            <RoleBadge label={n?.roleLabel ?? "Service"} cls={n?.roleClass ?? ""} small />
             <div className="n-name">{n?.label ?? p}</div>
           </div>
         );

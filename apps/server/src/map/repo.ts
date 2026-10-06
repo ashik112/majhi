@@ -115,15 +115,16 @@ export class MapRepo {
   journeys(org: string): Journey[] {
     const rows = this.db
       .prepare(
-        "SELECT id, name, steps, created_at FROM map_journeys WHERE org = ? ORDER BY created_at, rowid",
+        "SELECT id, name, steps, created_at, extra FROM map_journeys WHERE org = ? ORDER BY created_at, rowid",
       )
-      .all(org) as { id: string; name: string; steps: string; created_at: string }[];
+      .all(org) as { id: string; name: string; steps: string; created_at: string; extra: string | null }[];
     return rows.flatMap((r) => {
       try {
         const parsed = JourneySchema.safeParse({
           id: r.id,
           name: r.name,
           steps: JSON.parse(r.steps),
+          ...(r.extra === null ? {} : JSON.parse(r.extra)),
           createdAt: r.created_at,
         });
         return parsed.success ? [parsed.data] : [];
@@ -136,10 +137,20 @@ export class MapRepo {
   saveJourney(org: string, journey: Journey): void {
     this.db
       .prepare(
-        `INSERT INTO map_journeys (org, id, name, steps, created_at) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(org, id) DO UPDATE SET name = excluded.name, steps = excluded.steps`,
+        `INSERT INTO map_journeys (org, id, name, steps, created_at, extra) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(org, id) DO UPDATE SET name = excluded.name, steps = excluded.steps, extra = excluded.extra`,
       )
-      .run(org, journey.id, journey.name, JSON.stringify(journey.steps), journey.createdAt);
+      .run(
+        org,
+        journey.id,
+        journey.name,
+        JSON.stringify(journey.steps),
+        journey.createdAt,
+        JSON.stringify({
+          ...(journey.trigger === undefined ? {} : { trigger: journey.trigger }),
+          ...(journey.inner === undefined ? {} : { inner: journey.inner }),
+        }),
+      );
   }
 
   /** Whether a journey of that workspace was removed. */

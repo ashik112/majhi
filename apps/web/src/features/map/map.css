@@ -37,7 +37,14 @@
   --lamp-done: var(--c-lamp-done);
   --lamp-idle: var(--c-lamp-idle);
   --edge: color-mix(in srgb, var(--c-blue) 46%, transparent);
-  --ink: var(--c-canvas);
+  --on-blue: #07101c;
+  --cur: #ffffff;
+  --on-cur: #07101c;
+  --dimo: 0.32;
+  --dime: 0.22;
+  --bg-solid: rgb(8 13 22 / 0.9);
+  --band: rgb(22 32 48 / 0.97);
+  --band-hover: rgb(28 40 60 / 0.98);
   --shadow-rest: var(--c-shadow-glass);
   --shadow-pop: var(--c-shadow-pop);
   --sans: "IBM Plex Sans", "Helvetica Neue", system-ui, sans-serif;
@@ -798,7 +805,7 @@
   border-color: var(--line-hover);
 }
 .mapx .node.dim {
-  opacity: 0.32;
+  opacity: var(--dimo);
 }
 .mapx .node.lit-working {
   border-color: color-mix(in srgb, var(--lamp-working) 34%, transparent);
@@ -993,7 +1000,7 @@
   fill: var(--caution);
 }
 .mapx .edge.dim {
-  opacity: 0.22;
+  opacity: var(--dime);
 }
 .mapx .edge.hot .ln,
 .mapx .edge.tr .ln,
@@ -1025,7 +1032,7 @@
   margin: -10px 0 0 -10px;
   border-radius: 50%;
   background: var(--blue);
-  color: var(--ink);
+  color: var(--on-blue);
   font: 500 11px / 20px var(--mono);
   text-align: center;
   box-shadow:
@@ -1151,7 +1158,7 @@
   height: 18px;
   border-radius: 50%;
   background: var(--blue);
-  color: var(--ink);
+  color: var(--on-blue);
   font: 500 11px / 18px var(--mono);
   text-align: center;
   flex: none;
@@ -1321,18 +1328,18 @@
   font-weight: 500;
 }
 .mapx .jlabbg {
-  fill: var(--c-glass-strong);
+  fill: var(--bg-solid);
 }
 .mapx .jnum circle {
   fill: var(--blue);
 }
 .mapx .jnum text {
   font: 500 11px var(--mono);
-  fill: var(--ink);
+  fill: var(--on-blue);
   text-anchor: middle;
 }
 .mapx .jstep.cur .jnum circle {
-  fill: var(--fg);
+  fill: var(--cur);
 }
 .mapx .player {
   display: flex;
@@ -1357,6 +1364,400 @@
   height: 28px;
 }
 
+/* logos and icons */
+.mapx .lg {
+  display: inline-grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  color: var(--fg-muted);
+  flex: none;
+  transition: color 0.15s;
+}
+.mapx .lg svg {
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+.mapx .lg.tile {
+  border-radius: 3px;
+  background: var(--raised);
+  border: 1px solid var(--line-control);
+  font: 500 9px / 1 var(--mono);
+  color: var(--fg-muted);
+}
+.mapx .chip:hover .lg,
+.mapx .node:hover .lg,
+.mapx .node.sel .lg,
+.mapx .row:hover .lg,
+.mapx .row.on .lg,
+.mapx .dn:hover .lg,
+.mapx .dn.sel .lg,
+.mapx .link:hover .lg {
+  color: var(--bc);
+}
+.mapx .chip {
+  gap: 5px;
+}
+.mapx .chip.ic {
+  padding: 0;
+  width: 24px;
+  justify-content: center;
+}
+.mapx[data-view="overview"] .node .chip.ic {
+  width: 26px;
+  padding: 0;
+}
+.mapx[data-view="overview"] .node .chip.ic .lg {
+  width: 14px;
+  height: 14px;
+}
+.mapx[data-view="overview"] .node .bdg:has(> svg:only-child) {
+  padding: 0;
+  width: 26px;
+  justify-content: center;
+}
+.mapx .bdg > svg.i,
+.mapx .bdg > svg.ri {
+  width: 11px;
+  height: 11px;
+}
+.mapx[data-view="overview"] .node .bdg > svg {
+  width: 13px;
+  height: 13px;
+}
+.mapx .ri {
+  width: 11px;
+  height: 11px;
+}
+
+/* inside */
+.mapx .frame {
+  position: absolute;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: rgb(130 175 230 / 0.03);
+  z-index: 0;
+}
+.mapx .frame .ft {
+  position: absolute;
+  left: 12px;
+  top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+.mapx .frame .ft svg {
+  width: 12px;
+  height: 12px;
+}
+.mapx .node.entry {
+  padding: 7px 10px;
+  gap: 4px;
+  justify-content: center;
+}
+.mapx .entry .e-l {
+  font: 400 12px / 16px var(--mono);
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mapx .entry .e-s {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: 400 12px / 16px var(--mono);
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+.mapx .entry .e-s .bdg {
+  height: 18px;
+  font-family: var(--sans);
+}
+.mapx .node.fn {
+  padding: 0 10px;
+  justify-content: center;
+  gap: 2px;
+  border-radius: 10px;
+}
+.mapx .fn .fn-n {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: 400 13px / 18px var(--mono);
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mapx .fn .fn-n svg {
+  width: 13px;
+  height: 13px;
+  color: var(--fg-faint);
+}
+.mapx .fn .n-sub {
+  font-size: 12px;
+  line-height: 15px;
+  padding-left: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mapx .node.dn {
+  padding: 5px 10px;
+  gap: 0;
+  justify-content: center;
+  border-radius: 10px;
+}
+.mapx .dn .dn-t {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--fg);
+  white-space: nowrap;
+}
+.mapx .dn .dn-t svg.i {
+  width: 13px;
+  height: 13px;
+  color: var(--fg-muted);
+}
+.mapx .dn .n-sub {
+  font-size: 12px;
+  line-height: 15px;
+  padding-left: 20px;
+}
+.mapx .node.dn.out {
+  border-style: dashed;
+  border-color: var(--line-bright);
+  background: transparent;
+}
+.mapx .strip {
+  display: flex;
+  align-items: center;
+  gap: 6px 14px;
+  flex-wrap: wrap;
+  padding: 5px 10px;
+  border-radius: 9px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  min-height: 32px;
+}
+.mapx .strip .cnt {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+}
+.mapx .strip .cnt b {
+  font: 500 13px / 18px var(--mono);
+  color: var(--fg);
+}
+.mapx .tabs button {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.mapx .tabsrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-basis: 100%;
+}
+.mapx .stp {
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  text-align: left;
+  display: flex;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: var(--fg-soft);
+  font-size: 13px;
+  line-height: 18px;
+}
+.mapx .stp:hover {
+  background: var(--raised);
+  color: var(--fg);
+}
+.mapx .stp.on {
+  background: var(--selected);
+  box-shadow: inset 0 0 0 1px var(--line-control);
+  color: var(--fg);
+}
+.mapx .stp .f {
+  display: block;
+  font: 400 12px / 16px var(--mono);
+  color: var(--blue);
+  margin-top: 1px;
+}
+.mapx .stp .num {
+  margin-top: 1px;
+}
+.mapx .badge.cur {
+  background: var(--cur);
+  color: var(--on-cur);
+}
+.mapx .seg.rail-seg {
+  width: 100%;
+}
+.mapx .seg.rail-seg button {
+  flex: 1;
+  justify-content: center;
+  height: 28px;
+}
+
+/* journey groups */
+.mapx .gh.jg {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  margin: 6px -8px 2px;
+  padding: 7px 16px 7px 8px;
+  gap: 8px;
+  cursor: pointer;
+  width: calc(100% + 16px);
+  text-align: left;
+  background: var(--band);
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+  color: var(--fg);
+}
+.mapx .gh.jg:first-child {
+  margin-top: 0;
+}
+.mapx .gh.jg:hover {
+  background: var(--band-hover);
+}
+.mapx .gh.jg .pn {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mapx .gh.jg .chv {
+  display: grid;
+  place-items: center;
+  color: var(--fg-faint);
+  transition: transform 0.15s;
+}
+.mapx .gh.jg .chv svg {
+  width: 14px;
+  height: 14px;
+}
+.mapx .gh.jg.open .chv {
+  transform: rotate(90deg);
+}
+.mapx .gh.jg .n {
+  margin-left: auto;
+}
+.mapx .gh.jg .rb {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--fg-soft);
+}
+.mapx .gh.jg .rb svg {
+  width: 13px;
+  height: 13px;
+}
+.mapx .row.jc {
+  padding: 5px 8px 5px 38px;
+  gap: 1px;
+  border-radius: 8px;
+}
+.mapx .row.jc .l1 {
+  font-weight: 400;
+  color: var(--fg-soft);
+}
+.mapx .row.jc.on .l1 {
+  font-weight: 500;
+  color: var(--fg);
+}
+.mapx .row.jc .mk {
+  margin-left: auto;
+  color: var(--fg-faint);
+  display: grid;
+  place-items: center;
+}
+.mapx .row.jc .mk svg {
+  width: 12px;
+  height: 12px;
+}
+.mapx .row.jc.yours .mk {
+  color: var(--green);
+}
+.mapx .row.jc .l2 {
+  padding-left: 0;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--fg-faint);
+}
+.mapx .row.jc .l2 .st {
+  gap: 5px;
+}
+.mapx .row.jc .l2 svg.i {
+  width: 12px;
+  height: 12px;
+}
+.mapx .row.jc.on {
+  box-shadow:
+    inset 2px 0 0 var(--accent),
+    inset 0 0 0 1px var(--line-control);
+}
+.mapx .railctl {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 2px 0;
+}
+.mapx .railctl button {
+  font-size: 12px;
+  color: var(--fg-muted);
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mapx .railctl button:hover {
+  background: var(--raised);
+  color: var(--fg);
+}
+.mapx .railctl button svg {
+  width: 12px;
+  height: 12px;
+}
+
+:root[data-theme="light"] .mapx {
+  --on-blue: #ffffff;
+  --cur: #0e1726;
+  --on-cur: #ffffff;
+  --dimo: 0.52;
+  --dime: 0.4;
+  --bg-solid: rgb(240 244 249 / 0.95);
+  --band: rgb(226 233 243 / 0.98);
+  --band-hover: rgb(214 224 238 / 0.98);
+  --edge: rgb(25 70 140 / 0.5);
+}
+.mapx .jstep.cur .jnum text {
+  fill: var(--on-cur);
+}
 .mapx .only-narrow {
   display: none;
 }

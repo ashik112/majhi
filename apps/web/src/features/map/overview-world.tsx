@@ -1,3 +1,4 @@
+import { RoleBadge } from "./brand";
 import type { OverviewLayout } from "./layout";
 import type { Graph, PNode } from "./model";
 import type { UiState } from "./use-map-state";
@@ -106,7 +107,7 @@ export function OverviewWorld({
             onMouseLeave={() => acts.setHover(null)}
           >
             <div className="n-top">
-              <span className={`bdg ${n.roleClass}`}>{n.roleLabel}</span>
+              <RoleBadge label={n.roleLabel} cls={n.roleClass} iconOnly />
               {st !== undefined && (
                 <span className={`st ${n.lamp}`}>
                   <i className={`lamp ${n.lamp}`} />

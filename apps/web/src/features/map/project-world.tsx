@@ -1,8 +1,9 @@
+import { RoleBadge, Tag } from "./brand";
 import type { ProjectLayout } from "./layout";
 import { type Graph, type PNode, TIER_LABEL, type Tier } from "./model";
 import { ProjectInside } from "./project-inside";
 import type { UiState } from "./use-map-state";
-import { BoxChips, focusOf, Overlay, Wires } from "./wires";
+import { focusOf, Overlay, Wires } from "./wires";
 
 interface Acts {
   focusProject: (id: string) => void;
@@ -58,9 +59,7 @@ export function ProjectWorld({
           <span className="n-name">{short(n.label)}</span>
         </div>
         <div className="n-sub">
-          <span className={`bdg ${n.roleClass}`} style={{ height: 18 }}>
-            {n.roleLabel}
-          </span>
+          <RoleBadge label={n.roleLabel} cls={n.roleClass} small />
           {e.label}
         </div>
       </div>
@@ -114,7 +113,7 @@ export function ProjectWorld({
         style={{ left: layout.card.x, top: 0, width: mw, height: layout.h }}
       >
         <div className="n-top">
-          <span className={`bdg ${node.roleClass}`}>{node.roleLabel}</span>
+          <RoleBadge label={node.roleLabel} cls={node.roleClass} />
           <span className={`st ${st.cls}`}>
             <i className={`lamp ${st.lamp}`} />
             {st.text}
@@ -127,14 +126,10 @@ export function ProjectWorld({
         {node.desc !== "" && <div className="desc">{node.desc}</div>}
         <div className="chips" style={{ margin: 0 }}>
           {chips.map((c) => (
-            <span key={c} className="chip">
-              {c}
-            </span>
+            <Tag key={c} name={c} />
           ))}
           {node.outside.map((c) => (
-            <span key={c} className="chip out">
-              {c}
-            </span>
+            <Tag key={c} name={c} out />
           ))}
         </div>
         <ProjectInside node={node} />
@@ -166,4 +161,3 @@ export function ProjectWorld({
     </>
   );
 }
-export { BoxChips };

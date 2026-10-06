@@ -38,6 +38,7 @@ export * from "./health-run.ts";
 export * from "./home-facts.ts";
 export * from "./host.ts";
 export * from "./inbox.ts";
+export * from "./inside.ts";
 export * from "./journeys.ts";
 export * as lifecycle from "./lifecycle/index.ts";
 export * from "./machine.ts";

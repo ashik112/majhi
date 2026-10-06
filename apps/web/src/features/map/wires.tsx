@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Tag } from "./brand";
 import { arrowOf, badgePositions, longestMid, type Pt, roundPath, shorten } from "./layout";
 import { LINE_KIND_LABEL, type PEdge, type PNode } from "./model";
 
@@ -145,14 +146,10 @@ export function BoxChips({ node }: { node: PNode }) {
   return (
     <div className="chips">
       {node.stores.map((s) => (
-        <span key={s} className="chip">
-          {s}
-        </span>
+        <Tag key={s} name={s} iconOnly />
       ))}
       {node.outside.map((s) => (
-        <span key={s} className="chip out">
-          {s}
-        </span>
+        <Tag key={s} name={s} out iconOnly />
       ))}
     </div>
   );
