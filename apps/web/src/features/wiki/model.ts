@@ -107,7 +107,7 @@ export function countClaims(claims: readonly WikiClaim[]): {
 export function subline(page: WikiPage): string {
   switch (page.kind) {
     case "overview":
-      return "What it is, roles, map";
+      return "About, stack, diagram";
     case "component":
       return folderOf(page) ?? "Component";
     case "flow": {

@@ -257,18 +257,11 @@ function Overview({ page, all, onOpen, onGo, changed }: Props) {
   const titles = useMemo(() => new Map(all.map((p) => [p.page.id, p.page.title])), [all]);
   return (
     <>
-      <DetailSection title="What it is" className={FIRST}>
+      <DetailSection title="About" className={FIRST}>
         <Text page={page} onOpen={onOpen} />
       </DetailSection>
       {page.roles.length > 0 && (
-        <DetailSection
-          title="Where things are"
-          note={
-            page.roles.some((r) => r.page !== undefined && titles.has(r.page))
-              ? "Click a tile to open its page. The file under it shows the proof."
-              : "Click a tile to read its proof."
-          }
-        >
+        <DetailSection title="Stack">
           <div className="grid grid-cols-1 gap-2.5 @[480px]:grid-cols-2 @[720px]:grid-cols-4">
             {page.roles.map((row) => (
               <Tile
@@ -302,7 +295,7 @@ function Overview({ page, all, onOpen, onGo, changed }: Props) {
           )}
         </DetailSection>
       )}
-      <Diagrams page={page} title="How the pieces connect" height={440} />
+      <Diagrams page={page} title="System diagram" height={440} />
     </>
   );
 }
