@@ -9,6 +9,7 @@ import {
   DiagramSpecSchema,
   type DiagramTone,
 } from "./diagram.ts";
+import { JourneyViewSchema } from "./journeys.ts";
 
 /**
  * The project map (SPEC 5.21): one stored graph per workspace of how its projects connect. A config pass
@@ -53,12 +54,13 @@ export const MAP_CONFIDENCE_LABEL: Record<MapConfidence, string> = {
 };
 
 /** The role of a project decides its lane on the map. */
-export const MAP_ROLES = ["app", "service", "worker"] as const;
+export const MAP_ROLES = ["app", "service", "queue", "worker"] as const;
 export const MapRoleSchema = z.enum(MAP_ROLES);
 export type MapRole = z.infer<typeof MapRoleSchema>;
 export const MAP_ROLE_LABEL: Record<MapRole, string> = {
   app: "App",
   service: "Service",
+  queue: "Queue",
   worker: "Worker",
 };
 
@@ -261,6 +263,8 @@ export const MapViewSchema = z.object({
   changedThisWeek: z.array(z.string()),
   /** Registered projects of the workspace, with their checkout path (for "Open in editor"). */
   projects: z.array(z.object({ id: z.string(), path: z.string(), exists: z.boolean() })),
+  /** The owner's journeys, then majhi's examples that no kept journey already follows. */
+  journeys: z.array(JourneyViewSchema).default([]),
 });
 export type MapView = z.infer<typeof MapViewSchema>;
 
@@ -316,6 +320,8 @@ export const ShowMapInputSchema = z.object({
   /** A project id: draw the boxes within `depth` lines of it. Without it, the whole map. */
   around: z.string().trim().min(1).max(120).optional(),
   depth: z.union([z.literal(1), z.literal(2)]).default(1),
+  /** A journey's id or name: draw it as a sequence diagram instead of a slice of the map. */
+  journey: z.string().trim().min(1).max(120).optional(),
 });
 
 const NODE_TONE: Record<MapNode["kind"], DiagramTone> = {

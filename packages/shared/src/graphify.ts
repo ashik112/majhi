@@ -53,10 +53,59 @@ export const GraphifyCallSchema = z.object({
 });
 export type GraphifyCall = z.infer<typeof GraphifyCallSchema>;
 
+/**
+ * What `docker/map_inside.py` found in one project's code: its functions, the calls between them, what
+ * starts work (routes, schedules, queue consumers, commands) and what uses a datastore or an outside service.
+ */
+export const GraphifyInsideSchema = z.object({
+  defs: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(160),
+        file: z.string().min(1).max(400),
+        line: z.number().int().positive(),
+        end: z.number().int().positive(),
+        doc: z.string().max(200).default(""),
+      }),
+    )
+    .max(3000),
+  calls: z
+    .array(
+      z.object({ from: z.string().max(160), to: z.string().max(160), line: z.number().int().positive() }),
+    )
+    .max(20000),
+  uses: z
+    .array(
+      z.object({
+        fn: z.string().max(160),
+        name: z.string().max(80),
+        kind: z.enum(["db", "out"]),
+        line: z.number().int().positive(),
+        verb: z.enum(["read", "write", "call", "use"]),
+        target: z.string().max(120).optional(),
+      }),
+    )
+    .max(20000),
+  entries: z
+    .array(
+      z.object({
+        kind: z.enum(["HTTP", "SCHEDULE", "QUEUE", "COMMAND"]),
+        label: z.string().min(1).max(160),
+        file: z.string().min(1).max(400),
+        line: z.number().int().positive(),
+        fn: z.string().min(1).max(160),
+      }),
+    )
+    .max(2000),
+});
+export type GraphifyInside = z.infer<typeof GraphifyInsideSchema>;
+
 export const GraphifyFactsSchema = z.object({
-  v: z.literal(1),
+  /** 2 adds `inside`; a project read before that has 1 and shows as "not read inside yet". */
+  v: z.union([z.literal(1), z.literal(2)]),
   files: z.number().int().nonnegative(),
   calls: z.array(GraphifyCallSchema).max(2000),
+  inside: GraphifyInsideSchema.optional(),
 });
 export type GraphifyFacts = z.infer<typeof GraphifyFactsSchema>;
 

@@ -183,6 +183,8 @@ import {
   DecisionRecommendInputSchema,
   OwnerDecisionSchema,
 } from "./inbox.ts";
+import { InsideInputSchema, InsideViewSchema } from "./inside.ts";
+import { JourneyInputSchema, JourneyRemoveInputSchema } from "./journeys.ts";
 import { BlockerSchema } from "./lifecycle/blocker.ts";
 import {
   MapAnswerInputSchema,
@@ -1312,6 +1314,33 @@ export const commands = {
     summary:
       "Set whether a project is an app, a service or a worker on the map, over what its dependencies show; without `role` it goes back to that. The owner and the captain",
     input: MapRoleInputSchema,
+    output: MapViewSchema,
+  },
+  "map.inside": {
+    risk: "read",
+    summary:
+      "What is inside one project of the workspace: its entry points (routes, schedules, queue consumers, commands), the functions they run, and the datastores and outside services those functions use, each with its file and line. State `unread` when the project has not been read inside yet",
+    input: InsideInputSchema,
+    output: InsideViewSchema,
+  },
+  "map.readInside": {
+    risk: "change",
+    summary:
+      "Read one project's code now (free, no model, in a sealed container) so the map can show what is inside it. The owner and the captain",
+    input: InsideInputSchema,
+    output: InsideViewSchema,
+  },
+  "map.saveJourney": {
+    risk: "change",
+    summary:
+      "Name a journey on the map: ordered steps, each from one box to another with a label and the map line it follows (`edge`). Without `id` it makes a new journey (keeping one of majhi's examples is this too); with `id` it replaces that journey. Every box and line must be on this workspace's map. The owner and the captain",
+    input: JourneyInputSchema,
+    output: MapViewSchema,
+  },
+  "map.removeJourney": {
+    risk: "change",
+    summary: "Remove a journey the owner kept. The owner and the captain",
+    input: JourneyRemoveInputSchema,
     output: MapViewSchema,
   },
   // The chat dock -----------------------------------------------------------------

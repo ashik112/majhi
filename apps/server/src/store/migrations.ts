@@ -1660,6 +1660,24 @@ CREATE TABLE project_maps (
     name: "project map addresses and answers",
     sql: `ALTER TABLE project_maps ADD COLUMN extra TEXT;`,
   },
+  {
+    // Journeys on the project map: ordered steps over the map's lines, named by the owner. Steps are JSON
+    // (checked by zod when read). They live apart from the map so an update never rewrites them.
+    id: 169,
+    name: "project map journeys",
+    sql: `
+CREATE TABLE map_journeys (
+  org TEXT NOT NULL,
+  id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  steps TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  -- What starts it and, for a journey inside one project, which project and entry point (JSON).
+  extra TEXT,
+  PRIMARY KEY (org, id)
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

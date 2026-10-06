@@ -117,6 +117,10 @@ const SENDGRID: Outside = { slug: "sendgrid", label: "SendGrid" };
 const SLACK: Outside = { slug: "slack", label: "Slack" };
 const RESEND: Outside = { slug: "resend", label: "Resend" };
 const GITHUB: Outside = { slug: "github", label: "GitHub" };
+const HACKER_NEWS: Outside = { slug: "hacker-news", label: "Hacker News" };
+const TELEGRAM: Outside = { slug: "telegram", label: "Telegram" };
+const EXA: Outside = { slug: "exa", label: "Exa" };
+const FIRECRAWL: Outside = { slug: "firecrawl", label: "Firecrawl" };
 
 const NPM_OUTSIDE: Readonly<Record<string, Outside>> = {
   stripe: STRIPE,
@@ -159,6 +163,11 @@ const HOSTS: Readonly<Record<string, Outside>> = {
   "slack.com": SLACK,
   "api.resend.com": RESEND,
   "api.github.com": GITHUB,
+  "news.ycombinator.com": HACKER_NEWS,
+  "hacker-news.firebaseio.com": HACKER_NEWS,
+  "api.telegram.org": TELEGRAM,
+  "api.exa.ai": EXA,
+  "api.firecrawl.dev": FIRECRAWL,
 };
 
 /**

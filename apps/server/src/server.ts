@@ -138,9 +138,9 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
         : {}),
       codeGraph: services.codeGraph,
       maps: {
-        forTask: (task) => {
+        forTask: async (task) => {
           const org = services.lanes.orgOf(task) ?? services.store.tasks.get(task)?.org ?? PRIVATE;
-          return { org, map: services.map.stored(org) };
+          return { org, map: services.map.stored(org), journeys: await services.map.journeys(org) };
         },
       },
       memory: {

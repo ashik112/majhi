@@ -1,5 +1,11 @@
 # Progress
 
+## Map redesign (branch `feat/map-design`, not merged)
+
+**What changed.** The Map page is rebuilt to the approved v2 mockup: top bar, rail, canvas, detail panel, both themes (the app's own theme tokens; `T` flips the app theme). Overview lanes use ELK layered with orthogonal routing, the fewest crossings of 8 seeds. Project view has Connections and Inside tabs (`I`). Inside reads from the code reader's facts (`docker/map_inside.py`, tree-sitter, no model): entry points (routes, schedules, queue consumers, commands), functions by call depth, datastores and outside services, each with file and line; the story of an entry is plain words from a fixed table. "Read inside" runs the reader for one project. Journeys are stored per workspace (migration 169), proposed from found lines and from entry points ("Suggested") until kept ("Yours"), grouped by start project or by what they touch. Logos come from Simple Icons 16.34.0 (pinned, generated into `logos.generated.ts`); brands it dropped get a letter tile.
+
+**Left.** Frames use the compose service named for the entry kind, not the service that really runs a function. Reader covers Python and JS/TS frameworks listed in `map_inside.py`. The runner image must be rebuilt to carry `map_inside.py`. Not verified in the real runner (tested in a plain Python container and an isolated e2e server with seeded facts). Workspace picker and a Role select stay in the page (existing features).
+
 ## Map code graph with graphify (branch `feat/map-graphify`, not merged; backend only)
 
 **What changed.** graphify 0.9.77 is in the runner image (uv venv `/opt/graphify`, `GRAPHIFY_NO_AUTO_REFRESH=1`). Update map has a free **graph** pass: each project is read in a throwaway runner container with no network, a read-only root, the checkout read-only and one writable folder, `<tasks folder>/.map/<workspace>/<project>` (graph.json, majhi-facts.json, graphify's cache). HTTP client calls with an address in the file become endpoints with proof and go through the same resolver; unowned ones stay in Addresses. Agents get `code_graph` (search, explain, neighbors, path) over their own task's repos. The Map screen is unchanged apart from one line of copy for the new source in the line panel.

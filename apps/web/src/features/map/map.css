@@ -1,0 +1,1833 @@
+/*
+ * The Map page. Ported from the approved mockup (marketing-assets/map-mockup.html): the same classes and
+ * numbers, with its color names bound to the app's tokens so both themes work. The one deliberate change:
+ * the Overview's boxes use 12 px and larger text, so the picture is readable when it fills the canvas.
+ */
+.mapx {
+  --glass: var(--c-glass);
+  --glass-strong: var(--c-glass-strong);
+  --card: var(--c-card);
+  --field: var(--c-field);
+  --sunken: var(--c-sunken);
+  --raised: var(--c-raised);
+  --selected: var(--c-selected);
+  --glass-line: var(--c-glass-line);
+  --line: var(--c-line);
+  --line-strong: var(--c-line-strong);
+  --line-control: var(--c-line-control);
+  --line-bright: var(--c-line-bright);
+  --line-hover: var(--c-line-hover);
+  --fg: var(--c-fg);
+  --fg-soft: var(--c-fg-soft);
+  --fg-muted: var(--c-fg-muted);
+  --fg-faint: var(--c-fg-faint);
+  --fg-dim: var(--c-fg-dim);
+  --accent: var(--c-accent);
+  --accent-hover: var(--c-accent-hover);
+  --accent-ink: var(--c-accent-ink);
+  --accent-text: var(--c-accent-text);
+  --caution: var(--c-amber);
+  --caution-wash: var(--c-amber-wash);
+  --caution-line: var(--c-amber-line);
+  --blue: var(--c-blue);
+  --green: var(--c-green);
+  --violet: var(--c-violet);
+  --lamp-working: var(--c-lamp-working);
+  --lamp-needs: var(--c-lamp-needs);
+  --lamp-done: var(--c-lamp-done);
+  --lamp-idle: var(--c-lamp-idle);
+  --edge: color-mix(in srgb, var(--c-blue) 46%, transparent);
+  --on-blue: #07101c;
+  --cur: #ffffff;
+  --on-cur: #07101c;
+  --dimo: 0.32;
+  --dime: 0.22;
+  --bg-solid: rgb(8 13 22 / 0.9);
+  --band: rgb(22 32 48 / 0.97);
+  --band-hover: rgb(28 40 60 / 0.98);
+  --shadow-rest: var(--c-shadow-glass);
+  --shadow-pop: var(--c-shadow-pop);
+  --sans: "IBM Plex Sans", "Helvetica Neue", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  font: 400 13px / 20px var(--sans);
+  color: var(--fg);
+}
+.mapx *,
+.mapx *::before,
+.mapx *::after {
+  box-sizing: border-box;
+}
+.mapx button,
+.mapx input {
+  font: inherit;
+  color: inherit;
+}
+.mapx button {
+  cursor: pointer;
+  background: none;
+  border: 0;
+  margin: 0;
+}
+.mapx .mono {
+  font-family: var(--mono);
+  font-feature-settings: "tnum";
+}
+.mapx svg.i {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+.mapx .glass {
+  background: var(--glass);
+  backdrop-filter: blur(18px) saturate(1.35);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+  border: 1px solid var(--glass-line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-rest);
+}
+.mapx .float {
+  background: var(--glass-strong);
+  backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid var(--glass-line);
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+}
+.mapx .glabel {
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  line-height: 1.25;
+}
+
+/* lamps */
+.mapx .lamp {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+  background: var(--lc, var(--lamp-idle));
+}
+.mapx .lamp.working {
+  --lc: var(--lamp-working);
+  animation: mapx-breathe 2.2s ease-in-out infinite;
+}
+.mapx .lamp.needs {
+  --lc: var(--lamp-needs);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--lamp-needs) 16%, transparent),
+    0 0 9px color-mix(in srgb, var(--lamp-needs) 55%, transparent);
+}
+.mapx .lamp.idle {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--lamp-idle);
+}
+@keyframes mapx-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 8px color-mix(in srgb, var(--lamp-working) 50%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 12px color-mix(in srgb, var(--lamp-working) 75%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mapx .lamp.working {
+    animation: none;
+  }
+}
+.mapx .st {
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--fg-faint);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mapx .st.working {
+  color: var(--lamp-working);
+}
+.mapx .st.needs {
+  color: var(--lamp-needs);
+}
+
+/* badges, chips */
+.mapx .bdg {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid var(--line-control);
+  font: 400 11px / 1 var(--sans);
+  color: var(--fg-muted);
+  white-space: nowrap;
+  gap: 5px;
+}
+.mapx .bdg.app,
+.mapx .bdg.blue {
+  color: var(--blue);
+  border-color: var(--c-blue-line);
+  background: var(--c-blue-wash);
+}
+.mapx .bdg.queue {
+  color: var(--violet);
+  border-color: color-mix(in srgb, var(--violet) 32%, transparent);
+  background: color-mix(in srgb, var(--violet) 8%, transparent);
+}
+.mapx .bdg.worker,
+.mapx .bdg.green {
+  color: var(--green);
+  border-color: var(--c-green-line);
+  background: var(--c-green-wash);
+}
+.mapx .bdg.caution {
+  color: var(--accent-text);
+  border-color: var(--caution-line);
+  background: var(--caution-wash);
+}
+.mapx .chip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font: 400 11px / 1 var(--sans);
+  color: var(--fg-soft);
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  white-space: nowrap;
+}
+.mapx .chip.out {
+  background: transparent;
+  border-style: dashed;
+  color: var(--fg-muted);
+}
+.mapx kbd {
+  font: 400 11px / 1 var(--mono);
+  color: var(--fg-muted);
+  border: 1px solid var(--line-control);
+  border-radius: 4px;
+  padding: 2px 5px;
+  background: var(--field);
+}
+
+/* buttons */
+.mapx .btn {
+  height: 34px;
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  white-space: nowrap;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+.mapx .btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.mapx .btn.pri {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  box-shadow: 0 6px 18px -8px var(--accent);
+}
+.mapx .btn.pri:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.mapx .btn.sec {
+  background: var(--raised);
+  border: 1px solid var(--line-control);
+}
+.mapx .btn.sec:hover:not(:disabled) {
+  background: var(--selected);
+  border-color: var(--line-hover);
+}
+.mapx .btn.ghost {
+  color: var(--fg-muted);
+}
+.mapx .btn.ghost:hover:not(:disabled) {
+  background: var(--raised);
+  color: var(--fg);
+}
+.mapx .btn.sm {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.mapx .ibtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: var(--fg-muted);
+  background: var(--glass-strong);
+  border: 1px solid var(--line-control);
+}
+.mapx .ibtn:hover {
+  color: var(--fg);
+  border-color: var(--line-hover);
+  background: var(--selected);
+}
+
+/* top bar */
+.mapx .top {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+  border-radius: 14px;
+  flex: none;
+}
+.mapx .top h1 {
+  font-size: 22px;
+  line-height: 26px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.mapx .seg {
+  display: flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 9px;
+  background: var(--field);
+  border: 1px solid var(--line-strong);
+  margin: 0;
+  min-width: 0;
+}
+.mapx .seg button {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.mapx .seg button:hover {
+  color: var(--fg);
+  background: var(--raised);
+}
+.mapx .seg button[aria-pressed="true"] {
+  background: var(--selected);
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px var(--line-control);
+}
+.mapx .seg button .c {
+  font: 400 11px var(--mono);
+  color: var(--fg-faint);
+}
+.mapx .seg,
+.mapx .top .field,
+.mapx .update-btn {
+  flex: none;
+}
+.mapx .tele div {
+  white-space: nowrap;
+}
+.mapx .vsep {
+  width: 1px;
+  height: 16px;
+  background: var(--line-bright);
+}
+.mapx .tele {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-left: 4px;
+}
+.mapx .tele div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.mapx .tele b {
+  font: 500 15px / 22px var(--mono);
+  color: var(--fg);
+}
+.mapx .tele .lit b {
+  color: var(--lamp-needs);
+}
+.mapx .top .right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.mapx .top .upd {
+  font-size: 12px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mapx .work {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr) 276px;
+  gap: 12px;
+  position: relative;
+}
+.mapx .panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* rail */
+.mapx .rail-head {
+  padding: 12px 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mapx .search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--field);
+  border: 1px solid var(--line-control);
+  padding: 0 10px;
+  color: var(--fg-faint);
+}
+.mapx .search:focus-within {
+  border-color: var(--accent);
+}
+.mapx .search input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: 0;
+  color: var(--fg);
+  caret-color: var(--accent);
+  font-size: 13px;
+}
+.mapx .search input::placeholder {
+  color: var(--fg-faint);
+}
+.mapx .scroll {
+  overflow: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  flex: 1;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-bright) transparent;
+}
+.mapx .fade {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 22px), transparent);
+}
+.mapx .rail-list {
+  padding: 2px 8px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mapx .gh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px 4px;
+}
+.mapx .gh .n {
+  margin-left: auto;
+  font: 400 11px var(--mono);
+  color: var(--fg-faint);
+}
+.mapx .row {
+  width: 100%;
+  text-align: left;
+  border-radius: 8px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--fg-muted);
+}
+.mapx .row:hover {
+  background: var(--raised);
+  color: var(--fg);
+}
+.mapx .row.on {
+  background: var(--selected);
+  box-shadow: inset 0 0 0 1px var(--line-control);
+  color: var(--fg);
+}
+.mapx .row .l1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+}
+.mapx .row .l1 .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mapx .row .l1 .io {
+  margin-left: auto;
+  font: 400 11px var(--mono);
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+.mapx .row .l2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 16px;
+}
+.mapx .row.dim {
+  opacity: 0.4;
+}
+.mapx .row.unlinked .l1 {
+  color: var(--fg-muted);
+}
+.mapx .rail-foot {
+  padding: 10px 12px;
+  border-top: 1px solid var(--line-strong);
+  display: flex;
+  gap: 8px;
+}
+.mapx .rail-foot .btn {
+  flex: 1;
+}
+
+/* canvas */
+.mapx .canvas {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  min-width: 0;
+}
+.mapx .stage {
+  position: absolute;
+  inset: 0;
+  cursor: grab;
+  touch-action: none;
+}
+.mapx .stage.drag {
+  cursor: grabbing;
+}
+.mapx .world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+.mapx .world svg.wires {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1;
+}
+.mapx .world .ov {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+.mapx .tb {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mapx .tb.tl {
+  left: 12px;
+  top: 12px;
+  right: 64px;
+  flex-wrap: wrap;
+  pointer-events: none;
+}
+.mapx .tb.tl > * {
+  pointer-events: auto;
+}
+.mapx .tb.tr {
+  right: 12px;
+  top: 12px;
+  flex-direction: column;
+}
+.mapx .crumbs {
+  height: 32px;
+  border-radius: 9px;
+  padding: 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+}
+.mapx .crumbs button {
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 6px;
+  color: var(--fg-muted);
+}
+.mapx .crumbs button:hover {
+  background: var(--raised);
+  color: var(--fg);
+}
+.mapx .crumbs .cur {
+  padding: 0 7px;
+  color: var(--fg);
+  font-weight: 500;
+}
+.mapx .crumbs .sep {
+  color: var(--fg-dim);
+  display: grid;
+  place-items: center;
+}
+.mapx .crumbs .sep svg {
+  width: 12px;
+  height: 12px;
+}
+.mapx .tracechip {
+  height: 32px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 11px;
+  font-size: 12px;
+  color: var(--fg-soft);
+}
+.mapx .tracechip b {
+  font-weight: 500;
+  color: var(--fg);
+}
+.mapx .tracechip input {
+  height: 24px;
+  width: 150px;
+  border-radius: 6px;
+  background: var(--field);
+  border: 1px solid var(--line-control);
+  padding: 0 8px;
+  font-size: 12px;
+  outline: 0;
+}
+.mapx .tracechip input:focus {
+  border-color: var(--accent);
+}
+.mapx .tracechip .x {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  color: var(--fg-muted);
+}
+.mapx .tracechip .x:hover {
+  background: var(--raised);
+  color: var(--fg);
+}
+.mapx .zoom {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mapx .btm {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 6;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
+}
+.mapx .btm > * {
+  pointer-events: auto;
+}
+.mapx .legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 9px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.mapx .legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.mapx .legend svg.ri {
+  width: 12px;
+  height: 12px;
+}
+.mapx .legend svg {
+  width: 26px;
+  height: 8px;
+  overflow: visible;
+}
+.mapx .hints {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 9px;
+  font-size: 12px;
+  color: var(--fg-faint);
+}
+.mapx .hints span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.mapx .dock {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 56px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border-style: dashed;
+}
+.mapx .dock .glabel {
+  white-space: nowrap;
+}
+.mapx .dock .nodes {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mapx .mini {
+  height: 28px;
+  border-radius: 8px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg-muted);
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  cursor: pointer;
+}
+.mapx .mini:hover {
+  border-color: var(--line-hover);
+  color: var(--fg);
+}
+.mapx .mini.on {
+  background: var(--selected);
+  box-shadow: inset 0 0 0 1px var(--line-control);
+  color: var(--fg);
+}
+.mapx .mini.dim {
+  opacity: 0.35;
+}
+.mapx .sub {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--fg-faint);
+}
+
+/* nodes */
+.mapx .node {
+  position: absolute;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--glass-line);
+  box-shadow: var(--shadow-rest);
+  padding: 10px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  cursor: pointer;
+  transition:
+    opacity 0.15s,
+    border-color 0.15s,
+    background 0.15s,
+    transform 0.15s;
+  backdrop-filter: blur(12px);
+  z-index: 2;
+  text-align: left;
+}
+.mapx .node:hover {
+  border-color: var(--line-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-pop);
+}
+.mapx .node.sel {
+  background: var(--selected);
+  box-shadow:
+    inset 0 0 0 1px var(--line-control),
+    var(--shadow-rest);
+  border-color: var(--line-hover);
+}
+.mapx .node.dim {
+  opacity: var(--dimo);
+}
+.mapx .node.lit-working {
+  border-color: color-mix(in srgb, var(--lamp-working) 34%, transparent);
+  background-image: linear-gradient(color-mix(in srgb, var(--lamp-working) 8%, transparent), transparent 60%);
+}
+.mapx .node.lit-needs {
+  border-color: color-mix(in srgb, var(--lamp-needs) 34%, transparent);
+  background-image: linear-gradient(color-mix(in srgb, var(--lamp-needs) 8%, transparent), transparent 60%);
+}
+.mapx .n-top {
+  flex-wrap: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 20px;
+}
+.mapx .n-name {
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--fg);
+  flex: 0 0 auto;
+}
+.mapx .n-sub {
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--fg-faint);
+}
+.mapx .chips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: auto;
+}
+.mapx[data-view="overview"] .node .n-name {
+  font-size: calc(16px * var(--fz, 1));
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.mapx[data-view="overview"] .node .bdg,
+.mapx[data-view="overview"] .node .chip {
+  font-size: calc(14px * var(--fz, 1));
+  height: auto;
+  min-height: 23px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.mapx[data-view="overview"] .node .st {
+  font-size: calc(14px * var(--fz, 1));
+}
+.mapx .lod-low .chips,
+.mapx .lod-low .n-sub {
+  display: none;
+}
+.mapx .node.big {
+  padding: 16px 18px;
+  gap: 10px;
+  cursor: default;
+  border-radius: 14px;
+  background: var(--glass);
+}
+.mapx .node.big:hover {
+  transform: none;
+  box-shadow: var(--shadow-rest);
+  border-color: var(--glass-line);
+}
+.mapx .node.big .n-name {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+}
+.mapx .node.big .path {
+  font: 400 11px / 16px var(--mono);
+  color: var(--fg-faint);
+}
+.mapx .node.big .desc {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--fg-soft);
+}
+.mapx .tally {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--line-strong);
+  padding-top: 10px;
+}
+.mapx .tally .tl {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.mapx .tally .tl.zero {
+  opacity: 0.45;
+}
+.mapx .tally b {
+  font-weight: 500;
+  font-size: 13px;
+}
+.mapx .stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: auto;
+  border-top: 1px solid var(--line-strong);
+  padding-top: 10px;
+}
+.mapx .stats div {
+  display: flex;
+  flex-direction: column;
+}
+.mapx .stats b {
+  font: 500 15px / 22px var(--mono);
+  color: var(--fg);
+}
+.mapx .stats span {
+  font-size: 12px;
+  color: var(--fg-faint);
+}
+.mapx .node.nb .n-sub {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--fg-muted);
+}
+.mapx .node.nb {
+  padding: 9px 11px;
+  gap: 3px;
+  justify-content: center;
+}
+.mapx .rail-empty {
+  position: absolute;
+  border: 1px dashed var(--line-bright);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-faint);
+  font-size: 12px;
+}
+.mapx .rail-empty span {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  white-space: nowrap;
+}
+.mapx .gtag {
+  position: absolute;
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+
+/* wires */
+.mapx .edge .hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 16;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.mapx .edge .ln {
+  fill: none;
+  stroke: var(--edge);
+  stroke-width: 1.5;
+  transition:
+    stroke 0.15s,
+    opacity 0.15s;
+}
+.mapx .edge .ar {
+  fill: var(--edge);
+  stroke: none;
+  transition:
+    fill 0.15s,
+    opacity 0.15s;
+}
+.mapx .edge.k-jobs .ln {
+  stroke-dasharray: 6 5;
+}
+.mapx .edge.k-embeds .ln {
+  stroke-dasharray: 1.5 5;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+.mapx .edge.t-check .ln {
+  stroke: var(--caution);
+}
+.mapx .edge.t-check .ar {
+  fill: var(--caution);
+}
+.mapx .edge.dim {
+  opacity: var(--dime);
+}
+.mapx .edge.hot .ln,
+.mapx .edge.tr .ln,
+.mapx .edge.sel .ln {
+  stroke: var(--blue);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--blue) 55%, transparent));
+}
+.mapx .edge.hot .ar,
+.mapx .edge.tr .ar,
+.mapx .edge.sel .ar {
+  fill: var(--blue);
+}
+.mapx .edge.t-check.hot .ln,
+.mapx .edge.t-check.tr .ln,
+.mapx .edge.t-check.sel .ln {
+  stroke: var(--caution);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--caution) 50%, transparent));
+}
+.mapx .edge.t-check.hot .ar,
+.mapx .edge.t-check.tr .ar,
+.mapx .edge.t-check.sel .ar {
+  fill: var(--caution);
+}
+.mapx .badge {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border-radius: 50%;
+  background: var(--blue);
+  color: var(--on-blue);
+  font: 500 11px / 20px var(--mono);
+  text-align: center;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--blue) 22%, transparent),
+    0 2px 8px rgb(0 0 0 / 0.5);
+  z-index: 4;
+}
+.mapx .pill {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  white-space: nowrap;
+  background: var(--glass-strong);
+  border: 1px solid var(--line-bright);
+  box-shadow: var(--shadow-pop);
+  color: var(--fg);
+}
+.mapx .pill .mono {
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+
+/* detail */
+.mapx .dhead {
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--line-strong);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mapx .dhead .t {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+  min-width: 0;
+}
+.mapx .dhead .t span.nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mapx .dhead .s {
+  font: 400 11px / 16px var(--mono);
+  color: var(--fg-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mapx .dbody {
+  padding: 0 16px 14px;
+}
+.mapx .blk {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line-strong);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mapx .blk:last-child {
+  border-bottom: 0;
+}
+.mapx .blk .chips {
+  margin: 0;
+}
+.mapx .link {
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  margin: 0 -8px;
+  border-radius: 8px;
+  width: calc(100% + 16px);
+  color: var(--fg-soft);
+  font-size: 13px;
+}
+.mapx .link:hover {
+  background: var(--raised);
+  color: var(--fg);
+}
+.mapx .link .arr {
+  color: var(--fg-faint);
+  display: grid;
+  place-items: center;
+}
+.mapx .link .arr svg {
+  width: 14px;
+  height: 14px;
+}
+.mapx .link .lb {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 46%;
+}
+.mapx .link .nm {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.mapx .link.on {
+  background: var(--selected);
+  box-shadow: inset 0 0 0 1px var(--line-control);
+  color: var(--fg);
+}
+.mapx .num {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--blue);
+  color: var(--on-blue);
+  font: 500 11px / 18px var(--mono);
+  text-align: center;
+  flex: none;
+}
+.mapx .dfoot {
+  padding: 12px 16px;
+  border-top: 1px solid var(--line-strong);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mapx .dfoot .btn {
+  flex: 1 1 auto;
+}
+.mapx .well {
+  background: var(--sunken);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: 400 11px / 17px var(--mono);
+  color: var(--fg-soft);
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mapx .proof {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mapx .proof .f {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 400 11px / 16px var(--mono);
+  color: var(--blue);
+}
+.mapx .tier {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--fg-soft);
+}
+.mapx .tier .bdg {
+  margin-top: 1px;
+}
+.mapx .seg2 {
+  display: flex;
+  padding: 2px;
+  gap: 2px;
+  border-radius: 8px;
+  background: var(--field);
+  border: 1px solid var(--line-strong);
+  width: max-content;
+  margin: 0;
+}
+.mapx .seg2 button {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.mapx .seg2 button[aria-pressed="true"] {
+  background: var(--selected);
+  color: var(--fg);
+  box-shadow: inset 0 0 0 1px var(--line-control);
+}
+.mapx .field {
+  height: 30px;
+  width: 100%;
+  border-radius: 8px;
+  background: var(--field);
+  border: 1px solid var(--line-control);
+  padding: 0 10px;
+  font-size: 13px;
+  outline: 0;
+}
+.mapx .field:focus {
+  border-color: var(--accent);
+}
+.mapx select.field {
+  appearance: auto;
+}
+
+/* journeys */
+.mapx .jhead {
+  position: absolute;
+  border-radius: 12px;
+  padding: 9px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  background: var(--card);
+  border: 1px solid var(--glass-line);
+  box-shadow: var(--shadow-rest);
+  z-index: 2;
+  transition: opacity 0.15s;
+}
+.mapx .jhead.dim {
+  opacity: 0.4;
+}
+.mapx .jhead .n-name {
+  font-size: 12.5px;
+  line-height: 15px;
+}
+.mapx .jline {
+  stroke: var(--line-bright);
+  stroke-width: 1;
+  stroke-dasharray: 3 5;
+}
+.mapx .jrow {
+  fill: transparent;
+  cursor: pointer;
+}
+.mapx .jrow:hover {
+  fill: color-mix(in srgb, var(--c-blue) 6%, transparent);
+}
+.mapx .jrow.cur {
+  fill: var(--selected);
+}
+.mapx .jstep {
+  cursor: pointer;
+}
+.mapx .jstep .ln {
+  stroke: var(--edge);
+  stroke-width: 1.6;
+  fill: none;
+}
+.mapx .jstep .ar {
+  fill: var(--edge);
+}
+.mapx .jstep.t-check .ln {
+  stroke: var(--caution);
+}
+.mapx .jstep.t-check .ar {
+  fill: var(--caution);
+}
+.mapx .jstep.cur .ln,
+.mapx .jstep.done .ln {
+  stroke: var(--blue);
+  stroke-width: 2;
+}
+.mapx .jstep.cur .ar,
+.mapx .jstep.done .ar {
+  fill: var(--blue);
+}
+.mapx .jstep.t-check.cur .ln {
+  stroke: var(--caution);
+}
+.mapx .jstep.t-check.cur .ar {
+  fill: var(--caution);
+}
+.mapx .jstep.later {
+  opacity: 0.28;
+}
+.mapx .jlab {
+  font: 400 12px var(--sans);
+  fill: var(--fg-soft);
+  text-anchor: middle;
+}
+.mapx .jstep.cur .jlab {
+  fill: var(--fg);
+  font-weight: 500;
+}
+.mapx .jlabbg {
+  fill: var(--bg-solid);
+}
+.mapx .jnum circle {
+  fill: var(--blue);
+}
+.mapx .jnum text {
+  font: 500 11px var(--mono);
+  fill: var(--on-blue);
+  text-anchor: middle;
+}
+.mapx .jstep.cur .jnum circle {
+  fill: var(--cur);
+}
+.mapx .player {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 6px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.mapx .player .p {
+  font: 400 12px var(--mono);
+  color: var(--fg);
+  min-width: 78px;
+  text-align: center;
+}
+.mapx .player .ibtn {
+  border: 0;
+  background: none;
+  width: 28px;
+  height: 28px;
+}
+
+/* logos and icons */
+.mapx .lg {
+  display: inline-grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  color: var(--fg-muted);
+  flex: none;
+  transition: color 0.15s;
+}
+.mapx .lg svg {
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+.mapx .lg.tile {
+  border-radius: 3px;
+  background: var(--raised);
+  border: 1px solid var(--line-control);
+  font: 500 9px / 1 var(--mono);
+  color: var(--fg-muted);
+}
+.mapx .chip:hover .lg,
+.mapx .node:hover .lg,
+.mapx .node.sel .lg,
+.mapx .row:hover .lg,
+.mapx .row.on .lg,
+.mapx .dn:hover .lg,
+.mapx .dn.sel .lg,
+.mapx .link:hover .lg {
+  color: var(--bc);
+}
+.mapx .chip {
+  gap: 5px;
+}
+.mapx .chip.ic {
+  padding: 0;
+  width: 24px;
+  justify-content: center;
+}
+.mapx[data-view="overview"] .node .chip.ic {
+  width: 26px;
+  padding: 0;
+}
+.mapx[data-view="overview"] .node .chip.ic .lg {
+  width: 14px;
+  height: 14px;
+}
+.mapx[data-view="overview"] .node .bdg:has(> svg:only-child) {
+  padding: 0;
+  width: 26px;
+  justify-content: center;
+}
+.mapx .bdg > svg.i,
+.mapx .bdg > svg.ri {
+  width: 11px;
+  height: 11px;
+}
+.mapx[data-view="overview"] .node .bdg > svg {
+  width: 13px;
+  height: 13px;
+}
+.mapx .ri {
+  width: 11px;
+  height: 11px;
+}
+
+/* inside */
+.mapx .frame {
+  position: absolute;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: rgb(130 175 230 / 0.03);
+  z-index: 0;
+}
+.mapx .frame .ft {
+  position: absolute;
+  left: 12px;
+  top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+.mapx .frame .ft svg {
+  width: 12px;
+  height: 12px;
+}
+.mapx .node.entry {
+  padding: 7px 10px;
+  gap: 4px;
+  justify-content: center;
+}
+.mapx .entry .e-l {
+  font: 400 12px / 16px var(--mono);
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mapx .entry .e-s {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: 400 12px / 16px var(--mono);
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+.mapx .entry .e-s .bdg {
+  height: 18px;
+  font-family: var(--sans);
+}
+.mapx .node.fn {
+  padding: 0 10px;
+  justify-content: center;
+  gap: 2px;
+  border-radius: 10px;
+}
+.mapx .fn .fn-n {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: 400 13px / 18px var(--mono);
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mapx .fn .fn-n svg {
+  width: 13px;
+  height: 13px;
+  color: var(--fg-faint);
+}
+.mapx .fn .n-sub {
+  font-size: 12px;
+  line-height: 15px;
+  padding-left: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mapx .node.dn {
+  padding: 5px 10px;
+  gap: 0;
+  justify-content: center;
+  border-radius: 10px;
+}
+.mapx .dn .dn-t {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--fg);
+  white-space: nowrap;
+}
+.mapx .dn .dn-t svg.i {
+  width: 13px;
+  height: 13px;
+  color: var(--fg-muted);
+}
+.mapx .dn .n-sub {
+  font-size: 12px;
+  line-height: 15px;
+  padding-left: 20px;
+}
+.mapx .node.dn.out {
+  border-style: dashed;
+  border-color: var(--line-bright);
+  background: transparent;
+}
+.mapx .strip {
+  display: flex;
+  align-items: center;
+  gap: 6px 14px;
+  flex-wrap: wrap;
+  padding: 5px 10px;
+  border-radius: 9px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  min-height: 32px;
+}
+.mapx .strip .cnt {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+}
+.mapx .strip .cnt b {
+  font: 500 13px / 18px var(--mono);
+  color: var(--fg);
+}
+.mapx .tabs button {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.mapx .tabsrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-basis: 100%;
+}
+.mapx .stp {
+  width: calc(100% + 16px);
+  margin: 0 -8px;
+  text-align: left;
+  display: flex;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: var(--fg-soft);
+  font-size: 13px;
+  line-height: 18px;
+}
+.mapx .stp:hover {
+  background: var(--raised);
+  color: var(--fg);
+}
+.mapx .stp.on {
+  background: var(--selected);
+  box-shadow: inset 0 0 0 1px var(--line-control);
+  color: var(--fg);
+}
+.mapx .stp .f {
+  display: block;
+  font: 400 12px / 16px var(--mono);
+  color: var(--blue);
+  margin-top: 1px;
+}
+.mapx .stp .num {
+  margin-top: 1px;
+}
+.mapx .badge.cur {
+  background: var(--cur);
+  color: var(--on-cur);
+}
+.mapx .seg.rail-seg {
+  width: 100%;
+}
+.mapx .seg.rail-seg button {
+  flex: 1;
+  justify-content: center;
+  height: 28px;
+}
+
+/* journey groups */
+.mapx .gh.jg {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  margin: 6px -8px 2px;
+  padding: 7px 16px 7px 8px;
+  gap: 8px;
+  cursor: pointer;
+  width: calc(100% + 16px);
+  text-align: left;
+  background: var(--band);
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+  color: var(--fg);
+}
+.mapx .rail-list > div:first-child > .gh.jg {
+  margin-top: 0;
+}
+.mapx .gh.jg:hover {
+  background: var(--band-hover);
+}
+.mapx .gh.jg .pn {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mapx .gh.jg .chv {
+  display: grid;
+  place-items: center;
+  color: var(--fg-faint);
+  transition: transform 0.15s;
+}
+.mapx .gh.jg .chv svg {
+  width: 14px;
+  height: 14px;
+}
+.mapx .gh.jg.open .chv {
+  transform: rotate(90deg);
+}
+.mapx .gh.jg .n {
+  margin-left: auto;
+}
+.mapx .gh.jg .rb {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--fg-soft);
+}
+.mapx .gh.jg .rb svg {
+  width: 13px;
+  height: 13px;
+}
+.mapx .row.jc {
+  padding: 5px 8px 5px 38px;
+  gap: 1px;
+  border-radius: 8px;
+}
+.mapx .row.jc .l1 {
+  font-weight: 400;
+  color: var(--fg-soft);
+}
+.mapx .row.jc.on .l1 {
+  font-weight: 500;
+  color: var(--fg);
+}
+.mapx .row.jc .mk {
+  margin-left: auto;
+  color: var(--fg-faint);
+  display: grid;
+  place-items: center;
+}
+.mapx .row.jc .mk svg {
+  width: 12px;
+  height: 12px;
+}
+.mapx .row.jc.yours .mk {
+  color: var(--green);
+}
+.mapx .row.jc .l2 {
+  padding-left: 0;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--fg-faint);
+}
+.mapx .row.jc .l2 .st {
+  gap: 5px;
+}
+.mapx .row.jc .l2 svg.i {
+  width: 12px;
+  height: 12px;
+}
+.mapx .row.jc.on {
+  box-shadow:
+    inset 2px 0 0 var(--accent),
+    inset 0 0 0 1px var(--line-control);
+}
+.mapx .railctl {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 2px 0;
+}
+.mapx .railctl button {
+  font-size: 12px;
+  color: var(--fg-muted);
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mapx .railctl button:hover {
+  background: var(--raised);
+  color: var(--fg);
+}
+.mapx .railctl button svg {
+  width: 12px;
+  height: 12px;
+}
+
+:root[data-theme="light"] .mapx {
+  --on-blue: #ffffff;
+  --cur: #0e1726;
+  --on-cur: #ffffff;
+  --dimo: 0.52;
+  --dime: 0.4;
+  --bg-solid: rgb(240 244 249 / 0.95);
+  --band: rgb(226 233 243 / 0.98);
+  --band-hover: rgb(214 224 238 / 0.98);
+  --edge: rgb(25 70 140 / 0.5);
+}
+.mapx .jstep.cur .jnum text {
+  fill: var(--on-cur);
+}
+.mapx .only-narrow {
+  display: none;
+}
+.mapx .empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 24px;
+}
+.mapx .toast {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: 8px 14px;
+  font-size: 12px;
+  border-radius: 10px;
+}
+
+@media (max-width: 1280px) {
+  .mapx .top .field {
+    width: 108px !important;
+  }
+  .mapx .hints {
+    display: none;
+  }
+  .mapx .tele {
+    gap: 12px;
+  }
+  .mapx .top {
+    gap: 12px;
+    padding: 0 16px;
+  }
+  .mapx .top .upd {
+    display: none;
+  }
+}
+@media (max-width: 1200px) {
+  .mapx .cost {
+    display: none;
+  }
+  .mapx .work {
+    grid-template-columns: minmax(0, 1fr) 264px;
+  }
+  .mapx .work > .rail {
+    position: absolute;
+    left: 0;
+    top: 52px;
+    bottom: 12px;
+    width: 260px;
+    z-index: 30;
+    display: none;
+    background: var(--glass-strong);
+  }
+  .mapx.list-open .work > .rail {
+    display: flex;
+  }
+  .mapx .only-narrow {
+    display: grid;
+  }
+  .mapx .legend {
+    gap: 10px;
+    padding: 0 10px;
+  }
+  .mapx .tele .opt {
+    display: none;
+  }
+}
