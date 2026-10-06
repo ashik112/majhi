@@ -1,5 +1,5 @@
 import type { Layout } from "../types";
 import { layered } from "./layered";
 
-/** Left to right: each box to the right of what leads to it. The default. */
-export const flow: Layout = (d) => layered(d, { rankdir: "LR", nodesep: 40, ranksep: 120 });
+/** Each box beyond what leads to it, left to right or top to bottom, whichever fits a frame better. The default. */
+export const flow: Layout = (d, o) => layered(d, { direction: "AUTO", nodeGap: 28, layerGap: 44 }, o);

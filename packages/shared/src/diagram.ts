@@ -55,6 +55,8 @@ export const DiagramEdgeSchema = z.object({
   style: z.enum(["solid", "dashed", "dotted"]).optional(),
   tone: DiagramToneSchema.optional(),
   arrow: z.enum(["end", "both", "none"]).optional(),
+  /** A small second line under the label, in the muted color: how the line is known ("exact route match"). */
+  note: z.string().trim().min(1).max(40).optional(),
 });
 export type DiagramEdge = z.infer<typeof DiagramEdgeSchema>;
 
