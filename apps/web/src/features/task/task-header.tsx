@@ -86,8 +86,8 @@ export function TaskHeader({
 
   return (
     <header className={cn("@container flex shrink-0 flex-col gap-0.5 rounded-2xl px-5 pt-2", GLASS)}>
-      <div className="flex min-h-8 items-center gap-x-2.5 text-sm">
-        <div ref={line} className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+      <div className="flex min-h-8 flex-wrap items-center gap-x-2.5 gap-y-1 text-sm">
+        <div ref={line} className="flex min-w-0 flex-1 basis-[16rem] items-center gap-1.5 overflow-hidden">
           <Link
             to="/"
             search={orgSearch(filter)}
