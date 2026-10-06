@@ -8,11 +8,12 @@ import {
 } from "@majhi/shared";
 import { useMutation } from "@tanstack/react-query";
 import { Check, CircleCheck, CirclePause, MessageSquareReply, RotateCw, SendHorizontal } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PageLink } from "@/components/ui/page-link";
 import { useToast } from "@/components/ui/toast";
 import { SignInAgainDialog } from "@/features/accounts/account-dialogs";
+import { ChecksOnCommit } from "@/features/handoff/checks-on-commit";
 import { HandoffBlock } from "@/features/handoff/handoff-block";
 import { type RunShip, Ship, type ShipChoices, type ShipTarget } from "@/features/task/ship";
 import { CloseUnshippedDialog, unshippedCount } from "@/features/task/unshipped";
@@ -142,6 +143,12 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
   const checking = handoff?.running === true || handoff?.queued === true;
   const red = handoff?.current?.verdict === "red" && !checking;
   const notReady = (failed || red) && !checking;
+  const queuedMerge = options.data?.queued;
+  const cancelQueued = useMutation<unknown, ApiRequestError>({
+    mutationFn: () => cmd("tasks.cancelQueuedMerge", { id: task.id }),
+    onSuccess: () => after(),
+    onError: (error) => toast("Could not cancel it", { detail: describeError(error), tone: "error" }),
+  });
   const progress = checkProgress(handoff, now);
   // The checks that failed on this head, by name, for the agent's fix request.
   const failedChecks = (handoff?.current?.steps ?? [])
@@ -183,6 +190,25 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
         lamp={checking ? "working" : notReady ? "needs" : "done"}
         title={checking ? "Checking" : notReady ? "Not ready" : nothing ? "No code changes" : "Ready to ship"}
         line={line}
+        below={
+          queuedMerge === undefined ? undefined : (
+            <p className="m-0 flex items-center gap-2 pl-4 text-sm text-fg-soft">
+              <span>
+                Will {queuedMerge.action === "mergePush" ? "merge and push" : "merge"} when checks pass
+              </span>
+              <span aria-hidden="true">·</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="-mx-1 px-2"
+                disabled={cancelQueued.isPending}
+                onClick={() => cancelQueued.mutate()}
+              >
+                Cancel
+              </Button>
+            </p>
+          )
+        }
         actions={
           <>
             {notReady && lead !== undefined && failedChecks.length > 0 && (
@@ -258,23 +284,14 @@ function PendingReview({ item, owner }: { item: Of<"review">; owner: OwnerContex
   );
 }
 
-const STEP_NOW = {
-  ready: "Checking it can merge",
-  tests: "Running tests",
-  build: "Running the build",
-  lint: "Running lint",
-  acceptance: "Checking the brief",
-  review: "Reading the change",
-} as const;
-
-/** What a running hand-off check is doing now: its step and how long it has run, or its place in the queue. */
-function checkProgress(state: HandoffState | undefined, now: number): string {
+/** What a running hand-off check is doing now, in plain words: what is checked, the step and how long it has run. */
+function checkProgress(state: HandoffState | undefined, now: number): ReactNode {
   const a = state?.activity;
-  if (a === undefined) return "Checking the new commit";
+  if (a === undefined) return <ChecksOnCommit />;
   if (a.phase === "queued")
-    return `Waiting for a free slot${a.position === undefined ? "" : `, number ${a.position}`}`;
+    return `Waiting for a free slot${a.position === undefined ? "" : `, number ${a.position}`}. Checks come next.`;
   const mins = Math.max(0, Math.floor((now - new Date(a.since).getTime()) / 60_000));
-  return `${a.step === undefined ? "Checking the new commit" : STEP_NOW[a.step]} · ${mins < 1 ? "under 1 min" : `${mins} min`}`;
+  return <ChecksOnCommit step={a.step} after={mins < 1 ? "under 1 min" : `${mins} min`} />;
 }
 
 const PAUSE_WHY: Record<Of<"paused">["reason"], string> = {

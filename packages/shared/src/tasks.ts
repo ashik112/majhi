@@ -202,6 +202,27 @@ export function shipWords(ship: Pick<PendingShip, "action" | "into" | "method">)
   return ship.method === "rebase" ? `rebase onto ${ship.into}` : `${ship.method} into ${ship.into}`;
 }
 
+/**
+ * "Merge when checks pass": the owner's click in Ship while the hand-off check runs. majhi merges by
+ * itself when the check of exactly `head` is green, through the normal merge path, and cancels it
+ * (never merging) when the head moved, a check failed or the merge refuses. One per task.
+ */
+export const QueuedMergeSchema = z.object({
+  task: z.string().min(1),
+  action: z.enum(["merge", "mergePush"]),
+  /** The local branch to merge into, or the targets joined for display when `targets` is set. */
+  into: z.string(),
+  /** The branch each repo merges into, by project. */
+  targets: z.record(z.string(), z.string()).optional(),
+  method: MergeMethodSchema,
+  deleteAfter: z.boolean(),
+  /** The task's head commits when asked (`project@sha`, per repo): only this exact state merges. */
+  head: z.string().min(1),
+  by: z.string(),
+  at: z.string(),
+});
+export type QueuedMerge = z.infer<typeof QueuedMergeSchema>;
+
 /** What the host says about the reviews of a merge request. */
 export const MrReviewSchema = z.object({
   /** Enough approvals, or the host counts it approved. */

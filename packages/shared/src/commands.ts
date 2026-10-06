@@ -358,6 +358,7 @@ import {
   MergeMethodSchema,
   ProjectConfigSchema,
   ProjectViewSchema,
+  QueuedMergeSchema,
   RoomItemSchema,
   RoomSearchHitSchema,
   RoomSearchInputSchema,
@@ -552,6 +553,8 @@ export const ShipOptionsSchema = z.object({
   done: ShipOptionSchema.extend({ unshipped: z.array(UnshippedRepoSchema).optional() }),
   /** The merge rule for the task's head now: a merge goes through only when this is `ok`. */
   checks: MergeChecksSchema.optional(),
+  /** A merge waiting for the checks of its head to pass. */
+  queued: QueuedMergeSchema.optional(),
 });
 export type ShipOptions = z.infer<typeof ShipOptionsSchema>;
 const ById = z.object({ id: IdSchema });
@@ -2183,6 +2186,27 @@ export const commands = {
       deleteAfter: z.boolean().default(false),
     }),
     output: z.object({ task: TaskSchema }),
+  },
+  "tasks.queueMerge": {
+    risk: "outbound",
+    summary:
+      "Owner only. Merge (or merge and push) by itself when the hand-off checks of the task's current head pass, through the normal merge rule. Only while the checks of that head run or wait. Cancelled, never merged, when the head moves, a check fails or the merge refuses",
+    input: z.object({
+      id: TaskIdSchema,
+      action: z.enum(["merge", "mergePush"]),
+      into: LocalBranchSchema.optional(),
+      /** The branch to merge into, per repo. Wins over into. */
+      targets: ShipTargetsSchema.optional(),
+      method: MergeMethodSchema.default("merge"),
+      deleteAfter: z.boolean().default(false),
+    }),
+    output: z.object({ queued: QueuedMergeSchema }),
+  },
+  "tasks.cancelQueuedMerge": {
+    risk: "change",
+    summary: "Forget the merge that waits for the checks to pass. Nothing merges",
+    input: z.object({ id: TaskIdSchema }),
+    output: z.object({ ok: z.literal(true) }),
   },
   "tasks.cancelShip": {
     risk: "change",

@@ -29,6 +29,8 @@ export interface NotifierDeps {
   subject: (task: string) => Subject | undefined;
   /** The stored item now, to see whether it is still waiting. */
   item: (task: string, id: string) => RoomItem | undefined;
+  /** The task's review card that waits, if any: read again when its hand-off check lands. */
+  pendingReview?: (task: string) => RoomItem[];
   settings: () => Promise<NotificationsSettings>;
   events: EventHub;
   /**
@@ -84,7 +86,9 @@ export class Notifier {
     const key = `${task}:${item.id}`;
     const subject = this.deps.subject(task);
     if (subject === undefined) return;
-    const attention = isDecisionItem(item, subject) ? attentionOf(item, subjectName(subject)) : undefined;
+    const attention = isDecisionItem(item, subject)
+      ? attentionOf(item, subjectName(subject), subject.checks)
+      : undefined;
     if (attention === undefined) {
       // Answered, replaced or cancelled: if it was still in its quiet wait, it sends nothing.
       this.forget(key);
@@ -99,6 +103,14 @@ export class Notifier {
     }, SETTLE_MS);
     timer.unref();
     this.timers.set(key, timer);
+  }
+
+  /**
+   * The hand-off check of a task moved: a review card that was no decision while the check ran is
+   * one now (or still is not). Looks again, so it alerts once, when its verdict lands.
+   */
+  recheck(task: string): void {
+    for (const item of this.deps.pendingReview?.(task) ?? []) this.observe(task, item);
   }
 
   /** A failed update has no room item. It is told once per attempt. */
@@ -234,17 +246,25 @@ export class Notifier {
     this.buffer = [];
   }
 
+  /** Drops an alert still in its quiet wait. It was never sent, so a later decision for the item may still alert. */
   private forget(key: string): void {
     const timer = this.timers.get(key);
     if (timer === undefined) return;
     clearTimeout(timer);
     this.timers.delete(key);
+    this.seen.delete(key);
   }
 
   /** The five seconds passed. It still waits for the owner, so it is a notification, unless the captain answers it. */
   private async settled(waiting: Waiting, first: boolean): Promise<void> {
     const now = this.deps.item(waiting.task, waiting.id);
-    if (now === undefined || !isDecisionItem(now, waiting.subject)) return;
+    // The task may have moved on since the item was written (its checks started): read it again.
+    const subject = this.deps.subject(waiting.task) ?? waiting.subject;
+    if (now === undefined || !isDecisionItem(now, subject)) {
+      // Not a decision now: when it becomes one it must be able to alert.
+      this.seen.delete(`${waiting.task}:${waiting.id}`);
+      return;
+    }
     if (first && (await this.deps.captainHandles?.(now, waiting.subject)) === true) {
       const key = `${waiting.task}:${waiting.id}`;
       const timer = setTimeout(() => {

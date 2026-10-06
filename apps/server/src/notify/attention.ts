@@ -20,6 +20,11 @@ export interface Subject {
    * card belongs to: a review card in review, a pause card while paused. Absent: not checked.
    */
   status?: TaskStatus | undefined;
+  /**
+   * The hand-off check of a task in review, when it matters: `running` while the head has no verdict
+   * (not ready to ship yet, nobody is told), `failed` after a red verdict the lead can fix.
+   */
+  checks?: "running" | "failed" | undefined;
   /** Subtasks that are not done. A parent that waits on them waits for no decision of the owner's. */
   openSubtasks?: number | undefined;
   /** When the newest open subtask was made (ISO): a split approval older than it has been carried out. */
@@ -53,7 +58,7 @@ export function oneLine(text: string, max = 140): string {
  * The notification for an item that waits for the owner, or undefined when the item is not one: an
  * answered card, an agent's message, a pause the owner made. This is the one list of what needs the owner.
  */
-export function attentionOf(item: RoomItem, who: string): Attention | undefined {
+export function attentionOf(item: RoomItem, who: string, checks?: Subject["checks"]): Attention | undefined {
   switch (item.type) {
     case "permission":
       return item.state === "pending"
@@ -83,7 +88,8 @@ export function attentionOf(item: RoomItem, who: string): Attention | undefined 
       return item.state === "pending"
         ? {
             kind: "review",
-            text: item.ready === undefined ? `${who} is ready for review` : `${who} is ready to ship`,
+            // It is only a decision once its checks have a verdict: green (or none set up) is ready to ship.
+            text: checks === "failed" ? `${who} finished, but its checks failed` : `${who} is ready to ship`,
           }
         : undefined;
     case "paused": {

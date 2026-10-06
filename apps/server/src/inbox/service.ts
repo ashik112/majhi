@@ -21,7 +21,7 @@ import {
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import type { Subject } from "../notify/attention.ts";
-import { buildDecisions, type DecisionSources, type Recommendation } from "./build.ts";
+import { buildDecisions, type DecisionSources, FIX_CHECKS_TEXT, type Recommendation } from "./build.ts";
 
 /** The paths a decision is answered through: the same ones its card uses. */
 export interface DecisionActions {
@@ -429,6 +429,10 @@ export class InboxService {
       case "review": {
         if (input.option === "changes") {
           await actions.askChanges(item.task, (input.text ?? "").trim(), item.lead);
+          return;
+        }
+        if (input.option === "fix") {
+          await actions.askChanges(item.task, FIX_CHECKS_TEXT, item.lead);
           return;
         }
         const out = await actions.cardAction(item.task, item.id, input.option === "done" ? "done" : "merge");

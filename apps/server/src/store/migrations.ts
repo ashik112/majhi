@@ -1678,6 +1678,13 @@ CREATE TABLE map_journeys (
 );
 `,
   },
+  {
+    // "Merge when checks pass": the owner's merge, held until the hand-off check of the exact head it
+    // was asked for is green (JSON QueuedMerge, checked by zod when read). One per task.
+    id: 170,
+    name: "queued merges",
+    sql: `CREATE TABLE queued_merges (task TEXT PRIMARY KEY, body TEXT NOT NULL);`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */
