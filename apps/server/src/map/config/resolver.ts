@@ -45,38 +45,6 @@ export function wordsOf(name: string): string[] {
   return words;
 }
 
-/** Words that say "address" or "framework prefix", not which project. */
-const FILLER: ReadonlySet<string> = new Set([
-  "url",
-  "uri",
-  "host",
-  "hostname",
-  "base",
-  "endpoint",
-  "service",
-  "server",
-  "addr",
-  "address",
-  "port",
-  "public",
-  "next",
-  "vite",
-  "react",
-  "app",
-  "internal",
-  "external",
-  "origin",
-]);
-
-/** One candidate, or the one with the most words when that is unique, else none. */
-function pick(candidates: readonly ProjectFacts[]): ProjectFacts | undefined {
-  if (candidates.length === 0) return undefined;
-  if (candidates.length === 1) return candidates[0];
-  const most = Math.max(...candidates.map((c) => c.words.size));
-  const top = candidates.filter((c) => c.words.size === most);
-  return top.length === 1 ? top[0] : undefined;
-}
-
 /** `host/owner/repo` of a git remote in URL or scp form, without the scheme, the user and `.git`. */
 export function remoteKey(url: string): string | undefined {
   let text = url.trim();
@@ -129,31 +97,13 @@ export class Resolver {
   }
 
   /**
-   * The project a URL in a config value points to, by these rules in order: the host is a compose service
-   * that builds one; the host is localhost and the port is exposed by exactly one; the words of the variable
-   * name are all in one project's name; the words of the host contain one project's name.
+   * The project a host name belongs to, when a compose file proves it: the host is a service that one project's
+   * compose file builds, and no other project builds a service of that name. Nothing else counts: not the words of
+   * a variable name, not the domain, not a port. `undefined` when it is unknown or ambiguous.
    */
-  byUrl(url: URL, key: string | undefined, self: string): ProjectFacts | undefined {
-    const others = this.projects.filter((p) => p.id !== self);
-    const host = url.hostname.toLowerCase();
-    const service = host.split(".")[0] ?? host;
-    const named = others.find((p) => p.services.has(service) || p.id === service);
-    if (named !== undefined) return named;
-    const local =
-      host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host === "host.docker.internal";
-    if (local && url.port !== "") {
-      const port = Number(url.port);
-      const owners = others.filter((p) => p.ports.includes(port));
-      if (owners.length === 1) return owners[0];
-    }
-    if (key !== undefined) {
-      const want = wordsOf(key).filter((w) => !FILLER.has(w));
-      if (want.length > 0) {
-        const hit = pick(others.filter((p) => want.every((w) => p.words.has(w))));
-        if (hit !== undefined) return hit;
-      }
-    }
-    const hostWords = new Set(wordsOf(host));
-    return pick(others.filter((p) => p.words.size > 0 && [...p.words].every((w) => hostWords.has(w))));
+  ownerOfService(host: string): string | undefined {
+    const name = host.toLowerCase();
+    const owners = this.projects.filter((p) => p.services.has(name));
+    return owners.length === 1 ? owners[0]?.id : undefined;
   }
 }

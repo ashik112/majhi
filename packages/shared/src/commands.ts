@@ -184,7 +184,14 @@ import {
   OwnerDecisionSchema,
 } from "./inbox.ts";
 import { BlockerSchema } from "./lifecycle/blocker.ts";
-import { MapEdgeInputSchema, MapEstimateSchema, MapOrgInputSchema, MapViewSchema } from "./map.ts";
+import {
+  MapAnswerInputSchema,
+  MapEdgeInputSchema,
+  MapEstimateSchema,
+  MapOrgInputSchema,
+  MapRoleInputSchema,
+  MapViewSchema,
+} from "./map.ts";
 import {
   McpAgentInputSchema,
   McpInstallInputSchema,
@@ -1291,6 +1298,20 @@ export const commands = {
     risk: "change",
     summary: "Remove a line from the map. No later update adds it again. The owner and the captain",
     input: MapEdgeInputSchema,
+    output: MapViewSchema,
+  },
+  "map.answer": {
+    risk: "change",
+    summary:
+      "Say what an address the projects call is: one of the workspace's projects, an outside service, or not a call to show. The answer applies to the whole workspace and to every later update; without `to` it is forgotten. The owner and the captain",
+    input: MapAnswerInputSchema,
+    output: MapViewSchema,
+  },
+  "map.setRole": {
+    risk: "change",
+    summary:
+      "Set whether a project is an app, a service or a worker on the map, over what its dependencies show; without `role` it goes back to that. The owner and the captain",
+    input: MapRoleInputSchema,
     output: MapViewSchema,
   },
   // The chat dock -----------------------------------------------------------------

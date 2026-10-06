@@ -36,6 +36,32 @@ export type MapEdgeType = z.infer<typeof MapEdgeTypeSchema>;
 export const MapEdgeSourceSchema = z.enum(["config", "history", "agent"]);
 export type MapEdgeSource = z.infer<typeof MapEdgeSourceSchema>;
 
+/**
+ * How sure a line is, in the three tiers of graphify's edges. `extracted`: a file says it outright (a
+ * dependency, a compose service name). `inferred`: found through an answer the owner gave (this host is
+ * that project). `ambiguous`: proposed from code and not checked; hidden until the owner reviews it.
+ */
+export const MAP_CONFIDENCE = ["extracted", "inferred", "ambiguous"] as const;
+export const MapConfidenceSchema = z.enum(MAP_CONFIDENCE);
+export type MapConfidence = z.infer<typeof MapConfidenceSchema>;
+
+/** What the owner sees for each tier, in plain words. */
+export const MAP_CONFIDENCE_LABEL: Record<MapConfidence, string> = {
+  extracted: "Found in code",
+  inferred: "From your answer",
+  ambiguous: "Needs a check",
+};
+
+/** The role of a project decides its lane on the map. */
+export const MAP_ROLES = ["app", "service", "worker"] as const;
+export const MapRoleSchema = z.enum(MAP_ROLES);
+export type MapRole = z.infer<typeof MapRoleSchema>;
+export const MAP_ROLE_LABEL: Record<MapRole, string> = {
+  app: "App",
+  service: "Service",
+  worker: "Worker",
+};
+
 /** `new`: found by the code pass and not yet checked by the owner. */
 export const MapEdgeStateSchema = z.enum(["confirmed", "new"]);
 export type MapEdgeState = z.infer<typeof MapEdgeStateSchema>;
@@ -59,6 +85,12 @@ export const MapNodeSchema = DiagramNodeSchema.extend({
   deploy: z.string().max(60).optional(),
   /** The registered project, when the node is one. */
   project: IdSchema.optional(),
+  /** What the project is, from its dependencies. The owner can change it (`ProjectMap.roles`). */
+  role: MapRoleSchema.optional(),
+  /** What the project is built with, shown on its card: Django, Postgres, Redis. Not nodes. */
+  stack: z.array(z.string().min(1).max(30)).max(8).optional(),
+  /** Outside services it uses, shown on its card: OpenAI, Stripe. Not nodes. */
+  uses: z.array(z.string().min(1).max(40)).max(12).optional(),
 });
 export type MapNode = z.infer<typeof MapNodeSchema>;
 
@@ -71,6 +103,7 @@ export const MapEdgeSchema = DiagramEdgeSchema.extend({
   evidence: z.array(MapEvidenceSchema).max(12),
   source: MapEdgeSourceSchema,
   state: MapEdgeStateSchema,
+  confidence: MapConfidenceSchema.default("extracted"),
   /** For `together`: how many tasks changed both. */
   tasks: z.number().int().positive().optional(),
 });
@@ -84,6 +117,68 @@ export const MapRemovedSchema = z.object({
 });
 export type MapRemoved = z.infer<typeof MapRemovedSchema>;
 
+/** Hosts that mean "this computer": the same name is a different thing in every project that writes it. */
+const LOOPBACK: ReadonlySet<string> = new Set([
+  "localhost",
+  "127.0.0.1",
+  "0.0.0.0",
+  "::1",
+  "[::1]",
+  "host.docker.internal",
+]);
+export const isLoopbackHost = (host: string): boolean => LOOPBACK.has(host.toLowerCase());
+
+/**
+ * An address a project's files call: a host and port, found in a URL. A local address is only the same
+ * thing inside one project, so it carries that project in `scope`.
+ */
+export function endpointId(host: string, port: number | undefined, scope: string | undefined): string {
+  const address = `${host.toLowerCase()}${port === undefined ? "" : `:${port}`}`;
+  return scope === undefined ? address : `${scope}@${address}`;
+}
+
+/** One place a file calls an address: which project, which variable, and the line as proof. */
+export const MapEndpointRefSchema = MapEvidenceSchema.extend({
+  /** The variable or code the address was written in. */
+  key: z.string().max(120),
+  source: z.enum(["config", "agent"]),
+});
+export type MapEndpointRef = z.infer<typeof MapEndpointRefSchema>;
+
+export const MapEndpointSchema = z.object({
+  id: z.string().min(1).max(200),
+  host: z.string().min(1).max(200),
+  port: z.number().int().positive().max(65535).optional(),
+  /** A local address belongs to the project that wrote it. */
+  scope: z.string().min(1).max(120).optional(),
+  /** The project a compose file proves owns this host name (a service its build makes). */
+  known: z.string().min(1).max(120).optional(),
+  refs: z.array(MapEndpointRefSchema).max(12),
+});
+export type MapEndpoint = z.infer<typeof MapEndpointSchema>;
+
+/** What the owner says an address is. */
+export const MapAnswerSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("project"), project: z.string().min(1).max(120) }),
+  z.object({ kind: z.literal("outside") }),
+  z.object({ kind: z.literal("ignore") }),
+]);
+export type MapAnswer = z.infer<typeof MapAnswerSchema>;
+
+/** One answer of the owner, kept for the workspace: every later update applies it. */
+export const MapResolutionSchema = z.object({
+  host: z.string().min(1).max(200),
+  port: z.number().int().positive().max(65535).optional(),
+  scope: z.string().min(1).max(120).optional(),
+  to: MapAnswerSchema,
+});
+export type MapResolution = z.infer<typeof MapResolutionSchema>;
+
+export const MapRoleSettingSchema = z.object({ project: z.string().min(1).max(120), role: MapRoleSchema });
+
+/** Bumped when what the passes write changes shape; an older stored map reads as never updated. */
+export const MAP_RULES = 2;
+
 export function edgeId(from: string, to: string, type: MapEdgeType): string {
   return `${from}>${to}:${type}`;
 }
@@ -95,10 +190,24 @@ export const ProjectMapSchema = z.object({
   nodes: z.array(MapNodeSchema).max(300),
   edges: z.array(MapEdgeSchema).max(1000),
   removed: z.array(MapRemovedSchema).max(1000),
+  /** Every address the files call that is not a known service: unanswered ones are asked about on the page. */
+  endpoints: z.array(MapEndpointSchema).max(600).default([]),
+  /** The owner's answers: which project, or an outside service, each address is. */
+  resolutions: z.array(MapResolutionSchema).max(600).default([]),
+  /** The owner's choice of role for a project, over the one the dependencies show. */
+  roles: z.array(MapRoleSettingSchema).max(300).default([]),
 });
 export type ProjectMap = z.infer<typeof ProjectMapSchema>;
 
-export const EMPTY_MAP: ProjectMap = { v: DIAGRAM_VERSION, nodes: [], edges: [], removed: [] };
+export const EMPTY_MAP: ProjectMap = {
+  v: DIAGRAM_VERSION,
+  nodes: [],
+  edges: [],
+  removed: [],
+  endpoints: [],
+  resolutions: [],
+  roles: [],
+};
 
 /** A task still open in a project, for the node's panel. */
 export const MapTaskSchema = z.object({
@@ -166,6 +275,21 @@ export const MapEstimateSchema = z.object({
 export type MapEstimate = z.infer<typeof MapEstimateSchema>;
 
 export const MapOrgInputSchema = z.object({ org: IdSchema });
+export const MapAnswerInputSchema = z.object({
+  org: IdSchema,
+  /** `host` or `host:port`, as in a URL. */
+  address: z.string().trim().min(1).max(200),
+  /** For a local address: the project that wrote it. */
+  scope: z.string().min(1).max(120).optional(),
+  /** Absent: forget the answer. */
+  to: MapAnswerSchema.optional(),
+});
+export const MapRoleInputSchema = z.object({
+  org: IdSchema,
+  project: z.string().min(1).max(120),
+  /** Absent: back to the role the dependencies show. */
+  role: MapRoleSchema.optional(),
+});
 export const MapEdgeInputSchema = z.object({ org: IdSchema, id: z.string().min(1).max(300) });
 
 /** What the owner's page says each line type means. */

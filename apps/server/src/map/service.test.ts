@@ -1,8 +1,8 @@
 import { rm } from "node:fs/promises";
-import type { MapView } from "@majhi/shared";
+import { EMPTY_MAP, type MapView } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
-import { writeFixtures } from "./fixtures.ts";
+import { ACCURACY_FILES, writeFixtures } from "./fixtures.ts";
 import { MapRepo } from "./repo.ts";
 import { type Ask, MapService } from "./service.ts";
 
@@ -13,38 +13,18 @@ afterEach(async () => {
 
 const NOW = new Date("2026-10-06T10:00:00.000Z");
 
-/** An answer from the model that names a real line of a file it was sent. */
+/** An answer from the model: one real call, and three that majhi must drop. */
 const jobsReply: Ask = async (_task, prompt, parse) => {
   const parsed = parse(
     JSON.stringify({
-      nodes: [{ id: "outside:replicate", label: "Replicate" }],
-      edges: [
-        {
-          from: "acme-api",
-          to: "store:redis",
-          type: "queue",
-          label: "puts image-jobs",
-          file: "src/jobs.py",
-          line: 7,
-        },
+      calls: [
+        { host: "thumbs.acme.test", label: "makes thumbnails", file: "src/jobs.py", line: 9 },
+        // The line does not have this host: dropped.
+        { host: "cao.acme.test", label: "guess", file: "src/jobs.py", line: 7 },
         // A line the file does not have: dropped.
-        {
-          from: "acme-api",
-          to: "outside:replicate",
-          type: "http",
-          label: "makes images",
-          file: "src/jobs.py",
-          line: 99,
-        },
+        { host: "thumbs.acme.test", label: "guess", file: "src/jobs.py", line: 99 },
         // Another project's file: dropped.
-        {
-          from: "acme-api",
-          to: "outside:replicate",
-          type: "http",
-          label: "makes images",
-          file: "src/other.py",
-          line: 1,
-        },
+        { host: "thumbs.acme.test", label: "guess", file: "src/other.py", line: 1 },
       ],
     }),
   );
@@ -59,9 +39,10 @@ async function setup(
     spent?: () => number;
     cap?: number;
     extra?: Record<string, Record<string, string>>;
+    files?: Record<string, Record<string, string>>;
   } = {},
 ) {
-  const { root, projects } = await writeFixtures(opts.extra);
+  const { root, projects } = await writeFixtures(opts.extra, opts.files);
   roots.push(root);
   const store = new Store(":memory:");
   const repo = new MapRepo(store.raw);
@@ -100,7 +81,7 @@ describe("one map per workspace", () => {
     expect(acme.map.nodes.map((n) => n.id)).toContain("acme-api");
     // Another workspace reads nothing of it, and its own project list holds only its own.
     const globex = await service.view("globex");
-    expect(globex.map).toEqual({ v: 1, nodes: [], edges: [], removed: [] });
+    expect(globex.map).toEqual(EMPTY_MAP);
     expect(globex.updatedAt).toBeUndefined();
     expect(globex.projects.map((p) => p.id)).toEqual(["globex-site"]);
     expect((await service.view("acme")).projects.map((p) => p.id)).not.toContain("globex-site");
@@ -133,48 +114,49 @@ describe("one map per workspace", () => {
 });
 
 describe("removed lines", () => {
-  it("are never added again, by the config pass or by the model", async () => {
+  it("are never added again, by the config pass or by an answer", async () => {
     const { service, restarted } = await setup({ ask: jobsReply });
     const first = await service.update("acme");
-    expect(idsOf(first)).toContain("acme-web>acme-api:http");
-    expect(idsOf(first)).toContain("acme-api>store:redis:queue");
-    await service.removeEdge("acme", "acme-web>acme-api:http");
-    await service.removeEdge("acme", "acme-api>store:redis:queue");
-    // After a restart the model reads the same files again and proposes the line again.
+    expect(idsOf(first)).toContain("acme-worker>acme-api:http");
+    await service.removeEdge("acme", "acme-worker>acme-api:http");
     const again = await restarted().update("acme");
-    expect(idsOf(again)).not.toContain("acme-web>acme-api:http");
-    expect(idsOf(again)).not.toContain("acme-api>store:redis:queue");
-    expect(again.map.removed).toHaveLength(2);
+    expect(idsOf(again)).not.toContain("acme-worker>acme-api:http");
+    expect(again.map.removed).toHaveLength(1);
     // Other lines stay.
     expect(idsOf(again)).toContain("acme-worker>worker-kit:lib");
   });
 });
 
-describe("the code pass", () => {
-  it("lands proposed lines as new, with the real line as proof, and drops guesses", async () => {
-    const { service } = await setup({ ask: jobsReply });
-    const view = await service.update("acme");
-    const line = view.map.edges.find((e) => e.id === "acme-api>store:redis:queue");
-    expect(line).toMatchObject({
-      source: "agent",
-      state: "new",
-      label: "puts image-jobs",
-      evidence: [
-        { project: "acme-api", file: "src/jobs.py", line: 7, excerpt: 'queue.lpush("image-jobs", payload)' },
-      ],
+describe("an answer about an address", () => {
+  it("draws the line, and the next update draws it again", async () => {
+    const { service, restarted } = await setup({ files: ACCURACY_FILES });
+    const first = await service.update("acme");
+    // Only the line a compose file proves: billing calls the service acme-api builds.
+    expect(first.map.edges.filter((e) => e.type === "http").map((e) => e.id)).toEqual([
+      "acme-billing>acme-api:http",
+    ]);
+    const answered = await service.answer("acme", "api.acme.test", undefined, {
+      kind: "project",
+      project: "acme-api",
     });
-    expect(view.map.edges.some((e) => e.id === "acme-api>outside:replicate:http")).toBe(false);
-    expect(view.report?.fresh).toBe(1);
-    // The owner checks it once; a later update keeps it checked.
-    await service.confirmEdge("acme", "acme-api>store:redis:queue");
-    const again = await service.update("acme");
-    expect(again.map.edges.find((e) => e.id === "acme-api>store:redis:queue")?.state).toBe("confirmed");
+    expect(
+      answered.map.edges
+        .filter((e) => e.type === "http")
+        .map((e) => e.id)
+        .toSorted(),
+    ).toEqual(["acme-admin>acme-api:http", "acme-billing>acme-api:http", "acme-web>acme-api:http"]);
+    expect(answered.map.edges.find((e) => e.id === "acme-web>acme-api:http")?.confidence).toBe("inferred");
+    const again = await restarted().update("acme");
+    expect(idsOf(again)).toContain("acme-web>acme-api:http");
+    expect(again.map.resolutions).toHaveLength(1);
   });
+});
 
+describe("the code pass", () => {
   it("with no model, the update is config and history only, and says so", async () => {
     const { service } = await setup();
     const view = await service.update("acme");
-    expect(idsOf(view)).toContain("acme-web>acme-api:http");
+    expect(idsOf(view)).toContain("acme-worker>acme-api:http");
     expect(view.report?.note).toMatch(/No model/);
     expect(view.report?.fresh).toBe(0);
   });

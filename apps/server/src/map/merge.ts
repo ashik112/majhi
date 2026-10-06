@@ -1,34 +1,30 @@
-import { edgeId, type MapEdge, type MapEvidence, type MapNode, type ProjectMap } from "@majhi/shared";
+import { edgeId, type MapEdge, type MapEndpoint, type MapNode, type ProjectMap } from "@majhi/shared";
+import { deriveLines, mergeEndpoints } from "./endpoints.ts";
 
 /**
  * Puts the passes of one update together with the stored map. Pure.
  *
  * - Lines from the config and history passes are made again every update, so a dependency that is gone
  *   leaves the map. They are `confirmed`: the files say so.
- * - Lines the code pass proposed land as `new`. They stay until the owner removes them (a rerun that
- *   does not find one again does not drop it) and a rerun never turns a `confirmed` one back into `new`.
+ * - Calls between projects are not found directly: the passes find addresses, and a line exists only when an
+ *   address has a known owner (a compose service, or the owner's answer). What the model found stays until
+ *   it reads that project again, and the owner's check of such a line carries over.
  * - A line the owner removed is never added again by any pass.
- * - A box with no line is kept only when it is a project of the workspace.
+ * - The owner's answers and role choices carry over as they are.
  */
 
 export interface Passes {
-  /** The config pass: every project box, and the lines the files show. */
-  config: { nodes: readonly MapNode[]; edges: readonly MapEdge[] };
+  /** The config pass: every project box, the lines the files show, and the addresses they call. */
+  config: {
+    nodes: readonly MapNode[];
+    edges: readonly MapEdge[];
+    endpoints: readonly MapEndpoint[];
+    services: ReadonlyMap<string, string>;
+  };
   /** Pairs of projects that tasks changed together, already cut to the strong ones. */
   together: readonly { a: string; b: string; tasks: number }[];
-  /** The code pass: lines and boxes proposed, with proof. */
-  proposed: { nodes: readonly MapNode[]; edges: readonly MapEdge[] };
-}
-
-const EVIDENCE_MAX = 12;
-
-function unionEvidence(a: readonly MapEvidence[], b: readonly MapEvidence[]): MapEvidence[] {
-  const out = [...a];
-  for (const p of b) {
-    if (out.length >= EVIDENCE_MAX) break;
-    if (!out.some((q) => q.project === p.project && q.file === p.file && q.line === p.line)) out.push(p);
-  }
-  return out;
+  /** The code pass: addresses the model found in code, with proof, and the projects it read. */
+  found: { endpoints: readonly MapEndpoint[]; reread: ReadonlySet<string> };
 }
 
 export function togetherEdge(pair: { a: string; b: string; tasks: number }): MapEdge {
@@ -41,58 +37,57 @@ export function togetherEdge(pair: { a: string; b: string; tasks: number }): Map
     evidence: [],
     source: "history",
     state: "confirmed",
+    confidence: "extracted",
     tasks: pair.tasks,
   };
+}
+
+/** Lines drawn from the addresses of a map, with the owner's checks kept from `before`. */
+export function linesFrom(
+  map: Pick<ProjectMap, "endpoints" | "resolutions">,
+  projects: ReadonlySet<string>,
+  before: readonly MapEdge[],
+): MapEdge[] {
+  const checked = new Set(before.filter((e) => e.state === "confirmed").map((e) => e.id));
+  return deriveLines(map.endpoints, map.resolutions, projects).map((e) =>
+    e.source === "agent" && checked.has(e.id) ? { ...e, state: "confirmed" as const } : e,
+  );
 }
 
 export function mergeMap(prev: ProjectMap, passes: Passes): ProjectMap {
   const removed = new Set(prev.removed.map((r) => edgeId(r.from, r.to, r.type)));
   const nodes = new Map<string, MapNode>();
   for (const n of passes.config.nodes) nodes.set(n.id, n);
-  for (const n of passes.proposed.nodes) if (!nodes.has(n.id)) nodes.set(n.id, n);
+  const projects = new Set(passes.config.nodes.filter((n) => n.project !== undefined).map((n) => n.id));
+
+  const endpoints = mergeEndpoints({
+    config: passes.config.endpoints,
+    previous: prev.endpoints,
+    found: passes.found.endpoints,
+    reread: passes.found.reread,
+    projects,
+    services: passes.config.services,
+  });
+  const resolutions = prev.resolutions;
 
   const edges = new Map<string, MapEdge>();
-  for (const e of passes.config.edges) if (!removed.has(e.id)) edges.set(e.id, e);
+  for (const e of passes.config.edges) edges.set(e.id, e);
   for (const pair of passes.together) {
     const e = togetherEdge(pair);
-    if (!removed.has(e.id) && nodes.has(e.from) && nodes.has(e.to)) edges.set(e.id, e);
+    if (nodes.has(e.from) && nodes.has(e.to)) edges.set(e.id, e);
   }
+  for (const e of linesFrom({ endpoints, resolutions }, projects, prev.edges)) edges.set(e.id, e);
 
-  // What the code pass found before, and now. The owner's check carries over.
-  const before = new Map(prev.edges.filter((e) => e.source === "agent").map((e) => [e.id, e]));
-  const proposed = new Map(passes.proposed.edges.map((e) => [e.id, e]));
-  for (const id of new Set([...before.keys(), ...proposed.keys()])) {
-    if (removed.has(id)) continue;
-    const old = before.get(id);
-    const fresh = proposed.get(id);
-    const base = old ?? fresh;
-    if (base === undefined) continue;
-    const known = edges.get(id);
-    if (known !== undefined) {
-      // The files also show it: the proof adds up and the line stays confirmed.
-      edges.set(id, { ...known, evidence: unionEvidence(known.evidence, base.evidence) });
-      continue;
-    }
-    edges.set(id, {
-      ...base,
-      evidence: unionEvidence(old?.evidence ?? [], fresh?.evidence ?? []),
-      state: old?.state ?? "new",
-    });
-  }
-
-  // Boxes the kept lines name, from the passes or from the old map.
-  const oldNodes = new Map(prev.nodes.map((n) => [n.id, n]));
-  const kept: MapEdge[] = [];
-  for (const e of edges.values()) {
-    for (const end of [e.from, e.to]) {
-      if (!nodes.has(end)) {
-        const old = oldNodes.get(end);
-        if (old !== undefined) nodes.set(end, old);
-      }
-    }
-    if (nodes.has(e.from) && nodes.has(e.to)) kept.push(e);
-  }
-  return { v: prev.v, nodes: [...nodes.values()], edges: kept, removed: prev.removed };
+  const kept = [...edges.values()].filter((e) => !removed.has(e.id) && nodes.has(e.from) && nodes.has(e.to));
+  return {
+    v: prev.v,
+    nodes: [...nodes.values()],
+    edges: kept,
+    removed: prev.removed,
+    endpoints,
+    resolutions,
+    roles: prev.roles.filter((r) => projects.has(r.project)),
+  };
 }
 
 /** Marks a new line as checked by the owner. */
@@ -108,4 +103,51 @@ export function removeEdge(map: ProjectMap, id: string): ProjectMap {
     ? map.removed
     : [...map.removed, { from: gone.from, to: gone.to, type: gone.type }];
   return { ...map, edges: map.edges.filter((e) => e.id !== id), removed };
+}
+
+/**
+ * Records what the owner says an address is (or forgets it, without `to`) and draws the lines again from the
+ * stored addresses: the answer shows at once and every later update applies it too.
+ */
+export function answerAddress(
+  map: ProjectMap,
+  address: { host: string; port: number | undefined; scope: string | undefined },
+  to: ProjectMap["resolutions"][number]["to"] | undefined,
+): ProjectMap {
+  const same = (r: ProjectMap["resolutions"][number]) =>
+    r.host === address.host && r.port === address.port && r.scope === address.scope;
+  const resolutions = [
+    ...map.resolutions.filter((r) => !same(r)),
+    ...(to === undefined
+      ? []
+      : [
+          {
+            host: address.host,
+            ...(address.port === undefined ? {} : { port: address.port }),
+            ...(address.scope === undefined ? {} : { scope: address.scope }),
+            to,
+          },
+        ]),
+  ];
+  const projects = new Set(map.nodes.filter((n) => n.project !== undefined).map((n) => n.id));
+  const removed = new Set(map.removed.map((r) => edgeId(r.from, r.to, r.type)));
+  const derived = linesFrom({ endpoints: map.endpoints, resolutions }, projects, map.edges).filter(
+    (e) => !removed.has(e.id),
+  );
+  // Every line of the address kind is drawn again; the files' own lines (library, queue, data) stay.
+  const rest = map.edges.filter((e) => e.type !== "http");
+  return { ...map, resolutions, edges: [...rest, ...derived] };
+}
+
+/** Sets or clears the owner's choice of a project's role. */
+export function setRole(
+  map: ProjectMap,
+  project: string,
+  role: ProjectMap["roles"][number]["role"] | undefined,
+) {
+  const roles = [
+    ...map.roles.filter((r) => r.project !== project),
+    ...(role === undefined ? [] : [{ project, role }]),
+  ];
+  return { ...map, roles };
 }

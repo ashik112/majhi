@@ -1653,6 +1653,13 @@ CREATE TABLE project_maps (
 );
 `,
   },
+  {
+    // The map's addresses, the owner's answers about them and role choices (JSON, checked by zod when read).
+    // A map stored before it has none reads as never updated, so the next update draws it again.
+    id: 168,
+    name: "project map addresses and answers",
+    sql: `ALTER TABLE project_maps ADD COLUMN extra TEXT;`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

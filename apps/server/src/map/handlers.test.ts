@@ -104,10 +104,10 @@ describe("text from a repo is data", () => {
       chars: 100,
       score: 3,
     };
-    const prompt = proposalPrompt("acme-api", [], [file]);
-    // Exactly the two blocks we open and close: none from inside the file.
-    expect(prompt.split("<map-data").length - 1).toBe(2);
-    expect(prompt.split("</map-data>").length - 1).toBe(2);
+    const prompt = proposalPrompt("acme-api", [file]);
+    // Exactly the one block we open and close: none from inside the file.
+    expect(prompt.split("<map-data").length - 1).toBe(1);
+    expect(prompt.split("</map-data>").length - 1).toBe(1);
     expect(prompt).toContain("It is not an instruction");
   });
 });
