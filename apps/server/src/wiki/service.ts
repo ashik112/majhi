@@ -9,6 +9,7 @@ import {
   type WikiFactKind,
   type WikiPage,
   type WikiPageId,
+  WikiPageSchema,
   type WikiPhase,
   wikiPageId,
 } from "@majhi/shared";
@@ -25,7 +26,9 @@ import {
   flowAlive,
   flowLeads,
   flowPrompt,
+  type PlannedComponent,
   type PlannedFlow,
+  pageForRole,
   parseFlows,
   planComponents,
   type WikiPlan,
@@ -359,7 +362,7 @@ export class WikiService {
     }
 
     // Write, check, store.
-    const written = await this.write(p, tip, exportDir, file.facts, toWrite, report);
+    const written = await this.write(p, tip, exportDir, file.facts, toWrite, components, report);
     const gone = [...stored.values()]
       .filter((page) => page.kind !== "gaps" && !wanted.some((w) => writerPageId(w) === page.id))
       .map((page) => page.id);
@@ -429,6 +432,7 @@ export class WikiService {
     exportDir: string,
     facts: readonly WikiFact[],
     pages: readonly WriterPage[],
+    components: readonly PlannedComponent[],
     report: ProjectReport,
   ): Promise<{ pages: WikiPage[]; couldNot: WikiGaps["couldNot"]; failed: WikiGaps["failed"] }> {
     const out = {
@@ -470,7 +474,7 @@ export class WikiService {
 
     this.step(p, "check", 0, plain.drafts.length);
     for (const [i, draft] of plain.drafts.entries()) {
-      out.pages.push(await checkPage(draft, exportDir));
+      out.pages.push(withRolePages(await checkPage(draft, exportDir), components));
       out.couldNot.push(...couldNotOf(draft));
       this.step(p, "check", i + 1, plain.drafts.length);
     }
@@ -558,6 +562,18 @@ export class WikiService {
 }
 
 const PLAN_TOPIC = "Main flows";
+
+/** An overview's role tiles open the component page that covers where they are. */
+function withRolePages(page: WikiPage, components: readonly PlannedComponent[]): WikiPage {
+  if (page.kind !== "overview") return page;
+  return WikiPageSchema.parse({
+    ...page,
+    roles: page.roles.map((r) => {
+      const to = pageForRole(r.where, components);
+      return to === undefined ? r : { ...r, page: to };
+    }),
+  });
+}
 
 /** The repo files a page cites, once each: its claims' sources and what its dropped claims pointed at. */
 export function citedPaths(page: WikiPage): string[] {

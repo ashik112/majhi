@@ -4,6 +4,8 @@ import {
   type WikiFactId,
   WikiFactIdSchema,
   type WikiFactOf,
+  type WikiPageId,
+  wikiPageId,
 } from "@majhi/shared";
 import { z } from "zod";
 import { type Parsed, parseJson } from "../memory/housekeeper.ts";
@@ -234,4 +236,16 @@ export function writerPages(
     ...components.map((c): WriterPage => ({ kind: "component", ...c })),
     ...flows.map((f): WriterPage => ({ kind: "flow", ...f })),
   ];
+}
+
+/**
+ * The component page that covers a role tile: the component whose folder is the tile's `where`, or the deepest one
+ * that contains it. A `where` that is a unit name (no folder) matches none.
+ */
+export function pageForRole(where: string, components: readonly PlannedComponent[]): WikiPageId | undefined {
+  const place = where.replace(/^\.\//, "").replace(/\/+$/, "");
+  const found = components
+    .filter((c) => place === c.folder || place.startsWith(`${c.folder}/`))
+    .toSorted((a, b) => b.folder.length - a.folder.length)[0];
+  return found === undefined ? undefined : wikiPageId({ kind: "component", slug: found.slug });
 }
