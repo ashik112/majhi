@@ -49,7 +49,9 @@ export async function readOnlyDecision(ask: PermissionAsk, root: string): Promis
  */
 export function readOnlyHandler(root: string): (ask: PermissionAsk) => Promise<string | undefined> {
   return async (ask) => {
-    const wanted = (await readOnlyDecision(ask, root)).allow ? ["allow_once"] : ["reject_once", "reject_always"];
+    const wanted = (await readOnlyDecision(ask, root)).allow
+      ? ["allow_once"]
+      : ["reject_once", "reject_always"];
     for (const kind of wanted) {
       const option = ask.options.find((o) => o.kind === kind);
       if (option !== undefined) return option.id;

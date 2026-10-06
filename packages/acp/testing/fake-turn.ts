@@ -657,7 +657,6 @@ export function serveAcp(o: ServeOptions): void {
         stored.messages.push({ role: "user", text });
         let stopReason: StopReason;
         let agentText: string | undefined;
-        let reply: string | undefined;
         // `limit:<message>` fails the prompt with that error, like a CLI that is out of usage.
         if (text.startsWith("limit:")) {
           throw new RequestError(-32603, text.slice("limit:".length).trim());
@@ -673,6 +672,7 @@ export function serveAcp(o: ServeOptions): void {
           throw new RequestError(-32603, accountLimit.trim());
         }
         const scripted = text.startsWith("echo:") ? undefined : await scriptedTurn(s, text);
+        const reply = o.replies === undefined ? undefined : await repliedTo(o.replies, text);
         if (text.startsWith("crash:")) {
           console.error("fake-agent: crashed on purpose");
           process.exit(3);
@@ -698,9 +698,7 @@ export function serveAcp(o: ServeOptions): void {
             content: { type: "text", text: agentText },
           });
           stopReason = "end_turn";
-        } else if (
-          (reply = o.replies === undefined ? undefined : await repliedTo(o.replies, text)) !== undefined
-        ) {
+        } else if (reply !== undefined) {
           // A scripted answer for any session, whatever its folder or servers: a test plays a model that writes exact JSON.
           agentText = reply;
           await update(params.sessionId, {
