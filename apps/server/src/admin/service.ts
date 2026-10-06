@@ -296,7 +296,15 @@ export class AdminService {
       }
       const done = await this.execute("tasks.tell", input, metaFor(caller.agent, why, caller.task));
       if (done.ok && !NotTold.safeParse(done.output).success) {
-        this.log(caller.task, caller.agent, "tasks.tell", summarize("tasks.tell", input), "allow", "captain", why);
+        this.log(
+          caller.task,
+          caller.agent,
+          "tasks.tell",
+          summarize("tasks.tell", input),
+          "allow",
+          "captain",
+          why,
+        );
       }
       return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
     }
