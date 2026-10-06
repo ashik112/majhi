@@ -433,29 +433,39 @@ function InContext({
   );
 }
 
-/** The skills one agent's run had, as a count that opens to the names. The ones it used are marked. */
+/** What one agent's run used, named, and how many it had, which opens to the names. */
 function RunSkills({ run, single }: { run: SkillRun; single: boolean }) {
   const [open, setOpen] = useState(false);
   if (run.had.length === 0) return null;
-  const label = `Skills this run had: ${run.had.length}`;
   return (
-    <li className="flex min-w-0 flex-col">
+    <li className="flex min-w-0 flex-col gap-0.5">
+      <span className="min-w-0">
+        {!single && <span className="text-fg-muted">{`@${run.agent}: `}</span>}
+        <span className="text-fg-muted">Used: </span>
+        {run.used.length === 0 ? (
+          <span className="text-fg">none</span>
+        ) : (
+          run.used.map((name, i) => (
+            <span key={name}>
+              {i > 0 && ", "}
+              <Link to={PAGE_PATH.skills} search={{ skill: name }} className="text-fg hover:underline">
+                {name}
+              </Link>
+            </span>
+          ))
+        )}
+      </span>
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex cursor-pointer items-center gap-1 self-start text-left hover:text-fg"
+        className="flex cursor-pointer items-center gap-1 self-start text-left text-fg-muted hover:text-fg"
       >
         <ChevronRight
           aria-hidden="true"
           className={cn("size-3 shrink-0 text-fg-faint", open && "rotate-90")}
         />
-        <span>
-          {single ? label : `@${run.agent}: ${label}`}
-          {run.used.length > 0 && (
-            <span className="text-xs text-fg-faint">{`, ${run.used.length} used`}</span>
-          )}
-        </span>
+        {`${run.had.length} available`}
       </button>
       {open && (
         <ul
