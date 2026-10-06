@@ -420,11 +420,11 @@ function Plain({ page, changed, onOpen }: Props) {
   const files = useMemo(() => sourcesOf(page), [page]);
   return (
     <>
-      <DetailSection title={page.kind === "infra" ? "What it is" : "What it does"} className={FIRST}>
+      <DetailSection title="About" className={FIRST}>
         <Text page={page} onOpen={onOpen} />
       </DetailSection>
       {files.length > 0 && (
-        <DetailSection title="Where" note="Click a file to read it at the line.">
+        <DetailSection title="Files">
           <div className="flex flex-wrap gap-1.5">
             {files.map((s) => (
               <SourceChip
@@ -493,12 +493,11 @@ function Flow({ page, changed, onOpen }: Props) {
   const intro = page.body.trim() !== "";
   return (
     <>
-      <Diagrams page={page} title="How it moves" height={420}>
+      <Diagrams page={page} title="Sequence" height={420}>
         {intro && <Text page={page} onOpen={onOpen} />}
       </Diagrams>
       <DetailSection
         title="Steps"
-        note="In plain words, each with the file behind it."
         className={page.diagrams.length === 0 && !intro ? FIRST : ""}
       >
         <ol className="m-0 flex list-none flex-col gap-4 p-0">
