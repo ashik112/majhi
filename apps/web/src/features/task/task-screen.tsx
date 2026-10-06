@@ -13,11 +13,13 @@ import { useLaneRedirect } from "@/lib/lane-link";
 import { useFacts, useTaskRecord } from "@/lib/memory-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useReport, useTask } from "@/lib/task-queries";
+import { useMedia } from "@/lib/use-media";
 import type { AppSearch } from "@/router";
 import { ContextTab } from "./context-tab";
 import { briefBody } from "./model";
 import { ReportTab } from "./report-tab";
 import { RoomPanel } from "./room-panel";
+import { RoomOverlay, RoomRail } from "./room-rail";
 import { TaskHeader } from "./task-header";
 import { TAB_PANEL_ID, type TaskTab, TaskTabs, tabId } from "./task-tabs";
 import { TaskTerminal } from "./task-terminal";
@@ -53,6 +55,12 @@ function TaskView({ taskId }: { taskId: string }) {
   }, [navigate]);
   const [tab, setTab] = useState<TaskTab>("room");
   const showChanges = useCallback(() => setTab("changes"), []);
+  const showRoom = useCallback(() => setTab("room"), []);
+  // Narrower than about 1300 px the right column is a rail, and a click opens it over the page.
+  const wide = useMedia("(min-width: 1300px)");
+  const [panelOpen, setPanelOpen] = useState(false);
+  const closePanel = useCallback(() => setPanelOpen(false), []);
+  const openPanel = useCallback(() => setPanelOpen(true), []);
   const facts = useFacts();
   const record = useTaskRecord(taskId);
   const report = useReport(taskId);
@@ -131,7 +139,7 @@ function TaskView({ taskId }: { taskId: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="flex min-h-0 flex-1 gap-4">
+      <div className="relative flex min-h-0 flex-1 gap-4">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
           <TaskHeader
             task={data}
@@ -139,6 +147,7 @@ function TaskView({ taskId }: { taskId: string }) {
             cardAsks={cardAsks}
             brief={brief}
             tabs={<TaskTabs tabs={tabs} value={shown} onChange={setTab} />}
+            onShowRoom={showRoom}
           />
           <div
             id={TAB_PANEL_ID}
@@ -172,13 +181,38 @@ function TaskView({ taskId }: { taskId: string }) {
             {shown === "terminal" && <TaskTerminal task={data} />}
           </div>
         </div>
-        <RoomPanel
-          task={data}
-          agents={room.state.agents}
-          items={room.state.items}
-          processes={room.state.processes}
-          onShowChanges={data.repos.length > 0 ? showChanges : undefined}
-        />
+        {wide ? (
+          <RoomPanel
+            task={data}
+            agents={room.state.agents}
+            items={room.state.items}
+            processes={room.state.processes}
+            onShowChanges={data.repos.length > 0 ? showChanges : undefined}
+          />
+        ) : (
+          <>
+            <RoomRail task={data} agents={room.state.agents} onOpen={openPanel} />
+            {panelOpen && (
+              <RoomOverlay onClose={closePanel}>
+                <RoomPanel
+                  className="w-full"
+                  task={data}
+                  agents={room.state.agents}
+                  items={room.state.items}
+                  processes={room.state.processes}
+                  onShowChanges={
+                    data.repos.length > 0
+                      ? () => {
+                          showChanges();
+                          closePanel();
+                        }
+                      : undefined
+                  }
+                />
+              </RoomOverlay>
+            )}
+          </>
+        )}
       </div>
       {file !== undefined && fileTask === undefined && (
         <Suspense fallback={null}>

@@ -1,8 +1,7 @@
-import type { Task } from "@majhi/shared";
-import { Link } from "@tanstack/react-router";
-import { ArrowLeft, FolderGit2 } from "lucide-react";
-import { type ReactNode, useState } from "react";
-import { OrgBadge } from "@/components/ui/org-badge";
+import type { OriginView, Task, TrailStep } from "@majhi/shared";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { ArrowLeft, FileText } from "lucide-react";
+import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
@@ -10,17 +9,28 @@ import { badgeLetters, formatTokens } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
-import { useUpdateTask } from "@/lib/task-queries";
+import { useTaskDetail, useTaskRow, useUpdateTask } from "@/lib/task-queries";
 import { useUsageSummary } from "@/lib/usage-queries";
+import { AreaChips, areaNames } from "../tasks-ui/area-chips";
+import type { OrgTag } from "../tasks-ui/project-names";
+import { TrailStrip } from "../tasks-ui/trail-strip";
+import { TypeChip } from "../tasks-ui/type-chip";
 import { CostText } from "../usage/cost";
 import { Brief } from "./brief";
+import { Crumbs } from "./crumbs";
 import { TaskAction } from "./task-action";
 import { TaskLinks } from "./task-links";
 import { TaskMenu } from "./task-menu";
+import { useCrumbFit } from "./use-crumb-fit";
+
+/** A task that has begun has had its brief read: it stays folded until the owner asks for it. */
+const started = (task: Pick<Task, "status">) => task.status !== "inbox" && task.status !== "ready";
 
 /**
- * One line with the back link, key, status, project, org and the main action; the title; the brief;
- * then the tab bar along the bottom edge, with the task's links at its right.
+ * The page's header in three rows. The crumbs line: back, id, status, then workspace, projects and
+ * origin, the type and its areas, the cost and the main action. The title, with the Brief button. The
+ * tabs, with the trail of what the task produced at their right. Everything the owner reads about
+ * the task fits in about 120 px.
  */
 export function TaskHeader({
   task,
@@ -28,6 +38,7 @@ export function TaskHeader({
   brief,
   tabs,
   cardAsks,
+  onShowRoom,
 }: {
   task: Task;
   yourTurn: boolean;
@@ -36,17 +47,47 @@ export function TaskHeader({
   /** What the owner wrote beyond the title. */
   brief: string;
   tabs: ReactNode;
+  /** A trail step that lives in the room (the check, the merge) shows it. */
+  onShowRoom: () => void;
 }) {
   const orgs = useOrgs().data ?? [];
   const { org: filter } = useOrgFilter();
+  const navigate = useNavigate();
   const org = orgs.find((o) => o.id === task.org);
   const prefix = task.id.slice(0, task.id.lastIndexOf("-"));
-  const repos = task.repos.map((r) => r.project);
+  const tag: OrgTag = {
+    name: org?.name ?? "No workspace",
+    letters: badgeLetters(org?.key ?? prefix),
+    color: org?.color,
+  };
+  const row = useTaskRow(task.id);
+  const detail = useTaskDetail(task.id).data;
+  const origin: OriginView | undefined = detail?.origin ?? row?.origin;
+  const trail: readonly TrailStep[] = detail?.trail ?? row?.trail ?? [];
+  const areas = useMemo(() => areaNames(detail?.areas), [detail?.areas]);
+  const [briefOpen, setBriefOpen] = useState(() => !started(task));
+
+  const line = useRef<HTMLDivElement>(null);
+  const fit = useCrumbFit(
+    line,
+    [tag.name, task.repos.map((r) => r.project).join(), origin?.kind, areas.join()].join("|"),
+  );
+  const chips = (
+    <span className="flex min-w-0 shrink-0 items-center gap-1.5">
+      <TypeChip id={task.id} typing={task.typing} size="sm" />
+      <AreaChips names={areas} max={3} />
+    </span>
+  );
+
+  const openTask = useCallback(
+    (id: string) => void navigate({ to: "/t/$taskId", params: { taskId: id }, search: orgSearch(filter) }),
+    [navigate, filter],
+  );
 
   return (
-    <header className={cn("@container flex shrink-0 flex-col gap-1 rounded-2xl px-5 pt-2", GLASS)}>
-      <div className="flex min-h-8 flex-wrap items-center gap-x-2.5 gap-y-1 text-sm">
-        <div className="flex min-w-0 flex-1 basis-[19rem] items-center gap-2.5">
+    <header className={cn("@container flex shrink-0 flex-col gap-0.5 rounded-2xl px-5 pt-2", GLASS)}>
+      <div className="flex min-h-8 items-center gap-x-2.5 text-sm">
+        <div ref={line} className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
           <Link
             to="/"
             search={orgSearch(filter)}
@@ -62,26 +103,10 @@ export function TaskHeader({
             pausedReason={task.pausedReason}
             pausedBy={task.pausedBy}
             yourTurn={yourTurn}
-            className="shrink-0"
+            className="mx-1 shrink-0"
           />
-
-          {repos.length > 0 ? (
-            <span
-              title={`Project: ${repos.join(", ")}`}
-              className="flex min-w-6 shrink-[3] items-center gap-1 font-mono text-xs text-fg-soft"
-            >
-              <FolderGit2 aria-hidden="true" className="size-3.5 shrink-0 text-fg-faint" />
-              <span className="truncate">{repos.join(" + ")}</span>
-            </span>
-          ) : (
-            <span className="shrink-0 text-xs whitespace-nowrap text-fg-faint">
-              {task.kind === "chat" ? "chat" : "no project"}
-            </span>
-          )}
-          <span className="flex max-w-[14rem] min-w-6 shrink items-center gap-1.5 overflow-hidden text-xs text-fg-muted">
-            <OrgBadge label={badgeLetters(org?.key ?? prefix)} color={org?.color} size="sm" />
-            <span className="truncate">{org?.name ?? "No workspace"}</span>
-          </span>
+          <Crumbs task={task} org={tag} origin={origin} fit={fit} filter={filter} />
+          {fit === "full" && <span className="ml-2 flex">{chips}</span>}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <TaskCost taskId={task.id} />
@@ -89,12 +114,31 @@ export function TaskHeader({
           <TaskMenu task={task} />
         </div>
       </div>
-      <EditableTitle task={task} />
-      {brief !== "" && <Brief key={brief} text={brief} task={task} />}
-      <div className="-mx-5 mt-1.5 flex min-w-0 items-end gap-2 border-t border-line px-3">
+      <div className="flex min-h-7 min-w-0 items-center gap-2.5">
+        <EditableTitle task={task} />
+        {fit !== "full" && chips}
+        {brief !== "" && (
+          <button
+            type="button"
+            aria-pressed={briefOpen}
+            title={briefOpen ? "Hide the brief" : "Show the brief"}
+            onClick={() => setBriefOpen((v) => !v)}
+            className={cn(
+              "ml-auto inline-flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 text-base text-fg-muted hover:bg-raised hover:text-fg",
+              briefOpen && "bg-selected text-fg shadow-[inset_0_0_0_1px_var(--c-line-control)]",
+            )}
+          >
+            <FileText aria-hidden="true" className="size-3.5" />
+            Brief
+          </button>
+        )}
+      </div>
+      {brief !== "" && briefOpen && <Brief key={brief} text={brief} task={task} />}
+      <div className="-mx-5 mt-1 flex min-w-0 flex-wrap items-end gap-x-2 border-t border-line px-3">
         {tabs}
+        <TrailStrip steps={trail} variant="bar" actions={{ onOpenTask: openTask, onShowRoom }} />
         <div className="ml-auto flex min-h-9 min-w-0 items-center py-1">
-          <TaskLinks task={task} />
+          <TaskLinks task={task} compact={trail.length > 0} />
         </div>
       </div>
     </header>
@@ -133,12 +177,12 @@ function EditableTitle({ task }: { task: Task }) {
 
   if (draft === undefined) {
     return (
-      <h1 className="text-lg leading-snug font-semibold">
+      <h1 className="min-w-0 shrink text-lg leading-snug font-semibold">
         <button
           type="button"
           title={`${task.title} (click to edit)`}
           onClick={() => setDraft(task.title)}
-          className="line-clamp-1 cursor-text rounded-xs text-left hover:bg-raised"
+          className="block max-w-full cursor-text truncate rounded-xs text-left hover:bg-raised"
         >
           {task.title}
         </button>

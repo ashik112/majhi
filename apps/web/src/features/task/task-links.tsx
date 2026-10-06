@@ -1,18 +1,17 @@
 import type { Task } from "@majhi/shared";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { Check, ChevronDown, Plus, X } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { Check, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChoiceChip } from "@/components/ui/choice-chip";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Menu } from "@/components/ui/menu";
 import { Modal } from "@/components/ui/modal";
-import { UsageBar } from "@/components/ui/usage-bar";
 import { cn } from "@/lib/cn";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useLinkTask, useTasks, useUnlinkTask } from "@/lib/task-queries";
 import { TaskChips } from "../new-task/task-chips";
-import { linkTargets, relations, subtaskLine } from "./model";
+import { linkTargets, relations } from "./model";
 
 type Picking = "parent" | "depends-on" | null;
 
@@ -21,11 +20,13 @@ type Unlinking = { task: string; type: "parent" | "depends-on"; target: string; 
 const chip =
   "flex h-6 min-w-0 items-center gap-1 rounded-md border whitespace-nowrap border-line-control px-1.5 text-xs hover:border-line-hover";
 
-/** One line of small chips: what the task is part of, what it waits for, its subtasks, and "Link". */
-export function TaskLinks({ task }: { task: Task }) {
+/**
+ * One line of small chips: what the task is part of, what it waits for, and "Link". Its subtasks are a
+ * step of the trail on the same row. `compact` keeps only the plus, where the trail already fills the row.
+ */
+export function TaskLinks({ task, compact = false }: { task: Task; compact?: boolean }) {
   const list = useTasks().data ?? [];
   const { org } = useOrgFilter();
-  const navigate = useNavigate();
   const unlink = useUnlinkTask();
   const [picking, setPicking] = useState<Picking>(null);
   const [asking, setAsking] = useState<Unlinking | null>(null);
@@ -95,43 +96,6 @@ export function TaskLinks({ task }: { task: Task }) {
           ))}
         </span>
       )}
-      {rel.children.length > 0 && (
-        <Menu
-          label="Subtasks"
-          maxHeight={420}
-          items={rel.children.map((c) => {
-            const line = subtaskLine(c);
-            const state = line.waitingOn.length > 0 ? `${line.text} ${line.waitingOn.join(", ")}` : line.text;
-            return {
-              label: `${c.id}  ${short(c.title)}  ·  ${state}`,
-              checked: c.status === "done",
-              onSelect: () => void navigate(linkTo(c.id)),
-            };
-          })}
-          trigger={({ ref, ...props }) => (
-            <button
-              ref={ref}
-              type="button"
-              {...props}
-              title="Open a subtask"
-              className={cn(chip, "cursor-pointer text-fg-muted")}
-            >
-              <span className="text-fg-faint">Subtasks</span>
-              <span className="tnum">
-                {rel.progress
-                  ? `${rel.progress.done} of ${rel.progress.total} done`
-                  : `${rel.children.length}`}
-              </span>
-              {rel.progress && rel.progress.total > 0 && (
-                <span className="hidden w-10 @[40rem]:block">
-                  <UsageBar pct={(rel.progress.done / rel.progress.total) * 100} tone="green" height={3} />
-                </span>
-              )}
-              <ChevronDown aria-hidden="true" className="size-3" />
-            </button>
-          )}
-        />
-      )}
       <Menu
         label="Link a task"
         align="left"
@@ -152,7 +116,7 @@ export function TaskLinks({ task }: { task: Task }) {
             className="flex h-6 cursor-pointer items-center gap-1 rounded-sm text-fg-faint hover:text-fg"
           >
             <Plus aria-hidden="true" className="size-3" />
-            <span className="hidden @[40rem]:inline">Link</span>
+            {!compact && <span className="hidden @[40rem]:inline">Link</span>}
           </button>
         )}
       />
@@ -181,8 +145,6 @@ export function TaskLinks({ task }: { task: Task }) {
     </div>
   );
 }
-
-const short = (title: string) => (title.length > 60 ? `${title.slice(0, 59)}…` : title);
 
 function RemoveLink({ label, onClick }: { label: string; onClick: () => void }) {
   return (
