@@ -58,22 +58,26 @@ function rememberLast(org: string): void {
 }
 
 /**
- * The Map page. It always shows one workspace: the one the sidebar picked, else the one last shown
- * here, else the first. The workspace chips in its header switch it.
+ * The Map page. It always shows one workspace: the one picked on this page, else the sidebar's, else
+ * the one last shown here, else the first. Its picker is the page's own and leaves the sidebar alone.
  */
 export function MapScreen() {
   useEffect(preloadScene, []);
-  const { org: picked, setOrg } = useOrgFilter();
+  const { org: picked } = useOrgFilter();
   const orgs = useOrgs().data;
-  const [last, setLast] = useState(readLast);
+  // The page's own choice: it never changes the sidebar's workspace. A new sidebar pick resets it.
+  const [chosen, setChosen] = useState<string | undefined>();
+  const [seen, setSeen] = useState(picked);
+  if (seen !== picked) {
+    setSeen(picked);
+    setChosen(undefined);
+  }
   if (orgs === undefined) return <Header />;
   const known = (id: string | undefined) => id !== undefined && orgs.some((o) => o.id === id);
-  const org = [picked, last].find((id): id is string => known(id)) ?? orgs[0]?.id ?? PRIVATE;
+  const org = [chosen, picked, readLast()].find((id): id is string => known(id)) ?? orgs[0]?.id ?? PRIVATE;
   const choose = (id: string) => {
     rememberLast(id);
-    setLast(id);
-    // With a workspace picked in the sidebar, the chips move that pick: one place says which one.
-    if (picked !== undefined) setOrg(id);
+    setChosen(id);
   };
   return (
     <MapFor
