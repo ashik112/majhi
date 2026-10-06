@@ -118,6 +118,7 @@ function merged(a: Held, b: Draft): Held {
       runsOn: a.runsOn ?? b.runsOn,
       ports: union(a.ports, b.ports),
       dependsOn: union(a.dependsOn, b.dependsOn),
+      ...(a.builds === true || b.builds === true ? { builds: true } : {}),
     } as Held;
   }
   if (a.kind === "store" && b.kind === "store") {

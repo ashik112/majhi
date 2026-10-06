@@ -115,3 +115,41 @@ describe("values never reach the facts", () => {
     ]);
   });
 });
+
+describe("calls carry a method and a path only", () => {
+  it("keeps no header, body or token, and drops a path that holds one", async () => {
+    await put({ "src/api.ts": "export const a = 1;\nexport const b = 2;\nexport const c = 3;\n" });
+    const row = (line: number, path: string, extra: Record<string, unknown> = {}) => ({
+      file: "src/api.ts",
+      line,
+      method: "POST",
+      path,
+      ...extra,
+    });
+    const { file } = await extractFacts(
+      input(),
+      readerWith({
+        requests: [
+          row(1, "/api/v1/login", {
+            headers: { Authorization: "Bearer sk_live_headervalue" },
+            body: { password: "hunter2hunter2" },
+            query: "token=tok_live_9",
+          }),
+          row(2, "/hooks/9fK2xQ7mLp0aZ4vB8nR1cT6yW3uE5s"),
+          row(3, "/api/v1/items/{}", { host: "Api.Acme.Test", port: 8443 }),
+        ],
+      }),
+    );
+    const calls = file.facts.flatMap((f) =>
+      f.kind === "call" ? [{ method: f.method, path: f.path, host: f.host, port: f.port }] : [],
+    );
+    expect(calls).toEqual([
+      { method: "POST", path: "/api/v1/items/{}", host: "api.acme.test", port: 8443 },
+      { method: "POST", path: "/api/v1/login", host: undefined, port: undefined },
+    ]);
+    const text = await readFile(join(cacheDir, "facts.json"), "utf8");
+    for (const secret of ["headervalue", "hunter2hunter2", "tok_live_9", "9fK2xQ7mLp0aZ4vB8nR1cT6yW3uE5s"]) {
+      expect(text).not.toContain(secret);
+    }
+  });
+});
