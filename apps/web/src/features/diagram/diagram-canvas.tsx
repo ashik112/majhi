@@ -15,12 +15,22 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import { Maximize2, Minus, Plus } from "lucide-react";
-import { memo, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Lamp, type LampState } from "@/components/ui/lamp";
 import { ROW_SELECTED } from "@/components/ui/list-detail";
 import { cn } from "@/lib/cn";
 import { GLASS } from "@/lib/glass";
+import { fitSequence, SEQUENCE_PAD } from "./layouts/sequence";
 import { EDGE_PRESETS, edgeLook, TONE_COLOR } from "./presets";
 import { type Box, CARD_H, type EdgePath, type Positioned, type Rule } from "./types";
 
@@ -67,6 +77,8 @@ interface BoxData extends Record<string, unknown> {
   box: Box;
   decor: NodeDecor;
   selected: boolean;
+  /** A sequence's actor: a narrower box, a smaller name. */
+  compact: boolean;
 }
 interface GroupData extends Record<string, unknown> {
   label: string;
@@ -84,6 +96,8 @@ interface LineData extends Record<string, unknown> {
   decor: EdgeDecor;
   selected: boolean;
   hovered: boolean;
+  /** A message of a sequence: its number on the line, its label above the line. */
+  step?: number;
 }
 
 type BoxNode = Node<BoxData, "box">;
@@ -101,7 +115,7 @@ const Handles = () => (
 
 /** One box: its kind tag, a lamp with its word when a page says so, its name and a short line under it. */
 const BoxView = memo(function BoxView({ data }: NodeProps<BoxNode>) {
-  const { node, decor, selected, box } = data;
+  const { node, decor, selected, box, compact } = data;
   const tall = box.h >= CARD_H;
   const chips = decor.chips ?? [];
   const uses = decor.uses ?? [];
@@ -110,23 +124,31 @@ const BoxView = memo(function BoxView({ data }: NodeProps<BoxNode>) {
       data-diagram-node={node.id}
       style={{ width: box.w, height: box.h }}
       className={cn(
-        "cursor-pointer rounded-xl border border-glass-line bg-glass-strong px-3 py-2 shadow-glass transition-opacity duration-150",
+        "cursor-pointer rounded-xl border border-glass-line bg-glass-strong py-2 shadow-glass transition-opacity duration-150",
+        compact ? "px-2 text-center" : "px-3",
         selected && ROW_SELECTED,
         decor.dim && "opacity-30",
       )}
     >
       <Handles />
-      <div className="flex h-4 items-center gap-2">
+      <div className={cn("flex h-4 items-center gap-2", compact && "justify-center")}>
         {node.kind !== undefined && (
           <span
-            className="min-w-0 truncate font-mono text-[10px] tracking-[0.06em] uppercase"
+            className={cn(
+              "min-w-0 truncate font-mono tracking-[0.06em] uppercase",
+              compact ? "text-sm" : "text-[10px]",
+            )}
             style={{ color: TONE_COLOR[node.tone ?? "neutral"] }}
           >
             {node.kind}
           </span>
         )}
         {decor.tag !== undefined && (
-          <span className="font-mono text-[10px] font-semibold text-accent-text">{decor.tag}</span>
+          <span
+            className={cn("font-mono font-semibold text-accent-text", compact ? "text-sm" : "text-[10px]")}
+          >
+            {decor.tag}
+          </span>
         )}
         {decor.lamp !== undefined && (
           <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-fg-muted">
@@ -138,7 +160,10 @@ const BoxView = memo(function BoxView({ data }: NodeProps<BoxNode>) {
       <div className="mt-0.5 truncate text-base font-medium text-fg" title={node.label}>
         {node.label}
       </div>
-      <div className="truncate font-mono text-xs text-fg-faint" title={decor.caption ?? node.sub}>
+      <div
+        className={cn("truncate font-mono text-fg-faint", compact ? "text-sm" : "text-xs")}
+        title={decor.caption ?? node.sub}
+      >
         {decor.caption ?? node.sub ?? ""}
       </div>
       {tall && (
@@ -206,7 +231,8 @@ const RuleView = memo(function RuleView({ data }: NodeProps<RuleNode>) {
 /** A line, an arrowhead each end the diagram asks for, and a small label that selects it when clicked. */
 const LineView = memo(function LineView({ data, markerEnd, markerStart }: EdgeProps<LineEdge>) {
   if (data === undefined) return null;
-  const { edge, path, decor, selected, hovered } = data;
+  const { edge, path, decor, selected, hovered, step } = data;
+  const loop = path.from.x === path.to.x;
   const look = edgeLook(edge);
   const d = `M ${path.from.x} ${path.from.y} Q ${path.via.x} ${path.via.y} ${path.to.x} ${path.to.y}`;
   const showLabel = edge.label !== undefined && (decor.hideLabel !== true || hovered || selected);
@@ -224,7 +250,43 @@ const LineView = memo(function LineView({ data, markerEnd, markerStart }: EdgePr
           opacity: decor.dim ? 0.15 : edge.type === "together" ? 0.7 : 1,
         }}
       />
-      {showLabel && (
+      {step !== undefined && (
+        <EdgeLabelRenderer>
+          <div
+            data-diagram-edge={edge.id ?? ""}
+            style={{ transform: `translate(${path.mid.x}px, ${path.mid.y}px)` }}
+            className={cn("nodrag nopan pointer-events-none absolute size-0", decor.dim && "opacity-30")}
+          >
+            <span
+              data-step={step}
+              className={cn(
+                "absolute grid size-5 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border bg-glass-strong font-mono text-sm leading-none text-fg",
+                selected ? "border-line-hover bg-selected" : "border-line-bright",
+              )}
+            >
+              {step}
+            </span>
+            {showLabel && (
+              <span
+                style={{ maxWidth: loop ? 180 : Math.max(168, Math.abs(path.to.x - path.from.x)) }}
+                className={cn(
+                  "absolute line-clamp-2 w-max rounded-md bg-glass-strong px-1 font-mono text-sm [overflow-wrap:anywhere] text-fg-soft",
+                  loop
+                    ? "top-0 left-3.5 -translate-y-1/2 text-left"
+                    : "bottom-3 left-0 -translate-x-1/2 text-center",
+                  selected && "text-fg",
+                )}
+              >
+                {edge.label}
+                {decor.badge !== undefined && (
+                  <span className="ml-1 font-semibold text-accent-text">{decor.badge}</span>
+                )}
+              </span>
+            )}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+      {step === undefined && showLabel && (
         <EdgeLabelRenderer>
           <div
             data-diagram-edge={edge.id ?? ""}
@@ -332,6 +394,35 @@ function bounds(from: { x: number; y: number }, to: { x: number; y: number }): B
   };
 }
 
+/** What each kind of line means. On a canvas it floats at the bottom; under a sequence it is a bar of its own. */
+function Legend({ kinds, bar }: { kinds: readonly (keyof typeof EDGE_PRESETS)[]; bar: boolean }) {
+  return (
+    <div
+      className={cn(
+        "pointer-events-none flex flex-wrap gap-4 px-3 py-1.5 text-sm text-fg-muted",
+        bar ? "shrink-0 border-t border-line" : cn("absolute bottom-3 left-3 z-10 rounded-lg", GLASS),
+      )}
+    >
+      {kinds.map((type) => (
+        <span key={type} className="flex items-center gap-1.5">
+          <svg width="22" height="6" aria-hidden="true">
+            <line
+              x1="0"
+              y1="3"
+              x2="22"
+              y2="3"
+              stroke={EDGE_PRESETS[type].color}
+              strokeWidth="2"
+              strokeDasharray={EDGE_PRESETS[type].dash}
+            />
+          </svg>
+          {EDGE_PRESETS[type].legend}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /**
  * The one canvas: draws a positioned diagram, with zoom, fit and click. A chat diagram is a thin wrapper
  * around it; it differs only in what it decorates and what a click does.
@@ -347,10 +438,30 @@ export function DiagramCanvas({
   fitMin = 0.6,
   className,
 }: DiagramCanvasProps): ReactNode {
+  const sequence = diagram.layout === "sequence";
+  const box = useRef<HTMLDivElement>(null);
+  const [frameW, setFrameW] = useState(0);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!sequence || el === null) return;
+    const read = () => setFrameW(el.clientWidth);
+    read();
+    if (typeof ResizeObserver === "undefined") return;
+    const watch = new ResizeObserver(read);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [sequence]);
+  // A sequence is never scaled down to fit: its lanes spread over a wide frame, and a narrow one scrolls.
+  const fitted = useMemo(
+    () => (sequence ? fitSequence(positioned, frameW - 2 * SEQUENCE_PAD) : undefined),
+    [sequence, positioned, frameW],
+  );
+  const placed = fitted?.positioned ?? positioned;
+
   const flowNodes = useMemo(() => {
     const out: (BoxNode | GroupNode | RuleNode)[] = [];
     const labels = new Map(diagram.nodes.map((n) => [n.id, n.label]));
-    for (const [id, box] of positioned.groups) {
+    for (const [id, box] of placed.groups) {
       out.push({
         id,
         type: "frame",
@@ -363,7 +474,7 @@ export function DiagramCanvas({
         style: { pointerEvents: "none" },
       });
     }
-    positioned.rules.forEach((rule, i) => {
+    placed.rules.forEach((rule, i) => {
       const b = bounds(rule.from, rule.to);
       out.push({
         id: `rule:${i}`,
@@ -378,7 +489,7 @@ export function DiagramCanvas({
       });
     });
     for (const n of diagram.nodes) {
-      const box = positioned.nodes.get(n.id);
+      const box = placed.nodes.get(n.id);
       if (box === undefined) continue;
       out.push({
         id: n.id,
@@ -392,18 +503,19 @@ export function DiagramCanvas({
           box,
           decor: node?.(n) ?? {},
           selected: selection?.kind === "node" && selection.id === n.id,
+          compact: sequence,
         },
       });
     }
     return out;
-  }, [diagram, positioned, node, selection]);
+  }, [diagram, placed, sequence, node, selection]);
 
   const [hover, setHover] = useState<string | undefined>();
   const flowEdges = useMemo(() => {
     const out: LineEdge[] = [];
     diagram.edges.forEach((e, i) => {
       const key = edgeKey(e, i);
-      const path = positioned.edges.get(key);
+      const path = placed.edges.get(key);
       if (path === undefined) return;
       const look = edgeLook(e);
       const marker = { type: MarkerType.ArrowClosed, width: 14, height: 14, color: look.color } as const;
@@ -420,13 +532,61 @@ export function DiagramCanvas({
           decor: edge?.(key) ?? {},
           selected: selection?.kind === "edge" && selection.id === key,
           hovered: hover === key,
+          ...(sequence ? { step: i + 1 } : {}),
         },
       });
     });
     return out;
-  }, [diagram, positioned, edge, selection, hover]);
+  }, [diagram, placed, sequence, edge, selection, hover]);
 
-  const box = useRef<HTMLDivElement>(null);
+  const handlers = {
+    onNodeClick: (_: unknown, n: Node) => {
+      if (n.type === "box") onSelect?.({ kind: "node", id: n.id });
+    },
+    onEdgeClick: (_: unknown, e: Edge) => onSelect?.({ kind: "edge", id: e.id }),
+    onEdgeMouseEnter: (_: unknown, e: Edge) => setHover(e.id),
+    onEdgeMouseLeave: () => setHover(undefined),
+    onPaneClick: () => onSelect?.(undefined),
+  };
+  if (fitted !== undefined) {
+    return (
+      <div className={cn("flex h-full w-full flex-col", className)}>
+        <div ref={box} data-sequence-scroll="" className="min-h-0 flex-1 overflow-auto">
+          <div
+            style={{
+              width: Math.max(frameW, fitted.width + 2 * SEQUENCE_PAD),
+              height: fitted.height + 2 * SEQUENCE_PAD,
+            }}
+          >
+            <ReactFlowProvider>
+              <ReactFlow
+                nodes={flowNodes}
+                edges={flowEdges}
+                nodeTypes={nodeTypes}
+                edgeTypes={edgeTypes}
+                nodesDraggable={false}
+                nodesConnectable={false}
+                edgesFocusable
+                elementsSelectable={false}
+                defaultViewport={{ x: SEQUENCE_PAD, y: SEQUENCE_PAD, zoom: 1 }}
+                minZoom={1}
+                maxZoom={1}
+                panOnDrag={false}
+                zoomOnScroll={false}
+                zoomOnPinch={false}
+                zoomOnDoubleClick={false}
+                preventScrolling={false}
+                proOptions={{ hideAttribution: true }}
+                {...handlers}
+                className="!bg-transparent"
+              />
+            </ReactFlowProvider>
+          </div>
+        </div>
+        {legend !== undefined && <Legend kinds={legend} bar />}
+      </div>
+    );
+  }
   return (
     <div ref={box} className={cn("relative h-full w-full", className)}>
       <ReactFlowProvider>
@@ -444,44 +604,14 @@ export function DiagramCanvas({
           fitView
           fitViewOptions={{ padding: 0.04, minZoom: fitMin, maxZoom: 1 }}
           proOptions={{ hideAttribution: true }}
-          onNodeClick={(_, n) => {
-            if (n.type === "box") onSelect?.({ kind: "node", id: n.id });
-          }}
-          onEdgeClick={(_, e) => onSelect?.({ kind: "edge", id: e.id })}
-          onEdgeMouseEnter={(_, e) => setHover(e.id)}
-          onEdgeMouseLeave={() => setHover(undefined)}
-          onPaneClick={() => onSelect?.(undefined)}
+          {...handlers}
           className="!bg-transparent"
         >
           <Refit shape={positioned} box={box} fitMin={fitMin} />
           <Controls fitMin={fitMin} />
         </ReactFlow>
       </ReactFlowProvider>
-      {legend !== undefined && (
-        <div
-          className={cn(
-            "pointer-events-none absolute bottom-3 left-3 z-10 flex flex-wrap gap-4 rounded-lg px-3 py-1.5 text-sm text-fg-muted",
-            GLASS,
-          )}
-        >
-          {legend.map((type) => (
-            <span key={type} className="flex items-center gap-1.5">
-              <svg width="22" height="6" aria-hidden="true">
-                <line
-                  x1="0"
-                  y1="3"
-                  x2="22"
-                  y2="3"
-                  stroke={EDGE_PRESETS[type].color}
-                  strokeWidth="2"
-                  strokeDasharray={EDGE_PRESETS[type].dash}
-                />
-              </svg>
-              {EDGE_PRESETS[type].legend}
-            </span>
-          ))}
-        </div>
-      )}
+      {legend !== undefined && <Legend kinds={legend} bar={false} />}
     </div>
   );
 }

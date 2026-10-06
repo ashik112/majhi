@@ -390,6 +390,8 @@ export const WikiRoleRowSchema = z.object({
   where: z.string().min(1).max(200),
   tech: z.string().min(1).max(120),
   claim: z.number().int().positive(),
+  /** The component page that covers this role, when the plan has one. The tile opens it; without it the tile opens its proof. */
+  page: WikiPageIdSchema.refine((id) => wikiPageKind(id) === "component", "Use a component page").optional(),
 });
 export type WikiRoleRow = z.infer<typeof WikiRoleRowSchema>;
 
