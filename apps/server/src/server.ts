@@ -153,6 +153,7 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
         memory: services.memory,
         scopeOf: (task) => services.memoryScopes.agent(task),
         receipts: services.store.usageEvents,
+        wiki: services.wikiTools,
       },
       skills: {
         forRun: async (caller) => {
