@@ -126,6 +126,15 @@ export type CommitsSettings = z.infer<typeof CommitsSettingsSchema>;
 export const CommitsPatchSchema = z.strictObject({ attribution: z.boolean() }).partial();
 export type CommitsPatch = z.infer<typeof CommitsPatchSchema>;
 
+/**
+ * The project wiki (docs/design/wiki.md): off by default. A workspace can turn it on or off for itself;
+ * the workspace's own value wins over this one (`wikiEnabled` in wiki.ts).
+ */
+export const WikiSettingsSchema = z.strictObject({ enabled: z.boolean().default(false) });
+export type WikiSettings = z.infer<typeof WikiSettingsSchema>;
+export const WikiPatchSchema = z.strictObject({ enabled: z.boolean() }).partial();
+export type WikiPatch = z.infer<typeof WikiPatchSchema>;
+
 /** Teams in a room (5.3). Orgs can override `max_agent_turns`. */
 const roomFields = {
   /** Agent-to-agent turns without an owner message before the task pauses and asks (loop guard). */
@@ -574,6 +583,7 @@ export const SettingsSchema = z.object({
   turns: TurnsSettingsSchema,
   resume: ResumeSettingsSchema,
   commits: CommitsSettingsSchema,
+  wiki: WikiSettingsSchema,
   rooms: RoomSettingsSchema,
   policy: PolicySettingsSchema,
   memory: MemorySettingsSchema,

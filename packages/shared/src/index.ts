@@ -74,3 +74,4 @@ export * from "./triggers.ts";
 export * from "./usage.ts";
 export * from "./watch-formula.ts";
 export * from "./watches.ts";
+export * from "./wiki.ts";
