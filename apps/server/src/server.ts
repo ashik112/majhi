@@ -137,12 +137,14 @@ export function createMajhi(env: ServerEnv, options: MajhiAppOptions = {}): Majh
         ? {
             containers: {
               containers: services.containers,
-              askImage: async (caller: { task: string; agent: string }, image: string) => {
+              askImage: async (caller: { task: string; agent: string }, image: string, service?: string) => {
+                // Allowed for the task's workspace, not everywhere: the owner's list says which workspace may run what.
+                const org = services.store.tasks.get(caller.task)?.org ?? "private";
                 const result = await services.admin.request(
                   caller,
                   "containers.images.allow",
-                  { image },
-                  `A service container needs the image ${image}.`,
+                  { image, org, ...(service === undefined ? {} : { service }) },
+                  `${service === undefined ? "A container" : `The container ${service}`} of ${caller.task} needs the image ${image}.`,
                 );
                 if (result.isError) throw new UserError(result.text);
                 return result.text === WAITING_TEXT ? ("pending" as const) : ("allowed" as const);

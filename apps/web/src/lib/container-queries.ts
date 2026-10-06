@@ -25,11 +25,15 @@ export function useStopContainer() {
 /** Allows or stops allowing an image. Both are config commits, so the settings and history refetch. */
 export function useAllowImage() {
   const client = useQueryClient();
-  return useMutation<unknown, ApiRequestError, { image: string; allow: boolean }>({
-    mutationFn: ({ image, allow }) =>
+  return useMutation<unknown, ApiRequestError, { image: string; allow: boolean; org?: string }>({
+    mutationFn: ({ image, allow, org }) =>
       allow
         ? cmd("containers.images.allow", { image }, { reason: "Owner allowed a service image" })
-        : cmd("containers.images.remove", { image }, { reason: "Owner removed a service image" }),
+        : cmd(
+            "containers.images.remove",
+            { image, ...(org === undefined ? {} : { org }) },
+            { reason: "Owner removed a service image" },
+          ),
     onSuccess: () =>
       Promise.all([
         client.invalidateQueries({ queryKey: queryKeys.settings }),
