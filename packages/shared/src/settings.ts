@@ -340,7 +340,7 @@ export const ContainersSettingsSchema = z.strictObject({
   org_images: containersFields.org_images.default({}),
   cpus: containersFields.cpus.default(1),
   memory: containersFields.memory.default("512m"),
-  per_task: containersFields.per_task.default(3),
+  per_task: containersFields.per_task.default(6),
   total: containersFields.total.default(8),
   build_total: containersFields.build_total.default(1),
   build_cpus: containersFields.build_cpus.default(2),

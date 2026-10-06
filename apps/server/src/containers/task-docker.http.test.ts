@@ -129,11 +129,11 @@ describe("docker through majhi", () => {
     const cwd = w.taskDir("ACM-1");
     const one = env["ACM-1"] ?? {};
     const made: number[] = [];
-    for (const name of ["a", "b", "c", "d"]) {
+    for (const name of ["a", "b", "c", "d", "e", "f", "g"]) {
       made.push((await docker_(one, cwd, "run", "-d", "--name", name, "nginx:1.27-alpine")).code);
     }
-    // containers.per_task is 3 by default.
-    expect(made).toEqual([0, 0, 0, 125]);
+    // containers.per_task is 6 by default.
+    expect(made).toEqual([0, 0, 0, 0, 0, 0, 125]);
   }, 60_000);
 
   it("answers 401 without the run's token, and the token ends with the run", async () => {

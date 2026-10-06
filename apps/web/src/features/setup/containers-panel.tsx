@@ -234,8 +234,8 @@ type LimitKey = Exclude<keyof ContainersSettings, "images" | "org_images">;
 const LIMITS: readonly { key: LimitKey; label: string; hint: string }[] = [
   { key: "cpus", label: "CPUs per container", hint: "0.25 to 16" },
   { key: "memory", label: "Memory per container", hint: "Like 512m or 2g" },
-  { key: "per_task", label: "Containers per task", hint: "Previews and services at once, 1 to 10" },
-  { key: "total", label: "Containers across all tasks", hint: "Previews and services at once, 1 to 100" },
+  { key: "per_task", label: "Containers per task", hint: "At most this many at once, 1 to 10" },
+  { key: "total", label: "Containers across all tasks", hint: "At most this many at once, 1 to 100" },
   { key: "build_total", label: "Concurrent preview builds", hint: "Across all tasks, 1 to 10" },
   { key: "build_cpus", label: "CPUs for a preview build", hint: "0.25 to 16" },
   { key: "build_memory", label: "Memory for a preview build", hint: "Like 4g" },
