@@ -5,10 +5,12 @@ import {
   type HomeBackground,
   type HomeCheck,
   lifecycle,
+  type OriginKind,
   type OwnerDecision,
   PRIVATE,
   type TaskPriority,
   type TaskSummary,
+  type TaskType,
 } from "@majhi/shared";
 import { primaryOption, rowTitle, workspaceOf } from "../decisions/model";
 import type { BannerAction } from "../shell/model";
@@ -18,16 +20,17 @@ import { compareTaskIds, partOf, plainTitle, waitsOnSubtasks } from "./model";
 type Blocker = lifecycle.Blocker;
 
 /**
- * Home, sorted by who holds the ball. Pure: the screen reads the queries and hands them here, so the
+ * The Tasks board, sorted by who holds the ball. Pure: the screen reads the queries and hands them here, so the
  * assignment of every task to one section, the order inside a section and the one verb of each row
  * are decided in one place and can be checked without a browser.
  */
 
-export type SectionId = "needs" | "running" | "shipping" | "next" | "triage" | "captain" | "done";
+export type SectionId = "needs" | "running" | "waiting" | "shipping" | "next" | "triage" | "captain" | "done";
 
 export const SECTION_ORDER: readonly SectionId[] = [
   "needs",
   "running",
+  "waiting",
   "shipping",
   "next",
   "triage",
@@ -37,30 +40,32 @@ export const SECTION_ORDER: readonly SectionId[] = [
 
 export const SECTION_LABEL: Record<SectionId, string> = {
   needs: "Needs you",
-  running: "Running now",
+  running: "Running",
+  waiting: "Waiting",
   shipping: "Shipping",
   next: "Up next",
-  triage: "Unsorted ideas",
+  triage: "Ideas",
   captain: "Captain did today",
-  done: "Done today",
+  done: "Done",
 };
 
-/** What each section's order is, said at the right of its header. */
-export const SECTION_SORT: Record<SectionId, string> = {
-  needs: "blocks others, priority, waited",
-  running: "longest running",
-  shipping: "failed first, then running",
-  next: "can start, priority, due, age",
-  triage: "oldest first",
-  captain: "newest first",
-  done: "newest first",
+/** The word of a section on a tree row, where the header is not drawn. */
+export const SECTION_WORD: Record<SectionId, string> = {
+  needs: "Needs you",
+  running: "Running",
+  waiting: "Waiting",
+  shipping: "Shipping",
+  next: "Up next",
+  triage: "Idea",
+  captain: "Captain",
+  done: "Done",
 };
 
-/** Sections that stay shut until the owner opens them. */
+/** Sections that stay shut until the owner turns them on. */
 export const COLLAPSED_BY_DEFAULT: ReadonlySet<SectionId> = new Set(["triage", "captain", "done"]);
 
-/** How many rows a long section shows before "+n more". Needs you and Running now always show all. */
-export const SECTION_CAP: Partial<Record<SectionId, number>> = { shipping: 10, next: 5 };
+/** How many cards a column shows before "+n more". A column scrolls, but a hundred cards need not all be drawn. */
+export const SECTION_CAP = 30;
 
 // Facts the screen reads next to the task list ------------------------------
 
@@ -98,16 +103,34 @@ export interface HomeInput {
   org: string | undefined;
   query: string;
   now: number;
+  /** The chip filters of the screen: what the task is, where it came from, which part of the system it touches. */
+  type?: TaskType | undefined;
+  source?: OriginKind | undefined;
+  area?: string | undefined;
+  /** The names of the parts of the system each task touches (`tasks.areas`). */
+  areas?: ReadonlyMap<string, readonly string[]> | undefined;
+  /**
+   * The board nests a subtask in its parent's card, so it is no card of its own: a task whose parent has
+   * a card is left out, unless the subtask itself needs the owner or ships. The tree nests by its own rule.
+   */
+  nest?: { opened: ReadonlySet<SectionId> } | undefined;
 }
 
 // Section of a task ---------------------------------------------------------
 
 export type TaskSection = Exclude<SectionId, "captain">;
 
+/** A parent whose subtasks are being worked on is running, though no agent holds the parent itself. */
+function subtasksRunning(task: TaskSummary): boolean {
+  return task.trail.some((step) => step.kind === "children" && step.tone === "working");
+}
+
 /**
- * The one section a task belongs to, or undefined when Home does not draw it (a quiet chat). A task
- * a decision waits on is Needs you, whatever its status. Done tasks are Done today; the screen keeps
- * only today's.
+ * The one section a task belongs to, or undefined when the board does not draw it (a quiet chat). A
+ * task a decision waits on is Needs you, whatever its status. A paused task goes by who ends its
+ * hold: the owner (Needs you) or majhi on a condition it watches (Waiting). A task that waits on
+ * another task, or on its own subtasks, is Waiting. Done tasks are Done; the screen keeps only
+ * today's.
  */
 export function sectionOf(
   task: TaskSummary,
@@ -121,15 +144,19 @@ export function sectionOf(
     case "mr":
       return "shipping";
     case "running":
-      return ctx.working.has(task.id) ? "running" : "next";
+      if (ctx.working.has(task.id)) return "running";
+      if (waitsOnSubtasks(task)) return subtasksRunning(task) ? "running" : "waiting";
+      return "next";
     case "paused":
-      return waitsOnSubtasks(task) ? "next" : "running";
+      if (waitsOnSubtasks(task)) return subtasksRunning(task) ? "running" : "waiting";
+      return task.hold?.lifter === "system" ? "waiting" : "needs";
     case "review":
       return "next";
     case "ready":
-      return "next";
+      return task.waitingOn.length > 0 ? "waiting" : "next";
     case "inbox":
-      return lifecycle.isUntriaged(task) ? "triage" : "next";
+      if (lifecycle.isUntriaged(task)) return "triage";
+      return task.waitingOn.length > 0 ? "waiting" : "next";
   }
 }
 
@@ -142,11 +169,17 @@ export interface NeedsItem {
   /** How many open tasks wait for this decision's task. */
   blocks: number;
 }
+/** A paused task only the owner can lift: no decision for it, but it waits on a click. */
+export interface HeldItem {
+  task: TaskSummary;
+}
 export interface RunningItem {
   task: TaskSummary;
   doing: DoingFact | undefined;
-  /** Paused with no decision for the owner: the captain, Auto-pilot or a budget stopped it. */
-  paused: boolean;
+}
+/** A task that waits for something that is not the owner: a hold majhi lifts, another task, its subtasks. */
+export interface WaitingItem {
+  task: TaskSummary;
 }
 /** Work with no agent turn: a hand-off check, a process, a preview. One row each. */
 export interface BackgroundItem {
@@ -170,7 +203,10 @@ export interface DoneItem {
 
 export interface HomeSections {
   needs: NeedsItem[];
+  /** Listed in Needs you after the decisions. */
+  held: HeldItem[];
   running: RunningItem[];
+  waiting: WaitingItem[];
   /** Listed in Running now after the agents. */
   background: BackgroundItem[];
   shipping: ShippingItem[];
@@ -189,14 +225,19 @@ export type HomeTotals = Record<SectionId, number> & {
 const PRIORITY_RANK: Record<TaskPriority, number> = { high: 0, normal: 1, low: 2 };
 const priorityRank = (p: TaskPriority | undefined) => PRIORITY_RANK[p ?? "normal"];
 
-/** Tasks that wait for this task to finish: the number "blocks others" sorts by. */
-export function blockedBy(tasks: readonly TaskSummary[]): Map<string, number> {
-  const by = new Map<string, number>();
+/** The open tasks that wait for each task to finish. */
+export function waitersOf(tasks: readonly TaskSummary[]): Map<string, string[]> {
+  const by = new Map<string, string[]>();
   for (const t of tasks) {
     if (t.status === "done") continue;
-    for (const dep of t.waitingOn) by.set(dep, (by.get(dep) ?? 0) + 1);
+    for (const dep of t.waitingOn) by.set(dep, [...(by.get(dep) ?? []), t.id]);
   }
   return by;
+}
+
+/** Tasks that wait for this task to finish: the number "blocks others" sorts by. */
+export function blockedBy(tasks: readonly TaskSummary[]): Map<string, number> {
+  return new Map([...waitersOf(tasks)].map(([id, waiters]) => [id, waiters.length]));
 }
 
 function needsOrder(a: NeedsItem, b: NeedsItem, priority: (id: string | undefined) => number): number {
@@ -210,14 +251,10 @@ function needsOrder(a: NeedsItem, b: NeedsItem, priority: (id: string | undefine
   );
 }
 
-/** Rows of Running now: longest running first (the turn's start, else the last change), paused ones last. */
+/** Rows of Running: longest running first (the turn's start, else the last change). */
 function runningOrder(a: RunningItem, b: RunningItem): number {
   const since = (r: RunningItem) => r.doing?.since ?? r.task.updatedAt;
-  return (
-    Number(a.paused) - Number(b.paused) ||
-    since(a).localeCompare(since(b)) ||
-    a.task.id.localeCompare(b.task.id)
-  );
+  return since(a).localeCompare(since(b)) || a.task.id.localeCompare(b.task.id);
 }
 
 const CI_RANK: Record<CiState, number> = { failing: 0, pending: 1, none: 2, passing: 3 };
@@ -248,7 +285,7 @@ export function startRank(blocker: Blocker | null | undefined): number {
   }
 }
 
-/** Rank of a queued row: tasks that can start, then a task with no agent on it (running or paused), last. */
+/** Rank of a queued row: tasks that can start, then a task with no agent on it, last. */
 function queuedRank(item: QueuedItem): number {
   return item.task.status === "ready" || item.task.status === "inbox" ? startRank(item.blocker) : 5;
 }
@@ -284,14 +321,39 @@ export function decisionTitle(d: OwnerDecision): string {
   return plainTitle(d.taskTitle ?? rowTitle(d));
 }
 
-/** Every section of Home, each task in exactly one, ordered, with the workspace and text filters applied. */
+/** Longest first: a task's waiting is ordered by how long it has waited. */
+function waitingOrder(a: WaitingItem, b: WaitingItem): number {
+  return a.task.updatedAt.localeCompare(b.task.updatedAt) || a.task.id.localeCompare(b.task.id);
+}
+
+/** Every section of the board, each task in exactly one, ordered, with the chip, workspace and text filters applied. */
 export function buildHome(input: HomeInput): { sections: HomeSections; totals: HomeTotals } {
   const { org, query, now } = input;
+  const areas = input.areas ?? new Map<string, readonly string[]>();
   const inScope = (t: TaskSummary) => org === undefined || (t.org ?? PRIVATE) === org;
-  const tasks = input.tasks.filter(inScope);
   const byId = new Map(input.tasks.map((t) => [t.id, t]));
-  const decisions = input.decisions.filter((d) => org === undefined || workspaceOf(d) === org);
-  const asking = new Set(input.decisions.flatMap((d) => (d.task === undefined ? [] : [d.task])));
+  const chips = input.type !== undefined || input.source !== undefined || input.area !== undefined;
+  const passesChips = (t: TaskSummary) =>
+    (input.type === undefined || t.typing?.type === input.type) &&
+    (input.source === undefined || t.origin?.kind === input.source) &&
+    (input.area === undefined || (areas.get(t.id) ?? []).includes(input.area));
+  const tasks = input.tasks.filter((t) => inScope(t) && passesChips(t));
+  // A pause majhi lifts by itself is not a question for the owner: its task waits, in Waiting.
+  const waitsForMajhi = (id: string | undefined) =>
+    id !== undefined && byId.get(id)?.hold?.lifter === "system";
+  const decisions = input.decisions.filter((d) => {
+    if (d.kind === "paused" && waitsForMajhi(d.task)) return false;
+    if (org !== undefined && workspaceOf(d) !== org) return false;
+    // A decision with no task has no type, source or area: a chip filter hides it.
+    if (!chips) return true;
+    const task = d.task === undefined ? undefined : byId.get(d.task);
+    return task !== undefined && passesChips(task);
+  });
+  const asking = new Set(
+    input.decisions.flatMap((d) =>
+      d.task === undefined || (d.kind === "paused" && waitsForMajhi(d.task)) ? [] : [d.task],
+    ),
+  );
   const blocks = blockedBy(input.tasks);
   const midnight = localMidnight(now);
 
@@ -304,7 +366,9 @@ export function buildHome(input: HomeInput): { sections: HomeSections; totals: H
     needsOrder(a, b, (id) => priorityRank(id === undefined ? undefined : byId.get(id)?.priority)),
   );
 
+  const held: HeldItem[] = [];
   const running: RunningItem[] = [];
+  const waiting: WaitingItem[] = [];
   const shipping: ShippingItem[] = [];
   const next: QueuedItem[] = [];
   const triage: QueuedItem[] = [];
@@ -313,14 +377,21 @@ export function buildHome(input: HomeInput): { sections: HomeSections; totals: H
     const section = sectionOf(task, { asking, working: input.working });
     const blocker = input.blockers.get(task.id);
     switch (section) {
+      case "needs":
+        // A task a decision waits on is in `needs` already; only a hold the owner lifts is a row of its own.
+        if (!asking.has(task.id)) held.push({ task });
+        break;
       case "running":
-        running.push({ task, doing: input.doing.get(task.id), paused: task.status === "paused" });
+        running.push({ task, doing: input.doing.get(task.id) });
+        break;
+      case "waiting":
+        waiting.push({ task });
         break;
       case "shipping":
         shipping.push({ task, mr: input.mrs.get(task.id), extra: input.mrExtra.get(task.id) ?? 0 });
         break;
       case "next":
-        // A task in review whose checks run is shown once, as the Checking row in Running now.
+        // A task in review whose checks run is shown once, as the Checking row in Running.
         if (task.status === "review" && input.checks.get(task.id)?.activity !== undefined) break;
         next.push({ task, blocker });
         break;
@@ -334,11 +405,43 @@ export function buildHome(input: HomeInput): { sections: HomeSections; totals: H
         break;
     }
   }
+  if (input.nest !== undefined) {
+    const shown = (section: SectionId) =>
+      !COLLAPSED_BY_DEFAULT.has(section) || input.nest?.opened.has(section) === true;
+    const cards = new Set<string>([
+      ...needs.flatMap((n) => (n.decision.task === undefined ? [] : [n.decision.task])),
+      ...held.map((h) => h.task.id),
+      ...shipping.map((s) => s.task.id),
+      ...running.map((r) => r.task.id),
+      ...waiting.map((w) => w.task.id),
+      ...next.map((n) => n.task.id),
+      ...(shown("triage") ? triage.map((t) => t.task.id) : []),
+      ...(shown("done") ? done.map((d) => d.task.id) : []),
+    ]);
+    // A subtask in a section a card sums up is nested; one whose parent is itself nested has no card to nest in.
+    const parentIn = (task: TaskSummary, set: ReadonlySet<string>) => {
+      const parent = partOf(task);
+      return parent !== undefined && parent !== task.id && set.has(parent);
+    };
+    const nestedOnce = new Set<string>();
+    for (const list of [running, waiting, next, triage, done]) {
+      for (const row of list) if (parentIn(row.task, cards)) nestedOnce.add(row.task.id);
+    }
+    const roots = new Set([...cards].filter((id) => !nestedOnce.has(id)));
+    const keep = <T extends { task: TaskSummary }>(rows: T[]) => rows.filter((r) => !parentIn(r.task, roots));
+    running.splice(0, running.length, ...keep(running));
+    waiting.splice(0, waiting.length, ...keep(waiting));
+    next.splice(0, next.length, ...keep(next));
+    triage.splice(0, triage.length, ...keep(triage));
+    done.splice(0, done.length, ...keep(done));
+  }
+  held.sort((a, b) => a.task.updatedAt.localeCompare(b.task.updatedAt) || a.task.id.localeCompare(b.task.id));
   running.sort(runningOrder);
+  waiting.sort(waitingOrder);
   const background: BackgroundItem[] = input.background
     .flatMap((work) => {
       const task = byId.get(work.task);
-      return task === undefined || !inScope(task) ? [] : [{ task, work }];
+      return task === undefined || !inScope(task) || !passesChips(task) ? [] : [{ task, work }];
     })
     .toSorted((a, b) => a.work.since.localeCompare(b.work.since) || a.task.id.localeCompare(b.task.id));
   shipping.sort(shippingOrder);
@@ -348,33 +451,39 @@ export function buildHome(input: HomeInput): { sections: HomeSections; totals: H
   );
   done.sort((a, b) => newestFirst(a.task, b.task));
 
-  const captain = input.captain
-    .filter(
-      (a) =>
-        a.outcome === "done" &&
-        a.undo !== "done" &&
-        now - Date.parse(a.at) < CAPTAIN_WINDOW_MS &&
-        (org === undefined || a.org === org),
-    )
-    .toSorted((a, b) => b.at.localeCompare(a.at) || b.id - a.id);
+  // What the captain did has no type or source of its own: a chip filter leaves it out.
+  const captain = chips
+    ? []
+    : input.captain
+        .filter(
+          (a) =>
+            a.outcome === "done" &&
+            a.undo !== "done" &&
+            now - Date.parse(a.at) < CAPTAIN_WINDOW_MS &&
+            (org === undefined || a.org === org),
+        )
+        .toSorted((a, b) => b.at.localeCompare(a.at) || b.id - a.id);
 
   const totals: HomeTotals = {
-    needs: needs.length,
+    needs: needs.length + held.length,
     running: running.length + background.length,
+    waiting: waiting.length,
     shipping: shipping.length,
     next: next.length,
     triage: triage.length,
     captain: captain.length,
     done: done.length,
-    working: running.filter((r) => !r.paused).length + background.length,
+    working: running.length + background.length,
   };
 
   const sections: HomeSections = {
     needs: needs.filter((n) =>
       matches(query, n.decision.task, decisionTitle(n.decision), n.decision.sentence),
     ),
+    held: held.filter((h) => matches(query, h.task.id, h.task.title)),
     running: running.filter((r) => matches(query, r.task.id, r.task.title)),
     background: background.filter((b) => matches(query, b.task.id, b.task.title)),
+    waiting: waiting.filter((w) => matches(query, w.task.id, w.task.title)),
     shipping: shipping.filter((s) => matches(query, s.task.id, s.task.title)),
     next: next.filter((q) => matches(query, q.task.id, q.task.title)),
     triage: triage.filter((q) => matches(query, q.task.id, q.task.title)),
@@ -561,9 +670,21 @@ export function backgroundActions(item: BackgroundItem): ActionSpec[] {
 
 export function runningActions(item: RunningItem): ActionSpec[] {
   const id = item.task.id;
-  return item.paused
-    ? [{ kind: "start", task: id, label: "Resume" }, open(id, "Open")]
-    : [open(id, "Watch"), { kind: "stop", task: id, label: "Stop" }];
+  return [open(id, "Watch"), { kind: "stop", task: id, label: "Stop" }];
+}
+
+/** A hold only the owner lifts: Resume leads, then the task. */
+export function heldActions(item: HeldItem): ActionSpec[] {
+  const id = item.task.id;
+  return [{ kind: "start", task: id, label: "Resume" }, open(id, "Open")];
+}
+
+/** Waiting for something that is not the owner: the task is the place to look; a held one can be resumed by hand. */
+export function waitingActions(item: WaitingItem): ActionSpec[] {
+  const id = item.task.id;
+  return item.task.status === "paused"
+    ? [open(id, "Open"), { kind: "start", task: id, label: "Resume" }]
+    : [open(id, "Open")];
 }
 
 export function shippingActions(item: ShippingItem): ActionSpec[] {
@@ -624,25 +745,19 @@ export function doneActions(item: DoneItem): ActionSpec[] {
 // The flat list the screen draws and the keys walk ---------------------------
 
 export interface ListView {
-  /** Sections the owner opened (the collapsed ones). */
+  /** The toggled sections: Ideas, Done and Captain stay out of the board until the owner turns them on. */
   opened: ReadonlySet<SectionId>;
   /** Sections whose "+n more" was opened. */
   all: ReadonlySet<SectionId>;
 }
 
 export type Entry =
-  | {
-      type: "header";
-      key: string;
-      section: SectionId;
-      count: number;
-      collapsible: boolean;
-      open: boolean;
-      extra?: string;
-    }
+  | { type: "header"; key: string; section: SectionId; count: number }
   | { type: "needs"; key: string; section: "needs"; item: NeedsItem }
+  | { type: "held"; key: string; section: "needs"; item: HeldItem }
   | { type: "running"; key: string; section: "running"; item: RunningItem }
   | { type: "background"; key: string; section: "running"; item: BackgroundItem }
+  | { type: "waiting"; key: string; section: "waiting"; item: WaitingItem }
   | { type: "shipping"; key: string; section: "shipping"; item: ShippingItem }
   | { type: "next"; key: string; section: "next"; item: QueuedItem }
   | { type: "triage"; key: string; section: "triage"; item: QueuedItem }
@@ -652,39 +767,36 @@ export type Entry =
 
 export type RowEntry = Exclude<Entry, { type: "header" | "more" }>;
 
-/** Whether a key can land on the entry: rows, "+n more" and the header of a section that can open. */
+/** Whether a key can land on the entry: a row, or "+n more". A column head is only a heading. */
 export function focusable(entry: Entry): boolean {
-  return entry.type === "header" ? entry.collapsible : true;
+  return entry.type !== "header";
 }
 
 export function headerKey(section: SectionId): string {
   return `h:${section}`;
 }
 
-/** Sections with nothing in them are not drawn at all. */
+/** How many rows a section has. */
+export function countOf(sections: HomeSections, section: SectionId): number {
+  switch (section) {
+    case "needs":
+      return sections.needs.length + sections.held.length;
+    case "running":
+      return sections.running.length + sections.background.length;
+    default:
+      return sections[section].length;
+  }
+}
+
+/** Every column in order, each with its head: a column with nothing in it is a head and no rows. The toggled ones only while on. */
 export function buildEntries(sections: HomeSections, view: ListView): Entry[] {
   const out: Entry[] = [];
   for (const section of SECTION_ORDER) {
-    const count =
-      section === "running" ? sections.running.length + sections.background.length : sections[section].length;
-    if (count === 0) continue;
-    const collapsible = COLLAPSED_BY_DEFAULT.has(section);
-    const open = !collapsible || view.opened.has(section);
-    const paused = section === "running" ? sections.running.filter((r) => r.paused).length : 0;
-    out.push({
-      type: "header",
-      key: headerKey(section),
-      section,
-      count,
-      collapsible,
-      open,
-      ...(paused > 0 ? { extra: `${paused} paused` } : {}),
-    });
-    if (!open) continue;
-    const cap = SECTION_CAP[section];
-    const limit = cap === undefined || view.all.has(section) ? count : cap;
-    const rows = rowsOf(sections, section).slice(0, limit);
-    out.push(...rows);
+    if (COLLAPSED_BY_DEFAULT.has(section) && !view.opened.has(section)) continue;
+    const count = countOf(sections, section);
+    out.push({ type: "header", key: headerKey(section), section, count });
+    const limit = view.all.has(section) ? count : SECTION_CAP;
+    out.push(...rowsOf(sections, section).slice(0, limit));
     if (count > limit) out.push({ type: "more", key: `m:${section}`, section, hidden: count - limit });
   }
   return out;
@@ -693,7 +805,12 @@ export function buildEntries(sections: HomeSections, view: ListView): Entry[] {
 function rowsOf(sections: HomeSections, section: SectionId): RowEntry[] {
   switch (section) {
     case "needs":
-      return sections.needs.map((item) => ({ type: "needs", key: `d:${item.decision.id}`, section, item }));
+      return [
+        ...sections.needs.map(
+          (item): RowEntry => ({ type: "needs", key: `d:${item.decision.id}`, section, item }),
+        ),
+        ...sections.held.map((item): RowEntry => ({ type: "held", key: `t:${item.task.id}`, section, item })),
+      ];
     case "running":
       return [
         ...sections.running.map(
@@ -708,6 +825,8 @@ function rowsOf(sections: HomeSections, section: SectionId): RowEntry[] {
           }),
         ),
       ];
+    case "waiting":
+      return sections.waiting.map((item) => ({ type: "waiting", key: `t:${item.task.id}`, section, item }));
     case "shipping":
       return sections.shipping.map((item) => ({ type: "shipping", key: `t:${item.task.id}`, section, item }));
     case "next":
@@ -729,10 +848,14 @@ export function actionsOf(
   switch (entry.type) {
     case "needs":
       return needsActions(entry.item.decision, blockedOf(entry.item.decision.id), entry.item.check);
+    case "held":
+      return heldActions(entry.item);
     case "running":
       return runningActions(entry.item);
     case "background":
       return backgroundActions(entry.item);
+    case "waiting":
+      return waitingActions(entry.item);
     case "shipping":
       return shippingActions(entry.item);
     case "next":
@@ -780,13 +903,19 @@ export function jumpSection(
 
 // Relations: how a row connects to other tasks ---------------------------------
 
-/** The task a row stands for and how it connects: the task it is part of, and its own subtasks. */
+/** The task a row stands for and how it connects: its parent, its subtasks and the tasks it waits on, blocks or follows up. */
 export interface Relation {
   task: string;
   parent: string | undefined;
   /** Subtasks: how many are done, of how many. Total 0 for a task without. */
   done: number;
   total: number;
+  /** The tasks it waits for (their `depends-on` is not met yet). */
+  waitsOn: readonly string[];
+  /** The open tasks that wait for it. */
+  blocks: readonly string[];
+  /** The task it follows up. */
+  followUpOf: string | undefined;
 }
 
 /** The task of a row, if it has one (a decision for the workspace and a captain action may have none). */
@@ -801,12 +930,18 @@ export function taskIdOf(entry: RowEntry): string | undefined {
   }
 }
 
+/** Every row of every section that stands for a task, whichever sections are on: for what each task is doing now. */
+export function allTaskRows(sections: HomeSections): RowEntry[] {
+  return SECTION_ORDER.flatMap((s) => rowsOf(sections, s));
+}
+
 /** The relation of every row that has a task, by row key. */
 export function relationsOf(
   entries: readonly Entry[],
   tasks: ReadonlyMap<string, TaskSummary>,
 ): Map<string, Relation> {
   const out = new Map<string, Relation>();
+  const waiters = waitersOf([...tasks.values()]);
   for (const entry of entries) {
     if (entry.type === "header" || entry.type === "more") continue;
     const id = taskIdOf(entry);
@@ -818,6 +953,9 @@ export function relationsOf(
       parent: parent === id ? undefined : parent,
       done: task.children?.done ?? 0,
       total: task.children?.total ?? 0,
+      waitsOn: task.waitingOn,
+      blocks: waiters.get(id) ?? [],
+      followUpOf: task.links.find((l) => l.type === "follow-up")?.task,
     });
   }
   return out;
@@ -835,15 +973,18 @@ export interface TreeInfo {
   dim: boolean;
 }
 
-/** The rows that stand for tasks, in the order of the sections. Background work repeats a task; the captain's log is not one. */
-function taskRows(sections: HomeSections): RowEntry[] {
-  return SECTION_ORDER.filter((s) => s !== "captain").flatMap((s) =>
-    rowsOf(sections, s).filter((r) => r.type !== "background"),
-  );
+/**
+ * The rows that stand for tasks, in the order of the sections, the toggled ones only while on.
+ * Background work repeats a task; the captain's log is not one.
+ */
+function taskRows(sections: HomeSections, opened: ReadonlySet<SectionId>): RowEntry[] {
+  return SECTION_ORDER.filter(
+    (s) => s !== "captain" && (!COLLAPSED_BY_DEFAULT.has(s) || opened.has(s)),
+  ).flatMap((s) => rowsOf(sections, s).filter((r) => r.type !== "background"));
 }
 
 /**
- * Home as a tree. `all` holds every row with no filter, `shown` the rows that pass the filters. A
+ * The board as a tree. `all` holds every row with no filter, `shown` the rows that pass the filters. A
  * task goes under its parent task when that is a row too, at any depth; the rest stand at the top
  * in the order of the sections. A row that fails the filters stays, dimmed, while one below it
  * passes. A second decision of one task goes under it. Children follow their ids.
@@ -853,9 +994,10 @@ export function buildTree(
   shown: HomeSections,
   tasks: ReadonlyMap<string, TaskSummary>,
   collapsed: ReadonlySet<string>,
+  opened: ReadonlySet<SectionId>,
 ): { entries: RowEntry[]; info: Map<string, TreeInfo> } {
-  const rows = taskRows(all);
-  const passes = new Set(taskRows(shown).map((r) => r.key));
+  const rows = taskRows(all, opened);
+  const passes = new Set(taskRows(shown, opened).map((r) => r.key));
   const first = new Map<string, RowEntry>();
   for (const row of rows) {
     const id = taskIdOf(row);

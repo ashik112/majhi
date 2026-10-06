@@ -1,78 +1,20 @@
-import { DECISION_KIND_LABEL, type OwnerDecisionKind } from "@majhi/shared";
-import { ChevronRight, CornerDownRight, LoaderCircle } from "lucide-react";
-import { memo, type ReactNode, useMemo } from "react";
+import { ChevronRight, LoaderCircle } from "lucide-react";
+import { memo } from "react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
-import { LAMP_TEXT, Lamp, type LampState } from "@/components/ui/lamp";
-import { OrgBadge } from "@/components/ui/org-badge";
-import { rowTitle } from "@/features/decisions/model";
-import { useHeldOption } from "@/features/decisions/use-send-decision";
+import { LAMP_TEXT, Lamp } from "@/components/ui/lamp";
 import { cn } from "@/lib/cn";
-import { openDue, shortAgo } from "../tasks/schedule";
 import { DueChip, PriorityChip } from "../tasks/schedule-chips";
-import { backgroundChip, backgroundLine, checkElapsed, checkLine, checkState, duration } from "./check-state";
-import {
-  type ActionSpec,
-  actionsOf,
-  type BackgroundItem,
-  blockerText,
-  type DoneItem,
-  decisionTitle,
-  type Entry,
-  type NeedsItem,
-  type QueuedItem,
-  queuedChip,
-  type Relation,
-  type RowEntry,
-  type RunningItem,
-  SECTION_LABEL,
-  SECTION_SORT,
-  type SectionId,
-  type ShippingItem,
-  type TreeInfo,
-} from "./home-model";
-import { plainTitle } from "./model";
+import { OriginMark } from "../tasks-ui/origin-mark";
+import { ProjectNames } from "../tasks-ui/project-names";
+import { TrailStrip } from "../tasks-ui/trail-strip";
+import { TypeTile } from "../tasks-ui/type-chip";
+import { type EntryContext, rowDomId, taskOfEntry, useEntryActions } from "./entry-context";
+import { type EntryLine, lineOf, queuedMarks } from "./entry-text";
+import type { RowEntry, TreeInfo } from "./home-model";
+import { RelationChips } from "./relation-chips";
 
-/** What every row of the list shares: the focus, the selection, the clock, and the three callbacks. */
-export interface RowHandlers {
-  onFocus: (key: string) => void;
-  onAct: (key: string, index: number) => void;
-  onOpen: (key: string) => void;
-  onToggle: (section: SectionId) => void;
-  onMore: (section: SectionId) => void;
-  /** Fold or unfold the subtasks of a task in the tree. */
-  onFold: (task: string) => void;
-}
-
-interface RowProps extends Pick<RowHandlers, "onFocus" | "onAct" | "onOpen" | "onFold"> {
-  entryKey: string;
-  /** How the task connects to others. */
-  rel: Relation | undefined;
-  /** Set in the tree: where the row stands in it. */
-  tree: TreeInfo | undefined;
-  focused: boolean;
-  selected: boolean;
-  now: number;
-}
-
-/** A workspace as its colored tile and name; below 1280px only the tile. */
-export interface OrgTag {
-  name: string;
-  letters: string;
-  color: string | undefined;
-}
-
-function OrgChip({ org }: { org: OrgTag }) {
-  return (
-    <span
-      title={org.name}
-      className="flex shrink-0 items-center gap-1.5 text-xs text-fg-soft min-[1280px]:w-[104px]"
-    >
-      <OrgBadge label={org.letters} color={org.color} size="xs" />
-      <span className="min-w-0 truncate max-[1279px]:hidden">{org.name}</span>
-    </span>
-  );
-}
+export { rowDomId };
 
 /** Horizontal step of one tree level, in pixels. */
 const TREE_STEP = 18;
@@ -90,111 +32,59 @@ function Guides({ depth }: { depth: number }) {
   ));
 }
 
-/**
- * How a task connects, after its title: in the list the task it is part of and its subtask count; in
- * the tree, which already shows the parent, the progress of its subtasks.
- */
-function Connections({ rel, tree }: { rel: Relation | undefined; tree: boolean }) {
-  if (rel === undefined) return null;
-  const parent = tree ? undefined : rel.parent;
-  const kids =
-    rel.total === 0
-      ? undefined
-      : tree
-        ? `${rel.done} of ${rel.total} done`
-        : `${rel.total} ${rel.total === 1 ? "subtask" : "subtasks"}`;
-  if (parent === undefined && kids === undefined) return null;
-  return (
-    <span className="tnum flex max-w-[170px] shrink-0 items-center gap-1.5 truncate text-xs text-fg-faint">
-      {parent !== undefined && (
-        <span title={`Part of ${parent}`} className="inline-flex items-center gap-0.5 font-mono">
-          <CornerDownRight aria-hidden="true" className="size-3" />
-          {parent}
-        </span>
-      )}
-      {kids !== undefined && <span>{kids}</span>}
-    </span>
-  );
+const LINE_TEXT = { ...LAMP_TEXT, ok: "text-green" } as const;
+
+interface RowProps {
+  entry: RowEntry;
+  focused: boolean;
+  selected: boolean;
+  ctx: EntryContext;
 }
 
-export function rowDomId(key: string): string {
-  return `home-row-${key}`;
-}
-
-const VERB_BY_KIND: Record<OwnerDecisionKind, string> = {
-  question: "Answer",
-  approval: "Approve",
-  ship: "Review",
-  budget: "Budget",
-  paused: "Unblock",
-  "sign-in": "Sign in",
-  secret: "Secret",
-  draft: "Review",
-  batch: "Review",
-  incident: "Incident",
-  trust: "Trust",
-  notifications: "Turn on",
-};
-
 /**
- * One line: lamp, kind, id, title, workspace, the detail, the wait and the primary button. Below 1280px
- * the detail and the other numbered buttons drop to a second line, and only for the row the keys are on.
- * The wait and the primary button stay on the first line, at the right.
+ * One row of the tree: lamp, section word, id, type and title, the workspace and projects, what it
+ * says and how it connects, the origin, the age and the primary button. Below 1280px the projects
+ * and what it says drop to a second line, so the title keeps its room.
  */
-function Row({
-  entryKey,
-  focused,
-  selected,
-  lamp,
-  chip,
-  chipTone,
-  id,
-  title,
-  org,
-  detail,
-  wait,
-  actions,
-  primaryTone = "secondary",
-  busy = false,
-  elapsed: waited,
-  detailTitle,
-  rel,
-  tree,
-  onFocus,
-  onAct,
-  onOpen,
-  onFold,
-}: Pick<
-  RowProps,
-  "entryKey" | "focused" | "selected" | "rel" | "tree" | "onFocus" | "onAct" | "onOpen" | "onFold"
-> & {
-  lamp: LampState;
-  chip: string;
-  chipTone?: LampState | undefined;
-  id: string | undefined;
-  title: string;
-  org: OrgTag | undefined;
-  detail: ReactNode;
-  wait: string;
-  actions: readonly ActionSpec[];
-  primaryTone?: "primary" | "secondary";
-  busy?: boolean;
-  /** For a first action that waits: the time the work has run. */
-  elapsed?: string;
-  /** Hover text of the detail. */
-  detailTitle?: string | undefined;
-}) {
+const TreeRow = memo(function TreeRow({ entry, focused, selected, ctx }: RowProps) {
+  const { handlers, now } = ctx;
+  const line: EntryLine = lineOf(entry, ctx.line);
+  const task = taskOfEntry(entry, ctx.tasks);
+  const rel = ctx.relations.get(entry.key);
+  const tree: TreeInfo | undefined = ctx.treeInfo?.get(entry.key);
+  const { actions, busy } = useEntryActions(entry);
   const [first, ...others] = actions;
+  const org = ctx.orgLabel(entry);
+  const queued =
+    entry.type === "next" || entry.type === "triage" ? queuedMarks(entry.item.task, now) : undefined;
+  const projects = task?.repos.map((r) => r.project) ?? [];
+  const showTrail = task !== undefined && task.trail.length > 0 && entry.type !== "done";
+  const hasDetail =
+    line.text !== "" ||
+    line.why !== undefined ||
+    queued?.priority !== undefined ||
+    queued?.due !== undefined ||
+    (rel !== undefined &&
+      (rel.waitsOn.length > 0 || rel.blocks.length > 0 || rel.followUpOf !== undefined)) ||
+    showTrail;
+  const kids =
+    rel === undefined || rel.total === 0
+      ? undefined
+      : tree !== undefined
+        ? `${rel.done} of ${rel.total} done`
+        : undefined;
+  const wordTone = line.lamp === "idle" ? "text-fg-muted" : LAMP_TEXT[line.lamp];
+
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the row only takes the keys' place on a press; its buttons do the work
     <div
-      id={rowDomId(entryKey)}
-      data-home-row={entryKey}
+      id={rowDomId(entry.key)}
+      data-home-row={entry.key}
       aria-current={focused ? "true" : undefined}
-      onMouseDown={() => onFocus(entryKey)}
+      onMouseDown={() => handlers.onFocus(entry.key)}
       className={cn(
         "group relative flex flex-wrap items-center gap-x-3 border-b border-line px-3 text-base",
-        "min-h-9 py-1 transition-colors duration-100",
+        "min-h-9 py-1 transition-colors duration-100 max-[1279px]:gap-y-0",
         focused ? "bg-selected" : "hover:bg-raised",
         selected && "bg-accent-wash",
         tree?.dim && "opacity-55",
@@ -213,7 +103,7 @@ function Row({
               type="button"
               aria-label={tree.open ? "Fold subtasks" : "Unfold subtasks"}
               aria-expanded={tree.open}
-              onClick={() => onFold(rel.task)}
+              onClick={() => handlers.onFold(rel.task)}
               className="grid size-4 cursor-pointer place-items-center rounded-xs text-fg-faint hover:text-fg"
             >
               <ChevronRight
@@ -224,57 +114,69 @@ function Row({
           ) : (
             <span className="size-4" />
           ))}
-        <Lamp state={lamp} size={7} />
+        <Lamp state={line.lamp} size={7} />
       </span>
-      <span
-        className={cn(
-          "w-[66px] shrink-0 truncate text-xs font-medium",
-          chipTone === undefined ? "text-fg-muted" : LAMP_TEXT[chipTone],
-        )}
-      >
-        {chip}
-      </span>
-      <span className="w-[62px] shrink-0 truncate font-mono text-xs text-fg-faint">{id ?? ""}</span>
-      <span className="flex min-w-0 flex-[2] items-center gap-2">
+      <span className={cn("w-[68px] shrink-0 truncate text-xs font-medium", wordTone)}>{line.word}</span>
+      <span className="w-[62px] shrink-0 truncate font-mono text-xs text-fg-faint">{line.id ?? ""}</span>
+      <span className="flex min-w-0 flex-[2] items-center gap-2 max-[1279px]:min-w-[60px]">
+        {task !== undefined && task.chat !== true && <TypeTile typing={task.typing} size="sm" />}
         <button
           type="button"
-          onClick={() => onOpen(entryKey)}
-          title={title}
+          onClick={() => handlers.onOpen(entry.key)}
+          title={line.title}
           className="m-0 min-w-0 cursor-pointer truncate p-0 text-left text-base font-medium text-fg outline-none hover:underline focus-visible:underline"
         >
-          {title}
+          {line.title}
         </button>
-        <Connections rel={rel} tree={tree !== undefined} />
+        {kids !== undefined && <span className="tnum shrink-0 truncate text-xs text-fg-faint">{kids}</span>}
       </span>
-      {org !== undefined ? (
-        <OrgChip org={org} />
+      <span aria-hidden="true" className="hidden h-0 basis-full max-[1279px]:order-7 max-[1279px]:block" />
+      {task !== undefined ? (
+        <ProjectNames
+          org={org}
+          projects={projects}
+          className="w-[150px] shrink-0 max-[1279px]:order-8 max-[1279px]:ml-[100px] max-[1279px]:w-auto"
+        />
       ) : (
-        <span className="w-[18px] shrink-0 min-[1280px]:w-[104px]" />
+        <span className="w-[150px] shrink-0 max-[1279px]:hidden" />
       )}
       <span
         className={cn(
-          "flex min-w-0 flex-[3] items-center gap-2",
-          focused
-            ? "max-[1279px]:order-last max-[1279px]:basis-full max-[1279px]:pb-1 max-[1279px]:pl-[93px]"
-            : "max-[1279px]:hidden",
+          "flex min-w-0 flex-[3] items-center gap-2 text-sm text-fg-soft",
+          "max-[1279px]:order-9 max-[1279px]:flex-1 max-[1279px]:pb-1",
+          !hasDetail && "max-[1279px]:hidden",
         )}
       >
-        <span className="min-w-0 truncate text-sm text-fg-soft" title={detailTitle}>
-          {detail}
-        </span>
-        {others.length > 0 && (
+        {queued?.priority !== undefined && <PriorityChip priority={queued.priority} compact />}
+        {queued?.due !== undefined && <DueChip due={queued.due} short />}
+        {(line.text !== "" || line.why !== undefined) && (
           <span
+            title={line.hover ?? line.why}
             className={cn(
-              "ml-auto shrink-0 items-center gap-1",
-              focused ? "flex" : "hidden group-hover:flex",
+              "min-w-0 truncate",
+              line.tone === undefined ? "text-fg-soft" : LINE_TEXT[line.tone],
             )}
           >
+            {line.text}
+            {line.why !== undefined && (
+              <span className="text-fg-muted">{line.text === "" ? line.why : `. ${line.why}`}</span>
+            )}
+          </span>
+        )}
+        <RelationChips rel={rel} live={ctx.live} />
+        {showTrail && task !== undefined && (
+          <TrailStrip steps={task.trail} variant="mini" className="ml-auto" />
+        )}
+      </span>
+      <span className="ml-auto flex shrink-0 items-center gap-2">
+        {others.length > 0 && (
+          <span className={cn("items-center gap-1", focused ? "flex" : "hidden group-hover:flex")}>
             {others.map((spec, i) => (
               <button
                 // biome-ignore lint/suspicious/noArrayIndexKey: the number is the identity of an action
                 key={i}
                 type="button"
-                onClick={() => onAct(entryKey, i + 1)}
+                onClick={() => handlers.onAct(entry.key, i + 1)}
                 className="inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 text-xs text-fg-muted hover:bg-raised hover:text-fg"
               >
                 <Kbd className="h-4 min-w-4 text-[10px]">{i + 2}</Kbd>
@@ -283,488 +185,55 @@ function Row({
             ))}
           </span>
         )}
-      </span>
-      <span className="ml-auto flex shrink-0 items-center gap-3">
-        <span className="tnum w-9 text-right font-mono text-xs text-fg-faint">{wait}</span>
-        {first?.kind === "wait" && (
-          <span
-            title="Checks are running"
-            data-testid="row-waiting"
-            className="tnum inline-flex h-7 min-w-[84px] items-center justify-center gap-1.5 text-sm text-fg-muted"
-          >
-            <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
-            {waited}
-          </span>
-        )}
-        {first !== undefined && first.kind !== "wait" && (
-          <Button
-            size="sm"
-            variant={primaryTone}
-            disabled={busy}
-            onClick={() => onAct(entryKey, 0)}
-            className="max-w-[168px] min-w-[84px] justify-center"
-          >
-            {focused && <Kbd className="h-4 min-w-4 text-[10px]">1</Kbd>}
-            <span className="truncate">{busy ? "Sending..." : first.label}</span>
-          </Button>
-        )}
-      </span>
-    </div>
-  );
-}
-
-// Needs you -----------------------------------------------------------------
-
-const NeedsRow = memo(function NeedsRow({
-  item,
-  org,
-  entryKey,
-  ...rest
-}: { item: NeedsItem; org: OrgTag | undefined } & RowProps) {
-  const d = item.decision;
-  const ship = d.kind === "ship";
-  const held = useHeldOption(d.id);
-  // The list says when the main action cannot succeed; Home never reads a decision's detail.
-  const blocked = useMemo(
-    () =>
-      d.blocked === undefined ? undefined : Object.fromEntries(d.options.map((o) => [o.id, d.blocked ?? ""])),
-    [d.blocked, d.options],
-  );
-  const actions = actionsOf({ type: "needs", key: entryKey, section: "needs", item }, () => blocked);
-  const check = item.check;
-  const state = check === undefined ? undefined : checkState(check);
-  const text: ReactNode = ship ? (
-    check !== undefined && state !== undefined ? (
-      <span
-        className={cn(
-          state.kind === "ok"
-            ? "text-green"
-            : state.kind === "running" || state.kind === "queued"
-              ? undefined
-              : "text-caution",
-        )}
-      >
-        {checkLine(check, rest.now)}
-      </span>
-    ) : d.blocked !== undefined ? (
-      <span className="text-caution">{d.blocked}</span>
-    ) : (
-      "Ready to ship"
-    )
-  ) : d.kind === "question" || d.kind === "approval" ? (
-    rowTitle(d)
-  ) : (
-    (d.blocked ?? d.sentence ?? d.title)
-  );
-  const title = d.task === undefined ? d.title : decisionTitle(d);
-  return (
-    <Row
-      {...rest}
-      entryKey={entryKey}
-      lamp={d.kind === "paused" ? "paused" : "needs"}
-      chip={
-        d.kind === "question" ? VERB_BY_KIND.question : (VERB_BY_KIND[d.kind] ?? DECISION_KIND_LABEL[d.kind])
-      }
-      chipTone="needs"
-      id={d.task}
-      title={title}
-      org={org}
-      detail={text}
-      detailTitle={check?.outcome}
-      elapsed={check === undefined ? "" : checkElapsed(check, rest.now)}
-      wait={shortAgo(d.at, rest.now)}
-      actions={actions}
-      primaryTone="primary"
-      busy={held !== undefined}
-    />
-  );
-});
-
-// Running now ---------------------------------------------------------------
-
-function elapsed(iso: string | undefined, now: number): string {
-  return iso === undefined ? "" : shortAgo(iso, now);
-}
-
-/** How long background work has run: seconds in the first minute, so a fresh check does not read "now". */
-function runFor(iso: string, now: number): string {
-  const ms = now - Date.parse(iso);
-  return ms >= 0 && ms < 60_000 ? duration(ms) : shortAgo(iso, now);
-}
-
-const RunningRow = memo(function RunningRow({
-  item,
-  org,
-  entryKey,
-  ...rest
-}: { item: RunningItem; org: OrgTag | undefined } & RowProps) {
-  const { task, doing, paused } = item;
-  const kids = task.children === undefined ? "" : ` · ${task.children.done} of ${task.children.total} done`;
-  const who = task.autonomous === true ? "captain" : "you";
-  const text = paused
-    ? "Paused, no agent is working on it"
-    : `${who} · @${doing?.agent ?? task.working[0] ?? task.team[0] ?? "agent"}${doing?.text === undefined ? "" : ` "${doing.text}"`}${kids}`;
-  return (
-    <Row
-      {...rest}
-      entryKey={entryKey}
-      lamp={paused ? "paused" : "working"}
-      chip={paused ? "Paused" : "Running"}
-      chipTone={paused ? "paused" : "working"}
-      id={task.id}
-      title={plainTitle(task.title)}
-      org={org}
-      detail={text}
-      wait={elapsed(doing?.since ?? task.updatedAt, rest.now)}
-      actions={actionsOf({ type: "running", key: entryKey, section: "running", item })}
-    />
-  );
-});
-
-const BackgroundRow = memo(function BackgroundRow({
-  item,
-  org,
-  entryKey,
-  ...rest
-}: { item: BackgroundItem; org: OrgTag | undefined } & RowProps) {
-  const { task, work } = item;
-  return (
-    <Row
-      {...rest}
-      entryKey={entryKey}
-      lamp={work.kind === "queued-check" ? "idle" : "working"}
-      chip={backgroundChip(work.kind)}
-      chipTone={work.kind === "queued-check" ? undefined : "working"}
-      id={task.id}
-      title={plainTitle(task.title)}
-      org={org}
-      detail={backgroundLine(work)}
-      wait={runFor(work.since, rest.now)}
-      actions={actionsOf({ type: "background", key: entryKey, section: "running", item })}
-    />
-  );
-});
-
-// Shipping ------------------------------------------------------------------
-
-const CI_WORDS = {
-  failing: "CI failed",
-  pending: "CI running",
-  passing: "CI passed",
-  none: "No CI",
-} as const;
-
-const ShippingRow = memo(function ShippingRow({
-  item,
-  org,
-  entryKey,
-  ...rest
-}: { item: ShippingItem; org: OrgTag | undefined } & RowProps) {
-  const { task, mr, extra } = item;
-  const ci = mr?.ci;
-  const lamp: LampState =
-    ci === "failing" ? "needs" : ci === "pending" ? "working" : ci === "passing" ? "done" : "idle";
-  const who =
-    ci === "failing"
-      ? ""
-      : task.autonomous === true
-        ? ci === "passing"
-          ? " · the captain merges it"
-          : " · the captain merges when green"
-        : ci === "passing"
-          ? " · ready for you to merge"
-          : "";
-  const text =
-    mr === undefined
-      ? "Merge request open"
-      : `!${mr.number} ${mr.project}${extra > 0 ? ` +${extra}` : ""} · ${CI_WORDS[mr.ci]}${who}`;
-  return (
-    <Row
-      {...rest}
-      entryKey={entryKey}
-      lamp={lamp}
-      chip={ci === "failing" ? "Failed" : "MR open"}
-      chipTone={ci === "failing" ? "needs" : undefined}
-      id={task.id}
-      title={plainTitle(task.title)}
-      org={org}
-      detail={text}
-      wait={shortAgo(task.updatedAt, rest.now)}
-      actions={actionsOf({ type: "shipping", key: entryKey, section: "shipping", item })}
-    />
-  );
-});
-
-// Up next and To triage -----------------------------------------------------
-
-const QueuedRow = memo(function QueuedRow({
-  item,
-  org,
-  entryKey,
-  type,
-  orgName,
-  ...rest
-}: {
-  item: QueuedItem;
-  org: OrgTag | undefined;
-  type: "next" | "triage";
-  orgName: (id: string) => string;
-} & RowProps) {
-  const { task, blocker } = item;
-  const due = openDue(task, rest.now);
-  const priority = task.priority !== undefined && task.priority !== "normal" ? task.priority : undefined;
-  const text =
-    task.status === "review"
-      ? "Finished, nothing waits on you. Mark it done or reply"
-      : task.status === "running" || task.status === "paused"
-        ? task.children === undefined
-          ? "No agent is working on it"
-          : `Waits on its subtasks (${task.children.done} of ${task.children.total} done)`
-        : blockerText(blocker, orgName);
-  return (
-    <Row
-      {...rest}
-      entryKey={entryKey}
-      lamp="idle"
-      chip={
-        task.status === "review"
-          ? "finished"
-          : task.status === "ready" || task.status === "inbox"
-            ? queuedChip(blocker)
-            : "idle"
-      }
-      id={task.id}
-      title={plainTitle(task.title)}
-      org={org}
-      detail={
-        <span className="inline-flex min-w-0 items-center gap-2">
-          {priority && <PriorityChip priority={priority} compact />}
-          {due && <DueChip due={due} short />}
-          <span className="truncate">{text}</span>
+        <OriginMark origin={task?.origin} named={task?.origin?.kind === "finding"} />
+        <span className="tnum w-9 text-right font-mono text-xs text-fg-faint">{line.age}</span>
+        <span className="flex min-w-[84px] justify-end">
+          {first?.kind === "wait" && (
+            <span
+              title="Checks are running"
+              data-testid="row-waiting"
+              className="tnum inline-flex h-7 min-w-[84px] items-center justify-center gap-1.5 text-sm text-fg-muted"
+            >
+              <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
+              {line.elapsed}
+            </span>
+          )}
+          {first !== undefined && first.kind !== "wait" && (
+            <Button
+              size="sm"
+              variant={entry.type === "needs" || entry.type === "held" ? "primary" : "secondary"}
+              disabled={busy}
+              onClick={() => handlers.onAct(entry.key, 0)}
+              className="max-w-[168px] min-w-[84px] justify-center"
+            >
+              {focused && <Kbd className="h-4 min-w-4 text-[10px]">1</Kbd>}
+              <span className="truncate">{busy ? "Sending..." : first.label}</span>
+            </Button>
+          )}
         </span>
-      }
-      wait={shortAgo(task.updatedAt, rest.now)}
-      actions={actionsOf(
-        type === "next"
-          ? { type, key: entryKey, section: type, item }
-          : { type, key: entryKey, section: type, item },
-      )}
-    />
-  );
-});
-
-// Captain handled and Done today ---------------------------------------------
-
-const CaptainRow = memo(function CaptainRow({
-  item,
-  org,
-  entryKey,
-  ...rest
-}: { item: Extract<RowEntry, { type: "captain" }>["item"]; org: OrgTag | undefined } & RowProps) {
-  return (
-    <Row
-      {...rest}
-      entryKey={entryKey}
-      lamp="done"
-      chip="Captain"
-      id={item.task}
-      title={item.text}
-      org={org}
-      detail={item.evidence ?? item.reason}
-      wait={shortAgo(item.at, rest.now)}
-      actions={actionsOf({ type: "captain", key: entryKey, section: "captain", item })}
-    />
-  );
-});
-
-const DoneRow = memo(function DoneRow({
-  item,
-  org,
-  entryKey,
-  ...rest
-}: { item: DoneItem; org: OrgTag | undefined } & RowProps) {
-  return (
-    <Row
-      {...rest}
-      entryKey={entryKey}
-      lamp="done"
-      chip="Done"
-      id={item.task.id}
-      title={plainTitle(item.task.title)}
-      org={org}
-      detail={item.undoId === undefined ? "" : "Merged by the captain"}
-      wait={new Date(item.task.updatedAt).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      })}
-      actions={actionsOf({ type: "done", key: entryKey, section: "done", item })}
-    />
-  );
-});
-
-// Headers and "+n more" -----------------------------------------------------
-
-const HEADER_LAMP: Record<SectionId, LampState> = {
-  needs: "needs",
-  running: "working",
-  shipping: "done",
-  next: "idle",
-  triage: "idle",
-  captain: "done",
-  done: "done",
-};
-
-export const SectionHeader = memo(function SectionHeader({
-  entry,
-  focused,
-  onToggle,
-  onFocus,
-}: {
-  entry: Extract<Entry, { type: "header" }>;
-  focused: boolean;
-  onToggle: (section: SectionId) => void;
-  onFocus: (key: string) => void;
-}) {
-  const label = SECTION_LABEL[entry.section];
-  const inner = (
-    <>
-      {entry.collapsible ? (
-        <ChevronRight
-          aria-hidden="true"
-          className={cn("size-3.5 shrink-0 text-fg-faint transition-transform", entry.open && "rotate-90")}
-        />
-      ) : (
-        <Lamp state={HEADER_LAMP[entry.section]} size={7} />
-      )}
-      <h2 className="text-[11px] font-medium tracking-[0.08em] text-fg-soft uppercase">{label}</h2>
-      <span className="tnum font-mono text-xs text-fg-muted">{entry.count}</span>
-      {entry.extra !== undefined && <span className="text-xs text-fg-faint">{entry.extra}</span>}
-      {entry.open && (
-        <span className="ml-auto truncate text-xs text-fg-faint max-[1279px]:hidden">
-          sort: {SECTION_SORT[entry.section]}
-        </span>
-      )}
-    </>
-  );
-  const frame = cn(
-    "flex h-8 w-full items-center gap-2 border-b border-line px-3 text-left",
-    focused && "bg-selected",
-  );
-  return entry.collapsible ? (
-    <button
-      type="button"
-      id={rowDomId(entry.key)}
-      aria-expanded={entry.open}
-      onClick={() => {
-        onFocus(entry.key);
-        onToggle(entry.section);
-      }}
-      className={cn(frame, "cursor-pointer hover:bg-raised")}
-    >
-      {inner}
-    </button>
-  ) : (
-    <div id={rowDomId(entry.key)} className={cn(frame, "mt-1")}>
-      {inner}
+      </span>
     </div>
   );
 });
 
-export const MoreRow = memo(function MoreRow({
-  entry,
-  focused,
-  onMore,
-  onFocus,
-}: {
-  entry: Extract<Entry, { type: "more" }>;
-  focused: boolean;
-  onMore: (section: SectionId) => void;
-  onFocus: (key: string) => void;
-}) {
-  return (
-    <button
-      type="button"
-      id={rowDomId(entry.key)}
-      onClick={() => {
-        onFocus(entry.key);
-        onMore(entry.section);
-      }}
-      className={cn(
-        "flex h-8 w-full cursor-pointer items-center border-b border-line px-3 pl-[93px] text-left text-sm text-fg-muted hover:bg-raised hover:text-fg",
-        focused && "bg-selected",
-      )}
-    >
-      +{entry.hidden} more
-    </button>
-  );
-});
-
-// One entry -----------------------------------------------------------------
-
-/** Draws any entry of the list. Everything it passes down is stable, so a row renders again only for its own change. */
-export function EntryView({
+/** Draws one row of the tree. Everything it passes down is stable, so a row renders again only for its own change. */
+export function EntryRow({
   entry,
   focusKey,
   selectedKeys,
-  now,
-  orgLabel,
-  orgName,
-  relations,
-  treeInfo,
-  handlers,
+  ctx,
 }: {
-  entry: Entry;
+  entry: RowEntry;
   focusKey: string | undefined;
   selectedKeys: ReadonlySet<string>;
-  now: number;
-  relations: ReadonlyMap<string, Relation>;
-  /** Set in the tree. */
-  treeInfo: ReadonlyMap<string, TreeInfo> | undefined;
-  orgLabel: (entry: Entry) => OrgTag | undefined;
-  orgName: (id: string) => string;
-  handlers: RowHandlers;
+  ctx: EntryContext;
 }) {
-  const focused = entry.key === focusKey;
-  if (entry.type === "header")
-    return (
-      <SectionHeader
-        entry={entry}
-        focused={focused}
-        onToggle={handlers.onToggle}
-        onFocus={handlers.onFocus}
-      />
-    );
-  if (entry.type === "more")
-    return <MoreRow entry={entry} focused={focused} onMore={handlers.onMore} onFocus={handlers.onFocus} />;
-  const common = {
-    entryKey: entry.key,
-    focused,
-    selected: selectedKeys.has(entry.key),
-    now,
-    org: orgLabel(entry),
-    rel: relations.get(entry.key),
-    tree: treeInfo?.get(entry.key),
-    onFold: handlers.onFold,
-    onFocus: handlers.onFocus,
-    onAct: handlers.onAct,
-    onOpen: handlers.onOpen,
-  };
-  switch (entry.type) {
-    case "needs":
-      return <NeedsRow {...common} item={entry.item} />;
-    case "running":
-      return <RunningRow {...common} item={entry.item} />;
-    case "background":
-      return <BackgroundRow {...common} item={entry.item} />;
-    case "shipping":
-      return <ShippingRow {...common} item={entry.item} />;
-    case "next":
-    case "triage":
-      return <QueuedRow {...common} item={entry.item} type={entry.type} orgName={orgName} />;
-    case "captain":
-      return <CaptainRow {...common} item={entry.item} />;
-    case "done":
-      return <DoneRow {...common} item={entry.item} />;
-  }
+  return (
+    <TreeRow
+      entry={entry}
+      focused={entry.key === focusKey}
+      selected={selectedKeys.has(entry.key)}
+      ctx={ctx}
+    />
+  );
 }

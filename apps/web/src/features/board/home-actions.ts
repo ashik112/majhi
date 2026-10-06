@@ -13,13 +13,15 @@ const FIX_CI_TEXT =
   "The checks of your merge request failed. Open the failing checks, fix what broke and push.";
 
 /**
- * Runs the numbered actions of a Home row. One stable function: the rows are memoised, and a fresh
+ * Runs the numbered actions of a row of the board. One stable function: the rows are memoised, and a fresh
  * callback each render would draw all of them again. The events of the feed bring the new state back,
  * so nothing here reads a list again.
  */
 export function useHomeActions(): {
   act: (entry: RowEntry, spec: ActionSpec) => void;
   open: (entry: RowEntry) => void;
+  /** A task by its id: a nested subtask, or the task a card says it waits on. */
+  openTask: (id: string) => void;
 } {
   const run = useRunAttention();
   const { send } = useSendDecision();
@@ -104,18 +106,20 @@ export function useHomeActions(): {
             : { kind: "task", id: entry.item.task },
         );
         return;
+      case "held":
       case "running":
       case "background":
+      case "waiting":
       case "shipping":
       case "next":
       case "triage":
-        go({ kind: "task", id: entry.item.task.id });
-        return;
       case "done":
         go({ kind: "task", id: entry.item.task.id });
         return;
     }
   }, []);
 
-  return { act, open };
+  const openTask = useCallback((id: string) => latest.current.run({ kind: "task", id }), []);
+
+  return { act, open, openTask };
 }

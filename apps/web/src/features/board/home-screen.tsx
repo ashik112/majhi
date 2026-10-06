@@ -1,4 +1,4 @@
-import { type OrgView, PRIVATE } from "@majhi/shared";
+import { type OrgView, PRIVATE, type TaskSummary } from "@majhi/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Plus, Search, X } from "lucide-react";
@@ -23,37 +23,44 @@ import { GLASS } from "@/lib/glass";
 import { blockersKey, useBlockers, useHomeFacts } from "@/lib/home-queries";
 import { useOrgFilter } from "@/lib/org-filter";
 import { useAccounts, useOrgs } from "@/lib/studio-queries";
-import { useTasks } from "@/lib/task-queries";
+import { useAreas, useTasks } from "@/lib/task-queries";
 import { useNow } from "@/lib/use-now";
 import { useNewTask } from "../new-task/new-task-context";
 import { CHORD_MS } from "../shell/shortcuts";
+import { areaNames } from "../tasks-ui/area-chips";
+import type { OrgTag } from "../tasks-ui/project-names";
+import { BoardColumns } from "./board-columns";
+import { type EntryContext, type RowHandlers, rowDomId } from "./entry-context";
+import { liveStates } from "./entry-text";
+import { type Chips, chipsActive, FilterBar, NO_CHIPS, type Toggle } from "./filter-bar";
 import { useHomeActions } from "./home-actions";
 import {
   actionsOf,
+  allTaskRows,
   buildEntries,
   buildHome,
   buildTree,
   type Entry,
   focusable,
-  headerKey,
   jumpSection,
-  type Relation,
   type RowEntry,
   relationsOf,
+  SECTION_LABEL,
   type SectionId,
   stepFocus,
   type TreeInfo,
 } from "./home-model";
-import { EntryView, type OrgTag, type RowHandlers, rowDomId } from "./home-rows";
+import { compareTaskIds, partOf } from "./model";
+import { EntryRow } from "./tree-rows";
 
-type HomeView = "list" | "tree";
+type HomeView = "board" | "tree";
 const VIEW_KEY = "majhi.home.view";
 
 function readView(): HomeView {
   try {
-    return localStorage.getItem(VIEW_KEY) === "tree" ? "tree" : "list";
+    return localStorage.getItem(VIEW_KEY) === "tree" ? "tree" : "board";
   } catch {
-    return "list";
+    return "board";
   }
 }
 
@@ -65,12 +72,13 @@ function writeView(view: HomeView): void {
   }
 }
 
-/** A list longer than this draws only the rows in view (and a few around them). */
+/** A tree longer than this draws only the rows in view (and a few around them). */
 const WINDOW_FROM = 60;
 const ROW_ESTIMATE = 37;
-const HEADER_ESTIMATE = 33;
 /** How often the clock of the rows moves: the elapsed time of a running check reads in seconds. */
 const NOW_TICK_MS = 15_000;
+/** The sections the owner turns on from the filter bar. */
+const TOGGLED: readonly SectionId[] = ["triage", "done", "captain"];
 
 function typing(target: EventTarget | null): boolean {
   return (
@@ -82,7 +90,19 @@ function typing(target: EventTarget | null): boolean {
 const isRow = (entry: Entry | undefined): entry is RowEntry =>
   entry !== undefined && entry.type !== "header" && entry.type !== "more";
 
-/** Home: what needs the owner, what runs, what ships, what waits, one line each, in the order of who holds the ball. */
+/** The subtasks of each parent task, in id order. */
+function kidsByParent(tasks: readonly TaskSummary[]): Map<string, TaskSummary[]> {
+  const by = new Map<string, TaskSummary[]>();
+  for (const task of tasks) {
+    const parent = partOf(task);
+    if (parent === undefined || parent === task.id) continue;
+    by.set(parent, [...(by.get(parent) ?? []), task]);
+  }
+  for (const list of by.values()) list.sort((a, b) => compareTaskIds(a.id, b.id));
+  return by;
+}
+
+/** Tasks: what needs the owner, what runs, what waits, what ships and what is next, as a board or a tree. */
 export function BoardScreen() {
   const tasks = useTasks();
   const decisions = useDecisions();
@@ -92,10 +112,11 @@ export function BoardScreen() {
   const log = useCaptainLog(org);
   const blockers = useBlockers();
   const facts = useHomeFacts();
-  const { act, open } = useHomeActions();
+  const { act, open, openTask } = useHomeActions();
   const client = useQueryClient();
 
   const [query, setQuery] = useState("");
+  const [chips, setChips] = useState<Chips>(NO_CHIPS);
   const [opened, setOpened] = useState<ReadonlySet<SectionId>>(new Set());
   const [all, setAll] = useState<ReadonlySet<SectionId>>(new Set());
   const [focusKey, setFocusKey] = useState<string | undefined>();
@@ -117,9 +138,22 @@ export function BoardScreen() {
     return byTask;
   }, [captainActions]);
 
+  const taskList = tasks.data;
+  const taskById = useMemo(() => new Map((taskList ?? []).map((t) => [t.id, t])), [taskList]);
+  const kids = useMemo(() => kidsByParent(taskList ?? []), [taskList]);
+
+  // The parts of the system are read from each task's worktree: only the open tasks the board draws.
+  const areaIds = useMemo(
+    () => (taskList ?? []).filter((t) => t.status !== "done" && t.repos.length > 0).map((t) => t.id),
+    [taskList],
+  );
+  const areaData = useAreas(areaIds);
+  const areas = useMemo(() => new Map([...areaData].map(([id, a]) => [id, areaNames(a)])), [areaData]);
+  const areaOptions = useMemo(() => [...new Set([...areas.values()].flat())].toSorted(), [areas]);
+
   const homeInput = useMemo(
     () => ({
-      tasks: tasks.data ?? [],
+      tasks: taskList ?? [],
       decisions: decisions.data?.decisions ?? [],
       working,
       blockers,
@@ -130,28 +164,32 @@ export function BoardScreen() {
       background: facts.background,
       captain: captainActions ?? [],
       undoOf,
+      areas,
       now,
     }),
-    [tasks.data, decisions.data, working, blockers, facts, captainActions, undoOf, now],
+    [taskList, decisions.data, working, blockers, facts, captainActions, undoOf, areas, now],
   );
-  const { sections, totals } = useMemo(
-    () => buildHome({ ...homeInput, org, query }),
-    [homeInput, org, query],
+  const filters = useMemo(() => ({ org, query, ...chips }), [org, query, chips]);
+  // The strip counts what the board draws: a subtask nested in its parent's card is not one more.
+  const board = useMemo(
+    () => buildHome({ ...homeInput, ...filters, nest: { opened } }),
+    [homeInput, filters, opened],
   );
-  const taskById = useMemo(() => new Map((tasks.data ?? []).map((t) => [t.id, t])), [tasks.data]);
+  const { sections, totals } = board;
   const tree = view === "tree";
   // The tree keeps a parent that fails the filters, for context: it needs every row, filtered or not.
+  const treeSections = useMemo(
+    () => (tree ? buildHome({ ...homeInput, ...filters }).sections : undefined),
+    [tree, homeInput, filters],
+  );
+  const everything = useMemo(
+    () => buildHome({ ...homeInput, org: undefined, query: "" }).sections,
+    [homeInput],
+  );
   const treeRows = useMemo(
     () =>
-      tree
-        ? buildTree(
-            buildHome({ ...homeInput, org: undefined, query: "" }).sections,
-            sections,
-            taskById,
-            folded,
-          )
-        : undefined,
-    [tree, homeInput, sections, taskById, folded],
+      treeSections === undefined ? undefined : buildTree(everything, treeSections, taskById, folded, opened),
+    [treeSections, everything, taskById, folded, opened],
   );
   const entries: readonly Entry[] = useMemo(
     () => treeRows?.entries ?? buildEntries(sections, { opened, all }),
@@ -189,8 +227,10 @@ export function BoardScreen() {
           const id = workspaceOf(entry.item.decision);
           return id === undefined ? undefined : tagOf(id);
         }
+        case "held":
         case "running":
         case "background":
+        case "waiting":
         case "shipping":
         case "next":
         case "triage":
@@ -266,17 +306,33 @@ export function BoardScreen() {
     },
     [open],
   );
-
   const handlers: RowHandlers = useMemo(
     () => ({
       onFocus: setFocusKey,
       onAct: runAction,
       onOpen: openRow,
-      onToggle: toggleSection,
+      onOpenTask: openTask,
       onMore: moreOf,
       onFold: foldTask,
     }),
-    [runAction, openRow, toggleSection, moreOf, foldTask],
+    [runAction, openRow, openTask, moreOf, foldTask],
+  );
+
+  const lineCtx = useMemo(() => ({ now, orgName, kids, tasks: taskById }), [now, orgName, kids, taskById]);
+  const liveOf = useMemo(() => liveStates(allTaskRows(everything), lineCtx), [everything, lineCtx]);
+  const ctx: EntryContext = useMemo(
+    () => ({
+      now,
+      line: lineCtx,
+      live: liveOf,
+      relations,
+      tasks: taskById,
+      areas,
+      orgLabel,
+      treeInfo,
+      handlers,
+    }),
+    [now, lineCtx, liveOf, relations, taskById, areas, orgLabel, treeInfo, handlers],
   );
 
   // Runs the same numbered action on every selected row, in list order.
@@ -329,19 +385,16 @@ export function BoardScreen() {
       else if (key === "/") {
         event.preventDefault();
         filterRef.current?.focus();
-      } else if (key === "t" && state.treeInfo === undefined) {
+      } else if (key === "t") {
         event.preventDefault();
         setOpened((prev) => new Set(prev).add("triage"));
-        setFocusKey(headerKey("triage"));
       } else if (key === "Escape") {
         if (state.selected.size > 0) setSelected(new Set());
       } else if (current !== undefined) {
         if (key === "Enter") {
           if (target instanceof HTMLElement && target.closest("button, a, input")) return;
           event.preventDefault();
-          if (current.type === "header") {
-            if (current.collapsible) toggleSection(current.section);
-          } else if (current.type === "more") moreOf(current.section);
+          if (current.type === "more") moreOf(current.section);
           else if (isRow(current)) openRow(current.key);
         } else if ((key === "ArrowLeft" || key === "ArrowRight") && state.treeInfo !== undefined) {
           // In the tree, left folds the subtasks of the row and right unfolds them.
@@ -367,20 +420,28 @@ export function BoardScreen() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [runAction, openRow, toggleSection, moreOf, foldTask, applyToSelected]);
+  }, [runAction, openRow, moreOf, foldTask, applyToSelected]);
 
-  // The first row of a section: the strip and the chips send the keys there.
+  // The first row of a section: the strip sends the keys there.
   const jumpTo = useCallback((section: SectionId) => {
-    if (section === "triage" || section === "captain" || section === "done")
-      setOpened((prev) => new Set(prev).add(section));
     const first = live.current.entries.find((e) => e.section === section && focusable(e));
-    setFocusKey(first?.key ?? headerKey(section));
+    if (first !== undefined) setFocusKey(first.key);
   }, []);
 
   const loading = tasks.isPending || decisions.isPending;
-  const quiet =
-    totals.needs + totals.running + totals.shipping + totals.next + totals.triage === 0 && query === "";
+  const filtered = chipsActive(chips) || query !== "";
+  const nothing = totals.needs + totals.running + totals.waiting + totals.shipping + totals.next === 0;
+  const quiet = nothing && !filtered;
+  const noMatch = nothing && filtered && totals.triage + totals.done + totals.captain === 0;
   const orgCounts = useChipCounts(tasks.data, decisions.data?.decisions, decisions.data?.counts.orgs);
+  const toggles: Toggle[] = TOGGLED.filter((s) => s !== "captain" || totals.captain > 0 || opened.has(s)).map(
+    (section) => ({
+      section,
+      label: section === "captain" ? "Captain" : SECTION_LABEL[section],
+      count: totals[section],
+      on: opened.has(section),
+    }),
+  );
 
   const batch = useMemo(() => {
     const picked = entries.filter((e): e is RowEntry => isRow(e) && selected.has(e.key));
@@ -407,10 +468,19 @@ export function BoardScreen() {
           Could not load tasks. {tasks.error.message}
         </p>
       ) : (
-        <section aria-label="Home" className={cn("flex min-h-0 flex-1 flex-col rounded-2xl", GLASS)}>
-          <Strip totals={totals} org={org} onJump={jumpTo} />
+        <section aria-label="Tasks" className="flex min-h-0 flex-1 flex-col">
+          <div className={cn("shrink-0 overflow-hidden rounded-2xl", GLASS)}>
+            <Strip totals={totals} org={org} onJump={jumpTo} />
+            <FilterBar
+              chips={chips}
+              onChips={setChips}
+              areaNames={areaOptions}
+              toggles={toggles}
+              onToggle={toggleSection}
+            />
+          </div>
           {batch.count > 0 && (
-            <div className="flex h-9 shrink-0 items-center gap-3 border-b border-line bg-accent-wash px-3 text-sm">
+            <div className="mt-2 flex h-9 shrink-0 items-center gap-3 rounded-xl border border-line bg-accent-wash px-3 text-sm">
               <span className="font-medium">{batch.count} selected</span>
               {batch.label !== undefined && (
                 <Button size="sm" variant="primary" onClick={() => applyToSelected(0)}>
@@ -434,30 +504,50 @@ export function BoardScreen() {
                 <Skeleton key={i} className="h-8 w-full rounded-md" />
               ))}
             </div>
-          ) : (
-            <List
+          ) : tree ? (
+            <TreeList
               entries={entries}
               quiet={quiet}
+              noMatch={noMatch}
               empty={(tasks.data ?? []).length === 0}
               doneToday={totals.done}
               focusKey={focusKey}
               selected={selected}
-              now={now}
-              orgLabel={orgLabel}
-              orgName={orgName}
-              relations={relations}
-              treeInfo={treeInfo}
-              handlers={handlers}
+              ctx={ctx}
+              onClear={() => {
+                setChips(NO_CHIPS);
+                setQuery("");
+              }}
+            />
+          ) : (
+            <BoardView
+              entries={entries}
+              quiet={quiet}
+              noMatch={noMatch}
+              empty={(tasks.data ?? []).length === 0}
+              doneToday={totals.done}
+              focusKey={focusKey}
+              selected={selected}
+              ctx={ctx}
+              onClear={() => {
+                setChips(NO_CHIPS);
+                setQuery("");
+              }}
             />
           )}
-          <p className="hidden h-8 shrink-0 items-center gap-4 border-t border-line px-3 text-xs text-fg-faint min-[900px]:flex">
+          <p
+            className={cn(
+              "mt-2 hidden h-8 shrink-0 items-center gap-4 rounded-xl px-3 text-xs text-fg-faint min-[900px]:flex",
+              GLASS,
+            )}
+          >
             <Hint keys="j k">move</Hint>
             <Hint keys="Enter">open</Hint>
             <Hint keys="1 2 3">act</Hint>
             <Hint keys="x">select</Hint>
-            {!tree && <Hint keys="t">unsorted</Hint>}
+            <Hint keys="t">ideas</Hint>
             <Hint keys="/">filter</Hint>
-            {!tree && <Hint keys="J K">section</Hint>}
+            {!tree && <Hint keys="J K">column</Hint>}
           </p>
         </section>
       )}
@@ -534,7 +624,7 @@ function TopBar({
     );
   return (
     <header className={cn("flex h-11 shrink-0 items-center gap-3 rounded-xl px-4", GLASS)}>
-      <h1 className="text-[15px] leading-5 font-semibold tracking-[-0.01em]">Home</h1>
+      <h1 className="text-[15px] leading-5 font-semibold tracking-[-0.01em]">Tasks</h1>
       <nav aria-label="Workspace" className="flex min-w-0 items-center gap-1.5 overflow-hidden">
         <button
           type="button"
@@ -564,12 +654,12 @@ function TopBar({
         })}
       </nav>
       <fieldset aria-label="View" className="m-0 flex min-w-0 shrink-0 items-center gap-1 border-0 p-0">
-        {(["list", "tree"] as const).map((v) => (
+        {(["board", "tree"] as const).map((v) => (
           <button
             key={v}
             type="button"
             aria-pressed={view === v}
-            title={v === "list" ? "Rows by who holds the ball" : "Subtasks under their parent task"}
+            title={v === "board" ? "Columns by who holds the ball" : "Subtasks under their parent task"}
             onClick={(event) => {
               setView(v);
               // The row keys (Enter, 1 to 3) skip a focused button: hand them back to the list.
@@ -577,7 +667,7 @@ function TopBar({
             }}
             className={chip(view === v)}
           >
-            {v === "list" ? "List" : "Tree"}
+            {v === "board" ? "Board" : "Tree"}
           </button>
         ))}
       </fieldset>
@@ -637,16 +727,14 @@ function TopBar({
 
 /** What each count means, on hover. */
 const STRIP_HINT: Partial<Record<SectionId, string>> = {
-  needs: "Questions, approvals and finished work that wait for your answer.",
+  needs: "Questions, approvals, finished work and holds that wait for you.",
   running: "Agents working now, plus checks, processes and previews that run in the background.",
+  waiting: "Tasks held by something that lifts itself: a limit, a budget, another task or their subtasks.",
   shipping: "Tasks with an open merge request, waiting on CI or on a merge.",
-  next: "Tasks that can start, waiting for a slot, an account or another task.",
-  triage: "Ideas with no priority or repo yet. Sort them so work can start.",
-  captain: "What the captain finished by itself in the last 24 hours. Open one to check or undo it.",
+  next: "Tasks that can start, waiting for a slot, an account or the captain.",
 };
-const STRIP_HINT_FALLBACK = "";
 
-/** One line of counts: each is a jump to its section. */
+/** One line of counts: each is a jump to its column. */
 function Strip({
   totals,
   org,
@@ -657,38 +745,26 @@ function Strip({
   onJump: (section: SectionId) => void;
 }) {
   const { status } = useAutonomousSwitch();
-  const segment = (section: SectionId, n: number, label: string, hint: string, tone?: LampState) => {
-    if (n === 0 && section !== "needs") return null;
-    return (
-      <button
-        key={section}
-        type="button"
-        title={hint}
-        onClick={() => onJump(section)}
-        disabled={n === 0}
-        className="tnum flex shrink-0 cursor-pointer items-baseline gap-1.5 hover:text-fg disabled:cursor-default"
-      >
-        <b className={cn("font-mono text-md font-medium", n > 0 && tone ? LAMP_TEXT[tone] : "text-fg")}>
-          {n}
-        </b>
-        {label}
-      </button>
-    );
-  };
+  const segment = (section: SectionId, n: number, label: string, tone?: LampState) => (
+    <button
+      key={section}
+      type="button"
+      title={STRIP_HINT[section]}
+      onClick={() => onJump(section)}
+      disabled={n === 0}
+      className="tnum flex shrink-0 cursor-pointer items-baseline gap-1.5 hover:text-fg disabled:cursor-default"
+    >
+      <b className={cn("font-mono text-md font-medium", n > 0 && tone ? LAMP_TEXT[tone] : "text-fg")}>{n}</b>
+      {label}
+    </button>
+  );
   return (
     <p className="flex h-9 shrink-0 items-baseline gap-4 overflow-hidden border-b border-line px-3 pt-2 text-sm whitespace-nowrap text-fg-muted">
-      {segment(
-        "needs",
-        totals.needs,
-        totals.needs === 1 ? "needs you" : "need you",
-        STRIP_HINT.needs ?? STRIP_HINT_FALLBACK,
-        "needs",
-      )}
-      {segment("running", totals.working, "running", STRIP_HINT.running ?? STRIP_HINT_FALLBACK, "working")}
-      {segment("shipping", totals.shipping, "shipping", STRIP_HINT.shipping ?? STRIP_HINT_FALLBACK)}
-      {segment("next", totals.next, "up next", STRIP_HINT.next ?? STRIP_HINT_FALLBACK)}
-      {segment("triage", totals.triage, "unsorted ideas", STRIP_HINT.triage ?? STRIP_HINT_FALLBACK)}
-      {segment("captain", totals.captain, "captain did today", STRIP_HINT.captain ?? STRIP_HINT_FALLBACK)}
+      {segment("needs", totals.needs, totals.needs === 1 ? "needs you" : "need you", "needs")}
+      {segment("running", totals.working, "running", "working")}
+      {segment("waiting", totals.waiting, "waiting")}
+      {segment("shipping", totals.shipping, "shipping")}
+      {segment("next", totals.next, "up next")}
       <span className="ml-auto flex min-w-0 items-baseline gap-4">
         {status && <SpendToday status={status} className="text-sm text-fg-muted max-[1199px]:hidden" />}
         <AccountReadout org={org} />
@@ -697,41 +773,103 @@ function Strip({
   );
 }
 
-/** The list: sections as headers and one-line rows. A long one draws only what is in view. */
-function List({
-  entries,
+/** What the board says when it has nothing to draw: no tasks yet, nothing to do, or nothing that matches. */
+function Notice({
   quiet,
+  noMatch,
   empty,
   doneToday,
-  focusKey,
-  selected,
-  now,
-  orgLabel,
-  orgName,
-  relations,
-  treeInfo,
-  handlers,
+  onClear,
 }: {
+  quiet: boolean;
+  noMatch: boolean;
+  empty: boolean;
+  doneToday: number;
+  onClear: () => void;
+}) {
+  const newTask = useNewTask();
+  if (noMatch)
+    return (
+      <div className="pointer-events-none absolute inset-0 grid place-items-center">
+        <div className="pointer-events-auto flex flex-col items-center gap-2.5 text-center">
+          <h2 className="text-md font-semibold">No tasks match</h2>
+          <Button variant="secondary" onClick={onClear}>
+            Clear filters
+          </Button>
+        </div>
+      </div>
+    );
+  if (!quiet) return null;
+  return (
+    <div className={cn("mt-3 flex shrink-0 items-center gap-3 rounded-2xl px-3 py-4 text-base", GLASS)}>
+      <Lamp state="done" size={8} />
+      <span className="text-fg-soft">
+        {empty
+          ? "No tasks yet. Create your first one."
+          : `Nothing needs you and nothing is running.${doneToday > 0 ? ` ${doneToday} done today.` : ""}`}
+      </span>
+      <Button variant="primary" size="sm" onClick={newTask.open} className="ml-auto">
+        <Plus aria-hidden="true" strokeWidth={2.5} />
+        New task
+      </Button>
+    </div>
+  );
+}
+
+interface ViewProps {
   entries: readonly Entry[];
   quiet: boolean;
+  noMatch: boolean;
   empty: boolean;
   doneToday: number;
   focusKey: string | undefined;
   selected: ReadonlySet<string>;
-  now: number;
-  orgLabel: (entry: Entry) => OrgTag | undefined;
-  orgName: (id: string) => string;
-  relations: ReadonlyMap<string, Relation>;
-  treeInfo: ReadonlyMap<string, TreeInfo> | undefined;
-  handlers: RowHandlers;
-}) {
+  ctx: EntryContext;
+  onClear: () => void;
+}
+
+/** The board: columns of cards. The key that moved brings its card into view, inside its column and across the board. */
+function BoardView({
+  entries,
+  quiet,
+  noMatch,
+  empty,
+  doneToday,
+  focusKey,
+  selected,
+  ctx,
+  onClear,
+}: ViewProps) {
+  useEffect(() => {
+    if (focusKey === undefined) return;
+    document.getElementById(rowDomId(focusKey))?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [focusKey]);
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <Notice quiet={quiet} noMatch={noMatch} empty={empty} doneToday={doneToday} onClear={onClear} />
+      <BoardColumns entries={entries} focusKey={focusKey} selected={selected} ctx={ctx} />
+    </div>
+  );
+}
+
+/** The tree: one-line rows, subtasks nested under their parent. A long one draws only what is in view. */
+function TreeList({
+  entries,
+  quiet,
+  noMatch,
+  empty,
+  doneToday,
+  focusKey,
+  selected,
+  ctx,
+  onClear,
+}: ViewProps) {
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   const windowed = entries.length > WINDOW_FROM;
-  const newTask = useNewTask();
   const virtual = useVirtualizer({
     count: windowed ? entries.length : 0,
     getScrollElement: () => scroller,
-    estimateSize: (i) => (entries[i]?.type === "header" ? HEADER_ESTIMATE : ROW_ESTIMATE),
+    estimateSize: () => ROW_ESTIMATE,
     overscan: 10,
     getItemKey: (i) => entries[i]?.key ?? i,
   });
@@ -747,57 +885,35 @@ function List({
     }
   }, [focusKey, windowed, entries, virtual]);
 
-  const draw = (entry: Entry) => (
-    <EntryView
-      entry={entry}
-      focusKey={focusKey}
-      selectedKeys={selected}
-      now={now}
-      orgLabel={orgLabel}
-      orgName={orgName}
-      relations={relations}
-      treeInfo={treeInfo}
-      handlers={handlers}
-    />
-  );
+  const draw = (entry: Entry) =>
+    isRow(entry) ? <EntryRow entry={entry} focusKey={focusKey} selectedKeys={selected} ctx={ctx} /> : null;
 
   return (
-    <div ref={setScroller} className="scroll-fade min-h-0 flex-1 overflow-y-auto overscroll-contain">
-      {quiet && (
-        <div className="flex items-center gap-3 border-b border-line px-3 py-4 text-base">
-          <Lamp state="done" size={8} />
-          <span className="text-fg-soft">
-            {empty
-              ? "No tasks yet. Create your first one."
-              : `Nothing needs you and nothing is running.${doneToday > 0 ? ` ${doneToday} done today.` : ""}`}
-          </span>
-          <Button variant="primary" size="sm" onClick={newTask.open} className="ml-auto">
-            <Plus aria-hidden="true" strokeWidth={2.5} />
-            New task
-          </Button>
-        </div>
-      )}
-      {windowed ? (
-        <div className="relative w-full" style={{ height: virtual.getTotalSize() }}>
-          {virtual.getVirtualItems().map((row) => {
-            const entry = entries[row.index];
-            if (entry === undefined) return null;
-            return (
-              <div
-                key={row.key}
-                ref={virtual.measureElement}
-                data-index={row.index}
-                className="absolute inset-x-0 top-0"
-                style={{ transform: `translateY(${row.start}px)` }}
-              >
-                {draw(entry)}
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        entries.map((entry) => <Fragment key={entry.key}>{draw(entry)}</Fragment>)
-      )}
+    <div className={cn("relative mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl", GLASS)}>
+      <Notice quiet={quiet} noMatch={noMatch} empty={empty} doneToday={doneToday} onClear={onClear} />
+      <div ref={setScroller} className="scroll-fade min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        {windowed ? (
+          <div className="relative w-full" style={{ height: virtual.getTotalSize() }}>
+            {virtual.getVirtualItems().map((row) => {
+              const entry = entries[row.index];
+              if (entry === undefined) return null;
+              return (
+                <div
+                  key={row.key}
+                  ref={virtual.measureElement}
+                  data-index={row.index}
+                  className="absolute inset-x-0 top-0"
+                  style={{ transform: `translateY(${row.start}px)` }}
+                >
+                  {draw(entry)}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          entries.map((entry) => <Fragment key={entry.key}>{draw(entry)}</Fragment>)
+        )}
+      </div>
     </div>
   );
 }
