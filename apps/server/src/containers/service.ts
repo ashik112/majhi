@@ -40,6 +40,7 @@ import {
   taskHoldRunArgs,
   volumeCreateArgs,
 } from "./args.ts";
+import { type DockerfileSnapshot, snapshotDockerfile } from "./build-snapshot.ts";
 import type { ComposeInvocation } from "./compose-cli.ts";
 import { type ComposeHost, composeCall } from "./compose-run.ts";
 import type { DockerCli, TaskCallResult } from "./docker.ts";
@@ -157,6 +158,11 @@ function guardReady(holder: Spawned): Promise<void> {
 /** The runner containers of a task are found by these labels. */
 const RUNNER_LABEL = "label=majhi.runner=1";
 
+/** The args with the value of `flag` replaced. */
+function withFlagValue(args: readonly string[], flag: string, value: string): string[] {
+  return args.map((a, i) => (args[i - 1] === flag ? value : a));
+}
+
 /**
  * The containers majhi runs for agents (PRV-53). Each is a majhi process in `ProcessManager`, so the
  * Processes card, `majhi-processes output`, Stop, waking the agent when a build ends and stopping with
@@ -263,13 +269,20 @@ export class ContainerService {
       }
       const context = this.repoFolder(t, input.repo);
       const safety = this.safety(t);
+      const buildArgList = Object.entries(input.build_args ?? {}).map(([k, v]) => `${k}=${v}`);
+      const spec = {
+        context,
+        dockerfile: input.dockerfile,
+        target: input.target,
+        buildArgs: input.build_args,
+      };
       try {
         await this.assertBuildImages(
           docker,
           safety,
           settings,
           resolve(context, input.dockerfile),
-          Object.entries(input.build_args ?? {}).map(([k, v]) => `${k}=${v}`),
+          buildArgList,
         );
       } catch (err) {
         if (!(err instanceof ImageNotAllowed)) throw err;
@@ -286,12 +299,7 @@ export class ContainerService {
         );
       }
       // Checked before anything starts, so a refusal reads clearly.
-      const parts = buildArgs(safety, {
-        context,
-        dockerfile: input.dockerfile,
-        target: input.target,
-        buildArgs: input.build_args,
-      });
+      buildArgs(safety, spec);
       if ([...this.builds.values()].reduce((n, count) => n + count, 0) >= settings.build_total) {
         throw new UserError(
           `The preview build limit (${settings.build_total}) is reached. Wait for a build to finish.`,
@@ -311,9 +319,29 @@ export class ContainerService {
           managed: {
             container: { kind: "build", name: "preview build", image: names.previewImage },
             spawn: async () => {
-              const spawned = await docker.attached(parts, safety, { cwd: context });
-              spawned.child.once("exit", () => void this.buildEnded(task));
-              return spawned;
+              // Each start builds the bytes it checks, so a restart reads the Dockerfile again.
+              const snapshot = await this.snapshotBuild(
+                docker,
+                safety,
+                settings,
+                resolve(context, input.dockerfile),
+                buildArgList,
+              );
+              try {
+                const spawned = await docker.attached(
+                  buildArgs(snapshot.safety, { ...spec, dockerfile: snapshot.file }),
+                  snapshot.safety,
+                  { cwd: context },
+                );
+                spawned.child.once("exit", () => {
+                  void snapshot.cleanup();
+                  void this.buildEnded(task);
+                });
+                return spawned;
+              } catch (err) {
+                await snapshot.cleanup();
+                throw err;
+              }
             },
           },
         });
@@ -859,33 +887,42 @@ export class ContainerService {
     args: string[],
   ): Promise<TaskDockerResult> {
     const task = safety.task;
-    await this.assertBuildImages(
+    const snapshot = await this.snapshotBuild(
       docker,
       safety,
       settings,
       flagValues(args, "--file")[0] ?? "",
       flagValues(args, "--build-arg"),
     );
-    await this.locked(task, async () => {
-      this.assertOpen(task);
-      if ([...this.builds.values()].reduce((n, count) => n + count, 0) >= settings.build_total) {
-        throw new UserError(
-          `The build limit (${settings.build_total}) is reached. Wait for a build to finish.`,
-          409,
-        );
-      }
-      this.builds.set(task, (this.builds.get(task) ?? 0) + 1);
-      try {
-        await this.ensureBuilder(docker, safety, settings);
-      } catch (err) {
-        void this.buildEnded(task);
-        throw err;
-      }
-    });
     try {
-      return this.scriptResult(task, await docker.task(args, safety, this.allowed(task, settings)));
+      await this.locked(task, async () => {
+        this.assertOpen(task);
+        if ([...this.builds.values()].reduce((n, count) => n + count, 0) >= settings.build_total) {
+          throw new UserError(
+            `The build limit (${settings.build_total}) is reached. Wait for a build to finish.`,
+            409,
+          );
+        }
+        this.builds.set(task, (this.builds.get(task) ?? 0) + 1);
+        try {
+          await this.ensureBuilder(docker, safety, settings);
+        } catch (err) {
+          void this.buildEnded(task);
+          throw err;
+        }
+      });
+      try {
+        const out = await docker.task(
+          withFlagValue(args, "--file", snapshot.file),
+          snapshot.safety,
+          this.allowed(task, settings),
+        );
+        return this.scriptResult(task, out);
+      } finally {
+        void this.buildEnded(task);
+      }
     } finally {
-      void this.buildEnded(task);
+      await snapshot.cleanup();
     }
   }
 
@@ -939,7 +976,7 @@ export class ContainerService {
   /**
    * The images a Dockerfile pulls (every FROM stage, `COPY --from`, `RUN --mount from=`, the `# syntax=`
    * frontend) must be ones the owner allowed or the task built. A build otherwise pulls what no one saw.
-   * Throws `ImageNotAllowed` naming all of them.
+   * Throws `ImageNotAllowed` naming all of them. Returns the Dockerfile it checked.
    */
   private async assertBuildImages(
     docker: ContainerDocker,
@@ -947,7 +984,7 @@ export class ContainerService {
     settings: ContainersSettings,
     dockerfile: string,
     buildArgs: readonly string[],
-  ): Promise<void> {
+  ): Promise<string> {
     const task = safety.task;
     // First, so a `BUILDKIT_SYNTAX` never gets as far as a Dockerfile read: it loads any image as the frontend.
     checkBuildArgs([...buildArgs]);
@@ -966,6 +1003,24 @@ export class ContainerService {
     });
     const [first, ...more] = missing;
     if (first !== undefined) throw new ImageNotAllowed(first, undefined, more);
+    return text;
+  }
+
+  /**
+   * Checks a build's Dockerfile and writes the bytes it checked to a file of majhi's own. The build
+   * reads that file, so a task that rewrites its Dockerfile after the check changes nothing. The safety
+   * it returns accepts that one file as the build's `--file`.
+   */
+  private async snapshotBuild(
+    docker: ContainerDocker,
+    safety: Safety,
+    settings: ContainersSettings,
+    dockerfile: string,
+    buildArgs: readonly string[],
+  ): Promise<DockerfileSnapshot & { safety: Safety }> {
+    const text = await this.assertBuildImages(docker, safety, settings, dockerfile, buildArgs);
+    const snapshot = await snapshotDockerfile(text);
+    return { ...snapshot, safety: { ...safety, snapshots: [snapshot.file] } };
   }
 
   /**
@@ -1030,14 +1085,15 @@ export class ContainerService {
       ask: (image, service) => options.ask(image, service),
       checkLimits: (extra) => this.checkLimits(docker, task, settings, extra),
       build: (args) => this.scriptBuild(docker, safety, settings, args),
-      checkBuild: (args) =>
-        this.assertBuildImages(
+      checkBuild: async (args) => {
+        await this.assertBuildImages(
           docker,
           safety,
           settings,
           flagValues(args, "--file")[0] ?? "",
           flagValues(args, "--build-arg"),
-        ),
+        );
+      },
       launch: (plan) => this.scriptRun(docker, safety, settings, plan, options.signal),
       call: async (args) =>
         this.scriptResult(task, await docker.task(args, safety, this.allowed(task, settings))),

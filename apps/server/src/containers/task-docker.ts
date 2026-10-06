@@ -9,6 +9,7 @@ import {
 } from "@majhi/shared";
 import {
   all,
+  assertDockerfile,
   assertNoHostPaths,
   assertReadable,
   atMostOne,
@@ -1001,7 +1002,7 @@ function checkBuild(args: readonly string[], s: Safety): void {
   checkBuildArgs(all(flags, "--build-arg"));
   checkLabels(flags, s, ["image"]);
   if (rest.length !== 1) refuse("A build takes one folder.");
-  assertReadable(one(flags, "--file"), s, "Dockerfile");
+  assertDockerfile(one(flags, "--file"), s);
   assertReadable(rest[0] ?? "", s, "build context");
 }
 

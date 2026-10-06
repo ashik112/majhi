@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -274,6 +275,20 @@ describe("builds in a task", () => {
     await dockerfile("ARG BASE=alpine:3\nFROM ${BASE}\n");
     expect((await build()).code).toBe(0);
     expect((await build("--build-arg", "BASE=node:22")).error?.code).toBe("image_not_allowed");
+  });
+
+  it("builds the bytes it checked, from a file outside the task, gone after the build", async () => {
+    await dockerfile("FROM alpine:3\n");
+    // The task rewrites its Dockerfile after the check and before BuildKit reads it.
+    docker.beforeBuild = () => dockerfile("FROM node:22\n");
+    expect((await build()).code).toBe(0);
+    const [read] = docker.builtDockerfiles;
+    expect(read?.text).toBe("FROM alpine:3\n");
+    expect(read?.file.startsWith(repo)).toBe(false);
+    expect(existsSync(read?.file ?? repo)).toBe(false);
+    // A snapshot path is never a way to name a file: a call that names one is outside the task folder.
+    const named = await call("ACM-1", repo, "build", "-t", "web:test", "-f", read?.file ?? "/x", ".");
+    expect(named.code).not.toBe(0);
   });
 
   it("refuses a BUILDKIT_ build argument: BUILDKIT_SYNTAX would load any image as the Dockerfile's frontend", async () => {

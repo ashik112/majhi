@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { killTree, type Spawned } from "@majhi/acp";
 import { assertSafe, type DockerParts, dockerArgv, type Safety } from "../containers/args.ts";
 import type { ContainerDocker } from "../containers/service.ts";
@@ -58,6 +59,10 @@ export class FakeDocker implements ContainerDocker {
   waitGate: Promise<void> | undefined;
   /** Runs that fail before a container exists, by container name. */
   runFails = new Set<string>();
+  /** The Dockerfile each build read, at the moment it ran: the bytes BuildKit would have built. */
+  builtDockerfiles: { file: string; text: string }[] = [];
+  /** Runs just before a build reads its Dockerfile, to play a change made after majhi checked it. */
+  beforeBuild: (() => Promise<void>) | undefined;
   /** Makes `ps` answer late, to play a slow daemon. */
   psDelayMs = 0;
 
@@ -113,10 +118,17 @@ export class FakeDocker implements ContainerDocker {
     });
   }
 
+  private async readBuild(args: readonly string[]): Promise<void> {
+    await this.beforeBuild?.();
+    const file = args[args.indexOf("--file") + 1] ?? "";
+    this.builtDockerfiles.push({ file, text: readFileSync(file, "utf8") });
+  }
+
   async attached(parts: DockerParts, safety: Safety): Promise<Spawned> {
     assertSafe(parts, safety);
     const verb = parts.verb.join(" ");
     this.calls.push(verb);
+    if (verb === "buildx build") await this.readBuild(dockerArgv(parts));
     // A preview's holder says its guard is set, like netguard --hold.
     const holder = parts.flags.includes("majhi.container=previewhold");
     const child = holder
@@ -176,6 +188,7 @@ export class FakeDocker implements ContainerDocker {
         );
       }
       case "buildx":
+        await this.readBuild(args);
         this.images.add(at("--tag"));
         return ok("built\n");
       case "rm":

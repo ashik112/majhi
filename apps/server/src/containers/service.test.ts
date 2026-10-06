@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -112,6 +113,20 @@ describe("ContainerService", () => {
       await expect(
         service.previewBuild("ACM-1", "acme-builder", { dockerfile: "Dockerfile" }),
       ).rejects.toThrow(/Allow them first/);
+    });
+  });
+
+  describe("a preview's Dockerfile at build time", () => {
+    it("is the one that was checked, read from a file outside the task, gone when the build ends", async () => {
+      const file = join(dir, "tasks", "ACM-1", "api", "Dockerfile");
+      await writeFile(file, "FROM redis:7-alpine\n");
+      docker.beforeBuild = () => writeFile(file, "FROM node:22\n");
+      await service.previewBuild("ACM-1", "acme-builder", { dockerfile: "Dockerfile" });
+      await until(() => processes.listAll().every((p) => p.status !== "running"));
+      const [read] = docker.builtDockerfiles;
+      expect(read?.text).toBe("FROM redis:7-alpine\n");
+      expect(read?.file.startsWith(join(dir, "tasks"))).toBe(false);
+      await until(() => !existsSync(read?.file ?? dir));
     });
   });
 

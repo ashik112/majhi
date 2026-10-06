@@ -160,6 +160,11 @@ export interface Safety extends HostPaths {
   taskFolder: string;
   /** Ports majhi itself listens on, besides its default: no forwarder may name one. */
   ownPorts?: readonly number[] | undefined;
+  /**
+   * Dockerfiles majhi wrote itself, to build exactly what it checked (`build-snapshot.ts`). A build's
+   * `--file` may be one of these paths, exactly, besides a file of the task folder.
+   */
+  snapshots?: readonly string[] | undefined;
 }
 
 export interface Limits {
@@ -841,6 +846,12 @@ export function assertReadable(
   }
 }
 
+/** A build's Dockerfile: a file of the task folder, or exactly one of the snapshots majhi wrote of it. */
+export function assertDockerfile(path: string, s: Safety): void {
+  if (s.snapshots?.includes(path) === true) return;
+  assertReadable(path, s, "Dockerfile");
+}
+
 // ---------------------------------------------------------------------------
 // docker buildx build, buildx create, network create, volume create
 
@@ -870,7 +881,7 @@ function checkBuild(parts: DockerParts, s: Safety): void {
   checkBuildArgs(all(flags, "--build-arg"));
   checkLabels(flags, s, ["image"]);
   if (parts.command.length > 0) refuse("A build takes no arguments after its context.");
-  assertReadable(one(flags, "--file"), s, "Dockerfile");
+  assertDockerfile(one(flags, "--file"), s);
   assertReadable(parts.image ?? "", s, "build context");
 }
 
