@@ -1,16 +1,22 @@
 import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
+import { withGitConfig } from "@majhi/acp";
 import { writeFileAtomic } from "../fs.ts";
 import { git } from "./git.ts";
+import { EXCLUDES_FILE } from "./repo-config.ts";
 
 /**
  * Package stores and caches that never belong in a task branch. A task worktree ignores them even
  * when the project's own `.gitignore` does not, so a checkpoint or an agent's `git add` cannot
  * commit thousands of cache files.
  *
- * The list lives in a file next to the worktree's own git entry, which `core.excludesFile` points
- * to through the worktree's own config. `.git/info/exclude` is not used: git shares it between a
- * repo's checkouts, so a line there would also change the owner's own checkout.
+ * The list lives in a file next to the worktree's own git entry. Nothing is written into the repo's
+ * config or into `.git/info/exclude` (git shares it between a repo's checkouts, so it would change
+ * the owner's own checkout). Every git command that should honour the file gets it as
+ * `core.excludesFile` from outside: majhi's git helper (`worktreeExcludes`) and the environment of
+ * runs, hand-off checks and the task terminal (`excludesEnv`). The file starts with the owner's own
+ * global ignore patterns, because `core.excludesFile` replaces that setting.
  */
 
 type Language = "rust" | "java";
@@ -48,17 +54,22 @@ const LANGUAGE_MARKERS: ReadonlyMap<string, Language> = new Map([
   ["build.gradle.kts", "java"],
 ]);
 
-/** What a repo's tracked files say: which languages it has, and which folders hold tracked files. */
-function readTracked(files: readonly string[]): { languages: Set<Language>; tracked: string[][] } {
+/** What one repo's tracked files say: which languages it has, and the path segments of each file. */
+interface Tracked {
+  languages: Set<Language>;
+  paths: string[][];
+}
+
+function readTracked(files: readonly string[]): Tracked {
   const languages = new Set<Language>();
-  const tracked: string[][] = [];
+  const paths: string[][] = [];
   for (const file of files) {
     const segments = file.split("/");
     const marker = LANGUAGE_MARKERS.get(segments[segments.length - 1] ?? "");
     if (marker !== undefined) languages.add(marker);
-    tracked.push(segments);
+    paths.push(segments);
   }
-  return { languages, tracked };
+  return { languages, paths };
 }
 
 function containsRun(path: readonly string[], run: readonly string[]): boolean {
@@ -69,41 +80,73 @@ function containsRun(path: readonly string[], run: readonly string[]): boolean {
 }
 
 /**
- * The exclude lines for a repo with these tracked files: every rule that applies to its language,
- * minus any folder the repo tracks something in. A tracked folder is never excluded.
+ * The exclude lines for the tracked files of a task's repos (one list per repo; one repo is the
+ * usual case). A folder any repo tracks something in is never excluded, and a language rule applies
+ * only when every repo has that language, so no repo's own files are hidden by another's rules.
  */
-export function excludeLines(trackedFiles: readonly string[]): string[] {
-  const { languages, tracked } = readTracked(trackedFiles);
+export function excludeLines(repos: readonly (readonly string[])[]): string[] {
+  const read = repos.map(readTracked);
   const lines = new Set<string>();
   for (const rule of EXCLUDE_RULES) {
-    if (rule.only !== undefined && !rule.only.some((l) => languages.has(l))) continue;
-    if (tracked.some((path) => containsRun(path, rule.folder))) continue;
+    const only = rule.only;
+    if (only !== undefined && !read.every((r) => only.some((l) => r.languages.has(l)))) continue;
+    if (read.some((r) => r.paths.some((path) => containsRun(path, rule.folder)))) continue;
     lines.add(`**/${rule.folder.join("/")}/`);
   }
   return [...lines];
 }
 
-const FILE_NAME = "majhi-exclude";
+/** The owner's global ignore file, as git reads it: `core.excludesFile`, else the XDG default. */
+async function ownerExcludes(cwd: string): Promise<string> {
+  const set = (await git(cwd, ["config", "--global", "--get", "core.excludesFile"]).catch(() => "")).trim();
+  const file =
+    set === ""
+      ? join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "git", "ignore")
+      : set.startsWith("~/")
+        ? join(homedir(), set.slice(2))
+        : set;
+  return readFile(file, "utf8").catch(() => "");
+}
 
 /**
- * Makes a linked task worktree ignore the standard caches, and does nothing else. Safe to repeat:
- * it writes the file and the config only when they differ. A main checkout (the owner's own) is
- * never touched, because for it the git dir and the common dir are the same.
+ * Writes the exclude file of each linked worktree given (the worktrees of one task) and returns the
+ * path of the first, which holds what every one holds. Safe to repeat: a file is written only when
+ * it differs. A main checkout (the owner's own) is skipped, because for it the git dir and the
+ * common dir are the same. Undefined when there is no linked worktree.
  */
-export async function ensureWorktreeExcludes(worktree: string): Promise<void> {
-  const dirs = await gitDirs(worktree);
-  if (dirs === undefined) return;
-  const tracked = (await git(worktree, ["ls-files", "-z"])).split("\0").filter((f) => f !== "");
-  const body = `${excludeLines(tracked).join("\n")}\n`;
-  const file = join(dirs.own, FILE_NAME);
-  const current = await readIfThere(file);
-  if (current !== body) await writeFileAtomic(file, body);
-  if ((await configValue(worktree, ["extensions.worktreeConfig"])) !== "true") {
-    await git(worktree, ["config", "extensions.worktreeConfig", "true"]);
+export async function ensureWorktreeExcludes(worktrees: readonly string[]): Promise<string | undefined> {
+  const linked: { worktree: string; file: string }[] = [];
+  for (const worktree of worktrees) {
+    const dirs = await gitDirs(worktree);
+    if (dirs !== undefined) linked.push({ worktree, file: join(dirs.own, EXCLUDES_FILE) });
   }
-  if ((await configValue(worktree, ["--worktree", "core.excludesFile"])) !== file) {
-    await git(worktree, ["config", "--worktree", "core.excludesFile", file]);
+  const first = linked[0];
+  if (first === undefined) return undefined;
+  const tracked = await Promise.all(
+    linked.map(async ({ worktree }) =>
+      (await git(worktree, ["ls-files", "-z"])).split("\0").filter((f) => f !== ""),
+    ),
+  );
+  const own = (await ownerExcludes(first.worktree)).trimEnd();
+  const body = `${own === "" ? "" : `${own}\n\n`}# majhi: package stores and caches\n${excludeLines(tracked).join("\n")}\n`;
+  for (const { file } of linked) {
+    if ((await readFile(file, "utf8").catch(() => undefined)) !== body) await writeFileAtomic(file, body);
   }
+  return first.file;
+}
+
+/**
+ * `env` with `core.excludesFile` added as a command-line git setting, after whatever
+ * `GIT_CONFIG_COUNT` entries it already has, so git in the task's worktrees honours the exclude
+ * file. The path is the same inside a run, which mounts the worktree's git entry at its own path.
+ * `env` unchanged when the task has no linked worktree or the file cannot be written.
+ */
+export async function withExcludes(
+  env: Readonly<Record<string, string>>,
+  worktrees: readonly string[],
+): Promise<Record<string, string>> {
+  const file = await ensureWorktreeExcludes(worktrees).catch(() => undefined);
+  return file === undefined ? { ...env } : withGitConfig(env, [["core.excludesFile", file]]);
 }
 
 /** The worktree's own git dir, or undefined when `worktree` is a main checkout or not a repo. */
@@ -117,13 +160,4 @@ async function gitDirs(worktree: string): Promise<{ own: string } | undefined> {
   const [own, common] = out.split("\n").map((l) => l.trim());
   if (own === undefined || common === undefined || own === "" || own === common) return undefined;
   return { own };
-}
-
-async function configValue(worktree: string, args: readonly string[]): Promise<string | undefined> {
-  const out = await git(worktree, ["config", "--get", ...args]).catch(() => "");
-  return out.trim() === "" ? undefined : out.trim();
-}
-
-async function readIfThere(path: string): Promise<string | undefined> {
-  return readFile(path, "utf8").catch(() => undefined);
 }

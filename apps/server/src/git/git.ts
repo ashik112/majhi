@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { KeyedQueue } from "./keyed-queue.ts";
 import { refExists } from "./refs.ts";
-import { repoConfigIsPlain } from "./repo-config.ts";
+import { repoConfigIsPlain, worktreeExcludes } from "./repo-config.ts";
 
 const run = promisify(execFile);
 
@@ -347,12 +347,20 @@ async function gitOnce(
         ? { settings: [], env: {}, options: [] }
         : await repoCommands(cwd, base, command);
     const extra = DIFF_COMMANDS.has(command) ? ["--no-ext-diff", "--no-textconv"] : off.options;
+    const excludes = NO_LOOKUP.has(command) ? undefined : await worktreeExcludes(cwd, base);
     const argv = [...args.slice(0, at + 1), ...extra, ...args.slice(at + 1)];
     const { stdout } = await run("git", argv, {
       cwd,
       timeout: options.timeoutMs ?? GIT_TIMEOUT_MS,
       maxBuffer: options.maxBufferBytes ?? 64 * 1024 * 1024,
-      env: { ...withConfig(base, [...SERVER_CONFIG, ...off.settings]), ...off.env },
+      env: {
+        ...withConfig(base, [
+          ...SERVER_CONFIG,
+          ...off.settings,
+          ...(excludes === undefined ? [] : ([["core.excludesFile", excludes]] as const)),
+        ]),
+        ...off.env,
+      },
     });
     return stdout;
   } catch (err) {

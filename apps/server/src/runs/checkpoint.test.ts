@@ -91,6 +91,8 @@ describe("checkpoints", () => {
     ): Promise<{
       source: string;
       repo: CheckpointRepo;
+      /** The owner's `.git/config` before the worktree was made. */
+      configBefore: string;
     }> {
       const source = join(dir, "owner", task, "api");
       await mkdir(source, { recursive: true });
@@ -102,9 +104,14 @@ describe("checkpoints", () => {
       }
       await git(source, "add", ".");
       await git(source, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "init");
+      const configBefore = await readFile(join(source, ".git", "config"), "utf8");
       const path = join(dir, "tasks", task, "api");
       await createWorktree({ source, base: "main", branch: "task/acm-1-fix", path });
-      return { source, repo: { project: "api", worktree: path, branch: "task/acm-1-fix", base: "main" } };
+      return {
+        configBefore,
+        source,
+        repo: { project: "api", worktree: path, branch: "task/acm-1-fix", base: "main" },
+      };
     }
     const by = commitBy(DEFAULT_IDENTITY, "ACM-1");
 
@@ -144,7 +151,7 @@ describe("checkpoints", () => {
     });
 
     it("leaves the owner's checkout alone", async () => {
-      const { source, repo: a } = await taskWorktree();
+      const { source, repo: a, configBefore } = await taskWorktree();
       const exclude = join(source, ".git", "info", "exclude");
       const before = await readFile(exclude, "utf8");
       await mkdir(join(a.worktree, "node_modules"), { recursive: true });
@@ -153,9 +160,7 @@ describe("checkpoints", () => {
       await mkdir(join(source, "node_modules"), { recursive: true });
       await writeFile(join(source, "node_modules/x.js"), "x");
       expect(await readFile(exclude, "utf8")).toBe(before);
-      expect(await git(source, "config", "--local", "--get-all", "core.excludesFile").catch(() => "")).toBe(
-        "",
-      );
+      expect(await readFile(join(source, ".git", "config"), "utf8")).toBe(configBefore);
       expect(await git(source, "status", "--porcelain")).toBe("?? node_modules/");
     });
 
@@ -167,7 +172,8 @@ describe("checkpoints", () => {
         await writeFile(join(r.worktree, "target/notes.md"), "x");
         await writeFile(join(r.worktree, "feature.ts"), "export {};\n");
       }
-      await commitCheckpoint([plain.repo, rust.repo], "ACM-1", 1, by);
+      await commitCheckpoint([plain.repo], "ACM-1", 1, by);
+      await commitCheckpoint([rust.repo], "ACM-2", 1, by);
       expect(
         (await git(plain.repo.worktree, "show", "--name-only", "--format=", "HEAD")).split("\n").sort(),
       ).toEqual(["feature.ts", "target/notes.md"]);

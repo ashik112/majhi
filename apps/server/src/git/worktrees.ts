@@ -106,7 +106,7 @@ async function create(req: WorktreeRequest): Promise<WorktreeResult> {
 /** Not fatal: the checkpoint sets the excludes again, and its file-count limit backs it up. */
 async function excludeCaches(path: string, warnings: string[]): Promise<void> {
   try {
-    await ensureWorktreeExcludes(path);
+    await ensureWorktreeExcludes([path]);
   } catch (err) {
     warnings.push(
       `Could not set up the cache excludes (${err instanceof Error ? err.message : String(err)}).`,
