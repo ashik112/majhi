@@ -1,5 +1,6 @@
 import {
   type CommitSha,
+  WIKI_GAPS_HEADINGS,
   WIKI_RULES,
   type WikiDroppedClaim,
   type WikiDropReason,
@@ -50,11 +51,11 @@ export function buildGapsPage(input: GapsInput): WikiPage {
     if (lines.length > 0) sections.push(`## ${heading}\n\n${lines.join("\n")}`);
   };
   add(
-    "Could not confirm",
+    WIKI_GAPS_HEADINGS.couldNotConfirm,
     dropped.map(({ d, page }) => `- ${d.text} (${page}): ${WHY[d.reason]}.${place(d)}`),
   );
   add(
-    "Guessed",
+    WIKI_GAPS_HEADINGS.guessed,
     guessed.map(({ c, page }) => `- ${c.text} (${page})`),
   );
   add(

@@ -74,6 +74,8 @@ export const PageReplySchema = z
               id: KeySchema,
               label: z.string().trim().min(1).max(60),
               sub: z.string().trim().min(1).max(120).optional(),
+              /** What the box is, from the same list as the roles. Draws its colored tag. */
+              role: WikiKnownRoleSchema.optional(),
             }),
           )
           .min(1)
@@ -84,6 +86,8 @@ export const PageReplySchema = z
               from: KeySchema,
               to: KeySchema,
               label: z.string().trim().min(1).max(60).optional(),
+              /** A call over the network, a job on a queue, or a read and write of data. Draws the line's color. */
+              type: z.enum(["http", "queue", "data"]).optional(),
               /** The number of the item that shows this line. Without it, the line is drawn as a guess. */
               claim: z.number().int().positive().optional(),
             }),
@@ -162,6 +166,7 @@ export function draftOf(page: WriterPage, reply: PageReply, ctx: Context): Draft
             from: e.from,
             to: e.to,
             label: e.label,
+            type: e.type,
             // Item n is the claim after the role claims.
             claim: e.claim === undefined ? undefined : roleRows.length + e.claim - 1,
           })),

@@ -1,4 +1,10 @@
-import { type DiagramSpec, DiagramSpecSchema, type WikiClaim, type WikiPageKind } from "@majhi/shared";
+import {
+  type DiagramSpec,
+  DiagramSpecSchema,
+  type WikiClaim,
+  type WikiKnownRole,
+  type WikiPageKind,
+} from "@majhi/shared";
 import type { DraftDiagram, DraftPage } from "./draft.ts";
 
 /** A claim that passed the check, with the place it had in the draft. */
@@ -76,9 +82,10 @@ function sequence(draft: DraftPage, kept: readonly KeptClaim[]): DiagramSpec | u
   const edges = steps.map((s, i) => ({
     from: slug(s.actor ?? ""),
     to: slug(steps[i + 1]?.actor ?? s.actor ?? ""),
-    label: `${s.claim.n}. ${s.label ?? ""}`.trim().slice(0, 60),
+    // The badge on the line is the step's number, so the label has none.
+    label: (s.label ?? s.actor ?? "step").slice(0, 60),
     type: "step" as const,
-    ...(s.claim.proven ? {} : { style: "dashed" as const }),
+    ...(s.claim.proven ? {} : { style: "dotted" as const }),
   }));
   const parsed = DiagramSpecSchema.safeParse({
     title: draft.title.slice(0, 80),
@@ -90,19 +97,37 @@ function sequence(draft: DraftPage, kept: readonly KeptClaim[]): DiagramSpec | u
   return parsed.success ? parsed.data : undefined;
 }
 
-/** A box-and-lines picture the writer drew. A line is solid when the claim it names was kept and is proven, else dashed. */
+/** How a line is drawn when the writer gave no type: by what it reaches. Undefined when the box is not known. */
+const REACHES: Partial<Record<WikiKnownRole, "queue" | "data">> = {
+  database: "data",
+  cache: "data",
+  queue: "queue",
+  worker: "queue",
+};
+
+/**
+ * A box-and-lines picture the writer drew. A box carries its role as its tag (`outside` is drawn dashed). A line
+ * has the type the writer gave, else one from the role of the box it reaches, and is solid when the claim it
+ * names was kept and is proven, else dotted.
+ */
 function boxes(diagram: DraftDiagram, kept: readonly KeptClaim[]): DiagramSpec | undefined {
   const proven = new Set(kept.filter((k) => k.claim.proven).map((k) => k.at));
+  const roleOf = new Map(diagram.nodes.map((n) => [n.id, n.role]));
   const parsed = DiagramSpecSchema.safeParse({
     title: diagram.title,
     layout: "flow",
-    nodes: diagram.nodes,
-    edges: diagram.edges.map((e) => ({
-      from: e.from,
-      to: e.to,
-      ...(e.label === undefined ? {} : { label: e.label }),
-      ...(e.claim !== undefined && proven.has(e.claim) ? {} : { style: "dashed" as const }),
-    })),
+    nodes: diagram.nodes.map(({ role, ...n }) => ({ ...n, ...(role === undefined ? {} : { kind: role }) })),
+    edges: diagram.edges.map((e) => {
+      const reached = roleOf.get(e.to);
+      const type = e.type ?? (reached === undefined ? undefined : (REACHES[reached] ?? "http"));
+      return {
+        from: e.from,
+        to: e.to,
+        ...(e.label === undefined ? {} : { label: e.label }),
+        ...(type === undefined ? {} : { type }),
+        ...(e.claim !== undefined && proven.has(e.claim) ? {} : { style: "dotted" as const }),
+      };
+    }),
   });
   return parsed.success ? parsed.data : undefined;
 }
