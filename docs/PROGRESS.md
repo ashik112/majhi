@@ -1,5 +1,24 @@
 # Progress
 
+## Download and export in the file viewer (PRV-144, built, not merged)
+
+**What changed.** The file viewer's toolbar has a Download button beside Copy path, Open in editor, Open in new tab and Refresh. Any file downloads as it is. A markdown file opens a small menu: Markdown (.md), Web page (.html), PDF (.pdf), Word (.docx). The file name is the source's name with the new extension.
+
+- One render, every format: the server renders the markdown once with the viewer's own plugin list and link rule (now in `@majhi/shared`: `markdown.ts`, `markdown-rules.ts`) into one HTML tree (`apps/server/src/export/`). html is that tree as one self-contained page (light print stylesheet, IBM Plex embedded, task images inlined as data URIs, a CSP with no script and no fetch). pdf prints that page with the runner image's Chromium in a throwaway isolated runner container. docx writes the same tree with the `docx` library.
+- No new route: `?download=raw|html|pdf|docx` on the viewer's file URLs (task folder, repo, wiki source), after the same check that serves the file (`resolveInside` in `http/taskFiles.ts`). Every inlined image passes that check too.
+- The render runs in a worker thread (`dist/export/worker.js`), one at a time, capped at 1 GB heap and 60 s, so a long document never stalls the server. Markdown over 2 MB downloads raw only. Raw downloads stream through the browser's own download. html, pdf and docx show a spinner on the button and a toast if they fail.
+- Choices and measurements: docs/DECISIONS.md, 2026-10-06 (three rows). The server image grows by about 3 MB (worker bundle) and 62 KB (fonts). The runner image does not change.
+
+**How to try it.** Open any markdown file in a task's viewer, press Download and pick a format.
+
+**How verified.** One test per format through the real route (`apps/server/src/export/export.test.ts`): md is byte-identical; html holds the heading, the table and the inlined image and drops a `javascript:` link; pdf (the runner's print script, run with this machine's Chromium) holds the heading and the table rows as text; docx has the heading in Word's Heading1 style, the table as a Word table and the image. The access test refuses files outside the folder, behind a dot name or through a symlink, and inlines no image outside the folder. The existing file route tests pass. The bundled worker was run outside tsx: SPEC.md exports in 0.6 s (html) and 0.9 s (docx), and the event loop kept ticking meanwhile. The toolbar and the menu were checked in a browser.
+
+**Left.**
+- PDF answers 501 where agents run without runner containers (`MAJHI_RUNNER=local`, so dev and e2e). html and docx work there.
+- In docx, svg, webp and avif images become their alt text. Links to other task files keep their text but not the link in every format, since they mean nothing outside majhi.
+
+**Only the owner can check:** a PDF from the real runner image on the owner's machine (container start time and the fonts Chromium finds there).
+
 ## Wiki, phase 1: project wiki in place of the Map (branch `feat/wiki`, built, not merged)
 
 **What changed.** The Map is gone (page, Inside, Journeys, `show_map`, `map.*` commands, the map chore and `upkeep-map`, `docker/map_resolve.py`) and each project can have a wiki instead. Design: `docs/design/wiki.md`; choices the design did not cover: the W rows at the end of `docs/DECISIONS.md`; SPEC 5.21 describes the result. The sealed reader and the config scanners were moved, not rebuilt (`apps/server/src/reader/`, `wiki/facts/`, `wiki/system/`).
