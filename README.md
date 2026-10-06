@@ -109,9 +109,9 @@ majhi runs on macOS, Linux and Windows through WSL2. With Docker running (see be
 curl -fsSL https://raw.githubusercontent.com/ashik112/majhi/main/install.sh | sh
 ```
 
-It checks the computer first and stops with the step to take when something is missing. It keeps majhi in `~/.majhi/app` at the newest release, pulls that release's images (amd64 and arm64) instead of building them, starts majhi on http://127.0.0.1:7070 and opens it. After that, updates are one click in majhi, and running the line again is safe: it updates to the newest release too. `MAJHI_VERSION=v1.2.3` before `sh` installs that release instead.
+It checks the computer first and stops with the step to take when something is missing. It keeps majhi in `~/.majhi/app` at the latest release, pulls that release's images (amd64 and arm64) instead of building them, starts majhi on http://127.0.0.1:7070 and opens it. After that, updates are one click in majhi, and running the line again is safe: it updates to the latest release too. `MAJHI_VERSION=v1.2.3` before `sh` installs that release instead.
 
-**From source**, for working on majhi: `git clone https://github.com/ashik112/majhi.git && cd majhi && make up` builds every image from the checkout. It runs the same steps as the installer (`scripts/up.sh`), and updates rebuild what is on disk.
+**From source**, for working on majhi: `git clone https://github.com/ashik112/majhi.git && cd majhi && make up` builds every image from the checkout. It runs the same steps as the installer (`scripts/up.sh`), and updates rebuild what is on disk. Every merge to main with a `feat`, `fix` or `perf` commit becomes a release on its own (`.github/workflows/release.yml`).
 
 ### macOS
 

@@ -219,13 +219,13 @@ host helper   `apps/host`, a small Node process on the owner's computer (not
               server that would relay it is replaced part-way); the UI reads
               it through `system.version` and reloads when `/health` reports
               the new commit.
-              On a release install (install.sh: `.env` has MAJHI_VERSION) the
-              helper fetches tags at most every 6 hours and reports the
-              newest `vX.Y.Z` tag's commit instead of HEAD; `update` first
-              moves the checkout and MAJHI_VERSION to that tag, and the same
-              `docker compose build` then takes the release images from
-              ghcr.io instead of compiling. A failed update puts the checkout
-              and `.env` back with the previous images.
+              On a release install (install.sh: `.env` has MAJHI_VERSION and
+              MAJHI_LATEST_URL) the helper asks the latest-release pointer at
+              most every 6 hours and reports that release's commit instead of
+              HEAD; `update` first moves the checkout and MAJHI_VERSION to
+              that release, and the same `docker compose build` then takes the
+              release images from ghcr.io instead of compiling. A failed update
+              puts the checkout and `.env` back with the previous images.
               On Apple silicon it also runs Laya natively with `laya-mlx`
               (MLX on the GPU). Later it is also where MAJHI_RUNNER=native
               spawns agents.
@@ -340,7 +340,7 @@ projects:
 
 ### 4.5 Docker details
 
-- The image bakes the git commit it was built from (`ARG MAJHI_COMMIT`, exposed as the env var `MAJHI_COMMIT`, `dev` when unknown). `make up` and the host helper pass `git rev-parse HEAD`. `/health` reports it, so a browser can tell the new server from the old one after an update. Building never needs the owner: `docker compose build` reads the same variables `scripts/up.sh` exports (`make up` and install.sh both run it). Where the images come from is one rule: with `MAJHI_VERSION` in `.env` the server, runner and Laya images are that release's, built by `.github/workflows/release.yml` for amd64 and arm64 and pulled from `ghcr.io/ashik112/majhi-*:<version>` (Laya `-cuda` with an NVIDIA GPU), and only the last stage, the owner's passwd entry (`docker/owner.sh`), is built locally; without it every stage is built from the checkout. Either way compose tags the result `majhi-*:dev`. Docker access: macOS asks once whether OrbStack or Docker Desktop may read `~/Documents`, `~/Desktop`, `~/Downloads` and iCloud Drive; without a yes the container sees an empty folder, so the roots screen warns before saving a root there and names the runtime the helper found.
+- The image bakes the git commit it was built from (`ARG MAJHI_COMMIT`, exposed as the env var `MAJHI_COMMIT`, `dev` when unknown). `make up` and the host helper pass `git rev-parse HEAD`. `/health` reports it, so a browser can tell the new server from the old one after an update. Building never needs the owner: `docker compose build` reads the same variables `scripts/up.sh` exports (`make up` and install.sh both run it). Where the images come from is one rule: with `MAJHI_VERSION` in `.env` the server, runner and Laya images are that release's, pulled from `ghcr.io/ashik112/majhi-*:<version>` (Laya `-cuda` with an NVIDIA GPU), and only the last stage, the owner's passwd entry (`docker/owner.sh`), is built locally; without it every stage is built from the checkout. Either way compose tags the result `majhi-*:dev`. Releases are automatic: on every push to main, `.github/workflows/release.yml` works out the next version from the conventional commits since the last release (`scripts/next-version.sh`: breaking change major, `feat` minor, `fix` or `perf` patch, nothing else releases), builds the images for amd64 and arm64, and only once every image is pushed creates the tag and the GitHub release and marks it latest. That latest release is the one pointer install.sh and the host helper read. Docker access: macOS asks once whether OrbStack or Docker Desktop may read `~/Documents`, `~/Desktop`, `~/Downloads` and iCloud Drive; without a yes the container sees an empty folder, so the roots screen warns before saving a root there and names the runtime the helper found.
 - `health.run` runs the same checks as `make doctor` (config, config folder, git, each root mounted, tasks folder, host helper, SSH agent, each git host, secrets key, each CLI version, each account from its cached health, disk space). Each failed check that majhi can fix carries a `fix` label and `health.fix` runs it: mount a root (helper remount), create a missing folder, reload SSH keys, check an account again, open an account's sign-in (the UI opens the terminal), restart the helper. A failed check with no fix says the exact step in plain words.
 - Bind mount each workspace root at the **same absolute path** inside the containers, so paths match between host, agents and the owner's editor. `docker compose` cannot loop over a list, so majhi generates `docker-compose.override.yml` with one mount per root from `majhi.yaml`. The host helper regenerates it and recreates the server container whenever roots change; `make up` does the same on first start. Only roots are mounted, never the whole home folder, so agents cannot reach other credentials in it.
 - Docker per OS: OrbStack or Docker Desktop on macOS, Docker Engine run as root on Linux, Docker Desktop with WSL integration on WSL2. `make up` refuses Docker Desktop for Linux and rootless Docker for now: both map container uids through a user namespace, so the owner's uid in the server lands on another uid outside, and worktrees and `~/.majhi` would stop belonging to the owner.
