@@ -73,7 +73,9 @@ fetch_checkout() {
   if ! git -C "$APP_DIR" rev-parse --git-dir >/dev/null 2>&1; then
     fail "$APP_DIR is in the way: it is not a majhi checkout. Move it, or set MAJHI_APP_DIR to another folder, then run $MAJHI_RERUN again."
   fi
-  if [ -n "$(git -C "$APP_DIR" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+  # A clone whose first checkout never happened lists every file as deleted: nothing to keep there.
+  if [ -n "$(git -C "$APP_DIR" ls-files 2>/dev/null | head -n 1)" ] &&
+    [ -n "$(git -C "$APP_DIR" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
     fail "$APP_DIR has changes that are not committed, so it was left alone. Undo them (git -C $APP_DIR stash), then run $MAJHI_RERUN again."
   fi
   say "Looking for a newer majhi"
@@ -128,13 +130,14 @@ main() {
   need_git "$os"
   fetch_checkout
   version=$(pick_version)
-  current=$(git -C "$APP_DIR" describe --tags --exact-match HEAD 2>/dev/null || true)
-  if [ "$current" = "$version" ]; then
+  installed=$(sed -n 's/^[[:space:]]*MAJHI_VERSION[[:space:]]*=[[:space:]]*//p' "$APP_DIR/.env" 2>/dev/null | tail -n 1 | tr -d "\"'\r ")
+  if [ "$installed" = "$version" ]; then
     say "majhi $version is the newest. Starting it again"
   else
     say "Installing majhi $version ($os, $arch)"
-    git -C "$APP_DIR" -c advice.detachedHead=false checkout --quiet --detach "refs/tags/$version"
   fi
+  # Every time: a first clone has no files yet, and a run cut short may have left HEAD elsewhere.
+  git -C "$APP_DIR" -c advice.detachedHead=false checkout --quiet --detach "refs/tags/$version"
   record_version "$version"
   [ -f "$APP_DIR/scripts/up.sh" ] || fail "majhi $version is older than this installer. Install a newer release."
   sh "$APP_DIR/scripts/up.sh"
