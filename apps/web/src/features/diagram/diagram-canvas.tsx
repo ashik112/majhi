@@ -319,7 +319,7 @@ function Refit({
       window.clearTimeout(timer);
       watch.disconnect();
     };
-  }, [box, flow]);
+  }, [box, flow, fitMin]);
   return null;
 }
 
