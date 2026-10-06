@@ -404,6 +404,8 @@ import {
 } from "./watches.ts";
 import {
   WikiAnswerInputSchema,
+  WikiAskInputSchema,
+  WikiAskOutputSchema,
   WikiEstimateInputSchema,
   WikiEstimateSchema,
   WikiPageInputSchema,
@@ -1288,6 +1290,13 @@ export const commands = {
       "One wiki page: its text with numbered citations, each claim with the file and lines that prove it (or marked guessed), the claims that could not be confirmed, its diagrams and the commit it was built from. An agent reads its own workspace only",
     input: WikiPageInputSchema,
     output: WikiPageViewSchema,
+  },
+  "wiki.ask": {
+    risk: "read",
+    summary:
+      "Ask the wiki a question in plain words and get a short answer with the claims and pages it came from. Without `project` it covers the whole workspace. It spends a little (one cheap model call, booked under the workspace), refuses when the workspace budget is used up, and costs nothing when the wiki has nothing on it or the same question was asked of the same built commits. An agent asks its own workspace only",
+    input: WikiAskInputSchema,
+    output: WikiAskOutputSchema,
   },
   "wiki.estimate": {
     risk: "read",

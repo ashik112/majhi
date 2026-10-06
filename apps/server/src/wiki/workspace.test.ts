@@ -244,6 +244,7 @@ function world(extra: { sessions?: { count: number } } = {}) {
     orgs: async () => ["acme", "globex"],
     projects: async (org) => projects.filter((p) => p.org === org).map((p) => p.id),
     service,
+    asker: { answer: async () => ({ answer: "", sources: [], pages: [], found: false }) },
     lanes: {} as never,
     store: {} as never,
   });

@@ -730,6 +730,23 @@ export const WikiPageViewSchema = z.object({
 });
 export type WikiPageView = z.infer<typeof WikiPageViewSchema>;
 
+/** A question for the wiki. Without `project` it is asked of the whole workspace: every project's pages and the workspace's own. */
+export const WikiAskInputSchema = WikiScopeInputSchema.extend({
+  question: z.string().trim().min(1).max(500),
+});
+export type WikiAskInput = z.infer<typeof WikiAskInputSchema>;
+
+/** A short answer built from the wiki's pages. `found` is false, and `sources` and `pages` are empty, when the wiki does not answer it. */
+export const WikiAskOutputSchema = z.object({
+  answer: z.string().max(2000),
+  /** Where the claims behind the answer are shown in the code. */
+  sources: z.array(WikiSourceSchema).max(12),
+  /** The pages the answer came from. No `project`: a workspace page. */
+  pages: z.array(z.object({ project: IdSchema.optional(), id: WikiPageIdSchema })).max(12),
+  found: z.boolean(),
+});
+export type WikiAskOutput = z.infer<typeof WikiAskOutputSchema>;
+
 /**
  * Whether a workspace has a project wiki: its own setting, else majhi's, else off. Any level can turn it
  * on or back off for what is below it.
