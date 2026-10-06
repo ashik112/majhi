@@ -14,6 +14,7 @@ import {
   atMostOne,
   CAPS,
   ContainerRefused,
+  checkBuildArgs,
   checkKeyValues,
   checkLabels,
   checkLimits,
@@ -997,7 +998,7 @@ function checkBuild(args: readonly string[], s: Safety): void {
   if (!tag.startsWith(names.imagePrefix) || !BUILT_TAG.test(tag.slice(names.imagePrefix.length))) {
     refuse(`A build is tagged ${names.imagePrefix}<name>.`);
   }
-  checkKeyValues(all(flags, "--build-arg"), 32, 1_000, "build arguments");
+  checkBuildArgs(all(flags, "--build-arg"));
   checkLabels(flags, s, ["image"]);
   if (rest.length !== 1) refuse("A build takes one folder.");
   assertReadable(one(flags, "--file"), s, "Dockerfile");

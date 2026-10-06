@@ -115,6 +115,19 @@ describe("ContainerService", () => {
     });
   });
 
+  describe("a preview's build arguments", () => {
+    it("refuse BUILDKIT_SYNTAX, which would load any image as the frontend, before any builder exists", async () => {
+      await writeFile(join(dir, "tasks", "ACM-1", "api", "Dockerfile"), "FROM alpine:3\n");
+      await expect(
+        service.previewBuild("ACM-1", "acme-builder", {
+          dockerfile: "Dockerfile",
+          build_args: { BUILDKIT_SYNTAX: "evil/frontend:1" },
+        }),
+      ).rejects.toThrow(/BUILDKIT_/);
+      expect(docker.builders.size).toBe(0);
+    });
+  });
+
   describe("limits and names", () => {
     it("reserves a global slot before concurrent starts, and releases it when a container stops", async () => {
       settings = { ...settings, total: 1 };

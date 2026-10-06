@@ -294,6 +294,22 @@ export function checkKeyValues(specs: string[], max: number, maxValue: number, w
   }
 }
 
+/**
+ * `--build-arg` values of a build. A `BUILDKIT_` name is read by BuildKit itself: `BUILDKIT_SYNTAX`
+ * loads any image as the Dockerfile's frontend, past the image list, so none of them is allowed.
+ */
+export function checkBuildArgs(specs: string[]): void {
+  checkKeyValues(specs, 32, 1_000, "build arguments");
+  for (const spec of specs) {
+    if (spec.slice(0, spec.indexOf("=")).toUpperCase().startsWith("BUILDKIT_")) {
+      refuse(
+        `The build argument ${shown(spec.slice(0, spec.indexOf("=")))} is read by BuildKit itself and is not allowed.`,
+        "flag_not_allowed",
+      );
+    }
+  }
+}
+
 export const matches = (schema: { safeParse(v: unknown): { success: boolean } }, value: string): boolean =>
   schema.safeParse(value).success;
 
@@ -851,7 +867,7 @@ function checkBuild(parts: DockerParts, s: Safety): void {
   const target = atMostOne(flags, "--target");
   if (target !== undefined && !matches(BuildTargetSchema, target))
     refuse(`The build target ${shown(target)} is not allowed.`);
-  checkKeyValues(all(flags, "--build-arg"), 32, 1_000, "build arguments");
+  checkBuildArgs(all(flags, "--build-arg"));
   checkLabels(flags, s, ["image"]);
   if (parts.command.length > 0) refuse("A build takes no arguments after its context.");
   assertReadable(one(flags, "--file"), s, "Dockerfile");

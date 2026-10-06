@@ -276,6 +276,20 @@ describe("builds in a task", () => {
     expect((await build("--build-arg", "BASE=node:22")).error?.code).toBe("image_not_allowed");
   });
 
+  it("refuses a BUILDKIT_ build argument: BUILDKIT_SYNTAX would load any image as the Dockerfile's frontend", async () => {
+    await dockerfile("FROM alpine:3\n");
+    const out = await build("--build-arg", "BUILDKIT_SYNTAX=evil/frontend:1");
+    expect(out.error?.code).toBe("flag_not_allowed");
+    expect(docker.taskCalls.filter((c) => c[0] === "buildx")).toEqual([]);
+    await mkdir(join(repo, "app"), { recursive: true });
+    await writeFile(join(repo, "app", "Dockerfile"), "FROM alpine:3\n");
+    const stack = await up(
+      "services:\n  app:\n    build:\n      context: ./app\n      args:\n        BUILDKIT_SYNTAX: evil/frontend:1\n",
+    );
+    expect(stack.error?.code).toBe("flag_not_allowed");
+    expect(docker.taskCalls.filter((c) => c[0] === "buildx")).toEqual([]);
+  });
+
   it("refuses a Dockerfile that is not there or not a file, and one it cannot read the images of", async () => {
     await rm(join(repo, "Dockerfile"), { force: true });
     expect((await build()).code).not.toBe(0);

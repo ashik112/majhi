@@ -23,6 +23,7 @@ import {
   builderContainer,
   builderCreateArgs,
   builderGuardRunArgs,
+  checkBuildArgs,
   ContainerRefused,
   type HostPaths,
   hostForwardRunArgs,
@@ -948,6 +949,8 @@ export class ContainerService {
     buildArgs: readonly string[],
   ): Promise<void> {
     const task = safety.task;
+    // First, so a `BUILDKIT_SYNTAX` never gets as far as a Dockerfile read: it loads any image as the frontend.
+    checkBuildArgs([...buildArgs]);
     const text = await readTaskFile(dockerfile, safety, "Dockerfile", "refused", { maxBytes: 256 * 1024 });
     const args = new Map(
       buildArgs.flatMap((a) => {

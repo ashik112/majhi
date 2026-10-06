@@ -543,6 +543,22 @@ describe("builds", () => {
     ).toThrow(ContainerRefused);
   });
 
+  it("refuse a build argument that BuildKit reads for itself, whatever its case", () => {
+    for (const name of ["BUILDKIT_SYNTAX", "buildkit_syntax", "BUILDKIT_MULTI_PLATFORM"]) {
+      expect(() =>
+        buildArgs(safety, {
+          context: repo,
+          dockerfile: "Dockerfile",
+          buildArgs: { [name]: "evil/frontend:1" },
+        }),
+      ).toThrow(ContainerRefused);
+      expect(refusedBuild(plus(build(), "--build-arg", `${name}=evil/frontend:1`))).toThrow(ContainerRefused);
+    }
+    expect(
+      buildArgs(safety, { context: repo, dockerfile: "Dockerfile", buildArgs: { BUILD_MODE: "x" } }).flags,
+    ).toContain("BUILD_MODE=x");
+  });
+
   it("refuse a context or Dockerfile outside the task folder", () => {
     for (const context of [safety.hostHome, join(safety.hostHome, "Work"), safety.majhiHome, "/", "/etc"]) {
       expect(() => buildArgs(safety, { context, dockerfile: "Dockerfile" })).toThrow(ContainerRefused);
