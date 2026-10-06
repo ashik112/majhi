@@ -90,12 +90,24 @@ export class ImageNotAllowed extends ContainerRefused {
     readonly image: string,
     /** The name of the container or compose service that wants it, for the owner's card. */
     readonly service?: string,
+    /** More images the same call needs (a Dockerfile with several stages): each gets its own card. */
+    readonly also: readonly string[] = [],
   ) {
-    super(`${image} is not an image this task built or the owner allowed.`, "image_not_allowed");
+    super(
+      also.length === 0
+        ? `${image} is not an image this task built or the owner allowed.`
+        : `${[image, ...also].join(", ")} are not images this task built or the owner allowed.`,
+      "image_not_allowed",
+    );
   }
 }
 
 export const taskNames = containerNames;
+
+/** The values of every `flag` in a canonical call, like `--build-arg`. */
+export function flagValues(args: readonly string[], flag: string): string[] {
+  return args.flatMap((a, i) => (args[i - 1] === flag ? [a] : []));
+}
 
 /** What a run of the shim does with a translated call. */
 export type TaskDockerPlan =

@@ -368,7 +368,9 @@ function checkRun(parts: DockerParts, s: Safety): void {
   const labelled = all(flags, "--label");
   const forwarder = labelled.includes("majhi.container=hostfwd");
   const holder =
-    labelled.includes("majhi.container=previewhold") || labelled.includes("majhi.container=taskhold");
+    labelled.includes("majhi.container=previewhold") ||
+    labelled.includes("majhi.container=taskhold") ||
+    labelled.includes("majhi.container=builderguard");
   for (const cap of all(flags, "--cap-add")) {
     if (
       !CAPS.includes(cap) &&
@@ -386,7 +388,15 @@ function checkRun(parts: DockerParts, s: Safety): void {
   if (!/^[1-9][0-9]{0,2}$/.test(pids) || Number(pids) > PIDS_LIMIT)
     refuse(`The process limit ${pids} is not allowed.`);
   checkLimits(flags);
-  const kind = checkLabels(flags, s, ["preview", "previewhold", "taskhold", "taskrun", "dbcheck", "hostfwd"]);
+  const kind = checkLabels(flags, s, [
+    "preview",
+    "previewhold",
+    "taskhold",
+    "builderguard",
+    "taskrun",
+    "dbcheck",
+    "hostfwd",
+  ]);
   // Only a task container's holder runs detached: majhi waits for its guard, then starts the container in it.
   if (is(flags, "--detach") && kind !== "taskhold") refuse("The docker flag --detach is not allowed here.");
   const name = one(flags, "--name");
@@ -432,6 +442,10 @@ function checkRun(parts: DockerParts, s: Safety): void {
   }
   if (kind === "taskhold") {
     checkTaskHold(parts, flags, s, { name, networks, mounts, publishes, pull });
+    return;
+  }
+  if (kind === "builderguard") {
+    checkBuilderGuard(parts, flags, s, { name, networks, mounts, publishes, pull });
     return;
   }
   if (kind !== "hostfwd" && is(flags, "--add-host")) refuse("The docker flag --add-host is not allowed.");
@@ -548,6 +562,83 @@ function checkPreviewHold(
       refuse("A preview's holder may be told only the task network's subnets.");
   }
   if (!matches(ImageRefSchema, parts.image ?? "")) refuse("A preview's holder runs majhi's runner image.");
+}
+
+/** The container docker-container builds a builder in: `buildx_buildkit_<builder>0`. */
+export const builderContainer = (task: string): string => `buildx_buildkit_${containerNames(task).builder}0`;
+
+/**
+ * The one-shot guard of a task's builder: a container in the builder's own network namespace (where
+ * every `RUN` step of a build runs) that sets netguard's rules there and exits. Same rule as a holder:
+ * public internet, nothing private, link-local or of the computer. Nothing else may share that namespace.
+ */
+function checkBuilderGuard(
+  parts: DockerParts,
+  flags: Flag[],
+  s: Safety,
+  found: {
+    name: string;
+    networks: string[];
+    mounts: string[];
+    publishes: string[];
+    pull: string | undefined;
+  },
+): void {
+  const names = containerNames(s.task);
+  if (!found.name.startsWith(`majhi-${names.key}-bg-`))
+    refuse(`A builder guard is named majhi-${names.key}-bg-<id>.`);
+  if (found.pull !== "never") refuse("A builder guard must run with --pull never.");
+  if (found.mounts.length > 0 || found.publishes.length > 0)
+    refuse("A builder guard has no mount and publishes no port.");
+  if (!is(flags, "--read-only")) refuse("A builder guard runs with a read-only root.");
+  if (all(flags, "--cap-add").join() !== "NET_ADMIN") refuse("A builder guard adds NET_ADMIN, nothing else.");
+  if (all(flags, "--env").length > 0 || is(flags, "--add-host") || is(flags, "--tmpfs"))
+    refuse("A builder guard takes no environment, host name or scratch folder.");
+  if (found.networks.length !== 1 || found.networks[0] !== `container:${builderContainer(s.task)}`) {
+    refuse(
+      `A builder guard joins the network of ${builderContainer(s.task)}, and no other.`,
+      "network_not_allowed",
+    );
+  }
+  if (parts.command.join(" ") !== `node ${GUARD_SCRIPT}`)
+    refuse("A builder guard runs only majhi's network guard.");
+  if (!matches(ImageRefSchema, parts.image ?? "")) refuse("A builder guard runs majhi's runner image.");
+}
+
+/** The builder guard's call: see `checkBuilderGuard`. */
+export function builderGuardRunArgs(s: Safety, spec: { image: string; id: string }): DockerParts {
+  const names = containerNames(s.task);
+  return safe(
+    {
+      verb: ["run"],
+      flags: [
+        "--rm",
+        "--name",
+        `majhi-${names.key}-bg-${spec.id}`,
+        ...labelFlags("builderguard", s.task),
+        "--cap-drop",
+        "ALL",
+        "--cap-add",
+        "NET_ADMIN",
+        "--security-opt",
+        "no-new-privileges",
+        "--pids-limit",
+        "64",
+        "--memory",
+        "64m",
+        "--cpus",
+        "0.25",
+        "--read-only",
+        "--pull",
+        "never",
+        "--network",
+        `container:${builderContainer(s.task)}`,
+      ],
+      image: spec.image,
+      command: ["node", GUARD_SCRIPT],
+    },
+    s,
+  );
 }
 
 /** A network alias a task container is reached by. Lowercase, so it is a valid host name. */
@@ -852,6 +943,7 @@ const labelFlags = (
     | "hostfwd"
     | "previewhold"
     | "taskhold"
+    | "builderguard"
     | "image"
     | "network"
     | "volume",

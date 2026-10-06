@@ -32,6 +32,8 @@ export interface ComposeHost {
   checkLimits(extra: number): Promise<void>;
   /** Asks the owner for an image, naming the service. */
   ask(image: string, service?: string): Promise<"allowed" | "pending">;
+  /** Throws `ImageNotAllowed` when the Dockerfile of a build call pulls an image the task may not run. */
+  checkBuild(args: string[]): Promise<void>;
   /** `docker buildx build`, as the plan of a `docker build` has it. */
   build(args: string[]): Promise<TaskDockerResult>;
   /** Holder, then container. */
@@ -146,6 +148,25 @@ async function running(host: ComposeHost): Promise<Set<string>> {
   return new Set((await composeContainers(host, false)).map((c) => c.service));
 }
 
+/** The checked `docker buildx build` call of a service's `build:`. Throws when the build is refused. */
+function buildArgsOf(build: NonNullable<ComposeService["build"]>, ctx: TaskDockerContext): string[] {
+  const plan = translateTaskDocker(
+    [
+      "build",
+      "--tag",
+      build.tag,
+      "--file",
+      build.dockerfile,
+      ...(build.target === undefined ? [] : ["--target", build.target]),
+      ...build.args.flatMap((a) => ["--build-arg", a]),
+      build.context,
+    ],
+    ctx,
+  );
+  if (plan.kind !== "build") throw new ContainerRefused("The build was not understood.");
+  return plan.args;
+}
+
 async function up(
   host: ComposeHost,
   inv: ComposeInvocation,
@@ -165,12 +186,24 @@ async function up(
       if (err instanceof ImageNotAllowed) missing.push(err);
       else throw err;
     }
+    if (service.build !== undefined) {
+      try {
+        await host.checkBuild(buildArgsOf(service.build, ctx));
+      } catch (err) {
+        if (err instanceof ImageNotAllowed)
+          missing.push(new ImageNotAllowed(err.image, service.name, err.also));
+        else throw err;
+      }
+    }
   }
   if (missing.length > 0) {
-    const answers = await Promise.all(
-      missing.map((m) => host.ask(m.image, m.service).catch(() => "pending" as const)),
+    const wanted = missing.flatMap((m) =>
+      [m.image, ...m.also].map((image) => ({ image, service: m.service })),
     );
-    const list = missing.map((m) => `${m.service ?? "?"}: ${m.image}`).join(", ");
+    const answers = await Promise.all(
+      wanted.map((m) => host.ask(m.image, m.service).catch(() => "pending" as const)),
+    );
+    const list = wanted.map((m) => `${m.service ?? "?"}: ${m.image}`).join(", ");
     return fail(
       host,
       "image_not_allowed",
@@ -204,22 +237,8 @@ async function up(
       if (why !== undefined) return fail(host, "compose_dependency_failed", why);
     }
     if (service.build !== undefined) {
-      const build = translateTaskDocker(
-        [
-          "build",
-          "--tag",
-          service.build.tag,
-          "--file",
-          service.build.dockerfile,
-          ...(service.build.target === undefined ? [] : ["--target", service.build.target]),
-          ...service.build.args.flatMap((a) => ["--build-arg", a]),
-          service.build.context,
-        ],
-        ctx,
-      );
-      if (build.kind !== "build")
-        return fail(host, "refused", `${service.name}: the build was not understood.`);
-      const built = await host.build(build.args);
+      const buildArgs = buildArgsOf(service.build, ctx);
+      const built = await host.build(buildArgs);
       if (built.code !== 0) {
         return {
           code: built.code,

@@ -23,8 +23,7 @@ Cause (owner): `docker compose`, `-p`, `--network`, `--env-file` were refused in
 **Left.**
 - Owner to check on the real install: update the runner image (shim, `psql`, `redis-cli`), start a compose stack in a real task, answer an image card in a real workspace.
 - Gap 10 is partly done: the runner has the clients and services work by name. A `postgres` or `mysql` connection type and an allowed private range per connection are not built.
-- Copy to approve: the Containers limit hints in Setup still say "Previews and services"; they now count scripts' and compose containers too.
-- `containers.per_task` stays 3: an app with Postgres and Redis fits, a fourth container does not (compose says so before it starts any). Raise it in Setup if stacks are bigger.
+- `containers.per_task` defaults to 6 (owner decision).
 - A script's own `docker run -d` containers are not remembered across a pause (compose stacks and services are). The Hub's "Running now" list shows services and previews, not scripts' containers.
 - A process that serves on `localhost` only is not reachable by name; it must listen on `0.0.0.0`.
 - Existing majhi startup logs `docker buildx rm failed` for builder node names (before this branch; harmless).

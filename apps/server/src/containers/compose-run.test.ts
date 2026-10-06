@@ -242,6 +242,94 @@ describe("docker compose in a task", () => {
   });
 });
 
+describe("builds in a task", () => {
+  const dockerfile = (text: string) => writeFile(join(repo, "Dockerfile"), text);
+  const build = (...extra: string[]) => call("ACM-1", repo, "build", "-t", "web:test", ...extra, ".");
+
+  it("pulls only images the owner allowed or the task built: every FROM, COPY --from, mount and # syntax=", async () => {
+    for (const text of [
+      "FROM node:22\n",
+      "FROM alpine:3 AS a\nCOPY --from=nginx:1.27 /x /x\n",
+      "# syntax=docker/dockerfile:1.7\nFROM alpine:3\n",
+      "ARG BASE=mysql:8\nFROM ${BASE}\n",
+    ]) {
+      await dockerfile(text);
+      const out = await build();
+      expect(out.error?.code, text).toBe("image_not_allowed");
+    }
+    expect(docker.taskCalls.filter((c) => c[0] === "buildx")).toEqual([]);
+    // Each image asks the owner, once, and the card has no container name.
+    expect(asked).toEqual(
+      expect.arrayContaining(["? node:22", "? nginx:1.27", "? docker/dockerfile:1.7", "? mysql:8"]),
+    );
+  });
+
+  it("builds with allowed images, stages of its own and an image the task built before", async () => {
+    await dockerfile("FROM alpine:3 AS base\nFROM postgres:16-alpine\nCOPY --from=base /a /a\n");
+    expect((await build()).code).toBe(0);
+    docker.images.add("majhi-acm-1-img-web:test");
+    await dockerfile("FROM web:test\n");
+    expect((await build()).code).toBe(0);
+    // A build argument changes what ARG resolves to.
+    await dockerfile("ARG BASE=alpine:3\nFROM ${BASE}\n");
+    expect((await build()).code).toBe(0);
+    expect((await build("--build-arg", "BASE=node:22")).error?.code).toBe("image_not_allowed");
+  });
+
+  it("refuses a Dockerfile that is not there or not a file, and one it cannot read the images of", async () => {
+    await rm(join(repo, "Dockerfile"), { force: true });
+    expect((await build()).code).not.toBe(0);
+    await dockerfile("FROM ${NOPE}\n");
+    expect((await build()).error?.code).toBe("image_not_allowed");
+  });
+
+  it("refuses a compose stack whose build pulls an image nobody allowed, naming the service, before any start", async () => {
+    await mkdir(join(repo, "app"), { recursive: true });
+    await writeFile(join(repo, "app", "Dockerfile"), "FROM node:22\n");
+    const out = await up("services:\n  db:\n    image: postgres:16-alpine\n  app:\n    build: ./app\n");
+    expect(out.error?.code).toBe("image_not_allowed");
+    expect(asked).toEqual(["app node:22"]);
+    expect(docker.holds).toEqual([]);
+    expect(names()).toEqual([]);
+  });
+});
+
+describe("the builder's network", () => {
+  const dockerfile = () => writeFile(join(repo, "Dockerfile"), "FROM alpine:3\n");
+  const build = () => call("ACM-1", repo, "build", "-t", "web:test", ".");
+
+  it("is closed to private destinations before a build runs on it, at every start of the builder", async () => {
+    await dockerfile();
+    expect((await build()).code).toBe(0);
+    expect(docker.builderGuards).toHaveLength(1);
+    const guard = docker.builderGuards[0] ?? [];
+    expect(guard).toEqual(
+      expect.arrayContaining([
+        "--network",
+        "container:buildx_buildkit_majhi-preview-acm-10",
+        "--cap-add",
+        "NET_ADMIN",
+        "--pull",
+        "never",
+      ]),
+    );
+    expect(guard.slice(-3)).toEqual(["majhi-runner:dev", "node", "/usr/local/lib/majhi/netguard.mjs"]);
+    expect(guard.join(" ")).not.toContain("--publish");
+    // A builder stops when its build ends and starts with a new network: every start is guarded again.
+    await build();
+    expect(docker.builderGuards).toHaveLength(2);
+  });
+
+  it("fails closed: no build runs when the guard cannot be set", async () => {
+    await dockerfile();
+    docker.failBuilderGuard = true;
+    const out = await build();
+    expect(out.code).not.toBe(0);
+    expect(out.stderr).toContain("could not close the builder's network");
+    expect(docker.taskCalls.filter((c) => c[0] === "buildx")).toEqual([]);
+  });
+});
+
 describe("a script's own containers", () => {
   const run = (...argv: string[]) => call("ACM-1", repo, "run", ...argv);
 

@@ -82,6 +82,19 @@ export class FakeDocker implements ContainerDocker {
     return { stdout: "", stderr: "" };
   }
 
+  /** The builder guards run, as the arguments of their `docker run`. */
+  builderGuards: string[][] = [];
+  /** Makes the builder guard fail, to play a kernel that cannot filter. */
+  failBuilderGuard = false;
+  /** How many times each builder was stopped: a stopped builder starts again with a new network. */
+  private builderStarts = 0;
+
+  async guardBuilder(parts: DockerParts, safety: Safety): Promise<void> {
+    assertSafe(parts, safety);
+    if (this.failBuilderGuard) throw new Error("iptables-restore failed");
+    this.builderGuards.push(dockerArgv(parts));
+  }
+
   /** Holders that did not come up, by name, for a test of the failure. */
   failHolds = new Set<string>();
   /** The holders started, with the arguments of their `docker run`. */
@@ -227,6 +240,7 @@ export class FakeDocker implements ContainerDocker {
         if (!this.builders.has(last)) throw new Error("no builder");
         return out("");
       case "buildx stop":
+        this.builderStarts++;
         this.stoppedBuilders.push(last);
         return out("");
       case "buildx prune":
@@ -298,6 +312,7 @@ export class FakeDocker implements ContainerDocker {
         return out(c.logs ?? "");
       }
       case "inspect": {
+        if (last.startsWith("buildx_buildkit_")) return out(`abc123 started-${this.builderStarts}`);
         const c = [...this.containers.values()].find((x) => x.id === last || x.name === last);
         if (c === undefined) throw new Error("No such object");
         if (args.includes("{{.State.Status}}")) return out((c.state ?? "running 0 none").split(" ")[0] ?? "");

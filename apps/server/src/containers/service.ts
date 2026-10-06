@@ -1,4 +1,5 @@
-import { basename } from "node:path";
+import { randomBytes } from "node:crypto";
+import { basename, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { Spawned } from "@majhi/acp";
 import type {
@@ -19,7 +20,9 @@ import { errorMessage, UserError } from "../errors.ts";
 import type { ProcessManager } from "../processes/manager.ts";
 import {
   buildArgs,
+  builderContainer,
   builderCreateArgs,
+  builderGuardRunArgs,
   ContainerRefused,
   type HostPaths,
   hostForwardRunArgs,
@@ -39,11 +42,15 @@ import {
 import type { ComposeInvocation } from "./compose-cli.ts";
 import { type ComposeHost, composeCall } from "./compose-run.ts";
 import type { DockerCli, TaskCallResult } from "./docker.ts";
+import { dockerfileImages } from "./dockerfile-images.ts";
 import { prefetchEnvFiles } from "./env-file.ts";
 import { containerNames } from "./names.ts";
 import { lastPrune, PRUNE_EVERY_MS, pruneBuilderCache, pruneImages, savePrune } from "./prune.ts";
+import { readTaskFile } from "./safe-file.ts";
 import {
+  flagValues,
   ImageNotAllowed,
+  localImage,
   showUserNames,
   TASK_CONTAINER_ID,
   TASK_RUN_KIND,
@@ -57,7 +64,7 @@ export const NOT_IN_DOCKER = "Containers need majhi running in Docker.";
 /** The docker calls the service makes. A test gives it a fake. */
 export type ContainerDocker = Pick<
   DockerCli,
-  "exec" | "connect" | "guard" | "create" | "attached" | "task" | "hold"
+  "exec" | "connect" | "guard" | "guardBuilder" | "create" | "attached" | "task" | "hold"
 >;
 
 export interface ContainerServiceDeps {
@@ -183,6 +190,8 @@ export class ContainerService {
   /** Preview builds running, by task. The builder stops when the last one ends. */
   private readonly builds = new Map<string, number>();
   private pendingStarts = 0;
+  /** The start of each task's builder container that has its network guard, by task. */
+  private readonly guardedBuilders = new Map<string, string>();
   /** Docker calls of scripts that are waiting right now, by task. */
   private readonly calls = new Map<string, number>();
   /** The end of the queue of limit checks that reserve a name across all tasks. */
@@ -231,7 +240,12 @@ export class ContainerService {
   // Preview
 
   /** Builds the image of a task repo as its preview. Returns at once; the agent is woken when the build ends. */
-  async previewBuild(task: string, agent: string, input: PreviewBuildInput): Promise<ProcessInfo> {
+  async previewBuild(
+    task: string,
+    agent: string,
+    input: PreviewBuildInput,
+    ask?: AskImage,
+  ): Promise<ProcessInfo> {
     const docker = this.need();
     const t = this.task(task);
     const names = containerNames(task);
@@ -248,6 +262,28 @@ export class ContainerService {
       }
       const context = this.repoFolder(t, input.repo);
       const safety = this.safety(t);
+      try {
+        await this.assertBuildImages(
+          docker,
+          safety,
+          settings,
+          resolve(context, input.dockerfile),
+          Object.entries(input.build_args ?? {}).map(([k, v]) => `${k}=${v}`),
+        );
+      } catch (err) {
+        if (!(err instanceof ImageNotAllowed)) throw err;
+        const answers =
+          ask === undefined
+            ? []
+            : await Promise.all(
+                [err.image, ...err.also].map((image) =>
+                  ask(image, "preview").catch(() => "pending" as const),
+                ),
+              );
+        throw new UserError(
+          `${err.message}${ask === undefined ? " Allow them first with containers.images.allow." : answers.every((a) => a === "allowed") ? " The owner allowed them. Run preview_build again." : " majhi asked the owner in the room. Run preview_build again after the answer."}`,
+        );
+      }
       // Checked before anything starts, so a refusal reads clearly.
       const parts = buildArgs(safety, {
         context,
@@ -717,7 +753,12 @@ export class ContainerService {
       };
     };
     const asked = async (err: ImageNotAllowed): Promise<TaskDockerResult> => {
-      const answer = await options.ask(err.image, err.service).catch(() => "pending" as const);
+      const answers = await Promise.all(
+        [err.image, ...err.also].map((image) =>
+          options.ask(image, err.service).catch(() => "pending" as const),
+        ),
+      );
+      const answer = answers.every((a) => a === "allowed") ? "allowed" : "pending";
       return refused(
         answer === "allowed"
           ? `${err.message} Run the script again.`
@@ -817,6 +858,13 @@ export class ContainerService {
     args: string[],
   ): Promise<TaskDockerResult> {
     const task = safety.task;
+    await this.assertBuildImages(
+      docker,
+      safety,
+      settings,
+      flagValues(args, "--file")[0] ?? "",
+      flagValues(args, "--build-arg"),
+    );
     await this.locked(task, async () => {
       this.assertOpen(task);
       if ([...this.builds.values()].reduce((n, count) => n + count, 0) >= settings.build_total) {
@@ -888,6 +936,36 @@ export class ContainerService {
   }
 
   /**
+   * The images a Dockerfile pulls (every FROM stage, `COPY --from`, `RUN --mount from=`, the `# syntax=`
+   * frontend) must be ones the owner allowed or the task built. A build otherwise pulls what no one saw.
+   * Throws `ImageNotAllowed` naming all of them.
+   */
+  private async assertBuildImages(
+    docker: ContainerDocker,
+    safety: Safety,
+    settings: ContainersSettings,
+    dockerfile: string,
+    buildArgs: readonly string[],
+  ): Promise<void> {
+    const task = safety.task;
+    const text = await readTaskFile(dockerfile, safety, "Dockerfile", "refused", { maxBytes: 256 * 1024 });
+    const args = new Map(
+      buildArgs.flatMap((a) => {
+        const at = a.indexOf("=");
+        return at === -1 ? [] : [[a.slice(0, at), a.slice(at + 1)] as const];
+      }),
+    );
+    const built = await this.builtImages(docker, task);
+    const allowed = this.allowed(task, settings);
+    const missing = dockerfileImages(text, args).filter((ref) => {
+      const local = localImage(task, ref);
+      return !(local !== undefined && built.has(local)) && !allowed.some((image) => sameImage(image, ref));
+    });
+    const [first, ...more] = missing;
+    if (first !== undefined) throw new ImageNotAllowed(first, undefined, more);
+  }
+
+  /**
    * `docker start`: a container that ended cannot start again, because it joined the network of its
    * holder and the holder went when it ended. A container that still has its holder counts under the
    * limits like any start. Everything else is the script's to run again.
@@ -949,6 +1027,14 @@ export class ContainerService {
       ask: (image, service) => options.ask(image, service),
       checkLimits: (extra) => this.checkLimits(docker, task, settings, extra),
       build: (args) => this.scriptBuild(docker, safety, settings, args),
+      checkBuild: (args) =>
+        this.assertBuildImages(
+          docker,
+          safety,
+          settings,
+          flagValues(args, "--file")[0] ?? "",
+          flagValues(args, "--build-arg"),
+        ),
       launch: (plan) => this.scriptRun(docker, safety, settings, plan, options.signal),
       call: async (args) =>
         this.scriptResult(task, await docker.task(args, safety, this.allowed(task, settings))),
@@ -1334,6 +1420,7 @@ export class ContainerService {
       this.specs.delete(task);
       this.stacks.delete(task);
       this.parkedStacks.delete(task);
+      this.guardedBuilders.delete(task);
       await this.removeTaskContainers(task);
       await this.removeTaskState(task);
     });
@@ -1674,23 +1761,60 @@ export class ContainerService {
     };
   }
 
-  /** The task's builder, made on first use with the limits from the settings. */
+  /**
+   * The task's builder, made on first use with the limits from the settings, and closed to private
+   * destinations before any build runs on it (`guardBuilder`).
+   */
   private async ensureBuilder(
     docker: ContainerDocker,
     safety: Safety,
     settings: ContainersSettings,
   ): Promise<void> {
     const names = containerNames(safety.task);
+    let made = true;
     try {
       await docker.exec(["buildx", "inspect", names.builder]);
-      return;
+      made = false;
     } catch {
       // Not there yet.
     }
-    await docker.create(
-      builderCreateArgs(safety, { cpus: settings.build_cpus, memory: settings.build_memory }),
-      safety,
-    );
+    if (made) {
+      await docker.create(
+        builderCreateArgs(safety, { cpus: settings.build_cpus, memory: settings.build_memory }),
+        safety,
+      );
+    }
+    await this.guardBuilder(docker, safety);
+  }
+
+  /**
+   * The `RUN` steps of a build run in the builder's own network namespace, on the default bridge, so
+   * they would reach the computer's gateway, the LAN and 169.254.169.254. A one-shot container in that
+   * namespace sets the same rules as a holder (public internet only). A builder that was stopped starts
+   * with a new namespace, so this runs for every start of it; it fails closed.
+   */
+  private async guardBuilder(docker: ContainerDocker, safety: Safety): Promise<void> {
+    const image = this.deps.runnerImage;
+    if (image === undefined) throw new UserError("majhi does not know the runner image.", 501);
+    const task = safety.task;
+    try {
+      await docker.exec(["buildx", "inspect", "--bootstrap", containerNames(task).builder], {
+        timeoutMs: 120_000,
+      });
+      const started = (
+        await docker.exec(["inspect", "--format", "{{.Id}} {{.State.StartedAt}}", builderContainer(task)])
+      ).stdout.trim();
+      if (this.guardedBuilders.get(task) === started) return;
+      await docker.guardBuilder(
+        builderGuardRunArgs(safety, { image, id: randomBytes(4).toString("hex") }),
+        safety,
+      );
+      this.guardedBuilders.set(task, started);
+    } catch (err) {
+      throw new UserError(
+        `majhi could not close the builder's network, so nothing is built: ${errorMessage(err)}`,
+      );
+    }
   }
 
   /** The task's internal network, made once, with the task's running runners (and preview) joined to it. */

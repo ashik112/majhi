@@ -7,6 +7,7 @@ import {
   assertSafe,
   buildArgs,
   builderCreateArgs,
+  builderGuardRunArgs,
   ContainerRefused,
   type DockerParts,
   dockerArgv,
@@ -257,6 +258,32 @@ describe("the holder of a task's container", () => {
   it("is the only container that may run detached", () => {
     expect(refused(plus(service(), "--detach"))).toThrow(ContainerRefused);
     expect(refused(plus(preview(), "--detach"))).toThrow(ContainerRefused);
+  });
+});
+
+describe("the guard of a task's builder", () => {
+  const refused = (parts: DockerParts) => () => assertSafe(parts, safety);
+  const guard = () => builderGuardRunArgs(safety, { image: "majhi-runner:dev", id: "abcd1234" });
+
+  it("shares only the builder's network namespace, adds NET_ADMIN and runs only the network guard", () => {
+    const g = guard();
+    expect(values(g, "--network")).toEqual(["container:buildx_buildkit_majhi-preview-acm-10"]);
+    expect(values(g, "--cap-add")).toEqual(["NET_ADMIN"]);
+    for (const bad of [
+      replaced(g, "--network", "container:buildx_buildkit_majhi-preview-acm-20"),
+      replaced(g, "--network", "container:majhi-server"),
+      replaced(g, "--network", "host"),
+      plus(g, "--mount", "type=volume,target=/x"),
+      plus(g, "--publish", "127.0.0.1::80"),
+      plus(g, "--cap-add", "SYS_ADMIN"),
+      plus(g, "--env", "A=b"),
+      without(g, "--read-only"),
+      replaced(g, "--name", "majhi-acm-2-bg-abcd1234"),
+      { ...g, command: ["sh", "-c", "iptables -F"] },
+      { ...g, command: ["node", "/usr/local/lib/majhi/netguard.mjs", "--hold"] },
+    ]) {
+      expect(refused(bad)).toThrow(ContainerRefused);
+    }
   });
 });
 

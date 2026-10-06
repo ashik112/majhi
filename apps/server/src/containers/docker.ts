@@ -55,6 +55,7 @@ const GUARD_NODE = "/usr/local/bin/node";
 /** What netguard `--hold` prints once its rules are set. */
 const GUARD_READY = "majhi-netguard ready";
 const HOLD_WAIT_MS = 30_000;
+const GUARD_TIMEOUT_MS = 60_000;
 const HOLD_POLL_MS = 120;
 
 const CONTAINER_ID = /^[0-9a-f]{12,64}$/;
@@ -214,6 +215,19 @@ export class DockerCli {
     throw new ContainerRefused(
       `The network guard of ${name} did not start.${said.trim() === "" ? "" : ` ${said.trim().split("\n").slice(-3).join(" ")}`}`,
     );
+  }
+
+  /**
+   * Sets netguard's rules in the network namespace of a task's builder, where the `RUN` steps of a
+   * build run: a one-shot container shares that namespace, applies the rules and exits. The call is
+   * fixed (`builderGuardRunArgs`); only the task and the id in its name vary.
+   */
+  async guardBuilder(parts: DockerParts, safety: Safety): Promise<void> {
+    if (parts.verb.join(" ") !== "run" || !parts.flags.includes("majhi.container=builderguard")) {
+      throw new ContainerRefused("guardBuilder runs a builder guard only.");
+    }
+    assertSafe(parts, safety);
+    await this.raw(dockerArgv(parts), GUARD_TIMEOUT_MS);
   }
 
   /** Puts a container on the network of its task. Nothing else can be connected. */

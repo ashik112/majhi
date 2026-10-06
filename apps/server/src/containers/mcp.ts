@@ -114,6 +114,7 @@ export function containersServer(caller: ToolCaller, deps: ContainersMcpDeps): S
             task,
             agent,
             parsed.data as z.infer<typeof PreviewBuildInputSchema>,
+            (image, service) => deps.askImage(caller, image, service),
           );
           return ok(
             `Started ${listLine(p, new Date().toISOString())}.\nmajhi wakes you when the build ends. You can end your turn now.`,

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ContainersSettings, ContainersSettingsSchema, type Task } from "@majhi/shared";
@@ -47,6 +47,8 @@ beforeEach(async () => {
   folder = join(dir, "tasks", "ACM-1");
   await mkdir(join(folder, "api"), { recursive: true });
   await mkdir(join(dir, "tasks", "ACM-2", "api"), { recursive: true });
+  for (const id of ["ACM-1", "ACM-2"])
+    await writeFile(join(dir, "tasks", id, "api", "Dockerfile"), "FROM scratch\n");
   docker = new FakeDocker();
   openTasks = ["ACM-1", "ACM-2"];
   settings = ContainersSettingsSchema.parse({ images: ["postgres:16-alpine", "redis:7-alpine"] });
@@ -89,6 +91,27 @@ describe("ContainerService", () => {
         return "allowed";
       });
       expect(started.status).toBe("started");
+    });
+  });
+
+  describe("a preview's Dockerfile", () => {
+    it("pulls only images the owner allowed: it asks for the rest and builds nothing", async () => {
+      await writeFile(
+        join(dir, "tasks", "ACM-1", "api", "Dockerfile"),
+        "FROM node:22 AS build\nFROM redis:7-alpine\n",
+      );
+      const asked: string[] = [];
+      await expect(
+        service.previewBuild("ACM-1", "acme-builder", { dockerfile: "Dockerfile" }, async (image) => {
+          asked.push(image);
+          return "pending";
+        }),
+      ).rejects.toThrow(/node:22/);
+      expect(asked).toEqual(["node:22"]);
+      expect(docker.builders.size).toBe(0);
+      await expect(
+        service.previewBuild("ACM-1", "acme-builder", { dockerfile: "Dockerfile" }),
+      ).rejects.toThrow(/Allow them first/);
     });
   });
 
