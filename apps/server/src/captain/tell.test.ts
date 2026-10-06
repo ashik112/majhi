@@ -1,3 +1,4 @@
+import { AUTONOMY_CHAT_BRIEF, CHAT_BRIEF } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
 import { CaptainRepo } from "./repo.ts";
@@ -25,9 +26,19 @@ function setup() {
     boss: async () => state.boss,
     orgOf: (task: string) => ({ "LOCAL-1": "acme", "LOCAL-2": "globex" })[task],
   };
+  // The captain's root chat, another agent's chat with the owner, and the autonomy chat: none is a lane.
+  const chats: Record<string, { brief: string; team: string[] }> = {
+    "LOCAL-18": { brief: CHAT_BRIEF, team: ["boss"] },
+    "LOCAL-19": { brief: CHAT_BRIEF, team: ["acme-builder"] },
+    "LOCAL-20": { brief: AUTONOMY_CHAT_BRIEF, team: ["boss"] },
+  };
   const store = {
     tasks: {
-      get: (id: string) => (id in orgs ? { id, org: orgs[id], team: ["acme-builder"] } : undefined),
+      get: (id: string) => {
+        const chat = chats[id];
+        if (chat !== undefined) return { id, kind: "chat", org: undefined, ...chat };
+        return id in orgs ? { id, kind: "code", org: orgs[id], team: ["acme-builder"] } : undefined;
+      },
     },
   };
   const tell = new CaptainTell({
@@ -63,6 +74,29 @@ describe("tasks.tell", () => {
     await expect(t.tell.tell(say(), { kind: "agent", id: "boss" })).rejects.toThrow(/lane/);
     t.state.boss = undefined;
     await expect(t.tell.tell(say(), lane)).rejects.toThrow(/Only the captain/);
+    expect(t.sent).toEqual([]);
+  });
+
+  it("lets the captain in its root chat write to a task of any workspace (PRV-139)", async () => {
+    const t = setup();
+    const root = { kind: "agent", id: "boss", task: "LOCAL-18" } as const;
+    await expect(t.tell.tell(say(), root)).resolves.toMatchObject({ id: "ACM-1", told: true });
+    await expect(t.tell.tell({ id: "GLX-1", text: "hi" }, root)).resolves.toMatchObject({ told: true });
+    await expect(t.tell.tell({ id: "PRV-1", text: "hi" }, root)).resolves.toMatchObject({ told: true });
+    expect(t.sent.map((s) => [s.task, s.by])).toEqual([
+      ["ACM-1", "boss"],
+      ["GLX-1", "boss"],
+      ["PRV-1", "boss"],
+    ]);
+  });
+
+  it("refuses the captain in a chat that is not its root chat, and another agent in its own chat", async () => {
+    const t = setup();
+    await expect(t.tell.tell(say(), { kind: "agent", id: "boss", task: "LOCAL-19" })).rejects.toThrow(/lane/);
+    await expect(t.tell.tell(say(), { kind: "agent", id: "boss", task: "LOCAL-20" })).rejects.toThrow(/lane/);
+    await expect(t.tell.tell(say(), { kind: "agent", id: "acme-builder", task: "LOCAL-19" })).rejects.toThrow(
+      /Only the captain/,
+    );
     expect(t.sent).toEqual([]);
   });
 });

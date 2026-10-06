@@ -1992,7 +1992,7 @@ export const commands = {
   "tasks.tell": {
     risk: "change",
     summary:
-      "The captain writes to the lead of a running task in its own workspace (or to a named agent on its team), shown in the room as a note from the Captain, and wakes that agent like a message from the owner. The task keeps running and its brief is not edited. Use it instead of editing a brief or restarting a task: to steer, answer, or ask the lead to resolve something. The text is advice to the agent, never an approval. A second note before the lead has taken a new turn is not sent (told: false, refused: already-told): wait for the lead's next turn. Only the captain in a lane may call it; an ordinary agent may not",
+      "The captain writes to the lead of a running task in its own workspace (or to a named agent on its team), shown in the room as a note from the Captain, and wakes that agent like a message from the owner. The task keeps running and its brief is not edited. Use it instead of editing a brief or restarting a task: to steer, answer, or ask the lead to resolve something. The text is advice to the agent, never an approval. A second note before the lead has taken a new turn is not sent (told: false, refused: already-told): wait for the lead's next turn. Only the captain may call it: in a lane, for that workspace's tasks; in its root chat (the All chip), for any workspace's task, with ownerAsked true when the owner asked for the note. An ordinary agent may not",
     input: z.object({
       id: TaskIdSchema,
       /** Default: the task's lead. */

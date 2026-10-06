@@ -1,4 +1,4 @@
-import { PRIVATE } from "@majhi/shared";
+import { isAutonomyChat, isOwnerChat, PRIVATE, type Task } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
@@ -10,7 +10,9 @@ import type { CaptainRepo } from "./repo.ts";
  * `tasks.tell` (SPEC 5.18): the captain writes to a task's lead. Who may, and how often:
  * - the owner may, in any workspace (the UI and the palette);
  * - the captain may, in its lane, for a task of that lane's workspace only;
- * - no other agent may, and the captain outside a lane may not.
+ * - the captain may, in its root chat (the All chip), for a task of any workspace: the owner is in
+ *   that chat, and the admin tool lets it through only when the owner asked;
+ * - no other agent may, and the captain in any other chat may not.
  * A note is keyed by the lead's last turn (G1): a second note with no new turn of the lead since the
  * last one is not sent and says `already-told`, so two agents cannot talk each other into a loop. The
  * key is stored in the database, so it holds after a restart.
@@ -65,10 +67,15 @@ export class CaptainTell {
       );
     }
     const lane = actor.task === undefined ? undefined : this.deps.lanes.orgOf(actor.task);
-    if (lane === undefined) {
-      throw new UserError("The captain writes to a lead from its workspace lane only.", 409);
+    const from = actor.task === undefined ? undefined : this.deps.store.tasks.get(actor.task);
+    const root = from !== undefined && isRootChat(from, boss);
+    if (lane === undefined && !root) {
+      throw new UserError(
+        "The captain writes to a lead from its workspace lane, or from its root chat (the All chip) only.",
+        409,
+      );
     }
-    if ((task.org ?? PRIVATE) !== lane) {
+    if (lane !== undefined && (task.org ?? PRIVATE) !== lane) {
       throw new UserError(
         `Refused: ${task.id} belongs to another workspace, and this lane works in its own only.`,
         409,
@@ -87,4 +94,9 @@ export class CaptainTell {
     if (done.done) return { ...done.value, told: true };
     return { id: task.id, agent, told: false, refused: done.why === "repeat" ? "already-told" : "in-flight" };
   }
+}
+
+/** True for the captain's root chat: its own chat with the owner, in no workspace, not a lane or the autonomy chat. */
+export function isRootChat(task: Pick<Task, "kind" | "brief" | "org" | "team">, boss: string): boolean {
+  return isOwnerChat(task) && !isAutonomyChat(task) && task.org === undefined && task.team[0] === boss;
 }
