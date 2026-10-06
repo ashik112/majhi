@@ -160,16 +160,17 @@ export function deriveLines(
         : [...had.evidence, proof].slice(0, REFS_MAX);
       // A file that says it outright beats a proposal; the stronger tier wins.
       const better = fromFiles && had.source === "agent";
+      const tier = weaker(owner.confidence, ref.confidence ?? "extracted");
+      // A line several files show is as sure as its surest proof.
+      const surer = fromFiles && TIER_ORDER.indexOf(tier) < TIER_ORDER.indexOf(had.confidence);
       lines.set(id, {
         ...had,
         evidence,
         ...(better
-          ? {
-              source: ref.source,
-              state: "confirmed" as const,
-              confidence: weaker(owner.confidence, ref.confidence ?? "extracted"),
-            }
-          : {}),
+          ? { source: ref.source, state: "confirmed" as const, confidence: tier }
+          : surer
+            ? { confidence: tier }
+            : {}),
       });
     }
   }

@@ -15,7 +15,7 @@ export const EXTRACT_COMMAND = {
 
 /** The most one project may take, and the memory its reader gets. */
 const TIMEOUT_MS = 10 * 60_000;
-const MEMORY = "2g";
+const MEMORY = "4g";
 const MAX_OUTPUT = 16 * 1024;
 
 /** A folder name made from a project id: one path segment, never a way out of the map folder. */

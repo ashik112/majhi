@@ -1,5 +1,15 @@
 # Progress
 
+## Map code graph with graphify (branch `feat/map-graphify`, not merged; backend only)
+
+**What changed.** graphify 0.9.77 is in the runner image (uv venv `/opt/graphify`, `GRAPHIFY_NO_AUTO_REFRESH=1`). Update map has a free **graph** pass: each project is read in a throwaway runner container with no network, a read-only root, the checkout read-only and one writable folder, `<tasks folder>/.map/<workspace>/<project>` (graph.json, majhi-facts.json, graphify's cache). HTTP client calls with an address in the file become endpoints with proof and go through the same resolver; unowned ones stay in Addresses. Agents get `code_graph` (search, explain, neighbors, path) over their own task's repos. The Map screen is unchanged apart from one line of copy for the new source in the line panel.
+
+**How to try it.** With agents in the runner container, press Update map. The progress line says "Reading the code graph of ...". Output: `<tasks folder>/.map/<workspace>/<project>/`.
+
+**How verified.** Typecheck clean. Tests: isolated run flags (`packages/acp/src/runner/docker.test.ts`), `code_graph` refuses another workspace's graph (`apps/server/src/map/graph/tools.test.ts`). Real run in docker on three Acme fixtures (web, api, worker): 2.2 to 2.9 s for the three, three lines found with proof, checkouts untouched. On a folder of 857 TypeScript files: 40 s, 9,606 nodes, no gain on a second read (graphify's clustering, not extraction, takes the time).
+
+**Left.** Project-level communities, hubs, flow layout, Trace and the Inside view wait for the owner's mockup. Python and JavaScript/TypeScript only for call sites. Queue calls are not read. A project removed from a workspace leaves its map folder behind. A graph run longer than the live server's orphan sweep interval may be removed by a second majhi sharing the Docker daemon (seen in testing); one majhi owns its containers.
+
 ## Map accuracy (branch `fix/map-accuracy`, not merged)
 
 **Why.** The owner's real map was "random, mostly wrong, connects independent projects, no way to hide projects". Causes: lines were guessed from the words of a variable name, the domain or a port; every project's Postgres and Redis became one shared box; every outside service was a box; model-proposed lines were mixed in; the layout was a dagre dump.
