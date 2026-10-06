@@ -1586,6 +1586,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         path: p.path,
         base: p.base,
         exists: p.exists,
+        links: p.links.map((l) => l.to),
       })),
     tasksDir,
     reader: options.wikiReader ?? graphRunner,

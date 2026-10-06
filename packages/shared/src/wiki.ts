@@ -223,7 +223,11 @@ export const CallPathSchema = z
       !p.includes("#") &&
       !p.includes("\\") &&
       !p.includes("\0") &&
-      (p === "/" || p.slice(1).split("/").every((part) => part !== "" && part !== "." && part !== "..")),
+      (p === "/" ||
+        p
+          .slice(1)
+          .split("/")
+          .every((part) => part !== "" && part !== "." && part !== "..")),
     "Use an absolute path without a query",
   );
 
@@ -347,11 +351,19 @@ export const WikiFactSchema = z
 export type WikiFact = z.infer<typeof WikiFactSchema>;
 export type WikiFactOf<K extends WikiFactKind> = Extract<WikiFact, { kind: K }>;
 
+/**
+ * What the sealed reader finds, as a number. Raised when the reader learns to find a new kind of fact (2: HTTP calls with
+ * their method and path), so a repo already read at its commit is read again, with no model, and no page is rewritten.
+ */
+export const FACTS_READER = 2;
+
 /** What one fact run of a repo leaves in `facts.json`. */
 export const WikiFactsFileSchema = z.object({
   repo: IdSchema,
   commit: CommitShaSchema,
   rules: z.number().int(),
+  /** The `FACTS_READER` it was read by. A file from before the number existed is reader 1. */
+  reader: z.number().int().default(1),
   facts: z.array(WikiFactSchema).max(50_000),
 });
 export type WikiFactsFile = z.infer<typeof WikiFactsFileSchema>;

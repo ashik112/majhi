@@ -1,6 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type WikiAnswer, type WikiFactsFile, WikiFactsFileSchema, type WikiSystemView } from "@majhi/shared";
+import {
+  type CommitSha,
+  type WikiAnswer,
+  type WikiFact,
+  type WikiFactsFile,
+  WikiFactsFileSchema,
+  type WikiSystemView,
+} from "@majhi/shared";
 import { FACTS_FILE } from "../facts/extract.ts";
 import { buildSystem } from "./links.ts";
 
@@ -16,7 +23,9 @@ export interface SystemSources {
 export interface LoadedSystem {
   view: WikiSystemView;
   /** The commit each project's facts were read at: what a workspace page built from them is built from. */
-  commits: Record<string, string>;
+  commits: Record<string, CommitSha>;
+  /** Every project's facts, for what must tell whether a fact is still in the code. */
+  facts: readonly WikiFact[];
 }
 
 /**
@@ -33,7 +42,11 @@ export async function loadSystem(org: string, sources: SystemSources): Promise<L
     answers: sources.answers(org),
     missing: read.filter(({ file }) => file === undefined).map(({ m }) => m.id),
   });
-  return { view, commits: Object.fromEntries(withFacts.map(({ m, file }) => [m.id, file.commit])) };
+  return {
+    view,
+    commits: Object.fromEntries(withFacts.map(({ m, file }) => [m.id, file.commit])),
+    facts: withFacts.flatMap(({ file }) => file.facts),
+  };
 }
 
 /** The facts file a project's last run left in its cache folder. A file that is missing or does not parse reads as never read. */

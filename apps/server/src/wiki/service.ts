@@ -1,5 +1,6 @@
 import {
   type CommitSha,
+  FACTS_READER,
   type Price,
   WIKI_COST_CAP_USD,
   WIKI_RULES,
@@ -11,21 +12,24 @@ import {
   type WikiPageId,
   WikiPageSchema,
   type WikiPhase,
+  type WikiSystemView,
   wikiPageId,
 } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
 import { Background } from "../memory/background.ts";
 import type { Housekeeper } from "../memory/housekeeper.ts";
 import type { FactsReader, ReaderRun } from "../reader/run.ts";
+import { projectGapsPage, saveProjectGaps } from "./derived.ts";
 import { exportCommit, pruneExports } from "./facts/export.ts";
 import { extractFacts } from "./facts/extract.ts";
 import { ProjectFiles } from "./facts/files.ts";
-import { branchTip, changedFiles } from "./git.ts";
+import { branchTip } from "./git.ts";
 import { wikiCacheDir } from "./paths.ts";
 import {
   flowAlive,
   flowLeads,
   flowPrompt,
+  PLAN_TOPIC,
   type PlannedComponent,
   type PlannedFlow,
   pageForRole,
@@ -34,11 +38,13 @@ import {
   type WikiPlan,
   writerPages,
 } from "./plan.ts";
-import type { WikiGaps, WikiRepo, WikiState } from "./repo.ts";
+import { type WikiGaps, type WikiRepo, type WikiState, WORKSPACE_STATE } from "./repo.ts";
+import { Changes, citedPaths, staleReason } from "./stale.ts";
 import type { WikiEnabled } from "./switch.ts";
+import { readFactsFile } from "./system/load.ts";
+import { WorkspaceWiki } from "./workspace.ts";
 import { checkPage } from "./writer/check.ts";
 import { type DraftPage, type WriterPage, writerPageId } from "./writer/draft.ts";
-import { buildGapsPage } from "./writer/gaps.ts";
 import { hintFacts } from "./writer/hints.ts";
 import { plainWords } from "./writer/plain.ts";
 import { tokensOf, wikiSpendId, writePages } from "./writer/write.ts";
@@ -61,6 +67,8 @@ export interface WikiProject {
   path: string;
   base: string | undefined;
   exists: boolean;
+  /** The projects it declares it depends on (`projects.<id>.links`). */
+  links?: readonly string[];
 }
 
 /** What the search index keeps of the pages, so agents can search them. */
@@ -127,8 +135,22 @@ export class WikiService {
   private readonly tails = new Map<string, Promise<unknown>>();
   private readonly running = new Map<string, WikiRunning>();
   private readonly graphing = new Set<string>();
+  /** How the workspace's projects connect, and the pages that say so. */
+  private readonly workspace: WorkspaceWiki;
 
-  constructor(private readonly deps: WikiServiceDeps) {}
+  constructor(private readonly deps: WikiServiceDeps) {
+    this.workspace = new WorkspaceWiki(deps, (org) => this.projectsOf(org, undefined));
+  }
+
+  /** How the workspace's projects connect, drawn from the stored facts and the owner's answers. No reader, no model. */
+  system(org: string) {
+    return this.workspace.system(org);
+  }
+
+  /** Draws again what depends on the links (every Gaps page, the workspace overview's picture) after an answer or a role choice. */
+  redraw(org: string): Promise<void> {
+    return this.workspace.redraw(org);
+  }
 
   /** Resolves when every run and graph refresh has ended: shutdown waits for it. */
   settled(): Promise<void> {
@@ -176,17 +198,31 @@ export class WikiService {
   async start(
     org: string,
     project?: string,
-    options: { replan?: boolean } = {},
+    options: { replan?: boolean; page?: WikiPageId } = {},
   ): Promise<{ finished: Promise<ProjectReport[]> }> {
     await this.preflight(org, project);
-    const targets = await this.projectsOf(org, project);
+    // A page with no project is a workspace page: only the workspace stage runs for it.
+    const workspaceOnly = options.page !== undefined && project === undefined;
+    const targets = workspaceOnly ? [] : await this.projectsOf(org, project);
     for (const p of targets) this.step(p, "facts", 0, 1);
     const before = this.tails.get(org) ?? Promise.resolve();
     const run = before
       .catch(() => undefined)
       .then(async () => {
         const reports: ProjectReport[] = [];
-        for (const p of targets) reports.push(await this.runProject(p, options.replan === true));
+        try {
+          for (const p of targets) reports.push(await this.runProject(p, options));
+          // The projects' facts are stored now: the workspace pages follow them. A run of one project page changes
+          // nothing across projects.
+          if (project === undefined || options.page === undefined) {
+            reports.push(await this.runWorkspace(org, options));
+          }
+        } finally {
+          // Whatever happened, the links and the Gaps pages follow the facts that were stored. No model, seconds.
+          await this.workspace
+            .redraw(org)
+            .catch((err: unknown) => this.deps.log?.(`wiki: redraw: ${errorMessage(err)}`));
+        }
         return reports;
       });
     this.tails.set(org, run);
@@ -199,7 +235,11 @@ export class WikiService {
   }
 
   /** `start`, and waits for the run to end. */
-  async update(org: string, project?: string, options: { replan?: boolean } = {}): Promise<ProjectReport[]> {
+  async update(
+    org: string,
+    project?: string,
+    options: { replan?: boolean; page?: WikiPageId } = {},
+  ): Promise<ProjectReport[]> {
     return (await this.start(org, project, options)).finished;
   }
 
@@ -230,12 +270,19 @@ export class WikiService {
    * since each was built (git only), or a first build's usual size. The estimate is tokens at the phase 0 measure,
    * and dollars when the writer's model has a price.
    */
-  async estimate(org: string, project?: string): Promise<WikiEstimate> {
+  async estimate(org: string, project?: string, page?: WikiPageId): Promise<WikiEstimate> {
     const projects = await this.projectsOf(org, project);
     const cap = this.deps.capUsd ?? WIKI_COST_CAP_USD;
     const capTokens = this.deps.capTokens ?? WIKI_TOKEN_CAP;
     let pages = 0;
-    for (const p of projects) pages += await this.pagesToWrite(p);
+    if (page !== undefined) {
+      // One page is one page, written whether or not it is stale; the Gaps page is made by code.
+      pages = page === wikiPageId({ kind: "gaps" }) ? 0 : 1;
+    } else {
+      for (const p of projects) pages += await this.pagesToWrite(p);
+      // The workspace pages follow an update of the whole workspace, or of any one of its projects.
+      pages += await this.workspace.pagesToWrite(org);
+    }
     const tokens = pages * TOKENS_PER_PAGE;
     const price = await this.deps.price(org);
     const usd =
@@ -292,12 +339,38 @@ export class WikiService {
     return n;
   }
 
-  private async runProject(p: WikiProject, replan: boolean): Promise<ProjectReport> {
+  private async runWorkspace(
+    org: string,
+    options: { replan?: boolean; page?: WikiPageId },
+  ): Promise<ProjectReport> {
+    const { repo } = this.deps;
+    try {
+      return await this.workspace.build(org, {
+        replan: options.replan === true,
+        ...(options.page === undefined ? {} : { page: options.page }),
+      });
+    } catch (err) {
+      const state = repo.state(org, WORKSPACE_STATE);
+      repo.saveState(org, WORKSPACE_STATE, {
+        ...state,
+        lastError: errorMessage(err).slice(0, 500),
+        updatedAt: this.now(),
+      });
+      throw err;
+    } finally {
+      this.deps.changed();
+    }
+  }
+
+  private async runProject(
+    p: WikiProject,
+    options: { replan?: boolean; page?: WikiPageId },
+  ): Promise<ProjectReport> {
     const { repo } = this.deps;
     const report: ProjectReport = { project: p.id, written: [], left: [], removed: [], usd: 0, tokens: 0 };
     try {
       await this.preflight(p.org, p.id);
-      return await this.build(p, replan, report);
+      return await this.build(p, options, report);
     } catch (err) {
       const state = repo.state(p.org, p.id);
       repo.saveState(p.org, p.id, {
@@ -312,7 +385,11 @@ export class WikiService {
     }
   }
 
-  private async build(p: WikiProject, replan: boolean, report: ProjectReport): Promise<ProjectReport> {
+  private async build(
+    p: WikiProject,
+    options: { replan?: boolean; page?: WikiPageId },
+    report: ProjectReport,
+  ): Promise<ProjectReport> {
     const { repo, reader } = this.deps;
     if (reader === undefined || p.base === undefined) throw new UserError("The wiki cannot run here.", 409);
     this.step(p, "facts", 0, 1);
@@ -321,19 +398,30 @@ export class WikiService {
     report.commit = tip;
     const state = repo.state(p.org, p.id);
     const stored = new Map(repo.loaded(p.org, p.id).map((page) => [page.id, page]));
+    const replan = options.replan === true;
+    const only = options.page;
+    if (only !== undefined && state.builtCommit === undefined) {
+      throw new UserError(
+        `${p.id} has no wiki yet. Update the whole project once first: a page is written from the facts and plan of a full update.`,
+        409,
+      );
+    }
 
-    // Nothing moved since the last complete update: nothing to read, nothing to write.
+    // Nothing moved since the last complete update: nothing to read, nothing to write. The facts are read again when
+    // the reader that made them is older than the one that is here (new kinds of facts), which costs no model.
+    const cacheDir = wikiCacheDir(await this.deps.tasksDir(), p.org, p.id);
     if (
+      only === undefined &&
       state.builtCommit === tip &&
       state.rules === WIKI_RULES &&
       state.lastError === undefined &&
       !replan &&
-      stored.size > 0
+      stored.size > 0 &&
+      (await readFactsFile(cacheDir))?.reader === FACTS_READER
     ) {
       return report;
     }
 
-    const cacheDir = wikiCacheDir(await this.deps.tasksDir(), p.org, p.id);
     const exportDir = await exportCommit({ repoPath: p.path, cacheDir, sha: tip });
     const { file, report: found } = await extractFacts(
       { org: p.org, project: p.id, exportDir, cacheDir, sha: tip },
@@ -350,9 +438,21 @@ export class WikiService {
     const wanted = writerPages(components, flowing.flows);
     const changes = new Changes(p.path, tip);
     const toWrite: WriterPage[] = [];
+    if (
+      only !== undefined &&
+      only !== wikiPageId({ kind: "gaps" }) &&
+      !wanted.some((w) => writerPageId(w) === only)
+    ) {
+      throw new UserError(`${p.id} has no page ${only} to write.`, 404);
+    }
     for (const page of wanted) {
       const id = writerPageId(page);
       const had = stored.get(id);
+      if (only !== undefined) {
+        // One page was asked for: it is written whether or not it is stale, and no other is.
+        if (id === only) toWrite.push(page);
+        continue;
+      }
       const leads = hintFacts(page, file.facts).flatMap((f) => f.sources.map((s) => s.path));
       const why =
         had === undefined
@@ -363,14 +463,36 @@ export class WikiService {
 
     // Write, check, store.
     const written = await this.write(p, tip, exportDir, file.facts, toWrite, components, report);
-    const gone = [...stored.values()]
-      .filter((page) => page.kind !== "gaps" && !wanted.some((w) => writerPageId(w) === page.id))
-      .map((page) => page.id);
+    const gone =
+      only !== undefined
+        ? []
+        : [...stored.values()]
+            .filter((page) => page.kind !== "gaps" && !wanted.some((w) => writerPageId(w) === page.id))
+            .map((page) => page.id);
     this.step(p, "store", 0, 1);
-    this.store(p, tip, state, { written, gone, wanted, plan: flowing.plan, planNote: flowing.note, report });
-    // Exports of commits no page was built from any more are removed; each page's source chips read the export it was built from.
-    const built = new Set(repo.loaded(p.org, p.id).flatMap((page) => Object.values(page.builtFrom)));
-    await pruneExports(cacheDir, [tip, ...built]);
+    const view = (await this.workspace.system(p.org)).view;
+    this.store(p, tip, state, {
+      written,
+      gone,
+      wanted,
+      plan: flowing.plan,
+      planNote: flowing.note,
+      report,
+      view,
+      partial: only !== undefined,
+    });
+    // Exports of commits no page was built from any more are removed; each page's source chips read the export it was
+    // built from, and so do the workspace pages that cite this project.
+    const built = new Set([
+      ...repo.loaded(p.org, p.id).flatMap((page) => Object.values(page.builtFrom)),
+      ...repo
+        .loaded(p.org, undefined)
+        .flatMap((page) => (page.builtFrom[p.id] === undefined ? [] : [page.builtFrom[p.id]])),
+    ]);
+    await pruneExports(
+      cacheDir,
+      [tip, ...built].filter((c): c is CommitSha => c !== undefined),
+    );
     return report;
   }
 
@@ -493,6 +615,10 @@ export class WikiService {
       plan: WikiPlan | undefined;
       planNote: string | undefined;
       report: ProjectReport;
+      /** How the workspace's projects connect now: the project's Gaps page lists its calls that link nowhere. */
+      view: WikiSystemView;
+      /** One page was written: the commit, the rules and the other pages stay as they were. */
+      partial: boolean;
     },
   ): void {
     const { repo } = this.deps;
@@ -524,22 +650,16 @@ export class WikiService {
     repo.transaction(() => {
       for (const page of written.pages) repo.save(page);
       for (const id of run.gone) repo.remove(p.org, p.id, id);
-      const pages = repo.loaded(p.org, p.id).filter((page) => page.kind !== "gaps");
-      const gapsPage = buildGapsPage({
-        org: p.org,
-        project: p.id,
-        commit: tip,
-        pages,
-        couldNot: gaps.couldNot,
-        failed: gaps.failed,
-      });
-      const had = repo.page(p.org, p.id, gapsPage.id)?.page;
       // The gaps page names the commit it was made at; a commit that changed nothing on it is not a new version.
-      if (had === undefined || !sameGaps(had, gapsPage)) repo.save(gapsPage);
+      const commit = run.partial ? (before.builtCommit ?? tip) : tip;
+      saveProjectGaps(
+        repo,
+        projectGapsPage(repo, { org: p.org, project: p.id, commit, view: run.view, gaps }),
+      );
       repo.saveState(p.org, p.id, {
-        builtCommit: tip,
+        builtCommit: run.partial ? (before.builtCommit ?? tip) : tip,
         sources,
-        rules: WIKI_RULES,
+        rules: run.partial ? before.rules : WIKI_RULES,
         ...(run.plan === undefined ? {} : { plan: run.plan }),
         gaps,
         ...(lastError === undefined ? {} : { lastError }),
@@ -561,8 +681,6 @@ export class WikiService {
   }
 }
 
-const PLAN_TOPIC = "Main flows";
-
 /** An overview's role tiles open the component page that covers where they are. */
 function withRolePages(page: WikiPage, components: readonly PlannedComponent[]): WikiPage {
   if (page.kind !== "overview") return page;
@@ -575,66 +693,10 @@ function withRolePages(page: WikiPage, components: readonly PlannedComponent[]):
   });
 }
 
-/** The repo files a page cites, once each: its claims' sources and what its dropped claims pointed at. */
-export function citedPaths(page: WikiPage): string[] {
-  return [
-    ...new Set([
-      ...page.claims.flatMap((c) => c.sources.map((s) => s.path)),
-      ...page.dropped.flatMap((d) => d.cited.map((c) => c.path)),
-    ]),
-  ];
-}
-
 function couldNotOf(draft: DraftPage): WikiGaps["couldNot"] {
   return draft.couldNot.map((c) => ({
     page: draft.id,
     topic: c.topic.slice(0, 300),
     why: c.why.slice(0, 600),
   }));
-}
-
-/** Two gaps pages say the same when everything but the commit they were made at is equal. */
-function sameGaps(a: WikiPage, b: WikiPage): boolean {
-  return a.body === b.body && JSON.stringify(a.dropped) === JSON.stringify(b.dropped) && a.v === b.v;
-}
-
-/** Files changed between a commit and the tip, asked once per commit. */
-export class Changes {
-  private readonly seen = new Map<string, Promise<ReadonlySet<string> | undefined>>();
-
-  constructor(
-    private readonly repoPath: string,
-    private readonly tip: string,
-  ) {}
-
-  since(commit: string): Promise<ReadonlySet<string> | undefined> {
-    let got = this.seen.get(commit);
-    if (got === undefined) {
-      got = changedFiles(this.repoPath, commit, this.tip).then((files) =>
-        files === undefined ? undefined : new Set(files),
-      );
-      this.seen.set(commit, got);
-    }
-    return got;
-  }
-}
-
-/**
- * Why a stored page must be written again, or undefined when it stands: it was written by older rules, the commit
- * it was built from is gone, or a file it cites (or a file that now gives the facts it starts from) changed since.
- */
-export async function staleReason(
-  page: WikiPage,
-  sources: readonly string[],
-  leads: readonly string[],
-  project: string,
-  rules: number,
-  changes: Changes,
-): Promise<"rules" | "history" | "changed" | undefined> {
-  if (page.v !== WIKI_RULES || rules !== WIKI_RULES) return "rules";
-  const built = page.builtFrom[project];
-  if (built === undefined) return "history";
-  const changed = await changes.since(built);
-  if (changed === undefined) return "history";
-  return [...sources, ...leads].some((path) => changed.has(path)) ? "changed" : undefined;
 }

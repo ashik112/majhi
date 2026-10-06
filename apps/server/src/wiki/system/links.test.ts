@@ -266,6 +266,7 @@ describe("a workspace's links stay among its own projects", () => {
     repo,
     commit: SHA as never,
     rules: 1,
+    reader: 2,
     facts,
   });
   it("reads only the projects the workspace has and never another workspace's facts", async () => {
