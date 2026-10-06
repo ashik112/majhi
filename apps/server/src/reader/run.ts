@@ -2,7 +2,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { BaseEnv, Spawner } from "@majhi/acp";
 import { OrgIdSchema } from "@majhi/shared";
-import { errorMessage } from "../../errors.ts";
+import { errorMessage } from "../errors.ts";
 
 /** The graphify release the runner image installs. Raise it in the Dockerfile and here together. */
 export const GRAPHIFY_VERSION = "0.9.77";

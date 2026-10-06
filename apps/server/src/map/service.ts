@@ -40,7 +40,7 @@ import { type ConfigResult, configPass, type ProjectInput } from "./config/pass.
 import { answerOf, ownerOf, parseAddress } from "./endpoints.ts";
 import { ProjectFiles } from "./files.ts";
 import { graphEndpoints } from "./graph/facts.ts";
-import type { GraphRunner } from "./graph/run.ts";
+import type { GraphRunner } from "../reader/run.ts";
 import {
   buildInside,
   factsStamp,

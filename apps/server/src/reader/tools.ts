@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { UserError } from "../../errors.ts";
+import { UserError } from "../errors.ts";
 import { explain, loadGraph, neighbors, path, search } from "./query.ts";
 import { graphFolder } from "./run.ts";
 
@@ -16,7 +16,7 @@ export const CodeGraphInputSchema = z.object({
 export type CodeGraphInput = z.infer<typeof CodeGraphInputSchema>;
 
 export const CODE_GRAPH_DESCRIPTION =
-  "Ask the code graph of one of this task's repos, instead of grepping or reading many files to find your way. It lists functions, classes and files with the calls and imports between them, built from the repo's default branch at the last map update (it may not show your own changes yet). search: find nodes by words of a name or path, best connected first. explain: what one node is, what it calls and what calls it. neighbors: the same links, shorter. path: the shortest chain of calls or imports from one node (name) to another (to). Start with search or explain to learn the structure, then read the files it points to. Only this task's own repos; read-only.";
+  "Ask the code graph of one of this task's repos, instead of grepping or reading many files to find your way. It lists functions, classes and files with the calls and imports between them, built from the repo's registered checkout the last time it was read (it may not show your own changes yet). search: find nodes by words of a name or path, best connected first. explain: what one node is, what it calls and what calls it. neighbors: the same links, shorter. path: the shortest chain of calls or imports from one node (name) to another (to). Start with search or explain to learn the structure, then read the files it points to. Only this task's own repos; read-only.";
 
 export interface CodeGraphDeps {
   /** The map folder in the tasks folder. */

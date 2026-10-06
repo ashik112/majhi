@@ -32,7 +32,7 @@ import {
   type CodeGraphInput,
   CodeGraphInputSchema,
   type CodeGraphTools,
-} from "../map/graph/tools.ts";
+} from "../reader/tools.ts";
 import { type MemoryMcpDeps, memoryServer } from "../memory/mcp.ts";
 import type { ProcessManager } from "../processes/manager.ts";
 import { processesServer } from "../processes/mcp.ts";

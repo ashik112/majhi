@@ -160,9 +160,9 @@ RUN --mount=from=ghcr.io/astral-sh/uv:0.12.21,source=/uv,target=/usr/local/bin/u
   && chmod -R a+rX /opt/serena \
   && /opt/serena/bin/serena --version
 # graphify (SPEC 5.21): reads a project's code into a graph for the map, with no model and no network, in a
-# throwaway runner container that sees the project read-only (`apps/server/src/map/graph/`). Installed with uv
+# throwaway runner container that sees the project read-only (`apps/server/src/reader/`). Installed with uv
 # into its own venv under /opt/graphify, on the Python that Serena installed above. Pinned: raise
-# `graphifyy` here and GRAPHIFY_VERSION in `apps/server/src/map/graph/run.ts` together. GRAPHIFY_NO_AUTO_REFRESH
+# `graphifyy` here and GRAPHIFY_VERSION in `apps/server/src/reader/run.ts` together. GRAPHIFY_NO_AUTO_REFRESH
 # stops its CLI from rewriting the agent skill folders of the home it runs in.
 RUN --mount=from=ghcr.io/astral-sh/uv:0.12.21,source=/uv,target=/usr/local/bin/uv \
   UV_PYTHON_INSTALL_DIR=/opt/serena/python UV_COMPILE_BYTECODE=1 uv venv -p 3.13 /opt/graphify \
