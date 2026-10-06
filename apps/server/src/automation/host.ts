@@ -51,6 +51,7 @@ export function createActionHost({
         ...(input.team === undefined ? {} : { team: input.team }),
         attachments: [],
         start: true,
+        provenance: input.provenance,
       });
       return { id: task.id };
     },

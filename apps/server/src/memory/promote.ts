@@ -57,6 +57,7 @@ export class Promotion {
       text: `Add memory fact ${fact.id} to AGENTS.md in ${project.id}`,
       project: project.id,
       message: `docs: add a fact to AGENTS.md\n\n${fact.text}`,
+      reason: "Project facts the memory kept are added to AGENTS.md",
       change: async (repo) => {
         const file = join(repo.worktree, "AGENTS.md");
         const old = await readFile(file, "utf8").catch(() => "");

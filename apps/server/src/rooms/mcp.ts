@@ -157,7 +157,7 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     name: "create",
     command: "tasks.create",
     description:
-      "Create a task. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, how to check it). List in repos only the projects the task will change, each with an optional base: only those get a branch and a worktree. base (the starting branch) is set only there, never from words in title or text; without it the project's base is used, and a base the repo does not have falls back to the project's with a warning. Naming a project in text attaches nothing, and agents can read every registered project without listing it, so never list a repo only to read it or to tell the owner about it. To attach a file you have, pass its path in your task folder (like attachments/image.png) or an upload id in attachments. For an investigation (reading code to answer a question, such as why something fails), set readOnly true: the repos are mounted read-only and the task gets no branch, no worktree, no Changes and no Ship. Create a code task only when code must change. With parent, it becomes a subtask; with dependsOn, it waits for those tasks. For a fix found in an ops task, set followUpOf to that task: the new task is linked to it as a follow-up, and it never starts without the owner, so create it with start false and list the repos to change in repos. It does not start unless start is true and the owner allows it. To start it later, use start.",
+      "Create a task. Give a short title (under 80 characters, what the task is) and put the full description in text (what to do, why, how to check it). List in repos only the projects the task will change, each with an optional base: only those get a branch and a worktree. base (the starting branch) is set only there, never from words in title or text; without it the project's base is used, and a base the repo does not have falls back to the project's with a warning. Naming a project in text attaches nothing, and agents can read every registered project without listing it, so never list a repo only to read it or to tell the owner about it. To attach a file you have, pass its path in your task folder (like attachments/image.png) or an upload id in attachments. For an investigation (reading code to answer a question, such as why something fails), set readOnly true: the repos are mounted read-only and the task gets no branch, no worktree, no Changes and no Ship. Create a code task only when code must change. Set type (bug, incident, feature, request, research, design, test or chore) when you know it; left out, majhi reads it from the text. With parent, it becomes a subtask; with dependsOn, it waits for those tasks. For a fix found in an ops task, set followUpOf to that task: the new task is linked to it as a follow-up, and it never starts without the owner, so create it with start false and list the repos to change in repos. It does not start unless start is true and the owner allows it. To start it later, use start.",
   },
   {
     name: "split",
@@ -182,6 +182,12 @@ const TASK_TOOLS: (Tool & { command: CommandName })[] = [
     command: "tasks.update",
     description:
       "Change a task's title, description or coordination mode, or its starting branch (base, the branch its worktree is cut from) while it has not started. With more than one repo, give project too. A base the repo does not have is refused.",
+  },
+  {
+    name: "set_type",
+    command: "tasks.setType",
+    description:
+      "Set a task's type: bug, incident, feature, request, research, design, test or chore. Only the captain may, and only for a task of its own workspace; a type the owner set stays. Use it for a task that has no type yet.",
   },
   {
     name: "plan",
@@ -516,12 +522,20 @@ function tasksServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
   // The merge tool is offered only to agents with the Merge permission.
   const mayMerge = async () =>
     (await frontmatter(deps.agents, caller.agent))?.perms.includes("merge") === true;
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: listed(
-      (await mayMerge()) ? TASK_TOOLS : TASK_TOOLS.filter((t) => t.command !== "tasks.merge"),
-      true,
-    ),
-  }));
+  // Typing a task is the captain's: no other agent is offered the tool.
+  const isCaptain = async () => (await deps.config.sections()).boss === caller.agent;
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    const merge = await mayMerge();
+    const captain = await isCaptain();
+    return {
+      tools: listed(
+        TASK_TOOLS.filter(
+          (t) => (merge || t.command !== "tasks.merge") && (captain || t.command !== "tasks.setType"),
+        ),
+        true,
+      ),
+    };
+  });
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<Result> => {
     const tool = TASK_TOOLS.find((t) => t.name === request.params.name);
     if (tool === undefined) return fail(`There is no tool ${request.params.name}.`);

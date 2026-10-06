@@ -73,7 +73,15 @@ export async function openChat({ config, store, tasks, agents }: BossChatDeps, a
     if (summary.chat !== true || summary.team[0] !== agent || summary.org !== org) continue;
     if (DEFAULT_CHAT_TITLES.includes(summary.title)) return tasks.get(summary.id);
   }
-  return tasks.create({ text: CHAT_BRIEF, kind: "chat", agent, org, attachments: [], start: false });
+  return tasks.create({
+    text: CHAT_BRIEF,
+    kind: "chat",
+    agent,
+    org,
+    attachments: [],
+    start: false,
+    provenance: { kind: "chat" },
+  });
 }
 
 /** The owner's current captain chat as `openBossChat` finds it, without making one. */

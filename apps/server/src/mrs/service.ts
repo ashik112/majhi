@@ -35,7 +35,7 @@ import type { RoomService } from "../room/service.ts";
 import { DEFAULT_IDENTITY } from "../runs/checkpoint.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import type { Store } from "../store/index.ts";
-import { inferBranchType, readRepoStyle, titleFor, typeOfBranch } from "../tasks/branch-naming.ts";
+import { readRepoStyle, taskBranchType, titleFor, typeOfBranch } from "../tasks/branch-naming.ts";
 import type { TaskService } from "../tasks/service.ts";
 import {
   HELD,
@@ -494,7 +494,7 @@ export class MrService {
   /** `feat(acm-1): add login` when the repo's commits follow Conventional Commits, else `ACM-1: Add login`. */
   private async titleOf(task: Task, repo: TaskRepo): Promise<string> {
     const { commits } = await readRepoStyle(repo.source);
-    const type = typeOfBranch(repo.branch) ?? inferBranchType(task.title);
+    const type = typeOfBranch(repo.branch) ?? taskBranchType(task);
     return titleFor({ id: task.id, title: task.title, type }, commits);
   }
 
