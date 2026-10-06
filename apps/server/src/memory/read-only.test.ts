@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { PermissionAsk } from "@majhi/acp";
 import { describe, expect, it } from "vitest";
 import { readOnlyHandler } from "./read-only.ts";
@@ -21,7 +24,24 @@ describe("the read-only permission handler", () => {
   it("allows once a read or a search inside the export", async () => {
     expect(await decide(ask("read", [`${ROOT}/src/app.py`]))).toBe("yes");
     expect(await decide(ask("search", [ROOT]))).toBe("yes");
-    expect(await decide(ask("search"))).toBe("yes");
+  });
+
+  it("rejects a read or a search that names no place", async () => {
+    expect(await decide(ask("search"))).toBe("no");
+    expect(await decide(ask("read", []))).toBe("no");
+  });
+
+  it("rejects a read through a link in the export that leads out of it", async () => {
+    const base = await mkdtemp(join(tmpdir(), "read-only-"));
+    const root = join(base, "src-0123");
+    await mkdir(root);
+    await mkdir(join(base, "account"));
+    await writeFile(join(base, "account", "credentials.json"), "{}");
+    await symlink(join(base, "account"), join(root, "docs"));
+    await writeFile(join(root, "app.py"), "print(1)");
+    const decideIn = readOnlyHandler(root);
+    expect(await decideIn(ask("read", [join(root, "docs", "credentials.json")]))).toBe("no");
+    expect(await decideIn(ask("read", [join(root, "app.py")]))).toBe("yes");
   });
 
   it("rejects edit, delete, move, execute, fetch, an MCP tool and a request of no kind", async () => {
