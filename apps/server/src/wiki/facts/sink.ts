@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import {
   type CommitSha,
-  ContentHashSchema,
   RepoPathSchema,
   type WikiFact,
   type WikiFactId,
@@ -10,6 +9,7 @@ import {
   WikiFactSchema,
   type WikiSource,
 } from "@majhi/shared";
+import { hashLines, linesOf } from "../source.ts";
 import type { ProjectFiles } from "./files.ts";
 
 /** A place in a file a scanner points at, before it is read: the path is checked and the lines are hashed when facts are built. */
@@ -48,18 +48,6 @@ export function slugOf(text: string): string {
   return `${clean.slice(0, SLUG_MAX - 9)}#${hash}`;
 }
 
-/** Lines of a file as `[start, end]` cites count them: split at `\n`, a final newline ends the last line, `\r` is not part of a line. */
-export function linesOf(text: string): string[] {
-  const lines = text.split("\n");
-  if (lines.at(-1) === "") lines.pop();
-  return lines.map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l));
-}
-
-/** The hash a source stores for its lines: SHA-256 of the lines joined with `\n`. The checker computes it the same way. */
-export function hashLines(lines: readonly string[]): string {
-  return createHash("sha256").update(lines.join("\n")).digest("hex");
-}
-
 /**
  * Turns cites into sources by reading the export. Every read stays inside the export (`ProjectFiles` refuses a
  * symlink out of it, a folder, a file that is too big and a path with `..`). A file is read once per run.
@@ -96,7 +84,7 @@ export class Cites {
       commit: this.commit,
       path: cite.path,
       lines: [start, end],
-      hash: ContentHashSchema.parse(hashLines(all.slice(start - 1, end))),
+      hash: hashLines(all.slice(start - 1, end)),
     };
   }
 }
