@@ -150,7 +150,11 @@ describe("wiki.ask", () => {
   it("drops a cited passage number it was not given, and answers not found when none was", async () => {
     const some = await world({ cited: [1, 40] });
     const out = await some.ask.answer("acme", "api", "How does the billing service charge cards?");
-    expect(out).toMatchObject({ found: true, answer: "It charges cards.", pages: ["overview"] });
+    expect(out).toMatchObject({
+      found: true,
+      answer: "It charges cards.",
+      pages: [{ project: "api", id: "overview" }],
+    });
     expect(out.sources).toHaveLength(1);
 
     const none = await world({ cited: [40, 0, -1], answer: "It uses Paypal." });

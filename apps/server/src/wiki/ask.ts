@@ -1,4 +1,4 @@
-import type { WikiAskOutput, WikiPageId, WikiSource } from "@majhi/shared";
+import type { WikiAskOutput, WikiSource } from "@majhi/shared";
 import { z } from "zod";
 import { UserError } from "../errors.ts";
 import { type Housekeeper, parseJson } from "../memory/housekeeper.ts";
@@ -191,10 +191,13 @@ export class WikiAsk {
       return hit === undefined ? [] : [hit];
     });
     if (used.length === 0) return { answer: NOT_IN_WIKI, sources: [], pages: [], found: false };
-    const pages: WikiPageId[] = [];
+    const pages: WikiAskOutput["pages"] = [];
     const sources = new Map<string, WikiSource>();
     for (const hit of used) {
-      if (!pages.includes(hit.page)) pages.push(hit.page);
+      const project = hit.project === "" ? undefined : hit.project;
+      if (!pages.some((pg) => pg.id === hit.page && pg.project === project)) {
+        pages.push(project === undefined ? { id: hit.page } : { project, id: hit.page });
+      }
       if (hit.kind !== "claim") continue;
       const stored = this.deps.repo.page(org, hit.project === "" ? undefined : hit.project, hit.page);
       const claim = stored?.page.claims.find((c) => c.n === hit.n);

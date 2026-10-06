@@ -564,8 +564,8 @@ export const WikiAskOutputSchema = z.object({
   answer: z.string().max(2000),
   /** Where the claims behind the answer are shown in the code. */
   sources: z.array(WikiSourceSchema).max(12),
-  /** The pages the answer came from. A page id is unique within a project, so match it with the source's `repo` when the question covered several. */
-  pages: z.array(WikiPageIdSchema).max(12),
+  /** The pages the answer came from. No `project`: a workspace page. */
+  pages: z.array(z.object({ project: IdSchema.optional(), id: WikiPageIdSchema })).max(12),
   found: z.boolean(),
 });
 export type WikiAskOutput = z.infer<typeof WikiAskOutputSchema>;
