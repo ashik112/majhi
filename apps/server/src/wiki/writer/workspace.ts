@@ -2,8 +2,10 @@ import {
   type CommitSha,
   type DiagramSpec,
   DiagramSpecSchema,
+  WIKI_GAPS_HEADINGS,
   WIKI_RULES,
   type WikiDroppedClaim,
+  type WikiFactBasis,
   type WikiPage,
   type WikiPageId,
   WikiPageSchema,
@@ -119,12 +121,20 @@ export async function checkWorkspacePage(
   });
 }
 
+/** How a link is known, in the words under its label on the picture. */
+const BASIS_NOTE: Record<WikiFactBasis, string> = {
+  declared: "declared",
+  exact: "exact route match",
+  config: "set by config",
+  owner: "your answer",
+};
+
 const cut = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 /**
  * The picture of the workspace, drawn from the links and never by the model: a box per project (its role and what it
  * is, from the tile the writer gave and the checker kept), a line per pair of projects and type, solid, named by the
- * strongest link and how it is known. A guess the writer made is dashed. Without a tile a box has no role tag.
+ * strongest link and how it is known. A guess the writer made is dotted. Without a tile a box has no role tag.
  */
 export function workspaceDiagram(
   projects: readonly string[],
@@ -139,7 +149,8 @@ export function workspaceDiagram(
       from: l.from,
       to: l.to,
       type: l.type,
-      label: cut(`${l.label}${l.count > 1 ? ` +${l.count - 1}` : ""} (${l.basis})`, 60),
+      label: cut(`${l.label}${l.count > 1 ? ` +${l.count - 1}` : ""}`, 60),
+      note: BASIS_NOTE[l.basis],
     }));
   const drawn = new Set(edges.map((e) => `${e.from}>${e.to}`));
   const dashed = guessed
@@ -147,8 +158,9 @@ export function workspaceDiagram(
     .map((g) => ({
       from: g.from,
       to: g.to,
-      style: "dashed" as const,
-      label: cut(`${g.label ?? "linked"} (guessed)`, 60),
+      style: "dotted" as const,
+      label: cut(g.label ?? "linked", 60),
+      note: "guessed",
     }));
   return DiagramSpecSchema.parse({
     title: "How the projects connect",
@@ -195,7 +207,7 @@ export function buildWorkspaceGapsPage(input: WorkspaceGapsInput): WikiPage {
   const guessedLinks = input.pages.flatMap((p) =>
     p.diagrams.flatMap((d) =>
       d.edges
-        .filter((e) => e.style === "dashed" && p.kind === "overview")
+        .filter((e) => e.style === "dotted" && p.kind === "overview")
         .map((e) => `- ${e.from} to ${e.to}: ${e.label ?? "linked"}`),
     ),
   );
@@ -204,11 +216,11 @@ export function buildWorkspaceGapsPage(input: WorkspaceGapsInput): WikiPage {
     if (lines.length > 0) sections.push(`## ${heading}\n\n${lines.join("\n")}`);
   };
   add(
-    "Not linked calls",
+    WIKI_GAPS_HEADINGS.notLinked,
     input.system.unlinked.map((u) => unlinkedLine(u, true)),
   );
   add(
-    "Questions for you",
+    WIKI_GAPS_HEADINGS.questions,
     input.system.questions.map(
       (q) =>
         `- What is \`${address(q)}\`${q.scope === undefined ? "" : ` (a local address in ${q.scope})`}? Called by ${q.projects.join(", ")}${q.keys.length === 0 ? "" : `, set in ${q.keys.join(", ")}`}.`,

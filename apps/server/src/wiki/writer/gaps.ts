@@ -76,12 +76,12 @@ export function buildGapsPage(input: GapsInput): WikiPage {
   );
   const guessedRoles = input.guessedRoles ?? [];
   add(
-    "Guessed roles",
+    WIKI_GAPS_HEADINGS.guessedRoles,
     guessedRoles.map((r) => `- ${r.role}: ${r.tech} (${r.where}). Confirm it or change it on the overview.`),
   );
   const unlinked = input.unlinked ?? [];
   add(
-    "Not linked calls",
+    WIKI_GAPS_HEADINGS.notLinked,
     unlinked.map((u) => unlinkedLine(u, false)),
   );
   add(

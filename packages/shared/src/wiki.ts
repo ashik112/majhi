@@ -567,17 +567,13 @@ export type WikiRoleRow = z.infer<typeof WikiRoleRowSchema>;
 const WORKSPACE_PAGE_KINDS: readonly WikiPageKind[] = ["overview", "flow", "gaps"];
 
 /** The headings of the Gaps page's body that the page also shows as lists of its own data. */
-export const WIKI_GAPS_HEADINGS = { couldNotConfirm: "Could not confirm", guessed: "Guessed" } as const;
-
-/** A question the wiki asks the owner: it could not tell, so the owner picks one of the options. A saved answer rides along. */
-export const WikiQuestionSchema = z.object({
-  id: z.string().min(1).max(60),
-  text: z.string().min(1).max(400),
-  options: z.array(z.string().min(1).max(40)).min(2).max(6),
-  /** The option the owner chose, once they did. */
-  answer: z.string().min(1).max(40).optional(),
-});
-export type WikiQuestion = z.infer<typeof WikiQuestionSchema>;
+export const WIKI_GAPS_HEADINGS = {
+  couldNotConfirm: "Could not confirm",
+  guessed: "Guessed",
+  guessedRoles: "Guessed roles",
+  notLinked: "Not linked calls",
+  questions: "Questions for you",
+} as const;
 
 export const WikiPageSchema = z
   .object({
@@ -594,8 +590,6 @@ export const WikiPageSchema = z
     /** Overview pages only: the role tiles. A role not found has no row; the page says "not found". */
     roles: z.array(WikiRoleRowSchema).max(40).default([]),
     dropped: z.array(WikiDroppedClaimSchema).max(400).default([]),
-    /** Gaps pages only: what the wiki could not tell and asks the owner. */
-    questions: z.array(WikiQuestionSchema).max(40).default([]),
     diagrams: z.array(DiagramSpecSchema).max(6).default([]),
     /** The commit of each repo the page was written from. A project page names its project only. */
     builtFrom: z.record(IdSchema, CommitShaSchema),

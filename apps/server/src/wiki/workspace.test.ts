@@ -266,13 +266,14 @@ describe("the workspace wiki", () => {
     const overview = pages.find((p) => p.id === "overview") as WikiPage;
     expect(Object.keys(overview.builtFrom).sort()).toEqual(["acme-api", "acme-web"]);
     expect(overview.project).toBeUndefined();
-    // The picture is drawn from the links: a solid line per proven pair, the writer's guess dashed.
+    // The picture is drawn from the links: a solid line per proven pair, the writer's guess dotted.
     const edges = overview.diagrams[0]?.edges ?? [];
     expect(edges.map((e) => [e.from, e.to, e.type ?? e.style])).toEqual([
       ["acme-web", "acme-api", "http"],
-      ["acme-api", "acme-web", "dashed"],
+      ["acme-api", "acme-web", "dotted"],
     ]);
-    expect(edges[0]?.label).toBe("GET /api/v1/items +1 (exact)");
+    expect(edges[0]?.label).toBe("GET /api/v1/items +1");
+    expect(edges[0]?.note).toBe("exact route match");
     expect(overview.diagrams[0]?.nodes.map((n) => [n.id, n.kind])).toEqual([
       ["acme-api", "backend"],
       ["acme-web", "frontend"],

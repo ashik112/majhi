@@ -366,8 +366,8 @@ export class WorkspaceWiki {
     const overview = repo.loaded(org, undefined).find((p) => p.id === wikiPageId({ kind: "overview" }));
     if (overview !== undefined) {
       const guessed = (overview.diagrams[0]?.edges ?? [])
-        .filter((e) => e.style === "dashed")
-        .map((e) => ({ from: e.from, to: e.to, label: e.label?.replace(/ \(guessed\)$/, "") }));
+        .filter((e) => e.style === "dotted")
+        .map((e) => ({ from: e.from, to: e.to, label: e.label }));
       const diagram = workspaceDiagram(Object.keys(loaded.commits), overview.roles, loaded.view, guessed);
       if (JSON.stringify(diagram) !== JSON.stringify(overview.diagrams[0])) {
         repo.save({ ...overview, diagrams: [diagram, ...overview.diagrams.slice(1)] });
