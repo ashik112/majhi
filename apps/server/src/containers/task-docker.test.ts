@@ -51,6 +51,20 @@ describe("docker in a task: what a script may run", () => {
     expect(() => plan(["run", "acme/voice:test"])).toThrow(ImageNotAllowed);
   });
 
+  it("names the container on the owner's card, unless the script gave it no name", () => {
+    const wanted = (argv: string[]) => {
+      try {
+        plan(argv);
+      } catch (err) {
+        if (err instanceof ImageNotAllowed) return [err.image, err.service];
+        throw err;
+      }
+      return undefined;
+    };
+    expect(wanted(["run", "--name", "cache", "redis:7"])).toEqual(["redis:7", "cache"]);
+    expect(wanted(["run", "redis:7"])).toEqual(["redis:7", undefined]);
+  });
+
   it("lists only the task's containers, whatever filter it asks", () => {
     const listed = plan(["ps", "-a", "--filter", "name=web"]);
     expect(listed).toEqual({

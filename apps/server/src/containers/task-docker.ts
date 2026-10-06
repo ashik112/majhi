@@ -171,7 +171,7 @@ export function localImage(task: string, ref: string): string | undefined {
   return `${taskNames(task).imagePrefix}${name}:${match[2] ?? "latest"}`;
 }
 
-function runImage(ref: string, ctx: TaskDockerContext, service: string): string {
+function runImage(ref: string, ctx: TaskDockerContext, service: string | undefined): string {
   if (!matches(ImageRefSchema, ref)) return refuse(`The image ${shown(ref)} is not allowed.`);
   const local = localImage(ctx.safety.task, ref);
   if (local !== undefined && ctx.builtImages.has(local)) return local;
@@ -282,6 +282,8 @@ export interface RunSpec {
   name: string;
   /** More names the task network answers to. */
   aliases: readonly string[];
+  /** The script gave no `--name`: the name is made up, so an approval card does not show it. */
+  anonymous?: boolean | undefined;
   /** As typed: a local image of the task, or one the owner allowed. */
   image: string;
   rm: boolean;
@@ -342,7 +344,7 @@ export function buildRunPlan(
   if (spec.shmSize !== undefined && !SHM.test(spec.shmSize))
     return refuse(`The --shm-size ${shown(spec.shmSize)} is not allowed.`);
   checkHealth(spec.health);
-  const image = runImage(spec.image, ctx, spec.name);
+  const image = runImage(spec.image, ctx, spec.anonymous === true ? undefined : spec.name);
   const aliases = taskAliases(ctx.safety.task, spec.name, spec.aliases);
   const container = names.service(spec.name);
   const args = [
@@ -417,7 +419,8 @@ function translateRun(argv: readonly string[], ctx: TaskDockerContext): TaskDock
   if (command.length > MAX_COMMAND || command.some((a) => a.length > 4_000 || a.includes("\u0000"))) {
     return refuse("The container's command is too long or holds NUL.");
   }
-  const userName = single(parsed, "name") ?? `r${randomBytes(4).toString("hex")}`;
+  const typedName = single(parsed, "name");
+  const userName = typedName ?? `r${randomBytes(4).toString("hex")}`;
   if (!USER_NAME.test(userName)) return refuse(`The container name ${shown(userName)} is not allowed.`);
   const notes: string[] = [];
   const names = taskNames(ctx.safety.task);
@@ -449,6 +452,7 @@ function translateRun(argv: readonly string[], ctx: TaskDockerContext): TaskDock
   const health = single(parsed, "health-cmd");
   const spec: RunSpec = {
     name: userName,
+    anonymous: typedName === undefined,
     aliases: values(parsed, "alias"),
     image: imageRef,
     rm: has(parsed, "rm"),

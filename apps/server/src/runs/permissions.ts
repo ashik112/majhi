@@ -79,7 +79,9 @@ export function isProcessTool(title: string): boolean {
 
 /** A call to one of majhi's own MCP servers, as the CLIs name it: `mcp__majhi-admin__<tool>`. */
 export function isMajhiTool(title: string): boolean {
-  return /^mcp__majhi-(admin|decide|room|tasks|memory|connections|containers)__[a-z0-9_]+$/.test(title.trim());
+  return /^mcp__majhi-(admin|decide|room|tasks|memory|connections|containers)__[a-z0-9_]+$/.test(
+    title.trim(),
+  );
 }
 
 /**
