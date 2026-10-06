@@ -1,12 +1,23 @@
 import type { JourneyView } from "@majhi/shared";
-import { RoleBadge } from "./brand";
+import { Li, RoleBadge, RoleIcon, TriggerIcon } from "./brand";
 import { Ic } from "./icons";
 import type { Graph, PNode } from "./model";
 import type { UiState } from "./use-map-state";
 
 const checks = (j: JourneyView) => j.steps.filter((s) => s.check).length;
 
-/** The left list: projects (connected, then not connected) or journeys, with search and one action below. */
+/** Where a journey goes, in words: its project and what it reaches, or the projects in order. Shown as a tooltip only. */
+export function journeyPath(j: JourneyView): string {
+  if (j.inner !== undefined) {
+    const outside = [...new Set(j.steps.flatMap((s) => (s.toKind === "outside" ? [s.to] : [])))];
+    return `${j.inner.project} only${outside.length > 0 ? ` · ${outside.join(", ")}` : ""}`;
+  }
+  const order: string[] = [];
+  for (const s of j.steps) for (const p of [s.from, s.to]) if (!order.includes(p)) order.push(p);
+  return order.join(" → ");
+}
+
+/** The left list: projects (connected, then not connected), or journeys in groups by project. */
 export function Rail({
   graph,
   journeys,
@@ -16,6 +27,9 @@ export function Rail({
   onJourney,
   onNewJourney,
   onAddLink,
+  onMode,
+  onToggleGroup,
+  onAllGroups,
 }: {
   graph: Graph;
   journeys: readonly JourneyView[];
@@ -25,6 +39,9 @@ export function Rail({
   onJourney: (id: string) => void;
   onNewJourney: () => void;
   onAddLink: () => void;
+  onMode: (m: "start" | "touch") => void;
+  onToggleGroup: (id: string) => void;
+  onAllGroups: (ids: readonly string[], collapse: boolean) => void;
 }) {
   const q = s.q.trim().toLowerCase();
   const match = (text: string) => q === "" || text.toLowerCase().includes(q);
@@ -55,6 +72,57 @@ export function Rail({
   };
   const con = graph.connected.filter((n) => match(n.label));
   const un = graph.unlinked.filter((n) => match(n.label));
+
+  const shown = journeys.filter((j) => match(`${j.name} ${journeyPath(j)}`));
+  const groups = graph.nodes
+    .map((n) => ({
+      node: n,
+      list: shown.filter((j) =>
+        s.jmode === "start"
+          ? j.start === n.id
+          : j.inner === undefined
+            ? j.touches.includes(n.id)
+            : j.start === n.id,
+      ),
+    }))
+    .filter((g) => g.list.length > 0);
+  const ids = groups.map((g) => g.node.id);
+  const allOpen = ids.every((id) => s.collapsed[id] !== true);
+
+  const journeyRow = (j: JourneyView) => {
+    const chk = checks(j);
+    const yours = j.status === "kept";
+    return (
+      <button
+        key={j.id}
+        type="button"
+        className={`row jc ${yours ? "yours" : ""} ${s.journey === j.id ? "on" : ""}`}
+        data-journey={j.id}
+        title={journeyPath(j)}
+        onClick={() => onJourney(j.id)}
+      >
+        <div className="l1">
+          <span className="nm">{j.name}</span>
+          <span className="mk" title={yours ? "Yours" : "Suggested"}>
+            <Li n={yours ? "user" : "spark"} />
+          </span>
+        </div>
+        <div className="l2">
+          <span className="st" title={j.trigger}>
+            <TriggerIcon kind={j.trigger} />
+            {j.steps.length} steps
+          </span>
+          {chk > 0 && (
+            <span className="st needs">
+              <i className="lamp needs" style={{ width: 6, height: 6 }} />
+              {chk} to check
+            </span>
+          )}
+        </div>
+      </button>
+    );
+  };
+
   return (
     <>
       <div className="rail-head">
@@ -70,53 +138,61 @@ export function Rail({
           />
           <kbd>/</kbd>
         </div>
+        {journeysView && (
+          <>
+            <fieldset className="seg rail-seg" aria-label="Group by">
+              <button type="button" aria-pressed={s.jmode === "start"} onClick={() => onMode("start")}>
+                Start
+              </button>
+              <button type="button" aria-pressed={s.jmode === "touch"} onClick={() => onMode("touch")}>
+                Touches
+              </button>
+            </fieldset>
+            <div className="railctl">
+              <span className="glabel">{shown.length} journeys</span>
+              <button type="button" onClick={() => onAllGroups(ids, allOpen)}>
+                <Li n={allOpen ? "fold" : "expand"} />
+                {allOpen ? "Collapse all" : "Expand all"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
       <div className="scroll fade">
         <div className="rail-list">
           {journeysView ? (
-            <>
-              <div className="gh">
-                <span className="glabel">Journeys</span>
-                <span className="n">{journeys.length}</span>
-              </div>
-              {journeys.length === 0 && (
-                <p className="sub" style={{ padding: "4px 8px" }}>
-                  No journeys yet. Name one from the lines you found.
-                </p>
-              )}
-              {journeys
-                .filter((j) => match(j.name))
-                .map((j) => {
-                  const c = checks(j);
-                  return (
+            groups.length === 0 ? (
+              <p className="sub" style={{ padding: "12px 8px" }}>
+                {journeys.length === 0
+                  ? "No journeys yet. Name one from the lines you found."
+                  : "No journeys match."}
+              </p>
+            ) : (
+              groups.map((g) => {
+                const open = s.collapsed[g.node.id] !== true;
+                return (
+                  <div key={g.node.id} style={{ display: "contents" }}>
                     <button
-                      key={j.id}
                       type="button"
-                      className={`row ${s.journey === j.id ? "on" : ""}`}
-                      data-journey={j.id}
-                      onClick={() => onJourney(j.id)}
+                      className={`gh jg ${open ? "open" : ""}`}
+                      data-gtoggle={g.node.id}
+                      aria-expanded={open}
+                      onClick={() => onToggleGroup(g.node.id)}
                     >
-                      <div className="l1">
-                        <span className="nm">{j.name}</span>
-                        {j.status === "example" && (
-                          <span className="bdg" style={{ marginLeft: "auto" }}>
-                            Example
-                          </span>
-                        )}
-                      </div>
-                      <div className="l2">
-                        <span className="st">{j.steps.length} steps</span>
-                        {c > 0 && (
-                          <span className="st needs">
-                            <i className="lamp needs" />
-                            {c} to check
-                          </span>
-                        )}
-                      </div>
+                      <span className="chv">
+                        <Li n="chev" />
+                      </span>
+                      <span className="rb">
+                        <RoleIcon of={g.node.roleLabel} />
+                      </span>
+                      <span className="pn">{g.node.label}</span>
+                      <span className="n">{g.list.length}</span>
                     </button>
-                  );
-                })}
-            </>
+                    {open && g.list.map(journeyRow)}
+                  </div>
+                );
+              })
+            )
           ) : (
             <>
               <div className="gh">

@@ -67,6 +67,8 @@ export function entryId(kind: string, label: string, file: string): string {
   return `${kind.slice(0, 1).toLowerCase()}${h.toString(36)}`;
 }
 
+const KIND_RANK: Record<InsideTrigger, number> = { SCHEDULE: 0, QUEUE: 1, HTTP: 2, COMMAND: 3 };
+
 /** Names of the services the entry kinds are most likely to run in, tried in order against compose service names. */
 const SERVICE_HINTS: Record<InsideTrigger, readonly string[]> = {
   HTTP: ["api", "web", "app", "server", "backend"],
@@ -100,39 +102,37 @@ export function buildInside(facts: GraphifyFacts, ctx: InsideContext): InsideSpe
   const entries = inside.entries.map((e) => ({ ...e, id: entryId(e.kind, e.label, e.file) }));
   const uniqueEntries = [...new Map(entries.map((e) => [e.id, e])).values()];
 
-  // Which function each entry starts, and how far every function is from the nearest entry.
+  // Entries in the order the page lists them (schedules, jobs, requests, commands), then the functions they
+  // reach by following calls in the order the code reads, depth first, up to four deep.
+  const sorted = uniqueEntries.toSorted(
+    (x, y) => KIND_RANK[x.kind] - KIND_RANK[y.kind] || x.file.localeCompare(y.file) || x.line - y.line,
+  );
   const out = new Map<string, string[]>();
-  for (const c of inside.calls) out.set(c.from, [...(out.get(c.from) ?? []), c.to]);
+  for (const c of inside.calls.toSorted((x, y) => x.line - y.line)) {
+    out.set(c.from, [...(out.get(c.from) ?? []), c.to]);
+  }
   const depth = new Map<string, number>();
   const kindOf = new Map<string, InsideTrigger>();
-  let frontier: string[] = [];
-  for (const e of uniqueEntries) {
-    if (!depth.has(e.fn)) {
-      depth.set(e.fn, 0);
-      kindOf.set(e.fn, e.kind);
-      frontier.push(e.fn);
-    }
-  }
-  for (let d = 1; d <= DEPTH_MAX && frontier.length > 0; d++) {
-    const next: string[] = [];
-    for (const fn of frontier) {
-      for (const to of out.get(fn) ?? []) {
-        if (depth.has(to)) continue;
-        depth.set(to, d);
-        kindOf.set(to, kindOf.get(fn) as InsideTrigger);
-        next.push(to);
-      }
-    }
-    frontier = next;
-  }
+  const order: string[] = [];
+  const visit = (fn: string, d: number, kind: InsideTrigger) => {
+    if (depth.has(fn) || d > DEPTH_MAX) return;
+    depth.set(fn, d);
+    kindOf.set(fn, kind);
+    order.push(fn);
+    for (const to of out.get(fn) ?? []) visit(to, d + 1, kind);
+  };
+  for (const e of sorted) visit(e.fn, 0, e.kind);
   const defs = new Map(inside.defs.map((d) => [d.id, d]));
-  const ranked = [...depth.entries()]
-    .filter(([id]) => defs.has(id))
-    .toSorted((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]));
-  const shown = new Set(ranked.slice(0, FNS_MAX).map(([id]) => id));
+  const ranked = order.filter((id) => defs.has(id));
+  const shown = new Set(ranked.slice(0, FNS_MAX));
+  const serviceOrder = [
+    ...new Set(
+      ranked.slice(0, FNS_MAX).map((id) => serviceFor(kindOf.get(id) as InsideTrigger, ctx.services)),
+    ),
+  ];
   const fns = ranked
     .slice(0, FNS_MAX)
-    .map(([id]) => {
+    .map((id) => {
       const d = defs.get(id) as (typeof inside.defs)[number];
       return {
         id,
@@ -142,9 +142,7 @@ export function buildInside(facts: GraphifyFacts, ctx: InsideContext): InsideSpe
         service: serviceFor(kindOf.get(id) as InsideTrigger, ctx.services),
       };
     })
-    .toSorted(
-      (a, b) => a.service.localeCompare(b.service) || a.file.localeCompare(b.file) || a.line - b.line,
-    );
+    .toSorted((x, y) => serviceOrder.indexOf(x.service) - serviceOrder.indexOf(y.service));
 
   // Data: what the functions use through a client library, and what they call over HTTP.
   const data = new Map<string, InsideData>();
@@ -205,11 +203,11 @@ export function buildInside(facts: GraphifyFacts, ctx: InsideContext): InsideSpe
       ...[...data.values()].filter((d) => d.kind === "db").map((d) => d.sub.split(" ")[0] as string),
     ]),
   ].filter((d) => d !== "datastore");
-  const services = [...new Set(fns.map((f) => f.service))];
+  const services = serviceOrder;
   return {
     v: 1,
     project: ctx.project,
-    entries: uniqueEntries
+    entries: sorted
       .filter((e) => shown.has(e.fn))
       .map(({ id, kind, label, file, line, fn }) => ({ id, kind, label, file, line, fn })),
     fns,

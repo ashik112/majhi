@@ -3,8 +3,9 @@ import { Waypoints } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Problem } from "@/components/problem";
 import { useNewTask } from "@/features/new-task/new-task-context";
+import { resolvedTheme, setAppearance } from "@/lib/appearance";
 import { describeError } from "@/lib/errors";
-import { useMap, useMapEstimate, useUpdateMap } from "@/lib/map-queries";
+import { useInside, useMap, useMapEstimate, useReadInside, useUpdateMap } from "@/lib/map-queries";
 import { useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
 import { useNow } from "@/lib/use-now";
@@ -12,8 +13,16 @@ import { AddressDialog } from "./address-dialog";
 import { Chrome } from "./chrome";
 import { Detail, type DetailActs } from "./detail";
 import { Ic } from "./icons";
+import { InsideWorld } from "./inside-world";
 import { JourneyWorld } from "./journey-world";
-import { layoutJourney, layoutOverview, layoutProject, type OverviewLayout, overviewKey } from "./layout";
+import {
+  layoutInside,
+  layoutJourney,
+  layoutOverview,
+  layoutProject,
+  type OverviewLayout,
+  overviewKey,
+} from "./layout";
 import { agoWords, buildGraph, usdWords } from "./model";
 import { OverviewWorld } from "./overview-world";
 import { ProjectWorld } from "./project-world";
@@ -106,7 +115,7 @@ function MapFor({
   const journeys = useMemo<readonly JourneyView[]>(() => data?.journeys ?? [], [data]);
   const emptyGraph = useMemo(() => buildGraph({ ...EMPTY_VIEW, org }), [org]);
   const g = graph ?? emptyGraph;
-  const { s, patch, act, togglePlay } = useMapState(g, journeys);
+  const { s, patch, act, togglePlay } = useMapState(org, g, journeys);
   const stage = useRef<StageHandle>(null);
   const [addresses, setAddresses] = useState(false);
   const [listOpen, setListOpen] = useState(false);
@@ -131,6 +140,18 @@ function MapFor({
     () => (projectNode === undefined ? undefined : layoutProject(g, projectNode.id)),
     [g, projectNode],
   );
+  // What is inside the project on show, read when its Inside tab is open.
+  const insideFor = s.view === "project" && s.tab === "inside" ? s.focus : null;
+  const insideQuery = useInside(org, insideFor);
+  const inside = insideFor === null ? undefined : insideQuery.data;
+  const spec = inside?.spec;
+  const insideLayout = useMemo(
+    () => (spec === undefined ? undefined : layoutInside(spec, s.more)),
+    [spec, s.more],
+  );
+  const entryId = spec === undefined ? null : s.entry === undefined ? (spec.entries[0]?.id ?? null) : s.entry;
+  const projectLabels = useMemo(() => new Map(g.nodes.map((n) => [n.label, n.id])), [g]);
+  const readInside = useReadInside(org);
   const journey = journeys.find((j) => j.id === s.journey);
   const journeyLayout = useMemo(
     () => (journey === undefined ? undefined : layoutJourney(journey.steps)),
@@ -141,6 +162,10 @@ function MapFor({
     setDir: act.setDir,
     selectEdge: act.selectEdge,
     openProject: act.openProject,
+    openInside: act.openInside,
+    pickEntry: act.pickEntry,
+    pickInside: act.pickInside,
+    pickInsideStep: act.pickInsideStep,
     clearAll: act.clearAll,
     setView: act.setView,
     stepGo: act.stepGo,
@@ -191,7 +216,15 @@ function MapFor({
       else if (e.key === "2") a.setView("project");
       else if (e.key === "3") a.setView("journeys");
       else if (e.key === "f" || e.key === "F") stage.current?.fit();
-      else if (e.key === "l" || e.key === "L") setListOpen((v) => !v);
+      else if (e.key === "i" || e.key === "I") a.toggleTab();
+      else if (e.key === "t" || e.key === "T") {
+        setAppearance({
+          theme:
+            resolvedTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark") === "light"
+              ? "dark"
+              : "light",
+        });
+      } else if (e.key === "l" || e.key === "L") setListOpen((v) => !v);
       else if (e.key === "ArrowRight" && cur.view === "journeys")
         a.stepGo(cur.step === null ? 0 : cur.step + 1);
       else if (e.key === "ArrowLeft" && cur.view === "journeys")
@@ -250,11 +283,24 @@ function MapFor({
         fitKey: `o:${key}`,
       };
     }
+    if (s.view === "project" && s.tab === "inside") {
+      if (insideLayout !== undefined) {
+        return {
+          w: insideLayout.w,
+          h: insideLayout.h,
+          top: 142,
+          bottom: 70,
+          maxScale: 1.12,
+          fitKey: `in:${s.focus}:${s.more}`,
+        };
+      }
+      return { w: 360, h: 150, top: 142, bottom: 70, maxScale: 1.12, fitKey: `in0:${s.focus}` };
+    }
     if (s.view === "project" && projectLayout !== undefined) {
       return {
         w: projectLayout.w,
         h: projectLayout.h,
-        top: 90,
+        top: 134,
         bottom: 70,
         maxScale: 1.12,
         fitKey: `p:${s.focus}`,
@@ -339,7 +385,11 @@ function MapFor({
           >
             <Ic n="refresh" />
             Update map
-            {usd !== undefined && <span style={{ fontWeight: 400, opacity: 0.75 }}>{usdWords(usd)}</span>}
+            {usd !== undefined && (
+              <span className="cost" style={{ fontWeight: 400, opacity: 0.75 }}>
+                {usdWords(usd)}
+              </span>
+            )}
           </button>
         </div>
       </header>
@@ -352,23 +402,24 @@ function MapFor({
               s={s}
               onQuery={(q) => patch({ q })}
               onRow={(id) => {
-                setListOpen(false);
                 if (s.view === "project") act.openProject(id);
+                else if (g.byId.get(id)?.connected !== true) act.openInside(id);
                 else {
                   if (s.view === "journeys") act.setView("overview");
                   act.pickNode(id);
                 }
               }}
               onJourney={(id) => {
-                setListOpen(false);
                 act.pickJourney(id);
               }}
               onNewJourney={() => {
-                setListOpen(false);
                 act.setView("overview");
                 patch({ compose: { name: "", steps: [] }, sel: null, trace: null });
               }}
               onAddLink={() => setAddresses(true)}
+              onMode={act.setJmode}
+              onToggleGroup={act.toggleGroup}
+              onAllGroups={act.setGroups}
             />
           )}
         </section>
@@ -415,9 +466,58 @@ function MapFor({
               {s.view === "overview" && overview !== undefined && (
                 <OverviewWorld graph={g} layout={overview} s={s} acts={{ ...act, addStep }} />
               )}
-              {s.view === "project" && projectNode !== undefined && projectLayout !== undefined && (
-                <ProjectWorld graph={g} node={projectNode} layout={projectLayout} s={s} acts={act} />
-              )}
+              {s.view === "project" &&
+                s.tab === "conn" &&
+                projectNode !== undefined &&
+                projectLayout !== undefined && (
+                  <ProjectWorld graph={g} node={projectNode} layout={projectLayout} s={s} acts={act} />
+                )}
+              {s.view === "project" &&
+                s.tab === "inside" &&
+                spec !== undefined &&
+                insideLayout !== undefined && (
+                  <InsideWorld
+                    spec={spec}
+                    layout={insideLayout}
+                    s={s}
+                    entryId={entryId}
+                    acts={act}
+                    projectIds={projectLabels}
+                  />
+                )}
+              {s.view === "project" &&
+                s.tab === "inside" &&
+                spec === undefined &&
+                projectNode !== undefined && (
+                  <div
+                    className="node big"
+                    style={{ left: 0, top: 0, width: 360, height: 150 }}
+                    data-unread={projectNode.id}
+                  >
+                    <div className="n-name">
+                      {inside === undefined ? "Looking inside" : "Not read inside yet"}
+                    </div>
+                    <div className="desc">
+                      {inside === undefined
+                        ? "Reading what majhi already knows."
+                        : `majhi has not read the code of ${projectNode.label}. Read it to see its entry points, steps and data.`}
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        className="btn sec sm"
+                        disabled={
+                          inside === undefined || readInside.isPending || projectNode.project === undefined
+                        }
+                        onClick={() =>
+                          projectNode.project !== undefined && readInside.mutate(projectNode.project)
+                        }
+                      >
+                        Read inside
+                      </button>
+                    </div>
+                  </div>
+                )}
               {s.view === "journeys" && journey !== undefined && journeyLayout !== undefined && (
                 <JourneyWorld
                   graph={g}
@@ -442,7 +542,10 @@ function MapFor({
               onFit={() => stage.current?.fit()}
               onZoom={(f) => stage.current?.zoom(f)}
               onList={() => setListOpen((v) => !v)}
-              onPickMini={act.pickNode}
+              onPickMini={(id) => act.openInside(id)}
+              inside={spec}
+              onTab={act.setTab}
+              onMore={act.toggleMore}
               onPlay={togglePlay}
               onStep={act.stepGo}
               onJourneys={() => act.setView("journeys")}
@@ -508,7 +611,15 @@ function MapFor({
         </section>
         <section className="panel glass" aria-label="Map details">
           {data !== undefined && graph !== undefined && !empty && (
-            <Detail view={data} graph={graph} journeys={journeys} s={s} acts={detailActs} />
+            <Detail
+              view={data}
+              graph={graph}
+              journeys={journeys}
+              s={s}
+              acts={detailActs}
+              inside={insideFor === null ? undefined : inside}
+              entryId={entryId}
+            />
           )}
         </section>
       </div>

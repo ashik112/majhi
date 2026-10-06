@@ -89,6 +89,8 @@ export interface MapDeps {
    * does not run agents in containers: the update then has no graph pass.
    */
   graph?: GraphRunner | undefined;
+  /** Where a project's graph and facts are kept (the same on every runner mode), or null for an unsafe id. */
+  graphFolder?: (org: string, project: string) => Promise<string | null>;
 }
 
 const usageTask = (org: string) => `map:${org}`;
@@ -207,8 +209,12 @@ export class MapService {
    * was read by a build that knows how (the page then offers "Read inside").
    */
   async insideOf(org: string, project: string, map?: ProjectMap): Promise<InsideView> {
-    const runner = this.deps.graph;
-    const folder = runner === undefined ? null : await runner.folder(org, project);
+    let folder: string | null = null;
+    try {
+      folder = (await this.deps.graphFolder?.(org, project)) ?? null;
+    } catch {
+      folder = null;
+    }
     const got = folder === null ? undefined : await readFacts(folder);
     if (got === undefined || got.facts.inside === undefined) return { project, state: "unread" };
     const stored = map ?? this.deps.repo.get(org).map;

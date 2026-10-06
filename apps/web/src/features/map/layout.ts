@@ -1,3 +1,4 @@
+import type { InsideSpec } from "@majhi/shared";
 import type { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api";
 import type { Graph, PNode } from "./model";
 
@@ -351,6 +352,192 @@ export function layoutProject(g: Graph, id: string): ProjectLayout {
     routes,
     card: { x: cx, y: 0, w: mw, h },
     size: { cw, ch, mw, rx },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Inside a project
+
+export interface InsideLayout {
+  w: number;
+  h: number;
+  /** Frames of the services, with their title. */
+  frames: { svc: string; y: number; h: number }[];
+  entries: Map<string, Place>;
+  fns: Map<string, Place>;
+  data: Map<string, Place>;
+  /** Lines by the key the story uses: `i:<entry>`, `c:<a>><b>`, `d:<fn>><data>`. */
+  routes: Map<string, Pt[]>;
+  /** Where a step's number sits, by line key. */
+  badge: Map<string, Pt>;
+  frameX: number;
+  frameW: number;
+}
+
+const IN_EW = 180;
+const IN_EH = 54;
+const IN_FW = 186;
+const IN_FRW = 214;
+const IN_DW = 150;
+const IN_DH = 46;
+
+/**
+ * Entry points on the left, the functions in frames by the service that runs them in the middle, data and
+ * outside services on the right. "More" makes each function taller (it says what it does) and spaces them.
+ */
+export function layoutInside(spec: InsideSpec, more: boolean): InsideLayout {
+  const FH = more ? 60 : 42;
+  const P = more ? 78 : 60;
+  const frameX = IN_EW + 40;
+  const fx = frameX + 22;
+  const dataX = frameX + IN_FRW + 56;
+  const cx = fx + IN_FW / 2;
+  const fns = new Map<string, Place>();
+  const frames: InsideLayout["frames"] = [];
+  let y = 22;
+  for (const svc of spec.services) {
+    const members = spec.fns.filter((f) => f.service === svc);
+    const top = y;
+    y += 30;
+    members.forEach((f, i) => {
+      fns.set(f.id, { x: fx, y, w: IN_FW, h: FH });
+      y += i < members.length - 1 ? P : FH;
+    });
+    const bottom = y + 12;
+    frames.push({ svc, y: top, h: bottom - top });
+    y = bottom + 14;
+  }
+  const cyOf = (p: Place) => p.y + p.h / 2;
+
+  // Data hangs next to the first function that uses it, spread when one function uses several, then pushed
+  // down so two never overlap.
+  const firstUser = new Map<string, string>();
+  for (const u of spec.uses) if (!firstUser.has(u.data) && fns.has(u.fn)) firstUser.set(u.data, u.fn);
+  const perFn = new Map<string, string[]>();
+  for (const d of spec.data) {
+    const fn = firstUser.get(d.id);
+    if (fn !== undefined) perFn.set(fn, [...(perFn.get(fn) ?? []), d.id]);
+  }
+  const wanted: { id: string; cy: number }[] = [];
+  for (const [fn, ids] of perFn) {
+    const base = cyOf(fns.get(fn) as Place);
+    for (const [k, id] of ids.entries())
+      wanted.push({ id, cy: base + (k - (ids.length - 1) / 2) * (IN_DH + 6) });
+  }
+  wanted.sort((a, b) => a.cy - b.cy);
+  const data = new Map<string, Place>();
+  let floor = 12;
+  for (const w of wanted) {
+    const top = Math.max(w.cy - IN_DH / 2, floor);
+    data.set(w.id, { x: dataX, y: top, w: IN_DW, h: IN_DH });
+    floor = top + IN_DH + 6;
+  }
+
+  // Entry points sit at the height of the function they start, pushed down when two start the same one.
+  const entries = new Map<string, Place>();
+  let entryFloor = 12;
+  const ordered = spec.entries
+    .filter((e) => fns.has(e.fn))
+    .toSorted((a, b) => cyOf(fns.get(a.fn) as Place) - cyOf(fns.get(b.fn) as Place));
+  for (const e of ordered) {
+    const top = Math.max(cyOf(fns.get(e.fn) as Place) - IN_EH / 2, entryFloor);
+    entries.set(e.id, { x: 0, y: top, w: IN_EW, h: IN_EH });
+    entryFloor = top + IN_EH + 8;
+  }
+
+  const routes = new Map<string, Pt[]>();
+  const badge = new Map<string, Pt>();
+  for (const e of ordered) {
+    const from = entries.get(e.id) as Place;
+    const to = fns.get(e.fn) as Place;
+    const ey = cyOf(from);
+    const ty = cyOf(to);
+    const mid = IN_EW + 18;
+    routes.set(
+      `i:${e.id}`,
+      Math.abs(ey - ty) < 1
+        ? [
+            [IN_EW, ey],
+            [fx, ty],
+          ]
+        : [
+            [IN_EW, ey],
+            [mid, ey],
+            [mid, ty],
+            [fx, ty],
+          ],
+    );
+  }
+  let lane = 0;
+  for (const c of spec.calls) {
+    const a = fns.get(c.from);
+    const b = fns.get(c.to);
+    if (a === undefined || b === undefined) continue;
+    const adjacent = Math.abs(a.y - b.y) <= P + 1 && a.y !== b.y && Math.abs(cyOf(a) - cyOf(b)) <= P + 1;
+    if (adjacent) {
+      routes.set(
+        `c:${c.from}>${c.to}`,
+        a.y < b.y
+          ? [
+              [cx, a.y + a.h],
+              [cx, b.y],
+            ]
+          : [
+              [cx, a.y],
+              [cx, b.y + b.h],
+            ],
+      );
+    } else {
+      const gx = fx - 8 - 6 * (lane % 3);
+      lane += 1;
+      routes.set(`c:${c.from}>${c.to}`, [
+        [fx, cyOf(a)],
+        [gx, cyOf(a)],
+        [gx, cyOf(b)],
+        [fx, cyOf(b)],
+      ]);
+    }
+  }
+  for (const u of spec.uses) {
+    const a = fns.get(u.fn);
+    const d = data.get(u.data);
+    if (a === undefined || d === undefined) continue;
+    const py = cyOf(a);
+    const qy = cyOf(d);
+    routes.set(
+      `d:${u.fn}>${u.data}`,
+      Math.abs(py - qy) < 1
+        ? [
+            [fx + IN_FW, py],
+            [dataX, qy],
+          ]
+        : [
+            [fx + IN_FW, py],
+            [dataX - 26, py],
+            [dataX - 26, qy],
+            [dataX, qy],
+          ],
+    );
+  }
+  for (const [key, pts] of routes) {
+    if (key.startsWith("c:")) {
+      const p0 = pts[0] as Pt;
+      const p1 = pts[1] as Pt;
+      badge.set(key, pts.length === 2 ? [p0[0] + 22, (p0[1] + p1[1]) / 2] : badgePos(pts));
+    } else badge.set(key, badgePos(pts));
+  }
+  const bottoms = [...fns.values(), ...data.values(), ...entries.values()].map((p) => p.y + p.h);
+  return {
+    w: dataX + IN_DW,
+    h: Math.max(60, y - 4, ...bottoms),
+    frames,
+    entries,
+    fns,
+    data,
+    routes,
+    badge,
+    frameX,
+    frameW: IN_FRW,
   };
 }
 

@@ -1,7 +1,6 @@
 import { RoleBadge, Tag } from "./brand";
 import type { ProjectLayout } from "./layout";
 import { type Graph, type PNode, TIER_LABEL, type Tier } from "./model";
-import { ProjectInside } from "./project-inside";
 import type { UiState } from "./use-map-state";
 import { focusOf, Overlay, Wires } from "./wires";
 
@@ -132,7 +131,6 @@ export function ProjectWorld({
             <Tag key={c} name={c} out />
           ))}
         </div>
-        <ProjectInside node={node} />
         <div className="tally">
           <div className="glabel">Links by proof</div>
           {(["code", "answer", "check"] as const).map((t) => (

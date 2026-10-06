@@ -1,5 +1,5 @@
 import { DIAGRAM_LIMITS, type DiagramSpec, DiagramSpecSchema } from "./diagram.ts";
-import { flowOf, type InsideSpec, type InsideTrigger } from "./inside.ts";
+import { flowOf, type InsideSpec, type InsideStep, type InsideTrigger } from "./inside.ts";
 import {
   JOURNEY_LIMITS,
   type Journey,
@@ -121,6 +121,24 @@ export function proposeJourneys(map: ProjectMap, kept: readonly JourneyView[]): 
   return found.slice(0, EXAMPLES_MAX);
 }
 
+const ENTRY_WORDS: Record<InsideTrigger, string> = {
+  HTTP: "Request arrives",
+  SCHEDULE: "Wake up",
+  QUEUE: "Job arrives",
+  COMMAND: "Run command",
+};
+
+/** A few words for one step of a story: "Build digest", "Save to notes". The full sentence is the proof text. */
+function shortLabel(s: InsideStep, kind: InsideTrigger): string {
+  const words = (id: string) => {
+    const t = id.split("_").join(" ").trim();
+    return t.slice(0, 1).toUpperCase() + t.slice(1);
+  };
+  if (s.kind === "entry") return ENTRY_WORDS[kind];
+  if (s.kind === "call") return words(s.to);
+  return `${s.text.includes(" saves to ") ? "Save to" : s.text.includes(" reads from ") ? "Read from" : "Call"} ${s.to}`;
+}
+
 /** The part of a project's code a step end is: the entry that starts it, a function, a datastore or an outside service. */
 function partKind(spec: InsideSpec, name: string, entryLabel: string): JourneyPartKind {
   if (name === entryLabel) return "entry";
@@ -151,7 +169,7 @@ export function innerJourneys(spec: InsideSpec, kept: readonly JourneyView[]): J
       steps: flow.map((s) => ({
         from: s.from,
         to: s.to,
-        label: s.text.slice(0, JOURNEY_LIMITS.label),
+        label: shortLabel(s, entry.kind).slice(0, JOURNEY_LIMITS.label),
         fromKind: s.kind === "entry" ? "entry" : partKind(spec, s.from, entry.label),
         toKind: partKind(spec, s.to, entry.label),
         proof: { file: s.file, line: s.line, text: s.text },

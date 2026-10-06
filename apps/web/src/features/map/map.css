@@ -697,6 +697,10 @@
   gap: 7px;
   white-space: nowrap;
 }
+.mapx .legend svg.ri {
+  width: 12px;
+  height: 12px;
+}
 .mapx .legend svg {
   width: 26px;
   height: 8px;
@@ -1631,7 +1635,7 @@
   border-bottom: 1px solid var(--line-strong);
   color: var(--fg);
 }
-.mapx .gh.jg:first-child {
+.mapx .rail-list > div:first-child > .gh.jg {
   margin-top: 0;
 }
 .mapx .gh.jg:hover {
@@ -1797,6 +1801,9 @@
   }
 }
 @media (max-width: 1200px) {
+  .mapx .cost {
+    display: none;
+  }
   .mapx .work {
     grid-template-columns: minmax(0, 1fr) 264px;
   }

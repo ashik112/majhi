@@ -44,6 +44,7 @@ const ROLE_ICON: Record<string, LucideIcon> = {
   Outside: Globe,
   Connection: Route,
   Function: FileCode,
+  Entry: Globe,
 };
 
 const NAMED_ICON = {
@@ -74,8 +75,8 @@ export function TriggerIcon({ kind }: { kind: Trigger }) {
   return <I className="i ri" strokeWidth={1.6} aria-hidden="true" />;
 }
 
-export function RoleIcon({ role }: { role: string }) {
-  const I = ROLE_ICON[role] ?? Server;
+export function RoleIcon({ of }: { of: string }) {
+  const I = ROLE_ICON[of] ?? Server;
   return <I className="i ri" strokeWidth={1.6} aria-hidden="true" />;
 }
 
@@ -143,7 +144,7 @@ export function RoleBadge({
       style={small ? { height: 18 } : undefined}
       title={iconOnly ? label : undefined}
     >
-      <RoleIcon role={label} />
+      <RoleIcon of={label} />
       {iconOnly ? null : label}
     </span>
   );

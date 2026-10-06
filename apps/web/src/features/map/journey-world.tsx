@@ -1,7 +1,15 @@
-import type { JourneyView } from "@majhi/shared";
-import { RoleBadge } from "./brand";
+import type { JourneyPartKind, JourneyView } from "@majhi/shared";
+import { Logo, RoleBadge } from "./brand";
 import type { JourneyLayout } from "./layout";
 import type { Graph } from "./model";
+
+const PART_LABEL: Record<JourneyPartKind, string> = {
+  project: "Service",
+  entry: "Entry",
+  function: "Function",
+  outside: "Outside",
+  database: "Database",
+};
 
 /**
  * A journey as a sequence diagram: a header per box with a dashed lifeline, one numbered arrow per step.
@@ -24,6 +32,11 @@ export function JourneyWorld({
 }) {
   const { w, h, actors, x, hw, head, row } = layout;
   const cur = journey.steps[step ?? -1];
+  const kinds = new Map<string, JourneyPartKind>();
+  for (const st of journey.steps) {
+    if (st.fromKind !== undefined) kinds.set(st.from, st.fromKind);
+    if (st.toKind !== undefined) kinds.set(st.to, st.toKind);
+  }
   return (
     <>
       <svg
@@ -88,6 +101,7 @@ export function JourneyWorld({
       </svg>
       {actors.map((p) => {
         const n = graph.byId.get(p);
+        const kind = kinds.get(p);
         const active = cur !== undefined && (cur.from === p || cur.to === p);
         return (
           <div
@@ -95,7 +109,16 @@ export function JourneyWorld({
             className={`jhead ${step !== null && !active ? "dim" : ""}`}
             style={{ left: x(p) - hw / 2, top: 0, width: hw, height: head - 18 }}
           >
-            <RoleBadge label={n?.roleLabel ?? "Service"} cls={n?.roleClass ?? ""} small />
+            {kind === undefined || kind === "project" ? (
+              <RoleBadge label={n?.roleLabel ?? "Service"} cls={n?.roleClass ?? ""} small />
+            ) : kind === "outside" ? (
+              <span className="bdg" style={{ height: 18 }}>
+                <Logo name={p} />
+                Outside
+              </span>
+            ) : (
+              <RoleBadge label={PART_LABEL[kind]} cls="" small />
+            )}
             <div className="n-name">{n?.label ?? p}</div>
           </div>
         );

@@ -1,5 +1,7 @@
 import {
+  type InsideView,
   type JourneyStep,
+  type JourneyStepView,
   type JourneyView,
   MAP_ROLE_LABEL,
   MAP_ROLES,
@@ -17,14 +19,18 @@ import {
 } from "@/lib/map-queries";
 import { RoleBadge, Tag } from "./brand";
 import { Ic } from "./icons";
+import { InsideDetail } from "./inside-detail";
 import { type Graph, LINE_KIND_LABEL, type PEdge, type PNode, TIER_LABEL, TIER_WHY } from "./model";
-import { ProjectInside } from "./project-inside";
 import type { Compose, UiState } from "./use-map-state";
 
 export interface DetailActs {
   setDir: (d: "out" | "in") => void;
   selectEdge: (id: string) => void;
   openProject: (id: string) => void;
+  openInside: (project: string, entry?: string) => void;
+  pickEntry: (id: string) => void;
+  pickInside: (sel: { t: "fn" | "dn"; id: string } | null) => void;
+  pickInsideStep: (i: number | null) => void;
   clearAll: () => void;
   setView: (v: "overview" | "project" | "journeys") => void;
   stepGo: (i: number) => void;
@@ -47,12 +53,17 @@ export function Detail({
   journeys,
   s,
   acts,
+  inside,
+  entryId,
 }: {
   view: MapView;
   graph: Graph;
   journeys: readonly JourneyView[];
   s: UiState;
   acts: DetailActs;
+  /** What is inside the project on show (the Inside tab). Undefined while it loads. */
+  inside: InsideView | undefined;
+  entryId: string | null;
 }) {
   if (s.compose !== null && s.view === "overview") {
     return <ComposePanel view={view} graph={graph} compose={s.compose} acts={acts} />;
@@ -67,6 +78,19 @@ export function Detail({
   const id = s.view === "project" ? s.focus : s.sel?.t === "node" ? s.sel.id : null;
   const node = id === null ? undefined : graph.byId.get(id);
   if (node === undefined) return <EmptyPanel graph={graph} s={s} acts={acts} />;
+  if (s.view === "project" && s.tab === "inside") {
+    return (
+      <InsideDetail
+        view={view}
+        node={node}
+        inside={inside}
+        entryId={entryId}
+        journeys={journeys}
+        s={s}
+        acts={{ ...acts, newTask: acts.newTask }}
+      />
+    );
+  }
   return <NodePanel view={view} graph={graph} node={node} s={s} acts={acts} />;
 }
 
@@ -328,7 +352,6 @@ function NodePanel({
               </>
             )}
           </div>
-          <ProjectInside node={node} />
           {node.tasks.length > 0 && (
             <div className="blk">
               <div className="glabel">Open tasks</div>
@@ -587,6 +610,9 @@ function JourneyPanel({
 }) {
   const save = useSaveJourney(view.org);
   const remove = useRemoveJourney(view.org);
+  const open = useOpenInEditor();
+  const toast = useToast();
+  const editor = useEditorLabel();
   const j = journeys.find((x) => x.id === s.journey);
   if (j === undefined) {
     return (
@@ -608,6 +634,27 @@ function JourneyPanel({
     );
   }
   const name = (n: string) => graph.byId.get(n)?.label ?? n;
+  const example = j.status === "example";
+  const keep = () =>
+    save.mutate(
+      {
+        name: j.name,
+        steps: j.steps.map(stripCheck),
+        trigger: j.trigger,
+        ...(j.inner === undefined ? {} : { inner: j.inner }),
+      },
+      {
+        onSuccess: (v) =>
+          acts.saved(
+            v.journeys.find(
+              (x) =>
+                x.status === "kept" &&
+                x.name === j.name &&
+                (j.inner === undefined || x.inner?.entry === j.inner.entry),
+            )?.id,
+          ),
+      },
+    );
   const step = s.step === null ? undefined : j.steps[s.step];
   if (step !== undefined && s.step !== null) {
     const e = step.edge === undefined ? undefined : graph.edgeById.get(step.edge);
@@ -624,6 +671,9 @@ function JourneyPanel({
         />
       );
     }
+    const proof = step.proof;
+    const root =
+      j.inner === undefined ? undefined : view.projects.find((p) => p.id === j.inner?.project)?.path;
     return (
       <>
         <div className="dhead">
@@ -647,33 +697,90 @@ function JourneyPanel({
               <Ic n="back" />
               All steps
             </button>
+            {j.inner !== undefined && (
+              <button
+                type="button"
+                className="btn sec sm"
+                onClick={() => acts.openInside(j.inner?.project ?? "", j.inner?.entry)}
+              >
+                <Ic n="map" />
+                Open inside
+              </button>
+            )}
           </div>
         </div>
-        <div className="dbody">
-          <div className="blk">
-            <div className="tier">
-              <span className="bdg caution">Needs a check</span>
-              <span>
-                The link this step followed is no longer on the map. The step stays until you change it.
-              </span>
+        <div className="scroll fade">
+          <div className="dbody">
+            <div className="blk">
+              <div className="tier">
+                {proof === undefined ? (
+                  <>
+                    <span className="bdg caution">Needs a check</span>
+                    <span>
+                      The link this step followed is no longer on the map. The step stays until you change it.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="bdg green">Found in code</span>
+                    <span>majhi read this step in the code.</span>
+                  </>
+                )}
+              </div>
             </div>
+            {proof !== undefined && (
+              <div className="blk">
+                <div className="glabel">Proof</div>
+                <div className="proof">
+                  <div className="f">
+                    <Ic n="file" />
+                    <span>
+                      {proof.file}:{proof.line}
+                    </span>
+                  </div>
+                  <div className="well">{proof.text}</div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
         <div className="dfoot">
-          <button type="button" className="btn sec" onClick={() => acts.edit(j)}>
-            Edit steps
-          </button>
+          {proof !== undefined ? (
+            <button
+              type="button"
+              className="btn sec"
+              disabled={root === undefined || open.isPending}
+              title={`Open in ${editor}`}
+              onClick={() =>
+                root !== undefined &&
+                open.mutate(
+                  { path: `${root}/${proof.file}`, line: proof.line },
+                  {
+                    onSuccess: (done) => toast(`Opened in ${editor}`, { detail: done.path }),
+                    onError: (e2) =>
+                      toast(`Could not open in ${editor}`, { detail: e2.message, tone: "error" }),
+                  },
+                )
+              }
+            >
+              <Ic n="file" />
+              Open file
+            </button>
+          ) : (
+            <button type="button" className="btn sec" onClick={() => acts.edit(j)}>
+              Edit steps
+            </button>
+          )}
         </div>
       </>
     );
   }
-  const example = j.status === "example";
   return (
     <>
       <div className="dhead">
         <div className="t">
           <span className="nm">{j.name}</span>
-          {example && <span className="bdg">Example</span>}
+          <span className={`bdg ${example ? "" : "green"}`}>{example ? "Suggested" : "Yours"}</span>
         </div>
         <div className="s">{j.steps.length} steps</div>
       </div>
@@ -682,14 +789,15 @@ function JourneyPanel({
           <div className="blk">
             <div className="sub">
               {example
-                ? "A guess built from the links majhi found. Pick a step to see its proof, or keep it once it is right."
+                ? j.inner === undefined
+                  ? "A guess built from the links majhi found. Pick a step to see its proof, or say what really happens."
+                  : "Built from the code of this project. Pick a step to see the line it comes from."
                 : "Pick a step to see its proof."}
             </div>
           </div>
           <div className="blk">
             <div className="glabel">Steps</div>
             {j.steps.map((st, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: steps have no id of their own
               <button
                 // biome-ignore lint/suspicious/noArrayIndexKey: steps have no id of their own
                 key={`${st.from}>${st.to}:${i}`}
@@ -699,7 +807,7 @@ function JourneyPanel({
               >
                 <span className="num">{i + 1}</span>
                 <span className="nm">{st.label}</span>
-                <span className="lb">{cut(name(st.from), 12)}</span>
+                <span className="lb">{st.from === st.to ? "" : cut(name(st.from), 12)}</span>
               </button>
             ))}
           </div>
@@ -709,49 +817,48 @@ function JourneyPanel({
         </div>
       </div>
       <div className="dfoot">
-        <button type="button" className="btn pri" onClick={() => acts.showOnMap(j.id)}>
-          <Ic n="map" />
-          Show on map
-        </button>
-        {example ? (
+        {j.inner === undefined ? (
+          <button type="button" className="btn pri" onClick={() => acts.showOnMap(j.id)}>
+            <Ic n="map" />
+            Show on map
+          </button>
+        ) : (
           <button
             type="button"
-            className="btn sec"
-            disabled={save.isPending}
-            onClick={() =>
-              save.mutate(
-                { name: j.name, steps: j.steps.map(stripCheck) },
-                {
-                  onSuccess: (v) =>
-                    acts.saved(v.journeys.find((x) => x.status === "kept" && x.name === j.name)?.id),
-                },
-              )
-            }
+            className="btn pri"
+            onClick={() => acts.openInside(j.inner?.project ?? "", j.inner?.entry)}
           >
+            <Ic n="map" />
+            Open inside
+          </button>
+        )}
+        {j.inner === undefined && (
+          <button type="button" className="btn sec" onClick={() => acts.edit(j)}>
+            Edit steps
+          </button>
+        )}
+        {example ? (
+          <button type="button" className="btn ghost" disabled={save.isPending} onClick={keep}>
             Keep journey
           </button>
         ) : (
-          <>
-            <button type="button" className="btn sec" onClick={() => acts.edit(j)}>
-              Edit steps
-            </button>
-            <button
-              type="button"
-              className="btn ghost"
-              disabled={remove.isPending}
-              onClick={() => remove.mutate(j.id, { onSuccess: () => acts.saved(undefined) })}
-            >
-              Remove journey
-            </button>
-          </>
+          <button
+            type="button"
+            className="btn ghost"
+            disabled={remove.isPending}
+            onClick={() => remove.mutate(j.id, { onSuccess: () => acts.saved(undefined) })}
+          >
+            Remove journey
+          </button>
         )}
       </div>
     </>
   );
 }
 
-function stripCheck(st: { from: string; to: string; label: string; edge?: string | undefined }): JourneyStep {
-  return { from: st.from, to: st.to, label: st.label, ...(st.edge === undefined ? {} : { edge: st.edge }) };
+function stripCheck(st: JourneyStepView): JourneyStep {
+  const { check: _check, ...step } = st;
+  return step;
 }
 
 /** Naming a journey: the steps picked so far, each with a label to edit, and the name. */

@@ -1,4 +1,13 @@
-import type { JourneyStep, MapAnswer, MapEstimate, MapRole, MapView } from "@majhi/shared";
+import type {
+  InsideTrigger,
+  InsideView,
+  JourneyInner,
+  JourneyStep,
+  MapAnswer,
+  MapEstimate,
+  MapRole,
+  MapView,
+} from "@majhi/shared";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
@@ -68,11 +77,38 @@ export function useAnswerAddress(org: string) {
   );
 }
 
+/** What is inside one project. Refetched when the map updates (the `map` topic) so a fresh read shows. */
+export function useInside(org: string, project: string | null) {
+  return useQuery<InsideView, ApiRequestError>({
+    queryKey: [...queryKeys.map, "inside", org, project ?? ""],
+    queryFn: () => cmd("map.inside", { org, project: project ?? "" }),
+    enabled: project !== null,
+    placeholderData: keepPreviousData,
+    staleTime: 15_000,
+  });
+}
+
+/** "Read inside": read one project's code now, then show what is inside it. */
+export function useReadInside(org: string) {
+  const client = useQueryClient();
+  return useMutation<InsideView, ApiRequestError, string>({
+    mutationFn: (project) =>
+      cmd("map.readInside", { org, project }, { reason: "Owner read a project's code for the map" }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.map });
+    },
+  });
+}
+
 /** Name a journey, or replace one (with `id`). Keeping one of majhi's examples is a save without an id. */
 export function useSaveJourney(org: string) {
-  return useMapCommand<{ id?: string; name: string; steps: JourneyStep[] }>(org, (input) =>
-    cmd("map.saveJourney", { org, ...input }, { reason: "Owner saved a journey" }),
-  );
+  return useMapCommand<{
+    id?: string;
+    name: string;
+    steps: JourneyStep[];
+    trigger?: InsideTrigger;
+    inner?: JourneyInner;
+  }>(org, (input) => cmd("map.saveJourney", { org, ...input }, { reason: "Owner saved a journey" }));
 }
 
 export function useRemoveJourney(org: string) {

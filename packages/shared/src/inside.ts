@@ -124,7 +124,7 @@ const PHRASE: Readonly<Record<string, string>> = {
 const ENTRY_TEXT: Record<InsideTrigger, (label: string, fn: string) => string> = {
   HTTP: (label, fn) => `A request to ${label} calls ${fn}.`,
   SCHEDULE: (label, fn) => `On schedule (${label}) the scheduler starts ${fn}.`,
-  QUEUE: (label, fn) => `The consumer ${label} picks up a job and runs ${fn}.`,
+  QUEUE: (label, fn) => `A job for ${label} starts ${fn}.`,
   COMMAND: (label, fn) => `The command ${label} runs ${fn}.`,
 };
 

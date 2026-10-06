@@ -1,4 +1,5 @@
-import type { JourneyView } from "@majhi/shared";
+import type { InsideSpec, JourneyView } from "@majhi/shared";
+import { Li } from "./brand";
 import { Ic } from "./icons";
 import type { Graph, PNode } from "./model";
 import type { UiState, ViewId } from "./use-map-state";
@@ -22,6 +23,9 @@ export function Chrome({
   onStep,
   onJourneys,
   onComposeName,
+  inside,
+  onTab,
+  onMore,
 }: {
   graph: Graph;
   s: UiState;
@@ -38,6 +42,10 @@ export function Chrome({
   onStep: (i: number) => void;
   onJourneys: () => void;
   onComposeName: (name: string) => void;
+  /** The Inside spec of the project on show, when it has been read. */
+  inside: InsideSpec | undefined;
+  onTab: (tab: "conn" | "inside") => void;
+  onMore: () => void;
 }) {
   const q = s.q.trim().toLowerCase();
   const sep = (
@@ -100,6 +108,76 @@ export function Chrome({
     <>
       <div className="tb tl">
         <div className="crumbs float">{crumbs}</div>
+        {s.view === "project" && s.focus !== null && (
+          <div className="tabsrow">
+            <fieldset className="seg tabs" aria-label="Project tab">
+              <button
+                type="button"
+                aria-pressed={s.tab === "conn"}
+                data-tab="conn"
+                onClick={() => onTab("conn")}
+              >
+                Connections{" "}
+                <span className="c">
+                  {(graph.byId.get(s.focus)?.ins ?? 0) + (graph.byId.get(s.focus)?.outs ?? 0)}
+                </span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={s.tab === "inside"}
+                data-tab="inside"
+                onClick={() => onTab("inside")}
+              >
+                Inside{inside === undefined ? null : <span className="c"> {inside.fns.length}</span>}
+              </button>
+            </fieldset>
+            {s.tab === "inside" && inside !== undefined && (
+              <button
+                type="button"
+                className="btn sec sm"
+                data-act="more"
+                style={{ height: 32, background: "var(--glass-strong)" }}
+                onClick={onMore}
+              >
+                <Li n="layers" />
+                {s.more ? "Show less" : "Show more"}
+              </button>
+            )}
+          </div>
+        )}
+        {s.view === "project" && s.tab === "inside" && s.focus !== null && inside !== undefined && (
+          <div style={{ flexBasis: "100%" }}>
+            <div className="strip float" style={{ display: "inline-flex", maxWidth: "100%" }}>
+              {(graph.byId.get(s.focus)?.connected ?? false) ? (
+                <span className="bdg blue">
+                  <Li n="route" />
+                  Linked · {graph.byId.get(s.focus)?.ins ?? 0} in {graph.byId.get(s.focus)?.outs ?? 0} out
+                </span>
+              ) : (
+                <span className="bdg green">
+                  <Li n="check" />
+                  Self-contained
+                </span>
+              )}
+              <span className="cnt">
+                <b>{inside.entries.length}</b>entries
+              </span>
+              <span className="cnt">
+                <b>{inside.services.length}</b>services
+              </span>
+              <span className="cnt">
+                <b>{inside.fns.length}</b>steps
+              </span>
+              <span className="cnt">
+                <b>{inside.data.filter((x) => x.kind === "out").length}</b>outside
+              </span>
+              <span className="cnt">
+                <b>{inside.dbs.length}</b>
+                {inside.dbs.length === 1 ? "database" : "databases"}
+              </span>
+            </div>
+          </div>
+        )}
         {s.view === "overview" && s.compose !== null && (
           <div className="tracechip float">
             <span className="num">{s.compose.steps.length}</span>
@@ -227,12 +305,56 @@ export function Chrome({
               </button>
             </div>
           </>
+        ) : s.view === "project" && s.tab === "inside" ? (
+          <>
+            <div className="legend glass">
+              <span>
+                {dash({ color: "var(--blue)", w: 2 })}
+                <Li n="route" />
+                Step
+              </span>
+              <span>
+                {dash({ color: "var(--blue)", w: 2, dash: "6 5" })}
+                <Li n="database" />
+                Data
+              </span>
+              <span>
+                <span className="chip out" style={{ height: 18, padding: "0 5px" }}>
+                  <Li n="globe" />
+                </span>
+                Outside
+              </span>
+            </div>
+            <div className="hints glass">
+              <span>
+                <kbd>Esc</kbd>Clear
+              </span>
+              <span>
+                <kbd>F</kbd>Fit
+              </span>
+              <span>
+                <kbd>I</kbd>Tab
+              </span>
+            </div>
+          </>
         ) : (
           <>
             <div className="legend glass">
-              <span>{dash({})}Call</span>
-              <span>{dash({ dash: "6 5" })}Job</span>
-              <span>{dash({ dash: "1.5 5", w: 2, cap: true })}Embed</span>
+              <span>
+                {dash({})}
+                <Li n="route" />
+                Call
+              </span>
+              <span>
+                {dash({ dash: "6 5" })}
+                <Li n="list" />
+                Job
+              </span>
+              <span>
+                {dash({ dash: "1.5 5", w: 2, cap: true })}
+                <Li n="app" />
+                Embed
+              </span>
               <span>{dash({ color: "var(--caution)" })}Check</span>
             </div>
             <div className="hints glass">
