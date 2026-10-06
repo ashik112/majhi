@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { inflateRawSync } from "node:zlib";
+import { crc32, deflateSync, inflateRawSync } from "node:zlib";
 import { localSpawner } from "@majhi/acp";
 import { Hono } from "hono";
 import { extractText, getDocumentProxy } from "unpdf";
@@ -11,11 +11,29 @@ import { taskFileRoutes } from "../http/taskFiles.ts";
 import { tempDir } from "../testing/fixtures.ts";
 import { runnerPdfPrinter } from "./pdf.ts";
 
-/** A 1x1 PNG. */
-const PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-  "base64",
-);
+/** One PNG chunk: length, type, data and the CRC of type and data. */
+function chunk(type: string, data: Buffer): Buffer {
+  const body = Buffer.concat([Buffer.from(type, "latin1"), data]);
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(body));
+  return Buffer.concat([length, body, crc]);
+}
+
+/** A 1x1 PNG, one RGBA pixel, built here so the test holds no encoded blob. */
+const PNG = (() => {
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(1, 0);
+  header.writeUInt32BE(1, 4);
+  header.set([8, 6, 0, 0, 0], 8);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", header),
+    chunk("IDAT", deflateSync(Buffer.from([0, 0x2a, 0x64, 0xb8, 0xff]))),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+})();
 
 const PLAN = `# Northwind launch plan
 
