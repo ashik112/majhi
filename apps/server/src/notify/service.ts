@@ -246,11 +246,13 @@ export class Notifier {
     this.buffer = [];
   }
 
+  /** Drops an alert still in its quiet wait. It was never sent, so a later decision for the item may still alert. */
   private forget(key: string): void {
     const timer = this.timers.get(key);
     if (timer === undefined) return;
     clearTimeout(timer);
     this.timers.delete(key);
+    this.seen.delete(key);
   }
 
   /** The five seconds passed. It still waits for the owner, so it is a notification, unless the captain answers it. */
