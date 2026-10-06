@@ -37,6 +37,11 @@ export const tasks = sqliteTable("tasks", {
   priority: text("priority"),
   /** The owner's deadline, `YYYY-MM-DD`; NULL for none. */
   due: text("due"),
+  /** The task type and who set it (migration 176). Both set or both NULL. */
+  type: text("type"),
+  typeBy: text("type_by"),
+  /** JSON StoredOrigin: where the task came from. NULL for tasks made before origins and for chats (migration 176). */
+  origin: text("origin"),
   /** The owner marked it Not for autonomous mode (migration 114). */
   noAutonomy: integer("no_autonomy", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull(),

@@ -14,6 +14,7 @@ const row = (id: string, updatedAt: string, status: TaskSummary["status"] = "run
   working: [],
   links: [],
   waitingOn: [],
+  trail: [],
 });
 
 describe("patching the task list from an event", () => {

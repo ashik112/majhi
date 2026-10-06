@@ -1,28 +1,20 @@
 import type { HandoffStepId } from "./handoff.ts";
-import { liftersOf } from "./lifecycle/hold.ts";
-import { fromStored } from "./lifecycle/stored.ts";
 import type { CiState, MrState } from "./mr-state.ts";
 import type { Trail, TrailStep, TrailTone } from "./task-trail.ts";
-import type { PausedBy, PausedReason, TaskStatus } from "./tasks.ts";
+import type { TaskStatus } from "./tasks.ts";
 
 /**
  * Assembles a task's trail from facts the server already holds. Pure: it decides each step's tone
  * and nothing else, so the board and the task page read the same trail.
  */
 
-export interface StatusFacts {
-  status: TaskStatus;
-  pausedReason?: PausedReason | undefined;
-  pausedBy?: PausedBy | undefined;
-}
-
 /**
- * How a task's own state reads: running is working, done is done, review and a merge request wait
- * for the owner, a paused task needs the owner when only an owner (or the captain) can lift its hold
- * and is paused when majhi lifts it by itself, and a task that has not started is idle.
+ * How a task's own state reads in a trail: running is working, done is done, review and a merge
+ * request wait for the owner, a paused task is paused (why it is paused is on its own card), and a
+ * task that has not started is idle.
  */
-export function statusTone(task: StatusFacts): TrailTone {
-  switch (task.status) {
+export function statusTone(status: TaskStatus): TrailTone {
+  switch (status) {
     case "done":
       return "done";
     case "running":
@@ -30,16 +22,11 @@ export function statusTone(task: StatusFacts): TrailTone {
     case "review":
     case "mr":
       return "needs";
+    case "paused":
+      return "paused";
     case "inbox":
     case "ready":
       return "idle";
-    case "paused": {
-      const { hold } = fromStored(
-        { status: "paused", pausedReason: task.pausedReason, pausedBy: task.pausedBy },
-        { at: "" },
-      );
-      return hold !== undefined && liftersOf(hold).includes("majhi") ? "paused" : "needs";
-    }
   }
 }
 
@@ -51,8 +38,9 @@ export function worstTone(tones: readonly TrailTone[]): TrailTone {
   return URGENCY.find((t) => tones.includes(t)) ?? "idle";
 }
 
-export interface ChildFact extends StatusFacts {
+export interface ChildFact {
   id: string;
+  status: TaskStatus;
   /** Set for the single read, which lists the children. */
   title?: string | undefined;
 }
@@ -88,7 +76,7 @@ const CHECK_TONE = { green: "done", red: "needs", running: "working", queued: "w
 export function buildTrail(facts: TrailFacts): Trail {
   const steps: TrailStep[] = [];
   if (facts.children.length > 0) {
-    const tones = facts.children.map(statusTone);
+    const tones = facts.children.map((c) => statusTone(c.status));
     const withItems = facts.children.every((c) => c.title !== undefined);
     steps.push({
       kind: "children",

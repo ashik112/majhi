@@ -18,6 +18,7 @@ function task(id: string, status: TaskStatus, over: Partial<TaskSummary> = {}): 
     working: [],
     links: [],
     waitingOn: [],
+    trail: [],
     ...over,
   };
 }
