@@ -120,6 +120,8 @@ describe("majhi-processes", () => {
     const { h, servers, release } = await world();
     const tool = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-processes"));
     expect((await tool.listTools()).tools.map((t) => t.name).sort()).toEqual([
+      "handoff",
+      "handoff_rerun",
       "list",
       "output",
       "restart",
