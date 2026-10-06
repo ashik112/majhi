@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   type CommitSha,
+  FACTS_READER,
   WIKI_FACT_KINDS,
   WIKI_RULES,
   type WikiFactKind,
@@ -85,6 +86,7 @@ export async function extractFacts(input: ExtractInput, reader: FactsReader): Pr
     repo: input.project,
     commit: input.sha,
     rules: WIKI_RULES,
+    reader: FACTS_READER,
     facts: built.facts,
   });
   await mkdir(input.cacheDir, { recursive: true, mode: 0o700 });

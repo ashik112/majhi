@@ -1774,6 +1774,22 @@ UPDATE outcomes SET playbook = 'upkeep-wiki' WHERE playbook = 'upkeep-map';
 UPDATE outbound_drafts SET playbook = 'upkeep-wiki' WHERE playbook = 'upkeep-map';
 `,
   },
+  {
+    // What the owner told the wiki of a workspace (docs/design/wiki.md, step 2, rule 4): what an address or a call is,
+    // and what a role the writer guessed really is. One row per answer, JSON checked by zod when read; a row that no
+    // longer parses reads as absent. The key makes a later answer to the same question replace the earlier one.
+    id: 174,
+    name: "wiki owner answers",
+    sql: `
+CREATE TABLE wiki_answers (
+  org TEXT NOT NULL,
+  key TEXT NOT NULL,
+  answer TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (org, key)
+);
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

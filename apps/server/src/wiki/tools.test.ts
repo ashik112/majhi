@@ -59,7 +59,7 @@ async function world(on: Record<string, boolean>) {
     gaps: { couldNot: [], failed: [] },
   });
   const enabled = async (org: string) => on[org] === true;
-  return { store, tools: new WikiTools({ repo: store.wiki, enabled, index }), enabled };
+  return { store, index, tools: new WikiTools({ repo: store.wiki, enabled, index }), enabled };
 }
 
 const acme: AgentScope = { org: "acme", scopes: ["global", "org:acme", "project:api"] };
@@ -110,5 +110,78 @@ describe("TASK.md section", () => {
     expect((await notes("acme", ["api", "api", "api", "api"])).length).toBeLessThanOrEqual(10);
     expect(await notes("globex", ["shop"])).toEqual([]);
     expect(await notes(undefined, ["api"])).toEqual([]);
+  });
+});
+
+describe("the workspace pages", () => {
+  const workspacePage = (org: string, text: string): WikiPage =>
+    WikiPageSchema.parse({
+      id: "overview",
+      org,
+      kind: "overview",
+      title: "System overview",
+      body: `${text} [1]`,
+      claims: [
+        {
+          n: 1,
+          text,
+          proven: true,
+          sources: [{ repo: "api", commit: SHA, path: "src/app.py", lines: [3, 5], hash: HASH }],
+        },
+      ],
+      builtFrom: { api: SHA },
+      v: 1,
+    });
+
+  it("are listed, read and searched for the task's workspace only", async () => {
+    const { store, index, tools } = await world({ acme: true, globex: true });
+    for (const page of [
+      workspacePage("acme", "The Acme web app calls the billing API to charge cards."),
+      workspacePage("globex", "The Globex storefront calls the vault service for pricing."),
+    ]) {
+      store.wiki.save(page);
+      await index.put(page);
+    }
+    const found = await tools.call(acme, { action: "list" });
+    expect(found).toContain("Wiki of the workspace");
+    expect(found).toContain("- overview: System overview");
+    const read = await tools.call(acme, { action: "read", workspace: true, page: "overview" });
+    expect(read).toContain("Acme web app calls the billing API");
+    expect(read).not.toContain("Globex");
+    expect(await tools.call(acme, { action: "search", words: "storefront vault pricing" })).not.toContain(
+      "Globex",
+    );
+    const hits = await tools.call(acme, { action: "search", words: "web app calls billing API" });
+    expect(hits).toContain("workspace/overview");
+  });
+
+  it("add one line to TASK.md naming the links that touch the task's repos", async () => {
+    const { store, enabled } = await world({ acme: true, globex: false });
+    const end = (project: string, path: string) => ({
+      project,
+      sources: [{ repo: project, commit: SHA, path, lines: [1, 1] as [number, number], hash: HASH }],
+    });
+    const links = [
+      {
+        id: "web>api:exact:1",
+        type: "http" as const,
+        basis: "exact" as const,
+        from: end("web", "src/client.ts"),
+        to: end("api", "app/routes.py"),
+        label: "POST /api/v1/login",
+      },
+      {
+        id: "jobs>billing:exact:1",
+        type: "http" as const,
+        basis: "exact" as const,
+        from: end("jobs", "src/run.ts"),
+        to: end("billing", "app/pay.py"),
+        label: "GET /pay",
+      },
+    ];
+    const notes = wikiNotes({ repo: store.wiki, enabled, links: async () => links });
+    const lines = await notes("acme", ["api"]);
+    expect(lines).toContain("Links to other projects: web calls api (1, exact: POST /api/v1/login).");
+    expect(lines.join("\n")).not.toContain("jobs");
   });
 });

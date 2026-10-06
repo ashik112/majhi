@@ -412,8 +412,11 @@ export function agentSpoke(items: readonly RoomItem[]): boolean {
 export type SessionMode =
   /** Notes about work done: no files, every tool refused, the cheapest model. */
   | { kind: "notes" }
-  /** One repo's clean export, mounted read-only and the session's folder: reads and searches only, the writer's model. */
-  | { kind: "repo"; root: string };
+  /**
+   * One repo's clean export, mounted read-only and the session's folder: reads and searches only, the writer's model.
+   * `also` are further exports (the other repos of a workspace) mounted read-only beside it, readable the same way.
+   */
+  | { kind: "repo"; root: string; also?: readonly string[] };
 
 /** What a job of the Housekeeper is for: the id its spend is booked under, and the workspace and project it counts for. */
 export interface JobTask {
@@ -608,7 +611,9 @@ export class Housekeeper {
       options: deps.options,
       cwd,
       // Notes need no files: a runner gives them an empty folder of its own. A repo is the folder, read-only.
-      ...(mode.kind === "repo" ? { mounts: [{ path: mode.root, readOnly: true }] } : { scratch: true }),
+      ...(mode.kind === "repo"
+        ? { mounts: [mode.root, ...(mode.also ?? [])].map((path) => ({ path, readOnly: true })) }
+        : { scratch: true }),
       ...(wanted === undefined ? {} : { model: wanted }),
     });
     this.live.add(session);
@@ -634,7 +639,9 @@ export class Housekeeper {
       // Closed while the session was starting: `close` could not see it yet.
       if (this.closed) throw new HousekeeperClosed();
       // Notes only answer, so every tool request is refused. A repo may be read and searched, nothing else.
-      session.setPermissionHandler(mode.kind === "repo" ? readOnlyHandler(mode.root) : async () => undefined);
+      session.setPermissionHandler(
+        mode.kind === "repo" ? readOnlyHandler(mode.root, mode.also) : async () => undefined,
+      );
       if (wanted === undefined) {
         // No model named: the cheapest the account offers for notes, the middle one for a repo.
         const hidden = account.hidden_models ?? [];

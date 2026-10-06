@@ -113,6 +113,7 @@ function scanFile(ctx: ScanContext, file: ComposeFile): void {
       ...(svc.image === undefined ? {} : { image: svc.image }),
       ports: [...new Set(ports)],
       dependsOn: needs,
+      ...(svc.build === undefined ? {} : { builds: true }),
       basis: "declared",
       slug: name,
       cites,
