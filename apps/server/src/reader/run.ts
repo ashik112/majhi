@@ -1,4 +1,4 @@
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { BaseEnv, Spawner } from "@majhi/acp";
 import { OrgIdSchema } from "@majhi/shared";
@@ -7,18 +7,22 @@ import { errorMessage } from "../errors.ts";
 /** The graphify release the runner image installs. Raise it in the Dockerfile and here together. */
 export const GRAPHIFY_VERSION = "0.9.77";
 
-/** Where the runner image keeps the reader (`docker/map-extract.py`) and the Python that has graphify. */
-export const EXTRACT_COMMAND = {
+/** The Noir release the runner image installs. Raise it in the Dockerfile and here together. */
+export const NOIR_VERSION = "1.4.0";
+
+/** Where the runner image keeps the wiki's reader (`docker/wiki_facts.py`) and the Python that has graphify and tree-sitter. */
+export const READER_COMMAND = {
   command: "/opt/graphify/bin/python",
-  args: ["/usr/local/lib/majhi/map-extract.py"],
+  args: ["/usr/local/lib/majhi/wiki_facts.py"],
 } as const;
 
-/** The most one project may take, and the memory its reader gets. */
-const TIMEOUT_MS = 10 * 60_000;
+/** The most one repo may take, and the memory its reader gets. The facts pass is seconds; the first graph is about a minute. */
+const FACTS_TIMEOUT_MS = 5 * 60_000;
+const GRAPH_TIMEOUT_MS = 15 * 60_000;
 const MEMORY = "4g";
 const MAX_OUTPUT = 16 * 1024;
 
-/** A folder name made from a project id: one path segment, never a way out of the map folder. */
+/** A folder name made from a project id: one path segment, never a way out of the wiki folder. */
 export function segment(id: string): string | undefined {
   const bad = id === "" || id === "." || id === ".." || id.length > 120;
   if (bad || id.includes("/") || id.includes("\\") || id.includes("\0")) return undefined;
@@ -26,14 +30,14 @@ export function segment(id: string): string | undefined {
 }
 
 /**
- * Where a project's code graph is kept: `<tasks folder>/.map/<workspace>/<project>`. One folder per
- * project, so graphify's own cache and manifest in it make the next read incremental. Null for an id that
- * is not a safe folder name.
+ * Where a project's code graph is kept: `<root>/<workspace>/<project>/graph`, where `root` is the wiki folder in the
+ * tasks folder (`<tasks folder>/.wiki`) and the rest is the project's wiki cache folder (`wikiCacheDir`), so graphify's own cache and manifest make the next update incremental. Null for an id that is
+ * not a safe folder name.
  */
 export function graphFolder(root: string, org: string, project: string): string | null {
   const o = OrgIdSchema.safeParse(org);
   const p = segment(project);
-  return o.success && p !== undefined ? join(root, o.data, p) : null;
+  return o.success && p !== undefined ? join(root, o.data, p, "graph") : null;
 }
 
 export interface GraphRunDeps {
@@ -41,46 +45,51 @@ export interface GraphRunDeps {
   spawner: Spawner;
   /** PATH and LANG of runs. Never majhi's own environment. */
   base: BaseEnv;
-  /** The map folder in the tasks folder: runners can mount it, and it is never inside majhi's config folder. */
-  root: () => Promise<string>;
   timeoutMs?: number;
 }
 
-export type GraphRun = { ok: true; folder: string; ms: number } | { ok: false; reason: string };
+export type ReaderRun = { ok: true; ms: number } | { ok: false; reason: string };
+
+/** What a repo's facts need from the sealed reader: the export read, and the code graph updated. */
+export interface FactsReader {
+  /** Writes `reader.json` in the cache folder: routes, queue consumers, timers, commands, sockets and calls. */
+  readFacts(exportDir: string, cacheDir: string): Promise<ReaderRun>;
+}
 
 /**
- * Reads one project with graphify (SPEC 5.21), in a throwaway runner container with no network at all, the
- * project mounted read-only and the project's map folder the only place it can write. No model is used.
+ * The sealed reader (docs/design/wiki.md, step 1): one throwaway runner container per run, with no network at all, the
+ * repo's clean export mounted read-only and its cache folder the only place it can write. No model is used. The
+ * facts pass (`readFacts`) takes seconds; the code graph (`updateGraph`) is graphify's incremental update, a minute
+ * the first time and seconds after, and `code_graph` reads its `graph.json`.
  */
-export class GraphRunner {
+export class GraphRunner implements FactsReader {
   constructor(private readonly deps: GraphRunDeps) {}
 
-  /** The folder of a project's graph, or null for an unsafe id. */
-  async folder(org: string, project: string): Promise<string | null> {
-    return graphFolder(await this.deps.root(), org, project);
+  readFacts(exportDir: string, cacheDir: string): Promise<ReaderRun> {
+    return this.run(exportDir, cacheDir, [], this.deps.timeoutMs ?? FACTS_TIMEOUT_MS);
   }
 
-  /** Removes a project's graph. */
-  async forget(org: string, project: string): Promise<void> {
-    const folder = await this.folder(org, project);
-    if (folder !== null) await rm(folder, { recursive: true, force: true });
+  updateGraph(exportDir: string, cacheDir: string): Promise<ReaderRun> {
+    return this.run(exportDir, cacheDir, ["--graph"], this.deps.timeoutMs ?? GRAPH_TIMEOUT_MS);
   }
 
-  async extract(org: string, project: string, path: string): Promise<GraphRun> {
-    const folder = await this.folder(org, project);
-    if (folder === null) return { ok: false, reason: `"${project}" is not a usable folder name.` };
+  private async run(exportDir: string, cacheDir: string, flags: string[], limit: number): Promise<ReaderRun> {
     const started = Date.now();
     try {
-      await mkdir(folder, { recursive: true, mode: 0o700 });
-      const { code, output } = await this.run(path, folder);
-      if (code === 0) return { ok: true, folder, ms: Date.now() - started };
-      return { ok: false, reason: tail(output) };
+      await mkdir(cacheDir, { recursive: true, mode: 0o700 });
+      const { code, output } = await this.spawn(exportDir, cacheDir, flags, limit);
+      return code === 0 ? { ok: true, ms: Date.now() - started } : { ok: false, reason: tail(output) };
     } catch (err) {
       return { ok: false, reason: errorMessage(err) };
     }
   }
 
-  private run(project: string, folder: string): Promise<{ code: number | null; output: string }> {
+  private spawn(
+    exportDir: string,
+    cacheDir: string,
+    flags: string[],
+    limit: number,
+  ): Promise<{ code: number | null; output: string }> {
     const { base } = this.deps;
     const env: Record<string, string> = {
       PATH: base.PATH,
@@ -100,7 +109,6 @@ export class GraphRunner {
         clearTimeout(timer);
         resolve({ code, output });
       };
-      const limit = this.deps.timeoutMs ?? TIMEOUT_MS;
       const timer = setTimeout(() => {
         kill();
         output += `\nStopped after ${Math.round(limit / 1000)} s.`;
@@ -108,12 +116,15 @@ export class GraphRunner {
       }, limit);
       this.deps
         .spawner({
-          command: { command: EXTRACT_COMMAND.command, args: [...EXTRACT_COMMAND.args, project, folder] },
+          command: {
+            command: READER_COMMAND.command,
+            args: [...READER_COMMAND.args, exportDir, cacheDir, ...flags],
+          },
           env,
-          cwd: folder,
+          cwd: cacheDir,
           scratch: true,
           isolated: true,
-          mounts: [{ path: project, readOnly: true }, { path: folder }],
+          mounts: [{ path: exportDir, readOnly: true }, { path: cacheDir }],
           limits: { cpus: "1", memory: MEMORY, cpuShares: "256" },
         })
         .then(

@@ -72,7 +72,7 @@ RUN set -eu; \
 # export, in the sealed reader container, with no network and no model (`apps/server/src/wiki/facts/`). A static
 # binary, pinned by version and by the SHA-256 of each release asset, per CPU. To update, change the version
 # and take the sums from the release page (github.com/owasp-noir/noir/releases); raise `NOIR_VERSION` in
-# `apps/server/src/wiki/facts/run.ts` with it.
+# `apps/server/src/reader/run.ts` with it.
 FROM debian:bookworm-slim AS noir
 ARG TARGETARCH
 RUN apt-get update \
@@ -181,8 +181,8 @@ RUN --mount=from=ghcr.io/astral-sh/uv:0.12.21,source=/uv,target=/usr/local/bin/u
   UV_COMPILE_BYTECODE=1 uv tool install -p 3.13 serena-agent==1.7.0 \
   && chmod -R a+rX /opt/serena \
   && /opt/serena/bin/serena --version
-# graphify (SPEC 5.21): reads a project's code into a graph for the map, with no model and no network, in a
-# throwaway runner container that sees the project read-only (`apps/server/src/reader/`). Installed with uv
+# graphify: reads a project's code into a graph for `code_graph` and the wiki, with no model and no network, in a
+# throwaway runner container that sees the project's source export read-only (`apps/server/src/reader/`). Installed with uv
 # into its own venv under /opt/graphify, on the Python that Serena installed above. Pinned: raise
 # `graphifyy` here and GRAPHIFY_VERSION in `apps/server/src/reader/run.ts` together. GRAPHIFY_NO_AUTO_REFRESH
 # stops its CLI from rewriting the agent skill folders of the home it runs in.
@@ -192,7 +192,8 @@ RUN --mount=from=ghcr.io/astral-sh/uv:0.12.21,source=/uv,target=/usr/local/bin/u
   && chmod -R a+rX /opt/graphify \
   && GRAPHIFY_NO_AUTO_REFRESH=1 /opt/graphify/bin/graphify --help > /dev/null
 ENV GRAPHIFY_NO_AUTO_REFRESH=1
-COPY --chmod=0755 docker/map-extract.py /usr/local/lib/majhi/map-extract.py
+COPY --chmod=0755 docker/wiki_facts.py /usr/local/lib/majhi/wiki_facts.py
+COPY --chmod=0644 docker/wiki_calls.py /usr/local/lib/majhi/wiki_calls.py
 COPY --chmod=0644 docker/map_inside.py /usr/local/lib/majhi/map_inside.py
 COPY --from=kubectl /kubectl /usr/local/bin/kubectl
 # Noir, for the wiki's facts (see its stage above).
