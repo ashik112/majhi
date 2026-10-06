@@ -40,7 +40,6 @@ export * from "./host.ts";
 export * from "./inbox.ts";
 export * as lifecycle from "./lifecycle/index.ts";
 export * from "./machine.ts";
-export * from "./map.ts";
 export * from "./mcp-servers.ts";
 export * from "./media.ts";
 export * from "./memory.ts";

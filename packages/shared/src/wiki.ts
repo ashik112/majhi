@@ -9,8 +9,7 @@ import type { WikiPatch } from "./settings.ts";
  * checked by zod where it crosses a boundary: the database, the command endpoint, the fact files the reader
  * container writes and the writer's JSON.
  *
- * These types replace the Map's leftovers in `map.ts` (`MapNode`, `MapEdge`, `MapEndpoint`, `MapResolution`,
- * `ProjectMap`): a unit or a data store is a `unit` or `store` fact, a line is a `link` fact, an address is an
+ * A unit or a data store is a `unit` or `store` fact, a line between two of them is a `link` fact, an address is an
  * `endpoint` fact with its call sites as sources, and the owner's answer is an `OwnerAnswer`.
  */
 
@@ -325,7 +324,7 @@ export const OwnerAnswerTargetSchema = z.discriminatedUnion("kind", [
 ]);
 export type OwnerAnswerTarget = z.infer<typeof OwnerAnswerTargetSchema>;
 
-/** One answer of the owner, kept for the workspace: every later update applies it (the Map's `MapResolution`). */
+/** One answer of the owner, kept for the workspace: every later update applies it. */
 export const OwnerAnswerSchema = z.object({
   host: z.string().min(1).max(200),
   port: z.number().int().positive().max(65535).optional(),
