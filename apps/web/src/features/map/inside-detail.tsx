@@ -372,6 +372,7 @@ function ReadInside({
               <div className="glabel">What happens</div>
               <Steps key={entry.id} steps={steps} cur={s.istep} onPick={(i) => acts.pickInsideStep(i)} />
             </div>
+            {entry.ifFails.length > 0 && <IfFails lines={entry.ifFails} />}
             {entry.members.length > 1 && <Members entry={entry} org={view.org} project={project} />}
             {jn !== undefined && (
               <div className="blk">
@@ -558,6 +559,20 @@ function Steps({
   );
 }
 
+/** What else happens when the flow goes wrong, one plain line each. Not part of the numbered steps. */
+function IfFails({ lines }: { lines: readonly string[] }) {
+  return (
+    <div className="blk">
+      <div className="glabel">If it fails</div>
+      {lines.map((l) => (
+        <div key={l} className="sub" style={{ margin: "2px 0" }}>
+          {l}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** The part of a command name before its first dot, slash or colon: `tasks.create` is `tasks`. */
 function prefixOf(label: string): string {
   const cuts = [".", "/", ":"].map((c) => label.indexOf(c)).filter((i) => i > 0);
@@ -616,6 +631,7 @@ function Members({ entry, org, project }: { entry: InsideEntry; org: string; pro
                           </div>
                         )}
                         <Steps steps={stepsOf(story.data.steps)} cur={null} onPick={() => undefined} />
+                        {story.data.ifFails.length > 0 && <IfFails lines={story.data.ifFails} />}
                       </>
                     )}
                     {story.isError && <div className="sub">Could not read this command.</div>}

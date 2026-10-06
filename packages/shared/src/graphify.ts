@@ -80,6 +80,8 @@ export const GraphifyInsideSchema = z.object({
          * `name` is a match by name alone; it is never followed.
          */
         how: z.enum(["same-file", "import", "name"]).default("name"),
+        /** True when every such call sits in code that only runs when something went wrong. */
+        fail: z.boolean().optional(),
       }),
     )
     .max(60000),
@@ -92,6 +94,7 @@ export const GraphifyInsideSchema = z.object({
         line: z.number().int().positive(),
         verb: z.enum(["read", "write", "call", "use"]),
         target: z.string().max(120).optional(),
+        fail: z.boolean().optional(),
       }),
     )
     .max(60000),

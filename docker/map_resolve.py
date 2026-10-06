@@ -562,7 +562,12 @@ def assemble(per_file, meta):
             src_id = enclosing(f.rel, line)
             got = resolve_call(f, kind, name, obj, cls)
             if src_id and got and got[0] != src_id:
-                calls.setdefault((src_id, got[0]), (line, got[1]))
+                fail = line in f.fail_lines
+                prev = calls.get((src_id, got[0]))
+                if prev is None:
+                    calls[(src_id, got[0])] = (line, got[1], fail)
+                elif prev[2] and not fail:
+                    calls[(src_id, got[0])] = (line, got[1], False)
 
     # Entries, with the prefix of a router the file is mounted under.
     mount_prefix = {}
@@ -706,8 +711,11 @@ def assemble(per_file, meta):
                 target = table_names.get(ident)
             key = (src_id, svc, kind, target or "")
             prev = uses.get(key)
-            if prev is None or (verb == "write" and prev[1] != "write"):
-                uses[key] = (prev[0] if prev else line, verb)
+            fail = line in f.fail_lines
+            if prev is None:
+                uses[key] = (line, verb, fail)
+            else:
+                uses[key] = (prev[0], "write" if verb == "write" or prev[1] == "write" else prev[1], prev[2] and fail)
     # `db.cursor().execute("insert into t ...")` is one use of table t, not a second plain use of db.
     named = {(a, s, k) for (a, s, k, t) in uses if t}
     uses = {key: val for key, val in uses.items() if key[3] or (key[0], key[1], key[2]) not in named}
@@ -715,7 +723,7 @@ def assemble(per_file, meta):
 
     # Keep only what an entry point can reach.
     out_calls = {}
-    for (a, b), (ln, how) in calls.items():
+    for (a, b), (ln, how, _fail) in calls.items():
         out_calls.setdefault(a, []).append((b, ln, how))
     seen = {}
     frontier = [e["fn"] for e in entries] + [m["fn"] for e in entries for m in e.get("members", []) if "fn" in m]
@@ -740,13 +748,13 @@ def assemble(per_file, meta):
     return {
         "defs": sorted(kept_defs, key=lambda d: (d["file"], d["line"])),
         "calls": [
-            {"from": a, "to": b, "line": ln, "how": how}
-            for (a, b), (ln, how) in sorted(calls.items())
+            {"from": a, "to": b, "line": ln, "how": how, **({"fail": True} if fail else {})}
+            for (a, b), (ln, how, fail) in sorted(calls.items())
             if a in keep and b in keep
         ],
         "uses": [
-            {"fn": a, "name": s, "kind": k, "line": ln, "verb": v, **({"target": t} if t else {})}
-            for (a, s, k, t), (ln, v) in sorted(uses.items())
+            {"fn": a, "name": s, "kind": k, "line": ln, "verb": v, **({"target": t} if t else {}), **({"fail": True} if fail else {})}
+            for (a, s, k, t), (ln, v, fail) in sorted(uses.items())
             if a in keep
         ],
         "entries": sorted(entries, key=lambda e: (e["file"], e["line"], e["label"]))[:2000],

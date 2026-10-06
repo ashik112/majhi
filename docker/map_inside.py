@@ -24,6 +24,7 @@ WRITE_WORDS = ("set", "insert", "add", "save", "write", "put", "push", "lpush", 
 REGISTRY_NAMES = {"commands", "handlers", "registry", "actions", "tools", "routes", "jobs", "operations", "ops", "methods", "procedures", "mutations", "queries"}
 DISPATCH_PARAMS = {"name", "command", "cmd", "action", "type", "handler", "op", "method", "tool", "procedure", "event", "job", "task", "rpc"}
 REGISTRY_MIN = 8
+FETCHY = {"fetch", "fetchFn", "fetchImpl", "fetcher", "doFetch", "httpFetch"}
 
 # Module (exact, or the start of it) -> (display name, kind). Longest match wins. Names match the web page's logo table.
 # kind: db (a datastore), orm (a layer over some SQL database, named by the driver or "SQL database").
@@ -54,6 +55,9 @@ OUTSIDE = {
     "github": "GitHub", "@octokit/rest": "GitHub", "exa_py": "Exa", "exa-js": "Exa", "firecrawl": "Firecrawl",
     "@mendable/firecrawl-js": "Firecrawl", "firecrawl_py": "Firecrawl", "emails": "Email", "nodemailer": "Email",
     "smtplib": "Email", "boto3": "AWS", "@aws-sdk": "AWS",
+    "axios": "Outside service", "got": "Outside service", "ky": "Outside service", "node-fetch": "Outside service",
+    "undici": "Outside service", "ofetch": "Outside service", "superagent": "Outside service",
+    "requests": "Outside service", "httpx": "Outside service", "aiohttp": "Outside service", "urllib3": "Outside service",
     "fs": "Files", "node:fs": "Files", "shutil": "Files",
     "child_process": "Processes", "node:child_process": "Processes", "subprocess": "Processes",
 }
@@ -118,6 +122,7 @@ class FileFacts:
     def __init__(self, rel, nlines):
         self.rel = rel
         self.nlines = nlines
+        self.fail_lines = set()  # lines inside a catch or except block, or an `if` that ends in a throw or a failed result
         self.defs = []  # {name,cls,line,end,doc}
         self.calls = []  # (line, kind, name, obj, cls)   kind: id | member | this
         self.imports = {}  # local -> (module spec, original name or "*")
@@ -139,6 +144,34 @@ class FileFacts:
         self.implements = {}  # class name -> interface names it declares
         self.props = {}  # class, interface or object type name -> {property: type name}
         self.main_block = False  # python `if __name__ == "__main__"` seen
+
+
+def has_failure_exit(block):
+    """Whether a block throws, raises, or returns a result that says it did not work (`ok: false`)."""
+    for n in walk(block):
+        if n.type in ("throw_statement", "raise_statement"):
+            return True
+        if n.type == "return_statement":
+            for m in walk(n):
+                if m.type == "pair":
+                    k, v = m.child_by_field_name("key"), m.child_by_field_name("value")
+                    if k is not None and v is not None and text_of(k).strip("'\"") == "ok" and text_of(v) in ("false", "False"):
+                        return True
+    return False
+
+
+def mark_failures(facts, order):
+    """Lines of the code that only runs when something went wrong: catch and except blocks, and `if` blocks that exit with a failure."""
+    for n in order:
+        block = None
+        if n.type in ("catch_clause", "except_clause"):
+            block = n
+        elif n.type == "if_statement":
+            cons = n.child_by_field_name("consequence")
+            if cons is not None and has_failure_exit(cons):
+                block = cons
+        if block is not None:
+            facts.fail_lines.update(range(block.start_point[0] + 1, block.end_point[0] + 2))
 
 
 def line_of(node):
@@ -613,6 +646,7 @@ def scan_python(root, rel, nlines):
                 if method in ("exec", "execute") and verb == "use":
                     verb = "read" if "select" in text_of(args) else "use"
                 facts.uses.append((line_of(n), svc[0], svc[1], verb, target, ident))
+    mark_failures(facts, order)
     return facts
 
 
@@ -1002,7 +1036,15 @@ def scan_js(root, rel, nlines):
                     if chain_names and all(c != "" for c in chain_names):
                         facts.calls.append((line_of(n), "chain", prop, tuple(chain_names), js_class_of(n)))
             chain = js_chain(fn)
-            if len(chain) == 1 and chain[0] in bound and bound[chain[0]][0] in ("Files", "Processes"):
+            if chain and chain[-1] in FETCHY:
+                facts.uses.append((line_of(n), "Outside service", "out", "call", None, None))
+            elif args is not None and any(
+                m.type in ("identifier", "shorthand_property_identifier", "property_identifier") and text_of(m) in FETCHY
+                for m in walk(args)
+            ):
+                # The fetch function is handed to a client library: the call goes out through it.
+                facts.uses.append((line_of(n), "Outside service", "out", "call", None, None))
+            if len(chain) == 1 and chain[0] in bound and bound[chain[0]][0] in ("Files", "Processes", "Outside service"):
                 orig = facts.imports.get(chain[0], (None, chain[0]))[1]
                 verb, target = use_of(bound[chain[0]], orig, first)
                 facts.uses.append((line_of(n), bound[chain[0]][0], "out", verb, None, None))
@@ -1091,4 +1133,5 @@ def scan_js(root, rel, nlines):
         for d in facts.defs:
             if d["name"] in exported and d["name"].upper() in {v.upper() for v in HTTP_VERBS}:
                 facts.entries.append({"kind": "HTTP", "label": f"{d['name'].upper()} {route}", "line": d["line"], "fn": d["name"]})
+    mark_failures(facts, order)
     return facts

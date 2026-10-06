@@ -325,6 +325,10 @@ export function addressText(e: Pick<MapEndpoint, "host" | "port">): string {
 
 /** Entry points drawn on the canvas before "Show more". */
 export const CANVAS_ENTRIES = 5;
+/** The same, in a narrow window, where the canvas is shorter and narrower. */
+export const CANVAS_ENTRIES_NARROW = 3;
+/** Steps of the picked story drawn in a narrow window. */
+export const CANVAS_STEPS_NARROW = 5;
 
 /**
  * The part of an Inside spec the canvas draws: the first few entry points (all of them once asked), and
@@ -335,15 +339,16 @@ export function focusInside(
   spec: InsideSpec,
   entryId: string | null,
   all: boolean,
+  narrow = false,
 ): { spec: InsideSpec; hidden: number } {
-  const first = all ? spec.entries : spec.entries.slice(0, CANVAS_ENTRIES);
+  const first = all ? spec.entries : spec.entries.slice(0, narrow ? CANVAS_ENTRIES_NARROW : CANVAS_ENTRIES);
   const picked = spec.entries.find((e) => e.id === entryId);
   const entries = picked !== undefined && !first.includes(picked) ? [...first, picked] : first;
   const hidden = spec.entries.length - entries.length;
   if (picked === undefined)
     return { spec: { ...spec, entries, fns: [], data: [], calls: [], uses: [], services: [] }, hidden };
   // The canvas draws the steps the panel shows first, so it stays small enough to read.
-  const shownSteps = picked.steps.slice(0, STEPS_SHOWN);
+  const shownSteps = picked.steps.slice(0, narrow ? CANVAS_STEPS_NARROW : STEPS_SHOWN);
   const keys = new Set(shownSteps.map((st) => st.key));
   const fnIds = new Set<string>([picked.fn]);
   for (const st of shownSteps) {

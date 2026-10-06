@@ -57,6 +57,8 @@ export const InsideEntrySchema = z.object({
   wordsKey: z.string().max(40).optional(),
   /** What happens, step by step, followed only through calls proved in code. */
   steps: z.array(InsideStepSpecSchema).max(12).default([]),
+  /** What else happens when it goes wrong, one plain line each. Kept out of the numbered steps. */
+  ifFails: z.array(z.string().max(200)).max(6).default([]),
 });
 export type InsideEntry = z.infer<typeof InsideEntrySchema>;
 
@@ -134,6 +136,7 @@ export const InsideMemberSchema = z.object({
   line: Line,
   followed: z.boolean(),
   steps: z.array(InsideStepSpecSchema).max(12),
+  ifFails: z.array(z.string().max(200)).max(6).default([]),
 });
 export type InsideMember = z.infer<typeof InsideMemberSchema>;
 

@@ -15,6 +15,14 @@ import {
   isLoopbackHost,
 } from "@majhi/shared";
 import { outsideOfHost } from "./config/known.ts";
+import {
+  callSentence,
+  dataSentence,
+  entrySentence,
+  hasKnownVerb,
+  outsideSentence,
+  tablesSentence,
+} from "./inside-text.ts";
 
 /** Datastores the config pass names on a project's card. */
 export const STORE_LABELS: ReadonlySet<string> = new Set([
@@ -97,6 +105,7 @@ const OUT_SUB: Readonly<Record<string, string>> = {
   SendGrid: "email",
   Resend: "email",
   Replicate: "AI models",
+  "Outside service": "web request",
 };
 
 /** A short stable id of an entry point: the same kind, label and file give the same id. */
@@ -189,118 +198,6 @@ export function partOf(file: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Template sentences, used until a model has written better ones
-
-const PHRASE: Readonly<Record<string, string>> = {
-  "Hacker News": "reads the Hacker News front page",
-  Stripe: "creates a payment with Stripe",
-  OpenAI: "sends the request to OpenAI",
-  Anthropic: "sends the prompt to Anthropic",
-  Telegram: "talks to Telegram",
-  GitHub: "reads from GitHub",
-  Slack: "posts to Slack",
-  Sentry: "reports to Sentry",
-  Twilio: "sends through Twilio",
-  SendGrid: "sends the email through SendGrid",
-  Resend: "sends the email through Resend",
-  Exa: "searches the web with Exa",
-  Firecrawl: "scrapes the page with Firecrawl",
-  Replicate: "runs the model on Replicate",
-};
-
-/** The last name of a function id: `ConnectService.callback` is `callback`. */
-function fnName(id: string): string {
-  return (id.split(":")[0] ?? id).split(".").pop() ?? id;
-}
-
-function listOf(names: readonly string[]): string {
-  const uniq = [...new Set(names)];
-  const shown = uniq.slice(0, 3);
-  const head =
-    shown.length > 1 ? `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}` : (shown[0] ?? "");
-  return uniq.length > 3 ? `${shown.join(", ")} and ${uniq.length - 3} more` : head;
-}
-
-/** A sentence for a step from facts only: the doc line of the function, or the names of what runs. */
-function stepSentence(
-  step: { kind: "entry" | "call" | "data"; fns: { id: string }[]; to: string },
-  entry: { kind: InsideTrigger; raw: string },
-  defs: ReadonlyMap<string, Def>,
-  next?: { fns: { id: string }[] } | undefined,
-): string {
-  const names = step.fns
-    .slice(step.kind === "entry" ? 1 : 0)
-    .map((f) => fnName(f.id))
-    .filter((n) => n !== "");
-  const list = listOf(
-    names.length === 0 && step.kind === "entry" && next?.fns[0] ? [fnName(next.fns[0].id)] : names,
-  );
-  if (step.kind === "call") {
-    const doc = defs.get(step.fns[0]?.id ?? "")?.doc ?? "";
-    const text = doc.endsWith(".") ? doc.slice(0, -1) : doc;
-    // A doc line is cut at 90 characters when it is longer: a cut sentence is not shown.
-    return text !== "" && doc.length < 88 ? `${text} (${list}).` : `Runs ${list}.`;
-  }
-  const runs = list === "" ? "" : ` and runs ${list}`;
-  switch (entry.kind) {
-    case "HTTP":
-      return `Receives ${entry.raw}${runs}.`;
-    case "SOCKET":
-      return `A live connection opens${runs}.`;
-    case "TOOL":
-      return `An agent calls the tool${list === "" ? "" : `, which runs ${list}`}.`;
-    case "SCHEDULE":
-      return `${capital(entry.raw)}${list === "" ? "" : `, runs ${list}`}.`;
-    case "QUEUE":
-      return `A job for ${entry.raw} arrives${runs}.`;
-    case "COMMAND":
-      return `${capital(entry.raw)} starts${runs}.`;
-  }
-}
-
-/** The tables of one datastore a step touches, with what it does to each: one sentence. */
-function tablesSentence(byTable: ReadonlyMap<string, ReadonlySet<Use["verb"]>>, named: boolean): string {
-  const names = (verb: Use["verb"]) => [...byTable].filter(([, v]) => v.has(verb)).map(([n]) => n);
-  const phrase = (list: readonly string[]) => {
-    const head = list.slice(0, 3).join(", ");
-    const what = list.length > 3 ? `${head} and ${list.length - 3} more` : head;
-    return named ? `the ${what} ${list.length === 1 ? "table" : "tables"}` : what;
-  };
-  const reads = names("read");
-  const writes = names("write");
-  const others = [...byTable].filter(([, v]) => !v.has("read") && !v.has("write")).map(([n]) => n);
-  const parts = [
-    ...(reads.length > 0 ? [`reads from ${phrase(reads)}`] : []),
-    ...(writes.length > 0 ? [`saves to ${phrase(writes)}`] : []),
-    ...(others.length > 0 ? [`uses ${phrase(others)}`] : []),
-  ];
-  const text = parts.join(", ");
-  return `${capital(text)}.`;
-}
-
-function dataSentence(data: InsideData, verb: "read" | "write" | "call" | "use", fn: string): string {
-  if (data.kind === "out" && (data.name === "Files" || data.name === "Processes")) {
-    const by = ` (${fnName(fn)})`;
-    if (data.name === "Processes") return `Starts a program${by}.`;
-    return verb === "write"
-      ? `Writes files on disk${by}.`
-      : verb === "read"
-        ? `Reads files from disk${by}.`
-        : `Uses files on disk${by}.`;
-  }
-  if (data.kind === "out") {
-    const phrase = PHRASE[data.name];
-    return phrase === undefined ? `Sends a request to ${data.name}.` : `${capital(phrase)}.`;
-  }
-  if (data.kind === "proj") return `Hands the work to ${data.name}.`;
-  const named = data.sub.endsWith("table");
-  const store = named ? `the ${data.name} table` : `${data.name} (${fnName(fn)})`;
-  if (verb === "write") return `Saves to ${store}.`;
-  if (verb === "read") return `Reads from ${store}.`;
-  return `Uses ${store}.`;
-}
-
-// ---------------------------------------------------------------------------
 // The trace of one entry point
 
 type Facts = NonNullable<GraphifyFacts["inside"]>;
@@ -308,11 +205,11 @@ type Def = Facts["defs"][number];
 type Use = Facts["uses"][number];
 
 /** A call is followed only when the code proves it: the callee is in the same file or imported. */
-export function provedCalls(inside: Facts): Map<string, { to: string; line: number }[]> {
-  const out = new Map<string, { to: string; line: number }[]>();
+export function provedCalls(inside: Facts): Map<string, { to: string; line: number; fail: boolean }[]> {
+  const out = new Map<string, { to: string; line: number; fail: boolean }[]>();
   for (const c of inside.calls) {
     if (c.how !== "same-file" && c.how !== "import") continue;
-    out.set(c.from, [...(out.get(c.from) ?? []), { to: c.to, line: c.line }]);
+    out.set(c.from, [...(out.get(c.from) ?? []), { to: c.to, line: c.line, fail: c.fail === true }]);
   }
   return out;
 }
@@ -333,30 +230,38 @@ interface Traced {
   step: Omit<InsideStepSpec, "text"> & { template: string; item: WordItem };
   data?: InsideData;
   use?: { fn: string; verb: Use["verb"]; line: number; file: string };
-  /** A data step that several tables of one datastore share: the rest of them. */
-  extra?: { data: InsideData; use: { fn: string; verb: Use["verb"]; line: number; file: string } }[];
   byTable?: Map<string, Set<Use["verb"]>>;
   call?: { from: string; to: string; line: number };
+  /** For a step that goes out over the web: the step of the part it leaves from. */
+  via?: Traced;
 }
+
+type Trace = Traced[] & { fails?: string[] };
+
+/** Words a step may say for a failure line. */
+const FAIL_LINES = 6;
 
 /**
  * What happens after an entry point, as steps between parts of the project. A step is a part taking over
- * (the call crosses into another folder) or a part using data (a table, an outside service). Calls inside
- * one part fold into its step, and a trivial helper is not a step. Only proved calls are followed, at most
- * `TRACE_DEPTH` deep, at most `TRACE_STEPS` steps.
+ * (the call crosses into another folder) or a part using data (a table, a web call, files). Calls inside
+ * one part fold into its step, and a helper that reaches no output is not a step. Only proved calls are
+ * followed, at most `TRACE_DEPTH` part changes deep, at most `TRACE_STEPS` steps. Code that runs only when
+ * something fails (catch blocks, early exits that throw or return a failed result) is not a step: each line
+ * of it is kept apart, as "if it fails".
  */
 function traceOf(
   entry: { kind: InsideTrigger; raw: string; file: string; line: number; fn: string; id: string },
   g: {
     defs: Map<string, Def>;
-    calls: Map<string, { to: string; line: number }[]>;
+    calls: Map<string, { to: string; line: number; fail: boolean }[]>;
     uses: Map<string, Use[]>;
     project: string;
   },
-): Traced[] {
+): Trace {
   const lead = g.defs.get(entry.fn);
   const startPart = partOf(lead?.file ?? entry.file);
-  const out: Traced[] = [];
+  const out: Trace = [];
+  const fails = new Set<string>();
   const entryItem: WordItem = {
     key: sha(`${g.project}|e|${entry.id}`),
     kind: "step",
@@ -385,14 +290,14 @@ function traceOf(
   const visited = new Set<string>([entry.fn]);
   const seenData = new Set<string>();
   const reach = new Map<string, boolean>();
-  /** Whether the function, or what it calls (a few deep), uses a datastore or an outside service. */
+  /** Whether the function, or what it calls (a few deep), uses a datastore, files or the web on the normal path. */
   const reachesOutput = (fn: string, depth = 5): boolean => {
     const known = reach.get(fn);
     if (known !== undefined) return known;
     reach.set(fn, false);
     const yes =
-      (g.uses.get(fn)?.length ?? 0) > 0 ||
-      (depth > 0 && (g.calls.get(fn) ?? []).some((c) => reachesOutput(c.to, depth - 1)));
+      (g.uses.get(fn) ?? []).some((u) => u.fail !== true) ||
+      (depth > 0 && (g.calls.get(fn) ?? []).some((c) => !c.fail && reachesOutput(c.to, depth - 1)));
     reach.set(fn, yes);
     return yes;
   };
@@ -407,6 +312,10 @@ function traceOf(
         const to = item.call.to;
         const d = g.defs.get(to);
         if (d === undefined || visited.has(to)) continue;
+        if (item.call.fail) {
+          if (fails.size < FAIL_LINES && hasKnownVerb(to)) fails.add(callSentence(to, d.doc));
+          continue;
+        }
         visited.add(to);
         const part = partOf(d.file);
         const last = out[out.length - 1] as Traced;
@@ -417,7 +326,7 @@ function traceOf(
           walk(to, into === repStep ? rep : (into.step.fns[0]?.id ?? rep), into, depth, hops + 1);
           continue;
         }
-        // A helper that reaches no data is not a step of the story.
+        // A helper that reaches no output is not a step of the story.
         if (depth + 1 > TRACE_DEPTH || !reachesOutput(to)) continue;
         const key = `c:${rep}>${to}`;
         const wk = sha(`${g.project}|c|${entry.id}|${to}`);
@@ -451,17 +360,19 @@ function traceOf(
       } else {
         const u = item.use;
         const data = dataOf(u);
+        if (u.fail === true) {
+          if (fails.size < FAIL_LINES) fails.add(dataSentence(data, u.verb));
+          continue;
+        }
         const dk = `${rep}>${data.id}`;
         const usedIn = g.defs.get(fn);
         const useFile = usedIn?.file ?? entry.file;
         if (seenData.has(dk)) {
           // The same table again, maybe with another verb: the step says both.
           const there = out.find(
-            (t) =>
-              t.use?.fn === rep &&
-              (t.data?.id === data.id || t.extra?.some((e) => e.data.id === data.id) === true),
+            (t) => t.use?.fn === rep && t.byTable?.has(data.name) === true && t.data?.kind === "db",
           );
-          if (there?.data !== undefined && there.byTable !== undefined && data.kind === "db") {
+          if (there?.byTable !== undefined && data.kind === "db") {
             there.byTable.get(data.name)?.add(u.verb);
             there.step.template = tablesSentence(there.byTable, data.sub.endsWith("table"));
           }
@@ -478,22 +389,19 @@ function traceOf(
               )
             : undefined;
         if (sibling?.data !== undefined && sibling.byTable !== undefined) {
-          sibling.extra = [
-            ...(sibling.extra ?? []),
-            { data, use: { fn: rep, verb: u.verb, line: u.line, file: useFile } },
-          ];
           sibling.byTable.set(data.name, new Set([u.verb]));
           sibling.step.template = tablesSentence(sibling.byTable, data.sub.endsWith("table"));
           continue;
         }
         const repDef = g.defs.get(rep);
-        const part = data.kind === "db" ? "Database" : data.kind === "proj" ? data.name : data.name;
+        const outside = data.name === "Outside service";
+        const part = data.kind === "db" ? "Database" : outside ? "Outside" : data.name;
         const wk = sha(`${g.project}|d|${entry.id}|${dk}`);
         out.push({
           step: {
             key: `d:${rep}>${data.id}`,
             kind: "data",
-            template: dataSentence(data, u.verb, fn),
+            template: dataSentence(data, u.verb),
             part,
             from: rep,
             to: data.name,
@@ -505,7 +413,7 @@ function traceOf(
               key: wk,
               kind: "step",
               part: repStep.step.part,
-              role: `${u.verb === "write" ? "saves to" : u.verb === "read" ? "reads from" : "uses"} ${data.sub.endsWith("table") ? `the ${data.name} table in ` : ""}${data.sub.endsWith("table") ? data.sub.replace(" table", "") : data.name}`,
+              role: `${u.verb === "write" ? "saves to" : u.verb === "read" ? "reads from" : outside ? "sends a web request through" : "uses"} ${data.sub.endsWith("table") ? `the ${data.name} table in ` : ""}${data.sub.endsWith("table") ? data.sub.replace(" table", "") : data.name}`,
               file: repDef?.file ?? entry.file,
               line: repDef?.line ?? u.line,
               end: repDef?.end ?? u.line,
@@ -516,14 +424,28 @@ function traceOf(
           data,
           use: { fn: rep, verb: u.verb, line: u.line, file: useFile },
           byTable: new Map([[data.name, new Set([u.verb])]]),
+          via: repStep,
         });
       }
     }
   };
   walk(entry.fn, entry.fn, out[0] as Traced, 0, 0);
   out.forEach((t, i) => {
-    if (t.step.kind !== "data") t.step.template = stepSentence(t.step, entry, g.defs, out[i + 1]?.step);
+    if (t.step.kind === "call") t.step.template = callSentence(t.step.to, g.defs.get(t.step.to)?.doc ?? "");
+    else if (t.step.kind === "entry") {
+      const first = t.step.fns[1] ?? out[i + 1]?.step.fns[0];
+      t.step.template = entrySentence(
+        entry.kind,
+        entry.raw,
+        first === undefined ? undefined : { id: first.id, doc: g.defs.get(first.id)?.doc ?? "" },
+      );
+    } else if (t.data?.name === "Outside service" && t.via !== undefined) {
+      const ids = t.via.step.fns.map((f) => f.id);
+      const at = ids.indexOf(t.step.fns[0]?.id ?? "");
+      t.step.template = outsideSentence(at >= 0 ? ids.slice(0, at + 1) : ids);
+    }
   });
+  out.fails = [...fails];
   return out;
 }
 
@@ -534,7 +456,7 @@ interface Group {
   kind: InsideTrigger;
   members: Facts["entries"];
   lead: Facts["entries"][number];
-  trace: Traced[];
+  trace: Trace;
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -571,7 +493,7 @@ function groupLabel(g: Group): { label: string; raw: string } {
   }
 }
 
-function groupsOf(entries: Facts["entries"], trace: (e: Facts["entries"][number]) => Traced[]): Group[] {
+function groupsOf(entries: Facts["entries"], trace: (e: Facts["entries"][number]) => Trace): Group[] {
   const byKey = new Map<string, Facts["entries"]>();
   for (const e of entries) {
     const own = e.members !== undefined && e.members.length > 0;
@@ -626,6 +548,7 @@ export function buildInside(
       file: m.file,
       line: m.line,
       followed: trace.length > 1 || (trace[0]?.step.fns.length ?? 0) > 1,
+      ifFails: trace.fails ?? [],
       steps: trace.map((t) => {
         const { template, item: _item, ...rest } = t.step;
         return { ...rest, text: template };
@@ -759,6 +682,7 @@ export function buildInside(
       members,
       wordsKey: gk,
       steps: fixed,
+      ifFails: grp.trace.fails ?? [],
     };
   });
 

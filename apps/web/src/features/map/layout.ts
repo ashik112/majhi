@@ -376,23 +376,27 @@ export interface InsideLayout {
   moreAt: number;
 }
 
-const IN_EW = 184;
-const IN_EH = 66;
-const IN_FW = 164;
-const IN_FRW = 204;
-const IN_DW = 142;
-const IN_DH = 54;
+const WIDE = { ew: 184, eh: 66, fw: 164, frw: 204, dw: 142, dh: 54, fh: 46, p: 56, g1: 34, g2: 38 };
+/** Narrow windows: tighter boxes so the picture still fits at full size. */
+const NARROW = { ew: 176, eh: 66, fw: 148, frw: 172, dw: 108, dh: 50, fh: 46, p: 56, g1: 30, g2: 28 };
 
 /**
  * Entry points on the left, the functions in frames by the service that runs them in the middle, data and
  * outside services on the right. "More" makes each function taller (it says what it does) and spaces them.
  */
-export function layoutInside(spec: InsideSpec, more: boolean): InsideLayout {
-  const FH = more ? 62 : 46;
-  const P = more ? 78 : 56;
-  const frameX = IN_EW + 34;
+export function layoutInside(spec: InsideSpec, more: boolean, narrow = false): InsideLayout {
+  const D = narrow ? NARROW : WIDE;
+  const IN_EW = D.ew;
+  const IN_EH = D.eh;
+  const IN_FW = D.fw;
+  const IN_FRW = D.frw;
+  const IN_DW = D.dw;
+  const IN_DH = D.dh;
+  const FH = more ? 62 : D.fh;
+  const P = more ? 78 : D.p;
+  const frameX = IN_EW + D.g1;
   const fx = frameX + 20;
-  const dataX = frameX + IN_FRW + 38;
+  const dataX = frameX + IN_FRW + D.g2;
   const cx = fx + IN_FW / 2;
   const fns = new Map<string, Place>();
   const frames: InsideLayout["frames"] = [];

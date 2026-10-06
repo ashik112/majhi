@@ -23,7 +23,7 @@ import {
   type OverviewLayout,
   overviewKey,
 } from "./layout";
-import { agoWords, buildGraph, CANVAS_ENTRIES, focusInside, usdWords } from "./model";
+import { agoWords, buildGraph, CANVAS_ENTRIES, CANVAS_ENTRIES_NARROW, focusInside, usdWords } from "./model";
 import { OverviewWorld } from "./overview-world";
 import { ProjectWorld } from "./project-world";
 import { Rail } from "./rail";
@@ -146,6 +146,13 @@ function MapFor({
   const inside = insideFor === null ? undefined : insideQuery.data;
   const spec = inside?.spec;
   const [allEntries, setAllEntries] = useState(false);
+  // A narrow window gets a smaller picture, so its text stays at full size.
+  const [narrow, setNarrow] = useState(() => window.innerWidth < 1300);
+  useEffect(() => {
+    const onSize = () => setNarrow(window.innerWidth < 1300);
+    window.addEventListener("resize", onSize);
+    return () => window.removeEventListener("resize", onSize);
+  }, []);
   // A new project starts with the few top entry points again.
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset exactly when the project on show changes
   useEffect(() => setAllEntries(false), [s.focus]);
@@ -154,19 +161,19 @@ function MapFor({
       ? null
       : s.entry === undefined
         ? (spec.entries
-            .slice(0, CANVAS_ENTRIES)
+            .slice(0, narrow ? CANVAS_ENTRIES_NARROW : CANVAS_ENTRIES)
             .reduce<InsideEntry | undefined>(
               (best, e) => (best === undefined || e.steps.length > best.steps.length ? e : best),
               undefined,
             )?.id ?? null)
         : s.entry;
   const focused = useMemo(
-    () => (spec === undefined ? undefined : focusInside(spec, entryId, allEntries)),
-    [spec, entryId, allEntries],
+    () => (spec === undefined ? undefined : focusInside(spec, entryId, allEntries, narrow)),
+    [spec, entryId, allEntries, narrow],
   );
   const insideLayout = useMemo(
-    () => (focused === undefined ? undefined : layoutInside(focused.spec, s.more)),
-    [focused, s.more],
+    () => (focused === undefined ? undefined : layoutInside(focused.spec, s.more, narrow)),
+    [focused, s.more, narrow],
   );
   const projectLabels = useMemo(() => new Map(g.nodes.map((n) => [n.label, n.id])), [g]);
   const readInside = useReadInside(org);
@@ -498,6 +505,7 @@ function MapFor({
                     spec={focused.spec}
                     hidden={focused.hidden}
                     allEntries={allEntries}
+                    narrow={narrow}
                     onMoreEntries={() => setAllEntries(!allEntries)}
                     layout={insideLayout}
                     s={s}
