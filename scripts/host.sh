@@ -311,7 +311,7 @@ install() {
   if ! node_bin=$(find_node); then
     say "Node 20 or newer was not found. Folder browsing and automatic remounts need it."
     if [ "$os" != macos ]; then say "SSH keys reach majhi through it too, so git over SSH does not work without it."; fi
-    say "majhi still works: type folder paths, and run \`make up\` after adding a root."
+    say "majhi still works: type folder paths, and run $MAJHI_RERUN after adding a root."
     exit 0
   fi
   if ! extract_bundle; then

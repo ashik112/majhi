@@ -8,6 +8,7 @@ import type { ExecFn } from "./remount.ts";
 import { createUpdater } from "./update.ts";
 
 const HEAD = "0123456789abcdef0123456789abcdef01234567";
+const NEWER = "89abcdef0123456789abcdef0123456789abcdef";
 
 describe("update", () => {
   let dir: string;
@@ -34,12 +35,15 @@ describe("update", () => {
     env?: NodeJS.ProcessEnv;
     /** Whether the majhi-laya container exists. */
     layaContainer?: boolean;
+    /** The newest release tag the remote has, at NEWER. */
+    newestTag?: string;
   }) {
     const calls: Array<{ file: string; args: string; env: NodeJS.ProcessEnv }> = [];
     const exit: string[] = [];
     const ensured: string[] = [];
     let failedOnce = false;
     let netFailed = 0;
+    let head = HEAD;
     const exec: ExecFn = async (file, args, opts) => {
       const line = args.join(" ");
       calls.push({ file, args: line, env: opts.env });
@@ -70,10 +74,21 @@ describe("update", () => {
         return { stdout: "server-1  | starting\nserver-1  | SqliteError: malformed JSON\n", stderr: "" };
       }
       if (file === "/usr/bin/git") {
-        const command = args.slice(GUARD_CONFIG.length)[0];
+        const rest = args.slice(GUARD_CONFIG.length);
+        const command = rest[0];
+        if (options.failOn !== undefined && rest.join(" ").startsWith(options.failOn)) {
+          throw Object.assign(new Error("Command failed"), { stderr: "fatal: unable to access" });
+        }
+        if (rest.includes("checkout")) head = rest.at(-1) === `refs/tags/${options.newestTag}` ? NEWER : HEAD;
+        if (command === "tag") return { stdout: `${options.newestTag ?? ""}\nv0.1.0\n`, stderr: "" };
+        const tagged = command === "rev-parse" && rest.some((a) => a.startsWith("refs/tags/"));
         return {
           stdout:
-            command === "rev-parse" ? `${HEAD}\n` : command === "status" && options.dirty ? " M a\n" : "",
+            command === "rev-parse"
+              ? `${tagged ? NEWER : head}\n`
+              : command === "status" && options.dirty
+                ? " M a\n"
+                : "",
           stderr: "",
         };
       }
@@ -232,21 +247,92 @@ describe("update", () => {
     expect(s.calls.some((c) => c.args.startsWith("tag "))).toBe(false);
   });
 
-  it("tries the build again when Docker Hub does not answer, and goes on when it does", async () => {
+  it("tries the build again when the registry does not answer, and goes on when it does", async () => {
     const s = setup({ netFails: 2 });
     const status = await s.run();
     expect(status.state).toBe("done");
     expect(s.calls.filter((c) => c.args === "compose --profile runner build")).toHaveLength(3);
-    expect(status.lines.join("\n")).toContain("Docker Hub did not answer. Trying again");
+    expect(status.lines.join("\n")).toContain("The image registry did not answer. Trying again");
   });
 
   it("gives up after three network failures with a plain reason, and leaves majhi running", async () => {
     const s = setup({ netFails: 5 });
     const status = await s.run();
     expect(status.state).toBe("failed");
-    expect(status.error).toContain("Docker Hub could not be reached after 3 tries");
+    expect(status.error).toContain("the image registry could not be reached after 3 tries");
     expect(s.calls.filter((c) => c.args === "compose --profile runner build")).toHaveLength(3);
     expect(s.calls.some((c) => c.args.startsWith("compose up"))).toBe(false);
+  });
+
+  describe("on a release install", () => {
+    const dotenv = "MAJHI_PORT=7071\nMAJHI_VERSION=v1.0.0\n";
+    const env = () => readFile(join(dir, "repo", ".env"), "utf8");
+    const git = (s: { calls: Array<{ file: string; args: string }> }) =>
+      s.calls.filter((c) => c.file === "/usr/bin/git").map((c) => c.args);
+    beforeEach(() => writeFile(join(dir, "repo", ".env"), dotenv));
+
+    it("moves the checkout and .env to the newest release before the build, which bakes its commit in", async () => {
+      const s = setup({ newestTag: "v1.1.0" });
+      const status = await s.run();
+      expect(status.state).toBe("done");
+      expect(status.commit).toBe(NEWER);
+      expect(status.lines).toContain("Getting the majhi v1.1.0 images");
+      expect(await env()).toBe("MAJHI_PORT=7071\nMAJHI_VERSION=v1.1.0\n");
+      const fetched = s.calls.findIndex((c) => c.args.includes("fetch --quiet --tags"));
+      const checkout = s.calls.findIndex((c) =>
+        c.args.includes("checkout --quiet --detach refs/tags/v1.1.0"),
+      );
+      const build = s.calls.findIndex((c) => c.args === "compose --profile runner build");
+      expect(fetched).toBeGreaterThanOrEqual(0);
+      expect(checkout).toBeGreaterThan(fetched);
+      expect(build).toBeGreaterThan(checkout);
+      expect(s.calls[build]?.env.MAJHI_COMMIT).toBe(NEWER);
+      // The release before's images go once the new one runs.
+      expect(s.calls.some((c) => c.args.startsWith("image ls --filter label=majhi.release"))).toBe(true);
+    });
+
+    it("puts the checkout back when the release images cannot be had, and leaves majhi running", async () => {
+      const s = setup({ newestTag: "v1.1.0", failOn: "compose --profile runner build" });
+      const status = await s.run();
+      expect(status.state).toBe("failed");
+      expect(status.lines).toContain("Back on majhi v1.0.0");
+      expect(await env()).toBe(dotenv);
+      expect(git(s).at(-1)).toContain(`checkout --quiet --detach ${HEAD}`);
+      expect(s.calls.some((c) => c.args.startsWith("compose up"))).toBe(false);
+    });
+
+    it("puts the checkout back before it starts the previous majhi when the new one does not start", async () => {
+      const s = setup({ newestTag: "v1.1.0", failOnce: "compose up" });
+      const status = await s.run();
+      expect(status.state).toBe("failed");
+      expect(status.lines.join("\n")).toContain("Went back to the previous version");
+      expect(await env()).toBe(dotenv);
+      const back = s.calls.findIndex((c) => c.args.endsWith(`checkout --quiet --detach ${HEAD}`));
+      const lastUp = s.calls.map((c) => c.args).lastIndexOf("compose up -d --wait");
+      expect(back).toBeGreaterThanOrEqual(0);
+      expect(lastUp).toBeGreaterThan(back);
+    });
+
+    it("rebuilds the release it runs when it is the newest", async () => {
+      const s = setup({ newestTag: "v1.0.0" });
+      expect((await s.run()).state).toBe("done");
+      expect(git(s).some((a) => a.includes("checkout"))).toBe(false);
+      expect(await env()).toBe(dotenv);
+    });
+
+    it("fails without touching anything when the tags cannot be fetched", async () => {
+      const s = setup({ newestTag: "v1.1.0", failOn: "fetch" });
+      const status = await s.run();
+      expect(status.state).toBe("failed");
+      expect(s.calls.some((c) => c.file === "/usr/bin/docker" && c.args.includes("build"))).toBe(false);
+      expect(await env()).toBe(dotenv);
+    });
+  });
+
+  it("never fetches on a dev checkout", async () => {
+    const s = setup({ newestTag: "v1.1.0" });
+    expect((await s.run()).state).toBe("done");
+    expect(s.calls.some((c) => c.args.includes("fetch"))).toBe(false);
   });
 
   it("does not retry a build that failed for another reason", async () => {

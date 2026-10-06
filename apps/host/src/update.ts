@@ -1,10 +1,11 @@
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { UPDATE_STATUS_FILE, type UpdateStatus } from "@majhi/shared";
-import { removeOwnLeftovers } from "./diskHygiene.ts";
+import { removeOtherReleases, removeOwnLeftovers } from "./diskHygiene.ts";
 import { errorMessage } from "./errors.ts";
 import type { KeyBackup } from "./keyBackup.ts";
 import type { Logger } from "./log.ts";
+import { type Moved, moveBack, moveToNewest } from "./release.ts";
 import { dockerStep, OVERRIDE_FILE, type RemountOptions, regenerateAndUp } from "./remount.ts";
 import { type GitContext, readRepo } from "./repoInfo.ts";
 
@@ -48,7 +49,8 @@ export interface UpdateOptions {
  * Returns a function that rebuilds majhi from the checkout and restarts it, as `make up` does:
  * build with the same environment and the commit baked in, keep the secrets key, regenerate the
  * mounts, `up -d --wait`, then install the helper from the new image and let the login service
- * restart it.
+ * restart it. On a release install it first moves the checkout to the newest release (release.ts),
+ * and the same build then takes that release's images instead of compiling: compose decides.
  * It reports to `update.json` because the server that would relay progress is replaced part-way.
  * It never throws. Returns false when an update is already running.
  */
@@ -90,9 +92,11 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
 
   try {
     await say("Reading the code on disk");
-    const repo = await readRepo(git);
-    if (repo === undefined)
+    const before = await readRepo(git);
+    if (before === undefined)
       throw new Error("The majhi folder is not a git checkout, so there is nothing to build.");
+    const moved = await moveToNewest(git, before.commit, say);
+    const repo = moved === undefined ? before : ((await readRepo(git)) ?? before);
     status.commit = repo.commit;
     if (repo.dirty) await say("The folder has changes you have not committed. They are part of this build.");
 
@@ -109,13 +113,23 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
       if (id !== undefined) previous.push({ image, id });
     }
     const mounts = await readFile(join(remount.repo, OVERRIDE_FILE), "utf8").catch(() => undefined);
-    await say("Building the new image. This takes a few minutes");
+    await say(
+      moved === undefined
+        ? "Building the new image. This takes a few minutes"
+        : `Getting the majhi ${moved.to} images`,
+    );
     // The runner image too: agents run in it (it is never started by compose). Laya's as `make up` does.
     const build = ["compose", "--profile", "runner", ...(laya ? ["--profile", "laya"] : []), "build"];
-    await buildWithRetries(() => step("build", build, BUILD_TIMEOUT_MS), {
-      say,
-      sleep: options.sleep ?? defaultSleep,
-    });
+    try {
+      await buildWithRetries(() => step("build", build, BUILD_TIMEOUT_MS), {
+        say,
+        sleep: options.sleep ?? defaultSleep,
+      });
+    } catch (err) {
+      // The running majhi was not touched; only the checkout moved.
+      if (moved !== undefined) await putBack(git, moved, say);
+      throw err;
+    }
 
     try {
       await ensureSecretsKey(options, env, say);
@@ -129,6 +143,7 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
           ? "The new majhi did not start. Going back to the previous version"
           : "No previous version to go back to",
       );
+      if (moved !== undefined) await putBack(git, moved, say);
       if (server) {
         await goBack(step, remount.repo, previous, mounts).then(
           () => say("Went back to the previous version"),
@@ -144,6 +159,7 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
       majhiHome,
       images.map(([, keep]) => keep),
     );
+    if (moved !== undefined) await removeOtherReleases(step, moved.to, say).catch(() => undefined);
     await say("Installing the new host helper");
     const replaced = await installBundle(options, env);
     status.state = "done";
@@ -296,6 +312,15 @@ export async function cleanAfterUpdate(
   await removeOwnLeftovers(step, majhiHome, say, tags).catch(() => undefined);
 }
 
+/** Puts a release install's checkout and `.env` back on the release it ran. */
+async function putBack(git: GitContext, moved: Moved, say: (text: string) => Promise<void>): Promise<void> {
+  await moveBack(git, moved).then(
+    () => say(`Back on majhi ${moved.from}`),
+    (err: unknown) =>
+      say(`Could not put the checkout back on ${moved.from}: ${errorMessage(err).split("\n", 1)[0]}`),
+  );
+}
+
 /** Puts the previous images and mounts back and starts majhi on them. */
 async function goBack(step: Step, repo: string, previous: Kept[], mounts: string | undefined): Promise<void> {
   for (const { image, id } of previous) {
@@ -349,11 +374,11 @@ async function buildWithRetries(
       const wait = BUILD_RETRY_MS[attempt];
       if (wait === undefined) {
         throw new Error(
-          `build failed: Docker Hub could not be reached after ${attempt + 1} tries. Check your internet connection, then update again.\n${message}`,
+          `build failed: the image registry could not be reached after ${attempt + 1} tries. Check your internet connection, then update again.\n${message}`,
         );
       }
       await deps.say(
-        `Docker Hub did not answer. Trying again in ${Math.round(wait / 1000)} seconds (${attempt + 2} of ${BUILD_RETRY_MS.length + 1})`,
+        `The image registry did not answer. Trying again in ${Math.round(wait / 1000)} seconds (${attempt + 2} of ${BUILD_RETRY_MS.length + 1})`,
       );
       await deps.sleep(wait);
     }

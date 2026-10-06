@@ -1,5 +1,10 @@
 name: majhi
 
+# Where the images come from, one rule (docs/DECISIONS.md, "Release images"): with MAJHI_VERSION in
+# .env (the installer writes it), the server, runner and Laya images are that release's, pulled from
+# ghcr.io/ashik112 (MAJHI_REGISTRY), and only the owner's passwd entry is built here. Without it,
+# everything is built from this checkout. Either way `docker compose build` makes the `majhi-*:dev`
+# images below, and those are what runs.
 services:
   server:
     build:
@@ -12,8 +17,10 @@ services:
         HOST_UID: ${HOST_UID:-1000}
         HOST_GID: ${HOST_GID:-1000}
         HOST_HOME: ${HOME}
-        # `make up` and the host helper pass `git rev-parse HEAD`. It is baked into the image.
+        # `make up` and the host helper pass `git rev-parse HEAD`. It is baked into the image. A release
+        # image has its own, from the release workflow.
         MAJHI_COMMIT: ${MAJHI_COMMIT:-dev}
+        SERVER_FROM: ${MAJHI_VERSION:+${MAJHI_REGISTRY:-ghcr.io/ashik112}/majhi-server:${MAJHI_VERSION}}
     image: majhi-server:dev
     init: true
     restart: unless-stopped
@@ -67,6 +74,7 @@ services:
         HOST_UID: ${HOST_UID:-1000}
         HOST_GID: ${HOST_GID:-1000}
         HOST_HOME: ${HOME}
+        RUNNER_FROM: ${MAJHI_VERSION:+${MAJHI_REGISTRY:-ghcr.io/ashik112}/majhi-runner:${MAJHI_VERSION}}
     image: majhi-runner:dev
     profiles: [runner]
 
@@ -85,6 +93,8 @@ services:
       args:
         TORCH_INDEX: ${MAJHI_LAYA_TORCH_INDEX:-https://download.pytorch.org/whl/cpu}
         LAYA_DEVICE: ${MAJHI_LAYA_DEVICE:-cpu}
+        # A release has a CPU image and a CUDA one (`<version>-cuda`, PyTorch for CUDA 13.0).
+        LAYA_FROM: ${MAJHI_VERSION:+${MAJHI_REGISTRY:-ghcr.io/ashik112}/majhi-laya:${MAJHI_VERSION}${MAJHI_LAYA_DEVICE:+-${MAJHI_LAYA_DEVICE}}}
     image: majhi-laya:dev
     container_name: majhi-laya
     profiles: [laya]

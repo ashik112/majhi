@@ -1,6 +1,12 @@
 # No `# syntax=` line: it makes every build fetch the frontend from Docker Hub, and the
 # built-in one supports everything here (RUN --mount included).
 
+# Where the server and runner images start: the stages below (`runtime-build`, `runner-build`), built
+# from this checkout, or a release image on ghcr.io, which docker-compose.yml names when .env sets
+# MAJHI_VERSION. Either way the last stage, the owner's user, is built here (docker/owner.sh).
+ARG SERVER_FROM
+ARG RUNNER_FROM
+
 FROM node:22-bookworm-slim AS build
 # node-pty has no Linux prebuilds, so it compiles from source.
 RUN apt-get update \
@@ -29,23 +35,12 @@ RUN mkdir /sqlite \
   && cp -rL apps/server/node_modules/better-sqlite3 /sqlite/better-sqlite3 \
   && rm -rf /sqlite/better-sqlite3/deps /sqlite/better-sqlite3/src /sqlite/better-sqlite3/prebuilds/darwin-* /sqlite/better-sqlite3/prebuilds/win32-*
 
-# What the server and the runner share: Node, git, the agent CLIs and ACP adapters, and a passwd
-# entry for the owner's uid (OpenSSH and some CLIs refuse to run without one).
+# What the server and the runner share: Node, git, the agent CLIs and ACP adapters. The owner's
+# passwd entry comes last (`runtime`, `runner`), so these layers are the same on every computer.
 FROM node:22-bookworm-slim AS base
 RUN apt-get update \
   && apt-get install -y --no-install-recommends git openssh-client ca-certificates \
   && rm -rf /var/lib/apt/lists/*
-# The container runs as the owner's uid so files it writes belong to the owner. The passwd entry is
-# created here, at build time, with the owner's real home (where ~/.ssh/config is mounted).
-ARG HOST_UID=1000
-ARG HOST_GID=1000
-ARG HOST_HOME=/home/majhi
-RUN if ! getent group "$HOST_GID" >/dev/null; then groupadd -g "$HOST_GID" majhi; fi \
-  && if getent passwd "$HOST_UID" >/dev/null; then \
-       usermod -d "$HOST_HOME" "$(getent passwd "$HOST_UID" | cut -d: -f1)"; \
-     else \
-       useradd -u "$HOST_UID" -g "$HOST_GID" -d "$HOST_HOME" -M -s /bin/sh majhi; \
-     fi
 # The ACP adapters bring their own native CLIs as optional dependencies: never install with --omit=optional.
 RUN npm install -g @agentclientprotocol/claude-agent-acp@0.84.0 @agentclientprotocol/codex-acp@2.0.0 \
   && npm cache clean --force
@@ -127,7 +122,7 @@ RUN set -eu; \
   tar -xzf doctl.tgz -C /out doctl; \
   /out/doctl version
 
-FROM base AS runner
+FROM base AS runner-build
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ curl \
@@ -201,7 +196,7 @@ RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} +
 WORKDIR /tmp
 CMD ["sh", "-c", "echo 'The runner image is started by majhi, one container per agent run.'"]
 
-FROM base AS runtime
+FROM base AS runtime-build
 # The server starts runner containers through the Docker socket. Only the CLI, a static binary.
 COPY --from=docker:29.8.1-cli /usr/local/bin/docker /usr/local/bin/docker
 # The buildx plugin builds agents' previews, each on its own builder (PRV-53).
@@ -246,3 +241,17 @@ HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
 # A 2 MB young generation (V8 grows it to 16 MB by default) and two malloc arenas keep the server's
 # resident memory under the 200 MB target of SPEC 5.17; see docs/PROGRESS.md.
 CMD ["node", "--max-semi-space-size=2", "dist/main.js"]
+
+# The images compose runs: the stages above, or the release images, with a passwd entry for the
+# owner's uid. The containers run as that uid, so files they write belong to the owner.
+FROM ${RUNNER_FROM:-runner-build} AS runner
+ARG HOST_UID=1000
+ARG HOST_GID=1000
+ARG HOST_HOME=/home/majhi
+RUN --mount=type=bind,source=docker/owner.sh,target=/tmp/owner.sh sh /tmp/owner.sh
+
+FROM ${SERVER_FROM:-runtime-build} AS runtime
+ARG HOST_UID=1000
+ARG HOST_GID=1000
+ARG HOST_HOME=/home/majhi
+RUN --mount=type=bind,source=docker/owner.sh,target=/tmp/owner.sh sh /tmp/owner.sh

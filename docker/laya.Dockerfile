@@ -4,7 +4,12 @@
 # Serves laya-serve's /v1/systemone on port 8000 of the compose network only; majhi's server
 # starts the container on the first question and stops it when idle. Weights download on first use
 # into the laya-cache volume.
-FROM python:3.11-slim-bookworm
+
+# Built from here (`laya-build`), or the release image on ghcr.io that docker-compose.yml names
+# when .env sets MAJHI_VERSION.
+ARG LAYA_FROM
+
+FROM python:3.11-slim-bookworm AS laya-build
 
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -47,3 +52,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=2m --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"
 CMD ["laya-serve"]
+
+FROM ${LAYA_FROM:-laya-build} AS laya

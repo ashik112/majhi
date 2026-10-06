@@ -25,12 +25,13 @@ export interface GitContext {
  * `readsFiles`: the command reads the work tree's files, so the filter drivers that config names
  * are turned off too.
  */
-async function guardedGit(
+export async function guardedGit(
   { git, repo, env, exec }: GitContext,
   args: string[],
   readsFiles = false,
+  timeout = GIT_TIMEOUT_MS,
 ): Promise<string> {
-  const opts = { cwd: repo, env: { ...env, ...GUARD_ENV }, timeout: GIT_TIMEOUT_MS };
+  const opts = { cwd: repo, env: { ...env, ...GUARD_ENV }, timeout };
   if (readsFiles) {
     const listed = await exec(git, [...GUARD_CONFIG, ...LIST_FILTERS], opts).then(
       ({ stdout }) => stdout,
@@ -54,14 +55,17 @@ export async function readRepo(ctx: GitContext): Promise<RepoState | undefined> 
   }
 }
 
-/** Subjects of the commits after `from`, newest first, at most 20. Empty when `from` is not in this checkout. */
-export async function commitSubjects(ctx: GitContext, from: string): Promise<string[]> {
-  if (!HEAD.test(from)) return [];
+/**
+ * Subjects of the commits after `from` up to `to` (HEAD, or the release an update moves to), newest
+ * first, at most 20. Empty when `from` is not in this checkout.
+ */
+export async function commitSubjects(ctx: GitContext, from: string, to = "HEAD"): Promise<string[]> {
+  if (!HEAD.test(from) || (to !== "HEAD" && !HEAD.test(to))) return [];
   try {
     // No signature check either: a planted `log.showSignature` would run the repo's `gpg.program`.
     const stdout = await guardedGit(ctx, [
       ...["log", "--no-ext-diff", "--no-textconv", "--no-show-signature"],
-      ...["--format=%s", `${from}..HEAD`, "-n", "20"],
+      ...["--format=%s", `${from}..${to}`, "-n", "20"],
     ]);
     return stdout
       .split("\n")
@@ -81,9 +85,12 @@ export function parseDockerRuntime(operatingSystem: string): DockerRuntime {
   return "docker";
 }
 
-/** Keeps the checkout state and Docker runtime fresh in memory, because the poll header needs them at once. */
+/**
+ * Keeps the checkout state and Docker runtime fresh in memory, because the poll header needs them at
+ * once. `readTarget` reads what an update would run (release.ts).
+ */
 export function createHostFacts(options: {
-  git: GitContext | undefined;
+  readTarget: (() => Promise<RepoState | undefined>) | undefined;
   /** The docker CLI, read at each refresh: on WSL2 it can appear after the helper started. */
   docker: () => string | undefined;
   env: NodeJS.ProcessEnv;
@@ -97,7 +104,7 @@ export function createHostFacts(options: {
   let runtime: DockerRuntime | undefined;
   return {
     async refresh() {
-      if (options.git !== undefined) repo = await readRepo(options.git);
+      if (options.readTarget !== undefined) repo = await options.readTarget();
       const docker = options.docker();
       if (docker !== undefined) {
         try {

@@ -227,3 +227,41 @@ export async function removeOwnLeftovers(
       : `Removed ${gone.join(", ")}. About ${sizeText(total)} freed`,
   );
 }
+
+/** The label the release workflow puts on every release image, with its version. */
+export const RELEASE_LABEL = "majhi.release";
+
+/**
+ * The release images (`<registry>/majhi-*:<tag>`, from ghcr.io) of other versions than `version`:
+ * what runs now was built on that version's. The `majhi-*:dev` images built on them carry the label
+ * too, but have no registry in their name, so they are never picked.
+ */
+export function selectOtherReleases(rows: readonly ImageRow[], version: string): ImageRow[] {
+  return rows.filter(
+    (r) =>
+      r.repository.includes("/") &&
+      r.tag !== "<none>" &&
+      r.tag !== version &&
+      !r.tag.startsWith(`${version}-`),
+  );
+}
+
+/** After a release install moved to `version`: removes the release images of the version before. Best effort. */
+export async function removeOtherReleases(
+  step: Step,
+  version: string,
+  say: (text: string) => Promise<void>,
+): Promise<void> {
+  const listed = await step(
+    "list release images",
+    ["image", "ls", "--filter", `label=${RELEASE_LABEL}`, "--format", IMAGE_FORMAT],
+    STEP_TIMEOUT_MS,
+  ).catch(() => "");
+  const gone: string[] = [];
+  for (const row of selectOtherReleases(parseImages(listed), version)) {
+    const ref = `${row.repository}:${row.tag}`;
+    if (await attempt(step("remove an old release image", ["image", "rm", ref], STEP_TIMEOUT_MS)))
+      gone.push(ref);
+  }
+  if (gone.length > 0) await say(`Removed the images of the release before: ${gone.join(", ")}`);
+}

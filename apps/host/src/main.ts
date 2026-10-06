@@ -32,6 +32,7 @@ import { desktopNotifier, plainLine, showNotification } from "./notify.ts";
 import { findExecutable } from "./paths.ts";
 import { createPlatform, currentOs, nodePlatform, processDeps } from "./platform/index.ts";
 import type { Platform } from "./platform/types.ts";
+import { createTargetReader } from "./release.ts";
 import {
   composeEnv,
   createRemounter,
@@ -40,7 +41,7 @@ import {
   type RemountOptions,
   recreateServer,
 } from "./remount.ts";
-import { commitSubjects, createHostFacts, type GitContext, readRepo } from "./repoInfo.ts";
+import { commitSubjects, createHostFacts, type GitContext } from "./repoInfo.ts";
 import { createSsh, discoverPublicKeys } from "./ssh.ts";
 import { type StartupDeps, startAtLogin } from "./startup.ts";
 import { suggestRoots } from "./suggestRoots.ts";
@@ -174,8 +175,10 @@ async function main(): Promise<void> {
     saveToKeyring: (fingerprint) => keyBackup.save(fingerprint),
     log,
   });
+  // What an update would run: the checkout's HEAD, or on a release install the newest release.
+  const readTarget = gitContext === undefined ? undefined : createTargetReader(gitContext);
   const facts = createHostFacts({
-    git: gitContext,
+    readTarget,
     docker: () => remountOptions?.docker,
     env: { ...process.env, PATH: path },
     exec,
@@ -317,10 +320,15 @@ async function main(): Promise<void> {
     editorOpen,
     machineRead: () => readMachine({ os, exec, home: config.home, env: { ...process.env, PATH: path } }),
     versionChanges: async (params: { from: string }) => {
-      if (gitContext === undefined) throw new Error("This helper has no majhi checkout to read.");
-      const repo = await readRepo(gitContext);
+      if (gitContext === undefined || readTarget === undefined)
+        throw new Error("This helper has no majhi checkout to read.");
+      const repo = await readTarget();
       if (repo === undefined) throw new Error("The majhi folder is not a git checkout.");
-      return { head: repo.commit, dirty: repo.dirty, changes: await commitSubjects(gitContext, params.from) };
+      return {
+        head: repo.commit,
+        dirty: repo.dirty,
+        changes: await commitSubjects(gitContext, params.from, repo.commit),
+      };
     },
     get update() {
       return update;

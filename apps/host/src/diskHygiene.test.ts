@@ -6,6 +6,7 @@ import {
   readOpenTasks,
   removeOwnLeftovers,
   selectBuilders,
+  selectOtherReleases,
   selectPreviewImages,
   selectStateVolumes,
 } from "./diskHygiene.ts";
@@ -142,5 +143,23 @@ describe("removeOwnLeftovers", () => {
     expect([...((await readOpenTasks(home)) ?? [])]).toEqual(["acm-1"]);
     await writeFile(join(home, "open-tasks.json"), "{nope");
     expect(await readOpenTasks(home)).toBeUndefined();
+  });
+});
+
+describe("selectOtherReleases", () => {
+  it("picks only registry images of other versions, never the local images built on them", () => {
+    const rows = [
+      row("ghcr.io/acme/majhi-server", "v1.0.0"),
+      row("ghcr.io/acme/majhi-laya", "v1.0.0-cuda"),
+      row("ghcr.io/acme/majhi-server", "v1.1.0"),
+      row("ghcr.io/acme/majhi-laya", "v1.1.0-cpu"),
+      row("ghcr.io/acme/majhi-runner", "<none>"),
+      row("majhi-server", "dev"),
+      row("majhi-server", "previous"),
+    ];
+    expect(selectOtherReleases(rows, "v1.1.0").map((r) => `${r.repository}:${r.tag}`)).toEqual([
+      "ghcr.io/acme/majhi-server:v1.0.0",
+      "ghcr.io/acme/majhi-laya:v1.0.0-cuda",
+    ]);
   });
 });

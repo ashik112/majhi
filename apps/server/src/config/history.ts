@@ -31,6 +31,8 @@ export const GITIGNORE = [
   "bin/",
   "logs/",
   "run/",
+  // The checkout install.sh keeps (~/.majhi/app): code, not config.
+  "app/",
 ];
 
 export const COMMITTER = { name: "majhi", email: "majhi@majhi.local" };
