@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs majhi, or updates it to the newest release: run it again to update.
+# Installs majhi, or updates it to the latest release: run it again to update.
 #
 #   curl -fsSL https://raw.githubusercontent.com/ashik112/majhi/main/install.sh | sh
 #

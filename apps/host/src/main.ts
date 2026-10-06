@@ -175,7 +175,7 @@ async function main(): Promise<void> {
     saveToKeyring: (fingerprint) => keyBackup.save(fingerprint),
     log,
   });
-  // What an update would run: the checkout's HEAD, or on a release install the newest release.
+  // What an update would run: the checkout's HEAD, or on a release install the latest release.
   const readTarget = gitContext === undefined ? undefined : createTargetReader(gitContext);
   const facts = createHostFacts({
     readTarget,
