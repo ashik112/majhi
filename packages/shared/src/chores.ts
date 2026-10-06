@@ -14,5 +14,6 @@ export const CaptainChoreSchema = z.enum([
   "tidy",
   "health",
   "checklist",
+  "wiki",
 ]);
 export type CaptainChore = z.infer<typeof CaptainChoreSchema>;

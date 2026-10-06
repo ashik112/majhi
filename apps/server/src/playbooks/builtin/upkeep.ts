@@ -263,6 +263,21 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     ],
     runner: { kind: "chore", chore: "checklist" },
   }),
+  upkeep({
+    id: "upkeep-wiki",
+    name: "Project wiki",
+    purpose: "Keeps the wiki of how each project is built current after work is merged.",
+    trigger: { cadence: DAILY, events: [] },
+    inputs: ["Workspaces with the wiki on", "Projects whose base branch moved past the built commit"],
+    steps:
+      "For a workspace whose wiki is on, when a project's base branch moved past the commit its pages were built from, run the wiki update: read the code facts with no model, then rewrite only the pages whose cited files changed. Never more than one update a day, never over the cost cap, never when the workspace's budget is used up. A project never built waits for your first Update.",
+    outputs: ["log"],
+    cost: { tier: "small", tokens: PASS_BOUND.tokens },
+    turnOn:
+      "Updates the wiki once a day when work was merged, while Auto-pilot is on and the workspace has the wiki on. It costs nothing on a day nothing changed.",
+    outcomes: [{ id: "wiki-update", text: "The code moved past the wiki: update the pages that changed" }],
+    runner: { kind: "chore", chore: "wiki" },
+  }),
   // Runs once for the whole business, from Private. Pure code: it asks Laya, which is local, so it costs no tokens.
   {
     id: "upkeep-laya-eval",

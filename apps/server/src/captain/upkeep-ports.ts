@@ -110,5 +110,15 @@ export interface UpkeepPorts {
   setAccountSlots(limit: number): Promise<void>;
 }
 
+/** The project wiki as the wiki chore sees it. The real port is the wiki service. */
+export interface WikiPorts {
+  /** The wiki is on for the workspace (`wikiEnabled`). */
+  enabled(org: string): Promise<boolean>;
+  /** The projects whose wiki was built and is behind the base branch now. */
+  stale(org: string): Promise<{ projects: string[] }>;
+  /** The one update action, waited for. `summary` is the log line's tail. */
+  update(org: string): Promise<{ summary: string }>;
+}
+
 /** The most slots per account the captain raises to on its own. */
 export const MAX_ACCOUNT_SLOTS = 4;
