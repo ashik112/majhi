@@ -372,25 +372,27 @@ export interface InsideLayout {
   badge: Map<string, Pt>;
   frameX: number;
   frameW: number;
+  /** Where the "Show more entry points" button sits (top of it). */
+  moreAt: number;
 }
 
-const IN_EW = 180;
-const IN_EH = 54;
-const IN_FW = 186;
-const IN_FRW = 214;
-const IN_DW = 150;
-const IN_DH = 46;
+const IN_EW = 184;
+const IN_EH = 66;
+const IN_FW = 164;
+const IN_FRW = 204;
+const IN_DW = 142;
+const IN_DH = 54;
 
 /**
  * Entry points on the left, the functions in frames by the service that runs them in the middle, data and
  * outside services on the right. "More" makes each function taller (it says what it does) and spaces them.
  */
 export function layoutInside(spec: InsideSpec, more: boolean): InsideLayout {
-  const FH = more ? 60 : 42;
-  const P = more ? 78 : 60;
-  const frameX = IN_EW + 40;
-  const fx = frameX + 22;
-  const dataX = frameX + IN_FRW + 56;
+  const FH = more ? 62 : 46;
+  const P = more ? 78 : 56;
+  const frameX = IN_EW + 34;
+  const fx = frameX + 20;
+  const dataX = frameX + IN_FRW + 38;
   const cx = fx + IN_FW / 2;
   const fns = new Map<string, Place>();
   const frames: InsideLayout["frames"] = [];
@@ -433,17 +435,14 @@ export function layoutInside(spec: InsideSpec, more: boolean): InsideLayout {
     floor = top + IN_DH + 6;
   }
 
-  // Entry points sit at the height of the function they start, pushed down when two start the same one.
+  // Entry points stack on the left in the order given; the picked one's story is what the rest draws.
   const entries = new Map<string, Place>();
   let entryFloor = 12;
-  const ordered = spec.entries
-    .filter((e) => fns.has(e.fn))
-    .toSorted((a, b) => cyOf(fns.get(a.fn) as Place) - cyOf(fns.get(b.fn) as Place));
-  for (const e of ordered) {
-    const top = Math.max(cyOf(fns.get(e.fn) as Place) - IN_EH / 2, entryFloor);
-    entries.set(e.id, { x: 0, y: top, w: IN_EW, h: IN_EH });
-    entryFloor = top + IN_EH + 8;
+  for (const e of spec.entries) {
+    entries.set(e.id, { x: 0, y: entryFloor, w: IN_EW, h: IN_EH });
+    entryFloor += IN_EH + 8;
   }
+  const ordered = spec.entries.filter((e) => fns.has(e.fn));
 
   const routes = new Map<string, Pt[]>();
   const badge = new Map<string, Pt>();
@@ -527,6 +526,7 @@ export function layoutInside(spec: InsideSpec, more: boolean): InsideLayout {
     } else badge.set(key, badgePos(pts));
   }
   const bottoms = [...fns.values(), ...data.values(), ...entries.values()].map((p) => p.y + p.h);
+  bottoms.push(entryFloor + 36);
   return {
     w: dataX + IN_DW,
     h: Math.max(60, y - 4, ...bottoms),
@@ -538,6 +538,7 @@ export function layoutInside(spec: InsideSpec, more: boolean): InsideLayout {
     badge,
     frameX,
     frameW: IN_FRW,
+    moreAt: entryFloor,
   };
 }
 

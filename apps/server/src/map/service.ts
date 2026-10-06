@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  type InsideMember,
   type InsideSpec,
   type InsideTrigger,
   type InsideView,
@@ -40,7 +41,14 @@ import { answerOf, ownerOf, parseAddress } from "./endpoints.ts";
 import { ProjectFiles } from "./files.ts";
 import { graphEndpoints } from "./graph/facts.ts";
 import type { GraphRunner } from "./graph/run.ts";
-import { buildInside, factsStamp, readFacts, STORE_LABELS, type WordItem } from "./inside.ts";
+import {
+  buildInside,
+  factsStamp,
+  type MemberTracer,
+  readFacts,
+  STORE_LABELS,
+  type WordItem,
+} from "./inside.ts";
 import {
   batchesOf,
   parseWords,
@@ -141,7 +149,10 @@ export class MapService {
   /** Why the last background update of a workspace failed, until the next one starts. */
   private readonly failed = new Map<string, string>();
   /** The Inside spec of each project, kept while its facts file and the map stay as they were. */
-  private readonly insides = new Map<string, { key: string; spec: InsideSpec | undefined; read: boolean }>();
+  private readonly insides = new Map<
+    string,
+    { key: string; spec: InsideSpec | undefined; read: boolean; member?: MemberTracer | undefined }
+  >();
   private readonly reading = new Map<string, Promise<InsideView>>();
 
   constructor(private readonly deps: MapDeps) {}
@@ -287,8 +298,16 @@ export class MapService {
       wordsOf(await readWords(folder)),
     );
     const spec = built?.spec;
-    this.insides.set(cacheKey, { key, spec, read: true });
+    this.insides.set(cacheKey, { key, spec, read: true, member: built?.member });
     return { project, state: "ready", ...(spec === undefined ? {} : { spec }) };
+  }
+
+  /** The story of one command under a dispatcher route, from the project's facts. */
+  async insideMember(org: string, project: string, entry: string, member: string): Promise<InsideMember> {
+    await this.insideOf(org, project);
+    const got = this.insides.get(`${org}|${project}`)?.member?.(entry, member);
+    if (got === undefined) throw new UserError(`"${member}" is not a command of that route.`, 404);
+    return got;
   }
 
   /** The sentences a project's Inside page could have a model write, and the code each is written from. */

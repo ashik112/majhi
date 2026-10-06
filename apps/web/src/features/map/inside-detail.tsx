@@ -7,12 +7,13 @@ import {
   type JourneyView,
   type MapView,
   STEPS_SHOWN,
+  stepsOf,
 } from "@majhi/shared";
 import { FileCode, Layers } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useToast } from "@/components/ui/toast";
 import { useEditorLabel, useOpenInEditor } from "@/lib/editor-queries";
-import { useReadInside } from "@/lib/map-queries";
+import { useInsideMember, useReadInside } from "@/lib/map-queries";
 import { Li, RoleBadge, Tag, TriggerIcon } from "./brand";
 import { DataIcon } from "./inside-world";
 import type { PNode } from "./model";
@@ -371,7 +372,7 @@ function ReadInside({
               <div className="glabel">What happens</div>
               <Steps key={entry.id} steps={steps} cur={s.istep} onPick={(i) => acts.pickInsideStep(i)} />
             </div>
-            {entry.members.length > 1 && <Members entry={entry} />}
+            {entry.members.length > 1 && <Members entry={entry} org={view.org} project={project} />}
             {jn !== undefined && (
               <div className="blk">
                 <div className="glabel">Journey</div>
@@ -440,6 +441,22 @@ function ReadInside({
               );
             })}
           </div>
+          {(spec.dbs.length > 0 || spec.declared.length > 0) && (
+            <div className="blk">
+              <div className="glabel">Databases</div>
+              {spec.dbs.map((d) => (
+                <div key={d} className="link" style={{ cursor: "default" }}>
+                  <DataIcon kind="db" name={d} />
+                  <span className="nm">{d}</span>
+                </div>
+              ))}
+              {spec.declared.length > 0 && (
+                <div className="sub">
+                  Named in the dependencies but not used by any entry point: {spec.declared.join(", ")}.
+                </div>
+              )}
+            </div>
+          )}
           {outside.length > 0 && (
             <div className="blk">
               <div className="glabel">Outside services</div>
@@ -541,28 +558,73 @@ function Steps({
   );
 }
 
-/** The routes, commands or tools grouped under one entry point, collapsed. */
-function Members({ entry }: { entry: InsideEntry }) {
-  const [open, setOpen] = useState(false);
-  const shown = open ? entry.members.slice(0, 60) : [];
+/** The part of a command name before its first dot, slash or colon: `tasks.create` is `tasks`. */
+function prefixOf(label: string): string {
+  const cuts = [".", "/", ":"].map((c) => label.indexOf(c)).filter((i) => i > 0);
+  return cuts.length === 0 ? "other" : label.slice(0, Math.min(...cuts));
+}
+
+/** The commands, routes or tools grouped under one entry point, by name prefix. A command opens its own story. */
+function Members({ entry, org, project }: { entry: InsideEntry; org: string; project: string }) {
+  const [group, setGroup] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  const groups = useMemo(() => {
+    const by = new Map<string, InsideEntry["members"]>();
+    for (const m of entry.members) by.set(prefixOf(m.label), [...(by.get(prefixOf(m.label)) ?? []), m]);
+    return [...by].toSorted((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+  }, [entry]);
+  const story = useInsideMember(org, project, entry.id, picked);
   return (
     <div className="blk">
-      <button type="button" className="link" onClick={() => setOpen(!open)}>
-        <span className="nm">{open ? "Hide the list" : `Show all ${entry.count}`}</span>
-      </button>
-      {shown.map((m) => (
-        <div key={`${m.label}:${m.line}`} className="link" style={{ cursor: "default" }}>
-          <span className="nm mono" style={{ fontSize: 12 }}>
-            {m.label}
-          </span>
-          <span className="lb">
-            {m.file.split("/").pop()}:{m.line}
-          </span>
+      <div className="glabel">
+        {entry.raw.includes(":name") ? "Commands" : "Handlers"} · {entry.count}
+      </div>
+      {groups.map(([name, items]) => (
+        <div key={name}>
+          <button type="button" className="link" onClick={() => setGroup(group === name ? null : name)}>
+            <span className="nm mono" style={{ fontSize: 12 }}>
+              {name}
+              {items.length > 1 || name !== "other" ? ".*" : ""}
+            </span>
+            <span className="lb">{items.length}</span>
+          </button>
+          {group === name &&
+            items.map((m) => (
+              <div key={`${m.label}:${m.line}`}>
+                <button
+                  type="button"
+                  className={`link ${picked === m.label ? "on" : ""}`}
+                  style={{ paddingLeft: 18 }}
+                  onClick={() => setPicked(picked === m.label ? null : m.label)}
+                >
+                  <span className="nm mono" style={{ fontSize: 12 }}>
+                    {m.label}
+                  </span>
+                  <span className="lb">
+                    {m.file.split("/").pop()}:{m.line}
+                  </span>
+                </button>
+                {picked === m.label && (
+                  <div style={{ paddingLeft: 18 }}>
+                    {story.isPending && <div className="sub">Reading the code of {m.label}</div>}
+                    {story.data !== undefined && (
+                      <>
+                        {!story.data.followed && (
+                          <div className="sub">
+                            majhi cannot follow what {m.label} calls: the code does not tie it to the
+                            functions it runs.
+                          </div>
+                        )}
+                        <Steps steps={stepsOf(story.data.steps)} cur={null} onPick={() => undefined} />
+                      </>
+                    )}
+                    {story.isError && <div className="sub">Could not read this command.</div>}
+                  </div>
+                )}
+              </div>
+            ))}
         </div>
       ))}
-      {open && entry.members.length > shown.length && (
-        <div className="sub">{entry.members.length - shown.length} more in the code.</div>
-      )}
     </div>
   );
 }

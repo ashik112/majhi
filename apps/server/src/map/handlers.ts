@@ -12,6 +12,7 @@ type MapCommand =
   | "map.answer"
   | "map.setRole"
   | "map.inside"
+  | "map.insideMember"
   | "map.readInside"
   | "map.saveJourney"
   | "map.removeJourney";
@@ -75,6 +76,10 @@ export function mapHandlers(deps: MapHandlerDeps): Pick<CommandHandlers, MapComm
     "map.inside": async (input, ctx) => {
       await scope(ctx, input.org, false);
       return map.insideOf(input.org, input.project);
+    },
+    "map.insideMember": async (input, ctx) => {
+      await scope(ctx, input.org, false);
+      return map.insideMember(input.org, input.project, input.entry, input.member);
     },
     "map.readInside": async (input, ctx) => {
       await scope(ctx, input.org, true);

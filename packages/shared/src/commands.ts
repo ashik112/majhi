@@ -183,7 +183,12 @@ import {
   DecisionRecommendInputSchema,
   OwnerDecisionSchema,
 } from "./inbox.ts";
-import { InsideInputSchema, InsideViewSchema } from "./inside.ts";
+import {
+  InsideInputSchema,
+  InsideMemberInputSchema,
+  InsideMemberSchema,
+  InsideViewSchema,
+} from "./inside.ts";
 import { JourneyInputSchema, JourneyRemoveInputSchema } from "./journeys.ts";
 import { BlockerSchema } from "./lifecycle/blocker.ts";
 import {
@@ -1325,6 +1330,13 @@ export const commands = {
       "What is inside one project of the workspace: its entry points (routes, schedules, queue consumers, commands), the functions they run, and the datastores and outside services those functions use, each with its file and line. State `unread` when the project has not been read inside yet",
     input: InsideInputSchema,
     output: InsideViewSchema,
+  },
+  "map.insideMember": {
+    risk: "read",
+    summary:
+      "The story of one command of a dispatcher route of a project (for example `tasks.create` under `POST /api/cmd/:name`): the parts of the project it passes through and the data it touches, each with its file and line. `followed` is false when the code does not let majhi tie the command to its handler",
+    input: InsideMemberInputSchema,
+    output: InsideMemberSchema,
   },
   "map.readInside": {
     risk: "change",

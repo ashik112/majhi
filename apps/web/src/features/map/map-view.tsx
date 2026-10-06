@@ -23,7 +23,7 @@ import {
   type OverviewLayout,
   overviewKey,
 } from "./layout";
-import { agoWords, buildGraph, usdWords } from "./model";
+import { agoWords, buildGraph, CANVAS_ENTRIES, focusInside, usdWords } from "./model";
 import { OverviewWorld } from "./overview-world";
 import { ProjectWorld } from "./project-world";
 import { Rail } from "./rail";
@@ -145,19 +145,29 @@ function MapFor({
   const insideQuery = useInside(org, insideFor);
   const inside = insideFor === null ? undefined : insideQuery.data;
   const spec = inside?.spec;
-  const insideLayout = useMemo(
-    () => (spec === undefined ? undefined : layoutInside(spec, s.more)),
-    [spec, s.more],
-  );
+  const [allEntries, setAllEntries] = useState(false);
+  // A new project starts with the few top entry points again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset exactly when the project on show changes
+  useEffect(() => setAllEntries(false), [s.focus]);
   const entryId =
     spec === undefined
       ? null
       : s.entry === undefined
-        ? (spec.entries.reduce<InsideEntry | undefined>(
-            (best, e) => (best === undefined || e.steps.length > best.steps.length ? e : best),
-            undefined,
-          )?.id ?? null)
+        ? (spec.entries
+            .slice(0, CANVAS_ENTRIES)
+            .reduce<InsideEntry | undefined>(
+              (best, e) => (best === undefined || e.steps.length > best.steps.length ? e : best),
+              undefined,
+            )?.id ?? null)
         : s.entry;
+  const focused = useMemo(
+    () => (spec === undefined ? undefined : focusInside(spec, entryId, allEntries)),
+    [spec, entryId, allEntries],
+  );
+  const insideLayout = useMemo(
+    () => (focused === undefined ? undefined : layoutInside(focused.spec, s.more)),
+    [focused, s.more],
+  );
   const projectLabels = useMemo(() => new Map(g.nodes.map((n) => [n.label, n.id])), [g]);
   const readInside = useReadInside(org);
   const journey = journeys.find((j) => j.id === s.journey);
@@ -299,7 +309,7 @@ function MapFor({
           top: 142,
           bottom: 70,
           maxScale: 1.12,
-          fitKey: `in:${s.focus}:${s.more}`,
+          fitKey: `in:${s.focus}:${s.more}:${entryId}:${allEntries}`,
         };
       }
       return { w: 360, h: 150, top: 142, bottom: 70, maxScale: 1.12, fitKey: `in0:${s.focus}` };
@@ -482,10 +492,13 @@ function MapFor({
                 )}
               {s.view === "project" &&
                 s.tab === "inside" &&
-                spec !== undefined &&
+                focused !== undefined &&
                 insideLayout !== undefined && (
                   <InsideWorld
-                    spec={spec}
+                    spec={focused.spec}
+                    hidden={focused.hidden}
+                    allEntries={allEntries}
+                    onMoreEntries={() => setAllEntries(!allEntries)}
                     layout={insideLayout}
                     s={s}
                     entryId={entryId}
@@ -597,6 +610,7 @@ function MapFor({
             </p>
           ) : (
             data?.report?.note !== undefined &&
+            s.view === "overview" &&
             running === undefined && (
               <p
                 className="float"

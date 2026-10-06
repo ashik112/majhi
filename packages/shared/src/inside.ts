@@ -120,10 +120,29 @@ export const InsideSpecSchema = z.object({
   services: z.array(z.string().min(1).max(80)).max(40),
   /** Datastores the project uses, from its config (a Postgres chip), even when no function was seen using one. */
   dbs: z.array(z.string().min(1).max(60)).max(20),
+  /** Datastores named in dependencies or config that no code reached from an entry point uses. */
+  declared: z.array(z.string().min(1).max(60)).max(20).default([]),
   /** Functions left out because the project has more than the page shows. */
   hidden: z.number().int().nonnegative().default(0),
 });
 export type InsideSpec = z.infer<typeof InsideSpecSchema>;
+
+/** The story of one command of a dispatcher route. `followed` is false when its handler cannot be tied to code. */
+export const InsideMemberSchema = z.object({
+  label: Name,
+  file: File,
+  line: Line,
+  followed: z.boolean(),
+  steps: z.array(InsideStepSpecSchema).max(12),
+});
+export type InsideMember = z.infer<typeof InsideMemberSchema>;
+
+export const InsideMemberInputSchema = z.object({
+  org: IdSchema,
+  project: z.string().min(1).max(120),
+  entry: z.string().min(1).max(40),
+  member: Name,
+});
 
 /** `unread`: majhi has not read the code of this project yet. `ready` with an empty spec: it read it and found nothing it knows. */
 export const InsideViewSchema = z.object({
@@ -158,8 +177,13 @@ export interface InsideStep {
 export const STEPS_SHOWN = 6;
 
 /** The story of an entry point: what the server worked out, with each step's `where`. */
-export function flowOf(_spec: InsideSpec, entry: InsideEntry): InsideStep[] {
-  return entry.steps.map((s) => ({
+export function flowOf(_spec: InsideSpec, entry: Pick<InsideEntry, "steps">): InsideStep[] {
+  return stepsOf(entry.steps);
+}
+
+/** The steps of a story as the page lists them. */
+export function stepsOf(steps: readonly InsideStepSpec[]): InsideStep[] {
+  return steps.map((s) => ({
     key: s.key,
     text: s.text,
     where: `${s.file}:${s.line}`,

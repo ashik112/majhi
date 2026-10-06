@@ -7,6 +7,7 @@ import {
   GraphifyFactsSchema,
   type InsideData,
   type InsideEntry,
+  type InsideMember,
   type InsideMoreEntry,
   type InsideSpec,
   type InsideStepSpec,
@@ -31,16 +32,23 @@ export const STORE_LABELS: ReadonlySet<string> = new Set([
 ]);
 
 /** Entry points drawn on the canvas; the rest wait under "Show more". */
-export const ENTRIES_SHOWN = 10;
+export const ENTRIES_SHOWN = 12;
 /** Functions the canvas draws for one project. */
 const FNS_MAX = 60;
 /** Calls followed from an entry's function. */
-export const TRACE_DEPTH = 4;
+export const TRACE_DEPTH = 3;
+/** Calls followed inside one part before its step stops growing. */
+const FOLD_HOPS = 8;
 /** Steps kept for one entry point. */
 export const TRACE_STEPS = 9;
 
+/** The story of one command a dispatcher route hands over to, traced the same way as an entry point. */
+export type MemberTracer = (entry: string, label: string) => InsideMember | undefined;
+
 export interface InsideContext {
   project: string;
+  /** How many entry points to draw. Default `ENTRIES_SHOWN`. */
+  shown?: number | undefined;
   /** Datastores from the project's config (its Postgres chip), shown even when no function was seen using one. */
   dbs: readonly string[];
   /** Compose services this project builds, by name. Empty: functions are grouped by what starts them. */
@@ -200,45 +208,93 @@ const PHRASE: Readonly<Record<string, string>> = {
   Replicate: "runs the model on Replicate",
 };
 
-function entryText(kind: InsideTrigger, raw: string): string {
-  switch (kind) {
+/** The last name of a function id: `ConnectService.callback` is `callback`. */
+function fnName(id: string): string {
+  return (id.split(":")[0] ?? id).split(".").pop() ?? id;
+}
+
+function listOf(names: readonly string[]): string {
+  const uniq = [...new Set(names)];
+  const shown = uniq.slice(0, 3);
+  const head =
+    shown.length > 1 ? `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}` : (shown[0] ?? "");
+  return uniq.length > 3 ? `${shown.join(", ")} and ${uniq.length - 3} more` : head;
+}
+
+/** A sentence for a step from facts only: the doc line of the function, or the names of what runs. */
+function stepSentence(
+  step: { kind: "entry" | "call" | "data"; fns: { id: string }[]; to: string },
+  entry: { kind: InsideTrigger; raw: string },
+  defs: ReadonlyMap<string, Def>,
+  next?: { fns: { id: string }[] } | undefined,
+): string {
+  const names = step.fns
+    .slice(step.kind === "entry" ? 1 : 0)
+    .map((f) => fnName(f.id))
+    .filter((n) => n !== "");
+  const list = listOf(
+    names.length === 0 && step.kind === "entry" && next?.fns[0] ? [fnName(next.fns[0].id)] : names,
+  );
+  if (step.kind === "call") {
+    const doc = defs.get(step.fns[0]?.id ?? "")?.doc ?? "";
+    const text = doc.endsWith(".") ? doc.slice(0, -1) : doc;
+    // A doc line is cut at 90 characters when it is longer: a cut sentence is not shown.
+    return text !== "" && doc.length < 88 ? `${text} (${list}).` : `Runs ${list}.`;
+  }
+  const runs = list === "" ? "" : ` and runs ${list}`;
+  switch (entry.kind) {
     case "HTTP":
-      return `A request to ${raw} arrives.`;
+      return `Receives ${entry.raw}${runs}.`;
     case "SOCKET":
-      return "A live connection opens.";
+      return `A live connection opens${runs}.`;
     case "TOOL":
-      return "An agent calls a tool.";
+      return `An agent calls the tool${list === "" ? "" : `, which runs ${list}`}.`;
     case "SCHEDULE":
-      return `Wakes up ${raw}.`;
+      return `${capital(entry.raw)}${list === "" ? "" : `, runs ${list}`}.`;
     case "QUEUE":
-      return `A job for ${raw} arrives.`;
+      return `A job for ${entry.raw} arrives${runs}.`;
     case "COMMAND":
-      return `The command ${raw} starts.`;
+      return `${capital(entry.raw)} starts${runs}.`;
   }
 }
 
-/** One sentence for several tables of one datastore a step touches. */
-function tablesSentence(datas: readonly InsideData[], verbs: ReadonlySet<Use["verb"]>): string {
-  const names = datas.map((d) => d.name);
-  const shown = names.slice(0, 3).join(", ") + (names.length > 3 ? ` and ${names.length - 3} more` : "");
-  const what = datas.every((d) => d.sub.endsWith("table"))
-    ? `the ${shown} ${datas.length === 1 ? "table" : "tables"}`
-    : shown;
-  const read = verbs.has("read");
-  const write = verbs.has("write");
-  if (read && write) return `Reads from and saves to ${what}.`;
-  if (write) return `Saves to ${what}.`;
-  if (read) return `Reads from ${what}.`;
-  return `Uses ${what}.`;
+/** The tables of one datastore a step touches, with what it does to each: one sentence. */
+function tablesSentence(byTable: ReadonlyMap<string, ReadonlySet<Use["verb"]>>, named: boolean): string {
+  const names = (verb: Use["verb"]) => [...byTable].filter(([, v]) => v.has(verb)).map(([n]) => n);
+  const phrase = (list: readonly string[]) => {
+    const head = list.slice(0, 3).join(", ");
+    const what = list.length > 3 ? `${head} and ${list.length - 3} more` : head;
+    return named ? `the ${what} ${list.length === 1 ? "table" : "tables"}` : what;
+  };
+  const reads = names("read");
+  const writes = names("write");
+  const others = [...byTable].filter(([, v]) => !v.has("read") && !v.has("write")).map(([n]) => n);
+  const parts = [
+    ...(reads.length > 0 ? [`reads from ${phrase(reads)}`] : []),
+    ...(writes.length > 0 ? [`saves to ${phrase(writes)}`] : []),
+    ...(others.length > 0 ? [`uses ${phrase(others)}`] : []),
+  ];
+  const text = parts.join(", ");
+  return `${capital(text)}.`;
 }
 
-function dataSentence(data: InsideData, verb: "read" | "write" | "call" | "use"): string {
+function dataSentence(data: InsideData, verb: "read" | "write" | "call" | "use", fn: string): string {
+  if (data.kind === "out" && (data.name === "Files" || data.name === "Processes")) {
+    const by = ` (${fnName(fn)})`;
+    if (data.name === "Processes") return `Starts a program${by}.`;
+    return verb === "write"
+      ? `Writes files on disk${by}.`
+      : verb === "read"
+        ? `Reads files from disk${by}.`
+        : `Uses files on disk${by}.`;
+  }
   if (data.kind === "out") {
     const phrase = PHRASE[data.name];
     return phrase === undefined ? `Sends a request to ${data.name}.` : `${capital(phrase)}.`;
   }
   if (data.kind === "proj") return `Hands the work to ${data.name}.`;
-  const store = data.sub.endsWith("table") ? `the ${data.name} table` : data.name;
+  const named = data.sub.endsWith("table");
+  const store = named ? `the ${data.name} table` : `${data.name} (${fnName(fn)})`;
   if (verb === "write") return `Saves to ${store}.`;
   if (verb === "read") return `Reads from ${store}.`;
   return `Uses ${store}.`;
@@ -279,7 +335,7 @@ interface Traced {
   use?: { fn: string; verb: Use["verb"]; line: number; file: string };
   /** A data step that several tables of one datastore share: the rest of them. */
   extra?: { data: InsideData; use: { fn: string; verb: Use["verb"]; line: number; file: string } }[];
-  verbs?: Set<Use["verb"]>;
+  byTable?: Map<string, Set<Use["verb"]>>;
   call?: { from: string; to: string; line: number };
 }
 
@@ -315,7 +371,7 @@ function traceOf(
     step: {
       key: `i:${entry.id}`,
       kind: "entry",
-      template: entryText(entry.kind, entry.raw),
+      template: "",
       part: startPart,
       from: entry.raw,
       to: entry.fn,
@@ -330,7 +386,7 @@ function traceOf(
   const seenData = new Set<string>();
   const reach = new Map<string, boolean>();
   /** Whether the function, or what it calls (a few deep), uses a datastore or an outside service. */
-  const reachesOutput = (fn: string, depth = 3): boolean => {
+  const reachesOutput = (fn: string, depth = 5): boolean => {
     const known = reach.get(fn);
     if (known !== undefined) return known;
     reach.set(fn, false);
@@ -340,7 +396,7 @@ function traceOf(
     reach.set(fn, yes);
     return yes;
   };
-  const walk = (fn: string, rep: string, repStep: Traced, depth: number) => {
+  const walk = (fn: string, rep: string, repStep: Traced, depth: number, hops: number) => {
     const items = [
       ...(g.calls.get(fn) ?? []).map((c) => ({ line: c.line, call: c })),
       ...(g.uses.get(fn) ?? []).map((u) => ({ line: u.line, use: u })),
@@ -350,25 +406,26 @@ function traceOf(
       if ("call" in item) {
         const to = item.call.to;
         const d = g.defs.get(to);
-        if (d === undefined || visited.has(to) || depth + 1 > TRACE_DEPTH) continue;
+        if (d === undefined || visited.has(to)) continue;
         visited.add(to);
         const part = partOf(d.file);
         const last = out[out.length - 1] as Traced;
         if (part === repStep.step.part || (last.step.kind !== "data" && part === last.step.part)) {
+          if (hops + 1 > FOLD_HOPS) continue;
           const into = part === repStep.step.part ? repStep : last;
           if (into.step.fns.length < 8) into.step.fns.push({ id: to, file: d.file, line: d.line });
-          walk(to, into === repStep ? rep : (into.step.fns[0]?.id ?? rep), into, depth + 1);
+          walk(to, into === repStep ? rep : (into.step.fns[0]?.id ?? rep), into, depth, hops + 1);
           continue;
         }
         // A helper that reaches no data is not a step of the story.
-        if (!reachesOutput(to)) continue;
+        if (depth + 1 > TRACE_DEPTH || !reachesOutput(to)) continue;
         const key = `c:${rep}>${to}`;
         const wk = sha(`${g.project}|c|${entry.id}|${to}`);
         const next: Traced = {
           step: {
             key,
             kind: "call",
-            template: "The work continues here.",
+            template: "",
             part,
             from: rep,
             to,
@@ -390,7 +447,7 @@ function traceOf(
           call: { from: rep, to, line: item.call.line },
         };
         out.push(next);
-        walk(to, to, next, depth + 1);
+        walk(to, to, next, depth + 1, 0);
       } else {
         const u = item.use;
         const data = dataOf(u);
@@ -404,12 +461,9 @@ function traceOf(
               t.use?.fn === rep &&
               (t.data?.id === data.id || t.extra?.some((e) => e.data.id === data.id) === true),
           );
-          if (there?.data !== undefined && there.verbs !== undefined && !there.verbs.has(u.verb)) {
-            there.verbs.add(u.verb);
-            there.step.template = tablesSentence(
-              [there.data, ...(there.extra ?? []).map((e) => e.data)],
-              there.verbs,
-            );
+          if (there?.data !== undefined && there.byTable !== undefined && data.kind === "db") {
+            there.byTable.get(data.name)?.add(u.verb);
+            there.step.template = tablesSentence(there.byTable, data.sub.endsWith("table"));
           }
           continue;
         }
@@ -423,16 +477,13 @@ function traceOf(
                   t.data.sub.split(" ")[0] === data.sub.split(" ")[0],
               )
             : undefined;
-        if (sibling?.data !== undefined && sibling.verbs !== undefined) {
+        if (sibling?.data !== undefined && sibling.byTable !== undefined) {
           sibling.extra = [
             ...(sibling.extra ?? []),
             { data, use: { fn: rep, verb: u.verb, line: u.line, file: useFile } },
           ];
-          sibling.verbs.add(u.verb);
-          sibling.step.template = tablesSentence(
-            [sibling.data, ...sibling.extra.map((e) => e.data)],
-            sibling.verbs,
-          );
+          sibling.byTable.set(data.name, new Set([u.verb]));
+          sibling.step.template = tablesSentence(sibling.byTable, data.sub.endsWith("table"));
           continue;
         }
         const repDef = g.defs.get(rep);
@@ -442,7 +493,7 @@ function traceOf(
           step: {
             key: `d:${rep}>${data.id}`,
             kind: "data",
-            template: dataSentence(data, u.verb),
+            template: dataSentence(data, u.verb, fn),
             part,
             from: rep,
             to: data.name,
@@ -464,12 +515,15 @@ function traceOf(
           },
           data,
           use: { fn: rep, verb: u.verb, line: u.line, file: useFile },
-          verbs: new Set([u.verb]),
+          byTable: new Map([[data.name, new Set([u.verb])]]),
         });
       }
     }
   };
-  walk(entry.fn, entry.fn, out[0] as Traced, 0);
+  walk(entry.fn, entry.fn, out[0] as Traced, 0, 0);
+  out.forEach((t, i) => {
+    if (t.step.kind !== "data") t.step.template = stepSentence(t.step, entry, g.defs, out[i + 1]?.step);
+  });
   return out;
 }
 
@@ -490,7 +544,12 @@ function groupLabel(g: Group): { label: string; raw: string } {
   const part = partOf(first.file);
   const extra = g.members.length > 1 ? ` +${g.members.length - 1} more` : "";
   if (first.members !== undefined && first.members.length > 0) {
-    return { label: `${first.label} · ${first.count ?? first.members.length} handlers`, raw: first.label };
+    const noun = [":name", ":command", ":cmd", ":action", "{name}", "{command}"].some((x) =>
+      first.label.includes(x),
+    )
+      ? "commands"
+      : "handlers";
+    return { label: `${first.label} · ${first.count ?? first.members.length} ${noun}`, raw: first.label };
   }
   switch (g.kind) {
     case "HTTP":
@@ -541,14 +600,38 @@ export function buildInside(
   facts: GraphifyFacts,
   ctx: InsideContext,
   words: Words = NO_WORDS,
-): { spec: InsideSpec; items: WordItem[] } | undefined {
+): { spec: InsideSpec; items: WordItem[]; member: MemberTracer } | undefined {
   const inside = facts.inside;
   if (inside === undefined || facts.v < 3) return undefined;
   const defs = new Map(inside.defs.map((d) => [d.id, d]));
   const uses = new Map<string, Use[]>();
   for (const u of inside.uses) uses.set(u.fn, [...(uses.get(u.fn) ?? []), u]);
   const g = { defs, calls: provedCalls(inside), uses, project: ctx.project };
+  const limit = ctx.shown ?? ENTRIES_SHOWN;
   const raw = inside.entries.filter((e) => defs.has(e.fn));
+  const handlersOf = new Map<string, Map<string, { fn?: string | undefined; file: string; line: number }>>();
+  for (const e of raw)
+    if (e.members !== undefined && e.members.length > 0)
+      handlersOf.set(entryId(e.kind, e.label, e.file), new Map(e.members.map((m) => [m.label, m])));
+  const member: MemberTracer = (id, label) => {
+    const m = handlersOf.get(id)?.get(label);
+    if (m === undefined) return undefined;
+    const fn = m.fn !== undefined && defs.has(m.fn) ? m.fn : undefined;
+    const trace =
+      fn === undefined
+        ? []
+        : traceOf({ kind: "HTTP", raw: label, file: m.file, line: m.line, fn, id: `m${sha(id + label)}` }, g);
+    return {
+      label,
+      file: m.file,
+      line: m.line,
+      followed: trace.length > 1 || (trace[0]?.step.fns.length ?? 0) > 1,
+      steps: trace.map((t) => {
+        const { template, item: _item, ...rest } = t.step;
+        return { ...rest, text: template };
+      }),
+    };
+  };
   const unique = [...new Map(raw.map((e) => [entryId(e.kind, e.label, e.file), e])).values()];
   const groups = groupsOf(unique, (e) =>
     traceOf(
@@ -582,19 +665,14 @@ export function buildInside(
   const shown: Group[] = [];
   for (const kind of Object.keys(KIND_RANK) as InsideTrigger[]) {
     const best = ranked.filter((x) => x.kind === kind && substantive(x)).slice(0, kind === "HTTP" ? 2 : 1);
-    for (const b of best) if (shown.length < ENTRIES_SHOWN) shown.push(b);
+    for (const b of best) if (shown.length < limit) shown.push(b);
   }
   for (const x of ranked) {
-    if (shown.length >= ENTRIES_SHOWN) break;
+    if (shown.length >= limit) break;
     if (!shown.includes(x) && substantive(x)) shown.push(x);
   }
-  if (shown.length === 0) shown.push(...ranked.slice(0, ENTRIES_SHOWN));
-  const drawn = shown.toSorted(
-    (a, b) =>
-      KIND_RANK[a.kind] - KIND_RANK[b.kind] ||
-      a.lead.file.localeCompare(b.lead.file) ||
-      a.lead.line - b.lead.line,
-  );
+  if (shown.length === 0) shown.push(...ranked.slice(0, limit));
+  const drawn = shown;
   const rest = groups
     .filter((x) => !shown.includes(x))
     .toSorted(
@@ -621,11 +699,9 @@ export function buildInside(
     const id = entryId(lead.kind, lead.label, lead.file);
     const text = groupLabel(grp);
     const gk = sha(`${ctx.project}|g|${id}|${grp.members.length}`);
-    const members = (
-      lead.members !== undefined && lead.members.length > 0
-        ? lead.members
-        : grp.members.map((m) => ({ label: m.label, file: m.file, line: m.line }))
-    ).slice(0, 500);
+    const members = (lead.members !== undefined && lead.members.length > 0 ? lead.members : grp.members)
+      .map((m) => ({ label: m.label, file: m.file, line: m.line }))
+      .slice(0, 500);
     items.push({
       key: gk,
       kind: "group",
@@ -742,7 +818,6 @@ export function buildInside(
   const dbNames = [
     ...new Set([
       ...[...data.values()].filter((d) => d.kind === "db").map((d) => d.sub.split(" ")[0] as string),
-      ...ctx.dbs,
       ...inside.stores.map((s) => s.name),
     ]),
   ].filter((d) => d !== "datastore");
@@ -758,9 +833,10 @@ export function buildInside(
     uses: usesOut.filter((u) => keep.has(u.fn)),
     services: serviceOrder,
     dbs: dbNames.slice(0, 20),
+    declared: [...new Set([...inside.declared, ...ctx.dbs.filter((d) => !dbNames.includes(d))])].slice(0, 20),
     hidden: Math.max(0, fnOrder.length - ordered.length),
   };
-  return { spec, items };
+  return { spec, items, member };
 }
 
 /** Reads and checks a project's facts file. Undefined when it is missing or not in a shape this version knows. */

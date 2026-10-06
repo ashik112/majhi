@@ -19,7 +19,7 @@ JS_EXTS = (".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs", ".cjs")
 SCRIPT_EXTS = (".ts", ".mts", ".js", ".mjs", ".cjs", ".py", ".tsx")
 REACH_DEPTH = 6
 SKIP_SCRIPTS = {"build", "postinstall", "preinstall", "prepare", "typecheck", "test", "lint", "format", "check", "clean", "prebuild", "postbuild"}
-MAX_MEMBERS = 400
+MAX_MEMBERS = 600
 
 
 # ------------------------------------------------------------------------------------------------
@@ -310,6 +310,21 @@ def assemble(per_file, meta):
         for e in f.entries:
             if "span" in e:
                 add_synthetic(f, e["fn"], e["span"][0], e["span"][1])
+    inj_fn = {}
+    for f in per_file:
+        for cls_name, prop, how, _line in f.injections:
+            if how[0] == "fn":
+                inj_fn[(f.rel, cls_name, prop, how[1])] = add_synthetic(f, f"{cls_name}.{prop}", how[1], how[2])
+    table_fn = {}
+    for f in per_file:
+        if ".test." in f.rel or "/test" in f.rel:
+            continue
+        for tbl in f.handler_tables:
+            for key, line, how in tbl["keys"]:
+                if how[0] != "fn":
+                    continue
+                name = key if (f.rel, key) not in synthetic and (f.rel, key) not in top else f"{key}:{line}"
+                table_fn[(f.rel, key, line)] = add_synthetic(f, name, how[1], how[2])
 
     def find_def(rel, name, depth=0):
         got = top.get((rel, name))
@@ -350,7 +365,8 @@ def assemble(per_file, meta):
         impls = [m for m in (meth.get((rel, c, name)) for rel, c in implementers.get(cur[1], [])) if m]
         return impls[0] if len(impls) == 1 else None
 
-    classes = {(r, c) for (r, c, _n) in meth}
+    concrete = {(r, c) for (r, c, _n) in meth}
+    classes = set(concrete)
     for f in per_file:
         for cname in f.props:
             classes.add((f.rel, cname))
@@ -396,6 +412,34 @@ def assemble(per_file, meta):
                     return got, "import"
         return None
 
+    if os.environ.get("MAJHI_NO_INJECT"):
+        for f in per_file:
+            f.injections = []
+    injected = {}  # (class, property) -> (file, class) | ("fn", id) | None when sites disagree
+    for f in per_file:
+        for cls_name, prop, how, _line in f.injections:
+            got = None
+            if how[0] == "fn":
+                got = ("fn", inj_fn[(f.rel, cls_name, prop, how[1])])
+            elif how[0] == "new":
+                cf = find_class_file(f.rel, how[1])
+                got = (cf, how[1]) if cf else None
+            else:
+                ident = how[1]
+                tys = f.typed.get(ident, set())
+                if len(tys) == 1 and ident not in f.imports:
+                    t = next(iter(tys))
+                    cf = find_class_file(f.rel, t)
+                    got = (cf, t) if cf and (cf, t) in concrete else None
+                if got is None:
+                    fn = top.get((f.rel, ident)) or (resolve_name(f, ident) or (None,))[0]
+                    got = ("fn", fn) if fn else None
+            key = (cls_name, prop)
+            if key in injected and injected[key] != got:
+                injected[key] = None
+            elif key not in injected:
+                injected[key] = got
+
     def resolve_call(f, kind, name, obj, cls):
         if kind == "this":
             got = meth.get((f.rel, cls, name)) if cls else None
@@ -404,26 +448,38 @@ def assemble(per_file, meta):
             return resolve_name(f, name, cls)
         if kind == "chain":
             names = list(obj)
+            owner = None
             if names[0] == "this":
                 cur = (f.rel, cls) if cls else None
                 rest = names[1:]
+                owner = cls
             elif names[0] in f.typed and names[0] not in f.imports and len(f.typed[names[0]]) == 1:
                 cname = next(iter(f.typed[names[0]]))
                 cfile = find_type_file(f.rel, cname)
                 cur = (cfile, cname) if cfile else None
                 rest = names[1:]
+                owner = cname
             else:
                 return None
             for prop in rest:
                 if cur is None:
-                    return None
+                    break
                 nxt = files[cur[0]].props.get(cur[1], {}).get(prop)
                 nfile = find_type_file(cur[0], nxt) if nxt else None
-                cur = (nfile, nxt) if nfile else None
-            if cur is None:
-                return None
-            got = method_of(cur, name)
-            return (got, "import" if cur[0] != f.rel else "same-file") if got else None
+                nxt_cur = (nfile, nxt) if nfile else None
+                inj = injected.get((owner, prop)) if owner else None
+                if inj is not None and inj[0] != "fn" and (nxt_cur is None or nxt_cur not in concrete):
+                    nxt_cur = inj
+                cur = nxt_cur
+            got = method_of(cur, name) if cur is not None else None
+            if got is not None:
+                return got, "import" if cur[0] != f.rel else "same-file"
+            if owner and rest and not (os.environ.get("MAJHI_NO_INJECT")):
+                # `this.deps.openUrl(...)` or `this.deps.connections.create(...)`: a function handed in at construction.
+                inj = injected.get((owner, ".".join(rest[1:] + [name])))
+                if inj is not None and inj[0] == "fn":
+                    return inj[1], "import"
+            return None
         if kind == "member" and obj in f.typed and obj not in f.imports and len(f.typed[obj]) == 1:
             cname = next(iter(f.typed[obj]))
             cfile = find_class_file(f.rel, cname)
@@ -540,6 +596,39 @@ def assemble(per_file, meta):
 
     regs = [r for f in per_file for r in ({"file": f.rel, **x} for x in f.regs)]
     regs.sort(key=lambda r: -len(r["keys"]))
+
+    def handler_members(rel):
+        """Handlers of every table of functions in the dispatcher's package, by name: [{label, file, line, fn}]."""
+        pkg = "/".join(rel.split("/")[:2])
+        seen_keys = {}
+        for tf in per_file:
+            if not tf.rel.startswith(pkg + "/") or ".test." in tf.rel or "/test" in tf.rel or "/e2e" in tf.rel:
+                continue
+            for tbl in tf.handler_tables:
+                for key, line, how in tbl["keys"]:
+                    fid = None
+                    size = 0
+                    if how[0] == "fn":
+                        fid = table_fn.get((tf.rel, key, line))
+                        size = how[2] - how[1]
+                    else:
+                        got = resolve_name(tf, how[1])
+                        fid = got[0] if got else None
+                        size = 1
+                    # Several tables may name one command (a table of summaries, one of handlers): the bigger body is the handler.
+                    if key in seen_keys and seen_keys[key]["_size"] >= size:
+                        continue
+                    seen_keys[key] = {"label": key, "file": tf.rel, "line": line, "_size": size, **({"fn": fid} if fid else {})}
+        # The registry the route dispatches on names the commands; the tables say who handles each.
+        for reg in regs:
+            names = [k for k, _ln in reg["keys"]]
+            if len(set(names) & set(seen_keys)) >= mi.REGISTRY_MIN:
+                out = []
+                for k, ln in reg["keys"]:
+                    got = seen_keys.get(k)
+                    out.append(got if got else {"label": k, "file": reg["file"], "line": ln})
+                return [{a: b for a, b in m.items() if a != "_size"} for m in out]
+        return [{a: b for a, b in m.items() if a != "_size"} for m in seen_keys.values()]
     entries = []
     for f in per_file:
         local_prefix = next(iter(f.router_prefix.values()), "") if len(set(f.router_prefix.values())) == 1 else ""
@@ -562,10 +651,15 @@ def assemble(per_file, meta):
                 path = join_path(join_path(base, local_prefix), path)
                 label = f"{verb} {path}"
             item = {"kind": e["kind"], "label": label, "file": f.rel, "line": e["line"], "fn": fn}
-            if e["kind"] == "HTTP" and regs and dispatcher_param(label):
-                reg = regs[0]
-                item["members"] = [{"label": k, "file": reg["file"], "line": ln} for k, ln in reg["keys"][:MAX_MEMBERS]]
-                item["count"] = len(reg["keys"])
+            if e["kind"] == "HTTP" and dispatcher_param(label):
+                members = handler_members(f.rel)
+                if len(members) >= mi.REGISTRY_MIN:
+                    item["members"] = members[:MAX_MEMBERS]
+                    item["count"] = len(members)
+                elif regs:
+                    reg = regs[0]
+                    item["members"] = [{"label": k, "file": reg["file"], "line": ln} for k, ln in reg["keys"][:MAX_MEMBERS]]
+                    item["count"] = len(reg["keys"])
             entries.append(item)
     for f, e, fid in script_entries:
         entries.append({"kind": e["kind"], "label": e["label"], "file": f.rel, "line": e["line"], "fn": fid})
@@ -602,6 +696,8 @@ def assemble(per_file, meta):
             src_id = enclosing(f.rel, line)
             if not src_id:
                 continue
+            if svc == "Files" and verb != "write":
+                continue
             if kind == "orm":
                 kind = "db"
             if svc == "SQL database" and len(sql_names) == 1:
@@ -616,12 +712,13 @@ def assemble(per_file, meta):
     named = {(a, s, k) for (a, s, k, t) in uses if t}
     uses = {key: val for key, val in uses.items() if key[3] or (key[0], key[1], key[2]) not in named}
 
+
     # Keep only what an entry point can reach.
     out_calls = {}
     for (a, b), (ln, how) in calls.items():
         out_calls.setdefault(a, []).append((b, ln, how))
     seen = {}
-    frontier = [e["fn"] for e in entries]
+    frontier = [e["fn"] for e in entries] + [m["fn"] for e in entries for m in e.get("members", []) if "fn" in m]
     for fid in frontier:
         seen[fid] = 0
     while frontier:
@@ -636,6 +733,10 @@ def assemble(per_file, meta):
         frontier = nxt
     keep = set(seen)
     kept_defs = [d for d in defs if d["id"] in keep]
+    # A datastore counts when code an entry point reaches uses it, or a schema backs it. The rest is declared only.
+    used_names = {s for (a, s, k, _t) in uses if k == "db" and a in keep}
+    declared = [s["name"] for s in stores if s["name"] not in used_names and not s.get("tables")]
+    stores = [s for s in stores if s["name"] in used_names or s.get("tables")]
     return {
         "defs": sorted(kept_defs, key=lambda d: (d["file"], d["line"])),
         "calls": [
@@ -650,6 +751,7 @@ def assemble(per_file, meta):
         ],
         "entries": sorted(entries, key=lambda e: (e["file"], e["line"], e["label"]))[:2000],
         "stores": stores,
+        "declared": declared,
     }
 
 

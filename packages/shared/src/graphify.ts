@@ -68,7 +68,7 @@ export const GraphifyInsideSchema = z.object({
         doc: z.string().max(200).default(""),
       }),
     )
-    .max(3000),
+    .max(60000),
   calls: z
     .array(
       z.object({
@@ -82,7 +82,7 @@ export const GraphifyInsideSchema = z.object({
         how: z.enum(["same-file", "import", "name"]).default("name"),
       }),
     )
-    .max(20000),
+    .max(60000),
   uses: z
     .array(
       z.object({
@@ -94,7 +94,7 @@ export const GraphifyInsideSchema = z.object({
         target: z.string().max(120).optional(),
       }),
     )
-    .max(20000),
+    .max(60000),
   entries: z
     .array(
       z.object({
@@ -110,9 +110,11 @@ export const GraphifyInsideSchema = z.object({
               label: z.string().min(1).max(160),
               file: z.string().min(1).max(400),
               line: z.number().int().positive(),
+              /** The function that handles it, when the code ties it to one. */
+              fn: z.string().max(160).optional(),
             }),
           )
-          .max(500)
+          .max(600)
           .optional(),
         count: z.number().int().nonnegative().optional(),
       }),
@@ -130,6 +132,8 @@ export const GraphifyInsideSchema = z.object({
     )
     .max(20)
     .default([]),
+  /** Datastores the dependencies name that no code uses and no schema backs. */
+  declared: z.array(z.string().max(60)).max(20).default([]),
 });
 export type GraphifyInside = z.infer<typeof GraphifyInsideSchema>;
 

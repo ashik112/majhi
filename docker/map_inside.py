@@ -20,7 +20,7 @@ import os
 HTTP_VERBS = {"get", "post", "put", "patch", "delete", "head", "options"}
 JS_HTTP_VERBS = HTTP_VERBS | {"all"}
 READ_WORDS = ("get", "find", "select", "read", "fetch", "list", "query", "scan", "lrange", "hget", "exists", "count", "search", "load", "from")
-WRITE_WORDS = ("set", "insert", "add", "save", "write", "put", "push", "lpush", "rpush", "update", "delete", "create", "remove", "enqueue", "send", "publish", "post", "values", "commit", "merge", "upsert")
+WRITE_WORDS = ("set", "insert", "add", "save", "write", "put", "push", "lpush", "rpush", "update", "delete", "create", "remove", "enqueue", "send", "publish", "post", "values", "commit", "merge", "upsert", "rm", "mkdir", "rename", "copy", "append", "unlink", "spawn", "exec")
 REGISTRY_NAMES = {"commands", "handlers", "registry", "actions", "tools", "routes", "jobs", "operations", "ops", "methods", "procedures", "mutations", "queries"}
 DISPATCH_PARAMS = {"name", "command", "cmd", "action", "type", "handler", "op", "method", "tool", "procedure", "event", "job", "task", "rpc"}
 REGISTRY_MIN = 8
@@ -54,6 +54,8 @@ OUTSIDE = {
     "github": "GitHub", "@octokit/rest": "GitHub", "exa_py": "Exa", "exa-js": "Exa", "firecrawl": "Firecrawl",
     "@mendable/firecrawl-js": "Firecrawl", "firecrawl_py": "Firecrawl", "emails": "Email", "nodemailer": "Email",
     "smtplib": "Email", "boto3": "AWS", "@aws-sdk": "AWS",
+    "fs": "Files", "node:fs": "Files", "shutil": "Files",
+    "child_process": "Processes", "node:child_process": "Processes", "subprocess": "Processes",
 }
 STORE_KEYS = sorted(STORES, key=len, reverse=True)
 
@@ -125,6 +127,8 @@ class FileFacts:
         self.tables = []  # table names declared here
         self.table_vars = {}  # identifier -> table name
         self.table_classes = {}  # python class name -> table name
+        self.handler_tables = []  # [{keys: [(key, line, ("fn", start, end) | ("id", name))]}]: objects of 3+ handlers by name
+        self.injections = []  # (class, property, ("id", name) | ("new", class), line): `new C({ prop: value })`
         self.regs = []  # {name, keys: [(key, line)]}
         self.mounts = []  # (prefix, callee name)
         self.router_prefix = {}  # python router variable -> prefix
@@ -152,7 +156,7 @@ SQL_WRITE = {"insert", "update", "delete", "replace", "upsert"}
 def use_of(svc, method, first_arg):
     """(verb, target) of a call on a client: SQL text names its verb and table; else the method's name decides."""
     if svc[1] == "out":
-        return ("call", None)
+        return (verb_of(method), None) if svc[0] in ("Files", "Processes") else ("call", None)
     if first_arg:
         words = first_arg.lower().split()
         if words and (words[0] in SQL_READ or words[0] in SQL_WRITE):
@@ -966,7 +970,7 @@ def scan_js(root, rel, nlines):
                 facts.entries.append({"kind": "QUEUE", "label": f"consumer {first}", "line": line_of(n), "fn": js_last(pos[1])})
             elif method == "on" and first in ("connection", "upgrade") and len(pos) > 1 and fn.type == "member_expression":
                 h = unwrap(pos[-1])
-                label = "WebSocket connection" if first == "connection" else "WebSocket upgrade"
+                label = "WebSocket"
                 if h.type in FN_TYPES:
                     facts.entries.append({"kind": "SOCKET", "label": label, "line": line_of(n), "fn": f"{label.lower()} (line {line_of(n)})", "span": (line_of(h), h.end_point[0] + 1)})
                 elif js_last(h):
@@ -980,9 +984,9 @@ def scan_js(root, rel, nlines):
             elif method == "setRequestHandler" and len(pos) > 1 and pos[0].type == "identifier" and text_of(pos[0]) == "CallToolRequestSchema":
                 h = unwrap(pos[-1])
                 if h.type in FN_TYPES:
-                    facts.entries.append({"kind": "TOOL", "label": "MCP tool call", "line": line_of(n), "fn": f"mcp tool call (line {line_of(n)})", "span": (line_of(h), h.end_point[0] + 1)})
+                    facts.entries.append({"kind": "TOOL", "label": "MCP tools", "line": line_of(n), "fn": f"mcp tool call (line {line_of(n)})", "span": (line_of(h), h.end_point[0] + 1)})
                 elif js_last(h):
-                    facts.entries.append({"kind": "TOOL", "label": "MCP tool call", "line": line_of(n), "fn": js_last(h)})
+                    facts.entries.append({"kind": "TOOL", "label": "MCP tools", "line": line_of(n), "fn": js_last(h)})
             # A call site, to be resolved through the file's imports or its own definitions.
             if fn is not None and fn.type == "identifier":
                 facts.calls.append((line_of(n), "id", text_of(fn), None, js_class_of(n)))
@@ -998,6 +1002,10 @@ def scan_js(root, rel, nlines):
                     if chain_names and all(c != "" for c in chain_names):
                         facts.calls.append((line_of(n), "chain", prop, tuple(chain_names), js_class_of(n)))
             chain = js_chain(fn)
+            if len(chain) == 1 and chain[0] in bound and bound[chain[0]][0] in ("Files", "Processes"):
+                orig = facts.imports.get(chain[0], (None, chain[0]))[1]
+                verb, target = use_of(bound[chain[0]], orig, first)
+                facts.uses.append((line_of(n), bound[chain[0]][0], "out", verb, None, None))
             if len(chain) >= 2 and chain[0] in facts.imports and facts.imports[chain[0]][0].startswith((".", "@/", "~/")):
                 facts.maybe_uses.append((line_of(n), chain[0], tuple(chain[1:]), first))
             hit = next((c for c in chain[:-1] if c in bound), None)
@@ -1010,11 +1018,51 @@ def scan_js(root, rel, nlines):
                 facts.uses.append((line_of(n), svc[0], svc[1], verb, target, ident))
             if method == "describe" or method == "it":
                 pass
+        elif t == "object":
+            keys = []
+            for p in n.named_children:
+                if p.type != "pair":
+                    continue
+                k, v = p.child_by_field_name("key"), unwrap(p.child_by_field_name("value"))
+                if k is None or v is None or k.type not in ("string", "property_identifier"):
+                    continue
+                key = js_str(k) if k.type == "string" else text_of(k)
+                if not key or " " in key:
+                    continue
+                if v.type in ("arrow_function", "function_expression", "function"):
+                    keys.append((key, line_of(p), ("fn", line_of(v), v.end_point[0] + 1)))
+                elif v.type == "identifier":
+                    keys.append((key, line_of(p), ("id", text_of(v))))
+            if sum(1 for k in keys if k[2][0] == "fn") >= 3:
+                facts.handler_tables.append({"keys": keys})
         elif t == "new_expression":
             ctor = n.child_by_field_name("constructor")
             args = n.child_by_field_name("arguments")
             pos = args.named_children if args is not None else []
             name = js_last(ctor) if ctor is not None else None
+            if ctor is not None and ctor.type == "identifier" and pos and pos[0].type == "object":
+                for p in pos[0].named_children:
+                    if p.type == "shorthand_property_identifier":
+                        facts.injections.append((text_of(ctor), text_of(p), ("id", text_of(p)), line_of(p)))
+                    elif p.type == "pair":
+                        k, v = p.child_by_field_name("key"), unwrap(p.child_by_field_name("value"))
+                        if k is None or v is None:
+                            continue
+                        key = js_str(k) if k.type == "string" else text_of(k)
+                        if v.type in ("arrow_function", "function_expression", "function"):
+                            facts.injections.append((text_of(ctor), key, ("fn", line_of(v), v.end_point[0] + 1), line_of(p)))
+                        elif v.type == "object":
+                            for sp in v.named_children:
+                                if sp.type == "pair":
+                                    sk, sv = sp.child_by_field_name("key"), unwrap(sp.child_by_field_name("value"))
+                                    if sk is not None and sv is not None and sv.type in ("arrow_function", "function_expression", "function"):
+                                        facts.injections.append((text_of(ctor), f"{key}.{js_str(sk) if sk.type == 'string' else text_of(sk)}", ("fn", line_of(sv), sv.end_point[0] + 1), line_of(sp)))
+                                elif sp.type == "method_definition" and sp.child_by_field_name("name") is not None:
+                                    facts.injections.append((text_of(ctor), f"{key}.{text_of(sp.child_by_field_name('name'))}", ("fn", line_of(sp), sp.end_point[0] + 1), line_of(sp)))
+                        elif v.type == "identifier":
+                            facts.injections.append((text_of(ctor), key, ("id", text_of(v)), line_of(p)))
+                        elif v.type == "new_expression" and v.child_by_field_name("constructor") is not None and v.child_by_field_name("constructor").type == "identifier":
+                            facts.injections.append((text_of(ctor), key, ("new", text_of(v.child_by_field_name("constructor"))), line_of(p)))
             if name == "Worker" and pos and js_str(pos[0]) and len(pos) > 1 and js_last(pos[1]):
                 facts.entries.append({"kind": "QUEUE", "label": f"consumer {js_str(pos[0])}", "line": line_of(n), "fn": js_last(pos[1])})
             elif name == "Worker" and pos and js_str(pos[0]) and len(pos) > 1 and unwrap(pos[1]).type in FN_TYPES:

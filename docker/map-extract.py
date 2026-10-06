@@ -320,6 +320,8 @@ def main():
     for rel in graph_files(out)[:MAX_FILES]:
         path = (src / rel)
         kind = LANGS.get(path.suffix.lower())
+        if any(m in "/" + rel for m in (".test.", ".spec.", "/__tests__/", "/tests/", "/test/", "/e2e/", "conftest.py")) or os.path.basename(rel).startswith("test_"):
+            continue
         if kind is None or path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_BYTES:
             continue
         parser = parsers.setdefault(path.suffix.lower(), Parser(kind[1]))
