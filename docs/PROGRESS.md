@@ -1,5 +1,26 @@
 # Progress
 
+## Hand-off check: full logs, a named failure, reruns and the agent's own world (branch `fix/handoff-full-failure`, built, not merged)
+
+Gaps 4 and 5 of the task-gaps audit. The check kept the last 25 lines of the failing step, told the lead only in Autonomous, gave agents no way to read or rerun it, and ran in a poorer world than the agent.
+
+**Plan.** Logs and typed fields first (shared schema, `handoff/logs.ts`, exec), then the service (install step, per-step limits, rerun, telling), then the agent's tools, then the web, checked in a browser on an isolated server.
+
+**What works.**
+- Every command step (install, lint, build, tests) saves its whole output, secrets masked, as `.checks/<run>/<step>.log` in the task folder, capped at 0.95 MB with a line that says where it was cut. The newest 5 runs are kept. The existing files route serves exactly those paths and the existing viewer opens them.
+- The result names the first failing step as typed fields (`failed`: step, exit code, time, log), and so does the room line. The review card shows "Failed: Tests, exit 1" with Full log (opens the viewer at the top of the tail the card shows) and Rerun Tests. Each step in the details has Full log, and Rerun when it did not pass.
+- `handoff.rerun { task, step? }` and the agent tools `handoff` and `handoff_rerun` (in `majhi-processes`, scoped to the session's own task) run one step or all through the same queue and limits, one check per task at a time. The lead is told how an agent-asked rerun ended.
+- The lead is told of a failure whether or not Autonomous is on, with the log paths in the note. The brief tells agents about the tools.
+- The check runs with the workspace's package caches and tools folder, a real `HOME`, and the project's install first when packages are missing. Per-step minutes are in Settings, Containers.
+
+**How to try it.** Finish a task whose tests fail. The review card says Failed: Tests. Press Full log, then Rerun Tests. In an agent's session, call `handoff` and `handoff_rerun` from `majhi-processes`.
+
+**Checked.** Isolated server (own home, port 7391) with a project whose test prints 244 lines and fails: the card, the room line, Full log (all of the output, the failing line, the marked line in view), Rerun Tests (lint log kept, new tests log), at 1440 dark and 1100 light, no console errors, the page does not scroll. Screenshots in `/private/tmp/claude-501/handoff-shots/`.
+
+**Left.** The first error line from a runner's structured output (see DECISIONS). A per-project environment for the agent and the check. The typecheck step the card already names (`PROGRESS` of the card unit) is still not run. A check that needs Docker for its own services is unchanged.
+
+**Known issues.** The room line's Full log button sits at the right edge of a wrapped line at 1100 px.
+
 ## Workspace wiki, server side (branch `feat/wiki-workspace`, built, not merged)
 
 Phase 3 of `docs/design/wiki.md`, pulled forward. Server only: the web branch builds the screens on `wiki.system`, `wiki.answer` and `wiki.setRole`.
