@@ -72,12 +72,19 @@ export function typeQuestion(task: {
   };
 }
 
-/** The type the provider chose when it was sure enough, else the rules' guess. Either way it is intake's. */
-export function chooseType(guess: TypeGuess, result: DecisionResult | undefined): TaskTyping {
+/**
+ * The type the provider chose when it was sure enough, else the rules' guess. Either way it is intake's.
+ * `fellBack` says the provider's answer did not count.
+ */
+export function chooseType(
+  guess: TypeGuess,
+  result: DecisionResult | undefined,
+): { typing: TaskTyping; fellBack: boolean } {
   const answer = result?.answers.type;
   const picked = TaskTypeSchema.safeParse(answer?.value);
-  if (answer?.gate?.accepted === true && picked.success) return { type: picked.data, by: "intake" };
-  return { type: guess.type, by: "intake" };
+  if (answer?.gate?.accepted === true && picked.success)
+    return { typing: { type: picked.data, by: "intake" }, fellBack: false };
+  return { typing: { type: guess.type, by: "intake" }, fellBack: true };
 }
 
 /**

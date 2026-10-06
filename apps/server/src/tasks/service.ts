@@ -659,11 +659,11 @@ export class TaskService {
     const result = await this.deps.decisions
       ?.decide(typeQuestion(args), { use: "routing", task: args.id })
       .catch(() => undefined);
-    const typing = chooseType(guess, result);
+    const { typing, fellBack } = chooseType(guess, result);
     if (result !== undefined)
       this.deps.decisions?.outcome(result.id, {
         text: `Type: ${typing.type}.`,
-        fellBack: typing.type === guess.type && result.answers.type?.value !== guess.type,
+        fellBack,
         choices: [...TASK_TYPES],
       });
     return typing;

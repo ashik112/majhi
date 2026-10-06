@@ -92,6 +92,7 @@ function parseOrigin(json: string | null): StoredOrigin | undefined {
 
 /** The type and who set it. A row with only one of the two, or a value this build does not know, is untyped. */
 function typingOf(row: { type: string | null; typeBy: string | null }): TaskTyping | undefined {
+  if (row.type === null || row.typeBy === null) return undefined;
   const parsed = TaskTypingSchema.safeParse({ type: row.type, by: row.typeBy });
   return parsed.success ? parsed.data : undefined;
 }
@@ -929,8 +930,9 @@ function mrFactOf(r: {
   mrState: string | null;
   ciState: string | null;
 }): MrFact[] {
+  if (r.mrUrl === null || r.mrNumber === null) return [];
   const state = MrStateSchema.safeParse(r.mrState);
-  if (r.mrUrl === null || r.mrNumber === null || !state.success) return [];
+  if (!state.success) return [];
   return [
     {
       project: r.project,
