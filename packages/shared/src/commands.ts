@@ -407,6 +407,7 @@ import {
   WikiPageInputSchema,
   WikiPageViewSchema,
   WikiScopeInputSchema,
+  WikiUpdateInputSchema,
   WikiViewSchema,
 } from "./wiki.ts";
 
@@ -1294,8 +1295,8 @@ export const commands = {
   "wiki.update": {
     risk: "change",
     summary:
-      "Update the wiki of a workspace or one project: read the code facts with no model, then rewrite only the pages whose cited files changed. It runs in the background and the page follows its progress. One run per workspace at a time. The owner and the captain, never another agent",
-    input: WikiScopeInputSchema,
+      "Update the wiki of a workspace or one project: read the code facts with no model, then rewrite only the pages whose cited files changed. It runs in the background and the page follows its progress. One run per workspace at a time. `replan` picks the main flows again. The owner and the captain, never another agent",
+    input: WikiUpdateInputSchema,
     output: WikiViewSchema,
   },
   // The chat dock -----------------------------------------------------------------

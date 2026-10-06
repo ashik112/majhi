@@ -4,6 +4,7 @@ import { UserError } from "../errors.ts";
 import { type FindingsHandlerDeps, findingActor } from "../findings/handlers.ts";
 import type { DriftOf } from "./drift.ts";
 import type { WikiRepo } from "./repo.ts";
+import type { WikiService } from "./service.ts";
 import type { WikiEnabled } from "./switch.ts";
 
 type WikiCommand = "wiki.get" | "wiki.page" | "wiki.estimate" | "wiki.update";
@@ -17,6 +18,7 @@ export interface WikiHandlerDeps extends Pick<FindingsHandlerDeps, "lanes" | "st
   projects: (org: string) => Promise<readonly string[]>;
   /** How far the code has moved past a built commit. Absent: the status leaves it out. */
   drift?: DriftOf;
+  service: Pick<WikiService, "start" | "estimate" | "progress">;
 }
 
 /**
@@ -47,10 +49,11 @@ export function wikiHandlers(deps: WikiHandlerDeps): Pick<CommandHandlers, WikiC
     const state = repo.state(org, project);
     const drift =
       state.builtCommit === undefined ? undefined : await deps.drift?.(org, project, state.builtCommit);
+    const running = deps.service.progress(org, project);
     return {
       org,
       project,
-      running: false,
+      ...(running === undefined ? { running: false as const } : { running: true as const, ...running }),
       ...(state.builtCommit === undefined ? {} : { builtCommit: state.builtCommit }),
       ...(state.updatedAt === undefined || state.builtCommit === undefined
         ? {}
@@ -61,21 +64,23 @@ export function wikiHandlers(deps: WikiHandlerDeps): Pick<CommandHandlers, WikiC
       ...(state.lastError === undefined ? {} : { lastError: state.lastError }),
     };
   };
+  const view = async (org: string, project: string | undefined) => {
+    if (!(await deps.enabled(org))) {
+      return { org, ...(project === undefined ? {} : { project }), enabled: false, pages: [], status: [] };
+    }
+    const projects = project === undefined ? await deps.projects(org) : [project];
+    return {
+      org,
+      ...(project === undefined ? {} : { project }),
+      enabled: true,
+      pages: repo.pages(org, project),
+      status: await Promise.all(projects.map((p) => statusOf(org, p))),
+    };
+  };
   return {
     "wiki.get": async (input, ctx) => {
       await scope(ctx, input.org, false);
-      const { org, project } = input;
-      if (!(await deps.enabled(org))) {
-        return { org, ...(project === undefined ? {} : { project }), enabled: false, pages: [], status: [] };
-      }
-      const projects = project === undefined ? await deps.projects(org) : [project];
-      return {
-        org,
-        ...(project === undefined ? {} : { project }),
-        enabled: true,
-        pages: repo.pages(org, project),
-        status: await Promise.all(projects.map((p) => statusOf(org, p))),
-      };
+      return view(input.org, input.project);
     },
     "wiki.page": async (input, ctx) => {
       await scope(ctx, input.org, false);
@@ -91,17 +96,17 @@ export function wikiHandlers(deps: WikiHandlerDeps): Pick<CommandHandlers, WikiC
     "wiki.estimate": async (input, ctx) => {
       await scope(ctx, input.org, false);
       await requireOn(input.org);
-      return notBuilt();
+      return deps.service.estimate(input.org, input.project);
     },
     "wiki.update": async (input, ctx) => {
       await scope(ctx, input.org, true);
       await requireOn(input.org);
-      return notBuilt();
+      const { finished } = await deps.service.start(input.org, input.project, {
+        ...(input.replan === undefined ? {} : { replan: input.replan }),
+      });
+      // The run goes on after the answer; its failure is the project's last error, which the page shows.
+      void finished.catch(() => undefined);
+      return view(input.org, input.project);
     },
   };
-}
-
-/** The update service comes with W5. */
-async function notBuilt(): Promise<never> {
-  throw new UserError("Updating the wiki is not built yet.", 501);
 }
