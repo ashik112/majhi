@@ -49,8 +49,11 @@ export interface Positioned {
   /** Lines by their key (`edgeKey`). */
   edges: Map<string, EdgePath>;
   rules: Rule[];
-  /** The same diagram laid out the other way (a flow runs across or down); the canvas shows the one that reads larger in its frame. */
-  alternate?: Positioned;
+  /**
+   * The same diagram laid out another way, most compact last (a flow runs across, then wrapped, then down). The
+   * canvas draws the first of this one and these that is no wider than its frame, else the narrowest.
+   */
+  variants?: Positioned[];
 }
 
 /**

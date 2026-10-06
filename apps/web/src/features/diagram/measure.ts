@@ -11,7 +11,7 @@ const SANS = '"IBM Plex Sans", "Helvetica Neue", system-ui, sans-serif';
 /** The type of a box and a label. Layout and the canvas read the same numbers. */
 export const TYPE = {
   kind: { font: `500 11px ${SANS}`, line: 15 },
-  title: { font: `600 13px ${SANS}`, line: 18 },
+  title: { font: `600 14px ${SANS}`, line: 20 },
   sub: { font: `400 12px ${SANS}`, line: 16 },
   label: { font: `400 12px ${SANS}`, line: 16 },
   note: { font: `400 11px ${SANS}`, line: 14 },
@@ -60,28 +60,43 @@ export function wrappedLines(text: string, font: string, width: number): number 
   return lines;
 }
 
-/** The width of a content-sized box, and the padding around its text. */
-export const NODE_W = 152;
+/** The padding around a box's text, and the widest and narrowest a box is. */
 export const NODE_PAD_X = 12;
 export const NODE_PAD_Y = 10;
+const NODE_MIN_W = 116;
+const NODE_MAX_W = 196;
 /** The line a box can carry under its text, like "Open its wiki". */
 const ACTION_ROW = 22;
+const ACTION_FONT = TYPE.action.font;
+const ACTION_TEXT = "Open its wiki \u2192";
 
 /** A little room under the measure: a browser may wrap a hair earlier than the canvas says. */
 const SLACK = 6;
 
+/**
+ * The size of a box: as wide as its name needs (the sub line wraps, up to 116px of it on one line), between
+ * the narrowest and widest, and as tall as its lines. Text is never smaller than 14px for the name and 12px
+ * for the rest.
+ */
 export function nodeSize(node: DiagramNode, action: boolean): { w: number; h: number } {
-  const inner = NODE_W - 2 * NODE_PAD_X - SLACK;
+  const want = Math.max(
+    textWidth(node.label, TYPE.title.font),
+    node.kind === undefined ? 0 : textWidth(node.kind, TYPE.kind.font),
+    node.sub === undefined ? 0 : Math.min(116, textWidth(node.sub, TYPE.sub.font)),
+    action ? textWidth(ACTION_TEXT, ACTION_FONT) : 0,
+  );
+  const w = Math.min(NODE_MAX_W, Math.max(NODE_MIN_W, Math.ceil(want) + 2 * NODE_PAD_X + SLACK));
+  const inner = w - 2 * NODE_PAD_X - SLACK;
   let h = 2 * NODE_PAD_Y;
   if (node.kind !== undefined) h += TYPE.kind.line;
   h += wrappedLines(node.label, TYPE.title.font, inner) * TYPE.title.line;
   if (node.sub !== undefined) h += wrappedLines(node.sub, TYPE.sub.font, inner) * TYPE.sub.line;
   if (action) h += ACTION_ROW;
-  return { w: NODE_W, h: Math.max(44, h) };
+  return { w, h: Math.max(44, h) };
 }
 
 /** The most a label is wide before it wraps. */
-const LABEL_MAX = 200;
+const LABEL_MAX = 128;
 const LABEL_PAD_X = 8;
 const LABEL_PAD_Y = 4;
 

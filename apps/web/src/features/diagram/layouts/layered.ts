@@ -5,7 +5,7 @@ import type { Box, EdgePath, LayoutOptions, Point, Positioned } from "../types";
 import { routeEdges } from "./route";
 
 export interface LayeredOptions {
-  /** `AUTO` lays out both ways and hands both to the canvas, which picks by the frame it has. */
+  /** `AUTO` lays out across and down and hands both to the canvas: across when it fits the frame, else down. */
   direction: "RIGHT" | "DOWN" | "AUTO";
   /** Space between boxes of one layer, and between layers (a layer of a top-down picture needs less: labels sit on the lines). */
   nodeGap: number;
@@ -21,7 +21,7 @@ export function containersOf(diagram: Diagram): Set<string> {
 /** Room inside a group's frame: its name on top, a margin around the boxes. */
 const FRAME_PAD = { top: 32, side: 16, bottom: 16 };
 /** Room around the whole drawing. */
-const MARGIN = 20;
+const MARGIN = 6;
 
 /** ELK runs in a web worker, so laying out a big diagram never freezes the page. */
 const elk = new ELK({ workerUrl: new URL("elkjs/lib/elk-worker.min.js", import.meta.url).href });
@@ -45,7 +45,7 @@ export async function layered(
     run(diagram, { ...options, direction: "RIGHT" }, layout),
     run(diagram, { ...options, direction: "DOWN" }, layout),
   ]);
-  return { ...across, alternate: down };
+  return { ...across, variants: [down] };
 }
 
 async function run(
@@ -73,7 +73,15 @@ async function run(
       };
     }
     const size = nodeSize(n, action.has(n.id));
-    return { id: n.id, width: size.w, height: size.h };
+    return {
+      id: n.id,
+      width: size.w,
+      height: size.h,
+      // A box that names its column keeps it: the layer is the rank.
+      ...(n.rank === undefined
+        ? {}
+        : { layoutOptions: { "elk.layered.layering.layerChoiceConstraint": String(n.rank) } }),
+    };
   };
 
   const edges: ElkExtendedEdge[] = [];
@@ -103,9 +111,9 @@ async function run(
       "elk.layered.spacing.nodeNodeBetweenLayers": String(
         options.direction === "DOWN" ? (options.layerGapDown ?? options.layerGap) : options.layerGap,
       ),
-      "elk.spacing.edgeNode": "24",
+      "elk.spacing.edgeNode": "16",
       "elk.spacing.edgeEdge": "14",
-      "elk.layered.spacing.edgeNodeBetweenLayers": "24",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "12",
       "elk.layered.spacing.edgeEdgeBetweenLayers": "14",
       "elk.spacing.edgeLabel": "4",
       "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",

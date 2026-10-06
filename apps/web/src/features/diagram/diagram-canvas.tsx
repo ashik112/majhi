@@ -55,7 +55,7 @@ export interface DiagramCanvasProps {
   fitMin?: number | undefined;
   /** Zoom and fit buttons over the drawing. */
   controls?: boolean;
-  /** The frame is as tall as the drawing needs at the width it has, up to a limit, instead of filling its parent. */
+  /** Drawn at its own size, never scaled: the frame is as tall as the drawing, and a wider drawing scrolls sideways inside it. */
   autoHeight?: boolean;
   className?: string;
 }
@@ -136,7 +136,7 @@ const BoxView = memo(function BoxView({ data }: NodeProps<BoxNode>) {
         data-box-title=""
         title={node.label}
         className={cn(
-          "text-[13px] leading-[18px] font-semibold text-fg",
+          "text-[14px] leading-5 font-semibold text-fg",
           wrap ? "[overflow-wrap:anywhere]" : "truncate",
         )}
       >
@@ -348,9 +348,8 @@ function Controls({ fitMin }: { fitMin: number }) {
 
 /** How much of the frame a fit leaves empty, on each side, as a share of it. */
 const FIT_PAD = 0.04;
-/** An auto-height frame is never shorter or taller than this. */
-const AUTO_MIN = 150;
-const AUTO_MAX = 780;
+/** Room kept around a drawing that is shown at its own size. */
+const NATURAL_PAD = 8;
 
 /**
  * Fits the diagram to the canvas when what is drawn changes shape, and again when the canvas itself changes
@@ -402,20 +401,26 @@ function bounds(from: { x: number; y: number }, to: { x: number; y: number }): B
   };
 }
 
-/** The size of everything drawn: boxes, frames, line corners and labels. */
-function extent(p: Positioned): { w: number; h: number } {
-  let r = 1;
-  let b = 1;
-  const grow = (x: number, y: number) => {
-    r = Math.max(r, x);
-    b = Math.max(b, y);
+/** The box around everything drawn: boxes, frames, line corners and labels. */
+function extent(p: Positioned): { x: number; y: number; w: number; h: number } {
+  let l = Number.POSITIVE_INFINITY;
+  let t = Number.POSITIVE_INFINITY;
+  let r = Number.NEGATIVE_INFINITY;
+  let b = Number.NEGATIVE_INFINITY;
+  const grow = (x0: number, y0: number, x1 = x0, y1 = y0) => {
+    l = Math.min(l, x0);
+    t = Math.min(t, y0);
+    r = Math.max(r, x1);
+    b = Math.max(b, y1);
   };
-  for (const box of [...p.nodes.values(), ...p.groups.values()]) grow(box.x + box.w, box.y + box.h);
+  for (const box of [...p.nodes.values(), ...p.groups.values()])
+    grow(box.x, box.y, box.x + box.w, box.y + box.h);
   for (const e of p.edges.values()) {
     for (const pt of e.route ?? [e.from, e.via, e.to]) grow(pt.x, pt.y);
-    if (e.label !== undefined) grow(e.label.x + e.label.w, e.label.y + e.label.h);
+    if (e.label !== undefined) grow(e.label.x, e.label.y, e.label.x + e.label.w, e.label.y + e.label.h);
   }
-  return { w: r, h: b };
+  if (l === Number.POSITIVE_INFINITY) return { x: 0, y: 0, w: 1, h: 1 };
+  return { x: l, y: t, w: Math.max(1, r - l), h: Math.max(1, b - t) };
 }
 
 /** The size of an element, kept up to date. Zero until it is measured. */
@@ -440,18 +445,31 @@ function useSize(ref: RefObject<HTMLElement | null>): { w: number; h: number } {
 }
 
 /**
- * Which way to draw a diagram that has two: the one that fills the frame better, so a narrow frame gets the
- * tall picture and a wide one the long picture. The first wins unless the other is clearly larger.
+ * How much wider than its frame a drawing may be and still be drawn across: a bit of sideways scroll beats
+ * a tall tower. It is the ratio of the name's 14px to the 12px under which text would be too small to read.
  */
-function pickLayout(p: Positioned, frame: { w: number; h: number }, autoHeight: boolean): Positioned {
-  if (p.alternate === undefined || frame.w === 0) return p;
+const SCROLL_ALLOWANCE = 14 / 12;
+
+/**
+ * Which of a diagram's layouts to draw. Shown at its own size (`natural`, never scaled), the first that is no
+ * wider than the frame (and its allowance), else the narrowest, which the frame then scrolls sideways. Fitted into a frame, the one
+ * that fills it best, the first winning unless a later one is clearly larger.
+ */
+function pickLayout(p: Positioned, frame: { w: number; h: number }, natural: boolean): Positioned {
+  const all = [p, ...(p.variants ?? [])];
+  if (all.length === 1 || frame.w === 0) return p;
+  if (natural) {
+    const room = frame.w - 2 * NATURAL_PAD;
+    return (
+      all.find((q) => extent(q).w <= room * SCROLL_ALLOWANCE) ??
+      all.reduce((best, q) => (extent(q).w < extent(best).w ? q : best))
+    );
+  }
   const reach = (q: Positioned) => {
     const e = extent(q);
-    const w = (frame.w * (1 - 2 * FIT_PAD)) / e.w;
-    const h = ((autoHeight ? AUTO_MAX : frame.h) * (1 - 2 * FIT_PAD)) / e.h;
-    return Math.min(1, w, h > 0 ? h : 1);
+    return Math.min(1, (frame.w * (1 - 2 * FIT_PAD)) / e.w, (frame.h * (1 - 2 * FIT_PAD)) / e.h);
   };
-  return reach(p.alternate) > reach(p) * 1.12 ? p.alternate : p;
+  return all.reduce((best, q) => (reach(q) > reach(best) * 1.12 ? q : best));
 }
 
 const LEGEND_MARK = { w: 26, h: 8 } as const;
@@ -533,7 +551,8 @@ export function DiagramCanvas({
     () => (sequence ? fitSequence(positioned, frameW - 2 * SEQUENCE_PAD) : undefined),
     [sequence, positioned, frameW],
   );
-  const chosen = useMemo(() => pickLayout(positioned, frame, autoHeight), [positioned, frame, autoHeight]);
+  const natural = sequence || autoHeight;
+  const chosen = useMemo(() => pickLayout(positioned, frame, natural), [positioned, frame, natural]);
   const placed = fitted?.positioned ?? chosen;
 
   const flowNodes = useMemo(() => {
@@ -627,16 +646,21 @@ export function DiagramCanvas({
   };
   const bar = legend !== undefined && legend.length > 0 ? <Legend kinds={legend} corner={corner} /> : null;
   const loneCorner = bar === null && corner !== undefined;
-  if (fitted !== undefined) {
+  if (natural) {
+    // Drawn at its own size: the frame is as tall as the drawing, and a drawing wider than the frame scrolls sideways.
+    const drawn = fitted === undefined ? extent(chosen) : { x: 0, y: 0, w: fitted.width, h: fitted.height };
+    const pad = fitted === undefined ? NATURAL_PAD : SEQUENCE_PAD;
+    const width = Math.max(frameW, drawn.w + 2 * pad);
+    const height = drawn.h + 2 * pad;
     return (
       <div className={cn("flex w-full flex-col", autoHeight ? "" : "h-full", className)}>
-        <div ref={box} data-sequence-scroll="" className="min-h-0 flex-1 overflow-auto">
-          <div
-            style={{
-              width: Math.max(frameW, fitted.width + 2 * SEQUENCE_PAD),
-              height: fitted.height + 2 * SEQUENCE_PAD,
-            }}
-          >
+        <div
+          ref={box}
+          data-sequence-scroll={sequence ? "" : undefined}
+          data-diagram-scroll=""
+          className={cn("min-h-0 flex-1", sequence ? "overflow-auto" : "overflow-x-auto overflow-y-hidden")}
+        >
+          <div style={{ width, height }}>
             <ReactFlowProvider>
               <ReactFlow
                 nodes={flowNodes}
@@ -647,7 +671,12 @@ export function DiagramCanvas({
                 nodesConnectable={false}
                 edgesFocusable
                 elementsSelectable={false}
-                defaultViewport={{ x: SEQUENCE_PAD, y: SEQUENCE_PAD, zoom: 1 }}
+                viewport={{
+                  x: fitted === undefined ? (width - drawn.w) / 2 - drawn.x : pad,
+                  y: fitted === undefined ? pad - drawn.y : pad,
+                  zoom: 1,
+                }}
+                onViewportChange={() => undefined}
                 minZoom={1}
                 maxZoom={1}
                 panOnDrag={false}
@@ -667,17 +696,9 @@ export function DiagramCanvas({
       </div>
     );
   }
-  const drawn = extent(chosen);
-  // The frame as tall as the drawing is at the width there is, so a short drawing leaves no empty band.
-  const scale = frameW === 0 ? 1 : Math.min(1, (frameW * (1 - 2 * FIT_PAD)) / drawn.w);
-  const autoH = Math.round(Math.min(AUTO_MAX, Math.max(AUTO_MIN, (drawn.h * scale) / (1 - 2 * FIT_PAD))));
   return (
-    <div className={cn("flex w-full flex-col", autoHeight ? "" : "h-full", className)}>
-      <div
-        ref={box}
-        className="relative min-h-0 flex-1"
-        style={autoHeight ? { height: autoH, flex: "none" } : undefined}
-      >
+    <div className={cn("flex h-full w-full flex-col", className)}>
+      <div ref={box} className="relative min-h-0 flex-1">
         <ReactFlowProvider>
           <ReactFlow
             nodes={flowNodes}
