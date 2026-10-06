@@ -210,3 +210,36 @@ describe("the code pass", () => {
     expect(e.usd).toBeLessThan(e.cap);
   });
 });
+
+describe("journeys", () => {
+  it("refuses a step that names another workspace's project or line", async () => {
+    const { service } = await setup();
+    await service.update("acme");
+    await service.update("globex");
+    const acme = await service.view("acme");
+    const edge = acme.map.edges.find((e) => e.type !== "together");
+    expect(edge).toBeDefined();
+    const ok = { from: edge?.from ?? "", to: edge?.to ?? "", label: "Go", edge: edge?.id ?? "" };
+    await expect(service.saveJourney("acme", undefined, "Own", [ok])).resolves.toBeDefined();
+    await expect(
+      service.saveJourney("acme", undefined, "Leak", [{ from: "globex-site", to: ok.to, label: "Go" }]),
+    ).rejects.toThrow(/not on this workspace's map/);
+    await expect(service.saveJourney("globex", undefined, "Leak", [ok])).rejects.toThrow(
+      /not on this workspace's map/,
+    );
+    expect((await service.view("globex")).journeys.filter((j) => j.status === "kept")).toEqual([]);
+  });
+
+  it("keeps a step as needs a check when its line is removed", async () => {
+    const { service } = await setup();
+    const view = await service.update("acme");
+    const edge = view.map.edges.find((e) => e.type !== "together");
+    const step = { from: edge?.from ?? "", to: edge?.to ?? "", label: "Go", edge: edge?.id ?? "" };
+    const saved = await service.saveJourney("acme", undefined, "Own", [step, step]);
+    expect(saved.journeys.find((j) => j.name === "Own")?.steps.map((s) => s.check)).toEqual([false, false]);
+    const after = await service.removeEdge("acme", step.edge);
+    const own = after.journeys.find((j) => j.name === "Own");
+    expect(own?.steps).toHaveLength(2);
+    expect(own?.steps.map((s) => s.check)).toEqual([true, true]);
+  });
+});

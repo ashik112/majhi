@@ -118,7 +118,7 @@ import { InstallRequests } from "./installs/service.ts";
 import { busyReason } from "./machine/busy.ts";
 import { MemoryWatch } from "./machine/memwatch.ts";
 import { MachineSensor } from "./machine/sensor.ts";
-import { GraphRunner } from "./map/graph/run.ts";
+import { GraphRunner, graphFolder } from "./map/graph/run.ts";
 import { CodeGraphTools } from "./map/graph/tools.ts";
 import { housekeeperPrice } from "./map/price.ts";
 import { MapRepo } from "./map/repo.ts";
@@ -949,6 +949,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   // The project map (5.21). Its code pass is a Housekeeper question per project: the smallest model, no tools.
   const map = new MapService({
     graph: graphRunner,
+    graphFolder: async (o, p) => graphFolder(await graphRoot(), o, p),
     repo: new MapRepo(store.raw),
     projects: async () =>
       (await projects.infos()).map((p) => ({ id: p.id, org: p.org, path: p.path, exists: p.exists })),

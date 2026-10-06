@@ -18,8 +18,11 @@ export const MergeVerdictSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("running") }),
   /** A check failed on this exact commit. */
   z.object({ kind: z.literal("failed"), check: MergeCheckNameSchema }),
-  /** The first check (merges cleanly, committed, no card waits) failed on this commit: `why` says how. */
-  z.object({ kind: z.literal("blocked"), why: z.string() }),
+  /**
+   * The first check (merges cleanly, committed, no card waits) failed on this commit: `why` says how.
+   * `owner`: only the owner can clear it (a card waits for them), so no agent is asked to fix it.
+   */
+  z.object({ kind: z.literal("blocked"), why: z.string(), owner: z.literal(true).optional() }),
   /** The checks ran on an older commit (`ran`), or never ran. */
   z.object({ kind: z.literal("stale"), ran: z.boolean() }),
 ]);
@@ -41,8 +44,9 @@ export function mergeVerdictAction(verdict: MergeVerdict): MergeVerdictAction {
     case "stale":
       return "run-checks";
     case "failed":
-    case "blocked":
       return "fix-with-agent";
+    case "blocked":
+      return verdict.owner === true ? "none" : "fix-with-agent";
   }
 }
 

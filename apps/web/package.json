@@ -25,6 +25,7 @@
     "@xyflow/react": "12.12.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
+    "elkjs": "0.12.0",
     "frimousse": "0.4.0",
     "lucide-react": "1.48.0",
     "motion": "13.4.4",
@@ -45,6 +46,7 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
     "emojibase-data": "17.0.0",
+    "simple-icons": "16.34.0",
     "tailwindcss": "4.3.3",
     "vite": "8.3.1"
   }
