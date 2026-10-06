@@ -212,7 +212,7 @@ import { UsageService } from "./usage/service.ts";
 import { wikiNotes } from "./wiki/notes.ts";
 import { writerPrice } from "./wiki/price.ts";
 import { WikiIndex } from "./wiki/search.ts";
-import { WikiService } from "./wiki/service.ts";
+import { type WikiReader, WikiService } from "./wiki/service.ts";
 import { wikiEnabledFrom } from "./wiki/switch.ts";
 import { WikiTools } from "./wiki/tools.ts";
 
@@ -250,6 +250,8 @@ export interface ServiceOptions {
   mrPollMs?: number;
   /** Laya in Docker, so tests can play laya-serve. Default: from `MAJHI_LAYA_URL`. */
   layaDocker?: LayaDocker;
+  /** Replaces `@majhi/acp`'s runner for the wiki's sealed reader, so a test or a scratch server needs no container mode. */
+  wikiReader?: WikiReader;
   /** Replaces the embedding model, so tests never download one. */
   embedder?: Embedder;
   /** Replaces the docker CLI of the containers majhi runs for agents, so tests never start a real container. */
@@ -1586,7 +1588,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         exists: p.exists,
       })),
     tasksDir,
-    reader: graphRunner,
+    reader: options.wikiReader ?? graphRunner,
     housekeeper,
     rest: async (org) => {
       const { fm } = await housekeeper.resolve(org);
