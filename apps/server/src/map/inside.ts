@@ -91,6 +91,9 @@ export interface WordItem {
 }
 
 const OUT_SUB: Readonly<Record<string, string>> = {
+  // Local outputs, not services on the web.
+  Files: "files on this computer",
+  Programs: "programs it starts",
   Stripe: "payments",
   OpenAI: "AI model",
   Anthropic: "AI model",
