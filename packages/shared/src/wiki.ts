@@ -19,6 +19,13 @@ export const WIKI_RULES = 1;
 /** The most one update may spend, in dollars. The writer stops there and the rest of the pages stay as they were. */
 export const WIKI_COST_CAP_USD = 5;
 
+/**
+ * The most tokens one update may spend (input, output, reasoning and cache writes; cache reads are nearly free).
+ * The dollar cap cannot see a turn of a model with no price, so this one holds for every model. Phase 0 measured
+ * about 45,000 tokens a page, so this is about 33 pages.
+ */
+export const WIKI_TOKEN_CAP = 1_500_000;
+
 // Identity -------------------------------------------------------------------------------
 
 /** A git commit: 40 hex digits, or 64 in a repo that uses SHA-256. */
@@ -533,6 +540,10 @@ export const WikiViewSchema = z.object({
 });
 export type WikiView = z.infer<typeof WikiViewSchema>;
 
+/** `replan` picks the flows again instead of keeping the ones chosen at the first build. */
+export const WikiUpdateInputSchema = WikiScopeInputSchema.extend({ replan: z.boolean().optional() });
+export type WikiUpdateInput = z.infer<typeof WikiUpdateInputSchema>;
+
 export const WikiPageInputSchema = WikiScopeInputSchema.extend({ id: WikiPageIdSchema });
 export const WikiPageViewSchema = z.object({
   page: WikiPageSchema,
@@ -552,3 +563,35 @@ export function resolveWikiEnabled(levels: {
 }): boolean {
   return levels.org?.enabled ?? levels.global?.enabled ?? false;
 }
+
+// The agent tool --------------------------------------------------------------------------
+
+export const WIKI_TOOL_ACTIONS = ["list", "read", "search", "sources"] as const;
+
+/**
+ * What an agent sends the `wiki` tool of `majhi-memory`. The workspace is the task's, never an argument: `project` only
+ * picks one of that workspace's projects, and may be left out when the workspace has one wiki.
+ */
+export const WikiToolInputSchema = z.object({
+  action: z
+    .enum(WIKI_TOOL_ACTIONS)
+    .describe(
+      "list: the wiki's pages. read: one page, with its claims and where each is shown. search: the pieces of the pages that best match words. sources: where a claim is shown in the code.",
+    ),
+  project: IdSchema.optional().describe(
+    "One of this workspace's projects. Leave out when there is one wiki.",
+  ),
+  page: z
+    .string()
+    .max(80)
+    .optional()
+    .describe("For read: a page id from list, like overview or flow:sign-in."),
+  words: z.string().min(2).max(300).optional().describe("For search: the words to look for."),
+  claim: z
+    .string()
+    .min(2)
+    .max(300)
+    .optional()
+    .describe("For sources: the words of the claim, as on the page."),
+});
+export type WikiToolInput = z.infer<typeof WikiToolInputSchema>;

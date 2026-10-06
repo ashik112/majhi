@@ -1730,6 +1730,50 @@ CREATE TABLE wiki_state (
 );
 `,
   },
+  {
+    // The wiki's plan and gaps (W5): the main flows chosen at the first build (JSON, kept so a page id never
+    // changes between updates), and what the writer could not settle or write, per page (JSON), kept until
+    // that page is written again.
+    id: 172,
+    name: "wiki plan and gaps",
+    sql: `
+ALTER TABLE wiki_state ADD COLUMN plan TEXT;
+ALTER TABLE wiki_state ADD COLUMN gaps TEXT NOT NULL DEFAULT '{}';
+`,
+  },
+  {
+    // The Map's upkeep chore became the wiki's (W5), so the captain's history keeps its rows. The chore `map` is
+    // `wiki` and the playbook `upkeep-map` is `upkeep-wiki`. A table with a key on the name takes the update
+    // where the new name is free (UPDATE OR IGNORE); a row left under the old name is the same thing already
+    // under the new one, and goes. A run still open under the old name is closed first: a closed run cannot
+    // block the wiki chore, an open one would hold its slot for good.
+    id: 173,
+    name: "captain map chore becomes wiki",
+    sql: `
+UPDATE captain_runs SET status = 'stopped', ended_at = started_at, note = 'The map chore was replaced by the wiki chore.'
+  WHERE chore = 'map' AND ended_at IS NULL;
+UPDATE captain_runs SET chore = 'wiki' WHERE chore = 'map';
+UPDATE OR IGNORE captain_actions
+  SET chore = 'wiki', key = CASE WHEN key LIKE 'map:%' THEN 'wiki:' || substr(key, 5) ELSE key END
+  WHERE chore = 'map';
+DELETE FROM captain_actions WHERE chore = 'map';
+UPDATE OR IGNORE captain_chores SET chore = 'wiki' WHERE chore = 'map';
+DELETE FROM captain_chores WHERE chore = 'map';
+UPDATE OR IGNORE captain_cap_asks SET chore = 'wiki' WHERE chore = 'map';
+DELETE FROM captain_cap_asks WHERE chore = 'map';
+
+UPDATE playbook_runs SET status = 'stopped', ended_at = started_at, note = 'The map playbook was replaced by the wiki playbook.'
+  WHERE playbook = 'upkeep-map' AND status = 'running';
+UPDATE playbook_runs SET playbook = 'upkeep-wiki' WHERE playbook = 'upkeep-map';
+UPDATE OR IGNORE playbook_state
+  SET playbook = 'upkeep-wiki', state = replace(state, '"map-update"', '"wiki-update"')
+  WHERE playbook = 'upkeep-map';
+DELETE FROM playbook_state WHERE playbook = 'upkeep-map';
+UPDATE findings SET playbook = 'upkeep-wiki' WHERE playbook = 'upkeep-map';
+UPDATE outcomes SET playbook = 'upkeep-wiki' WHERE playbook = 'upkeep-map';
+UPDATE outbound_drafts SET playbook = 'upkeep-wiki' WHERE playbook = 'upkeep-map';
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

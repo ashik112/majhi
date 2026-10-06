@@ -155,4 +155,27 @@ ALTER TABLE facts ADD COLUMN source TEXT NOT NULL DEFAULT 'agent';
 UPDATE facts SET kind = 'statement', source = 'owner' WHERE agent = 'owner';
 `,
   },
+  {
+    id: 5,
+    name: "wiki chunks for agent search",
+    sql: `
+-- The wiki's pages cut into pieces agents search through the wiki tool: paragraphs of a page's text ('text') and
+-- each claim with its status and citations ('claim'). Rebuildable from majhi.db; kept here so the same
+-- hybrid search (keywords and the local embedder) serves them. A workspace page has an empty project.
+CREATE TABLE wiki_chunks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT NOT NULL,
+  project TEXT NOT NULL DEFAULT '',
+  page TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('text', 'claim')),
+  n INTEGER,
+  text TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX wiki_chunks_page ON wiki_chunks (org, project, page);
+CREATE VIRTUAL TABLE wiki_chunks_fts USING fts5 (text, tokenize = 'porter unicode61');
+CREATE VIRTUAL TABLE wiki_chunks_vec USING vec0 (embedding float[${EMBEDDING_DIMS}]);
+`,
+  },
 ];

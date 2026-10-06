@@ -31,6 +31,8 @@ import { captainAnsweredLine } from "../tasks/cards.ts";
 import type { CleanupService } from "../tasks/cleanup.ts";
 import type { TaskFolderSweep } from "../tasks/folder-sweep.ts";
 import type { TaskService } from "../tasks/service.ts";
+import type { WikiService } from "../wiki/service.ts";
+import type { WikiEnabled } from "../wiki/switch.ts";
 import { isAnswerTask } from "./answer-check.ts";
 import { answerOnce } from "./keys.ts";
 import type { Lanes } from "./lanes.ts";
@@ -63,6 +65,9 @@ export interface WorldDeps {
   decisions: DecisionService;
   memory: MemoryService;
   findings: FindingsService;
+  /** The project wiki: the wiki chore asks whether it is behind and runs the one update. */
+  wiki: WikiService;
+  wikiOn: WikiEnabled;
   curate: (fact: Fact, off?: ReadonlySet<string>) => Promise<{ reason?: string }>;
   scanner: RepoScanner;
   cleanup: CleanupService;
@@ -500,6 +505,16 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
     // Follow-ups and findings
 
     findings: deps.findings,
+    wiki: {
+      enabled: deps.wikiOn,
+      stale: async (org) => ({ projects: (await deps.wiki.stale(org)).projects }),
+      update: async (org) => {
+        const reports = await deps.wiki.update(org);
+        const pages = reports.reduce((n, r) => n + r.written.length, 0);
+        const usd = reports.reduce((n, r) => n + r.usd, 0);
+        return { summary: `${pages} ${pages === 1 ? "page" : "pages"} written, $${usd.toFixed(2)}` };
+      },
+    },
     upkeep: upkeepWorld({
       run,
       store,

@@ -16,6 +16,7 @@ import type {
 import { branchAllowed, typingWhy } from "./rules.ts";
 import type { ChoreRun } from "./runner.ts";
 import { createUpkeepChores } from "./upkeep.ts";
+import { createWikiChore } from "./wiki-chore.ts";
 
 /** How many times the captain sends an answer task back before it leaves it for the owner. */
 const MAX_ANSWER_NUDGES = 2;
@@ -320,6 +321,7 @@ export function createChores(
 
   return {
     ...createUpkeepChores(ports),
+    ...createWikiChore(ports),
     async ship(run) {
       const { org, ws } = run;
       const answered = await answerChecks(run);

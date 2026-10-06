@@ -209,6 +209,12 @@ import { readPrices } from "./usage/prices.ts";
 import { UsageRecorder } from "./usage/recorder.ts";
 import { UsageRepo } from "./usage/repo.ts";
 import { UsageService } from "./usage/service.ts";
+import { wikiNotes } from "./wiki/notes.ts";
+import { writerPrice } from "./wiki/price.ts";
+import { WikiIndex } from "./wiki/search.ts";
+import { type WikiReader, WikiService } from "./wiki/service.ts";
+import { wikiEnabledFrom } from "./wiki/switch.ts";
+import { WikiTools } from "./wiki/tools.ts";
 
 /** How often chats are checked for memory. */
 const CHAT_SWEEP_MS = 60_000;
@@ -244,6 +250,8 @@ export interface ServiceOptions {
   mrPollMs?: number;
   /** Laya in Docker, so tests can play laya-serve. Default: from `MAJHI_LAYA_URL`. */
   layaDocker?: LayaDocker;
+  /** Replaces `@majhi/acp`'s runner for the wiki's sealed reader, so a test or a scratch server needs no container mode. */
+  wikiReader?: WikiReader;
   /** Replaces the embedding model, so tests never download one. */
   embedder?: Embedder;
   /** Replaces the docker CLI of the containers majhi runs for agents, so tests never start a real container. */
@@ -387,6 +395,10 @@ export interface Services {
   codeGraph: CodeGraphTools;
   /** The sealed reader runner: no network, read-only checkout. Absent unless agents run in containers. */
   graphRunner: GraphRunner | undefined;
+  /** The project wiki: facts, plan, write, check, store, and what is behind. */
+  wiki: WikiService;
+  /** The `wiki` tool of `majhi-memory`. */
+  wikiTools: WikiTools;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
   captainTell: CaptainTell;
   /** The captain's chat per workspace (5.18). */
@@ -920,11 +932,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   // The wiki folder: each project's source export, facts and code graph, read in a runner container with no
   // network. In the tasks folder: runners can mount it, and it is never inside majhi's config folder.
-  const graphRoot = async () => {
+  const tasksDir = async () => {
     const loaded = await config.load();
     if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
-    return join(loaded.state.config.tasksDir, ".wiki");
+    return loaded.state.config.tasksDir;
   };
+  const graphRoot = async () => join(await tasksDir(), ".wiki");
   const graphRunner =
     env.runner.mode === "container"
       ? new GraphRunner({
@@ -948,6 +961,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   } = { off: () => false, briefHidden: () => false };
   // Bound below: the findings store is built after the cards.
   let reportFinding: FindingsService["report"] | undefined;
+  const wikiOn = wikiEnabledFrom(config);
+  // Bound below: the wiki service needs the autonomy service, which is built after the cards.
+  let wikiService: WikiService | undefined;
   let findingsStore: FindingsService | undefined;
   const cards = createCards({
     store,
@@ -956,6 +972,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     housekeeper,
     log: (message) => console.error(message),
     ruleOff: (org, rule) => ruleSwitches.off(org, rule),
+    wikiOn,
+    onBaseMoved: () => wikiService?.tipMoved(),
     reportGap: async (project, gap) => {
       await reportFinding?.(
         {
@@ -974,6 +992,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   memory.useCards((project) => cards.compact(project));
   const extraction = new Extraction({
+    wikiOn: async (org) => org !== undefined && (await wikiOn(org)),
     housekeeper,
     curator,
     memory,
@@ -1005,8 +1024,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return [commands.test, commands.build, commands.lint].some((c) => c !== undefined && c.trim() !== "");
     },
   });
+  const wikiLines = wikiNotes({ repo: store.wiki, enabled: wikiOn });
   const tasks = new TaskService({
     mergeGate,
+    wikiNotes: (task) =>
+      wikiLines(
+        task.org,
+        task.repos.map((r) => r.project),
+      ),
     protectedPaths: [env.secretsKeyFile],
     onCaptainAnswer: (task) => void loopGuard?.answered(task).catch(() => undefined),
     onOwnerResumedLimit: (task) => budgets.exempt(task),
@@ -1550,6 +1575,50 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       }),
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
+  const wikiIndex = new WikiIndex(memory.rawDatabase, (texts) => memory.embed(texts));
+  const wiki = new WikiService({
+    repo: store.wiki,
+    enabled: wikiOn,
+    projects: async () =>
+      (await projects.infos()).map((p) => ({
+        id: p.id,
+        org: p.org,
+        path: p.path,
+        base: p.base,
+        exists: p.exists,
+      })),
+    tasksDir,
+    reader: options.wikiReader ?? graphRunner,
+    housekeeper,
+    rest: async (org) => {
+      const { fm } = await housekeeper.resolve(org);
+      return autonomy.laneRest(org, fm.account);
+    },
+    unavailable: async (org) => {
+      try {
+        await housekeeper.resolve(org);
+        return undefined;
+      } catch (err) {
+        return err instanceof NoHousekeeper
+          ? "No model is set, so the wiki cannot be written. Choose a captain in Settings."
+          : `The wiki cannot be written here: ${errorMessage(err)}`;
+      }
+    },
+    price: async (org) => {
+      try {
+        const { account } = await housekeeper.resolve(org);
+        const owner = await readPrices(config.file).catch(() => ({}));
+        return writerPrice((await config.settings()).wiki.writer_model, account.tool, owner);
+      } catch {
+        return undefined;
+      }
+    },
+    index: wikiIndex,
+    changed: () => events.emit(["wiki"]),
+    log: (message) => console.error(message),
+  });
+  wikiService = wiki;
+  const wikiTools = new WikiTools({ repo: store.wiki, enabled: wikiOn, index: wikiIndex });
   autonomy.useDriver(
     new AutonomyDriver({
       autonomy,
@@ -1746,6 +1815,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       idle: idleWatch,
       runs,
       lanes,
+      wiki,
+      wikiOn,
       repo: captainRepo,
       typing: (task) => events.typing.holds(task),
       aliasesOf: (path, id) => suggestRepoAliases(path, id),
@@ -2478,6 +2549,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     agenda,
     codeGraph,
     graphRunner,
+    wiki,
+    wikiTools,
     captainTell: new CaptainTell({
       tasks,
       lanes,
@@ -2534,6 +2607,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       // Titles and records of closed tasks run after their turn and write into the home: let them
       // end (the Housekeeper's sessions are cut short) before usage is flushed and the stores close.
       await housekeeper.close();
+      await wiki.settled();
       await Promise.all([extraction.idle(), chatMemory?.idle()]);
       await processes.stopAll();
       await usageRecorder.flush();

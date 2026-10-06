@@ -9,6 +9,15 @@ import {
 } from "@majhi/shared";
 import type Database from "better-sqlite3";
 import { z } from "zod";
+import { WikiPlanSchema } from "./plan.ts";
+
+export const WikiGapsSchema = z.object({
+  couldNot: z
+    .array(z.object({ page: WikiPageIdSchema, topic: z.string().max(300), why: z.string().max(600) }))
+    .max(400),
+  failed: z.array(z.object({ page: WikiPageIdSchema, problem: z.string().max(600) })).max(100),
+});
+export type WikiGaps = z.infer<typeof WikiGapsSchema>;
 
 /** What an update leaves per project besides the pages: where it got to, and which files each page was written from. */
 export const WikiStateSchema = z.object({
@@ -18,12 +27,16 @@ export const WikiStateSchema = z.object({
   sources: z.record(WikiPageIdSchema, z.array(RepoPathSchema).max(5000)),
   /** The `WIKI_RULES` of the last update. */
   rules: z.number().int().nonnegative(),
+  /** The main flows chosen at the first build. Absent: not chosen yet. */
+  plan: WikiPlanSchema.optional(),
+  /** What the writer could not settle, and the pages it could not write, per page. A page written again replaces its own. */
+  gaps: WikiGapsSchema.default({ couldNot: [], failed: [] }),
   lastError: z.string().max(500).optional(),
   updatedAt: z.string().optional(),
 });
 export type WikiState = z.infer<typeof WikiStateSchema>;
 
-export const EMPTY_WIKI_STATE: WikiState = { sources: {}, rules: 0 };
+export const EMPTY_WIKI_STATE: WikiState = { sources: {}, rules: 0, gaps: { couldNot: [], failed: [] } };
 
 export interface StoredPage {
   page: WikiPage;
@@ -58,6 +71,8 @@ interface StateRow {
   built_commit: string | null;
   sources: string;
   rules: number;
+  plan: string | null;
+  gaps: string;
   last_error: string | null;
   updated_at: string | null;
 }
@@ -92,6 +107,17 @@ export class WikiRepo {
     if (row === undefined) return undefined;
     const page = parsePage(row.page);
     return page === undefined ? undefined : { page, updatedAt: row.updated_at };
+  }
+
+  /** The whole pages of one project, or of the workspace when `project` is absent. Rows that do not parse are left out. */
+  loaded(org: string, project: string | undefined): WikiPage[] {
+    const rows = this.db
+      .prepare("SELECT * FROM wiki_pages WHERE org = ? AND ifnull(project, '') = ? ORDER BY id")
+      .all(org, project ?? "") as PageRow[];
+    return rows.flatMap((row) => {
+      const page = parsePage(row.page);
+      return page === undefined ? [] : [page];
+    });
   }
 
   /** The pages of one project, or of the workspace when `project` is absent. Rows that do not parse are left out. */
@@ -190,6 +216,8 @@ export class WikiRepo {
         ...(row.built_commit === null ? {} : { builtCommit: row.built_commit }),
         sources: JSON.parse(row.sources),
         rules: row.rules,
+        ...(row.plan === null ? {} : { plan: JSON.parse(row.plan) }),
+        gaps: JSON.parse(row.gaps),
         ...(row.last_error === null ? {} : { lastError: row.last_error }),
         ...(row.updated_at === null ? {} : { updatedAt: row.updated_at }),
       });
@@ -203,11 +231,11 @@ export class WikiRepo {
     const next = WikiStateSchema.parse(state);
     this.db
       .prepare(
-        `INSERT INTO wiki_state (org, project, built_commit, sources, rules, last_error, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO wiki_state (org, project, built_commit, sources, rules, plan, gaps, last_error, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (org, project) DO UPDATE SET built_commit = excluded.built_commit,
-           sources = excluded.sources, rules = excluded.rules, last_error = excluded.last_error,
-           updated_at = excluded.updated_at`,
+           sources = excluded.sources, rules = excluded.rules, plan = excluded.plan, gaps = excluded.gaps,
+           last_error = excluded.last_error, updated_at = excluded.updated_at`,
       )
       .run(
         org,
@@ -215,6 +243,8 @@ export class WikiRepo {
         next.builtCommit ?? null,
         JSON.stringify(next.sources),
         next.rules,
+        next.plan === undefined ? null : JSON.stringify(next.plan),
+        JSON.stringify(next.gaps),
         next.lastError ?? null,
         next.updatedAt ?? this.now(),
       );
