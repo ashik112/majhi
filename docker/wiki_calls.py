@@ -1,26 +1,14 @@
-#!/opt/graphify/bin/python
-"""Reads one project for the map (SPEC 5.21): graphify's code graph, and the addresses its HTTP client calls use.
+"""The HTTP calls a project makes to an address written in its files, for the wiki's `endpoint` facts.
 
-Usage: map-extract.py <project folder> <output folder>
+Imported by wiki_facts.py, which runs in a runner container with no network and the project mounted read-only.
 
-Runs in a runner container with no network, the project mounted read-only and only the output folder
-writable. It writes, in the output folder:
-
-  graph.json         graphify's own graph (`graphify update`), kept with its cache for the next run
-  majhi-facts.json   the call sites graphify does not record: an HTTP client called with an address
-
-graphify records functions, files and the calls between them, not a call to `fetch` or `requests.get`,
-so the second file is made here with the tree-sitter grammars graphify installs. A call site is a call
-whose first argument is an address written in the file: a string, a template or f-string that starts with
-one, a name set once in the same file to one, or an environment read with an address as its default.
-Only the scheme, host and port leave this script: a password, a path or a query never does.
+graphify records functions, files and the calls between them, not a call to `fetch` or `requests.get`, so the
+call sites are found here with the tree-sitter grammars graphify installs. A call site is a call whose first
+argument is an address written in the file: a string, a template or f-string that starts with one, a name set
+once in the same file to one, or an environment read with an address as its default. Only the scheme, host and
+port leave this module: a password, a path or a query never does.
 """
 
-import json
-import os
-import subprocess
-import sys
-from pathlib import Path
 from urllib.parse import urlsplit
 
 import tree_sitter_javascript
@@ -28,8 +16,6 @@ import tree_sitter_python
 import tree_sitter_typescript
 from tree_sitter import Language, Parser
 
-MAX_FILES = 4000
-MAX_BYTES = 512 * 1024
 SCHEMES = {"http", "https", "ws", "wss"}
 VERBS = {"get", "post", "put", "patch", "delete", "head", "options", "request", "stream"}
 BARE_CLIENTS = {"fetch", "got", "ky", "ofetch", "$fetch"}
@@ -280,61 +266,3 @@ def py_sites(root, rel):
             continue
         sites.append({"file": rel, "line": node.start_point[0] + 1, "client": text(fn), "how": value[1], "key": value[2], **addr})
     return sites
-
-
-# ---- Run ----------------------------------------------------------------------------------------
-
-
-def graph_files(out):
-    """The files graphify read, from its own graph: it already skips what a project ignores."""
-    try:
-        graph = json.loads((out / "graph.json").read_text())
-    except (OSError, ValueError):
-        return []
-    files = {n.get("source_file") for n in graph.get("nodes", []) if isinstance(n.get("source_file"), str)}
-    return sorted(files)
-
-
-def main():
-    if len(sys.argv) != 3:
-        sys.exit("usage: map-extract.py <project folder> <output folder>")
-    src, out = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
-    out.mkdir(parents=True, exist_ok=True)
-    env = {**os.environ, "GRAPHIFY_OUT": str(out), "GRAPHIFY_NO_AUTO_REFRESH": "1"}
-    update = subprocess.run(
-        [os.environ.get("MAJHI_GRAPHIFY_BIN", "/opt/graphify/bin/graphify"), "update", str(src), "--force"],
-        env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-    )
-    if update.returncode != 0 or not (out / "graph.json").is_file():
-        sys.stderr.write((update.stdout + update.stderr)[-2000:])
-        sys.exit(update.returncode or 1)
-
-    # The page it draws is large and nothing here reads it.
-    (out / "graph.html").unlink(missing_ok=True)
-
-    parsers = {}
-    sites, scanned = [], 0
-    for rel in graph_files(out)[:MAX_FILES]:
-        path = (src / rel)
-        kind = LANGS.get(path.suffix.lower())
-        if any(m in "/" + rel for m in (".test.", ".spec.", "/__tests__/", "/tests/", "/test/", "/e2e/", "conftest.py")) or os.path.basename(rel).startswith("test_"):
-            continue
-        if kind is None or path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_BYTES:
-            continue
-        parser = parsers.setdefault(path.suffix.lower(), Parser(kind[1]))
-        try:
-            data = path.read_bytes()
-            tree = parser.parse(data)
-        except OSError:
-            continue
-        scanned += 1
-        found = js_sites(tree.root_node, rel) if kind[0] == "js" else py_sites(tree.root_node, rel)
-        sites.extend(found)
-    sites.sort(key=lambda s: (s["file"], s["line"]))
-    facts = {"v": 3, "files": scanned, "calls": sites[:2000]}
-    tmp = out / "majhi-facts.json.tmp"
-    tmp.write_text(json.dumps(facts))
-    tmp.replace(out / "majhi-facts.json")
-
-
-main()

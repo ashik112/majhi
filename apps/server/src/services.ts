@@ -918,19 +918,18 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     majhiHome: env.majhiHome,
     usage: usageRecorder,
   });
-  // Each project's code graph, read by graphify in a runner container with no network. In the tasks
-  // folder: runners can mount it, and it is never inside majhi's config folder.
+  // The wiki folder: each project's source export, facts and code graph, read in a runner container with no
+  // network. In the tasks folder: runners can mount it, and it is never inside majhi's config folder.
   const graphRoot = async () => {
     const loaded = await config.load();
     if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
-    return join(loaded.state.config.tasksDir, ".map");
+    return join(loaded.state.config.tasksDir, ".wiki");
   };
   const graphRunner =
     env.runner.mode === "container"
       ? new GraphRunner({
           spawner: sessionOptions.spawner ?? localSpawner,
           base: sessionOptions.base,
-          root: graphRoot,
         })
       : undefined;
   const codeGraph = new CodeGraphTools({

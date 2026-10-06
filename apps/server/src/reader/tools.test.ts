@@ -15,7 +15,7 @@ const graph = (label: string) => ({
 });
 
 async function put(org: string, project: string, label: string): Promise<void> {
-  const dir = join(root, org, project);
+  const dir = join(root, org, project, "graph");
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, "graph.json"), JSON.stringify(graph(label)));
 }

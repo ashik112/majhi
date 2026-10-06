@@ -1,16 +1,16 @@
-import type { MapNodeKind, MapRole } from "@majhi/shared";
+import type { WikiKnownRole } from "@majhi/shared";
 import { wordsOf } from "../system/resolver.ts";
 
 /**
- * What the config pass knows by name. These are typed tables, not guesses over text: an image name, a
- * URL scheme, a dependency name or a host is looked up exactly. A name that is not here makes no node.
+ * What the fact scanners know by name. These are typed tables, not guesses over text: an image name, a
+ * URL scheme, a dependency name or a host is looked up exactly. A name that is not here makes no fact.
  */
 
 export interface Store {
-  /** `redis`: the node is `store:redis`. */
+  /** `redis`: part of the id of the store fact. */
   slug: string;
   label: string;
-  kind: Extract<MapNodeKind, "database" | "queue" | "cache">;
+  kind: "database" | "queue" | "cache";
 }
 
 const POSTGRES: Store = { slug: "postgres", label: "Postgres", kind: "database" };
@@ -23,6 +23,7 @@ const NATS: Store = { slug: "nats", label: "NATS", kind: "queue" };
 const MEMCACHED: Store = { slug: "memcached", label: "Memcached", kind: "cache" };
 const ELASTIC: Store = { slug: "elasticsearch", label: "Elasticsearch", kind: "database" };
 const CLICKHOUSE: Store = { slug: "clickhouse", label: "ClickHouse", kind: "database" };
+const SQLITE: Store = { slug: "sqlite", label: "SQLite", kind: "database" };
 
 /** The last part of an image name (`bitnami/postgresql:16` is `postgresql`). */
 const IMAGES: Readonly<Record<string, Store>> = {
@@ -68,38 +69,43 @@ const SCHEMES: Readonly<Record<string, Store>> = {
   clickhouse: CLICKHOUSE,
 };
 
-/** Client libraries: a project that depends on one uses that store. `via` is the edge it draws. */
-const NPM_STORES: Readonly<Record<string, { store: Store; via: "data" | "queue" }>> = {
-  pg: { store: POSTGRES, via: "data" },
-  postgres: { store: POSTGRES, via: "data" },
-  mysql2: { store: MYSQL, via: "data" },
-  mongodb: { store: MONGO, via: "data" },
-  mongoose: { store: MONGO, via: "data" },
-  redis: { store: REDIS, via: "data" },
-  ioredis: { store: REDIS, via: "data" },
-  bullmq: { store: REDIS, via: "queue" },
-  bull: { store: REDIS, via: "queue" },
-  amqplib: { store: RABBIT, via: "queue" },
-  kafkajs: { store: KAFKA, via: "queue" },
-  nats: { store: NATS, via: "queue" },
-  "@elastic/elasticsearch": { store: ELASTIC, via: "data" },
+/** Client libraries: a project that depends on one uses that store. */
+const NPM_STORES: Readonly<Record<string, Store>> = {
+  pg: POSTGRES,
+  postgres: POSTGRES,
+  mysql2: MYSQL,
+  mongodb: MONGO,
+  mongoose: MONGO,
+  redis: REDIS,
+  ioredis: REDIS,
+  bullmq: REDIS,
+  bull: REDIS,
+  amqplib: RABBIT,
+  kafkajs: KAFKA,
+  nats: NATS,
+  "@elastic/elasticsearch": ELASTIC,
+  "better-sqlite3": SQLITE,
+  sqlite3: SQLITE,
+  "@libsql/client": SQLITE,
+  libsql: SQLITE,
 };
 
-const PYTHON_STORES: Readonly<Record<string, { store: Store; via: "data" | "queue" }>> = {
-  psycopg: { store: POSTGRES, via: "data" },
-  psycopg2: { store: POSTGRES, via: "data" },
-  "psycopg2-binary": { store: POSTGRES, via: "data" },
-  asyncpg: { store: POSTGRES, via: "data" },
-  pymysql: { store: MYSQL, via: "data" },
-  mysqlclient: { store: MYSQL, via: "data" },
-  pymongo: { store: MONGO, via: "data" },
-  motor: { store: MONGO, via: "data" },
-  redis: { store: REDIS, via: "data" },
-  "django-redis": { store: REDIS, via: "data" },
-  rq: { store: REDIS, via: "queue" },
-  pika: { store: RABBIT, via: "queue" },
-  "kafka-python": { store: KAFKA, via: "queue" },
-  "confluent-kafka": { store: KAFKA, via: "queue" },
+const PYTHON_STORES: Readonly<Record<string, Store>> = {
+  psycopg: POSTGRES,
+  psycopg2: POSTGRES,
+  "psycopg2-binary": POSTGRES,
+  asyncpg: POSTGRES,
+  pymysql: MYSQL,
+  mysqlclient: MYSQL,
+  pymongo: MONGO,
+  motor: MONGO,
+  redis: REDIS,
+  "django-redis": REDIS,
+  rq: REDIS,
+  pika: RABBIT,
+  "kafka-python": KAFKA,
+  "confluent-kafka": KAFKA,
+  aiosqlite: SQLITE,
 };
 
 export interface Outside {
@@ -202,93 +208,126 @@ export function keyIsNotACall(key: string): boolean {
   return wordsOf(key).some((w) => NOT_A_CALL_WORDS.has(w));
 }
 
+/** What a dependency says about the repo: its role, and the technology that gives it. */
+export interface Tech {
+  role: WikiKnownRole;
+  tech: string;
+}
+
 /** Packages that run a user interface in a browser or on a phone. */
-const APP_DEPS: ReadonlySet<string> = new Set([
-  "next",
-  "nuxt",
-  "@sveltejs/kit",
-  "vite",
-  "react",
-  "vue",
-  "svelte",
-  "@angular/core",
-  "react-native",
-  "expo",
-  "flutter",
-]);
-const SERVICE_DEPS: ReadonlySet<string> = new Set([
-  "django",
-  "fastapi",
-  "flask",
-  "express",
-  "@nestjs/core",
-  "fastify",
-  "koa",
-  "hono",
-  "aiohttp",
-  "starlette",
-  "uvicorn",
-  "gunicorn",
-]);
-const WORKER_DEPS: ReadonlySet<string> = new Set([
-  "celery",
-  "rq",
-  "bullmq",
-  "bull",
-  "dramatiq",
-  "huey",
-  "arq",
-  "kafkajs",
-  "pika",
-]);
-/** Frameworks that serve pages: they make an app even when a server library sits beside them. */
-const PAGE_FRAMEWORKS: ReadonlySet<string> = new Set([
-  "next",
-  "nuxt",
-  "@sveltejs/kit",
-  "react-native",
-  "expo",
-]);
+const NPM_FRONTEND: Readonly<Record<string, string>> = {
+  next: "Next.js",
+  nuxt: "Nuxt",
+  "@sveltejs/kit": "SvelteKit",
+  "@remix-run/react": "Remix",
+  astro: "Astro",
+  react: "React",
+  vue: "Vue",
+  svelte: "Svelte",
+  "solid-js": "Solid",
+  "@angular/core": "Angular",
+  "react-native": "React Native",
+  expo: "Expo",
+};
+
+/** Server frameworks: a repo that depends on one answers requests. */
+const NPM_BACKEND: Readonly<Record<string, string>> = {
+  "@nestjs/core": "NestJS",
+  fastify: "Fastify",
+  express: "Express",
+  hono: "Hono",
+  koa: "Koa",
+  "@trpc/server": "tRPC",
+};
+
+const PYTHON_BACKEND: Readonly<Record<string, string>> = {
+  django: "Django",
+  fastapi: "FastAPI",
+  flask: "Flask",
+  starlette: "Starlette",
+  aiohttp: "aiohttp",
+  tornado: "Tornado",
+  sanic: "Sanic",
+  litestar: "Litestar",
+};
+
+/** Libraries that run jobs outside the request. */
+const NPM_WORKER: Readonly<Record<string, string>> = {
+  bullmq: "BullMQ",
+  bull: "Bull",
+  "node-cron": "node-cron",
+};
+
+const PYTHON_WORKER: Readonly<Record<string, string>> = {
+  celery: "Celery",
+  rq: "RQ",
+  dramatiq: "Dramatiq",
+  huey: "Huey",
+  arq: "arq",
+  apscheduler: "APScheduler",
+};
+
+/** Sign-in and token libraries. No tool finds auth by itself, so the catalog names the common ones. */
+const NPM_AUTH: Readonly<Record<string, string>> = {
+  passport: "Passport",
+  "next-auth": "NextAuth",
+  "@auth/core": "Auth.js",
+  "better-auth": "Better Auth",
+  lucia: "Lucia",
+  "@clerk/nextjs": "Clerk",
+  "@clerk/clerk-react": "Clerk",
+  jsonwebtoken: "JWT",
+  jose: "JWT",
+  bcrypt: "bcrypt",
+  bcryptjs: "bcrypt",
+};
+
+const PYTHON_AUTH: Readonly<Record<string, string>> = {
+  pyjwt: "JWT",
+  "python-jose": "JWT",
+  authlib: "Authlib",
+  "django-allauth": "django-allauth",
+  djangorestframework_simplejwt: "JWT",
+  "djangorestframework-simplejwt": "JWT",
+  "fastapi-users": "FastAPI Users",
+  passlib: "Passlib",
+  bcrypt: "bcrypt",
+};
+
+const STORE_ROLE: Readonly<Record<Store["kind"], WikiKnownRole>> = {
+  database: "database",
+  queue: "queue",
+  cache: "cache",
+};
 
 /**
- * What a project is, from its dependencies and its script names: a page framework is an app, else a server
- * framework is a service, else a job library or a `worker` script is a worker, else a UI library is an app.
+ * The roles one dependency shows, from the typed tables above. A dependency with no entry shows nothing.
+ * Python names are normalized (`normalizePython`), npm names are as written in package.json.
  */
-export function roleOfDeps(deps: ReadonlySet<string>, scripts: readonly string[]): MapRole {
-  const has = (set: ReadonlySet<string>) => [...deps].some((d) => set.has(d));
-  if ([...deps].some((d) => PAGE_FRAMEWORKS.has(d))) return "app";
-  if (has(SERVICE_DEPS)) return "service";
-  if (has(WORKER_DEPS) || scripts.some((s) => wordsOf(s).includes("worker"))) return "worker";
-  if (has(APP_DEPS)) return "app";
-  return "service";
+export function techsOfDep(dep: string, python: boolean): Tech[] {
+  const out: Tech[] = [];
+  const add = (role: WikiKnownRole, tech: string | undefined) => {
+    if (tech !== undefined) out.push({ role, tech });
+  };
+  if (python) {
+    add("backend", PYTHON_BACKEND[dep]);
+    add("worker", PYTHON_WORKER[dep]);
+    add("auth", PYTHON_AUTH[dep]);
+  } else {
+    add("frontend", NPM_FRONTEND[dep]);
+    add("backend", NPM_BACKEND[dep]);
+    add("worker", NPM_WORKER[dep]);
+    add("auth", NPM_AUTH[dep]);
+  }
+  const store = python ? storeOfPython(dep) : storeOfNpm(dep);
+  if (store !== undefined) add(STORE_ROLE[store.kind], store.label);
+  const outside = python ? outsideOfPython(dep) : outsideOfNpm(dep);
+  add("outside", outside?.label);
+  return out;
 }
 
-const FRAMEWORKS: readonly (readonly [string, string])[] = [
-  ["next", "Next.js"],
-  ["nuxt", "Nuxt"],
-  ["@sveltejs/kit", "SvelteKit"],
-  ["@nestjs/core", "NestJS"],
-  ["fastify", "Fastify"],
-  ["express", "Express"],
-  ["hono", "Hono"],
-  ["koa", "Koa"],
-  ["vue", "Vue"],
-  ["react", "React"],
-  ["svelte", "Svelte"],
-];
-
-const PYTHON_FRAMEWORKS: readonly (readonly [string, string])[] = [
-  ["django", "Django"],
-  ["fastapi", "FastAPI"],
-  ["flask", "Flask"],
-  ["celery", "Celery"],
-];
-
-/** The first listed framework the dependency names contain. */
-export function frameworkOf(deps: ReadonlySet<string>, python: boolean): string | undefined {
-  for (const [dep, label] of python ? PYTHON_FRAMEWORKS : FRAMEWORKS) if (deps.has(dep)) return label;
-  return undefined;
-}
+/** The role of the store behind an image, a scheme or a driver. */
+export const roleOfStore = (store: Store): WikiKnownRole => STORE_ROLE[store.kind];
 
 /** The part of an image name after the last `/` and before the tag or digest. */
 export function imageName(image: string): string {
@@ -299,10 +338,20 @@ export function imageName(image: string): string {
   return (colon < 0 ? noDigest : noDigest.slice(0, colon)).toLowerCase();
 }
 
+/** Images of programs that sit in front of an app or route to it: they are infrastructure, not part of the app. */
+const INFRA_IMAGES: ReadonlySet<string> = new Set(["traefik", "nginx", "caddy", "haproxy", "envoy", "kong"]);
+
+/** The role an image alone shows: a datastore, or a proxy. */
+export function roleOfImage(image: string): WikiKnownRole | undefined {
+  const store = storeOfImage(image);
+  if (store !== undefined) return roleOfStore(store);
+  return INFRA_IMAGES.has(imageName(image)) ? "infra" : undefined;
+}
+
 export const storeOfImage = (image: string): Store | undefined => IMAGES[imageName(image)];
 export const storeOfScheme = (scheme: string): Store | undefined => SCHEMES[scheme.toLowerCase()];
-export const storeOfNpm = (dep: string) => NPM_STORES[dep];
-export const storeOfPython = (dep: string) => PYTHON_STORES[dep];
+export const storeOfNpm = (dep: string): Store | undefined => NPM_STORES[dep];
+export const storeOfPython = (dep: string): Store | undefined => PYTHON_STORES[dep];
 export const outsideOfNpm = (dep: string): Outside | undefined => NPM_OUTSIDE[dep];
 export const outsideOfPython = (dep: string): Outside | undefined => PYTHON_OUTSIDE[dep];
 

@@ -1,39 +1,29 @@
-import type { Resolver } from "../system/resolver.ts";
-import type { MapBuilder } from "./builder.ts";
-import type { Loaded } from "./facts.ts";
-import { bindServices, scanCompose } from "./scan-docker.ts";
+import type { ScanContext } from "./context.ts";
+import { scanComponents } from "./scan-components.ts";
+import { scanCompose } from "./scan-compose.ts";
 import { scanDotenv } from "./scan-env.ts";
 import { scanKube } from "./scan-kube.ts";
-import { scanPackageJson, scanPython } from "./scan-manifests.ts";
-
-/** What a source gets when it scans one project: the other projects (to link to) and the graph to add to. */
-export interface ScanContext {
-  resolver: Resolver;
-  b: MapBuilder;
-}
+import { scanMarkers } from "./scan-markers.ts";
+import { scanMembers } from "./scan-members.ts";
 
 /**
- * One kind of config file that shows links between projects. It reads what `loadProject` already parsed
- * (`Loaded`), never the disk, and adds boxes and lines with proof. The config files themselves are read
- * once per project and cached by their size and time, so an unchanged project costs a few `stat` calls.
+ * One kind of config file that shows facts about the repo. It reads what `readRepo` already parsed (`RepoScan`),
+ * never the disk, and adds facts with the lines that show them. The sealed reader's own findings (routes, queue
+ * consumers, timers, calls) are added after these, from `reader.json` (`scan-reader.ts`).
  *
- * To add one: write `scan-<thing>.ts` with a function `(loaded, ctx) => void`, have `facts.ts` load the file
- * it needs, and add a line to `PROJECT_SOURCES`.
+ * To add one: write `scan-<thing>.ts` with a function `(ctx) => void`, have `read.ts` load the file it needs, and add a
+ * line to `FACT_SOURCES`.
  */
-export interface ProjectSource {
+export interface FactSource {
   id: string;
-  /** `free`: runs in code. A source that asked a model would say `model` and be counted in the estimate. */
-  cost: "free" | "model";
-  scan(loaded: Loaded, ctx: ScanContext): void;
+  scan(ctx: ScanContext): void;
 }
 
-export const PROJECT_SOURCES: readonly ProjectSource[] = [
-  { id: "package-json", cost: "free", scan: scanPackageJson },
-  { id: "python", cost: "free", scan: scanPython },
-  { id: "compose", cost: "free", scan: scanCompose },
-  { id: "env-example", cost: "free", scan: scanDotenv },
-  { id: "kubernetes", cost: "free", scan: scanKube },
+export const FACT_SOURCES: readonly FactSource[] = [
+  { id: "manifests", scan: scanMembers },
+  { id: "components", scan: scanComponents },
+  { id: "compose", scan: scanCompose },
+  { id: "env-example", scan: scanDotenv },
+  { id: "kubernetes", scan: scanKube },
+  { id: "deploy-files", scan: scanMarkers },
 ];
-
-/** Steps that look across every project before any source scans one (compose services name projects). */
-export const PRE_SCANS: readonly ((all: readonly Loaded[], resolver: Resolver) => void)[] = [bindServices];

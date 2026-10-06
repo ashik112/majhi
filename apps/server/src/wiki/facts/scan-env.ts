@@ -1,28 +1,25 @@
-import { isLoopbackHost } from "@majhi/shared";
-import type { Resolver } from "../system/resolver.ts";
-import type { MapBuilder, Proof } from "./builder.ts";
-import type { Loaded } from "./facts.ts";
+import { endpointId, isLoopbackHost } from "../system/address.ts";
+import { kebab, type ScanContext } from "./context.ts";
 import { splitSpaces } from "./formats.ts";
 import { keyIsNotACall, outsideOfHost, storeOfScheme } from "./known.ts";
+import type { Cite } from "./sink.ts";
+import { addStore } from "./stores.ts";
 
 /**
- * Environment values that point at another service: a connection URL to a datastore, or the address of
- * something the project calls. Shared by `.env.example`, compose `environment` and Kubernetes `env`, which
- * all hold the same kind of value.
+ * Environment values that point at another service: a connection URL to a datastore, or the address of something
+ * the repo calls. Shared by `.env.example`, compose `environment` and Kubernetes `env`, which all hold the same
+ * kind of value. Only the name of the setting leaves this module: a value never becomes part of a fact.
  */
 
-/** A URL as text, without the user and password. */
-function plainUrl(u: URL): string {
-  const copy = new URL(u.href);
-  copy.username = "";
-  copy.password = "";
-  return copy.href;
-}
-
-/** The excerpt of an environment line: a URL without credentials, any other value hidden. */
-export function envExcerpt(key: string, value: string): string {
-  const url = parseUrl(value);
-  return url === undefined ? `${key}=…` : `${key}=${plainUrl(url)}`;
+export interface ValueRef {
+  key: string;
+  value: string;
+  /** Where the setting is written. */
+  cite: Cite;
+  /** The folder or unit the setting belongs to: where a role found in it is shown. */
+  where: string;
+  /** The compose service the setting is in, when it is one: a URL naming another service is a link between them. */
+  unit?: string;
 }
 
 function parseUrl(value: string): URL | undefined {
@@ -42,75 +39,85 @@ function isList(value: string): boolean {
   return value.includes(",") || splitSpaces(value).length > 1;
 }
 
-/** The remote host of a connection URL that two projects could share. A local or one-word name is each project's own. */
-function sharedAddress(url: URL): { host: string; port: number | undefined; db: string } | undefined {
-  const host = url.hostname.toLowerCase();
-  if (isLoopbackHost(host) || !host.includes(".") || host.includes(":")) return undefined;
-  const db = url.pathname.length > 1 ? url.pathname.slice(1) : "";
-  return { host, port: url.port === "" ? undefined : Number(url.port), db };
-}
-
 /**
- * Reads one environment value of a project. A datastore connection URL is a use of that store (a chip, or a
- * shared box when another project names the same remote host and database). A web URL is an address the
- * project calls: a known outside service becomes a chip; any other becomes an endpoint that needs an owner.
- * Lists of origins, CORS settings, the project's own addresses and names with no URL are never calls.
+ * Reads one environment value. A datastore connection URL is a use of that store. A web URL is an address the repo
+ * calls: a known outside service is a role, a compose service of this repo is a link between two units, any other
+ * becomes an endpoint that needs an owner. Lists of origins, CORS settings, the repo's own addresses and names
+ * with no URL are never calls.
  */
-export function linkFromValue(
-  ctx: { resolver: Resolver; b: MapBuilder; self: string },
-  from: string,
-  key: string,
-  value: string,
-  proof: Proof,
-): void {
-  const { resolver, b } = ctx;
+export function fromValue(ctx: ScanContext, ref: ValueRef): void {
+  const { sink } = ctx;
+  const { key, value, cite } = ref;
   if (value === "" || isList(value.trim())) return;
   const url = parseUrl(value.trim());
   if (url === undefined) return;
+  const host = url.hostname.toLowerCase();
+  const service = ctx.service(host);
+  const link = (type: "http" | "queue" | "data") => {
+    if (ref.unit === undefined || service === undefined || host === ref.unit) return;
+    sink.add({
+      kind: "link",
+      from: sink.idOf("unit", ref.unit),
+      to: sink.idOf("unit", host),
+      type,
+      basis: "config",
+      slug: `${kebab(ref.unit)}-${type}-${kebab(host)}`,
+      cites: [cite],
+    });
+  };
+
   const store = storeOfScheme(url.protocol.slice(0, -1));
   if (store !== undefined) {
-    const address = sharedAddress(url);
-    b.storeRef({
-      project: from,
-      store,
-      via: store.kind === "queue" ? "queue" : "data",
-      proof,
-      ...(address === undefined ? {} : { address }),
-    });
+    const unit = service?.store?.slug === store.slug ? host : undefined;
+    addStore(ctx, { store, unit, basis: "config", cite, where: ref.where });
+    link(store.kind === "queue" ? "queue" : "data");
     return;
   }
   if (!WEB_SCHEMES.has(url.protocol) || keyIsNotACall(key)) return;
-  const host = url.hostname.toLowerCase();
   const outside = outsideOfHost(host);
   if (outside !== undefined) {
-    b.chip(from, "uses", outside.label);
+    sink.add({
+      kind: "role",
+      role: "outside",
+      where: ref.where,
+      tech: outside.label,
+      basis: "config",
+      slug: `outside-${kebab(outside.label)}-${kebab(ref.where)}`,
+      cites: [cite],
+    });
+    return;
+  }
+  if (service !== undefined) {
+    link("http");
     return;
   }
   const local = isLoopbackHost(host);
   // A local address with no port says nothing about where it leads.
   if (local && url.port === "") return;
-  const known = local ? undefined : resolver.ownerOfService(host);
-  if (known === from) return;
-  b.endpoint({
+  const port = url.port === "" ? undefined : Number(url.port);
+  const scope = local ? sink.repo : undefined;
+  sink.add({
+    kind: "endpoint",
     host,
-    port: url.port === "" ? undefined : Number(url.port),
-    from,
-    key,
-    proof,
-    known,
+    ...(port === undefined ? {} : { port }),
+    ...(scope === undefined ? {} : { scope }),
+    keys: [key.slice(0, 120)],
+    basis: "config",
+    slug: endpointId(host, port, scope),
+    cites: [cite],
   });
 }
 
-/** The lines of `.env.example` and its siblings. */
-export function scanDotenv(loaded: Loaded, ctx: { resolver: Resolver; b: MapBuilder }): void {
-  const self = loaded.facts.id;
-  for (const file of loaded.dotenv) {
+/** The settings of `.env.example` and its siblings. */
+export function scanDotenv(ctx: ScanContext): void {
+  for (const file of ctx.scan.dotenv) {
+    const dir = file.path.includes("/") ? file.path.slice(0, file.path.lastIndexOf("/")) : "";
     for (const entry of file.entries) {
-      linkFromValue({ ...ctx, self }, self, entry.key, entry.value, {
-        project: self,
-        file: file.file,
-        line: entry.line,
-        excerpt: envExcerpt(entry.key, entry.value),
+      fromValue(ctx, {
+        key: entry.key,
+        value: entry.value,
+        cite: { path: file.path, lines: [entry.line, entry.line] },
+        where: dir === "" ? "." : dir,
       });
     }
   }
