@@ -209,6 +209,7 @@ import { readPrices } from "./usage/prices.ts";
 import { UsageRecorder } from "./usage/recorder.ts";
 import { UsageRepo } from "./usage/repo.ts";
 import { UsageService } from "./usage/service.ts";
+import { WikiAsk } from "./wiki/ask.ts";
 import { wikiNotes } from "./wiki/notes.ts";
 import { writerPrice } from "./wiki/price.ts";
 import { WikiIndex } from "./wiki/search.ts";
@@ -399,6 +400,7 @@ export interface Services {
   wiki: WikiService;
   /** The `wiki` tool of `majhi-memory`. */
   wikiTools: WikiTools;
+  wikiAsk: WikiAsk;
   /** `tasks.tell`: the captain writes to a task's lead (5.18). */
   captainTell: CaptainTell;
   /** The captain's chat per workspace (5.18). */
@@ -1576,6 +1578,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
   });
   const wikiIndex = new WikiIndex(memory.rawDatabase, (texts) => memory.embed(texts));
+  const wikiRest = async (org: string) => {
+    const { fm } = await housekeeper.resolve(org);
+    return autonomy.laneRest(org, fm.account);
+  };
+  const wikiUnavailable = async (org: string) => {
+    try {
+      await housekeeper.resolve(org);
+      return undefined;
+    } catch (err) {
+      return err instanceof NoHousekeeper
+        ? "No model is set, so the wiki cannot be written. Choose a captain in Settings."
+        : `The wiki cannot be written here: ${errorMessage(err)}`;
+    }
+  };
   const wiki = new WikiService({
     repo: store.wiki,
     enabled: wikiOn,
@@ -1590,20 +1606,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     tasksDir,
     reader: options.wikiReader ?? graphRunner,
     housekeeper,
-    rest: async (org) => {
-      const { fm } = await housekeeper.resolve(org);
-      return autonomy.laneRest(org, fm.account);
-    },
-    unavailable: async (org) => {
-      try {
-        await housekeeper.resolve(org);
-        return undefined;
-      } catch (err) {
-        return err instanceof NoHousekeeper
-          ? "No model is set, so the wiki cannot be written. Choose a captain in Settings."
-          : `The wiki cannot be written here: ${errorMessage(err)}`;
-      }
-    },
+    rest: wikiRest,
+    unavailable: wikiUnavailable,
     price: async (org) => {
       try {
         const { account } = await housekeeper.resolve(org);
@@ -1619,6 +1623,14 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   wikiService = wiki;
   const wikiTools = new WikiTools({ repo: store.wiki, enabled: wikiOn, index: wikiIndex });
+  const wikiAsk = new WikiAsk({
+    repo: store.wiki,
+    index: wikiIndex,
+    housekeeper,
+    projects: async (org) => (await projects.infos()).filter((p) => p.org === org).map((p) => p.id),
+    rest: wikiRest,
+    unavailable: wikiUnavailable,
+  });
   autonomy.useDriver(
     new AutonomyDriver({
       autonomy,
@@ -2551,6 +2563,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     graphRunner,
     wiki,
     wikiTools,
+    wikiAsk,
     captainTell: new CaptainTell({
       tasks,
       lanes,
