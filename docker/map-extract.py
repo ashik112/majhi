@@ -25,6 +25,7 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import map_inside  # noqa: E402
+import map_resolve  # noqa: E402
 import tree_sitter_javascript
 import tree_sitter_python
 import tree_sitter_typescript
@@ -304,7 +305,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "GRAPHIFY_OUT": str(out), "GRAPHIFY_NO_AUTO_REFRESH": "1"}
     update = subprocess.run(
-        ["/opt/graphify/bin/graphify", "update", str(src), "--force"],
+        [os.environ.get("MAJHI_GRAPHIFY_BIN", "/opt/graphify/bin/graphify"), "update", str(src), "--force"],
         env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
     )
     if update.returncode != 0 or not (out / "graph.json").is_file():
@@ -323,7 +324,9 @@ def main():
             continue
         parser = parsers.setdefault(path.suffix.lower(), Parser(kind[1]))
         try:
-            tree = parser.parse(path.read_bytes())
+            data = path.read_bytes()
+            tree = parser.parse(data)
+            nlines = data.count(b"\n") + 1
         except OSError:
             continue
         scanned += 1
@@ -331,12 +334,12 @@ def main():
         sites.extend(found)
         try:
             inside.append(
-                map_inside.scan_js(tree.root_node, rel) if kind[0] == "js" else map_inside.scan_python(tree.root_node, rel)
+                map_inside.scan_js(tree.root_node, rel, nlines) if kind[0] == "js" else map_inside.scan_python(tree.root_node, rel, nlines)
             )
         except RecursionError:
             pass
     sites.sort(key=lambda s: (s["file"], s["line"]))
-    facts = {"v": 2, "files": scanned, "calls": sites[:2000], "inside": map_inside.assemble(inside)}
+    facts = {"v": 3, "files": scanned, "calls": sites[:2000], "inside": map_resolve.assemble(inside, map_resolve.collect_meta(src))}
     tmp = out / "majhi-facts.json.tmp"
     tmp.write_text(json.dumps(facts))
     tmp.replace(out / "majhi-facts.json")
