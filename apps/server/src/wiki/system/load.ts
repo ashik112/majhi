@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
   type CommitSha,
@@ -49,13 +49,21 @@ export async function loadSystem(org: string, sources: SystemSources): Promise<L
   };
 }
 
+/** The last facts file read of each cache folder, with the size and time that file had: a file that did not change is not parsed again. */
+const parsed = new Map<string, { key: string; file: WikiFactsFile }>();
+
 /** The facts file a project's last run left in its cache folder. A file that is missing or does not parse reads as never read. */
 export async function readFactsFile(cacheDir: string): Promise<WikiFactsFile | undefined> {
+  const path = join(cacheDir, FACTS_FILE);
   try {
-    const parsed = WikiFactsFileSchema.safeParse(
-      JSON.parse(await readFile(join(cacheDir, FACTS_FILE), "utf8")),
-    );
-    return parsed.success ? parsed.data : undefined;
+    const info = await stat(path);
+    const key = `${info.size}:${info.mtimeMs}`;
+    const had = parsed.get(path);
+    if (had?.key === key) return had.file;
+    const file = WikiFactsFileSchema.safeParse(JSON.parse(await readFile(path, "utf8")));
+    if (!file.success) return undefined;
+    parsed.set(path, { key, file: file.data });
+    return file.data;
   } catch {
     return undefined;
   }

@@ -1024,7 +1024,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return [commands.test, commands.build, commands.lint].some((c) => c !== undefined && c.trim() !== "");
     },
   });
-  const wikiLines = wikiNotes({ repo: store.wiki, enabled: wikiOn });
+  const wikiLines = wikiNotes({
+    repo: store.wiki,
+    enabled: wikiOn,
+    links: async (org) => (await wikiService?.system(org))?.view.links ?? [],
+  });
   const tasks = new TaskService({
     mergeGate,
     wikiNotes: (task) =>

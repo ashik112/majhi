@@ -758,6 +758,12 @@ export const WikiToolInputSchema = z.object({
   project: IdSchema.optional().describe(
     "One of this workspace's projects. Leave out when there is one wiki.",
   ),
+  workspace: z
+    .boolean()
+    .optional()
+    .describe(
+      "true: the workspace's own pages (how its projects connect, the cross-repo flows, the gaps) instead of one project's. For read and search.",
+    ),
   page: z
     .string()
     .max(80)
