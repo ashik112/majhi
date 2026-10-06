@@ -106,6 +106,7 @@ describe("isMajhiTool", () => {
     expect(isMajhiTool("mcp__majhi-room__record_plan")).toBe(true);
     expect(isMajhiTool("mcp__majhi-tasks__create")).toBe(true);
     expect(isMajhiTool("mcp__majhi-memory__recall")).toBe(true);
+    expect(isMajhiTool("mcp__majhi-containers__service_start")).toBe(true);
     // Processes run commands: never waved through as a majhi tool.
     expect(isMajhiTool("mcp__majhi-processes__start")).toBe(false);
     expect(isMajhiTool("mcp__majhi-admin-evil__majhi_tasks_remove")).toBe(false);
