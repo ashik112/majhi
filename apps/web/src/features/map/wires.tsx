@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { arrowOf, badgePos, longestMid, type Pt, roundPath, shorten } from "./layout";
+import { arrowOf, badgePositions, longestMid, type Pt, roundPath, shorten } from "./layout";
 import { LINE_KIND_LABEL, type PEdge, type PNode } from "./model";
 
 /** What a picture says about each line and box right now, from hover, pick and trace. */
@@ -44,6 +44,7 @@ export function Wires({
   focus,
   onPick,
   onHover,
+  crossings,
 }: {
   edges: readonly PEdge[];
   routes: ReadonlyMap<string, Pt[]>;
@@ -52,9 +53,10 @@ export function Wires({
   focus: Focus;
   onPick: (id: string) => void;
   onHover: (id: string | undefined) => void;
+  crossings?: number;
 }) {
   return (
-    <svg className="wires" width={w} height={h} aria-hidden="true">
+    <svg className="wires" width={w} height={h} aria-hidden="true" data-crossings={crossings}>
       {edges.map((e) => {
         const pts = routes.get(e.id);
         if (pts === undefined || pts.length < 2) return null;
@@ -113,13 +115,11 @@ export function Overlay({
 }): ReactNode {
   return (
     <div className="ov" style={{ width: w, height: h }}>
-      {numbered.map((id, i) => {
-        const pts = routes.get(id);
-        if (pts === undefined) return null;
-        const [x, y] = badgePos(pts);
+      {badgePositions(numbered.map((id) => routes.get(id))).map((pos, i) => {
+        if (pos === undefined) return null;
         return (
           // biome-ignore lint/suspicious/noArrayIndexKey: the same line may be a step twice
-          <div key={`${id}:${i}`} className="badge" style={{ left: x, top: y }}>
+          <div key={`${numbered[i]}:${i}`} className="badge" style={{ left: pos[0], top: pos[1] }}>
             {i + 1}
           </div>
         );

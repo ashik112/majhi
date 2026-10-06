@@ -122,7 +122,7 @@ export function ProjectWorld({
         </div>
         <div>
           <div className="n-name">{node.label}</div>
-          {node.deploy !== undefined && <div className="path">runs on {node.deploy}</div>}
+          {node.path !== undefined && <div className="path">{node.path}</div>}
         </div>
         {node.desc !== "" && <div className="desc">{node.desc}</div>}
         <div className="chips" style={{ margin: 0 }}>

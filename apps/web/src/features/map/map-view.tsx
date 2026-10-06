@@ -246,6 +246,7 @@ function MapFor({
         top: 90,
         bottom: unlinked.length > 0 ? 118 : 70,
         maxScale: 1.12,
+        minText: { size: 14, min: 12.2 },
         fitKey: `o:${key}`,
       };
     }
@@ -330,7 +331,7 @@ function MapFor({
           </span>
           <button
             type="button"
-            className="btn pri"
+            className="btn pri update-btn"
             data-act="update"
             disabled={running !== undefined || update.isPending || data === undefined}
             title={estimate.data?.note}
@@ -392,7 +393,7 @@ function MapFor({
                 {data.projects.length > 0 && (
                   <button
                     type="button"
-                    className="btn pri"
+                    className="btn pri update-btn"
                     disabled={running !== undefined}
                     onClick={() => update.mutate("")}
                   >

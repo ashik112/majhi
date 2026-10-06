@@ -63,6 +63,8 @@ export interface PNode {
   outside: string[];
   desc: string;
   deploy: string | undefined;
+  /** Where its checkout is, with the home folder written `~`. */
+  path: string | undefined;
   lamp: NodeLamp;
   /** "1 agent working", "needs you", "to check", "idle". */
   lampWord: string;
@@ -164,6 +166,16 @@ export function usesOf(view: MapView, node: MapNode): string[] {
   return [...new Set([...(node.uses ?? []), ...hosts])];
 }
 
+/** `/Users/name/Work/x` as `~/Work/x`: the first two folders of a home on macOS or Linux. */
+export function homeShort(path: string | undefined): string | undefined {
+  if (path === undefined) return undefined;
+  const parts = path.split("/");
+  if (parts[0] === "" && (parts[1] === "Users" || parts[1] === "home") && parts.length > 3) {
+    return `~/${parts.slice(3).join("/")}`;
+  }
+  return path;
+}
+
 /** One workspace's map as the page draws it: boxes with their lane, lamp and counts, lines with their tier. */
 export function buildGraph(view: MapView): Graph {
   const edges: PEdge[] = view.map.edges
@@ -214,6 +226,7 @@ export function buildGraph(view: MapView): Graph {
         outside: usesOf(view, n),
         desc: n.sub ?? "",
         deploy: n.deploy,
+        path: homeShort(view.projects.find((p) => p.id === n.project)?.path),
         // A running task wins over a line to check on the lamp, as in the mockup's two states.
         lamp: needsYou ? "needs" : running > 0 ? "working" : lamp,
         lampWord,

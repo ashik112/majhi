@@ -145,6 +145,7 @@
   }
 }
 .mapx .st {
+  white-space: nowrap;
   font-size: 12px;
   line-height: 18px;
   color: var(--fg-faint);
@@ -333,6 +334,14 @@
 .mapx .seg button .c {
   font: 400 11px var(--mono);
   color: var(--fg-faint);
+}
+.mapx .seg,
+.mapx .top .field,
+.mapx .update-btn {
+  flex: none;
+}
+.mapx .tele div {
+  white-space: nowrap;
 }
 .mapx .vsep {
   width: 1px;
@@ -800,6 +809,7 @@
   background-image: linear-gradient(color-mix(in srgb, var(--lamp-needs) 8%, transparent), transparent 60%);
 }
 .mapx .n-top {
+  flex-wrap: nowrap;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -824,17 +834,21 @@
   flex-wrap: wrap;
   margin-top: auto;
 }
-.mapx .overview .n-name {
-  font-size: 14px;
-  line-height: 17px;
+.mapx[data-view="overview"] .node .n-name {
+  font-size: calc(16px * var(--fz, 1));
+  line-height: 1.2;
+  white-space: nowrap;
 }
-.mapx .overview .bdg,
-.mapx .overview .chip {
-  font-size: 12px;
-  height: 21px;
+.mapx[data-view="overview"] .node .bdg,
+.mapx[data-view="overview"] .node .chip {
+  font-size: calc(14px * var(--fz, 1));
+  height: auto;
+  min-height: 23px;
+  padding-top: 2px;
+  padding-bottom: 2px;
 }
-.mapx .overview .st {
-  font-size: 12px;
+.mapx[data-view="overview"] .node .st {
+  font-size: calc(14px * var(--fz, 1));
 }
 .mapx .lod-low .chips,
 .mapx .lod-low .n-sub {
@@ -1364,6 +1378,9 @@
 }
 
 @media (max-width: 1280px) {
+  .mapx .top .field {
+    width: 108px !important;
+  }
   .mapx .hints {
     display: none;
   }

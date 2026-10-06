@@ -193,7 +193,7 @@ function NodePanel({
   const id = node.id;
   const outs = graph.outs(id);
   const ins = graph.ins(id);
-  const path = view.projects.find((p) => p.id === node.project)?.path;
+  const path = node.path;
   const stateTxt =
     node.lamp === "idle" ? (
       <span className="st">

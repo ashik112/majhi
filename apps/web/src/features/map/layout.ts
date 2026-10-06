@@ -22,29 +22,35 @@ export interface OverviewLayout {
   routes: Map<string, Pt[]>;
   /** The lane titles and where each starts. */
   tags: { text: string; x: number }[];
+  /** Lines that cross each other in this picture. */
+  crossings: number;
 }
 
-const CHAR_W = 8.2;
-const MIN_W = 120;
+const CHAR_W = 9.3;
+const MIN_W = 112;
 const MAX_W = 196;
 const CHIP_GAP = 4;
 
 /** A box's width from its longest text, and its height from how many rows of chips it needs. */
 export function boxSize(n: PNode): { w: number; h: number } {
-  const chips = [...n.stores, ...n.outside];
-  const widest = Math.max(n.label.length * CHAR_W + 24, ...chips.map((c) => c.length * 6.8 + 22));
+  const chips = [...n.stores, ...n.outside].map((c) => c.length * 8.4 + 20 + CHIP_GAP);
+  // The badge and the state word share the first row.
+  const state =
+    n.lamp === "idle" ? 0 : 18 + (n.lamp === "working" ? 7 : n.lampWord === "needs you" ? 9 : 8) * 8;
+  const head = n.roleLabel.length * 8.4 + 20 + state + 8;
+  const row = Math.min(MAX_W, chips.reduce((a, b) => a + b, 0) + 22);
+  const widest = Math.max(n.label.length * CHAR_W + 24, head + 22, row);
   const w = Math.min(MAX_W, Math.max(MIN_W, Math.round(widest)));
   let rows = 1;
   let used = 0;
-  for (const c of chips) {
-    const cw = c.length * 6.8 + 14 + CHIP_GAP;
+  for (const cw of chips) {
     if (used + cw > w - 22 && used > 0) {
       rows += 1;
       used = 0;
     }
     used += cw;
   }
-  return { w, h: 76 + 25 * Math.min(rows, 3) };
+  return { w, h: 80 + 28 * Math.min(rows, 3) };
 }
 
 /** The structure the layout depends on. Two maps with the same key lay out the same. */
@@ -64,14 +70,51 @@ function engine() {
   return elk;
 }
 
-/**
- * The Overview: left to right in the four lanes, ELK's layered layout with orthogonal routing, each box held
- * in its lane by a partition so a lane never lands left of the one before it.
- */
-export async function layoutOverview(g: Graph): Promise<OverviewLayout> {
-  const key = overviewKey(g);
-  const hit = cache.get(key);
-  if (hit !== undefined) return hit;
+/** Tries of ELK's layered layout with different random seeds; the one with the fewest crossings wins. */
+const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
+
+/** Whether two orthogonal segments cross in the open (touching at a shared port is not a crossing). */
+function crosses(a0: Pt, a1: Pt, b0: Pt, b1: Pt): boolean {
+  const aH = Math.abs(a0[1] - a1[1]) < 0.5;
+  const bH = Math.abs(b0[1] - b1[1]) < 0.5;
+  if (aH === bH) return false;
+  const [h0, h1, v0, v1] = aH ? [a0, a1, b0, b1] : [b0, b1, a0, a1];
+  const x = v0[0];
+  const y = h0[1];
+  const eps = 1;
+  return (
+    x > Math.min(h0[0], h1[0]) + eps &&
+    x < Math.max(h0[0], h1[0]) - eps &&
+    y > Math.min(v0[1], v1[1]) + eps &&
+    y < Math.max(v0[1], v1[1]) - eps
+  );
+}
+
+/** Lines that cross each other, so a layout with fewer is a calmer picture. */
+export function countCrossings(routes: ReadonlyMap<string, readonly Pt[]>): number {
+  const all = [...routes.values()];
+  let n = 0;
+  for (let i = 0; i < all.length; i++) {
+    for (let j = i + 1; j < all.length; j++) {
+      const a = all[i] as readonly Pt[];
+      const b = all[j] as readonly Pt[];
+      for (let p = 1; p < a.length; p++) {
+        for (let q = 1; q < b.length; q++) {
+          if (crosses(a[p - 1] as Pt, a[p] as Pt, b[q - 1] as Pt, b[q] as Pt)) n += 1;
+        }
+      }
+    }
+  }
+  return n;
+}
+
+function bends(routes: ReadonlyMap<string, readonly Pt[]>): number {
+  let n = 0;
+  for (const r of routes.values()) n += Math.max(0, r.length - 2);
+  return n;
+}
+
+async function runElk(g: Graph, seed: number): Promise<OverviewLayout> {
   const sizes = new Map(g.connected.map((n) => [n.id, boxSize(n)]));
   const ids = new Set(g.connected.map((n) => n.id));
   const graph: ElkNode = {
@@ -81,17 +124,18 @@ export async function layoutOverview(g: Graph): Promise<OverviewLayout> {
       "elk.direction": "RIGHT",
       "elk.edgeRouting": "ORTHOGONAL",
       "elk.partitioning.activate": "true",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "64",
+      "elk.randomSeed": String(seed),
+      "elk.layered.spacing.nodeNodeBetweenLayers": "40",
       "elk.layered.spacing.edgeNodeBetweenLayers": "26",
       "elk.layered.spacing.edgeEdgeBetweenLayers": "14",
       "elk.spacing.nodeNode": "34",
       "elk.spacing.edgeEdge": "14",
       "elk.spacing.edgeNode": "20",
       "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
-      "elk.layered.crossingMinimization.semiInteractive": "false",
-      "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+      "elk.layered.crossingMinimization.greedySwitch.type": "TWO_SIDED",
+      "elk.layered.thoroughness": "30",
       "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
-      "elk.layered.cycleBreaking.strategy": "MODEL_ORDER",
+      "elk.layered.cycleBreaking.strategy": "GREEDY",
       "elk.padding": "[top=0,left=0,bottom=0,right=0]",
     },
     children: g.connected.map((n) => ({
@@ -131,7 +175,34 @@ export async function layoutOverview(g: Graph): Promise<OverviewLayout> {
   }
   const right = Math.max(0, ...[...nodes.values()].map((p) => p.x + p.w));
   const bottom = Math.max(0, ...[...nodes.values()].map((p) => p.y + p.h));
-  const out: OverviewLayout = { w: Math.ceil(right), h: Math.ceil(bottom), nodes, routes, tags };
+  return {
+    w: Math.ceil(right),
+    h: Math.ceil(bottom),
+    nodes,
+    routes,
+    tags,
+    crossings: countCrossings(routes),
+  };
+}
+
+/**
+ * The Overview: left to right in the four lanes, ELK's layered layout with orthogonal routing, each box held
+ * in its lane by a partition so a lane never lands left of the one before it. It runs with a few seeds and
+ * keeps the picture with the fewest crossings, then the fewest bends and the smallest size.
+ */
+export async function layoutOverview(g: Graph): Promise<OverviewLayout> {
+  const key = overviewKey(g);
+  const hit = cache.get(key);
+  if (hit !== undefined) return hit;
+  let best: { layout: OverviewLayout; score: number } | undefined;
+  for (const seed of SEEDS) {
+    const layout = await runElk(g, seed);
+    const score =
+      countCrossings(layout.routes) * 1000 + bends(layout.routes) * 4 + (layout.w + layout.h) / 50;
+    if (best === undefined || score < best.score) best = { layout, score };
+    if (best.score < 100 && seed >= 3) break;
+  }
+  const out = (best as { layout: OverviewLayout }).layout;
   if (cache.size > 20) cache.clear();
   cache.set(key, out);
   return out;
@@ -204,10 +275,26 @@ export function longestMid(pts: readonly Pt[]): Pt {
 }
 
 /** Where a step's number sits: a little before the arrow head. */
-export function badgePos(pts: readonly Pt[]): Pt {
+export function badgePos(pts: readonly Pt[], back = 24): Pt {
   const { x, y, px, py, l } = ends(pts);
-  const d = Math.min(24, l / 2);
+  const d = Math.min(back, l / 2);
   return [x - ((x - px) / l) * d, y - ((y - py) / l) * d];
+}
+
+/** Where each numbered step sits: near its arrow head, moved back along the line when another number is already there. */
+export function badgePositions(order: readonly (readonly Pt[] | undefined)[]): (Pt | undefined)[] {
+  const placed: Pt[] = [];
+  return order.map((pts) => {
+    if (pts === undefined) return undefined;
+    let pos = badgePos(pts);
+    for (const back of [24, 48, 72, 96]) {
+      const c = badgePos(pts, back);
+      pos = c;
+      if (!placed.some((q) => Math.hypot(q[0] - c[0], q[1] - c[1]) < 22)) break;
+    }
+    placed.push(pos);
+    return pos;
+  });
 }
 
 // ---------------------------------------------------------------------------

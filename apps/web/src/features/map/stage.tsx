@@ -22,6 +22,8 @@ interface Props {
   bottom: number;
   /** The most "fit" may enlarge a small picture. */
   maxScale: number;
+  /** Keep the smallest text of the boxes at least `min` px on screen: `size` is its size at scale 1. */
+  minText?: { size: number; min: number };
   /** Fit again when this changes (a new picture). */
   fitKey: string;
   onBackground: () => void;
@@ -35,7 +37,7 @@ const INTERACTIVE = ".node,.edge,.jhead,[data-step],.pill,.badge";
  * element, so dragging never renders React. The picture is centered between its top and bottom room.
  */
 export const Stage = forwardRef<StageHandle, Props>(function Stage(
-  { w, h, top, bottom, maxScale, fitKey, onBackground, children },
+  { w, h, top, bottom, maxScale, minText, fitKey, onBackground, children },
   handle,
 ) {
   const stage = useRef<HTMLDivElement>(null);
@@ -43,8 +45,8 @@ export const Stage = forwardRef<StageHandle, Props>(function Stage(
   const t = useRef({ fit: 1, z: 1, px: 0, py: 0, sw: 0, sh: 0 });
   const drag = useRef<{ x: number; y: number; px: number; py: number; moved: boolean } | null>(null);
   const dragged = useRef(false);
-  const dims = useRef({ w, h, top, bottom, maxScale });
-  dims.current = { w, h, top, bottom, maxScale };
+  const dims = useRef({ w, h, top, bottom, maxScale, minText });
+  dims.current = { w, h, top, bottom, maxScale, minText };
 
   const apply = useCallback(() => {
     const el = world.current;
@@ -56,6 +58,9 @@ export const Stage = forwardRef<StageHandle, Props>(function Stage(
     const ty = d.top + (c.sh - d.top - d.bottom - d.h * s) / 2 + c.py;
     el.style.transform = `translate(${tx}px,${ty}px) scale(${s})`;
     el.classList.toggle("lod-low", s < 0.7);
+    const boost =
+      d.minText === undefined ? 1 : Math.min(1.3, Math.max(1, d.minText.min / (d.minText.size * s)));
+    el.style.setProperty("--fz", String(boost));
   }, []);
 
   const fit = useCallback(() => {
@@ -64,7 +69,7 @@ export const Stage = forwardRef<StageHandle, Props>(function Stage(
     const d = dims.current;
     const sw = el.clientWidth;
     const sh = el.clientHeight;
-    const s = Math.min((sw - 40) / d.w, (sh - d.top - d.bottom) / d.h, d.maxScale);
+    const s = Math.min((sw - 24) / d.w, (sh - d.top - d.bottom) / d.h, d.maxScale);
     t.current = { fit: Math.max(0.2, s), z: 1, px: 0, py: 0, sw, sh };
     apply();
   }, [apply]);

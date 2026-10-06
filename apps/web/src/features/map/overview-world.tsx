@@ -61,6 +61,7 @@ export function OverviewWorld({
         focus={focus}
         onPick={(id) => (composing ? acts.addStep(id) : acts.selectEdge(id))}
         onHover={(id) => acts.setHover(id === undefined ? null : { t: "edge", id })}
+        crossings={layout.crossings}
       />
       {layout.tags.map((t) => (
         <div key={t.text} className="gtag" style={{ left: t.x, top: -26 }}>
