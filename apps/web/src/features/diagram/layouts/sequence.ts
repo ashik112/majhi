@@ -7,7 +7,7 @@ import { straight } from "./route";
 export const ACTOR_W = 128;
 const LANE = ACTOR_W + 20;
 /** Space between two messages. */
-const STEP = 68;
+const STEP = 72;
 /** The loop a message to the same actor makes, to the right of its lane; its number sits on the loop's tip. */
 const LOOP_W = 40;
 /** The widest a loop's label is, and the room the loop and its label take to the right of the lane. */
@@ -42,6 +42,13 @@ function words(text: string, max: number): { w: number; h: number } {
   return { w, h: wrappedLines(text, TYPE.label.font, w - 6) * TYPE.label.line + 2 * LABEL_PAD };
 }
 
+/** The distance between the two lanes a message runs between, or the room to the right of its lane. */
+function laneSpan(d: Diagram, order: readonly string[], e: Diagram["edges"][number]): number {
+  const a = order.indexOf(e.from);
+  const b = order.indexOf(e.to);
+  return e.from === e.to ? LOOP_LABEL_W : Math.abs(b - a) * LANE;
+}
+
 /**
  * Lanes per actor, left to right (`actors` sets the order, then the rest as given), and the edges in the order
  * given as messages from top to bottom. A message to the same actor loops back on its lane. Each lane has a
@@ -55,7 +62,15 @@ export const sequence: Layout = (d: Diagram) => {
     ...d.nodes.map((n) => n.id).filter((id) => !(d.actors ?? []).includes(id)),
   ];
   const head = actorHeight(d.nodes);
-  const first = head + 44;
+  // The first message's words sit above its line, clear of the actor boxes.
+  const firstLabel = d.edges[0]?.label;
+  const aboveFirst =
+    firstLabel === undefined || d.edges[0] === undefined
+      ? 0
+      : words(withoutStepNumber(firstLabel), Math.max(40, laneSpan(d, order, d.edges[0]) - 16)).h +
+        LABEL_LIFT +
+        8;
+  const first = head + Math.max(44, aboveFirst);
   const nodes = new Map<string, Box>();
   order.forEach((id, i) => {
     nodes.set(id, { x: i * LANE, y: 0, w: ACTOR_W, h: head, fit: true });
@@ -167,5 +182,5 @@ function height(laid: Positioned): number {
 
 /** How tall a frame must be to show a whole sequence of `messages` messages without scrolling down. */
 export function sequenceHeight(messages: number, actors: readonly DiagramNode[]): number {
-  return actorHeight(actors) + 44 + Math.max(1, messages) * STEP + 8 + 2 * SEQUENCE_PAD;
+  return actorHeight(actors) + 72 + Math.max(1, messages) * STEP + 8 + 2 * SEQUENCE_PAD;
 }

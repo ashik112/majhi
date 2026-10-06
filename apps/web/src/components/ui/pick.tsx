@@ -61,11 +61,13 @@ export function Pick({
   });
   const chosen = options.find((o) => o.value === value);
 
+  // The menu is hidden until it is placed, and a hidden element cannot take focus: focus the chosen row once it shows.
+  const placed = style.visibility !== "hidden";
   useEffect(() => {
-    if (!open) return;
+    if (!open || !placed) return;
     const on = panel.current?.querySelector<HTMLElement>('[aria-checked="true"]');
     (on ?? panel.current?.querySelector<HTMLElement>(ITEM))?.focus();
-  }, [open, panel]);
+  }, [open, placed, panel]);
 
   function onKeyDown(event: React.KeyboardEvent) {
     if (event.key === "Escape") {

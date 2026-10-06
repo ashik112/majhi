@@ -77,7 +77,7 @@ export function nodeSize(node: DiagramNode, action: boolean): { w: number; h: nu
   h += wrappedLines(node.label, TYPE.title.font, inner) * TYPE.title.line;
   if (node.sub !== undefined) h += wrappedLines(node.sub, TYPE.sub.font, inner) * TYPE.sub.line;
   if (action) h += ACTION_ROW;
-  return { w: NODE_W, h: Math.max(52, h) };
+  return { w: NODE_W, h: Math.max(44, h) };
 }
 
 /** The most a label is wide before it wraps. */

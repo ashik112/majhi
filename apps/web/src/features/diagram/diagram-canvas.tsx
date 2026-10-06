@@ -126,7 +126,7 @@ const BoxView = memo(function BoxView({ data }: NodeProps<BoxNode>) {
       {node.kind !== undefined && !compact && (
         <div
           data-box-kind=""
-          className="min-w-0 truncate text-[11px] leading-[15px] font-medium"
+          className="min-w-0 text-[11px] leading-[15px] font-medium [overflow-wrap:anywhere]"
           style={{ color: kindColor(node.kind, node.tone) }}
         >
           {node.kind}
@@ -146,7 +146,7 @@ const BoxView = memo(function BoxView({ data }: NodeProps<BoxNode>) {
         <div
           data-box-sub=""
           title={node.sub}
-          className={cn("text-xs leading-4 text-fg-muted", wrap ? "[overflow-wrap:anywhere]" : "truncate")}
+          className={cn("text-sm leading-4 text-fg-muted", wrap ? "[overflow-wrap:anywhere]" : "truncate")}
         >
           {node.sub}
         </div>
@@ -159,7 +159,7 @@ const BoxView = memo(function BoxView({ data }: NodeProps<BoxNode>) {
             e.stopPropagation();
             decor.action?.onClick();
           }}
-          className="nodrag mt-auto cursor-pointer self-start text-xs leading-4 text-fg-soft hover:text-fg hover:underline"
+          className="nodrag mt-auto cursor-pointer self-start text-sm leading-4 text-fg-soft hover:text-fg hover:underline"
         >
           {decor.action.label}
         </button>
@@ -275,7 +275,7 @@ const LineView = memo(function LineView({ data, markerEnd, markerStart }: EdgePr
               style={at}
               className={cn(
                 MARK,
-                "flex items-center px-0.5 text-xs leading-4 [overflow-wrap:anywhere] text-fg-soft",
+                "flex items-center px-0.5 text-sm leading-4 [overflow-wrap:anywhere] text-fg-soft",
                 path.from.x === path.to.x ? "justify-start text-left" : "justify-center text-center",
                 selected && "text-fg",
               )}
@@ -297,7 +297,7 @@ const LineView = memo(function LineView({ data, markerEnd, markerStart }: EdgePr
               selected ? "border-line-hover bg-selected" : "border-line-strong",
             )}
           >
-            <span className="text-xs leading-4 [overflow-wrap:anywhere] text-fg-soft">{edge.label}</span>
+            <span className="text-sm leading-4 [overflow-wrap:anywhere] text-fg-soft">{edge.label}</span>
             {edge.note !== undefined && (
               <span className={cn("text-[11px] leading-[14px]", guessed ? "text-amber" : "text-fg-faint")}>
                 {edge.note}
@@ -426,7 +426,9 @@ function useSize(ref: RefObject<HTMLElement | null>): { w: number; h: number } {
     if (el === null) return;
     const read = () =>
       setSize((was) =>
-        was.w === el.clientWidth && was.h === el.clientHeight ? was : { w: el.clientWidth, h: el.clientHeight },
+        was.w === el.clientWidth && was.h === el.clientHeight
+          ? was
+          : { w: el.clientWidth, h: el.clientHeight },
       );
     read();
     if (typeof ResizeObserver === "undefined") return;
