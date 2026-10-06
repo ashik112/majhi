@@ -3,10 +3,10 @@ import type { LampState } from "@/components/ui/lamp";
 
 /** The four ways to look at one map. The data is the same; a view dims what it is not about. */
 export const MAP_VIEWS = [
-  { id: "all", label: "Everything" },
-  { id: "flow", label: "How a job flows" },
-  { id: "deploy", label: "Where it runs" },
-  { id: "changed", label: "Changed this week" },
+  { id: "all", label: "All" },
+  { id: "flow", label: "Data flow" },
+  { id: "deploy", label: "Deployment" },
+  { id: "changed", label: "Recent changes" },
 ] as const;
 export type MapViewId = (typeof MAP_VIEWS)[number]["id"];
 

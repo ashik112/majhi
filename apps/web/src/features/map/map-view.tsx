@@ -1,8 +1,18 @@
-import { type Diagram, type DiagramNode, type MapEdge, type MapNode, PRIVATE } from "@majhi/shared";
+import {
+  type Diagram,
+  type DiagramNode,
+  type MapEdge,
+  type MapNode,
+  type OrgView,
+  PRIVATE,
+} from "@majhi/shared";
 import { Loader, RefreshCw, Waypoints } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Problem } from "@/components/problem";
 import { Button } from "@/components/ui/button";
+import { Segmented } from "@/components/ui/segmented";
+import { Select } from "@/components/ui/select";
+import { WorkspaceMark } from "@/features/connections/scope-picker";
 import type { EdgeDecor, NodeDecor, Selection } from "@/features/diagram/diagram-canvas";
 import { LazyScene, preloadScene } from "@/features/diagram/lazy-scene";
 import { cn } from "@/lib/cn";
@@ -29,34 +39,79 @@ import { MapPanel } from "./panel";
 
 const LEGEND = ["http", "queue", "data", "lib"] as const;
 
-/** The Map page: the workspace the sidebar picked, or a list to pick from. */
+const LAST_KEY = "majhi.map.workspace";
+
+function readLast(): string | undefined {
+  try {
+    return localStorage.getItem(LAST_KEY) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function rememberLast(org: string): void {
+  try {
+    localStorage.setItem(LAST_KEY, org);
+  } catch {
+    // Storage blocked: the page opens on the first workspace next time.
+  }
+}
+
+/**
+ * The Map page. It always shows one workspace: the one the sidebar picked, else the one last shown
+ * here, else the first. The workspace chips in its header switch it.
+ */
 export function MapScreen() {
   useEffect(preloadScene, []);
-  const { org, setOrg } = useOrgFilter();
-  const orgs = useOrgs().data ?? [];
-  const names = useMemo(
-    () => [{ id: PRIVATE, name: "Private" }, ...orgs.map((o) => ({ id: o.id, name: o.name }))],
-    [orgs],
+  const { org: picked, setOrg } = useOrgFilter();
+  const orgs = useOrgs().data;
+  const [last, setLast] = useState(readLast);
+  if (orgs === undefined) return <Header />;
+  const known = (id: string | undefined) => id !== undefined && orgs.some((o) => o.id === id);
+  const org = [picked, last].find((id): id is string => known(id)) ?? orgs[0]?.id ?? PRIVATE;
+  const choose = (id: string) => {
+    rememberLast(id);
+    setLast(id);
+    // With a workspace picked in the sidebar, the chips move that pick: one place says which one.
+    if (picked !== undefined) setOrg(id);
+  };
+  return (
+    <MapFor
+      key={org}
+      org={org}
+      name={orgs.find((o) => o.id === org)?.name ?? org}
+      switcher={<WorkspaceChips orgs={orgs} value={org} onChange={choose} />}
+    />
   );
-  if (org === undefined) {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        <Header />
-        <div className={cn("flex min-h-0 flex-1 flex-col items-start gap-3 rounded-2xl p-6", GLASS)}>
-          <h2 className="text-md font-semibold text-fg">Pick a workspace</h2>
-          <p className="text-base text-fg-muted">A map shows one workspace's projects. Pick which one.</p>
-          <div className="flex flex-wrap gap-2">
-            {names.map((o) => (
-              <Button key={o.id} onClick={() => setOrg(o.id)}>
-                {o.name}
-              </Button>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
-  return <MapFor org={org} name={names.find((o) => o.id === org)?.name ?? org} />;
+}
+
+/** Which workspace the map shows: its tile, then a compact picker. */
+function WorkspaceChips({
+  orgs,
+  value,
+  onChange,
+}: {
+  orgs: readonly OrgView[];
+  value: string;
+  onChange: (org: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <WorkspaceMark org={value} orgs={orgs} size="sm" />
+      <Select
+        aria-label="Workspace"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-8 min-w-[140px] text-sm"
+      >
+        {orgs.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+          </option>
+        ))}
+      </Select>
+    </div>
+  );
 }
 
 function Header({ children }: { children?: React.ReactNode }) {
@@ -73,7 +128,7 @@ function Header({ children }: { children?: React.ReactNode }) {
   );
 }
 
-function MapFor({ org, name }: { org: string; name: string }) {
+function MapFor({ org, name, switcher }: { org: string; name: string; switcher: React.ReactNode }) {
   const map = useMap(org);
   const estimate = useMapEstimate(org);
   const update = useUpdateMap(org);
@@ -155,7 +210,7 @@ function MapFor({ org, name }: { org: string; name: string }) {
   if (map.isError && data === undefined) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
-        <Header />
+        <Header>{switcher}</Header>
         <Problem icon={<Waypoints />} title="Could not load the map" body={describeError(map.error)} />
       </div>
     );
@@ -165,24 +220,14 @@ function MapFor({ org, name }: { org: string; name: string }) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <Header>
-        <div className="flex flex-wrap items-center gap-1.5" role="toolbar" aria-label="View">
-          {MAP_VIEWS.map((v) => (
-            <button
-              key={v.id}
-              type="button"
-              aria-pressed={viewId === v.id}
-              onClick={() => setViewId(v.id)}
-              className={cn(
-                "inline-flex h-[26px] cursor-pointer items-center rounded-full border px-3 text-sm whitespace-nowrap",
-                viewId === v.id
-                  ? "border-accent-line bg-accent-wash text-fg"
-                  : "border-line-strong text-fg-muted hover:text-fg",
-              )}
-            >
-              {v.label}
-            </button>
-          ))}
-        </div>
+        {switcher}
+        <span aria-hidden="true" className="h-5 w-px bg-line-strong" />
+        <Segmented
+          label="View"
+          value={viewId}
+          onChange={setViewId}
+          segments={MAP_VIEWS.map((v) => ({ value: v.id, label: v.label }))}
+        />
         <div className="ml-auto flex min-w-0 items-center gap-3">
           <span className="min-w-0 truncate text-sm text-fg-muted" data-map-fresh="">
             {ago === undefined ? `${name}: never updated` : `Updated ${ago}`}
@@ -280,7 +325,9 @@ function MapFor({ org, name }: { org: string; name: string }) {
             </p>
           )}
         </section>
-        {data !== undefined && <MapPanel view={data} selection={selection} onSelect={setSelection} />}
+        {data !== undefined && !empty && (
+          <MapPanel view={data} selection={selection} onSelect={setSelection} />
+        )}
       </div>
     </div>
   );
