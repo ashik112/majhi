@@ -6,6 +6,7 @@ import type {
   WikiPageSummary,
   WikiRoleRow,
 } from "@majhi/shared";
+import { FileText } from "lucide-react";
 import { type ReactNode, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -253,13 +254,21 @@ function Overview({ page, all, onOpen, onGo, changed }: Props) {
   const claims = useMemo(() => new Map(page.claims.map((c) => [c.n, c])), [page.claims]);
   const missing = CORE_ROLES.filter((r) => !page.roles.some((row) => row.role === r));
   const gaps = all.find((p) => p.page.kind === "gaps");
+  const titles = useMemo(() => new Map(all.map((p) => [p.page.id, p.page.title])), [all]);
   return (
     <>
       <DetailSection title="What it is" className={FIRST}>
         <Text page={page} onOpen={onOpen} />
       </DetailSection>
       {page.roles.length > 0 && (
-        <DetailSection title="Where things are" note="Click a tile to read its proof.">
+        <DetailSection
+          title="Where things are"
+          note={
+            page.roles.some((r) => r.page !== undefined && titles.has(r.page))
+              ? "Click a tile to open its page. The file under it shows the proof."
+              : "Click a tile to read its proof."
+          }
+        >
           <div className="grid grid-cols-1 gap-2.5 @[480px]:grid-cols-2 @[720px]:grid-cols-4">
             {page.roles.map((row) => (
               <Tile
@@ -267,7 +276,9 @@ function Overview({ page, all, onOpen, onGo, changed }: Props) {
                 row={row}
                 claim={claims.get(row.claim)}
                 moved={claims.get(row.claim)?.sources.some((s) => changed.has(s.path)) ?? false}
+                pageTitle={row.page === undefined ? undefined : titles.get(row.page)}
                 onOpen={onOpen}
+                onGo={onGo}
               />
             ))}
           </div>
@@ -296,40 +307,100 @@ function Overview({ page, all, onOpen, onGo, changed }: Props) {
   );
 }
 
+/**
+ * One role. With a component page behind it the tile opens that page and the file line under it opens the
+ * proof; without one the whole tile opens the proof.
+ */
 function Tile({
   row,
   claim,
   moved,
+  pageTitle,
   onOpen,
+  onGo,
 }: {
   row: WikiRoleRow;
   claim: WikiClaim | undefined;
   moved: boolean;
+  /** The title of the component page this role names, when that page exists. */
+  pageTitle: string | undefined;
   onOpen: OpenSource;
+  onGo: (id: WikiPageId) => void;
 }) {
   const source = claim?.sources[0];
   const proven = claim?.proven ?? false;
-  const inner = (
+  const head = (
     <>
       <span className="flex items-center justify-between gap-2 text-sm text-fg-muted">
         <span className="truncate">{ROLE_LABEL[row.role]}</span>
         <BasisMark proven={proven} />
       </span>
-      <span className="mt-1.5 block text-body leading-5 font-semibold text-fg [overflow-wrap:anywhere]">
-        {row.tech}
-      </span>
+      {pageTitle !== undefined && (
+        <span className="mt-1.5 block truncate text-body leading-5 font-semibold text-fg">{pageTitle}</span>
+      )}
       <span
-        className="mt-3 flex items-center gap-1.5 font-mono text-xs text-fg-faint"
-        title={source === undefined ? row.where : `${row.where} (${source.path}:${source.lines[0]})`}
+        className={cn(
+          "block text-fg [overflow-wrap:anywhere]",
+          pageTitle === undefined
+            ? "mt-1.5 text-body leading-5 font-semibold"
+            : "mt-0.5 text-sm text-fg-muted",
+        )}
       >
-        <span className="min-w-0 truncate">{row.where}</span>
-        {moved && <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-amber" />}
+        {row.tech}
       </span>
     </>
   );
+  const where = (
+    <>
+      <span className="min-w-0 truncate">{row.where}</span>
+      {moved && <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-amber" />}
+    </>
+  );
+  const whereTitle = source === undefined ? row.where : `${row.where} (${source.path}:${source.lines[0]})`;
   const style = cn(
     "block min-w-0 rounded-xl border bg-field p-3 text-left",
     proven ? "border-line-control" : "border-dashed border-amber-line",
+  );
+  const hover = "cursor-pointer transition-colors duration-150 hover:border-line-hover hover:bg-raised";
+  if (row.page !== undefined && pageTitle !== undefined) {
+    const id = row.page;
+    return (
+      <div data-tile={row.role} className={cn(style, "flex flex-col gap-3", hover)}>
+        <button
+          type="button"
+          data-tile-page={id}
+          title={`Open ${pageTitle}`}
+          onClick={() => onGo(id)}
+          className="flex min-w-0 flex-1 cursor-pointer flex-col justify-start text-left"
+        >
+          {head}
+        </button>
+        {source === undefined ? (
+          <span className="flex items-center gap-1.5 font-mono text-xs text-fg-faint" title={whereTitle}>
+            {where}
+          </span>
+        ) : (
+          <button
+            type="button"
+            data-tile-source={`${source.path}:${source.lines[0]}`}
+            title={`Read the proof: ${whereTitle}`}
+            onClick={() => onOpen(source)}
+            className="flex min-w-0 cursor-pointer items-center gap-1.5 self-start rounded-md border border-line-control px-1.5 font-mono text-xs leading-5 text-fg-faint transition-colors duration-150 hover:border-line-hover hover:text-fg"
+          >
+            <FileText aria-hidden="true" className="size-3 shrink-0" />
+            {where}
+          </button>
+        )}
+      </div>
+    );
+  }
+  const inner = (
+    <>
+      {head}
+      <span className="mt-3 flex items-center gap-1.5 font-mono text-xs text-fg-faint" title={whereTitle}>
+        {where}
+      </span>
+    </>
   );
   if (source === undefined) {
     return (
@@ -343,10 +414,7 @@ function Tile({
       type="button"
       data-tile={row.role}
       onClick={() => onOpen(source)}
-      className={cn(
-        style,
-        "cursor-pointer transition-colors duration-150 hover:border-line-hover hover:bg-raised",
-      )}
+      className={cn(style, hover, "flex flex-col justify-start")}
     >
       {inner}
     </button>
