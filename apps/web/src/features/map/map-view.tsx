@@ -1,4 +1,4 @@
-import { type JourneyStep, type JourneyView, type OrgView, PRIVATE } from "@majhi/shared";
+import { type InsideEntry, type JourneyStep, type JourneyView, type OrgView, PRIVATE } from "@majhi/shared";
 import { Waypoints } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Problem } from "@/components/problem";
@@ -149,7 +149,15 @@ function MapFor({
     () => (spec === undefined ? undefined : layoutInside(spec, s.more)),
     [spec, s.more],
   );
-  const entryId = spec === undefined ? null : s.entry === undefined ? (spec.entries[0]?.id ?? null) : s.entry;
+  const entryId =
+    spec === undefined
+      ? null
+      : s.entry === undefined
+        ? (spec.entries.reduce<InsideEntry | undefined>(
+            (best, e) => (best === undefined || e.steps.length > best.steps.length ? e : best),
+            undefined,
+          )?.id ?? null)
+        : s.entry;
   const projectLabels = useMemo(() => new Map(g.nodes.map((n) => [n.label, n.id])), [g]);
   const readInside = useReadInside(org);
   const journey = journeys.find((j) => j.id === s.journey);

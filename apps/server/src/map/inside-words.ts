@@ -157,8 +157,9 @@ export function cleanSentence(raw: string): string {
   const flat = raw
     .split("\n")
     .join(" ")
-    .replaceAll("—", ",")
-    .replaceAll("–", ",")
+    .replaceAll(String.fromCharCode(32, 0x2014, 32), ", ")
+    .replaceAll(String.fromCharCode(0x2014), ", ")
+    .replaceAll(String.fromCharCode(0x2013), "-")
     .split(" ")
     .filter((w) => w !== "")
     .join(" ")

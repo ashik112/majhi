@@ -200,20 +200,20 @@ const PHRASE: Readonly<Record<string, string>> = {
   Replicate: "runs the model on Replicate",
 };
 
-function entryText(kind: InsideTrigger, raw: string, part: string): string {
+function entryText(kind: InsideTrigger, raw: string): string {
   switch (kind) {
     case "HTTP":
-      return `A request to ${raw} reaches ${part}.`;
+      return `A request to ${raw} arrives.`;
     case "SOCKET":
-      return `A live connection opens in ${part}.`;
+      return "A live connection opens.";
     case "TOOL":
-      return `An agent calls a tool in ${part}.`;
+      return "An agent calls a tool.";
     case "SCHEDULE":
-      return `On a timer (${raw}) ${part} runs.`;
+      return `Wakes up ${raw}.`;
     case "QUEUE":
-      return `A job for ${raw} reaches ${part}.`;
+      return `A job for ${raw} arrives.`;
     case "COMMAND":
-      return `The command ${raw} starts in ${part}.`;
+      return `The command ${raw} starts.`;
   }
 }
 
@@ -221,7 +221,9 @@ function entryText(kind: InsideTrigger, raw: string, part: string): string {
 function tablesSentence(datas: readonly InsideData[], verbs: ReadonlySet<Use["verb"]>): string {
   const names = datas.map((d) => d.name);
   const shown = names.slice(0, 3).join(", ") + (names.length > 3 ? ` and ${names.length - 3} more` : "");
-  const what = datas.every((d) => d.sub.endsWith("table")) ? `the ${shown} tables` : shown;
+  const what = datas.every((d) => d.sub.endsWith("table"))
+    ? `the ${shown} ${datas.length === 1 ? "table" : "tables"}`
+    : shown;
   const read = verbs.has("read");
   const write = verbs.has("write");
   if (read && write) return `Reads from and saves to ${what}.`;
@@ -313,7 +315,7 @@ function traceOf(
     step: {
       key: `i:${entry.id}`,
       kind: "entry",
-      template: entryText(entry.kind, entry.raw, startPart),
+      template: entryText(entry.kind, entry.raw),
       part: startPart,
       from: entry.raw,
       to: entry.fn,
@@ -366,7 +368,7 @@ function traceOf(
           step: {
             key,
             kind: "call",
-            template: `${part} takes over.`,
+            template: "The work continues here.",
             part,
             from: rep,
             to,
@@ -395,7 +397,22 @@ function traceOf(
         const dk = `${rep}>${data.id}`;
         const usedIn = g.defs.get(fn);
         const useFile = usedIn?.file ?? entry.file;
-        if (seenData.has(dk)) continue;
+        if (seenData.has(dk)) {
+          // The same table again, maybe with another verb: the step says both.
+          const there = out.find(
+            (t) =>
+              t.use?.fn === rep &&
+              (t.data?.id === data.id || t.extra?.some((e) => e.data.id === data.id) === true),
+          );
+          if (there?.data !== undefined && there.verbs !== undefined && !there.verbs.has(u.verb)) {
+            there.verbs.add(u.verb);
+            there.step.template = tablesSentence(
+              [there.data, ...(there.extra ?? []).map((e) => e.data)],
+              there.verbs,
+            );
+          }
+          continue;
+        }
         seenData.add(dk);
         const sibling =
           data.kind === "db"
@@ -550,7 +567,11 @@ export function buildInside(
   const score = (x: Group) =>
     x.trace.length +
     3 * x.trace.filter((t) => t.data !== undefined).length +
+    Math.min(x.trace[0]?.step.fns.length ?? 0, 8) / 4 +
     (x.lead.members?.length ? 100 : 0);
+  // Worth drawing: it goes somewhere, lists handlers, or its own part does real work.
+  const substantive = (x: Group) =>
+    x.trace.length > 1 || (x.lead.members?.length ?? 0) > 0 || (x.trace[0]?.step.fns.length ?? 0) > 2;
   const ranked = groups.toSorted(
     (a, b) =>
       score(b) - score(a) ||
@@ -560,14 +581,12 @@ export function buildInside(
   );
   const shown: Group[] = [];
   for (const kind of Object.keys(KIND_RANK) as InsideTrigger[]) {
-    const best = ranked.find(
-      (x) => x.kind === kind && (x.trace.length > 1 || (x.lead.members?.length ?? 0) > 0),
-    );
-    if (best !== undefined && shown.length < ENTRIES_SHOWN) shown.push(best);
+    const best = ranked.filter((x) => x.kind === kind && substantive(x)).slice(0, kind === "HTTP" ? 2 : 1);
+    for (const b of best) if (shown.length < ENTRIES_SHOWN) shown.push(b);
   }
   for (const x of ranked) {
     if (shown.length >= ENTRIES_SHOWN) break;
-    if (!shown.includes(x) && (x.trace.length > 1 || (x.lead.members?.length ?? 0) > 0)) shown.push(x);
+    if (!shown.includes(x) && substantive(x)) shown.push(x);
   }
   if (shown.length === 0) shown.push(...ranked.slice(0, ENTRIES_SHOWN));
   const drawn = shown.toSorted(
@@ -637,7 +656,8 @@ export function buildInside(
         });
       }
       if (t.data !== undefined && t.use !== undefined) {
-        for (const x of [{ data: t.data, use: t.use }, ...(t.extra ?? [])]) {
+        // The canvas draws one box per datastore step; the rest of its tables are named in the sentence.
+        for (const x of [{ data: t.data, use: t.use }]) {
           data.set(x.data.id, x.data);
           if (!usesOut.some((u) => u.fn === x.use.fn && u.data === x.data.id))
             usesOut.push({

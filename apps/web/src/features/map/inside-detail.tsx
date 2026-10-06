@@ -516,13 +516,13 @@ function Steps({
         >
           <span className="num">{i + 1}</span>
           <span>
-            <b>{st.part}</b> {st.text}
+            <b>{st.part}:</b> {st.text}
             {cur === i && (
               <>
-                <span className="f">{st.where}</span>
+                {st.fns.length === 0 && <span className="f">{st.where}</span>}
                 {st.fns.map((f) => (
-                  <span key={`${f.file}:${f.line}:${f.id}`} className="f">
-                    {f.id} · {f.file}:{f.line}
+                  <span key={`${f.file}:${f.line}:${f.id}`} className="f" title={`${f.file}:${f.line}`}>
+                    {f.id} · {f.file.split("/").pop()}:{f.line}
                   </span>
                 ))}
               </>
