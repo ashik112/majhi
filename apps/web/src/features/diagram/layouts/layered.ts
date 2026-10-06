@@ -5,11 +5,12 @@ import type { Box, EdgePath, LayoutOptions, Point, Positioned } from "../types";
 import { routeEdges } from "./route";
 
 export interface LayeredOptions {
-  /** `AUTO` tries both and keeps the one that reads larger in a typical frame. */
+  /** `AUTO` lays out both ways and hands both to the canvas, which picks by the frame it has. */
   direction: "RIGHT" | "DOWN" | "AUTO";
-  /** Space between boxes of one layer, and between layers. */
+  /** Space between boxes of one layer, and between layers (a layer of a top-down picture needs less: labels sit on the lines). */
   nodeGap: number;
   layerGap: number;
+  layerGapDown?: number;
 }
 
 /** The ids of the nodes that hold others: the ones some node names as its `group`. */
@@ -44,25 +45,7 @@ export async function layered(
     run(diagram, { ...options, direction: "RIGHT" }, layout),
     run(diagram, { ...options, direction: "DOWN" }, layout),
   ]);
-  return legibility(down) > legibility(across) * 1.15 ? down : across;
-}
-
-/** The frame a picture is judged in: how large it draws when fitted into a typical inline diagram. */
-const FRAME = { w: 800, h: 680 };
-
-function legibility(p: Positioned): number {
-  let w = 1;
-  let h = 1;
-  for (const b of [...p.nodes.values(), ...p.groups.values()]) {
-    w = Math.max(w, b.x + b.w);
-    h = Math.max(h, b.y + b.h);
-  }
-  for (const e of p.edges.values())
-    for (const pt of e.route ?? []) {
-      w = Math.max(w, pt.x);
-      h = Math.max(h, pt.y);
-    }
-  return Math.min(1, FRAME.w / w, FRAME.h / h);
+  return { ...across, alternate: down };
 }
 
 async function run(
@@ -117,7 +100,9 @@ async function run(
       "elk.json.edgeCoords": "ROOT",
       "elk.padding": `[top=${MARGIN},left=${MARGIN},bottom=${MARGIN},right=${MARGIN}]`,
       "elk.spacing.nodeNode": String(options.nodeGap),
-      "elk.layered.spacing.nodeNodeBetweenLayers": String(options.layerGap),
+      "elk.layered.spacing.nodeNodeBetweenLayers": String(
+        options.direction === "DOWN" ? (options.layerGapDown ?? options.layerGap) : options.layerGap,
+      ),
       "elk.spacing.edgeNode": "24",
       "elk.spacing.edgeEdge": "14",
       "elk.layered.spacing.edgeNodeBetweenLayers": "24",

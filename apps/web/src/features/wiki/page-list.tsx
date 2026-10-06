@@ -1,7 +1,8 @@
 import type { WikiPage, WikiPageId, WikiPageSummary } from "@majhi/shared";
 import { ListPane, ROW, ROW_SELECTED } from "@/components/ui/list-detail";
 import { cn } from "@/lib/cn";
-import { GROUPS, subline } from "./model";
+import { COPY } from "./copy";
+import { groupsOf, subline } from "./model";
 import { StaleMark } from "./parts";
 
 /** One page of the list as the view knows it: its summary, the page once read, and whether a newer commit touched it. */
@@ -16,18 +17,21 @@ export function PageList({
   entries,
   selected,
   openItems,
+  workspace,
   onSelect,
 }: {
   entries: readonly ListEntry[];
   selected: WikiPageId | undefined;
   /** How many guesses and unconfirmed claims there are across the pages. */
   openItems: number;
+  /** The workspace's own pages: no components, and its flows cross repos. */
+  workspace: boolean;
   onSelect: (id: WikiPageId) => void;
 }) {
   return (
     <ListPane label="Wiki pages">
       <div className="flex flex-col gap-1">
-        {GROUPS.map(({ kind, label }) => {
+        {groupsOf(workspace).map(({ kind, label }) => {
           const rows = entries.filter((e) => e.summary.kind === kind);
           if (rows.length === 0) return null;
           const count = kind === "gaps" ? openItems : rows.length;
@@ -72,7 +76,7 @@ function Row({ entry, on, onSelect }: { entry: ListEntry; on: boolean; onSelect:
         className={cn("w-full truncate text-body font-medium", on ? "text-fg" : "text-fg-soft")}
         title={summary.title}
       >
-        {kind === "gaps" ? "Open items" : summary.title}
+        {kind === "gaps" ? COPY.openItemsTitle : summary.title}
       </span>
       {stale ? (
         <StaleMark />

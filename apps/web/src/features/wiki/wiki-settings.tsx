@@ -1,15 +1,23 @@
 import { Check } from "lucide-react";
+import { useMemo } from "react";
+import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { DetailSection } from "@/components/ui/list-detail";
 import { OrgBadge } from "@/components/ui/org-badge";
+import { PageLink } from "@/components/ui/page-link";
 import { Segmented } from "@/components/ui/segmented";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { useSaveSettings, useSettings } from "@/lib/boss-queries";
 import { describeError } from "@/lib/errors";
-import { badgeLetters } from "@/lib/format";
+import { badgeLetters, formatAgo } from "@/lib/format";
+import { usePlaybooksAcross } from "@/lib/playbook-queries";
 import { useAccountModels, useAgents, useUpdateOrg } from "@/lib/studio-queries";
+import { COPY } from "./copy";
 import { useWikiWorkspaces, type WikiWorkspace } from "./use-wiki-switch";
+
+/** The id of the playbook that keeps the wiki up to date. */
+const UPKEEP = "upkeep-wiki";
 
 const OFF_NOTES = [
   "No pages are built or refreshed.",
@@ -44,6 +52,8 @@ export function WikiSection() {
       : ok.find((a) => a.agent.frontmatter.id === housekeeper)?.agent.frontmatter;
   const models = useAccountModels(writer?.account).data?.models ?? [];
   const model = settings?.wiki.writer_model ?? "";
+  const on = useMemo(() => workspaces.filter((w) => w.enabled), [workspaces]);
+  const upkeep = usePlaybooksAcross(on.map((w) => w.org.id));
   const fail = (e: unknown) => toast("Could not change it", { detail: describeError(e), tone: "error" });
 
   if (globalOn === undefined) return <p className="pt-5 text-sm text-fg-faint">Loading</p>;
@@ -136,7 +146,32 @@ export function WikiSection() {
           ))}
         </ul>
       </DetailSection>
-      <DetailSection title="When it is off">
+      <DetailSection title={COPY.settings.upkeep}>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="min-w-[220px] flex-1 text-sm text-fg-muted">{COPY.settings.upkeepWords}</p>
+          <Button asChild>
+            <PageLink page="playbooks">{COPY.settings.openPlaybook}</PageLink>
+          </Button>
+        </div>
+        {on.length > 0 && (
+          <ul className="m-0 flex list-none flex-col p-0">
+            {on.map((w, i) => {
+              const row = upkeep[i]?.data?.playbooks.find((p) => p.playbook.id === UPKEEP);
+              return (
+                <li
+                  key={w.org.id}
+                  className="flex items-center gap-2.5 border-b border-line py-2 text-base last:border-b-0"
+                >
+                  <OrgBadge label={badgeLetters(w.org.key)} color={w.org.color} size="md" />
+                  <span className="min-w-0 flex-1 truncate text-fg">{w.org.name}</span>
+                  <span className="text-sm text-fg-muted">{upkeepState(row)}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </DetailSection>
+      <DetailSection title={COPY.settings.whenOff}>
         <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
           {OFF_NOTES.map((line) => (
             <li key={line} className="flex items-start gap-2 text-base text-fg-soft">
@@ -148,4 +183,19 @@ export function WikiSection() {
       </DetailSection>
     </>
   );
+}
+
+/** What the upkeep playbook of a workspace is doing, in a few words. */
+function upkeepState(
+  row:
+    | { enabled: boolean; running: boolean; held?: string | undefined; lastRun?: string | undefined }
+    | undefined,
+): string {
+  if (row === undefined) return COPY.settings.noPlaybook;
+  if (!row.enabled) return COPY.settings.off;
+  if (row.running) return COPY.settings.running;
+  if (row.held !== undefined) return COPY.settings.held(row.held);
+  return row.lastRun === undefined
+    ? COPY.settings.on
+    : COPY.settings.lastRun(formatAgo(row.lastRun, Date.now()));
 }

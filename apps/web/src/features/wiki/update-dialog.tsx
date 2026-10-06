@@ -15,7 +15,8 @@ export function UpdateDialog({
   onClose,
 }: {
   org: string;
-  project: string;
+  /** Absent: the whole workspace. */
+  project?: string;
   onClose: () => void;
 }) {
   const estimate = useWikiEstimate(org, project, true);
@@ -56,7 +57,9 @@ export function UpdateDialog({
       busy={update.isPending}
       confirmDisabled={estimate.isPending || estimate.isError || nothing}
       error={error}
-      onConfirm={() => update.mutate({ org, project }, { onSuccess: onClose })}
+      onConfirm={() =>
+        update.mutate({ org, ...(project === undefined ? {} : { project }) }, { onSuccess: onClose })
+      }
       onCancel={onClose}
     />
   );

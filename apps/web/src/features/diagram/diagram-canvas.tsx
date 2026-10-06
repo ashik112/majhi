@@ -350,7 +350,7 @@ function Controls({ fitMin }: { fitMin: number }) {
 const FIT_PAD = 0.04;
 /** An auto-height frame is never shorter or taller than this. */
 const AUTO_MIN = 150;
-const AUTO_MAX = 680;
+const AUTO_MAX = 780;
 
 /**
  * Fits the diagram to the canvas when what is drawn changes shape, and again when the canvas itself changes
@@ -418,20 +418,38 @@ function extent(p: Positioned): { w: number; h: number } {
   return { w: r, h: b };
 }
 
-/** The width of an element, kept up to date. Zero until it is measured. */
-function useWidth(ref: RefObject<HTMLElement | null>): number {
-  const [width, setWidth] = useState(0);
+/** The size of an element, kept up to date. Zero until it is measured. */
+function useSize(ref: RefObject<HTMLElement | null>): { w: number; h: number } {
+  const [size, setSize] = useState({ w: 0, h: 0 });
   useLayoutEffect(() => {
     const el = ref.current;
     if (el === null) return;
-    const read = () => setWidth(el.clientWidth);
+    const read = () =>
+      setSize((was) =>
+        was.w === el.clientWidth && was.h === el.clientHeight ? was : { w: el.clientWidth, h: el.clientHeight },
+      );
     read();
     if (typeof ResizeObserver === "undefined") return;
     const watch = new ResizeObserver(read);
     watch.observe(el);
     return () => watch.disconnect();
   }, [ref]);
-  return width;
+  return size;
+}
+
+/**
+ * Which way to draw a diagram that has two: the one that fills the frame better, so a narrow frame gets the
+ * tall picture and a wide one the long picture. The first wins unless the other is clearly larger.
+ */
+function pickLayout(p: Positioned, frame: { w: number; h: number }, autoHeight: boolean): Positioned {
+  if (p.alternate === undefined || frame.w === 0) return p;
+  const reach = (q: Positioned) => {
+    const e = extent(q);
+    const w = (frame.w * (1 - 2 * FIT_PAD)) / e.w;
+    const h = ((autoHeight ? AUTO_MAX : frame.h) * (1 - 2 * FIT_PAD)) / e.h;
+    return Math.min(1, w, h > 0 ? h : 1);
+  };
+  return reach(p.alternate) > reach(p) * 1.12 ? p.alternate : p;
 }
 
 const LEGEND_MARK = { w: 26, h: 8 } as const;
@@ -506,13 +524,15 @@ export function DiagramCanvas({
 }: DiagramCanvasProps): ReactNode {
   const sequence = diagram.layout === "sequence";
   const box = useRef<HTMLDivElement>(null);
-  const frameW = useWidth(box);
+  const frame = useSize(box);
+  const frameW = frame.w;
   // A sequence is never scaled down to fit: its lanes spread over a wide frame, and a narrow one scrolls.
   const fitted = useMemo(
     () => (sequence ? fitSequence(positioned, frameW - 2 * SEQUENCE_PAD) : undefined),
     [sequence, positioned, frameW],
   );
-  const placed = fitted?.positioned ?? positioned;
+  const chosen = useMemo(() => pickLayout(positioned, frame, autoHeight), [positioned, frame, autoHeight]);
+  const placed = fitted?.positioned ?? chosen;
 
   const flowNodes = useMemo(() => {
     const out: (BoxNode | GroupNode | RuleNode)[] = [];
@@ -645,7 +665,7 @@ export function DiagramCanvas({
       </div>
     );
   }
-  const drawn = extent(positioned);
+  const drawn = extent(chosen);
   // The frame as tall as the drawing is at the width there is, so a short drawing leaves no empty band.
   const scale = frameW === 0 ? 1 : Math.min(1, (frameW * (1 - 2 * FIT_PAD)) / drawn.w);
   const autoH = Math.round(Math.min(AUTO_MAX, Math.max(AUTO_MIN, (drawn.h * scale) / (1 - 2 * FIT_PAD))));
@@ -674,7 +694,7 @@ export function DiagramCanvas({
             {...handlers}
             className="!bg-transparent"
           >
-            <Refit shape={positioned} box={box} fitMin={fitMin} />
+            <Refit shape={chosen} box={box} fitMin={fitMin} />
             {controls && <Controls fitMin={fitMin} />}
           </ReactFlow>
         </ReactFlowProvider>

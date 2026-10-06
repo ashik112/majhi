@@ -61,7 +61,7 @@ export function wrappedLines(text: string, font: string, width: number): number 
 }
 
 /** The width of a content-sized box, and the padding around its text. */
-export const NODE_W = 176;
+export const NODE_W = 152;
 export const NODE_PAD_X = 12;
 export const NODE_PAD_Y = 10;
 /** The line a box can carry under its text, like "Open its wiki". */
