@@ -72,6 +72,7 @@ export const SETUP_GROUPS = [
     sections: [
       "decisions",
       "memory",
+      "wiki",
       "context",
       "turns",
       "teams",
@@ -93,6 +94,7 @@ export const SECTION_TITLE: Record<SetupSection, string> = {
   ssh: "SSH keys",
   decisions: "Laya",
   memory: "Memory",
+  wiki: "Wiki",
   context: "Context and limits",
   turns: "Turns",
   teams: "Teams",
@@ -142,6 +144,7 @@ export const SETTINGS_GROUPS: readonly { label: string; items: readonly Settings
     items: [
       { kind: "page", page: "memory" },
       { kind: "section", section: "memory", label: "Memory rules" },
+      { kind: "section", section: "wiki" },
       { kind: "section", section: "teams" },
       { kind: "section", section: "turns" },
       { kind: "section", section: "context" },
