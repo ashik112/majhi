@@ -82,6 +82,21 @@ import {
   CaptainUndoResultSchema,
   SlotCapacitySchema,
 } from "./captain.ts";
+import {
+  ChatEditReplyInputSchema,
+  ChatHolderInputSchema,
+  ChatIgnoreInputSchema,
+  ChatLinkInputSchema,
+  ChatSendInputSchema,
+  ClientListSchema,
+  ClientRowSchema,
+  ContactMergeInputSchema,
+  ContactMergeResultSchema,
+  ContactUndoInputSchema,
+  ContactViewSchema,
+  ProposeRulesInputSchema,
+  SamePersonAnswerInputSchema,
+} from "./chat.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
   ConnectCatalogSchema,
@@ -1341,6 +1356,87 @@ export const commands = {
       "Confirm a role the wiki guessed on a project's overview, or change it to another role (`choice: undo` removes the choice). It applies on read and to every later update, and the Gaps page stops listing it. The owner (any workspace) and the captain (its own)",
     input: WikiSetRoleInputSchema,
     output: WikiPageViewSchema,
+  },
+  // Client chats (docs/briefs/client-chats.md) ------------------------------------
+  "chat.list": {
+    risk: "read",
+    summary:
+      "The clients' chats: each workspace's linked chats with their newest line, the chats nobody linked yet (New chats), and whether each chat app account can be read. Owner only",
+    input: z.object({}),
+    output: ClientListSchema,
+  },
+  "chat.link": {
+    risk: "change",
+    summary:
+      "Link a New chat to a workspace. From then on the captain reads what the client writes there. Owner only",
+    input: ChatLinkInputSchema,
+    output: ClientRowSchema,
+  },
+  "chat.ignore": {
+    risk: "change",
+    summary: "Ignore a New chat: what arrives from it is dropped. Owner only",
+    input: ChatIgnoreInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.holder": {
+    risk: "change",
+    summary:
+      "Say who writes to the client in a chat: the captain (replies go through the owner's Tell setting) or the owner (the captain does not write). Owner only",
+    input: ChatHolderInputSchema,
+    output: ClientRowSchema,
+  },
+  "chat.send": {
+    risk: "outbound",
+    summary:
+      "Write to the client in a chat as the owner. It goes at once, and the owner holds the chat from then on. Owner only",
+    input: ChatSendInputSchema,
+    output: z.object({ draft: z.number().int().positive(), state: z.enum(["sent", "held", "failed"]) }),
+  },
+  "chat.editReply": {
+    risk: "change",
+    summary: "Change the words of a reply to a client that waits for the owner. Owner only",
+    input: ChatEditReplyInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.samePerson": {
+    risk: "change",
+    summary:
+      "Answer the captain's question whether two contacts are one person: Same merges them, Not same remembers it. Owner only",
+    input: SamePersonAnswerInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.confirmWebhook": {
+    risk: "change",
+    summary:
+      "Telegram has a webhook set for the bot, which stops majhi from reading. Remove it so majhi can read the chats. Owner only",
+    input: z.object({ connection: IdSchema }),
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.proposeRules": {
+    risk: "read",
+    summary:
+      "The captain proposes a change to who decides what to tell a workspace's clients (the Tell setting) or to its Hold list. It only puts a card in the room for the owner to approve; nothing changes until the owner does",
+    input: ProposeRulesInputSchema,
+    output: z.object({ text: z.string() }),
+  },
+  "contacts.list": {
+    risk: "read",
+    summary: "The clients' contacts of a workspace with the chat identities each has. Owner only",
+    input: z.object({ org: IdSchema }),
+    output: z.array(ContactViewSchema),
+  },
+  "contacts.merge": {
+    risk: "change",
+    summary:
+      "Merge one contact into another of the same workspace. It is logged, so it can be undone with both contacts as they were. Owner only",
+    input: ContactMergeInputSchema,
+    output: ContactMergeResultSchema,
+  },
+  "contacts.undoMerge": {
+    risk: "change",
+    summary: "Undo a contact merge: both contacts and their identities are back as they were. Owner only",
+    input: ContactUndoInputSchema,
+    output: z.object({ ok: z.literal(true) }),
   },
   // The chat dock -----------------------------------------------------------------
   "conversations.list": {

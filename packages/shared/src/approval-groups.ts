@@ -34,6 +34,18 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "conversations.markRead",
   "chats.create",
   "chats.rename",
+  // What clients wrote, who they are and what is sent to them are the owner's: no agent reads or changes them.
+  "chat.list",
+  "chat.link",
+  "chat.ignore",
+  "chat.holder",
+  "chat.send",
+  "chat.editReply",
+  "chat.samePerson",
+  "chat.confirmWebhook",
+  "contacts.list",
+  "contacts.merge",
+  "contacts.undoMerge",
   // Autonomous mode is the owner's switch: the captain never turns it on, widens its limits or guides itself.
   "autonomy.start",
   "autonomy.pause",
