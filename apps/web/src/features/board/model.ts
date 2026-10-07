@@ -1,6 +1,6 @@
 import type { TaskSummary } from "@majhi/shared";
 import type { LampState } from "@/components/ui/lamp";
-import { inOrg, isOpen } from "../shell/model";
+import { inOrg } from "../shell/model";
 import { isYourTurn, taskLamp } from "../tasks/model";
 
 export type ColumnId = "inbox" | "working" | "needs" | "mr" | "done";

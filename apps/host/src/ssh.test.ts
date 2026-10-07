@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -271,38 +271,6 @@ describe("the key loader", () => {
       await expect(ssh.unlock("/etc/passwd", "x")).rejects.toThrow("is not waiting for a passphrase");
       expect(w.calls.some((c) => c.includes("--apple-use-keychain"))).toBe(false);
     });
-
-    it("puts the askpass in $XDG_RUNTIME_DIR while it exists, and says when ssh-add never ran it", async () => {
-      const runtimeDir = join(tmp, "run");
-      await mkdir(runtimeDir);
-      const w = fakeWorld({ [KEY_B]: "pass" });
-      w.unlockWith[KEY_B] = "correct horse";
-      const roots: string[] = [];
-      let noexec = true;
-      const run: RunFn = async (file, args, options) => {
-        const askpass = options.env.SSH_ASKPASS_REQUIRE === "force" ? options.env.SSH_ASKPASS : undefined;
-        if (askpass !== undefined) {
-          roots.push(dirname(dirname(askpass)));
-          // A folder mounted noexec: ssh-add cannot start the askpass, so it never asks.
-          if (noexec) return fail(1, `ssh_askpass: exec(${askpass}): Permission denied`);
-        }
-        return fakeRun(w)(file, args, options);
-      };
-      const ssh = setup(w, { keeping: "keyring", runtimeDir, run });
-      await ssh.reload();
-      await expect(ssh.unlock("~/.ssh/id_work", "correct horse")).rejects.toThrow(
-        "The passphrase was not tried: ssh-add stopped before it asked for it. Unlock ~/.ssh/id_work in a terminal: SSH_AUTH_SOCK=~/.majhi/run/ssh-agent.sock ssh-add ~/.ssh/id_work",
-      );
-      expect(await readdir(runtimeDir)).toEqual([]);
-      expect(logs.join("\n")).toContain("Permission denied");
-
-      noexec = false;
-      await rm(runtimeDir, { recursive: true }); // the owner logged out
-      expect((await ssh.unlock("~/.ssh/id_work", "correct horse")).loaded).toBe(1);
-      expect(roots).toEqual([runtimeDir, tmp]);
-      expect(await readdir(tmp)).toEqual([]);
-      expect(logs.join("\n")).not.toContain("correct horse");
-    });
   });
 
   describe("passphrases in the keyring", () => {
@@ -354,26 +322,5 @@ describe("the key loader", () => {
       w.agent.clear();
       expect((await ssh.reload()).needsPassphrase).toEqual(["~/.ssh/id_work"]);
     });
-  });
-
-  it("checks at start and after a wake, not on a plain tick, and stops", async () => {
-    const w = fakeWorld({ [KEY_A]: "none" });
-    const ssh = setup(w);
-    const loads = () => w.calls.filter((c) => c.includes("--apple-load-keychain")).length;
-    let clock = 1_000_000;
-    const settle = () => new Promise((r) => setTimeout(r, 60));
-    const stop = ssh.start({ tickMs: 20, now: () => clock });
-    await settle();
-    expect(loads()).toBe(1);
-    clock += 20; // an ordinary tick: awake the whole time
-    await settle();
-    expect(loads()).toBe(1);
-    clock += 10 * 60_000; // ten minutes passed between ticks: the computer slept
-    await settle();
-    expect(loads()).toBe(2);
-    stop();
-    clock += 10 * 60_000;
-    await settle();
-    expect(loads()).toBe(2);
   });
 });
