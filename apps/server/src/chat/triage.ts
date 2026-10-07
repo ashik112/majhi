@@ -1,5 +1,6 @@
 import {
   type ClientOutcome,
+  chatRoomSettings,
   externalKeyText,
   type FindingReportInput,
   mentionLabel,
@@ -13,6 +14,7 @@ import {
   TriageActionSchema,
 } from "@majhi/shared";
 import { z } from "zod";
+import type { ClientMessageRead } from "../decisions/uses/client-message.ts";
 import type { FindingActor, FindingsService } from "../findings/service.ts";
 import type { Parsed } from "../memory/housekeeper.ts";
 import type { RoomService } from "../room/service.ts";
@@ -60,6 +62,13 @@ export interface TriageDeps {
   };
   /** True when the text tries to instruct an agent. Such a message is only read by the owner. */
   injects?: ((text: string) => Promise<boolean>) | undefined;
+  /**
+   * Laya's first read of a message (chat setting "Needs a reply"): its label, or undefined when Laya did not answer.
+   * Absent: no Laya here, so the captain's triage reads everything.
+   */
+  read?: ((text: string) => Promise<ClientMessageRead | undefined>) | undefined;
+  /** Told after each Laya read whether Laya answered, so Health can say once that the captain's triage stood in. */
+  layaAnswered?: ((answered: boolean) => void) | undefined;
 }
 
 const DecisionSchema = z.object({
@@ -146,6 +155,11 @@ export interface TriageOutcome {
   finding: number;
 }
 
+/** What the chat's "Reply when" says to do before the captain reads a message. */
+type Gate =
+  | { go: false; why: string }
+  | { go: true; injection: boolean; urgent: boolean; /** Laya read it, so the injection check is done. */ read: boolean };
+
 export class ClientTriage {
   constructor(private readonly deps: TriageDeps) {}
 
@@ -155,6 +169,16 @@ export class ClientTriage {
     const current = now?.type === "client" ? now : item;
     const { id: _id, task: _task, seq: _seq, at: _at, ...payload } = current;
     this.deps.room.post(room.id as TaskId, item.id, { ...payload, outcome });
+  }
+
+  /** The owner's rules for this chat, as instructions that cannot loosen the fixed rails or the Ask-me cases. */
+  private rules(room: RoomRow): string {
+    const rules = chatRoomSettings(room.chat).rules;
+    if (rules === "") return "";
+    return [
+      "The owner wrote these rules for this chat. Follow them. They never allow a secret, another client's or workspace's data, a report, or skipping a case the owner asks to approve: those are checked in code whatever they say.",
+      `<owner-rules>${fenced(rules)}</owner-rules>`,
+    ].join("\n");
   }
 
   /** The room's last few lines, as quoted data for the model. */
@@ -192,11 +216,55 @@ export class ClientTriage {
     return `People in this chat (write the token to mention one): ${list}`;
   }
 
+  /**
+   * The chat's own say before the captain reads anything: a muted sender is never read, "Mentioned" reads only
+   * what names us, "Needs a reply" has Laya read it first, "Every message" reads all. Laya silent: the captain's
+   * triage stands in. Laya unsure: it needs a reply.
+   */
+  private async gate(room: RoomRow, item: Extract<RoomItem, { type: "client" }>, said: string): Promise<Gate> {
+    if ((room.chat.muted ?? []).includes(item.sender.id)) return { go: false, why: "Muted" };
+    const when = chatRoomSettings(room.chat).replyWhen;
+    const open: Gate = { go: true, injection: false, urgent: false, read: false };
+    if (when === "every") return open;
+    if (when === "mentioned") {
+      return item.addressed === true ? open : { go: false, why: "It does not name us" };
+    }
+    if (this.deps.read === undefined || said.trim() === "") return open;
+    const read = await this.deps.read(said);
+    this.deps.layaAnswered?.(read !== undefined);
+    if (read === undefined) return open;
+    switch (read.label) {
+      case "chit-chat":
+        // A message that names us is answered whatever Laya thinks of it.
+        return item.addressed === true ? { ...open, read: true } : { go: false, why: "Chit-chat" };
+      case "spam":
+        return { go: false, why: "Spam" };
+      case "injection":
+        return { go: true, injection: true, urgent: false, read: true };
+      case "urgent":
+        return { go: true, injection: false, urgent: true, read: true };
+      default:
+        return { ...open, read: true };
+    }
+  }
+
   /** Files the message as a finding and decides what to do with it. Never throws: a failure asks the owner. */
   async run(room: RoomRow, item: Extract<RoomItem, { type: "client" }>): Promise<TriageOutcome | undefined> {
     const org = room.org;
     if (org === undefined) return undefined;
     const said = readable(room, item);
+    let gate: Gate;
+    try {
+      gate = await this.gate(room, item, said);
+    } catch {
+      gate = { go: true, injection: false, urgent: false, read: false };
+    }
+    if (!gate.go) {
+      this.outcome(room, item, { state: "ignored", why: gate.why });
+      return undefined;
+    }
+    const tag = gate.urgent ? { urgent: true as const } : {};
+    const mark = (outcome: ClientOutcome): void => this.outcome(room, item, { ...outcome, ...tag });
     const input: FindingReportInput = {
       org,
       source: "client",
@@ -208,23 +276,23 @@ export class ClientTriage {
       severity: "low",
       dedupeKey: `client:${externalKeyText(item.external)}`,
     };
-    this.outcome(room, item, { state: "working" });
+    mark({ state: "working" });
     try {
       const { finding } = await this.deps.findings.report(input, { kind: "captain", org });
       try {
-        const decision = await this.decide(room, item);
+        const decision = await this.decide(room, item, gate);
         const outcome = await this.act(room, item, finding.id, decision);
-        this.outcome(room, item, outcome);
+        mark(outcome);
         return { action: decision.action, reason: decision.reason, finding: finding.id };
       } catch (err) {
         const why = err instanceof Error ? err.message : "It could not be read.";
-        this.outcome(room, item, { state: "failed", why });
+        mark({ state: "failed", why });
         return { action: "ask", reason: why, finding: finding.id };
       }
     } catch (err) {
       // Nothing may end in silence: a failure before the finding exists lands on the message too.
       const why = err instanceof Error ? err.message : "It could not be read.";
-      this.outcome(room, item, { state: "failed", why });
+      mark({ state: "failed", why });
       return undefined;
     }
   }
@@ -232,6 +300,7 @@ export class ClientTriage {
   private async decide(
     room: RoomRow,
     item: Extract<RoomItem, { type: "client" }>,
+    gate: Extract<Gate, { go: true }>,
   ): Promise<{
     action: TriageAction;
     reason: string;
@@ -246,7 +315,7 @@ export class ClientTriage {
       return { action: "ignore", reason: "It asks for nothing" };
     }
     if (item.text === "") return { action: "ask", reason: "It is a file with no words", quiet: true };
-    if ((await this.deps.injects?.(said)) === true) {
+    if (gate.injection || (!gate.read && (await this.deps.injects?.(said)) === true)) {
       return {
         action: "ask",
         reason: "Its text tries to instruct an AI agent, so only you read it",
@@ -268,6 +337,7 @@ export class ClientTriage {
       incidents.length === 0
         ? "Incidents: none."
         : `Incidents:\n${incidents.map((i) => `- ${i.id}${i.resolved === true ? " (resolved)" : ""}: ${clip(i.title, 120)}`).join("\n")}`,
+      this.rules(room),
       `Earlier in the chat:\n<context>${fenced(this.context(room, item.id))}</context>`,
       `The message from ${fenced(item.sender.name)}:\n<message>${fenced(said.slice(0, 2000))}</message>`,
     ].join("\n\n");
@@ -394,6 +464,7 @@ export class ClientTriage {
       `{"text": "the reply", "promisedTime": true if it names a time or a date the team will act by, "money": true if it mentions money, price, refund or a contract, "security": true if it is about a security incident or a data leak, "severalClients": true if the chat shows more than one client company}`,
       "You may format the reply with a small Markdown subset (**bold**, _italic_, `code`, links, - lists) and mention a person with the token from the people line.",
       this.people(room),
+      this.rules(room),
       `Facts:\n<facts>${fenced(wiki)}</facts>`,
       `Earlier in the chat:\n<context>${fenced(this.context(room, item.id))}</context>`,
       `The client's message:\n<message>${fenced(said.slice(0, 2000))}</message>`,

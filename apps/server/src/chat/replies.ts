@@ -2,7 +2,9 @@ import {
   type AuthorityChoice,
   type ChatApp,
   type Draft,
+  chatRoomSettings,
   type Holds,
+  holdsForRoom,
   mentionedContacts,
   PRIVATE,
   type ReplyFlags,
@@ -19,6 +21,7 @@ import { ChatSendError } from "./adapter.ts";
 import { type People, parseBody, renderPlain } from "./format.ts";
 import type { ChatHub } from "./hub.ts";
 import { railsFor, withoutSecrets } from "./rails.ts";
+import { dayBegins } from "./settings.ts";
 import type { ClientRooms } from "./rooms.ts";
 
 export interface RepliesDeps {
@@ -33,6 +36,8 @@ export interface RepliesDeps {
   holds: (org: string) => Promise<Holds>;
   /** The names of the workspaces, to keep one workspace's name out of another's replies. */
   orgNames: () => Promise<ReadonlyMap<string, string>>;
+  /** When today began in the workspace's time zone (ISO): the daily reply limit counts from it. Default: UTC midnight. */
+  dayBegins?: (org: string) => Promise<string>;
   changed: () => void;
   now?: () => Date;
 }
@@ -144,7 +149,9 @@ export class ClientReplies {
     }
     const rails = {
       tell: await this.deps.tell(org),
-      holds: await this.deps.holds(org),
+      // The chat's own Ask-me cases over the workspace's list.
+      holds: holdsForRoom(await this.deps.holds(org), room.chat),
+
       flags: input.flags,
       others: await this.others(room),
       firstContact: this.firstContact(room.id, input.to),
@@ -158,6 +165,10 @@ export class ClientReplies {
     if (verdict.send && plain !== input.text) {
       const read = railsFor({ ...rails, text: plain });
       if (!read.send) verdict = read.why === "secret" ? read : { ...read, text: input.text };
+    }
+    // The day's limit: past it, a reply the rails would send waits for the owner. A fixed hold keeps its own reason.
+    if (verdict.send && (await this.overLimit(room))) {
+      verdict = { send: false, why: "limit", text: verdict.text };
     }
     const { draft } = await this.deps.gate.submit(
       { org, channel: "client", target: room.id, body: verdict.text },
@@ -175,6 +186,16 @@ export class ClientReplies {
       },
     );
     return this.resultOf(draft, verdict.send ? undefined : verdict.why);
+  }
+
+  /** Whether the captain sent as many replies in this chat today as the chat's limit allows. */
+  private async overLimit(room: RoomRow): Promise<boolean> {
+    const limit = chatRoomSettings(room.chat).dailyLimit;
+    if (limit === "none") return false;
+    const now = this.deps.now?.() ?? new Date();
+    const since =
+      (await this.deps.dayBegins?.(room.org as string)) ?? dayBegins(now, "UTC");
+    return this.deps.store.client.captainRepliesSince(room.id, since) >= limit;
   }
 
   /** The owner's own message in the chat: sent at once, and the owner holds the chat from then on. */

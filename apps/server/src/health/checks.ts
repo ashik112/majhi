@@ -98,6 +98,7 @@ export async function collectChecks(ctx: CheckContext): Promise<Check[]> {
     checkDisk(state, home).then((c) => [c]),
     [checkTaskFolders(ctx.services)],
     [checkMachine(ctx.services)],
+    checkClientChat(ctx.services),
     checkSecrets(ctx.services),
     checkKeyBackup(ctx),
     checkBackups(ctx),
@@ -468,6 +469,21 @@ function checkMachine(services: Services): Check {
   const detail = machineLine(reading);
   if (warnings.length === 0) return { ...base, status: "pass", detail };
   return { ...base, status: "warn", detail: `${upperFirst(warnings.join(", "))}. ${detail}` };
+}
+
+/** Says once, while it holds, that Laya did not read the client messages and the captain's triage stood in. */
+function checkClientChat(services: Services): Check[] {
+  if (!services.chat.layaDown()) return [];
+  return [
+    {
+      id: "client-chat-laya",
+      group: "majhi",
+      name: "Laya reading client chats",
+      status: "warn",
+      detail:
+        "Laya did not answer, so the captain's triage reads every client message that needed a reply check. It costs a little. It stops when Laya answers again.",
+    },
+  ];
 }
 
 /** Task folders above this size are a warning, with a fix that frees what done tasks can rebuild. */

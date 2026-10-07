@@ -6,6 +6,10 @@ import {
   AutonomyPatchSchema,
   type AutonomySettings,
   AutonomyStartInputSchema,
+  type ChatRoomSettings,
+  ChatSettingsInputSchema,
+  HOLD_CLASSES,
+  HOLD_LABEL,
   type DeployEnvironment,
   SetEnvironmentsInputSchema,
 } from "@majhi/shared";
@@ -24,6 +28,8 @@ export interface ProposalWorld {
   /** A project's workspace and environments, or undefined when it does not exist. */
   project(id: string): Promise<{ org: string; deploy: readonly DeployEnvironment[] } | undefined>;
   orgName(org: string): Promise<string>;
+  /** A client chat's workspace, name and settings, or undefined when there is no such linked chat. */
+  chatSettings(room: string): Promise<{ org: string; title: string; settings: ChatRoomSettings } | undefined>;
 }
 
 export type Planned =
@@ -215,6 +221,47 @@ async function planEnvironments(world: ProposalWorld, input: unknown, lane: stri
   };
 }
 
+const CHAT_WORD: Record<string, string> = {
+  replyWhen: "Reply when",
+  dailyLimit: "Replies a day",
+  rules: "Rules",
+  keep: "Keep",
+  notify: "Notify me",
+};
+
+const askWord = (value: boolean | undefined): string =>
+  value === undefined ? "workspace" : value ? "ask me" : "captain";
+
+async function planChatSettings(world: ProposalWorld, input: unknown, lane: string): Promise<Planned> {
+  const parsed = ChatSettingsInputSchema.safeParse(input);
+  if (!parsed.success) return { kind: "refuse", error: "Invalid input for chat.settingsSet." };
+  const found = await world.chatSettings(parsed.data.room);
+  if (found === undefined) return { kind: "refuse", error: "There is no such linked client chat." };
+  if (found.org !== lane) {
+    return { kind: "refuse", error: "That chat belongs to another workspace; the captain proposes for its own only." };
+  }
+  const lines: string[] = [];
+  for (const key of ["replyWhen", "dailyLimit", "rules", "keep", "notify"] as const) {
+    const next = parsed.data[key];
+    if (next === undefined || canon(next) === canon(found.settings[key])) continue;
+    lines.push(`${CHAT_WORD[key]}: ${show(found.settings[key])} → ${show(next)}`);
+  }
+  for (const kind of HOLD_CLASSES) {
+    const next = parsed.data.holds?.[kind];
+    if (next === undefined) continue;
+    const was = found.settings.holds[kind];
+    if ((next ?? undefined) === was) continue;
+    lines.push(`Ask me, ${HOLD_LABEL[kind].toLowerCase()}: ${askWord(was)} → ${askWord(next ?? undefined)}`);
+  }
+  if (lines.length === 0) return { kind: "refuse", error: "That would change nothing." };
+  return {
+    kind: "propose",
+    summary: `${found.title}: change chat settings`.slice(0, 280),
+    basis: canon(found.settings),
+    changes: lines,
+  };
+}
+
 /**
  * What a captain's call to a proposable command becomes: `run` (its own rail allows it, the normal path
  * carries on), `refuse` (outside its workspace or invalid), or `propose` (stored for the owner).
@@ -232,6 +279,8 @@ export async function planProposal(
       return planStart(world, input);
     case "projects.setEnvironments":
       return planEnvironments(world, input, lane);
+    case "chat.settingsSet":
+      return planChatSettings(world, input, lane);
     default:
       return { kind: "refuse", error: `${command} cannot be proposed.` };
   }
@@ -257,6 +306,12 @@ export async function proposalBasis(
       if (!parsed.success) return undefined;
       const info = await world.project(parsed.data.project);
       return info === undefined ? undefined : canon(info.deploy);
+    }
+    case "chat.settingsSet": {
+      const parsed = ChatSettingsInputSchema.safeParse(input);
+      if (!parsed.success) return undefined;
+      const found = await world.chatSettings(parsed.data.room);
+      return found === undefined ? undefined : canon(found.settings);
     }
     default:
       return undefined;

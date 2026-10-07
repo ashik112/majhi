@@ -1498,7 +1498,7 @@ export const commands = {
   "chat.settingsSet": {
     risk: "change",
     summary:
-      "Change the settings of one client chat, only the fields named: replyWhen (mentioned, needs-reply, every), sendAs (bot, me), dailyLimit (20, 50, 100, none), rules (the owner's text for this chat, at most 1500 characters; a secret in it is refused; it never loosens an Ask-me case or the fixed holds), holds (per case: true asks the owner, false lets the captain send, null follows the workspace), keep (all, 500, 100) and notify (needs-me, every, never). The owner changes it at once; the captain's call is a proposal the owner applies, for a chat of its own workspace",
+      "Change the settings of one client chat, only the fields named: replyWhen (mentioned, needs-reply, every), dailyLimit (20, 50, 100, none), rules (the owner's text for this chat, at most 1500 characters; a secret in it is refused; it never loosens an Ask-me case or the fixed holds), holds (per case: true asks the owner, false lets the captain send, null follows the workspace), keep (all, 500, 100) and notify (needs-me, every, never). The owner changes it at once; the captain's call is a proposal the owner applies, for a chat of its own workspace",
     input: ChatSettingsInputSchema,
     output: ChatSettingsViewSchema,
   },

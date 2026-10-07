@@ -600,7 +600,6 @@ export const ChatHoldsChangeSchema = z.strictObject({
 export const ChatSettingsInputSchema = z.strictObject({
   room: z.string().min(1),
   replyWhen: ReplyWhenSchema.optional(),
-  sendAs: z.enum(["bot", "me"]).optional(),
   dailyLimit: ReplyLimitSchema.optional(),
   /** Empty clears it. A secret in it is refused. */
   rules: z.string().max(CHAT_RULES_MAX).optional(),

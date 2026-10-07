@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Command, dockerTty, localSpawner, orphanRuns } from "@majhi/acp";
 import {
+  chatRoomSettings,
   BUILT_IN_CONNECT_APPS,
   DEFAULT_GIT_HOST,
   failureFromError,
@@ -237,6 +238,8 @@ import { WikiTools } from "./wiki/tools.ts";
 /** How often chats are checked for memory. */
 const CHAT_SWEEP_MS = 60_000;
 const INCIDENT_SWEEP_MS = 20_000;
+/** How often each client chat is cut to its Keep setting. */
+const KEEP_SWEEP_MS = 24 * 3_600_000;
 const RETENTION_SWEEP_MS = 24 * 60 * 60_000;
 const RETENTION_FIRST_MS = 10 * 60_000;
 /** How often paused budget runs are checked against the week. */
@@ -1758,6 +1761,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       }
     },
     orgName: async (org) => (await config.sections()).orgs[org]?.name ?? (org === PRIVATE ? "Private" : org),
+    chatSettings: async (room) => {
+      const found = store.client.room(room);
+      if (found?.org === undefined) return undefined;
+      return { org: found.org, title: found.chat.title, settings: chatRoomSettings(found.chat) };
+    },
   });
   const cleanup = new CleanupService({ store, room, events, projects });
   const folderSweep = new TaskFolderSweep({
@@ -2466,6 +2474,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     INCIDENT_SWEEP_MS,
   );
   incidentSweep.unref();
+  // Each chat keeps only the newest messages its Keep says, once a day (and once at start).
+  const keepSweep = setInterval(() => background.run(async () => void chatParts.settings.sweep()), KEEP_SWEEP_MS);
+  keepSweep.unref();
+  background.run(async () => void chatParts.settings.sweep());
   // The read loops follow the connections: a new bot starts reading, a removed one stops.
   events.subscribe((event) => {
     if (event.type === "changed" && event.topics.includes("connections")) void chatParts.hub.sync();
