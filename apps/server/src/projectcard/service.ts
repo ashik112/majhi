@@ -111,7 +111,8 @@ export class ProjectCards {
 
   /**
    * The cards as the page shows them: the stored card with the checks the repo's CI runs now, read
-   * through the one CI reader (cached for a minute), so they are right without a refresh.
+   * through the one CI reader (cached for a minute), and the remotes read from the repo now, since a
+   * change to origin moves no tip. Both are right without a refresh.
    */
   async listLive(project?: string): Promise<ProjectCard[]> {
     const projects = await this.deps.projects();
@@ -145,7 +146,10 @@ export class ProjectCards {
               };
             }),
         );
-        return { ...card, checks };
+        const live = await this.deps.git.remotes(path).catch(() => undefined);
+        const remotes =
+          live === undefined ? card.remotes : live.map((r) => ({ name: r.name, url: plainUrl(r.url) }));
+        return { ...card, checks, remotes };
       }),
     );
   }
@@ -153,21 +157,6 @@ export class ProjectCards {
   list(project?: string): ProjectCard[] {
     const all = this.deps.repo.all().map((r) => r.card);
     return project === undefined ? all : all.filter((c) => c.project === project);
-  }
-
-  /** The cards as the owner views them: the remotes are read from the repo now, since a change to origin moves no tip. */
-  async listLive(project?: string): Promise<ProjectCard[]> {
-    const paths = new Map((await this.deps.projects()).map((p) => [p.id, p.path]));
-    return Promise.all(
-      this.list(project).map(async (card) => {
-        const path = paths.get(card.project);
-        if (path === undefined) return card;
-        const live = await this.deps.git.remotes(path).catch(() => undefined);
-        return live === undefined
-          ? card
-          : { ...card, remotes: live.map((r) => ({ name: r.name, url: plainUrl(r.url) })) };
-      }),
-    );
   }
 
   /** The owner's Refresh (or the captain's): reads the files now and rewrites the card. */
