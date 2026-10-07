@@ -1,5 +1,28 @@
 # Progress
 
+## Client chats, phase 1: core and Telegram (branch `feat/client-chats`, built, not merged)
+
+A client's Telegram group is a room in Chats. The captain reads what the client writes through the findings flow, and what goes back goes through the outbound gate under the owner's Tell setting and Hold list. Brief: `docs/briefs/client-chats.md`.
+
+**Plan.** Shared schemas and the `chat` connection type, then the store (external keys, contacts, merges, read position), then the Telegram adapter against a fake Bot API, then rooms, ingest, contacts, rails, replies and triage, then the commands, then the screens (Clients list, New chats, client room), then a throwaway majhi against the fake API.
+
+**What works.**
+- Telegram setup on the Connections page: paste the BotFather token, majhi asks Telegram who the bot is (`getMe`), saves a `chat` connection (token in secrets.age, never given to a run) and says to add the bot to each client group as admin.
+- Adapter on the app-neutral interface (`apps/server/src/chat/adapter.ts`): `getUpdates` long polling with explicit `allowed_updates`, the offset saved only after the batch is stored, `migrate_to_chat_id` relinks the room, 401 marks the connection as needing a new token, 403 marks the chat unreachable, a webhook is only removed after the owner clicks "Remove it", a per-chat send queue that waits `retry_after`, messages split at 4096, HTML with a plain fallback, files fetched at once up to 20 MB, other bots and our own messages ignored. Only the main server reads (`MAJHI_CHATS`, on by default with container runners; tests and previews are off).
+- Rooms: a client room is a `chat` task with a `client` column. A chat nobody linked has one New chats row and stores nothing; Link to workspace or Ignore. Messages keep an external key (unique), edits keep the earlier text, a gap longer than Telegram keeps shows a marker.
+- Contacts (the only new store): identity is the app account and user id, never a name. "Same person?" cards are proposed, never merged by name; a merge is logged and Undo restores both contacts exactly.
+- Findings source `client`. Triage is one question to a model with no tools (ignore, answer from the wiki, ask the owner, attach to an open incident, open a task); anything else it says asks the owner. The captain is not told a client's words as news.
+- Replies through the outbound gate (new channel `client`) with a real Telegram transport. Rails in code: Tell Ask me holds every reply; under Captain decides the Hold list holds promised times, first message to a contact, several clients, anything after a gap, money, security; a secret (taken out of the text), another client's or workspace's name, and a report always wait. The Hold list is in the workspace's autonomy entry (Captain, More rules, Hold for me) and only the owner changes it; the captain proposes a change through the general proposal card. One holder per room (Replies: Captain or You); the owner's composer sends at once and takes the chat.
+- Screens: Clients under each workspace in Chats, New chats, the room header with Replies, held reply card with Send and Edit, Sent mark, same-person card, the box that writes to the chat.
+
+**How to try it.** Connections, Add connection, Telegram (or `connect.appSave` for `telegram`); add the bot to a group as admin; the group shows under New chats; link it to a workspace; set Tell to Captain decides under Captain, and the captain's replies go (or wait). Without Telegram: `apps/server/src/chat/testing/fake-telegram.ts` serves a fake Bot API (`serve(port)`), and `MAJHI_TELEGRAM_API=http://127.0.0.1:<port> MAJHI_CHATS=on` points a throwaway majhi at it.
+
+**Checked.** Typecheck of every package, biome, the five tests of the brief (external keys and edits, the Telegram read position with a fake Bot API, the rails and the tool-less triage, reversible merges, isolation of a client room and of the captain's proposal), the full unit suite and e2e once at the end. A throwaway majhi against the fake API: connected the bot, a group arrived under New chats, linked it in the browser, messages arrived, a held reply was approved with Send and the fake API received it with the reply link; compared to the mockup in light theme.
+
+**Left (phase 2 and 3).** Incident linking, derived client status with the soak, update cadence, the RCA report and its send after the click (phase 2). The Slack migration and adapter, Discord, email, backfill after a gap with `conversations.history` (phase 3). The composer has no attachment button: files go from client to majhi, not back. A held "ask the owner" from triage shows as a line in the room, not on the row. Not run against real Telegram.
+
+**Known issues.** The model for triage and replies runs on the captain's cheap model (Housekeeper) and rests when the workspace's account is signed out or over budget; the room then says "Waits for you" with the reason.
+
 ## Ship without me, phase C: deploy targets, verify, rollback (branch `feat/deploy-targets`, built, not merged)
 
 A merged fix can now deploy to staging by the owner's rule, is checked, and rolls itself back with an incident when it fails. Production waits for the owner's click.

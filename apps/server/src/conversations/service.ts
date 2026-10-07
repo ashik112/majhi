@@ -33,7 +33,13 @@ export class ConversationsService {
 
   /** A room item was stored. Only messages change a row. */
   observe(task: string, item: RoomItem): void {
-    if (item.type !== "agent" && item.type !== "owner") return;
+    if (
+      item.type !== "agent" &&
+      item.type !== "owner" &&
+      item.type !== "client" &&
+      item.type !== "client-reply"
+    )
+      return;
     if (this.pending.has(task)) return;
     const timer = setTimeout(() => {
       this.pending.delete(task);

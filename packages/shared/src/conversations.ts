@@ -7,7 +7,7 @@ import { IdSchema } from "./ids.ts";
  * in the same store, so one row shape and one unread rule cover them. The owner's own chats on the
  * Chats page are not conversations here.
  */
-export const ConversationKindSchema = z.enum(["task", "captain"]);
+export const ConversationKindSchema = z.enum(["task", "captain", "client"]);
 export type ConversationKind = z.infer<typeof ConversationKindSchema>;
 
 export const ConversationSchema = z.object({

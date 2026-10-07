@@ -13,7 +13,13 @@ import {
 } from "@majhi/shared";
 import { z } from "zod";
 import { UserError } from "../errors.ts";
-import { type AppClientStore, checkDiscordId, checkSlackToken, parseGoogleClientJson } from "./app-client.ts";
+import {
+  type AppClientStore,
+  checkDiscordId,
+  checkSlackToken,
+  checkTelegramToken,
+  parseGoogleClientJson,
+} from "./app-client.ts";
 import { ConnectError, type Fetch } from "./oauth.ts";
 import type { ConnectConnections } from "./service.ts";
 
@@ -26,6 +32,7 @@ import type { ConnectConnections } from "./service.ts";
 
 const SLACK = "https://slack.com/api";
 const DISCORD = "https://discord.com/api/v10";
+const TELEGRAM = "https://api.telegram.org";
 
 export interface AppServiceDeps {
   apps: AppClientStore;
@@ -34,11 +41,15 @@ export interface AppServiceDeps {
   orgName: (org: string) => Promise<string | undefined>;
   redirect: string;
   fetch: () => Fetch;
+  /** Telegram's Bot API address. Only a trial against a fake bot server changes it. */
+  telegramApi?: string | undefined;
   connections: ConnectConnections;
   connectionIds: () => Promise<{ org: string; id: string; connection: ConnectionConfig }[]>;
   /** The value of a secret entry of a connection's `vars`. */
   secretOf: (connection: string, name: string) => Promise<string | undefined>;
   changed: () => void;
+  /** Where a connection stands: a setup that asked the service and got a good answer says so. */
+  observe?: ((connection: string, result: ConnectionTestResult) => void) | undefined;
   log?: ((line: string) => void) | undefined;
 }
 
@@ -108,6 +119,8 @@ export class AppService {
           return await this.saveSlack(input, meta);
         case "discord":
           return await this.saveDiscord(input, meta);
+        case "telegram":
+          return await this.saveTelegram(input, meta);
         case "linkedin":
           return await this.saveClient(input, true);
         default:
@@ -268,6 +281,73 @@ export class AppService {
     };
   }
 
+  /** Asks Telegram who a bot token belongs to. Never puts the token in a message. */
+  private async telegramMe(token: string): Promise<{ id: number; username: string } | undefined> {
+    try {
+      const base = (this.deps.telegramApi ?? TELEGRAM).replace(/\/+$/, "");
+      const res = await this.deps.fetch()(`${base}/bot${token}/getMe`, {
+        method: "POST",
+        redirect: "error",
+        signal: AbortSignal.timeout(15_000),
+      });
+      const body = z
+        .object({
+          ok: z.boolean(),
+          result: z.object({ id: z.number(), username: z.string().optional() }).optional(),
+        })
+        .safeParse(await res.json().catch(() => undefined));
+      if (!body.success || !body.data.ok || body.data.result === undefined) return undefined;
+      return { id: body.data.result.id, username: body.data.result.username ?? String(body.data.result.id) };
+    } catch {
+      throw new ConnectError(
+        "majhi could not reach Telegram. Check the connection and try again.",
+        "network",
+      );
+    }
+  }
+
+  private async saveTelegram(input: SaveInput, meta: CommandMeta): Promise<SaveResult> {
+    const token = checkTelegramToken(input.values.botToken ?? "");
+    const me = await this.telegramMe(token);
+    if (me === undefined) {
+      throw new ConnectError(
+        "Telegram did not accept the bot token. Copy it again from BotFather.",
+        "refused",
+      );
+    }
+    const account = `@${me.username}`;
+    const connection = await this.upsert(
+      input,
+      meta,
+      "telegram",
+      "Telegram",
+      { TELEGRAM_BOT_TOKEN: { kind: "secret" } },
+      account,
+      "chat",
+    );
+    await this.deps.connections.setSecret?.(
+      { id: connection, field: "TELEGRAM_BOT_TOKEN", list: "vars", value: token },
+      "connect.appSave",
+      meta,
+    );
+    this.deps.observe?.(connection, {
+      ok: true,
+      detail: `Telegram: bot ${account}.`,
+      warnings: [],
+      at: new Date().toISOString(),
+      durationMs: 0,
+      checked: ["Asked Telegram who the bot is (getMe)"],
+      account,
+    });
+    this.deps.changed();
+    this.deps.log?.(`connect: telegram connected in ${input.org}`);
+    return {
+      app: "telegram",
+      connection,
+      message: `Telegram is connected as ${account}. Add the bot to each client group as an admin. The groups show up under New chats.`,
+    };
+  }
+
   private async discordMe(token: string): Promise<{ id: string; name: string } | undefined> {
     try {
       const res = await this.deps.fetch()(`${DISCORD}/users/@me`, {
@@ -294,6 +374,7 @@ export class AppService {
     name: string,
     vars: Record<string, { kind: "secret" | "text"; value?: string }>,
     account: string,
+    type: "env" | "chat" = "env",
   ): Promise<string> {
     const all = await this.deps.connectionIds();
     const had = all.find((c) => c.org === input.org && c.connection.fields?.service === service);
@@ -303,12 +384,15 @@ export class AppService {
       {
         org: input.org,
         id,
-        type: "env",
+        type,
         name,
-        description: `${name} bot for this workspace. Variables ${Object.keys(vars).join(", ")}. Posting asks the owner first.`,
+        description:
+          type === "chat"
+            ? `${name} bot for this workspace's client chats. Only majhi reads it.`
+            : `${name} bot for this workspace. Variables ${Object.keys(vars).join(", ")}. Posting asks the owner first.`,
         fields: {
           service,
-          access: input.access === "read" ? "read" : "readwrite",
+          ...(type === "env" ? { access: input.access === "read" ? "read" : "readwrite" } : {}),
           ...(account === "" ? {} : { account }),
         },
         vars,
@@ -351,6 +435,27 @@ export class AppService {
             })
           : result(false, "Slack no longer accepts the bot token. Set the app up again.", {
               failure: { reason: "rejected" },
+            });
+      }
+      if (service === "telegram") {
+        const token = await this.deps.secretOf(connection, "TELEGRAM_BOT_TOKEN");
+        if (token === undefined) {
+          return result(false, "The bot token is not saved. Set the app up again.", {
+            failure: { reason: "no-credential" },
+          });
+        }
+        const me = await this.telegramMe(token);
+        return me === undefined
+          ? result(
+              false,
+              "Telegram no longer accepts the bot token. Make a new one in BotFather and set the app up again.",
+              {
+                failure: { reason: "rejected" },
+              },
+            )
+          : result(true, `Telegram: bot @${me.username}.`, {
+              checked: ["Asked Telegram who the bot is (getMe)"],
+              account: `@${me.username}`,
             });
       }
       if (service === "discord") {

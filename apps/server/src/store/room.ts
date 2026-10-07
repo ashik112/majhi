@@ -121,6 +121,35 @@ export class RoomRepo {
     return row === undefined ? undefined : toItem(row);
   }
 
+  /** The item a chat app's message was stored as, found by its external key (`externalKeyText`). */
+  byExternal(external: string): RoomItem | undefined {
+    const row = this.db.select().from(roomItems).where(sql`${roomItems.external} = ${external}`).get();
+    return row === undefined ? undefined : toItem(row);
+  }
+
+  /**
+   * Stores a message of a chat app under its external key, once. `make` gets the item already stored for the key
+   * (undefined for a first delivery) and returns what to store, or undefined to leave it as it is: a repeat delivery
+   * stores nothing. The key is unique, so two deliveries at once cannot both insert.
+   */
+  putExternal(
+    task: TaskId,
+    external: string,
+    id: string,
+    make: (existing: RoomItem | undefined) => RoomPayload | undefined,
+  ): { item: RoomItem; created: boolean } | undefined {
+    return this.db.transaction(() => {
+      const existing = this.byExternal(external);
+      const payload = make(existing);
+      if (payload === undefined) return undefined;
+      const item = this.upsert(existing?.task ?? task, existing?.id ?? id, payload);
+      this.db.run(
+        sql`UPDATE room_items SET external = ${external} WHERE task = ${item.task} AND id = ${item.id}`,
+      );
+      return { item, created: existing === undefined };
+    });
+  }
+
   /** Newest first by `seq`, at most `limit`, and whether older ones exist. */
   page(task: string, limit: number, beforeSeq?: number): { items: RoomItem[]; more: boolean } {
     const rows =

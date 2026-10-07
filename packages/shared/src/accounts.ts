@@ -567,6 +567,8 @@ export const EventTopicSchema = z.enum([
   "checks",
   /** A wiki page was stored, or an update started, moved or ended: refetch `wiki.*`. */
   "wiki",
+  /** The clients' chats or contacts changed: refetch `chat.list` and `contacts.list`. */
+  "clients",
 ]);
 export type EventTopic = z.infer<typeof EventTopicSchema>;
 /**

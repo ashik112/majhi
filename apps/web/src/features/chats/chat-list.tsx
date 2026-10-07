@@ -1,4 +1,4 @@
-import type { TaskSummary } from "@majhi/shared";
+import type { ClientList, OrgView, TaskSummary } from "@majhi/shared";
 import { ChevronRight, MoreHorizontal, Search, SquarePen } from "lucide-react";
 import { useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
@@ -8,6 +8,7 @@ import { Lamp } from "@/components/ui/lamp";
 import { ROW, ROW_SELECTED } from "@/components/ui/list-detail";
 import { Menu } from "@/components/ui/menu";
 import { OrgBadge } from "@/components/ui/org-badge";
+import { AccountNotices, ClientRows, NewChats } from "@/features/clients/clients-list";
 import { cn } from "@/lib/cn";
 import { badgeLetters, formatAgo } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
@@ -28,7 +29,12 @@ export function ChatList({
   onDelete,
   creating,
   now,
+  clients,
+  orgs,
 }: {
+  /** The clients' chats, and the chats nobody linked yet. */
+  clients: ClientList | undefined;
+  orgs: readonly OrgView[];
   groups: readonly ChatGroup[];
   orgKeys: ReadonlyMap<string, { key: string; color: string | undefined }>;
   selected: string | undefined;
@@ -71,6 +77,8 @@ export function ChatList({
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pt-2 pb-6 scroll-fade">
+        <NewChats rows={clients?.newChats ?? []} orgs={orgs} />
+        <AccountNotices accounts={clients?.accounts ?? []} />
         {groups.length === 0 && (
           <p className="px-2 py-3 text-sm text-fg-faint">
             {query.trim() === "" ? "No agents yet. Make one in Agents." : "Nothing matches."}
@@ -89,6 +97,15 @@ export function ChatList({
                   />
                   <h2 className="min-w-0 truncate text-sm font-medium text-fg-soft">{group.label}</h2>
                 </div>
+                <ClientRows
+                  rows={(clients?.clients ?? []).filter(
+                    (c) =>
+                      c.org === group.scope &&
+                      (query.trim() === "" || c.title.toLowerCase().includes(query.trim().toLowerCase())),
+                  )}
+                  selected={selected}
+                  onOpen={onOpen}
+                />
                 {agents.length === 0 && <p className="px-2 pb-1 text-sm text-fg-faint">No agents yet.</p>}
                 {agents.map((agent) => (
                   <AgentBlock

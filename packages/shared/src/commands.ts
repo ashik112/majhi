@@ -82,6 +82,23 @@ import {
   CaptainUndoResultSchema,
   SlotCapacitySchema,
 } from "./captain.ts";
+import {
+  ChatEditReplyInputSchema,
+  ChatHolderInputSchema,
+  ChatIgnoreInputSchema,
+  ChatLinkInputSchema,
+  ChatMarkUsInputSchema,
+  ChatReplyInputSchema,
+  ChatReplyResultSchema,
+  ChatSendInputSchema,
+  ClientListSchema,
+  ClientRowSchema,
+  ContactMergeInputSchema,
+  ContactMergeResultSchema,
+  ContactUndoInputSchema,
+  ContactViewSchema,
+  SamePersonAnswerInputSchema,
+} from "./chat.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
   ConnectCatalogSchema,
@@ -1341,6 +1358,96 @@ export const commands = {
       "Confirm a role the wiki guessed on a project's overview, or change it to another role (`choice: undo` removes the choice). It applies on read and to every later update, and the Gaps page stops listing it. The owner (any workspace) and the captain (its own)",
     input: WikiSetRoleInputSchema,
     output: WikiPageViewSchema,
+  },
+  // Client chats (docs/briefs/client-chats.md) ------------------------------------
+  "chat.list": {
+    risk: "read",
+    summary:
+      "The clients' chats: each workspace's linked chats with their newest line, the chats nobody linked yet (New chats), and whether each chat app account can be read. Owner only",
+    input: z.object({}),
+    output: ClientListSchema,
+  },
+  "chat.link": {
+    risk: "change",
+    summary:
+      "Link a New chat to a workspace. From then on the captain reads what the client writes there. Owner only",
+    input: ChatLinkInputSchema,
+    output: ClientRowSchema,
+  },
+  "chat.ignore": {
+    risk: "change",
+    summary: "Ignore a New chat: what arrives from it is dropped. Owner only",
+    input: ChatIgnoreInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.holder": {
+    risk: "change",
+    summary:
+      "Say who writes to the client in a chat: the captain (replies go through the owner's Tell setting) or the owner (the captain does not write). Owner only",
+    input: ChatHolderInputSchema,
+    output: ClientRowSchema,
+  },
+  "chat.send": {
+    risk: "outbound",
+    summary:
+      "Write to the client in a chat as the owner. It goes at once, and the owner holds the chat from then on. Owner only",
+    input: ChatSendInputSchema,
+    output: z.object({ draft: z.number().int().positive(), state: z.enum(["sent", "held", "failed"]) }),
+  },
+  "chat.editReply": {
+    risk: "change",
+    summary: "Change the words of a reply to a client that waits for the owner. Owner only",
+    input: ChatEditReplyInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.samePerson": {
+    risk: "change",
+    summary:
+      "Answer the captain's question whether two contacts are one person: Same merges them, Not same remembers it. Owner only",
+    input: SamePersonAnswerInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.confirmWebhook": {
+    risk: "change",
+    summary:
+      "Telegram has a webhook set for the bot, which stops majhi from reading. Remove it so majhi can read the chats. Owner only",
+    input: z.object({ connection: IdSchema }),
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.markUs": {
+    risk: "change",
+    summary:
+      'Say that the sender of a message is one of us, the owner or a teammate, or is not. What an "us" writes in a chat is not a client\'s: the captain does not triage it, and the chat goes to the owner (Replies: You). Owner only',
+    input: ChatMarkUsInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.reply": {
+    // `read` on purpose: the owner's Tell setting and the Hold list decide whether this sends or waits (a held reply is a
+    // draft of the outbound gate), so no approval card is asked on top of them.
+    risk: "read",
+    summary:
+      "Write a reply to a client chat of this workspace. State what the text says: promisedTime (it names a time or date), money (price, refund, contract), security (an incident or leak) and severalClients (the chat shows more than one client company). Under Tell Ask me, or when a hold applies, the reply waits for the owner as a draft; otherwise it goes at once. A secret or another client's name always waits",
+    input: ChatReplyInputSchema,
+    output: ChatReplyResultSchema,
+  },
+  "contacts.list": {
+    risk: "read",
+    summary: "The clients' contacts of a workspace with the chat identities each has. Owner only",
+    input: z.object({ org: IdSchema }),
+    output: z.array(ContactViewSchema),
+  },
+  "contacts.merge": {
+    risk: "change",
+    summary:
+      "Merge one contact into another of the same workspace. It is logged, so it can be undone with both contacts as they were. Owner only",
+    input: ContactMergeInputSchema,
+    output: ContactMergeResultSchema,
+  },
+  "contacts.undoMerge": {
+    risk: "change",
+    summary: "Undo a contact merge: both contacts and their identities are back as they were. Owner only",
+    input: ContactUndoInputSchema,
+    output: z.object({ ok: z.literal(true) }),
   },
   // The chat dock -----------------------------------------------------------------
   "conversations.list": {

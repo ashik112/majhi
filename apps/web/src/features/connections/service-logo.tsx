@@ -34,6 +34,7 @@ const LOGOS: Readonly<Record<string, string>> = {
   "google-calendar": "googlecalendar",
   "google-drive": "googledrive",
   slack: "slack",
+  telegram: "telegram",
   discord: "discord",
   aws: "amazonaws",
   gcloud: "googlecloud",

@@ -129,6 +129,8 @@ export const roomItems = sqliteTable(
     /** JSON of the item without `id`, `task`, `seq`, `at`. */
     payload: text("payload").notNull(),
     at: text("at").notNull(),
+    /** A chat app message's key (`externalKeyText`), unique (migration 179). Null for every other item. */
+    external: text("external"),
     /** 1 while the item's `state` is pending, read from the payload (virtual column, migration 153). */
     pending: integer("pending").generatedAlwaysAs(
       sql`CASE WHEN json_valid(payload) THEN coalesce(json_extract(payload, '$.state') = 'pending', 0) ELSE 0 END`,

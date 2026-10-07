@@ -392,6 +392,20 @@ export class ConnectionTester {
         );
       case "host":
         return this.host(values);
+      case "chat": {
+        // The bot token is majhi's own: the check is that it is saved. Telegram itself was asked when the app was set up.
+        const saved = (values.lists.vars ?? []).filter((e) => e.value !== undefined).length;
+        return Promise.resolve(
+          saved > 0
+            ? {
+                ok: true,
+                detail: "The bot token is saved.",
+                warnings: [],
+                checked: ["Checked that the bot token is set"],
+              }
+            : fail("The bot token is not saved. Set the app up again.", { reason: "no-credential" }),
+        );
+      }
     }
   }
 

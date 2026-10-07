@@ -37,6 +37,16 @@ export default function DockPanel({ onClose }: { onClose: () => void }) {
   }, [refetch]);
   const groups = useMemo(() => groupByWorkspace(list.data ?? [], orgs), [list.data, orgs]);
   const open = list.data?.find((c) => c.id === openId);
+  const navigate = useNavigate();
+  // A client's chat has its own page, with its Replies switch and held replies: the dock goes there.
+  const openRow = (id: string) => {
+    if (list.data?.find((c) => c.id === id)?.kind === "client") {
+      onClose();
+      void navigate({ to: "/chats/$taskId", params: { taskId: id } });
+      return;
+    }
+    setOpenId(id);
+  };
   const workspace = (c: Conversation) => groups.find((g) => g.rows.some((r) => r.id === c.id))?.name ?? "";
 
   return (
@@ -82,7 +92,7 @@ export default function DockPanel({ onClose }: { onClose: () => void }) {
           No chats yet. Replies from agents on your tasks and from the captain show up here.
         </p>
       ) : (
-        <GroupList groups={groups} onOpen={setOpenId} />
+        <GroupList groups={groups} onOpen={openRow} />
       )}
     </div>
   );

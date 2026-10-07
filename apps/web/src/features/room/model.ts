@@ -72,7 +72,7 @@ export function mergeItems(current: readonly RoomItem[], incoming: readonly Room
 export function newestAgentAt(items: readonly RoomItem[]): string | undefined {
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
-    if (item?.type === "agent") return item.at;
+    if (item?.type === "agent" || item?.type === "client") return item.at;
   }
   return undefined;
 }

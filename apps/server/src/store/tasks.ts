@@ -8,6 +8,7 @@ import {
   type ChildFact,
   type CiState,
   CiStateSchema,
+  CLIENT_CHAT_BRIEF,
   type CoordinationMode,
   CoordinationModeSchema,
   DaySchema,
@@ -54,7 +55,14 @@ import { attachments, autonomyTasks, taskCounters, taskLinks, taskRepos, tasks }
 import { parseRows } from "./tolerant.ts";
 
 /** The briefs that make a `chat` task the owner's chat or a captain lane (see `isOwnerChat`). */
-const OWNER_CHAT_BRIEFS = [CHAT_BRIEF, BOSS_CHAT_BRIEF, AUTONOMY_CHAT_BRIEF, CAPTAIN_LANE_BRIEF];
+const OWNER_CHAT_BRIEFS = [
+  CHAT_BRIEF,
+  CLIENT_CHAT_BRIEF,
+  BOSS_CHAT_BRIEF,
+  AUTONOMY_CHAT_BRIEF,
+  CAPTAIN_LANE_BRIEF,
+  CLIENT_CHAT_BRIEF,
+];
 
 const TeamSchema = z.array(z.string());
 const OverridesSchema = z.record(z.string(), TeamOverrideSchema);

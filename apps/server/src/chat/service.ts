@@ -1,0 +1,168 @@
+import {
+  type AuthorityChoice,
+  type ChatApp,
+  type ChatReplyInput,
+  type ClientList,
+  type ClientRow,
+  type ContactView,
+  type HoldsPatch,
+  REPLY_HOLD_LABEL,
+} from "@majhi/shared";
+import { UserError } from "../errors.ts";
+import type { RoomService } from "../room/service.ts";
+import type { Store } from "../store/index.ts";
+import type { Contacts } from "./contacts.ts";
+import type { ChatConnectionInfo, ChatHub } from "./hub.ts";
+import type { ChatIngest } from "./ingest.ts";
+import type { ClientReplies } from "./replies.ts";
+import type { ClientRooms } from "./rooms.ts";
+
+export interface ClientChatDeps {
+  store: Store;
+  room: Pick<RoomService, "post" | "get">;
+  rooms: ClientRooms;
+  contacts: Contacts;
+  replies: ClientReplies;
+  ingest: ChatIngest;
+  hub: ChatHub;
+  /** The chat app connections that exist now. */
+  connections: () => Promise<ChatConnectionInfo[]>;
+  /** The owner's Hold list of a workspace, as saved. */
+  savedHolds: (org: string) => Promise<HoldsPatch | undefined>;
+  /** The Tell row of a workspace now. */
+  tell: (org: string) => Promise<AuthorityChoice>;
+  /** The captain, and the workspace of a task that is its lane. */
+  lane: (task: string) => Promise<{ boss: string; org: string } | undefined>;
+  /** Removes Telegram's webhook so majhi may read with getUpdates. */
+  deleteWebhook: (connection: string) => Promise<void>;
+}
+
+/** What the commands of client chats do. The handlers only check who asks and call these. */
+export class ClientChat {
+  constructor(private readonly deps: ClientChatDeps) {}
+
+  async list(): Promise<ClientList> {
+    const rooms = this.deps.rooms.list();
+    return { ...rooms, accounts: this.deps.hub.accounts(await this.deps.connections()) };
+  }
+
+  private row(id: string): ClientRow {
+    const all = this.deps.rooms.list();
+    const found = [...all.clients, ...all.newChats].find((r) => r.id === id);
+    if (found === undefined) throw new UserError(`There is no client chat ${id}.`, 404);
+    return found;
+  }
+
+  async link(room: string, org: string): Promise<ClientRow> {
+    // Nothing was stored before the link, so there are no contacts to make yet: they appear as people write.
+    const linked = await this.deps.rooms.link(room, org);
+    return this.row(linked.id);
+  }
+
+  ignore(room: string): void {
+    this.deps.rooms.ignore(room);
+  }
+
+  holder(room: string, holder: "captain" | "you"): ClientRow {
+    this.deps.rooms.holder(room, holder);
+    return this.row(room);
+  }
+
+  async send(room: string, text: string, replyTo: string | undefined) {
+    const out = await this.deps.replies.owner({ room, text, replyTo });
+    return { draft: out.draft, state: out.state };
+  }
+
+  editReply(draft: number, text: string): void {
+    this.deps.replies.edit(draft, text);
+  }
+
+  /** The sender of a message is one of us, or is not. */
+  markUs(room: string, item: string, us: boolean): void {
+    const row = this.deps.rooms.room(room);
+    const found = this.deps.room.get(room, item);
+    if (row.org === undefined || found?.type !== "client")
+      throw new UserError("That is not a client's message.", 404);
+    const contact = this.deps.store.client.byIdentity(row.org, {
+      app: found.external.app,
+      account: found.external.account,
+      native: found.sender.id,
+    });
+    if (contact === undefined)
+      throw new UserError("That sender is not verified, so it cannot be marked.", 409);
+    this.deps.contacts.setUs(contact.id, us);
+  }
+
+  samePerson(room: string, item: string, answer: "same" | "not-same"): void {
+    this.deps.contacts.answer(room, item, answer);
+  }
+
+  contacts(org: string): ContactView[] {
+    return this.deps.contacts.list(org);
+  }
+
+  merge(keep: string, merge: string) {
+    return this.deps.contacts.merge(keep, merge);
+  }
+
+  undoMerge(merge: number): void {
+    const record = this.deps.store.client.mergeRecord(merge);
+    // The card the merge came from, if any, goes back to what the owner now says: not the same.
+    const card = record === undefined ? undefined : this.cardOfMerge(merge);
+    this.deps.contacts.undo(merge, card);
+  }
+
+  private cardOfMerge(merge: number): string | undefined {
+    for (const room of this.deps.store.client.rooms()) {
+      const hit = this.deps.store.room
+        .page(room.id, 200)
+        .items.some((i) => i.type === "same-person" && i.merge === merge);
+      if (hit) return room.id;
+    }
+    return undefined;
+  }
+
+  async confirmWebhook(connection: string): Promise<void> {
+    await this.deps.deleteWebhook(connection);
+    await this.deps.hub.restart(connection);
+  }
+
+  /** The captain's reply, from its lane, to a client chat of its own workspace. The rails decide whether it goes. */
+  async reply(
+    input: ChatReplyInput,
+    caller: { agent: string; task: string },
+  ): Promise<{ state: "sent" | "held" | "failed"; why?: string }> {
+    const lane = await this.deps.lane(caller.task);
+    if (lane === undefined || lane.boss !== caller.agent) {
+      throw new UserError("Only the captain writes to a client chat, from its workspace lane.", 409);
+    }
+    const room = this.deps.rooms.room(input.room);
+    if (room.org !== lane.org) {
+      throw new UserError(
+        "Refused: that chat belongs to another workspace, and this lane works in its own only.",
+        409,
+      );
+    }
+    const out = await this.deps.replies.captain({
+      room: input.room,
+      text: input.text,
+      flags: {
+        promisedTime: input.promisedTime,
+        money: input.money,
+        security: input.security,
+        severalClients: input.severalClients,
+      },
+      to: input.to,
+      replyTo: input.replyTo,
+      thread: input.thread,
+    });
+    if (out.state === "sent") return { state: "sent" };
+    if (out.state === "failed") return { state: "failed", why: out.why };
+    return { state: "held", why: REPLY_HOLD_LABEL[out.why] };
+  }
+
+  /** Whether a chat app of a kind exists. */
+  hasApp(app: ChatApp): boolean {
+    return this.deps.hub.capabilities(app) !== undefined;
+  }
+}

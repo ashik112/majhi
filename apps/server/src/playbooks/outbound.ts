@@ -46,6 +46,8 @@ export interface OutboundDeps {
   /** Whether the owner accepted a promotion to Auto for this channel (the trust ladder). Without it Auto is never selectable. */
   autoAllowed?: (org: string, channel: OutboundChannel) => boolean;
   changed?: () => void;
+  /** A draft reached an end (sent, failed, discarded) or its text changed: whoever shows it keeps up. */
+  settled?: (draft: Draft) => void;
 }
 
 interface DraftRow {
@@ -244,8 +246,16 @@ export class OutboundGate {
     return first !== undefined && first.getTime() <= now.getTime();
   }
 
-  /** Offers an output for sending. It never leaves from here unless the channel is Auto and within its limit. */
-  async submit(input: OutboundSubmitInput, actor: GateActor): Promise<{ draft: Draft; text: string }> {
+  /**
+   * Offers an output for sending. It never leaves from here unless the channel is Auto and within its limit, or the
+   * caller passes `release: "now"`: the owner's own message, or one the owner's Tell setting lets the captain send.
+   * Only the client chat module passes it, after its rails. A Batch channel still queues.
+   */
+  async submit(
+    input: OutboundSubmitInput,
+    actor: GateActor,
+    options: { release?: "now"; prepared?: (draft: Draft) => void } = {},
+  ): Promise<{ draft: Draft; text: string }> {
     const org = actor.kind === "owner" ? input.org : (actor.org ?? input.org);
     if (org === undefined) throw new UserError("Say which workspace this is for.", 400);
     if (actor.kind !== "owner" && input.org !== undefined && input.org !== org) {
@@ -289,7 +299,11 @@ export class OutboundGate {
       );
     const id = Number(info.lastInsertRowid);
     let draft = this.must(id);
-    if (mode === "auto" && result === undefined) {
+    // The caller shows the draft before anything is sent, so what the send needs (its thread) is there when it runs.
+    options.prepared?.(draft);
+    if (options.release === "now" && mode !== "batch") {
+      draft = await this.release(draft, actor.kind === "owner" ? "owner" : "auto");
+    } else if (mode === "auto" && result === undefined) {
       draft = await this.release(draft, "auto");
     }
     this.deps.changed?.();
@@ -326,6 +340,25 @@ export class OutboundGate {
     return rows.filter((r) => localDay(r.decided_at, tz) === today).length;
   }
 
+  /**
+   * Changes the words of a draft that waits. The same scan as a new draft: a text with a secret is refused.
+   * Only the owner edits; the handler checks.
+   */
+  edit(id: number, body: string): Draft {
+    const draft = this.must(id);
+    if (draft.status !== "pending" && draft.status !== "queued") {
+      throw new UserError(`Draft ${id} is ${draft.status}: only a draft that waits can be changed.`, 409);
+    }
+    if (detectSecrets(body).length > 0) {
+      throw new UserError("The text holds what looks like a secret. Take it out, then save it.", 409);
+    }
+    this.deps.db.prepare("UPDATE outbound_drafts SET body = ? WHERE id = ?").run(body, id);
+    const edited = this.must(id);
+    this.deps.settled?.(edited);
+    this.deps.changed?.();
+    return edited;
+  }
+
   /** The owner's decision on one draft. Only the owner reaches this; the handler checks. */
   async decide(id: number, decision: "send" | "discard"): Promise<Draft> {
     const draft = this.must(id);
@@ -335,7 +368,9 @@ export class OutboundGate {
     if (decision === "discard") {
       this.setStatus(id, "discarded", "Discarded by the owner");
       this.deps.changed?.();
-      return this.must(id);
+      const discarded = this.must(id);
+      this.deps.settled?.(discarded);
+      return discarded;
     }
     const out = await this.release(draft, "owner");
     this.deps.changed?.();
@@ -392,6 +427,8 @@ export class OutboundGate {
     } catch (err) {
       this.setStatus(draft.id, "failed", errorMessage(err));
     }
-    return this.must(draft.id);
+    const done = this.must(draft.id);
+    this.deps.settled?.(done);
+    return done;
   }
 }

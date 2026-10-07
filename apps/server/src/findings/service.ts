@@ -280,7 +280,8 @@ export class FindingsService {
 
   /** The open findings of a workspace for the captain's digest: worst first, at most `max`. */
   digestLines(org: string, max = 6): string[] {
-    const open = this.repo.list({ org, statuses: ["open"], limit: 200 });
+    // A client's words are data for the owner, never a line in the captain's own briefing.
+    const open = this.repo.list({ org, statuses: ["open"], limit: 200 }).filter((f) => f.source !== "client");
     const rank = { high: 3, medium: 2, low: 1, info: 0 } as const;
     return open
       .toSorted((a, b) => rank[b.severity] - rank[a.severity] || b.id - a.id)

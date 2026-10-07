@@ -403,6 +403,31 @@ export const EXTRA_SERVICES: readonly unknown[] = [
     docs: "https://docs.slack.dev/app-manifests/",
   },
   {
+    id: "telegram",
+    name: "Telegram",
+    kind: "api-key",
+    summary: "A bot in your clients' Telegram groups that reads what they write and replies",
+    app: "telegram",
+    ready: true,
+    verified: false,
+    verifiedNote: `${DOCS_ONLY} A Telegram bot has one token, made once in BotFather and pasted here.`,
+    packs: ["Social and inbox"],
+    scopes: [
+      {
+        id: "read",
+        access: "read",
+        sentence: "Read messages in the groups the bot is added to, and see who wrote them.",
+      },
+      {
+        id: "write",
+        access: "write",
+        sentence: "Send replies as the bot. The Tell setting of the workspace decides who sends.",
+      },
+    ],
+    test: { kind: "token", sentence: "Asks Telegram who the bot is." },
+    docs: "https://core.telegram.org/bots/api",
+  },
+  {
     id: "discord",
     name: "Discord",
     kind: "api-key",

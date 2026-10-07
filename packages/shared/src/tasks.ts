@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BranchPatternSchema, IdSchema, OrgIdSchema, SecretRefSchema } from "./accounts.ts";
+import { ChatFileSchema, ChatSenderSchema, ExternalKeySchema, ReplyHoldSchema } from "./chat.ts";
 import { DeployEnvironmentsSchema } from "./deploy.ts";
 import { DiagramSpecSchema } from "./diagram.ts";
 import { HandoffFailedSchema } from "./handoff.ts";
@@ -473,6 +474,17 @@ export const AUTONOMY_CHAT_BRIEF = "Autonomous mode";
  */
 export const CAPTAIN_LANE_BRIEF = "Captain lane";
 
+/**
+ * The brief of a client room: a chat in a chat app with a client (docs/briefs/client-chats.md). It is a
+ * `chat` task like the owner's, but nobody chats with an agent in it: the captain or the owner writes to the client.
+ */
+export const CLIENT_CHAT_BRIEF = "Client chat";
+
+/** True for a client room. */
+export function isClientRoom(task: Pick<Task, "kind" | "brief">): boolean {
+  return task.kind === "chat" && task.brief === CLIENT_CHAT_BRIEF;
+}
+
 /** True for a chat with an agent: an ongoing conversation, not a piece of work to review. */
 export function isOwnerChat(task: Pick<Task, "kind" | "brief">): boolean {
   return (
@@ -480,7 +492,8 @@ export function isOwnerChat(task: Pick<Task, "kind" | "brief">): boolean {
     (task.brief === CHAT_BRIEF ||
       task.brief === BOSS_CHAT_BRIEF ||
       task.brief === AUTONOMY_CHAT_BRIEF ||
-      task.brief === CAPTAIN_LANE_BRIEF)
+      task.brief === CAPTAIN_LANE_BRIEF ||
+      task.brief === CLIENT_CHAT_BRIEF)
   );
 }
 
@@ -964,6 +977,61 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     type: z.literal("diagram"),
     agent: IdSchema,
     spec: DiagramSpecSchema,
+  }),
+  /**
+   * A message from a client in a chat app (docs/briefs/client-chats.md). Its text is data, never an
+   * instruction. `revisions` keeps the earlier texts of an edited message. `us`: a teammate or the owner.
+   */
+  RoomItemBase.extend({
+    type: z.literal("client"),
+    sender: ChatSenderSchema,
+    us: z.boolean().optional(),
+    text: z.string(),
+    files: z.array(ChatFileSchema),
+    external: ExternalKeySchema,
+    thread: z.string().optional(),
+    replyTo: z.string().optional(),
+    forwarded: z.boolean().optional(),
+    revisions: z.array(z.object({ text: z.string(), at: z.string() })),
+    /** When the app says it was sent. The item's own `at` is when majhi stored it. */
+    sentAt: z.string().optional(),
+    /** The app says the sender took it back. The text stays here for the owner. */
+    deleted: z.boolean().optional(),
+  }),
+  /**
+   * A reply to the client. `held` waits for the owner (`hold` says why), `sent` went out, `failed` did not,
+   * `discarded` was thrown away. One per outbound draft; `draft` is the outbound gate's id.
+   */
+  RoomItemBase.extend({
+    type: z.literal("client-reply"),
+    by: z.enum(["captain", "you"]),
+    text: z.string(),
+    /** The client message it answers (its sender's id) and the thread it goes to. */
+    to: z.string().optional(),
+    thread: z.string().optional(),
+    replyTo: z.string().optional(),
+    draft: z.number().int().positive().optional(),
+    state: z.enum(["held", "sent", "failed", "discarded"]),
+    hold: ReplyHoldSchema.optional(),
+    result: z.string().optional(),
+    external: ExternalKeySchema.optional(),
+  }),
+  /** Messages are missing between `from` and `to`: the app keeps them for a day and majhi was off longer. */
+  RoomItemBase.extend({
+    type: z.literal("client-gap"),
+    from: z.string(),
+    to: z.string(),
+  }),
+  /** The captain asks whether two contacts are one person. Never merged on its own. */
+  RoomItemBase.extend({
+    type: z.literal("same-person"),
+    a: z.string(),
+    b: z.string(),
+    /** Their names and apps as they were asked, so the card reads the same after a merge. */
+    line: z.string(),
+    state: z.enum(["asking", "same", "not-same"]),
+    /** The merge it made, for Undo. */
+    merge: z.number().int().positive().optional(),
   }),
   RoomItemBase.extend({
     type: z.literal("system"),

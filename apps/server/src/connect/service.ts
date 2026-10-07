@@ -151,6 +151,8 @@ export interface ConnectDeps {
   apps: AppClientStore;
   /** Public client IDs majhi ships, by app. */
   builtInApps?: Readonly<Record<string, string>>;
+  /** Telegram's Bot API address, when it is not Telegram's own (a trial against a fake bot server). */
+  telegramApi?: string | undefined;
   /** The client ID of the workspace-wide GitHub OAuth app git sign-in already uses, if any. */
   githubClientId?: () => Promise<string | undefined>;
   /** Command-line tool sign-ins through the host helper. */
@@ -284,6 +286,8 @@ export class ConnectService {
       orgName: deps.orgName,
       redirect: deps.redirect,
       fetch: () => this.fetchFn,
+      telegramApi: deps.telegramApi,
+      observe: (id, result) => this.deps.health?.observe(id, result),
       connections: deps.connections,
       connectionIds: deps.connectionIds,
       secretOf: deps.secretOf,
@@ -370,7 +374,7 @@ export class ConnectService {
 
   /** An `env` connection a guided app setup made (Slack, Discord): tokens, no sign-in to renew. */
   private isTokenService(connection: ConnectionConfig): boolean {
-    if (connection.type !== "env") return false;
+    if (connection.type !== "env" && connection.type !== "chat") return false;
     const id = connection.fields?.service;
     const kind = id === undefined ? undefined : this.service(id)?.kind;
     return kind === "api-key" || kind === "token";

@@ -136,3 +136,23 @@ export function checkDiscordId(value: string): string {
   }
   return id;
 }
+
+/** A Telegram bot token: the bot's number, a colon and a secret part. BotFather gives it once. */
+export function checkTelegramToken(value: string): string {
+  const token = value.trim();
+  const [id, secret, ...rest] = token.split(":");
+  const digits = id !== undefined && id.length > 0 && [...id].every((ch) => ch >= "0" && ch <= "9");
+  if (
+    !digits ||
+    secret === undefined ||
+    secret.length < 30 ||
+    rest.length > 0 ||
+    [...token].some((ch) => ch.trim() === "")
+  ) {
+    throw new ConnectError(
+      "The bot token is a number, a colon and a long code, like 123456789:AAH... Copy it again from BotFather.",
+      "protocol",
+    );
+  }
+  return token;
+}

@@ -312,6 +312,35 @@ const DEFS: Readonly<Record<string, Def>> = {
       ),
     ],
   },
+  telegram: {
+    title: "Telegram bot",
+    intro:
+      "A Telegram bot reads and writes in your clients' groups without a public address. You make the bot once in BotFather, paste its token here, and add the bot to each client group as an admin.",
+    finishes: "tokens",
+    services: ["telegram"],
+    inputs: [
+      {
+        key: "botToken",
+        label: "Bot token",
+        kind: "secret",
+        help: "BotFather shows it once you create the bot. It looks like 123456789:AAH...",
+        placeholder: "123456789:",
+      },
+    ],
+    steps: (c) => [
+      step(
+        "Make the bot in BotFather",
+        "Send /newbot to BotFather, give the bot a name and a username, and copy the token it answers with.",
+        [{ label: "Open BotFather", url: "https://t.me/BotFather" }],
+        [{ label: "Name", value: c.appName }],
+      ),
+      step(
+        "Let it see every message",
+        "Add the bot to each client group as an admin. An admin bot sees every message of the group, not only commands. Nobody else needs to be added.",
+      ),
+      step("Paste the token", "majhi asks Telegram who the bot is, and keeps the token encrypted."),
+    ],
+  },
   microsoft: {
     title: "Microsoft app (Outlook)",
     intro:

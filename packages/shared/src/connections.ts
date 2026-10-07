@@ -30,6 +30,7 @@ export const ConnectionTypeSchema = z.enum([
   "cli",
   "git",
   "host",
+  "chat",
 ]);
 export type ConnectionType = z.infer<typeof ConnectionTypeSchema>;
 
@@ -567,10 +568,49 @@ export const CONNECTION_TYPES: readonly ConnectionTypeDef[] = [
     ],
     lists: [],
   },
+  {
+    type: "chat",
+    label: "Chat app",
+    summary: "A bot in a chat app that majhi reads client chats through. Agents never get its token",
+    fields: [
+      {
+        // The catalog entry of the app, like every guided setup's `service`: telegram, slack, discord or email.
+        key: "service",
+        label: "App",
+        kind: "text",
+        required: true,
+        managed: true,
+        help: "The chat app this account is in.",
+        choices: [
+          { value: "telegram", label: "Telegram" },
+          { value: "slack", label: "Slack" },
+          { value: "discord", label: "Discord" },
+          { value: "email", label: "Email" },
+        ],
+      },
+      {
+        key: "account",
+        label: "Signed in as",
+        kind: "text",
+        required: false,
+        managed: true,
+        help: "Who the app says the token belongs to.",
+      },
+    ],
+    lists: [
+      {
+        key: "vars",
+        label: "Tokens",
+        help: "The app's tokens. Only majhi reads them: no run gets them.",
+        kinds: ["secret"],
+        names: "variable",
+      },
+    ],
+  },
 ];
 
 /** Types only Connect makes (5.14): the new-connection form does not offer them. */
-export const CONNECT_ONLY_TYPES: readonly ConnectionType[] = ["api", "cli"];
+export const CONNECT_ONLY_TYPES: readonly ConnectionType[] = ["api", "cli", "chat"];
 
 const BY_TYPE = new Map(CONNECTION_TYPES.map((def) => [def.type, def]));
 
