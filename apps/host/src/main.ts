@@ -222,6 +222,7 @@ async function main(): Promise<void> {
     path,
     socket: () => platform.sshAgent.socket(),
     find: deps.find,
+    ssh: process.env.MAJHI_HOST_SSH ?? "/usr/bin/ssh",
   };
   // majhi's own askpass for clones and pushes with a workspace's token (see gitAuth.ts).
   const askpass = await ensureAskpass(config.majhiHome);

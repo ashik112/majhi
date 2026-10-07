@@ -28,6 +28,7 @@ describe("detectGitLogins", () => {
     path: "/usr/bin",
     socket: async () => "/tmp/agent.sock",
     find: async (name: "gh" | "glab") => (name === "gh" ? "/opt/homebrew/bin/gh" : undefined),
+    ssh: "/usr/bin/ssh",
   };
 
   it("keeps going when a probe fails and never reads a token", async () => {
