@@ -127,7 +127,14 @@ export function TaskHeader({
             yourTurn={yourTurn}
             className="mx-1 shrink-0"
           />
-          <Crumbs task={task} org={tag} origin={origin} fit={fit} filter={filter} />
+          <Crumbs
+            task={task}
+            org={tag}
+            // A client report names its chat in the chip beside the title.
+            origin={origin?.kind === "client" ? undefined : origin}
+            fit={fit}
+            filter={filter}
+          />
           {fit === "full" && <span className="ml-2 flex">{chips}</span>}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1">

@@ -88,7 +88,6 @@ const UPDATE_FLAGS: ReplyFlags = {
   severalClients: false,
 };
 
-type EventItem = Extract<RoomItem, { type: "incident-event" }>;
 type ReportItem = Extract<RoomItem, { type: "report" }>;
 
 function clip(text: string, max: number): string {
@@ -336,28 +335,33 @@ export class ClientIncidents {
   candidates(org: string, roomId: string): IncidentChoice[] {
     const out: IncidentChoice[] = [];
     const { store } = this.deps;
-    const linked = new Set(
-      store.tasks.get(roomId) === undefined ? [] : store.tasks.linksTo(roomId).map((l) => l.task),
-    );
-    const taskOfWatch = new Set<number>();
-    for (const t of store.tasks.list(true)) {
-      if (t.org !== org || t.typing?.type !== "incident") continue;
-      const open = t.status !== "done";
-      const mine = linked.has(t.id);
-      if (!open && !mine) continue;
-      out.push({ id: t.id, title: t.title, ...(open ? {} : { resolved: true }) });
+    const incident = (t: { typing?: { type: string } | undefined; org?: string | undefined }) =>
+      t.org === org && t.typing?.type === "incident";
+    const open = store.tasks.list(false).filter(incident);
+    for (const t of open) out.push({ id: t.id, title: t.title });
+    // A resolved incident told to this chat stays on the list for a day: a client saying it is back reopens it.
+    const lately = this.now().getTime() - DAY_MS;
+    for (const link of store.tasks.linksTo(roomId)) {
+      if (link.type !== "client" || open.some((t) => t.id === link.task)) continue;
+      const task = store.tasks.get(link.task);
+      if (task !== undefined && incident(task) && Date.parse(task.updatedAt) > lately) {
+        out.push({ id: task.id, title: task.title, resolved: true });
+      }
     }
+    // A watch incident nobody made a task of yet.
     for (const w of this.deps.watch.open(org)) {
-      const task = w.finding === undefined ? undefined : this.deps.findings.get(w.finding).task;
-      if (task !== undefined) taskOfWatch.add(w.id);
-      else out.push({ id: `watch:${w.id}`, title: w.title });
+      const task = w.finding === undefined ? undefined : this.taskOfFinding(w.finding);
+      if (task === undefined) out.push({ id: `watch:${w.id}`, title: w.title });
     }
-    // A resolved incident counts only while the chat can still say it is back.
-    return out.filter((c) => {
-      if (c.resolved !== true) return true;
-      const task = store.tasks.get(c.id);
-      return task !== undefined && Date.parse(task.updatedAt) > this.now().getTime() - DAY_MS;
-    });
+    return out;
+  }
+
+  private taskOfFinding(finding: number): string | undefined {
+    try {
+      return this.deps.findings.get(finding).task;
+    } catch {
+      return undefined;
+    }
   }
 
   private link(incident: string, room: string): void {
@@ -590,9 +594,7 @@ export class ClientIncidents {
       entries.push({ at: r, internal: "reported again", client: "you told us it was back" });
     entries.push({ at: resolvedAt, internal: "resolved", client: "resolved" });
 
-    const fixLines = [task, ...read.fixes]
-      .filter((t) => t.status === "done" || t.id === task.id)
-      .map((t) => `${t.id} ${clip(t.title, 80)}`);
+    const fixLines = read.fixes.filter((t) => t.status === "done").map((t) => `${t.id} ${clip(t.title, 80)}`);
     const shipped = read.deploys.map((d) => `${d.project} ${d.env} ${d.commit.slice(0, 7)} ${d.state}`);
     const open = read.fixes.filter((t) => t.status !== "done");
 
@@ -601,7 +603,7 @@ export class ClientIncidents {
       impact: `Reported in ${reporters === "" ? "no client room" : reporters}${reportedAt === undefined ? "" : ` at ${at(reportedAt)}`}. It ran from ${at(began)} to ${at(resolvedAt)} (${minutes} min).`,
       timeline: line(entries, "internal"),
       cause: cause === undefined ? "Not recorded." : cause.text,
-      fix: [...fixLines, ...shipped].join("; "),
+      fix: [...fixLines, ...shipped].join("; ") || "Not recorded.",
       followUps:
         open.length === 0 ? "None recorded." : open.map((t) => `${t.id} ${clip(t.title, 80)}`).join("; "),
     };

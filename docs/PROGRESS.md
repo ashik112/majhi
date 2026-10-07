@@ -1,5 +1,25 @@
 # Progress
 
+## Client chats, phase 2: incidents and RCA (branch `feat/chat-incidents`, built, not merged)
+
+A client who reports an outage is told what is happening, in their own chat, until it is resolved, and the owner can send them a short report after. Brief: `docs/briefs/client-chats.md`, phase 2.
+
+**Plan.** Origin `client` and the `client` task link, then the derived status (one pure function), then the incident service (linking, updates, report), the commands, then the card in the task's dock and the chips in its header, then a throwaway majhi with the fake Bot API and a fake watch.
+
+**What works.**
+- A client message that reports an outage opens an `incident` task with origin `client {room, item}`; one that is about an open incident links its room to that task (`client` task links, so one incident can tell several rooms). A message about an open watch incident with no task makes the task and links the watch through its finding. The header shows "From Telegram · room · sender" and the watch chip.
+- The status a client sees is derived, never stored (`clientStatus`, `packages/shared/src/incident.ts`): Investigating, Identified (a cause is marked or a fix task, push, merge or deploy record exists), Monitoring (the fix's deploys are live), Resolved (the linked watch stayed green for the soak, default 15 minutes; with no watch, the task is done and its deploys are live). A client who says it is back after Resolved reopens it, and only a new fix live (or the task done again) resolves it.
+- The status card in the task's dock (like the deploy plan): "<room> sees: <status>", one line of facts, the four steps with the time each began. Each linked room is told through the same rails (Tell and the Hold list) when the status changes and at the workspace's cadence (default 30 minutes) while open, never more. A held update that is not sent yet is changed to say the newest thing instead of piling up. `autonomy.orgs.<org>.incident` holds `soakMin` and `cadenceMin`.
+- The report: when an incident is Resolved, one `report` room item with Internal and Client versions (Summary, Impact, Timeline, Cause, Fix, Follow-ups), written in code from recorded events only (client messages, the cause the captain marked with `incident.cause`, fix tasks, deploy records, the watch incident). The Client version never says more than the recorded `client` cause. The card has Internal | Client, Edit and "Send to <room>". Only the owner's click sends it (the report hold is fixed, and the commands refuse agents); a secret or another client's name stops it until edited; the text is frozen once it went to any room.
+
+**How to try it.** Throwaway majhi with the fake Bot API (`MAJHI_TELEGRAM_API`, `MAJHI_CHATS=on`), a watched service that goes down, a message in a linked group, then the task page.
+
+**Checked.** Typecheck of every package, biome, the three tests of the brief (the derived status for every state, reopen and no watch; the report is sent only by the owner and frozen after; one incident with two rooms tells each once per change), the unit suite and e2e once. A throwaway majhi in a browser with the fake Bot API and a real watch on a fake network: a message arrived, the watch incident became the task, each step was told to two rooms (and seen in the fake API), the watch went green and the soak passed, the report was made and sent to one room by the owner's click. Compared to the mockup pair by pair (header chips, status bar, steps, RCA bar, sections).
+
+**Left.** "Any update?" is not yet answered from the status (the triage answers from the wiki). The captain has `incident.cause` but no prompt asks it to use it; until it does, the cause line says "Not recorded" and the client text says the cause is being confirmed. The report is written in code, not by a model, so its prose is plain. A reopened task that is `done` stays done; the card shows Investigating again. Not run against real Telegram.
+
+**Known issues.** The incident pass runs every 20 seconds over incidents that have a client room, and reads the deploys and the room of each; it is cheap now and should skip long-resolved ones when there are many.
+
 ## Client chats, phase 1: core and Telegram (branch `feat/client-chats`, built, not merged)
 
 A client's Telegram group is a room in Chats. The captain reads what the client writes through the findings flow, and what goes back goes through the outbound gate under the owner's Tell setting and Hold list. Brief: `docs/briefs/client-chats.md`.
