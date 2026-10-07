@@ -27,7 +27,7 @@ function scopesOf(headers: Headers): string[] | undefined {
 function refused(err: unknown): never {
   if (err instanceof SlackError) {
     if (err.badToken) throw new ChatSendError("Slack no longer accepts the bot token.", "needs-token");
-    throw new ChatSendError(err.plain, "rejected");
+    throw new ChatSendError(err.plain, "rejected", err.needed);
   }
   throw err;
 }
@@ -36,10 +36,12 @@ function refused(err: unknown): never {
 export async function listSlackChannels(api: SlackApi, conn: ChatConnection): Promise<ChatChannelList> {
   try {
     const auth = await api.callWithHeaders("auth.test", conn.token, {}, SlackAuth);
+    // Slack lists the token's scopes on every answer; the first that does is read, auth.test's before the rest.
+    let scopes = scopesOf(auth.headers);
     const channels: ChatChannelList["channels"] = [];
     let cursor: string | undefined;
     for (let page = 0; page < MAX_PAGES; page++) {
-      const got = await api.call(
+      const got = await api.callWithHeaders(
         "conversations.list",
         conn.token,
         {
@@ -50,7 +52,8 @@ export async function listSlackChannels(api: SlackApi, conn: ChatConnection): Pr
         },
         SlackChannelsPage,
       );
-      for (const raw of got.channels) {
+      scopes ??= scopesOf(got.headers);
+      for (const raw of got.data.channels) {
         const row = SlackChannelRow.safeParse(raw);
         if (!row.success || row.data.is_archived === true) continue;
         channels.push({
@@ -60,7 +63,7 @@ export async function listSlackChannels(api: SlackApi, conn: ChatConnection): Pr
           member: row.data.is_member === true,
         });
       }
-      cursor = got.response_metadata?.next_cursor;
+      cursor = got.data.response_metadata?.next_cursor;
       if (cursor === undefined || cursor === "") break;
     }
     // The app's id names its permissions page. `bots.info` may be refused: then the page is the list of apps.
@@ -76,7 +79,7 @@ export async function listSlackChannels(api: SlackApi, conn: ChatConnection): Pr
       bot: auth.data.user ?? "majhi",
       ...(appId === undefined ? {} : { appId }),
       channels,
-      scopes: scopesOf(auth.headers),
+      scopes,
     };
   } catch (err) {
     return refused(err);

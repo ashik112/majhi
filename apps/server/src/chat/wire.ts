@@ -127,6 +127,14 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
       set: (connection, cursor) =>
         w.store.client.setCursor(connection, cursor, (w.now?.() ?? new Date()).toISOString()),
     },
+    notes: {
+      get: (connection) => {
+        const cursor = w.store.client.cursor(connection);
+        return { needed: cursor?.needed ?? [], eventSeen: cursor?.eventSeen === true };
+      },
+      set: (connection, notes) =>
+        w.store.client.setNotes(connection, notes, (w.now?.() ?? new Date()).toISOString()),
+    },
     deliver: async (conn, envelope) => {
       if (ingest === undefined) throw new Error("Chats are not ready.");
       await ingest.deliver(conn, envelope);

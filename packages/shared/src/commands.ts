@@ -95,6 +95,8 @@ import {
   ChatReplyInputSchema,
   ChatReplyResultSchema,
   ChatSendInputSchema,
+  ChatUnignoreInputSchema,
+  ChatUnlinkInputSchema,
   ClientListSchema,
   ClientRowSchema,
   ContactMergeInputSchema,
@@ -1409,6 +1411,19 @@ export const commands = {
     risk: "change",
     summary: "Ignore a New chat: what arrives from it is dropped. Owner only",
     input: ChatIgnoreInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.unlink": {
+    risk: "change",
+    summary:
+      "Unlink a client chat from its workspace: nothing is read or sent for it any more, its history stays read only under the workspace, and the chat can be linked again as a fresh room. Owner only",
+    input: ChatUnlinkInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.unignore": {
+    risk: "change",
+    summary: "Watch an ignored chat again: it is a New chat once more and can be linked. Owner only",
+    input: ChatUnignoreInputSchema,
     output: z.object({ ok: z.literal(true) }),
   },
   "chat.holder": {

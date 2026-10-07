@@ -1915,6 +1915,18 @@ ALTER TABLE connection_health ADD COLUMN cursor TEXT;
 ALTER TABLE contact_ids ADD COLUMN username TEXT;
 `,
   },
+  {
+    // An unlinked client room is archived: it keeps its history under its workspace and gives up its chat, so the
+    // chat can be linked again as a fresh room. Only a live room is unique per chat.
+    id: 181,
+    name: "archived client rooms free their chat",
+    sql: `
+DROP INDEX tasks_client_chat;
+CREATE UNIQUE INDEX tasks_client_chat ON tasks (
+  json_extract(client, '$.app'), json_extract(client, '$.account'), json_extract(client, '$.chat')
+) WHERE client IS NOT NULL AND json_extract(client, '$.archived') IS NOT 1;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */
