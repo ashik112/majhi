@@ -8,7 +8,8 @@ type DecisionCommand =
   | "decisions.detail"
   | "decisions.answer"
   | "decisions.answerBatch"
-  | "decisions.recommend";
+  | "decisions.recommend"
+  | "answers.cancelHeld";
 
 /** The answer is the owner's click: an agent, the captain included, never answers for them here. */
 export function ownerOnly(ctx: CommandContext): void {
@@ -39,5 +40,9 @@ export function inboxHandlers(decisions: InboxService): Pick<CommandHandlers, De
       return decisions.answerBatch(input);
     },
     "decisions.recommend": async (_input, ctx) => captainTool(ctx),
+    "answers.cancelHeld": async (input, ctx) => {
+      ownerOnly(ctx);
+      return { cancelled: decisions.held.cancel(input.key) };
+    },
   };
 }

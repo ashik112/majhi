@@ -1,6 +1,6 @@
 import type { BudgetAsk, CommandName, RoomItem } from "@majhi/shared";
 import Database from "better-sqlite3";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CommandContext } from "../commands/handlers.ts";
 import { migrate } from "../store/migrations.ts";
 import { buildDecisions, type DecisionSources, isDecisionItem } from "./build.ts";
@@ -271,5 +271,35 @@ describe("the captain's recommendation", () => {
     await expect(
       handlers["decisions.recommend"]({ id: "room:ACM-1:ask1", option: "keep", reason: "x" }, ctx),
     ).rejects.toThrow(/tool of the captain/);
+  });
+});
+
+describe("an answer that waits out its Undo time", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("is sent by the server when the time is up, with no tab left, and Undo drops it", async () => {
+    vi.useFakeTimers();
+    const inbox = service();
+    const id = "room:ACM-1:ch1";
+    await inbox.answerView({ id, option: "now", holdMs: 5000 });
+    expect(log).toEqual([]);
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(log).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(log).toEqual(["choice ACM-1 ch1 now"]);
+
+    const again = "room:ACM-1:oq1";
+    await inbox.answerView({ id: again, option: "c0", holdMs: 5000 });
+    expect(inbox.held.cancel(again)).toBe(true);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(log).toEqual(["choice ACM-1 ch1 now"]);
+  });
+
+  it("is sent at once, not lost, when the server shuts down", async () => {
+    vi.useFakeTimers();
+    const inbox = service();
+    await inbox.answerView({ id: "room:ACM-1:ch1", option: "wait", holdMs: 5000 });
+    await inbox.held.flush();
+    expect(log).toEqual(["choice ACM-1 ch1 wait"]);
   });
 });

@@ -97,6 +97,8 @@ import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
 import { layaEvalRunner } from "./decisions/uses/weekly-eval.ts";
 import { createNothingDeploys } from "./deploy/nothing.ts";
+import { failingConnectionDecisions } from "./connections/decisions.ts";
+import { waitingDeployDecisions } from "./deploy/decisions.ts";
 import { createDeploy, type DeployTiming, type DeployWorld } from "./deploy/wire.ts";
 import type { ServerEnv } from "./env.ts";
 import { errorMessage, UserError } from "./errors.ts";
@@ -1510,6 +1512,22 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   const inbox = new InboxService({
     outbound,
     incidents: () => opsWatch?.unacked() ?? [],
+    incidentDetail: (id) => {
+      const inc = opsWatch?.incident(id);
+      if (inc === undefined) return undefined;
+      const found = inc.timeline.findLast((e) => e.kind === "action" && e.text.startsWith("Captain: "));
+      let task: string | undefined;
+      try {
+        task = inc.finding === undefined ? undefined : findingsStore?.get(inc.finding).task;
+      } catch {
+        // The finding was removed: the incident still shows what it knows.
+      }
+      return {
+        ...(inc.finding === undefined ? {} : { finding: inc.finding }),
+        ...(found === undefined ? {} : { found: found.text.slice("Captain: ".length).slice(0, 600) }),
+        ...(task === undefined ? {} : { task }),
+      };
+    },
     items: () => store.room.waitingDecisions(),
     working: () => runs.workingTasks(),
     changed: (task) => events.emitTask(task),
@@ -1532,6 +1550,9 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         .map((a) => ({ id: a.id, at: a.lastHealth?.checkedAt ?? new Date().toISOString() })),
     recommendations: new RecommendationRepo(store.raw),
     proposalStale: (item) => admin.proposalStale(item),
+    warn: (task, text) =>
+      room.post(task as TaskId, `warn:${randomUUID()}`, { type: "system", level: "warn", text }),
+    supersedeProposals: () => admin.supersedeProposals(),
     orgNames: async () =>
       Object.fromEntries(Object.entries((await config.sections()).orgs).map(([id, o]) => [id, o.name])),
     lastAgentMessage: (task) => {
@@ -1573,7 +1594,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       answerCeiling: (month, option) => outcomesService?.answerCeiling(month, option) ?? Promise.resolve(),
       answerNotifyAccess: (option) => macNotify?.answer(option) ?? Promise.resolve(),
     },
-    extras: () => [...(outcomesService?.decisions() ?? []), ...(macNotify?.decision() ?? [])],
+    extras: async () => [
+      ...(outcomesService?.decisions() ?? []),
+      ...(macNotify?.decision() ?? []),
+      ...failingConnectionDecisions(await connections.list().catch(() => [])),
+      ...waitingDeployDecisions(await deployWorld.board(), (id) => store.tasks.get(id)),
+    ],
     answered: (decision, option) => outcomesService?.answered(decision, option),
   });
   const lanes = new Lanes({
@@ -1831,6 +1857,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     decisions: (org) => inbox.list(org),
     findings: () => findings.list({ limit: 500 }, agendaOwner).findings,
     briefHidden: (f) => ruleSwitches.briefHidden(f.org, f.playbook),
+    incidentOf: (finding) => opsWatch?.incidentOfFinding(finding)?.id,
     goals: () => goals.list({}, agendaOwner),
     running: () =>
       store.tasks
@@ -3006,6 +3033,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       automation.scheduler.stop();
       cards.close();
       layaDocker?.close();
+      await inbox.held.flush();
       await runs.closeAll();
       // Hooks already running (rewriting TASK.md at review, a restack) end before the stores close.
       // After the runs: a hook can wait on a lock a turn holds.

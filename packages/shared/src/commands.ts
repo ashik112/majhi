@@ -2987,6 +2987,13 @@ export const commands = {
     input: z.object({ task: TaskIdSchema, item: z.string(), choice: z.string().min(1).max(200) }),
     output: CardAnswerOutput,
   },
+  "answers.cancelHeld": {
+    risk: "change",
+    summary:
+      "Undo an answer that waits out its Undo time: a decision id, or ask:<task>:<item> for a question card. Owner only",
+    input: z.object({ key: z.string().min(1).max(400) }),
+    output: z.object({ cancelled: z.boolean() }),
+  },
   "room.answerAsk": {
     risk: "change",
     summary: "Answer one or more questions on an ask card and send the answers to the agent",
@@ -2995,6 +3002,8 @@ export const commands = {
       item: z.string(),
       /** questionId -> the option id chosen, or free text typed. */
       answers: z.record(z.string(), z.string()),
+      /** The owner's Undo time: majhi holds the answer this many milliseconds, then sends it. */
+      holdMs: z.number().int().min(1000).max(15_000).optional(),
     }),
     output: CardAnswerOutput,
   },

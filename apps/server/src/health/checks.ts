@@ -155,7 +155,7 @@ export function connectionCheck(view: ConnectionView): Check {
       const transient = result.failure !== undefined && TRANSIENT_FAILURES.has(result.failure.reason);
       return {
         ...base,
-        status: "fail",
+        status: transient ? "warn" : "fail",
         detail: result.detail,
         checkedAt: result.at,
         ...(transient ? {} : { fix: { label: "Reconnect" } }),
@@ -173,7 +173,7 @@ export function connectionCheck(view: ConnectionView): Check {
   if (h?.state === "failed" || h?.state === "needs-attention") {
     return {
       ...base,
-      status: "fail",
+      status: TRANSIENT_FAILURES.has(h.reason) ? "warn" : "fail",
       detail: `${FAILURE_LINE[h.reason]}. ${h.fix}`,
       checkedAt: h.at,
       ...(TRANSIENT_FAILURES.has(h.reason) ? {} : { fix: { label: "Reconnect" } }),
@@ -227,7 +227,7 @@ async function checkMajhiHome(dir: string, home: string): Promise<Check> {
     if (errorCode(err) === "ENOENT") {
       return {
         ...base,
-        status: "warn",
+        status: "pass",
         detail: `${shown} does not exist yet. majhi creates it on the first save.`,
         fix: { label: "Create folder" },
       };
@@ -427,7 +427,7 @@ async function checkTasksDir(state: ConfigState, home: string): Promise<Check[]>
   return [
     {
       ...base,
-      status: "warn",
+      status: "pass",
       detail: `${shown} does not exist yet. majhi creates it with your first task.`,
       fix: { label: "Create folder" },
     },

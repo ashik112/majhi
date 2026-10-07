@@ -14,6 +14,8 @@ export interface AgendaInput {
   findings: readonly Finding[];
   /** A workspace's name by id; undefined reads as the id. */
   orgName: (org: string | undefined) => string | undefined;
+  /** The incident a finding was made for, to acknowledge it from Today. */
+  incidentOf?: ((finding: number) => number | undefined) | undefined;
 }
 
 /** Minutes the owner is estimated to need for a decision. Cheap to answer ones are 1, a ship to read is 3. */
@@ -114,6 +116,13 @@ function decisionItem(d: OwnerDecision, input: AgendaInput): AgendaItem {
   };
 }
 
+/** A finding is dismissed; an incident is acknowledged, and has no button when its incident is unknown. */
+function doneOf(f: Finding, input: AgendaInput): Pick<AgendaItem, "done"> {
+  if (f.source !== "incident") return { done: { kind: "dismiss-finding", id: f.id } };
+  const incident = input.incidentOf?.(f.id);
+  return incident === undefined ? {} : { done: { kind: "ack-incident", incident } };
+}
+
 function findingItem(f: Finding, input: AgendaInput): AgendaItem | undefined {
   if (f.status !== "open") return undefined;
   const incident = f.source === "incident";
@@ -134,7 +143,7 @@ function findingItem(f: Finding, input: AgendaInput): AgendaItem | undefined {
     weight: incident ? W.incident : W.finding + ageBonus(f.createdAt, input.now),
     at: f.createdAt,
     must: incident,
-    done: { kind: "dismiss-finding", id: f.id },
+    ...doneOf(f, input),
   };
 }
 

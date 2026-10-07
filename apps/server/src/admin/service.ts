@@ -53,7 +53,14 @@ import {
   WithdrawSecretInputSchema,
 } from "./fetch-secret.ts";
 import { decide as decideMode, matchRule, redact, redactOutput, redactText, sameRule } from "./policy.ts";
-import { PROPOSED_TEXT, type ProposalWorld, planProposal, proposalBasis } from "./proposals.ts";
+import {
+  mergeProposalInput,
+  PROPOSED_TEXT,
+  type ProposalWorld,
+  planProposal,
+  proposalBasis,
+  proposalTarget,
+} from "./proposals.ts";
 import { summarize } from "./summary.ts";
 import type { AdminCaller } from "./tokens.ts";
 import { adminTools, REQUEST_SECRET_TOOL } from "./tools.ts";
@@ -308,9 +315,37 @@ export class AdminService {
     }
     const world = this.proposals;
     if (world === undefined) return error("Proposals are not available.");
-    const planned = await planProposal(world, command, input, lane.org);
+    let planned = await planProposal(world, command, input, lane.org);
     if (planned.kind === "run") return undefined;
     if (planned.kind === "refuse") return error(planned.error);
+    // A second proposal for the same thing in one turn joins the card that waits: one card, one Apply.
+    const target = proposalTarget(command, input);
+    const open =
+      target === undefined
+        ? undefined
+        : this.deps.store.room.pendingOfType(caller.task, "approval").find((i) => {
+            if (i.type !== "approval" || i.proposal === undefined || i.command !== command) return false;
+            try {
+              return proposalTarget(command, JSON.parse(i.input)) === target;
+            } catch {
+              return false;
+            }
+          });
+    if (open?.type === "approval" && open.input !== JSON.stringify(input)) {
+      const merged = mergeProposalInput(command, JSON.parse(open.input), input);
+      const joined = await planProposal(world, command, merged, lane.org);
+      if (joined.kind === "propose") {
+        this.update(open, {
+          summary: redactText(joined.summary),
+          input: JSON.stringify(merged),
+          ...(why === "" ? {} : { reason: redactText(why) }),
+          proposal: { org: lane.org, basis: joined.basis, changes: joined.changes },
+        });
+        return { text: PROPOSED_TEXT, isError: false };
+      }
+      planned = joined.kind === "refuse" ? joined : planned;
+      if (planned.kind === "refuse") return error(planned.error);
+    }
     const stored = JSON.stringify(input);
     const waiting = this.deps.store.room
       .pendingOfType(caller.task, "approval")
@@ -333,6 +368,41 @@ export class AdminService {
       });
     }
     return { text: PROPOSED_TEXT, isError: false };
+  }
+
+  /**
+   * A pending proposal whose setting changed since (part of it was applied, or the owner changed it by hand) is
+   * rebuilt against what holds now, or closed when nothing is left to change. The room says which.
+   */
+  async supersedeProposals(): Promise<void> {
+    const world = this.proposals;
+    if (world === undefined) return;
+    for (const item of this.deps.store.room.waitingOnOwner()) {
+      if (item.type !== "approval" || item.proposal === undefined || !(await this.proposalStale(item))) continue;
+      let input: unknown;
+      try {
+        input = JSON.parse(item.input);
+      } catch {
+        continue;
+      }
+      const planned = await planProposal(world, item.command, input, item.proposal.org);
+      const line = (text: string) =>
+        this.deps.room.post(item.task as TaskId, `info:${randomUUID()}`, {
+          type: "system",
+          level: "info",
+          text: redactText(text),
+        });
+      if (planned.kind === "propose") {
+        this.update(item, {
+          summary: redactText(planned.summary),
+          proposal: { org: item.proposal.org, basis: planned.basis, changes: planned.changes },
+        });
+        line(`Part of "${lowerFirst(item.summary)}" is done already. What is left is on its card.`);
+      } else {
+        this.update(item, { state: "rejected", result: "Nothing is left of it" });
+        line(`"${lowerFirst(item.summary)}" is closed: what it asked for is done already.`);
+      }
+    }
   }
 
   /** Whether a pending proposal still matches the setting it was measured against. */

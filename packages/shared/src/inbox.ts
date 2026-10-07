@@ -57,6 +57,7 @@ export const DecisionLinkSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("account"), id: z.string().min(1) }),
   z.object({ kind: z.literal("playbooks") }),
   z.object({ kind: z.literal("watch") }),
+  z.object({ kind: z.literal("connections") }),
   /** A section of Hub setup, like `notifications`. */
   z.object({ kind: z.literal("setup"), section: z.string().min(1).max(40) }),
 ]);
@@ -136,6 +137,14 @@ export const DecisionDetailSchema = z.object({
   changes: z.array(z.string()).max(60).optional(),
   /** Who asks, so the pane can say "@agent in ACM-3". */
   agent: z.string().optional(),
+  /** An incident's finding, what the captain found out about it, and the task that fixes it. */
+  incident: z
+    .object({
+      finding: z.number().int().positive().optional(),
+      found: z.string().max(600).optional(),
+      task: TaskIdSchema.optional(),
+    })
+    .optional(),
 });
 export type DecisionDetail = z.infer<typeof DecisionDetailSchema>;
 
@@ -211,6 +220,11 @@ export const DecisionAnswerInputSchema = z.object({
   id: z.string().min(1).max(300),
   option: z.string().min(1).max(200),
   text: z.string().min(1).max(2000).optional(),
+  /**
+   * The owner's Undo time for a one-click answer to a question: majhi holds the answer this many milliseconds
+   * and then sends it, also when the tab is gone. `answers.cancelHeld` drops it before then.
+   */
+  holdMs: z.number().int().min(1000).max(15_000).optional(),
 });
 export type DecisionAnswerInput = z.infer<typeof DecisionAnswerInputSchema>;
 

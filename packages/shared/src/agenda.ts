@@ -34,6 +34,8 @@ export type AgendaTarget = z.infer<typeof AgendaTargetSchema>;
 /** What `e` does with an item where the owner may do it from Today. */
 export const AgendaDoneSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("dismiss-finding"), id: z.number().int().positive() }),
+  /** A firing incident is acknowledged, not dismissed: it keeps alerting until its checks are green. */
+  z.object({ kind: z.literal("ack-incident"), incident: z.number().int().positive() }),
 ]);
 export type AgendaDone = z.infer<typeof AgendaDoneSchema>;
 

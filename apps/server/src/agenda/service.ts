@@ -32,6 +32,8 @@ export interface AgendaDeps {
   briefHidden?: ((f: Finding) => boolean) | undefined;
   goals: () => Goal[];
   running: () => { id: string; title: string; org?: string | undefined; since?: string | undefined }[];
+  /** The incident a finding was made for. */
+  incidentOf?: ((finding: number) => number | undefined) | undefined;
   /** A workspace's name by id. */
   names: () => Promise<ReadonlyMap<string, string>>;
   overnight: (from: string, to: string) => Promise<Overnight & { spent: number; budget?: number }>;
@@ -183,6 +185,7 @@ export class AgendaService {
         scope,
       ),
       orgName,
+      incidentOf: this.deps.incidentOf,
     });
     return plan(items, this.budgetMinutes());
   }

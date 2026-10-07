@@ -1,7 +1,10 @@
 import type { DecisionList, OwnerDecision } from "@majhi/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useSyncExternalStore } from "react";
 import { useToast } from "@/components/ui/toast";
+import { cmd } from "@/lib/api";
 import { useAnswerDecision } from "@/lib/decision-queries";
+import { queryKeys } from "@/lib/queries";
 import { describeError } from "@/lib/errors";
 import { rowTitle } from "./model";
 
@@ -59,6 +62,7 @@ interface SendOptions {
 export function useSendDecision() {
   const answer = useAnswerDecision();
   const toast = useToast();
+  const client = useQueryClient();
 
   const sendNow = useCallback(
     (decision: OwnerDecision, option: string, options: SendOptions = {}) => {
@@ -94,27 +98,44 @@ export function useSendDecision() {
         return;
       }
       if (holds.has(decision.id)) return;
+      // The server holds the answer for its Undo time and sends it, also when this tab is gone.
       const timer = window.setTimeout(() => {
         holds.delete(decision.id);
         changed();
-        sendNow(decision, option, options);
-      }, UNDO_MS);
+        void client.invalidateQueries({ queryKey: queryKeys.decisions });
+        void cmd("decisions.list", {}).then((left) => options.onDone?.(left), () => undefined);
+      }, UNDO_MS + 400);
       holds.set(decision.id, { option, timer });
       changed();
+      const drop = () => {
+        const held = holds.get(decision.id);
+        if (held !== undefined) window.clearTimeout(held.timer);
+        holds.delete(decision.id);
+        changed();
+      };
+      cmd(
+        "decisions.answer",
+        { id: decision.id, option, holdMs: UNDO_MS },
+        { reason: "Owner answered a decision" },
+      ).then(
+        () => undefined,
+        (error: unknown) => {
+          drop();
+          toast(failureTitle(decision, chosen.label, false), { detail: describeError(error), tone: "error" });
+        },
+      );
       toast(`Sending in 5 seconds: ${chosen.label}`, {
         ms: UNDO_MS,
         action: {
           label: "Undo",
           onClick: () => {
-            const held = holds.get(decision.id);
-            if (held !== undefined) window.clearTimeout(held.timer);
-            holds.delete(decision.id);
-            changed();
+            drop();
+            void cmd("answers.cancelHeld", { key: decision.id }, { reason: "Owner undid an answer" });
           },
         },
       });
     },
-    [sendNow, toast],
+    [sendNow, toast, client],
   );
 
   return { send, busy: answer.isPending };

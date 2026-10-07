@@ -23,12 +23,13 @@ import {
   useSetReviewBudget,
 } from "@/lib/agenda-queries";
 import { cn } from "@/lib/cn";
+import { applyFilters } from "@/features/decisions/model";
 import { useDecisions } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
 import { formatMoney } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useOrgFilter } from "@/lib/org-filter";
-import { useWatch } from "@/lib/watch-queries";
+import { useAckIncident, useWatch } from "@/lib/watch-queries";
 import {
   actionOf,
   clockText,
@@ -429,6 +430,11 @@ function AgendaPanel({
 function RightNowPanel({ today, org }: { today: AgendaToday; org: string | undefined }) {
   const { watch } = today;
   const run = useRunAttention();
+  // An incident the agenda lists already is not listed a second time.
+  const onAgenda = new Set(
+    [...today.today, ...today.later].flatMap((i) => (i.target.to === "finding" ? [i.target.id] : [])),
+  );
+  const incidents = watch.incidents.filter((i) => !onAgenda.has(i.id));
   const asFinding = new Set(watch.incidents.map((i) => i.id));
   const services = (useWatch().data?.incidents ?? []).filter(
     (i) =>
@@ -437,7 +443,7 @@ function RightNowPanel({ today, org }: { today: AgendaToday; org: string | undef
       (i.finding === undefined || !asFinding.has(i.finding)),
   );
   const pct = watch.budget === undefined || watch.budget === 0 ? 0 : (watch.spent / watch.budget) * 100;
-  const quiet = watch.running.length === 0 && watch.incidents.length === 0 && services.length === 0;
+  const quiet = watch.running.length === 0 && incidents.length === 0 && services.length === 0;
   return (
     <Panel
       title="Right now"
@@ -468,7 +474,7 @@ function RightNowPanel({ today, org }: { today: AgendaToday; org: string | undef
             </Link>
           </li>
         ))}
-        {watch.incidents.map((i) => (
+        {incidents.map((i) => (
           <li key={`i${i.id}`}>
             <button
               type="button"
@@ -567,6 +573,9 @@ export function TodayView() {
   const run = useRunAttention();
   const toast = useToast();
   const dismiss = useDismissFinding();
+  const ack = useAckIncident();
+  const decisions = useDecisions();
+  const needsCount = applyFilters(decisions.data?.decisions ?? [], { org, kind: undefined }).length;
   const [picked, setPicked] = useState<string | undefined>();
   const [later, setLater] = useState(false);
 
@@ -581,6 +590,10 @@ export function TodayView() {
     const done = item.done;
     if (done === undefined) return;
     const fail = (e: unknown) => toast("Could not do that", { detail: describeError(e), tone: "error" });
+    if (done.kind === "ack-incident") {
+      ack.mutate(done.incident, { onSuccess: () => toast(`Acknowledged: ${item.title}`), onError: fail });
+      return;
+    }
     dismiss.mutate(done.id, { onSuccess: () => toast(`Dismissed: ${item.title}`), onError: fail });
   };
 
@@ -661,7 +674,8 @@ export function TodayView() {
             ? "The brief, the agenda and what is coming."
             : subtitleOf({
                 day: today.day,
-                count: today.today.length,
+                needs: needsCount,
+                look: [...today.today, ...today.later].filter((i) => i.target.to !== "decision").length,
                 minutes: today.usedMinutes,
                 later: today.later.length,
               })

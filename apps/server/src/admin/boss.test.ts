@@ -174,22 +174,25 @@ describe("the captain proposes what it may not do alone", () => {
     expect(settings.authority?.deployProduction ?? "ask").toBe("ask");
   });
 
-  it("cannot be applied once the setting changed after it was proposed", async () => {
-    const { h, chat, call, merge, proposals, decisions } = await lane();
+  it("is one card for overlapping proposals, rebuilt when part of it is done and closed when all of it is", async () => {
+    const { h, call, merge, proposals, decisions } = await lane();
     await call("majhi_autonomy_configure", MERGE);
-    const [card] = await proposals();
-    // The owner moves the same workspace's table by hand: the diff no longer describes what would happen.
+    await call("majhi_autonomy_configure", { orgs: { acme: { authority: { push: "decide" } } } });
+    const [card, ...rest] = await proposals();
+    expect(rest).toHaveLength(0);
+    expect(card?.proposal?.changes).toEqual(["Merge: You → Captain", "Push: You → Captain"]);
+    // The owner makes one of the two changes by hand: the card shows only what is left.
+    expect((await h.cmd("autonomy.configure", MERGE)).status).toBe(200);
+    const listed = (await decisions()).find((d) => d.id.includes(card?.id ?? "?"));
+    expect(listed?.options.map((o) => o.label)).toEqual(["Apply", "Reject"]);
+    expect((await proposals())[0]?.proposal?.changes).toEqual(["Push: You → Captain"]);
+    // Then the other: nothing is left, so the card closes and applies nothing twice.
     expect(
       (await h.cmd("autonomy.configure", { orgs: { acme: { authority: { push: "decide" } } } })).status,
     ).toBe(200);
-    const listed = (await decisions()).find((d) => d.id.includes(card?.id ?? "?"));
-    expect(listed?.options.map((o) => o.label)).toEqual(["Reject"]);
-    expect(listed?.blocked).toContain("changed");
-    expect((await h.cmd("room.approve", { task: chat, item: card?.id, decision: "approve" })).status).toBe(
-      409,
-    );
-    expect(await merge()).toBe("ask");
-    expect((await proposals())[0]).toMatchObject({ state: "pending" });
+    expect((await decisions()).some((d) => d.id.includes(card?.id ?? "?"))).toBe(false);
+    expect((await proposals())[0]).toMatchObject({ state: "rejected" });
+    expect(await merge()).toBe("decide");
   });
 
   it("proposes an environment change its own rail refuses, and runs one it allows", async () => {
