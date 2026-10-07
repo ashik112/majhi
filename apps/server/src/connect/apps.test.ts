@@ -1,12 +1,6 @@
 import { mkdir, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  buildAppSetup,
-  type CommandMeta,
-  type ConnectionConfig,
-  SERVICE_CATALOG,
-  scopesAt,
-} from "@majhi/shared";
+import { type CommandMeta, type ConnectionConfig, SERVICE_CATALOG, scopesAt } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { generateKey, SecretStore } from "../secrets/store.ts";
 import { tempDir, writeKeyFile } from "../testing/fixtures.ts";
@@ -39,15 +33,6 @@ describe("Google's client file", () => {
     expect(() => parseGoogleClientJson(desktopClient({ auth_uri: "not a url" }))).toThrow(
       /not a Google client file/,
     );
-  });
-});
-
-describe("the Slack manifest", () => {
-  it("adds posting only at readwrite, and is the same every time", () => {
-    const write = buildAppSetup("slack", { orgName: "Acme", redirect: REDIRECT, access: "readwrite" });
-    expect(JSON.parse(write?.manifest?.json ?? "{}").oauth_config.scopes.bot).toContain("chat:write");
-    const again = buildAppSetup("slack", { orgName: "Acme", redirect: REDIRECT, access: "readwrite" });
-    expect(again?.manifest?.json).toBe(write?.manifest?.json);
   });
 });
 

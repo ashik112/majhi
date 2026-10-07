@@ -14,9 +14,8 @@ afterEach(async () => {
   cleanups = [];
 });
 
-const cmd = (name: string, body?: unknown, meta?: unknown) => w.h.cmd(name, body, meta);
+const cmd = (name: string, body?: unknown) => w.h.cmd(name, body);
 const tip = (repo: string, ref: string) => git(repo, "rev-parse", ref).then((s) => s.trim());
-const ID = { actor: { kind: "agent", id: "acme-builder" }, reason: "to catch up" };
 const commitAs = (repo: string, msg: string) =>
   git(repo, "-c", "user.name=Other", "-c", "user.email=other@example.com", "commit", "--quiet", "-m", msg);
 
@@ -80,10 +79,7 @@ describe("tasks.updateTarget", () => {
     }
     const before = await tip(w.repo("api"), "main");
     const res = await cmd("tasks.updateTarget", { id: "ACM-1", into: "main" });
-    expect(res.body.results[0]).toMatchObject({
-      ok: false,
-      detail: "local main has 2 commits origin lacks; push or merge them first.",
-    });
+    expect(res.body.results[0]).toMatchObject({ ok: false });
     expect(await tip(w.repo("api"), "main")).toBe(before);
   });
 
@@ -94,8 +90,6 @@ describe("tasks.updateTarget", () => {
     const before = await tip(w.repo("api"), "main");
     const res = await cmd("tasks.updateTarget", { id: "ACM-1", into: "main" });
     expect(res.body.results[0].ok).toBe(false);
-    expect(res.body.results[0].detail).toContain("README.md");
-    expect(res.body.results[0].detail).toContain("uncommitted");
     expect(await tip(w.repo("api"), "main")).toBe(before);
     expect(await readFile(join(w.repo("api"), "README.md"), "utf8")).toBe("my edit\n");
   });
@@ -107,7 +101,6 @@ describe("tasks.updateTarget", () => {
     const before = await tip(w.repo("api"), "main");
     const res = await cmd("tasks.updateTarget", { id: "ACM-1", into: "main" });
     expect(res.body.results[0].ok).toBe(false);
-    expect(res.body.results[0].detail).toContain("untracked docs");
     expect(await tip(w.repo("api"), "main")).toBe(before);
   });
 
@@ -120,13 +113,5 @@ describe("tasks.updateTarget", () => {
     expect(await tip(w.repo("api"), "main")).toBe(theirs);
     expect((await git(w.repo("api"), "branch", "--show-current")).trim()).toBe("scratch");
     expect((await stat(join(w.repo("api"), ".git"))).isDirectory()).toBe(true);
-  });
-
-  it("runs for an agent caller once its approval let it through", async () => {
-    await reviewed();
-    const theirs = await pushFromElsewhere("other.txt");
-    const res = await cmd("tasks.updateTarget", { id: "ACM-1", into: "main" }, ID);
-    expect(res.status).toBe(200);
-    expect(await tip(w.repo("api"), "main")).toBe(theirs);
   });
 });

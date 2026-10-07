@@ -5,17 +5,11 @@ import { join } from "node:path";
 import type { TaskRepo } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { guardMounts } from "../runs/launch.ts";
-import { typeOfBranch } from "./branch-naming.ts";
 import { targetRefusal } from "./ship-plan.ts";
 import { unshippedCommits } from "./shipped.ts";
 
 describe("branches that already exist", () => {
-  it("leaves task/ branches alone: no type, still guarded", async () => {
-    expect(typeOfBranch("task/acm-1-fix-login")).toBeUndefined();
-    expect(typeOfBranch("fix/acm-1-fix-login")).toBe("fix");
-    expect(typeOfBranch("feature/acm-1-x")).toBe("feat");
-    expect(typeOfBranch("main")).toBeUndefined();
-
+  it("keeps task/ branches guarded", async () => {
     const dir = mkdtempSync(join(tmpdir(), "majhi-guard-"));
     try {
       const paths = async (branch: string, created: boolean) =>

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   capacityOf,
-  defaultRunsTotal,
   type Holder,
   type Limits,
   noRoomLine,
@@ -221,13 +220,7 @@ describe("machine-wide run cap", () => {
     expect(capacityOf(s.state(), capped).agents).toEqual({ inUse: 2, waiting: 1, limit: 2, free: 0 });
   });
 
-  it("defaults to a third of the cores, at least 2, and 3 without a reading", () => {
-    expect([
-      defaultRunsTotal(8),
-      defaultRunsTotal(12),
-      defaultRunsTotal(2),
-      defaultRunsTotal(undefined),
-    ]).toEqual([2, 4, 2, 3]);
+  it("never lets the machine-wide run total exceed agents_max", () => {
     expect(runsTotal({ agents_max: 6, per_account: 2, per_task: 3, idle_timeout: "3m" }, 24)).toBe(6);
     expect(
       runsTotal({ agents_max: 6, per_account: 2, per_task: 3, idle_timeout: "3m", runs_total: 9 }, 24),

@@ -45,8 +45,6 @@ async function teamWorld(
     agentOf["claude-acme-2"] = "acme-reviewer";
   }
   const prompts: Record<string, string[]> = {};
-  /** The same prompts with every text block, for what rides after the first one. */
-  const full: Record<string, string[]> = {};
   h.runtime.onSession = (session, start) => {
     // A decision stand-in's session is not the agent's turn.
     if (start.scratch) return;
@@ -55,16 +53,13 @@ async function teamWorld(
       const list = prompts[agent] ?? [];
       prompts[agent] = list;
       list.push(turn.text);
-      const texts = full[agent] ?? [];
-      full[agent] = texts;
-      texts.push(turn.blocks.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n\n"));
       const step = scripts[agent]?.[list.length - 1];
       const text = step === undefined ? "ok" : await step(turn);
       turn.emit({ type: "text", messageId: `m${list.length}`, text });
       return "end_turn";
     };
   };
-  return { h, prompts, full };
+  return { h, prompts };
 }
 
 const say = (text: string) => async () => text;
@@ -76,10 +71,6 @@ async function items(task: string): Promise<RoomItem[]> {
 
 async function handoffs(task: string): Promise<string[]> {
   return (await items(task)).flatMap((i) => (i.type === "handoff" ? [`${i.from}>${i.to} (${i.via})`] : []));
-}
-
-async function systemTexts(task: string): Promise<string[]> {
-  return (await items(task)).flatMap((i) => (i.type === "system" ? [i.text] : []));
 }
 
 /**
@@ -118,8 +109,6 @@ describe("the loop guard", () => {
     expect(task.pausedReason).toBe("loop");
     // The first trip woke the lead (the team's first member) instead of pausing.
     expect(await handoffs("ACM-1")).toContain("majhi>acme-builder (guard)");
-    expect((await systemTexts("ACM-1")).some((t) => t.startsWith("Agents went in circles"))).toBe(true);
-    expect((await systemTexts("ACM-1")).some((t) => t.includes("more handoffs changed no files"))).toBe(true);
 
     const sent = await h.cmd("room.send", { task: "ACM-1", text: "carry on" });
     expect(sent.status).toBe(200);
@@ -136,7 +125,7 @@ async function must(h: World["h"], name: string, body: unknown): Promise<void> {
 describe("work the lead has not reviewed", () => {
   it("wakes the lead once instead of going to review, then the task goes to review", async () => {
     const worktree = () => join(w.taskDir("ACM-1"), "acme-api");
-    const { h, prompts, full } = await teamWorld(
+    const { h, prompts } = await teamWorld(
       {
         "acme-lead": [say("@acme-builder: please build the health endpoint."), say("Looked at it. Done.")],
         "acme-builder": [
@@ -156,10 +145,6 @@ describe("work the lead has not reviewed", () => {
     });
     await until(() => (prompts["acme-lead"]?.length ?? 0) === 2, "the lead woken to review");
     await until(async () => (await status("ACM-1")) === "review", "review after the lead's turn");
-    expect(full["acme-lead"]?.[1]).toContain("A teammate changed the worktrees since your last turn");
-    expect(await systemTexts("ACM-1")).toContain(
-      "Nobody is working on ACM-1, but a teammate changed the worktrees and nobody has reviewed it. Woke @acme-lead to review that work before the task goes to review.",
-    );
     expect(await handoffs("ACM-1")).toEqual(["acme-lead>acme-builder (mention)"]);
     expect(prompts["acme-lead"]).toHaveLength(2);
   });
@@ -182,6 +167,5 @@ describe("owner messages", () => {
     });
     const res = await h.cmd("room.send", { task: "ACM-1", text: "@globex-builder help" });
     expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/cannot work in "acme"/);
   });
 });

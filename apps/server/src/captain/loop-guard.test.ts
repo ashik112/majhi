@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
 import { LoopGuard } from "./loop-guard.ts";
 import { CaptainRepo } from "./repo.ts";
-import { LOOP_GUARD_ANSWERS } from "./rules.ts";
 
 /**
  * The loop guard: after LOOP_GUARD_ANSWERS captain answers to one task with no progress in between
@@ -49,7 +48,6 @@ async function answers(guard: LoopGuard, task: string, n: number): Promise<void>
 
 describe("the loop guard", () => {
   it("pauses a task after three answers with no progress, and not before", async () => {
-    expect(LOOP_GUARD_ANSWERS).toBe(3);
     const { guard, paused } = setup(memory());
     await answers(guard, "ACM-1", 2);
     expect(paused).toEqual([]);

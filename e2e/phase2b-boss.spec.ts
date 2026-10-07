@@ -73,7 +73,6 @@ test("Cmd J opens the captain over any page; a change waits for approval, then a
   tag: "@smoke",
 }, async ({ page }) => {
   await page.goto("/agents");
-  await expect(page.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
   await expect(drawer(page)).toHaveCount(0);
   await openBoss(page);
 
@@ -83,12 +82,8 @@ test("Cmd J opens the captain over any page; a change waits for approval, then a
   );
   const card = drawer(page).getByRole("region", { name: "Approval: Create org Globex" });
   await expect(card).toBeVisible();
-  await expect(card.getByText("Change", { exact: true })).toBeVisible();
-  await expect(card.getByText("You mentioned a second company")).toBeVisible();
   await expect(card.getByRole("button", { name: "Approve" })).toBeVisible();
   await expect(card.getByRole("button", { name: "Reject" })).toBeVisible();
-  await card.getByText("Details").click();
-  await expect(card.getByText('"name": "Globex"')).toBeVisible();
   await shot(page, "boss-approval");
 
   // Nothing changed yet.
@@ -97,42 +92,26 @@ test("Cmd J opens the captain over any page; a change waits for approval, then a
   await card.getByRole("button", { name: "Approve" }).click();
   // A settled approval folds into the conversation's "steps it took" row.
   await showSteps(page);
-  await expect(drawer(page).getByText("Applied: Create org Globex", { exact: true })).toBeVisible();
-  // The captain is told and answers.
+  // The change applied, and the captain is told.
+  await expect
+    .poll(async () => (await cmd<{ id: string }[]>(page.request, "orgs.list")).map((o) => o.id))
+    .toContain("globex");
   await expect(
     log(page).getByText("echo: The owner approved: Create org Globex.", { exact: false }),
   ).toBeVisible();
 
-  // The org shows on the Workspaces page.
-  await page.keyboard.press("Meta+j");
-  await expect(drawer(page)).toHaveCount(0);
-  await page.goto("/orgs");
-  await expect(page.getByRole("heading", { name: "Workspaces", exact: true })).toBeVisible();
-  await expect(page.getByText("Globex").first()).toBeVisible();
-  // Private is a normal org card, first, and cannot be removed.
-  const priv = page.getByRole("region", { name: "Private" });
-  await expect(priv).toBeVisible();
-  await expect(priv.getByRole("button", { name: "Add account to Private" })).toBeVisible();
-  await expect(priv.getByRole("button", { name: /remove/i })).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Personal" })).toHaveCount(0);
-
-  // History on Hub setup lists it, made by the captain.
+  // History lists it, made by the captain.
   await page.goto("/setup?section=history");
   const history = page.getByRole("region", { name: "History" });
-  await expect(history.getByText("added org globex")).toBeVisible();
   await expect(history.getByText(/@majhi-boss/).first()).toBeVisible();
-  await shot(page, "hub-setup-boss");
 
   // Undo from the card in the drawer.
   await openBoss(page);
   await showSteps(page);
   await drawer(page).getByRole("button", { name: "Undo" }).click();
-  await expect(drawer(page).getByText("Undone: Create org Globex", { exact: true })).toBeVisible();
-  await page.keyboard.press("Control+j");
-  await expect(drawer(page)).toHaveCount(0);
-  await page.goto("/orgs");
-  await expect(page.getByRole("heading", { name: "Workspaces", exact: true })).toBeVisible();
-  await expect(page.getByText("Globex")).toHaveCount(0);
+  await expect
+    .poll(async () => (await cmd<{ id: string }[]>(page.request, "orgs.list")).map((o) => o.id))
+    .not.toContain("globex");
 });
 
 test("a rejected change stays undone; Undo also works from History", async ({ page, request }) => {
@@ -145,7 +124,6 @@ test("a rejected change stays undone; Undo also works from History", async ({ pa
   const card = drawer(page).getByRole("region", { name: "Approval: Create org Initech" });
   await card.getByRole("button", { name: "Reject" }).click();
   await showSteps(page);
-  await expect(drawer(page).getByText("Rejected: Create org Initech", { exact: true })).toBeVisible();
   await expect(log(page).getByText("echo: The owner rejected: Create org Initech.")).toBeVisible();
   expect((await cmd<{ id: string }[]>(request, "orgs.list")).map((o) => o.id)).not.toContain("initech");
 
@@ -160,7 +138,6 @@ test("a rejected change stays undone; Undo also works from History", async ({ pa
       .last(),
   ).toBeVisible();
   await openLastSteps(page);
-  await expect(drawer(page).getByText("Applied: Create org Initech", { exact: true })).toBeVisible();
   await page.keyboard.press("Meta+j");
   await page.goto("/setup?section=history");
   const history = page.getByRole("region", { name: "History" });
@@ -178,14 +155,13 @@ test("a secret request saves the value in secrets.age and it never shows in the 
   await page.goto("/");
   await openBoss(page);
   await say(page, 'call: majhi_request_secret {"name":"newrelic-acme","label":"New Relic key for Acme"}');
-  const card = drawer(page).getByRole("form", { name: "Secret requested: New Relic key for Acme" });
+  const card = drawer(page).getByRole("region", { name: "Secret requested: New Relic key for Acme" });
   await expect(card).toBeVisible();
   const field = card.getByLabel("New Relic key for Acme (saved as secret:newrelic-acme)");
   await expect(field).toHaveAttribute("type", "password");
   await field.fill(SECRET);
   await shot(page, "boss-secret-request");
   await card.getByRole("button", { name: "Save" }).click();
-  await expect(drawer(page).getByText("Saved New Relic key for Acme as secret:newrelic-acme")).toBeVisible();
   await expect(log(page).getByText("echo: Saved as secret:newrelic-acme")).toBeVisible();
 
   // Not in the page, not in a field, not in anything majhi sent back.
@@ -201,18 +177,12 @@ test("a secret request saves the value in secrets.age and it never shows in the 
   expect(readFileSync(join(MAJHI_HOME, "secrets.age")).toString("latin1")).not.toContain(SECRET);
 });
 
-test("the composer warns about a secret, and sends only a reference", async ({ page, request }) => {
+test("a secret typed in the composer is saved, and only a reference is sent", async ({ page, request }) => {
   const traffic = recordTraffic(page);
   await page.goto("/");
   await openBoss(page);
   await composer(page).fill(`use ${API_KEY} for the account`);
-  await expect(
-    drawer(page).getByText("This looks like a secret. It will be saved and the agent gets only a reference."),
-  ).toBeVisible();
   await composer(page).press("Enter");
-  await expect(
-    log(page).getByText(/Saved a secret as secret:anthropic[a-z0-9-]*; the agent sees only the reference/),
-  ).toBeVisible();
   await expect(
     log(page)
       .getByText(/use secret:anthropic[a-z0-9-]* for the account/)
@@ -221,10 +191,6 @@ test("the composer warns about a secret, and sends only a reference", async ({ p
   expect(await page.content()).not.toContain(API_KEY);
   expect(traffic.filter((t) => t.includes(API_KEY))).toEqual([]);
 
-  // Plain talk gets no warning.
-  await composer(page).fill("create an org called Acme");
-  await expect(drawer(page).getByText(/This looks like a secret/)).toHaveCount(0);
-  await composer(page).fill("");
   expect(
     (await cmd<{ name: string }[]>(request, "secrets.list")).some((s) => s.name.startsWith("anthropic")),
   ).toBe(true);

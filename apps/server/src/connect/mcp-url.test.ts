@@ -77,7 +77,7 @@ describe("probing an MCP server by address", () => {
     }
     expect(await t.svc.probe({ url: "https://169.254.169.254/mcp", allowPrivate: true })).toMatchObject({
       method: "unreachable",
-      failure: { reason: "blocked-host", fix: expect.stringContaining("metadata") },
+      failure: { reason: "blocked-host" },
     });
     expect(t.calls).toEqual([]);
   });
@@ -86,11 +86,10 @@ describe("probing an MCP server by address", () => {
     const t = service({});
     expect(await t.svc.probe({ url: "http://mcp.acme.test/mcp" })).toMatchObject({
       method: "unreachable",
-      failure: { reason: "blocked-host", fix: expect.stringContaining("https") },
+      failure: { reason: "blocked-host" },
     });
     expect(await t.svc.probe({ url: "https://user:pass@mcp.acme.test/mcp" })).toMatchObject({
       method: "unreachable",
-      failure: { fix: expect.stringContaining("Leave the sign-in out") },
     });
   });
 

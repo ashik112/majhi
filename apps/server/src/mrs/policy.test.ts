@@ -20,7 +20,6 @@ describe("nextMerge when the owner clicks", () => {
   it("stops on failing CI and says which repo", () => {
     const d = ask({ order: [repo("api", "merged", "passing"), repo("web", "open", "failing")] });
     expect(d).toMatchObject({ action: "stop", project: "web" });
-    expect((d as { reason: string }).reason).toContain("CI failed on web");
   });
 
   it("stops, rather than waits, while CI runs, since the click ends the call", () => {

@@ -4,6 +4,7 @@ import { BookText } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Problem } from "@/components/problem";
 import { Button } from "@/components/ui/button";
+import { Lamp } from "@/components/ui/lamp";
 import { DetailPane, ListDetail } from "@/components/ui/list-detail";
 import { PageLink } from "@/components/ui/page-link";
 import { RowsSkeleton } from "@/components/ui/skeleton";
@@ -19,7 +20,7 @@ import { type LoadedPage, PageView } from "./page-view";
 import { SourceViewer } from "./source-viewer";
 import { UpdateDialog } from "./update-dialog";
 import { useWikiWorkspaces } from "./use-wiki-switch";
-import { WHOLE, WikiHeader } from "./wiki-header";
+import { PHASE_WORDS, WHOLE, WikiHeader } from "./wiki-header";
 import { WikiOff } from "./wiki-off";
 
 /** The URL value of `scope` that shows the workspace's own pages. */
@@ -179,7 +180,12 @@ function Scope({
     body = (
       <ListDetail>
         <DetailPane label="Wiki page">
-          <NoPages name={scopeName} building={summaries.length > 0} onBuild={() => setUpdating({})} />
+          <NoPages
+            name={scopeName}
+            building={summaries.length > 0}
+            status={status}
+            onBuild={() => setUpdating({})}
+          />
         </DetailPane>
       </ListDetail>
     );
@@ -247,18 +253,47 @@ function Scope({
   );
 }
 
-/** Nothing built yet for this project or workspace: one button builds it. */
-function NoPages({ name, building, onBuild }: { name: string; building: boolean; onBuild: () => void }) {
+/** Nothing built yet for this project or workspace: one button builds it, then the build's progress or its error. */
+function NoPages({
+  name,
+  building,
+  status,
+  onBuild,
+}: {
+  name: string;
+  building: boolean;
+  status: WikiStatus | undefined;
+  onBuild: () => void;
+}) {
+  if (status?.running) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 py-16 text-center" role="status">
+        <h2 className="flex items-center gap-2 text-md font-semibold">
+          <Lamp state="working" />
+          {COPY.build.running} {name}
+        </h2>
+        <p className="text-base text-fg-muted">
+          {PHASE_WORDS[status.phase]}
+          {status.total > 0 && `, ${status.done} of ${status.total}`}
+        </p>
+      </div>
+    );
+  }
+  const failed = status?.lastError;
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 py-16 text-center">
       <h2 className="text-md font-semibold">
-        {building ? COPY.build.reading : `${COPY.build.title} for ${name}`}
+        {building
+          ? COPY.build.reading
+          : failed !== undefined
+            ? COPY.build.failed
+            : `${COPY.build.title} for ${name}`}
       </h2>
       {!building && (
         <>
-          <p className="max-w-[420px] text-base text-fg-muted text-pretty">{COPY.build.body}</p>
+          <p className="max-w-[520px] text-base text-fg-muted text-pretty">{failed ?? COPY.build.body}</p>
           <Button variant="primary" className="mt-2" onClick={onBuild}>
-            {COPY.build.button}
+            {failed !== undefined ? COPY.build.again : COPY.build.button}
           </Button>
         </>
       )}

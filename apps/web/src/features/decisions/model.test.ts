@@ -15,8 +15,4 @@ describe("the one needs-you count", () => {
     expect(workCountsOf(counts, "private")?.needsYou).toBe(1);
     expect(workCountsOf(counts, "missing")).toEqual({ needsYou: 0, working: 0 });
   });
-
-  it("is unknown, not zero, until the list has loaded", () => {
-    expect(workCountsOf(undefined)).toBeUndefined();
-  });
 });

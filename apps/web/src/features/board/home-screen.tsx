@@ -468,7 +468,7 @@ export function BoardScreen() {
           Could not load tasks. {tasks.error.message}
         </p>
       ) : (
-        <section aria-label="Tasks" className="flex min-h-0 flex-1 flex-col">
+        <section aria-label="Tasks" data-testid="tasks-home" className="flex min-h-0 flex-1 flex-col">
           <div className={cn("shrink-0 overflow-hidden rounded-2xl", GLASS)}>
             <Strip totals={totals} org={org} onJump={jumpTo} />
             <FilterBar
@@ -933,6 +933,7 @@ function AccountReadout({ org }: { org: string | undefined }) {
   return (
     <PageLink
       page="usage"
+      data-testid="account-readout"
       title={usageTitle(accounts, org, now)}
       className="tnum min-w-0 truncate rounded-xs text-sm text-fg-muted hover:text-fg"
     >

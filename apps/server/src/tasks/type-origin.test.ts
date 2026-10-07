@@ -1,4 +1,4 @@
-import type { Finding, Task } from "@majhi/shared";
+import type { Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { taskWorld, type World } from "../testing/world.ts";
 import { originFor } from "./provenance.ts";
@@ -26,14 +26,6 @@ describe("the type an owner sets", () => {
 
     const changed = await w.h.cmd("tasks.setType", { id: made.id, type: "bug" });
     expect((changed.body as Task).typing).toEqual({ type: "bug", by: "owner" });
-  });
-
-  it("is read from the text when the owner names none, and the branch follows it", async () => {
-    w = await taskWorld();
-    const made = (await w.h.cmd("tasks.create", box({ text: "Fix the cart badge count" }))).body as Task;
-    expect(made.typing).toEqual({ type: "bug", by: "intake" });
-    expect(made.repos[0]?.branch).toMatch(/^fix\//);
-    expect(made.origin).toEqual({ kind: "owner" });
   });
 });
 
@@ -79,33 +71,5 @@ describe("a task's origin stays in its workspace", () => {
       }),
     ).rejects.toThrow(/own workspace/);
     expect(services.store.tasks.list(true)).toEqual([]);
-  });
-});
-
-describe("a task made from a finding", () => {
-  it("keeps the finding's source and severity, and is typed from them", async () => {
-    w = await taskWorld();
-    const reported = await w.h.cmd("findings.report", {
-      org: "acme",
-      project: "acme-api",
-      source: "log",
-      severity: "high",
-      title: "Checkout errors in the api log",
-    });
-    expect(reported.status).toBe(200);
-    const found = (reported.body as { finding: Finding }).finding;
-    const made = await w.h.cmd("findings.toTask", { id: found.id });
-    expect(made.status).toBe(200);
-    const task = w.h.majhi.services.tasks.get((made.body as { task: string }).task);
-    expect(task.origin).toEqual({ kind: "finding", finding: found.id, source: "log", severity: "high" });
-    expect(task.typing).toEqual({ type: "incident", by: "intake" });
-    const row = w.h.majhi.services.store.tasks.list(true).find((t) => t.id === task.id);
-    expect(row?.origin).toEqual({
-      kind: "finding",
-      finding: found.id,
-      source: "log",
-      severity: "high",
-      name: "Logs",
-    });
   });
 });

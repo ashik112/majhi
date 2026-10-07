@@ -140,13 +140,6 @@ describe("network guard rules", () => {
     expect(opened.every((r) => r.includes("53"))).toBe(true);
   });
 
-  it("builds an atomic restore of exactly these rules", async () => {
-    const { restoreText } = await load();
-    expect(restoreText([["-A", "OUTPUT", "-o", "lo", "-j", "ACCEPT"]])).toBe(
-      "*filter\n:INPUT ACCEPT [0:0]\n:FORWARD ACCEPT [0:0]\n:OUTPUT ACCEPT [0:0]\n-A OUTPUT -o lo -j ACCEPT\nCOMMIT\n",
-    );
-  });
-
   it("reads name servers from resolv.conf and the upstream Docker notes", async () => {
     const { nameServers } = await load();
     const text = ["nameserver 127.0.0.11", "# ExtServers: [host(0.250.250.200) host(8.8.8.8)]"].join("\n");

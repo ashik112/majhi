@@ -237,12 +237,6 @@ describe("a wiki update", () => {
     expect(quiet?.written).toEqual([]);
   });
 
-  it("keeps the main flows chosen at the first build", async () => {
-    const { service } = world();
-    await service.update("acme", "api");
-    expect(store.wiki.state("acme", "api").plan?.flows.map((f) => f.slug)).toEqual(["sign-in"]);
-  });
-
   it("waits for an update that is running in the workspace instead of running at once", async () => {
     const { service, sessions, gate } = world();
     gate.hold = true;

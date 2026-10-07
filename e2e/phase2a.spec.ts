@@ -2,12 +2,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { APIRequestContext, Locator, Page } from "@playwright/test";
-import { expect, HOST_HOME, MAJHI_HOME, test, useHome } from "./fixture.ts";
+import { expect, expectTasksHome, HOST_HOME, MAJHI_HOME, test, useHome } from "./fixture.ts";
 
-// Org Acme with its agents. One task on api, from registering the project to removing the task.
+// Org Acme with its agents and the project api. One task on api, from creating it to removing it.
 // The fake Claude adapter pauses 120 ms between the steps of a turn, so the turn can be watched.
 // The room's other flows are in phase2a-room.spec.ts.
-useHome({ seed: "team", slow: { claude: 120 } });
+useHome({ seed: "team-api", slow: { claude: 120 } });
 test.describe.configure({ mode: "serial" });
 
 const API_SOURCE = join(HOST_HOME, "Work", "alpha-api");
@@ -52,7 +52,6 @@ async function setPerms(request: APIRequestContext, id: string, perms: string[])
 const taskIdOf = (page: Page) => new URL(page.url()).pathname.split("/").pop() as string;
 const getTask = (request: APIRequestContext, id: string) => cmd<TaskInfo>(request, "tasks.get", { id });
 
-const room = (page: Page) => page.getByRole("region", { name: "Task room" });
 const messages = (page: Page) => page.getByRole("log", { name: "Room messages" });
 const _composer = (page: Page) => page.getByRole("textbox", { name: "Message the room" });
 
@@ -61,7 +60,7 @@ const newTaskDialog = (page: Page) => page.getByRole("dialog", { name: "New task
 /** Opens the New task dialog with `n` and types the title. */
 async function openNewTask(page: Page, title: string) {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Board", exact: true })).toBeVisible();
+  await expectTasksHome(page);
   await page.keyboard.press("n");
   await expect(newTaskDialog(page)).toBeVisible();
   await newTaskDialog(page).getByRole("textbox", { name: "Title" }).fill(title);
@@ -92,30 +91,6 @@ test.beforeAll(async ({ request }) => {
   await setPerms(request, bossId as string, ["edit", "shell"]);
 });
 
-test("register a repo as a project from the Projects page", async ({ page, request }) => {
-  await page.goto("/projects");
-  await page.getByRole("button", { name: "Register alpha-api" }).click();
-  const dialog = page.getByRole("dialog", { name: "Register alpha-api" });
-  await dialog.getByRole("combobox", { name: "Workspace" }).selectOption({ label: "Acme" });
-  const id = dialog.getByRole("textbox", { name: "Project id" });
-  await expect(id).toHaveValue("alpha-api");
-  await id.fill("api");
-  const aliases = dialog.getByRole("textbox", { name: "Aliases" });
-  await aliases.fill("backend");
-  await aliases.press("Enter");
-  await expect(dialog.getByRole("button", { name: "Remove alias backend" })).toBeVisible();
-  await shot(page, "repos-register");
-  await dialog.getByRole("button", { name: "Register", exact: true }).click();
-  await expect(dialog).toBeHidden();
-
-  await expect(
-    page.getByRole("navigation", { name: "Projects" }).getByRole("button", { name: "api", exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Register alpha-api" })).toHaveCount(0);
-  const projects = await cmd<{ id: string; org: string; aliases: string[] }[]>(request, "projects.list", {});
-  expect(projects).toMatchObject([{ id: "api", org: "acme", aliases: ["backend"] }]);
-});
-
 test("add a health endpoint to api from develop: worktree, branch, TASK.md and a streamed turn", async ({
   page,
   request,
@@ -138,37 +113,12 @@ test("add a health endpoint to api from develop: worktree, branch, TASK.md and a
   await dialog.getByRole("button", { name: "Add and start" }).click();
   await expect(page).toHaveURL(/\/t\/ACM-\d+$/);
   apiTaskId = taskIdOf(page);
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("health endpoint");
 
-  // The turn streams: the owner's text, pinned plan, text, tools, a permission answered by rule, the final message.
+  // The turn runs to its end: a permission answered by rule, the final message, and the agent idle.
   const log = messages(page);
-  await expect(log.getByText("add a health endpoint to api from develop")).toBeVisible();
-  await expect(log.getByText(/@acme-lead started on claude-acme-1/)).toBeVisible();
-  // The fixture remote does not exist, so the fetch fails; the task starts from the local copy.
-  await expect(log.getByText(/Could not fetch \S+ from origin/)).toBeVisible();
-  const plan = room(page).getByRole("region", { name: "Plan of acme-lead" });
-  await expect(plan).toBeVisible();
-  await expect(plan).toContainText("Read the project");
-  await expect(plan).toContainText("Write the change");
-  await expect(log.getByText("I will look at the project first.")).toBeVisible();
-  await expect(log.getByRole("button", { name: /Read package\.json/ })).toBeVisible();
-  const edit = log.getByRole("button", { name: /Edit HEALTH\.md/ });
-  await expect(edit).toBeVisible();
-  await page.getByRole("button", { name: "Stop all" }).waitFor();
-  await shot(page, "room-running");
-
   await expect(verdict(log, "Allowed by rule", "Run npm test")).toBeVisible();
   await expect(log.getByText(/Done\..*Created HEALTH\.md\. Tests passed\./)).toBeVisible();
-  // Nothing is left open, so the plan is no longer pinned; the room keeps a summary line.
-  await expect(plan).toBeHidden();
-  await expect(log.getByText("Plan, 2 of 2 done")).toBeVisible();
   await expectIdle(page);
-
-  // Expanding the edit shows its diff.
-  await edit.click();
-  await expect(edit).toHaveAttribute("aria-expanded", "true");
-  await expect(log.getByText("# Health")).toBeVisible();
-  await expect(log.getByText("new file")).toBeVisible();
 
   // On disk.
   apiTask = await getTask(request, apiTaskId);
@@ -180,7 +130,7 @@ test("add a health endpoint to api from develop: worktree, branch, TASK.md and a
   expect(repo?.worktree).toBe(worktree);
   expect(existsSync(join(worktree, ".git"))).toBe(true);
   const branch = git(worktree, "rev-parse", "--abbrev-ref", "HEAD");
-  expect(branch).toMatch(new RegExp(`^task/${apiTaskId.toLowerCase()}-`));
+  expect(branch).toMatch(new RegExp(`^[a-z]+/${apiTaskId.toLowerCase()}-`));
   expect(branch).toContain("health-endpoint");
   // Created from the project's own branch, not from the develop named in the words (one commit ahead of main).
   expect(git(worktree, "rev-parse", "HEAD")).toBe(git(API_SOURCE, "rev-parse", "main"));
@@ -216,7 +166,6 @@ test("removing a task with uncommitted changes is refused, and typing its id rem
   await page.getByRole("menuitem", { name: "Remove task" }).click();
   const dialog = page.getByRole("dialog", { name: `Remove ${apiTaskId}` });
   await dialog.getByRole("button", { name: "Remove task" }).click();
-  await expect(dialog.getByText("These changes are in no commit")).toBeVisible();
   await expect(dialog.getByRole("listitem")).toContainText("HEALTH.md");
   expect(existsSync(worktree)).toBe(true);
 

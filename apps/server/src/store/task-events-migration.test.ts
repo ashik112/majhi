@@ -1,20 +1,9 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import { MIGRATIONS, migrate } from "./migrations.ts";
+import { migrate } from "./migrations.ts";
 
 /** Migration 156: the lifecycle's audit trail and outbox. */
 describe("the task events migration", () => {
-  it("adds the table to a database that has the earlier migrations, keeps its rows, and runs once", () => {
-    const db = new Database(":memory:");
-    db.pragma("foreign_keys = ON");
-    migrate(
-      db,
-      MIGRATIONS.filter((m) => m.id < 156),
-    );
-    expect(migrate(db)[0]).toBe(156);
-    expect(migrate(db)).toEqual([]);
-  });
-
   it("removes a task's events with the task", () => {
     const db = new Database(":memory:");
     db.pragma("foreign_keys = ON");

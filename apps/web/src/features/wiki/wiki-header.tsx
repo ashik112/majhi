@@ -73,9 +73,9 @@ export function WikiHeader({ workspaces, org, onOrg, projects, scope, onScope, s
         </span>
       }
     >
+      <StatusLine status={status} />
       {onUpdate !== undefined && (
         <>
-          <StatusLine status={status} />
           <Button variant="primary" onClick={onUpdate} disabled={status?.running === true}>
             <RefreshCw aria-hidden="true" className={status?.running ? "animate-spin" : undefined} />
             Update
@@ -86,7 +86,7 @@ export function WikiHeader({ workspaces, org, onOrg, projects, scope, onScope, s
   );
 }
 
-const PHASE_WORDS = {
+export const PHASE_WORDS = {
   facts: "reading the code",
   plan: "planning",
   write: "writing pages",

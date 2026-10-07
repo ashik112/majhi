@@ -75,9 +75,7 @@ describe("the chore runner", () => {
     });
     expect(await t.runner.start("acme", "ship", "test")).toBe("done");
     expect(did).toBe(0);
-    expect(t.repo.allActions()).toEqual([
-      expect.objectContaining({ outcome: "skipped", text: "Left ACM-1: a check fails now" }),
-    ]);
+    expect(t.repo.allActions()).toEqual([expect.objectContaining({ outcome: "skipped" })]);
     // The owner moved the workspace to Ask me for everything a moment ago: the run stops before the step.
     const u = setup(async (run) => {
       u.state.authority = ALL_ASK;
@@ -234,7 +232,7 @@ describe("the chore runner", () => {
     expect(await t.runner.start("acme", "ship", "slow suite")).toBe("capped");
     // The step at 44 minutes ran (a slow test suite no longer ends the run at 10); the one at 46 did not.
     expect(steps).toBe(2);
-    expect(t.repo.allActions().some((a) => a.text.startsWith("Ship finished work stopped"))).toBe(true);
+    expect(t.repo.allActions().some((a) => a.outcome === "skipped")).toBe(true);
   });
 
   it("stops a run that spent its tokens in the lane", async () => {

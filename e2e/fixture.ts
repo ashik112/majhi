@@ -3,11 +3,11 @@ import { closeSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { test as base } from "@playwright/test";
+import { test as base, expect, type Page } from "@playwright/test";
 import { E2E_ROOT } from "./paths.ts";
 
-export { expect } from "@playwright/test";
 export * from "./paths.ts";
+export { expect };
 
 /**
  * What a spec file's server starts with (written by home-seed.ts).
@@ -148,3 +148,6 @@ async function startServer(home: Home, logFile: string): Promise<{ url: string; 
   }
   return { url, stop };
 }
+
+/** The tasks home has loaded. Found by a test id, so renaming its heading never breaks a flow. */
+export const expectTasksHome = (page: Page) => expect(page.getByTestId("tasks-home")).toBeVisible();

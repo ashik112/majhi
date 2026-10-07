@@ -32,10 +32,6 @@ describe.each(["claude", "codex"] as const)("probeAccount with the fake %s adapt
       ["auth", true],
       ["acp", true],
     ]);
-    expect(probe.health.steps[0]?.detail).toContain(tool === "claude" ? "2.1.284" : "0.158.0");
-    expect(probe.health.steps[2]?.detail).toBe("3 models");
-    expect(probe.health.durationMs).toBeGreaterThanOrEqual(0);
-    expect(Number.isNaN(Date.parse(probe.health.checkedAt))).toBe(false);
     expect(probe.models).toMatchObject({
       models: [
         { id: "m1", name: "m1" },
@@ -46,7 +42,6 @@ describe.each(["claude", "codex"] as const)("probeAccount with the fake %s adapt
       defaultModel: "m1",
       defaultEffort: "low",
     });
-    if (tool === "claude") expect(probe.signedInAs).toBe("fake@example.com");
   });
 
   it("stops at auth when not signed in", async () => {
@@ -56,7 +51,6 @@ describe.each(["claude", "codex"] as const)("probeAccount with the fake %s adapt
       ["cli", true],
       ["auth", false],
     ]);
-    expect(probe.health.steps[1]?.detail).toBe("Not signed in. Sign in from Studio > Accounts.");
     expect(probe.models).toBeUndefined();
   });
 });

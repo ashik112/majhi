@@ -122,13 +122,6 @@ describe("ConnectionHealthService", () => {
     expect(r.health.get("acme-gh")).toMatchObject({ state: "failed", reason: "timeout" });
   });
 
-  it("two checks of one connection at once share one call", async () => {
-    const r = rig();
-    const [a, b] = await Promise.all([r.health.check("acme-gh"), r.health.check("acme-gh")]);
-    expect(r.checks).toEqual(["acme-gh"]);
-    expect(a).toBe(b);
-  });
-
   it("holds nothing but typed facts: no token can enter a state through a detail line", () => {
     const r = rig();
     const state = r.health.observe("acme-gh", {

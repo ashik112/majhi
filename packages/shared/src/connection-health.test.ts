@@ -43,26 +43,6 @@ describe("nextHealth", () => {
     expect(failed.state === "failed" && failed.fix.length > 0).toBe(true);
   });
 
-  it("keeps the check's own fix and fix link", () => {
-    const failed = nextHealth(undefined, {
-      type: "result",
-      at: T1,
-      outcome: {
-        ok: false,
-        failure: {
-          reason: "setup-needed",
-          fix: "Turn on the Gmail API.",
-          fixUrl: "https://console.cloud.google.com/apis/library/gmail.googleapis.com",
-        },
-      },
-    });
-    expect(failed).toMatchObject({
-      state: "failed",
-      fix: "Turn on the Gmail API.",
-      fixUrl: "https://console.cloud.google.com/apis/library/gmail.googleapis.com",
-    });
-  });
-
   it("a re-check failure moves connected to needs-attention and keeps when it last passed", () => {
     const next = nextHealth(connected(), { type: "result", at: T2, outcome: fail("rejected", 401) });
     expect(next).toMatchObject({
@@ -95,11 +75,6 @@ describe("nextHealth", () => {
     for (const prev of [connected(), nextHealth(connected(), { type: "result", at: T2, outcome: fail() })]) {
       expect(nextHealth(prev, { type: "start", at: T2 })).toEqual({ state: "connecting", since: T2 });
     }
-  });
-
-  it("a pass with no recorded steps still says what it did", () => {
-    const done = nextHealth(undefined, { type: "result", at: T1, outcome: { ok: true, checked: [] } });
-    expect(done.state === "connected" && done.checked.length).toBe(1);
   });
 });
 

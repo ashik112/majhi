@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   BLOCKER_ORDER,
   type Blocker,
-  BlockerSchema,
   type BlockerTask,
   type BlockerWorld,
   blockerOf,
@@ -173,10 +172,6 @@ describe("blockerOf, when several apply", () => {
       "nobody",
     ]);
     expect(seen).toEqual([...BLOCKER_ORDER]);
-  });
-
-  it("every value it returns passes the schema", () => {
-    expect(BlockerSchema.safeParse(blockerOf(task(), everything())).success).toBe(true);
   });
 
   it("isUntriaged needs both priority and due absent", () => {

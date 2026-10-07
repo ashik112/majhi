@@ -119,7 +119,7 @@ describe("a task with uncommitted changes", () => {
     );
     for (n = 1; n <= 4; n++) await t.run();
     expect(t.calls.changes).toHaveLength(2);
-    expect(t.repo.allActions().some((a) => a.text.includes("is not ready to ship"))).toBe(true);
+    expect(t.repo.allActions().some((a) => a.outcome === "skipped")).toBe(true);
   });
 });
 

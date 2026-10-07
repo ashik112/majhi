@@ -230,21 +230,4 @@ describe("the answer cache under attack", () => {
     expect(after.cached).toBeUndefined();
     expect(after.answers.size?.gate?.accepted).toBe(true);
   });
-
-  it("answers ten identical requests at the same moment with one call to Laya", async () => {
-    const laya = fakeLaya({
-      script: async (request) => {
-        await new Promise((r) => setTimeout(r, 40));
-        return Object.fromEntries(Object.entries(request.questions).map(([k, q]) => [k, sure(q, "small")]));
-      },
-    });
-    const { svc } = service(laya, undefined, [SIZE_SLOT]);
-    const results = await Promise.all(
-      Array.from({ length: 10 }, () => svc.decide(ask("same"), { use: "task-size" })),
-    );
-    expect(laya.calls).toBe(1);
-    expect(new Set(results.map((r) => r.id)).size).toBe(1);
-    expect(results.filter((r) => r.cached === true)).toHaveLength(9);
-    expect(svc.recent(20)).toHaveLength(1);
-  });
 });

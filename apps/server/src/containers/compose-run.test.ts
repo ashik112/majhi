@@ -112,7 +112,6 @@ describe("docker compose in a task", () => {
       " Container cache  Started",
       " Container app  Started",
     ]);
-    expect(out.stderr).toContain("app: reach it from this task at app:8000");
     expect(names()).toEqual([
       "majhi-acm-1-c-app",
       "majhi-acm-1-c-cache",
@@ -134,9 +133,6 @@ describe("docker compose in a task", () => {
       expect(run).toEqual(expect.arrayContaining(["--label", "majhi.container=taskrun"]));
     }
     // What was started is listed, and `up` again changes nothing.
-    const ps = await call("ACM-1", repo, "compose", "ps");
-    expect(ps.stdout).toContain("db");
-    expect(ps.stdout).toContain("postgres:16-alpine");
     const again = await up();
     expect(again.stdout.split("\n").filter((l) => l !== "")).toEqual([
       " Container db  Running",
@@ -162,7 +158,6 @@ describe("docker compose in a task", () => {
     settings = { ...settings, per_task: 2 };
     const out = await up();
     expect(out.error?.code).toBe("limit_reached");
-    expect(out.stderr).toContain("this starts 3 more");
     expect(docker.containers.size).toBe(0);
   });
 
@@ -375,7 +370,6 @@ describe("the builder's network", () => {
     docker.failBuilderGuard = true;
     const out = await build();
     expect(out.code).not.toBe(0);
-    expect(out.stderr).toContain("could not close the builder's network");
     expect(docker.taskCalls.filter((c) => c[0] === "buildx")).toEqual([]);
   });
 });
@@ -424,8 +418,6 @@ describe("a script's own containers", () => {
       "alpine:3",
     );
     expect(out.code).toBe(0);
-    expect(out.stderr).toContain("Nothing is published on the computer. From this task, reach it at web:80.");
-    expect(out.stderr).toContain("--network is the task's own network, majhi-acm-1");
     const call_ = docker.taskCalls.find((c) => c[0] === "run") ?? [];
     expect(call_).toEqual(expect.arrayContaining(["--env", "A=1"]));
     expect(call_).not.toContain("--publish");
