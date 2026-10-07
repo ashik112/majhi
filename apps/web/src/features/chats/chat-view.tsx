@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StatusBadge } from "@/components/ui/status-badge";
+import { TaskStatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/components/ui/toast";
 import { ClientRoom } from "@/features/clients/client-room";
 import { permissionDomId } from "@/features/room/items";
@@ -168,10 +168,9 @@ function OpenChat({
               >
                 {task.id}
               </Link>
-              <StatusBadge
-                status={task.status}
-                pausedReason={task.pausedReason}
-                pausedBy={task.pausedBy}
+              <TaskStatusBadge
+                task={task}
+                yourTurn={task.status === "running" && row !== undefined && row.working.length === 0}
                 className="shrink-0"
               />
               <TrailStrip steps={trail} variant="chips" className="min-w-0" />
