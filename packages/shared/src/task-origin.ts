@@ -47,9 +47,16 @@ const client = z.object({
   item: z.string().min(1).max(200),
 });
 
+/**
+ * Made in a chat with an agent. `room` is that chat. A chat that was promoted into a task names itself:
+ * it is the same conversation, so it has no "from" to show, only the mark that it began as a chat.
+ */
+const chat = z.object({ kind: z.literal("chat"), room: TaskIdSchema });
+
 export const StoredOriginSchema = z.discriminatedUnion("kind", [
   owner,
   captain,
+  chat,
   finding,
   watch,
   schedule,
@@ -61,6 +68,7 @@ export type StoredOrigin = z.infer<typeof StoredOriginSchema>;
 export const TaskOriginSchema = z.discriminatedUnion("kind", [
   owner,
   captain,
+  chat,
   finding,
   watch,
   schedule,
@@ -78,6 +86,8 @@ export type OriginKind = TaskOrigin["kind"];
 export const OriginViewSchema = z.discriminatedUnion("kind", [
   owner.extend({ name: z.string().optional() }),
   captain.extend({ name: z.string().optional() }),
+  /** `name`: the chat's title. */
+  chat.extend({ name: z.string().optional() }),
   finding.extend({ name: z.string().optional() }),
   watch.extend({ name: z.string().optional() }),
   schedule.extend({ name: z.string().optional() }),

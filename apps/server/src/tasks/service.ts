@@ -9,6 +9,7 @@ import {
   AUTO,
   BRANCH_TYPE_OF,
   type BranchType,
+  CHAT_BRIEF,
   type CoordinationMode,
   canWorkIn,
   chatTitleFrom,
@@ -283,6 +284,12 @@ export interface CreateInput {
   dependsWhen?: "merged" | "ready" | undefined;
   /** Connection ids its root agents get beyond the task's org's. */
   connections?: string[] | undefined;
+  /**
+   * The id of a chat to turn into this task instead of making a new one: it keeps its id, folder, room
+   * and team, and gains the repos, type and lifecycle. Only an ordinary chat with an agent can be
+   * promoted, and it cannot also be a child, wait for others or follow up another task.
+   */
+  promote?: string | undefined;
 }
 
 /** What the room says when a message cannot restart a task whose merge request is open. */
@@ -425,8 +432,14 @@ export class TaskService {
   // Create
 
   async create(given: CreateInput): Promise<Task> {
+    const promoting = given.promote === undefined ? undefined : this.promotableChat(given);
     // A separate title becomes the first line, so the parser and the brief see one text as usual.
-    const input = given.title === undefined ? given : { ...given, text: `${given.title}\n\n${given.text}` };
+    const titled = given.title === undefined ? given : { ...given, text: `${given.title}\n\n${given.text}` };
+    // The chat's own agent leads the task it becomes: nobody else is picked.
+    const input: CreateInput =
+      promoting === undefined
+        ? titled
+        : { ...titled, team: promoting.team, mode: promoting.mode, agent: undefined };
     const { store, config, uploads } = this.deps;
     const loaded = await config.load();
     if (loaded.state.status !== "loaded") throw new UserError("Pick workspace roots first.", 409);
@@ -470,6 +483,12 @@ export class TaskService {
     }
     if (kind === "code" && parsed.repos.length === 0) {
       throw new UserError("A code task needs a project. Pick the repos it changes, or change the kind.");
+    }
+    if (promoting !== undefined && kind === "chat") {
+      throw new UserError(
+        "This chat has no work to turn into a task yet. Pick the repos the work changes, or set readOnly for an investigation. Until then, keep talking here.",
+        409,
+      );
     }
     const dependsOn = [...new Set(input.dependsOn ?? [])];
     const others = [
@@ -520,7 +539,7 @@ export class TaskService {
     const origin = originFor(input.provenance, { org, parent: input.parent });
     const key =
       org === undefined ? LOCAL_TASK_PREFIX : (orgKeys(sections.orgs).get(org) ?? LOCAL_TASK_PREFIX);
-    const id = store.tasks.allocateKey(key);
+    const id = promoting?.id ?? store.tasks.allocateKey(key);
     const typing =
       kind === "chat"
         ? undefined
@@ -533,7 +552,7 @@ export class TaskService {
             origin,
             branchType: input.branchType,
           })));
-    const folder = join(tasksDir, id);
+    const folder = promoting?.folder ?? join(tasksDir, id);
     const picked =
       asked !== undefined
         ? { team: asked, mode: input.mode ?? "lead", line: undefined }
@@ -563,10 +582,12 @@ export class TaskService {
     const at = this.now().toISOString();
 
     await mkdir(tasksDir, { recursive: true });
-    try {
-      await mkdir(folder);
-    } catch {
-      throw new UserError(`${folder} already exists. Move it away and try again.`, 409);
+    if (promoting === undefined) {
+      try {
+        await mkdir(folder);
+      } catch {
+        throw new UserError(`${folder} already exists. Move it away and try again.`, 409);
+      }
     }
     try {
       const attachmentsDir = join(folder, "attachments");
@@ -581,7 +602,7 @@ export class TaskService {
         ...(typing === undefined ? {} : { typing }),
         ...(origin === undefined ? {} : { origin }),
         ...(org === undefined ? {} : { org }),
-        status: input.start ? "ready" : "inbox",
+        status: promoting?.status ?? (input.start ? "ready" : "inbox"),
         folder,
         repos,
         ...(investigation ? { readMounts: this.investigationMounts(parsed, projects, at) } : {}),
@@ -598,16 +619,24 @@ export class TaskService {
             when: input.dependsWhen ?? "merged",
           })),
         ],
-        attachments: [...files, ...links],
-        createdAt: at,
+        attachments: [...(promoting?.attachments ?? []), ...files, ...links],
+        createdAt: promoting?.createdAt ?? at,
         updatedAt: at,
       };
       await this.writeBriefFiles(task, agents, sections.orgs[org ?? ""]?.name, this.relatedOf(task));
-      store.tasks.insert(task);
-      store.tasks.setRoomState(id, firstTurn(task.mode, this.members(task, agents)).state);
-      if (input.start) store.tasks.setStartWhenReady(id, true);
+      if (promoting === undefined) {
+        store.tasks.insert(task);
+        store.tasks.setRoomState(id, firstTurn(task.mode, this.members(task, agents)).state);
+        if (input.start) store.tasks.setStartWhenReady(id, true);
+      } else {
+        // The same row, room and folder: only what makes it a task is added.
+        store.tasks.promote(task);
+        const added = [...files, ...links];
+        if (added.length > 0) store.tasks.addAttachments(id, added);
+      }
     } catch (err) {
-      await rm(folder, { recursive: true, force: true });
+      // A promoted chat's folder holds its history of files: it stays.
+      if (promoting === undefined) await rm(folder, { recursive: true, force: true });
       throw err;
     }
 
@@ -629,6 +658,7 @@ export class TaskService {
     if (linked.length > 0) await this.linksChanged(linked);
     let task = this.get(id);
     this.deps.room.publishTask(task);
+    if (promoting !== undefined) return this.promoted(task, investigation);
     // A task that waits stays ready and starts by itself when its dependencies are met.
     const waiting = store.tasks.unmetDependencies(id);
     if (input.start && waiting.length > 0) {
@@ -645,6 +675,36 @@ export class TaskService {
       }
     }
     return task;
+  }
+
+  /**
+   * The chat `given.promote` names, when it may become a task: an ordinary chat with an agent, still
+   * a chat, asked to become a standalone task. Anything else is refused with the reason.
+   */
+  private promotableChat(given: CreateInput): Task {
+    const chat = this.get(given.promote as string);
+    if (chat.kind !== "chat" || chat.brief !== CHAT_BRIEF) {
+      throw new UserError(`${chat.id} is not a chat with an agent, so it cannot become a task.`, 409);
+    }
+    if (given.parent !== undefined || given.followUpOf !== undefined || (given.dependsOn ?? []).length > 0) {
+      throw new UserError(
+        "A chat becomes a standalone task. To make a subtask or a follow-up, create a separate task.",
+        409,
+      );
+    }
+    return chat;
+  }
+
+  /** The chat became a task: say so in its room, give it its folders and the agent its place to work. */
+  private async promoted(task: Task, investigation: boolean): Promise<Task> {
+    this.note(
+      task.id,
+      `This chat is now task ${task.id}: ${task.title}. The conversation above stays; the work happens here.`,
+    );
+    if (!investigation) await this.ensureWorktrees(task);
+    await this.recallMemory(task);
+    this.deps.events.emitTask(task.id, true);
+    return this.get(task.id);
   }
 
   /**
@@ -2396,6 +2456,121 @@ export class TaskService {
     this.deps.room.publishTask(this.get(task.id));
   }
 
+  /**
+   * Adds a repo to a task that exists: a branch, and a worktree once the task has started. Only a
+   * project of the task's workspace, and a protected one only when the owner adds it. Safe to repeat.
+   */
+  async addRepo(input: {
+    id: string;
+    project: string;
+    base?: string | undefined;
+    byOwner: boolean;
+  }): Promise<Task> {
+    const task = this.get(input.id);
+    if (task.kind === "chat")
+      throw new UserError("A chat has no repos. It becomes a task when the work starts.", 409);
+    if (task.status === "done") throw new UserError(`${task.id} is done. Reopen it first.`, 409);
+    if (task.repos.some((r) => r.project === input.project)) return task;
+    const projects = await this.deps.projects.infos();
+    const project = projects.find((p) => p.id === input.project);
+    if (project === undefined) throw new UserError(`Project "${input.project}" does not exist.`, 404);
+    if (task.org !== undefined && project.org !== task.org) {
+      throw new UserError(
+        `${project.id} is in ${project.org}, and ${task.id} is in ${task.org}. A task never spans workspaces.`,
+        409,
+      );
+    }
+    if (project.protected && !input.byOwner) {
+      throw new UserError(
+        `${project.id} is protected: only the owner can add it to a task. Agents can still read it.`,
+        409,
+      );
+    }
+    if (task.kind === "ops") {
+      throw new UserError(
+        `${task.id} is an investigation: it reads repos, it does not branch them. Say which repo to read in the room.`,
+        409,
+      );
+    }
+    const parsed: ParsedTask = {
+      title: task.title,
+      repos: [{ project: project.id, match: project.id }],
+      mentions: [],
+      links: [],
+      kind: "code",
+      warnings: [],
+    };
+    const bases = new Map(input.base === undefined ? [] : [[project.id, input.base] as const]);
+    const planned = await this.planRepos(task.id, parsed, projects, bases, taskBranchType(task));
+    const repo = planned.repos[0];
+    if (repo === undefined) throw new UserError(`Could not add ${project.id}.`, 409);
+    this.deps.store.tasks.addRepo(
+      task.id,
+      input.byOwner && project.protected ? { ...repo, writes: true } : repo,
+    );
+    for (const w of planned.warnings) this.warn(task.id, w);
+    this.note(task.id, `Added ${project.id} to ${task.id}: branch ${repo.branch} from ${repo.base}.`);
+    // A task that has begun gets the new worktree now; one that has not gets it with the others.
+    if (task.status !== "inbox" && task.status !== "ready") await this.ensureWorktrees(this.get(task.id));
+    else await this.refreshBriefs([task.id]);
+    await this.afterRepoChange(task);
+    return this.get(task.id);
+  }
+
+  /**
+   * Takes a repo off a task and removes its worktree. Refused, with the list of changes, while the
+   * worktree holds uncommitted work (untracked files included): nothing is lost unless the owner
+   * says `discard`. The branch stays in the project.
+   */
+  async removeRepo(input: { id: string; project: string; discard: boolean }): Promise<Task> {
+    const task = this.get(input.id);
+    const repo = task.repos.find((r) => r.project === input.project);
+    if (repo === undefined) return task;
+    if (task.repos.length === 1 && task.kind === "code") {
+      throw new UserError(
+        `${input.project} is the only repo of ${task.id}, and a code task needs one. Remove the task instead.`,
+        409,
+      );
+    }
+    if (repo.worktree !== undefined && !input.discard) {
+      const changes = await uncommitted(repo.worktree).catch(() => [
+        "Could not inspect this worktree safely",
+      ]);
+      if (changes.length > 0) {
+        const shown = changes.slice(0, 12);
+        throw new UserError(
+          `${input.project} in ${task.id} has uncommitted changes (${changes.length}), so it was not removed:\n${shown.join("\n")}${changes.length > shown.length ? `\n... and ${changes.length - shown.length} more` : ""}\nAsk the owner whether to commit them first or throw them away.`,
+          409,
+        );
+      }
+    }
+    if (repo.worktree !== undefined) {
+      await removeWorktree(repo.source, repo.worktree, input.discard).catch((err: unknown) => {
+        if (err instanceof WorktreeProblem) throw new UserError(err.message, 409);
+        throw err;
+      });
+    }
+    const commits =
+      repo.worktree === undefined ? 0 : await commitsSinceStart(repo.source, repo).catch(() => 0);
+    this.deps.store.tasks.removeRepo(task.id, input.project);
+    // The owner's merge order named this repo: it goes back to the order from project links.
+    this.deps.store.tasks.setMergeOrder(task.id, null);
+    this.note(
+      task.id,
+      `Took ${input.project} off ${task.id}.${commits > 0 ? ` Its branch ${repo.branch} keeps ${commits} ${commits === 1 ? "commit" : "commits"} in the project.` : ""}`,
+    );
+    await this.refreshBriefs([task.id]);
+    await this.afterRepoChange(task);
+    return this.get(task.id);
+  }
+
+  private async afterRepoChange(before: Task): Promise<void> {
+    const task = this.get(before.id);
+    this.deps.room.publishTask(task);
+    this.deps.events.emitTask(task.id, true);
+    for (const agent of task.team) this.deps.runs.remount(task.id, agent);
+  }
+
   /** Renames a chat. The brief stays: it marks the task as a chat. */
   renameChat(id: string, title: string): Task {
     const task = this.get(id);
@@ -3775,8 +3950,10 @@ export class TaskService {
     task: string;
     agent?: string | undefined;
     text: string;
-    /** The captain's agent id. */
+    /** The captain's agent id, or the agent of a chat that made the task. */
     by: string;
+    /** Who the note is from, in words, when it is not the captain: an agent in a chat. */
+    from?: string | undefined;
   }): Promise<{ id: string; agent: string }> {
     const task = this.get(input.task);
     if (task.status !== "running" && task.status !== "review") {
@@ -3791,15 +3968,17 @@ export class TaskService {
       throw new UserError(`@${agent} cannot run: its account ${signedOut} needs a new sign-in.`, 409);
     // From review it goes back to the lead for more work, and its review card says so.
     const back = task.status === "review";
-    const who = input.by === "owner" ? "the owner" : "the captain";
+    const who = input.by === "owner" ? "the owner" : (input.from ?? "the captain");
     this.note(
       task.id,
-      back ? `Sent back to @${agent} by ${who}: ${input.text}` : `Captain to @${agent}: ${input.text}`,
+      back
+        ? `Sent back to @${agent} by ${who}: ${input.text}`
+        : `${input.from === undefined ? "Captain" : input.from} to @${agent}: ${input.text}`,
     );
     await this.tellAgent({
       task: task.id,
       agent,
-      text: `Message from the captain (it is advice, not the owner's approval; the owner's rules and checks still decide what you may do):\n${input.text}`,
+      text: `Message from ${input.from ?? "the captain"} (it is advice, not the owner's approval; the owner's rules and checks still decide what you may do):\n${input.text}`,
       settled: back ? "Sent back to the lead" : "The captain wrote to the lead",
       by: input.by,
     });

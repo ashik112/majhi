@@ -1956,6 +1956,30 @@ INSERT INTO read_marks (id, read_at, updated_at)
     sql: "",
     run: stabilizeSlackIds,
   },
+  {
+    // A task an agent made from a chat with the owner now names that chat (origin `chat`), so the chat can
+    // say "Work moved to ..." and the task "From the chat ...". Old tasks are found from the applied
+    // `tasks.create` card in the chat's room, whose result starts with the new task's JSON. Only a task with
+    // no origin, or one recorded as the captain's, changes; a task made by hand or from a finding stays.
+    id: 184,
+    name: "tasks made from chats",
+    sql: `
+UPDATE tasks SET origin = json_object('kind', 'chat', 'room', (
+  SELECT i.task FROM room_items i JOIN tasks c ON c.id = i.task
+   WHERE c.kind = 'chat' AND c.brief = 'Chat' AND i.type = 'approval'
+     AND CASE WHEN json_valid(i.payload) THEN json_extract(i.payload, '$.command') END = 'tasks.create'
+     AND CASE WHEN json_valid(i.payload) THEN json_extract(i.payload, '$.state') END = 'applied'
+     AND CASE WHEN json_valid(i.payload) THEN json_extract(i.payload, '$.result') END LIKE '%{"id":"' || tasks.id || '"%'
+   ORDER BY i.seq LIMIT 1))
+ WHERE kind != 'chat' AND (origin IS NULL OR json_extract(origin, '$.kind') = 'captain')
+   AND EXISTS (
+  SELECT 1 FROM room_items i JOIN tasks c ON c.id = i.task
+   WHERE c.kind = 'chat' AND c.brief = 'Chat' AND i.type = 'approval'
+     AND CASE WHEN json_valid(i.payload) THEN json_extract(i.payload, '$.command') END = 'tasks.create'
+     AND CASE WHEN json_valid(i.payload) THEN json_extract(i.payload, '$.state') END = 'applied'
+     AND CASE WHEN json_valid(i.payload) THEN json_extract(i.payload, '$.result') END LIKE '%{"id":"' || tasks.id || '"%');
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

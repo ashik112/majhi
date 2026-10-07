@@ -300,6 +300,76 @@ export class TaskRepo {
     });
   }
 
+  /**
+   * A chat becomes the task it was talking about: same id, folder, room and team. Its text, kind, type,
+   * origin, workspace and repos are set from `task`; its status, links and attachments stay as they are.
+   */
+  promote(task: Task): void {
+    this.db.transaction((tx) => {
+      tx.update(tasks)
+        .set({
+          title: task.title,
+          brief: task.brief,
+          kind: task.kind,
+          type: task.typing?.type ?? null,
+          typeBy: task.typing?.by ?? null,
+          origin: task.origin === undefined ? null : JSON.stringify(StoredOriginSchema.parse(task.origin)),
+          org: task.org ?? null,
+          readMounts: JSON.stringify(ReadMountsSchema.parse(task.readMounts ?? [])),
+          connections: JSON.stringify(ConnectionIdsSchema.parse(task.connections ?? [])),
+          updatedAt: task.updatedAt,
+        })
+        .where(eq(tasks.id, task.id))
+        .run();
+      task.repos.forEach((r, pos) => {
+        tx.insert(taskRepos)
+          .values({
+            task: task.id,
+            project: r.project,
+            source: r.source,
+            base: r.base,
+            branch: r.branch,
+            worktree: r.worktree ?? null,
+            createdBranch: r.createdBranch,
+            pos,
+            writes: r.writes === true,
+          })
+          .run();
+      });
+    });
+  }
+
+  /** Adds a repo to a task, after its others. */
+  addRepo(task: string, r: Task["repos"][number]): void {
+    const pos = this.db
+      .select({ n: sql<number>`coalesce(max(${taskRepos.pos}), -1) + 1` })
+      .from(taskRepos)
+      .where(eq(taskRepos.task, task))
+      .get();
+    this.db
+      .insert(taskRepos)
+      .values({
+        task,
+        project: r.project,
+        source: r.source,
+        base: r.base,
+        branch: r.branch,
+        worktree: r.worktree ?? null,
+        createdBranch: r.createdBranch,
+        pos: pos?.n ?? 0,
+        writes: r.writes === true,
+      })
+      .run();
+  }
+
+  /** Drops a repo from a task. Its branch in the project is not touched. */
+  removeRepo(task: string, project: string): void {
+    this.db
+      .delete(taskRepos)
+      .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
+      .run();
+  }
+
   /** Whether the task exists: one cheap query where `get` runs four. */
   has(id: string): boolean {
     return this.q.has.get({ id }) !== undefined;
@@ -431,6 +501,7 @@ export class TaskRepo {
             own.map((l) => ({ type: l.type, task: l.other })),
           ),
           (id) => facts.get(id)?.title,
+          row.id,
         );
         if (origin !== undefined) summary.origin = origin;
         if (kids !== undefined)
@@ -704,6 +775,7 @@ export class TaskRepo {
         links.map((l) => ({ type: l.type, task: l.other })),
       ),
       (task) => this.q.row.get({ id: task })?.title,
+      id,
     );
   }
 
@@ -1014,9 +1086,16 @@ function shipProjects(ship: PendingShip, repos: readonly { project: string }[]):
 function originView(
   origin: TaskOrigin | undefined,
   titleOf: (task: string) => string | undefined,
+  self: string,
 ): OriginView | undefined {
   if (origin === undefined) return undefined;
   switch (origin.kind) {
+    case "chat": {
+      // A chat promoted into a task is the same conversation: it has no chat to point at.
+      if (origin.room === self) return undefined;
+      const name = titleOf(origin.room);
+      return name === undefined ? origin : { ...origin, name };
+    }
     case "finding":
       return { ...origin, name: FINDING_SOURCE_LABEL[origin.source] };
     case "parent": {

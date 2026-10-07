@@ -41,16 +41,20 @@ function setup() {
       },
     },
   };
+  const owner: Record<string, string[]> = {};
   const tell = new CaptainTell({
     tasks,
     lanes,
-    store,
+    store: {
+      ...store,
+      room: { ofType: (task: string) => (owner[task] ?? []).map((text) => ({ type: "owner", text })) },
+    },
     keys: new CaptainRepo(new Store(":memory:").raw),
     // The lead took a new turn before each note, so the key never refuses here (keys.test.ts has the repeats).
     lastTurn: () => ++turn,
     now: () => state.now,
   } as unknown as ConstructorParameters<typeof CaptainTell>[0]);
-  return { state, sent, tell };
+  return { state, sent, tell, owner };
 }
 
 const lane = { kind: "agent", id: "boss", task: "LOCAL-1" } as const;
@@ -90,13 +94,26 @@ describe("tasks.tell", () => {
     ]);
   });
 
-  it("refuses the captain in a chat that is not its root chat, and another agent in its own chat", async () => {
+  it("refuses the captain in a chat that is not its root chat, and another agent in a chat with no link to the task", async () => {
     const t = setup();
     await expect(t.tell.tell(say(), { kind: "agent", id: "boss", task: "LOCAL-19" })).rejects.toThrow(/lane/);
     await expect(t.tell.tell(say(), { kind: "agent", id: "boss", task: "LOCAL-20" })).rejects.toThrow(/lane/);
     await expect(t.tell.tell(say(), { kind: "agent", id: "acme-builder", task: "LOCAL-19" })).rejects.toThrow(
+      /not a task this chat made/,
+    );
+    // An agent in a task, not a chat, is not the captain either.
+    await expect(t.tell.tell(say(), { kind: "agent", id: "acme-builder", task: "ACM-1" })).rejects.toThrow(
       /Only the captain/,
     );
     expect(t.sent).toEqual([]);
+  });
+
+  it("lets an agent in its own chat write to a task the owner named there, as itself", async () => {
+    const t = setup();
+    t.owner["LOCAL-19"] = ["can you tell the lead of ACM-1 to cover the empty state?"];
+    const chat = { kind: "agent", id: "acme-builder", task: "LOCAL-19" } as const;
+    await expect(t.tell.tell(say(), chat)).resolves.toMatchObject({ id: "ACM-1", told: true });
+    expect(t.sent).toMatchObject([{ task: "ACM-1", by: "acme-builder" }]);
+    await expect(t.tell.tell({ id: "GLX-1", text: "hi" }, chat)).rejects.toThrow(/not a task this chat made/);
   });
 });

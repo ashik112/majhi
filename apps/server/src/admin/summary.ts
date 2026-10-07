@@ -51,6 +51,9 @@ const TEMPLATES: Partial<Record<CommandName, (i: Input) => string>> = {
   "tasks.resolveShip": (i) =>
     `Ask the lead of ${str(i.id)} to resolve the conflicts with ${targetsText(i.targets) || str(i.into) || "its base"}, then ${i.action === "mergePush" ? "merge and push" : "merge"} by itself`,
   "tasks.tell": (i) => `Tell ${str(i.agent) || "the lead"} of ${str(i.id)}: ${firstLine(str(i.text))}`,
+  "tasks.addRepo": (i) => `Add ${str(i.project)} to ${str(i.id)}`,
+  "tasks.removeRepo": (i) => `Take ${str(i.project)} off ${str(i.id)}`,
+  "tasks.look": (i) => `Read the working folder of ${str(i.id)}`,
   "tasks.cancelShip": (i) => `Cancel the ship waiting on the lead of ${str(i.id)}`,
   "tasks.changeBranch": (i) => {
     const n = Array.isArray(i.files) ? i.files.length : 0;

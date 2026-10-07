@@ -1,4 +1,4 @@
-import type { StoredOrigin } from "@majhi/shared";
+import type { StoredOrigin, TaskId } from "@majhi/shared";
 import { PRIVATE } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 
@@ -10,6 +10,7 @@ import { UserError } from "../errors.ts";
  *    workspace is the one the creator found the thing in; the task must be in the same one.
  *  - `child`: made under a parent (`input.parent`); its origin is that link, never stored twice.
  *  - `chat`: a chat has no origin and no type.
+ *  - `in-chat`: made by an agent in a chat with the owner; the origin names that chat.
  */
 export type Provenance =
   | { kind: "owner" }
@@ -20,7 +21,9 @@ export type Provenance =
       workspace: string;
     }
   | { kind: "child" }
-  | { kind: "chat" };
+  | { kind: "chat" }
+  /** Made in a chat with an agent: a separate task (`room` is that chat), or the chat itself promoted (`room` is its own id). */
+  | { kind: "in-chat"; room: TaskId };
 
 /**
  * The origin to store for a new task, or undefined when it stores none (a child, a chat). Refuses
@@ -50,5 +53,7 @@ export function originFor(
       return undefined;
     case "chat":
       return undefined;
+    case "in-chat":
+      return { kind: "chat", room: provenance.room };
   }
 }

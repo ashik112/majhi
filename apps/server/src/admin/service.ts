@@ -4,6 +4,7 @@ import {
   AUTONOMY_BOSS_COMMANDS,
   type AutonomyMode,
   CAPTAIN_PROPOSALS,
+  CHAT_BRIEF,
   type CommandMeta,
   type CommandName,
   type ConnectionTestResult,
@@ -387,9 +388,26 @@ export class AdminService {
       }
       return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
     }
+    // An agent in its own ordinary chat: the handler lets it through only for a task that chat made
+    // or the owner named there (`reachFromChat`), so no card waits for it either.
+    if (auto === undefined && (await this.inOwnChat(caller))) {
+      const done = await this.execute("tasks.tell", input, metaFor(caller.agent, why, caller.task));
+      if (done.ok && !NotTold.safeParse(done.output).success) {
+        this.log(
+          caller.task,
+          caller.agent,
+          "tasks.tell",
+          summarize("tasks.tell", input),
+          "allow",
+          "rule",
+          why,
+        );
+      }
+      return done.ok ? { text: textOf(done.output), isError: false } : error(done.error);
+    }
     if (auto !== "boss" || this.autonomy === undefined) {
       return error(
-        "tasks.tell is the captain's tool, from its workspace lane or its root chat (the All chip). Tell the lead through your own room instead, or ask the captain.",
+        "tasks.tell is the captain's tool, from its workspace lane or its root chat (the All chip), and the tool of an agent in its own chat for a task that chat made. Tell the lead through your own room instead, or ask the captain.",
       );
     }
     const refused = await this.autonomy.refusal(caller, "tasks.tell", input, why);
@@ -717,6 +735,19 @@ export class AdminService {
       text: `Asked the owner for ${label}. You will get a message when it is saved as secret:${name.data}.`,
       isError: false,
     };
+  }
+
+  /** Whether the caller is an agent other than the captain, in its own ordinary chat with the owner. */
+  private async inOwnChat(caller: AdminCaller): Promise<boolean> {
+    const { boss } = await this.deps.config.sections();
+    const task = this.deps.store.tasks.get(caller.task);
+    return (
+      caller.agent !== boss &&
+      task !== undefined &&
+      task.kind === "chat" &&
+      task.brief === CHAT_BRIEF &&
+      task.team.includes(caller.agent)
+    );
   }
 
   /** Whether the caller is the captain in its root chat (the All chip). */
