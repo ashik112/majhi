@@ -8,10 +8,17 @@ import { changeBase } from "../git/since-start.ts";
  * file is in it, so a rule that limits lines never covers a change whose size is not known.
  */
 export async function changedLinesOf(
-  repo: Pick<TaskRepo, "source" | "base" | "branch" | "startCommit">,
+  repo: Pick<TaskRepo, "source" | "base" | "branch" | "startCommit" | "landed" | "shipped">,
 ): Promise<number | undefined> {
   const tip = `refs/heads/${repo.branch}`;
   try {
+    // Work that landed is in its base already, so the merge base is the branch itself: what it changed is
+    // measured from where it started to the tip it landed from.
+    if (repo.landed !== undefined && repo.startCommit !== undefined) {
+      const head = repo.shipped?.head ?? (await git(repo.source, ["rev-parse", tip])).trim();
+      const landed = await git(repo.source, ["diff", "--numstat", "--no-renames", repo.startCommit, head]);
+      return linesOfNumstat(landed);
+    }
     const from = await changeBase(repo.source, repo, tip, { mergeBase: true });
     const out = await git(repo.source, ["diff", "--numstat", "--no-renames", from.commit, tip]);
     return linesOfNumstat(out);
@@ -36,7 +43,10 @@ export function linesOfNumstat(out: string): number | undefined {
 
 /** The size of a task's change across its writing repos, or undefined when any repo's is not known. */
 export async function changedLinesOfTask(
-  repos: readonly Pick<TaskRepo, "source" | "base" | "branch" | "startCommit" | "writes">[],
+  repos: readonly Pick<
+    TaskRepo,
+    "source" | "base" | "branch" | "startCommit" | "writes" | "landed" | "shipped"
+  >[],
 ): Promise<number | undefined> {
   let total = 0;
   for (const repo of repos) {

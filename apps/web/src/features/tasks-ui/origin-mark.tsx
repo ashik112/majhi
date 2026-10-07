@@ -1,5 +1,14 @@
 import type { OriginKind, OriginView } from "@majhi/shared";
-import { Anchor, Clock, CornerDownRight, Eye, Focus, type LucideIcon, User } from "lucide-react";
+import {
+  Anchor,
+  ArrowUpToLine,
+  Clock,
+  CornerDownRight,
+  Eye,
+  Focus,
+  type LucideIcon,
+  User,
+} from "lucide-react";
 import { cn } from "@/lib/cn";
 
 const ORIGIN_ICON: Record<OriginKind, LucideIcon> = {
@@ -8,6 +17,7 @@ const ORIGIN_ICON: Record<OriginKind, LucideIcon> = {
   finding: Focus,
   watch: Eye,
   schedule: Clock,
+  deploy: ArrowUpToLine,
   parent: CornerDownRight,
 };
 
@@ -18,6 +28,7 @@ export const ORIGIN_LABEL: Record<OriginKind, string> = {
   finding: "Finding",
   watch: "Watch",
   schedule: "Schedule",
+  deploy: "Deploy",
   parent: "Subtask",
 };
 
@@ -27,6 +38,7 @@ export const ORIGIN_KINDS: readonly OriginKind[] = [
   "finding",
   "watch",
   "schedule",
+  "deploy",
   "parent",
 ];
 
@@ -48,6 +60,8 @@ export function originName(origin: OriginView): string {
       return origin.name ?? ORIGIN_LABEL.watch;
     case "schedule":
       return origin.name ?? ORIGIN_LABEL.schedule;
+    case "deploy":
+      return origin.name ?? ORIGIN_LABEL.deploy;
     case "parent":
       return origin.task;
   }
@@ -66,6 +80,8 @@ export function originTitle(origin: OriginView): string {
       return "From a watch incident";
     case "schedule":
       return "From a schedule";
+    case "deploy":
+      return `From a failed deploy: ${originName(origin)}`;
     case "parent":
       return `Subtask of ${origin.task}${origin.name === undefined ? "" : `, ${origin.name}`}`;
   }

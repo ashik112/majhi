@@ -68,7 +68,7 @@ export function WikiSection() {
           <div className="min-w-0 flex-1">
             <p className="text-body font-medium text-fg">Wiki</p>
             <p className="text-sm text-fg-muted">
-              Off until a workspace asks for it, or until you turn it on here.
+              On for every workspace unless that workspace turns it off.
             </p>
           </div>
           <Segmented

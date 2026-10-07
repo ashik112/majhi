@@ -757,14 +757,14 @@ export const WikiAskOutputSchema = z.object({
 export type WikiAskOutput = z.infer<typeof WikiAskOutputSchema>;
 
 /**
- * Whether a workspace has a project wiki: its own setting, else majhi's, else off. Any level can turn it
+ * Whether a workspace has a project wiki: its own setting, else majhi's, else on. Any level can turn it
  * on or back off for what is below it.
  */
 export function resolveWikiEnabled(levels: {
   org?: WikiOrgPatch | undefined;
   global?: Pick<WikiPatch, "enabled"> | undefined;
 }): boolean {
-  return levels.org?.enabled ?? levels.global?.enabled ?? false;
+  return levels.org?.enabled ?? levels.global?.enabled ?? true;
 }
 
 // The agent tool --------------------------------------------------------------------------

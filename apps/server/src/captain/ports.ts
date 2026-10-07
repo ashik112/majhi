@@ -1,4 +1,4 @@
-import type { Authority, CaptainUndo, CommandName, ShipFix, TaskPriority } from "@majhi/shared";
+import type { Authority, CaptainUndo, CommandName, DeployRecord, ShipFix, TaskPriority } from "@majhi/shared";
 import type { FollowUpPorts } from "../findings/followups.ts";
 import type { FindingsService } from "../findings/service.ts";
 import type { ShipPlan } from "../ship/plan.ts";
@@ -112,6 +112,29 @@ export interface TriageTask {
   updatedAt: string;
   /** Steps the brief lists (`- [ ]` items), when there are any. */
   checklist?: number | undefined;
+}
+
+/** A deploy step of merged work that is next: the captain does it, or it waits for the owner. */
+export interface DeployNext {
+  task: string;
+  title: string;
+  project: string;
+  env: string;
+  commit: string;
+  /** Who does it by the ship rules. */
+  who: "captain" | "owner";
+  /** What the rule that decided covers, in words ("A bug up to 200 lines"). Absent when the rows decided. */
+  rule?: string | undefined;
+}
+
+/** Deploying merged work: what the ship chore reads and does after a merge. The real port is the deploy service. */
+export interface DeployPorts {
+  /** The deploy steps of work merged lately in the workspace that are next, by the ship rules, guards read now. */
+  next(org: string): Promise<DeployNext[]>;
+  /** Why the step may not go now, read again right before it, or undefined. */
+  recheck(org: string, step: DeployNext): Promise<string | undefined>;
+  /** Starts it as the captain. Answers at once; the run is followed in the background. */
+  deploy(org: string, step: DeployNext): Promise<{ record: DeployRecord; repeat: boolean }>;
 }
 
 export interface CaptainPorts {
@@ -242,6 +265,9 @@ export interface CaptainPorts {
 
   /** The self-upkeep chores: discover, tidy, health and the checklist. Absent: they do nothing. */
   upkeep?: UpkeepPorts;
+
+  /** Deploying merged work. Absent: the ship chore deploys nothing. */
+  deploys?: DeployPorts;
 
   /** The project wiki: whether it is on and behind, and the one update. Absent: the wiki chore does nothing. */
   wiki?: WikiPorts;

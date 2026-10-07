@@ -1,4 +1,5 @@
 import {
+  DEPLOY_STATE_WORD,
   type HandoffStepId,
   SHIP_STEP_LABEL,
   type TrailKind,
@@ -44,9 +45,12 @@ const FAILED_STEP: Record<HandoffStepId, string> = {
 
 const capital = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 
-const BY_TONE = {
-  deploy: { done: "live", working: "deploying", needs: "waits for you", paused: "held", idle: "next" },
-  reply: { done: "sent", working: "sending", needs: "waits for you", paused: "held", idle: "when live" },
+const REPLY_WORD = {
+  done: "sent",
+  working: "sending",
+  needs: "waits for you",
+  paused: "held",
+  idle: "when live",
 } as const;
 
 function stepView(step: TrailStep, index: number): StepView {
@@ -102,9 +106,9 @@ function stepView(step: TrailStep, index: number): StepView {
     case "ship":
       return { ...base, label: SHIP_STEP_LABEL[step.step], word: "waits for you", waiting };
     case "deploy":
-      return { ...base, label: capital(step.env), word: BY_TONE.deploy[step.tone], waiting };
+      return { ...base, label: capital(step.env), word: DEPLOY_STATE_WORD[step.state], waiting };
     case "reply":
-      return { ...base, label: "Reply", word: BY_TONE.reply[step.tone], waiting };
+      return { ...base, label: "Reply", word: REPLY_WORD[step.tone], waiting };
   }
 }
 

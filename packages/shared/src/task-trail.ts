@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DeployAskSchema, DeployStepStateSchema } from "./deploy.ts";
 import { HandoffStepIdSchema } from "./handoff.ts";
 import { IdSchema, TaskIdSchema } from "./ids.ts";
 import { CiStateSchema, MrStateSchema } from "./mr-state.ts";
@@ -21,8 +22,8 @@ export type TrailTone = z.infer<typeof TrailToneSchema>;
 const tone = { tone: TrailToneSchema };
 
 /**
- * One step of a task's trail, in the order a task produces them. Phases B and C add what the `deploy`
- * and `reply` steps carry; nothing produces them yet.
+ * One step of a task's trail, in the order a task produces them. The `reply` step is for the phase that
+ * tells the client; nothing produces it yet.
  */
 export const TrailStepSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -68,7 +69,21 @@ export const TrailStepSchema = z.discriminatedUnion("kind", [
    * single read (`tasks.detail`), since it is read from the ship decision for the task's diff now.
    */
   z.object({ kind: z.literal("ship"), ...tone, step: z.enum(["merge", "push"]) }),
-  z.object({ kind: z.literal("deploy"), ...tone, env: z.string().min(1).max(60) }),
+  /** One target of a project the task changed: its state is the deploy record's, or what the ship rules say happens next. */
+  z.object({
+    kind: z.literal("deploy"),
+    ...tone,
+    env: z.string().min(1).max(60),
+    project: IdSchema,
+    state: DeployStepStateSchema,
+    commit: z.string().optional(),
+    /** The run's page, once the provider started one. */
+    run: z.string().optional(),
+    /** What blocks it or why it failed, in a sentence. */
+    why: z.string().optional(),
+    /** The incident task a failure opened. */
+    incident: TaskIdSchema.optional(),
+  }),
   z.object({ kind: z.literal("reply"), ...tone }),
 ]);
 export type TrailStep = z.infer<typeof TrailStepSchema>;
@@ -130,5 +145,7 @@ export const TaskDetailSchema = z.object({
   trail: TrailSchema,
   /** Who ships it, for a task in review or with a merge request open. */
   ship: ShipViewSchema.optional(),
+  /** The deploy that waits for the owner, when one does. */
+  deployAsk: DeployAskSchema.optional(),
 });
 export type TaskDetail = z.infer<typeof TaskDetailSchema>;

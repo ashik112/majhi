@@ -1,16 +1,20 @@
 import { isAbsolute, relative } from "node:path";
-import type {
-  CommandMeta,
-  CommitsPatch,
-  HandoffCommands,
-  ProjectConfig,
-  ProjectLink,
-  ProjectView,
-  RemoteConfig,
+import {
+  type CommandMeta,
+  type CommitsPatch,
+  type ConnectionConfig,
+  type DeployTarget,
+  type HandoffCommands,
+  type ProjectConfig,
+  type ProjectLink,
+  type ProjectView,
+  type RemoteConfig,
+  textValue,
 } from "@majhi/shared";
 import { resolvePath } from "../config/load.ts";
 import type { ConfigService } from "../config/service.ts";
 import { removeProjectEntry, writeProject } from "../config/write.ts";
+import { rollbackProblem } from "../deploy/guards.ts";
 import { UserError } from "../errors.ts";
 import { defaultBranch, isGitRepo } from "../git/git.ts";
 import { MergeOrderCycle, type ProjectGraph, pathBetween } from "../mrs/order.ts";
@@ -68,6 +72,10 @@ export interface ProjectInfo {
   branchPattern: string | undefined;
   /** The project's own hand-off check commands, when set. */
   handoff: HandoffCommands | undefined;
+  /** Where the project is deployed, in the order the environments go live. */
+  deploy: DeployTarget[];
+  /** The deploy suggestions the owner hid. */
+  deployHidden: string[];
 }
 
 /** Projects in majhi.yaml: registering, changing, and resolving each one's base branch. */
@@ -118,6 +126,8 @@ export class ProjectService {
           protected: project.protected === true,
           branchPattern: project.branch_pattern ?? sections.orgs[project.org]?.branch_pattern,
           handoff: project.handoff,
+          deploy: project.deploy ?? [],
+          deployHidden: project.deploy_hidden ?? [],
         };
         return info;
       }),
@@ -212,6 +222,37 @@ export class ProjectService {
     return toView(await this.get(input.id));
   }
 
+  /**
+   * Where the project is deployed, and the suggestions the owner hid. The list is the whole list, in the
+   * order the environments go live; an empty one removes it. The only writer of a project's targets.
+   */
+  async setDeploy(
+    id: string,
+    change: { targets?: readonly DeployTarget[]; hidden?: readonly string[] },
+    command: string,
+    meta: CommandMeta,
+  ): Promise<ProjectView> {
+    const sections = await this.config.sections();
+    const current = sections.projects[id];
+    if (current === undefined) throw new UserError(`Project "${id}" does not exist.`, 404);
+    const project: ProjectConfig = { ...current };
+    if (change.targets !== undefined) {
+      if (change.targets.length === 0) delete project.deploy;
+      else {
+        checkDeploy(current.org, change.targets, sections.orgs[current.org]?.connections ?? {});
+        project.deploy = [...change.targets];
+      }
+    }
+    if (change.hidden !== undefined) {
+      if (change.hidden.length === 0) delete project.deploy_hidden;
+      else project.deploy_hidden = [...new Set(change.hidden)];
+    }
+    await this.config.change({ command, meta, summary: `changed where ${id} is deployed` }, () =>
+      writeProject(this.config.file, id, project),
+    );
+    return toView(await this.get(id));
+  }
+
   async remove(id: string, command: string, meta: CommandMeta): Promise<void> {
     const sections = await this.config.sections();
     if (sections.projects[id] === undefined) throw new UserError(`Project "${id}" does not exist.`, 404);
@@ -257,6 +298,7 @@ function toView(p: ProjectInfo): ProjectView {
   if (p.base !== undefined) view.base = p.base;
   if (p.commits !== undefined) view.commits = p.commits;
   if (p.handoff !== undefined) view.handoff = p.handoff;
+  if (p.deploy.length > 0) view.deploy = p.deploy;
   if (Object.keys(p.remotes).length > 0) view.mrRemote = mrRemoteName(p.remotes);
   return view;
 }
@@ -316,5 +358,60 @@ function checkNames(id: string, aliases: readonly string[], projects: Record<str
     if (clash !== undefined) {
       throw new UserError(`Alias "${clash}" is already used by project "${otherId}".`, 409);
     }
+  }
+}
+
+/**
+ * A deploy target names connections of the project's own workspace and nobody else's, each of the
+ * kind its route needs, and a rollback that can really go back. Refused with one sentence.
+ */
+export function checkDeploy(
+  org: string,
+  targets: readonly DeployTarget[],
+  connections: Readonly<Record<string, ConnectionConfig>>,
+): void {
+  const need = (env: string, id: string, what: string, ok: (c: ConnectionConfig) => boolean) => {
+    const found = connections[id];
+    if (found === undefined) {
+      throw new UserError(`${env}: ${org} has no connection ${id}. Use one of this workspace's own.`);
+    }
+    if (!ok(found)) throw new UserError(`${env}: ${id} is not ${what}.`);
+  };
+  for (const target of targets) {
+    const { via, env } = target;
+    switch (via.kind) {
+      case "github-workflow":
+        need(
+          env,
+          via.connection,
+          "a GitHub connection",
+          (c) => c.type === "git" && textValue(c, "provider") === "github",
+        );
+        break;
+      case "gitlab-pipeline":
+        need(
+          env,
+          via.connection,
+          "a GitLab connection",
+          (c) => c.type === "git" && textValue(c, "provider") === "gitlab",
+        );
+        break;
+      case "vercel":
+        need(
+          env,
+          via.connection,
+          "a variables connection that holds VERCEL_TOKEN",
+          (c) => c.type === "env" && c.vars?.VERCEL_TOKEN !== undefined,
+        );
+        break;
+      case "ssh":
+        need(env, via.connection, "an SSH host", (c) => c.type === "ssh");
+        break;
+    }
+    if (target.rollback.kind === "ssh") {
+      need(env, target.rollback.connection, "an SSH host", (c) => c.type === "ssh");
+    }
+    const problem = rollbackProblem(target);
+    if (problem !== undefined) throw new UserError(`${env}: ${problem}`);
   }
 }

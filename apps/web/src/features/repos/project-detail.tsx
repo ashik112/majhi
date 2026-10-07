@@ -22,6 +22,7 @@ import { Select } from "@/components/ui/select";
 import { Dot } from "@/components/ui/status-dot";
 import { Switch } from "@/components/ui/switch";
 import { orgLabel } from "@/features/accounts/model";
+import { DeploySection } from "@/features/deploy/deploy-section";
 import type { ApiRequestError } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { badgeLetters } from "@/lib/format";
@@ -151,6 +152,7 @@ export function ProjectDetail({
       <div className="mt-4">
         <ProjectCardSection project={project.id} />
       </div>
+      <DeploySection project={project} />
       <ProtectionSection project={project} />
       <NamesSection project={project} repo={repo} projects={projects} orgs={orgs} />
       <HandoffSection project={project} />

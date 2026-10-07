@@ -589,6 +589,45 @@ export function createHandlers({
       }
       return services.mrs.fetchProject(input);
     },
+    "projects.deployView": (input) => services.deploy.view(input.project),
+    "projects.setDeploy": async (input, ctx) => {
+      const info = await services.projects.get(input.project);
+      const known = info.deploy.some((t) => t.env === input.target.env);
+      const targets = known
+        ? info.deploy.map((t) => (t.env === input.target.env ? input.target : t))
+        : [...info.deploy, input.target];
+      await services.projects.setDeploy(input.project, { targets }, ctx.command, ctx.meta);
+      return services.deploy.view(input.project);
+    },
+    "projects.removeDeploy": async (input, ctx) => {
+      const info = await services.projects.get(input.project);
+      const targets = info.deploy.filter((t) => t.env !== input.env);
+      await services.projects.setDeploy(input.project, { targets }, ctx.command, ctx.meta);
+      return services.deploy.view(input.project);
+    },
+    "projects.hideDeploySuggestion": async (input, ctx) => {
+      const info = await services.projects.get(input.project);
+      await services.projects.setDeploy(
+        input.project,
+        { hidden: [...info.deployHidden, input.suggestion] },
+        ctx.command,
+        ctx.meta,
+      );
+      return services.deploy.view(input.project);
+    },
+    // A deploy leaves the machine: the owner's click, or the captain by a rule the owner wrote (never through here).
+    "projects.deploy": async (input, ctx) => {
+      if (ctx.meta.actor.kind !== "owner") throw new UserError("Only the owner deploys from here.", 409);
+      return services.deploy.service.deploy(input, "owner");
+    },
+    "projects.rollback": async (input, ctx) => {
+      if (ctx.meta.actor.kind !== "owner") throw new UserError("Only the owner rolls a deploy back.", 409);
+      return services.deploy.service.rollback(input.record, "owner");
+    },
+    "projects.holdDeploy": async (input, ctx) => {
+      if (ctx.meta.actor.kind !== "owner") throw new UserError("Only the owner holds a deploy.", 409);
+      return services.deploy.service.hold(input);
+    },
     "projects.remove": async (input, ctx) => {
       await services.projects.remove(input.id, ctx.command, ctx.meta);
       services.cards.forget(input.id);
@@ -627,6 +666,7 @@ export function createHandlers({
         })),
         checks,
         background,
+        deploys: await services.deploy.board(),
       };
     },
     "tasks.get": async (input) => services.tasks.get(input.id),

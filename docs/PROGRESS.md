@@ -1,5 +1,25 @@
 # Progress
 
+## Ship without me, phase C: deploy targets, verify, rollback (branch `feat/deploy-targets`, built, not merged)
+
+A merged fix can now deploy to staging by the owner's rule, is checked, and rolls itself back with an incident when it fails. Production waits for the owner's click.
+
+**Plan.** Shared schemas and the record table, then the providers, the check and the service, then the planner that reads the ship rules, the captain's pass and the commands, then the screens (project page, trail, task bar, board, log), then the isolated proof.
+
+**What works.**
+- Targets per project in its config (GitHub workflow, GitLab pipeline, Vercel, ssh command the owner wrote), with a check (health address and or a watch, wait seconds) and a rollback (redeploy previous, or the owner's ssh command). One record per target and commit; the same pair never deploys twice.
+- `projects.deploy` and `projects.rollback`, `projects.setDeploy` and friends, owner only. Credentials come only from the workspace's own connections. The run is followed to its end, then checked; a failed run or check rolls back, opens an `incident` task with the scrubbed log and tells the owner.
+- After a merge the ship rules decide each environment: the captain's pass deploys what they give it, in order (production only after staging is live at the same commit), under every guard (the commit is the merged head and checked, the host has it, hours and freezes). The owner's steps wait on the trail and as "Deploy to production?" on the task page (Deploy, Hold). The captain log offers Roll back instead of Undo.
+- Screens: Deploy targets on the project page (targets, found in the project, history with Roll back and the incident line), deploy steps in the task trail and on board cards (Needs you, Shipping), the question bar above the composer.
+
+**How to try it.** Project page, Deploy targets, Set up or Add as; set the Deploy rows or a rule in Captain, Permissions; turn Auto-pilot on and merge a typed bug. Proof without anything real: `MAJHI_E2E_PORT=<free port> node --import tsx e2e/deploy-proof-run.ts` (needs Docker for the ssh host), shots with `e2e/deploy-proof-shots.ts` and `e2e/deploy-proof-compare.ts`.
+
+**Checked.** Typecheck, biome, census, unit tests (the service with fake GitHub, GitLab, Vercel and ssh: success, failing run, failing check, first deploy with nothing to go back to, never retried by the captain, once per target and commit, production behind staging, unverified commit, rest, another workspace; the planner; the captain's pass; credentials of one workspace; saving targets), and the Playwright suite. The isolated proof ran a verified staging deploy, a failing one that rolled back with an incident, and production by the owner's click through an ssh command on a throwaway container, in a browser at 1440 and 1100, dark and light, beside the mockup.
+
+**Left.** Merge requests landing through a host that majhi cannot read the merge of (only the fetched base tip is used). The hourly chore is what notices a push the owner made by hand. Verify is edited in the form, not inline as in the mockup. Not run against a real GitHub, GitLab, Vercel or ssh host.
+
+**Known issues.** A GitLab pipeline and an ssh target need an owner-written rollback.
+
 ## Ship without me, phase B: ship rules on the authority rows, one merge path (branch `feat/ship-rules`, built, not merged)
 
 Who ships a task is one decision now: the workspace's authority rows refined by an ordered list of ship rules by task type, read the same way by the captain's ship chore, its lane, a lead's merge card, the hand-off and the merge request timer.

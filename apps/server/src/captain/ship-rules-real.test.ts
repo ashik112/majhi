@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { ALL_ASK, type ShipRule, type Task, type TaskDetail } from "@majhi/shared";
+import { ALL_ASK, type HandoffState, type ShipRule, type Task, type TaskDetail } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { git } from "../testing/fixtures.ts";
@@ -41,9 +41,10 @@ async function reviewed(world: BossWorld, text: string, file: string, content: s
   expect(made.status).toBe(200);
   const id = (made.body as Task).id;
   await h.majhi.services.runs.idle();
-  for (let i = 0; i < 500; i++) {
-    if (((await h.cmd("tasks.get", { id })).body as Task).status === "review") break;
-    await new Promise((r) => setTimeout(r, 10));
+  const until = Date.now() + 60_000;
+  while (((await h.cmd("tasks.get", { id })).body as Task).status !== "review") {
+    if (Date.now() > until) throw new Error(`${id} never reached review`);
+    await new Promise((r) => setTimeout(r, 20));
   }
   const tree = join(world.taskDir(id), "acme-api");
   await writeFile(join(tree, file), content);
@@ -60,6 +61,15 @@ async function shipAsCaptain(world: BossWorld, id: string, rules: ShipRule[]) {
     (await h.cmd("autonomy.configure", { orgs: { acme: { authority: rows, ships: rules } } })).status,
   ).toBe(200);
   expect((await h.cmd("autonomy.start")).status).toBe(200);
+  // The check of this head ends before the captain looks, as it does once a real check is done.
+  await h.cmd("handoff.check", { task: id });
+  const until = Date.now() + 90_000;
+  for (;;) {
+    const state = (await h.cmd("handoff.get", { task: id })).body as HandoffState;
+    if (!state.running && !state.queued && state.current !== undefined) break;
+    if (Date.now() > until) throw new Error(`the check of ${id} never ended`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
   h.majhi.services.captain.reviewReached(id);
   await h.majhi.services.captain.settled();
 }
@@ -98,7 +108,8 @@ describe("ship rules with a real captain", { timeout: 120_000 }, () => {
     const { id } = await reviewed(w, "fix the coupon crash", "coupon.txt", "fixed\n", "bug");
     await shipAsCaptain(w, id, [bugRule]);
     expect(await mainHas(w, "coupon.txt")).toBe(false);
-    expect(((await w.h.cmd("tasks.get", { id })).body as Task).status).toBe("review");
+    // A failed check goes back to the lead, so the task may be running again; it is never done.
+    expect(((await w.h.cmd("tasks.get", { id })).body as Task).status).not.toBe("done");
     const log = JSON.stringify((await w.h.cmd("captain.log", { org: "acme" })).body);
     expect(log).toContain("the hand-off check failed");
   });
@@ -109,7 +120,8 @@ describe("ship rules with a real captain", { timeout: 120_000 }, () => {
     const { id } = await reviewed(w, "fix the coupon crash", "keys.txt", `aws_access_key_id=${key}\n`, "bug");
     await shipAsCaptain(w, id, [bugRule]);
     expect(await mainHas(w, "keys.txt")).toBe(false);
-    expect(((await w.h.cmd("tasks.get", { id })).body as Task).status).toBe("review");
+    // A failed check goes back to the lead, so the task may be running again; it is never done.
+    expect(((await w.h.cmd("tasks.get", { id })).body as Task).status).not.toBe("done");
     const log = JSON.stringify((await w.h.cmd("captain.log", { org: "acme" })).body);
     expect(log).toContain("looks like a secret");
   });

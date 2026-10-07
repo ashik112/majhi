@@ -1,4 +1,4 @@
-import type { CommandOutput, HomeBackground, HomeCheck, lifecycle } from "@majhi/shared";
+import type { CommandOutput, HomeBackground, HomeCheck, HomeDeploy, lifecycle } from "@majhi/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { DoingFact, MrFact } from "@/features/board/home-model";
@@ -33,6 +33,8 @@ export interface HomeFacts {
   checks: ReadonlyMap<string, HomeCheck>;
   /** Hand-off checks, processes and previews that run now. */
   background: readonly HomeBackground[];
+  /** The deploy steps of recently merged tasks that are not all live yet. */
+  deploys: ReadonlyMap<string, HomeDeploy>;
 }
 
 /** The open merge requests and what each working agent does. The live line has no event, so it is read every few seconds. */
@@ -58,6 +60,7 @@ export function useHomeFacts(): HomeFacts {
       if (!doing.has(d.task)) doing.set(d.task, d);
     }
     const checks = new Map((data?.checks ?? []).map((c) => [c.task, c]));
-    return { mrs, mrExtra, doing, checks, background: data?.background ?? [] };
+    const deploys = new Map((data?.deploys ?? []).map((d) => [d.task, d]));
+    return { mrs, mrExtra, doing, checks, background: data?.background ?? [], deploys };
   }, [data]);
 }

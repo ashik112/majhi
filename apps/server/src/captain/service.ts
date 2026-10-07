@@ -289,6 +289,11 @@ export class CaptainService {
     this.trigger(org, "ship", `${task} reached review`, "agent", task);
   }
 
+  /** A deploy went live: the next environment of its project may go now, so the ship chore looks again. */
+  deployChanged(org: string): void {
+    this.trigger(org, "ship", "A deploy went live", "majhi");
+  }
+
   /** A turn ended: a workspace captain's message to the owner is relayed to the root chat. */
   turnEnded(turn: { task: string; agent: string; text: string }): void {
     if (this.relay === undefined || turn.agent !== this.boss) return;
@@ -583,6 +588,10 @@ export class CaptainService {
       case "memory":
         await this.deps.ownerCommand("memory.undo", { event: undo.event }, meta);
         detail = "Undid the memory step.";
+        break;
+      case "rollback":
+        await this.deps.ownerCommand("projects.rollback", { record: undo.record }, meta);
+        detail = "Rolled the target back.";
         break;
     }
     this.repo.markUndone(id, this.now().toISOString());

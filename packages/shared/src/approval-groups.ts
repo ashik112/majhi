@@ -25,6 +25,13 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "secrets.exportKey",
   "secrets.restoreKey",
   "boss.chat",
+  // A deploy leaves the machine for a server or a client: the owner's click, or a rule they wrote, never an agent's call.
+  "projects.setDeploy",
+  "projects.removeDeploy",
+  "projects.hideDeploySuggestion",
+  "projects.deploy",
+  "projects.rollback",
+  "projects.holdDeploy",
   // Read state is the owner's: what they have seen is not for an agent to read or move.
   "conversations.list",
   "conversations.markRead",

@@ -141,12 +141,12 @@ function EntryRow({
       </span>
       {action?.undo === "yes" && (
         <Button size="sm" variant="ghost" className="shrink-0 self-start" onClick={() => onUndo(entry)}>
-          Undo
+          {action.undoWord === "roll-back" ? "Roll back" : "Undo"}
         </Button>
       )}
       {action?.undo === "done" && (
         <Badge className="shrink-0 self-start" title="Undone">
-          Undone
+          {action.undoWord === "roll-back" ? "Rolled back" : "Undone"}
         </Badge>
       )}
     </li>
@@ -158,18 +158,21 @@ function UndoDialog({ entry, onClose }: { entry: LogEntry; onClose: () => void }
   const toast = useToast();
   const action = entry.action;
   if (action === undefined) return null;
+  const rollback = action.undoWord === "roll-back";
   return (
     <ConfirmDialog
-      title="Undo this?"
+      title={rollback ? "Roll back this deploy?" : "Undo this?"}
       body={
         <span className="text-pretty">
           {entry.sentence}.{" "}
-          {action.chore === "ship"
-            ? "A new commit reverts the merge. Later work on the branch stays."
-            : "It goes back the way it was."}
+          {rollback
+            ? "The target goes back to the commit it ran before, and is checked again."
+            : action.chore === "ship"
+              ? "A new commit reverts the merge. Later work on the branch stays."
+              : "It goes back the way it was."}
         </span>
       }
-      confirmLabel="Undo"
+      confirmLabel={rollback ? "Roll back" : "Undo"}
       busy={undo.isPending}
       error={undo.error ? describeError(undo.error) : undefined}
       onConfirm={() =>
@@ -178,7 +181,7 @@ function UndoDialog({ entry, onClose }: { entry: LogEntry; onClose: () => void }
           {
             onSuccess: (done) => {
               onClose();
-              toast("Undone", { detail: done.detail });
+              toast(rollback ? "Rolled back" : "Undone", { detail: done.detail });
             },
           },
         )

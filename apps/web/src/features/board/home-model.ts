@@ -2,8 +2,12 @@ import {
   type BoardCounts,
   type CaptainAction,
   type CiState,
+  type DeployPhase,
+  deployPhase,
+  deployTrailStep,
   type HomeBackground,
   type HomeCheck,
+  type HomeDeploy,
   lifecycle,
   type OriginKind,
   type OwnerDecision,
@@ -97,6 +101,8 @@ export interface HomeInput {
   checks: ReadonlyMap<string, HomeCheck>;
   /** Hand-off checks, background processes and previews that run now. */
   background: readonly HomeBackground[];
+  /** The deploy steps of recently merged tasks that are not all live yet. */
+  deploys?: ReadonlyMap<string, HomeDeploy> | undefined;
   captain: readonly CaptainAction[];
   /** Captain actions that merged a task and can be undone, by task. */
   undoOf: ReadonlyMap<string, number>;
@@ -134,13 +140,21 @@ function subtasksRunning(task: TaskSummary): boolean {
  */
 export function sectionOf(
   task: TaskSummary,
-  ctx: { asking: ReadonlySet<string>; working: ReadonlySet<string> },
+  ctx: {
+    asking: ReadonlySet<string>;
+    working: ReadonlySet<string>;
+    /** Where the deploys of a merged task stand: one that waits for the owner is Needs you, one that moves or failed is Shipping. */
+    deploys?: ReadonlyMap<string, DeployPhase> | undefined;
+  },
 ): TaskSection | undefined {
   if (ctx.asking.has(task.id)) return "needs";
   if (task.chat === true) return undefined;
   switch (task.status) {
-    case "done":
-      return "done";
+    case "done": {
+      const phase = ctx.deploys?.get(task.id);
+      if (phase === "asks") return "needs";
+      return phase === "moving" || phase === "failed" ? "shipping" : "done";
+    }
     case "mr":
       return "shipping";
     case "running":
@@ -169,9 +183,10 @@ export interface NeedsItem {
   /** How many open tasks wait for this decision's task. */
   blocks: number;
 }
-/** A paused task only the owner can lift: no decision for it, but it waits on a click. */
+/** A paused task only the owner can lift: no decision for it, but it waits on a click. Or merged work whose deploy waits for one. */
 export interface HeldItem {
   task: TaskSummary;
+  deploy?: HomeDeploy | undefined;
 }
 export interface RunningItem {
   task: TaskSummary;
@@ -190,6 +205,8 @@ export interface ShippingItem {
   task: TaskSummary;
   mr: MrFact | undefined;
   extra: number;
+  /** Set for merged work that is being deployed. */
+  deploy?: HomeDeploy | undefined;
 }
 export interface QueuedItem {
   task: TaskSummary;
@@ -337,7 +354,20 @@ export function buildHome(input: HomeInput): { sections: HomeSections; totals: H
     (input.type === undefined || t.typing?.type === input.type) &&
     (input.source === undefined || t.origin?.kind === input.source) &&
     (input.area === undefined || (areas.get(t.id) ?? []).includes(input.area));
-  const tasks = input.tasks.filter((t) => inScope(t) && passesChips(t));
+  const deploys = input.deploys ?? new Map<string, HomeDeploy>();
+  const phases = new Map([...deploys].map(([id, d]) => [id, deployPhase(d.steps)] as const));
+  const tasks = input.tasks
+    .filter((t) => inScope(t) && passesChips(t))
+    .map((t) => {
+      // The summary's trail knows only the deploys that started; the board's facts say what comes next.
+      const fact = deploys.get(t.id);
+      return fact === undefined
+        ? t
+        : {
+            ...t,
+            trail: [...t.trail.filter((s) => s.kind !== "deploy"), ...fact.steps.map(deployTrailStep)],
+          };
+    });
   // A pause majhi lifts by itself is not a question for the owner: its task waits, in Waiting.
   const waitsForMajhi = (id: string | undefined) =>
     id !== undefined && byId.get(id)?.hold?.lifter === "system";
@@ -374,12 +404,12 @@ export function buildHome(input: HomeInput): { sections: HomeSections; totals: H
   let triage: QueuedItem[] = [];
   let done: DoneItem[] = [];
   for (const task of tasks) {
-    const section = sectionOf(task, { asking, working: input.working });
+    const section = sectionOf(task, { asking, working: input.working, deploys: phases });
     const blocker = input.blockers.get(task.id);
     switch (section) {
       case "needs":
         // A task a decision waits on is in `needs` already; only a hold the owner lifts is a row of its own.
-        if (!asking.has(task.id)) held.push({ task });
+        if (!asking.has(task.id)) held.push({ task, deploy: deploys.get(task.id) });
         break;
       case "running":
         running.push({ task, doing: input.doing.get(task.id) });
@@ -388,7 +418,12 @@ export function buildHome(input: HomeInput): { sections: HomeSections; totals: H
         waiting.push({ task });
         break;
       case "shipping":
-        shipping.push({ task, mr: input.mrs.get(task.id), extra: input.mrExtra.get(task.id) ?? 0 });
+        shipping.push({
+          task,
+          mr: input.mrs.get(task.id),
+          extra: input.mrExtra.get(task.id) ?? 0,
+          deploy: deploys.get(task.id),
+        });
         break;
       case "next":
         // A task in review whose checks run is shown once, as the Checking row in Running.
@@ -585,7 +620,9 @@ export type ActionSpec =
   | { kind: "recheck"; task: string; label: string }
   /** Nothing to press: the row shows a spinner and the time. */
   | { kind: "wait"; label: string }
-  | { kind: "undo"; id: number; label: string };
+  | { kind: "undo"; id: number; label: string }
+  /** Deploy what waits for the owner: the commit of the step the task page asks about. */
+  | { kind: "deploy"; task: string; project: string; env: string; commit: string; label: string };
 
 const open = (task: string, label: string): ActionSpec => ({
   kind: "go",
@@ -676,6 +713,20 @@ export function runningActions(item: RunningItem): ActionSpec[] {
 /** A hold only the owner lifts: Resume leads, then the task. */
 export function heldActions(item: HeldItem): ActionSpec[] {
   const id = item.task.id;
+  const ask = item.deploy?.steps.find((s) => s.state === "waits-for-owner" && s.commit !== undefined);
+  if (ask?.commit !== undefined) {
+    return [
+      {
+        kind: "deploy",
+        task: id,
+        project: ask.project,
+        env: ask.env,
+        commit: ask.commit,
+        label: `Deploy ${ask.env}`,
+      },
+      open(id, "Open"),
+    ];
+  }
   return [{ kind: "start", task: id, label: "Resume" }, open(id, "Open")];
 }
 

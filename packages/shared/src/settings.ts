@@ -137,7 +137,7 @@ const wikiFields = {
   writer_model: z.string().trim().min(1).max(100),
 };
 export const WikiSettingsSchema = z.strictObject({
-  enabled: wikiFields.enabled.default(false),
+  enabled: wikiFields.enabled.default(true),
   writer_model: wikiFields.writer_model.optional(),
 });
 export type WikiSettings = z.infer<typeof WikiSettingsSchema>;

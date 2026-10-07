@@ -1811,6 +1811,43 @@ ALTER TABLE tasks ADD COLUMN type_by TEXT;
 ALTER TABLE tasks ADD COLUMN origin TEXT;
 `,
   },
+  {
+    // Deploys (docs/design/ship-without-me.md, section 3). One row per target and commit: asking again for the same
+    // pair finds this row, which is what makes a deploy happen once. `run`, `check_result` and `rollback` are JSON
+    // that zod checks when a row is read. The `landed_*` columns of a task repo are the commit its work landed in
+    // (the base tip right after majhi merged it, or the fetched base tip once its merge request merged) and when.
+    id: 177,
+    name: "deploys and landed commits",
+    sql: `
+CREATE TABLE deploys (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT NOT NULL,
+  project TEXT NOT NULL,
+  env TEXT NOT NULL,
+  commit_sha TEXT NOT NULL,
+  previous TEXT,
+  state TEXT NOT NULL,
+  task TEXT,
+  by TEXT NOT NULL,
+  run TEXT,
+  check_result TEXT,
+  reason TEXT,
+  rollback TEXT,
+  incident TEXT,
+  unchecked INTEGER NOT NULL DEFAULT 0,
+  attempt INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  finished_at TEXT,
+  UNIQUE (project, env, commit_sha)
+);
+CREATE INDEX deploys_task ON deploys (task);
+CREATE INDEX deploys_state ON deploys (state);
+ALTER TABLE task_repos ADD COLUMN landed_commit TEXT;
+ALTER TABLE task_repos ADD COLUMN landed_into TEXT;
+ALTER TABLE task_repos ADD COLUMN landed_at TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

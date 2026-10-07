@@ -107,6 +107,8 @@ export interface MrDeps {
    * click does not ask. Without it the captain merges nothing.
    */
   captainMerges?: (task: Task) => Promise<{ yes: true } | { yes: false; why: string }>;
+  /** Every merge request of a task is merged and its work landed in the base: deploys may go. */
+  landed?: (task: string) => void;
   now?: () => Date;
 }
 
@@ -1628,6 +1630,18 @@ export class MrService {
           `${repo.project}: could not fetch ${repo.base} from ${remote} (${failed}). Tasks waiting on this one use the last copy on this machine.`,
           "error",
         );
+      } else {
+        // What the host merged into the base: the commit a deploy of this work ships.
+        const landed = (
+          await git(repo.source, ["rev-parse", `refs/remotes/${remote}/${repo.base}`]).catch(() => "")
+        ).trim();
+        if (landed !== "") {
+          this.deps.store.tasks.setLanded(task.id, repo.project, {
+            commit: landed,
+            into: repo.base,
+            at: this.now().toISOString(),
+          });
+        }
       }
     }
     for (const repo of task.repos) {
@@ -1648,6 +1662,7 @@ export class MrService {
         this.note(task.id, `${repo.project}: could not remove the worktree (${errorMessage(err)}).`, "error");
       }
     }
+    this.deps.landed?.(task.id);
     this.note(task.id, "Every merge request is merged. The task is done.");
     await this.deps.tasks.close(task.id, {
       whenSubtasksOpen: "stay",

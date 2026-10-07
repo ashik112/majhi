@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { FindingSeveritySchema, FindingSourceSchema } from "./findings.ts";
-import { TaskIdSchema } from "./ids.ts";
+import { IdSchema, TaskIdSchema } from "./ids.ts";
 
 /**
  * Where a task came from. The creator sets it once, when the task is made. A reference points at
@@ -30,9 +30,23 @@ const schedule = z.object({
   /** A schedule (clock playbook) id. */
   schedule: z.string().min(1).max(80),
 });
+const deploy = z.object({
+  kind: z.literal("deploy"),
+  /** The deploy record that failed. */
+  deploy: z.number().int().positive(),
+  project: IdSchema,
+  env: z.string().min(1).max(40),
+});
 const parent = z.object({ kind: z.literal("parent"), task: TaskIdSchema });
 
-export const StoredOriginSchema = z.discriminatedUnion("kind", [owner, captain, finding, watch, schedule]);
+export const StoredOriginSchema = z.discriminatedUnion("kind", [
+  owner,
+  captain,
+  finding,
+  watch,
+  schedule,
+  deploy,
+]);
 export type StoredOrigin = z.infer<typeof StoredOriginSchema>;
 
 export const TaskOriginSchema = z.discriminatedUnion("kind", [
@@ -41,6 +55,7 @@ export const TaskOriginSchema = z.discriminatedUnion("kind", [
   finding,
   watch,
   schedule,
+  deploy,
   parent,
 ]);
 export type TaskOrigin = z.infer<typeof TaskOriginSchema>;
@@ -56,6 +71,7 @@ export const OriginViewSchema = z.discriminatedUnion("kind", [
   finding.extend({ name: z.string().optional() }),
   watch.extend({ name: z.string().optional() }),
   schedule.extend({ name: z.string().optional() }),
+  deploy.extend({ name: z.string().optional() }),
   parent.extend({ name: z.string().optional() }),
 ]);
 export type OriginView = z.infer<typeof OriginViewSchema>;
