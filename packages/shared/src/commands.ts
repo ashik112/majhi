@@ -1317,7 +1317,7 @@ export const commands = {
   "wiki.update": {
     risk: "change",
     summary:
-      "Update the wiki of a workspace or one project: read the code facts with no model, then rewrite only the pages whose cited files changed. It runs in the background and the page follows its progress. One run per workspace at a time. Without `project` it also writes the workspace pages (how the projects connect, the cross-repo flows, the gaps). `replan` picks the main flows again. `page` writes only that page. The owner and the captain, never another agent",
+      'Update the wiki of a workspace or one project: read the code facts with no model, then rewrite only the pages whose cited files changed. It runs in the background and the page follows its progress. One run per workspace at a time. Without `project` it also writes the workspace pages (how the projects connect, the cross-repo flows, the gaps). `replan` picks the main flows again. `page` writes only that page. `note` (with `project` and `page`) adds a correction in words to a page, like "kinbe first, then the rest" on `deploys`: it is kept apart from the page, shows under Owner notes and survives every rewrite, and the page is written again with it; `dropNote` removes one. The owner and the captain, never another agent',
     input: WikiUpdateInputSchema,
     output: WikiViewSchema,
   },

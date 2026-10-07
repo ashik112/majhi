@@ -5,7 +5,7 @@ import {
   type WikiKnownRole,
   type WikiPageKind,
 } from "@majhi/shared";
-import type { DraftDiagram, DraftPage } from "./draft.ts";
+import { DEPLOY_SECTION_KEYS, DEPLOY_SECTIONS, type DraftDiagram, type DraftPage } from "./draft.ts";
 
 /** A claim that passed the check, with the place it had in the draft. */
 export interface KeptClaim {
@@ -17,6 +17,7 @@ export interface KeptClaim {
 const HEADING: Record<Exclude<WikiPageKind, "gaps">, string> = {
   overview: "Also worth knowing",
   infra: "What runs where",
+  deploys: "Deploys",
   component: "In detail",
   flow: "Steps",
 };
@@ -31,14 +32,22 @@ function line(c: WikiClaim): string {
  * overview what was not found. The tiles of an overview carry their own claims, so those are not repeated.
  */
 export function bodyOf(
-  draft: Pick<DraftPage, "kind" | "couldNot">,
+  draft: Pick<DraftPage, "kind" | "couldNot" | "claims">,
   kept: readonly KeptClaim[],
   summary: readonly string[],
   tiles: ReadonlySet<number>,
 ): string {
   const rest = kept.filter((k) => !tiles.has(k.claim.n));
   const parts: string[] = [summary.join(" ")];
-  if (rest.length > 0) {
+  if (draft.kind === "deploys") {
+    // Short sections in a fixed order. The reply parser refuses a claim with no section, so none is left out.
+    for (const key of DEPLOY_SECTION_KEYS) {
+      const inside = rest.filter((k) => draft.claims[k.at]?.section === key);
+      if (inside.length === 0) continue;
+      parts.push(`## ${DEPLOY_SECTIONS[key]}`);
+      parts.push(inside.map((k) => `- ${line(k.claim)}`).join("\n"));
+    }
+  } else if (rest.length > 0) {
     parts.push(`## ${HEADING[draft.kind]}`);
     parts.push(
       rest
@@ -46,7 +55,7 @@ export function bodyOf(
         .join("\n"),
     );
   }
-  if (draft.kind === "overview" && draft.couldNot.length > 0) {
+  if ((draft.kind === "overview" || draft.kind === "deploys") && draft.couldNot.length > 0) {
     parts.push("## Not found");
     parts.push(draft.couldNot.map((c) => `- ${c.topic}: ${c.why}`).join("\n"));
   }

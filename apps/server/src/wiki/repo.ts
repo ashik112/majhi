@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   CommitShaSchema,
   type OwnerAnswer,
@@ -6,6 +7,7 @@ import {
   RepoPathSchema,
   type WikiAnswer,
   WikiAnswerSchema,
+  type WikiNote,
   type WikiPage,
   type WikiPageId,
   WikiPageIdSchema,
@@ -57,8 +59,18 @@ export function answerKey(a: WikiAnswer): string {
       return `call:${a.repo}:${a.method} ${a.path}`;
     case "role":
       return `role:${a.project}:${a.role}:${a.where}`;
+    case "note":
+      return noteKey(a);
   }
 }
+
+/** A note's key holds a hash of its text, so the same note given twice is one row and a different one is another. */
+export function noteKey(n: Pick<WikiNote, "project" | "page" | "text">): string {
+  return `note:${n.project}:${n.page}:${createHash("sha256").update(n.text).digest("hex").slice(0, 16)}`;
+}
+
+/** The heading of the notes a page shows under its text. */
+export const OWNER_NOTES_HEADING = "Owner notes";
 
 export interface StoredPage {
   page: WikiPage;
@@ -260,6 +272,43 @@ export class WikiRepo {
     );
   }
 
+  /** The notes given to one page of a project, oldest first. */
+  notes(org: string, project: string, page: WikiPageId): string[] {
+    const rows = this.db
+      .prepare("SELECT answer FROM wiki_answers WHERE org = ? AND key LIKE ? ORDER BY updated_at, key")
+      .all(org, `note:${project}:${page}:%`) as { answer: string }[];
+    return rows.flatMap((row) => {
+      try {
+        const parsed = WikiAnswerSchema.safeParse(JSON.parse(row.answer));
+        // The key's pattern treats `_` in an id as any character, so the stored note says whose it is.
+        return parsed.success &&
+          parsed.data.kind === "note" &&
+          parsed.data.project === project &&
+          parsed.data.page === page
+          ? [parsed.data.text]
+          : [];
+      } catch {
+        return [];
+      }
+    });
+  }
+
+  /** Keeps a note on a page. The same text twice is one note. */
+  addNote(org: string, note: WikiNote): void {
+    const row = WikiAnswerSchema.parse({ ...note, kind: "note" });
+    this.db
+      .prepare("INSERT OR REPLACE INTO wiki_answers (org, key, answer, updated_at) VALUES (?, ?, ?, ?)")
+      .run(org, noteKey(note), JSON.stringify(row), this.now());
+  }
+
+  /** Takes a note away. False when there was none with that text. */
+  dropNote(org: string, note: WikiNote): boolean {
+    return (
+      this.db.prepare("DELETE FROM wiki_answers WHERE org = ? AND key = ?").run(org, noteKey(note)).changes >
+      0
+    );
+  }
+
   /** Replaces every answer of one kind in a workspace with `next`, in one transaction. Other kinds and other workspaces are untouched. */
   replaceAnswers(org: string, kind: WikiAnswer["kind"], next: readonly WikiAnswer[]): void {
     const rows = next.map((a) => WikiAnswerSchema.parse(a));
@@ -273,11 +322,17 @@ export class WikiRepo {
     });
   }
 
-  /** A page as the owner sees it: a project overview with the owner's role decisions applied. Stored pages are never changed by it. */
+  /**
+   * A page as the owner sees it: a project overview with the owner's role decisions applied, and any page with the notes
+   * given to it listed under "Owner notes". Stored pages are never changed by it, so a rewrite never loses either.
+   */
   shown(page: WikiPage): WikiPage {
-    return page.kind === "overview" && page.project !== undefined
-      ? applyRoleChoices(page, this.roleAnswers(page.org))
-      : page;
+    if (page.project === undefined) return page;
+    const decided = page.kind === "overview" ? applyRoleChoices(page, this.roleAnswers(page.org)) : page;
+    const notes = this.notes(page.org, page.project, page.id);
+    if (notes.length === 0) return decided;
+    const list = notes.map((n) => `- ${n}`).join("\n");
+    return { ...decided, body: `${decided.body}\n\n## ${OWNER_NOTES_HEADING}\n${list}` };
   }
 
   /** A project's state. A project never updated, or a row that no longer parses, reads as never built. */

@@ -3,7 +3,8 @@ import { isMap, isScalar, isSeq, LineCounter, type Node, parseAllDocuments, pars
 /**
  * A YAML or JSON file read with a real parser, with the line of every key. JSON is YAML, so one parser
  * serves package.json, compose files and Kubernetes manifests; the line counter gives the proof its
- * line number. A file that does not parse reads as missing: the config pass never guesses.
+ * line number. A file that does not parse reads as missing: the config pass never guesses. Merge keys (`<<: *base`)
+ * are applied, as compose and GitLab files use them.
  */
 
 export interface Located {
@@ -40,7 +41,7 @@ function locate(root: unknown, lines: LineCounter): Located["lineOf"] {
 /** One document. Undefined when the text has errors. */
 export function readLocated(text: string): Located | undefined {
   const lines = new LineCounter();
-  const doc = parseDocument(text, { lineCounter: lines, prettyErrors: false });
+  const doc = parseDocument(text, { lineCounter: lines, prettyErrors: false, merge: true });
   if (doc.errors.length > 0) return undefined;
   return { data: doc.toJS(), lineOf: locate(doc.contents, lines) };
 }
@@ -49,7 +50,7 @@ export function readLocated(text: string): Located | undefined {
 export function readAllLocated(text: string): Located[] {
   const lines = new LineCounter();
   const out: Located[] = [];
-  for (const doc of parseAllDocuments(text, { lineCounter: lines, prettyErrors: false })) {
+  for (const doc of parseAllDocuments(text, { lineCounter: lines, prettyErrors: false, merge: true })) {
     if (doc.errors.length > 0) continue;
     out.push({ data: doc.toJS(), lineOf: locate(doc.contents, lines) });
   }

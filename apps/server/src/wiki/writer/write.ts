@@ -92,6 +92,8 @@ export interface WriteInput {
   /** What the tools found: leads for the writer. */
   facts: readonly WikiFact[];
   pages: readonly WriterPage[];
+  /** What the owner or the captain said about a page, to write from. Absent: none. */
+  notes?: ((page: WriterPage) => readonly string[]) | undefined;
   capUsd?: number | undefined;
   capTokens?: number | undefined;
   stop?: (() => Promise<string | undefined>) | undefined;
@@ -113,7 +115,14 @@ export async function writePages(input: WriteInput): Promise<WriteOutcome> {
     pages: input.pages,
     job: {
       id: writerPageId,
-      prompt: (page, first) => pagePrompt({ repo, page, hints: hintBlock(page, input.facts).text, first }),
+      prompt: (page, first) =>
+        pagePrompt({
+          repo,
+          page,
+          hints: hintBlock(page, input.facts).text,
+          first,
+          notes: input.notes?.(page) ?? [],
+        }),
       parse: (page) =>
         parsePageReply(page, {
           org: input.org,

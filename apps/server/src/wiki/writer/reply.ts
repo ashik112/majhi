@@ -8,6 +8,7 @@ import {
 import { z } from "zod";
 import { type Parsed, parseJson } from "../../memory/housekeeper.ts";
 import {
+  DEPLOY_SECTION_KEYS,
   type DraftClaim,
   type DraftDiagram,
   type DraftPage,
@@ -60,6 +61,8 @@ export const PageReplySchema = z
           actor: z.string().trim().min(1).max(40).optional(),
           /** Flow steps: a few words for the arrow. */
           label: z.string().trim().min(1).max(40).optional(),
+          /** Deploys page: the section it belongs to. */
+          section: z.enum(DEPLOY_SECTION_KEYS).optional(),
         }),
       )
       .max(ITEM_LIMIT)
@@ -109,7 +112,7 @@ export const PageReplySchema = z
       .default([]),
   })
   .refine(
-    (r) => r.roles.length + r.items.length > 0,
+    (r) => r.roles.length + r.items.length + r.could_not_determine.length > 0,
     "Write at least one item, or say in could_not_determine why you cannot.",
   );
 export type PageReply = z.infer<typeof PageReplySchema>;
@@ -150,6 +153,7 @@ export function draftOf(page: WriterPage, reply: PageReply, ctx: Context): Draft
       ...claimOf(i, ctx.known),
       ...(i.actor === undefined ? {} : { actor: i.actor }),
       ...(i.label === undefined ? {} : { label: i.label }),
+      ...(kind === "deploys" && i.section !== undefined ? { section: i.section } : {}),
     })),
   ];
   const roles: DraftRole[] = roleRows.map((r, claim) => ({
@@ -195,6 +199,8 @@ export function pageTitle(page: WriterPage): string {
       return "Overview";
     case "infra":
       return "Infra and deploy";
+    case "deploys":
+      return "Deploys";
     case "component":
     case "flow":
       return page.title;
@@ -205,6 +211,9 @@ export function pageTitle(page: WriterPage): string {
 function problemWith(page: WriterPage, reply: PageReply): string | undefined {
   if (page.kind === "flow" && reply.items.length < 2) {
     return "items: a flow has at least two steps. Cover the path from its first trigger to its last effect.";
+  }
+  if (page.kind === "deploys" && reply.items.some((i) => i.section === undefined)) {
+    return `items: give every claim a section: ${DEPLOY_SECTION_KEYS.join(", ")}.`;
   }
   if (page.kind === "overview" && reply.roles.length === 0 && reply.items.length === 0) {
     return "roles: name each role you can find, or say in could_not_determine why you cannot.";
