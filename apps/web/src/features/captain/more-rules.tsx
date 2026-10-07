@@ -1,4 +1,12 @@
-import { type AccountView, type CaptainOrg, type Freeze, PRIVATE } from "@majhi/shared";
+import {
+  type AccountView,
+  type CaptainOrg,
+  effectiveHolds,
+  type Freeze,
+  HOLD_CLASSES,
+  HOLD_LABEL,
+  PRIVATE,
+} from "@majhi/shared";
 import { X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -214,6 +222,7 @@ export function MoreRules({
           )}
         </Field>
       </div>
+      <HoldList org={org} />
       <div className="flex min-h-8 items-center gap-2">
         {problem !== undefined && dirty && (
           <p role="alert" className="text-sm text-red">
@@ -243,5 +252,43 @@ export function MoreRules({
         </span>
       </div>
     </section>
+  );
+}
+
+/**
+ * What the owner keeps for themselves when the captain decides what the clients are told: each switch holds that
+ * kind of reply for the owner. A reply with a secret, or one that names another client, waits whatever is set here.
+ * Only the owner changes it, and each switch saves at once.
+ */
+function HoldList({ org }: { org: CaptainOrg }) {
+  const toast = useToast();
+  const save = useCaptainRules();
+  const holds = effectiveHolds(org.rules.holds);
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <span className="text-sm text-fg-faint">Hold for me</span>
+      <div className="grid gap-x-6 min-[1180px]:grid-cols-3">
+        {HOLD_CLASSES.map((kind) => (
+          <Switch
+            key={kind}
+            label={HOLD_LABEL[kind]}
+            checked={holds[kind]}
+            disabled={save.isPending}
+            onChange={(on) =>
+              save.mutate(
+                {
+                  input: { orgs: { [org.org]: { holds: { [kind]: on } } } },
+                  reason: `Owner changed what is held for them in ${org.name}`,
+                },
+                {
+                  onError: (error) =>
+                    toast("Could not save it", { detail: describeError(error), tone: "error" }),
+                },
+              )
+            }
+          />
+        ))}
+      </div>
+    </div>
   );
 }

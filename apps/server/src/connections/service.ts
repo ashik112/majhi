@@ -606,7 +606,9 @@ function viewOf(
     headers: list("headers"),
     env: list("env"),
     allow: connection.allow ?? [],
+    // A chat app's account is majhi's own: no agent holds it.
     agents: known.agents.flatMap((a) =>
+      connection.type !== "chat" &&
       a.ok &&
       !(connection.agents_off ?? []).includes(a.id) &&
       (org === GLOBAL_CONNECTIONS ||

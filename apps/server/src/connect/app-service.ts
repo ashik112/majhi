@@ -48,6 +48,8 @@ export interface AppServiceDeps {
   /** The value of a secret entry of a connection's `vars`. */
   secretOf: (connection: string, name: string) => Promise<string | undefined>;
   changed: () => void;
+  /** Where a connection stands: a setup that asked the service and got a good answer says so. */
+  observe?: ((connection: string, result: ConnectionTestResult) => void) | undefined;
   log?: ((line: string) => void) | undefined;
 }
 
@@ -328,6 +330,15 @@ export class AppService {
       "connect.appSave",
       meta,
     );
+    this.deps.observe?.(connection, {
+      ok: true,
+      detail: `Telegram: bot ${account}.`,
+      warnings: [],
+      at: new Date().toISOString(),
+      durationMs: 0,
+      checked: ["Asked Telegram who the bot is (getMe)"],
+      account,
+    });
     this.deps.changed();
     this.deps.log?.(`connect: telegram connected in ${input.org}`);
     return {

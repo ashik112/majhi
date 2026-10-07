@@ -26,6 +26,8 @@ export interface IngestDeps {
   contacts: Contacts;
   hub: Pick<ChatHub, "file">;
   triage: Pick<ClientTriage, "run">;
+  /** Whether a message already has its finding: the triage ran for it. */
+  triaged?: ((org: string, key: string) => boolean) | undefined;
   majhiHome: string;
   now?: () => Date;
   log?: (line: string) => void;
@@ -208,6 +210,30 @@ export class ChatIngest {
   unreachable(conn: ChatConnection, chat: string): void {
     const room = this.deps.rooms.find(conn.app, conn.account, chat);
     if (room !== undefined) this.deps.rooms.patch(room, { trouble: "unreachable" });
+  }
+
+  /**
+   * After a restart: client messages stored in the last day whose triage never ran (majhi stopped between storing
+   * them and reading them) are triaged now. A message is stored before the read position moves, so none is lost.
+   */
+  async recover(): Promise<number> {
+    const check = this.deps.triaged;
+    if (check === undefined) return 0;
+    const since = this.now().getTime() - 24 * 3_600_000;
+    let n = 0;
+    for (const room of this.deps.store.client.rooms()) {
+      if (room.org === undefined || room.chat.ignored === true || room.chat.holder !== "captain") continue;
+      for (const item of this.deps.store.room.page(room.id, 100).items.toReversed()) {
+        if (item.type !== "client" || item.us === true || !item.sender.verified) continue;
+        if (Date.parse(item.at) < since || check(room.org, `client:${externalKeyText(item.external)}`))
+          continue;
+        n += 1;
+        await this.deps.triage
+          .run(room, item)
+          .catch((err) => this.deps.log?.(`chat: triage of ${item.id} failed: ${errorMessage(err)}`));
+      }
+    }
+    return n;
   }
 
   /** The rooms and their account, for a caller that needs them. */

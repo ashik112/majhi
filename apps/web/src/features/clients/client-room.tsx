@@ -11,7 +11,7 @@ import { EMOJI_FONT } from "@/components/agent-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
-import { OrgBadge } from "@/components/ui/org-badge";
+import { Menu } from "@/components/ui/menu";
 import { useToast } from "@/components/ui/toast";
 import { useRoom } from "@/features/room/use-room";
 import { useAgentIndex } from "@/lib/agent-index";
@@ -21,12 +21,13 @@ import {
   useClients,
   useDecideReply,
   useEditReply,
+  useMarkUs,
   useSamePerson,
   useUndoMerge,
 } from "@/lib/client-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
-import { badgeLetters, formatBytes } from "@/lib/format";
+import { formatBytes } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useOrgs } from "@/lib/studio-queries";
 import { AppMark } from "./app-mark";
@@ -111,8 +112,7 @@ function Header({ row }: { row: ClientRow }) {
         <h1 className="min-w-0 truncate text-md font-semibold">{row.title}</h1>
         <div className="flex min-w-0 items-center gap-2 text-xs text-fg-faint">
           <span className="shrink-0">{kindLine(row)}</span>
-          <span className="flex min-w-0 items-center gap-1.5 truncate">
-            {org && <OrgBadge label={badgeLetters(org.key)} color={org.color} size="xs" />}
+          <span className="min-w-0 truncate">
             {org?.name}
             {row.people !== undefined && row.people > 0 ? ` · ${row.people} people` : ""}
           </span>
@@ -287,7 +287,7 @@ function Message({ item, row }: { item: Of<"client">; row: ClientRow }) {
       <Initial name={name} seed={item.sender.id} />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex h-6 min-w-0 items-center gap-2">
-          <span className="shrink-0 text-base font-semibold text-fg">{name}</span>
+          <SenderName item={item} name={name} />
           <span className="min-w-0 truncate font-mono text-xs text-fg-faint">
             {row.title} · {CHAT_APP_LABEL[row.app]}
           </span>
@@ -316,6 +316,38 @@ function Message({ item, row }: { item: Of<"client">; row: ClientRow }) {
         )}
       </div>
     </article>
+  );
+}
+
+/** The sender's name. A verified sender's menu says whether they are one of us: the owner or a teammate. */
+function SenderName({ item, name }: { item: Of<"client">; name: string }) {
+  const toast = useToast();
+  const mark = useMarkUs();
+  if (!item.sender.verified) return <span className="shrink-0 text-base font-semibold text-fg">{name}</span>;
+  const set = (us: boolean) =>
+    mark.mutate(
+      { room: item.task, item: item.id, us },
+      { onError: (error) => toast("Could not mark it", { detail: describeError(error), tone: "error" }) },
+    );
+  return (
+    <Menu
+      label={`${name}`}
+      align="left"
+      items={[
+        { label: "Mark as us", onSelect: () => set(true), checked: item.us === true },
+        { label: "Not us", onSelect: () => set(false), checked: item.us !== true },
+      ]}
+      trigger={(props) => (
+        <button
+          type="button"
+          {...props}
+          title={`${name}`}
+          className="shrink-0 cursor-pointer rounded-sm text-base font-semibold text-fg hover:text-accent-text"
+        >
+          {name}
+        </button>
+      )}
+    />
   );
 }
 

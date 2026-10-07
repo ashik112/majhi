@@ -87,6 +87,9 @@ import {
   ChatHolderInputSchema,
   ChatIgnoreInputSchema,
   ChatLinkInputSchema,
+  ChatMarkUsInputSchema,
+  ChatReplyInputSchema,
+  ChatReplyResultSchema,
   ChatSendInputSchema,
   ClientListSchema,
   ClientRowSchema,
@@ -1411,6 +1414,22 @@ export const commands = {
       "Telegram has a webhook set for the bot, which stops majhi from reading. Remove it so majhi can read the chats. Owner only",
     input: z.object({ connection: IdSchema }),
     output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.markUs": {
+    risk: "change",
+    summary:
+      'Say that the sender of a message is one of us, the owner or a teammate, or is not. What an "us" writes in a chat is not a client\'s: the captain does not triage it, and the chat goes to the owner (Replies: You). Owner only',
+    input: ChatMarkUsInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.reply": {
+    // `read` on purpose: the owner's Tell setting and the Hold list decide whether this sends or waits (a held reply is a
+    // draft of the outbound gate), so no approval card is asked on top of them.
+    risk: "read",
+    summary:
+      "Write a reply to a client chat of this workspace. State what the text says: promisedTime (it names a time or date), money (price, refund, contract), security (an incident or leak) and severalClients (the chat shows more than one client company). Under Tell Ask me, or when a hold applies, the reply waits for the owner as a draft; otherwise it goes at once. A secret or another client's name always waits",
+    input: ChatReplyInputSchema,
+    output: ChatReplyResultSchema,
   },
   "chat.proposeRules": {
     risk: "read",

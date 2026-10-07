@@ -11,6 +11,8 @@ type ChatCommand =
   | "chat.editReply"
   | "chat.samePerson"
   | "chat.confirmWebhook"
+  | "chat.markUs"
+  | "chat.reply"
   | "chat.proposeRules"
   | "contacts.list"
   | "contacts.merge"
@@ -65,6 +67,17 @@ export function chatHandlers(chat: ClientChat): Pick<CommandHandlers, ChatComman
       ownerOnly(ctx);
       await chat.confirmWebhook(input.connection);
       return { ok: true as const };
+    },
+    "chat.markUs": async (input, ctx) => {
+      ownerOnly(ctx);
+      chat.markUs(input.room, input.item, input.us);
+      return { ok: true as const };
+    },
+    "chat.reply": async (input, ctx) => {
+      if (ctx.meta.actor.kind !== "agent" || ctx.meta.task === undefined) {
+        throw new UserError("Only the captain writes to a client chat, from its workspace lane.", 409);
+      }
+      return chat.reply(input, { agent: ctx.meta.actor.id, task: ctx.meta.task });
     },
     "chat.proposeRules": async (input, ctx) => {
       if (ctx.meta.actor.kind !== "agent" || ctx.meta.task === undefined) {

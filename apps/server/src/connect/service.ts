@@ -286,6 +286,7 @@ export class ConnectService {
       redirect: deps.redirect,
       fetch: () => this.fetchFn,
       telegramApi: deps.telegramApi,
+      observe: (id, result) => this.deps.health?.observe(id, result),
       connections: deps.connections,
       connectionIds: deps.connectionIds,
       secretOf: deps.secretOf,

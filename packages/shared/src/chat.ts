@@ -176,6 +176,13 @@ export const ChatEditReplyInputSchema = z.object({
   draft: z.number().int().positive(),
   text: z.string().trim().min(1).max(20_000),
 });
+/** The owner says a sender is one of us (the owner or a teammate), or is not. */
+export const ChatMarkUsInputSchema = z.object({
+  room: z.string().min(1),
+  /** A message of the sender. */
+  item: z.string().min(1),
+  us: z.boolean(),
+});
 export const ChatRoomInputSchema = z.object({ room: z.string().min(1) });
 
 /** What a room needs beyond its items: the chat, its workspace and its state. */
@@ -296,15 +303,35 @@ export type ReplyFlags = z.infer<typeof ReplyFlagsSchema>;
 export const ReplyHoldSchema = z.union([HoldClassSchema, FixedHoldSchema, z.literal("tell")]);
 export type ReplyHold = z.infer<typeof ReplyHoldSchema>;
 
-/** The line a held reply shows beside "Reply waits for you". Plain words, no new vocabulary. */
+/** The line a held reply shows beside "Reply waits for you": what in the reply made it wait. */
 export const REPLY_HOLD_LABEL: Record<ReplyHold, string> = {
   tell: "You decide replies here",
   secret: "Holds a secret",
   "other-client": "Names another client",
   report: "A report to a client",
   unchecked: "Not checked",
-  ...HOLD_LABEL,
+  promisedTime: "Mentions a time",
+  firstContact: "First message to them",
+  severalClients: "Several clients in the chat",
+  afterGap: "After a gap in delivery",
+  money: "Mentions money",
+  security: "Security incident",
 };
+
+/** The captain writes to a client chat. It states what the text says about itself: a missing statement holds the reply. */
+export const ChatReplyInputSchema = ReplyFlagsSchema.extend({
+  room: z.string().min(1),
+  text: z.string().trim().min(1).max(4000),
+  /** The message it answers: the sender's user id and the message id. */
+  to: z.string().max(200).optional(),
+  replyTo: z.string().max(200).optional(),
+  thread: z.string().max(200).optional(),
+});
+export const ChatReplyResultSchema = z.object({
+  state: z.enum(["sent", "held", "failed"]),
+  /** Why it waits, in the owner's words. */
+  why: z.string().optional(),
+});
 
 export const ProposeRulesInputSchema = z.object({
   org: IdSchema,
@@ -313,6 +340,7 @@ export const ProposeRulesInputSchema = z.object({
   /** Why the captain proposes it, in a sentence. */
   why: z.string().trim().min(1).max(300),
 });
+export type ChatReplyInput = z.infer<typeof ChatReplyInputSchema>;
 export type ProposeRulesInput = z.infer<typeof ProposeRulesInputSchema>;
 
 /** What a client message says about itself, as the triage step reports it: no tools, only these answers. */

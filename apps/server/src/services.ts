@@ -2390,6 +2390,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     if (event.type === "changed" && event.topics.includes("connections")) void chatParts.hub.sync();
   });
   background.run(() => chatParts.hub.sync());
+  if (env.chats?.polling === true) background.run(() => chatParts.ingest.recover().then(() => undefined));
   connect.startSweeper();
   connections.onRemoved((id) => connect.removed(id));
   const skills = new SkillService({

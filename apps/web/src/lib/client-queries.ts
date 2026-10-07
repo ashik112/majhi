@@ -78,6 +78,18 @@ export function useEditReply() {
   });
 }
 
+export function useMarkUs() {
+  const done = useRefetch();
+  return useMutation<
+    CommandOutput<"chat.markUs">,
+    ApiRequestError,
+    { room: string; item: string; us: boolean }
+  >({
+    mutationFn: (input) => cmd("chat.markUs", input),
+    onSuccess: done,
+  });
+}
+
 export function useSamePerson() {
   const done = useRefetch();
   return useMutation<

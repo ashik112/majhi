@@ -41,7 +41,7 @@ export interface ClientChatWiring {
   housekeeper: Pick<Housekeeper, "ask">;
   wiki: (org: string, question: string) => Promise<{ answer: string; found: boolean }>;
   rest: (org: string) => Promise<string | undefined>;
-  findings: Pick<FindingsService, "report" | "dismiss" | "toTask">;
+  findings: Pick<FindingsService, "report" | "dismiss" | "toTask" | "find">;
   incidents: (org: string) => { id: number; title: string }[];
   decisions: LayaDecisions | undefined;
   offer: ClientChatDeps["offer"];
@@ -162,6 +162,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     contacts,
     hub,
     triage,
+    triaged: (org, key) => w.findings.find(org, key) !== undefined,
     majhiHome: w.majhiHome,
     ...(w.now === undefined ? {} : { now: w.now }),
     ...(w.log === undefined ? {} : { log: w.log }),

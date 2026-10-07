@@ -92,9 +92,11 @@ export class ConversationsRepo {
         (SELECT CASE WHEN r.type = 'client' THEN coalesce(json_extract(r.payload, '$.sender.name'), '') || ': ' ELSE '' END
             || substr(json_extract(r.payload, '$.text'), 1, 600) FROM room_items r
           WHERE r.task = t.id AND r.type IN ('agent', 'client') ORDER BY r.at DESC LIMIT 1) AS agent_text,
-        (SELECT max(r.at) FROM room_items r WHERE r.task = t.id AND r.type IN ('owner', 'client-reply')) AS owner_at,
+        (SELECT max(r.at) FROM room_items r WHERE r.task = t.id AND r.type IN ('owner', 'client-reply')
+            AND (r.type = 'owner' OR json_extract(r.payload, '$.state') = 'sent')) AS owner_at,
         (SELECT substr(json_extract(r.payload, '$.text'), 1, 600) FROM room_items r
-          WHERE r.task = t.id AND r.type IN ('owner', 'client-reply') ORDER BY r.at DESC LIMIT 1) AS owner_text
+          WHERE r.task = t.id AND r.type IN ('owner', 'client-reply')
+            AND (r.type = 'owner' OR json_extract(r.payload, '$.state') = 'sent') ORDER BY r.at DESC LIMIT 1) AS owner_text
       FROM tasks t LEFT JOIN read_marks m ON m.id = t.id
       WHERE ${LISTED}
         AND (t.status != 'done' OR EXISTS (
