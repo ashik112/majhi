@@ -170,6 +170,11 @@ export function toEnvelope(
         };
   const at = edit === undefined ? msg.date : (edit.edit_date ?? edit.date);
   const mentions = mentionsOf(msg, text);
+  const bot = account.startsWith("@") ? account.slice(1).toLowerCase() : account.toLowerCase();
+  const addressed =
+    mentions.some((m) => m.username?.toLowerCase() === bot) ||
+    (msg.reply_to_message?.from?.is_bot === true &&
+      msg.reply_to_message.from.username?.toLowerCase() === bot);
   return {
     kind: edit === undefined ? "new" : "edit",
     external,
@@ -184,6 +189,7 @@ export function toEnvelope(
     ...(msg.reply_to_message === undefined ? {} : { replyTo: String(msg.reply_to_message.message_id) }),
     ...(msg.forward_origin !== undefined || msg.forward_date !== undefined ? { forwarded: true } : {}),
     ...(mentions.length === 0 ? {} : { mentions }),
+    ...(addressed ? { addressed: true } : {}),
   };
 }
 

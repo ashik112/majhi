@@ -535,6 +535,9 @@ export class FakeSlack {
         };
       }
       case "chat.postMessage": {
+        // Like Slack, a token without chat:write is refused and told what it lacks.
+        if (!this.scopes.includes("chat:write"))
+          return { ok: false, error: "missing_scope", needed: "chat:write", provided: this.scopes.join(",") };
         const channel = this.channels.get(params.channel ?? "");
         if (channel === undefined) return fail("channel_not_found");
         if (channel.member === false) return fail("not_in_channel");

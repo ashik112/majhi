@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { BranchPatternSchema, IdSchema, OrgIdSchema, SecretRefSchema } from "./accounts.ts";
-import { ChatFileSchema, ChatSenderSchema, ExternalKeySchema, ReplyHoldSchema } from "./chat.ts";
+import {
+  ChatFileSchema,
+  ChatSenderSchema,
+  ClientOutcomeSchema,
+  ExternalKeySchema,
+  ReplyHoldSchema,
+} from "./chat.ts";
 import { DeployEnvironmentsSchema } from "./deploy.ts";
 import { DiagramSpecSchema } from "./diagram.ts";
 import { HandoffFailedSchema } from "./handoff.ts";
@@ -996,6 +1002,10 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     thread: z.string().optional(),
     replyTo: z.string().optional(),
     forwarded: z.boolean().optional(),
+    /** It names the bot or answers the bot's message: the captain answers it, whatever it says. */
+    addressed: z.boolean().optional(),
+    /** What the captain did with it. */
+    outcome: ClientOutcomeSchema.optional(),
     revisions: z.array(z.object({ text: z.string(), at: z.string() })),
     /** When the app says it was sent. The item's own `at` is when majhi stored it. */
     sentAt: z.string().optional(),

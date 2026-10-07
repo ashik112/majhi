@@ -1,6 +1,7 @@
 import {
   CHAT_APP_LABEL,
   type ChatFile,
+  type ClientOutcome,
   type ClientRow,
   REPLY_HOLD_LABEL,
   type RoomItem,
@@ -199,6 +200,12 @@ function Log({
   const shown = useMemo(() => items.filter(visible), [items]);
   const contacts = useContacts(row.org);
   const people = useMemo(() => roomPeople(items, contacts.data), [items, contacts.data]);
+  const replies = useMemo(() => {
+    const byDraft = new Map<number, Of<"client-reply">>();
+    for (const item of items)
+      if (item.type === "client-reply" && item.draft !== undefined) byDraft.set(item.draft, item);
+    return byDraft;
+  }, [items]);
   const last = shown.at(-1)?.id;
   const count = shown.length;
   // Follows the newest message while the owner is at the bottom; else offers a way back down.
@@ -232,7 +239,14 @@ function Log({
         )}
         <ol className="m-0 mt-auto flex w-full max-w-[920px] flex-col p-0">
           {shown.map((item, i) => (
-            <Row key={item.id} item={item} row={row} previous={shown[i - 1]} people={people} />
+            <Row
+              key={item.id}
+              item={item}
+              row={row}
+              previous={shown[i - 1]}
+              people={people}
+              replies={replies}
+            />
           ))}
         </ol>
       </div>
@@ -275,17 +289,19 @@ function Row({
   row,
   previous,
   people,
+  replies,
 }: {
   item: RoomItem;
   row: ClientRow;
   previous: RoomItem | undefined;
   people: readonly Person[];
+  replies: ReadonlyMap<number, Of<"client-reply">>;
 }) {
   switch (item.type) {
     case "client":
       return (
         <li className="mt-4 list-none">
-          <Message item={item} row={row} />
+          <Message item={item} row={row} replies={replies} />
         </li>
       );
     case "client-reply":
@@ -329,7 +345,48 @@ function Row({
   }
 }
 
-function Message({ item, row }: { item: Of<"client">; row: ClientRow }) {
+/** The one faint line under a client message: what became of it, read from the message and the reply it led to. */
+function outcomeText(outcome: ClientOutcome, reply: Of<"client-reply"> | undefined): string {
+  if (outcome.state === "working") return "Working on it";
+  if (reply !== undefined) {
+    switch (reply.state) {
+      case "sent":
+        return "Replied";
+      case "held":
+        return `Waits for you: ${reply.hold === undefined ? "the reply is held" : REPLY_HOLD_LABEL[reply.hold]}`;
+      case "failed": {
+        // The gate marks who sent it ("Auto: ..."); the owner reads only the reason.
+        const result = reply.result ?? "It did not go.";
+        return `Can't reply: ${result.startsWith("Auto: ") ? result.slice(6) : result}`;
+      }
+      case "discarded":
+        return "Reply discarded";
+    }
+  }
+  const why = outcome.why === undefined ? "" : `: ${outcome.why}`;
+  switch (outcome.state) {
+    case "replied":
+      return "Replied";
+    case "ignored":
+      return `Ignored${why}`;
+    case "waits":
+      return `Waits for you${why}`;
+    case "failed":
+      return `Can't reply${why}`;
+    case "handled":
+      return outcome.why ?? "Handled";
+  }
+}
+
+function Message({
+  item,
+  row,
+  replies,
+}: {
+  item: Of<"client">;
+  row: ClientRow;
+  replies: ReadonlyMap<number, Of<"client-reply">>;
+}) {
   const name = item.sender.name === "" ? "Unknown" : item.sender.name;
   return (
     <article className="flex gap-2.5">
@@ -364,6 +421,14 @@ function Message({ item, row }: { item: Of<"client">; row: ClientRow }) {
               <FileChip key={f.id} file={f} />
             ))}
           </ul>
+        )}
+        {item.outcome !== undefined && (
+          <span className="text-xs text-fg-faint">
+            {outcomeText(
+              item.outcome,
+              item.outcome.draft === undefined ? undefined : replies.get(item.outcome.draft),
+            )}
+          </span>
         )}
       </div>
     </article>
