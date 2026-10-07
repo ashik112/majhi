@@ -82,19 +82,21 @@ export function createCards(w: CardsWiring): ProjectCards {
     }));
   const { housekeeper } = w;
   const seedBrief = async (card: ProjectCard): Promise<void> => {
-    // A brief that says "Nothing yet." for what it is and its architecture gets them from the card.
+    // The brief's "What it is" follows the card. A brief that says "Nothing yet." for it and its architecture also
+    // gets the architecture from the card.
     const current = w.memory.project.currentBrief(card.project);
     const sections = current === undefined ? undefined : parseBrief(current.body);
     const empty = (s: string | undefined) => s === undefined || s === "" || /^nothing yet\.?$/i.test(s);
-    if (!empty(sections?.["What it is"]) || !empty(sections?.Architecture)) return;
-    if (card.whatItIs === "" && card.structure.length === 0) return;
+    const fresh = empty(sections?.["What it is"]) && empty(sections?.Architecture);
+    if (card.whatItIs === "" && (!fresh || card.structure.length === 0)) return;
+    if (!fresh && sections?.["What it is"] === card.whatItIs) return;
     const wiki = (await w.wikiOn?.(card.org)) === true;
     const next = Object.fromEntries(BRIEF_SECTIONS.map((s) => [s, sections?.[s] ?? ""]));
     next["What it is"] = card.whatItIs;
-    next.Architecture = card.structure.map((s) => `- ${s.path}: ${s.note}`).join("\n");
+    if (fresh) next.Architecture = card.structure.map((s) => `- ${s.path}: ${s.note}`).join("\n");
     w.memory.project.setBrief(card.project, next, "scan", wiki);
   };
-  return new ProjectCards({
+  const cards = new ProjectCards({
     repo: new CardRepo(w.store.raw),
     projects,
     git: {
@@ -150,4 +152,7 @@ export function createCards(w: CardsWiring): ProjectCards {
     ...(w.ruleOff === undefined ? {} : { ruleOff: w.ruleOff }),
     ...(w.log === undefined ? {} : { log: w.log }),
   });
+  // The card is the one writer of "what it is": the brief shows its paragraph, never a second one.
+  w.memory.project.useWhatItIs((project) => cards.get(project)?.whatItIs);
+  return cards;
 }

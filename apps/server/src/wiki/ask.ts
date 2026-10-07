@@ -1,7 +1,8 @@
 import type { WikiAskOutput, WikiSource } from "@majhi/shared";
 import { z } from "zod";
 import { UserError } from "../errors.ts";
-import { type Housekeeper, parseJson } from "../memory/housekeeper.ts";
+import { BadReply, type Housekeeper, parseJson } from "../memory/housekeeper.ts";
+import { UNREADABLE_ANSWER } from "./plain-error.ts";
 import type { WikiRepo } from "./repo.ts";
 import type { ChunkHit, WikiIndex } from "./search.ts";
 
@@ -137,11 +138,14 @@ export class WikiAsk {
     if (unavailable !== undefined) throw new UserError(unavailable, 409);
     const rest = await this.deps.rest(org);
     if (rest !== undefined) throw new UserError(rest, 409);
-    const { value } = await this.deps.housekeeper.ask(
-      { id: `wiki:${org}:ask`, org, project },
-      prompt(question, passages),
-      (text) => parseJson(text, ReplySchema),
-    );
+    const { value } = await this.deps.housekeeper
+      .ask({ id: `wiki:${org}:ask`, org, project }, prompt(question, passages), (text) =>
+        parseJson(text, ReplySchema),
+      )
+      .catch((err: unknown) => {
+        if (err instanceof BadReply) throw new UserError(`${UNREADABLE_ANSWER} Ask again.`, 409);
+        throw err;
+      });
     return this.build(org, passages, value);
   }
 

@@ -21,7 +21,7 @@ import type { PageProps } from "./page-view";
 import { BasisMark, Block, SourceChip, Sources, Text } from "./parts";
 
 /** The headings of the body that this page draws from data instead, so the body's copy of them is not shown twice. */
-const DRAWN: ReadonlySet<string> = new Set(Object.values(WIKI_GAPS_HEADINGS));
+const DRAWN: ReadonlySet<string> = new Set([...Object.values(WIKI_GAPS_HEADINGS), COPY.failed.pagesTitle]);
 
 /** The sections of the body that have no data of their own: split at the headings the page is written with. */
 function extraSections(body: string): { heading: string; text: string }[] {
@@ -46,7 +46,19 @@ export function guessedRoleRows(overview: WikiPage | undefined): WikiRoleRow[] {
  * the claims the checker could not confirm, the calls that link to no other project, and what it asks the owner.
  * Each list is drawn from data, so a guess can be acted on.
  */
-export function GapsBody({ page, all, system, changed, onOpen, onGo, scope, projects }: PageProps) {
+export function GapsBody({
+  page,
+  all,
+  system,
+  changed,
+  onOpen,
+  onGo,
+  scope,
+  projects,
+  failed,
+  flowsNotChosen,
+  onRetry,
+}: PageProps) {
   const { guessed, dropped } = useMemo(() => openItems(all), [all]);
   const overview = all.find((l) => l.page.kind === "overview")?.page;
   const roleClaims = useMemo(() => new Set(overview?.roles.map((r) => r.claim) ?? []), [overview]);
@@ -65,6 +77,8 @@ export function GapsBody({ page, all, system, changed, onOpen, onGo, scope, proj
   );
   const extras = useMemo(() => extraSections(page.body), [page.body]);
   const empty =
+    failed.size === 0 &&
+    !flowsNotChosen &&
     loose.length === 0 &&
     dropped.length === 0 &&
     rows.length === 0 &&
@@ -81,6 +95,32 @@ export function GapsBody({ page, all, system, changed, onOpen, onGo, scope, proj
           text.trim() !== "" && <Text className="max-w-[68ch] text-fg-soft">{text}</Text>
         )}
       </Block>
+      {(failed.size > 0 || flowsNotChosen) && (
+        <Block title={COPY.failed.group} note={failed.size + (flowsNotChosen ? 1 : 0)}>
+          <ul className="m-0 flex list-none flex-col p-0">
+            {flowsNotChosen && (
+              <li className="flex min-w-0 flex-col gap-1 border-t border-line py-2.5 first:border-t-0 first:pt-0">
+                <Text>{COPY.failed.flows}</Text>
+                <p className="m-0 text-sm text-fg-muted">{COPY.failed.flowsWhy}</p>
+              </li>
+            )}
+            {[...failed].map((id) => (
+              <li
+                key={id}
+                className="flex min-w-0 flex-col gap-1 border-t border-line py-2.5 first:border-t-0 first:pt-0"
+              >
+                <code className="font-mono text-sm text-fg">{id}</code>
+                <p className="m-0 text-sm text-fg-muted">{COPY.failed.pagesWhy}</p>
+              </li>
+            ))}
+          </ul>
+          <div>
+            <Button size="sm" onClick={onRetry}>
+              {COPY.failed.retry}
+            </Button>
+          </div>
+        </Block>
+      )}
       {dropped.length > 0 && (
         <Block title={COPY.heading.couldNotConfirm} note={dropped.length}>
           <ul className="m-0 flex list-none flex-col p-0">
