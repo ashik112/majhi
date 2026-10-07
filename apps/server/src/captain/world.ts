@@ -227,6 +227,22 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       return out;
     },
 
+    async mrTasks(org) {
+      const out = [];
+      for (const summary of tasksOf(org)) {
+        if (summary.status !== "mr") continue;
+        const task = store.tasks.get(summary.id);
+        if (task === undefined || task.repos.length === 0) continue;
+        out.push({
+          id: task.id,
+          title: task.title,
+          heads: await headsOf(task.repos),
+          bases: await basesOf(task.repos),
+        });
+      }
+      return out;
+    },
+
     shipPlan: (_org, id) => deps.ship.plan(id),
     ...(deps.deploys === undefined ? {} : { deploys: deps.deploys }),
 

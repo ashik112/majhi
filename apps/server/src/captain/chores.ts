@@ -564,6 +564,12 @@ export function createChores(
           do: () => ports.ship(org, t.id, { push }, reason),
         });
       }
+      // A task with open merge requests still has to be planned: the captain merges them only once the plan is in.
+      for (const t of (await ports.mrTasks?.(org)) ?? []) {
+        run.check();
+        if (answered.has(t.id) || away(t.id) !== undefined) continue;
+        await planDeploy(run, t);
+      }
       await deployPass(run);
     },
 

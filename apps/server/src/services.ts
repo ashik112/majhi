@@ -1931,9 +1931,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       return {
         yes: false,
         why:
-          plan.ruleSubject === undefined
-            ? "merging is the owner's here"
-            : `the rule for ${plan.ruleSubject.charAt(0).toLowerCase()}${plan.ruleSubject.slice(1)} leaves the merge to the owner`,
+          plan.waits !== undefined
+            ? "it waits for the deploy plan"
+            : plan.ruleSubject === undefined
+              ? "merging is the owner's here"
+              : `the rule for ${plan.ruleSubject.charAt(0).toLowerCase()}${plan.ruleSubject.slice(1)} leaves the merge to the owner`,
       };
     }
     if (plan.rest !== undefined) return { yes: false, why: plan.rest };

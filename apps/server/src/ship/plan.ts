@@ -121,11 +121,15 @@ export class ShipPlanner {
   }
 
   /**
-   * The captain's merge and push wait until the deploy is planned, for a task still in review. Only what the captain
+   * The captain's merge and push wait until the deploy is planned, for a task in review or with merge requests open. Only what the captain
    * would have done is held, so a task the owner ships anyway shows nothing.
    */
   private async holdForPlan(task: Task, steps: ShipSteps): Promise<{ steps: ShipSteps; waits?: string }> {
-    if (task.status !== "review" || (steps.merge !== "captain" && steps.push !== "captain")) return { steps };
+    if (
+      (task.status !== "review" && task.status !== "mr") ||
+      (steps.merge !== "captain" && steps.push !== "captain")
+    )
+      return { steps };
     if (!(await this.deps.needsDeployPlan(task).catch(() => false))) return { steps };
     return { steps: { ...steps, merge: "owner", push: "owner" }, waits: WAITS_FOR_PLAN };
   }
