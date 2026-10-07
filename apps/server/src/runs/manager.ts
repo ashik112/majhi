@@ -1352,6 +1352,7 @@ export class RunManager {
         break;
       }
       run.lockHeld = lock.release;
+      run.foldOwners = lock.waited === true || lock.bypassed !== undefined;
       // Read before `blocksFor` resets it: an owner or handoff prompt on a session that has not
       // seen the brief starts with "First read TASK.md".
       const unbriefed = run.needsBrief;
@@ -1504,7 +1505,7 @@ export class RunManager {
    */
   private async lockWorktrees(
     run: AgentRun,
-  ): Promise<{ release: () => void; bypassed?: string } | "restart" | undefined> {
+  ): Promise<{ release: () => void; bypassed?: string; waited?: boolean } | "restart" | undefined> {
     const none = { release: () => {} };
     const task = this.deps.store.tasks.get(run.task);
     if (task === undefined || !run.perms.includes("edit")) return none;
@@ -1523,21 +1524,20 @@ export class RunManager {
     run.lockWait = wait;
     run.lockedBy = undefined;
     try {
-      return {
-        release: await this.locks.acquire(paths, this.key(run.task, run.agent), {
-          signal: wait.signal,
-          onWait: (path, holder) => {
-            const other = holder.split("\u0000")[1] ?? "another agent";
-            const repo = task.repos.find((r) => r.worktree === path)?.project ?? path;
-            run.lockedBy = other;
-            this.setLive(run, {
-              status: "waiting",
-              nowDoing: `Waiting for @${other} to finish in ${repo}`,
-              lockedBy: other,
-            });
-          },
-        }),
-      };
+      const release = await this.locks.acquire(paths, this.key(run.task, run.agent), {
+        signal: wait.signal,
+        onWait: (path, holder) => {
+          const other = holder.split("\u0000")[1] ?? "another agent";
+          const repo = task.repos.find((r) => r.worktree === path)?.project ?? path;
+          run.lockedBy = other;
+          this.setLive(run, {
+            status: "waiting",
+            nowDoing: `Waiting for @${other} to finish in ${repo}`,
+            lockedBy: other,
+          });
+        },
+      });
+      return { release, waited: run.lockedBy !== undefined };
     } catch {
       if (run.lockRestart) {
         run.lockRestart = false;
@@ -1986,9 +1986,9 @@ export class RunManager {
         ];
       }
       case "owner": {
-        // Newest first: messages still queued behind this one join it, so a correction never
-        // waits behind an older prompt.
-        const queuedOwners = run.queue.filter((e) => e.kind === "owner");
+        // After a wait for the worktree, newest first: messages queued meanwhile join this one, so
+        // a correction never waits behind an older prompt.
+        const queuedOwners = run.foldOwners ? run.queue.filter((e) => e.kind === "owner") : [];
         const asked = [entry, ...queuedOwners].flatMap((e) => {
           if (e.kind !== "owner") return [];
           const item = this.deps.room.get(run.task, e.itemId);

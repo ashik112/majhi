@@ -210,6 +210,8 @@ export class AgentRun {
   bypassNote: string | undefined;
   /** Owner messages folded into the prompt being built, after the one in `sending`. */
   merged: QueueEntry[] = [];
+  /** The loop waited for a worktree before this prompt: owner messages queued meanwhile join it. */
+  foldOwners = false;
   /** Owner messages in the prompt being built, newest first, marked sent when the prompt goes out. */
   toDeliver: string[] = [];
 
