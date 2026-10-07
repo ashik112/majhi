@@ -5,7 +5,7 @@ import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
 
 /**
- * The chat dock's one list (`conversations.list`): task rooms and captain threads with their unread
+ * The chat dock's one list (`conversations.list`): task rooms, captain threads, client chats and agent chats with their unread
  * counts. The events feed patches it row by row (`patchConversation`), so it is read once and again
  * only when the feed was down or lost a frame.
  */
@@ -18,10 +18,29 @@ export function useConversations<T = Conversation[]>(select?: (list: Conversatio
   });
 }
 
-const totalUnread = (list: Conversation[]): number => list.reduce((n, c) => n + c.unread, 0);
+const totalUnread = (list: Conversation[]): number =>
+  list.reduce((n, c) => (c.archived === true ? n : n + c.unread), 0);
 
 /** The badge: the unread total. A number, so only a change of the number renders the badge. */
 export const useUnreadTotal = (): number => useConversations(totalUnread).data ?? 0;
+
+/** Hides a conversation from the list, or brings it back. The feed patches the list. */
+export function useArchiveConversation() {
+  const client = useQueryClient();
+  return useMutation<{ ok: true }, ApiRequestError, { id: string; archived: boolean }>({
+    mutationFn: (input) => cmd("conversations.archive", input),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.conversations }),
+  });
+}
+
+/** Marks a conversation read up to its newest line (the server never passes the newest agent message). */
+export function useMarkConversationRead() {
+  const client = useQueryClient();
+  return useMutation<{ ok: true }, ApiRequestError, { id: string; upTo: string }>({
+    mutationFn: (input) => cmd("conversations.markRead", input),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.conversations }),
+  });
+}
 
 /** One conversation's unread count; zero for one that is not listed. */
 export function useConversationUnread(id: string): number {

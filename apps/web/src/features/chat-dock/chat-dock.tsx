@@ -1,17 +1,17 @@
 import { MessageCircle } from "lucide-react";
 import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useBoss } from "@/features/boss/boss-context";
+import { badgeText } from "@/features/chats/model";
 import { cn } from "@/lib/cn";
 import { useUnreadTotal } from "@/lib/conversation-queries";
 import { GLASS_STRONG } from "@/lib/glass";
-import { badgeText } from "./model";
 
 const loadPanel = () => import("./dock-panel");
 const DockPanel = lazy(loadPanel);
 
 /**
- * The floating chat button, bottom right on every page, with the unread count. It opens the panel of
- * task and captain conversations. Mounted once in the shell. It reads one number from the list, so
+ * The floating chat button, bottom right on every page, with the unread count. It opens the panel with the
+ * same list of conversations as the Chats page. Mounted once in the shell. It reads one number from the list, so
  * a new message re-renders this button and nothing else.
  */
 export const ChatDock = memo(function ChatDock() {
