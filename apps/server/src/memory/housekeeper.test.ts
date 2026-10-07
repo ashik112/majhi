@@ -36,7 +36,7 @@ const reply = (r: Reply = {}) =>
 
 /** A world where `acme-builder` is the Housekeeper and scripts what its session says. */
 async function world(options: { housekeeper?: boolean } = {}) {
-  w = await taskWorld();
+  w = await taskWorld({ cards: true });
   const { h } = w;
   const must = async (name: Parameters<typeof h.cmd>[0], body: unknown) => {
     const res = await h.cmd(name, body);

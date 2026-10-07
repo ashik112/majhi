@@ -37,6 +37,8 @@ export interface WorldOptions {
   containerDocker?: ContainerDocker;
   connectionsRemote?: RemoteRunFn;
   idleWatchMs?: number;
+  /** Write the card of `acme-api` in the background, as registering the project does. */
+  cards?: boolean;
   /** Replaces `fetch` for git sign-in and the git hosts' APIs. */
   gitFetch?: typeof fetch;
   skillsCommand?: HarnessOptions["skillsCommand"];
@@ -68,9 +70,10 @@ export async function taskWorld(options: WorldOptions = {}): Promise<World> {
     return { dir: built.h.dir, patch: [join("Work", "api", ".git", "config")] };
   });
   const h = harnessOver(dir, cleanup, harnessOptionsOf(options));
-  // Registering the project writes its card in the background, and some tests wait for it. The template
-  // has none (its paths would be the template's), so each world starts it, as registering did.
-  h.majhi.services.cards.onRegistered("acme-api");
+  // Registering the project writes its card in the background (a scan of the repo, a dozen git runs).
+  // The template has none (its paths would be the template's), and most tests never read it, so a world
+  // starts it only when asked.
+  if (options.cards === true) h.majhi.services.cards.onRegistered("acme-api");
   return worldOver(h);
 }
 
