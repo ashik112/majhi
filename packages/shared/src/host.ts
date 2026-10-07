@@ -217,13 +217,27 @@ export const GitLoginSchema = z.object({
   /** The `Host` alias of ~/.ssh/config for `ssh`. Absent for a key used with the host name itself. */
   alias: z.string().optional(),
   account: z.string(),
+  /** SHA256 fingerprint of the key, when the server matched an anonymous key to the account. */
+  fingerprint: z.string().optional(),
 });
 export type GitLogin = z.infer<typeof GitLoginSchema>;
+
+/**
+ * An SSH key the host accepted without saying whose it is (Bitbucket greets with "authenticated via
+ * ssh key." only). The fingerprint is the key's SHA256 one; absent when ssh did not print it.
+ */
+export const GitAcceptedKeySchema = z.object({
+  alias: z.string().optional(),
+  fingerprint: z.string().optional(),
+});
+export type GitAcceptedKey = z.infer<typeof GitAcceptedKeySchema>;
 
 export const GitHostLoginsSchema = z.object({
   /** Lowercase host name, like `github.com`. */
   host: z.string(),
   logins: z.array(GitLoginSchema),
+  /** Accepted SSH keys that name no account. The server matches them to an account by fingerprint. */
+  keys: z.array(GitAcceptedKeySchema).optional(),
 });
 export type GitHostLogins = z.infer<typeof GitHostLoginsSchema>;
 

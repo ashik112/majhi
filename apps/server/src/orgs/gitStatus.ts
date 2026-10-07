@@ -12,6 +12,7 @@ import {
   sshRouteMatches,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
+import type { KeyOwner } from "../git/keyOwners.ts";
 import { mrKindOf, type TokenCheck } from "./gitAccount.ts";
 
 export interface GitStatusDeps {
@@ -32,6 +33,8 @@ export interface GitStatusDeps {
   /** Silent: whether this computer saved a login for the account, and if the host takes it as a token. */
   savedLogin: (host: string, kind: GitHost, account: string) => Promise<"none" | "login" | "token">;
   classify: (host: string) => GitHost;
+  /** The key lists of the host's accounts, to tell why an accepted key could not be tied to one. */
+  keyOwners?: (host: string) => Promise<readonly KeyOwner[]>;
 }
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -47,6 +50,8 @@ export async function gitStatus(deps: GitStatusDeps, id: string): Promise<GitSta
   const loginsOf = (host: string): readonly GitLogin[] =>
     found?.hosts.find((h) => h.host === host)?.logins ?? [];
 
+  const hostEntry = (host: string) => found?.hosts.find((h) => h.host === host);
+
   const accounts = await Promise.all(
     org.accounts.map(async (a): Promise<GitAccountStatus> => {
       const kind = deps.classify(a.host);
@@ -61,6 +66,14 @@ export async function gitStatus(deps: GitStatusDeps, id: string): Promise<GitSta
         found !== undefined && (key === undefined || ref === undefined)
           ? await deps.savedLogin(a.host, kind, a.account).catch(() => "none" as const)
           : "none";
+      // A key was accepted that names no account, and this account's key list could not be read.
+      let note: string | undefined;
+      if (found !== undefined && key === undefined && (hostEntry(a.host)?.keys?.length ?? 0) > 0) {
+        const owners = await (deps.keyOwners?.(a.host) ?? Promise.resolve([])).catch(() => []);
+        if (!owners.some((o) => same(o.account, a.account) && o.fingerprints !== undefined)) {
+          note = `Can't confirm the SSH key: the ${a.host === "bitbucket.org" ? "Bitbucket" : a.host} sign-in can't list keys`;
+        }
+      }
       const push: GitAccountStatus["push"] =
         found === undefined
           ? { state: "unknown" }
@@ -70,6 +83,7 @@ export async function gitStatus(deps: GitStatusDeps, id: string): Promise<GitSta
               ? { state: "https" }
               : {
                   state: "missing",
+                  ...(note === undefined ? {} : { note }),
                   choices: logins
                     .filter((l) => l.via === "ssh")
                     .map((l) => ({

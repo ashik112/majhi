@@ -3,6 +3,7 @@ import { UserError } from "../errors.ts";
 import type { HostLink } from "../host/link.ts";
 import { hostNameOf } from "../mrs/remote.ts";
 import { readGitMeta } from "../scan/gitMeta.ts";
+import { type KeyOwner, resolveKeys } from "./keyOwners.ts";
 
 const CACHE_MS = 60_000;
 /** Each ssh probe waits up to nine seconds, in parallel. */
@@ -12,12 +13,18 @@ const CALL_TIMEOUT_MS = 30_000;
 export class GitLoginService {
   private cached: { at: number; value: GitLoginsResult } | undefined;
   private running: Promise<GitLoginsResult> | undefined;
+  private owners: ((host: string) => Promise<readonly KeyOwner[]>) | undefined;
 
   constructor(
     private readonly link: Pick<HostLink, "call" | "isConnected"> | undefined,
     private readonly projectPaths: () => Promise<readonly string[]>,
     private readonly now: () => number = Date.now,
   ) {}
+
+  /** How accepted keys that name no account are matched to one: the key lists of the host's known accounts. */
+  setKeyOwners(owners: (host: string) => Promise<readonly KeyOwner[]>): void {
+    this.owners = owners;
+  }
 
   /** When the logins were last detected, or undefined before the first answer. */
   checkedAt(): string | undefined {
@@ -42,8 +49,16 @@ export class GitLoginService {
           { extraHosts: await this.remoteHosts() },
           CALL_TIMEOUT_MS,
         );
-        this.cached = { at: this.now(), value };
-        return value;
+        const hosts = await Promise.all(
+          value.hosts.map(async (h) =>
+            h.keys === undefined || this.owners === undefined
+              ? h
+              : resolveKeys(h, await this.owners(h.host).catch(() => [])),
+          ),
+        );
+        const resolved = { ...value, hosts };
+        this.cached = { at: this.now(), value: resolved };
+        return resolved;
       } finally {
         this.running = undefined;
       }
