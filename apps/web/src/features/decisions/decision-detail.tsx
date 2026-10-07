@@ -212,6 +212,14 @@ export function DecisionDetailPane({
           </p>
         )}
 
+        {detail?.changes !== undefined && (
+          <Block title="Changes">
+            <pre className="m-0 max-h-72 overflow-auto rounded-md border border-line bg-sunken p-2.5 font-mono text-xs whitespace-pre-wrap break-words text-fg-soft">
+              {detail.changes.join("\n")}
+            </pre>
+          </Block>
+        )}
+
         {detail?.command !== undefined && (
           <Block title={decision.kind === "approval" ? "What it asks" : "Command"}>
             <p className="m-0 text-sm text-fg-muted">
