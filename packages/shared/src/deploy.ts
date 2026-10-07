@@ -1,37 +1,83 @@
 import { z } from "zod";
-import { IdSchema, TaskIdSchema } from "./ids.ts";
+import { IdSchema, LocalBranchSchema, TaskIdSchema } from "./ids.ts";
 import type { ShipStep } from "./ship-rules.ts";
 
 /**
- * Deploy targets, deploy records and what a deploy shows (docs/design/ship-without-me.md, section 3).
+ * Environments, deploy records and what a deploy shows (docs/briefs/deploy-v2.md).
  *
- * One source of truth. A target lives in the project's config, next to its base branch and remotes.
- * A deploy record is one row of one table, written by `projects.deploy`. Everything else (a task's
- * deploy steps in its trail, the suggestions, who deploys what) is derived on read.
+ * One source of truth. An environment lives in the project's config, next to its base branch and remotes.
+ * A deploy record is one row of one table: planned by the captain (`projects.planDeploy`), run by
+ * `projects.deploy`. Everything else (a task's deploy steps in its trail, who deploys what) is derived on read.
+ * How a project deploys (jobs, inputs, order, quirks) is prose in the project's wiki, not a form.
  *
- * Nothing here carries a secret. A target names a workspace connection, and majhi reads the
- * credential from it only while it triggers a run.
+ * Nothing here carries a secret. A run on a git host names one of the project's remotes and uses the
+ * workspace's git account for that host; vercel and ssh runs name a workspace connection.
  */
 
-/** A watch id, as `watches.ts` spells it (not imported: that file reads the project config, which holds a target). */
-const WatchRefSchema = z.string().regex(/^wch-[a-z0-9]{4,12}$/);
-
-/** An environment name: `staging`, `production`, or one the owner picks. */
+/** An environment name: `staging`, `production`, or one the owner picks. One `/` is allowed (`app/acme`). */
 export const EnvNameSchema = z
   .string()
   .trim()
   .regex(
-    /^[a-z0-9][a-z0-9-]{0,39}$/,
-    "Use lowercase letters, digits and dashes, starting with a letter or digit",
+    /^[a-z0-9][a-z0-9-]{0,39}(?:\/[a-z0-9][a-z0-9-]{0,39})?$/,
+    "Use lowercase letters, digits and dashes, starting with a letter or digit, with at most one /",
   );
 
-/**
- * Which ship step decides who deploys an environment. The ship rules have two Deploy cells: the
- * environment named `production` uses Deploy production, every other one uses Deploy staging.
- */
-export function deployStepOf(env: string): Extract<ShipStep, "deployStaging" | "deployProduction"> {
-  return env === "production" ? "deployProduction" : "deployStaging";
+/** Who decides an environment: the Deploy production cell for `production`, the Deploy staging cell for `staging`. */
+export const DeployTierSchema = z.enum(["production", "staging"]);
+export type DeployTier = z.infer<typeof DeployTierSchema>;
+
+/** Which ship step decides who deploys an environment: by its tier, never by its name. */
+export function deployStepOf(tier: DeployTier): Extract<ShipStep, "deployStaging" | "deployProduction"> {
+  return tier === "staging" ? "deployStaging" : "deployProduction";
 }
+
+/**
+ * One environment of a project. `branch`: pushing or merging to it deploys (the host's CI does it).
+ * `check`: answers 2xx when the environment is up. A tier that is not named is production.
+ */
+export const DeployEnvironmentSchema = z.object({
+  env: EnvNameSchema,
+  tier: DeployTierSchema.default("production"),
+  branch: LocalBranchSchema.optional(),
+  check: z
+    .url({ protocol: /^https?$/ })
+    .max(500)
+    .optional(),
+});
+export type DeployEnvironment = z.infer<typeof DeployEnvironmentSchema>;
+
+/**
+ * Environments written before deploys v2 were targets with a route, a check and a rollback. The name and the
+ * health address carry over; the tier is production unless the name is exactly `staging`. Anything else is dropped.
+ */
+function fromTargets(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  return value.map((item: unknown) => {
+    if (typeof item !== "object" || item === null) return item;
+    const old = item as { env?: unknown; via?: unknown; verify?: unknown; rollback?: unknown };
+    if (old.via === undefined && old.verify === undefined && old.rollback === undefined) return item;
+    const verify = old.verify;
+    const health =
+      typeof verify === "object" && verify !== null ? (verify as { health?: unknown }).health : undefined;
+    return {
+      env: old.env,
+      tier: old.env === "staging" ? "staging" : "production",
+      ...(typeof health === "string" ? { check: health } : {}),
+    };
+  });
+}
+
+/** A project's environments, in the order they usually go live. Reads the older target form too. */
+export const DeployEnvironmentsSchema = z.preprocess(
+  fromTargets,
+  z
+    .array(DeployEnvironmentSchema)
+    .max(20)
+    .refine((list) => new Set(list.map((e) => e.env)).size === list.length, {
+      message: "Each environment is listed once",
+    }),
+);
 
 const FileName = z
   .string()
@@ -50,21 +96,32 @@ const RefSchema = z
 
 const InputsSchema = z.record(z.string().trim().min(1).max(100), z.string().max(500));
 
-/** How the target is deployed. Every kind names a connection of the project's own workspace. */
-export const DeployViaSchema = z.discriminatedUnion("kind", [
+/** A git remote of the project, by name (`origin`). Its host gives the provider; the workspace's git account for it gives the token. */
+const RemoteNameSchema = z.string().trim().min(1).max(100);
+
+/**
+ * One run on a host. A step has up to 8, in the order they must go (a build, then the deploy job).
+ * A run is repeatable when the host can start it again for an earlier commit: that is what a rollback does.
+ */
+export const DeployRunStepSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("github-workflow"),
-    /** A `git` connection of the project's workspace, for GitHub. */
-    connection: IdSchema,
+    remote: RemoteNameSchema,
     /** The workflow file in `.github/workflows`, like `deploy.yml`. */
     workflow: FileName,
     ref: z.union([z.literal("base"), RefSchema]).default("base"),
     inputs: InputsSchema.optional(),
   }),
   z.object({
+    kind: z.literal("gitlab-job"),
+    remote: RemoteNameSchema,
+    /** A manual job of the commit's pipeline. The pipeline is created when the commit has none. */
+    job: z.string().trim().min(1).max(200),
+    variables: InputsSchema.optional(),
+  }),
+  z.object({
     kind: z.literal("gitlab-pipeline"),
-    /** A `git` connection of the project's workspace, for GitLab. */
-    connection: IdSchema,
+    remote: RemoteNameSchema,
     ref: z.union([z.literal("base"), RefSchema]).default("base"),
     variables: InputsSchema.optional(),
   }),
@@ -80,76 +137,36 @@ export const DeployViaSchema = z.discriminatedUnion("kind", [
     kind: z.literal("ssh"),
     /** An `ssh` connection of the project's workspace. */
     connection: IdSchema,
-    /** A command the owner wrote. majhi never builds one from task text. */
+    /** A command the owner wrote. Never planned by the captain, never built from task text. */
     command: z.string().trim().min(1).max(2000),
   }),
 ]);
-export type DeployVia = z.infer<typeof DeployViaSchema>;
-export type DeployKind = DeployVia["kind"];
+export type DeployRunStep = z.infer<typeof DeployRunStepSchema>;
+export type DeployKind = DeployRunStep["kind"];
+
+export const DeployRunsSchema = z.array(DeployRunStepSchema).min(1).max(8);
 
 export const DEPLOY_KIND_LABEL: Record<DeployKind, string> = {
   "github-workflow": "GitHub workflow",
+  "gitlab-job": "GitLab job",
   "gitlab-pipeline": "GitLab pipeline",
   vercel: "Vercel",
   ssh: "SSH command",
 };
 
-/** How a deploy is checked once the run ends: the URL answers 2xx, and the watch stays green, for the wait. */
-export const DeployVerifySchema = z
-  .object({
-    /** A URL that answers 2xx when the new version is up. */
-    health: z
-      .url({ protocol: /^https?$/ })
-      .max(500)
-      .optional(),
-    /** A watch of the same workspace that must read ok for the wait. */
-    watch: WatchRefSchema.optional(),
-    waitSeconds: z.number().int().min(0).max(1800).default(60),
-  })
-  .refine((v) => v.health !== undefined || v.watch !== undefined, {
-    message: "Name a health address or a watch, so a deploy can be checked",
-  });
-export type DeployVerify = z.infer<typeof DeployVerifySchema>;
-
-export const DeployRollbackSchema = z.discriminatedUnion("kind", [
-  /** Run the same deploy again for the commit that was live before. */
-  z.object({ kind: z.literal("redeploy-previous") }),
-  z.object({
-    kind: z.literal("ssh"),
-    connection: IdSchema,
-    /** A command the owner wrote. The commit it goes back to is not put in it. */
-    command: z.string().trim().min(1).max(2000),
-  }),
-]);
-export type DeployRollback = z.infer<typeof DeployRollbackSchema>;
-
-export const DeployTargetSchema = z.object({
-  env: EnvNameSchema,
-  via: DeployViaSchema,
-  verify: DeployVerifySchema,
-  rollback: DeployRollbackSchema,
-});
-export type DeployTarget = z.infer<typeof DeployTargetSchema>;
-
-/** A project's targets, in the order they must go live: a target waits for the ones before it. */
-export const DeployTargetsSchema = z
-  .array(DeployTargetSchema)
-  .max(10)
-  .refine((targets) => new Set(targets.map((t) => t.env)).size === targets.length, {
-    message: "Each environment is listed once",
-  });
-
-/** The one-line form of a target's route, for rows and logs: "GitHub workflow deploy.yml". */
-export function viaLine(via: DeployVia): string {
-  switch (via.kind) {
+/** One run in a line, for a row and a log: "GitHub workflow deploy.yml", "GitLab job deploy-prod". */
+export function deployRunLine(run: DeployRunStep): string {
+  switch (run.kind) {
     case "github-workflow":
-      return `${DEPLOY_KIND_LABEL[via.kind]} ${via.workflow}`;
+      return `${DEPLOY_KIND_LABEL[run.kind]} ${run.workflow}`;
+    case "gitlab-job":
+      return `${DEPLOY_KIND_LABEL[run.kind]} ${run.job}`;
     case "gitlab-pipeline":
-      return DEPLOY_KIND_LABEL[via.kind];
+      return DEPLOY_KIND_LABEL[run.kind];
     case "vercel":
-      return `Vercel ${via.project}`;
+      return `Vercel ${run.project}`;
     case "ssh":
-      return `${DEPLOY_KIND_LABEL[via.kind]} on ${via.connection}`;
+      return DEPLOY_KIND_LABEL[run.kind];
   }
 }
 
@@ -157,12 +174,14 @@ export function viaLine(via: DeployVia): string {
 // Records
 
 /**
- * A deploy's states. `held`: the owner said hold, so no rule deploys this commit to this target.
+ * A deploy's states. `planned`: the captain's plan names it, nothing decided yet (a plan that is replaced deletes
+ * its own planned rows). `held`: the owner said hold, or the plan holds it for a reason, so no rule deploys it.
  * `queued`: decided, not started. `running`: the run is going. `verifying`: the run ended well and
  * the check is waiting. `live`: the check passed. `failed`: the run or the check failed. `rolled-back`:
  * the target went back to the commit it ran before.
  */
 export const DEPLOY_STATES = [
+  "planned",
   "held",
   "queued",
   "running",
@@ -176,6 +195,7 @@ export type DeployState = z.infer<typeof DeployStateSchema>;
 
 /** The moves a record may make. Anything else is a bug, so the store refuses it. */
 export const DEPLOY_MOVES: Readonly<Record<DeployState, readonly DeployState[]>> = {
+  planned: ["queued", "held"],
   held: ["queued"],
   queued: ["running", "failed", "held"],
   running: ["verifying", "failed"],
@@ -196,20 +216,37 @@ export function deployIsActive(state: DeployState): boolean {
 
 export const DeployByIdSchema = z.enum(["owner", "captain"]);
 
-/** The run a provider started: its id, its page, and for GitHub which attempt of it is ours. */
+/**
+ * The run a provider started for one of a record's runs: its id, its page, and for GitHub which attempt of it
+ * is ours. `ended` once the run ended well, so a restart goes on with the next one and never starts one twice.
+ */
 export const DeployRunSchema = z.object({
   id: z.string().min(1).max(200),
   url: z.string().max(500).optional(),
   attempt: z.number().int().positive().optional(),
+  ended: z.boolean().optional(),
 });
 export type DeployRun = z.infer<typeof DeployRunSchema>;
+
+/**
+ * A planned or plan-held record has no commit yet: it is the head of the base branch when the record runs. Until
+ * then `commit` holds this stand-in, which is unique per task and step. Never shown as a commit.
+ */
+export function plannedCommit(task: string, seq: number): string {
+  return `planned-${task}-${seq}`;
+}
+
+/** Whether a record's `commit` is a real commit and not the stand-in of a step that has not run. */
+export function deployHasCommit(record: Pick<DeployRecord, "commit">): boolean {
+  return !record.commit.startsWith("planned-");
+}
 
 export const DeployRecordSchema = z.object({
   id: z.number().int().positive(),
   org: IdSchema,
   project: IdSchema,
   env: EnvNameSchema,
-  /** The commit deployed, in full. */
+  /** The commit deployed, in full. A step that has not run yet holds a stand-in: see `deployHasCommit`. */
   commit: z.string().min(7).max(64),
   /** The commit the target ran before: where a rollback goes. Absent for the first deploy. */
   previous: z.string().min(7).max(64).optional(),
@@ -217,8 +254,16 @@ export const DeployRecordSchema = z.object({
   /** The task whose merge this ships. Absent for a deploy the owner started from the project page. */
   task: TaskIdSchema.optional(),
   by: DeployByIdSchema,
-  /** The run the provider started: its id and its page. */
+  /** What to run, in order: 1 to 8 runs. Records from before deploys v2 have none and cannot be repeated. */
+  runs: z.array(DeployRunStepSchema).max(8).default([]),
+  /** The provider's run for each of `runs` started so far, in the same order. */
+  handles: z.array(DeployRunSchema).max(8).default([]),
+  /** The newest of `handles`: the run to show. Derived on read. */
   run: DeployRunSchema.optional(),
+  /** The step's place in its task's plan: a step waits for the ones before it. 0 for a deploy outside a plan. */
+  seq: z.number().int().nonnegative().default(0),
+  /** Why the captain planned it, or what it skips, in a sentence. Display only. */
+  note: z.string().max(500).optional(),
   /** What the check found. */
   check: z.object({ ok: z.boolean(), detail: z.string(), at: z.string() }).optional(),
   /** Why it failed or was held, in a sentence. Display only. */
@@ -279,6 +324,7 @@ export function deployTone(state: DeployStepState): "done" | "working" | "needs"
     case "blocked":
       return "paused";
     case "none":
+    case "planned":
     case "captain-next":
     case "waits-for-previous":
       return "idle";
@@ -288,6 +334,7 @@ export function deployTone(state: DeployStepState): "done" | "working" | "needs"
 /** The state in a word or two, for a chip and its title. */
 export const DEPLOY_STATE_WORD: Record<DeployStepState, string> = {
   none: "not set up",
+  planned: "planned",
   "captain-next": "next",
   "waits-for-owner": "waits for you",
   "waits-for-previous": "waiting",
@@ -301,14 +348,44 @@ export const DEPLOY_STATE_WORD: Record<DeployStepState, string> = {
   "rolled-back": "rolled back",
 };
 
+/** How one run of a step reads: waiting its turn, going now, done, or the one that failed. */
+export type DeployRunState = "waiting" | "running" | "done" | "failed";
+
+/** The state of each of a record's runs, in order. Derived from the handles and the record's state. */
+export function deployRunStates(r: Pick<DeployRecord, "runs" | "handles" | "state">): DeployRunState[] {
+  const live = r.state === "live" || r.state === "verifying";
+  const dead = r.state === "failed" || r.state === "rolled-back";
+  let current = r.runs.findIndex((_, i) => r.handles[i]?.ended !== true);
+  if (current < 0) current = r.runs.length;
+  return r.runs.map((_, i): DeployRunState => {
+    if (live || i < current) return "done";
+    if (i > current) return "waiting";
+    if (dead) return "failed";
+    return r.state === "running" ? "running" : "waiting";
+  });
+}
+
 export const DeployStepViewSchema = z.object({
   project: IdSchema,
   env: EnvNameSchema,
+  /** The environment's tier, when the project still has it. */
+  tier: DeployTierSchema.optional(),
   state: DeployStepStateSchema,
   /** Who does the step by the ship rules. */
   who: z.enum(["captain", "owner"]),
+  /** Absent while the step has not run: it deploys the head of the base branch when it does. */
   commit: z.string().optional(),
   record: z.number().int().positive().optional(),
+  /** The step's place in its task's plan. */
+  seq: z.number().int().nonnegative().optional(),
+  /** What to run, and how far it got. */
+  runs: z.array(DeployRunStepSchema).max(8).optional(),
+  runStates: z
+    .array(z.enum(["waiting", "running", "done", "failed"]))
+    .max(8)
+    .optional(),
+  /** Why the captain planned it, or what it skips. */
+  note: z.string().optional(),
   /** The run's page, once there is one. */
   run: z.string().optional(),
   /** What blocks it or why it failed, in a sentence. */
@@ -319,14 +396,18 @@ export const DeployStepViewSchema = z.object({
 export type DeployStepView = z.infer<typeof DeployStepViewSchema>;
 
 /** A record as a step of a task's deploys: what the row says, nothing decided. */
-export function deployStepOfRecord(r: DeployRecord): DeployStepView {
+export function deployStepOfRecord(r: DeployRecord, tier?: DeployTier): DeployStepView {
   return {
     project: r.project,
     env: r.env,
+    ...(tier === undefined ? {} : { tier }),
     state: r.state,
     who: r.by,
-    commit: r.commit,
+    ...(deployHasCommit(r) ? { commit: r.commit } : {}),
     record: r.id,
+    seq: r.seq,
+    ...(r.runs.length === 0 ? {} : { runs: r.runs, runStates: deployRunStates(r) }),
+    ...(r.note === undefined ? {} : { note: r.note }),
     ...(r.run?.url === undefined ? {} : { run: r.run.url }),
     ...(r.reason === undefined ? {} : { why: r.reason }),
     ...(r.incident === undefined ? {} : { incident: r.incident }),
@@ -344,7 +425,9 @@ export function deployPhase(steps: readonly Pick<DeployStepView, "state">[]): De
   const has = (...states: DeployStepState[]) => steps.some((s) => states.includes(s.state));
   if (has("failed", "rolled-back")) return "failed";
   if (has("waits-for-owner")) return "asks";
-  if (has("queued", "running", "verifying", "captain-next", "waits-for-previous", "blocked", "none")) {
+  if (
+    has("planned", "queued", "running", "verifying", "captain-next", "waits-for-previous", "blocked", "none")
+  ) {
     return "moving";
   }
   return "done";
@@ -373,41 +456,11 @@ export const DeployAskSchema = z.object({
 export type DeployAsk = z.infer<typeof DeployAskSchema>;
 
 // ---------------------------------------------------------------------------
-// Suggestions
-
-/**
- * A target majhi found in the project, offered to the owner. Derived on every read from the repo's files and
- * the workspace's connections; never copied into the project card or the wiki. `target` is set when nothing
- * is left to write, so one click saves it. Otherwise the form opens with what is known.
- */
-export const DeploySuggestionSchema = z.object({
-  /** Stable for the same finding, so a hidden suggestion stays hidden. */
-  id: z.string().min(1).max(200),
-  env: EnvNameSchema,
-  kind: z.enum(["github-workflow", "gitlab-pipeline", "vercel", "ssh"]),
-  /** What it was found in: ".github/workflows/deploy.yml". */
-  found: z.string(),
-  /** In words: "has workflow_dispatch". */
-  because: z.string(),
-  /** The workspace's connection that fits, when there is one. */
-  connection: IdSchema.optional(),
-  workflow: z.string().optional(),
-  project: z.string().optional(),
-  /** A watch of the workspace that looks at the same address, offered as the check. */
-  watch: z.string().optional(),
-  /** What is missing for a one-click target, in a few words: "A health address". */
-  needs: z.string().optional(),
-  target: DeployTargetSchema.optional(),
-});
-export type DeploySuggestion = z.infer<typeof DeploySuggestionSchema>;
-
-// ---------------------------------------------------------------------------
 // Commands
 
 export const ProjectDeployViewSchema = z.object({
   project: IdSchema,
-  targets: z.array(DeployTargetSchema),
-  suggestions: z.array(DeploySuggestionSchema),
+  environments: z.array(DeployEnvironmentSchema),
   /** Newest first. */
   history: z.array(DeployRecordSchema),
   /** The ship rule that covers the project's deploys, in words, when the owner set one. */
@@ -415,40 +468,78 @@ export const ProjectDeployViewSchema = z.object({
 });
 export type ProjectDeployView = z.infer<typeof ProjectDeployViewSchema>;
 
-export const DeployInputSchema = z.object({
-  project: IdSchema,
-  env: EnvNameSchema,
-  /** Default: the project's base branch tip. */
-  commit: z.string().trim().min(7).max(64).optional(),
-  /** The task whose merge this ships. */
-  task: TaskIdSchema.optional(),
-  /** Owner only: deploy a base tip no merge of majhi's produced, past the check. */
-  confirmUnchecked: z.boolean().optional(),
-  /** Owner only: try again a deploy that failed or was rolled back. */
-  retry: z.boolean().optional(),
-});
+/**
+ * `projects.deploy`: runs a planned (or held, or failed) record by id, or, for the owner, an ad-hoc deploy of
+ * the base branch head to one environment with the runs written here.
+ */
+export const DeployInputSchema = z.union([
+  z.object({
+    record: z.number().int().positive(),
+    /** Owner only: deploy a head no merge of majhi's produced, past the check. */
+    confirmUnchecked: z.boolean().optional(),
+    /** Owner only: try again a deploy that failed or was rolled back. */
+    retry: z.boolean().optional(),
+  }),
+  z.object({
+    project: IdSchema,
+    env: EnvNameSchema,
+    runs: DeployRunsSchema,
+    /** Default: the project's base branch tip. */
+    commit: z.string().trim().min(7).max(64).optional(),
+    /** The task whose merge this ships. */
+    task: TaskIdSchema.optional(),
+    confirmUnchecked: z.boolean().optional(),
+    retry: z.boolean().optional(),
+  }),
+]);
 export type DeployInput = z.infer<typeof DeployInputSchema>;
 
 /** What `projects.deploy` and `projects.rollback` answer: the record, and whether this call changed anything. */
 export const DeployResultSchema = z.object({
   record: DeployRecordSchema,
-  /** The same target and commit was already deploying or live: nothing new started. */
+  /** The same environment and commit was already deploying or live: nothing new started. */
   repeat: z.boolean(),
 });
 export type DeployResult = z.infer<typeof DeployResultSchema>;
 
 export const RollbackInputSchema = z.object({ record: z.number().int().positive() });
 
-export const DeployHoldInputSchema = z.object({
-  project: IdSchema,
-  env: EnvNameSchema,
-  commit: z.string().trim().min(7).max(64),
-  task: TaskIdSchema.optional(),
-});
+/** Holds a planned record by id, or a commit of an environment that has no record yet. */
+export const DeployHoldInputSchema = z.union([
+  z.object({ record: z.number().int().positive() }),
+  z.object({
+    project: IdSchema,
+    env: EnvNameSchema,
+    commit: z.string().trim().min(7).max(64),
+    task: TaskIdSchema.optional(),
+    runs: DeployRunsSchema.optional(),
+  }),
+]);
 
 export const DeployViewInputSchema = z.object({ project: IdSchema });
-export const DeployHideInputSchema = z.object({ project: IdSchema, suggestion: z.string().min(1).max(200) });
 
-/** The target the owner confirmed: a suggestion by id, or one written by hand. Saved in the project's config. */
-export const DeploySetInputSchema = z.object({ project: IdSchema, target: DeployTargetSchema });
-export const DeployRemoveInputSchema = z.object({ project: IdSchema, env: EnvNameSchema });
+/** `projects.setEnvironments`: the whole list of a project's environments. An empty list removes them. */
+export const SetEnvironmentsInputSchema = z.object({
+  project: IdSchema,
+  environments: DeployEnvironmentsSchema,
+});
+
+/** One step of a task's deploy plan. `hold`: the step waits for the owner, and says why. */
+export const DeployPlanStepSchema = z.object({
+  project: IdSchema,
+  env: EnvNameSchema,
+  runs: DeployRunsSchema,
+  hold: z.literal("migration").optional(),
+  note: z.string().trim().max(500).optional(),
+});
+export type DeployPlanStep = z.infer<typeof DeployPlanStepSchema>;
+
+/** `projects.planDeploy`: the plan of one task. It replaces the task's planned rows. Steps go in this order. */
+export const PlanDeployInputSchema = z.object({
+  task: TaskIdSchema,
+  steps: z.array(DeployPlanStepSchema).max(20),
+});
+export type PlanDeployInput = z.infer<typeof PlanDeployInputSchema>;
+
+export const PlanDeployResultSchema = z.object({ records: z.array(DeployRecordSchema) });
+export type PlanDeployResult = z.infer<typeof PlanDeployResultSchema>;

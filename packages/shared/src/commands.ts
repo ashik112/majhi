@@ -136,17 +136,17 @@ import {
   ProviderIdSchema,
 } from "./decisions.ts";
 import {
-  DeployHideInputSchema,
   DeployHoldInputSchema,
   DeployInputSchema,
   DeployRecordSchema,
-  DeployRemoveInputSchema,
   DeployResultSchema,
-  DeploySetInputSchema,
   DeployViewInputSchema,
   HomeDeploySchema,
+  PlanDeployInputSchema,
+  PlanDeployResultSchema,
   ProjectDeployViewSchema,
   RollbackInputSchema,
+  SetEnvironmentsInputSchema,
 } from "./deploy.ts";
 import { EmojiSchema } from "./emoji.ts";
 import {
@@ -192,6 +192,7 @@ import {
   SshStatusSchema,
   UpdateStatusSchema,
 } from "./host.ts";
+import { LocalBranchSchema } from "./ids.ts";
 import {
   BoardCountsSchema,
   DecisionAnswerInputSchema,
@@ -460,14 +461,6 @@ export interface CommandDef<I extends z.ZodType, O extends z.ZodType> {
 }
 
 const Empty = z.object({});
-
-/** A branch name to merge into, push, or open a merge request against. */
-const LocalBranchSchema = z
-  .string()
-  .trim()
-  .regex(/^[A-Za-z0-9._][A-Za-z0-9._/-]*$/, "Not a branch name")
-  .refine((b) => !b.includes(".."), "Not a branch name")
-  .max(200);
 
 /**
  * The branch each repo ships into, by project. Repos not named here ship into `into` when given and
@@ -1701,47 +1694,42 @@ export const commands = {
   "projects.deployView": {
     risk: "read",
     summary:
-      "Where a project is deployed: its targets in the order they go live, the targets majhi found in the project to confirm with one click, and the deploys so far, newest first",
+      "Where a project is deployed: its environments (name, tier, branch that deploys, check address) and the deploys so far, newest first",
     input: DeployViewInputSchema,
     output: ProjectDeployViewSchema,
   },
-  "projects.setDeploy": {
+  "projects.setEnvironments": {
     risk: "change",
     summary:
-      "Add or change one deploy target of a project (an environment, how it is deployed through a connection of the project's workspace, how it is checked and how it goes back). A new environment goes last",
-    input: DeploySetInputSchema,
+      "Set the whole list of a project's deploy environments: name (one / allowed), tier (production or staging), the branch whose push or merge deploys it, and an address that answers 2xx when it is up. The captain may add environments (always production) and set branch and check; only the owner sets a staging tier or removes a production environment. How the project deploys goes in its wiki, not here",
+    input: SetEnvironmentsInputSchema,
     output: ProjectDeployViewSchema,
   },
-  "projects.removeDeploy": {
+  "projects.planDeploy": {
     risk: "change",
-    summary: "Remove one deploy target of a project. Its earlier deploys stay in the history",
-    input: DeployRemoveInputSchema,
-    output: ProjectDeployViewSchema,
-  },
-  "projects.hideDeploySuggestion": {
-    risk: "change",
-    summary: "Stop offering one deploy target majhi found in a project",
-    input: DeployHideInputSchema,
-    output: ProjectDeployViewSchema,
+    summary:
+      "Write the deploy plan of a task: the ordered steps (project, environment, and the runs to start on the host: GitHub workflow, GitLab job or pipeline, Vercel), with an optional note and hold: migration to leave a step for the owner. It replaces the task's earlier planned steps. Only environments the project has; ssh runs are the owner's. Nothing runs until the ship rules or the owner start a step",
+    input: PlanDeployInputSchema,
+    output: PlanDeployResultSchema,
   },
   "projects.deploy": {
     risk: "outbound",
     summary:
-      "Deploy the head of a project's base branch to one of its targets with that target's connection, follow the run until it ends, then check it. A failed run or check rolls back at once, opens an incident task and tells the owner. The same target and commit twice is one deploy. Never run by an agent",
+      "Run a planned deploy step by its record id, or deploy the head of a project's base branch to an environment with the runs written in the call. Each run is followed until it ends, then the environment's check runs. A failed run or check rolls back at once, opens an incident task and tells the owner. The same environment and commit twice is one deploy. Never run by an agent",
     input: DeployInputSchema,
     output: DeployResultSchema,
   },
   "projects.rollback": {
     risk: "outbound",
     summary:
-      "Go back: run the target's rollback for a deploy that is live, or whose own rollback did not work. Only the newest live deploy of a target can be rolled back",
+      "Go back: run the runs of the earlier live deploy of the environment again at its commit, for a deploy that is live, or whose own rollback did not work. Only the newest live deploy of an environment can be rolled back",
     input: RollbackInputSchema,
     output: DeployResultSchema,
   },
   "projects.holdDeploy": {
     risk: "change",
     summary:
-      "Hold a commit back from a target: no rule deploys it there until the owner deploys it. For the Deploy to production question on a task",
+      "Hold a planned deploy step by its record id, or a commit of an environment: no rule deploys it there until the owner deploys it. For the Deploy to production question on a task",
     input: DeployHoldInputSchema,
     output: DeployRecordSchema,
   },

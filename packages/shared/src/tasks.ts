@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { BranchPatternSchema, IdSchema, MrHostSchema, OrgIdSchema, SecretRefSchema } from "./accounts.ts";
-import { DeployTargetsSchema } from "./deploy.ts";
+import { DeployEnvironmentsSchema } from "./deploy.ts";
 import { DiagramSpecSchema } from "./diagram.ts";
 import { HandoffFailedSchema } from "./handoff.ts";
 import { TaskIdSchema } from "./ids.ts";
@@ -86,10 +86,8 @@ export const ProjectConfigSchema = z.looseObject({
   protected: z.boolean().optional(),
   /** Hand-off check commands that win over the project card's. */
   handoff: HandoffCommandsSchema.optional(),
-  /** Where this project is deployed, in the order the environments go live. Set once, here, and nowhere else. */
-  deploy: DeployTargetsSchema.optional(),
-  /** Suggested deploy targets the owner hid, by suggestion id. */
-  deploy_hidden: z.array(z.string().min(1).max(200)).max(50).optional(),
+  /** The environments this project is deployed to. Set once, here, and nowhere else. How it deploys is in its wiki. */
+  deploy: DeployEnvironmentsSchema.optional(),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 
@@ -113,8 +111,8 @@ export const ProjectViewSchema = z.object({
   protected: z.boolean().default(false),
   /** This project's own hand-off check commands, when set. */
   handoff: HandoffCommandsSchema.optional(),
-  /** Where this project is deployed, in order. */
-  deploy: DeployTargetsSchema.optional(),
+  /** The environments this project is deployed to. */
+  deploy: DeployEnvironmentsSchema.optional(),
   /** Not protected, but looks like infra by its name or files: the UI offers to protect it. */
   looksLikeInfra: z.boolean().optional(),
 });
