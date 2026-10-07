@@ -99,7 +99,8 @@ describe("ship rules with a real captain", { timeout: 120_000 }, () => {
     const { id } = await reviewed(w, "fix the coupon crash", "coupon.txt", "fixed\n", "bug");
     await shipAsCaptain(w, id, [bugRule]);
     expect(await mainHas(w, "coupon.txt")).toBe(false);
-    expect(((await w.h.cmd("tasks.get", { id })).body as Task).status).toBe("review");
+    // A failed check goes back to the lead, so the task may be running again; it is never done.
+    expect(((await w.h.cmd("tasks.get", { id })).body as Task).status).not.toBe("done");
     const log = JSON.stringify((await w.h.cmd("captain.log", { org: "acme" })).body);
     expect(log).toContain("the hand-off check failed");
   });
@@ -110,7 +111,8 @@ describe("ship rules with a real captain", { timeout: 120_000 }, () => {
     const { id } = await reviewed(w, "fix the coupon crash", "keys.txt", `aws_access_key_id=${key}\n`, "bug");
     await shipAsCaptain(w, id, [bugRule]);
     expect(await mainHas(w, "keys.txt")).toBe(false);
-    expect(((await w.h.cmd("tasks.get", { id })).body as Task).status).toBe("review");
+    // A failed check goes back to the lead, so the task may be running again; it is never done.
+    expect(((await w.h.cmd("tasks.get", { id })).body as Task).status).not.toBe("done");
     const log = JSON.stringify((await w.h.cmd("captain.log", { org: "acme" })).body);
     expect(log).toContain("looks like a secret");
   });
