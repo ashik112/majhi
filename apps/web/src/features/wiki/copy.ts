@@ -138,11 +138,9 @@ export const COPY = {
     flows: "Main flows",
     retry: "Retry",
     pagesTitle: "Pages not written",
-    flowsTitle: "Main flows not chosen",
     flowsWhy: "The captain's answer could not be read.",
     pagesWhy: "The update did not get to these. Retry writes them again.",
     updateFailed: "Last update failed",
-    retryTitle: "The last update did not finish",
   },
   notes: {
     title: "Your notes",

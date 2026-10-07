@@ -98,11 +98,14 @@ export function PageView(props: PageProps) {
   );
 }
 
-function Head({ page, all, scope, system }: PageProps) {
+function Head({ page, all, scope, system, failed, flowsNotChosen }: PageProps) {
   const n = countClaims(page.claims);
   const built = Object.values(page.builtFrom)[0];
   const workspace = scope.project === undefined;
-  const open = page.kind === "gaps" ? gapCount(all, system, scope.project) : n.guessed + page.dropped.length;
+  const open =
+    page.kind === "gaps"
+      ? gapCount(all, system, scope.project) + failed.size + (flowsNotChosen ? 1 : 0)
+      : n.guessed + page.dropped.length;
   const stats: ReactNode[] = [];
   if (built !== undefined && page.kind !== "gaps" && !workspace) {
     stats.push(
