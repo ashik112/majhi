@@ -1,4 +1,4 @@
-import type { CommandMeta, Settings, WorkspacesUpdate } from "@majhi/shared";
+import { type CommandMeta, GLOBAL_CONNECTIONS, type Settings, type WorkspacesUpdate } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import { fileSignature } from "../fs.ts";
 import { ConfigHistory, type HistoryEntry } from "./history.ts";
@@ -11,9 +11,10 @@ import {
   planRemoteRoutes,
   type RoutePlan,
 } from "./migrate-remote-routes.ts";
+import { asChat, legacySlack } from "./migrate-slack-chat.ts";
 import { type ConfigSections, readSections } from "./sections.ts";
 import { readSettings, type SettingsPatch } from "./settings.ts";
-import { writeSettings, writeWorkspaces } from "./write.ts";
+import { writeConnection, writeSettings, writeWorkspaces } from "./write.ts";
 
 /** Folder of agent files, kept in the same history as majhi.yaml. */
 export const AGENTS_DIR_NAME = "agents";
@@ -220,6 +221,33 @@ export class ConfigService {
       },
     );
     return done;
+  }
+
+  /**
+   * Startup migration: a Slack app saved as an `env` connection becomes a `chat` connection (see
+   * `migrate-slack-chat.ts`), with its token references untouched. Returns how many it moved; a second run
+   * finds none and makes no commit.
+   */
+  async migrateSlackChat(): Promise<number> {
+    if (legacySlack(await this.sections()).length === 0) return 0;
+    let moved = 0;
+    await this.change(
+      {
+        command: "config.migrate",
+        meta: { actor: { kind: "agent", id: "majhi" } },
+        summary: "Slack is a chat app now: its connection is read only by majhi",
+      },
+      async () => {
+        const sections = await this.sections();
+        for (const { org, id, connection } of legacySlack(sections)) {
+          const entry = org === GLOBAL_CONNECTIONS ? { name: "Global" } : sections.orgs[org];
+          if (entry === undefined) continue;
+          await writeConnection(this.file, org, entry, id, asChat(connection));
+          moved += 1;
+        }
+      },
+    );
+    return moved;
   }
 
   /** Context budget, limits, resume and policy from majhi.yaml, with defaults applied. */

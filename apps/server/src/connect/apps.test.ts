@@ -152,12 +152,9 @@ describe("saving an app", () => {
     expect(out.connection).toBeDefined();
     expect(JSON.stringify(out)).not.toContain("xoxb-1111");
     const made = t.connections.get(out.connection ?? "");
-    expect(made?.connection.type).toBe("env");
-    expect(made?.connection.fields).toMatchObject({
-      service: "slack",
-      account: "Acme Team / majhi",
-      access: "read",
-    });
+    // A chat app account: only majhi reads its tokens.
+    expect(made?.connection.type).toBe("chat");
+    expect(made?.connection.fields).toEqual({ service: "slack", account: "Acme Team / majhi" });
     expect(Object.keys(made?.connection.vars ?? {}).sort()).toEqual(["SLACK_APP_TOKEN", "SLACK_BOT_TOKEN"]);
     // The secret entries are created empty; the values go through setSecret only.
     expect(JSON.stringify(made?.connection.vars)).not.toContain("xoxb");

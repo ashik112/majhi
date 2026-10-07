@@ -99,7 +99,7 @@ export function AccountNotices({ accounts }: { accounts: readonly ChatAccount[] 
           <span className="min-w-0 flex-1">
             {a.trouble === "webhook"
               ? `${a.account} has a webhook set, so majhi cannot read it.`
-              : `${a.account} needs a new token. Set Telegram up again.`}
+              : `${a.account} needs a new token. Set ${CHAT_APP_LABEL[a.app]} up again.`}
           </span>
           {a.trouble === "webhook" && (
             <Button

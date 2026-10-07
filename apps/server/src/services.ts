@@ -53,6 +53,7 @@ import { CaptainService } from "./captain/service.ts";
 import { CaptainTell } from "./captain/tell.ts";
 import { captainWorld } from "./captain/world.ts";
 import type { ClientChat } from "./chat/service.ts";
+import { SlackAdapter } from "./chat/slack/adapter.ts";
 import { TelegramAdapter } from "./chat/telegram/adapter.ts";
 import { type ClientChatParts, createClientChat } from "./chat/wire.ts";
 import type { Dispatch } from "./commands/dispatch.ts";
@@ -483,6 +484,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   background.run(
     () => config.migrateUpdateTargetPolicy(),
     (err) => console.error(`Could not update the branch-sync approval setting: ${errorMessage(err)}`),
+  );
+  background.run(
+    () => config.migrateSlackChat(),
+    (err) => console.error(`Could not move the Slack connection to chat apps: ${errorMessage(err)}`),
   );
   background.run(
     () => config.migrateOrgMerge(),
@@ -2303,6 +2308,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     apps: new AppClientStore(secrets),
     builtInApps: BUILT_IN_CONNECT_APPS,
     telegramApi: env.chats?.telegramApi,
+    slackApi: env.chats?.slackApi,
     githubClientId: async () => (await gitConnect.apps()).github?.clientId,
     ...(options.hostLink === undefined ? {} : { cli: hostCli(options.hostLink) }),
     orgName: async (org) => connectionScopes(await config.sections())[org]?.name,
@@ -2361,6 +2367,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     adapters: [
       new TelegramAdapter({
         ...(env.chats?.telegramApi === undefined ? {} : { base: env.chats.telegramApi }),
+        log: (line) => console.log(line),
+        ...(options.runClock === undefined ? {} : { now: options.runClock }),
+      }),
+      new SlackAdapter({
+        ...(env.chats?.slackApi === undefined ? {} : { base: env.chats.slackApi }),
         log: (line) => console.log(line),
         ...(options.runClock === undefined ? {} : { now: options.runClock }),
       }),

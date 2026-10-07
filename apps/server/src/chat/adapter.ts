@@ -13,6 +13,8 @@ export interface ChatConnection {
   /** Who the app says the token belongs to, like the bot's @name. */
   account: string;
   token: string;
+  /** A second token some apps need: Slack's app-level token for Socket Mode. */
+  appToken?: string | undefined;
   /** A folder the adapter may write fetched files into. */
   filesDir: string;
 }
@@ -51,6 +53,8 @@ export interface ChatSink {
   trouble(trouble: ChatTrouble | undefined): void;
   /** A chat the bot can no longer write to. */
   unreachable(chat: string): void;
+  /** Messages are missing between two times and the adapter could not fetch them: the rooms show a gap. */
+  gap?(from: string, to: string): void;
 }
 
 /** One interface for every chat app. Slack, Discord and email are written against it, not beside it. */
