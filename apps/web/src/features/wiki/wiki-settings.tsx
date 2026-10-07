@@ -1,5 +1,5 @@
 import { Check } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { DetailSection } from "@/components/ui/list-detail";
@@ -8,6 +8,8 @@ import { PageLink } from "@/components/ui/page-link";
 import { Segmented } from "@/components/ui/segmented";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
+import { TurnOnDialog } from "@/features/autonomy/controls";
+import { useAutonomyStatus } from "@/lib/autonomy-queries";
 import { useSaveSettings, useSettings } from "@/lib/boss-queries";
 import { describeError } from "@/lib/errors";
 import { badgeLetters, formatAgo } from "@/lib/format";
@@ -54,6 +56,8 @@ export function WikiSection() {
   const model = settings?.wiki.writer_model ?? "";
   const on = useMemo(() => workspaces.filter((w) => w.enabled), [workspaces]);
   const upkeep = usePlaybooksAcross(on.map((w) => w.org.id));
+  const autopilot = useAutonomyStatus().data;
+  const [turningOn, setTurningOn] = useState(false);
   const fail = (e: unknown) => toast("Could not change it", { detail: describeError(e), tone: "error" });
 
   if (globalOn === undefined) return <p className="pt-5 text-sm text-fg-faint">Loading</p>;
@@ -165,12 +169,20 @@ export function WikiSection() {
                   <OrgBadge label={badgeLetters(w.org.key)} color={w.org.color} size="md" />
                   <span className="min-w-0 flex-1 truncate text-fg">{w.org.name}</span>
                   <span className="text-sm text-fg-muted">{upkeepState(row)}</span>
+                  {row?.held !== undefined && autopilot?.mode === "off" && (
+                    <Button size="sm" onClick={() => setTurningOn(true)}>
+                      Turn on
+                    </Button>
+                  )}
                 </li>
               );
             })}
           </ul>
         )}
       </DetailSection>
+      {turningOn && autopilot !== undefined && (
+        <TurnOnDialog status={autopilot} onClose={() => setTurningOn(false)} />
+      )}
       <DetailSection title={COPY.settings.whenOff}>
         <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
           {OFF_NOTES.map((line) => (

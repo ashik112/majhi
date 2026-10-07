@@ -676,7 +676,10 @@ export function createHandlers({
       services.cards.onRegistered(input.id);
       return view;
     },
-    "projects.cards": async (input) => services.cards.listLive(input.project),
+    "projects.cards": async (input) => {
+      await services.cards.refreshMoved();
+      return services.cards.listLive(input.project);
+    },
     "projects.cardRefresh": (input) => services.cards.refresh(input.project),
     "projects.update": async (input, ctx) => {
       // Protection is the owner's guard on their infra: an agent may turn it on, never off.

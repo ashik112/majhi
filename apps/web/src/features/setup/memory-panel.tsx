@@ -173,7 +173,7 @@ export function MemorySection({ saved }: { saved: MemorySettings }) {
         </div>
         <Field
           label="Keep or drop on its own above"
-          hint="How far above a random guess the decision provider must be (0 is a guess, 1 is certain) before majhi drops a lesson as chatter or merges it into one it has, and logs why. Below it, the lesson is kept, and Undo drops it. Global lessons and contradictions always wait for you. Other decisions use 0.2; memory is stricter because a wrong fact sticks. From 0.2 to 1. Default 0.4."
+          hint="How sure Laya must be before majhi drops a lesson as chatter or merges it into one it already has. Below that, the lesson is kept and Undo drops it. Global lessons and contradictions always wait for you. From 0.2 to 1. Default 0.4."
           error={showErrors ? error : undefined}
         >
           {(p) => (

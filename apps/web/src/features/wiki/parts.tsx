@@ -71,6 +71,16 @@ export function StaleMark({ className }: { className?: string }) {
   );
 }
 
+/** The red dot and words of a page the last update could not write. */
+export function FailedMark({ className }: { className?: string }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 text-xs text-red", className)}>
+      <span aria-hidden="true" className="size-1.5 rounded-full bg-red" />
+      {COPY.failed.mark}
+    </span>
+  );
+}
+
 /** The chips of a claim's sources. A guess with none says so. */
 export function Sources({
   claim,
