@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
 import { MOD_KEY } from "@/lib/format";
 import { useHostStatus, useSetWorkspaces } from "@/lib/queries";
+import { MissingFolders } from "./missing-folders";
 import { checkRoots, defaultTasksDir, protectedRoots, type RootRow, type RootsDraft } from "./model";
 import { ProtectedWarning } from "./protected-warning";
 import { RootPicker } from "./root-picker";
@@ -214,6 +215,12 @@ export function RootsForm({ mode, home, file, initial, onSaved, onCancel, bare =
 
         {os === "macos" && (
           <ProtectedWarning found={protectedFound} runtime={host.data?.info?.dockerRuntime} />
+        )}
+
+        {save.data?.missing !== undefined && (
+          <div className="mx-4 mb-4">
+            <MissingFolders save={save} />
+          </div>
         )}
 
         {save.error && (

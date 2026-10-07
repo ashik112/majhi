@@ -446,6 +446,38 @@ export class SignInService {
     };
   }
 
+  /**
+   * Removes one git account and the sign-in it holds: its token and grant, the `mr_tokens` entry that
+   * points at the same token, and the secrets. A token another account still uses stays.
+   */
+  async removeAccount(
+    input: { org: string; host: string; account: string },
+    change: { command: string; meta: CommandMeta },
+  ): Promise<void> {
+    const org = (await this.deps.orgs())[input.org];
+    if (org === undefined) throw new UserError(`Workspace "${input.org}" does not exist.`, 404);
+    const host = input.host.toLowerCase();
+    const isRow = (a: GitAccount) =>
+      a.host === host && a.account.toLowerCase() === input.account.toLowerCase();
+    const row = (org.git_accounts ?? []).find(isRow);
+    const rest = (org.git_accounts ?? []).filter((a) => !isRow(a));
+    const dropped = [row?.token, row?.oauth].filter(
+      (ref): ref is string => ref !== undefined && !rest.some((a) => a.token === ref || a.oauth === ref),
+    );
+    const tokens = Object.fromEntries(
+      Object.entries(org.mr_tokens ?? {}).filter(([, ref]) => !dropped.includes(ref)),
+    ) as Partial<Record<MrHost, string>>;
+    await this.deps.writeOrg(
+      input.org,
+      {
+        git_accounts: rest.length === 0 ? null : rest,
+        mr_tokens: Object.keys(tokens).length === 0 ? null : tokens,
+      },
+      change,
+    );
+    for (const ref of dropped) await this.deps.dropSecret(ref).catch(() => undefined);
+  }
+
   private async runDevice(id: string): Promise<void> {
     const wait = this.deps.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref?.()));
     for (;;) {

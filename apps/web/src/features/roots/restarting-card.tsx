@@ -26,10 +26,10 @@ export function RestartingCard({
   /** Absolute paths of the roots being mounted. */
   roots: readonly string[];
   home: string;
-  continueLabel: string;
+  continueLabel?: string;
   onBack: () => void;
   /** The way out after a time-out, for example "Show repos now". */
-  onContinue: () => void;
+  onContinue?: () => void;
 }) {
   const { phase, startedAt, checkAgain } = useRestartWatch(onBack);
   const now = useNow(1000);
@@ -59,9 +59,11 @@ export function RestartingCard({
         </div>
         <div className="mt-5 flex items-center gap-2 border-t border-line px-5 py-3">
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="ghost" onClick={onContinue}>
-              {continueLabel}
-            </Button>
+            {onContinue !== undefined && continueLabel !== undefined && (
+              <Button variant="ghost" onClick={onContinue}>
+                {continueLabel}
+              </Button>
+            )}
             <Button variant="primary" onClick={checkAgain}>
               <RotateCw aria-hidden="true" />
               Check again

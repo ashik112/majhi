@@ -2746,6 +2746,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       list: () => connections.list(),
       create: (input, command, meta) => connections.create(input as never, command, meta),
       update: (input, command, meta) => connections.update(input as never, command, meta),
+      remove: (id, command, meta) => connections.remove(id, command, meta),
     },
     orgs: async () => (await config.sections()).orgs,
     kindOf: (host) => {

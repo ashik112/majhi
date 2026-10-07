@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
+import { MissingFolders } from "@/features/roots/missing-folders";
 import { draftFromConfig } from "@/features/roots/model";
 import { RestartCard } from "@/features/roots/restart-card";
 import { RestartingCard } from "@/features/roots/restarting-card";
@@ -46,12 +47,10 @@ export function WelcomeStep() {
         <RestartingCard
           roots={pending.unmounted}
           home={pending.state.home}
-          continueLabel="Continue"
           onBack={() => {
             toast("Folder mounted");
             step.next();
           }}
-          onContinue={step.next}
         />
       </StepFrame>
     );
@@ -59,12 +58,7 @@ export function WelcomeStep() {
   if (pending) {
     return (
       <StepFrame skippable={false}>
-        <RestartCard
-          result={pending}
-          home={pending.state.home}
-          continueLabel="Continue"
-          onContinue={step.next}
-        />
+        <RestartCard result={pending} home={pending.state.home} />
       </StepFrame>
     );
   }
@@ -178,6 +172,7 @@ function Suggestion({
           {save.isPending ? "Saving" : top ? `Use ${collapseHome(top.path, home)}` : "Use this folder"}
         </Button>
       </div>
+      <MissingFolders save={save} />
       {save.error && (
         <Problem>
           {save.error.unreachable ? "majhi is not responding. The folder was not saved." : save.error.message}

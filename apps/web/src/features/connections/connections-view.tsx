@@ -25,7 +25,7 @@ import { needsOwner, type RowStatus, rowStatus } from "./status";
 
 /** The columns every row shares, so lamps, workspaces and actions line up down the page. */
 const COLUMNS =
-  "grid-cols-[32px_minmax(120px,1fr)_24px_minmax(190px,1.3fr)_88px_16px] min-[1320px]:grid-cols-[32px_minmax(200px,1fr)_minmax(0,160px)_minmax(220px,320px)_72px_96px_16px]";
+  "grid-cols-[32px_minmax(120px,1fr)_24px_minmax(220px,1.6fr)_88px_16px] min-[1320px]:grid-cols-[32px_minmax(200px,1fr)_minmax(0,160px)_minmax(220px,320px)_72px_96px_16px]";
 
 /**
  * Every connection in one list, grouped by how it connects. Each row is one line: what it is, who
@@ -230,7 +230,7 @@ function Row({
   onOpen: () => void;
   onCheck: () => void;
 }) {
-  const status = rowStatus(view.health, checking, now);
+  const status = rowStatus(view, checking, now);
   const account = view.health !== undefined && "account" in view.health ? view.health.account : undefined;
   const host = view.fields.host?.value;
   const sub = [account, host, connectionType(view.type).label].filter((v) => v !== undefined && v !== "")[0];
@@ -291,12 +291,14 @@ function Row({
 function StatusCell({ status }: { status: RowStatus }) {
   return (
     <span
-      className={cn("flex min-w-0 items-center gap-2 text-sm", LAMP_TEXT[status.lamp])}
+      className={cn("flex min-w-0 items-start gap-2 text-sm", LAMP_TEXT[status.lamp])}
       title={`${status.word}: ${status.line}`}
     >
-      <Lamp state={status.lamp} size={7} />
-      <span className="shrink-0 font-medium">{status.word}</span>
-      <span className="min-w-0 truncate text-fg-faint">{status.line}</span>
+      <Lamp state={status.lamp} size={7} className="mt-[7px]" />
+      <span className="flex min-w-0 flex-col">
+        <span className="font-medium">{status.word}</span>
+        <span className="line-clamp-2 text-pretty text-fg-faint">{status.line}</span>
+      </span>
     </span>
   );
 }

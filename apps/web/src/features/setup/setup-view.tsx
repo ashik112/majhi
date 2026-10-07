@@ -253,7 +253,7 @@ export function SetupView() {
           note="The same as the sidebar's Appearance button"
           className="border-t-0"
         >
-          <AppearanceControls className="max-w-[320px]" />
+          <AppearanceControls className="max-w-[320px]" hint={false} />
         </DetailSection>
       )}
       {section === "backups" && <BackupsSection home={home} />}

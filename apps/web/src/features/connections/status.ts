@@ -2,9 +2,10 @@ import {
   type ConnectionHealth,
   type ConnectionView,
   connectionFailing,
+  FAILURE_ACTION_LABEL,
   FAILURE_FIX,
-  FAILURE_LINE,
-  type FailureReason,
+  failureAction,
+  failureLine,
   TRANSIENT_FAILURES,
 } from "@majhi/shared";
 import type { LampState } from "@/components/ui/lamp";
@@ -25,16 +26,12 @@ export interface RowStatus {
   actionLabel: string;
 }
 
-/** Reasons where signing in again is the fix. */
-const RECONNECT: ReadonlySet<FailureReason> = new Set<FailureReason>([
-  "rejected",
-  "expired",
-  "insufficient-scope",
-  "no-credential",
-  "not-signed-in",
-]);
-
-export function rowStatus(health: ConnectionHealth | undefined, checking: boolean, now: number): RowStatus {
+export function rowStatus(
+  view: Pick<ConnectionView, "health" | "lastTest" | "type">,
+  checking: boolean,
+  now: number,
+): RowStatus {
+  const health = view.health;
   if (checking || health === undefined) {
     return {
       lamp: "working",
@@ -63,14 +60,13 @@ export function rowStatus(health: ConnectionHealth | undefined, checking: boolea
       };
     case "failed":
     case "needs-attention": {
-      const transient = TRANSIENT_FAILURES.has(health.reason);
-      const reconnect = RECONNECT.has(health.reason);
+      const action = failureAction(view.type, health.reason);
       return {
-        lamp: transient ? "paused" : "needs",
+        lamp: "needs",
         word: health.state === "failed" ? "Failed" : "Needs attention",
-        line: FAILURE_LINE[health.reason],
-        action: transient ? "check" : reconnect ? "reconnect" : "fix",
-        actionLabel: transient ? "Check now" : reconnect ? "Reconnect" : "Fix",
+        line: failureLine(view),
+        action,
+        actionLabel: FAILURE_ACTION_LABEL[action],
       };
     }
   }

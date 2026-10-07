@@ -75,6 +75,7 @@ const OWNER_SETTINGS: ReadonlySet<string> = new Set([
   "settings.set",
   "boss.set",
   "history.undo",
+  "config.restoreLast",
   "decisions.set",
   "system.update",
   "cleanup.run",

@@ -76,7 +76,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
   const runtime = fakeRuntime();
   const h = build(dir, env, runtime, cleanup, options);
   if (options.workspaces !== false) {
-    const res = await h.cmd("workspaces.set", { workspaces: ["~/Work"] });
+    const res = await h.cmd("workspaces.set", { workspaces: ["~/Work"], create: true });
     if (res.status !== 200) throw new Error(`workspaces.set failed: ${JSON.stringify(res.body)}`);
   }
   return h;

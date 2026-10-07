@@ -228,6 +228,28 @@ export class ConfigHistory {
     return entries;
   }
 
+  /** The commits that changed `file`, newest first. */
+  async commitsTouching(file: string, limit: number): Promise<{ commit: string; at: string }[]> {
+    if ((await this.head()) === undefined) return [];
+    const { stdout } = await this.git(["log", `-n${limit}`, "--format=%H%x1f%aI", "--", file]);
+    return stdout
+      .split("\n")
+      .filter((l) => l !== "")
+      .map((l) => {
+        const [commit = "", at = ""] = l.split("\u001f");
+        return { commit, at };
+      });
+  }
+
+  /** The text of `file` as `commit` had it, or undefined when it was not there. */
+  async fileAt(commit: string, file: string): Promise<string | undefined> {
+    try {
+      return (await this.git(["show", `${commit}:${file}`])).stdout;
+    } catch {
+      return undefined;
+    }
+  }
+
   /** The full hash for a commit name, or undefined when it is not in this history. */
   async resolve(commit: string): Promise<string | undefined> {
     try {

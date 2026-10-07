@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { KeyringItem, PassphraseKeeping } from "./platform/types.ts";
 import {
   createSsh,
+  freeKeyName,
   type RunFn,
   type RunOptions,
   type RunResult,
@@ -322,5 +323,22 @@ describe("the key loader", () => {
       w.agent.clear();
       expect((await ssh.reload()).needsPassphrase).toEqual(["~/.ssh/id_work"]);
     });
+  });
+});
+
+describe("making an SSH key", () => {
+  it("never picks a name that holds a private or public key already", async () => {
+    const taken = new Set(["/h/.ssh/id_ed25519", "/h/.ssh/id_ed25519_majhi.pub"]);
+    const exists = async (path: string) => taken.has(path);
+    expect(await freeKeyName(exists, "/h/.ssh")).toBe("/h/.ssh/id_ed25519_majhi_2");
+    const all = new Set([
+      "id_ed25519",
+      "id_ed25519_majhi",
+      ...[2, 3, 4, 5].map((n) => `id_ed25519_majhi_${n}`),
+    ]);
+    await expect(
+      freeKeyName(async (path) => all.has(path.split("/").pop() ?? ""), "/h/.ssh"),
+    ).rejects.toThrow("every key name");
+    expect(await freeKeyName(async () => false, "/h/.ssh")).toBe("/h/.ssh/id_ed25519");
   });
 });

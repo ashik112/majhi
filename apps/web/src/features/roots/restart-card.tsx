@@ -17,9 +17,9 @@ export function RestartCard({
 }: {
   result: WorkspacesUpdateResult;
   home: string;
-  /** The secondary action: carry on without restarting, for example "Show repos now". */
-  continueLabel: string;
-  onContinue: () => void;
+  /** The secondary action: carry on without restarting, for example "Show repos now". Absent where the page already has a Continue. */
+  continueLabel?: string;
+  onContinue?: () => void;
 }) {
   const count = result.unmounted.length;
   return (
@@ -67,9 +67,11 @@ export function RestartCard({
       <div className="mt-5 flex items-center gap-2 border-t border-line px-5 py-3">
         <p className="text-sm text-fg-faint">{plural(count, "folder")} waiting for a restart</p>
         <div className="ml-auto flex items-center gap-2">
-          <Button variant="ghost" onClick={onContinue}>
-            {continueLabel}
-          </Button>
+          {onContinue !== undefined && continueLabel !== undefined && (
+            <Button variant="ghost" onClick={onContinue}>
+              {continueLabel}
+            </Button>
+          )}
           <Button variant="primary" onClick={() => window.location.assign("/")}>
             <RotateCw aria-hidden="true" />
             Reload
