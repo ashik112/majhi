@@ -41,9 +41,10 @@ async function reviewed(world: BossWorld, text: string, file: string, content: s
   expect(made.status).toBe(200);
   const id = (made.body as Task).id;
   await h.majhi.services.runs.idle();
-  for (let i = 0; i < 500; i++) {
-    if (((await h.cmd("tasks.get", { id })).body as Task).status === "review") break;
-    await new Promise((r) => setTimeout(r, 10));
+  const until = Date.now() + 60_000;
+  while (((await h.cmd("tasks.get", { id })).body as Task).status !== "review") {
+    if (Date.now() > until) throw new Error(`${id} never reached review`);
+    await new Promise((r) => setTimeout(r, 20));
   }
   const tree = join(world.taskDir(id), "acme-api");
   await writeFile(join(tree, file), content);
