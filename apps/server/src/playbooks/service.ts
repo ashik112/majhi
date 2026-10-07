@@ -333,7 +333,11 @@ export class PlaybookService implements ChorePlaybooks {
       result = runResult(lastRun);
       look = needsLook(lastRun.status, lastRun.findings, def.pack, false);
     } else if (lastChore !== undefined && chore !== undefined) {
-      result = choreResult(chore, captain.repo.actionsOfRun(lastChore.id), lastChore.note);
+      // What the lane did on its own since (a ship it made or failed) is in the log, so it is in the result too.
+      const own = captain.repo
+        .actions({ org, limit: 30 })
+        .filter((a) => a.chore === chore && a.run === undefined && a.at > lastChore.startedAt);
+      result = choreResult(chore, [...captain.repo.actionsOfRun(lastChore.id), ...own], lastChore.note);
       look = needsLook(lastChore.status === "failed" ? "failed" : "done", 0, def.pack, false);
     }
     return {

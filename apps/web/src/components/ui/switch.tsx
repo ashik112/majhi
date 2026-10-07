@@ -31,7 +31,7 @@ export function Switch({
       title={title}
       disabled={disabled}
       onClick={() => onChange(mixed ? true : !checked)}
-      className="flex h-8 cursor-pointer items-center gap-2.5 rounded-md text-left text-base text-fg-soft disabled:cursor-not-allowed disabled:opacity-50"
+      className="flex min-h-8 cursor-pointer items-center gap-2.5 rounded-md py-0.5 text-left text-base text-fg-soft disabled:cursor-not-allowed disabled:opacity-50"
     >
       <span
         aria-hidden="true"

@@ -16,6 +16,7 @@ import {
   plainAuthorityText,
   type RoomItem,
   roomDecisionId,
+  SHIP_FAILED_PREFIX,
   signInDecisionId,
   type TaskId,
 } from "@majhi/shared";
@@ -287,6 +288,14 @@ function draftOf(
           options: withPrimary([...fix, done, changes], fix.length > 0 ? "fix" : undefined),
         };
       }
+      if (item.why?.startsWith(SHIP_FAILED_PREFIX) === true && repos > 0) {
+        return {
+          kind: "ship",
+          title: `Ship failed: ${oneLine(subject.title, 120)}`,
+          sentence: `${who} finished ${name}. ${item.why}`.slice(0, 500),
+          options: withPrimary(own, undefined),
+        };
+      }
       if (item.ready === undefined) {
         return {
           kind: "ship",
@@ -471,10 +480,10 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       kind: "draft",
       org: d.org,
       title: oneLine(`${OUTBOUND_CHANNEL_LABEL[d.channel]} to ${d.target}: ${head}`),
-      sentence: `A ${what} to ${d.target} is drafted${d.voice === undefined ? "" : ` in the voice "${d.voice}"`}. Nothing is sent until you approve it.`,
+      sentence: `${"aeiou".includes(what.charAt(0)) ? "An" : "A"} ${what} to ${d.target} is drafted${d.voice === undefined ? "" : ` in the voice "${d.voice}"`}. Nothing is sent until you approve it.`,
       ...decorate(id, options, undefined, src.orgName?.(d.org)),
       at: d.createdAt,
-      link: { kind: "playbooks" },
+      link: { kind: "decision", id },
     });
   }
 
@@ -493,7 +502,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       sentence: `${b.drafts.length} ${label} ${b.drafts.length === 1 ? "draft waits" : "drafts wait"} in this batch. Nothing is sent until you approve.`,
       ...decorate(id, options, undefined, src.orgName?.(b.org)),
       at: b.drafts[0]?.createdAt ?? new Date(0).toISOString(),
-      link: { kind: "playbooks" },
+      link: { kind: "decision", id },
     });
   }
 

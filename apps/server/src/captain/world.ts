@@ -307,6 +307,10 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       deps.tasks.cards.shipReady(id, line);
     },
 
+    async shipFailed(_org, id, error) {
+      deps.tasks.cards.shipFailed(id, error);
+    },
+
     async mrReady(_org, id) {
       const options = await deps.mrs.shipOptions(id);
       if (!options.mr.ok) {

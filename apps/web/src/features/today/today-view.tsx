@@ -1,5 +1,5 @@
 import type { AgendaItem, AgendaToday } from "@majhi/shared";
-import { PAGE_PATH } from "@majhi/shared";
+import { PAGE_PATH, parseDecisionId } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight, CircleCheck, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -14,6 +14,7 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { UsageBar } from "@/components/ui/usage-bar";
+import { applyFilters } from "@/features/decisions/model";
 import { incidentLamp } from "@/features/watch/model";
 import {
   useAgendaToday,
@@ -28,7 +29,7 @@ import { describeError } from "@/lib/errors";
 import { formatMoney } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useOrgFilter } from "@/lib/org-filter";
-import { useWatch } from "@/lib/watch-queries";
+import { useAckIncident, useWatch } from "@/lib/watch-queries";
 import {
   actionOf,
   clockText,
@@ -429,15 +430,28 @@ function AgendaPanel({
 function RightNowPanel({ today, org }: { today: AgendaToday; org: string | undefined }) {
   const { watch } = today;
   const run = useRunAttention();
+  // An incident the agenda lists already is not listed a second time.
+  const onAgenda = new Set(
+    [...today.today, ...today.later].flatMap((i) => (i.target.to === "finding" ? [i.target.id] : [])),
+  );
+  const incidents = watch.incidents.filter((i) => !onAgenda.has(i.id));
   const asFinding = new Set(watch.incidents.map((i) => i.id));
+  // An incident that waits in Needs you is on the agenda: it is not listed here again.
+  const asDecision = new Set(
+    (useDecisions().data?.decisions ?? []).flatMap((d) => {
+      const parsed = parseDecisionId(d.id);
+      return parsed?.kind === "incident" ? [parsed.id] : [];
+    }),
+  );
   const services = (useWatch().data?.incidents ?? []).filter(
     (i) =>
       i.status === "open" &&
       (org === undefined || i.org === org) &&
+      !asDecision.has(i.id) &&
       (i.finding === undefined || !asFinding.has(i.finding)),
   );
   const pct = watch.budget === undefined || watch.budget === 0 ? 0 : (watch.spent / watch.budget) * 100;
-  const quiet = watch.running.length === 0 && watch.incidents.length === 0 && services.length === 0;
+  const quiet = watch.running.length === 0 && incidents.length === 0 && services.length === 0;
   return (
     <Panel
       title="Right now"
@@ -453,7 +467,13 @@ function RightNowPanel({ today, org }: { today: AgendaToday; org: string | undef
       {watch.budget !== undefined && (
         <UsageBar pct={pct} tone={pct > 100 ? "red" : "calm"} className="mb-2.5" />
       )}
-      {quiet && <p className="m-0 text-sm text-fg-muted">Nothing is running and no incident is open.</p>}
+      {quiet && (
+        <p className="m-0 text-sm text-fg-muted">
+          {watch.incidents.length > 0
+            ? "Nothing is running. Open incidents are on the agenda."
+            : "Nothing is running and no incident is open."}
+        </p>
+      )}
       <ul className="m-0 flex max-h-[220px] list-none flex-col gap-0.5 overflow-y-auto overscroll-contain p-0">
         {services.map((i) => (
           <li key={`s${i.id}`}>
@@ -468,7 +488,7 @@ function RightNowPanel({ today, org }: { today: AgendaToday; org: string | undef
             </Link>
           </li>
         ))}
-        {watch.incidents.map((i) => (
+        {incidents.map((i) => (
           <li key={`i${i.id}`}>
             <button
               type="button"
@@ -567,6 +587,12 @@ export function TodayView() {
   const run = useRunAttention();
   const toast = useToast();
   const dismiss = useDismissFinding();
+  const ack = useAckIncident();
+  const decisions = useDecisions();
+  const waiting = applyFilters(decisions.data?.decisions ?? [], { org, kind: undefined });
+  const needsCount = waiting.length;
+  // An incident that is already a Needs you decision is not counted a second time as something to look at.
+  const incidentsWaiting = waiting.filter((d) => d.kind === "incident").length;
   const [picked, setPicked] = useState<string | undefined>();
   const [later, setLater] = useState(false);
 
@@ -581,6 +607,10 @@ export function TodayView() {
     const done = item.done;
     if (done === undefined) return;
     const fail = (e: unknown) => toast("Could not do that", { detail: describeError(e), tone: "error" });
+    if (done.kind === "ack-incident") {
+      ack.mutate(done.incident, { onSuccess: () => toast(`Acknowledged: ${item.title}`), onError: fail });
+      return;
+    }
     dismiss.mutate(done.id, { onSuccess: () => toast(`Dismissed: ${item.title}`), onError: fail });
   };
 
@@ -661,7 +691,12 @@ export function TodayView() {
             ? "The brief, the agenda and what is coming."
             : subtitleOf({
                 day: today.day,
-                count: today.today.length,
+                needs: needsCount,
+                look: Math.max(
+                  0,
+                  [...today.today, ...today.later].filter((i) => i.target.to !== "decision").length -
+                    incidentsWaiting,
+                ),
                 minutes: today.usedMinutes,
                 later: today.later.length,
               })

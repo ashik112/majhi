@@ -50,7 +50,7 @@ export function leftOutWhy(
   names: OrgNames,
   authority: Authority,
 ): string | undefined {
-  if (task.noAutonomy === true) return "Marked Not for autonomous mode";
+  if (task.noAutonomy === true) return "Marked Not for Auto-pilot";
   if (authority.start !== "decide")
     return `In ${orgName(task.org ?? PRIVATE, names)} you decide when work starts`;
   const big = sizeProblem(pick.size, size);
@@ -64,7 +64,7 @@ export function pickLines(pick: AutonomyPick, names: OrgNames, org?: string): st
     org === undefined
       ? "Workspaces: only those where the captain decides when work starts, each in its own lane."
       : `Workspace: ${orgName(org, names)} only. This lane never sees or acts in another workspace.`,
-    "Tasks the owner marked Not for autonomous mode are left alone.",
+    "Tasks the owner marked Not for Auto-pilot are left alone.",
   ];
 }
 

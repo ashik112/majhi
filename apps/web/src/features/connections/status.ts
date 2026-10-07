@@ -1,6 +1,7 @@
 import {
   type ConnectionHealth,
   type ConnectionView,
+  connectionFailing,
   FAILURE_ACTION_LABEL,
   FAILURE_FIX,
   failureAction,
@@ -83,9 +84,5 @@ export function fixOf(health: ConnectionHealth | undefined): { text: string; url
 
 /** How many connections need the owner: failed, or worked once and fails now, and the fix is theirs. */
 export function needsOwner(views: readonly ConnectionView[]): number {
-  return views.filter(
-    (v) =>
-      (v.health?.state === "failed" || v.health?.state === "needs-attention") &&
-      !TRANSIENT_FAILURES.has(v.health.reason),
-  ).length;
+  return views.filter((v) => connectionFailing(v.health)).length;
 }

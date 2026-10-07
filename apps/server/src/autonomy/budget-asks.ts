@@ -81,7 +81,7 @@ export function askName(scope: string, names: Readonly<Record<string, string>>):
  * budget's scope spent today.
  */
 export function waitText(scope: string, name: string, used: number): string {
-  const whose = scope === DAY_SCOPE ? "the autonomous daily budget" : `${name}'s daily budget`;
+  const whose = scope === DAY_SCOPE ? "the Auto-pilot daily budget" : `${name}'s daily budget`;
   return `Waiting for ${whose}, ${budgetWord({ cost: Math.round(used * 100) / 100 })} used`;
 }
 

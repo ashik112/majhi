@@ -36,11 +36,14 @@ export function MoreRules({
   accounts,
   zone,
   onDone,
+  doneLabel = "Fold away",
 }: {
   org: CaptainOrg;
   accounts: readonly AccountView[];
   zone: string;
   onDone: () => void;
+  /** What the button that leaves the form says: "Fold away" in the page, "Close" in a dialog. */
+  doneLabel?: string;
 }) {
   const toast = useToast();
   const save = useCaptainRules();
@@ -97,7 +100,7 @@ export function MoreRules({
                 aria-label="From"
                 value={form.from}
                 onChange={(e) => set({ from: e.target.value })}
-                className="tnum h-8 w-[112px] font-mono text-sm"
+                className="tnum h-8 w-[140px] font-mono text-sm"
               />
               to
               <Input
@@ -105,7 +108,7 @@ export function MoreRules({
                 aria-label="To"
                 value={form.to}
                 onChange={(e) => set({ to: e.target.value })}
-                className="tnum h-8 w-[112px] font-mono text-sm"
+                className="tnum h-8 w-[140px] font-mono text-sm"
               />
             </div>
           )}
@@ -246,7 +249,7 @@ export function MoreRules({
             </>
           ) : (
             <Button size="sm" variant="ghost" onClick={onDone}>
-              Fold away
+              {doneLabel}
             </Button>
           )}
         </span>
@@ -267,7 +270,7 @@ function HoldList({ org }: { org: CaptainOrg }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <span className="text-sm text-fg-faint">Ask me before sending</span>
-      <div className="grid gap-x-6 min-[1180px]:grid-cols-3">
+      <div className="grid gap-x-6 gap-y-2 min-[600px]:grid-cols-2">
         {HOLD_CLASSES.map((kind) => (
           <Switch
             key={kind}

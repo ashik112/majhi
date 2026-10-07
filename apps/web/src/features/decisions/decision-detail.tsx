@@ -1,6 +1,7 @@
 import { DECISION_KIND_LABEL, type DecisionDetail, type OwnerDecision } from "@majhi/shared";
 import { ArrowLeft, Check, TriangleAlert } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
+import { useRunAttention } from "@/components/shell/banner";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Lamp } from "@/components/ui/lamp";
@@ -160,6 +161,8 @@ export function DecisionDetailPane({
   const suggestedLabel =
     decision.options.find((o) => o.id === suggestion?.option)?.label ?? suggestion?.option;
   const hand = detail?.handback;
+  const run = useRunAttention();
+  const incident = detail?.incident;
 
   useLayoutEffect(() => {
     if (replyOpen) field.current?.focus();
@@ -229,6 +232,38 @@ export function DecisionDetailPane({
             <pre className="m-0 max-h-72 overflow-auto rounded-md border border-line bg-sunken p-2.5 font-mono text-xs whitespace-pre-wrap break-words text-fg-soft">
               {detail.command}
             </pre>
+          </Block>
+        )}
+
+        {incident !== undefined && (
+          <Block title="What the captain found">
+            {incident.found !== undefined && (
+              <p className="m-0 text-base text-fg-soft text-pretty break-words">{incident.found}</p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {incident.finding !== undefined && (
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    run({
+                      kind: "page",
+                      to: "/captain",
+                      search: { id: String(incident.finding), tab: "findings" },
+                    })
+                  }
+                >
+                  Open the finding
+                </Button>
+              )}
+              {incident.task !== undefined && (
+                <Button size="sm" onClick={() => run({ kind: "task", id: incident.task as string })}>
+                  Open the fix, {incident.task}
+                </Button>
+              )}
+            </div>
+            {incident.found === undefined && incident.task === undefined && (
+              <p className="m-0 text-sm text-fg-muted">The captain has not reported on it yet.</p>
+            )}
           </Block>
         )}
 
@@ -367,16 +402,19 @@ export function DecisionDetailPane({
               </Button>
             );
           })}
-          <Button
-            variant={noButtons ? "primary" : "ghost"}
-            className={noButtons ? undefined : "ml-auto"}
-            onClick={onOpen}
-          >
-            {openLabel(decision.link)}
-            <Kbd aria-hidden="true" className="hidden min-[1280px]:inline-flex">
-              o
-            </Kbd>
-          </Button>
+          {/* A draft is shown whole above: there is no other place to open it. */}
+          {decision.kind !== "draft" && (
+            <Button
+              variant={noButtons ? "primary" : "ghost"}
+              className={noButtons ? undefined : "ml-auto"}
+              onClick={onOpen}
+            >
+              {openLabel(decision.link)}
+              <Kbd aria-hidden="true" className="hidden min-[1280px]:inline-flex">
+                o
+              </Kbd>
+            </Button>
+          )}
         </div>
         {blockedNow.map((o) => (
           <p key={o.id} className="mt-2 mb-0 text-sm text-fg-faint text-pretty">

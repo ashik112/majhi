@@ -90,6 +90,15 @@ function toDraft(r: DraftRow): Draft {
 
 const DEFAULT_BATCH_AT = "09:00";
 
+/** What to do when a channel has no sender: the one step, in the owner's words. */
+const NO_SENDER: Record<Draft["channel"], string> = {
+  email: "no email account is connected. Add one in Connections, then have the captain draft it again.",
+  message: "no chat app is connected. Add one in Connections, then have the captain draft it again.",
+  client: "the client's chat is not linked. Link it in Clients, then have the captain draft it again.",
+  post: "majhi cannot post for you yet. Copy the text from the draft and post it yourself.",
+  form: "majhi cannot submit forms for you yet. Copy the text from the draft and send it yourself.",
+};
+
 export class OutboundGate {
   constructor(private readonly deps: OutboundDeps) {}
 
@@ -407,11 +416,7 @@ export class OutboundGate {
     }
     const transport = this.deps.transports?.[draft.channel];
     if (transport === undefined) {
-      this.setStatus(
-        draft.id,
-        "approved",
-        "Approved. Nothing was sent: no sender is connected for this channel yet",
-      );
+      this.setStatus(draft.id, "approved", `Approved. Nothing was sent: ${NO_SENDER[draft.channel]}`);
       return this.must(draft.id);
     }
     // Claim it first so a second click cannot send the same draft twice.

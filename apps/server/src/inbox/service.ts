@@ -19,9 +19,10 @@ import {
   type ShipOptions,
   splitReady,
 } from "@majhi/shared";
-import { UserError } from "../errors.ts";
+import { errorMessage, UserError } from "../errors.ts";
 import type { Subject } from "../notify/attention.ts";
 import { buildDecisions, type DecisionSources, FIX_CHECKS_TEXT, type Recommendation } from "./build.ts";
+import { HeldAnswers } from "./held.ts";
 
 /** The paths a decision is answered through: the same ones its card uses. */
 export interface DecisionActions {
@@ -87,13 +88,19 @@ export interface InboxDeps {
   clientDraft?: DecisionSources["clientDraft"];
   actions: DecisionActions;
   /** Decisions the trust ladder and the money ceiling build themselves. */
-  extras?: () => readonly OwnerDecision[];
+  extras?: () => readonly OwnerDecision[] | Promise<readonly OwnerDecision[]>;
   /** The owner answered a decision: the scorecard learns whether the captain's opinion held. */
   answered?: (decision: OwnerDecision, option: string) => void;
   /** Workspace names by id, for the sentences that name one. */
   orgNames?: () => Promise<Readonly<Record<string, string>>>;
   /** Whether a captain's proposal no longer matches the setting it was measured against. */
   proposalStale?: (item: Extract<RoomItem, { type: "approval" }>) => Promise<boolean>;
+  /** What is known of an incident: its finding, the captain's found text, the fix task. */
+  incidentDetail?: (id: number) => NonNullable<DecisionDetail["incident"]> | undefined;
+  /** Says in a task's room that something the owner did could not be carried out. */
+  warn?: (task: string, text: string) => void;
+  /** Rebuilds or closes the pending proposals whose setting changed since. */
+  supersedeProposals?: () => Promise<void>;
   /** The agent's last message in the task. */
   lastAgentMessage?: (task: string) => { agent: string; text: string; at: string } | undefined;
   /**
@@ -144,6 +151,9 @@ export class InboxService {
   private lookRunning = 0;
   /** What waited at the last build, so a change in who is working recounts without building everything again. */
   private lastDecisions: readonly OwnerDecision[] | undefined;
+
+  /** Answers waiting out their Undo time, here and for the room's question cards. */
+  readonly held = new HeldAnswers();
 
   constructor(private readonly deps: InboxDeps) {}
 
@@ -260,6 +270,7 @@ export class InboxService {
       deps.signedOut(),
       deps.orgNames?.() ?? NO_NAMES,
     ]);
+    await deps.supersedeProposals?.();
     const items = deps.items();
     // One batched read names every task a row mentions; a task it did not cover falls back to the single read.
     const known = deps.subjects?.([...new Set(items.map((i) => i.task))]);
@@ -276,7 +287,7 @@ export class InboxService {
       batches: (await deps.outbound?.batchesDue()) ?? [],
       incidents: deps.incidents?.() ?? [],
       orgName: (org) => names[org],
-      extras: deps.extras?.() ?? [],
+      extras: (await deps.extras?.()) ?? [],
     });
     await this.markStale(all, items);
     const now = (deps.now?.() ?? new Date()).getTime();
@@ -311,9 +322,26 @@ export class InboxService {
     return this.list();
   }
 
-  /** `answer`, with the counts of what waits after it. */
+  /**
+   * `answer`, with the counts of what waits after it. With `holdMs`, a one-click answer to a question waits
+   * out its Undo time here, on the server: closing the tab does not lose it, and `answers.cancelHeld` drops it.
+   */
   async answerView(input: DecisionAnswerInput): Promise<{ decisions: OwnerDecision[]; counts: BoardCounts }> {
-    await this.answer(input);
+    const { holdMs, ...answer } = input;
+    const decision = holdMs === undefined ? undefined : (await this.list()).find((d) => d.id === input.id);
+    if (holdMs !== undefined && decision?.kind === "question") {
+      this.held.hold(
+        input.id,
+        holdMs,
+        () => this.answer(answer),
+        (error) => {
+          if (decision.task !== undefined)
+            this.deps.warn?.(decision.task, `Could not send your answer: ${errorMessage(error)}`);
+        },
+      );
+      return this.view();
+    }
+    await this.answer(answer);
     return this.view();
   }
 
@@ -486,6 +514,11 @@ export class InboxService {
     const { deps } = this;
     const out: DecisionDetail = { id };
     const parsed = parseDecisionId(id);
+    if (parsed?.kind === "incident") {
+      const incident = deps.incidentDetail?.(parsed.id);
+      if (incident !== undefined) out.incident = incident;
+      return out;
+    }
     if (parsed?.kind === "draft") {
       const draft = deps.outbound?.get(parsed.id);
       if (draft !== undefined) {
