@@ -638,6 +638,9 @@ export type WikiRoleRow = z.infer<typeof WikiRoleRowSchema>;
 /** Pages with no project belong to the workspace: how its repos connect. */
 const WORKSPACE_PAGE_KINDS: readonly WikiPageKind[] = ["overview", "flow", "gaps"];
 
+/** The heading of the owner's notes a page shows under its text. */
+export const WIKI_OWNER_NOTES_HEADING = "Owner notes";
+
 /** The headings of the Gaps page's body that the page also shows as lists of its own data. */
 export const WIKI_GAPS_HEADINGS = {
   couldNotConfirm: "Could not confirm",
@@ -732,6 +735,10 @@ const statusBase = {
   changed: z.array(RepoPathSchema).max(5000).default([]),
   /** The pages were written by older rules and the next update rewrites them. */
   oldRules: z.boolean().default(false),
+  /** Pages the last update could not write or left for the next one. The next update tries them again. */
+  failed: z.array(WikiPageIdSchema).default([]),
+  /** The last update could not choose the main flows. The next update asks again. */
+  flowsNotChosen: z.boolean().default(false),
   lastError: z.string().max(500).optional(),
 };
 
@@ -762,6 +769,8 @@ export const WikiEstimateSchema = z.object({
   overCap: z.boolean(),
   /** Why there is nothing to run: no writer model, no projects, nothing changed. */
   note: z.string().optional(),
+  /** The last update did not finish, so an update has something to try again even when no page changed. */
+  retry: z.boolean().optional(),
 });
 export type WikiEstimate = z.infer<typeof WikiEstimateSchema>;
 
@@ -813,6 +822,8 @@ export const WikiPageViewSchema = z.object({
   updatedAt: z.string(),
   /** Older versions kept in history. */
   versions: z.number().int().nonnegative(),
+  /** The owner's notes on this page of a project, oldest first. They are also listed at the end of `page.body`. */
+  notes: z.array(z.string()).default([]),
 });
 export type WikiPageView = z.infer<typeof WikiPageViewSchema>;
 

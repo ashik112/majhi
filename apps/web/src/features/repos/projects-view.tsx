@@ -171,18 +171,22 @@ function Loaded({ home }: { home: string }) {
         subtitle={
           data ? (
             <>
-              {plural(projectList.length, "project")}, {plural(notRegistered, "repo")} not registered. Scanned{" "}
-              <time dateTime={data.scannedAt} title={new Date(data.scannedAt).toLocaleString()}>
-                {formatAgo(data.scannedAt, now)}
-              </time>
-              {` in ${formatDuration(data.durationMs)}.`}
+              {plural(projectList.length, "project")}, {notRegistered} not registered.
+              <span className="hidden min-[1320px]:inline">
+                {" "}
+                Scanned{" "}
+                <time dateTime={data.scannedAt} title={new Date(data.scannedAt).toLocaleString()}>
+                  {formatAgo(data.scannedAt, now)}
+                </time>
+                {` in ${formatDuration(data.durationMs)}.`}
+              </span>
             </>
           ) : (
             SUBTITLE
           )
         }
       >
-        <div className="relative w-64">
+        <div className="relative w-40 min-[1320px]:w-64">
           <Search
             aria-hidden="true"
             className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-fg-faint"
@@ -218,9 +222,16 @@ function Loaded({ home }: { home: string }) {
             </Button>
           )}
         </div>
-        <Button size="lg" onClick={runRescan} disabled={scanning} aria-keyshortcuts="r">
+        <Button
+          size="lg"
+          onClick={runRescan}
+          disabled={scanning}
+          aria-keyshortcuts="r"
+          aria-label="Rescan"
+          title="Rescan"
+        >
           <RefreshCw aria-hidden="true" className={cn(scanning && "animate-spin")} />
-          {scanning ? "Scanning" : "Rescan"}
+          <span className="hidden min-[1320px]:inline">{scanning ? "Scanning" : "Rescan"}</span>
         </Button>
       </PageHeader>
 

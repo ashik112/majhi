@@ -2,9 +2,13 @@ import type { AgentEntry } from "@majhi/shared";
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
+import { describeError } from "@/lib/errors";
+import { useFixCheck } from "@/lib/ops-queries";
 
 export interface AgentChoice {
   id: string;
@@ -48,6 +52,30 @@ export function Block({
 }
 
 /** The server's refusal or a failed read, in red under the control that caused it. */
+/** The step majhi does itself when the agents' image lacks a tool: the same Rebuild majhi as the Needs you card. */
+export function RebuildMajhi() {
+  const fix = useFixCheck();
+  const toast = useToast();
+  return (
+    <Button
+      size="sm"
+      disabled={fix.isPending}
+      onClick={() =>
+        fix.mutate("runner", {
+          onSuccess: (out) =>
+            toast(out.ok ? "Rebuilding majhi" : "Could not rebuild", {
+              detail: out.detail,
+              tone: out.ok ? "success" : "error",
+            }),
+          onError: (error) => toast("Could not rebuild", { detail: describeError(error), tone: "error" }),
+        })
+      }
+    >
+      Rebuild majhi
+    </Button>
+  );
+}
+
 export function ErrorLine({ children }: { children: ReactNode }) {
   return (
     <p

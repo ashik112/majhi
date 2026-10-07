@@ -124,7 +124,7 @@ export class SkillsCli {
     const result = await this.run({ command: bin.command, args }, env, stage.dir);
     if (result.missing) {
       throw new UserError(
-        `The skills CLI is not installed where agents run (skills@${SKILLS_CLI_VERSION} is in the runner image). Rebuild the runner image.`,
+        `Skills cannot be added yet: the tool that fetches them (skills@${SKILLS_CLI_VERSION}) is missing from the image agents run in. Rebuild majhi and it is added.`,
         501,
       );
     }

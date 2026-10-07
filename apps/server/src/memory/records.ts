@@ -58,6 +58,12 @@ export class ProjectMemory {
   private readonly store: RecordStore;
   private readonly now: () => Date;
   private landed: Landed | undefined;
+  private whatItIs: ((project: string) => string | undefined) | undefined;
+
+  /** Where a project's "What it is" comes from: the project card, which is its one writer. Set after the cards are made. */
+  useWhatItIs(text: (project: string) => string | undefined): void {
+    this.whatItIs = text;
+  }
 
   constructor(private readonly deps: ProjectMemoryDeps) {
     this.store = deps.store;
@@ -213,7 +219,9 @@ export class ProjectMemory {
     /** The workspace has the wiki on: Architecture is a pointer to it, whatever the sections say. */
     wiki = false,
   ): ProjectBrief {
-    const body = applyPatch(undefined, wiki ? withWikiArchitecture(sections) : sections);
+    const card = this.whatItIs?.(project);
+    const written = card === undefined || card === "" ? sections : { ...sections, "What it is": card };
+    const body = applyPatch(undefined, wiki ? withWikiArchitecture(written) : written);
     if (body === undefined) throw new UserError("The Housekeeper wrote an empty brief.", 409);
     const brief = this.store.addBrief({
       project,

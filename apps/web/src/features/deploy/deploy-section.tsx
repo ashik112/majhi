@@ -1,6 +1,6 @@
 import type { ProjectView } from "@majhi/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { HostGlyph } from "@/components/host-glyph";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,9 @@ import { DetailSection } from "@/components/ui/list-detail";
 import { RowsSkeleton } from "@/components/ui/skeleton";
 import { Dot } from "@/components/ui/status-dot";
 import { useToast } from "@/components/ui/toast";
+import { useBoss } from "@/features/boss/boss-context";
+import { wsTab } from "@/features/captain/panel-model";
+import { useProjectCards } from "@/lib/card-queries";
 import { cn } from "@/lib/cn";
 import { useDeployView } from "@/lib/deploy-queries";
 import { useWiki, useWikiUpdate } from "@/lib/wiki-queries";
@@ -58,9 +61,16 @@ function DeployPageButton({ project }: { project: ProjectView }) {
   );
 }
 
-/** Where the project is deployed, read only: one row per environment and what reached it last. */
+/** What the captain is asked to do when a project has no environments: read how it deploys, then propose them. */
+export function setupDeploysAsk(project: string): string {
+  return `Set up deploys for ${project}. Read its Deploys wiki page and its CI files, then add its environments with the branch each deploys from and its check address, in the order they go live. Add them as production: I will change a tier myself if one is staging. Tell me what you found in a line or two.`;
+}
+
+/** Where the project is deployed: one row per environment with its branch and check address, and what reached it last. */
 export function DeploySection({ project }: { project: ProjectView }) {
   const view = useDeployView(project.id);
+  const boss = useBoss();
+  const found = useProjectCards().data?.get(project.id)?.deploy ?? [];
   const [open, setOpen] = useState<string>();
 
   if (view.isPending) {
@@ -83,7 +93,17 @@ export function DeploySection({ project }: { project: ProjectView }) {
   if (environments.length === 0) {
     return (
       <DetailSection title="Deploys" className="pb-3">
-        <p className="text-sm text-fg-faint">None found.</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="m-0 text-sm text-fg-faint text-pretty">
+            {found.length > 0
+              ? `No environments yet. The repo has ${found.join(", ")}.`
+              : "No environments yet."}
+          </p>
+          <Button size="sm" onClick={() => boss.show(wsTab(project.org), setupDeploysAsk(project.id))}>
+            <MessageSquare aria-hidden="true" />
+            Set up deploys
+          </Button>
+        </div>
       </DetailSection>
     );
   }
@@ -140,6 +160,18 @@ export function DeploySection({ project }: { project: ProjectView }) {
                       <Dot tone={look.tone} size={6} />
                       {look.text}
                     </>
+                  )}
+                </span>
+              </div>
+              <div className="grid grid-cols-[136px_92px_minmax(0,1fr)_auto] gap-3 pb-1 text-xs text-fg-faint">
+                <span className="col-start-3 col-end-5 flex min-w-0 items-center gap-3">
+                  <span className="shrink-0 font-mono">
+                    {environment.branch ?? project.base ?? "base branch"}
+                  </span>
+                  {environment.check !== undefined && (
+                    <span className="min-w-0 truncate font-mono" title={environment.check}>
+                      {environment.check}
+                    </span>
                   )}
                 </span>
               </div>

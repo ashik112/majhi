@@ -137,7 +137,7 @@ export function ProjectDetail({
               </span>
               <span
                 className={cn(
-                  "flex shrink-0 items-center gap-1.5 pl-1",
+                  "flex shrink-0 items-center gap-1.5 pl-1 whitespace-nowrap",
                   project.exists ? "text-green" : "text-red",
                 )}
               >
@@ -168,9 +168,11 @@ export function ProjectDetail({
           </span>
         </p>
       )}
-      <div className="mt-4">
-        <ProjectCardSection project={project.id} />
-      </div>
+      {project.exists && (
+        <div className="mt-4">
+          <ProjectCardSection project={project.id} />
+        </div>
+      )}
       <DeploysAnchor project={project} />
       <ProtectionSection project={project} />
       <NamesSection project={project} repo={repo} projects={projects} orgs={orgs} />
