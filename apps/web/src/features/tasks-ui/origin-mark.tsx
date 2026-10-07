@@ -8,6 +8,7 @@ import {
   Focus,
   type LucideIcon,
   MessageCircle,
+  MessagesSquare,
   User,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -15,6 +16,7 @@ import { cn } from "@/lib/cn";
 const ORIGIN_ICON: Record<OriginKind, LucideIcon> = {
   owner: User,
   captain: Anchor,
+  chat: MessagesSquare,
   finding: Focus,
   watch: Eye,
   schedule: Clock,
@@ -27,6 +29,7 @@ const ORIGIN_ICON: Record<OriginKind, LucideIcon> = {
 export const ORIGIN_LABEL: Record<OriginKind, string> = {
   owner: "You",
   captain: "Captain",
+  chat: "Chat",
   finding: "Finding",
   watch: "Watch",
   schedule: "Schedule",
@@ -38,6 +41,7 @@ export const ORIGIN_LABEL: Record<OriginKind, string> = {
 export const ORIGIN_KINDS: readonly OriginKind[] = [
   "owner",
   "captain",
+  "chat",
   "finding",
   "watch",
   "schedule",
@@ -58,6 +62,8 @@ export function originName(origin: OriginView): string {
       return ORIGIN_LABEL.owner;
     case "captain":
       return ORIGIN_LABEL.captain;
+    case "chat":
+      return origin.name ?? ORIGIN_LABEL.chat;
     case "finding":
       return origin.name ?? ORIGIN_LABEL.finding;
     case "watch":
@@ -80,6 +86,8 @@ export function originTitle(origin: OriginView): string {
       return "You made it";
     case "captain":
       return `Made by the captain: ${origin.reason}`;
+    case "chat":
+      return `From the chat ${originName(origin)}`;
     case "finding":
       return `From a finding: ${originName(origin)}`;
     case "watch":

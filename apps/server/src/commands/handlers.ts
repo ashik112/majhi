@@ -13,7 +13,7 @@ import type {
   RoomItem,
   TaskId,
 } from "@majhi/shared";
-import { PRIVATE, RESTART_COMMAND, sameImage } from "@majhi/shared";
+import { CHAT_BRIEF, PRIVATE, RESTART_COMMAND, sameImage, type Task } from "@majhi/shared";
 import type { z } from "zod";
 import { openBossChat, openChat } from "../admin/boss.ts";
 import { cardStats } from "../admin/card-stats.ts";
@@ -74,6 +74,8 @@ import type { SshHostProbe } from "../ssh/hosts.ts";
 import type { SystemService } from "../system/service.ts";
 import { actorName } from "../tasks/cards.ts";
 import { changeTaskBranch } from "../tasks/change-branch.ts";
+import { reachFromChat } from "../tasks/chat-link.ts";
+import { lookAtTask } from "../tasks/look.ts";
 import type { Provenance } from "../tasks/provenance.ts";
 import { readReport } from "../tasks/report.ts";
 import { typist } from "../tasks/typing.ts";
@@ -126,6 +128,27 @@ export interface HandlerDeps {
  * Who made a task through `tasks.create`. A child's origin is its parent link. Otherwise the owner, or an
  * agent, which is recorded as the captain with the reason it gave (the origin kinds name no other agent).
  */
+/** The ordinary chat with an agent a call comes from, or undefined: only an agent's call from one counts. */
+function chatOf(store: Services["store"], ctx: CommandContext): Task | undefined {
+  if (ctx.meta.actor.kind !== "agent" || ctx.meta.task === undefined) return undefined;
+  const from = store.tasks.get(ctx.meta.task);
+  return from !== undefined && from.kind === "chat" && from.brief === CHAT_BRIEF ? from : undefined;
+}
+
+/**
+ * An agent's call on a task other than the one it works in: allowed for a task its chat made or the
+ * owner named there (`reachFromChat`), and for the lead of its own task. The owner may always.
+ */
+function mayReach(store: Services["store"], ctx: CommandContext, id: string): void {
+  const { actor, task } = ctx.meta;
+  if (actor.kind === "owner") return;
+  const reach =
+    task === undefined
+      ? ({ ok: false, why: "This call has no task of its own." } as const)
+      : reachFromChat(store, { task, agent: actor.id }, id);
+  if (!reach.ok) throw new UserError(reach.why, 409);
+}
+
 function createdBy(ctx: CommandContext, child: boolean): Provenance {
   if (child) return { kind: "child" };
   const actor = ctx.meta.actor;
@@ -806,13 +829,22 @@ export function createHandlers({
         // A secret in the task text must not reach TASK.md or the agent.
         const captured = await services.secretService.capture(input.text);
         const byOwner = ctx.meta.actor.kind === "owner";
-        const { type, ...rest } = input;
+        const { type, separate, ...rest } = input;
+        // An agent in an ordinary chat: the chat becomes the task, unless it asked for a separate one.
+        const chat = chatOf(services.store, ctx);
+        const joined =
+          input.parent !== undefined || input.followUpOf !== undefined || input.dependsOn.length > 0;
+        const promote = chat !== undefined && separate !== true && !joined;
         const task = await services.tasks.create({
           ...rest,
           text: captured.text,
           from: ctx.meta.task,
           byOwner,
-          provenance: createdBy(ctx, input.parent !== undefined),
+          provenance:
+            chat === undefined || joined
+              ? createdBy(ctx, input.parent !== undefined)
+              : { kind: "in-chat", room: chat.id },
+          ...(promote ? { promote: chat.id } : {}),
           ...(type === undefined ? {} : { typing: { type, by: byOwner ? "owner" : "captain" } }),
         });
         noteSecrets(services, task.id, captured.saved);
@@ -933,6 +965,25 @@ export function createHandlers({
         agent: ctx.meta.actor.kind === "agent",
       }),
     }),
+    "tasks.addRepo": (input, ctx) => {
+      mayReach(services.store, ctx, input.id);
+      return services.tasks.addRepo({ ...input, byOwner: ctx.meta.actor.kind === "owner" });
+    },
+    "tasks.removeRepo": (input, ctx) => {
+      mayReach(services.store, ctx, input.id);
+      if (ctx.meta.actor.kind === "agent" && input.discard === true) {
+        throw new UserError("Only the owner throws away uncommitted work. Ask the owner.", 409);
+      }
+      return services.tasks.removeRepo({
+        id: input.id,
+        project: input.project,
+        discard: input.discard === true,
+      });
+    },
+    "tasks.look": (input, ctx) => {
+      mayReach(services.store, ctx, input.id);
+      return lookAtTask(services.tasks.get(input.id), input);
+    },
     "tasks.tell": (input, ctx) =>
       services.captainTell.tell(input, {
         kind: ctx.meta.actor.kind === "agent" ? "agent" : "owner",

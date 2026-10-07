@@ -43,9 +43,16 @@ export class RunLive {
 
   /** The owner's messages waiting for the agent's next turn. majhi's own entries do not count. */
   refreshQueued(run: AgentRun): void {
-    const queued = run.queue.filter(
+    const waiting = run.queue.filter(
       (e) => e.kind === "owner" || e.kind === "brief" || e.kind === "handoff",
     ).length;
+    // A message the loop took off the queue but has not sent yet still waits.
+    const unsent = [run.sending, ...run.merged].filter((e) => {
+      if (e?.kind !== "owner") return false;
+      const item = this.room.get(run.task, e.itemId);
+      return item?.type === "owner" && item.queued && item.removed !== true;
+    }).length;
+    const queued = waiting + unsent;
     if (run.live.queued !== queued) this.set(run, { queued });
   }
 

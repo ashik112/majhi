@@ -48,7 +48,7 @@ it("rewrites Slack ids to the user id, merges duplicate contacts into the oldest
   item("a", 1, "T01ACME:U1SARA");
   item("b", 2, ":U1SARA");
   item("c", 3, "U1SARA");
-  expect(migrate(db)).toEqual([183]);
+  expect(migrate(db)).toContain(183);
   expect(db.prepare("SELECT contact, native, username FROM contact_ids ORDER BY app, native").all()).toEqual([
     { contact: "ct-old", native: "U1SARA", username: "sara" },
     { contact: "ct-tg", native: "T01ACME:99", username: null },

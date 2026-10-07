@@ -1,4 +1,4 @@
-import type { PausedBy, TaskStatus } from "@majhi/shared";
+import type { PausedBy, Task, TaskStatus } from "@majhi/shared";
 import { statusInfo } from "@/features/tasks/model";
 import { cn } from "@/lib/cn";
 import { LAMP_TEXT, Lamp } from "./lamp";
@@ -30,5 +30,26 @@ export function StatusBadge({
       <Lamp state={info.lamp} size={7} />
       {info.label}
     </span>
+  );
+}
+
+/** A task's status badge, read from the task itself. */
+export function TaskStatusBadge({
+  task,
+  yourTurn = false,
+  className,
+}: {
+  task: Pick<Task, "status" | "pausedReason" | "pausedBy">;
+  yourTurn?: boolean;
+  className?: string;
+}) {
+  return (
+    <StatusBadge
+      status={task.status}
+      pausedReason={task.pausedReason}
+      pausedBy={task.pausedBy}
+      yourTurn={yourTurn}
+      {...(className === undefined ? {} : { className })}
+    />
   );
 }
