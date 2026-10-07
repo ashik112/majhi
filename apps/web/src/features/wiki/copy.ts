@@ -31,6 +31,7 @@ export const COPY = {
     flow: "Flow",
     crossRepoFlow: "Cross-repo flow",
     infra: "Infra",
+    deploys: "Deploys",
     gaps: "Gaps",
   },
   /** The groups of the page list. */
@@ -40,6 +41,7 @@ export const COPY = {
     flow: "Flows",
     crossRepoFlow: "Cross-repo flows",
     infra: "Infra and deploy",
+    deploys: "Deploys",
     gaps: "Gaps",
   },
   /** The title of the single Gaps page, and of an infra page in the list. */
@@ -49,6 +51,7 @@ export const COPY = {
     workspaceOverview: (repos: number, links: number) =>
       `${repos} ${repos === 1 ? "repo" : "repos"}, ${links} ${links === 1 ? "link" : "links"}`,
     infra: "Hosts and deploy",
+    deploys: "Where, how and in what order",
     gaps: "To check and answer",
     outOfDate: "out of date",
   },

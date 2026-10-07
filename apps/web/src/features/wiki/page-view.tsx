@@ -6,6 +6,7 @@ import { DetailPane } from "@/components/ui/list-detail";
 import { AskBar } from "./ask-bar";
 import { ComponentBody } from "./component-body";
 import { COPY } from "./copy";
+import { DeploysBody } from "./deploys-body";
 import { FlowBody } from "./flow-body";
 import { GapsBody } from "./gaps-body";
 import { InfraBody } from "./infra-body";
@@ -168,6 +169,9 @@ function Head({ page, all, scope, system }: PageProps) {
     }
     if (n.total > 0) stats.push(<BasisMark key="basis" proven={n.proven * 2 >= n.total} />);
   }
+  if (page.kind === "deploys" && n.total > 0) {
+    stats.push(<BasisMark key="basis" proven={n.proven * 2 >= n.total} />);
+  }
   if (page.kind === "infra") {
     const units = page.claims.filter((c) => c.facts.length > 0).length;
     if (units > 0) {
@@ -247,6 +251,8 @@ function Body(props: PageProps & { stale: boolean }) {
       return <ComponentBody {...props} />;
     case "infra":
       return <InfraBody {...props} />;
+    case "deploys":
+      return <DeploysBody {...props} />;
   }
 }
 
