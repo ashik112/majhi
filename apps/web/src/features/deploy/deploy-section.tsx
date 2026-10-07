@@ -1,144 +1,93 @@
-import type { DeploySuggestion, ProjectView } from "@majhi/shared";
-import { useState } from "react";
+import type { ProjectView } from "@majhi/shared";
+import { Link } from "@tanstack/react-router";
+import { HostGlyph } from "@/components/host-glyph";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DetailSection } from "@/components/ui/list-detail";
 import { RowsSkeleton } from "@/components/ui/skeleton";
-import {
-  useDeploy,
-  useDeployView,
-  useHideDeploySuggestion,
-  useRemoveDeploy,
-  useSetDeploy,
-} from "@/lib/deploy-queries";
-import {
-  defaultEnv,
-  draftFromSuggestion,
-  draftFromTarget,
-  emptyDraft,
-  type TargetDraft,
-} from "./deploy-model";
-import { History } from "./history";
-import { Suggestions } from "./suggestions";
-import { TargetBlock } from "./target-block";
-import { TargetForm } from "./target-form";
+import { Dot } from "@/components/ui/status-dot";
+import { useDeployView } from "@/lib/deploy-queries";
+import { DEPLOY_PAGE_ID, lastReached, reachedLook, runHost, runsLine } from "./deploy-model";
+import { TierChip } from "./tier-chip";
 
-interface FormState {
-  initial: TargetDraft;
-  editing: string | undefined;
-}
-
-/** Where the project is deployed: its targets in the order they go live, what majhi found, and the deploys so far. */
+/** Where the project is deployed, read only: one row per environment and what reached it last. */
 export function DeploySection({ project }: { project: ProjectView }) {
   const view = useDeployView(project.id);
-  const set = useSetDeploy();
-  const hide = useHideDeploySuggestion();
-  const remove = useRemoveDeploy();
-  const deploy = useDeploy();
-  const [form, setForm] = useState<FormState | undefined>();
-  const [removing, setRemoving] = useState<string | undefined>();
-  // The env a Deploy now was pressed for, so a refusal sits under that block.
-  const [deployed, setDeployed] = useState<{ env: string; message: string } | undefined>();
-
-  const rule = view.data?.rule;
-  const note =
-    rule === undefined ? undefined : (
-      <span className="text-xs text-fg-faint">
-        Ship rule <span className="text-fg-soft">{rule}</span>
-      </span>
-    );
 
   if (view.isPending) {
     return (
-      <DetailSection title="Deploy targets">
-        <RowsSkeleton rows={2} height={72} />
+      <DetailSection title="Deploys" className="pb-3">
+        <RowsSkeleton rows={2} height={36} />
       </DetailSection>
     );
   }
   if (view.isError) {
     return (
-      <DetailSection title="Deploy targets">
+      <DetailSection title="Deploys" className="pb-3">
         <p role="alert" className="text-sm text-red text-pretty">
           {view.error.message}
         </p>
       </DetailSection>
     );
   }
-  const { targets, suggestions, history } = view.data;
-
-  const addSuggestion = (s: DeploySuggestion) => {
-    if (s.target === undefined) return;
-    set.mutate({ project: project.id, target: s.target });
-  };
-
-  return (
-    <>
-      <DetailSection title="Deploy targets" note={note} className="pb-3">
-        <div className="flex min-w-0 flex-col">
-          {targets.map((t) => (
-            <TargetBlock
-              key={t.env}
-              project={project}
-              target={t}
-              deploying={deploy.isPending && deploy.variables?.env === t.env}
-              problem={deployed?.env === t.env ? deployed.message : undefined}
-              onEdit={() => setForm({ initial: draftFromTarget(t), editing: t.env })}
-              onRemove={() => {
-                remove.reset();
-                setRemoving(t.env);
-              }}
-              onDeploy={() => {
-                setDeployed(undefined);
-                deploy.mutate(
-                  { project: project.id, env: t.env },
-                  { onError: (e) => setDeployed({ env: t.env, message: e.message }) },
-                );
-              }}
-            />
-          ))}
-        </div>
-        <div>
-          <Button
-            size="sm"
-            onClick={() => setForm({ initial: emptyDraft(defaultEnv(targets)), editing: undefined })}
-          >
-            Add target
-          </Button>
-        </div>
+  const { environments, history } = view.data;
+  if (environments.length === 0) {
+    return (
+      <DetailSection title="Deploys" className="pb-3">
+        <p className="text-sm text-fg-faint">None found.</p>
       </DetailSection>
-      <Suggestions
-        items={suggestions}
-        busy={set.isPending || hide.isPending}
-        error={set.error?.message ?? hide.error?.message}
-        onAdd={addSuggestion}
-        onSetUp={(s) => setForm({ initial: draftFromSuggestion(s), editing: undefined })}
-        onHide={(s) => hide.mutate({ project: project.id, suggestion: s.id })}
-      />
-      <History history={history} />
-      {form !== undefined && (
-        <TargetForm
-          project={project}
-          initial={form.initial}
-          editing={form.editing}
-          onClose={() => {
-            set.reset();
-            setForm(undefined);
-          }}
-        />
-      )}
-      {removing !== undefined && (
-        <ConfirmDialog
-          title={`Remove ${removing}`}
-          body="The target goes from this project. Deploys already made stay in the history."
-          confirmLabel="Remove"
-          busy={remove.isPending}
-          error={remove.error?.message}
-          onCancel={() => setRemoving(undefined)}
-          onConfirm={() =>
-            remove.mutate({ project: project.id, env: removing }, { onSuccess: () => setRemoving(undefined) })
-          }
-        />
-      )}
-    </>
+    );
+  }
+  const now = Date.now();
+  return (
+    <DetailSection
+      title="Deploys"
+      className="pb-3"
+      actions={
+        <Button asChild size="sm">
+          <Link to="/wiki" search={{ org: project.org, project: project.id, id: DEPLOY_PAGE_ID }}>
+            Deploy page
+          </Link>
+        </Button>
+      }
+    >
+      <ul aria-label={`Environments of ${project.id}`} className="flex flex-col">
+        {environments.map((environment) => {
+          const reached = lastReached(history, environment.env);
+          const first = reached?.runs[0];
+          const look = reached === undefined ? undefined : reachedLook(reached, now);
+          return (
+            <li
+              key={environment.env}
+              className="grid min-h-9 grid-cols-[136px_92px_minmax(0,1fr)_auto] items-center gap-3 border-t border-line py-1.5 text-sm first:border-t-0"
+            >
+              <span className="truncate font-mono text-fg" title={environment.env}>
+                {environment.env}
+              </span>
+              <span>
+                <TierChip tier={environment.tier} />
+              </span>
+              <span className="flex min-w-0 items-center gap-1.5 text-fg-soft">
+                {first !== undefined && reached !== undefined && (
+                  <>
+                    <HostGlyph host={runHost(first)} className="size-3.5" />
+                    <span className="min-w-0 truncate font-mono text-xs" title={runsLine(reached.runs)}>
+                      {runsLine(reached.runs)}
+                    </span>
+                  </>
+                )}
+              </span>
+              <span className="flex shrink-0 items-center gap-2 text-xs text-fg-faint">
+                {look !== undefined && (
+                  <>
+                    <Dot tone={look.tone} size={6} />
+                    {look.text}
+                  </>
+                )}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </DetailSection>
   );
 }
