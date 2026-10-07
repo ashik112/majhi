@@ -235,6 +235,7 @@ import { WikiTools } from "./wiki/tools.ts";
 
 /** How often chats are checked for memory. */
 const CHAT_SWEEP_MS = 60_000;
+const INCIDENT_SWEEP_MS = 20_000;
 const RETENTION_SWEEP_MS = 24 * 60 * 60_000;
 const RETENTION_FIRST_MS = 10 * 60_000;
 /** How often paused budget runs are checked against the week. */
@@ -2376,10 +2377,33 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     rest: async (org) => (await wikiUnavailable(org)) ?? (await wikiRest(org)),
     findings,
-    incidents: (org) =>
-      (opsWatch?.openIncidents() ?? [])
-        .filter((i) => i.org === org)
-        .map((i) => ({ id: i.id, title: i.title })),
+    watch: {
+      incident: (id) => opsWatch?.incident(id),
+      incidentOfFinding: (finding) => opsWatch?.incidentOfFinding(finding),
+      open: (org) => (opsWatch?.openIncidents() ?? []).filter((i) => i.org === org),
+    },
+    createIncident: async (n) => {
+      const task = await tasks.create({
+        title: n.title,
+        text: n.text,
+        org: n.org,
+        kind: "ops",
+        byOwner: false,
+        attachments: [],
+        start: false,
+        typing: { type: "incident", by: "captain" },
+        provenance: {
+          kind: "ref",
+          origin: { kind: "client", room: n.room as TaskId, item: n.item },
+          workspace: n.org,
+        },
+      });
+      return { id: task.id };
+    },
+    tz: async (org) => {
+      const a = (await config.settings()).autonomy;
+      return zoneOr(a.orgs[org]?.tz ?? a.tz);
+    },
     decisions,
     lane: async (task) => {
       const org = lanes.orgOf(task);
@@ -2400,6 +2424,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     log: (line) => console.log(line),
   });
   clientChat = chatParts;
+  // Each client room hears of an incident when its status changes and at the workspace's cadence.
+  const incidentSweep = setInterval(
+    () => background.run(() => chatParts.incidents.tick()),
+    INCIDENT_SWEEP_MS,
+  );
+  incidentSweep.unref();
   // The read loops follow the connections: a new bot starts reading, a removed one stops.
   events.subscribe((event) => {
     if (event.type === "changed" && event.topics.includes("connections")) void chatParts.hub.sync();

@@ -5,6 +5,7 @@ import { DeployEnvironmentsSchema } from "./deploy.ts";
 import { DiagramSpecSchema } from "./diagram.ts";
 import { HandoffFailedSchema } from "./handoff.ts";
 import { TaskIdSchema } from "./ids.ts";
+import { IncidentEventSchema, ReportSentSchema, ReportTextSchema } from "./incident.ts";
 import { CiStateSchema, MrStateSchema } from "./mr-state.ts";
 import { ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./rooms.ts";
@@ -302,7 +303,8 @@ export const TaskRepoSchema = z.object({
 });
 export type TaskRepo = z.infer<typeof TaskRepoSchema>;
 
-export const TaskLinkTypeSchema = z.enum(["parent", "depends-on", "follow-up"]);
+/** `client`: the task is an incident a client room is told about; `task` is the room (a chat task). */
+export const TaskLinkTypeSchema = z.enum(["parent", "depends-on", "follow-up", "client"]);
 export const TaskLinkSchema = z.object({
   type: TaskLinkTypeSchema,
   /** The other task. For `parent`, the parent. */
@@ -1032,6 +1034,23 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     state: z.enum(["asking", "same", "not-same"]),
     /** The merge it made, for Undo. */
     merge: z.number().int().positive().optional(),
+  }),
+  /** A fact about a client incident: the cause, a reopen, an update told to a room. Read by the incident card, not drawn in the log. */
+  RoomItemBase.extend({
+    type: z.literal("incident-event"),
+    detail: IncidentEventSchema,
+  }),
+  /**
+   * The report of a resolved incident, in two versions. `client` goes to a client room only after the owner's click,
+   * and neither version can change once it went to any room.
+   */
+  RoomItemBase.extend({
+    type: z.literal("report"),
+    /** When the incident this report is of was resolved: one report for each resolution. */
+    resolvedAt: z.string(),
+    internal: ReportTextSchema,
+    client: ReportTextSchema,
+    sent: z.array(ReportSentSchema),
   }),
   RoomItemBase.extend({
     type: z.literal("system"),

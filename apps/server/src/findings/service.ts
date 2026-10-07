@@ -400,6 +400,23 @@ export class FindingsService {
     return { finding, task: task.id };
   }
 
+  /** Every finding linked to a task. */
+  ofTask(task: string): Finding[] {
+    return this.repo.ofTask(task);
+  }
+
+  /**
+   * A task made for a finding by another path (an incident a client reported) becomes the finding's task, as a
+   * proposal: the owner sees it as they see any task the captain made from a finding. A finding that has a task keeps it.
+   */
+  adopt(id: number, task: string): Finding {
+    const found = this.get(id);
+    if (found.task !== undefined || !canMoveFinding(found.status, "proposed")) return found;
+    const finding = this.repo.patch(id, { at: this.at(), status: "proposed", task });
+    this.deps.changed?.();
+    return finding;
+  }
+
   /** Follows the linked tasks: a proposal the owner started is a task, a finished task fixed the finding. */
   sync(): void {
     let changed = false;

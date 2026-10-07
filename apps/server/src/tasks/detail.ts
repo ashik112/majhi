@@ -1,9 +1,11 @@
 import {
   buildTrail,
+  CHAT_APP_LABEL,
   type ChildFact,
   type DeployAsk,
   type DeployStepView,
   type HandoffState,
+  type OriginView,
   type ShipView,
   type Task,
   type TaskDetail,
@@ -15,7 +17,7 @@ import type { Store } from "../store/index.ts";
 import type { AreasReader } from "./areas.ts";
 
 export interface DetailDeps {
-  store: Pick<Store, "tasks">;
+  store: Pick<Store, "tasks" | "room" | "client">;
   areas: AreasReader;
   /** The hand-off state of a task: its check of the current head and what the check is doing now. */
   handoff(id: string): Promise<HandoffState>;
@@ -93,6 +95,20 @@ function shipView(plan: ShipPlan): ShipView {
 export class TaskDetails {
   constructor(private readonly deps: DetailDeps) {}
 
+  /** A client origin reads "Telegram · Acme ops · Sara": the app, the room and who wrote. */
+  private withSender(origin: OriginView | undefined): OriginView | undefined {
+    if (origin?.kind !== "client") return origin;
+    const { store } = this.deps;
+    const item = store.room.get(origin.room, origin.item);
+    const app = store.client.room(origin.room)?.chat.app;
+    const parts = [
+      app === undefined ? undefined : CHAT_APP_LABEL[app],
+      origin.name,
+      item?.type === "client" ? item.sender.name : undefined,
+    ].filter((p): p is string => p !== undefined && p !== "");
+    return parts.length === 0 ? origin : { ...origin, from: parts.join(" · ") };
+  }
+
   async detail(id: string): Promise<TaskDetail> {
     const { store } = this.deps;
     const task = store.tasks.get(id);
@@ -107,7 +123,7 @@ export class TaskDetails {
       this.deps.handoff(id).catch(() => undefined),
     ]);
     const check = state === undefined ? undefined : checkFacts(state);
-    const origin = store.tasks.originView(id);
+    const origin = this.withSender(store.tasks.originView(id));
     const plan =
       task.status === "review" || task.status === "mr"
         ? await this.deps.ship(id).catch(() => undefined)
