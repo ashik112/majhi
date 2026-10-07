@@ -33,7 +33,7 @@ describe("a client room of another workspace", () => {
     const conn = { ...CONN, org: "globex" };
     await parts.ingest.deliver(
       conn,
-      envelope({ chatId: "-900", message: "1", chat: { title: "Kinbe ops", kind: "group" } }),
+      envelope({ chatId: "-900", message: "1", chat: { title: "Acme ops", kind: "group" } }),
     );
     const found = parts.rooms.find("telegram", conn.account, "-900");
     if (found === undefined) throw new Error("no room");
@@ -64,7 +64,7 @@ describe("a client room of another workspace", () => {
       ["findings.list", {}],
     ] as const) {
       const res = await call(command, input);
-      expect(res.text, command).not.toMatch(/pricing|Kinbe|Quarterly/);
+      expect(res.text, command).not.toMatch(/pricing|Acme|Quarterly/);
       expect(res.text, command).not.toContain(found.id);
     }
     // What clients wrote and who they are are never an agent's tools.

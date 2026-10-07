@@ -14,7 +14,7 @@ const CONN: ChatConnection = {
   token: FakeTelegram.TOKEN,
   filesDir: "/tmp/majhi-chat-test",
 };
-const GROUP = { id: -100, type: "supergroup", title: "Kinbe ops" } as const;
+const GROUP = { id: -100, type: "supergroup", title: "Acme ops" } as const;
 const SARA = { id: 11, first_name: "Sara" };
 
 async function until(ok: () => boolean, what: string): Promise<void> {

@@ -38,7 +38,7 @@ export function envelope(
   return {
     kind: "new",
     external: { app: "telegram", account: CONN.account, chat: chatId ?? "-100", message: message ?? "1" },
-    chat: { title: "Kinbe ops", kind: "group", people: 4 },
+    chat: { title: "Acme ops", kind: "group", people: 4 },
     sender: { id: "u1", name: "Sara", bot: false, verified: true },
     text: "Orders page is not loading",
     files: [],
