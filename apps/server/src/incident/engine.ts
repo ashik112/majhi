@@ -314,6 +314,7 @@ export class IncidentEngine {
     if (project !== undefined && (await this.deps.starts(source.org)) === "captain") {
       started = await this.tryStart(task.id);
     }
+    await this.refresh(source.org).catch(() => undefined);
     this.deps.changed();
     return { task: task.id, joined: false, started, projectUnknown: project === undefined };
   }
@@ -492,6 +493,20 @@ export class IncidentEngine {
   private startsBy = new Map<string, "captain" | "owner">();
   private projectOptions = new Map<string, { id: string; label: string; primary?: true }[]>();
 
+  /** What the cards need to know about a workspace, read once so a card is built without waiting. */
+  private async refresh(org: string): Promise<void> {
+    this.startsBy.set(org, await this.deps.starts(org));
+    const projects = await this.deps.projects(org);
+    this.projectOptions.set(
+      org,
+      projects.slice(0, PROJECT_OPTIONS).map((p, i) => ({
+        id: p.id,
+        label: p.name,
+        ...(i === 0 ? { primary: true as const } : {}),
+      })),
+    );
+  }
+
   /** The owner's click on one of the cards above. */
   async answer(what: string, ref: string, option: string): Promise<void> {
     const at = this.at();
@@ -538,16 +553,7 @@ export class IncidentEngine {
     }
     for (const org of orgs) {
       try {
-        this.startsBy.set(org, await this.deps.starts(org));
-        const projects = await this.deps.projects(org);
-        this.projectOptions.set(
-          org,
-          projects.slice(0, PROJECT_OPTIONS).map((p, i) => ({
-            id: p.id,
-            label: p.name,
-            ...(i === 0 ? { primary: true as const } : {}),
-          })),
-        );
+        await this.refresh(org);
         for (const task of this.openTasks(org)) {
           const read = await this.deps.facts.read(task);
           const result = clientStatus(read.facts);

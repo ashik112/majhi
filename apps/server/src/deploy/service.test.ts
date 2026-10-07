@@ -466,23 +466,23 @@ describe("deploy", () => {
       expect(calls.every((c) => c.token === r.hosts.tokens.gitlab)).toBe(true);
     });
 
-    it("cannot go back to an earlier commit through a GitLab pipeline, and says so", async () => {
+    it("goes back through a GitLab pipeline: the same runs again at the earlier commit", async () => {
       r = await rig([environment("staging")], "gitlab");
       r.hosts.branches.set("gitlab:acme/storefront:main", C1);
-      await r.service.deploy({ project: "storefront", env: "staging", runs: GL_PIPELINE }, "owner");
+      const first = await r.service.deploy({ project: "storefront", env: "staging", runs: GL_PIPELINE }, "owner");
       await r.service.idle();
       r.hosts.branches.set("gitlab:acme/storefront:main", C2);
       r.tip.value = C2;
-      r.hosts.outcome.gitlab = "failed";
-      const out = await r.service.deploy(
-        { project: "storefront", env: "staging", runs: GL_PIPELINE },
-        "owner",
-      );
+      const second = await r.service.deploy({ project: "storefront", env: "staging", runs: GL_PIPELINE }, "owner");
       await r.service.idle();
-      const rec = r.store.deploys.get(out.record.id);
-      expect(rec?.state).toBe("failed");
-      expect(rec?.rollback?.detail).toContain("not from an earlier commit");
-      expect(rec?.rollback?.detail).toContain("by hand");
+      expect(r.store.deploys.get(second.record.id)?.state).toBe("live");
+      const out = await r.service.rollback(second.record.id, "owner");
+      expect(out.record.state).toBe("rolled-back");
+      expect(out.record.rollback).toMatchObject({ ok: true });
+      // A branch at the earlier commit was made and a pipeline ran on it.
+      const made = r.hosts.calls.find((c) => c.path.endsWith("/repository/branches") && c.method === "POST");
+      expect(made?.body).toMatchObject({ ref: C1 });
+      expect(r.store.deploys.get(first.record.id)?.commit).toBe(C1);
     });
 
     it("deploys a commit through Vercel and makes the earlier deployment again to go back", async () => {

@@ -204,6 +204,12 @@ export async function startFakeHosts(
           ? send(res, 404, { message: "404 Branch Not Found" })
           : send(res, 200, { commit: { id: sha } });
       }
+      if (method === "POST" && rest === "repository/branches") {
+        const made = body as { branch?: string; ref?: string } | undefined;
+        if (made?.branch === undefined || made.ref === undefined) return send(res, 400, { message: "bad" });
+        state.branches.set(`gitlab:${slug}:${made.branch}`, made.ref);
+        return send(res, 201, { name: made.branch });
+      }
       if (method === "POST" && rest === "pipeline") {
         const ref = (body as { ref?: string } | undefined)?.ref ?? "";
         const sha = state.branches.get(`gitlab:${slug}:${ref}`);

@@ -11,7 +11,10 @@ import { ClientTriage, type TriageDeps } from "./triage.ts";
  * store, outbound gate and rails; only the watch is a stub.
  */
 
-async function setup(status: Task["status"] = "inbox") {
+async function setup(
+  status: Task["status"] = "inbox",
+  write?: (org: string, key: string, prompt: string) => Promise<string | undefined>,
+) {
   const w = world({ tell: "decide", holds: { firstContact: false } });
   const watch: { incident?: OpsIncident } = {};
   const reopened: string[] = [];
@@ -41,6 +44,7 @@ async function setup(status: Task["status"] = "inbox") {
     },
     tz: async () => "UTC",
     facts,
+    ...(write === undefined ? {} : { write }),
     engine: { open: async () => ({ task: "ACM-1", joined: false, started: false, projectUnknown: false }), evidence: () => [] },
     reopen: async (id) => {
       reopened.push(id);
@@ -111,6 +115,40 @@ describe("updates to client rooms", () => {
     w.rooms.holder(rooms[0] as string, "you");
     await incidents.tick();
     expect(w.sent.map((s) => s.chat)).toEqual(["-200"]);
+  });
+});
+
+describe("the report never claims what was not recorded", () => {
+  it("says no fix was shipped and the cause is being confirmed, whatever the model wrote", async () => {
+    const section = { summary: "We found and fixed it", impact: "Brief", cause: "A bad index", fix: "We deployed a fix", followUps: "None" };
+    const { incidents } = await setup("done", async () => JSON.stringify({ internal: section, client: section }));
+    await incidents.tick();
+    const view = await incidents.view("ACM-9");
+    expect(view?.report?.client.fix).not.toContain("deployed a fix");
+    expect(view?.report?.client.fix).toContain("without a change from us");
+    expect(view?.report?.client.cause).toBe("The cause is being confirmed.");
+    expect(view?.report?.internal.fix).toBe("No fix was shipped. The problem recovered on its own.");
+    expect(view?.report?.internal.cause).toBe("Not recorded.");
+    // The owner is warned before sending it.
+    expect(view?.report?.warn).toContain("No cause is recorded");
+  });
+
+  it("uses the model's words for a cause and fix that are recorded", async () => {
+    const section = { summary: "Fixed", impact: "Brief", cause: "Slow query", fix: "Added an index", followUps: "None" };
+    const { incidents, w } = await setup("done", async () => JSON.stringify({ internal: section, client: section }));
+    incidents.cause("ACM-9", "report query", "a slow query");
+    // A fix is recorded once something shipped: a deploy that is live.
+    w.store.raw
+      .prepare(
+        `INSERT INTO deploys (org, project, env, commit_sha, state, task, by, runs, seq, attempt, created_at, updated_at, finished_at)
+         VALUES ('acme', 'storefront', 'production', 'abcdef1234567', 'live', 'ACM-9', 'owner', '[]', 0, 1, ?, ?, ?)`,
+      )
+      .run(...Array(3).fill(new Date().toISOString()));
+    await incidents.tick();
+    const view = await incidents.view("ACM-9");
+    expect(view?.report?.client.fix).toBe("Added an index");
+    expect(view?.report?.client.cause).toBe("Slow query");
+    expect(view?.report?.warn).toBeUndefined();
   });
 });
 

@@ -22,6 +22,7 @@ function gitlab(over: { pipelines?: boolean; status?: string } = {}) {
     const path = u.pathname.replace("/api/v4/projects/acme%2Fstorefront", "");
     if (method === "GET" && path === "/pipelines")
       return reply(200, over.pipelines === false ? [] : [{ id: 9 }]);
+    if (method === "POST" && path === "/repository/branches") return reply(201, { name: "made" });
     if (method === "POST" && path === "/pipeline")
       return reply(201, { id: 10, web_url: "http://gl.test/p/10" });
     if (method === "GET" && /^\/pipelines\/\d+\/jobs$/.test(path)) return reply(200, [job]);
@@ -92,6 +93,21 @@ describe("the gitlab-job provider", () => {
     const { provider, ctx } = gitlab({ status: "success" });
     const back = await provider.redeploy?.(ctx, step, { commit: "2".repeat(40), run: { id: "55" } });
     expect(back?.id).toBe("56");
+  });
+
+  it("goes back on a pipeline target: the earlier commit gets a branch and the same pipeline runs there with its inputs", async () => {
+    const { provider, ctx, calls } = gitlab();
+    const pipeline: DeployRunStep = { kind: "gitlab-pipeline", remote: "origin", ref: "base", variables: { VERSION: "1.8.2" } };
+    const previous = "2".repeat(40);
+    const back = await provider.redeploy?.(ctx, pipeline, { commit: previous, run: undefined });
+    expect(back?.id).toBe("10");
+    const branch = calls.find((c) => c.path.endsWith("/repository/branches"));
+    expect(branch?.body).toEqual({ branch: `majhi-rollback-${previous.slice(0, 12)}`, ref: previous });
+    const started = calls.find((c) => c.method === "POST" && c.path.endsWith("/pipeline"));
+    expect(started?.body).toEqual({
+      ref: `majhi-rollback-${previous.slice(0, 12)}`,
+      variables: [{ key: "VERSION", value: "1.8.2" }],
+    });
   });
 
   it("never sends its token to a repo on another host than the remote's", async () => {
