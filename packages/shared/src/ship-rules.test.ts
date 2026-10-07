@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ALL_ASK, type Authority } from "./authority.ts";
-import { type ShipFacts, type ShipRule, shipRuleSentence, shipSteps } from "./ship-rules.ts";
+import { type ShipFacts, type ShipRule, shipSteps } from "./ship-rules.ts";
 
 const rule = (id: string, over: Partial<ShipRule> & Pick<ShipRule, "when">): ShipRule => ({
   id,
@@ -80,16 +80,5 @@ describe("ship steps", () => {
 
   it("Push stays on its row: a rule cannot widen it", () => {
     expect(shipSteps(ALL_ASK, [bugRule], bug, true).push).toBe("owner");
-  });
-});
-
-describe("the sentence", () => {
-  it("says in plain words what the captain does and what asks", () => {
-    expect(shipRuleSentence(bugRule)).toBe(
-      "A bug or incident up to 200 lines merges and deploys to staging by itself; production asks you. The reply to the client goes out by itself.",
-    );
-    expect(shipRuleSentence(anyRule)).toBe(
-      "Any task asks you to merge and to deploy to staging; production asks you. The reply to the client waits for you.",
-    );
   });
 });

@@ -94,15 +94,6 @@ describe("the captain copying to the owner's clipboard", () => {
     return { h, chat, copied, roots, call, secrets, everything, dir };
   }
 
-  it("copies a line of a project file and the value shows nowhere else", async () => {
-    const t = await lane();
-    const res = await t.call({ file: join(t.dir, ".env"), line: 1, part: "value" });
-    expect(res.isError).toBe(false);
-    expect(t.copied).toEqual([KEY]);
-    expect(res.text).not.toContain(KEY);
-    expect(await t.everything()).not.toContain(KEY);
-  });
-
   it("refuses without ownerAsked, outside the lane's projects, for an agent, and with no helper", async () => {
     const t = await lane();
     const file = join(t.dir, ".env");

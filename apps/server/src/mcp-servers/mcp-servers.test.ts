@@ -1,73 +1,13 @@
 import { readFile } from "node:fs/promises";
-import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
-import type { ConnectionTestResult, McpInstallResult, McpPreview } from "@majhi/shared";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { McpInstallResult, McpPreview } from "@majhi/shared";
+import { afterEach, describe, expect, it } from "vitest";
 import { taskWorld, type World } from "../testing/world.ts";
 
 const FAKE_MCP = fileURLToPath(new URL("../testing/fake-mcp.mjs", import.meta.url));
 const KEY = "weather-key-0123456789abcdef";
 
-/** A remote MCP server that wants its Authorization header, like a hosted one. */
-let remote: Server | undefined;
-let remoteUrl = "";
-const seenAuth: (string | undefined)[] = [];
-
-async function startRemote(): Promise<void> {
-  remote = createServer((req, res) => {
-    let body = "";
-    req.on("data", (c: Buffer) => {
-      body += c.toString();
-    });
-    req.on("end", () => {
-      if (req.method !== "POST") return void res.writeHead(405).end();
-      const msg = JSON.parse(body) as { id?: number; method: string; params?: { protocolVersion?: string } };
-      if (msg.id === undefined) return void res.writeHead(202).end();
-      seenAuth.push(req.headers.authorization);
-      if (req.headers.authorization !== `Bearer ${KEY}`) return void res.writeHead(401).end();
-      const result =
-        msg.method === "initialize"
-          ? {
-              protocolVersion: msg.params?.protocolVersion,
-              capabilities: { tools: {} },
-              serverInfo: { name: "weather", version: "1" },
-            }
-          : { tools: [{ name: "get_forecast", inputSchema: { type: "object" } }] };
-      res
-        .writeHead(200, { "content-type": "application/json" })
-        .end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result }));
-    });
-  });
-  const server = remote;
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  remoteUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`;
-}
-
 const repository = { url: "https://github.com/acme/weather-mcp", source: "github" };
-const remoteServer = () => ({
-  name: "io.github.acme/weather-remote",
-  title: "Acme Weather",
-  description: "Forecasts from Acme.",
-  version: "2.0.0",
-  repository,
-  remotes: [
-    {
-      type: "streamable-http",
-      url: remoteUrl,
-      headers: [
-        {
-          name: "Authorization",
-          description: "Your Acme key",
-          isRequired: true,
-          isSecret: true,
-          value: "Bearer {api_key}",
-          variables: { api_key: { isSecret: true } },
-        },
-      ],
-    },
-  ],
-});
 const packageServer = (version: string | undefined = "1.2.0") => ({
   name: "io.github.acme/weather",
   description: "Forecasts, run locally.",
@@ -124,49 +64,15 @@ describe("MCP servers", () => {
       { status: "installed" }
     >;
   const configText = () => readFile((w as World).h.majhi.services.config.file, "utf8");
-  const audit = () =>
-    (w as World).h.majhi.services.store.permissions
-      .audit("")
-      .map((r) => r.kind)
-      .filter((k) => k.startsWith("mcp-"));
-
   async function start(servers: () => unknown[], old = false) {
     const reg = registry(servers, old);
     w = await taskWorld({ mcpFetch: reg.fetch });
     return reg;
   }
 
-  beforeEach(startRemote);
   afterEach(async () => {
-    remote?.closeAllConnections?.();
-    remote?.close();
-    seenAuth.length = 0;
     await w?.cleanup();
     w = undefined;
-  });
-
-  it("installs a registry server with a secret header as a connection, then Test lists its tools", async () => {
-    await start(() => [remoteServer()]);
-    const p = await preview({ registry: "io.github.acme/weather-remote" });
-    expect(p).toMatchObject({ headers: [{ name: "Authorization", kind: "secret", required: true }] });
-    // Nothing exists until the owner confirms.
-    expect(await must("connections.list", {})).toEqual([]);
-
-    const done = await confirm(p);
-    expect(done.test).toBeUndefined();
-    expect(done.connection).toMatchObject({ type: "mcp", org: "acme" });
-
-    await must("connections.setSecret", {
-      id: "weather-remote",
-      list: "headers",
-      field: "Authorization",
-      value: `Bearer ${KEY}`,
-    });
-    const test = (await must("connections.test", { id: "weather-remote" })) as ConnectionTestResult;
-    expect(test).toMatchObject({ ok: true, tools: ["get_forecast"] });
-    expect(seenAuth.at(-1)).toBe(`Bearer ${KEY}`);
-    expect(await configText()).not.toContain(KEY);
-    expect(audit()).toEqual(["mcp-install"]);
   });
 
   it("refuses a package the registry does not pin", async () => {

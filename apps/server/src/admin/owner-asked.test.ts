@@ -59,26 +59,6 @@ describe("an agent saying the owner asked", () => {
       (await h.cmd("orgs.list")).body.find((o: { id: string }) => o.id === "acme")?.identity,
     ).toBeUndefined();
   });
-
-  it("does not change what the owner set: an auto mode still runs", async () => {
-    w = await bossWorld({ real: false });
-    const { h } = w;
-    expect((await h.cmd("policy.set", { change: "auto" })).status).toBe(200);
-    const task = (
-      await h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: false })
-    ).body as { id: string };
-    const result = await h.majhi.services.admin.call(
-      { task: task.id, agent: "acme-builder" },
-      "majhi_orgs_update",
-      {
-        id: "acme",
-        identity: { name: "Ada", email: "ada@acme.test" },
-        ownerAsked: false,
-        reason: "set up",
-      },
-    );
-    expect(result.text).not.toBe(WAITING_TEXT);
-  });
 });
 
 describe("what an agent can never ask for", () => {

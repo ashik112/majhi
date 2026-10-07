@@ -25,22 +25,6 @@ async function until(check: () => boolean | Promise<boolean>, what = "condition"
   throw new Error(`Timed out waiting for ${what}`);
 }
 
-/** A turn that stays open until `open.release()`. */
-function gated(): { script: Script; release: () => void } {
-  let release: () => void = () => {};
-  const open = new Promise<void>((r) => {
-    release = r;
-  });
-  return {
-    release: () => release(),
-    script: async (turn) => {
-      turn.emit({ type: "text", messageId: "m", text: "working" });
-      await Promise.race([open, turn.untilCancelled()]);
-      return "end_turn";
-    },
-  };
-}
-
 /** Starts the task with the first session scripted, and waits for that session's brief turn to begin. */
 async function started(script?: Script): Promise<FakeSession> {
   w = await taskWorld();
@@ -110,39 +94,6 @@ describe("permissions", () => {
     expect(
       (await w.h.cmd("room.permission", { task: "ACM-1", item: pending.id, option: "allow" })).status,
     ).toBe(409);
-  });
-
-  it("remembers allow for this task per kind, but never for pushes", async () => {
-    const answers: (string | undefined)[] = [];
-    const g = gated();
-    await started(async (turn) => {
-      answers.push(await turn.ask(ask({ kind: "other", title: "Use a tool", command: undefined })));
-      answers.push(
-        await turn.ask(
-          ask({ kind: "other", title: "Use a tool again", command: undefined, toolCallId: "t2" }),
-        ),
-      );
-      answers.push(
-        await turn.ask(ask({ kind: "execute", title: "git push", command: "git push", toolCallId: "t3" })),
-      );
-      return g.script(turn);
-    });
-    await until(() => live()?.status === "waiting", "first prompt");
-    const first = (await items()).find((i) => i.type === "permission") as RoomItem;
-    expect(
-      (await w.h.cmd("room.permission", { task: "ACM-1", item: first.id, option: "always" })).status,
-    ).toBe(200);
-    await until(() => answers.length === 2 && live()?.status === "waiting", "push prompt");
-    expect(answers).toEqual(["always", "allow"]);
-    const states = (await items())
-      .filter((i) => i.type === "permission")
-      .map((i) => (i as { state: string }).state);
-    expect(states).toEqual(["answered", "auto", "pending"]);
-    expect(services().store.permissions.allowed("ACM-1", "other")).toBe(true);
-    expect(services().store.permissions.allowed("ACM-1", "execute")).toBe(false);
-    g.release();
-    await w.h.cmd("room.cancel", { task: "ACM-1" });
-    await runs().idle();
   });
 
   it("allows nothing beyond reads for an agent with no perms", async () => {

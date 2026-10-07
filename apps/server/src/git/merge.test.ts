@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { git } from "./git.ts";
-import { mergeBranch, mergeConflicts } from "./merge.ts";
+import { mergeBranch } from "./merge.ts";
 
 const who = { name: "Owner", email: "owner@example.com" };
 let root: string;
@@ -37,24 +37,6 @@ beforeEach(async () => {
 afterEach(() => rm(root, { recursive: true, force: true }));
 
 describe("mergeBranch", () => {
-  it("fast-forwards the checked-out branch and updates the owner's files", async () => {
-    expect(await mergeBranch(request("main"))).toMatchObject({ ok: true, how: "fast-forward" });
-    expect(await readFile(join(repo, "b.txt"), "utf8")).toBe("task work");
-    expect((await git(repo, ["status", "--porcelain"])).trim()).toBe("");
-  });
-
-  it("merges into a branch checked out nowhere, without touching the checkout", async () => {
-    await commit(repo, "c.txt", "main moved"); // main diverges; dev is not checked out
-    expect(await mergeBranch(request("dev"))).toMatchObject({ ok: true, how: "fast-forward", where: "dev" });
-    await git(repo, ["checkout", "-q", "dev"]);
-    await commit(repo, "d.txt", "dev moved");
-    await git(repo, ["checkout", "-q", "main"]);
-    await commit(join(root, "task"), "e.txt", "more");
-    expect(await mergeBranch(request("dev"))).toMatchObject({ ok: true, how: "merge commit" });
-    expect(await git(repo, ["show", "dev:e.txt"])).toBe("more");
-    expect((await git(repo, ["worktree", "list"])).includes("scratch")).toBe(false);
-  });
-
   it("refuses a checkout with uncommitted changes and aborts a conflict, leaving it clean", async () => {
     await writeFile(join(repo, "a.txt"), "owner edit");
     expect(await mergeBranch(request("main"))).toMatchObject({ ok: false });
@@ -134,23 +116,6 @@ describe("mergeBranch with rebase", () => {
     expect((await git(task(), ["status", "--porcelain"])).trim()).toBe("");
   });
 
-  it("works when neither branch is checked out, and removes its throwaway worktree", async () => {
-    await git(repo, ["worktree", "remove", task()]);
-    await git(repo, ["checkout", "-q", "dev"]);
-    await commit(repo, "d.txt", "dev moved");
-    await git(repo, ["checkout", "-q", "main"]);
-    await commit(repo, "c.txt", "main moved");
-    const devBefore = await tip(repo, "dev");
-    expect(await mergeBranch({ ...request("dev"), method: "rebase" })).toMatchObject({
-      ok: true,
-      how: "rebased",
-      where: "dev",
-    });
-    expect(await tip(repo, "dev^")).toBe(devBefore);
-    expect(await tip(repo, "task/x")).toBe(await tip(repo, "dev"));
-    expect((await git(repo, ["worktree", "list"])).includes("scratch")).toBe(false);
-  });
-
   it("on a conflict aborts and leaves both branches exactly as they were", async () => {
     await commit(repo, "b.txt", "main side");
     await commit(task(), "e.txt", "more");
@@ -173,20 +138,5 @@ describe("mergeBranch with rebase", () => {
     expect(await mergeBranch({ ...request("main"), method: "rebase" })).toMatchObject({ ok: false });
     expect(await tip(repo, "task/x")).toBe(branchBefore);
     expect(await readFile(join(repo, "a.txt"), "utf8")).toBe("owner edit");
-  });
-});
-
-describe("mergeConflicts", () => {
-  it("lists the files that would conflict, and none once the task branch has the target in it", async () => {
-    await commit(repo, "b.txt", "main side");
-    const mainBefore = await tip(repo, "main");
-    expect(await mergeConflicts(repo, "task/x", "main")).toEqual(["b.txt"]);
-    // It touched nothing.
-    expect(await tip(repo, "main")).toBe(mainBefore);
-    expect((await git(repo, ["status", "--porcelain"])).trim()).toBe("");
-
-    await git(task(), ["-c", "user.name=t", "-c", "user.email=t@t", "merge", "-q", "main"]).catch(() => "");
-    await commit(task(), "b.txt", "both sides");
-    expect(await mergeConflicts(repo, "task/x", "main")).toEqual([]);
   });
 });

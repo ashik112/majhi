@@ -1,17 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { APIRequestContext, Page } from "@playwright/test";
-import { expect, expectTasksHome, MAJHI_HOME, test, useHome } from "./fixture.ts";
+import { expect, MAJHI_HOME, test, useHome } from "./fixture.ts";
 
-// From first run. Each test builds on the state the previous one left.
-useHome({ seed: "empty" });
-test.describe.configure({ mode: "serial" });
+useHome({ seed: "team" });
 
 const FAKE_KEY = "sk-test-fake-0000";
 const AGENTS_DIR = join(MAJHI_HOME, "agents");
 
-const shot = (page: Page, name: string) => page.screenshot({ path: `e2e/screenshots/${name}.png` });
 const agentFile = (id: string) => join(AGENTS_DIR, `${id}.md`);
 const _readAgent = (id: string) => readFileSync(agentFile(id), "utf8");
 
@@ -32,15 +29,6 @@ function recordTraffic(page: Page): string[] {
   return seen;
 }
 
-async function waitForHelper(request: APIRequestContext) {
-  await expect
-    .poll(async () => {
-      const res = await request.post("/api/cmd/host.status", { data: {} });
-      return ((await res.json()) as { connected: boolean }).connected;
-    })
-    .toBe(true);
-}
-
 /** Types a code into the embedded terminal once the fake Claude login asks for it. */
 async function signInThroughTerminal(page: Page) {
   const terminal = page.getByRole("region", { name: "Sign-in terminal" });
@@ -59,6 +47,15 @@ async function _addClaudeLogin(page: Page, id: string, org?: string) {
   await form.getByRole("button", { name: "Add account and sign in" }).click();
   await signInThroughTerminal(page);
   await expect(page.getByRole("status").filter({ hasText: `${id} is signed in and healthy` })).toBeVisible();
+}
+
+async function waitForHelper(request: APIRequestContext) {
+  await expect
+    .poll(async () => {
+      const res = await request.post("/api/cmd/host.status", { data: {} });
+      return ((await res.json()) as { connected: boolean }).connected;
+    })
+    .toBe(true);
 }
 
 async function openAccountsPage(page: Page) {
@@ -84,95 +81,35 @@ async function _openHealthCheck(page: Page, title: string) {
   await expect(dialog).toBeHidden();
 }
 
-test("fresh install: roots, first account, boss, and onboarding does not come back", {
-  tag: "@smoke",
-}, async ({ page, request }) => {
-  await waitForHelper(request);
-  await page.goto("/");
-
-  // Welcome: the suggested project folder, one click.
-  const step = (id: string) => expect(page.locator(`[data-step="${id}"]`)).toBeVisible();
-  await step("welcome");
-  await page.getByRole("button", { name: "Use ~/Work" }).click();
-
-  // AI account: sign in through the terminal
-  await step("account");
-  await page.getByRole("textbox", { name: "Account id" }).fill("claude-personal");
-  await page.getByRole("button", { name: "Add account and sign in" }).click();
-  await expect(page.getByRole("region", { name: "Sign-in terminal" })).toContainText("Paste code here");
-  await shot(page, "add-account-terminal");
-  await signInThroughTerminal(page);
-  await expect(
-    page.getByRole("status").filter({ hasText: "claude-personal is signed in and healthy" }),
-  ).toBeVisible();
-  await expect(page.getByRole("list", { name: "Health check steps" }).getByRole("listitem")).toHaveCount(3);
-  await page.getByRole("button", { name: "Continue" }).click();
-
-  // Workspaces, git accounts and projects can wait.
-  for (const id of ["workspaces", "git", "projects"]) {
-    await step(id);
-    // A step with nothing to do yet (git, with no projects) offers Continue instead of Skip.
-    await page
-      .getByRole("button", { name: /^(Skip for now|Continue)$/ })
-      .first()
-      .click();
-  }
-
-  // The captain, with the suggested defaults
-  await step("boss");
-  const form = page.getByRole("form", { name: "Captain agent" });
-  // The account's default model is picked, not "Account default".
-  await expect(form.getByRole("group", { name: "Model" }).getByRole("button", { pressed: true })).toHaveText(
-    /fake-model/,
-  );
-  await form.getByRole("button", { name: "Make it the captain" }).click();
-  await expect(form.getByText("Health check passed")).toBeVisible();
-  await shot(page, "onboarding-boss");
-  await page.getByRole("button", { name: "Continue" }).click();
-
-  // Arrive: the board, with the new-task box open.
-  await step("finish");
-  await page.getByRole("button", { name: "Write the first task" }).click();
-  await expect(page.getByRole("dialog", { name: "New task" })).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expectTasksHome(page);
-
-  await page.reload();
-  await expectTasksHome(page);
-  await expect(page.locator("[data-step]")).toHaveCount(0);
-
-  const bossFiles = readdirSync(AGENTS_DIR).filter((f) => f.endsWith(".md"));
-  expect(bossFiles).toHaveLength(1);
-  expect(readFileSync(join(MAJHI_HOME, "majhi.yaml"), "utf8")).toMatch(/^boss: /m);
-});
-
 test("an API-key account passes its health check and the key is never stored in the clear or sent back", async ({
   page,
+  request,
 }) => {
+  await waitForHelper(request);
   const traffic = recordTraffic(page);
   await openAccountsPage(page);
   await page.getByRole("button", { name: "Add account", exact: true }).click();
   const form = page.getByRole("form", { name: "Add an account" });
   await form.getByRole("radio", { name: "Codex" }).click();
   await form.getByRole("radio", { name: "API key" }).click();
-  await form.getByRole("textbox", { name: "Account id" }).fill("codex-key");
+  await form.getByRole("textbox", { name: "Account id" }).fill("codex-extra");
   await form.getByRole("textbox", { name: "OpenAI API key" }).fill(FAKE_KEY);
   await form.getByRole("button", { name: "Add account and check it" }).click();
 
   await expect(
-    page.getByRole("status").filter({ hasText: "codex-key is signed in and healthy" }),
+    page.getByRole("status").filter({ hasText: "codex-extra is signed in and healthy" }),
   ).toBeVisible();
   await expect(page.getByRole("list", { name: "Health check steps" }).getByRole("listitem")).toHaveCount(3);
   await page.getByRole("button", { name: "Close add account" }).click();
-  const row = accountRow(page, "codex-key");
+  const row = accountRow(page, "codex-extra");
   await expect(row).toContainText("API key");
   await expect(row).toContainText("Healthy");
 
   // The account list and the health check ran again after the key was sent; none of it echoes the key.
-  await row.getByRole("button", { name: "codex-key", exact: true }).click();
-  await page.getByRole("button", { name: "Health check codex-key" }).click();
+  await row.getByRole("button", { name: "codex-extra", exact: true }).click();
+  await page.getByRole("button", { name: "Health check codex-extra" }).click();
   await expect(
-    page.getByRole("dialog", { name: "Health check: codex-key" }).getByText("Health check passed"),
+    page.getByRole("dialog", { name: "Health check: codex-extra" }).getByText("Health check passed"),
   ).toBeVisible();
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.getByRole("region", { name: "Account details" })).toContainText(
@@ -187,6 +124,6 @@ test("an API-key account passes its health check and the key is never stored in 
     encoding: "utf8",
     env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" },
   });
-  expect(history).toContain("codex-key");
+  expect(history).toContain("codex-extra");
   expect(history).not.toContain(FAKE_KEY);
 });

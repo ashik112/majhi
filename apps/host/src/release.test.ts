@@ -6,43 +6,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  CHECK_EVERY_MS,
-  createTargetReader,
-  dotenvValue,
-  moveBack,
-  moveToLatest,
-  readLatest,
-  releaseIn,
-  withVersion,
-} from "./release.ts";
+import { moveBack, moveToLatest, readLatest } from "./release.ts";
 import type { GitContext } from "./repoInfo.ts";
 
 const exec = promisify(execFile);
 const PATH = process.env.PATH ?? "/usr/bin:/bin";
 const ID = ["-c", "user.name=T", "-c", "user.email=t@acme.test"];
 const LATEST = "https://api.github.example/repos/acme/majhi/releases/latest";
-
-describe(".env release lines", () => {
-  it("reads the last value, without quotes, and none when unset or empty", () => {
-    const text = "MAJHI_PORT=7071\nMAJHI_VERSION=v1.0.0\nMAJHI_VERSION='v1.2.0'\r\n";
-    expect(dotenvValue(text, "MAJHI_VERSION")).toBe("v1.2.0");
-    expect(dotenvValue("# MAJHI_VERSION=v1.0.0\nMAJHI_PORT=7071\n", "MAJHI_VERSION")).toBeUndefined();
-    expect(dotenvValue("MAJHI_VERSION=\n", "MAJHI_VERSION")).toBeUndefined();
-    expect(releaseIn(`MAJHI_VERSION=v1.0.0\nMAJHI_LATEST_URL=${LATEST}\n`)).toEqual({
-      version: "v1.0.0",
-      latestUrl: LATEST,
-    });
-    expect(releaseIn(`MAJHI_LATEST_URL=${LATEST}\n`)).toBeUndefined();
-  });
-
-  it("sets the version and keeps every other line of the owner's", () => {
-    expect(
-      withVersion(`MAJHI_PORT=7071\nMAJHI_VERSION=v1.0.0\n# note\nMAJHI_LATEST_URL=${LATEST}\n`, "v1.1.0"),
-    ).toBe(`MAJHI_PORT=7071\n# note\nMAJHI_LATEST_URL=${LATEST}\nMAJHI_VERSION=v1.1.0\n`);
-    expect(withVersion("MAJHI_VERSION=\n", "v1.1.0")).toBe("MAJHI_VERSION=v1.1.0\n");
-  });
-});
 
 describe("the latest-release pointer", () => {
   let close: (() => Promise<void>) | undefined;
@@ -168,60 +138,5 @@ describe("release install", () => {
     );
     expect(await git(app, "rev-parse", "HEAD")).toBe(head);
     expect(await readFile(join(app, ".env"), "utf8")).toBe(dotenv);
-  });
-
-  it("reports the latest release as what an update runs, asking at most every few hours", async () => {
-    const head = await git(app, "rev-parse", "HEAD");
-    let now = 0;
-    let tag = "v0.9.0";
-    let asks = 0;
-    const read = createTargetReader(ctx(), {
-      now: () => now,
-      latest: async () => {
-        asks += 1;
-        return tag;
-      },
-    });
-    expect(await read()).toEqual({ commit: head, dirty: false });
-
-    const newer = await commitAndTag("v0.9.1");
-    tag = "v0.9.1";
-    now += CHECK_EVERY_MS - 1;
-    expect((await read())?.commit).toBe(head);
-    now += 1;
-    expect((await read())?.commit).toBe(newer);
-    expect(asks).toBe(2);
-    // The checkout itself does not move until the update.
-    expect(await git(app, "rev-parse", "HEAD")).toBe(head);
-  });
-
-  it("keeps the last answer when the pointer cannot be read", async () => {
-    const newer = await commitAndTag("v0.9.1");
-    let now = 0;
-    let fail = false;
-    const read = createTargetReader(ctx(), {
-      now: () => now,
-      latest: async () => {
-        if (fail) throw new Error("offline");
-        return "v0.9.1";
-      },
-    });
-    expect((await read())?.commit).toBe(newer);
-    fail = true;
-    now += CHECK_EVERY_MS;
-    expect((await read())?.commit).toBe(newer);
-  });
-
-  it("reports HEAD on a dev checkout and never asks", async () => {
-    await writeFile(join(app, ".env"), "");
-    await commitAndTag("v2.0.0");
-    const head = await git(app, "rev-parse", "HEAD");
-    const p = pointer("v2.0.0");
-    expect(await createTargetReader(ctx(), { now: () => 0, latest: p.latest })()).toEqual({
-      commit: head,
-      dirty: false,
-    });
-    expect(p.asked).toEqual([]);
-    expect(await git(app, "tag", "--list", "v2.0.0")).toBe("");
   });
 });

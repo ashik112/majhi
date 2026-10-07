@@ -1,5 +1,4 @@
-import { mkdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import { taskWorld, type World } from "../testing/world.ts";
 

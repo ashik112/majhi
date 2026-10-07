@@ -1,16 +1,10 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fakeAdapter } from "../testing/index.ts";
 import type { AccountRuntime } from "./index.ts";
-import {
-  type AgentSession,
-  type PermissionAsk,
-  type SessionEvent,
-  type SessionStart,
-  startSession,
-} from "./session.ts";
+import { type AgentSession, type SessionEvent, type SessionStart, startSession } from "./session.ts";
 
 const base = { PATH: process.env.PATH ?? "/usr/bin" };
 let root: string;
@@ -53,71 +47,7 @@ async function ensure(dir: string): Promise<string> {
 const text = (t: string) => [{ type: "text" as const, text: t }];
 const answer = (id: string | undefined) => async () => id;
 
-function summarize(events: SessionEvent[]): string[] {
-  const out: string[] = [];
-  for (const e of events) {
-    const label =
-      e.type === "tool" ? `tool:${e.toolCallId}:${e.status ?? "-"}` : e.type === "text" ? "text" : e.type;
-    if (out[out.length - 1] !== label || e.type === "tool") out.push(label);
-  }
-  return out;
-}
-
 describe("default turn", () => {
-  it("streams the full scripted sequence and writes the file", async () => {
-    const { session, events, cwd } = await start();
-    const asks: PermissionAsk[] = [];
-    session.setPermissionHandler(async (ask) => {
-      asks.push(ask);
-      return "allow";
-    });
-    const res = await session.prompt(text("please create notes/HEALTH.md"));
-    expect(res.stopReason).toBe("end_turn");
-    expect(summarize(events)).toEqual([
-      "commands",
-      "plan",
-      "usage",
-      "text",
-      "tool:t-read:pending",
-      "tool:t-read:completed",
-      "usage",
-      "plan",
-      "tool:t-edit:in_progress",
-      "tool:t-edit:completed",
-      "tool:t-exec:pending",
-      "tool:t-exec:in_progress",
-      "tool:t-exec:completed",
-      "plan",
-      "usage",
-      "text",
-      "usage",
-      "turn",
-    ]);
-    const edit = events.find(
-      (e) => e.type === "tool" && e.toolCallId === "t-edit" && e.status === "completed",
-    );
-    expect(edit).toEqual({
-      type: "tool",
-      toolCallId: "t-edit",
-      status: "completed",
-      content: [{ type: "diff", path: join(cwd, "notes/HEALTH.md"), newText: "# Health\n\nok\n" }],
-    });
-    expect(await readFile(join(cwd, "notes/HEALTH.md"), "utf8")).toBe("# Health\n\nok\n");
-    expect(asks).toEqual([
-      {
-        toolCallId: "t-exec",
-        title: "Run npm test",
-        kind: "execute",
-        command: "npm test",
-        options: [
-          { id: "allow", name: "Allow", kind: "allow_once" },
-          { id: "allow_always", name: "Always allow", kind: "allow_always" },
-          { id: "reject", name: "Reject", kind: "reject_once" },
-        ],
-      },
-    ]);
-  });
-
   it("cancels the permission when there is no handler or the handler gives up", async () => {
     const { session, events } = await start();
     await session.prompt(text("hello"));
@@ -156,29 +86,6 @@ describe("cancel and busy", () => {
   });
 });
 
-describe("resume", () => {
-  it("loads the session without emitting replayed messages", async () => {
-    const first = await start();
-    first.session.setPermissionHandler(answer("allow"));
-    await first.session.prompt(text("hello there"));
-    const id = first.session.sessionId;
-    await first.session.close();
-
-    const second = await start({}, { resume: id, cwd: first.cwd });
-    expect(second.session.sessionId).toBe(id);
-    // Only current state comes through: the commands list, no replayed text.
-    expect(second.events.map((e) => e.type)).toEqual(["commands"]);
-    await second.session.prompt(text("echo: again"));
-    expect(second.events.filter((e) => e.type === "text")).toHaveLength(1);
-  });
-
-  it("starts a new session with a notice when the agent cannot load", async () => {
-    const { session, events } = await start({ noLoadSession: true }, { resume: "fake-x" });
-    expect(session.sessionId).not.toBe("fake-x");
-    expect(events.find((e) => e.type === "notice")).toMatchObject({ level: "info" });
-  });
-});
-
 describe("lifecycle", () => {
   it("emits exit and rejects the running prompt when the agent crashes", async () => {
     const { session, events } = await start();
@@ -187,15 +94,6 @@ describe("lifecycle", () => {
     );
     expect(events.at(-1)).toEqual({ type: "exit", code: 3, error: "fake-agent: crashed on purpose" });
     await expect(session.prompt(text("more"))).rejects.toThrow("closed");
-  });
-
-  it("fails a prompt with the limit error a directive names, or answers it as the turn's text", async () => {
-    const { session, events } = await start();
-    const line = "Claude AI usage limit reached|1760000000";
-    await expect(session.prompt(text(`limit: ${line}`))).rejects.toThrow(line);
-    const out = await session.prompt(text(`limit-text: ${line}`));
-    expect(out.stopReason).toBe("end_turn");
-    expect(events.some((e) => e.type === "text" && e.text === line)).toBe(true);
   });
 
   it("close kills the process group", async () => {

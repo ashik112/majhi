@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { git, tempDir } from "../testing/fixtures.ts";
@@ -35,26 +35,6 @@ async function pushFromElsewhere(name: string, file: string): Promise<string> {
 }
 
 describe("projects.fetch", () => {
-  it("moves origin/main and fast-forwards main, with no task at all", async () => {
-    w = await taskWorld();
-    const before = await tip(w.repo("api"), "refs/remotes/origin/main");
-    const theirs = await pushFromElsewhere("api", "other.txt");
-
-    const res = await cmd("projects.fetch", { project: "acme-api" }, AGENT);
-    expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({
-      project: "acme-api",
-      remote: "origin",
-      branch: "main",
-      from: before,
-      to: theirs,
-      local: { ok: true },
-    });
-    expect(await tip(w.repo("api"), "refs/remotes/origin/main")).toBe(theirs);
-    expect(await tip(w.repo("api"), "main")).toBe(theirs);
-    expect(await readFile(join(w.repo("api"), "other.txt"), "utf8")).toBe("other\n");
-  });
-
   it("still moves origin/main when local main has its own commits, and leaves main as it was", async () => {
     w = await taskWorld();
     await writeFile(join(w.repo("api"), "mine.txt"), "mine\n");

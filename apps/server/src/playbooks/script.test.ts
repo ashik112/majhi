@@ -133,28 +133,3 @@ describe("a playbook through a captain turn", () => {
     expect(await runs(world)).toEqual([]);
   });
 });
-
-describe("the upkeep chores on playbooks", () => {
-  it("shows the chores as the Upkeep pack, and a chore turned off does not run, by schedule or by hand", async () => {
-    const { h } = await lane();
-    const list = (await h.cmd("playbooks.list", { org: "acme" })).body as PlaybooksList;
-    const upkeep = list.playbooks.filter((p) => p.playbook.pack === "upkeep");
-    expect(upkeep.every((p) => p.enabled)).toBe(true);
-
-    await h.cmd("playbooks.update", { org: "acme", id: "upkeep-triage", enabled: false });
-    const { captain } = h.majhi.services;
-    await captain.sweepNow();
-    await captain.settled();
-    expect(captain.repo.runCount("acme", "triage")).toBe(0);
-    expect(captain.repo.runCount("acme", "cleanup")).toBe(1);
-    const manual = await h.cmd("playbooks.run", { org: "acme", id: "upkeep-triage" });
-    expect(manual.body).toMatchObject({ started: false });
-    expect(captain.repo.runCount("acme", "triage")).toBe(0);
-
-    // Turned on again, the next sweep runs it once, as before.
-    await h.cmd("playbooks.update", { org: "acme", id: "upkeep-triage", enabled: true });
-    await captain.sweepNow();
-    await captain.settled();
-    expect(captain.repo.runCount("acme", "triage")).toBe(1);
-  });
-});

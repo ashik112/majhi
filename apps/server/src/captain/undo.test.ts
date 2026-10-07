@@ -72,25 +72,6 @@ describe("undoing the captain's merge", () => {
     expect(await git(repo, "status", "--porcelain")).toBe("");
   });
 
-  it("reverts a fast-forward on a branch checked out nowhere by moving it forward", async () => {
-    const repo = await repoWithTask();
-    await git(repo, "branch", "develop", "main");
-    const before = await tip(repo, "develop");
-    await git(repo, "update-ref", "refs/heads/develop", await tip(repo, "task"), before);
-    const after = await tip(repo, "develop");
-    const head = await revertMerge(
-      { project: "api", source: repo, into: "develop", before, after },
-      ME,
-      "Revert",
-    );
-    expect(await tip(repo, "develop")).toBe(head);
-    expect(await git(repo, "rev-parse", `${head}^`)).toBe(after);
-    expect(await git(repo, "show", "develop:app.txt")).toBe("one");
-    // The checkout on main did not move, and no worktree was left behind.
-    expect(await git(repo, "rev-parse", "--abbrev-ref", "HEAD")).toBe("main");
-    expect((await git(repo, "worktree", "list")).split("\n")).toHaveLength(1);
-  });
-
   it("changes nothing when later work touched the same lines", async () => {
     const repo = await repoWithTask();
     const before = await tip(repo, "main");

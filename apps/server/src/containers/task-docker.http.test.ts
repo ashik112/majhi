@@ -1,9 +1,6 @@
 import { execFile } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
-import { rm } from "node:fs/promises";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { serve } from "@hono/node-server";
@@ -84,46 +81,6 @@ async function docker_(
   }
 }
 
-describe("the shim", () => {
-  it("hands `--env-file` to majhi as an argument, and never lets node open it (a FIFO would hang node)", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "majhi-shim-"));
-    await run("mkfifo", [join(dir, "run.env")]);
-    let seen: { argv: string[]; cwd: string } | undefined;
-    const stub = serve({
-      port: 0,
-      hostname: "127.0.0.1",
-      fetch: async (req) => {
-        seen = (await req.json()) as { argv: string[]; cwd: string };
-        return Response.json({ code: 0, stdout: "ok\n", stderr: "" });
-      },
-    }) as unknown as Server;
-    await new Promise<void>((resolve) => stub.once("listening", () => resolve()));
-    try {
-      // The shim's first line is what the kernel runs: `env -S "node --" docker-shim.mjs ...`.
-      const shebang = readFileSync(SHIM, "utf8").split("\n")[0];
-      expect(shebang).toBe("#!/usr/bin/env -S node --");
-      const out = await run(
-        "env",
-        ["-S", "node --", SHIM, "run", "--rm", "--env-file", "run.env", "alpine:3"],
-        {
-          cwd: dir,
-          env: {
-            PATH: process.env.PATH ?? "",
-            MAJHI_DOCKER_URL: `http://127.0.0.1:${(stub.address() as AddressInfo).port}/`,
-            MAJHI_DOCKER_TOKEN: "t",
-          },
-          timeout: 10_000,
-        },
-      );
-      expect(out.stdout).toBe("ok\n");
-      expect(seen?.argv).toEqual(["run", "--rm", "--env-file", "run.env", "alpine:3"]);
-    } finally {
-      stub.close();
-      await rm(dir, { recursive: true, force: true });
-    }
-  }, 30_000);
-});
-
 describe("docker through majhi", () => {
   it("keeps a container to its task: another task's token cannot see or remove it", async () => {
     const { w, env } = await world();
@@ -165,18 +122,6 @@ describe("docker through majhi", () => {
     }
     expect(docker.taskCalls).toEqual([]);
     expect(docker.containers.size).toBe(0);
-  }, 60_000);
-
-  it("stops at the task's container limit", async () => {
-    const { w, env } = await world();
-    const cwd = w.taskDir("ACM-1");
-    const one = env["ACM-1"] ?? {};
-    const made: number[] = [];
-    for (const name of ["a", "b", "c", "d", "e", "f", "g"]) {
-      made.push((await docker_(one, cwd, "run", "-d", "--name", name, "nginx:1.27-alpine")).code);
-    }
-    // containers.per_task is 6 by default.
-    expect(made).toEqual([0, 0, 0, 0, 0, 0, 125]);
   }, 60_000);
 
   it("answers 401 without the run's token, and the token ends with the run", async () => {

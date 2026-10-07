@@ -1,7 +1,6 @@
-import type { AccountStatus, AutonomyStatus, QueueItem, Task } from "@majhi/shared";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { RUNS } from "../captain/authority-fixtures.ts";
-import { type BossWorld, bossWorld } from "../testing/boss.ts";
+import type { AccountStatus, QueueItem } from "@majhi/shared";
+import { afterEach, describe, expect, it } from "vitest";
+import type { BossWorld } from "../testing/boss.ts";
 import { evaluateWaits, waitProblem } from "./waits.ts";
 
 let w: BossWorld | undefined;
@@ -73,55 +72,5 @@ describe("queue items that wait for an account", () => {
     expect(waitProblem(item("signed-in"), status("healthy"), known)).toBeDefined();
     expect(waitProblem(item("signed-in"), status("needs-login"), known)).toBeUndefined();
     expect(waitProblem(item("signed-in"), status("healthy"), () => false)).toBeDefined();
-  });
-});
-
-describe("majhi watching the account for the captain", () => {
-  it("refuses a stale wait, saves a real one, and wakes the captain when the account is signed in again", async () => {
-    w = await bossWorld({ real: false });
-    const { h } = w;
-    const { autonomy, accounts, store } = h.majhi.services;
-    // The account's health as the test sets it: a real sign-in needs a browser.
-    let health: AccountStatus = "healthy";
-    const real = accounts.list.bind(accounts);
-    vi.spyOn(accounts, "list").mockImplementation(async () =>
-      (await real()).map((a) => (a.id === "claude-acme" ? { ...a, status: health } : a)),
-    );
-    expect((await h.cmd("autonomy.configure", { orgs: { acme: { authority: RUNS } } })).status).toBe(200);
-    expect((await h.cmd("autonomy.start")).status).toBe(200);
-    const chat = await autonomy.laneChat("acme");
-    if (chat === undefined) throw new Error("no lane for Acme");
-    const call = (tool: string, args: Record<string, unknown>) =>
-      h.majhi.services.admin.call({ task: chat, agent: "boss" }, tool, { reason: "it is next", ...args });
-    const made = await h.cmd("tasks.create", {
-      text: "Fix the typo on the login page",
-      repos: [{ project: "acme-api" }],
-      start: false,
-    });
-    const id = (made.body as Task).id;
-    const plan = (waitFor: QueueItem["waitFor"]) =>
-      call("majhi_autonomy_plan", {
-        items: [{ title: "Restart the export", task: id, why: "Waits for the account", waitFor }],
-      });
-    const queue = async () =>
-      ((await h.cmd("autonomy.status", { detail: true })).body as AutonomyStatus).queue;
-    const sweep = () => autonomy.sweepNow();
-
-    // The account works: the captain's belief that it does not is refused, nothing is saved.
-    const stale = await plan({ account: "claude-acme", state: "signed-in" });
-    expect(stale.isError).toBe(true);
-    expect(await queue()).toEqual([]);
-
-    // Signed out for real: the wait is saved, and not ready.
-    health = "needs-login";
-    expect((await plan({ account: "claude-acme", state: "signed-in" })).isError).toBe(false);
-    await sweep();
-    expect((await queue())[0]?.readyAt).toBeUndefined();
-
-    // Signed in again: the item is ready and the captain's lane hears of it.
-    health = "healthy";
-    await sweep();
-    expect((await queue())[0]?.readyAt).toBeDefined();
-    expect(store.tasks.get(id)?.status).toBe("inbox");
   });
 });

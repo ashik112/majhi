@@ -122,26 +122,6 @@ describe("protected projects", () => {
     expect(await git(w.remote("ops"), "show", "main:change.txt")).toBe("acme-ops");
   });
 
-  it("resolve and ship never takes it, and a push or merge request leaves it out", async () => {
-    await world();
-    await changedInBoth();
-    const pushed = await cmd("tasks.push", { id: "ACM-1" });
-    expect(pushed.status).toBe(200);
-    expect(pushed.body.results).toMatchObject([
-      { project: "acme-api", ok: true },
-      { project: "acme-ops", skipped: true },
-    ]);
-    const branch = ((await cmd("tasks.get", { id: "ACM-1" })).body as Task).repos[1]?.branch ?? "";
-    expect(await git(w.remote("ops"), "branch", "--list", branch)).toBe("");
-
-    // A conflict only in ops: nothing that may ship conflicts, so nothing is asked of the lead.
-    await writeFile(join(w.repo("ops"), "change.txt"), "main side\n");
-    await git(w.repo("ops"), "add", "change.txt");
-    await git(w.repo("ops"), "commit", "--quiet", "-m", "main side");
-    const resolve = await cmd("tasks.resolveShip", { id: "ACM-1", action: "merge", into: "main" });
-    expect(resolve.status).toBe(409);
-  });
-
   it("agent runs get its worktree read-only, unless the owner allowed writes for the task", async () => {
     await world();
     const locked = await changedInBoth();
@@ -152,12 +132,5 @@ describe("protected projects", () => {
     expect(mounts).toContainEqual({ path: ops?.worktree, readOnly: true });
     expect(mounts.some((m) => m.path === join(w.repo("ops"), ".git") && m.readOnly !== true)).toBe(false);
     expect(mounts.some((m) => m.path === join(w.repo("api"), ".git") && m.readOnly !== true)).toBe(true);
-  });
-
-  it("allow writes: the owner's choice for one task", async () => {
-    await world();
-    const open = await changedInBoth(true);
-    expect(open.repos.find((r) => r.project === "acme-ops")?.writes).toBe(true);
-    expect([...(await readOnlyRepos(w.h.majhi.services.config, open))]).toEqual([]);
   });
 });

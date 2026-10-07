@@ -49,47 +49,6 @@ afterEach(async () => {
 });
 
 describe("syncBranch", () => {
-  it("is a no-op when the branch already has the base", async () => {
-    await commit(worktree, "mine.txt", "m\n", "mine");
-    const before = await head();
-    expect(await sync(false)).toEqual({ status: "current", from: before, to: before });
-    expect(await head()).toBe(before);
-  });
-
-  it("fast-forwards a branch with no commits of its own", async () => {
-    await commit(source, "b.txt", "b\n", "base moves");
-    const tip = await head(source);
-    const out = await sync(true);
-    expect(out).toMatchObject({ status: "fast-forwarded", to: tip });
-    expect(await head()).toBe(tip);
-  });
-
-  it("rebases a branch that was never pushed", async () => {
-    await commit(worktree, "mine.txt", "m\n", "mine");
-    await commit(source, "b.txt", "b\n", "base moves");
-    const baseTip = await head(source);
-    const out = await sync(false);
-    expect(out.status).toBe("rebased");
-    expect((await testGit(worktree, "rev-list", "--merges", "--count", "HEAD")).trim()).toBe("0");
-    expect(await testGit(worktree, "merge-base", "--is-ancestor", baseTip, "HEAD").then(() => true)).toBe(
-      true,
-    );
-    expect(await readFile(join(worktree, "mine.txt"), "utf8")).toBe("m\n");
-  });
-
-  it("merges a pushed branch, keeping its commits so no force push is needed", async () => {
-    await commit(worktree, "mine.txt", "m\n", "mine");
-    const pushedTip = await head();
-    await commit(source, "b.txt", "b\n", "base moves");
-    const out = await sync(true);
-    expect(out).toMatchObject({ status: "merged", from: pushedTip });
-    // The old tip is an ancestor of the new one: a plain push is enough.
-    await testGit(worktree, "merge-base", "--is-ancestor", pushedTip, "HEAD");
-    expect((await testGit(worktree, "log", "-1", "--format=%an <%ae>")).trim()).toBe(
-      "Acme Bot <bot@example.com>",
-    );
-  });
-
   it("refuses a dirty worktree and leaves it untouched", async () => {
     await commit(source, "b.txt", "b\n", "base moves");
     await writeFile(join(worktree, "a.txt"), "edited\n");

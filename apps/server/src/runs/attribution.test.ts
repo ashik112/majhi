@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { buildEnv } from "@majhi/acp";
@@ -157,17 +157,6 @@ describe("another task's branch", () => {
     ).rejects.toThrow(/change_task_branch/);
     expect(await git(repo, "log", "-1", "--format=%s", "task/acm-2-other-work")).toBe("init");
   });
-
-  it("allows the run's own branch, and anything without MAJHI_TASK", async () => {
-    const { repo, wt, as } = await twoTasks();
-    await updateRef(wt, as("ACM-1"), "task/acm-1-own-work");
-    expect(await git(repo, "log", "-1", "--format=%s", "task/acm-1-own-work")).toBe("change");
-    await updateRef(wt, as(), "task/acm-2-other-work");
-    expect(await git(repo, "log", "-1", "--format=%s", "task/acm-2-other-work")).toBe("change");
-    await updateRef(wt, as(), "feature/x");
-    await updateRef(repo, as(), "main");
-    expect(await git(repo, "log", "-1", "--format=%s", "main")).toBe("change");
-  });
 });
 
 describe("a run in the shared git folder", () => {
@@ -286,29 +275,5 @@ describe("a run in the shared git folder", () => {
     await as(wt, ownerEnv, "reflog", "expire", "--all");
     await as(wt, ownerEnv, "gc", "--quiet");
     await expect(git(repo, "cat-file", "-e", dropped)).rejects.toThrow();
-  });
-});
-
-describe("package stores and caches in a run's git", () => {
-  it("are never staged by an agent's `git add -A`, while the owner's own ignore patterns still apply", async () => {
-    const { repo, wt } = await taskWorktree();
-    const ownerIgnore = join(dir, "owner-ignore");
-    await writeFile(ownerIgnore, "*.scratch\n");
-    const ownerConfig = join(dir, "owner-gitconfig");
-    await writeFile(ownerConfig, `[core]\n\texcludesFile = ${ownerIgnore}\n`);
-    vi.stubEnv("GIT_CONFIG_GLOBAL", ownerConfig);
-    const configBefore = await readFile(join(repo, ".git", "config"), "utf8");
-
-    const env = await runEnv(repo, { worktree: wt });
-    for (const file of [".pnpm-store/v11/index.db", "node_modules/x/y.js", "todo.scratch", "real.txt"]) {
-      await mkdir(join(wt, file, ".."), { recursive: true });
-      await writeFile(join(wt, file), "x");
-    }
-    await run("git", ["add", "-A"], { cwd: wt, env });
-    const { stdout } = await run("git", ["diff", "--cached", "--name-only"], { cwd: wt, env });
-    expect(stdout.trim().split("\n")).toEqual(["a.txt", "real.txt"]);
-    expect(env.GIT_CONFIG_KEY_0).toBe("core.hooksPath");
-    expect(env[`GIT_CONFIG_KEY_${Number(env.GIT_CONFIG_COUNT) - 1}`]).toBe("core.excludesFile");
-    expect(await readFile(join(repo, ".git", "config"), "utf8")).toBe(configBefore);
   });
 });

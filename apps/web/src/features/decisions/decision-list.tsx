@@ -1,16 +1,14 @@
 import type { OwnerDecision } from "@majhi/shared";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { type ReactNode, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRunAttention } from "@/components/shell/banner";
 import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
-import { OrgBadge } from "@/components/ui/org-badge";
 import { Textarea } from "@/components/ui/select";
 import { SecretAnswer } from "@/features/room/secret-answer";
 import { cn } from "@/lib/cn";
-import { badgeLetters, formatAgo } from "@/lib/format";
-import { useOrgs } from "@/lib/studio-queries";
-import { KindIcon, kindWord, WorkspaceName } from "./decision-bits";
+import { formatAgo } from "@/lib/format";
+import { kindWord, WorkspaceName } from "./decision-bits";
 import { actionOf, openLabel, primaryOption, rowTitle, secretCardOf, workspaceOf } from "./model";
 import { useHeldOption } from "./use-send-decision";
 

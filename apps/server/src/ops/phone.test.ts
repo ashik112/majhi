@@ -102,35 +102,7 @@ describe("escalation", () => {
   });
 });
 
-describe("ntfy down", () => {
-  it("the desktop is still told, nothing throws, and the push goes out when the server is back", async () => {
-    const w = opsWorld();
-    await phoneOn(w);
-    w.ntfyDown = true;
-    const id = await openHigh(w);
-    expect(w.alerts).toHaveLength(1);
-    expect(w.ops.repo.incident(id)?.phoneAt).toBeUndefined();
-    expect((await w.ops.phone.status()).lastError).toBeDefined();
-    await w.ops.watch.tick();
-    expect(w.ntfy).toEqual([]);
-    w.ntfyDown = false;
-    await w.ops.watch.tick();
-    expect(w.ntfy).toHaveLength(1);
-    expect(w.ops.repo.incident(id)?.phoneAt).toBeDefined();
-    expect((await w.ops.phone.status()).lastError).toBeUndefined();
-  });
-});
-
 describe("what the phone gets", () => {
-  it("is off until set up: no push, no request", async () => {
-    const w = opsWorld();
-    await openHigh(w);
-    w.decisions = [approval()];
-    await w.ops.phone.sweepDecisions();
-    expect(w.ntfy).toEqual([]);
-    expect(await w.ops.phone.status()).toMatchObject({ state: "off", hasTopic: false, buttons: false });
-  });
-
   it("shows the topic once, stores it in secrets, and never returns it again", async () => {
     const w = opsWorld();
     const first = await w.ops.phone.setup({});

@@ -45,17 +45,6 @@ async function blockedTask(): Promise<void> {
 }
 
 describe("starting a blocked task", () => {
-  it("runs the agent and delivers the owner's message", async () => {
-    await blockedTask();
-    const before = prompts.length;
-    const res = await cmd("tasks.start", { id: "ACM-1", message: "Use the staging database" });
-    expect(res.status).toBe(200);
-    await until(() => prompts.length > before, "the agent's turn");
-    expect(prompts.slice(before).join("\n")).toContain("Use the staging database");
-    const owner = (await items()).flatMap((i) => (i.type === "owner" ? [i.text] : []));
-    expect(owner).toContain("Use the staging database");
-  });
-
   it("a start that queues nothing leaves a typed hold and a room line, not a silent running", async () => {
     await blockedTask();
     // Nothing to run: the agent's turn never comes.

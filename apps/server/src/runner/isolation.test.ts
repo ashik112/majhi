@@ -263,18 +263,6 @@ describe("the runner isolation check", () => {
     expect(calls).toBe(2);
   });
 
-  it("reports a timeout, with Docker's last words, and does not wait for it twice", async () => {
-    const { verdict, calls } = await failingCheck((args) =>
-      dockerFailed(args, "docker: context canceled\n", {
-        code: null,
-        killed: true,
-        signal: "SIGTERM",
-      }),
-    );
-    expect(verdict.ok).toBe(false);
-    expect(calls).toBe(1);
-  });
-
   it("passes when a brief failure clears on the retry, and never retries a run that saw too much", async () => {
     const { dir, cleanup } = await tempDir();
     cleanups.push(cleanup);

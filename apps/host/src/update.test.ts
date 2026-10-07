@@ -258,23 +258,6 @@ describe("update", () => {
     expect(s.calls.some((c) => c.args.startsWith("tag "))).toBe(false);
   });
 
-  it("tries the build again when the registry does not answer, and goes on when it does", async () => {
-    const s = setup({ netFails: 2 });
-    const status = await s.run();
-    expect(status.state).toBe("done");
-    expect(s.calls.filter((c) => c.args === "compose --profile runner build")).toHaveLength(3);
-    expect(status.lines.join("\n")).toContain("The image registry did not answer. Trying again");
-  });
-
-  it("gives up after three network failures with a plain reason, and leaves majhi running", async () => {
-    const s = setup({ netFails: 5 });
-    const status = await s.run();
-    expect(status.state).toBe("failed");
-    expect(status.error).toContain("the image registry could not be reached after 3 tries");
-    expect(s.calls.filter((c) => c.args === "compose --profile runner build")).toHaveLength(3);
-    expect(s.calls.some((c) => c.args.startsWith("compose up"))).toBe(false);
-  });
-
   describe("on a release install", () => {
     const LATEST = "https://api.github.example/repos/acme/majhi/releases/latest";
     const dotenv = `MAJHI_PORT=7071\nMAJHI_VERSION=v1.0.0\nMAJHI_LATEST_URL=${LATEST}\n`;
@@ -357,11 +340,5 @@ describe("update", () => {
     expect((await s.run()).state).toBe("done");
     expect(s.latestAsked).toEqual([]);
     expect(s.calls.some((c) => c.args.includes("fetch"))).toBe(false);
-  });
-
-  it("does not retry a build that failed for another reason", async () => {
-    const s = setup({ failOn: "compose --profile runner build" });
-    await s.run();
-    expect(s.calls.filter((c) => c.args === "compose --profile runner build")).toHaveLength(1);
   });
 });

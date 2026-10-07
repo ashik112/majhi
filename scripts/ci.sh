@@ -7,6 +7,7 @@ pnpm install --frozen-lockfile
 pnpm exec biome check .
 pnpm -r typecheck
 pnpm exec tsc -p e2e
+pnpm exec tsx scripts/census-lifecycle.ts --check scripts/census-baseline.json
 pnpm exec vitest run
 pnpm --filter @majhi/web build
 pnpm --filter @majhi/server build

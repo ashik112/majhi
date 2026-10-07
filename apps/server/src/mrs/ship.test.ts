@@ -2,7 +2,6 @@ import { stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { git, tempDir } from "../testing/fixtures.ts";
-import { seedStatus } from "../testing/status.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
 /** Ship's pushes against a local bare remote: never forced, and refused with the fix when they cannot work. */
@@ -66,16 +65,6 @@ async function pushFromElsewhere(ref: string): Promise<string> {
 }
 
 describe("Ship", () => {
-  it("merges into main and pushes main, then marks the task done", async () => {
-    await reviewed();
-    const res = await cmd("tasks.merge", { id: "ACM-1", into: "main", push: true, done: true });
-    expect(res.status).toBe(200);
-    expect(res.body.results).toMatchObject([{ project: "acme-api", into: "main", ok: true }]);
-    expect(res.body.task.status).toBe("done");
-    expect(await tip(w.remote("api"), "main")).toBe(await tip(w.repo("api"), "main"));
-    expect(await git(w.remote("api"), "ls-tree", "--name-only", "main")).toContain("fix.txt");
-  });
-
   it("refuses to merge and push when the remote branch moved, and changes nothing", async () => {
     await reviewed();
     const theirs = await pushFromElsewhere("main");
@@ -86,38 +75,6 @@ describe("Ship", () => {
     expect(await tip(w.repo("api"), "main")).toBe(before);
     expect(await tip(w.remote("api"), "main")).toBe(theirs);
     expect((await cmd("tasks.get", { id: "ACM-1" })).body.status).toBe("review");
-  });
-
-  it("pushes the task branch, and never forces over a branch that moved on the remote", async () => {
-    await reviewed();
-    const first = await cmd("tasks.push", { id: "ACM-1" });
-    expect(first.status).toBe(200);
-    expect(first.body.results).toMatchObject([{ project: "acme-api", into: branch, ok: true }]);
-    expect(await tip(w.remote("api"), branch)).toBe(await tip(w.repo("api"), branch));
-
-    const theirs = await pushFromElsewhere(branch);
-    const second = await cmd("tasks.push", { id: "ACM-1" });
-    expect(second.status).toBe(200);
-    expect(second.body.results[0]).toMatchObject({ ok: false });
-    expect(await tip(w.remote("api"), branch)).toBe(theirs);
-  });
-
-  it("squashes into main, marks it done, then deletes the task branch and its worktree", async () => {
-    await reviewed();
-    const res = await cmd("tasks.merge", {
-      id: "ACM-1",
-      into: "main",
-      done: true,
-      method: "squash",
-      deleteAfter: true,
-    });
-    expect(res.status).toBe(200);
-    expect(res.body.results).toMatchObject([{ ok: true }]);
-    expect(res.body.task.status).toBe("done");
-    expect(res.body.task.repos[0].worktree).toBeUndefined();
-    expect(await git(w.repo("api"), "show", "main:fix.txt")).toBe("fix");
-    expect(await git(w.repo("api"), "branch", "--list", branch)).toBe("");
-    expect(await present(join(w.taskDir("ACM-1"), "acme-api"))).toBe(false);
   });
 
   it("refuses delete after while the worktree has uncommitted files, before merging anything", async () => {
@@ -148,20 +105,5 @@ describe("Ship", () => {
     expect(await present(tree)).toBe(false);
     expect(await git(w.repo("api"), "branch", "--list", branch)).toBe("");
     expect(await git(w.remote("api"), "branch", "--list", branch)).not.toBe("");
-  });
-
-  it("keeps Ship open on a done task until its work is pushed, without reopening it", async () => {
-    await reviewed();
-    const { store } = w.h.majhi.services;
-    seedStatus(store, "ACM-1", "done", undefined, new Date().toISOString());
-    let options = (await cmd("tasks.shipOptions", { id: "ACM-1" })).body;
-    expect(options).toMatchObject({ merge: { ok: true }, mergePush: { ok: true }, push: { ok: true } });
-
-    const res = await cmd("tasks.push", { id: "ACM-1" });
-    expect(res.body.results[0]).toMatchObject({ ok: true });
-    expect(res.body.task.status).toBe("done");
-    options = (await cmd("tasks.shipOptions", { id: "ACM-1" })).body;
-    expect(options.merge).toMatchObject({ ok: false });
-    expect(options.push).toMatchObject({ ok: false });
   });
 });

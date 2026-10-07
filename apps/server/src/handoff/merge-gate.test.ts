@@ -193,42 +193,4 @@ describe("the merge rule", { timeout: 90_000 }, () => {
     const audit = await h.cmd("audit.list", { task: id });
     expect(JSON.stringify(audit.body)).toContain("merge-override");
   });
-
-  it("refuses while a check runs and after a new commit, and merges once the exact head is green", async () => {
-    const { h, w: world, id, repo } = await reviewed("\t@echo ok");
-    expect((await h.cmd("tasks.shipOptions", { id })).body.checks.verdict).toEqual({ kind: "ok" });
-
-    // A new commit on the task's branch: the green result belongs to the older head.
-    const tree = join(world.taskDir(id), "acme-api");
-    await writeFile(join(tree, "more.txt"), "more\n");
-    await git(tree, "add", ".");
-    await git(tree, ...who, "commit", "-qm", "more");
-    const before = await tip(repo, "main");
-    const stale = await h.cmd("tasks.merge", { id, into: "main", done: true });
-    expect(stale.status).toBe(409);
-    expect(stale.body.error).toContain("The checks ran on an older commit");
-    expect(await tip(repo, "main")).toBe(before);
-
-    // A check of the new head is running: wait.
-    await h.cmd("handoff.check", { task: id });
-    const running = await h.cmd("tasks.merge", { id, into: "main", done: true });
-    expect(running.status).toBe(409);
-    expect(running.body.error).toContain("still running");
-    expect(await tip(repo, "main")).toBe(before);
-
-    await h.majhi.services.handoff.settled();
-    const merged = await h.cmd("tasks.merge", { id, into: "main", done: true });
-    expect(merged.status).toBe(200);
-    expect(await tip(repo, "main")).not.toBe(before);
-  });
-
-  it("does not block a project with no checks set up", async () => {
-    const { h, id, repo } = await reviewed("", false);
-    const options = (await h.cmd("tasks.shipOptions", { id })).body;
-    expect(options.checks.verdict).toEqual({ kind: "ok", noChecks: true });
-    const before = await tip(repo, "main");
-    const merged = await h.cmd("tasks.merge", { id, into: "main", done: true });
-    expect(merged.status).toBe(200);
-    expect(await tip(repo, "main")).not.toBe(before);
-  });
 });

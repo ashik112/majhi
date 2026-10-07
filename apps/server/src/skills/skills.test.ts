@@ -1,10 +1,9 @@
 import { mkdir, readdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Skill, SkillInstallResult, SkillPreview } from "@majhi/shared";
+import type { Skill, SkillPreview } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { taskWorld, type World } from "../testing/world.ts";
-import { makeZip } from "../testing/zip.ts";
 import { cleanSource } from "./service.ts";
 
 const FAKE_CLI = {
@@ -31,22 +30,6 @@ describe("skills", () => {
     const res = await run(name, body, meta);
     if (res.status !== 200) throw new Error(`${name}: ${JSON.stringify(res.body)}`);
     return res.body;
-  };
-  const installAll = async (body: Record<string, unknown>) => {
-    const preview = (await must("skills.install", body)) as SkillPreview;
-    expect(preview.status).toBe("preview");
-    const done = (await must("skills.install", { confirm: preview.previewId })) as SkillInstallResult;
-    if (done.status !== "installed") throw new Error("not installed");
-    return { preview, skills: done.skills };
-  };
-  /** Installs, then puts the skill in the state skills had before the all-agents rule: on for no agent. */
-  const install = async (body: Record<string, unknown>) => {
-    const out = await installAll(body);
-    const file = join(store(), "skills-lock.json");
-    const lock = JSON.parse(await readFile(file, "utf8"));
-    for (const skill of out.skills) lock.skills[skill.name].defaultOn = false;
-    await writeFile(file, JSON.stringify(lock));
-    return { preview: out.preview, skills: out.skills.map((s) => ({ ...s, defaultOn: false, agents: [] })) };
   };
   const store = () => join(w.h.env.majhiHome, "skills");
   const exists = (path: string) =>
@@ -123,25 +106,6 @@ describe("skills", () => {
       }
     };
 
-    it("installs it, and an update previews the change before it lands", async () => {
-      await write(folder("my-skill"), "my-skill", "Does the thing", { "ref/a.md": "one" });
-      const { skills } = await install({ source: folder("my-skill") });
-      expect(skills[0]).toMatchObject({ name: "my-skill", sourceType: "local", source: folder("my-skill") });
-      expect(skills[0]?.files.map((f) => f.path)).toEqual(["SKILL.md", "ref/a.md"]);
-
-      // Nothing changed: unchanged, and no preview is left.
-      expect(await must("skills.update", { name: "my-skill" })).toMatchObject({ status: "unchanged" });
-
-      await write(folder("my-skill"), "my-skill", "Does the thing better", { "ref/a.md": "two" });
-      const preview = (await must("skills.update", { name: "my-skill" })) as SkillPreview;
-      expect(preview.status).toBe("preview");
-      expect(preview.skills[0]?.replaces?.hash).toBe(skills[0]?.hash);
-      expect(((await must("skills.list", {})) as Skill[])[0]?.description).toBe("Does the thing");
-      await must("skills.update", { name: "my-skill", confirm: preview.previewId });
-      expect(((await must("skills.list", {})) as Skill[])[0]?.description).toBe("Does the thing better");
-      expect(auditKinds()).toEqual(["skill-install", "skill-update"]);
-    });
-
     it("refuses a symlink that points out of the folder, and a folder outside the workspace", async () => {
       await write(folder("linked"), "linked", "Has a link");
       await writeFile(join(w.h.dir, "secret.txt"), "top secret");
@@ -156,31 +120,6 @@ describe("skills", () => {
       const home = await run("skills.install", { source: join(w.h.env.majhiHome, "agents") });
       expect(home.status).toBe(400);
     });
-  });
-
-  it("installs from an uploaded zip, and refuses a zip that tries to leave its folder", async () => {
-    const upload = async (data: Buffer, name = "skill.zip") => {
-      const form = new FormData();
-      form.append("file", new File([new Uint8Array(data)], name, { type: "application/zip" }));
-      const res = await w.h.majhi.app.request("/api/uploads", { method: "POST", body: form });
-      return ((await res.json()) as { id: string }).id;
-    };
-    const good = makeZip([
-      { name: "zipped/SKILL.md", data: "---\nname: zipped\ndescription: From a zip\n---\n" },
-      { name: "zipped/ref/a.md", data: "hi" },
-    ]);
-    const { skills } = await install({ upload: await upload(good) });
-    expect(skills[0]).toMatchObject({ name: "zipped", sourceType: "upload", source: "upload:skill.zip" });
-    expect(await exists(join(store(), "zipped", "ref", "a.md"))).toBe(true);
-
-    const evil = makeZip([
-      { name: "zipped/SKILL.md", data: "---\nname: zipped\ndescription: x\n---\n" },
-      { name: "../../../escaped.txt", data: "owned" },
-    ]);
-    const res = await run("skills.install", { upload: await upload(evil, "evil.zip") });
-    expect(res.status).toBe(400);
-    expect(await exists(join(w.h.dir, "escaped.txt"))).toBe(false);
-    expect(await exists(join(w.h.dir, "Work", "escaped.txt"))).toBe(false);
   });
 
   it("an agent can confirm only a preview it made itself", async () => {

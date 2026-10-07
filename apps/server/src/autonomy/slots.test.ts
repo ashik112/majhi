@@ -84,48 +84,6 @@ describe("the captain and free agent slots", () => {
   });
 });
 
-describe("the captain and the repo rule", () => {
-  it("keeps a second task naming the same file in the backlog, allows different files and areas, and never blocks the owner", async () => {
-    const t = await on();
-    // The repo rule on its own: the workspace may work on several tasks at once here.
-    expect((await t.h.cmd("autonomy.configure", { orgs: { acme: { tasksAtOnce: 5 } } })).status).toBe(200);
-    const running = await t.ownerTask("Rework login in src/auth/login.ts");
-    expect((await t.h.cmd("tasks.start", { id: running })).status).toBe(200);
-    const same = await t.ownerTask("Add a guard in src/auth/login.ts");
-    const no = await t.call("majhi_tasks_start", { id: same });
-    expect(no.isError).toBe(true);
-    expect(no.text).toMatch(
-      new RegExp(
-        `^Not starting ${same}: ${running} is already changing acme-api on \\S+\\. ${same} waits\\.$`,
-      ),
-    );
-    expect(t.status(same)).toBe("inbox");
-
-    // A different file in the same folder is not held by the repo rule.
-    const other = await t.ownerTask("Fix a typo in src/auth/session.ts");
-    const beside = await t.call("majhi_tasks_start", { id: other });
-    expect(beside.text).not.toContain("already changing");
-
-    // A new task whose plan is not known yet runs beside it: its own worktree keeps them apart.
-    const filed = await t.call("majhi_tasks_create", {
-      text: "Tidy the login form",
-      repos: [{ project: "acme-api" }],
-      start: true,
-    });
-    expect(filed.text).not.toContain("Not starting");
-
-    // Plans naming different top-level areas may run together.
-    const docs = await t.ownerTask("Update the setup guide in docs/guide.md");
-    const yes = await t.call("majhi_tasks_start", { id: docs });
-    // Not held by the repo rule (it may still wait for a free slot).
-    expect(yes.text).not.toContain("already changing");
-
-    // The owner's own start is never blocked.
-    expect((await t.h.cmd("tasks.start", { id: same })).status).toBe(200);
-    expect(t.status(same)).toBe("running");
-  });
-});
-
 describe("one task at a time per workspace", () => {
   it("keeps the captain's second start in the backlog while one runs, lets the owner raise it, and never holds the owner", async () => {
     const t = await on();

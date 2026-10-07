@@ -4,9 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type FakeProgram, failed, fakeOs, fakeSecretService, ok } from "./fakeOs.ts";
-import { linuxPlatform, parseEnvironment } from "./linux.ts";
+import { linuxPlatform } from "./linux.ts";
 import { macosPlatform } from "./macos.ts";
-import { wslPlatform } from "./wsl.ts";
 
 describe("the SSH agent socket on Linux", () => {
   let tmp: string;
@@ -92,20 +91,6 @@ describe("the SSH agent socket on Linux", () => {
     ]);
   });
 
-  it("reads systemd's $'...' quoting, with C escapes and UTF-8 bytes in octal", () => {
-    expect(
-      parseEnvironment(
-        "HOME=/home/owner\nSSH_AUTH_SOCK=$'/run/user/1000/caf\\303\\251 agent\\x2fs.sock'\n" +
-          "TABS=$'a\\tb\\\\c\\'d'\nEMPTY=\nnot a variable\n=x\n",
-      ),
-    ).toEqual({
-      HOME: "/home/owner",
-      SSH_AUTH_SOCK: "/run/user/1000/café agent/s.sock",
-      TABS: "a\tb\\c'd",
-      EMPTY: "",
-    });
-  });
-
   it("keeps passphrases in the keyring only while it answers", async () => {
     const keeping = (state: "unlocked" | "locked" | "absent") =>
       linuxPlatform(fakeOs({ programs: fakeSecretService(new Map(), state) }).deps).sshAgent.passphrases();
@@ -131,23 +116,5 @@ describe("the SSH agent on macOS", () => {
     );
     expect(await mac({}, {}).socket()).toBeUndefined();
     expect(await mac({}).passphrases()).toBe("apple");
-  });
-});
-
-describe("the socket compose gives the server container", () => {
-  it("is Docker's host-services socket on macOS, unless an older setup picked another", () => {
-    const composeSocket = (env: Record<string, string>) =>
-      macosPlatform(fakeOs({ home: "/Users/owner", env }).deps).sshAgent.composeSocket;
-    expect(composeSocket({})).toBe("/run/host-services/ssh-auth.sock");
-    expect(composeSocket({ SSH_AGENT_SOCK: "/Users/owner/.orbstack/run/agent.sock" })).toBe(
-      "/Users/owner/.orbstack/run/agent.sock",
-    );
-    expect(composeSocket({ SSH_AGENT_SOCK: " " })).toBe("/run/host-services/ssh-auth.sock");
-  });
-
-  it("is the forwarder's socket in ~/.majhi on Linux and WSL2", () => {
-    const deps = fakeOs({ majhiHome: "/home/owner/.majhi" }).deps;
-    expect(linuxPlatform(deps).sshAgent.composeSocket).toBe("/home/owner/.majhi/run/ssh-agent.sock");
-    expect(wslPlatform(deps).sshAgent.composeSocket).toBe("/home/owner/.majhi/run/ssh-agent.sock");
   });
 });

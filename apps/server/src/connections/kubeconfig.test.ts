@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { cutKubeconfig, KubeconfigError, mergeKubeconfigs } from "./kubeconfig.ts";
+import { cutKubeconfig, mergeKubeconfigs } from "./kubeconfig.ts";
 
 const PROD_TOKEN = "prod-viewer-token-0123456789";
 const STAGING_TOKEN = "staging-admin-token-9876543210";

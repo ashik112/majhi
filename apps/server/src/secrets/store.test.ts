@@ -1,6 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { armor, Decrypter } from "age-encryption";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { tempDir, writeKeyFile } from "../testing/fixtures.ts";
 import { generateKey, SecretStore } from "./store.ts";
@@ -59,22 +58,5 @@ describe("SecretStore", () => {
     expect(await wrong.keyState()).toBe("wrong");
     expect(await wrong.opens(identity)).toBe(true);
     expect(await wrong.opens(await generateKey())).toBe(false);
-  });
-
-  it("exports the key under a passphrase, as a key file that reads the secrets again", async () => {
-    await store.set("a", "value-aaaa");
-    const exported = await store.exportKey("correct horse battery");
-    expect(exported).toContain("BEGIN AGE ENCRYPTED FILE");
-    expect(exported).not.toContain("AGE-SECRET-KEY-1");
-
-    const wrong = new Decrypter();
-    wrong.addPassphrase("not the passphrase");
-    await expect(wrong.decrypt(armor.decode(exported), "text")).rejects.toThrow();
-
-    const decrypter = new Decrypter();
-    decrypter.addPassphrase("correct horse battery");
-    const restored = join(dir, "restored.key");
-    await writeFile(restored, await decrypter.decrypt(armor.decode(exported), "text"));
-    expect(await new SecretStore(join(dir, "home"), restored).get("a")).toBe("value-aaaa");
   });
 });

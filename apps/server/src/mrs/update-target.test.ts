@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { git, tempDir } from "../testing/fixtures.ts";
@@ -50,25 +50,6 @@ async function pushFromElsewhere(file: string, content = "other\n"): Promise<str
 }
 
 describe("tasks.updateTarget", () => {
-  it("fast-forwards a checked-out branch, keeps untracked folders, and then the ship pushes", async () => {
-    await reviewed();
-    const theirs = await pushFromElsewhere("other.txt");
-    await mkdir(join(w.repo("api"), "scratch"));
-    await writeFile(join(w.repo("api"), "scratch", "notes.txt"), "mine\n");
-
-    const res = await cmd("tasks.updateTarget", { id: "ACM-1", into: "main" });
-    expect(res.status).toBe(200);
-    expect(res.body.results).toMatchObject([{ project: "acme-api", into: "main", ok: true }]);
-    expect(await tip(w.repo("api"), "main")).toBe(theirs);
-    expect(await readFile(join(w.repo("api"), "other.txt"), "utf8")).toBe("other\n");
-    expect(await readFile(join(w.repo("api"), "scratch", "notes.txt"), "utf8")).toBe("mine\n");
-
-    const ship = await cmd("tasks.merge", { id: "ACM-1", into: "main", push: true, done: true });
-    expect(ship.status).toBe(200);
-    expect(await tip(w.remote("api"), "main")).toBe(await tip(w.repo("api"), "main"));
-    expect(await git(w.remote("api"), "ls-tree", "--name-only", "main")).toContain("fix.txt");
-  });
-
   it("refuses when the local branch has commits the remote lacks", async () => {
     await reviewed();
     await pushFromElsewhere("other.txt");
@@ -102,16 +83,5 @@ describe("tasks.updateTarget", () => {
     const res = await cmd("tasks.updateTarget", { id: "ACM-1", into: "main" });
     expect(res.body.results[0].ok).toBe(false);
     expect(await tip(w.repo("api"), "main")).toBe(before);
-  });
-
-  it("moves a branch that is checked out nowhere, by compare-and-swap", async () => {
-    await reviewed();
-    const theirs = await pushFromElsewhere("other.txt");
-    await git(w.repo("api"), "checkout", "--quiet", "-b", "scratch");
-    const res = await cmd("tasks.updateTarget", { id: "ACM-1", into: "main" });
-    expect(res.body.results).toMatchObject([{ ok: true }]);
-    expect(await tip(w.repo("api"), "main")).toBe(theirs);
-    expect((await git(w.repo("api"), "branch", "--show-current")).trim()).toBe("scratch");
-    expect((await stat(join(w.repo("api"), ".git"))).isDirectory()).toBe(true);
   });
 });

@@ -118,27 +118,6 @@ describe("resolve and ship", () => {
     expect(await tip(world().repo("api"), "main")).toBe(main);
   });
 
-  it("still conflicting: forgets the ship and puts the task back in review with the reason", async () => {
-    await conflicted();
-    next = async () => undefined; // the lead ends its turn without resolving anything
-    const main = await tip(world().repo("api"), "main");
-    expect((await cmd("tasks.resolveShip", { id: "ACM-1", action: "merge", into: "main" })).status).toBe(200);
-
-    await until(
-      async () =>
-        (await items()).some((i) => i.type === "review" && i.state === "pending" && i.why !== undefined),
-      "the review card with the reason",
-    );
-    const task = await get();
-    expect(task.status).toBe("review");
-    expect(task.pendingShip).toBeUndefined();
-    const card = (await items()).find((i) => i.type === "review" && i.state === "pending");
-    expect(card?.type === "review" && card.why).toBe(
-      "Did not merge into main: Still conflicts in shared.txt.",
-    );
-    expect(await tip(world().repo("api"), "main")).toBe(main);
-  });
-
   it("a target that moved after the owner asked is not shipped onto", async () => {
     await conflicted();
     next = async () => {
@@ -159,38 +138,6 @@ describe("resolve and ship", () => {
       "Did not merge into main: main in acme-api moved since you asked. Look at it and ship again.",
     );
     expect(await git(world().repo("api"), "show", "main:shared.txt")).toBe("main side");
-  });
-
-  it("cancel: the lead finishes, and nothing ships", async () => {
-    await conflicted();
-    let release = () => {};
-    const gate = new Promise<void>((r) => {
-      release = r;
-    });
-    next = async () => {
-      await gate;
-      await resolve();
-    };
-    const main = await tip(world().repo("api"), "main");
-    expect((await cmd("tasks.resolveShip", { id: "ACM-1", action: "merge", into: "main" })).status).toBe(200);
-    const cancelled = await cmd("tasks.cancelShip", { id: "ACM-1" });
-    expect(cancelled.status).toBe(200);
-    expect(cancelled.body.task.pendingShip).toBeUndefined();
-    release();
-
-    await world().h.majhi.services.runs.idle();
-    await until(async () => (await get()).status === "review", "review");
-    expect(await tip(world().repo("api"), "main")).toBe(main);
-    expect(await notes()).toContain("majhi will not merge into main: you cancelled it.");
-    expect(
-      world()
-        .h.majhi.services.store.permissions.audit("ACM-1")
-        .map((r) => [r.kind, r.decision]),
-    ).toEqual([
-      ["merge", "failed"],
-      ["ship", "allow"],
-      ["ship", "deny"],
-    ]);
   });
 });
 

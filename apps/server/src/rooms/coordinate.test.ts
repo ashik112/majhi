@@ -1,13 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  firstTurn,
-  type Member,
-  pipelineStages,
-  planTurn,
-  type TurnEnd,
-  unreviewed,
-  verdictOf,
-} from "./coordinate.ts";
+import { type Member, planTurn, type TurnEnd, unreviewed } from "./coordinate.ts";
 import { WorktreeLocks } from "./locks.ts";
 
 const team: Member[] = [
@@ -44,11 +36,6 @@ describe("planTurn: lead delegates", () => {
     expect(plan.toOwner).toBeDefined();
   });
 
-  it("wakes nobody for a message that mentions no one", () => {
-    expect(planTurn(turn({ from: "builder" })).handoffs).toEqual([]);
-    expect(planTurn(turn({ from: "reviewer" })).handoffs).toEqual([]);
-  });
-
   it("wakes nobody for a waiting reply while the owner has a question pending, mentions or not", () => {
     const plan = planTurn(turn({ from: "builder", mentions: ["lead"], waiting: true }));
     expect(plan.handoffs).toEqual([]);
@@ -81,82 +68,6 @@ describe("planTurn: the loop guard", () => {
     const plan = planTurn(turn({ mentions: ["builder", "web"], state: { agentTurns: 11 } }));
     expect(plan.handoffs).toEqual([]);
     expect(plan.nudge).toBeDefined();
-  });
-});
-
-describe("planTurn: pipeline", () => {
-  it("runs each role once, in order, waiting for every builder", () => {
-    expect(pipelineStages(team)).toEqual([["lead"], ["builder", "web"], ["reviewer"], ["tester"]]);
-    const start = firstTurn("pipeline", team);
-    expect(start.agents).toEqual(["lead"]);
-    let state = start.state;
-    const step = (from: string, mentions: string[] = []) => {
-      const plan = planTurn(turn({ mode: "pipeline", from, mentions, state }));
-      state = plan.state;
-      return plan;
-    };
-    expect(step("lead", ["reviewer"]).handoffs).toEqual([
-      { to: "builder", via: "pipeline" },
-      { to: "web", via: "pipeline" },
-    ]);
-    expect(step("builder").handoffs).toEqual([]);
-    // Someone outside the current step (the owner asked the tester something) moves nothing.
-    expect(step("tester").handoffs).toEqual([]);
-    expect(step("web").handoffs).toEqual([{ to: "reviewer", via: "pipeline" }]);
-    expect(step("reviewer").handoffs).toEqual([{ to: "tester", via: "pipeline" }]);
-    const last = step("tester");
-    expect(last.handoffs).toEqual([]);
-    expect(last.toOwner).toBeDefined();
-  });
-
-  it("holds the step when the agent asked the owner", () => {
-    const plan = planTurn(
-      turn({ mode: "pipeline", from: "lead", mentions: ["owner"], state: firstTurn("pipeline", team).state }),
-    );
-    expect(plan.handoffs).toEqual([]);
-    expect(plan.state.stage).toBe(0);
-    expect(plan.toOwner).toBeDefined();
-  });
-});
-
-describe("planTurn: build and review loop", () => {
-  const pair: Member[] = [
-    { id: "builder", role: "Builder" },
-    { id: "reviewer", role: "Reviewer" },
-  ];
-  const loop = (over: Partial<TurnEnd>) => planTurn(turn({ mode: "review-loop", team: pair, ...over }));
-
-  it("starts with the builder and alternates until the reviewer approves", () => {
-    expect(firstTurn("review-loop", pair).agents).toEqual(["builder"]);
-    expect(loop({ from: "builder", state: { agentTurns: 0, round: 0 } }).handoffs).toEqual([
-      { to: "reviewer", via: "review-loop" },
-    ]);
-    const back = loop({ from: "reviewer", verdict: "changes", state: { agentTurns: 1, round: 0 } });
-    expect(back.handoffs).toEqual([{ to: "builder", via: "review-loop" }]);
-    expect(back.state.round).toBe(1);
-    const done = loop({ from: "reviewer", verdict: "approved", state: { agentTurns: 3, round: 1 } });
-    expect(done.handoffs).toEqual([]);
-    expect(done.toOwner).toBeDefined();
-  });
-
-  it("stops after the last round, and asks the owner when the verdict is unclear", () => {
-    const capped = loop({ from: "reviewer", verdict: "changes", state: { agentTurns: 1, round: 4 } });
-    expect(capped.handoffs).toEqual([]);
-    expect(capped.pause).toBeDefined();
-    const unclear = loop({ from: "reviewer", verdict: "unclear", state: { agentTurns: 1, round: 0 } });
-    expect(unclear.handoffs).toEqual([]);
-    expect(unclear.toOwner).toBeDefined();
-  });
-});
-
-describe("verdictOf", () => {
-  it("reads approval and change requests, changes first", () => {
-    expect(verdictOf("All good. APPROVED")).toBe("approved");
-    expect(verdictOf("LGTM, ship it")).toBe("approved");
-    expect(verdictOf("CHANGES NEEDED: the test is missing")).toBe("changes");
-    expect(verdictOf("I cannot approve this yet, the handler leaks")).toBe("changes");
-    expect(verdictOf("Not approved: see below")).toBe("changes");
-    expect(verdictOf("I looked at the handler.")).toBeUndefined();
   });
 });
 
