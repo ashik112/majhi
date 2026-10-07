@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readdir, readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import type {
   Budget,
   BudgetsPatch,
@@ -14,7 +14,7 @@ import type {
   SshPublicKey,
   TaskId,
 } from "@majhi/shared";
-import { CHAT_BRIEF, PRIVATE, RESTART_COMMAND, sameImage, type Task } from "@majhi/shared";
+import { CHAT_BRIEF, isSystemFolder, PRIVATE, RESTART_COMMAND, sameImage, type Task } from "@majhi/shared";
 import type { z } from "zod";
 import { openBossChat, openChat } from "../admin/boss.ts";
 import { cardStats } from "../admin/card-stats.ts";
@@ -27,6 +27,7 @@ import { captainHandlers } from "../captain/handlers.ts";
 import { answerOnce } from "../captain/keys.ts";
 import { chatHandlers } from "../chat/handlers.ts";
 import { incidentHandlers } from "../chat/incident-handlers.ts";
+import { resolvePath } from "../config/load.ts";
 import type { ConfigService } from "../config/service.ts";
 import { connectHandlers } from "../connect/handlers.ts";
 import { connectionHandlers } from "../connections/handlers.ts";
@@ -414,7 +415,30 @@ export function createHandlers({
       return scan;
     },
 
-    "workspaces.set": async (input, ctx) => {
+    "workspaces.set": async (inputWithCreate, ctx) => {
+      const { create, ...input } = inputWithCreate;
+      const roots = input.workspaces.map((p) => ({ shown: p, abs: resolvePath(p, config.paths.hostHome) }));
+      const system = roots.find((r) => isSystemFolder(r.abs));
+      if (system !== undefined) {
+        throw new UserError(
+          `${system.shown} is a system folder. Choose a folder in your home folder, like ~/Work.`,
+          409,
+        );
+      }
+      const absent = await missingFolders(roots, hostLink);
+      if (absent.length > 0) {
+        if (create !== true) {
+          const { state } = await config.load();
+          return {
+            state,
+            unmounted: [],
+            remount: "not-needed" as const,
+            restartCommand: RESTART_COMMAND,
+            missing: absent.map((r) => r.shown),
+          };
+        }
+        await makeFolders(absent, hostLink);
+      }
       const tasks = input.tasks_dir === undefined ? "" : `, tasks_dir ${input.tasks_dir}`;
       const loaded = await config.setWorkspaces(input, {
         command: ctx.command,
@@ -1545,6 +1569,39 @@ function allowances(services: Services) {
 /** Placeholder for a Phase 2b command that is not built yet. */
 async function notBuilt(): Promise<never> {
   throw new UserError("This command is not built yet.", 501);
+}
+
+/**
+ * The roots that do not exist. The host helper knows for certain. Without it, a root the server cannot
+ * see is missing only when its parent folder is visible: a folder in a mounted parent shows at once,
+ * while a root that is not mounted yet may exist, so it is not called missing.
+ */
+async function missingFolders<T extends { abs: string }>(
+  roots: readonly T[],
+  hostLink: HostLink,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (const root of roots) {
+    if (await isDirectory(root.abs)) continue;
+    if (hostLink.isConnected()) {
+      const exists = await hostLink
+        .call("listDirs", { path: root.abs, showHidden: false })
+        .then(() => true)
+        .catch((err: unknown) => !(err instanceof HostJobError));
+      if (!exists) out.push(root);
+    } else if (await isDirectory(dirname(root.abs))) {
+      out.push(root);
+    }
+  }
+  return out;
+}
+
+/** Makes folders that do not exist: through the host helper, else directly where the server can write. */
+async function makeFolders(roots: readonly { abs: string }[], hostLink: HostLink): Promise<void> {
+  for (const root of roots) {
+    if (hostLink.isConnected()) await hostLink.call("fs.mkdir", { path: root.abs });
+    else await mkdir(root.abs, { recursive: true });
+  }
 }
 
 /** Roots the server cannot see, because they are not mounted yet. */

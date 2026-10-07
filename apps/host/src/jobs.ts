@@ -25,6 +25,8 @@ import type { NotifyOutcome } from "./platform/types.ts";
 export interface JobHandlers {
   listDirs(params: { path: string; showHidden: boolean }): Promise<DirListing>;
   suggestRoots(): Promise<RootSuggestion[]>;
+  /** Throws an error whose message is safe to show. */
+  makeDir(params: { path: string }): Promise<{ path: string }>;
   /** Undefined when this helper cannot run `docker compose`. */
   remount: (() => Promise<unknown>) | undefined;
   sshReload(): Promise<SshStatus>;
@@ -132,6 +134,9 @@ export async function runJob(
 ): Promise<void> {
   try {
     switch (job.method) {
+      case "fs.mkdir":
+        await reply({ id: job.id, ok: true, result: await handlers.makeDir(job.params) });
+        return;
       case "listDirs":
         await reply({ id: job.id, ok: true, result: await handlers.listDirs(job.params) });
         return;

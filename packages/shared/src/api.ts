@@ -82,6 +82,8 @@ export type ReposResponse = z.infer<typeof ReposResponseSchema>;
 export const WorkspacesUpdateSchema = z.object({
   workspaces: z.array(ConfigPath).min(1, "Add at least one workspace root"),
   tasks_dir: ConfigPath.optional(),
+  /** Make the folders that do not exist yet instead of asking. */
+  create: z.boolean().optional(),
 });
 export type WorkspacesUpdate = z.infer<typeof WorkspacesUpdateSchema>;
 
@@ -103,6 +105,8 @@ export const WorkspacesUpdateResultSchema = z.object({
   unmounted: z.array(z.string()),
   remount: RemountSchema,
   restartCommand: z.string(),
+  /** Folders that do not exist. Nothing was saved: send again with `create` to make them. */
+  missing: z.array(z.string()).optional(),
 });
 export type WorkspacesUpdateResult = z.infer<typeof WorkspacesUpdateResultSchema>;
 

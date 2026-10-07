@@ -377,6 +377,8 @@ export const HostJobSchema = z.discriminatedUnion("method", [
     method: z.literal("listDirs"),
     params: z.object({ path: z.string(), showHidden: z.boolean() }),
   }),
+  /** Make a project folder inside the owner's home. Refuses anywhere else. */
+  z.object({ id: z.string(), method: z.literal("fs.mkdir"), params: z.object({ path: z.string() }) }),
   z.object({ id: z.string(), method: z.literal("suggestRoots"), params: z.object({}) }),
   /** Load, memory and free disk of this computer. */
   z.object({ id: z.string(), method: z.literal("machine.read"), params: z.object({}) }),
@@ -626,6 +628,7 @@ export type HostMethod = HostJob["method"];
 
 export const HostResultSchemas = {
   listDirs: DirListingSchema,
+  "fs.mkdir": z.object({ path: z.string() }),
   suggestRoots: z.object({ suggestions: z.array(RootSuggestionSchema) }),
   /** The helper answers before it restarts the server, so the server can tell the UI. */
   remount: z.object({ accepted: z.literal(true) }),

@@ -29,6 +29,7 @@ export type HostResult<M extends HostMethod> = z.infer<(typeof HostResultSchemas
  */
 const parseResult: { [M in HostMethod]: (value: unknown) => z.ZodSafeParseResult<HostResult<M>> } = {
   listDirs: (value) => HostResultSchemas.listDirs.safeParse(value),
+  "fs.mkdir": (value) => HostResultSchemas["fs.mkdir"].safeParse(value),
   suggestRoots: (value) => HostResultSchemas.suggestRoots.safeParse(value),
   remount: (value) => HostResultSchemas.remount.safeParse(value),
   "ssh.reload": (value) => HostResultSchemas["ssh.reload"].safeParse(value),

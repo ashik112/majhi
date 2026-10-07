@@ -123,6 +123,8 @@ export function useSetWorkspaces(onSaved?: (result: WorkspacesUpdateResult) => v
   return useMutation<WorkspacesUpdateResult, ApiRequestError, WorkspacesUpdate>({
     mutationFn: (input) => cmd("workspaces.set", input, { reason: "Owner edited project folders" }),
     onSuccess: async (result) => {
+      // Nothing was saved: a folder does not exist. The caller offers to create it.
+      if ((result.missing?.length ?? 0) > 0) return;
       onSaved?.(result);
       client.setQueryData(queryKeys.config, result.state);
       await client.invalidateQueries({ queryKey: queryKeys.repos });

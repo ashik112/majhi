@@ -44,6 +44,7 @@ describe("host jobs", () => {
       throw new Error("There is no folder at /nope");
     },
     suggestRoots: async () => [{ path: "/Users/a/Work", repoCount: 2 }],
+    makeDir: async (params) => params,
     sshReload: async () => SSH_OK,
     sshKeygen: async () => ({ path: "~/.ssh/id_ed25519", publicKey: "ssh-ed25519 AAAA majhi" }),
     secretsKeySave: async () => {
