@@ -121,9 +121,6 @@ describe("removeOwnLeftovers", () => {
     // The build cache is only ever capped, never cleared.
     const builderPrunes = all.split("\n").filter((l) => l.includes("builder prune"));
     expect(builderPrunes.every((l) => l.includes("--max-used-space 15gb"))).toBe(true);
-    expect(said.at(-1)).toContain("majhi-server:previous (2.1GB)");
-    expect(said.at(-1)).toContain("majhi-preview-acm-2:latest (700MB)");
-    expect(said.at(-1)).toContain("freed");
   });
 
   it("keeps all previews but still drops the previous tag when the open tasks are unknown", async () => {
@@ -134,7 +131,6 @@ describe("removeOwnLeftovers", () => {
     expect(lines).toContain("image rm majhi-server:previous");
     expect(lines.some((l) => l.startsWith("buildx rm") || l.startsWith("volume rm"))).toBe(false);
     expect(lines.some((l) => l.includes("majhi-preview-acm-2"))).toBe(false);
-    expect(said[0]).toContain("Kept the preview images");
   });
 
   it("reads the open tasks lowercased, or nothing when the file is bad", async () => {

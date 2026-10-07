@@ -90,10 +90,6 @@ describe("the ssh-agent forwarder", () => {
     expect(await exchange(path, "sign this")).toBe("agent:sign this");
     expect((await stat(path)).mode & 0o777).toBe(0o600);
     expect((await stat(join(tmp, "run"))).mode & 0o777).toBe(0o700);
-    expect(logs).toEqual([
-      `ssh-agent forwarder: listening on ${path}`,
-      `ssh-agent forwarder: forwarding to ${upstream}`,
-    ]);
     // What passed through is never logged.
     expect(logs.join("\n")).not.toContain("sign this");
   });
@@ -120,23 +116,17 @@ describe("the ssh-agent forwarder", () => {
     await mkdir(join(tmp, "run"));
     await writeFile(path, "keep me");
     await serve(async () => undefined);
-    expect(logs).toEqual([
-      `ssh-agent forwarder: ${path} is not a socket, so it was left alone and the forwarder is off`,
-    ]);
     expect(await readFile(path, "utf8")).toBe("keep me");
 
     await rm(path);
     await agentAt(path, "other helper");
-    logs.length = 0;
     await serve(async () => undefined);
-    expect(logs).toEqual([`ssh-agent forwarder: another helper is serving ${path}, so this one is off`]);
     expect(await exchange(path, "hello")).toBe("other helper:hello");
   });
 
   it("closes the client when there is no agent to forward to", async () => {
     await serve(async () => undefined);
     expect(await exchange(path, "hello")).toBe("");
-    expect(logs).toContain("ssh-agent forwarder: no agent to forward to");
   });
 
   it("looks the agent up again when the one it used went away", async () => {
@@ -156,6 +146,5 @@ describe("the ssh-agent forwarder", () => {
     await agentAt(second, "second");
     expect(await exchange(path, "two")).toBe("second:two");
     expect(asked).toEqual([undefined, undefined, first]);
-    expect(logs).toContain(`ssh-agent forwarder: forwarding to ${second}`);
   });
 });

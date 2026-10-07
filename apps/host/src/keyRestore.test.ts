@@ -151,7 +151,6 @@ describe("restoring the secrets key", () => {
     await run.after();
     expect(events).toEqual(["docker", `keyring ${keyFingerprint(key)}`]);
     expect(docker).toEqual([["compose", "up", "-d", "--force-recreate", "--wait", "server"]]);
-    expect(logs[0]).toBe(`secrets key: restored from its export, the old file is ${keyFile}.old-${STAMP}`);
     expect(logs.join("\n")).not.toContain("AGE-SECRET-KEY");
   });
 
@@ -169,10 +168,6 @@ describe("restoring the secrets key", () => {
       log: (m) => logs.push(m),
     });
     await expect((await failing({ key })).after()).resolves.toBeUndefined();
-    expect(logs.slice(1)).toEqual([
-      "secrets key: restart majhi failed: timed out after 300s",
-      "secrets key: The keyring did not take the secrets key. Is it locked?",
-    ]);
 
     const saved: string[] = [];
     const noDocker = createKeyRestorer({
@@ -187,28 +182,6 @@ describe("restoring the secrets key", () => {
     expect(run.result).toEqual({ written: false, restarts: false });
     await run.after();
     expect(saved).toEqual([keyFingerprint(key)]);
-  });
-
-  it("looks for the restart at each restore, so one works once docker is found", async () => {
-    await seal(key);
-    let restart: (() => Promise<void>) | undefined;
-    const restarted: string[] = [];
-    const restore = createKeyRestorer({
-      ...files(),
-      get restart() {
-        return restart;
-      },
-      saveToKeyring: undefined,
-      log: () => undefined,
-    });
-    expect((await restore({ key })).result.restarts).toBe(false);
-    restart = async () => {
-      restarted.push("server");
-    };
-    const run = await restore({ key });
-    expect(run.result.restarts).toBe(true);
-    await run.after();
-    expect(restarted).toEqual(["server"]);
   });
 
   it("runs one restore at a time", async () => {

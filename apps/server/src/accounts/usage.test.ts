@@ -1,6 +1,6 @@
 import type { AccountUsage, HealthCheck } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { failedHealth, OK_HEALTH } from "../testing/fakeRuntime.ts";
+import { OK_HEALTH } from "../testing/fakeRuntime.ts";
 import { type Harness, harness } from "../testing/harness.ts";
 import { statusFromHealthAndUsage } from "./status.ts";
 
@@ -19,7 +19,7 @@ const usage = (five: number, week: number): AccountUsage => ({
   updatedAt: "2026-09-29T15:00:00.000Z",
 });
 
-async function withAccount(auth: "login" | "api-key" = "login") {
+async function _withAccount(auth: "login" | "api-key" = "login") {
   h = await harness();
   await h.cmd("orgs.create", { id: "acme", name: "Acme" });
   const created = await h.cmd("accounts.create", {

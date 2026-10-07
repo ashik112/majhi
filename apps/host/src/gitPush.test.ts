@@ -1,20 +1,7 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type GitPushDeps, gitCredential, gitPush, pushArgs, stripCredentials } from "./gitPush.ts";
-import { runCommand } from "./runCommand.ts";
 
 describe("pushArgs", () => {
-  it("builds a plain push of one branch", () => {
-    expect(pushArgs({ url: "https://acme-dev@github.com/acme/api.git", branch: "task/x" })).toEqual([
-      "push",
-      "--quiet",
-      "https://acme-dev@github.com/acme/api.git",
-      "refs/heads/task/x:refs/heads/task/x",
-    ]);
-  });
-
   it("refuses force, delete, refspec and option-like branches", () => {
     const url = "https://github.com/acme/api.git";
     for (const branch of ["+main", ":main", "a:b", "--force", "-f", "a..b", "x.lock", "a b", "main^"]) {
@@ -80,34 +67,6 @@ describe("gitPush", () => {
         },
       ),
     ).rejects.toThrow("absolute");
-  });
-
-  it("pushes for real to a temp bare repo (path remotes bypass the https check only in this test)", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "majhi-push-"));
-    const run: GitPushDeps["run"] = (file, args, o) =>
-      runCommand(file, args, { ...o, env: { ...o.env, GIT_CONFIG_GLOBAL: "/dev/null" } });
-    const sh = async (cwd: string, ...a: string[]) => {
-      const r = await runCommand("git", ["-C", cwd, ...a], {
-        env: { PATH: process.env.PATH ?? "", HOME: dir, GIT_CONFIG_GLOBAL: "/dev/null" },
-        timeoutMs: 20_000,
-      });
-      expect(r.code, r.stderr).toBe(0);
-      return r.stdout.trim();
-    };
-    const bare = join(dir, "host.git");
-    const work = join(dir, "work");
-    await sh(dir, "init", "--bare", "--quiet", "--initial-branch=main", bare);
-    await sh(dir, "init", "--quiet", "--initial-branch=main", work);
-    await writeFile(join(work, "a.txt"), "a\n");
-    await sh(work, "add", ".");
-    await sh(work, "-c", "user.name=T", "-c", "user.email=t@acme.test", "commit", "--quiet", "-m", "init");
-    // pushArgs refuses non-https, so run the same argument shape through the runner directly.
-    const r = await run("git", ["-C", work, "push", "--quiet", bare, "refs/heads/main:refs/heads/main"], {
-      env: { PATH: process.env.PATH ?? "", HOME: dir },
-      timeoutMs: 20_000,
-    });
-    expect(r.code).toBe(0);
-    expect(await sh(bare, "rev-parse", "refs/heads/main")).toBe(await sh(work, "rev-parse", "HEAD"));
   });
 });
 

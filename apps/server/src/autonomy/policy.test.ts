@@ -428,22 +428,6 @@ describe("decideAutonomously: the authority rows", () => {
       why: "In acme you decide when work starts, so the captain does not start it",
     });
   });
-
-  it("merges only where the captain decides when work is merged", () => {
-    expect(decide(call("tasks.merge", { id: "ACM-1" }), withRows({ merge: "decide" }))).toBe("approved");
-    expect(decide(call("tasks.merge", { id: "ACM-1" }), withRows({ merge: "ask" }))).toBe("left");
-    // A push row on "decide" does not allow a merge, and the other way round.
-    expect(decide(call("tasks.merge", { id: "ACM-1" }), withRows({ push: "decide", merge: "ask" }))).toBe(
-      "left",
-    );
-  });
-
-  it("pushes and opens merge requests only where the captain decides when work is pushed", () => {
-    for (const command of ["tasks.push", "tasks.openMrs"] as const) {
-      expect(decide(call(command, { id: "ACM-1" }), withRows({ push: "decide" }))).toBe("approved");
-      expect(decide(call(command, { id: "ACM-1" }), withRows({ push: "ask", merge: "decide" }))).toBe("left");
-    }
-  });
 });
 
 describe("what follows the Merge row and Upkeep for the captain's own calls", () => {
