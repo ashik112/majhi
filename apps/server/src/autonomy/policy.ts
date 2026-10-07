@@ -34,7 +34,7 @@ export interface PolicyContext {
    * For a call that ships a task: who does each step of shipping it and how it lands, read now by the one
    * ship decision (`ShipPlanner`). Absent: the workspace's rows decide.
    */
-  ship?: Pick<ShipPlan, "steps" | "way" | "ruleSubject"> | undefined;
+  ship?: Pick<ShipPlan, "steps" | "way" | "ruleSubject" | "gated"> | undefined;
   holds: readonly AutonomyHold[];
   /** The accounts of the agents that would do the work. */
   accounts: readonly string[];

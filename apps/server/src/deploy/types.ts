@@ -1,11 +1,11 @@
-import type { DeployKind, DeployTarget } from "@majhi/shared";
+import type { DeployEnvironment, DeployKind, DeployRunStep } from "@majhi/shared";
 import type { RemoteRunFn } from "../connections/remote.ts";
 import type { Fetch } from "../gitConnect/http.ts";
 
 /**
- * What a deploy needs from the providers it can run on. One provider per kind of target; each takes
- * the credential of the target's own connection and nothing else. Nothing in here builds a command
- * from text: an ssh target runs the string its owner wrote.
+ * What a deploy needs from the providers it can run on. One provider per kind of run. A run on a git host
+ * uses the workspace's git account for the host of the run's remote; vercel and ssh runs use a connection
+ * of the workspace. Nothing in here builds a command from text: an ssh run is the string its owner wrote.
  */
 
 /** The run a provider started: its id, its page, and for GitHub which attempt of it is ours. */
@@ -13,6 +13,8 @@ export interface RunHandle {
   id: string;
   url?: string | undefined;
   attempt?: number | undefined;
+  /** Set by the service once the run ended well. */
+  ended?: boolean | undefined;
   /** A provider whose run ends before `start` returns (an ssh command) hands the outcome back here. */
   outcome?: RunProgress | undefined;
 }
@@ -24,18 +26,20 @@ export interface RepoRef {
   provider: "github" | "gitlab" | "bitbucket";
   /** `owner/repo`, or `group/subgroup/repo`. */
   slug: string;
+  /** The host name the workspace's git account is for: `github.com`, or a self-hosted server. */
+  host: string;
 }
 
-/** What a provider knows when it deploys: whose, what, which commit, and the target the owner set. */
+/** What a provider knows when it deploys: whose, what, which commit, and the environment. */
 export interface DeployContext {
   org: string;
   project: string;
-  env: string;
-  /** The base branch a run starts from when the target says `base`. */
+  env: DeployEnvironment;
+  /** The base branch a run starts from when the run says `base`. */
   base: string;
   commit: string;
-  repo: RepoRef | undefined;
-  target: DeployTarget;
+  /** The host and repo of one of the project's remotes, or of the one merge requests go to when none is named. Undefined when it is not a host a provider reaches. */
+  repoOf(remote?: string): Promise<RepoRef | undefined>;
 }
 
 /** The run a rollback goes back to: the commit and the run that deployed it. */
@@ -46,23 +50,23 @@ export interface PreviousDeploy {
 
 export interface DeployProvider {
   /** A sentence when the host does not have the commit where the run would start from, else undefined. */
-  preflight(ctx: DeployContext): Promise<string | undefined>;
-  start(ctx: DeployContext): Promise<RunHandle>;
-  poll(ctx: DeployContext, run: RunHandle): Promise<RunProgress>;
-  /** Starts the run that deployed `previous` again. Undefined when this kind of target cannot. */
-  redeploy?(ctx: DeployContext, previous: PreviousDeploy): Promise<RunHandle>;
+  preflight(ctx: DeployContext, step: DeployRunStep): Promise<string | undefined>;
+  start(ctx: DeployContext, step: DeployRunStep): Promise<RunHandle>;
+  poll(ctx: DeployContext, step: DeployRunStep, run: RunHandle): Promise<RunProgress>;
+  /** Starts the run that deployed `previous` again. Absent: this kind of run cannot go back to an earlier commit. */
+  redeploy?(ctx: DeployContext, step: DeployRunStep, previous: PreviousDeploy): Promise<RunHandle>;
 }
 
 export type Providers = Record<DeployKind, DeployProvider>;
 
 /** The credentials of a workspace's connections. Each answer is a value or one sentence saying why not. */
 export interface DeployCredentials {
-  /** The workspace's sign-in to a git host, through one of its `git` connections. */
+  /** The workspace's own git account for a host: the one merge requests and pushes use. */
   git(
     org: string,
-    connection: string,
+    host: string,
     provider: "github" | "gitlab",
-  ): Promise<{ token: string; host: string } | { problem: string }>;
+  ): Promise<{ token: string } | { problem: string }>;
   /** One variable of one of its `env` connections. */
   variable(org: string, connection: string, name: string): Promise<{ value: string } | { problem: string }>;
   /** The host of one of its `ssh` connections. */

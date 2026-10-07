@@ -1,3 +1,4 @@
+import type { DeployRunStep } from "@majhi/shared";
 import { call, HostUnreachable, str } from "../gitConnect/http.ts";
 import {
   type DeployContext,
@@ -24,10 +25,15 @@ interface Access {
   base: string;
 }
 
-async function access(ctx: DeployContext, deps: ProviderDeps): Promise<Access> {
-  const via = ctx.target.via;
-  if (via.kind !== "vercel") throw new DeployProblem("This target is not a Vercel project.");
-  const got = await deps.credentials.variable(ctx.org, via.connection, VERCEL_TOKEN_VARIABLE);
+type VercelRun = Extract<DeployRunStep, { kind: "vercel" }>;
+
+function vercelOf(step: DeployRunStep): VercelRun {
+  if (step.kind !== "vercel") throw new DeployProblem("This run is not a Vercel project.");
+  return step;
+}
+
+async function access(ctx: DeployContext, step: VercelRun, deps: ProviderDeps): Promise<Access> {
+  const got = await deps.credentials.variable(ctx.org, step.connection, VERCEL_TOKEN_VARIABLE);
   if ("problem" in got) throw new DeployProblem(got.problem);
   return { token: got.value, base: deps.vercelApi ?? API };
 }
@@ -57,10 +63,12 @@ function handleOf(body: unknown): RunHandle {
 }
 
 export function createVercelProvider(deps: ProviderDeps): DeployProvider {
-  const create = async (ctx: DeployContext, body: Record<string, unknown>): Promise<RunHandle> => {
-    const a = await access(ctx, deps);
-    const via = ctx.target.via;
-    if (via.kind !== "vercel") throw new DeployProblem("This target is not a Vercel project.");
+  const create = async (
+    ctx: DeployContext,
+    via: VercelRun,
+    body: Record<string, unknown>,
+  ): Promise<RunHandle> => {
+    const a = await access(ctx, via, deps);
     const made = await api(deps, a, "/v13/deployments?forceNew=1", {
       name: via.project,
       project: via.project,
@@ -77,21 +85,22 @@ export function createVercelProvider(deps: ProviderDeps): DeployProvider {
     // Vercel reads the commit from the repo itself; a commit it cannot find is its error at start.
     preflight: async () => undefined,
 
-    start(ctx) {
-      const repo = ctx.repo;
+    async start(ctx, run) {
+      const via = vercelOf(run);
+      const repo = await ctx.repoOf();
       if (repo === undefined || repo.provider !== "github") {
         throw new DeployProblem(
           `${ctx.project} has no GitHub remote, so Vercel cannot deploy a commit of it.`,
         );
       }
       const [org, ...rest] = repo.slug.split("/");
-      return create(ctx, {
+      return create(ctx, via, {
         gitSource: { type: "github", org, repo: rest.join("/"), ref: ctx.base, sha: ctx.commit },
       });
     },
 
-    async poll(ctx, run): Promise<RunProgress> {
-      const a = await access(ctx, deps);
+    async poll(ctx, step, run): Promise<RunProgress> {
+      const a = await access(ctx, vercelOf(step), deps);
       const answer = await api(deps, a, `/v13/deployments/${encodeURIComponent(run.id)}`);
       if (answer.status !== 200)
         throw new DeployProblem(`Vercel answered ${answer.status} for the deployment.`);
@@ -107,11 +116,11 @@ export function createVercelProvider(deps: ProviderDeps): DeployProvider {
       return { state: "running" };
     },
 
-    redeploy(ctx, previous: PreviousDeploy) {
+    redeploy(ctx, step, previous: PreviousDeploy) {
       if (previous.run === undefined) {
         throw new DeployProblem("The earlier deploy has no Vercel deployment to make again.");
       }
-      return create(ctx, { deploymentId: previous.run.id });
+      return create(ctx, vercelOf(step), { deploymentId: previous.run.id });
     },
   };
 }

@@ -120,6 +120,8 @@ export interface DeployNext {
   title: string;
   project: string;
   env: string;
+  /** The planned record that starts it. */
+  record: number;
   commit: string;
   /** Who does it by the ship rules. */
   who: "captain" | "owner";
@@ -127,8 +129,18 @@ export interface DeployNext {
   rule?: string | undefined;
 }
 
+/** A ready task that changes projects with deploy environments and has no deploy plan yet. */
+export interface DeployPlanNeed {
+  task: string;
+  title: string;
+  /** The projects the task changes that have environments, with each one's environments in words. */
+  projects: { project: string; environments: string[] }[];
+}
+
 /** Deploying merged work: what the ship chore reads and does after a merge. The real port is the deploy service. */
 export interface DeployPorts {
+  /** Whether a ready task needs its deploy planned: it changes a project with environments and has no plan rows. */
+  needsPlan(org: string, task: string): Promise<DeployPlanNeed | undefined>;
   /** The deploy steps of work merged lately in the workspace that are next, by the ship rules, guards read now. */
   next(org: string): Promise<DeployNext[]>;
   /** Why the step may not go now, read again right before it, or undefined. */

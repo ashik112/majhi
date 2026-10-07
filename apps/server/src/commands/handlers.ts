@@ -31,6 +31,7 @@ import { redactSecrets } from "../connections/redact.ts";
 import { taskSecrets } from "../connections/run-files.ts";
 import { connectionDir } from "../connections/service.ts";
 import { conversationsHandlers } from "../conversations/handlers.ts";
+import { environmentsProblem } from "../deploy/rails.ts";
 import { editorPath } from "../editor/allowed.ts";
 import { UserError } from "../errors.ts";
 import { findingsHandlers } from "../findings/handlers.ts";
@@ -158,6 +159,15 @@ export function createHandlers({
       await orgs.update({ id, mr_tokens: tokens }, ctx.command, ctx.meta);
     },
   });
+  /** An org agent reaches only its own org; a root agent (the captain) and the owner any. */
+  const agentReaches = async (meta: CommandMeta, org: string): Promise<void> => {
+    if (meta.actor.kind !== "agent") return;
+    const stored = await services.agentStore.get(meta.actor.id);
+    const scope = stored?.ok === true ? stored.agent.frontmatter.scope : undefined;
+    if (scope !== "root" && scope !== org) {
+      throw new UserError("That is in another org: you can only change your own org's deploys.", 409);
+    }
+  };
   const gitChecks = new CheckCache();
   /** `tasks.create` calls by their request id, kept a few minutes: the same id returns the first task. */
   const recentCreates = new Map<string, { at: number; made: ReturnType<typeof services.tasks.create> }>();
@@ -590,30 +600,21 @@ export function createHandlers({
       return services.mrs.fetchProject(input);
     },
     "projects.deployView": (input) => services.deploy.view(input.project),
-    "projects.setDeploy": async (input, ctx) => {
+    "projects.setEnvironments": async (input, ctx) => {
       const info = await services.projects.get(input.project);
-      const known = info.deploy.some((t) => t.env === input.target.env);
-      const targets = known
-        ? info.deploy.map((t) => (t.env === input.target.env ? input.target : t))
-        : [...info.deploy, input.target];
-      await services.projects.setDeploy(input.project, { targets }, ctx.command, ctx.meta);
-      return services.deploy.view(input.project);
-    },
-    "projects.removeDeploy": async (input, ctx) => {
-      const info = await services.projects.get(input.project);
-      const targets = info.deploy.filter((t) => t.env !== input.env);
-      await services.projects.setDeploy(input.project, { targets }, ctx.command, ctx.meta);
-      return services.deploy.view(input.project);
-    },
-    "projects.hideDeploySuggestion": async (input, ctx) => {
-      const info = await services.projects.get(input.project);
-      await services.projects.setDeploy(
-        input.project,
-        { hidden: [...info.deployHidden, input.suggestion] },
-        ctx.command,
-        ctx.meta,
+      await agentReaches(ctx.meta, info.org);
+      const problem = environmentsProblem(
+        info.deploy,
+        input.environments,
+        ctx.meta.actor.kind === "agent" ? "captain" : "owner",
       );
+      if (problem !== undefined) throw new UserError(problem, 409);
+      await services.projects.setEnvironments(input.project, input.environments, ctx.command, ctx.meta);
       return services.deploy.view(input.project);
+    },
+    "projects.planDeploy": async (input, ctx) => {
+      await agentReaches(ctx.meta, services.tasks.get(input.task)?.org ?? PRIVATE);
+      return services.deploy.service.plan(input, ctx.meta.actor.kind === "agent" ? "captain" : "owner");
     },
     // A deploy leaves the machine: the owner's click, or the captain by a rule the owner wrote (never through here).
     "projects.deploy": async (input, ctx) => {

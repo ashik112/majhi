@@ -1,24 +1,24 @@
 import {
+  type DeployEnvironment,
+  type DeployHoldInputSchema,
   type DeployInput,
   type DeployRecord,
   type DeployResult,
-  type DeployTarget,
+  type DeployRunStep,
+  deployHasCommit,
   deployIsActive,
+  type PlanDeployInput,
+  type PlanDeployResult,
   PRIVATE,
+  plannedCommit,
   type RemoteConfig,
 } from "@majhi/shared";
+import type { z } from "zod";
 import { errorMessage, UserError } from "../errors.ts";
 import type { DeployRepo } from "../store/deploys.ts";
 import type { DeployGit } from "./git.ts";
-import {
-  type DeployRefusal,
-  deployIsUnchecked,
-  deployRefusal,
-  rollbackProblem,
-  targetsBefore,
-} from "./guards.ts";
+import { type DeployRefusal, deployIsUnchecked, deployRefusal } from "./guards.ts";
 import { incidentBrief } from "./incident.ts";
-import { runRollbackCommand } from "./ssh.ts";
 import {
   type DeployContext,
   DeployProblem,
@@ -31,11 +31,12 @@ import {
 import { type VerifyDeps, verifyDeploy } from "./verify.ts";
 
 /**
- * Deploys (docs/design/ship-without-me.md, section 3). `deploy` decides whether a deploy may start, makes
- * the one record for the target and commit, and returns at once; the run is followed in the background
- * until it ends, then checked. A failed run or check rolls back, opens an incident task and tells the owner.
+ * Deploys (docs/briefs/deploy-v2.md). `plan` writes a task's steps as planned records. `deploy` decides
+ * whether a deploy may start, makes (or takes) the one record for the environment and commit, and returns at once;
+ * the record's runs are followed in the background, in order, until they end, then checked. A failed run or check
+ * rolls back, opens an incident task and tells the owner.
  *
- * Every step is keyed by the record: asking again for the same target and commit finds the record, so a
+ * Every step is keyed by the record: asking again for the same environment and commit finds the record, so a
  * deploy is never started twice, and a restart picks up the records that were moving.
  */
 
@@ -45,7 +46,7 @@ export interface DeployProject {
   path: string;
   base: string | undefined;
   remotes: Readonly<Record<string, RemoteConfig>>;
-  targets: readonly DeployTarget[];
+  environments: readonly DeployEnvironment[];
 }
 
 export interface DeployTask {
@@ -58,16 +59,16 @@ export interface DeployDeps {
   projects: { get(id: string): Promise<DeployProject> };
   tasks: { get(id: string): DeployTask | undefined; landedCommits(project: string): ReadonlySet<string> };
   git: DeployGit;
-  /** The project's host and repo, from its remote. Undefined when the remote is not a host a provider reaches. */
-  repoRef(project: DeployProject): Promise<RepoRef | undefined>;
+  /** The host and repo of one of the project's remotes (default: the one merge requests go to). Undefined when it is not a host a provider reaches. */
+  repoRef(project: DeployProject, remote?: string): Promise<RepoRef | undefined>;
   /** The project's card sets a test, build or lint command, so a commit no merge produced is unverified. */
   checksConfigured(project: string): boolean;
   providers: Providers;
   providerDeps: ProviderDeps;
-  /** One look at a health address, and at a watch of the workspace. */
-  looks: Pick<VerifyDeps, "health"> & {
-    watch(org: string, id: string): Promise<{ ok: boolean; detail: string }>;
-  };
+  /** One look at an environment's check address. */
+  looks: Pick<VerifyDeps, "health">;
+  /** How long the check after the runs lasts. */
+  checkSeconds: number;
   /** Opens the incident task of a failed deploy and returns its id. */
   openIncident(input: {
     org: string;
@@ -87,7 +88,7 @@ export interface DeployDeps {
   }): void;
   /** Something about deploys changed: screens read again. */
   changed(): void;
-  /** A deploy went live: the next environment of the project may go now. */
+  /** A deploy went live: the next step of the plan may go now. */
   onLive?: (record: DeployRecord) => void;
   /** One line in the room of the task a deploy belongs to, keyed so a repeat says nothing new. */
   taskNote?: (task: string, key: string, level: "info" | "warn", text: string) => void;
@@ -102,10 +103,23 @@ export interface DeployDeps {
 
 export type DeployActor = DeployRecord["by"];
 
+/** What a deploy asks for: an environment of a project, the runs to start, and what it ships. */
+export interface DeployRequest {
+  project: string;
+  env: string;
+  runs: readonly DeployRunStep[];
+  /** Default: the project's base branch tip. */
+  commit?: string | undefined;
+  task?: string | undefined;
+  confirmUnchecked?: boolean | undefined;
+  /** The record this is a step of, when it is one. */
+  record?: DeployRecord | undefined;
+}
+
 /** What a decision to deploy says before anything starts: the sentence that stops it, or what it would run with. */
 export type Evaluated =
   | { ok: false; why: string; kind: DeployRefusal["kind"] | "setup" | "unpushed" }
-  | { ok: true; project: DeployProject; target: DeployTarget; ctx: DeployContext; unchecked: boolean };
+  | { ok: true; project: DeployProject; env: DeployEnvironment; ctx: DeployContext; unchecked: boolean };
 
 /** Calls to a provider that fail this many times in a row end the follow: what the run did is not known. */
 const MAX_POLL_ERRORS = 5;
@@ -129,67 +143,96 @@ export class DeployService {
 
   constructor(private readonly deps: DeployDeps) {}
 
-  /** Why a deploy of the commit to the target may not start, or what it would run with. Starts nothing. */
-  async evaluate(input: DeployInput, actor: DeployActor, rest?: string): Promise<Evaluated> {
-    const project = await this.deps.projects.get(input.project);
-    const target = project.targets.find((t) => t.env === input.env);
-    if (target === undefined)
-      return { ok: false, kind: "setup", why: `${project.id} has no ${input.env} target.` };
-    if (input.task !== undefined) {
-      const task = this.deps.tasks.get(input.task);
+  private contextFor(
+    project: DeployProject,
+    env: DeployEnvironment,
+    commit: string,
+    base: string,
+  ): DeployContext {
+    return {
+      org: project.org,
+      project: project.id,
+      env,
+      base,
+      commit,
+      repoOf: (remote) => this.deps.repoRef(project, remote),
+    };
+  }
+
+  /** Why a deploy of the commit to the environment may not start, or what it would run with. Starts nothing. */
+  async evaluate(req: DeployRequest, actor: DeployActor, rest?: string): Promise<Evaluated> {
+    const project = await this.deps.projects.get(req.project);
+    const env = project.environments.find((e) => e.env === req.env);
+    if (env === undefined) {
+      return { ok: false, kind: "setup", why: `${project.id} has no ${req.env} environment.` };
+    }
+    if (req.runs.length === 0) {
+      return { ok: false, kind: "setup", why: `The deploy of ${req.env} has no runs to start.` };
+    }
+    if (actor === "captain" && req.runs.some((r) => r.kind === "ssh")) {
+      return { ok: false, kind: "setup", why: "An ssh run is the owner's: the captain does not start one." };
+    }
+    if (req.task !== undefined) {
+      const task = this.deps.tasks.get(req.task);
       if ((task?.org ?? PRIVATE) !== project.org) {
-        return { ok: false, kind: "setup", why: `${input.task} is not in the workspace of ${project.id}.` };
+        return { ok: false, kind: "setup", why: `${req.task} is not in the workspace of ${project.id}.` };
       }
     }
     const base = project.base;
     if (base === undefined) return { ok: false, kind: "setup", why: `${project.id} has no base branch.` };
     const tip = await this.deps.git.tip(project.path, base);
-    const commit = input.commit ?? tip;
+    const commit = req.commit ?? tip;
     if (commit === undefined) {
       return { ok: false, kind: "unreadable", why: "majhi could not read the project's base branch." };
     }
+    // The steps of the task's plan before this one go first, each live (at this commit, for the same project).
+    const before =
+      req.record === undefined || req.record.task === undefined
+        ? []
+        : this.deps.repo
+            .ofTask(req.record.task)
+            .filter((r) => r.seq < (req.record?.seq ?? 0))
+            .map((r) => ({
+              env: `${r.project} ${r.env}`,
+              live: r.state === "live" && (r.project !== project.id || r.commit === commit),
+            }));
     const facts = {
       actor,
       commit,
       tip,
       landed: this.deps.tasks.landedCommits(project.id).has(commit),
       checksConfigured: this.deps.checksConfigured(project.id),
-      confirmUnchecked: input.confirmUnchecked === true,
-      before: targetsBefore(project.targets, target.env).map((env) => ({
-        env,
-        live: this.deps.repo.find(project.id, env, commit)?.state === "live",
-      })),
+      confirmUnchecked: req.confirmUnchecked === true,
+      before,
       rest,
     };
     const refused = deployRefusal(facts);
     if (refused !== undefined) return { ok: false, ...refused };
-    const ctx: DeployContext = {
-      org: project.org,
-      project: project.id,
-      env: target.env,
-      base,
-      commit,
-      repo: await this.deps.repoRef(project),
-      target,
-    };
+    const ctx = this.contextFor(project, env, commit, base);
     // The host must have the commit before a run starts. A commit not pushed yet is a wait, not a failure.
-    const missing = await this.hostLacks(ctx);
+    const missing = await this.hostLacks(ctx, req.runs);
     if (missing !== undefined) return { ok: false, ...missing };
-    return { ok: true, project, target, unchecked: deployIsUnchecked(facts), ctx };
+    return { ok: true, project, env, unchecked: deployIsUnchecked(facts), ctx };
   }
 
-  /** Asks the provider whether the host has the commit, once in a while for the same target and commit. */
+  /** Asks the providers whether the host has the commit, once in a while for the same environment and commit. */
   private async hostLacks(
     ctx: DeployContext,
+    runs: readonly DeployRunStep[],
   ): Promise<{ kind: "unpushed" | "setup"; why: string } | undefined> {
-    const key = `${ctx.project}:${ctx.env}:${ctx.commit}`;
+    const key = `${ctx.project}:${ctx.env.env}:${ctx.commit}`;
     const seen = this.preflights.get(key);
     const at = this.deps.now().getTime();
     if (seen !== undefined && at - seen.at < PREFLIGHT_KEEP_MS) return seen.answer;
     let answer: { kind: "unpushed" | "setup"; why: string } | undefined;
     try {
-      const why = await this.deps.providers[ctx.target.via.kind].preflight(ctx);
-      if (why !== undefined) answer = { kind: "unpushed", why };
+      for (const step of runs) {
+        const why = await this.deps.providers[step.kind].preflight(ctx, step);
+        if (why !== undefined) {
+          answer = { kind: "unpushed", why };
+          break;
+        }
+      }
     } catch (err) {
       answer = { kind: "setup", why: reasonOf(err) };
     }
@@ -198,50 +241,164 @@ export class DeployService {
   }
 
   /**
-   * Deploys a commit of a project to one of its targets. Returns the record at once. The same target
-   * and commit twice is one deploy: the second call returns the first's record and starts nothing.
+   * Writes a task's plan: the ordered steps, as planned records that replace the task's planned ones. Nothing runs.
+   * The rails are here, not in the captain's prompt: an environment the project has, no ssh run from the captain,
+   * a task and projects of one workspace, a step once.
+   */
+  plan(input: PlanDeployInput, actor: DeployActor): Promise<PlanDeployResult> {
+    return this.writePlan(input, actor);
+  }
+
+  private async writePlan(input: PlanDeployInput, actor: DeployActor): Promise<PlanDeployResult> {
+    const task = this.deps.tasks.get(input.task);
+    if (task === undefined) throw new UserError(`There is no task ${input.task}.`, 404);
+    const org = task.org ?? PRIVATE;
+    const seen = new Set<string>();
+    for (const step of input.steps) {
+      const project = await this.deps.projects.get(step.project).catch(() => undefined);
+      if (project === undefined) throw new UserError(`There is no project ${step.project}.`, 404);
+      if (project.org !== org) {
+        throw new UserError(`${step.project} is not in the workspace of ${input.task}.`, 409);
+      }
+      if (!project.environments.some((e) => e.env === step.env)) {
+        throw new UserError(
+          `${step.project} has no ${step.env} environment. Its environments: ${project.environments.map((e) => e.env).join(", ") || "none"}.`,
+          409,
+        );
+      }
+      if (actor === "captain" && step.runs.some((r) => r.kind === "ssh")) {
+        throw new UserError("An ssh run is the owner's: the captain does not plan one.", 409);
+      }
+      const key = `${step.project}:${step.env}`;
+      if (seen.has(key)) throw new UserError(`${step.env} of ${step.project} is in the plan twice.`, 409);
+      seen.add(key);
+    }
+    const at = this.deps.now().toISOString();
+    // Steps that ran keep their place: the new ones come after them.
+    const kept = this.deps.repo
+      .ofTask(input.task)
+      .filter((r) => r.state !== "planned" && !(r.state === "held" && !deployHasCommit(r)));
+    const first = Math.max(0, ...kept.map((r) => r.seq)) + 1;
+    const records = this.deps.repo.replacePlan(
+      input.task,
+      input.steps.map((step, i) => ({
+        org,
+        project: step.project,
+        env: step.env,
+        commit: plannedCommit(input.task, first + i),
+        state: step.hold === undefined ? ("planned" as const) : ("held" as const),
+        runs: step.runs,
+        seq: first + i,
+        ...(step.note === undefined ? {} : { note: step.note }),
+        ...(step.hold === undefined ? {} : { reason: "Held for a migration: the owner lets it go" }),
+        task: input.task,
+        by: actor,
+        at,
+      })),
+    );
+    this.changed();
+    return { records };
+  }
+
+  /**
+   * Deploys to an environment: a planned (or held, or failed) record by id, or the owner's own request. Returns the
+   * record at once. The same environment and commit twice is one deploy: the second call returns the first's
+   * record and starts nothing.
    */
   async deploy(input: DeployInput, actor: DeployActor, rest?: string): Promise<DeployResult> {
+    const rec = "record" in input ? this.deps.repo.get(input.record) : undefined;
+    if ("record" in input && rec === undefined) {
+      throw new UserError(`There is no deploy ${input.record}.`, 404);
+    }
+    const req: DeployRequest =
+      rec !== undefined
+        ? {
+            project: rec.project,
+            env: rec.env,
+            runs: rec.runs,
+            record: rec,
+            ...(rec.task === undefined ? {} : { task: rec.task }),
+            ...(deployHasCommit(rec) ? { commit: rec.commit } : {}),
+            confirmUnchecked: input.confirmUnchecked === true,
+          }
+        : "record" in input
+          ? (() => {
+              throw new UserError("There is no such deploy.", 404);
+            })()
+          : { ...input, confirmUnchecked: input.confirmUnchecked === true };
+    const retry = input.retry === true;
     const named =
-      input.commit === undefined ? undefined : this.deps.repo.find(input.project, input.env, input.commit);
+      rec !== undefined
+        ? rec
+        : req.commit === undefined
+          ? undefined
+          : this.deps.repo.find(req.project, req.env, req.commit);
     // A record of this commit that is moving or live is the answer: nothing about it is decided again.
     if (named !== undefined && (deployIsActive(named.state) || named.state === "live")) {
       return { record: named, repeat: true };
     }
-    const evaluated = await this.evaluate(input, actor, rest);
+    // Failed or rolled back, and nobody asked to try again: the captain never retries a deploy by itself.
+    if (
+      rec !== undefined &&
+      (rec.state === "failed" || rec.state === "rolled-back") &&
+      !(retry && actor === "owner")
+    ) {
+      return { record: rec, repeat: true };
+    }
+    const evaluated = await this.evaluate(req, actor, rest);
     if (!evaluated.ok) throw new UserError(evaluated.why, 409);
-    const { ctx, target, project } = evaluated;
-    const existing = this.deps.repo.find(project.id, target.env, ctx.commit);
+    const { ctx, project, env } = evaluated;
+    const existing = this.deps.repo.find(project.id, env.env, ctx.commit);
     const at = this.deps.now().toISOString();
     const carried = {
       by: actor,
-      ...(input.task === undefined ? {} : { task: input.task }),
+      ...(req.task === undefined ? {} : { task: req.task }),
       ...(evaluated.unchecked ? { unchecked: true } : {}),
     };
     let record: DeployRecord | undefined;
-    if (existing === undefined) {
+    if (rec !== undefined && existing !== undefined && existing.id !== rec.id) {
+      // Another record already has this environment and commit (another task shipped the same head): that one is
+      // the answer, and the step that was only planned is moot.
+      if (!deployHasCommit(rec)) this.deps.repo.dropUnstarted(rec.id);
+      this.changed();
+      return { record: existing, repeat: true };
+    }
+    if (rec !== undefined) {
+      const stand = deployHasCommit(rec) ? {} : { commit: ctx.commit };
+      if (rec.state === "failed" || rec.state === "rolled-back") {
+        record = this.deps.repo.move(rec.id, rec.state, "queued", at, carried);
+      } else if (rec.state === "planned" || rec.state === "held") {
+        record = this.deps.repo.move(rec.id, rec.state, "queued", at, { ...carried, ...stand });
+      }
+    } else if (existing === undefined) {
       record = this.deps.repo.create({
         org: project.org,
         project: project.id,
-        env: target.env,
+        env: env.env,
         commit: ctx.commit,
         state: "queued",
+        runs: req.runs,
         at,
         ...carried,
       });
     } else if (deployIsActive(existing.state) || existing.state === "live") {
       return { record: existing, repeat: true };
     } else if (existing.state === "held") {
-      record = this.deps.repo.move(existing.id, "held", "queued", at, carried);
-    } else if (input.retry === true && actor === "owner") {
-      record = this.deps.repo.move(existing.id, existing.state, "queued", at, carried);
+      record = this.deps.repo.move(existing.id, "held", "queued", at, {
+        ...carried,
+        ...(existing.runs.length === 0 ? { runs: req.runs } : {}),
+      });
+    } else if (retry && actor === "owner") {
+      record = this.deps.repo.move(existing.id, existing.state, "queued", at, {
+        ...carried,
+        runs: req.runs,
+      });
     } else {
-      // Failed or rolled back, and nobody asked to try again: the captain never retries a deploy by itself.
       return { record: existing, repeat: true };
     }
     if (record === undefined) {
       // Another caller made or moved it first: its record is the answer.
-      const winner = this.deps.repo.find(project.id, target.env, ctx.commit);
+      const winner = this.deps.repo.find(project.id, env.env, ctx.commit);
       if (winner === undefined) throw new Error("A deploy record vanished");
       return { record: winner, repeat: true };
     }
@@ -251,18 +408,26 @@ export class DeployService {
     return { record, repeat: false };
   }
 
-  /** The owner said hold: no rule deploys this commit to this target until the owner does it. */
-  async hold(input: {
-    project: string;
-    env: string;
-    commit: string;
-    task?: string | undefined;
-  }): Promise<DeployRecord> {
+  /** The owner said hold: no rule deploys this step or commit until the owner does it. */
+  async hold(input: z.infer<typeof DeployHoldInputSchema>): Promise<DeployRecord> {
+    const at = this.deps.now().toISOString();
+    if ("record" in input) {
+      const rec = this.deps.repo.get(input.record);
+      if (rec === undefined) throw new UserError(`There is no deploy ${input.record}.`, 404);
+      if (rec.state === "held") return rec;
+      if (rec.state !== "planned" && rec.state !== "queued") {
+        throw new UserError(`Deploy ${rec.id} is ${rec.state}, so it cannot be held.`, 409);
+      }
+      const held = this.deps.repo.move(rec.id, rec.state, "held", at, { reason: "You held it", by: "owner" });
+      if (held === undefined) throw new UserError(`Deploy ${rec.id} changed while it was held.`, 409);
+      this.changed();
+      return held;
+    }
     const existing = this.deps.repo.find(input.project, input.env, input.commit);
     if (existing !== undefined) return existing;
     const project = await this.deps.projects.get(input.project);
-    if (!project.targets.some((t) => t.env === input.env)) {
-      throw new UserError(`${project.id} has no ${input.env} target.`);
+    if (!project.environments.some((e) => e.env === input.env)) {
+      throw new UserError(`${project.id} has no ${input.env} environment.`);
     }
     const record = this.deps.repo.create({
       org: project.org,
@@ -270,9 +435,10 @@ export class DeployService {
       env: input.env,
       commit: input.commit,
       state: "held",
+      runs: input.runs ?? [],
       by: "owner",
       reason: "You held it",
-      at: this.deps.now().toISOString(),
+      at,
       ...(input.task === undefined ? {} : { task: input.task }),
     });
     const made = record ?? this.deps.repo.find(input.project, input.env, input.commit);
@@ -282,8 +448,8 @@ export class DeployService {
   }
 
   /**
-   * Goes back: runs the target's rollback for a deploy that is live or whose own rollback did not work.
-   * The owner's click, and what the captain log offers instead of Undo.
+   * Goes back: runs the runs of the environment's earlier live deploy again, for a deploy that is live or whose
+   * own rollback did not work. The owner's click, and what the captain log offers instead of Undo.
    */
   async rollback(id: number, actor: DeployActor): Promise<DeployResult> {
     const record = this.deps.repo.get(id);
@@ -342,7 +508,7 @@ export class DeployService {
   private kick(id: number): void {
     const record = this.deps.repo.get(id);
     if (record === undefined) return;
-    // One at a time per target: a newer commit waits for the one that is going out.
+    // One at a time per environment: a newer commit waits for the one that is going out.
     const lane = `${record.project}:${record.env}`;
     const before = this.lanes.get(lane) ?? Promise.resolve();
     const next: Promise<void> = before
@@ -358,9 +524,12 @@ export class DeployService {
 
   private async drive(id: number): Promise<void> {
     let record = this.deps.repo.get(id);
-    let handle: RunHandle | undefined;
-    if (record?.state === "queued") ({ record, handle } = await this.begin(record));
-    if (record?.state === "running") record = await this.follow(record, handle);
+    let resumed = true;
+    if (record?.state === "queued") {
+      record = this.begin(record);
+      resumed = false;
+    }
+    if (record?.state === "running") record = await this.follow(record, resumed);
     if (record?.state === "verifying") await this.check(record);
   }
 
@@ -373,73 +542,70 @@ export class DeployService {
     );
   }
 
-  private async contextOf(
-    record: DeployRecord,
-  ): Promise<{ ctx: DeployContext; provider: DeployProvider } | undefined> {
+  private async contextOf(record: DeployRecord): Promise<DeployContext | undefined> {
     const project = await this.deps.projects.get(record.project).catch(() => undefined);
-    const target = project?.targets.find((t) => t.env === record.env);
-    if (project === undefined || target === undefined || project.base === undefined) return undefined;
-    return {
-      ctx: {
-        org: project.org,
-        project: project.id,
-        env: target.env,
-        base: project.base,
-        commit: record.commit,
-        repo: await this.deps.repoRef(project),
-        target,
-      },
-      provider: this.deps.providers[target.via.kind],
-    };
+    const env = project?.environments.find((e) => e.env === record.env);
+    if (project === undefined || env === undefined || project.base === undefined) return undefined;
+    return this.contextFor(project, env, record.commit, project.base);
   }
 
-  /** queued to running: the run is started. The handle is what the provider returned, with an outcome when the run is already over. */
-  private async begin(
-    record: DeployRecord,
-  ): Promise<{ record: DeployRecord | undefined; handle?: RunHandle }> {
+  /** queued to running: what the environment ran before is noted, for a rollback. */
+  private begin(record: DeployRecord): DeployRecord | undefined {
     const at = this.deps.now().toISOString();
     const previous = this.deps.repo.latestLive(record.project, record.env)?.commit;
     const running = this.deps.repo.move(record.id, "queued", "running", at, {
       ...(previous === undefined ? {} : { previous }),
     });
-    if (running === undefined) return { record: undefined };
-    this.changed();
-    const known = await this.contextOf(running);
-    if (known === undefined) {
-      return {
-        record: await this.fail(running, "The target is not in the project any more.", { rollback: false }),
-      };
-    }
-    try {
-      const refused = await known.provider.preflight(known.ctx);
-      if (refused !== undefined) return { record: await this.fail(running, refused, { rollback: false }) };
-      const handle = await known.provider.start(known.ctx);
-      const { outcome: _over, ...run } = handle;
-      this.deps.repo.annotate(running.id, this.deps.now().toISOString(), { run });
-      this.changed();
-      return { record: this.deps.repo.get(running.id), handle };
-    } catch (err) {
-      // Nothing was deployed, so there is nothing to roll back.
-      return { record: await this.fail(running, reasonOf(err), { rollback: false }) };
-    }
+    if (running !== undefined) this.changed();
+    return running;
   }
 
-  /** Waits for the run to end: running to verifying, or to failed. */
-  private async follow(record: DeployRecord, started?: RunHandle): Promise<DeployRecord | undefined> {
-    const known = await this.contextOf(record);
-    if (known === undefined)
-      return this.fail(record, "The target is not in the project any more.", { rollback: false });
-    const run: RunHandle | undefined = started ?? record.run;
-    if (run === undefined) {
-      return this.fail(record, "majhi restarted before the run was known, so what it did is not known", {
-        rollback: true,
-      });
+  /**
+   * Starts the record's runs one after the other, and waits for each to end: running to verifying, or to failed.
+   * A run that was started and not ended (a restart in between) is followed, not started again.
+   */
+  private async follow(record: DeployRecord, resumed: boolean): Promise<DeployRecord | undefined> {
+    const ctx = await this.contextOf(record);
+    if (ctx === undefined) {
+      return this.fail(record, "The environment is not in the project any more.", { rollback: false });
     }
-    const ended =
-      run.outcome === undefined
-        ? await this.waitFor(known.provider, known.ctx, run)
-        : progressOf(run.outcome);
-    if (!ended.ok) return this.fail(record, ended.detail, { rollback: true });
+    if (record.runs.length === 0) {
+      return this.fail(record, "The deploy has no runs to start.", { rollback: false });
+    }
+    const handles = [...record.handles];
+    for (const [i, step] of record.runs.entries()) {
+      const provider = this.deps.providers[step.kind];
+      let handle: RunHandle | undefined = handles[i];
+      if (handle?.ended === true) continue;
+      let outcome: RunHandle["outcome"];
+      if (handle === undefined) {
+        if (resumed) {
+          return this.fail(record, "majhi restarted before the run was known, so what it did is not known", {
+            rollback: true,
+          });
+        }
+        try {
+          const refused = await provider.preflight(ctx, step);
+          // Nothing was deployed yet when the first run is refused or does not start, so there is nothing to roll back.
+          if (refused !== undefined) return this.fail(record, refused, { rollback: i > 0 });
+          const started = await provider.start(ctx, step);
+          outcome = started.outcome;
+          const { outcome: _over, ...run } = started;
+          handle = run;
+          handles[i] = run;
+          this.deps.repo.annotate(record.id, this.deps.now().toISOString(), { handles });
+          this.changed();
+        } catch (err) {
+          return this.fail(record, reasonOf(err), { rollback: i > 0 });
+        }
+      }
+      const ended =
+        outcome === undefined ? await this.waitFor(provider, ctx, step, handle) : progressOf(outcome);
+      if (!ended.ok) return this.fail(record, ended.detail, { rollback: true });
+      handles[i] = { ...handle, ended: true };
+      this.deps.repo.annotate(record.id, this.deps.now().toISOString(), { handles });
+      this.changed();
+    }
     const verifying = this.deps.repo.move(record.id, "running", "verifying", this.deps.now().toISOString());
     this.changed();
     return verifying;
@@ -449,13 +615,14 @@ export class DeployService {
   private async waitFor(
     provider: DeployProvider,
     ctx: DeployContext,
+    step: DeployRunStep,
     run: RunHandle,
   ): Promise<{ ok: true } | { ok: false; detail: string }> {
     const deadline = this.deps.now().getTime() + this.deps.runTimeoutMs;
     let errors = 0;
     for (;;) {
       try {
-        const progress = await provider.poll(ctx, run);
+        const progress = await provider.poll(ctx, step, run);
         errors = 0;
         if (progress.state === "success") return { ok: true };
         if (progress.state === "failed") return { ok: false, detail: progress.detail };
@@ -472,14 +639,14 @@ export class DeployService {
     }
   }
 
-  /** The check after the run: verifying to live, or to failed. */
+  /** The check after the runs: verifying to live, or to failed. */
   private async check(record: DeployRecord): Promise<void> {
-    const known = await this.contextOf(record);
-    if (known === undefined) {
-      await this.fail(record, "The target is not in the project any more.", { rollback: false });
+    const ctx = await this.contextOf(record);
+    if (ctx === undefined) {
+      await this.fail(record, "The environment is not in the project any more.", { rollback: false });
       return;
     }
-    const result = await this.verify(known.ctx);
+    const result = await this.verify(ctx);
     const at = this.deps.now().toISOString();
     const check = { ok: result.ok, detail: result.detail, at };
     if (!result.ok) {
@@ -502,13 +669,15 @@ export class DeployService {
   }
 
   private verify(ctx: DeployContext): Promise<{ ok: boolean; detail: string }> {
-    return verifyDeploy(ctx.target.verify, {
-      health: this.deps.looks.health,
-      watch: (id) => this.deps.looks.watch(ctx.org, id),
-      sleep: (ms) => this.deps.sleep(ms),
-      now: () => this.deps.now().getTime(),
-      everyMs: this.deps.verifyMs,
-    });
+    return verifyDeploy(
+      { health: ctx.env.check, waitSeconds: this.deps.checkSeconds },
+      {
+        health: this.deps.looks.health,
+        sleep: (ms) => this.deps.sleep(ms),
+        now: () => this.deps.now().getTime(),
+        everyMs: this.deps.verifyMs,
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -569,39 +738,70 @@ export class DeployService {
     return undefined;
   }
 
-  /** Runs the target's rollback and checks the target is healthy again. */
+  /**
+   * Runs the runs of the environment's earlier live deploy again, each at that deploy's commit with its own inputs,
+   * and checks the environment is healthy again. A deploy whose runs cannot be repeated says so.
+   */
   private async goBack(record: DeployRecord): Promise<NonNullable<DeployRecord["rollback"]>> {
-    const known = await this.contextOf(record);
+    const ctx = await this.contextOf(record);
     const at = () => this.deps.now().toISOString();
-    if (known === undefined)
-      return { ok: false, detail: "The target is not in the project any more.", at: at() };
-    const { ctx, provider } = known;
-    const how = ctx.target.rollback;
-    const problem = rollbackProblem(ctx.target);
-    if (problem !== undefined) return { ok: false, detail: problem, at: at() };
-    let handle: RunHandle;
-    if (how.kind === "ssh") {
-      handle = await runRollbackCommand(ctx, this.deps.providerDeps, how.connection, how.command);
-    } else {
-      if (record.previous === undefined || provider.redeploy === undefined) {
-        return { ok: false, detail: "There is no earlier deploy of this target to go back to.", at: at() };
-      }
-      const before = this.deps.repo.find(record.project, record.env, record.previous);
-      handle = await provider.redeploy(
-        { ...ctx, commit: record.previous },
-        { commit: record.previous, run: before?.run },
-      );
+    if (ctx === undefined) {
+      return { ok: false, detail: "The environment is not in the project any more.", at: at() };
     }
-    const ended =
-      handle.outcome !== undefined ? progressOf(handle.outcome) : await this.waitFor(provider, ctx, handle);
-    if (!ended.ok) return { ok: false, detail: ended.detail, run: handle, at: at() };
+    const earlier =
+      record.previous === undefined
+        ? undefined
+        : this.deps.repo.find(record.project, record.env, record.previous);
+    if (earlier === undefined) {
+      return { ok: false, detail: "There is no earlier deploy of this environment to go back to.", at: at() };
+    }
+    if (earlier.runs.length === 0) {
+      return {
+        ok: false,
+        detail: `The earlier deploy (${earlier.commit.slice(0, 7)}) has no recorded runs, so majhi cannot repeat it. Ask the owner to roll ${record.env} back by hand.`,
+        at: at(),
+      };
+    }
+    const stuck = earlier.runs.find((step) => this.deps.providers[step.kind].redeploy === undefined);
+    if (stuck !== undefined) {
+      return {
+        ok: false,
+        detail: `A ${stuck.kind} run cannot go back to an earlier commit, so majhi cannot repeat the deploy of ${earlier.commit.slice(0, 7)}. Ask the owner to roll ${record.env} back by hand.`,
+        at: at(),
+      };
+    }
+    const back = { ...ctx, commit: earlier.commit };
+    let last: RunHandle | undefined;
+    for (const [i, step] of earlier.runs.entries()) {
+      const redeploy = this.deps.providers[step.kind].redeploy;
+      if (redeploy === undefined) continue;
+      let handle: RunHandle;
+      try {
+        handle = await redeploy.call(this.deps.providers[step.kind], back, step, {
+          commit: earlier.commit,
+          run: earlier.handles[i],
+        });
+      } catch (err) {
+        if (!(err instanceof DeployProblem)) throw err;
+        return {
+          ok: false,
+          detail: `${err.message} Ask the owner to roll ${record.env} back by hand.`,
+          at: at(),
+        };
+      }
+      last = handle;
+      const ended =
+        handle.outcome !== undefined
+          ? progressOf(handle.outcome)
+          : await this.waitFor(this.deps.providers[step.kind], back, step, handle);
+      if (!ended.ok) return { ok: false, detail: ended.detail, run: handle, at: at() };
+    }
     const checked = await this.verify(ctx);
-    const commit = how.kind === "redeploy-previous" ? record.previous : undefined;
     return {
       ok: checked.ok,
       detail: checked.ok ? checked.detail : `Rolled back, but the check still fails: ${checked.detail}`,
-      ...(commit === undefined ? {} : { commit }),
-      run: handle,
+      commit: earlier.commit,
+      ...(last === undefined ? {} : { run: last }),
       at: at(),
     };
   }

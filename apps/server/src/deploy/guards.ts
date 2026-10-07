@@ -1,5 +1,3 @@
-import type { DeployTarget } from "@majhi/shared";
-
 /**
  * The guards a deploy passes before it starts, whoever asks. Pure: the facts are read by the caller, so the
  * same answer is given to the chore that decides, the command that deploys and the trail that shows why a
@@ -17,7 +15,7 @@ export interface DeployFacts {
   checksConfigured: boolean;
   /** The owner deploys a base tip no merge of majhi's produced. Never honoured for the captain. */
   confirmUnchecked: boolean;
-  /** The environments listed before this one in the project, and whether each is live at this commit. */
+  /** The steps of the task's plan before this one, by name ("storefront staging"), and whether each is live at this commit. */
   before: readonly { env: string; live: boolean }[];
   /** Why the captain rests in the workspace now (hours, a freeze). Only the captain's deploys wait for it. */
   rest?: string | undefined;
@@ -60,19 +58,4 @@ export function deployIsUnchecked(
   f: Pick<DeployFacts, "landed" | "checksConfigured" | "confirmUnchecked" | "actor">,
 ): boolean {
   return !f.landed && f.checksConfigured && f.actor === "owner" && f.confirmUnchecked;
-}
-
-/** The targets before `env` in the project's order: each must be live before this one goes. */
-export function targetsBefore(targets: readonly DeployTarget[], env: string): string[] {
-  const at = targets.findIndex((t) => t.env === env);
-  return at < 0 ? [] : targets.slice(0, at).map((t) => t.env);
-}
-
-/** The rollback a target can really do, or why it cannot: a pipeline or a command cannot start an earlier commit. */
-export function rollbackProblem(target: DeployTarget): string | undefined {
-  if (target.rollback.kind === "ssh") return undefined;
-  if (target.via.kind === "github-workflow" || target.via.kind === "vercel") return undefined;
-  return target.via.kind === "gitlab-pipeline"
-    ? "A GitLab pipeline starts from a branch, not from an earlier commit. Write the rollback command."
-    : "An ssh command has no earlier commit to start from. Write the rollback command.";
 }

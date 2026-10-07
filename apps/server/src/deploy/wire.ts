@@ -5,18 +5,15 @@ import {
   PRIVATE,
   type ProjectDeployView,
   shipRuleSubject,
-  textValue,
 } from "@majhi/shared";
 import { auditActor, auditDetail } from "../audit.ts";
 import { shipRulesOf } from "../captain/levels.ts";
 import type { DeployNext, DeployPorts } from "../captain/ports.ts";
-import type { ConfigSections } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
 import { type RemoteRunFn, runRemote } from "../connections/remote.ts";
 import type { Fetch } from "../gitConnect/http.ts";
 import { remoteUrl } from "../mrs/push.ts";
-import { mrHostOf, mrRemoteName, repoSlug } from "../mrs/remote.ts";
-import { fsRepoFiles } from "../projectcard/files.ts";
+import { hostNameOf, mrHostOf, mrRemoteName, repoSlug } from "../mrs/remote.ts";
 import type { ProjectInfo, ProjectService } from "../projects/service.ts";
 import type { ShipPlanner } from "../ship/plan.ts";
 import type { Store } from "../store/index.ts";
@@ -28,7 +25,6 @@ import { createGitLabProvider } from "./gitlab.ts";
 import { DeployPlanner } from "./plan.ts";
 import { type DeployProject, DeployService } from "./service.ts";
 import { createSshProvider } from "./ssh.ts";
-import { suggestDeploys } from "./suggest.ts";
 import type { ProviderDeps, Providers, RepoRef } from "./types.ts";
 import { createVercelProvider } from "./vercel.ts";
 
@@ -40,9 +36,16 @@ export interface DeployTiming {
   pollMs: number;
   verifyMs: number;
   runTimeoutMs: number;
+  /** How long the check after the runs lasts. */
+  checkSeconds: number;
 }
 
-export const DEFAULT_TIMING: DeployTiming = { pollMs: 5_000, verifyMs: 5_000, runTimeoutMs: 30 * 60_000 };
+export const DEFAULT_TIMING: DeployTiming = {
+  pollMs: 5_000,
+  verifyMs: 5_000,
+  runTimeoutMs: 30 * 60_000,
+  checkSeconds: 60,
+};
 
 export interface DeployWorldDeps {
   store: Store;
@@ -51,9 +54,8 @@ export interface DeployWorldDeps {
   tasks: Pick<TaskService, "create" | "get">;
   ship: Pick<ShipPlanner, "plan">;
   credentials: CredentialDeps;
-  /** The watch engine, once it exists: one look at a watch of the workspace, and the ones that look at an address. */
-  watch: (org: string, id: string) => Promise<{ ok: boolean; detail: string }>;
-  watches: (org: string) => Promise<{ id: string; name: string; url?: string | undefined }[]>;
+  /** SSH aliases of the owner's ssh config, lowercased alias to host name: a remote pushed through one is on its host. */
+  hostAliases?: (() => Promise<ReadonlyMap<string, string>>) | undefined;
   checksConfigured: (project: string) => boolean;
   tellOwner: (key: string, text: string) => void;
   /** One line in a task's room. */
@@ -73,7 +75,7 @@ export interface DeployWorld {
   planner: DeployPlanner;
   /** What the captain's ship chore reads and does. */
   ports: DeployPorts;
-  /** The project's page: targets, what majhi found, history. */
+  /** The project's page: environments and history. */
   view(project: string): Promise<ProjectDeployView>;
   /** The deploy steps of recently merged tasks that are not all live yet, for the board. Kept briefly. */
   board(): Promise<HomeDeploy[]>;
@@ -87,17 +89,11 @@ const BOARD_TASKS = 40;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 function projectOf(p: ProjectInfo): DeployProject {
-  return { id: p.id, org: p.org, path: p.path, base: p.base, remotes: p.remotes, targets: p.deploy };
+  return { id: p.id, org: p.org, path: p.path, base: p.base, remotes: p.remotes, environments: p.deploy };
 }
 
-function connectionViews(sections: ConfigSections, org: string) {
-  return Object.entries(sections.orgs[org]?.connections ?? {}).map(([id, c]) => ({
-    id,
-    type: c.type,
-    provider: textValue(c, "provider"),
-    vercel: c.vars?.VERCEL_TOKEN !== undefined,
-  }));
-}
+/** The host a provider is reached at when the remote has no host name of its own (a local path or an alias with no entry). */
+const PUBLIC_HOST = { github: "github.com", gitlab: "gitlab.com", bitbucket: "bitbucket.org" } as const;
 
 export function createDeploy(deps: DeployWorldDeps): DeployWorld {
   const now = deps.now ?? (() => new Date());
@@ -110,21 +106,29 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     now,
     vercelApi: deps.vercelApi,
   };
+  const gitlab = createGitLabProvider(providerDeps);
   const providers: Providers = {
     "github-workflow": createGitHubProvider(providerDeps),
-    "gitlab-pipeline": createGitLabProvider(providerDeps),
+    "gitlab-pipeline": gitlab,
+    "gitlab-job": gitlab,
     vercel: createVercelProvider(providerDeps),
     ssh: createSshProvider(providerDeps),
   };
 
   const project = async (id: string): Promise<DeployProject> => projectOf(await deps.projects.get(id));
 
-  const repoRef = async (p: DeployProject): Promise<RepoRef | undefined> => {
-    const remote = mrRemoteName(p.remotes);
+  const repoRef = async (p: DeployProject, named?: string): Promise<RepoRef | undefined> => {
+    const remote = named ?? mrRemoteName(p.remotes);
     const url = await remoteUrl(p.path, remote).catch(() => undefined);
     if (url === undefined) return undefined;
     const provider = mrHostOf(p.remotes[remote], url);
-    return provider === undefined ? undefined : { provider, slug: repoSlug(url) };
+    if (provider === undefined) return undefined;
+    // The workspace's git account is for the real host: an ssh alias is looked up in the owner's ssh config.
+    const name = hostNameOf(url)?.toLowerCase();
+    const aliased =
+      name === undefined ? undefined : (await deps.hostAliases?.().catch(() => undefined))?.get(name);
+    const host = aliased ?? name ?? PUBLIC_HOST[provider];
+    return { provider, slug: repoSlug(url), host };
   };
 
   /** Opens the incident task of a failed deploy: typed `incident`, its origin the deploy, in the deploy's workspace. */
@@ -189,7 +193,6 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
           return undefined;
         }
       },
-      watch: (org, id) => deps.watch(org, id),
     },
     openIncident,
     tellOwner: (_org, key, text) => deps.tellOwner(key, text),
@@ -217,7 +220,7 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     service,
     repo: deps.store.deploys,
     ship: (id) => deps.ship.plan(id),
-    targets: async (id) => (await deps.projects.get(id).catch(() => undefined))?.deploy ?? [],
+    environments: async (id) => (await deps.projects.get(id).catch(() => undefined))?.deploy ?? [],
   });
 
   const next = async (org: string): Promise<DeployNext[]> => {
@@ -231,7 +234,13 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
         deps.ship.plan(id).catch(() => undefined),
       ]);
       for (const s of steps) {
-        if ((s.state !== "captain-next" && s.state !== "waits-for-owner") || s.commit === undefined) continue;
+        if (
+          (s.state !== "captain-next" && s.state !== "waits-for-owner") ||
+          s.commit === undefined ||
+          s.record === undefined
+        ) {
+          continue;
+        }
         const key = `${s.project}:${s.env}:${s.commit}`;
         if (out.has(key)) continue;
         out.set(key, {
@@ -239,6 +248,7 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
           title: task.title,
           project: s.project,
           env: s.env,
+          record: s.record,
           commit: s.commit,
           who: s.who,
           ...(plan?.ruleSubject === undefined ? {} : { rule: plan.ruleSubject }),
@@ -250,6 +260,24 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
 
   const ports: DeployPorts = {
     next,
+    async needsPlan(_org, id) {
+      const task = deps.store.tasks.get(id);
+      if (task === undefined || deps.store.deploys.ofTask(id).length > 0) return undefined;
+      const projects: { project: string; environments: string[] }[] = [];
+      for (const repo of task.repos) {
+        if (repo.writes === false) continue;
+        const envs = (await deps.projects.get(repo.project).catch(() => undefined))?.deploy ?? [];
+        if (envs.length === 0) continue;
+        projects.push({
+          project: repo.project,
+          environments: envs.map(
+            (e) =>
+              `${e.env} (${e.tier}${e.branch === undefined ? "" : `, deploys when ${e.branch} is pushed or merged`})`,
+          ),
+        });
+      }
+      return projects.length === 0 ? undefined : { task: id, title: task.title, projects };
+    },
     async recheck(_org, step) {
       const task = deps.store.tasks.get(step.task);
       if (task === undefined) return `${step.task} is gone`;
@@ -262,35 +290,18 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     },
     async deploy(_org, step) {
       const plan = await deps.ship.plan(step.task).catch(() => undefined);
-      return service.deploy(
-        { project: step.project, env: step.env, task: step.task, commit: step.commit },
-        "captain",
-        plan?.rest,
-      );
+      return service.deploy({ record: step.record }, "captain", plan?.rest);
     },
   };
 
   const view = async (id: string): Promise<ProjectDeployView> => {
     const info = await deps.projects.get(id);
-    const sections = await deps.config.sections();
-    const ref = await repoRef(projectOf(info));
-    const suggestions = await suggestDeploys(
-      { id: info.id, org: info.org, path: info.path, provider: ref?.provider },
-      info.deployHidden,
-      {
-        files: fsRepoFiles,
-        connections: async (org) => connectionViews(sections, org),
-        watches: deps.watches,
-      },
-      info.deploy,
-    ).catch(() => []);
     const rules = shipRulesOf((await deps.config.settings()).autonomy, info.org);
     // The rule the project's tasks meet first: one that names no project, or this one.
     const rule = rules.find((r) => r.when.projects === undefined || r.when.projects.includes(info.id));
     return {
       project: info.id,
-      targets: info.deploy,
-      suggestions,
+      environments: info.deploy,
       history: service.history(info.id),
       ...(rule === undefined ? {} : { rule: shipRuleSubject(rule.when) }),
     };

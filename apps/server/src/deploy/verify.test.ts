@@ -2,17 +2,13 @@ import { describe, expect, it } from "vitest";
 import { type VerifyDeps, verifyDeploy } from "./verify.ts";
 
 /** A clock that only moves when the check sleeps, and the answers of the health address in order. */
-function world(answers: (number | undefined)[], watch: boolean[] = []) {
+function world(answers: (number | undefined)[]) {
   let at = 0;
-  const looks: { health: number; watch: number } = { health: 0, watch: 0 };
+  const looks = { health: 0 };
   const deps: VerifyDeps = {
     health: async () => {
       const a = answers[Math.min(looks.health++, answers.length - 1)];
       return a === undefined ? undefined : { status: a };
-    },
-    watch: async () => {
-      const ok = watch[Math.min(looks.watch++, watch.length - 1)] ?? true;
-      return { ok, detail: ok ? "ok" : "alerting" };
     },
     sleep: async (ms) => {
       at += ms;
@@ -53,13 +49,10 @@ describe("verifyDeploy", () => {
     });
   });
 
-  it("needs the watch green as well as the address", async () => {
-    const { deps } = world([200], [true, false]);
-    const result = await verifyDeploy(
-      { health: "https://a.example/h", watch: "wch-abcd", waitSeconds: 30 },
-      deps,
-    );
-    expect(result).toEqual({ ok: false, detail: "It was up, then the watch says alerting" });
+  it("is live when the environment has no address to look at", async () => {
+    const { deps, looks } = world([500]);
+    expect((await verifyDeploy({ health: undefined, waitSeconds: 60 }, deps)).ok).toBe(true);
+    expect(looks.health).toBe(0);
   });
 
   it("looks once when the wait is zero", async () => {

@@ -49,8 +49,12 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
       { id: "ship-conflict", text: "Conflicts with main: ask the lead to resolve it, then try again" },
       { id: "ship-notready", text: "Not committed, a card waits or a secret in the diff: tell me why" },
       {
+        id: "ship-deploy-plan",
+        text: "Work is ready to ship, its project has deploy environments and the task has no deploy plan: ask the captain to plan it from the project's wiki and the diff",
+      },
+      {
         id: "ship-deploy",
-        text: "Work is merged and its project has a deploy target the rules give the captain: deploy it, check it, roll back if it fails",
+        text: "Work is merged and its deploy plan has a step the rules give the captain: deploy it, check it, roll back if it fails",
       },
       {
         id: "ship-deploy-ask",

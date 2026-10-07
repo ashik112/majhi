@@ -1,11 +1,12 @@
 import { type ConnectionConfig, textValue } from "@majhi/shared";
-import { gitTarget, type PlanDeps } from "../connections/plan.ts";
+import type { PlanDeps } from "../connections/plan.ts";
 import type { DeployCredentials } from "./types.ts";
 
 /**
- * The only way a deploy reaches a credential: through a connection of the project's own workspace. A
- * connection of another workspace, or of another kind than the target needs, is refused with a sentence,
- * so one workspace's targets can never use another's keys. A value is returned to the provider that
+ * The only way a deploy reaches a credential: through the project's own workspace. A run on a git host uses
+ * the workspace's git account for that host; other runs use a connection of the workspace. A connection of
+ * another workspace, or of another kind than the run needs, is refused with a sentence, so one workspace's
+ * deploys can never use another's keys. A value is returned to the provider that
  * calls with it and goes nowhere else: not into a record, a log or a command line.
  */
 
@@ -35,16 +36,8 @@ export function createDeployCredentials(deps: CredentialDeps): DeployCredentials
   };
 
   return {
-    async git(org, id, provider) {
-      const got = await own(org, id, "git", "a git host connection");
-      if (!got.ok) return { problem: got.problem };
-      const target = gitTarget(got.connection);
-      if (target.provider !== provider) {
-        return { problem: `${id} is a ${target.provider} connection, not ${provider}.` };
-      }
-      const token = await deps.gitToken(org, provider, target.host);
-      return "problem" in token ? token : { token: token.token, host: target.host };
-    },
+    // The workspace's git account for the host, which is what a merge request or a push signs in with.
+    git: (org, host, provider) => deps.gitToken(org, provider, host),
 
     async variable(org, id, name) {
       const got = await own(org, id, "env", "a variables connection");

@@ -1848,6 +1848,19 @@ ALTER TABLE task_repos ADD COLUMN landed_into TEXT;
 ALTER TABLE task_repos ADD COLUMN landed_at TEXT;
 `,
   },
+  {
+    // Deploys v2 (docs/briefs/deploy-v2.md). A record carries the runs to start, in order (`runs`, JSON checked by zod
+    // on read), its place in the task's plan (`seq`) and the captain's note. The `run` column now holds the provider's
+    // run of each of `runs` (a JSON list; a row from before holds one run and reads as a list of one). The new state
+    // `planned` needs no column.
+    id: 178,
+    name: "deploy runs, plan order and notes",
+    sql: `
+ALTER TABLE deploys ADD COLUMN runs TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE deploys ADD COLUMN seq INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE deploys ADD COLUMN note TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

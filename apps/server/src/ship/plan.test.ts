@@ -1,4 +1,10 @@
-import { ALL_ASK, AutonomySettingsSchema, type ShipRule, type Task } from "@majhi/shared";
+import {
+  ALL_ASK,
+  AutonomySettingsSchema,
+  type DeployEnvironment,
+  type ShipRule,
+  type Task,
+} from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { ownerStepOf } from "../tasks/detail.ts";
 import { linesOfNumstat } from "./lines.ts";
@@ -13,12 +19,23 @@ const rule: ShipRule = {
   tell: "ask",
 };
 
-const task = (id: string, org: string | undefined, type: "bug" | "feature"): Task =>
-  ({ id, org, status: "review", repos: [], typing: { type, by: "owner" } }) as unknown as Task;
+const task = (id: string, org: string | undefined, type: "bug" | "feature", into?: string): Task =>
+  ({
+    id,
+    org,
+    status: "review",
+    repos: into === undefined ? [] : [{ project: "storefront", base: into, branch: "task/x" }],
+    typing: { type, by: "owner" },
+  }) as unknown as Task;
 
-function planner(mode: "on" | "off", way: "local" | "merge-request" = "local") {
+function planner(
+  mode: "on" | "off",
+  way: "local" | "merge-request" = "local",
+  environments: DeployEnvironment[] = [],
+  into?: string,
+) {
   const tasks = new Map<string, Task>([
-    ["ACM-1", task("ACM-1", "acme", "bug")],
+    ["ACM-1", task("ACM-1", "acme", "bug", into)],
     ["ACM-2", task("ACM-2", "acme", "feature")],
     ["GLX-1", task("GLX-1", "globex", "bug")],
   ]);
@@ -33,6 +50,7 @@ function planner(mode: "on" | "off", way: "local" | "merge-request" = "local") {
       }),
     mode: () => mode,
     areas: { of: async () => ({ areas: [], unmapped: 0 }), forget: () => undefined },
+    environments: async () => environments,
     viaMergeRequests: async () => way === "merge-request",
     zone: () => "UTC",
     now: () => new Date("2026-10-04T10:00:00.000Z"),
@@ -57,6 +75,41 @@ describe("who ships a task", () => {
     const plan = await planner("on", "merge-request").plan("ACM-1");
     expect(plan.way).toBe("merge-request");
     expect(plan.ruleSubject).toBe("A bug");
+  });
+});
+
+describe("a merge into the branch of an environment", () => {
+  const deployOnMain = (tier: "production" | "staging"): DeployEnvironment[] => [
+    { env: "production", tier, branch: "main" },
+  ];
+
+  it("takes the stricter of Merge and the tier's Deploy cell, so the owner's Deploy production keeps the merge", async () => {
+    // The rule gives the captain the merge and leaves both Deploy cells to the owner.
+    const plan = await planner("on", "local", deployOnMain("production"), "main").plan("ACM-1");
+    expect(plan.steps.merge).toBe("owner");
+    expect(plan.steps.push).toBe("owner");
+    expect(plan.gated).toEqual({ project: "storefront", env: "production", tier: "production" });
+  });
+
+  it("leaves the merge alone when the branch is no environment's, and when the tier's Deploy cell is the captain's", async () => {
+    expect(
+      (await planner("on", "local", deployOnMain("production"), "develop").plan("ACM-1")).steps.merge,
+    ).toBe("captain");
+    const open: ShipRule = { ...rule, deployStaging: "decide" };
+    const p = new ShipPlanner({
+      tasks: { get: () => task("ACM-1", "acme", "bug", "main") },
+      settings: async () =>
+        AutonomySettingsSchema.parse({ orgs: { acme: { authority: { ...ALL_ASK }, ships: [open] } } }),
+      mode: () => "on",
+      areas: { of: async () => ({ areas: [], unmapped: 0 }), forget: () => undefined },
+      environments: async () => deployOnMain("staging"),
+      viaMergeRequests: async () => false,
+      zone: () => "UTC",
+      now: () => new Date("2026-10-04T10:00:00.000Z"),
+    });
+    const plan = await p.plan("ACM-1");
+    expect(plan.steps.merge).toBe("captain");
+    expect(plan.gated).toBeUndefined();
   });
 });
 

@@ -10,7 +10,7 @@ import {
 /**
  * Deploy by running the owner's fixed command on one of the workspace's ssh hosts, through the same
  * connection majhi runs host commands with (its own agent, BatchMode, stdin closed). The command is the
- * string the owner wrote when they set the target: nothing is added to it, and no task text reaches it.
+ * string the owner wrote in the run: nothing is added to it, and no task text reaches it. The captain never plans one.
  */
 
 const LOG_LINES = 40;
@@ -21,7 +21,7 @@ export function tailOf(output: string): string {
   return scrubSecrets(lines.slice(-LOG_LINES).join("\n"));
 }
 
-async function run(
+export async function runCommand(
   ctx: DeployContext,
   deps: ProviderDeps,
   connection: string,
@@ -42,24 +42,13 @@ async function run(
 export function createSshProvider(deps: ProviderDeps): DeployProvider {
   return {
     preflight: async () => undefined,
-    start(ctx) {
-      const via = ctx.target.via;
-      if (via.kind !== "ssh") throw new DeployProblem("This target is not an ssh command.");
-      return run(ctx, deps, via.connection, via.command);
+    start(ctx, step) {
+      if (step.kind !== "ssh") throw new DeployProblem("This run is not an ssh command.");
+      return runCommand(ctx, deps, step.connection, step.command);
     },
-    async poll(_ctx, handle) {
+    async poll(_ctx, _step, handle) {
       // The command ended before `start` returned; asking again gives the same answer.
       return handle.outcome ?? { state: "failed", detail: "majhi restarted while the command ran" };
     },
   };
-}
-
-/** The owner's rollback command, on its own connection. */
-export function runRollbackCommand(
-  ctx: DeployContext,
-  deps: ProviderDeps,
-  connection: string,
-  command: string,
-): Promise<RunHandle> {
-  return run(ctx, deps, connection, command);
 }

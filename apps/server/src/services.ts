@@ -300,7 +300,7 @@ export interface ServiceOptions {
 
 /** Everything the commands, the sockets and the CLI share, wired once. */
 export interface Services {
-  /** Deploy targets, deploy records and what follows a deploy. */
+  /** Deploy environments, deploy records and what follows a deploy. */
   deploy: DeployWorld;
   config: ConfigService;
   runtime: AcpRuntime;
@@ -1860,12 +1860,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     settings: async () => (await config.settings()).autonomy,
     mode: () => autonomy.mode(),
     areas: areasReader,
+    environments: async (id) => (await projects.get(id).catch(() => undefined))?.deploy ?? [],
     viaMergeRequests: (task) => mrs.viaMergeRequests(task),
     zone: zoneOr,
     now: () => new Date(),
   });
-  // Deploys: targets live in each project's config, records in one table, and the trail is derived. The
-  // connections and the watch engine are built below; each is read only when a deploy asks.
+  // Deploys: environments live in each project's config, records in one table, and the trail is derived. The
+  // connections are built below; each is read only when a deploy asks.
   const deployWorld = createDeploy({
     store,
     config,
@@ -1878,18 +1879,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       gitToken: async (org, provider, host) =>
         gitSignIn.token?.(org, provider, host) ?? { problem: "Sign-in is not ready." },
     },
-    watch: async (org, id) => {
-      const view = await opsEngine?.checkNow(id);
-      if (view === undefined) return { ok: false, detail: "the watch is not ready" };
-      if (view.org !== org) return { ok: false, detail: "it belongs to another workspace" };
-      return { ok: view.status === "ok", detail: view.word === "" ? view.status : view.word };
-    },
-    watches: async (org) =>
-      ((await opsEngine?.overview(org))?.watches ?? []).map((w) => ({
-        id: w.id,
-        name: w.def.name,
-        ...(w.def.spec.kind === "website" ? { url: w.def.spec.url } : {}),
-      })),
+    hostAliases: () => gitConnect.aliases(),
     checksConfigured: (project) => {
       const commands = cards.get(project)?.commands ?? {};
       return [commands.test, commands.build, commands.lint].some((c) => c !== undefined && c.trim() !== "");

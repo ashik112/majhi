@@ -1,17 +1,23 @@
-import type { DeployVerify } from "@majhi/shared";
-
 /**
- * The check after a deploy's run ends. Until the first green look, failures are the new version still
- * starting and are only remembered. From the first green look to the end of the wait, every look must be
- * green: a health address that answers 2xx and a watch that reads ok. A failure after that is a deploy
- * that does not hold, so it ends the check at once. Never green by the end is a failure with the last thing seen.
+ * The check after a deploy's runs end: the environment's address answers 2xx. Until the first green look,
+ * failures are the new version still starting and are only remembered. From the first green look to the
+ * end of the wait, every look must be green. A failure after that is a deploy that does not hold, so it
+ * ends the check at once. Never green by the end is a failure with the last thing seen. An environment
+ * with no address has nothing to look at: its deploy is live when its runs end.
  */
+
+/** How long a check lasts. */
+export const CHECK_SECONDS = 60;
+
+export interface Check {
+  /** The environment's `check` address. */
+  health: string | undefined;
+  waitSeconds: number;
+}
 
 export interface VerifyDeps {
   /** GET with no redirect and a short timeout, or undefined when nothing answered. */
   health(url: string): Promise<{ status: number } | undefined>;
-  /** One look at the watch, of the same workspace: ok, or what it says instead. */
-  watch(id: string): Promise<{ ok: boolean; detail: string }>;
   sleep(ms: number): Promise<void>;
   now(): number;
   /** Time between looks. */
@@ -25,7 +31,7 @@ export interface VerifyResult {
 
 type Look = { green: true } | { green: false; detail: string };
 
-async function look(verify: DeployVerify, deps: VerifyDeps): Promise<Look> {
+async function look(verify: Check, deps: VerifyDeps): Promise<Look> {
   if (verify.health !== undefined) {
     const answer = await deps.health(verify.health);
     if (answer === undefined) return { green: false, detail: "the health address did not answer" };
@@ -33,14 +39,11 @@ async function look(verify: DeployVerify, deps: VerifyDeps): Promise<Look> {
       return { green: false, detail: `the health address answered ${answer.status}` };
     }
   }
-  if (verify.watch !== undefined) {
-    const seen = await deps.watch(verify.watch);
-    if (!seen.ok) return { green: false, detail: `the watch says ${seen.detail}` };
-  }
   return { green: true };
 }
 
-export async function verifyDeploy(verify: DeployVerify, deps: VerifyDeps): Promise<VerifyResult> {
+export async function verifyDeploy(verify: Check, deps: VerifyDeps): Promise<VerifyResult> {
+  if (verify.health === undefined) return { ok: true, detail: "The environment has no check address" };
   const deadline = deps.now() + verify.waitSeconds * 1000;
   let seenGreen = false;
   let last = "nothing was checked";

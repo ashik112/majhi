@@ -17,6 +17,7 @@ const step = (over: Partial<DeployNext> = {}): DeployNext => ({
   title: "Checkout fails when a coupon takes more than 50% off",
   project: "storefront",
   env: "staging",
+  record: 7,
   commit: COMMIT,
   who: "captain",
   rule: "A bug up to 200 lines",
@@ -34,6 +35,7 @@ function setup(
     answerTasks: async () => [],
     reviewTasks: async () => [],
     deploys: {
+      needsPlan: async () => undefined,
       next: async () => steps,
       recheck: async () => over.stillNext?.(),
       deploy: async (_org: string, s: DeployNext) => {
