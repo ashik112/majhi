@@ -216,7 +216,6 @@ export const ClientRoomSchema = z.strictObject({
   holder: ChatHolderSchema.default("captain"),
   /** Slack: whose name replies in this chat go out under. Me needs the owner's user token on the connection. */
   sendAs: z.enum(["bot", "me"]).default("bot"),
-<<<<<<< HEAD
   /** The chat's own settings (the sheet "Chat settings"). Absent: the default, or the workspace's. */
   replyWhen: ReplyWhenSchema.optional(),
   dailyLimit: ReplyLimitSchema.optional(),
@@ -228,8 +227,6 @@ export const ClientRoomSchema = z.strictObject({
   notify: NotifySchema.optional(),
   /** Senders (the app's user ids) whose messages are stored and never read by the captain. */
   muted: z.array(z.string().min(1).max(200)).max(500).optional(),
-=======
->>>>>>> main
   ignored: z.boolean().optional(),
   /** Unlinked by the owner: its history stays under its workspace, read only, and nothing is read or sent. */
   archived: z.boolean().optional(),
@@ -506,7 +503,7 @@ export type TriageAction = z.infer<typeof TriageActionSchema>;
 // Chat settings (the sheet opened from a client room's header)
 
 /** What the chat's settings are when the owner set nothing: the default of each, filled in. */
-export interface RoomSettings {
+export interface ChatRoomSettings {
   replyWhen: ReplyWhen;
   sendAs: "bot" | "me";
   dailyLimit: ReplyLimit;
@@ -517,7 +514,7 @@ export interface RoomSettings {
   notify: Notify;
 }
 
-export function roomSettings(chat: ClientRoom): RoomSettings {
+export function chatRoomSettings(chat: ClientRoom): ChatRoomSettings {
   return {
     replyWhen: chat.replyWhen ?? DEFAULT_REPLY_WHEN,
     sendAs: chat.sendAs,
@@ -531,16 +528,15 @@ export function roomSettings(chat: ClientRoom): RoomSettings {
 
 /** The Ask-me list that applies to a chat: the workspace's, with the cases the chat sets for itself. */
 export function holdsForRoom(workspace: Holds, chat: ClientRoom): Holds {
-  return { ...workspace, ...definedOnly(chat.holds) };
-}
-
-function definedOnly(patch: HoldsPatch | undefined): HoldsPatch {
-  const out: HoldsPatch = {};
-  for (const key of HOLD_CLASSES) {
-    const value = patch?.[key];
-    if (value !== undefined) out[key] = value;
-  }
-  return out;
+  const own = chat.holds;
+  return {
+    promisedTime: own?.promisedTime ?? workspace.promisedTime,
+    firstContact: own?.firstContact ?? workspace.firstContact,
+    severalClients: own?.severalClients ?? workspace.severalClients,
+    afterGap: own?.afterGap ?? workspace.afterGap,
+    money: own?.money ?? workspace.money,
+    security: own?.security ?? workspace.security,
+  };
 }
 
 /** Why "Me" cannot be chosen in a chat of an app, or undefined when it can. */
