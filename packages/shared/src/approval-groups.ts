@@ -265,7 +265,7 @@ const LABELS: Partial<Record<CommandName, string>> = {
   "processes.stop": "Stop a background process",
   "tasks.terminal.open": "Open a task's terminal",
   "projects.register": "Register a project",
-  "projects.update": "Change a project: remote, base, SSH alias",
+  "projects.update": "Change a project: remote, base",
   "projects.clone": "Clone a repo into a workspace",
   "projects.create": "Create a new local project",
   "projects.publish": "Create a project's repo on its git host and push",

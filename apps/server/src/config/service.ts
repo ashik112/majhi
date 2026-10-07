@@ -5,6 +5,12 @@ import { ConfigHistory, type HistoryEntry } from "./history.ts";
 import { CONFIG_FILE_NAME, type ConfigPaths, configFilePath, type LoadedConfig, loadConfig } from "./load.ts";
 import { foldedOrgs, orgsWithMergeSwitch, removeOrgMergeSwitches } from "./migrate-org-merge.ts";
 import { applyWrites, planPrivateRename, RENAME_PRIVATE_SUMMARY } from "./migrate-private.ts";
+import {
+  type AliasHostOf,
+  applyRemoteRoutes,
+  planRemoteRoutes,
+  type RoutePlan,
+} from "./migrate-remote-routes.ts";
 import { type ConfigSections, readSections } from "./sections.ts";
 import { readSettings, type SettingsPatch } from "./settings.ts";
 import { writeSettings, writeWorkspaces } from "./write.ts";
@@ -188,6 +194,32 @@ export class ConfigService {
       },
     );
     return changed;
+  }
+
+  /**
+   * Startup migration: a project remote's SSH alias and host (`remotes.<name>.ssh`, `.host`) move to the
+   * workspace's git account for that host, and the two keys are removed (see `migrate-remote-routes.ts`).
+   * An alias with no account to take it is left out, and the commit says so. Returns what moved and what
+   * was left, or undefined when nothing was stale; a second run finds nothing and makes no commit.
+   */
+  async migrateRemoteRoutes(hostOf: AliasHostOf): Promise<(RoutePlan & { summary: string }) | undefined> {
+    const first = await planRemoteRoutes(this.file, hostOf);
+    if (first === undefined) return undefined;
+    let done: (RoutePlan & { summary: string }) | undefined;
+    await this.change(
+      {
+        command: "config.migrate",
+        meta: { actor: { kind: "agent", id: "majhi" } },
+        summary: first.summary,
+      },
+      async () => {
+        const now = await planRemoteRoutes(this.file, hostOf);
+        if (now === undefined) return;
+        done = now;
+        await applyRemoteRoutes(this.file, now.routes);
+      },
+    );
+    return done;
   }
 
   /** Context budget, limits, resume and policy from majhi.yaml, with defaults applied. */

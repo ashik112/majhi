@@ -203,9 +203,8 @@ export function createGitConnect(w: GitConnectWiring): GitConnect {
       return new Set(Object.entries(sections.projects).flatMap(([id, p]) => [id, ...p.aliases]));
     },
     project: (id) => w.projects.get(id),
-    rawProject: async (id) => (await w.config.sections()).projects[id],
     register,
-    update: (input, change) => w.projects.update(input, change.command, change.meta),
+    view: (id) => w.projects.view(id),
     aliases,
     tokens: w.tokens,
     fetch: w.fetch,

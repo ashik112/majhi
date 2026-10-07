@@ -39,10 +39,8 @@ export interface ProjectDeps {
   /** Project ids and aliases in use. */
   taken: () => Promise<Set<string>>;
   project: (id: string) => Promise<ProjectInfo>;
-  /** The project's own entry in majhi.yaml, to keep its own base when remotes change. */
-  rawProject: (id: string) => Promise<ProjectConfig | undefined>;
   register: (input: RegisterInput, change: Change) => Promise<ProjectView>;
-  update: (input: UpdateInput, change: Change) => Promise<ProjectView>;
+  view: (id: string) => Promise<ProjectView>;
   aliases: () => Promise<ReadonlyMap<string, string>>;
   tokens: GitTokens;
   fetch: Fetch;
@@ -130,26 +128,6 @@ async function hasCommit(path: string, branch: string): Promise<boolean> {
   );
 }
 
-async function saveRemote(
-  deps: ProjectDeps,
-  project: ProjectInfo,
-  name: string,
-  remote: RemoteConfig,
-  change: Change,
-): Promise<ProjectView> {
-  const raw = await deps.rawProject(project.id);
-  return deps.update(
-    {
-      id: project.id,
-      org: project.org,
-      aliases: project.aliases,
-      base: raw?.base,
-      remotes: { ...project.remotes, [name]: remote },
-    },
-    change,
-  );
-}
-
 /** `projects.publish`: makes the remote repo, sets `origin`, pushes the base branch. */
 export async function publishProject(
   deps: ProjectDeps,
@@ -209,13 +187,7 @@ export async function publishProject(
     { remote: "origin", url, branch, kind: input.kind, tokenRef: cred.tokenRef, ssh: route !== undefined },
     change.meta,
   );
-  const view = await saveRemote(
-    deps,
-    project,
-    "origin",
-    { host: input.kind, ...(alias === undefined ? {} : { ssh: alias }) },
-    change,
-  );
+  const view = await deps.view(project.id);
   return {
     project: view,
     remote: { name: "origin", url, fullName: repo.fullName, webUrl: repo.webUrl },
@@ -301,11 +273,6 @@ export async function connectRemote(
   const remote = await deps.hostLsRemote({ url: input.url, auth });
   const branch = await baseOf(project);
   await git(project.path, ["remote", "add", name, input.url]);
-  const alias = at.ssh ? hostNameOf(input.url)?.toLowerCase() : undefined;
-  const config: RemoteConfig = {
-    host: at.kind,
-    ...(alias !== undefined && alias !== at.host ? { ssh: alias } : {}),
-  };
   if (remote.empty) {
     if (!(await hasCommit(project.path, branch))) {
       throw new UserError(`${project.id} has no commit on ${branch} to push yet.`, 409);
@@ -316,11 +283,11 @@ export async function connectRemote(
       { remote: name, url: input.url, branch, kind: at.kind, tokenRef, ssh: at.ssh },
       change.meta,
     );
-    const view = await saveRemote(deps, project, name, config, change);
+    const view = await deps.view(project.id);
     return { state: "pushed", project: view, remote: { name, url: input.url }, pushed: branch };
   }
   await deps.serverFetch(project.path, name).catch(() => undefined);
-  const view = await saveRemote(deps, project, name, config, change);
+  const view = await deps.view(project.id);
   const theirs = remote.defaultBranch ?? branch;
   return {
     state: "connected",

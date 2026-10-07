@@ -1,9 +1,8 @@
 import { type GitHostLogins, type GitLogin, normalizeSshRoute, sshRouteMatches } from "@majhi/shared";
 import { hostNameOf, repoSlug } from "./remote.ts";
 
-/** How majhi reaches a remote to push: the owner's pick, a key it found, or nothing it can use. */
+/** How majhi reaches a remote to push: a key it found for the workspace's account, or nothing it can use. */
 export type PushRoute =
-  | { state: "picked"; alias: string }
   | { state: "auto"; account: string; alias?: string }
   | { state: "ambiguous"; choices: GitLogin[] }
   /** No SSH key fits and the host helper is connected: push over https with the computer's saved login. */
@@ -15,8 +14,6 @@ export type PushRoute =
 export interface RouteInput {
   /** The remote's host name, so an org route saved as the host name reads as its default key. */
   host?: string | undefined;
-  /** The SSH alias the owner picked for the remote. It always wins. */
-  explicit: string | undefined;
   /** The git account the project's org bound for this host. Wins over the automatic choice. */
   org?: { account: string; ssh?: string | undefined } | undefined;
   /** The remote's namespace: `acme` of `acme/api`, or `group/sub` of `group/sub/api`. */
@@ -27,9 +24,8 @@ export interface RouteInput {
   httpsOk?: boolean | undefined;
 }
 
-/** The SSH route to push with. Prefers the account that owns the repo's namespace, else the only one. */
-export function chooseRoute({ host, explicit, org, owner, logins, httpsOk }: RouteInput): PushRoute {
-  if (explicit !== undefined && explicit !== "") return { state: "picked", alias: explicit };
+/** The SSH route to push with. The workspace's git account for the host decides; without one it prefers the account that owns the repo's namespace, else the only one. */
+export function chooseRoute({ host, org, owner, logins, httpsOk }: RouteInput): PushRoute {
   const ssh = logins.filter((l) => l.via === "ssh");
   if (org !== undefined) {
     const route = normalizeSshRoute(host ?? "", org.ssh);

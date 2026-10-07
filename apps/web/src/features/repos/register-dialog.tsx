@@ -1,4 +1,4 @@
-import { type MrHost, MrHostSchema, type Repo } from "@majhi/shared";
+import type { Repo } from "@majhi/shared";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChipsInput } from "@/components/ui/chips-input";
@@ -9,7 +9,6 @@ import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { defaultOrgId } from "@/features/accounts/model";
 import type { ApiRequestError } from "@/lib/api";
-import { HOST_LABEL } from "@/lib/hosts";
 import { useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
 import { useProjects, useRegisterProject } from "@/lib/task-queries";
@@ -23,7 +22,6 @@ import {
   remoteNames,
   suggestProjectId,
 } from "./project-model";
-import { SshAliasPicker } from "./ssh-alias-picker";
 
 /** Registers a repo as a project. A registered project is edited in place on its detail pane. */
 export function RegisterDialog({ repo, onClose }: { repo: Repo; onClose: () => void }) {
@@ -173,36 +171,7 @@ export function RegisterDialog({ repo, onClose }: { repo: Repo; onClose: () => v
                   </Select>
                 )}
               </Field>
-              <Field label="Host" hint="Auto reads it from the remote's URL.">
-                {(props) => (
-                  <Select
-                    {...props}
-                    value={choice.host}
-                    onChange={(event) => {
-                      const parsed = MrHostSchema.safeParse(event.target.value);
-                      setChoice({ ...choice, host: parsed.success ? parsed.data : "" });
-                    }}
-                  >
-                    <option value="">Auto</option>
-                    {MrHostSchema.options.map((host: MrHost) => (
-                      <option key={host} value={host}>
-                        {HOST_LABEL[host]}
-                      </option>
-                    ))}
-                  </Select>
-                )}
-              </Field>
             </div>
-            <Field label="SSH alias" hint="A Host from your SSH config. Pushes go through it.">
-              {(props) => (
-                <SshAliasPicker
-                  fieldProps={{ id: props.id, "aria-describedby": props["aria-describedby"] }}
-                  value={choice.ssh}
-                  onChange={(ssh) => setChoice({ ...choice, ssh })}
-                  suggested={repo.remotes.flatMap((r) => (r.sshAlias ? [r.sshAlias] : []))}
-                />
-              )}
-            </Field>
             {others.filter((p) => p.id !== id).length > 0 && (
               <fieldset className="m-0 flex min-w-0 flex-col gap-1 border-0 p-0">
                 <legend className="mb-1 p-0 text-sm text-fg-faint">Depends on</legend>

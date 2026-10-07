@@ -645,7 +645,7 @@ export const commands = {
   "ssh.hosts": {
     risk: "read",
     summary:
-      "The Host entries of the owner's ~/.ssh/config (wildcards left out), with their HostName, User and IdentityFile, to pick a project remote's SSH alias",
+      "The Host entries of the owner's ~/.ssh/config (wildcards left out), with their HostName, User and IdentityFile, to pick the SSH alias of a connection",
     input: Empty,
     output: z.array(
       z.object({
@@ -807,18 +807,6 @@ export const commands = {
       host: z.string().trim().min(1).max(255).optional(),
     }),
     output: RemoteOwnersSchema,
-  },
-  "projects.pushRoute": {
-    risk: "read",
-    summary: "How a project pushes its MR remote over SSH, and the keys that could do it",
-    input: z.object({ id: IdSchema }),
-    output: z.object({
-      host: z.string().optional(),
-      state: z.enum(["picked", "auto", "ambiguous", "none", "ssh", "https"]),
-      /** A plain sentence like "Pushes as acme-dev via github.com key". */
-      label: z.string().optional(),
-      choices: z.array(z.object({ alias: z.string().optional(), account: z.string(), label: z.string() })),
-    }),
   },
   "ssh.keys": {
     risk: "read",
@@ -2254,7 +2242,7 @@ export const commands = {
   "tasks.push": {
     risk: "outbound",
     summary:
-      "Push the task branch of each repo to its MR remote (through the project's SSH alias), with no merge request. Never forced: a remote branch that moved is refused. With deleteAfter, a clean push removes the worktree and the local branch majhi created; the remote branch stays",
+      "Push the task branch of each repo to its MR remote (through the SSH route of the workspace's git account), with no merge request. Never forced: a remote branch that moved is refused. With deleteAfter, a clean push removes the worktree and the local branch majhi created; the remote branch stays",
     input: z.object({ id: TaskIdSchema, deleteAfter: z.boolean().default(false) }),
     output: z.object({ results: z.array(MergeResultSchema), task: TaskSchema }),
   },
@@ -2325,7 +2313,7 @@ export const commands = {
   "tasks.openMrs": {
     risk: "outbound",
     summary:
-      "Push each repo's branch to its MR remote (through the project's SSH alias) and open one merge request per repo, in merge order, then link the sibling MRs in each description. The task moves to mr. Repos with no new commit are skipped",
+      "Push each repo's branch to its MR remote (through the SSH route of the workspace's git account) and open one merge request per repo, in merge order, then link the sibling MRs in each description. The task moves to mr. Repos with no new commit are skipped",
     input: z.object({
       id: TaskIdSchema,
       /** The branch the merge requests go into. Default: each repo's base branch. */

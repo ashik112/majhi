@@ -13,8 +13,9 @@ import type { ConfigService } from "../config/service.ts";
 import { type RemoteRunFn, runRemote } from "../connections/remote.ts";
 import type { Fetch } from "../gitConnect/http.ts";
 import { remoteUrl } from "../mrs/push.ts";
-import { hostNameOf, mrHostOf, mrRemoteName, repoSlug } from "../mrs/remote.ts";
+import { mrHostOf, mrRemoteName, realHostOf, repoSlug } from "../mrs/remote.ts";
 import type { ProjectInfo, ProjectService } from "../projects/service.ts";
+import { loadSshConfig } from "../scan/sshConfig.ts";
 import type { ShipPlanner } from "../ship/plan.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
@@ -54,8 +55,6 @@ export interface DeployWorldDeps {
   tasks: Pick<TaskService, "create" | "get">;
   ship: Pick<ShipPlanner, "plan">;
   credentials: CredentialDeps;
-  /** SSH aliases of the owner's ssh config, lowercased alias to host name: a remote pushed through one is on its host. */
-  hostAliases?: (() => Promise<ReadonlyMap<string, string>>) | undefined;
   checksConfigured: (project: string) => boolean;
   tellOwner: (key: string, text: string) => void;
   /** One line in a task's room. */
@@ -121,14 +120,13 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     const remote = named ?? mrRemoteName(p.remotes);
     const url = await remoteUrl(p.path, remote).catch(() => undefined);
     if (url === undefined) return undefined;
-    const provider = mrHostOf(p.remotes[remote], url);
-    if (provider === undefined) return undefined;
+    const ssh = await loadSshConfig(deps.config.paths.hostHome);
     // The workspace's git account is for the real host: an ssh alias is looked up in the owner's ssh config.
-    const name = hostNameOf(url)?.toLowerCase();
-    const aliased =
-      name === undefined ? undefined : (await deps.hostAliases?.().catch(() => undefined))?.get(name);
-    const host = aliased ?? name ?? PUBLIC_HOST[provider];
-    return { provider, slug: repoSlug(url), host };
+    const real = realHostOf(url, ssh);
+    const account = (await deps.config.sections()).orgs[p.org]?.git_accounts?.some((a) => a.host === real);
+    const provider = mrHostOf(url, ssh, account === true);
+    if (provider === undefined) return undefined;
+    return { provider, slug: repoSlug(url), host: real ?? PUBLIC_HOST[provider] };
   };
 
   /** Opens the incident task of a failed deploy: typed `incident`, its origin the deploy, in the deploy's workspace. */

@@ -137,6 +137,8 @@ import { createMemory, TaskScopes } from "./memory/wiring.ts";
 import { createHostGit } from "./mrs/hostGit.ts";
 import { createMrHosts, type MrHostOptions } from "./mrs/hosts/index.ts";
 import { MrPoller } from "./mrs/poller.ts";
+import { remoteUrl } from "./mrs/push.ts";
+import { realHostOf } from "./mrs/remote.ts";
 import { MrService } from "./mrs/service.ts";
 import type { Subject } from "./notify/attention.ts";
 import { MacNotifyAccess } from "./notify/mac-access.ts";
@@ -185,6 +187,7 @@ import { toolsFolder } from "./runs/tools-folder.ts";
 import { type AcpRuntime, realRuntime } from "./runtime.ts";
 import { classifyHost } from "./scan/remote.ts";
 import { RepoScanner } from "./scan/scanner.ts";
+import { loadSshConfig } from "./scan/sshConfig.ts";
 import { KeyExports } from "./secrets/backup.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
@@ -474,6 +477,21 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   background.run(
     () => config.migrateOrgMerge(),
     (err) => console.error(`Could not fold the merge policies into the Merge row: ${errorMessage(err)}`),
+  );
+  background.run(
+    async () => {
+      const moved = await config.migrateRemoteRoutes(async (remote) => {
+        const ssh = await loadSshConfig(env.hostHome);
+        const viaAlias = ssh.hostNameFor(remote.alias);
+        if (viaAlias !== undefined) return viaAlias;
+        const url = await remoteUrl(resolvePath(remote.path, env.hostHome), remote.remote).catch(
+          () => undefined,
+        );
+        return url === undefined ? undefined : realHostOf(url, ssh);
+      });
+      if (moved !== undefined && moved.left.length > 0) console.info(moved.summary);
+    },
+    (err) => console.error(`Could not move project SSH aliases to the git accounts: ${errorMessage(err)}`),
   );
   const secrets = new SecretStore(env.majhiHome, env.secretsKeyFile);
   const cache = new AccountCache(env.majhiHome);
@@ -1879,7 +1897,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       gitToken: async (org, provider, host) =>
         gitSignIn.token?.(org, provider, host) ?? { problem: "Sign-in is not ready." },
     },
-    hostAliases: () => gitConnect.aliases(),
     checksConfigured: (project) => {
       const commands = cards.get(project)?.commands ?? {};
       return [commands.test, commands.build, commands.lint].some((c) => c !== undefined && c.trim() !== "");

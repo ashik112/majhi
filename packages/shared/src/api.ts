@@ -46,8 +46,8 @@ export const RemoteSchema = z.object({
   name: z.string(),
   url: z.string(),
   host: GitHostSchema,
-  /** SSH alias from ~/.ssh/config when the remote uses one, like `github-globex`. */
-  sshAlias: z.string().optional(),
+  /** The real host name, with an `~/.ssh/config` alias resolved: `github.com` for `git@github-globex:acme/api.git`. Absent for a local path. */
+  hostName: z.string().optional(),
 });
 export type Remote = z.infer<typeof RemoteSchema>;
 

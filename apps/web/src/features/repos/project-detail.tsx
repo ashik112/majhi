@@ -1,11 +1,4 @@
-import {
-  collapseHome,
-  type MrHost,
-  MrHostSchema,
-  type OrgView,
-  type ProjectView,
-  type Repo,
-} from "@majhi/shared";
+import { collapseHome, type GitStatus, type OrgView, type ProjectView, type Repo } from "@majhi/shared";
 import { CircleAlert, Lock } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { HostGlyph } from "@/components/host-glyph";
@@ -17,6 +10,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { DetailPane } from "@/components/ui/list-detail";
 import { OrgBadge } from "@/components/ui/org-badge";
+import { PageLink } from "@/components/ui/page-link";
 import { SaveSection, type SaveState } from "@/components/ui/save-section";
 import { Select } from "@/components/ui/select";
 import { Dot } from "@/components/ui/status-dot";
@@ -27,7 +21,7 @@ import type { ApiRequestError } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { badgeLetters } from "@/lib/format";
 import { HOST_LABEL } from "@/lib/hosts";
-import { usePushRoute } from "@/lib/studio-queries";
+import { useGitStatus } from "@/lib/studio-queries";
 import { useUpdateProject } from "@/lib/task-queries";
 import { useSearchParam } from "@/pages/parts/url-state";
 import { ProjectCardSection } from "./project-card";
@@ -41,7 +35,6 @@ import {
   stubRepo,
 } from "./project-model";
 import { CopyPath } from "./project-row";
-import { SshAliasPicker } from "./ssh-alias-picker";
 
 const GRID = "grid gap-3 @[460px]:grid-cols-2";
 const IDLE: SaveState = { kind: "idle" };
@@ -404,32 +397,28 @@ function HandoffSection({ project }: { project: ProjectView }) {
   );
 }
 
-/** The repo's remotes as git has them, then the remote MRs go to, its host and the SSH alias pushes use. */
+/** The repo's remotes as git has them, who each one pushes as, and the remote MRs go to. */
 function RemotesSection({ project, repo }: { project: ProjectView; repo: Repo | undefined }) {
   const initial = choiceFromProject(project);
   const [choice, setChoice] = useState<MrRemoteChoice>(initial);
   const { state, setState, save } = useSectionSave(project);
   const known = repo ?? stubRepo(project);
-  const route = usePushRoute(project.id);
-  const dirty = choice.name !== initial.name || choice.host !== initial.host || choice.ssh !== initial.ssh;
-  // Opened from a link that points here (Ship's "Fix it in Projects"): show the SSH alias at once.
+  const git = useGitStatus(project.org);
+  const dirty = choice.name !== initial.name;
+  // Opened from a link that points here (Ship's "Fix it in Projects"): show the MR remote at once.
   const [section, setSection] = useSearchParam("section");
-  const aliasField = useRef<string>(undefined);
+  const mrField = useRef<string>(undefined);
   // biome-ignore lint/correctness/useExhaustiveDependencies: once, when the link lands
   useEffect(() => {
-    if (section !== "remotes" || aliasField.current === undefined) return;
-    const field = document.getElementById(aliasField.current);
+    if (section !== "remotes" || mrField.current === undefined) return;
+    const field = document.getElementById(mrField.current);
     field?.scrollIntoView({ block: "center" });
     field?.focus({ preventScroll: true });
     setSection(undefined);
   }, []);
-  const set = (patch: Partial<MrRemoteChoice>) => {
-    if (state.kind !== "saving") setState(IDLE);
-    setChoice((c) => ({ ...c, ...patch }));
-  };
   return (
     <SaveSection
-      title="Remotes and merge requests"
+      title="Remotes"
       dirty={dirty}
       state={state}
       onDiscard={() => {
@@ -463,85 +452,33 @@ function RemotesSection({ project, repo }: { project: ProjectView; repo: Repo | 
               <span className="min-w-0 truncate font-mono text-xs text-fg-faint" title={remote.url}>
                 {remote.url}
               </span>
-              <span className="flex shrink-0 items-center gap-2 text-xs">
-                {remote.sshAlias && <span className="font-mono text-fg-muted">{remote.sshAlias}</span>}
-                {remote.name === initial.name && <span className="text-accent-text">MRs</span>}
+              <span className="flex min-w-0 max-w-[240px] shrink-0 items-center gap-2 text-xs">
+                <PushesAs org={project.org} remote={remote} status={git.data} />
+                {remote.name === initial.name && <span className="shrink-0 text-accent-text">MRs</span>}
               </span>
             </li>
           ))}
         </ul>
       )}
-      {route.data && (route.data.label !== undefined || route.data.choices.length > 0) && (
-        <div className="flex flex-col gap-1.5 text-sm">
-          {route.data.label !== undefined && <p className="m-0 text-fg-soft">{route.data.label}</p>}
-          {route.data.state !== "auto" && route.data.state !== "picked" && route.data.choices.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-fg-faint">Push with:</span>
-              {route.data.choices.map((c) => (
-                <Button
-                  key={`${c.alias ?? ""}:${c.account}`}
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  disabled={state.kind === "saving"}
-                  onClick={() => {
-                    const ssh = c.alias ?? route.data?.host ?? "";
-                    const remotes = buildRemotes(project.remotes, { ...choice, ssh });
-                    if (remotes !== undefined) save({ remotes });
-                  }}
-                >
-                  {c.label}
-                </Button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-      <div className="grid gap-3 @[460px]:grid-cols-2 @[760px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
+      <div className={GRID}>
         <Field label="Open MRs against" hint="Default: origin.">
-          {(props) => (
-            <Select {...props} value={choice.name} onChange={(e) => set({ name: e.target.value })}>
-              {remoteNames(known, project).map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </Select>
-          )}
-        </Field>
-        <Field label="Host" hint="Auto reads it from the URL.">
-          {(props) => (
-            <Select
-              {...props}
-              value={choice.host}
-              onChange={(e) => {
-                const parsed = MrHostSchema.safeParse(e.target.value);
-                set({ host: parsed.success ? parsed.data : "" });
-              }}
-            >
-              <option value="">Auto</option>
-              {MrHostSchema.options.map((host: MrHost) => (
-                <option key={host} value={host}>
-                  {HOST_LABEL[host]}
-                </option>
-              ))}
-            </Select>
-          )}
-        </Field>
-        <Field
-          label="SSH alias"
-          hint="A Host from your SSH config. Pushes go through it."
-          className="@[460px]:col-span-2 @[760px]:col-span-1"
-        >
           {(props) => {
-            aliasField.current = props.id;
+            mrField.current = props.id;
             return (
-              <SshAliasPicker
-                fieldProps={{ id: props.id, "aria-describedby": props["aria-describedby"] }}
-                value={choice.ssh}
-                onChange={(ssh) => set({ ssh })}
-                suggested={known.remotes.flatMap((r) => (r.sshAlias ? [r.sshAlias] : []))}
-              />
+              <Select
+                {...props}
+                value={choice.name}
+                onChange={(e) => {
+                  if (state.kind !== "saving") setState(IDLE);
+                  setChoice({ name: e.target.value });
+                }}
+              >
+                {remoteNames(known, project).map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </Select>
             );
           }}
         </Field>
@@ -549,6 +486,53 @@ function RemotesSection({ project, repo }: { project: ProjectView; repo: Repo | 
     </SaveSection>
   );
 }
+
+/**
+ * Who a remote pushes as: the workspace's git account for its host, and how it reaches the host. A host
+ * with no account links to the workspace's git accounts, where one step adds it.
+ */
+function PushesAs({
+  org,
+  remote,
+  status,
+}: {
+  org: string;
+  remote: Repo["remotes"][number];
+  status: GitStatus | undefined;
+}) {
+  if (status === undefined || remote.hostName === undefined) return null;
+  const account = status.accounts.find((a) => a.host === remote.hostName);
+  if (account === undefined) {
+    return (
+      <PageLink
+        page="orgs"
+        search={{ org }}
+        className="inline-flex min-w-0 items-center gap-1 truncate text-amber underline-offset-2 hover:underline"
+      >
+        <Dot tone="amber" size={7} />
+        <span className="truncate">No git account for {remote.hostName}</span>
+      </PageLink>
+    );
+  }
+  const how = PUSH_LABEL[account.push.state];
+  return (
+    <span
+      className="flex min-w-0 items-center gap-1.5 text-fg-muted"
+      title={`${account.account} on ${account.host}`}
+    >
+      <Dot tone={account.push.state === "missing" ? "amber" : "green"} size={7} />
+      <span className="truncate font-mono">{account.account}</span>
+      <span className="shrink-0 text-fg-faint">{how}</span>
+    </span>
+  );
+}
+
+const PUSH_LABEL: Record<GitStatus["accounts"][number]["push"]["state"], string> = {
+  ssh: "SSH key",
+  https: "saved login",
+  unknown: "not checked",
+  missing: "no SSH key",
+};
 
 /** The projects this one depends on: when a task changes both, the one it depends on merges first. */
 function LinksSection({ project, projects }: { project: ProjectView; projects: readonly ProjectView[] }) {
