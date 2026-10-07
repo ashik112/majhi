@@ -39,6 +39,8 @@ export interface GitConnectHandlerDeps {
   scanner: RepoScanner;
   hostLink: HostLink;
   services: Services;
+  /** Host names of the remotes of an org's projects. */
+  usedHosts: (org: string) => Promise<string[]>;
 }
 
 /** Sign-in and the OAuth apps are the owner's: an agent never gets them, even past the agent-blocked set. */
@@ -67,6 +69,7 @@ export function gitConnectHandlers({
   scanner,
   hostLink,
   services,
+  usedHosts,
 }: GitConnectHandlerDeps): Pick<CommandHandlers, GitConnectCommand> {
   const gc = services.gitConnect;
   const view = async () => appsView(await gc.apps());
@@ -205,6 +208,9 @@ export function gitConnectHandlers({
         accounts: await services.accounts.list(),
         hasCaptain: agents.some((a) => a.status === "ok" && a.isBoss),
         projects,
+        usedHosts: Object.fromEntries(
+          await Promise.all(Object.keys(sections.orgs).map(async (id) => [id, await usedHosts(id)] as const)),
+        ),
         hostHelper: hostLink.isConnected(),
       });
     },

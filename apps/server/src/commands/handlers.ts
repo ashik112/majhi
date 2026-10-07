@@ -53,6 +53,7 @@ import {
   checkToken,
   fetchProbe,
   fetchPublicProfile,
+  mrKindOf,
   setGitAccount,
   tokenRequest,
   useSavedLogin,
@@ -376,7 +377,7 @@ export function createHandlers({
       store: services.store,
     }),
     ...mcpHandlers(services.mcpServers),
-    ...gitConnectHandlers({ config, scanner, hostLink, services }),
+    ...gitConnectHandlers({ config, scanner, hostLink, services, usedHosts }),
 
     "config.get": async () => (await config.load()).state,
 
@@ -564,17 +565,18 @@ export function createHandlers({
     },
 
     "orgs.removeGitAccount": async (input, ctx) => {
-      const org = (await config.sections()).orgs[input.id];
-      if (org === undefined) throw new UserError(`Org "${input.id}" does not exist.`, 404);
       const host = input.host.toLowerCase();
-      const rest = (org.git_accounts ?? []).filter(
-        (a) => !(a.host === host && a.account.toLowerCase() === input.account.toLowerCase()),
-      );
-      return orgs.update(
-        { id: input.id, git_accounts: rest.length === 0 ? null : rest },
-        ctx.command,
-        ctx.meta,
-      );
+      const change = { command: ctx.command, meta: ctx.meta };
+      // The account, its token and its `git` connection are one sign-in: they go together.
+      await services.gitConnect.signIn.removeAccount({ org: input.id, host, account: input.account }, change);
+      const classified = classifyHost(host);
+      if (classified !== "other")
+        await services.gitLink.signedOut(
+          { org: input.id, kind: mrKindOf(classified), host },
+          ctx.command,
+          ctx.meta,
+        );
+      return viewOf(input.id);
     },
 
     "ssh.reload": async () => {
