@@ -12,6 +12,7 @@ import { errorMessage, UserError } from "../errors.ts";
 import { projectGapsPage, sameGaps, saveProjectGaps } from "./derived.ts";
 import { exportCommit } from "./facts/export.ts";
 import { wikiCacheDir } from "./paths.ts";
+import { plainReason } from "./plain-error.ts";
 import { flowAlive, PLAN_TOPIC, type PlannedFlow, parseFlows, type WikiPlan } from "./plan.ts";
 import type { WikiGaps } from "./repo.ts";
 import { WORKSPACE_STATE } from "./repo.ts";
@@ -188,7 +189,7 @@ export class WorkspaceWiki {
       const flows = [...kept, ...value].slice(0, MAX_WORKSPACE_FLOWS);
       return { flows, plan: { flows, plannedAt: this.now() }, note: undefined };
     } catch (err) {
-      return { flows: kept, plan: had, note: `The main flows were not chosen: ${errorMessage(err)}` };
+      return { flows: kept, plan: had, note: `The main flows were not chosen. ${plainReason(err)}` };
     }
   }
 

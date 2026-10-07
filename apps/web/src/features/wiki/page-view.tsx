@@ -19,7 +19,9 @@ import {
   ROLE_TONE,
   roleRowOf,
   tagOf,
+  withoutNotes,
 } from "./model";
+import { NotesBlock } from "./notes-block";
 import { OverviewBody } from "./overview-body";
 import { BasisMark, type OpenSource, Stat, Text } from "./parts";
 
@@ -27,6 +29,7 @@ import { BasisMark, type OpenSource, Stat, Text } from "./parts";
 export interface LoadedPage {
   summary: WikiPageSummary;
   page: WikiPage;
+  notes: readonly string[];
 }
 
 /** Everything a page of any kind needs. */
@@ -52,11 +55,20 @@ export interface PageProps {
   onGoProject: (project: string) => void;
   /** Rewrite just this page: opens the update with what it would cost. */
   onUpdatePage: (id: WikiPageId) => void;
+  /** The owner's notes on this page, oldest first. Empty for a workspace page. */
+  notes: readonly string[];
+  /** Pages the last update could not write, and whether it could not choose the main flows. */
+  failed: ReadonlySet<WikiPageId>;
+  flowsNotChosen: boolean;
+  /** Opens the update, which tries what failed again. */
+  onRetry: () => void;
 }
 
 /** The page on the right: its head, then the sections its kind has, then the Ask box. */
 export function PageView(props: PageProps) {
-  const { page, changed, scope } = props;
+  const { changed, scope } = props;
+  // The notes are drawn by their own block, with a way to drop each.
+  const page = useMemo(() => withoutNotes(props.page), [props.page]);
   const moved = useMemo(() => movedFiles(page, changed), [page, changed]);
   const summaries = useMemo(() => props.all.map((l) => l.summary), [props.all]);
   return (
@@ -78,7 +90,10 @@ export function PageView(props: PageProps) {
       {moved.length > 0 && (
         <StaleBanner moved={moved} behind={props.behind} page={page} onUpdatePage={props.onUpdatePage} />
       )}
-      <Body {...props} stale={moved.length > 0} />
+      <Body {...props} page={page} stale={moved.length > 0} />
+      {scope.project !== undefined && page.kind !== "gaps" && (
+        <NotesBlock org={scope.org} project={scope.project} page={page} notes={props.notes} />
+      )}
     </DetailPane>
   );
 }

@@ -29,11 +29,23 @@ interface Props {
   scope: string | undefined;
   onScope: (scope: string) => void;
   status: WikiStatus | undefined;
+  /** The commit each project's pages were built from, shown for the whole workspace. */
+  commits: readonly { project: string; commit: string }[] | undefined;
   onUpdate: (() => void) | undefined;
 }
 
 /** The top bar: the workspace and project pickers, what the pages were built from, and Update. */
-export function WikiHeader({ workspaces, org, onOrg, projects, scope, onScope, status, onUpdate }: Props) {
+export function WikiHeader({
+  workspaces,
+  org,
+  onOrg,
+  projects,
+  scope,
+  onScope,
+  status,
+  commits,
+  onUpdate,
+}: Props) {
   const orgOptions: PickOption[] = workspaces.map((w) => ({
     value: w.org.id,
     label: w.org.name,
@@ -73,10 +85,14 @@ export function WikiHeader({ workspaces, org, onOrg, projects, scope, onScope, s
         </span>
       }
     >
-      <StatusLine status={status} />
+      <StatusLine status={status} commits={commits} />
       {onUpdate !== undefined && (
         <>
-          <Button variant="primary" onClick={onUpdate} disabled={status?.running === true}>
+          <Button
+            variant={needsUpdate(status) ? "primary" : "secondary"}
+            onClick={onUpdate}
+            disabled={status?.running === true}
+          >
             <RefreshCw aria-hidden="true" className={status?.running ? "animate-spin" : undefined} />
             Update
           </Button>
@@ -94,8 +110,26 @@ export const PHASE_WORDS = {
   store: "saving",
 } as const;
 
+/** Whether an update has something to do: the code moved, the rules are older, or the last update did not finish. */
+function needsUpdate(status: WikiStatus | undefined): boolean {
+  if (status === undefined) return false;
+  return (
+    (status.behind ?? 0) > 0 ||
+    status.oldRules ||
+    status.lastError !== undefined ||
+    status.failed.length > 0 ||
+    status.flowsNotChosen
+  );
+}
+
 /** What the pages were built from and how far the code has moved since, or what the update is doing now. */
-function StatusLine({ status }: { status: WikiStatus | undefined }) {
+function StatusLine({
+  status,
+  commits,
+}: {
+  status: WikiStatus | undefined;
+  commits: readonly { project: string; commit: string }[] | undefined;
+}) {
   if (status === undefined) return null;
   if (status.running) {
     return (
@@ -111,14 +145,27 @@ function StatusLine({ status }: { status: WikiStatus | undefined }) {
       {status.lastError !== undefined && (
         <span className="flex items-center gap-1.5 text-red" title={status.lastError}>
           <span aria-hidden="true" className="size-1.5 rounded-full bg-red" />
-          Last update failed
+          {COPY.failed.updateFailed}
         </span>
       )}
       {status.builtCommit === undefined ? (
         <span>Not built yet</span>
       ) : (
-        <span className="whitespace-nowrap">
-          Built from <b className="font-mono font-medium text-fg">{status.builtCommit.slice(0, 7)}</b>
+        <span
+          className="min-w-0 truncate"
+          title={commits?.map((c) => `${c.project} ${c.commit.slice(0, 7)}`).join(", ")}
+        >
+          Built from{" "}
+          {commits !== undefined && commits.length > 1 ? (
+            commits.map((c, i) => (
+              <span key={c.project}>
+                {i > 0 && ", "}
+                {c.project} <b className="font-mono font-medium text-fg">{c.commit.slice(0, 7)}</b>
+              </span>
+            ))
+          ) : (
+            <b className="font-mono font-medium text-fg">{status.builtCommit.slice(0, 7)}</b>
+          )}
         </span>
       )}
       {status.builtCommit !== undefined && status.behind !== undefined && (

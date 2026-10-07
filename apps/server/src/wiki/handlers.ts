@@ -16,7 +16,7 @@ import { type FindingsHandlerDeps, findingActor } from "../findings/handlers.ts"
 import type { WikiAsk } from "./ask.ts";
 import type { DriftOf } from "./drift.ts";
 import type { WikiRepo } from "./repo.ts";
-import type { WikiService } from "./service.ts";
+import { flowsNotChosen, type WikiService } from "./service.ts";
 import type { WikiEnabled } from "./switch.ts";
 import { answerAddress, answerCall, answerRole } from "./system/answers.ts";
 
@@ -83,6 +83,8 @@ export function wikiHandlers(deps: WikiHandlerDeps): Pick<CommandHandlers, WikiC
       ...(drift === undefined ? {} : { behind: drift.behind }),
       changed: drift?.changed ?? [],
       oldRules: state.builtCommit !== undefined && state.rules !== WIKI_RULES,
+      failed: state.gaps.failed.map((f) => f.page),
+      flowsNotChosen: flowsNotChosen(state),
       ...(state.lastError === undefined ? {} : { lastError: state.lastError }),
     };
   };
@@ -210,6 +212,7 @@ export function wikiHandlers(deps: WikiHandlerDeps): Pick<CommandHandlers, WikiC
         page: repo.shown(now.page),
         updatedAt: now.updatedAt,
         versions: repo.versionCount(org, project, id),
+        notes: repo.notes(org, project, id),
       };
     },
     "wiki.get": async (input, ctx) => {
@@ -226,6 +229,7 @@ export function wikiHandlers(deps: WikiHandlerDeps): Pick<CommandHandlers, WikiC
         page: repo.shown(stored.page),
         updatedAt: stored.updatedAt,
         versions: repo.versionCount(input.org, input.project, input.id),
+        notes: input.project === undefined ? [] : repo.notes(input.org, input.project, input.id),
       };
     },
     "wiki.ask": async (input, ctx) => {

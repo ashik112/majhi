@@ -34,8 +34,15 @@ const WORKSPACE_SCOPE = "workspace";
 export function WikiView() {
   const { org: filter, setOrg } = useOrgFilter();
   const { workspaces } = useWikiWorkspaces();
-  const fallback = workspaces.find((w) => w.enabled) ?? workspaces[0];
-  const workspace = workspaces.find((w) => w.org.id === filter) ?? fallback;
+  const projects = useProjects();
+  // With All picked, the first workspace that has the wiki on and projects to read, so the page opens on something.
+  const withProjects = (id: string) => (projects.data ?? []).some((p) => p.org === id);
+  const fallback =
+    workspaces.find((w) => w.enabled && withProjects(w.org.id)) ??
+    workspaces.find((w) => w.enabled) ??
+    workspaces[0];
+  const picked = workspaces.find((w) => w.org.id === filter);
+  const workspace = picked ?? (projects.isPending ? undefined : fallback);
   if (workspace === undefined) {
     return (
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -60,11 +67,15 @@ function workspaceStatus(org: string, statuses: readonly WikiStatus[]): WikiStat
   if (worst === undefined) return undefined;
   const behind = statuses.reduce((n, s) => n + (s.behind ?? 0), 0);
   const running = statuses.find((s) => s.running);
+  const lastError = statuses.find((s) => s.lastError !== undefined)?.lastError;
   const base = {
     org,
     project: worst.project,
     changed: statuses.flatMap((s) => s.changed),
     oldRules: statuses.some((s) => s.oldRules),
+    failed: [...new Set(statuses.flatMap((s) => s.failed))],
+    flowsNotChosen: statuses.some((s) => s.flowsNotChosen),
+    ...(lastError === undefined ? {} : { lastError }),
     ...(worst.builtCommit === undefined ? {} : { builtCommit: worst.builtCommit }),
     ...(worst.behind === undefined ? {} : { behind }),
   };
@@ -104,15 +115,24 @@ function Scope({
     summaries.map((s) => s.id),
   );
   const statuses = useMemo(() => everything.data?.status ?? [], [everything.data]);
+  const commits = useMemo(
+    () =>
+      statuses.flatMap((s) =>
+        s.builtCommit === undefined ? [] : [{ project: s.project, commit: s.builtCommit }],
+      ),
+    [statuses],
+  );
   const status = whole
     ? workspaceStatus(org, statuses)
     : (own.data?.status.find((s) => s.project === project) ?? statuses.find((s) => s.project === project));
   const changed = useMemo(() => new Set(status?.changed ?? []), [status]);
+  // A page that failed belongs to one project, so the workspace's own list marks none.
+  const failed = useMemo(() => new Set(whole ? [] : (status?.failed ?? [])), [status, whole]);
   const loaded = useMemo<LoadedPage[]>(
     () =>
       summaries.flatMap((summary, i) => {
-        const page = reads[i]?.data?.page;
-        return page === undefined ? [] : [{ summary, page }];
+        const read = reads[i]?.data;
+        return read === undefined ? [] : [{ summary, page: read.page, notes: read.notes }];
       }),
     [summaries, reads],
   );
@@ -142,40 +162,43 @@ function Scope({
       summaries.map((summary, i) => {
         const page = reads[i]?.data?.page;
         const sources = page?.claims.flatMap((c) => c.sources.map((s) => s.path)) ?? [];
-        return { summary, page, stale: sources.some((p) => changed.has(p)) };
+        return { summary, page, stale: sources.some((p) => changed.has(p)), failed: failed.has(summary.id) };
       }),
-    [summaries, reads, changed],
+    [summaries, reads, changed, failed],
   );
   const system = useWikiSystem(on ? org : undefined);
-  const items = useMemo(() => gapCount(loaded, system.data, project), [loaded, system.data, project]);
+  const items = useMemo(
+    () => gapCount(loaded, system.data, project) + failed.size + (status?.flowsNotChosen ? 1 : 0),
+    [loaded, system.data, project, status, failed],
+  );
   const current = loaded.find((l) => l.summary.id === selected?.id);
   const scopeName = whole ? workspace.org.name : (project ?? "");
 
   let body: React.ReactNode;
   if (!on) {
     body = <WikiOff workspace={workspace} />;
-  } else if (projectList.isPending || wiki.isPending) {
+  } else if (projectList.isPending) {
     body = <RowsSkeleton rows={8} height={44} />;
-  } else if (wiki.isError || projectList.isError) {
+  } else if (projectList.isError) {
     body = (
-      <Problem
-        icon={<BookText />}
-        title="Could not load the wiki"
-        body={describeError(wiki.error ?? projectList.error)}
-      />
+      <Problem icon={<BookText />} title="Could not load the wiki" body={describeError(projectList.error)} />
     );
   } else if (project === undefined && !whole) {
     body = (
       <Problem
         icon={<BookText />}
         title={`${workspace.org.name} has no projects yet`}
-        body="The wiki is built for a project. Add one first."
+        body="The wiki is built for a project. Register one and it can be read."
       >
         <PageLink page="projects" className="text-accent-text hover:underline">
-          Open Projects and links
+          Register a project
         </PageLink>
       </Problem>
     );
+  } else if (wiki.isPending) {
+    body = <RowsSkeleton rows={8} height={44} />;
+  } else if (wiki.isError) {
+    body = <Problem icon={<BookText />} title="Could not load the wiki" body={describeError(wiki.error)} />;
   } else if (summaries.length === 0 || current === undefined) {
     body = (
       <ListDetail>
@@ -196,6 +219,8 @@ function Scope({
           entries={entries}
           selected={selected?.id}
           openItems={items}
+          notWritten={[...failed].filter((id) => !summaries.some((s) => s.id === id))}
+          flowsNotChosen={status?.flowsNotChosen === true}
           workspace={whole}
           onSelect={(id) => go({ project, id })}
         />
@@ -212,6 +237,10 @@ function Scope({
           onGoPage={(to, id) => go({ project: to, id })}
           onGoProject={(p) => go({ project: p })}
           onUpdatePage={(id) => setUpdating({ page: id })}
+          notes={current.notes}
+          failed={failed}
+          flowsNotChosen={status?.flowsNotChosen === true}
+          onRetry={() => setUpdating({})}
         />
       </ListDetail>
     );
@@ -227,6 +256,7 @@ function Scope({
         scope={whole ? WHOLE : project}
         onScope={(p) => go({ project: p === WHOLE ? undefined : p })}
         status={status}
+        commits={whole ? commits : undefined}
         onUpdate={
           on && (project !== undefined || whole) && summaries.length > 0 ? () => setUpdating({}) : undefined
         }
@@ -246,6 +276,9 @@ function Scope({
           org={org}
           {...(project === undefined ? {} : { project })}
           {...(updating.page === undefined ? {} : { page: updating.page })}
+          first={(whole ? statuses : status === undefined ? [] : [status]).every(
+            (s) => s.builtCommit === undefined,
+          )}
           onClose={() => setUpdating(undefined)}
         />
       )}
