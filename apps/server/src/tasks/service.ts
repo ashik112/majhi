@@ -1891,6 +1891,7 @@ export class TaskService {
     const published = async (repo: TaskRepo): Promise<string | undefined> =>
       trackingRefOf(repo.source, repo.branch);
     const renames: { repo: TaskRepo; wanted: string }[] = [];
+    const failed: string[] = [];
     for (const repo of task.repos) {
       if (!repo.createdBranch || !(await localBranchExists(repo.source, repo.branch))) continue;
       if (repo.pushedAt !== undefined || (await published(repo)) !== undefined) continue;
@@ -1920,9 +1921,10 @@ export class TaskService {
         this.deps.store.tasks.setBranch(id, repo.project, to);
         this.note(id, `${repo.project}: the branch is now ${to}, so no majhi id reaches the remote.`);
       } catch (err) {
-        this.warn(id, `${repo.project}: could not rename ${repo.branch} to ${to}: ${errorMessage(err)}`);
+        failed.push(`${repo.project}: could not rename ${repo.branch} to ${to}: ${errorMessage(err)}`);
       }
     }
+    if (renames.length > 0) await this.refreshBriefs([id]);
     const identity =
       (await this.deps.config.sections()).orgs[task.org ?? "private"]?.identity ?? DEFAULT_IDENTITY;
     const now = this.get(id);
@@ -1952,13 +1954,15 @@ export class TaskService {
           );
         }
       } catch (err) {
-        this.warn(
-          id,
-          `${repo.project}: could not clean the commits before they leave majhi: ${errorMessage(err)}`,
-        );
+        failed.push(`${repo.project}: could not clean the commits before they leave majhi: ${errorMessage(err)}`);
       }
     }
     if (rewritten) await this.restackOnto(id);
+    // Shipping anyway would publish the task id or the checkpoints, so nothing leaves until it is clean.
+    if (failed.length > 0) {
+      for (const line of failed) this.warn(id, line);
+      throw new UserError(`Nothing was shipped. ${failed.join(" ")}`, 409);
+    }
     return this.get(id);
   }
 
