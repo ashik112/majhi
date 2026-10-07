@@ -5,19 +5,23 @@ import {
   type ChatPermission,
   type ChatPermissionState,
   type ChatReplyInput,
+  type ChatSendAs,
   type ClientList,
   type ClientRow,
+  type CommandMeta,
   type ContactView,
   type HoldsPatch,
   REPLY_HOLD_LABEL,
   SLACK_SCOPE_USE,
+  SLACK_USER_SCOPE_USE,
+  SLACK_USER_SCOPES,
   slackChatScopes,
   slackManifest,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
-import type { ChatChannelList } from "./adapter.ts";
+import { type ChatChannelList, ChatSendError } from "./adapter.ts";
 import type { Contacts } from "./contacts.ts";
 import type { ChatConnectionInfo, ChatHub } from "./hub.ts";
 import type { ChatIngest } from "./ingest.ts";
@@ -31,7 +35,7 @@ export interface ClientChatDeps {
   contacts: Contacts;
   replies: ClientReplies;
   ingest: ChatIngest;
-  hub: Pick<ChatHub, "accounts" | "capabilities" | "restart" | "channels" | "join" | "notesOf">;
+  hub: Pick<ChatHub, "accounts" | "capabilities" | "restart" | "channels" | "join" | "notesOf" | "checkYou">;
   /** The chat app connections that exist now. */
   connections: () => Promise<ChatConnectionInfo[]>;
   /** The owner's Hold list of a workspace, as saved. */
@@ -42,6 +46,8 @@ export interface ClientChatDeps {
   lane: (task: string) => Promise<{ boss: string; org: string } | undefined>;
   /** Removes Telegram's webhook so majhi may read with getUpdates. */
   deleteWebhook: (connection: string) => Promise<void>;
+  /** Saves the owner's User OAuth Token on a Slack connection, in secrets.age. */
+  saveUserToken: (connection: string, userToken: string, meta: CommandMeta) => Promise<void>;
 }
 
 /** How long a channel list from the app is reused. */
@@ -90,9 +96,26 @@ export class ClientChat {
             : "unknown";
       return { scope, use: SLACK_SCOPE_USE[scope] ?? scope, state };
     });
+    const you = list.you ?? { state: "none" as const };
+    // The owner's own permissions are listed once a user token is saved.
+    if (you.state !== "none") {
+      const yours = you.state === "ok" ? you.scopes : undefined;
+      for (const scope of SLACK_USER_SCOPES) {
+        const state: ChatPermissionState =
+          yours !== undefined
+            ? yours.includes(scope)
+              ? "granted"
+              : "missing"
+            : notes.needed.includes(`user:${scope}`)
+              ? "missing"
+              : "unknown";
+        permissions.push({ scope, as: "you", use: `As you: ${SLACK_USER_SCOPE_USE[scope] ?? scope}`, state });
+      }
+    }
     return {
       connection,
       bot: list.bot,
+      you,
       ...(list.appId === undefined ? {} : { appId: list.appId }),
       channels,
       permissions,
@@ -100,6 +123,31 @@ export class ClientChat {
       messageEvents: notes.eventSeen,
       manifest: JSON.stringify(slackManifest(list.bot, "readwrite")),
     };
+  }
+
+  /** Chooses whose name replies in one chat go out under. Me waits for a good user token at send time. */
+  setSendAs(room: string, sendAs: ChatSendAs): ClientRow {
+    this.deps.rooms.sendAs(room, sendAs);
+    return this.row(room);
+  }
+
+  /**
+   * Saves the owner's User OAuth Token on a Slack connection. It is checked first (Slack's, and of the same workspace
+   * as the bot); a refusal says what to do.
+   */
+  async setUserToken(connection: string, userToken: string, meta: CommandMeta): Promise<void> {
+    const info = (await this.deps.connections()).find((c) => c.id === connection);
+    if (info === undefined || info.app !== "slack")
+      throw new UserError("Only a Slack connection has a user token.", 404);
+    try {
+      await this.deps.hub.checkYou(connection, userToken);
+    } catch (err) {
+      if (err instanceof ChatSendError) throw new UserError(err.message, 409);
+      throw err;
+    }
+    await this.deps.saveUserToken(connection, userToken, meta);
+    this.listed.delete(connection);
+    await this.deps.hub.restart(connection);
   }
 
   /** Socket Mode is on when the connection's own check opened a socket; a failed check says it is not. */
@@ -119,6 +167,7 @@ export class ClientChat {
       title: `#${channel.name}`,
       kind: "group",
       holder: "captain",
+      sendAs: "bot" as const,
     }).id;
   }
 

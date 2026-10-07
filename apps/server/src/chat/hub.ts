@@ -61,6 +61,8 @@ export interface ChatNotes {
 export interface ChatTokens {
   token: string;
   appToken?: string | undefined;
+  /** Slack: the owner's User OAuth Token, when one is saved. */
+  userToken?: string | undefined;
 }
 
 interface Running {
@@ -121,7 +123,12 @@ export class ChatHub {
         this.troubles.set(info.id, "needs-token");
         continue;
       }
-      if (had !== undefined && had.tokens.token === tokens.token && had.tokens.appToken === tokens.appToken)
+      if (
+        had !== undefined &&
+        had.tokens.token === tokens.token &&
+        had.tokens.appToken === tokens.appToken &&
+        had.tokens.userToken === tokens.userToken
+      )
         continue;
       had?.stop();
       this.start(adapter, info, tokens);
@@ -137,6 +144,7 @@ export class ChatHub {
       account: info.account,
       token: tokens.token,
       ...(tokens.appToken === undefined ? {} : { appToken: tokens.appToken }),
+      ...(tokens.userToken === undefined ? {} : { userToken: tokens.userToken }),
       filesDir: join(this.deps.majhiHome, "chat-files", info.id),
     };
   }
@@ -251,13 +259,23 @@ export class ChatHub {
       throw err;
     }
     const scopes = list.scopes;
+    const yours = list.you?.state === "ok" ? list.you.scopes : undefined;
     const notes = this.notesOf(connection);
     if (scopes !== undefined) {
-      // A permission the token holds now is no longer missing.
-      const still = notes.needed.filter((s) => !scopes.includes(s));
+      // A permission the token holds now is no longer missing. The owner's own are noted as `user:<scope>`.
+      const still = notes.needed.filter((s) =>
+        s.startsWith("user:") ? yours === undefined || !yours.includes(s.slice(5)) : !scopes.includes(s),
+      );
       if (still.length !== notes.needed.length) this.deps.notes?.set(connection, { needed: still });
     }
     return { info, list, notes: this.notesOf(connection) };
+  }
+
+  /** Checks a user token (or the saved one) of a connection against its workspace. Throws a refusal with its fix. */
+  async checkYou(connection: string, userToken: string | undefined): Promise<void> {
+    const { adapter, conn } = await this.byConnection(connection);
+    if (adapter.asYou === undefined) throw new Error("That chat app has no user token.");
+    await adapter.asYou({ ...conn, userToken: userToken ?? conn.userToken });
   }
 
   /** The bot joins a public channel of a connection's workspace. */
@@ -278,7 +296,7 @@ export class ChatHub {
     account: string,
     target: ChatTarget,
     message: ChatMessage,
-  ): Promise<{ message: string }> {
+  ): Promise<{ message: string; as?: "you" }> {
     const { adapter, conn } = await this.resolve(app, account);
     try {
       return await adapter.send(conn, target, message);

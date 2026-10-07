@@ -17,12 +17,23 @@ export interface ChatConnection {
   appToken?: string | undefined;
   /** A folder the adapter may write fetched files into. */
   filesDir: string;
+  /** Slack: the owner's own token (User OAuth Token). Reading never uses it; sending as the owner does. */
+  userToken?: string | undefined;
+}
+
+/** Who a user token belongs to, and the scopes it holds when the app says. */
+export interface ChatAsYou {
+  user: string;
+  name: string;
+  scopes: string[] | undefined;
 }
 
 export interface ChatTarget {
   chat: string;
   thread?: string | undefined;
   replyTo?: string | undefined;
+  /** Slack: this chat's replies go out as the owner. With no good user token the send is refused, never made as the bot. */
+  asYou?: boolean | undefined;
 }
 
 export interface ChatCapabilities {
@@ -65,6 +76,8 @@ export interface ChatChannelList {
   channels: { id: string; name: string; private: boolean; member: boolean }[];
   /** The permissions the token holds, when the app says. */
   scopes: string[] | undefined;
+  /** The owner's user token: whose it is, or why it is refused. Absent when none is saved. */
+  you?: { state: "ok"; name: string; scopes: string[] | undefined } | { state: "refused"; fix: string };
 }
 
 /** One interface for every chat app. Slack, Discord and email are written against it, not beside it. */
@@ -76,7 +89,13 @@ export interface ChatAdapter {
   /** The body in the app's own markup (Telegram HTML, Slack mrkdwn). Slack, Discord and email add a renderer only. */
   render(body: Body, people: People): string;
   /** Writes the message, rendered by this adapter's `render`; falls back to plain words if the app refuses the markup. */
-  send(conn: ChatConnection, target: ChatTarget, message: ChatMessage): Promise<{ message: string }>;
+  send(
+    conn: ChatConnection,
+    target: ChatTarget,
+    message: ChatMessage,
+  ): Promise<{ message: string; as?: "you" }>;
+  /** Checks the owner's user token (`conn.userToken`) against the same workspace as the bot. Throws a refusal with its fix. */
+  asYou?(conn: ChatConnection): Promise<ChatAsYou>;
   /** The channels of the workspace, for the owner's channel picker. Only apps with channels have it. */
   channels?(conn: ChatConnection): Promise<ChatChannelList>;
   /** The bot joins a public channel. Only apps that allow it have it. */

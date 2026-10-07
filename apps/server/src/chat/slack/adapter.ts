@@ -5,6 +5,7 @@ import { z } from "zod";
 import { errorMessage } from "../../errors.ts";
 import {
   type ChatAdapter,
+  type ChatAsYou,
   type ChatCapabilities,
   type ChatChannelList,
   type ChatConnection,
@@ -29,7 +30,7 @@ import {
   SlackPosted,
   SlackUser,
 } from "./api.ts";
-import { joinSlackChannel, listSlackChannels } from "./channels.ts";
+import { checkSlackUser, joinSlackChannel, listSlackChannels } from "./channels.ts";
 import { beforeTs, compareTs, laterTs, readSlackText, tsToIso } from "./read.ts";
 
 /** One message of Slack's text holds this much: below the 4,000 Slack recommends, so a long reply splits cleanly. */
@@ -166,6 +167,12 @@ class SlackSession {
     cursor: ChatCursor | undefined,
     private readonly options: SlackAdapterOptions,
     rootOf: Map<string, string>,
+    /** The messages majhi sent as the owner (`channel:ts`), so their echoes are not read as the owner typing. */
+    private readonly sentAsYou: Set<string>,
+    /** Who the owner's user token belongs to, when it is valid. */
+    private readonly youOf: () => Promise<{ user: string; team: string } | undefined>,
+    /** Resolves when the sends under way to a channel are done: Slack's echo can come before the answer to the post. */
+    private readonly sendsDone: (channel: string) => Promise<unknown>,
   ) {
     this.api = new SlackApi({ base: options.base, fetch: options.fetch });
     this.sleep = options.sleep ?? defaultSleep;
@@ -415,6 +422,7 @@ class SlackSession {
       const before = event.previous_message;
       if (event.deleted_ts === undefined) return undefined;
       if (before !== undefined && this.ours(before)) return undefined;
+      if (before?.user !== undefined && (await this.sentByUs(event.channel, before))) return undefined;
       const ts = event.deleted_ts;
       const channel = await this.chat(event.channel, event.channel_type, before?.user);
       return {
@@ -440,6 +448,13 @@ class SlackSession {
     );
   }
 
+  /** The owner's own post that majhi sent as the owner: majhi's reply, already stored as one. */
+  private async sentByUs(channel: string, message: SlackMessage): Promise<boolean> {
+    if (message.user === undefined || (await this.youOf())?.user !== message.user) return false;
+    await this.sendsDone(channel).catch(() => undefined);
+    return this.sentAsYou.has(`${channel}:${message.ts}`);
+  }
+
   private key(channel: string, ts: string) {
     return { app: "slack" as const, account: this.conn.account, chat: channel, message: ts };
   }
@@ -453,6 +468,9 @@ class SlackSession {
     kind: "new" | "edit",
   ): Promise<Delivery | undefined> {
     if (this.ours(message) || message.user === undefined) return undefined;
+    if (await this.sentByUs(channel, message)) return undefined;
+    const owner = await this.youOf();
+    const byOwner = owner !== undefined && message.user === owner.user;
     const files: ChatFileRef[] = [];
     for (const file of message.files ?? []) {
       if (file.url_private === undefined) continue;
@@ -498,7 +516,12 @@ class SlackSession {
         at,
         ...(root === undefined ? {} : { thread: root, replyTo: root }),
         ...(read.mentions.length === 0 ? {} : { mentions: read.mentions }),
-        ...(this.me !== undefined && read.mentions.some((m) => m.native === `${team}:${this.me?.user}`)
+        ...(byOwner ? { owner: true as const } : {}),
+        ...(read.mentions.some(
+          (m) =>
+            (this.me !== undefined && m.native === `${team}:${this.me.user}`) ||
+            (owner !== undefined && m.native === `${team}:${owner.user}`),
+        )
           ? { addressed: true }
           : {}),
       },
@@ -792,13 +815,29 @@ export class SlackAdapter implements ChatAdapter {
   private readonly queues = new Map<string, Promise<unknown>>();
   /** Which thread a message of a channel is in, from what was read. */
   private readonly rootOf = new Map<string, string>();
+  /** What majhi posted as the owner, as `channel:ts`, recorded the moment Slack answered the post. */
+  private readonly sentAsYou = new Set<string>();
+  /** Who each connection's user token belongs to, asked now and then. */
+  private readonly youCache = new Map<
+    string,
+    { token: string; at: number; who: { user: string; team: string } | undefined }
+  >();
 
   constructor(private readonly options: SlackAdapterOptions = {}) {
     this.sleep = options.sleep ?? defaultSleep;
   }
 
   start(conn: ChatConnection, sink: ChatSink, cursor: ChatCursor | undefined): () => void {
-    const session = new SlackSession(conn, sink, cursor, this.options, this.rootOf);
+    const session = new SlackSession(
+      conn,
+      sink,
+      cursor,
+      this.options,
+      this.rootOf,
+      this.sentAsYou,
+      () => this.youOf(conn),
+      (channel) => this.queues.get(channel) ?? Promise.resolve(),
+    );
     void session.run().catch((err) => {
       this.options.log?.(`slack ${conn.id}: the read loop ended: ${errorMessage(err)}`);
     });
@@ -807,6 +846,33 @@ export class SlackAdapter implements ChatAdapter {
 
   channels(conn: ChatConnection): Promise<ChatChannelList> {
     return listSlackChannels(new SlackApi({ base: this.options.base, fetch: this.options.fetch }), conn);
+  }
+
+  /** The owner's user token checked against the bot's workspace. Throws a refusal with its fix. */
+  async asYou(conn: ChatConnection): Promise<ChatAsYou> {
+    const api = new SlackApi({ base: this.options.base, fetch: this.options.fetch });
+    return checkSlackUser(api, conn);
+  }
+
+  /** Who the user token belongs to, or undefined when none is saved or it is not good. A failure is asked again soon. */
+  private async youOf(conn: ChatConnection): Promise<{ user: string; team: string } | undefined> {
+    const token = conn.userToken;
+    if (token === undefined) return undefined;
+    const now = (this.options.now?.() ?? new Date()).getTime();
+    const had = this.youCache.get(conn.id);
+    if (had !== undefined && had.token === token && now - had.at < (had.who === undefined ? 30_000 : 600_000))
+      return had.who;
+    let who: { user: string; team: string } | undefined;
+    try {
+      const api = new SlackApi({ base: this.options.base, fetch: this.options.fetch });
+      const mine = await api.call("auth.test", token, {}, SlackAuth);
+      const bot = await api.call("auth.test", conn.token, {}, SlackAuth);
+      if (mine.team_id === bot.team_id) who = { user: mine.user_id, team: mine.team_id };
+    } catch (err) {
+      this.options.log?.(`slack ${conn.id}: the user token was not checked: ${errorMessage(err)}`);
+    }
+    this.youCache.set(conn.id, { token, at: now, who });
+    return who;
   }
 
   join(conn: ChatConnection, channel: string): Promise<void> {
@@ -824,7 +890,11 @@ export class SlackAdapter implements ChatAdapter {
     return renderSlack(body, people);
   }
 
-  send(conn: ChatConnection, target: ChatTarget, message: ChatMessage): Promise<{ message: string }> {
+  send(
+    conn: ChatConnection,
+    target: ChatTarget,
+    message: ChatMessage,
+  ): Promise<{ message: string; as?: "you" }> {
     const previous = this.queues.get(target.chat) ?? Promise.resolve();
     const run = previous.catch(() => undefined).then(() => this.sendNow(conn, target, message));
     this.queues.set(target.chat, run);
@@ -840,7 +910,7 @@ export class SlackAdapter implements ChatAdapter {
     conn: ChatConnection,
     target: ChatTarget,
     message: ChatMessage,
-  ): Promise<{ message: string }> {
+  ): Promise<{ message: string; as?: "you" }> {
     const api = new SlackApi({ base: this.options.base, fetch: this.options.fetch });
     // A reply to a message goes to its thread: the root when the message is in one, else the message starts it.
     const thread =
@@ -855,10 +925,26 @@ export class SlackAdapter implements ChatAdapter {
       (part) => renderPlain(part, message.people),
     );
     let last = "";
-    for (const part of parts) {
-      last = await this.sendPart(api, conn, target.chat, thread, this.render(part, message.people));
+    let asYou = false;
+    if (target.asYou === true && (conn.userToken === undefined || (await this.youOf(conn)) === undefined)) {
+      // A chat set to Me never falls back to the bot: the reply waits and the owner is told what to fix.
+      await this.asYou(conn);
+      throw new ChatSendError("Slack does not accept your User OAuth Token.", "rejected");
     }
-    return { message: last };
+    for (const part of parts) {
+      const you = target.asYou === true ? conn.userToken : undefined;
+      const sent = await this.sendPart(
+        api,
+        conn,
+        target.chat,
+        thread,
+        this.render(part, message.people),
+        you,
+      );
+      last = sent.ts;
+      asYou = sent.asYou;
+    }
+    return { message: last, ...(asYou ? { as: "you" as const } : {}) };
   }
 
   private async sendPart(
@@ -867,17 +953,44 @@ export class SlackAdapter implements ChatAdapter {
     channel: string,
     thread: string | undefined,
     text: string,
-  ): Promise<string> {
+    userToken: string | undefined,
+  ): Promise<{ ts: string; asYou: boolean }> {
+    const token = userToken ?? conn.token;
     for (let attempt = 1; ; attempt++) {
       try {
         const sent = await api.call(
           "chat.postMessage",
-          conn.token,
+          token,
           { channel, text, mrkdwn: true, ...(thread === undefined ? {} : { thread_ts: thread }) },
           SlackPosted,
         );
-        return sent.ts;
+        // Recorded before anything else can read Slack's echo of it.
+        const asYou = token !== conn.token;
+        if (asYou) this.rememberSent(`${channel}:${sent.ts}`);
+        return { ts: sent.ts, asYou };
       } catch (err) {
+        if (err instanceof SlackError && token !== conn.token) {
+          if (err.code === "ratelimited" && attempt < CALL_TRIES) {
+            await this.sleep(((err.retryAfter ?? 1) + 0.25) * 1000);
+            continue;
+          }
+          if (err.badToken) {
+            this.youCache.delete(conn.id);
+            await this.asYou(conn);
+            throw new ChatSendError("Slack does not accept your User OAuth Token.", "rejected");
+          }
+          if (err.unreachable)
+            throw new ChatSendError("The app cannot write to that channel any more.", "unreachable");
+          if (err.code === "missing_scope") {
+            const needed = err.needed ?? "chat:write";
+            throw new ChatSendError(
+              `Slack needs the user scope ${needed} to post as you. In the Slack app add it under User Token Scopes, press Reinstall to Workspace, then copy the User OAuth Token again.`,
+              "rejected",
+              `user:${needed}`,
+            );
+          }
+          throw new ChatSendError(err.plain, "rejected");
+        }
         if (err instanceof SlackError) {
           if (err.code === "ratelimited" && attempt < CALL_TRIES) {
             await this.sleep(((err.retryAfter ?? 1) + 0.25) * 1000);
@@ -890,6 +1003,14 @@ export class SlackAdapter implements ChatAdapter {
         }
         throw err;
       }
+    }
+  }
+
+  private rememberSent(key: string): void {
+    this.sentAsYou.add(key);
+    if (this.sentAsYou.size > SEEN_LIMIT) {
+      const oldest = this.sentAsYou.values().next().value;
+      if (oldest !== undefined) this.sentAsYou.delete(oldest);
     }
   }
 
