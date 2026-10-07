@@ -58,7 +58,7 @@ export async function probeAccount(account: AccountRuntime, options: RuntimeOpti
     }
     const parsed = tool.parseAuthStatus(status.code ?? 1, status.stdout);
     if (!parsed.signedIn) {
-      steps.push({ name: "auth", ok: false, detail: "Not signed in. Sign in from Studio > Accounts." });
+      steps.push({ name: "auth", ok: false, detail: "Not signed in. Sign in from Accounts." });
       return finish();
     }
     steps.push({ name: "auth", ok: true, detail: parsed.as ?? "Signed in" });
@@ -79,7 +79,7 @@ export async function probeAccount(account: AccountRuntime, options: RuntimeOpti
   } catch (err) {
     const detail =
       err instanceof AcpAuthRequired
-        ? "The agent says sign-in is required. Sign in again from Studio > Accounts."
+        ? "The agent says sign-in is required. Sign in again from Accounts."
         : `Could not open a session. ${err instanceof Error ? err.message : String(err)}`;
     steps.push({ name: "acp", ok: false, detail });
   }

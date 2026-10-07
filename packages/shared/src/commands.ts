@@ -88,6 +88,8 @@ import {
   ChatChannelsInputSchema,
   ChatChannelsSchema,
   ChatEditReplyInputSchema,
+  ChatGroupsInputSchema,
+  ChatGroupsSchema,
   ChatHolderInputSchema,
   ChatIgnoreInputSchema,
   ChatKeepCountInputSchema,
@@ -111,6 +113,7 @@ import {
   ContactUndoInputSchema,
   ContactViewSchema,
   SamePersonAnswerInputSchema,
+  WhoIsAnswerInputSchema,
 } from "./chat.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
@@ -151,6 +154,8 @@ import {
   ConversationArchiveInputSchema,
   ConversationListSchema,
   ConversationMarkReadInputSchema,
+  ConversationSearchInputSchema,
+  ConversationSearchResultSchema,
 } from "./conversations.ts";
 import {
   DecisionLabelSchema,
@@ -1447,6 +1452,13 @@ export const commands = {
     input: ChatLinkInputSchema,
     output: ClientRowSchema,
   },
+  "chat.groups": {
+    risk: "read",
+    summary:
+      "The groups and channels majhi knows of one chat connection's account: linked, new and ignored ones, for the connection page. Owner only",
+    input: ChatGroupsInputSchema,
+    output: ChatGroupsSchema,
+  },
   "chat.channels": {
     risk: "read",
     summary:
@@ -1476,9 +1488,9 @@ export const commands = {
   "chat.unlink": {
     risk: "change",
     summary:
-      "Unlink a client chat from its workspace: nothing is read or sent for it any more, its history stays read only under the workspace, and the chat can be linked again as a fresh room. Owner only",
+      "Unlink a client chat from its workspace: nothing is read or sent for it any more, its history stays read only under the workspace, and replies that waited for the owner are discarded. Linking it again to the same workspace brings the room back; to another workspace it is a fresh room. Owner only",
     input: ChatUnlinkInputSchema,
-    output: z.object({ ok: z.literal(true) }),
+    output: z.object({ ok: z.literal(true), discarded: z.number().int().nonnegative() }),
   },
   "chat.unignore": {
     risk: "change",
@@ -1511,6 +1523,13 @@ export const commands = {
     summary:
       "Answer the captain's question whether two contacts are one person: Same merges them, Not same remembers it. Owner only",
     input: SamePersonAnswerInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.whoIs": {
+    risk: "change",
+    summary:
+      "Answer the question whether a sender in a client chat is one of us or a client. Us means the captain stays out of what they write. Owner only",
+    input: WhoIsAnswerInputSchema,
     output: z.object({ ok: z.literal(true) }),
   },
   "chat.confirmWebhook": {
@@ -1640,6 +1659,13 @@ export const commands = {
       "The owner's conversations (task rooms, captain threads, client chats, agent chats): title, newest line and how many agent messages the owner has not read, newest first. Owner only",
     input: z.object({}),
     output: ConversationListSchema,
+  },
+  "conversations.search": {
+    risk: "read",
+    summary:
+      "The ids of the conversations whose messages hold some words (client messages and replies, agent and owner messages), for the Chats search. Owner only",
+    input: ConversationSearchInputSchema,
+    output: ConversationSearchResultSchema,
   },
   "conversations.markRead": {
     risk: "change",

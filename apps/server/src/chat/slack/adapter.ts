@@ -143,7 +143,7 @@ class SlackSession {
   private readonly seenMessages = new Set<string>();
   private readonly users = new Map<
     string,
-    { name: string; username?: string | undefined; bot: boolean; at: number }
+    { name: string; username?: string | undefined; bot: boolean; staff?: boolean; at: number }
   >();
   private readonly chats = new Map<string, { title: string; kind: ChatKind; people?: number; at: number }>();
   /** A message's thread, so a reply to a reply goes to the thread's root. */
@@ -432,7 +432,11 @@ class SlackSession {
           external: this.key(event.channel, ts),
           chat: channel,
           sender: {
-            id: before?.user === undefined ? "slack" : slackPersonId(before.user), name: "", bot: false, verified: before?.user !== undefined },
+            id: before?.user === undefined ? "slack" : slackPersonId(before.user),
+            name: "",
+            bot: false,
+            verified: before?.user !== undefined,
+          },
           text: "",
           files: [],
           at: this.now().toISOString(),
@@ -509,6 +513,7 @@ class SlackSession {
           ...(sender.username === undefined ? {} : { username: sender.username }),
           bot: sender.bot,
           verified: true,
+          ...("staff" in sender && sender.staff === true ? { staff: true as const } : {}),
         },
         text: read.text,
         files,
@@ -593,6 +598,9 @@ class SlackSession {
         name: name ?? id,
         ...(user.name === undefined ? {} : { username: user.name }),
         bot: user.is_bot === true,
+        ...(user.is_admin === true || user.is_owner === true || user.is_primary_owner === true
+          ? { staff: true }
+          : {}),
         at: this.now().getTime(),
       };
       this.users.set(id, out);

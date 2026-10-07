@@ -476,7 +476,16 @@ export class TaskService {
       );
     }
     // An investigation reads the repos it names. It gets no branch, no worktree, no Changes and no Ship.
-    const kind = input.kind ?? (input.readOnly === true && parsed.kind === "code" ? "ops" : parsed.kind);
+    // An incident made with repos the owner passed is code work in them, whatever the words read like.
+    const incidentInRepos =
+      input.typing?.type === "incident" && input.readOnly !== true && parsed.repos.length > 0;
+    const kind =
+      input.kind ??
+      (input.readOnly === true && parsed.kind === "code"
+        ? "ops"
+        : incidentInRepos && parsed.kind === "ops"
+          ? "code"
+          : parsed.kind);
     const investigation = input.readOnly === true || kind === "ops";
     // Every repo listed was protected and left out: nothing is left to make the task about.
     if (!investigation && parsed.repos.length === 0 && picks.refused.length > 0) {
@@ -546,7 +555,7 @@ export class TaskService {
     const id = promoting?.id ?? store.tasks.allocateKey(key);
     const typing =
       kind === "chat"
-        ? undefined
+        ? input.typing
         : (input.typing ??
           (await this.intakeType({
             id,

@@ -1,4 +1,4 @@
-import type { OriginView, Task, TrailStep } from "@majhi/shared";
+import type { OriginView, Task, TrailKind, TrailStep } from "@majhi/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, FileText } from "lucide-react";
 import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
@@ -41,7 +41,8 @@ export function TaskHeader({
   brief,
   tabs,
   cardAsks,
-  onShowRoom,
+  onShowStep,
+  shipAsk,
 }: {
   task: Task;
   yourTurn: boolean;
@@ -50,8 +51,10 @@ export function TaskHeader({
   /** What the owner wrote beyond the title. */
   brief: string;
   tabs: ReactNode;
-  /** A trail step that lives in the room (the check, the merge) shows it. */
-  onShowRoom: () => void;
+  /** A trail step that has its panel (the check, the merge) shows it, from any tab. */
+  onShowStep: (kind: TrailKind) => void;
+  /** Counts up each time a step asks for the Ship panel. */
+  shipAsk: number;
 }) {
   const orgs = useOrgs().data ?? [];
   const { org: filter } = useOrgFilter();
@@ -151,7 +154,7 @@ export function TaskHeader({
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1">
           <TaskCost taskId={task.id} />
-          <TaskAction task={task} yourTurn={yourTurn} cardAsks={cardAsks} />
+          <TaskAction task={task} yourTurn={yourTurn} cardAsks={cardAsks} shipAsk={shipAsk} />
           <TaskMenu task={task} />
         </div>
       </div>
@@ -178,7 +181,7 @@ export function TaskHeader({
       {brief !== "" && briefOpen && <Brief key={brief} text={brief} task={task} />}
       <div className="-mx-5 mt-1 flex min-w-0 flex-wrap items-end gap-x-2 border-t border-line px-3">
         {tabs}
-        <TrailStrip steps={trail} variant="bar" actions={{ onOpenTask: openTask, onShowRoom }} />
+        <TrailStrip steps={trail} variant="bar" actions={{ onOpenTask: openTask, onShowStep }} />
         <div className="ml-auto flex min-h-9 min-w-0 items-center py-1">
           <TaskLinks task={task} compact={trail.length > 0} />
         </div>

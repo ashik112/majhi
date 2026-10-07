@@ -32,6 +32,7 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "projects.holdDeploy",
   // Read state is the owner's: what they have seen is not for an agent to read or move.
   "conversations.list",
+  "conversations.search",
   "conversations.markRead",
   "conversations.archive",
   "chats.create",
@@ -41,6 +42,7 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "chat.link",
   "chat.ignore",
   "chat.channels",
+  "chat.groups",
   "chat.channelLink",
   "chat.channelIgnore",
   "chat.unlink",
@@ -49,6 +51,7 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "chat.send",
   "chat.editReply",
   "chat.samePerson",
+  "chat.whoIs",
   "chat.confirmWebhook",
   "chat.markUs",
   "chat.settings",
@@ -184,7 +187,7 @@ export const APPROVAL_GROUP_DEFS: Record<ApprovalGroupId, GroupDef> = {
     ],
   },
   accounts: {
-    label: "Orgs, git accounts and secrets",
+    label: "Workspaces, git accounts and secrets",
     about:
       "Org settings, git accounts and tokens, saved logins, accounts, connections, secrets, skills and MCP servers (code that runs in agent runs).",
     commands: [

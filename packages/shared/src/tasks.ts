@@ -1051,6 +1051,14 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     /** The merge it made, for Undo. */
     merge: z.number().int().positive().optional(),
   }),
+  /** Asked once in the chat: a sender who looks like one of us (an admin of the chat or workspace). The answer is the person's role. */
+  RoomItemBase.extend({
+    type: z.literal("who-is"),
+    /** The sender's id in the app. */
+    sender: z.string(),
+    name: z.string(),
+    state: z.enum(["asking", "us", "client"]),
+  }),
   /** A fact about a client incident: the cause, a reopen, an update told to a room. Read by the incident card, not drawn in the log. */
   RoomItemBase.extend({
     type: z.literal("incident-event"),
@@ -1077,6 +1085,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     decision: z.string().max(40).optional(),
     /** The hand-off check step this line reports as failed: the room shows its log and a rerun beside it. */
     failed: HandoffFailedSchema.optional(),
+    /** The button this line carries: Retry for the Housekeeper's read of the task, or Raise memory for the runner limit. */
+    action: z.enum(["memory-retry", "runner-memory"]).optional(),
   }),
 ]);
 export type RoomItem = z.infer<typeof RoomItemSchema>;

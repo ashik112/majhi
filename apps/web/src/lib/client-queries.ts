@@ -1,5 +1,6 @@
 import type { ChatSettingsInput, ClientList, CommandOutput, Keep, PersonRole } from "@majhi/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/components/ui/toast";
 import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
 
@@ -8,6 +9,15 @@ export function useClients() {
   return useQuery<ClientList, ApiRequestError>({
     queryKey: queryKeys.clients,
     queryFn: () => cmd("chat.list", {}),
+  });
+}
+
+/** `chat.groups`: the groups of a chat connection's account, ignored ones too. The `clients` topic refetches it. */
+export function useGroups(connection: string, enabled: boolean) {
+  return useQuery<CommandOutput<"chat.groups">, ApiRequestError>({
+    queryKey: [...queryKeys.clients, "groups", connection],
+    queryFn: () => cmd("chat.groups", { connection }),
+    enabled,
   });
 }
 
@@ -101,10 +111,20 @@ export function useIgnoreChat() {
 /** Stops a linked chat: its history stays, read only; it can be linked again as a fresh room. */
 export function useUnlinkChat() {
   const done = useRefetch();
+  const toast = useToast();
   const client = useQueryClient();
   return useMutation<CommandOutput<"chat.unlink">, ApiRequestError, { room: string }>({
     mutationFn: (input) => cmd("chat.unlink", input),
-    onSuccess: async () => {
+    onSuccess: async (out) => {
+      if (out.discarded > 0)
+        toast(
+          out.discarded === 1
+            ? "1 waiting reply was discarded"
+            : `${out.discarded} waiting replies were discarded`,
+          {
+            detail: "The chat is unlinked, so nothing would be sent.",
+          },
+        );
       await done();
       await client.invalidateQueries({ queryKey: [...queryKeys.clients, "channels"] });
     },
@@ -169,6 +189,18 @@ export function useMarkUs() {
     { room: string; item: string; us: boolean }
   >({
     mutationFn: (input) => cmd("chat.markUs", input),
+    onSuccess: done,
+  });
+}
+
+export function useWhoIs() {
+  const done = useRefetch();
+  return useMutation<
+    CommandOutput<"chat.whoIs">,
+    ApiRequestError,
+    { room: string; item: string; answer: "us" | "client" }
+  >({
+    mutationFn: (input) => cmd("chat.whoIs", input),
     onSuccess: done,
   });
 }

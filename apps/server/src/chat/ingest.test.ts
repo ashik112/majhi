@@ -54,4 +54,48 @@ describe("a delivery of a chat app", () => {
     );
     expect(w.store.room.page(room, 10).items.filter((i) => i.type === "client")).toHaveLength(1);
   });
+
+  it("takes the owner's own message as the owner's: the holder becomes You and it is never triaged as a client", async () => {
+    const w = world();
+    const room = await w.linked();
+    await w.ingest.deliver(
+      CONN,
+      envelope({
+        message: "20",
+        owner: true,
+        sender: { id: "u-owner", name: "Owner Acme", bot: false, verified: true },
+        text: "I will look at the orders page",
+      }),
+    );
+    await w.ingest.idle();
+    expect(w.triaged).toEqual([]);
+    expect(w.store.client.room(room)?.chat.holder).toBe("you");
+    const contact = w.store.client.byIdentity("acme", {
+      app: "telegram",
+      account: CONN.account,
+      native: "u-owner",
+    });
+    expect(contact?.us).toBe(true);
+  });
+
+  it("asks once whether an admin nobody marked is one of us, and reads their message only if the answer is client", async () => {
+    const w = world();
+    const room = await w.linked();
+    const admin = { id: "u-admin", name: "Dana", bot: false, verified: true, staff: true };
+    await w.ingest.deliver(
+      CONN,
+      envelope({ message: "30", sender: admin, text: "Checking the orders page" }),
+    );
+    await w.ingest.deliver(CONN, envelope({ message: "31", sender: admin, text: "Still checking" }));
+    await w.ingest.idle();
+    expect(w.triaged).toEqual([]);
+    const cards = w.store.room.page(room, 50).items.filter((i) => i.type === "who-is");
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ sender: "u-admin", state: "asking" });
+    await w.ingest.settleWaiting(room, "u-admin", false);
+    expect(w.triaged.map((i) => (i.type === "client" ? i.text : ""))).toEqual([
+      "Checking the orders page",
+      "Still checking",
+    ]);
+  });
 });

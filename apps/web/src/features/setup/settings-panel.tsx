@@ -266,7 +266,7 @@ export function TurnsSection({ settings }: { settings: Settings }) {
     <Section
       first
       title="Turn limits"
-      note="Orgs and agents can override these. They apply from the next turn."
+      note="Workspaces and agents can override these. They apply from the next turn."
       draft={turns}
     >
       {limits.map((l) => (

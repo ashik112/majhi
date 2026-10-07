@@ -23,7 +23,7 @@ export function DockBar({
   lamp: LampState;
   /** What it is, in a few words: "Ready to ship", "@acme-builder wants to run a command". */
   title: ReactNode;
-  /** One short line after the title; it truncates. */
+  /** One short line after the title; it wraps. */
   line?: ReactNode;
   /** Primary and secondary buttons. */
   actions?: ReactNode;
@@ -49,7 +49,7 @@ export function DockBar({
           {line !== undefined && (
             <span
               title={typeof line === "string" ? line : undefined}
-              className="min-w-0 flex-1 truncate text-sm text-fg-muted"
+              className="min-w-0 flex-1 break-words text-sm text-fg-muted"
             >
               {line}
             </span>

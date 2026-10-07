@@ -251,7 +251,7 @@ describe("three strikes", () => {
     expect(state.strikes).toBe(3);
     expect(state.escalated).toBe(true);
     expect(state.history.map((h) => h.action)).toEqual(["escalated", "told", "told"]);
-    expect(w.calls.holds.at(-1)).toContain("Checks failed 3 times in a row");
+    expect(w.calls.holds.at(-1)).toContain("Tests failed 3 times in a row");
 
     // A fourth head fails too: still the owner's, nobody is told.
     w.state.head = "acme-api@ddd444";
@@ -365,7 +365,7 @@ describe("the full log of a step", () => {
     w.state.exec = (c) => (c === "pnpm test" ? bad("boom") : ok());
     await w.service.ensure("ACM-1", { force: false });
     expect(w.calls.tell).toEqual([]);
-    expect(w.calls.holds.at(-1)).toContain("Checks failed");
+    expect(w.calls.holds.at(-1)).toContain("Tests failed");
   });
 
   it("a log that cannot be saved leaves the step without one and the verdict as it was", async () => {

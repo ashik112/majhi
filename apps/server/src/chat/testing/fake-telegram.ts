@@ -55,6 +55,8 @@ export class FakeTelegram {
   readonly sent: SentMessage[] = [];
   readonly files = new Map<string, Uint8Array>();
   webhook = "";
+  /** The user ids Telegram lists as administrators of every chat. */
+  admins: number[] = [];
   private updates: { update_id: number; [key: string]: unknown }[] = [];
   private nextUpdate = 1;
   private nextMessage = 100;
@@ -66,6 +68,11 @@ export class FakeTelegram {
     /** How long an empty getUpdates holds, in ms. A real long poll holds for `timeout` seconds. */
     private readonly holdMs = 20,
   ) {}
+
+  /** Telegram now lists these users as administrators of every chat. */
+  setAdmins(ids: number[]): void {
+    this.admins = ids;
+  }
 
   /** A message arrives. Returns its update id. */
   push(message: FakeMessage, kind: "message" | "edited_message" = "message", messageId?: number): number {
@@ -144,6 +151,8 @@ export class FakeTelegram {
         return true;
       case "getChatMemberCount":
         return 4;
+      case "getChatAdministrators":
+        return this.admins.map((id) => ({ status: "administrator", user: { id } }));
       case "getUpdates": {
         const offset = typeof params.offset === "number" ? params.offset : 0;
         // A higher offset confirms everything below it.

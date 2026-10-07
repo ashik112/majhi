@@ -2,17 +2,24 @@ import type { OriginView, Task } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, FolderGit2 } from "lucide-react";
 import { OrgBadge } from "@/components/ui/org-badge";
+import { PageLink } from "@/components/ui/page-link";
 import { cn } from "@/lib/cn";
-import { orgSearch } from "@/lib/org-filter";
+import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { OriginMark, originName } from "../tasks-ui/origin-mark";
-import { type OrgTag, ProjectNames } from "../tasks-ui/project-names";
+import type { OrgTag } from "../tasks-ui/project-names";
 import { CLIP_ATTR, type CrumbFit } from "./use-crumb-fit";
 
 const SEP = <ChevronRight aria-hidden="true" className="size-3 shrink-0 text-fg-dim" />;
 
+const LINK = "rounded-xs hover:text-fg hover:underline underline-offset-2";
+
+/** Projects shown before "+N". */
+const SHOWN = 2;
+
 /**
  * Where the task lives and where it came from, on one line: workspace, its projects, then the origin.
- * The workspace opens the board for it. A subtask's origin is its parent, a link.
+ * The workspace opens the board for it, a project opens its page and a deploy origin opens the
+ * project's deploys. A subtask's origin is its parent, a link.
  */
 export function Crumbs({
   task,
@@ -21,33 +28,66 @@ export function Crumbs({
   fit,
   filter,
 }: {
-  task: Pick<Task, "kind" | "repos">;
+  task: Pick<Task, "kind" | "repos" | "org">;
   org: OrgTag;
   origin: OriginView | undefined;
   fit: CrumbFit;
   /** The workspace filter the board keeps, so the link back lands where the owner was. */
   filter: string | undefined;
 }) {
+  const { setOrg } = useOrgFilter();
   const projects = task.repos.map((r) => r.project);
+  const shown = projects.slice(0, SHOWN);
+  const more = projects.length - shown.length;
+  const workspace = (
+    <>
+      <OrgBadge label={org.letters} color={org.color} size="sm" />
+      <span
+        {...{ [CLIP_ATTR]: "" }}
+        className={cn("min-w-0 truncate", (fit === "short" || fit === "tight") && "hidden")}
+      >
+        {org.name}
+      </span>
+    </>
+  );
   return (
     <>
-      <span title={org.name} className="flex min-w-0 shrink-[2] items-center gap-1.5 text-sm text-fg-soft">
-        <OrgBadge label={org.letters} color={org.color} size="sm" />
-        <span
-          {...{ [CLIP_ATTR]: "" }}
-          className={cn("min-w-0 truncate", (fit === "short" || fit === "tight") && "hidden")}
-        >
-          {org.name}
+      {task.org === undefined ? (
+        <span title={org.name} className="flex min-w-0 shrink-[2] items-center gap-1.5 text-sm text-fg-soft">
+          {workspace}
         </span>
-      </span>
+      ) : (
+        <Link
+          to="/"
+          search={orgSearch(filter)}
+          onClick={() => setOrg(task.org)}
+          title={`Open ${org.name} on the board`}
+          className={cn("flex min-w-0 shrink-[2] items-center gap-1.5 text-sm text-fg-soft", LINK)}
+        >
+          {workspace}
+        </Link>
+      )}
       {SEP}
       {projects.length > 0 ? (
         <span
-          className="flex min-w-0 shrink items-center gap-1 text-sm"
+          className="flex max-w-[16rem] min-w-12 shrink-0 items-center gap-1 text-sm"
           title={`Project: ${projects.join(", ")}`}
         >
           <FolderGit2 aria-hidden="true" className="size-3.5 shrink-0 text-fg-faint" />
-          <ProjectNames org={undefined} projects={projects} tile={false} />
+          {shown.map((project, i) => (
+            <span key={project} className="flex min-w-0 shrink-0 items-center font-mono text-xs text-fg-soft">
+              <PageLink
+                page="projects"
+                search={{ project }}
+                title={`Open ${project}`}
+                className={cn("truncate", LINK)}
+              >
+                {project}
+              </PageLink>
+              {i < shown.length - 1 && ","}
+            </span>
+          ))}
+          {more > 0 && <span className="shrink-0 font-mono text-xs text-fg-faint">+{more}</span>}
         </span>
       ) : (
         <span className="shrink-0 text-sm whitespace-nowrap text-fg-faint">
@@ -80,6 +120,16 @@ export function Crumbs({
                 {`From the chat ${originName(origin)}`}
               </span>
             </Link>
+          ) : origin.kind === "deploy" ? (
+            <PageLink
+              page="projects"
+              search={{ project: origin.project, section: "deploys" }}
+              title={`From a failed deploy of ${origin.project} to ${origin.env}. Open its deploys`}
+              className={cn("flex min-w-0 shrink-0 items-center gap-1.5 text-sm text-fg-soft", LINK)}
+            >
+              <OriginMark origin={origin} />
+              <span className={cn("truncate", fit === "tight" && "hidden")}>{originName(origin)}</span>
+            </PageLink>
           ) : (
             <span className="flex min-w-0 shrink-0 items-center gap-1.5 text-sm text-fg-soft">
               <OriginMark origin={origin} />

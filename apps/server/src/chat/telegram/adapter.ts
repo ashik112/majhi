@@ -17,6 +17,7 @@ import {
   TelegramApi,
   TelegramError,
   TelegramNetworkError,
+  TgAdmins,
   TgCount,
   TgFileInfo,
   type TgMessage,
@@ -124,6 +125,7 @@ export function toEnvelope(
   update: TgUpdate,
   account: string,
   people: (chat: string) => number | undefined,
+  staff: (chat: string) => ReadonlySet<string> | undefined = () => undefined,
 ): ChatEnvelope | undefined {
   const edit = update.edited_message ?? update.edited_channel_post;
   const msg = update.message ?? update.channel_post ?? edit;
@@ -167,6 +169,7 @@ export function toEnvelope(
           ...(msg.from?.username === undefined ? {} : { username: msg.from.username }),
           bot: msg.from?.is_bot === true,
           verified: true,
+          ...(staff(chat)?.has(String(msg.from?.id)) === true ? { staff: true as const } : {}),
         };
   const at = edit === undefined ? msg.date : (edit.edit_date ?? edit.date);
   const mentions = mentionsOf(msg, text);
@@ -236,6 +239,7 @@ export class TelegramAdapter implements ChatAdapter {
   private readonly now: () => Date;
   /** The send queue of each chat: one send at a time, in the order they were asked. */
   private readonly queues = new Map<string, Promise<unknown>>();
+  private readonly adminCache = new Map<string, { ids: Set<string>; at: number }>();
   private readonly peopleCache = new Map<string, { n: number | undefined; at: number }>();
 
   constructor(private readonly options: TelegramAdapterOptions = {}) {
@@ -298,8 +302,16 @@ export class TelegramAdapter implements ChatAdapter {
               update.data.channel_post ??
               update.data.edited_message ??
               update.data.edited_channel_post;
-            if (msg !== undefined) await this.people(api, String(msg.chat.id), signal);
-            const envelope = toEnvelope(update.data, conn.account, (chat) => this.peopleCache.get(chat)?.n);
+            if (msg !== undefined) {
+              await this.people(api, String(msg.chat.id), signal);
+              if (msg.chat.type !== "private") await this.admins(api, String(msg.chat.id), signal);
+            }
+            const envelope = toEnvelope(
+              update.data,
+              conn.account,
+              (chat) => this.peopleCache.get(chat)?.n,
+              (chat) => this.adminCache.get(chat)?.ids,
+            );
             if (envelope !== undefined) await sink.deliver(envelope);
           }
           top = Math.max(top, id + 1);
@@ -329,6 +341,21 @@ export class TelegramAdapter implements ChatAdapter {
         );
         await this.sleep(Math.min(30_000, 1000 * 2 ** Math.min(failures, 5)), signal);
       }
+    }
+  }
+
+  /** Who administers a group, asked once in a while: an admin may be one of us, so the owner is asked once. */
+  private async admins(api: TelegramApi, chat: string, signal: AbortSignal): Promise<void> {
+    const cached = this.adminCache.get(chat);
+    if (cached !== undefined && this.now().getTime() - cached.at < PEOPLE_TTL_MS) return;
+    try {
+      const list = await api.call("getChatAdministrators", { chat_id: chat }, TgAdmins, signal);
+      this.adminCache.set(chat, {
+        ids: new Set(list.map((a) => String(a.user.id))),
+        at: this.now().getTime(),
+      });
+    } catch {
+      this.adminCache.set(chat, { ids: cached?.ids ?? new Set(), at: this.now().getTime() });
     }
   }
 

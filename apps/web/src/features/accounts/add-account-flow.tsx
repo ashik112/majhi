@@ -35,7 +35,6 @@ export type Stage =
       accountId: string;
       loginHint: string;
       terminalId: string;
-      command: string;
       state: LoginState;
     }
   | { kind: "checking"; accountId: string }
@@ -180,7 +179,6 @@ function AccountForm({
           accountId,
           loginHint: tool.loginHint,
           terminalId: started.terminalId,
-          command: started.command,
           state: { phase: "running" },
         });
       } else {
@@ -304,7 +302,6 @@ export function AccountProgress({
         accountId,
         loginHint,
         terminalId: started.terminalId,
-        command: started.command,
         state: { phase: "running" },
       });
     } catch (error) {

@@ -278,6 +278,13 @@ export class ChatHub {
     await adapter.asYou({ ...conn, userToken: userToken ?? conn.userToken });
   }
 
+  /** Whether the owner saved a user token on the account's connection (Slack's Send as Me needs it). */
+  async hasUserToken(app: ChatApp, account: string): Promise<boolean> {
+    const info = (await this.deps.connections()).find((c) => c.app === app && c.account === account);
+    if (info === undefined) return false;
+    return (await this.deps.tokens(info.id))?.userToken !== undefined;
+  }
+
   /** The bot joins a public channel of a connection's workspace. */
   async join(connection: string, channel: string): Promise<void> {
     const { adapter, info, conn } = await this.byConnection(connection);

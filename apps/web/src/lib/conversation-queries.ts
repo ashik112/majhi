@@ -3,6 +3,7 @@ import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tansta
 import { useCallback, useEffect } from "react";
 import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
+import { useDebounced } from "./search-queries";
 
 /**
  * The chat dock's one list (`conversations.list`): task rooms, captain threads, client chats and agent chats with their unread
@@ -23,6 +24,17 @@ const totalUnread = (list: Conversation[]): number =>
 
 /** The badge: the unread total. A number, so only a change of the number renders the badge. */
 export const useUnreadTotal = (): number => useConversations(totalUnread).data ?? 0;
+
+/** The conversations whose messages hold the words: the Chats search reads history, not only titles and last lines. */
+export function useConversationSearch(query: string) {
+  const text = useDebounced(query.trim(), 250);
+  return useQuery<string[], ApiRequestError>({
+    queryKey: [...queryKeys.conversations, "search", text],
+    queryFn: () => cmd("conversations.search", { query: text }),
+    enabled: text.length >= 2,
+    staleTime: 10_000,
+  });
+}
 
 /** Hides a conversation from the list, or brings it back. The feed patches the list. */
 export function useArchiveConversation() {

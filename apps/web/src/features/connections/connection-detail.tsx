@@ -33,6 +33,7 @@ import { useConnectionCommand } from "@/lib/connection-queries";
 import { describeError, errorDetails } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 import { useAgents } from "@/lib/studio-queries";
+import { ChatGroups } from "./chat-groups";
 import { ConnectFlowCard, ScopeList } from "./connect-flow";
 import { isOauth, useReconnect } from "./connect-section";
 import { ConnectionFields } from "./connection-fields";
@@ -108,9 +109,7 @@ export function ConnectionPanel({
           {view.fields.service?.value === "slack" ? (
             <SlackChannels connection={view.id} orgs={orgs} />
           ) : (
-            <p className="text-base text-fg-muted text-pretty">
-              majhi reads the groups this bot is added to and sends replies as it. No agent gets its token.
-            </p>
+            <ChatGroups connection={view.id} orgs={orgs} />
           )}
         </DetailSection>
       ) : (
