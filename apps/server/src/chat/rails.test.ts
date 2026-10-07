@@ -201,8 +201,9 @@ describe("the triage step", () => {
     expect(out?.action).toBe("ask");
     expect(t.w.sent).toEqual([]);
     expect(t.toTask).not.toHaveBeenCalled();
-    const notes = t.w.store.room.page(room, 20).items.filter((i) => i.type === "system");
-    expect(notes.some((n) => n.type === "system" && n.text.startsWith("Waits for you"))).toBe(true);
+    const message = t.w.store.room.page(room, 20).items.find((i) => i.type === "client");
+    // A model reply off the list is an error of the path: it lands as a plain line, and nothing was done.
+    expect(message).toMatchObject({ outcome: { state: "failed" } });
   });
 
   it("gives the model no tool: a message that tells it to act is data, and an attempt to act in its reply does nothing", async () => {
@@ -229,5 +230,81 @@ describe("the triage step", () => {
     expect(out?.action).toBe("ignore");
     expect(t.model).not.toHaveBeenCalled();
     expect(t.dismiss).toHaveBeenCalled();
+  });
+});
+
+describe("a message addressed to the bot", () => {
+  /** The model says `decision` when triaging and writes `reply` when asked for the words. */
+  function addressed(options: Parameters<typeof world>[0], decision = "ignore", extra: object = {}) {
+    const w = world({ holds: { firstContact: false }, ...options });
+    const model = async (
+      _org: string,
+      key: string,
+      _prompt: string,
+      parse: (t: string) => Parsed<unknown>,
+    ) => {
+      const text = key.endsWith(":reply")
+        ? '{"text":"We saw your message. A person will follow up.","promisedTime":false,"money":false,"security":false,"severalClients":false}'
+        : `{"action":"${decision}","reason":"model said so"}`;
+      const parsed = parse(text);
+      if (!parsed.ok) throw new Error(parsed.problem);
+      return parsed.value;
+    };
+    const deps = {
+      store: w.store,
+      room: w.room,
+      model,
+      findings: {
+        report: async () => ({ finding: { id: 1 } }),
+        dismiss: () => undefined,
+        toTask: async () => ({ task: "LOCAL-9" }),
+      },
+      replies: w.replies,
+      wiki: async () => ({ answer: "", found: false }),
+      rest: async () => undefined,
+      incidents: () => [],
+      incident: { linked: () => false, answer: async () => undefined },
+      ...extra,
+    } as unknown as TriageDeps;
+    return {
+      w,
+      run: async (text = "@acme_bot can you check the login page?") => {
+        const room = await w.linked();
+        await w.ingest.deliver(CONN, envelope({ message: "40", text, addressed: true }));
+        const item = w.store.room
+          .page(room, 10)
+          .items.find((i) => i.type === "client" && i.id.length > 0 && i.text === text);
+        if (item?.type !== "client") throw new Error("no message");
+        await new ClientTriage(deps).run(w.rooms.room(room), item);
+        const after = w.store.room.get(room, item.id);
+        return after?.type === "client" ? after : undefined;
+      },
+    };
+  }
+
+  it("is answered through the fake adapter with Tell on Captain decides, never ignored, with no Autonomous involved", async () => {
+    const t = addressed({ tell: "decide" });
+    const message = await t.run();
+    expect(message?.addressed).toBe(true);
+    expect(t.w.sent.map((s) => s.text)).toEqual(["We saw your message. A person will follow up."]);
+    expect(message?.outcome).toMatchObject({ state: "replied" });
+  });
+
+  it("waits for the owner when Tell is on You decide", async () => {
+    const t = addressed({ tell: "ask" });
+    const message = await t.run();
+    expect(t.w.sent).toEqual([]);
+    expect(message?.outcome).toMatchObject({ state: "waits" });
+  });
+
+  it("records the plain reason on the message when the app refuses the send", async () => {
+    const t = addressed({ tell: "decide", failSend: true });
+    const message = await t.run();
+    expect(message?.outcome).toMatchObject({ state: "failed" });
+    const draft = message?.outcome?.draft;
+    expect(t.w.store.room.get(message?.task ?? "", `reply:${draft}`)).toMatchObject({
+      state: "failed",
+      result: "Auto: Telegram is down",
+    });
   });
 });

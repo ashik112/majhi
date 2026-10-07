@@ -498,6 +498,9 @@ class SlackSession {
         at,
         ...(root === undefined ? {} : { thread: root, replyTo: root }),
         ...(read.mentions.length === 0 ? {} : { mentions: read.mentions }),
+        ...(this.me !== undefined && read.mentions.some((m) => m.native === `${team}:${this.me?.user}`)
+          ? { addressed: true }
+          : {}),
       },
       ...(kind === "new" ? { advance: message.ts } : {}),
       ...(root === undefined ? {} : { root }),

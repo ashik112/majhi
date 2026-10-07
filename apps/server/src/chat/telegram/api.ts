@@ -164,7 +164,7 @@ export const TgMessage = z.object({
   caption: z.string().optional(),
   entities: z.array(TgEntity).optional(),
   caption_entities: z.array(TgEntity).optional(),
-  reply_to_message: z.object({ message_id: z.number() }).optional(),
+  reply_to_message: z.object({ message_id: z.number(), from: TgUser.optional() }).optional(),
   forward_origin: z.unknown().optional(),
   forward_date: z.number().optional(),
   migrate_to_chat_id: z.number().optional(),

@@ -2365,7 +2365,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     room,
     gate: outbound,
     config,
-    autonomyMode: () => autonomy.mode(),
     adapters: [
       new TelegramAdapter({
         ...(env.chats?.telegramApi === undefined ? {} : { base: env.chats.telegramApi }),

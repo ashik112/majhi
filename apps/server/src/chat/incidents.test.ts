@@ -275,7 +275,7 @@ describe('"any update?" from a client', () => {
     const { t } = await ask("-300");
     expect(t.w.sent).toEqual([]);
     const room = t.w.rooms.find("telegram", CONN.account, "-300");
-    const notes = t.w.store.room.page(room?.id ?? "", 20).items.filter((i) => i.type === "system");
-    expect(notes.some((n) => n.type === "system" && n.text.startsWith("Waits for you"))).toBe(true);
+    const message = t.w.store.room.page(room?.id ?? "", 20).items.find((i) => i.type === "client");
+    expect(message).toMatchObject({ outcome: { state: "waits" } });
   });
 });
