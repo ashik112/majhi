@@ -432,11 +432,7 @@ class SlackSession {
           external: this.key(event.channel, ts),
           chat: channel,
           sender: {
-            id: before?.user === undefined ? "slack" : slackPersonId(before.user),
-            name: "",
-            bot: false,
-            verified: before?.user !== undefined,
-          },
+            id: before?.user === undefined ? "slack" : slackPersonId(before.user), name: "", bot: false, verified: before?.user !== undefined },
           text: "",
           files: [],
           at: this.now().toISOString(),

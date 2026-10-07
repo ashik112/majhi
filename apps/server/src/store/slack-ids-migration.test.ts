@@ -31,19 +31,10 @@ it("rewrites Slack ids to the user id, merges duplicate contacts into the oldest
   const db = seeded();
   db.prepare(
     "INSERT INTO tasks (id, title, brief, kind, status, folder, team, client, created_at, updated_at) VALUES ('t1','t','b','chat','review','/t/1','[]',?,'x','x')",
-  ).run(
-    JSON.stringify({
-      app: "slack",
-      account: "ws",
-      chat: "C1",
-      muted: ["T01ACME:U2OMAR", "U2OMAR", ":U3LEE"],
-    }),
-  );
+  ).run(JSON.stringify({ app: "slack", account: "ws", chat: "C1", muted: ["T01ACME:U2OMAR", "U2OMAR", ":U3LEE"] }));
   const item = (id: string, seq: number, sender: string) =>
     db
-      .prepare(
-        "INSERT INTO room_items (task, id, seq, type, payload, at) VALUES ('t1', ?, ?, 'client', ?, 'x')",
-      )
+      .prepare("INSERT INTO room_items (task, id, seq, type, payload, at) VALUES ('t1', ?, ?, 'client', ?, 'x')")
       .run(id, seq, JSON.stringify({ external: { app: "slack" }, sender: { id: sender } }));
   item("a", 1, "T01ACME:U1SARA");
   item("b", 2, ":U1SARA");
