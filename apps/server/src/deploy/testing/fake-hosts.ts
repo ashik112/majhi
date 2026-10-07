@@ -62,7 +62,7 @@ function readBody(req: IncomingMessage): Promise<unknown> {
 }
 
 export async function startFakeHosts(
-  init: { tokens?: Partial<FakeHosts["tokens"]>; pollsToFinish?: number } = {},
+  init: { tokens?: Partial<FakeHosts["tokens"]>; pollsToFinish?: number; port?: number } = {},
 ): Promise<FakeHosts> {
   const tokens = {
     github: init.tokens?.github ?? "gh-fake-token-1111",
@@ -204,6 +204,12 @@ export async function startFakeHosts(
           ? send(res, 404, { message: "404 Branch Not Found" })
           : send(res, 200, { commit: { id: sha } });
       }
+      if (method === "POST" && rest === "repository/branches") {
+        const made = body as { branch?: string; ref?: string } | undefined;
+        if (made?.branch === undefined || made.ref === undefined) return send(res, 400, { message: "bad" });
+        state.branches.set(`gitlab:${slug}:${made.branch}`, made.ref);
+        return send(res, 201, { name: made.branch });
+      }
       if (method === "POST" && rest === "pipeline") {
         const ref = (body as { ref?: string } | undefined)?.ref ?? "";
         const sha = state.branches.get(`gitlab:${slug}:${ref}`);
@@ -281,7 +287,7 @@ export async function startFakeHosts(
   const server: Server = createServer((req, res) => {
     void serve(req, res).catch(() => send(res, 500, { message: "fake failed" }));
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(init.port ?? 0, "127.0.0.1", resolve));
   const address = server.address();
   state.port = typeof address === "object" && address !== null ? address.port : 0;
   state.host = `127.0.0.1:${state.port}`;

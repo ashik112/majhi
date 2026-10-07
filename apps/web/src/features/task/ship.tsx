@@ -177,6 +177,7 @@ export function Ship({
   align = "right",
   variant = "secondary",
   primaryAction = false,
+  openAsk = 0,
 }: {
   task: Task;
   run: RunShip;
@@ -186,6 +187,8 @@ export function Ship({
   variant?: "primary" | "secondary";
   /** The task's one main action, which the approve shortcut clicks. */
   primaryAction?: boolean;
+  /** Counts up each time something outside asks for the panel to open. */
+  openAsk?: number;
 }) {
   const [place, setPlace] = useState<CSSProperties>();
   const open = place !== undefined;
@@ -195,6 +198,11 @@ export function Ship({
   const id = useId();
   const setOpen = (next: boolean) =>
     setPlace(next && trigger.current ? placeNear(trigger.current, align) : undefined);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new ask opens it
+  useEffect(() => {
+    if (openAsk > 0 && trigger.current) setPlace(placeNear(trigger.current, align));
+  }, [openAsk]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: set up once per opening
   useEffect(() => {

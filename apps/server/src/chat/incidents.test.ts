@@ -1,5 +1,6 @@
 import type { OpsIncident, Task } from "@majhi/shared";
 import { describe, expect, it, vi } from "vitest";
+import { IncidentFacts } from "../incident/facts.ts";
 import { incidentHandlers } from "./incident-handlers.ts";
 import { ClientIncidents } from "./incidents.ts";
 import { CONN, envelope, world } from "./testing/world.ts";
@@ -10,29 +11,44 @@ import { ClientTriage, type TriageDeps } from "./triage.ts";
  * store, outbound gate and rails; only the watch is a stub.
  */
 
-async function setup(status: Task["status"] = "inbox") {
+async function setup(
+  status: Task["status"] = "inbox",
+  write?: (org: string, key: string, prompt: string) => Promise<string | undefined>,
+) {
   const w = world({ tell: "decide", holds: { firstContact: false } });
   const watch: { incident?: OpsIncident } = {};
   const reopened: string[] = [];
+  const findings = {
+    ofTask: () => (watch.incident === undefined ? [] : [{ id: 1 } as never]),
+    adopt: () => ({}) as never,
+    get: () => ({}) as never,
+    dismiss: () => ({}) as never,
+  };
+  const facts = new IncidentFacts({
+    store: w.store,
+    findings,
+    watch: { incident: () => watch.incident, incidentOfFinding: () => watch.incident },
+    settings: async () => ({ soakMin: 15, cadenceMin: 30 }),
+    envs: async () => 0,
+  });
   const incidents = new ClientIncidents({
     store: w.store,
     room: w.room,
     replies: w.replies,
     gate: w.gate,
-    findings: {
-      ofTask: () => (watch.incident === undefined ? [] : [{ id: 1 } as never]),
-      adopt: () => ({}) as never,
-      get: () => ({}) as never,
-      dismiss: () => ({}) as never,
-    },
+    findings,
     watch: {
       incident: () => watch.incident,
       incidentOfFinding: () => watch.incident,
       open: () => [],
     },
-    settings: async () => ({ soakMin: 15, cadenceMin: 30 }),
     tz: async () => "UTC",
-    create: async () => ({ id: "ACM-1" }),
+    facts,
+    ...(write === undefined ? {} : { write }),
+    engine: {
+      open: async () => ({ task: "ACM-1", joined: false, started: false, projectUnknown: false }),
+      evidence: () => [],
+    },
     reopen: async (id) => {
       reopened.push(id);
       // What the lifecycle's reopen does to the row: a done task is open again.
@@ -105,6 +121,56 @@ describe("updates to client rooms", () => {
   });
 });
 
+describe("the report never claims what was not recorded", () => {
+  it("says no fix was shipped and the cause is being confirmed, whatever the model wrote", async () => {
+    const section = {
+      summary: "We found and fixed it",
+      impact: "Brief",
+      cause: "A bad index",
+      fix: "We deployed a fix",
+      followUps: "None",
+    };
+    const { incidents } = await setup("done", async () =>
+      JSON.stringify({ internal: section, client: section }),
+    );
+    await incidents.tick();
+    const view = await incidents.view("ACM-9");
+    expect(view?.report?.client.fix).not.toContain("deployed a fix");
+    expect(view?.report?.client.fix).toContain("without a change from us");
+    expect(view?.report?.client.cause).toBe("The cause is being confirmed.");
+    expect(view?.report?.internal.fix).toBe("No fix was shipped. The problem recovered on its own.");
+    expect(view?.report?.internal.cause).toBe("Not recorded.");
+    // The owner is warned before sending it.
+    expect(view?.report?.warn).toContain("No cause is recorded");
+  });
+
+  it("uses the model's words for a cause and fix that are recorded", async () => {
+    const section = {
+      summary: "Fixed",
+      impact: "Brief",
+      cause: "Slow query",
+      fix: "Added an index",
+      followUps: "None",
+    };
+    const { incidents, w } = await setup("done", async () =>
+      JSON.stringify({ internal: section, client: section }),
+    );
+    incidents.cause("ACM-9", "report query", "a slow query");
+    // A fix is recorded once something shipped: a deploy that is live.
+    w.store.raw
+      .prepare(
+        `INSERT INTO deploys (org, project, env, commit_sha, state, task, by, runs, seq, attempt, created_at, updated_at, finished_at)
+         VALUES ('acme', 'storefront', 'production', 'abcdef1234567', 'live', 'ACM-9', 'owner', '[]', 0, 1, ?, ?, ?)`,
+      )
+      .run(...Array(3).fill(new Date().toISOString()));
+    await incidents.tick();
+    const view = await incidents.view("ACM-9");
+    expect(view?.report?.client.fix).toBe("Added an index");
+    expect(view?.report?.client.cause).toBe("Slow query");
+    expect(view?.report?.warn).toBeUndefined();
+  });
+});
+
 describe("the report to a client", () => {
   const resolved = () => setup("done");
 
@@ -117,7 +183,12 @@ describe("the report to a client", () => {
     const sentBefore = w.sent.length;
 
     // An agent, even the captain, cannot send or edit it.
-    const handlers = incidentHandlers({ incidents, lane: async () => undefined, orgOf: () => "acme" });
+    const handlers = incidentHandlers({
+      incidents,
+      lane: async () => undefined,
+      orgOf: () => "acme",
+      askCaptain: async () => undefined,
+    });
     const agent = {
       command: "incident.sendReport",
       meta: { actor: { kind: "agent", id: "captain" } },
@@ -267,6 +338,10 @@ describe('"any update?" from a client', () => {
     const soaking = await t.incidents.answer(t.rooms[0] as string);
     expect(soaking?.text).not.toContain("resolved");
     t.watch.incident = { ...t.watch.incident, resolvedAt: new Date(now.getTime() - 3_600_000).toISOString() };
+    // Closed with nothing shipped: the soak runs from the close, so the close was an hour ago too.
+    t.w.store.raw
+      .prepare("UPDATE tasks SET updated_at = ? WHERE id = 'ACM-9'")
+      .run(new Date(now.getTime() - 3_000_000).toISOString());
     const after = await t.incidents.answer(t.rooms[0] as string);
     expect(after?.text).toContain("resolved");
   });

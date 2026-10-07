@@ -308,6 +308,10 @@ export function createHandlers({
         return org === undefined || boss === undefined ? undefined : { boss, org };
       },
       orgOf: (task) => services.store.tasks.get(task)?.org,
+      askCaptain: async (org, text) => {
+        const chat = await services.lanes.ensure(org);
+        await services.tasks.send({ task: chat.id, text, attachments: [], mode: "queue" });
+      },
     }),
     ...agendaHandlers({
       agenda: services.agenda,
@@ -1282,6 +1286,7 @@ export function createHandlers({
         meta: ctx.meta,
         summary: `changed ${describePatch(patch)}`,
       });
+      if (patch.containers !== undefined) await services.applyRunMemory();
       // Limits apply live: starts waiting in line may fit now.
       if (patch.limits !== undefined) await services.runs.limitsChanged();
       // Budgets apply live: a raised one re-arms its alerts, a lowered one may fire now.

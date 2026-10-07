@@ -73,9 +73,7 @@ export function isAuthFailure(err: unknown, lastText?: string): boolean {
  * refreshed, or was refused. The account needs a new sign-in.
  */
 export class SignInExpired extends Error {
-  constructor(
-    message = "The sign-in expired and could not be refreshed. Sign in again from Studio > Accounts.",
-  ) {
+  constructor(message = "The sign-in expired and could not be refreshed. Sign in again from Accounts.") {
     super(message);
     this.name = "SignInExpired";
   }

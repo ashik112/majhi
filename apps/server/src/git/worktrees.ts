@@ -74,6 +74,7 @@ async function create(req: WorktreeRequest): Promise<WorktreeResult> {
   if (remote !== undefined) {
     const failed = await fetchWithKeys(source, remote, base, req.reloadKeys);
     if (failed !== undefined) {
+      console.warn(`Could not fetch ${base} from ${remote} for ${source}: ${failed}`);
       warnings.push(fetchFailureNote(base, remote, failed));
     }
     // A named branch that exists only on the remote needs its own fetch. Missing is fine.
