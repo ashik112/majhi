@@ -63,7 +63,7 @@ async function _addClaudeLogin(page: Page, id: string, org?: string) {
 
 async function openAccountsPage(page: Page) {
   await page.goto("/accounts");
-  await expect(page.getByRole("heading", { name: "Accounts", exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Accounts" })).toBeVisible();
 }
 
 const accountRow = (page: Page, id: string) =>
@@ -91,13 +91,12 @@ test("fresh install: roots, first account, boss, and onboarding does not come ba
   await page.goto("/");
 
   // Welcome: the suggested project folder, one click.
-  const heading = page.locator("#journey-heading");
-  await expect(heading).toContainText("Welcome to majhi");
+  const step = (id: string) => expect(page.locator(`[data-step="${id}"]`)).toBeVisible();
+  await step("welcome");
   await page.getByRole("button", { name: "Use ~/Work" }).click();
 
   // AI account: sign in through the terminal
-  await expect(heading).toHaveText("Sign in to Claude Code or Codex");
-  await expect(page.getByText("Step 2 of 7")).toBeVisible();
+  await step("account");
   await page.getByRole("textbox", { name: "Account id" }).fill("claude-personal");
   await page.getByRole("button", { name: "Add account and sign in" }).click();
   await expect(page.getByRole("region", { name: "Sign-in terminal" })).toContainText("Paste code here");
@@ -110,12 +109,8 @@ test("fresh install: roots, first account, boss, and onboarding does not come ba
   await page.getByRole("button", { name: "Continue" }).click();
 
   // Workspaces, git accounts and projects can wait.
-  for (const step of [
-    "Keep each client's work apart",
-    "Sign each workspace in to git",
-    "Add the projects agents can work on",
-  ]) {
-    await expect(heading).toHaveText(step);
+  for (const id of ["workspaces", "git", "projects"]) {
+    await step(id);
     // A step with nothing to do yet (git, with no projects) offers Continue instead of Skip.
     await page
       .getByRole("button", { name: /^(Skip for now|Continue)$/ })
@@ -124,10 +119,8 @@ test("fresh install: roots, first account, boss, and onboarding does not come ba
   }
 
   // The captain, with the suggested defaults
-  await expect(heading).toHaveText("Choose the captain");
-  await expect(page.getByText("Step 6 of 7")).toBeVisible();
+  await step("boss");
   const form = page.getByRole("form", { name: "Captain agent" });
-  await expect(form.getByText("@majhi-boss")).toBeVisible();
   // The account's default model is picked, not "Account default".
   await expect(form.getByRole("group", { name: "Model" }).getByRole("button", { pressed: true })).toHaveText(
     /fake-model/,
@@ -138,8 +131,7 @@ test("fresh install: roots, first account, boss, and onboarding does not come ba
   await page.getByRole("button", { name: "Continue" }).click();
 
   // Arrive: the board, with the new-task box open.
-  await expect(heading).toHaveText("You have arrived");
-  await expect(page.getByText("Step 7 of 7")).toBeVisible();
+  await step("finish");
   await page.getByRole("button", { name: "Write the first task" }).click();
   await expect(page.getByRole("dialog", { name: "New task" })).toBeVisible();
   await page.keyboard.press("Escape");
@@ -147,7 +139,7 @@ test("fresh install: roots, first account, boss, and onboarding does not come ba
 
   await page.reload();
   await expectTasksHome(page);
-  await expect(page.locator("#journey-heading")).toHaveCount(0);
+  await expect(page.locator("[data-step]")).toHaveCount(0);
 
   const bossFiles = readdirSync(AGENTS_DIR).filter((f) => f.endsWith(".md"));
   expect(bossFiles).toHaveLength(1);

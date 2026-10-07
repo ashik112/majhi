@@ -127,6 +127,7 @@ export function OnboardingFlow({
           <AnimatePresence mode="wait" initial={false}>
             <m.div
               key={current.id}
+              data-step={current.id}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}

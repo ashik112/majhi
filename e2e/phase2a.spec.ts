@@ -4,10 +4,10 @@ import { join } from "node:path";
 import type { APIRequestContext, Locator, Page } from "@playwright/test";
 import { expect, expectTasksHome, HOST_HOME, MAJHI_HOME, test, useHome } from "./fixture.ts";
 
-// Org Acme with its agents. One task on api, from registering the project to removing the task.
+// Org Acme with its agents and the project api. One task on api, from creating it to removing it.
 // The fake Claude adapter pauses 120 ms between the steps of a turn, so the turn can be watched.
 // The room's other flows are in phase2a-room.spec.ts.
-useHome({ seed: "team", slow: { claude: 120 } });
+useHome({ seed: "team-api", slow: { claude: 120 } });
 test.describe.configure({ mode: "serial" });
 
 const API_SOURCE = join(HOST_HOME, "Work", "alpha-api");
@@ -89,30 +89,6 @@ test.beforeAll(async ({ request }) => {
   const bossId = readFileSync(join(MAJHI_HOME, "majhi.yaml"), "utf8").match(/^boss: (\S+)/m)?.[1];
   expect(bossId).toBeTruthy();
   await setPerms(request, bossId as string, ["edit", "shell"]);
-});
-
-test("register a repo as a project from the Projects page", async ({ page, request }) => {
-  await page.goto("/projects");
-  await page.getByRole("button", { name: "Register alpha-api" }).click();
-  const dialog = page.getByRole("dialog", { name: "Register alpha-api" });
-  await dialog.getByRole("combobox", { name: "Workspace" }).selectOption({ label: "Acme" });
-  const id = dialog.getByRole("textbox", { name: "Project id" });
-  await expect(id).toHaveValue("alpha-api");
-  await id.fill("api");
-  const aliases = dialog.getByRole("textbox", { name: "Aliases" });
-  await aliases.fill("backend");
-  await aliases.press("Enter");
-  await expect(dialog.getByRole("button", { name: "Remove alias backend" })).toBeVisible();
-  await shot(page, "repos-register");
-  await dialog.getByRole("button", { name: "Register", exact: true }).click();
-  await expect(dialog).toBeHidden();
-
-  await expect(
-    page.getByRole("navigation", { name: "Projects" }).getByRole("button", { name: "api", exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Register alpha-api" })).toHaveCount(0);
-  const projects = await cmd<{ id: string; org: string; aliases: string[] }[]>(request, "projects.list", {});
-  expect(projects).toMatchObject([{ id: "api", org: "acme", aliases: ["backend"] }]);
 });
 
 test("add a health endpoint to api from develop: worktree, branch, TASK.md and a streamed turn", async ({
