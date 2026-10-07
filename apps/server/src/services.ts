@@ -1733,7 +1733,12 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     log: (message) => console.error(message),
   });
   wikiService = wiki;
-  const wikiTools = new WikiTools({ repo: store.wiki, enabled: wikiOn, index: wikiIndex });
+  const wikiTools = new WikiTools({
+    repo: store.wiki,
+    enabled: wikiOn,
+    index: wikiIndex,
+    projects: async (org) => (await projects.infos()).filter((p) => p.org === org).map((p) => p.id),
+  });
   const wikiAsk = new WikiAsk({
     repo: store.wiki,
     index: wikiIndex,
