@@ -121,7 +121,7 @@ function Frame() {
 
   return (
     // The chat bubble sits in the right gutter, so no control is ever under it.
-    <div className="flex min-h-0 flex-1 gap-3 py-3 pr-16 pl-3">
+    <div className="flex min-h-0 flex-1 gap-3 p-3">
       <Sidebar />
       <main id="main" tabIndex={-1} className="flex h-full min-w-0 flex-1 flex-col outline-none">
         <StaleBuildBar />
