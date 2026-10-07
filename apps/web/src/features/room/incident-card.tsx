@@ -298,7 +298,7 @@ function Section({
   return (
     <>
       <dt className="text-fg-faint">{label}</dt>
-      <dd className="m-0 text-fg-soft">
+      <dd className="m-0 whitespace-pre-line text-fg-soft">
         {editing ? (
           <textarea
             aria-label={label}

@@ -229,7 +229,7 @@ async function failedDeploy(w: World): Promise<string> {
   if (tasks.length !== before + 1) throw new Error(`expected one new incident task, saw ${tasks.length - before}`);
   const mine = tasks.find((t: any) => t.id === failed.incident);
   if (!mine) throw new Error("the deploy has no incident task");
-  console.log(await shot(w, "07-deploy-failed-needs-you", "/needs-you"));
+  console.log(await shot(w, "07-deploy-failed-needs-you", "/decisions"));
   console.log(await shot(w, "07-deploy-failed-board"));
   // The owner presses Roll back (the fake pipeline succeeds again), through the card.
   w.hosts.outcome.gitlab = "success";
