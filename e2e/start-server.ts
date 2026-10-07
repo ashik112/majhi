@@ -142,6 +142,8 @@ const helperEnv: NodeJS.ProcessEnv = {
   MAJHI_HOST_VERSION: "e2e",
   // Its notifications are about test tasks (ACM-1): never on the owner's desktop.
   MAJHI_HOST_NOTIFY: "off",
+  // Its git-login probe greets github.com and the other hosts over ssh: never from a test.
+  MAJHI_HOST_SSH: "/usr/bin/false",
 };
 delete helperEnv.MAJHI_REPO;
 const helper = spawn(

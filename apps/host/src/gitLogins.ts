@@ -87,6 +87,8 @@ export interface GitLoginsDeps {
   socket: () => Promise<string | undefined>;
   /** Absolute path of `gh` or `glab`, or undefined when not installed. */
   find: (name: "gh" | "glab") => Promise<string | undefined>;
+  /** The ssh that greets the git hosts. A test helper points it at one that never leaves the machine. */
+  ssh: string;
 }
 
 function cliEnv(deps: GitLoginsDeps): Record<string, string> {
@@ -141,7 +143,7 @@ export async function detectGitLogins(
     targets.map(async ({ host, alias, target }) => {
       try {
         const run = await deps.run(
-          "/usr/bin/ssh",
+          deps.ssh,
           ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", `git@${target}`],
           { env, timeoutMs: SSH_TIMEOUT_MS },
         );
@@ -151,7 +153,7 @@ export async function detectGitLogins(
           add(host, { via: "ssh", ...(alias === undefined ? {} : { alias }), account });
         } else if (acceptedWithoutAccount(output)) {
           const verbose = await deps.run(
-            "/usr/bin/ssh",
+            deps.ssh,
             ["-T", "-v", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", `git@${target}`],
             { env, timeoutMs: SSH_TIMEOUT_MS },
           );
