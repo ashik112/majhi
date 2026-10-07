@@ -16,8 +16,17 @@ export class SlackError extends Error {
     /** Slack's own error name, like `invalid_auth` or `channel_not_found`, or `http_<status>`. */
     readonly code: string,
     readonly retryAfter?: number,
+    /** Of `missing_scope`: the scope the method needs. */
+    readonly needed?: string,
   ) {
     super(`Slack refused: ${code}`);
+  }
+
+  /** Plain words for a refusal for want of a scope, else Slack's own error. */
+  get plain(): string {
+    if (this.code !== "missing_scope") return this.message;
+    const what = this.needed === undefined ? "a permission" : this.needed;
+    return `Slack needs ${what} ${this.needed === "chat:write" ? "to post replies" : "for that"}. Reinstall the app with it.`;
   }
 
   /** The token is not accepted, and will not be by trying again. */
@@ -52,7 +61,12 @@ const UNREACHABLE: ReadonlySet<string> = new Set([
 /** The network failed or the answer was not Slack's. Worth trying again later. */
 export class SlackNetworkError extends Error {}
 
-const ErrorBody = z.object({ ok: z.literal(false), error: z.string().default("unknown_error") });
+const ErrorBody = z.object({
+  ok: z.literal(false),
+  error: z.string().default("unknown_error"),
+  /** Of `missing_scope`: the scope the method needs. */
+  needed: z.string().optional(),
+});
 const OkBody = z.object({ ok: z.literal(true) }).loose();
 
 export interface SlackApiOptions {
@@ -82,6 +96,17 @@ export class SlackApi {
     schema: z.ZodType<T>,
     signal?: AbortSignal,
   ): Promise<T> {
+    return (await this.callWithHeaders(method, token, params, schema, signal)).data;
+  }
+
+  /** Like `call`, and the answer's headers too: `auth.test` lists the token's scopes in `x-oauth-scopes`. */
+  async callWithHeaders<T>(
+    method: string,
+    token: string,
+    params: Record<string, string | number | boolean | undefined>,
+    schema: z.ZodType<T>,
+    signal?: AbortSignal,
+  ): Promise<{ data: T; headers: Headers }> {
     const form = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined) form.set(key, String(value));
@@ -115,10 +140,10 @@ export class SlackApi {
       const result = schema.safeParse(ok.data);
       if (!result.success)
         throw new SlackNetworkError(`Slack's answer to ${method} had an unexpected shape.`);
-      return result.data;
+      return { data: result.data, headers: res.headers };
     }
     const failed = ErrorBody.safeParse(body);
-    if (failed.success) throw new SlackError(failed.data.error);
+    if (failed.success) throw new SlackError(failed.data.error, undefined, failed.data.needed);
     throw new SlackNetworkError(`Slack's answer to ${method} was not recognised (HTTP ${res.status}).`);
   }
 
@@ -197,6 +222,22 @@ export const SlackAuth = z.object({
   user: z.string().optional(),
   bot_id: z.string().optional(),
 });
+
+/** One page of `conversations.list`. Each channel is parsed on its own: one of a shape majhi does not know costs that channel. */
+export const SlackChannelsPage = z.object({
+  channels: z.array(z.unknown()).default([]),
+  response_metadata: z.object({ next_cursor: z.string().optional() }).optional(),
+});
+
+export const SlackChannelRow = z.object({
+  id: z.string(),
+  name: z.string().optional(),
+  is_private: z.boolean().optional(),
+  is_member: z.boolean().optional(),
+  is_archived: z.boolean().optional(),
+});
+
+export const SlackBotInfo = z.object({ bot: z.object({ app_id: z.string().optional() }) });
 
 export const SlackOpen = z.object({ url: z.string() });
 

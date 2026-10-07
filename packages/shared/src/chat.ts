@@ -169,6 +169,44 @@ export type ClientList = z.infer<typeof ClientListSchema>;
 
 export const ChatLinkInputSchema = z.object({ room: z.string().min(1), org: IdSchema });
 export const ChatIgnoreInputSchema = z.object({ room: z.string().min(1) });
+
+/** One channel of a chat app's workspace, as the channel picker shows it. */
+export const ChatChannelSchema = z.object({
+  id: z.string().min(1),
+  name: z.string(),
+  private: z.boolean(),
+  /** Whether the bot is in it now. */
+  member: z.boolean(),
+  /** The room majhi made for it, once there is one. */
+  room: z.string().optional(),
+  /** The workspace it is linked to. */
+  org: IdSchema.optional(),
+  ignored: z.boolean().optional(),
+});
+export type ChatChannel = z.infer<typeof ChatChannelSchema>;
+
+export const ChatChannelsSchema = z.object({
+  connection: IdSchema,
+  /** The bot's name, for the `/invite @name` line. */
+  bot: z.string(),
+  /** The app's page of permissions, when majhi knows the app. */
+  appId: z.string().optional(),
+  channels: z.array(ChatChannelSchema),
+  /** Permissions majhi needs that the connection lacks. Empty when none, or when the app does not say. */
+  missingScopes: z.array(z.string()),
+});
+export type ChatChannels = z.infer<typeof ChatChannelsSchema>;
+
+export const ChatChannelsInputSchema = z.object({ connection: IdSchema, refresh: z.boolean().optional() });
+export const ChatChannelLinkInputSchema = z.object({
+  connection: IdSchema,
+  channel: z.string().min(1),
+  org: IdSchema,
+});
+export const ChatChannelIgnoreInputSchema = z.object({ connection: IdSchema, channel: z.string().min(1) });
+
+/** The Slack permissions majhi needs beyond reading channel messages: posting, files, group chats and joining public channels. */
+export const SLACK_NEEDED_SCOPES = ["chat:write", "files:read", "mpim:read", "channels:join"] as const;
 export const ChatHolderInputSchema = z.object({ room: z.string().min(1), holder: ChatHolderSchema });
 export const ChatSendInputSchema = z.object({
   room: z.string().min(1),

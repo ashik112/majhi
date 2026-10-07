@@ -17,6 +17,8 @@ export interface FakeChannel {
   /** Whether the app is in it. A channel it is not in answers `not_in_channel`. */
   member?: boolean;
   archived?: boolean;
+  /** A private channel: the app cannot join it, it has to be invited. */
+  private?: boolean;
 }
 
 export interface FakeUser {
@@ -70,6 +72,20 @@ export class FakeSlack {
   static readonly APP_TOKEN = "xapp-1-A000000-fake-token-aaaaaaaaaaaaaaaaaaaaaaaa";
 
   readonly team = { id: "T01ACME", name: "Acme" };
+  /** The scopes the bot token holds, as `auth.test` lists them in `x-oauth-scopes`. */
+  scopes: string[] = [
+    "channels:history",
+    "groups:history",
+    "im:history",
+    "mpim:history",
+    "channels:read",
+    "groups:read",
+    "mpim:read",
+    "users:read",
+    "files:read",
+    "channels:join",
+    "chat:write",
+  ];
   readonly bot = { user: "U0BOT", bot_id: "B0BOT", name: "majhi" };
   readonly users = new Map<string, FakeUser>();
   readonly channels = new Map<string, FakeChannel>();
@@ -382,7 +398,11 @@ export class FakeSlack {
     }
     const wanted = method === "apps.connections.open" ? FakeSlack.APP_TOKEN : FakeSlack.BOT_TOKEN;
     if (token !== wanted) return send(200, { ok: false, error: "invalid_auth" });
-    return send(200, this.answer(method, params));
+    return send(
+      200,
+      this.answer(method, params),
+      method === "auth.test" ? { "x-oauth-scopes": this.scopes.join(",") } : {},
+    );
   }
 
   private answer(method: string, params: Record<string, string>): Record<string, unknown> {
@@ -397,6 +417,39 @@ export class FakeSlack {
           user: this.bot.name,
           bot_id: this.bot.bot_id,
         };
+      case "bots.info":
+        return { ok: true, bot: { id: this.bot.bot_id, app_id: "A0MAJHI" } };
+      case "conversations.list": {
+        const wanted = (params.types ?? "public_channel").split(",");
+        const pool = [...this.channels.values()].filter(
+          (c) =>
+            c.kind === "channel" &&
+            !(params.exclude_archived === "true" && c.archived === true) &&
+            wanted.includes(c.private === true ? "private_channel" : "public_channel"),
+        );
+        const limit = Number(params.limit ?? "100");
+        const start = Number(params.cursor ?? "0");
+        const more = start + limit < pool.length;
+        return {
+          ok: true,
+          channels: pool.slice(start, start + limit).map((c) => ({
+            id: c.id,
+            name: c.name,
+            is_private: c.private === true,
+            is_member: c.member !== false,
+            is_archived: c.archived === true,
+          })),
+          ...(more ? { response_metadata: { next_cursor: String(start + limit) } } : {}),
+        };
+      }
+      case "conversations.join": {
+        const channel = this.channels.get(params.channel ?? "");
+        if (channel === undefined) return fail("channel_not_found");
+        if (channel.private === true) return fail("method_not_supported_for_channel_type");
+        if (channel.archived === true) return fail("is_archived");
+        channel.member = true;
+        return { ok: true, channel: { id: channel.id, name: channel.name } };
+      }
       case "apps.connections.open":
         return { ok: true, url: `ws://127.0.0.1:${this.port}/socket` };
       case "users.info": {

@@ -6,6 +6,7 @@ import { errorMessage } from "../../errors.ts";
 import {
   type ChatAdapter,
   type ChatCapabilities,
+  type ChatChannelList,
   type ChatConnection,
   type ChatMessage,
   ChatSendError,
@@ -28,6 +29,7 @@ import {
   SlackPosted,
   SlackUser,
 } from "./api.ts";
+import { joinSlackChannel, listSlackChannels } from "./channels.ts";
 import { beforeTs, compareTs, laterTs, readSlackText, tsToIso } from "./read.ts";
 
 /** One message of Slack's text holds this much: below the 4,000 Slack recommends, so a long reply splits cleanly. */
@@ -800,6 +802,18 @@ export class SlackAdapter implements ChatAdapter {
     return () => session.stop();
   }
 
+  channels(conn: ChatConnection): Promise<ChatChannelList> {
+    return listSlackChannels(new SlackApi({ base: this.options.base, fetch: this.options.fetch }), conn);
+  }
+
+  join(conn: ChatConnection, channel: string): Promise<void> {
+    return joinSlackChannel(
+      new SlackApi({ base: this.options.base, fetch: this.options.fetch }),
+      conn,
+      channel,
+    );
+  }
+
   // -------------------------------------------------------------------------
   // Sending
 
@@ -869,7 +883,7 @@ export class SlackAdapter implements ChatAdapter {
           if (err.badToken) throw new ChatSendError("Slack no longer accepts the bot token.", "needs-token");
           if (err.unreachable)
             throw new ChatSendError("The app cannot write to that channel any more.", "unreachable");
-          throw new ChatSendError(err.message, "rejected");
+          throw new ChatSendError(err.plain, "rejected");
         }
         throw err;
       }

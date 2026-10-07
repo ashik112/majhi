@@ -83,6 +83,10 @@ import {
   SlotCapacitySchema,
 } from "./captain.ts";
 import {
+  ChatChannelIgnoreInputSchema,
+  ChatChannelLinkInputSchema,
+  ChatChannelsInputSchema,
+  ChatChannelsSchema,
   ChatEditReplyInputSchema,
   ChatHolderInputSchema,
   ChatIgnoreInputSchema,
@@ -1380,6 +1384,26 @@ export const commands = {
       "Link a New chat to a workspace. From then on the captain reads what the client writes there. Owner only",
     input: ChatLinkInputSchema,
     output: ClientRowSchema,
+  },
+  "chat.channels": {
+    risk: "read",
+    summary:
+      "The channels of a chat app's workspace for one connection: which the bot is in, which are linked to a workspace or ignored, and which permissions the connection lacks. Owner only",
+    input: ChatChannelsInputSchema,
+    output: ChatChannelsSchema,
+  },
+  "chat.channelLink": {
+    risk: "change",
+    summary:
+      "Link a channel from the channel list to a workspace, the same link as for a New chat. The bot joins a public channel first. Owner only",
+    input: ChatChannelLinkInputSchema,
+    output: ClientRowSchema,
+  },
+  "chat.channelIgnore": {
+    risk: "change",
+    summary: "Ignore a channel from the channel list: what arrives from it is dropped. Owner only",
+    input: ChatChannelIgnoreInputSchema,
+    output: z.object({ ok: z.literal(true) }),
   },
   "chat.ignore": {
     risk: "change",
