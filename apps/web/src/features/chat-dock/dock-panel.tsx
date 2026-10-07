@@ -54,7 +54,7 @@ export default function DockPanel({ onClose }: { onClose: () => void }) {
       role="dialog"
       aria-label="Chats"
       className={cn(
-        "fixed right-4 bottom-[68px] z-40 flex h-[min(620px,calc(100dvh-92px))] w-[min(420px,calc(100vw-32px))] animate-fade-in flex-col overflow-hidden rounded-2xl outline-none",
+        "fixed right-4 bottom-[164px] z-40 flex h-[min(620px,calc(100dvh-188px))] w-[min(420px,calc(100vw-32px))] animate-fade-in flex-col overflow-hidden rounded-2xl outline-none",
         GLASS_STRONG,
       )}
     >

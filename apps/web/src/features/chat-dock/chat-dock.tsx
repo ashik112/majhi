@@ -55,7 +55,7 @@ export const ChatDock = memo(function ChatDock() {
         onPointerEnter={() => void loadPanel()}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "fixed right-4 bottom-4 z-40 flex size-11 cursor-pointer items-center justify-center rounded-full text-fg-soft transition-colors hover:border-line-hover hover:text-fg",
+          "fixed right-4 bottom-[112px] z-40 flex size-11 cursor-pointer items-center justify-center rounded-full text-fg-soft transition-colors hover:border-line-hover hover:text-fg",
           open && "text-fg",
           GLASS_STRONG,
         )}
