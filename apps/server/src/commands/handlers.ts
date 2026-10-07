@@ -24,6 +24,7 @@ import { autonomyHandlers } from "../autonomy/handlers.ts";
 import { backupHandlers } from "../backup/handlers.ts";
 import { captainHandlers } from "../captain/handlers.ts";
 import { answerOnce } from "../captain/keys.ts";
+import { chatHandlers } from "../chat/handlers.ts";
 import type { ConfigService } from "../config/service.ts";
 import { connectHandlers } from "../connect/handlers.ts";
 import { connectionHandlers } from "../connections/handlers.ts";
@@ -193,9 +194,7 @@ export function createHandlers({
         if (real === host) found.push({ url: remote.url, slug: repoSlug(remote.url) });
       }
     }
-    return (
-      found.find((f) => f.slug.split("/")[0]?.toLowerCase() === account.toLowerCase()) ?? found[0]
-    );
+    return found.find((f) => f.slug.split("/")[0]?.toLowerCase() === account.toLowerCase()) ?? found[0];
   };
   /**
    * The Bitbucket accounts of the orgs, each with the fingerprints of the SSH keys registered on it (when
@@ -276,6 +275,7 @@ export function createHandlers({
     ...captainHandlers(services.captain, services.autonomy),
     ...inboxHandlers(services.inbox),
     ...conversationsHandlers(services.conversations),
+    ...chatHandlers(services.chat),
     ...agendaHandlers({
       agenda: services.agenda,
       findings: services.findings,

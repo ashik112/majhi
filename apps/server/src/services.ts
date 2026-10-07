@@ -52,6 +52,9 @@ import { CaptainRepo } from "./captain/repo.ts";
 import { CaptainService } from "./captain/service.ts";
 import { CaptainTell } from "./captain/tell.ts";
 import { captainWorld } from "./captain/world.ts";
+import type { ClientChat } from "./chat/service.ts";
+import { TelegramAdapter } from "./chat/telegram/adapter.ts";
+import { type ClientChatParts, createClientChat } from "./chat/wire.ts";
 import type { Dispatch } from "./commands/dispatch.ts";
 import { resolvePath } from "./config/load.ts";
 import { connectionScopes } from "./config/sections.ts";
@@ -406,6 +409,10 @@ export interface Services {
   ops: Ops;
   /** The outbound gate: everything that would leave the machine passes it (5.18). */
   outbound: OutboundGate;
+  /** Client chats: the clients' rooms, contacts and replies, and the read loops of the chat apps. */
+  chat: ClientChat;
+  /** The parts behind it, for the tests that drive them. */
+  chatParts: ClientChatParts;
   /** Outcomes, the scorecard, the trust ladder and the monthly ceiling (5.18). */
   outcomes: OutcomesService;
   /** The checked hand-off: tests, build, lint and a review before "Ready to ship" (5.18). */
@@ -1465,9 +1472,18 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   });
   // Bound below, after the playbooks: the trust ladder decides which channels may be Auto.
   let outcomesService: OutcomesService | undefined;
+  // Bound below, after Connect: the client chats send and settle drafts of the gate's `client` channel.
+  let clientChat: ClientChatParts | undefined;
   const outbound = new OutboundGate({
     db: store.raw,
     knownOrg,
+    transports: {
+      client: {
+        send: async (draft) =>
+          clientChat?.replies.transport.send(draft) ?? { ok: false, detail: "Client chats are not ready." },
+      },
+    },
+    settled: (draft) => clientChat?.replies.settled(draft),
     autoAllowed: (org, channel) => outcomesService?.autoAccepted(org, channel) ?? false,
     tz: async (org) => {
       const a = (await config.settings()).autonomy;
@@ -1757,12 +1773,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     changed: () => events.emit(["findings"]),
     // Laya reads each new finding: likely real or noise, with the owner's dismiss and keep as its labels.
-    triage: (f) => triageFinding(decisions, f, options.runClock),
+    // A client's message has its own triage (chat/triage.ts), which has no tools and never dismisses by Laya's word.
+    triage: (f) =>
+      f.source === "client" ? Promise.resolve(undefined) : triageFinding(decisions, f, options.runClock),
     labelled: (f, label, note) => decisions.resolve("finding", String(f.id), label, note),
     // A new finding is news to its workspace's lane, where Start is You too (it files a proposal).
     appeared: (f) => {
       // An incident wakes the lane itself, with its evidence and what the captain may do (ops watch).
       if (f.source === "incident") return;
+      // A client's words are data. They are never put in front of the captain as news: its triage reads them without tools.
+      if (f.source === "client") return;
       if (f.severity !== "info") autonomy.news(`New finding #${f.id} (${f.severity}): ${f.title}`, f.org);
     },
     ...(options.runClock === undefined ? {} : { now: options.runClock }),
@@ -2265,6 +2285,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     grants: new GrantStore(secrets),
     apps: new AppClientStore(secrets),
     builtInApps: BUILT_IN_CONNECT_APPS,
+    telegramApi: env.chats?.telegramApi,
     githubClientId: async () => (await gitConnect.apps()).github?.clientId,
     ...(options.hostLink === undefined ? {} : { cli: hostCli(options.hostLink) }),
     orgName: async (org) => connectionScopes(await config.sections())[org]?.name,
@@ -2305,6 +2326,70 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     attention: reportAttention,
   });
   oauth.bearer = (id) => connect.bearer(id);
+  /** A secret entry of a connection, read from secrets.age. */
+  const connectionSecret = async (connection: string, name: string): Promise<string | undefined> => {
+    const orgs = connectionScopes(await config.sections());
+    for (const entry of Object.values(orgs)) {
+      const ref = entry.connections?.[connection]?.vars?.[name]?.value;
+      if (ref !== undefined && ref.startsWith("secret:")) return secrets.get(ref.slice("secret:".length));
+    }
+    return undefined;
+  };
+  const chatParts = createClientChat({
+    store,
+    room,
+    gate: outbound,
+    config,
+    autonomyMode: () => autonomy.mode(),
+    adapters: [
+      new TelegramAdapter({
+        ...(env.chats?.telegramApi === undefined ? {} : { base: env.chats.telegramApi }),
+        log: (line) => console.log(line),
+        ...(options.runClock === undefined ? {} : { now: options.runClock }),
+      }),
+    ],
+    connectionIds: async () =>
+      Object.entries(connectionScopes(await config.sections())).flatMap(([org, entry]) =>
+        Object.entries(entry.connections ?? {}).map(([id, connection]) => ({ org, id, connection })),
+      ),
+    secretOf: connectionSecret,
+    housekeeper,
+    wiki: async (org, question) => {
+      const out = await wikiAsk.answer(org, undefined, question);
+      return { answer: out.answer, found: out.found };
+    },
+    rest: async (org) => (await wikiUnavailable(org)) ?? (await wikiRest(org)),
+    findings,
+    incidents: (org) =>
+      (opsWatch?.openIncidents() ?? [])
+        .filter((i) => i.org === org)
+        .map((i) => ({ id: i.id, title: i.title })),
+    decisions,
+    offer: (card) => admin.offer(card),
+    lane: async (task) => {
+      const org = lanes.orgOf(task);
+      const boss = await lanes.boss();
+      return org === undefined || boss === undefined ? undefined : { boss, org };
+    },
+    deleteWebhook: async (connection) => {
+      const token = await connectionSecret(connection, "TELEGRAM_BOT_TOKEN");
+      if (token === undefined) throw new UserError("The bot token is not saved.", 409);
+      const base = env.chats?.telegramApi ?? "https://api.telegram.org";
+      const res = await fetch(`${base}/bot${token}/deleteWebhook`, { method: "POST", redirect: "error" });
+      if (!res.ok) throw new UserError("Telegram would not remove the webhook.", 409);
+    },
+    majhiHome: env.majhiHome,
+    polling: env.chats?.polling === true,
+    changed: () => events.emit(["clients"]),
+    ...(options.runClock === undefined ? {} : { now: options.runClock }),
+    log: (line) => console.log(line),
+  });
+  clientChat = chatParts;
+  // The read loops follow the connections: a new bot starts reading, a removed one stops.
+  events.subscribe((event) => {
+    if (event.type === "changed" && event.topics.includes("connections")) void chatParts.hub.sync();
+  });
+  background.run(() => chatParts.hub.sync());
   connect.startSweeper();
   connections.onRemoved((id) => connect.removed(id));
   const skills = new SkillService({
@@ -2709,6 +2794,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     goals,
     ops,
     outbound,
+    chat: chatParts.chat,
+    chatParts,
     outcomes,
     handoff,
     deploy: deployWorld,
@@ -2781,6 +2868,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       clearTimeout(retentionFirst);
       clearInterval(chatSweep);
       conversations.stop();
+      chatParts.hub.stop();
       clearInterval(limitSweep);
       clearInterval(agendaSweep);
       clearInterval(pruneSweep);
