@@ -101,7 +101,10 @@ export function taskSync(client: QueryClient): {
         return { decisions, counts: answer.counts };
       });
       // An open task page reads its own task again; one nobody looks at is only marked stale.
-      for (const id of ids) void client.invalidateQueries({ queryKey: [...queryKeys.tasks, "one", id] });
+      for (const id of ids) {
+        void client.invalidateQueries({ queryKey: [...queryKeys.tasks, "one", id] });
+        void client.invalidateQueries({ queryKey: [...queryKeys.tasks, "detail", id] });
+      }
       // What waits to start and the open merge requests move with the tasks; both reads are small.
       void client.invalidateQueries({ queryKey: [...queryKeys.tasks, "blockers"] });
       void client.invalidateQueries({ queryKey: [...queryKeys.tasks, "home-facts"] });

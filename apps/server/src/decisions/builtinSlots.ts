@@ -202,6 +202,7 @@ export const BUILTIN_SLOTS: readonly SlotDef[] = [
     fixtures: VERDICTS,
   },
   { id: "team-pick", title: "Team for a new task", use: "routing", question: /^team$/, target: 0.9 },
+  { id: "task-type", title: "Type of a new task", use: "routing", question: /^type$/, target: 0.9 },
   {
     id: "memory-verdict",
     title: "Keep or drop a fact",

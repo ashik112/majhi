@@ -10,6 +10,7 @@ import {
   type TaskStatus,
 } from "@majhi/shared";
 import { errorMessage, UserError } from "../errors.ts";
+import type { Provenance } from "../tasks/provenance.ts";
 import type { RunHistory } from "./history.ts";
 
 /** The part of majhi an action touches, so tests can stand in for it. */
@@ -33,6 +34,8 @@ export interface ActionHost {
     project: string;
     agent: string | undefined;
     team: string[] | undefined;
+    /** The schedule or watch that starts it, and the workspace that source lives in. */
+    provenance: Provenance;
   }): Promise<{ id: string }>;
   /** Tells the task's lead, as a message from the scheduler. Wakes the task like an owner message. */
   postToTask(input: { task: string; text: string; from: string }): Promise<void>;
@@ -66,6 +69,18 @@ export function refuseSecrets(...texts: (string | undefined)[]): void {
       throw new UserError("This looks like a secret. Save it with secrets.save and refer to it by name.");
     }
   }
+}
+
+/** The origin of a task a schedule or a watch starts: that source, in its own workspace. */
+export function provenanceOf(source: RunSource): Provenance {
+  return {
+    kind: "ref",
+    origin:
+      source.kind === "schedule"
+        ? { kind: "schedule", schedule: source.id }
+        : { kind: "watch", watch: source.id },
+    workspace: source.org,
+  };
 }
 
 /** The text a started task gets: the owner's title and text. Its repo is passed on its own. */
@@ -198,6 +213,7 @@ export class ActionRunner {
           project: action.project,
           agent: action.agent,
           team: action.team,
+          provenance: provenanceOf(source),
         });
         return { detail: `Started task ${task.id}`, taskId: task.id };
       }

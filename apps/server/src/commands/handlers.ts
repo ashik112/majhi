@@ -70,7 +70,9 @@ import type { SshHostProbe } from "../ssh/hosts.ts";
 import type { SystemService } from "../system/service.ts";
 import { actorName } from "../tasks/cards.ts";
 import { changeTaskBranch } from "../tasks/change-branch.ts";
+import type { Provenance } from "../tasks/provenance.ts";
 import { readReport } from "../tasks/report.ts";
+import { typist } from "../tasks/typing.ts";
 import { toolsHandlers } from "../tools/handlers.ts";
 import { gitDrift } from "../wiki/drift.ts";
 import { wikiHandlers } from "../wiki/handlers.ts";
@@ -112,6 +114,17 @@ export interface HandlerDeps {
   health?: HealthService;
   /** `system.version` and `system.update`. Without it they answer 501. */
   system?: SystemService;
+}
+
+/**
+ * Who made a task through `tasks.create`. A child's origin is its parent link. Otherwise the owner, or an
+ * agent, which is recorded as the captain with the reason it gave (the origin kinds name no other agent).
+ */
+function createdBy(ctx: CommandContext, child: boolean): Provenance {
+  if (child) return { kind: "child" };
+  const actor = ctx.meta.actor;
+  if (actor.kind === "owner") return { kind: "owner" };
+  return { kind: "captain", reason: ctx.meta.reason?.trim() || `Created by @${actor.id}` };
 }
 
 /** How long a `tasks.create` request id is remembered. */
@@ -617,6 +630,18 @@ export function createHandlers({
       };
     },
     "tasks.get": async (input) => services.tasks.get(input.id),
+    "tasks.detail": async (input) => services.taskDetails.detail(input.id),
+    "tasks.areas": async (input) => services.taskDetails.areas(input.ids),
+    "tasks.setType": async (input, ctx) => {
+      const task = services.tasks.get(input.id);
+      const who = typist(ctx.meta.actor, {
+        boss: await services.lanes.boss(),
+        lane: ctx.meta.task === undefined ? undefined : services.lanes.orgOf(ctx.meta.task),
+        taskOrg: task.org ?? PRIVATE,
+      });
+      if ("refusal" in who) throw new UserError(who.refusal, 409);
+      return services.tasks.setType(input.id, input.type, who.by);
+    },
     "captain.reportBug": async (input, ctx) => {
       // majhi's own code: the Private project named majhi, or the one whose folder is called majhi.
       const own = (await services.projects.list()).find(
@@ -638,6 +663,8 @@ export function createHandlers({
         start: false,
         from: ctx.meta.task,
         byOwner: false,
+        provenance: { kind: "captain", reason: "A bug in majhi's own code, reported by an agent" },
+        typing: { type: "bug", by: "captain" },
       });
       noteSecrets(services, task.id, captured.saved);
       return { task: task.id };
@@ -652,11 +679,15 @@ export function createHandlers({
       const made = (async () => {
         // A secret in the task text must not reach TASK.md or the agent.
         const captured = await services.secretService.capture(input.text);
+        const byOwner = ctx.meta.actor.kind === "owner";
+        const { type, ...rest } = input;
         const task = await services.tasks.create({
-          ...input,
+          ...rest,
           text: captured.text,
           from: ctx.meta.task,
-          byOwner: ctx.meta.actor.kind === "owner",
+          byOwner,
+          provenance: createdBy(ctx, input.parent !== undefined),
+          ...(type === undefined ? {} : { typing: { type, by: byOwner ? "owner" : "captain" } }),
         });
         noteSecrets(services, task.id, captured.saved);
         return task;

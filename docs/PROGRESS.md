@@ -1,5 +1,25 @@
 # Progress
 
+## Ship without me, phase A, units A2 and A3: the Tasks screen and the task page (branch `feat/tasks-phase-a`, built, not merged)
+
+The approved mockup (`marketing-assets/ship-mockup`) built on the data A1 gave: types, origin, areas and the trail. Web only, plus one read of the lifecycle's hold.
+
+**Plan.** The hold read (summary carries who ends a pause), then the shared pieces once (`features/tasks-ui`: type chip, project names, origin mark, area chips, trail strip), then the board and the tree on `features/board`, then the task page header and the folding column. Each checked in a browser on an isolated server (own home, port 7411, three workspaces, 47 seeded tasks with real worktrees, real hand-off checks and a wiki facts file for areas), at 1440 and 1100, dark and light.
+
+**What works.**
+- Home is Tasks. The board has Needs you, Running, Waiting, Shipping and Up next; Ideas, Done and (when it has rows) the captain's log are toggles; empty columns fold to a rail. Cards show the type tile, id, origin, age, title, workspace and projects with "+N", one status line, "Waits on" with the other task's live state, the hold's sentence, nested subtasks with progress, the trail as chips, area chips and the agent. Filters: type, area, workspace (the chips in the top bar), source. At 1100 the board scrolls sideways inside itself. Keys are as before (j, k, J, K, Enter, 1 to 3, x, t, /).
+- The tree is today's tree with a type tile, workspace and projects, the origin, the section word, and relation chips (waits on, blocks, follow-up of); List is gone.
+- Needs you and Waiting come from the lifecycle's hold: an error, a loop or a stop is the owner's; a signed-out account, a budget or offline is Waiting (majhi lifts it). A task that waits on another task, or on subtasks that do not run, is Waiting.
+- The task page header is three rows (about 115 px, with the brief open about 141, against 147 before): crumbs with workspace, projects, origin, the type chip (one click to change, sticks after a reload) and area chips; the title with a Brief button (folded once work has begun); the tabs with the trail strip at their right. Below 1300 px the right column is a rail that opens over the page.
+
+**How to try it.** Open Tasks. Press Tree, press Ideas and Done, pick a type, an area or a source. Open a task, change its type from the chip, press Brief. Narrow the window below 1300 px and press the arrow on the rail.
+
+**Checked.** Typecheck, biome on the touched paths, the board model tests (`home-model.test.ts`, updated for the new sections) and the lifecycle census (unchanged). In a browser on the isolated server, at 1440 and 1100, dark and light, with assertions: the page never scrolls; the five columns; the strip counts the cards; no label cut, no content spilling out of its box, every chip, tile and trail step whole; the board scrolls sideways inside itself at 1100; type, area, source and workspace filters; the empty state; Ideas and Done toggles; Board and Tree and the view surviving a reload; j and Enter; a card opens its task; the header no taller than 147 px (115 px, 141 with the brief open) for seven tasks; the trail strip whole in all three modes (widths 1440 to 760); Brief, the rail, the arrow and Esc; a type picked from the chip sticks after a reload; the Subtasks step opens a subtask. 66 board, 68 tree and 242 task assertions pass, and 42 of 45 trail ones (the three that fail are a 600 px window, below any width majhi supports). Measured on 47 tasks: `tasks.list` p50 1.1 ms, p95 2.2 ms; `tasks.areas` for 36 tasks 122 ms cold and 2 ms warm; `tasks.detail` p50 7 ms.
+
+**Left.** Phases B and C add the Staging, Production and Reply steps the mockup draws; nothing draws them until something produces them. Client origins (Telegram, WhatsApp) come with phase D. The mockup's hover highlight between a relation chip and its row is not built.
+
+**Known issues.** A budget or usage-limit pause reads back from the stored fields as a budget hold (the account is not stored with it until the hold column ships), so its label says "budget". A pause that majhi lifts itself leaves Waiting as soon as its condition clears, so an isolated server shows it only while the condition holds.
+
 ## Docker inside tasks: one network, compose, approvals (branch `fix/task-docker-stack`, built, not merged)
 
 Cause (owner): `docker compose`, `-p`, `--network`, `--env-file` were refused in a task, containers a task started had no internet, `service_start` and script containers could not see each other, a `majhi-processes` process had no name on the network, and the image card named nothing. One task built Postgres and Redis into one image to get round it. Audit gaps 1, 2, 6, 7, 8, 10 (`task-gaps.md`). Design: `docs/design/task-network.md`; decisions dated 2026-10-07.

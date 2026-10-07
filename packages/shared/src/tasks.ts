@@ -2,10 +2,16 @@ import { z } from "zod";
 import { BranchPatternSchema, IdSchema, MrHostSchema, OrgIdSchema, SecretRefSchema } from "./accounts.ts";
 import { DiagramSpecSchema } from "./diagram.ts";
 import { HandoffFailedSchema } from "./handoff.ts";
+import { TaskIdSchema } from "./ids.ts";
+import { CiStateSchema, MrStateSchema } from "./mr-state.ts";
 import { ProcessInfoSchema } from "./processes.ts";
 import { CoordinationModeSchema, HandoffViaSchema, TeamOverrideSchema } from "./rooms.ts";
 import { CommitsPatchSchema } from "./settings.ts";
 import { SkillNameSchema } from "./skills.ts";
+import { HoldViewSchema } from "./task-hold.ts";
+import { OriginViewSchema, StoredOriginSchema } from "./task-origin.ts";
+import { TrailSchema } from "./task-trail.ts";
+import { TaskTypingSchema } from "./task-type.ts";
 import { DaySchema } from "./usage.ts";
 
 /**
@@ -110,11 +116,7 @@ export type ProjectView = z.infer<typeof ProjectViewSchema>;
 // ---------------------------------------------------------------------------
 // Tasks
 
-/** `GLX-420`, `LOCAL-9`. The org's key prefix plus a number. Also the task folder name. */
-export const TaskIdSchema = z
-  .string()
-  .regex(/^[A-Z][A-Z0-9]{0,9}-[1-9][0-9]*$/, "Task ids look like GLX-420");
-export type TaskId = z.infer<typeof TaskIdSchema>;
+export { type TaskId, TaskIdSchema } from "./ids.ts";
 
 /** Prefix for tasks without an org. */
 export const LOCAL_TASK_PREFIX = "LOCAL";
@@ -165,12 +167,7 @@ export function waitsForOwner(reason: PausedReason | undefined): boolean {
   return reason === "owner" || reason === "loop" || reason === "blocked";
 }
 
-export const MrStateSchema = z.enum(["open", "merged", "closed"]);
-export type MrState = z.infer<typeof MrStateSchema>;
-
-/** `none`: the host reports no checks, which is not the same as passing (5.5). */
-export const CiStateSchema = z.enum(["none", "pending", "passing", "failing"]);
-export type CiState = z.infer<typeof CiStateSchema>;
+export { type CiState, CiStateSchema, type MrState, MrStateSchema } from "./mr-state.ts";
 
 /** How a merge lands the task branch: a merge commit, one squashed commit, or a rebase and fast-forward. */
 export const MergeMethodSchema = z.enum(["merge", "squash", "rebase"]);
@@ -335,6 +332,13 @@ export const TaskSchema = z.object({
   /** What the owner typed, verbatim. */
   brief: z.string(),
   kind: TaskKindSchema,
+  /**
+   * What the work is and who said so. Absent: untyped (every task made before types, and chats).
+   * `by` only exists with `type`.
+   */
+  typing: TaskTypingSchema.optional(),
+  /** Where it came from, as its creator set it. Absent for tasks made before origins. A parent is not stored here: it is the `parent` link. */
+  origin: StoredOriginSchema.optional(),
   /** An org id, or absent for LOCAL tasks. */
   org: IdSchema.optional(),
   status: TaskStatusSchema,
@@ -495,6 +499,7 @@ export const TaskSummarySchema = TaskSchema.pick({
   id: true,
   title: true,
   kind: true,
+  typing: true,
   org: true,
   status: true,
   pausedReason: true,
@@ -518,6 +523,15 @@ export const TaskSummarySchema = TaskSchema.pick({
     .optional(),
   /** Unmet `depends-on` links: the tasks this one waits for (5.4a). */
   waitingOn: z.array(TaskIdSchema),
+  /** Where it came from, with the name to show (a parent's title, a watch's or schedule's name). */
+  origin: OriginViewSchema.optional(),
+  /** Why a paused task waits and who ends it. Set only while the task is paused. */
+  hold: HoldViewSchema.optional(),
+  /**
+   * What the task produced so far: its children, the merge request or local merge. Derived on read.
+   * The hand-off check joins in the single read (`tasks.detail`).
+   */
+  trail: TrailSchema,
   /** A chat with an agent (`isOwnerChat`). Chats show in Chats, not on the board. */
   chat: z.boolean().optional(),
   /** A workspace thread of the captain (5.18): not a task to the owner, never listed by `tasks.list`. */

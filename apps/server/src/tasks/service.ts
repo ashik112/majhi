@@ -7,6 +7,7 @@ import {
   type AgentFrontmatter,
   type Attachment,
   AUTO,
+  BRANCH_TYPE_OF,
   type BranchType,
   type CoordinationMode,
   canWorkIn,
@@ -20,6 +21,7 @@ import {
   lifecycle,
   type MergeChecks,
   MODE_LABELS,
+  mayRetype,
   mergeCanBeOverridden,
   OWNER_HANDLE,
   type ParsedTask,
@@ -35,7 +37,10 @@ import {
   type RoomSearchHit,
   type ShipOption,
   type ShipOptions,
+  type StoredOrigin,
   shipWords,
+  TASK_TYPE_OF_BRANCH,
+  TASK_TYPES,
   type Task,
   type TaskId,
   type TaskKind,
@@ -43,8 +48,11 @@ import {
   type TaskPriority,
   type TaskRepo,
   type TaskSummary,
+  type TaskType,
+  type TaskTyping,
   type TeamOverride,
   type TeamPlan,
+  type TypeBy,
 } from "@majhi/shared";
 import type { AccountService } from "../accounts/service.ts";
 import { isBossChat } from "../admin/boss.ts";
@@ -112,6 +120,7 @@ import {
   inferBranchType,
   readRepoStyle,
   styleOptions,
+  taskBranchType,
   typeOfBranch,
 } from "./branch-naming.ts";
 import {
@@ -124,6 +133,7 @@ import {
 import { OwnerCards } from "./cards.ts";
 import { deleteAfterShip, deleteRefusal } from "./delete-after.ts";
 import { handoverNote } from "./handover.ts";
+import { holdViewOf } from "./hold-view.ts";
 import {
   type ApplyOptions,
   assertedReading,
@@ -141,6 +151,7 @@ import { type PickedRepo, withPickedRepos } from "./picked-repos.ts";
 import { TaskPlanner } from "./planner.ts";
 import type { Footprint } from "./planning.ts";
 import { TaskPlans } from "./plans.ts";
+import { originFor, type Provenance } from "./provenance.ts";
 import { blockedPaths, checkReadMount, projectsFor, type ReadPolicy, ReadRefused } from "./read-mounts.ts";
 import {
   childrenWaitOnParent,
@@ -162,6 +173,7 @@ import {
 import { unshippedText, unshippedWork } from "./shipped.ts";
 import { type TeamFacts, wakeFacts } from "./team-facts.ts";
 import { TeamFactsSource } from "./team-facts-source.ts";
+import { chooseType, guessType, typeQuestion } from "./typing.ts";
 
 /**
  * The merge rule (nothing merges unless the hand-off checks are green for the exact commit). Required,
@@ -242,8 +254,12 @@ export interface CreateInput {
   /** A separate short title: it becomes the first line, and `text` the description. */
   title?: string | undefined;
   kind?: TaskKind | undefined;
-  /** The type its new branch starts with. Default: read from the title. */
+  /** The type its new branch starts with. Default: follows the task's type. */
   branchType?: BranchType | undefined;
+  /** What the work is and who said so. Absent: majhi reads it from the text and source (and asks Laya when unsure). */
+  typing?: TaskTyping | undefined;
+  /** Where the task came from. Every creator says (see `Provenance`). */
+  provenance: Provenance;
   /** An investigation: the named repos are mounted read-only, with no branch, worktree or Ship. */
   readOnly?: boolean | undefined;
   agent?: string | undefined;
@@ -358,11 +374,16 @@ export class TaskService {
   list(includeDone: boolean, only?: readonly string[]): TaskSummary[] {
     const rows = this.deps.store.tasks.list(includeDone, only);
     const waiting = this.deps.store.room.tasksWaitingOnOwner();
-    return rows.map((t) => ({
-      ...t,
-      working: this.deps.runs.working(t.id),
-      ...(t.status !== "done" && waiting.has(t.id) ? { asking: true } : {}),
-    }));
+    return rows.map((t) => {
+      // Only a paused task has a hold the board draws, so only those cost a read of the lifecycle.
+      const hold = t.status === "paused" ? this.lifecycle.state(t.id)?.hold : undefined;
+      return {
+        ...t,
+        working: this.deps.runs.working(t.id),
+        ...(t.status !== "done" && waiting.has(t.id) ? { asking: true } : {}),
+        ...(hold === undefined ? {} : { hold: holdViewOf(hold) }),
+      };
+    });
   }
 
   /** What waits for the owner in open tasks and chats, oldest first (`notify.pending`). */
@@ -495,9 +516,23 @@ export class TaskService {
     }
     const planned = await planAttachments(uploads, input.attachments, this.attachSource(input.from), { org });
 
+    // Before anything is made: a task never points into another workspace.
+    const origin = originFor(input.provenance, { org, parent: input.parent });
     const key =
       org === undefined ? LOCAL_TASK_PREFIX : (orgKeys(sections.orgs).get(org) ?? LOCAL_TASK_PREFIX);
     const id = store.tasks.allocateKey(key);
+    const typing =
+      kind === "chat"
+        ? undefined
+        : (input.typing ??
+          (await this.intakeType({
+            id,
+            title: parsed.title,
+            text: input.text,
+            kind,
+            origin,
+            branchType: input.branchType,
+          })));
     const folder = join(tasksDir, id);
     const picked =
       asked !== undefined
@@ -517,7 +552,13 @@ export class TaskService {
           });
     const repoPlan = investigation
       ? { repos: [], warnings: [] }
-      : await this.planRepos(id, parsed, projects, picks.bases, input.branchType);
+      : await this.planRepos(
+          id,
+          parsed,
+          projects,
+          picks.bases,
+          input.branchType ?? (typing === undefined ? undefined : BRANCH_TYPE_OF[typing.type]),
+        );
     const repos = repoPlan.repos.map((r) => (picks.writes.has(r.project) ? { ...r, writes: true } : r));
     const at = this.now().toISOString();
 
@@ -537,6 +578,8 @@ export class TaskService {
         title: parsed.title,
         brief: input.text,
         kind,
+        ...(typing === undefined ? {} : { typing }),
+        ...(origin === undefined ? {} : { origin }),
         ...(org === undefined ? {} : { org }),
         status: input.start ? "ready" : "inbox",
         folder,
@@ -602,6 +645,52 @@ export class TaskService {
       }
     }
     return task;
+  }
+
+  /**
+   * The type of a task made without one: the rules' reading of the branch type the creator named, the
+   * finding's source or the title, and Laya's pick (recorded on the task) when they say nothing.
+   */
+  private async intakeType(args: {
+    id: string;
+    title: string;
+    text: string;
+    kind: TaskKind;
+    origin: StoredOrigin | undefined;
+    branchType: BranchType | undefined;
+  }): Promise<TaskTyping> {
+    if (args.branchType !== undefined) return { type: TASK_TYPE_OF_BRANCH[args.branchType], by: "intake" };
+    const guess = guessType(args);
+    if (guess.sure) return { type: guess.type, by: "intake" };
+    const result = await this.deps.decisions
+      ?.decide(typeQuestion(args), { use: "routing", task: args.id })
+      .catch(() => undefined);
+    const { typing, fellBack } = chooseType(guess, result);
+    if (result !== undefined)
+      this.deps.decisions?.outcome(result.id, {
+        text: `Type: ${typing.type}.`,
+        fellBack,
+        choices: [...TASK_TYPES],
+      });
+    return typing;
+  }
+
+  /**
+   * Sets a task's type. The owner's choice stands against the captain and against inference; the
+   * captain's against inference. Chats have no type.
+   */
+  setType(id: string, type: TaskType, by: Exclude<TypeBy, "intake">): Task {
+    const task = this.get(id);
+    if (task.kind === "chat") throw new UserError("A chat has no type.", 409);
+    if (!mayRetype(task.typing, by)) {
+      throw new UserError(`The owner set the type of ${id}. Only the owner changes it.`, 409);
+    }
+    if (task.typing?.type === type && task.typing.by === by) return task;
+    this.deps.store.tasks.setTyping(id, { type, by });
+    const typed = this.get(id);
+    this.deps.room.publishTask(typed);
+    this.deps.events.emitTask(id, true);
+    return typed;
   }
 
   /**
@@ -778,7 +867,7 @@ export class TaskService {
     );
     const asks = styles.filter(([, commits]) => commits !== "other").map(([project]) => project);
     if (asks.length === 0) return undefined;
-    const type = typeOfBranch(first.branch) ?? inferBranchType(task.title);
+    const type = typeOfBranch(first.branch) ?? taskBranchType(task);
     return { type, ...(asks.length === task.repos.length ? {} : { only: asks }) };
   }
 
@@ -1692,6 +1781,7 @@ export class TaskService {
           from: input.from,
           start: false,
           parent: parent.id,
+          provenance: { kind: "child" },
           dependsOn,
           dependsWhen: child.when,
         }),
@@ -1874,6 +1964,8 @@ export class TaskService {
     /** The repo the change is made in. Named explicitly: text never attaches a repo. */
     project: string;
     message: string;
+    /** Why majhi makes this change itself, for the task's origin. */
+    reason: string;
     change: (repo: { project: string; worktree: string }) => Promise<void>;
   }): Promise<Task> {
     const created = await this.create({
@@ -1881,6 +1973,8 @@ export class TaskService {
       repos: [{ project: input.project }],
       attachments: [],
       start: false,
+      provenance: { kind: "captain", reason: input.reason },
+      typing: { type: "chore", by: "intake" },
     });
     const task = this.get(created.id);
     try {

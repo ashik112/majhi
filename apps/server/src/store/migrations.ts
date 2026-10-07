@@ -1798,6 +1798,19 @@ CREATE TABLE wiki_answers (
 ALTER TABLE task_repos ADD COLUMN start_ref TEXT;
 `,
   },
+  {
+    // What a task is and where it came from. Tasks made before this have neither: no type reads as "untyped" and
+    // no origin as unknown, and nothing is guessed for them. `type` and `type_by` are set together or not at all
+    // (zod checks the pair when a row is read); `origin` is JSON (StoredOrigin), a row that no longer parses reads as
+    // none. A child's parent is its task_links row, never stored here.
+    id: 176,
+    name: "task type and origin",
+    sql: `
+ALTER TABLE tasks ADD COLUMN type TEXT;
+ALTER TABLE tasks ADD COLUMN type_by TEXT;
+ALTER TABLE tasks ADD COLUMN origin TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

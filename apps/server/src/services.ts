@@ -196,8 +196,10 @@ import { SkillStore } from "./skills/store.ts";
 import { logSqliteBaseline } from "./store/db.ts";
 import { DB_FILE_NAME, Store } from "./store/index.ts";
 import { pruneOld } from "./store/retention.ts";
+import { AreasReader } from "./tasks/areas.ts";
 import { CardActions } from "./tasks/card-actions.ts";
 import { CleanupService } from "./tasks/cleanup.ts";
+import { TaskDetails } from "./tasks/detail.ts";
 import { TaskFolderSweep } from "./tasks/folder-sweep.ts";
 import type { LinkOptions } from "./tasks/links.ts";
 import { PendingShips } from "./tasks/pending-ship.ts";
@@ -213,10 +215,12 @@ import { UsageRepo } from "./usage/repo.ts";
 import { UsageService } from "./usage/service.ts";
 import { WikiAsk } from "./wiki/ask.ts";
 import { wikiNotes } from "./wiki/notes.ts";
+import { wikiCacheDir } from "./wiki/paths.ts";
 import { writerPrice } from "./wiki/price.ts";
 import { WikiIndex } from "./wiki/search.ts";
 import { type WikiReader, WikiService } from "./wiki/service.ts";
 import { wikiEnabledFrom } from "./wiki/switch.ts";
+import { readFactsFile } from "./wiki/system/load.ts";
 import { WikiTools } from "./wiki/tools.ts";
 
 /** How often chats are checked for memory. */
@@ -392,6 +396,8 @@ export interface Services {
   handoff: HandoffService;
   /** The checks of every review task in one read, for Home. */
   homeChecks: HomeChecks;
+  /** A task's origin, areas and whole trail in one read, and the areas of many tasks for a board. */
+  taskDetails: TaskDetails;
   /** The owner's agenda and the morning brief (5.18). */
   agenda: AgendaService;
   /** `code_graph`: agents ask a task's own repos' code graph (5.21). */
@@ -1693,6 +1699,16 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         byOwner: n.byOwner,
         attachments: [],
         start: false,
+        provenance: {
+          kind: "ref",
+          origin: {
+            kind: "finding",
+            finding: n.finding.id,
+            source: n.finding.source,
+            severity: n.finding.severity,
+          },
+          workspace: n.org,
+        },
       });
       return { id: task.id };
     },
@@ -2570,6 +2586,21 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     outbound,
     outcomes,
     handoff,
+    taskDetails: new TaskDetails({
+      store,
+      handoff: (id) => handoff.state(id),
+      areas: new AreasReader({
+        enabled: wikiOn,
+        components: async (org, project) => {
+          const loaded = await config.load();
+          if (loaded.state.status !== "loaded") return [];
+          const file = await readFactsFile(wikiCacheDir(loaded.state.config.tasksDir, org, project));
+          return (file?.facts ?? []).flatMap((f) =>
+            f.kind === "component" ? [{ name: f.name, folder: f.folder, role: f.role }] : [],
+          );
+        },
+      }),
+    }),
     homeChecks: new HomeChecks({
       ids: () => store.tasks.idsWithStatus("review"),
       mergeChecks: (id) => tasks.mergeChecks(id),

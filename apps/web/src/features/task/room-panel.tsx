@@ -13,6 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { useAgentIndex } from "@/lib/agent-index";
+import { cn } from "@/lib/cn";
 import { useConfig } from "@/lib/queries";
 import { useAccounts, useOrgs } from "@/lib/studio-queries";
 import { useTaskBranches, useUpdateTask } from "@/lib/task-queries";
@@ -36,6 +37,7 @@ export function RoomPanel({
   items,
   processes,
   onShowChanges,
+  className,
 }: {
   task: Task;
   agents: readonly AgentLive[];
@@ -43,11 +45,13 @@ export function RoomPanel({
   processes: readonly ProcessInfo[];
   /** Opens the Changes tab. */
   onShowChanges?: (() => void) | undefined;
+  /** Replaces the column's width, where it sits over the page instead of beside it. */
+  className?: string | undefined;
 }) {
   return (
     <aside
       aria-label="Task details"
-      className="flex w-[320px] shrink-0 flex-col gap-2.5 overflow-y-auto pb-6 scroll-fade"
+      className={cn("flex w-[320px] shrink-0 flex-col gap-2.5 overflow-y-auto pb-6 scroll-fade", className)}
     >
       <InRoomCard task={task} agents={agents} />
       <SubtasksCard task={task} />

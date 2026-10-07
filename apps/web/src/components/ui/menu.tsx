@@ -15,6 +15,8 @@ export interface MenuItem {
   checked?: boolean;
   /** Items with a group get its name as a small heading above the first of them. */
   group?: string;
+  /** A small mark before the label. */
+  icon?: ReactNode;
 }
 
 export interface TriggerProps {
@@ -142,6 +144,11 @@ export function Menu({
                 {item.checked !== undefined && (
                   <span aria-hidden="true" className="flex w-3 justify-center text-accent-text">
                     {item.checked && <Check className="size-3.5" strokeWidth={2.5} />}
+                  </span>
+                )}
+                {item.icon !== undefined && (
+                  <span aria-hidden="true" className="flex shrink-0 items-center">
+                    {item.icon}
                   </span>
                 )}
                 <span className="min-w-0 truncate">{item.label}</span>

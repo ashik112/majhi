@@ -154,7 +154,7 @@ function alternatives(
 }
 
 /** Files changed from the fork point to the working tree, plus new files. Empty when git says nothing. */
-async function changedFiles(worktree: string, base: string): Promise<string[]> {
+export async function changedFiles(worktree: string, base: string): Promise<string[]> {
   const fork = (await git(worktree, ["merge-base", "HEAD", base]).catch(() => "")).trim() || "HEAD";
   const diff = await git(worktree, ["diff", "--name-only", fork]).catch(() => "");
   const fresh = await git(worktree, ["ls-files", "--others", "--exclude-standard"]).catch(() => "");

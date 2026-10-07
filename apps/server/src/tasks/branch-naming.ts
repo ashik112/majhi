@@ -1,4 +1,4 @@
-import { BRANCH_TYPES, type BranchType } from "@majhi/shared";
+import { BRANCH_TYPE_OF, BRANCH_TYPES, type BranchType, type TaskTyping } from "@majhi/shared";
 import { git } from "../git/git.ts";
 
 /** The pattern used when neither the owner nor the repo's own branches say otherwise. */
@@ -56,8 +56,8 @@ export function typeOfWord(word: string): BranchType | undefined {
   return BRANCH_TYPES.find((t) => ALIASES[t].includes(w));
 }
 
-/** The type a title suggests: a `type(scope):` prefix, its first word, a keyword, else `feat`. */
-export function inferBranchType(title: string): BranchType {
+/** The type a title says (a `type(scope):` prefix, its first word, a keyword), or undefined when it says nothing. */
+export function branchTypeSignal(title: string): BranchType | undefined {
   const text = title.trim().toLowerCase();
   const prefixed = /^([a-z]+)(?:\([^)]*\))?!?:/.exec(text);
   const named = prefixed?.[1] === undefined ? undefined : typeOfWord(prefixed[1]);
@@ -65,7 +65,17 @@ export function inferBranchType(title: string): BranchType {
   if (FEATURE_VERB.test(text)) return "feat";
   for (const [type, re] of LEADING) if (re.test(text)) return type;
   for (const [type, re] of ANYWHERE) if (re.test(text)) return type;
-  return "feat";
+  return undefined;
+}
+
+/** The type a title suggests: what it says, else `feat`. For a task with a type, `taskBranchType` follows that instead. */
+export function inferBranchType(title: string): BranchType {
+  return branchTypeSignal(title) ?? "feat";
+}
+
+/** The branch type of a task: its task type's when it has one (the one source), else read from the title. */
+export function taskBranchType(task: { title: string; typing?: TaskTyping | undefined }): BranchType {
+  return task.typing === undefined ? inferBranchType(task.title) : BRANCH_TYPE_OF[task.typing.type];
 }
 
 /** The type a task branch starts with (`fix/acm-1-x`, `feature/acm-1-x`), or undefined for `task/...` and others. */

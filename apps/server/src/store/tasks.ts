@@ -2,32 +2,44 @@ import {
   type Attachment,
   AUTONOMY_CHAT_BRIEF,
   BOSS_CHAT_BRIEF,
+  buildTrail,
   CAPTAIN_LANE_BRIEF,
   CHAT_BRIEF,
+  type ChildFact,
   type CiState,
   CiStateSchema,
   type CoordinationMode,
   CoordinationModeSchema,
   DaySchema,
+  FINDING_SOURCE_LABEL,
   IdSchema,
   isCaptainLane,
   isOwnerChat,
+  type MrFact,
   type MrReview,
   MrReviewSchema,
+  MrStateSchema,
+  type OriginView,
+  originOf,
   type PendingShip,
   PendingShipSchema,
   type ReadMount,
   ReadMountSchema,
   type RepoMr,
+  type StoredOrigin,
+  StoredOriginSchema,
   type Task,
   type TaskId,
   TaskIdSchema,
   TaskLinkTypeSchema,
+  type TaskOrigin,
   type TaskPriority,
   TaskPrioritySchema,
   TaskSchema,
   type TaskStatus,
   type TaskSummary,
+  type TaskTyping,
+  TaskTypingSchema,
   type TeamOverride,
   TeamOverrideSchema,
 } from "@majhi/shared";
@@ -65,6 +77,24 @@ function parsePendingShip(json: string | null): PendingShip | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** A stored origin, or undefined when there is none or it no longer parses. */
+function parseOrigin(json: string | null): StoredOrigin | undefined {
+  if (json === null) return undefined;
+  try {
+    const parsed = StoredOriginSchema.safeParse(JSON.parse(json));
+    return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The type and who set it. A row with only one of the two, or a value this build does not know, is untyped. */
+function typingOf(row: { type: string | null; typeBy: string | null }): TaskTyping | undefined {
+  if (row.type === null || row.typeBy === null) return undefined;
+  const parsed = TaskTypingSchema.safeParse({ type: row.type, by: row.typeBy });
+  return parsed.success ? parsed.data : undefined;
 }
 
 const ReadMountsSchema = z.array(ReadMountSchema);
@@ -191,6 +221,9 @@ export class TaskRepo {
           title: task.title,
           brief: task.brief,
           kind: task.kind,
+          type: task.typing?.type ?? null,
+          typeBy: task.typing?.by ?? null,
+          origin: task.origin === undefined ? null : JSON.stringify(StoredOriginSchema.parse(task.origin)),
           org: task.org ?? null,
           status: task.status,
           pausedReason: task.pausedReason ?? null,
@@ -317,27 +350,27 @@ export class TaskRepo {
           : this.q.listOpen.all();
     // `pos` orders a task's repos; sorting here saves SQLite a temp sort of every repo row on each call.
     const repos = this.q.repoSummaries.all().sort((a, b) => a.pos - b.pos);
-    const byTask = new Map<string, { project: string; branch: string }[]>();
+    const byTask = new Map<string, typeof repos>();
     for (const r of repos) {
       const list = byTask.get(r.task) ?? [];
-      list.push({ project: r.project, branch: r.branch });
+      list.push(r);
       byTask.set(r.task, list);
     }
     const linkRows = this.allLinks();
-    const statuses = this.statuses();
+    const facts = this.statusFacts();
     const unmerged = this.unmergedMrs();
     const autonomous = new Set(this.q.autonomous.all().map((r) => r.task));
     const linksBy = new Map<string, LinkRow[]>();
-    const childStatuses = new Map<string, TaskStatus[]>();
+    const childFacts = new Map<string, ChildFact[]>();
     for (const l of linkRows) {
       const own = linksBy.get(l.task) ?? [];
       own.push(l);
       linksBy.set(l.task, own);
       if (l.type === "parent") {
-        const kids = childStatuses.get(l.other) ?? [];
-        const status = statuses.get(l.task);
-        if (status !== undefined) kids.push(status);
-        childStatuses.set(l.other, kids);
+        const kids = childFacts.get(l.other) ?? [];
+        const child = facts.get(l.task);
+        if (child !== undefined) kids.push({ id: l.task, status: child.status });
+        childFacts.set(l.other, kids);
       }
     }
     return parseRows(
@@ -346,7 +379,9 @@ export class TaskRepo {
       (r) => r.id,
       (row) => {
         const own = linksBy.get(row.id) ?? [];
-        const kids = childStatuses.get(row.id);
+        const kids = childFacts.get(row.id);
+        const mine = byTask.get(row.id) ?? [];
+        const pending = parsePendingShip(row.pendingShip);
         const summary: Omit<TaskSummary, "working"> = {
           id: TaskIdSchema.parse(row.id),
           title: row.title,
@@ -355,16 +390,32 @@ export class TaskRepo {
           team: TeamSchema.parse(JSON.parse(row.team)),
           mode: CoordinationModeSchema.catch("lead").parse(row.mode),
           updatedAt: row.updatedAt,
-          repos: byTask.get(row.id) ?? [],
+          repos: mine.map((r) => ({ project: r.project, branch: r.branch })),
           links: own.map(toLink),
           waitingOn: unmetDependencies(
             own,
-            (id) => statuses.get(id),
+            (id) => facts.get(id)?.status,
             (id) => unmerged.has(id),
           ),
+          trail: buildTrail({
+            children: kids ?? [],
+            mrs: mine.flatMap(mrFactOf),
+            merged: mine.filter((r) => r.shippedHead !== null).map((r) => r.project),
+            pendingShip: pending === undefined ? [] : shipProjects(pending, mine),
+          }),
         };
+        const typing = typingOf(row);
+        if (typing !== undefined) summary.typing = typing;
+        const origin = originView(
+          originOf(
+            parseOrigin(row.origin),
+            own.map((l) => ({ type: l.type, task: l.other })),
+          ),
+          (id) => facts.get(id)?.title,
+        );
+        if (origin !== undefined) summary.origin = origin;
         if (kids !== undefined)
-          summary.children = { total: kids.length, done: kids.filter((k) => k === "done").length };
+          summary.children = { total: kids.length, done: kids.filter((k) => k.status === "done").length };
         if (row.org !== null) summary.org = row.org;
         if (isOwnerChat({ kind: summary.kind, brief: row.brief })) summary.chat = true;
         if (isCaptainLane({ kind: summary.kind, brief: row.brief })) summary.lane = true;
@@ -399,12 +450,20 @@ export class TaskRepo {
 
   /** Status of every task, one query. */
   statuses(): Map<string, TaskStatus> {
+    return new Map([...this.statusFacts()].map(([id, f]) => [id, f.status]));
+  }
+
+  /** The status and title of every task, one query. */
+  statusFacts(): Map<string, StatusRow> {
     return new Map(
       parseRows(
         "tasks",
         this.q.statusRows.all(),
         (r) => r.id,
-        (r): [string, TaskStatus] => [r.id, TaskSchema.shape.status.parse(r.status)],
+        (r): [string, StatusRow] => [
+          r.id,
+          { status: TaskSchema.shape.status.parse(r.status), title: r.title },
+        ],
       ),
     );
   }
@@ -546,6 +605,15 @@ export class TaskRepo {
     this.db.update(tasks).set(set).where(eq(tasks.id, id)).run();
   }
 
+  /**
+   * Replaces a task's type and who set it. The store takes whatever it is given: who may replace whom
+   * is `mayRetype`'s rule, asked by the caller. Typing a task does not move it in the lists.
+   */
+  setTyping(id: string, typing: TaskTyping): void {
+    const parsed = TaskTypingSchema.parse(typing);
+    this.db.update(tasks).set({ type: parsed.type, typeBy: parsed.by }).where(eq(tasks.id, id)).run();
+  }
+
   /** The owner's mark Not for autonomous mode. It does not move the task in the lists. */
   setNoAutonomy(id: string, on: boolean): void {
     this.db.update(tasks).set({ noAutonomy: on }).where(eq(tasks.id, id)).run();
@@ -604,6 +672,20 @@ export class TaskRepo {
       .set({ roomState: JSON.stringify(state) })
       .where(eq(tasks.id, id))
       .run();
+  }
+
+  /** A task's origin as a reader sees it, with the name to show: a finding's source, a parent's title. */
+  originView(id: string): OriginView | undefined {
+    const row = this.q.row.get({ id });
+    if (row === undefined) return undefined;
+    const links = this.q.links.all({ id });
+    return originView(
+      originOf(
+        parseOrigin(row.origin),
+        links.map((l) => ({ type: l.type, task: l.other })),
+      ),
+      (task) => this.q.row.get({ id: task })?.title,
+    );
   }
 
   /** The ship waiting for the lead, if any. */
@@ -834,6 +916,60 @@ export class TaskRepo {
   }
 }
 
+/** A task's status and title. */
+export interface StatusRow {
+  status: TaskStatus;
+  title: string;
+}
+
+/** The merge request of a repo row, when it has a valid one. */
+function mrFactOf(r: {
+  project: string;
+  mrUrl: string | null;
+  mrNumber: number | null;
+  mrState: string | null;
+  ciState: string | null;
+}): MrFact[] {
+  if (r.mrUrl === null || r.mrNumber === null) return [];
+  const state = MrStateSchema.safeParse(r.mrState);
+  if (!state.success) return [];
+  return [
+    {
+      project: r.project,
+      number: r.mrNumber,
+      url: r.mrUrl,
+      state: state.data,
+      ci: CiStateSchema.catch("none").parse(r.ciState),
+    },
+  ];
+}
+
+/** The projects a pending ship covers: the ones it names a target for, else every repo of the task. */
+function shipProjects(ship: PendingShip, repos: readonly { project: string }[]): string[] {
+  return ship.targets === undefined ? repos.map((r) => r.project) : Object.keys(ship.targets);
+}
+
+/** An origin with the name to show for it. A finding's name is its source, a parent's its title. */
+function originView(
+  origin: TaskOrigin | undefined,
+  titleOf: (task: string) => string | undefined,
+): OriginView | undefined {
+  if (origin === undefined) return undefined;
+  switch (origin.kind) {
+    case "finding":
+      return { ...origin, name: FINDING_SOURCE_LABEL[origin.source] };
+    case "parent": {
+      const name = titleOf(origin.task);
+      return name === undefined ? origin : { ...origin, name };
+    }
+    case "owner":
+    case "captain":
+    case "watch":
+    case "schedule":
+      return origin;
+  }
+}
+
 /** A row's priority and due date, left out when unset or no longer valid. */
 function priorityAndDue(row: { priority: string | null; due: string | null }): {
   priority?: TaskPriority;
@@ -933,12 +1069,17 @@ function taskStatements(db: Db) {
         project: taskRepos.project,
         branch: taskRepos.branch,
         pos: taskRepos.pos,
+        mrUrl: taskRepos.mrUrl,
+        mrNumber: taskRepos.mrNumber,
+        mrState: taskRepos.mrState,
+        ciState: taskRepos.ciState,
+        shippedHead: taskRepos.shippedHead,
       })
       .from(taskRepos)
       .prepare(),
     autonomous: db.select({ task: autonomyTasks.task }).from(autonomyTasks).prepare(),
     allLinks: db.select().from(taskLinks).prepare(),
-    statusRows: db.select({ id: tasks.id, status: tasks.status }).from(tasks).prepare(),
+    statusRows: db.select({ id: tasks.id, status: tasks.status, title: tasks.title }).from(tasks).prepare(),
     unmerged: db
       .selectDistinct({ task: taskRepos.task })
       .from(taskRepos)
@@ -1031,11 +1172,15 @@ function buildTask(
   files: (typeof attachments.$inferSelect)[],
 ): Task {
   const pending = parsePendingShip(row.pendingShip);
+  const typing = typingOf(row);
+  const origin = parseOrigin(row.origin);
   return TaskSchema.parse({
     id: row.id,
     title: row.title,
     brief: row.brief,
     kind: row.kind,
+    ...(typing === undefined ? {} : { typing }),
+    ...(origin === undefined ? {} : { origin }),
     ...(row.org === null ? {} : { org: row.org }),
     status: row.status,
     ...(row.pausedReason === null ? {} : { pausedReason: row.pausedReason }),

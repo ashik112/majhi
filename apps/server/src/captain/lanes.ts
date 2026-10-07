@@ -81,6 +81,7 @@ export class Lanes {
       ...(org === PRIVATE ? {} : { org }),
       attachments: [],
       start: false,
+      provenance: { kind: "chat" },
     });
     const at = this.deps.now().toISOString();
     // The lane is named for its workspace; the brief stays the marker.

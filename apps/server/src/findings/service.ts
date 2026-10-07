@@ -5,6 +5,7 @@ import {
   type Finding,
   type FindingReportInput,
   type FindingReportResult,
+  type FindingSeverity,
   type FindingSource,
   type FindingStatus,
   type FindingsList,
@@ -41,6 +42,8 @@ export interface FindingsDeps {
     title: string;
     text: string;
     byOwner: boolean;
+    /** The finding the task is made from: the task keeps its source and severity as its origin. */
+    finding: { id: number; source: FindingSource; severity: FindingSeverity };
     /** A change to code, whatever the words say: an incident's fix reads "is down" but is not an investigation. */
     code?: boolean;
   }): Promise<{ id: string }>;
@@ -387,6 +390,7 @@ export class FindingsService {
       title: found.title,
       text: taskText(found),
       byOwner: actor.kind === "owner",
+      finding: { id: found.id, source: found.source, severity: found.severity },
       ...(found.source === "incident" ? { code: true } : {}),
     });
     const finding = this.repo.patch(id, { at: this.at(), status: to, task: task.id });

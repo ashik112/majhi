@@ -346,6 +346,8 @@ import {
   SkillSetManyInputSchema,
   SkillUpdateInputSchema,
 } from "./skills.ts";
+import { TaskAreasSchema, TaskDetailSchema } from "./task-trail.ts";
+import { TaskTypeSchema } from "./task-type.ts";
 import {
   AttachmentSchema,
   CardActionSchema,
@@ -1787,6 +1789,27 @@ export const commands = {
     input: z.object({ id: TaskIdSchema }),
     output: TaskSchema,
   },
+  "tasks.detail": {
+    risk: "read",
+    summary:
+      "One task's origin with the name to show, the parts of the system it touches (the wiki's components its changed files fall in) and its whole trail: children with their states, the hand-off check, the merge request or local merge",
+    input: z.object({ id: TaskIdSchema }),
+    output: TaskDetailSchema,
+  },
+  "tasks.areas": {
+    risk: "read",
+    summary:
+      "The parts of the system each of these tasks touches, for a board that shows area chips and filters by area (at most 100 ids). Reads each task's worktree diff, so ask for the tasks on screen. Ids that do not exist are left out",
+    input: z.object({ ids: z.array(TaskIdSchema).min(1).max(100) }),
+    output: z.array(z.object({ task: TaskIdSchema, areas: TaskAreasSchema })),
+  },
+  "tasks.setType": {
+    risk: "change",
+    summary:
+      "Set a task's type (bug, incident, feature, request, research, design, test or chore). The owner may set any task's; the captain only a task of its own workspace, and never over a type the owner set",
+    input: z.object({ id: TaskIdSchema, type: TaskTypeSchema }),
+    output: TaskSchema,
+  },
   "tasks.create": {
     risk: "change",
     summary:
@@ -1799,6 +1822,11 @@ export const commands = {
       title: z.string().trim().min(1).max(120).optional(),
       /** Overrides what the parser inferred. */
       kind: TaskKindSchema.optional(),
+      /**
+       * What the work is. Left out, majhi reads it from the text (and Laya when unsure). The owner's choice is
+       * never changed by inference or by the captain.
+       */
+      type: TaskTypeSchema.optional(),
       /**
        * The type its new branch starts with (feat, fix, chore, docs, refactor, test, perf, ci, build).
        * Default: read from the title.

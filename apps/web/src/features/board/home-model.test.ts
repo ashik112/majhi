@@ -18,6 +18,7 @@ function task(id: string, status: TaskStatus, over: Partial<TaskSummary> = {}): 
     working: [],
     links: [],
     waitingOn: [],
+    trail: [],
     ...over,
   };
 }
@@ -103,7 +104,9 @@ describe("section of a task", () => {
       if (id !== undefined) seen.set(id, [...(seen.get(id) ?? []), section]);
     };
     for (const n of sections.needs) add(n.decision.task, "needs");
+    for (const h of sections.held) add(h.task.id, "needs");
     for (const r of sections.running) add(r.task.id, "running");
+    for (const w of sections.waiting) add(w.task.id, "waiting");
     for (const s of sections.shipping) add(s.task.id, "shipping");
     for (const q of sections.next) add(q.task.id, "next");
     for (const q of sections.triage) add(q.task.id, "triage");
@@ -113,7 +116,8 @@ describe("section of a task", () => {
       "ACM-1": ["running"],
       "ACM-2": ["needs"],
       "ACM-3": ["next"],
-      "ACM-4": ["running"],
+      // Paused, and nothing says majhi lifts it: the owner does.
+      "ACM-4": ["needs"],
       "ACM-5": ["next"],
       "ACM-6": ["shipping"],
       "ACM-7": ["next"],
@@ -123,10 +127,11 @@ describe("section of a task", () => {
       "GLX-1": ["running"],
       "GLX-2": ["needs"],
       "GLX-3": ["shipping"],
-      "GLX-4": ["next"],
+      // It waits on another task, which is not the owner.
+      "GLX-4": ["waiting"],
       "GLX-5": ["triage"],
-      // A parent with open subtasks and no agent waits in the queue, it is not "paused".
-      "GLX-6": ["next"],
+      // A parent with open subtasks and no agent waits for them.
+      "GLX-6": ["waiting"],
       "PRV-1": ["next"],
       "PRV-3": ["needs"],
     });
@@ -143,6 +148,24 @@ describe("section of a task", () => {
     const asking = new Set(["ACM-6"]);
     expect(sectionOf(task("ACM-6", "mr"), { asking, working: new Set() })).toBe("needs");
     expect(sectionOf(task("ACM-6", "mr"), { asking: new Set(), working: new Set() })).toBe("shipping");
+  });
+
+  it("a paused task goes by who ends its hold", () => {
+    const ctx = { asking: new Set<string>(), working: new Set<string>() };
+    const hold = (lifter: "owner" | "system") => ({ lifter, label: "usage limit", sentence: "It resumes." });
+    expect(sectionOf(task("ACM-4", "paused", { hold: hold("system") }), ctx)).toBe("waiting");
+    expect(sectionOf(task("ACM-4", "paused", { hold: hold("owner") }), ctx)).toBe("needs");
+  });
+
+  it("a parent is running while a subtask runs, and waiting while none does", () => {
+    const ctx = { asking: new Set<string>(), working: new Set<string>() };
+    const parent = (tone: "working" | "idle") =>
+      task("ACM-20", "running", {
+        children: { total: 2, done: 0 },
+        trail: [{ kind: "children", tone, total: 2, done: 0 }],
+      });
+    expect(sectionOf(parent("working"), ctx)).toBe("running");
+    expect(sectionOf(parent("idle"), ctx)).toBe("waiting");
   });
 
   it("a running task with no agent is queued, one with an agent is running", () => {

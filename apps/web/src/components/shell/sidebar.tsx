@@ -149,7 +149,7 @@ type NavBadge = { text: string; tone?: "needs" | "check"; dot?: boolean; title?:
 const ICON = "size-4 shrink-0";
 
 /**
- * The sidebar's rows: Home, Needs you, Chats, the captain, Playbooks, and Watch; then the
+ * The sidebar's rows: Tasks, Needs you, Chats, the captain, Playbooks, and Watch; then the
  * agents that work now (see AgentsNow); at the foot Agents, Accounts, Health & usage and Settings.
  */
 function MainNav() {
