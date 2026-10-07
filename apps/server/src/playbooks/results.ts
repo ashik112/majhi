@@ -1,8 +1,10 @@
 import type { CaptainChore, PlaybookRun } from "@majhi/shared";
+import { isSummaryKey } from "../captain/upkeep.ts";
 
 /** The last result of a playbook in plain words, written here so the page shows no codes or ids. */
 
 interface Line {
+  key?: string;
   outcome: "done" | "asked" | "skipped" | "failed";
   text: string;
 }
@@ -24,7 +26,14 @@ const VERBS: Record<CaptainChore, { done: (n: number) => string; asked: (n: numb
 };
 
 /** What a chore run did, from its log lines: "shipped 2, asked you about 1". Empty lines: "nothing to do". */
-export function choreResult(chore: CaptainChore, lines: readonly Line[], note?: string): string {
+export function choreResult(chore: CaptainChore, all: readonly Line[], note?: string): string {
+  // An upkeep run ends with one line of its own result ("Tidy up: nothing to tidy"): the log's words are the result.
+  const own = all.find((l) => l.key !== undefined && isSummaryKey(l.key));
+  if (own !== undefined) {
+    const said = own.text.slice(own.text.indexOf(": ") + 2);
+    return said.charAt(0).toLowerCase() + said.slice(1);
+  }
+  const lines = all;
   const done = lines.filter((l) => l.outcome === "done").length;
   const asked = lines.filter((l) => l.outcome === "asked").length;
   const failed = lines.filter((l) => l.outcome === "failed").length;
