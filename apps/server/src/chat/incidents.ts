@@ -412,31 +412,37 @@ export class ClientIncidents {
     return { task: taskId, reopened };
   }
 
-  /** The open incident task a chat is linked to, if any. */
-  private openIncidentOf(room: string): Task | undefined {
+  /** The incident tasks a chat is linked to, whatever the task's own status: the client status says what is open. */
+  private incidentsOf(room: string): Task[] {
+    const out: Task[] = [];
     for (const link of this.deps.store.tasks.linksTo(room)) {
       if (link.type !== "client") continue;
       const task = this.deps.store.tasks.get(link.task);
-      if (task !== undefined && task.typing?.type === "incident" && task.status !== "done") return task;
+      if (task !== undefined && task.typing?.type === "incident") out.push(task);
     }
-    return undefined;
+    return out;
   }
 
-  /** Whether the chat is linked to an open incident: a question like "any update?" is then about it. */
+  /** Whether the chat is linked to an incident: a question like "any update?" is then about it. */
   linked(room: string): boolean {
-    return this.openIncidentOf(room) !== undefined;
+    return this.incidentsOf(room).length > 0;
   }
 
   /**
-   * The answer to "any update?" in a chat linked to an open incident: the derived status in the same words an update
-   * uses, with the facts a client may read (the cause in its client wording, when the fix went live). Nothing from
-   * the wiki and nothing guessed. Undefined when the chat has no open incident.
+   * The answer to "any update?" in a chat linked to an incident: the derived status in the same words an update
+   * uses, with the facts a client may read (the cause in its client wording, when the fix went live). An incident
+   * that is not Resolved comes first, even when its task is done and still soaking; after Resolved the client gets
+   * the Resolved wording. Nothing from the wiki and nothing guessed. Undefined when no incident is linked.
    */
   async answer(room: string): Promise<{ text: string; flags: ReplyFlags } | undefined> {
-    const task = this.openIncidentOf(room);
-    if (task === undefined) return undefined;
-    const read = await this.read(task);
-    const result = clientStatus(read.facts);
+    const reads: { read: Read; result: ReturnType<typeof clientStatus> }[] = [];
+    for (const task of this.incidentsOf(room).toSorted((x, y) => y.updatedAt.localeCompare(x.updatedAt))) {
+      const read = await this.read(task);
+      reads.push({ read, result: clientStatus(read.facts) });
+    }
+    const chosen = reads.find((r) => r.result.status !== "resolved") ?? reads[0];
+    if (chosen === undefined) return undefined;
+    const { read, result } = chosen;
     const tz = await this.deps.tz(read.org);
     const parts = [UPDATE_TEXT[result.status]];
     const cause = read.events.find((e) => e.detail.event === "cause")?.detail;

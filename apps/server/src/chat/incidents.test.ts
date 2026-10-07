@@ -20,7 +20,7 @@ async function setup(status: Task["status"] = "inbox") {
     replies: w.replies,
     gate: w.gate,
     findings: {
-      ofTask: () => [],
+      ofTask: () => (watch.incident === undefined ? [] : [{ id: 1 } as never]),
       adopt: () => ({}) as never,
       get: () => ({}) as never,
       dismiss: () => ({}) as never,
@@ -251,6 +251,24 @@ describe('"any update?" from a client', () => {
       t.w.store.room.page(t.rooms[0] as string, 10).items.find((i) => i.type === "client") as never,
     );
     expect(t.w.sent).toHaveLength(before);
+  });
+
+  it("counts a done task still in its soak as open, and answers Resolved once the soak has passed", async () => {
+    const t = await setup("done");
+    const now = new Date();
+    t.watch.incident = {
+      id: 1,
+      org: "acme",
+      title: "Orders down",
+      status: "resolved",
+      openedAt: new Date(now.getTime() - 3_600_000).toISOString(),
+      resolvedAt: now.toISOString(),
+    } as OpsIncident;
+    const soaking = await t.incidents.answer(t.rooms[0] as string);
+    expect(soaking?.text).not.toContain("resolved");
+    t.watch.incident = { ...t.watch.incident, resolvedAt: new Date(now.getTime() - 3_600_000).toISOString() };
+    const after = await t.incidents.answer(t.rooms[0] as string);
+    expect(after?.text).toContain("resolved");
   });
 
   it("in a chat with no linked incident is not answered; the owner is asked", async () => {
