@@ -1,4 +1,4 @@
-import { type Block, type Body, type Inline, splitMentions } from "@majhi/shared";
+import { type Block, type Body, type Inline, slackPersonId, splitMentions } from "@majhi/shared";
 import type { PhrasingContent, RootContent } from "mdast";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
@@ -237,8 +237,7 @@ const SLACK: Markup = {
   link: (href, inner) => `<${escapeMarkup(href).split("|").join("%7C")}|${inner}>`,
   mention: (person, contact) => {
     if (person === undefined) return escapeMarkup(contact);
-    // A Slack identity is the team id and the user id (`T01:U02`): the mention names the user.
-    if (person.native !== undefined) return `<@${person.native.slice(person.native.lastIndexOf(":") + 1)}>`;
+    if (person.native !== undefined) return `<@${slackPersonId(person.native)}>`;
     return escapeMarkup(person.name);
   },
 };

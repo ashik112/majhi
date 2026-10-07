@@ -124,7 +124,10 @@ export class ClientRepo {
     });
   }
 
-  /** Everyone who wrote in a room (verified or not), newest writer first. Bots are left out. */
+  /**
+   * Everyone who wrote in a room (verified or not), newest writer first. Bots are left out. The group is by the
+   * sender's id expression: a bare `GROUP BY id` binds to the item's own id column and gives one row per message.
+   */
   senders(room: string): { id: string; name: string; verified: boolean }[] {
     const rows = this.sqlite
       .prepare(
@@ -134,7 +137,7 @@ export class ClientRepo {
                 max(seq) AS last
            FROM room_items
           WHERE task = ? AND type = 'client' AND coalesce(json_extract(payload, '$.sender.bot'), 0) = 0
-          GROUP BY id ORDER BY last DESC`,
+          GROUP BY json_extract(payload, '$.sender.id') ORDER BY last DESC`,
       )
       .all(room) as { id: string; name: string | null; verified: number }[];
     return rows.map((r) => ({ id: r.id, name: r.name ?? "", verified: r.verified === 1 }));

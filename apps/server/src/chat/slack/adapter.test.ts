@@ -149,4 +149,31 @@ describe("the Slack adapter", () => {
     expect(r.clientItems(room.id)).toHaveLength(3);
     expect(r.gaps).toEqual([]);
   });
+
+  it("reads one Slack user as one person and one contact, with or without team fields, live or from the history", async () => {
+    const api = await slack();
+    const r = reader(api);
+    const stop = r.start();
+    await until(() => api.socketCount === 1, "the socket");
+    api.post({ channel: "C1OPS", user: "U1SARA", text: "hello" });
+    await until(() => r.w.rooms.find("slack", CONN.account, "C1OPS") !== undefined, "the New chat");
+    const room = r.w.rooms.find("slack", CONN.account, "C1OPS");
+    if (room === undefined) throw new Error("no room");
+    await r.w.rooms.link(room.id, "acme");
+    api.post({ channel: "C1OPS", user: "U1SARA", text: "one" });
+    api.sendTeam = false;
+    api.post({ channel: "C1OPS", user: "U1SARA", text: "two" });
+    await until(() => r.clientItems(room.id).length === 2, "the live messages");
+    const cursor = r.saved.at(-1);
+    stop();
+    api.holdEvents = true;
+    api.post({ channel: "C1OPS", user: "U1SARA", text: "three" });
+    api.sendTeam = true;
+    api.post({ channel: "C1OPS", user: "U1SARA", text: "four" });
+    r.start(cursor);
+    await until(() => r.clientItems(room.id).length === 4, "the history");
+    expect(new Set(r.delivered.map((e) => e.sender.id))).toEqual(new Set(["U1SARA"]));
+    expect(r.w.store.client.senders(room.id).map((s) => s.id)).toEqual(["U1SARA"]);
+    expect(r.w.store.client.contactsOf("acme")).toHaveLength(1);
+  });
 });
