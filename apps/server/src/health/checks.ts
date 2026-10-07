@@ -12,8 +12,7 @@ import {
   dockerRuntimeName,
   FAILURE_ACTION_LABEL,
   failureAction,
-  failureFix,
-  failureLine,
+  failureSentence,
   type HostOs,
   type HostStatus,
   hostOsOf,
@@ -159,7 +158,7 @@ export function connectionCheck(view: ConnectionView): Check {
     return {
       ...base,
       status: "fail",
-      detail: `${failureLine(view)}. ${failureFix(view)}`,
+      detail: failureSentence(view),
       checkedAt: h.at,
       ...(action === "check" ? {} : { fix: { label: FAILURE_ACTION_LABEL[action] } }),
     };

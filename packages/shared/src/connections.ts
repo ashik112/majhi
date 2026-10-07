@@ -1129,6 +1129,11 @@ export const ConnectionViewSchema = z.object({
 });
 export type ConnectionView = z.infer<typeof ConnectionViewSchema>;
 
+/** A sentence without its closing full stop, to compare two and to join them. */
+export function withoutPeriod(text: string): string {
+  return text.endsWith(".") ? text.slice(0, -1) : text;
+}
+
 /**
  * What failed, in the check's own plain words ("nonexistent-cli is not installed where agents run"),
  * else the reason's line. No trailing full stop. Empty when the connection has not failed. The Connections
@@ -1139,7 +1144,14 @@ export function failureLine(view: Pick<ConnectionView, "health" | "lastTest">): 
   if (health === undefined || (health.state !== "failed" && health.state !== "needs-attention")) return "";
   const test = view.lastTest;
   const said = test !== undefined && !test.ok && test.failure?.reason === health.reason ? test.detail : "";
-  return (said === "" ? FAILURE_LINE[health.reason] : said).replace(/\.$/, "");
+  return withoutPeriod(said === "" ? FAILURE_LINE[health.reason] : said);
+}
+
+/** `failureLine` and `failureFix` as one text, saying a repeated sentence once. */
+export function failureSentence(view: Pick<ConnectionView, "health" | "lastTest">): string {
+  const line = failureLine(view);
+  const fix = failureFix(view);
+  return withoutPeriod(fix) === line ? `${line}.` : `${line}. ${fix}`;
 }
 
 /** The next step of a failed connection, the same everywhere. Empty when it has not failed. */

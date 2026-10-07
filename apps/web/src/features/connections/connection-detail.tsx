@@ -10,6 +10,7 @@ import {
   scopesAt,
   serviceById,
   serviceByUrl,
+  withoutPeriod,
 } from "@majhi/shared";
 import { Check, ExternalLink, Wrench } from "lucide-react";
 import { type FormEvent, useState } from "react";
@@ -203,7 +204,9 @@ function StatusBlock({
       {failed && health !== undefined && (
         <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-line-strong bg-sunken p-3">
           <p className="text-base font-medium text-fg">{failureLine(view)}.</p>
-          {fix !== undefined && <p className="text-base text-fg-muted text-pretty">{fix.text}</p>}
+          {fix !== undefined && withoutPeriod(fix.text) !== failureLine(view) && (
+            <p className="text-base text-fg-muted text-pretty">{fix.text}</p>
+          )}
           {health.state === "needs-attention" && (
             <p className="text-sm text-fg-faint">
               It last worked <Ago iso={health.lastVerifiedAt} now={now} />.
