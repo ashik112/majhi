@@ -1077,6 +1077,8 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     decision: z.string().max(40).optional(),
     /** The hand-off check step this line reports as failed: the room shows its log and a rerun beside it. */
     failed: HandoffFailedSchema.optional(),
+    /** The button this line carries: Retry for the Housekeeper's read of the task, or Raise memory for the runner limit. */
+    action: z.enum(["memory-retry", "runner-memory"]).optional(),
   }),
 ]);
 export type RoomItem = z.infer<typeof RoomItemSchema>;

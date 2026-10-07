@@ -682,7 +682,7 @@ export function createHandlers({
     },
     "projects.cards": async (input) => {
       await services.cards.refreshMoved();
-      return services.cards.list(input.project);
+      return services.cards.listLive(input.project);
     },
     "projects.cardRefresh": (input) => services.cards.refresh(input.project),
     "projects.update": async (input, ctx) => {
@@ -1286,6 +1286,7 @@ export function createHandlers({
         meta: ctx.meta,
         summary: `changed ${describePatch(patch)}`,
       });
+      if (patch.containers !== undefined) await services.applyRunMemory();
       // Limits apply live: starts waiting in line may fit now.
       if (patch.limits !== undefined) await services.runs.limitsChanged();
       // Budgets apply live: a raised one re-arms its alerts, a lowered one may fire now.

@@ -77,6 +77,9 @@ export function AccountMeters({
     );
   }
   const usage = account.usage;
+  if (account.status === "needs-login") {
+    return <p className={cn("text-sm text-fg-faint", className)}>Signed out. Sign in to read usage.</p>;
+  }
   if (!usage?.window && !usage?.weekly) {
     return (
       <p className={cn("text-sm text-fg-faint", className)}>

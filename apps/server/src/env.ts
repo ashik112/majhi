@@ -6,6 +6,7 @@ import { DEFAULT_MAJHI_ORIGIN, expandHome } from "@majhi/shared";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
 import { formatIssues } from "./errors.ts";
+import { defaultHandoffMemory } from "./handoff/limits.ts";
 
 /** `apps/web/dist`, found from `apps/server/src` (tsx) and `apps/server/dist` (bundle) alike. */
 const DEFAULT_WEB_DIST = fileURLToPath(new URL("../../web/dist", import.meta.url));
@@ -87,12 +88,12 @@ const EnvSchema = z.object({
   MAJHI_TELEGRAM_API: z.url({ protocol: /^https?$/, error: "Use an http:// URL" }).optional(),
   /** Where Slack's Web API is. Only a test or a trial against a fake Slack sets it. */
   MAJHI_SLACK_API: z.url({ protocol: /^https?$/, error: "Use an http:// URL" }).optional(),
-  /** Memory cap per run. */
+  /** Memory cap per run, when the owner has not set one in Settings. Unset: a share of the machine (see defaultHandoffMemory). */
   MAJHI_RUNNER_MEMORY: z
     .string()
     .trim()
     .regex(/^\d+[kmg]$/, "Use a size like 4g")
-    .default("4g"),
+    .optional(),
   /** CPU cap per run: cores one agent run may use. */
   MAJHI_RUNNER_CPUS: z
     .string()
@@ -198,7 +199,7 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
       network: env.MAJHI_RUNNER_NETWORK,
       ...(env.MAJHI_RUNNER_USER === undefined ? {} : { user: env.MAJHI_RUNNER_USER }),
       mcpHost: env.MAJHI_RUNNER_MCP_HOST,
-      memory: env.MAJHI_RUNNER_MEMORY,
+      memory: env.MAJHI_RUNNER_MEMORY ?? defaultHandoffMemory(),
       cpus: env.MAJHI_RUNNER_CPUS,
       docker: "docker",
       cliEnv: {
