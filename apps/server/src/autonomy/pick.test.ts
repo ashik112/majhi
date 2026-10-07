@@ -181,7 +181,7 @@ describe("tasks marked Not for autonomous mode", () => {
     expect(list.find((s) => s.id === id)?.noAutonomy).toBe(true);
     expect(t.h.majhi.services.store.tasks.get(id)?.noAutonomy).toBe(true);
 
-    const why = `Refused: the owner marked ${id} Not for autonomous mode, so autonomous mode leaves it alone.`;
+    const why = `Refused: the owner marked ${id} Not for Auto-pilot, so Auto-pilot leaves it alone.`;
     expect(await t.call("majhi_tasks_start", { id })).toEqual({ isError: true, text: why });
     expect(await t.call("majhi_tasks_update", { id, title: "Renamed" })).toEqual({
       isError: true,

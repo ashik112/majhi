@@ -196,7 +196,7 @@ export function Workspaces({ rows, nowMs }: { rows: readonly WorkspaceRow[]; now
     >
       {rows.length === 0 ? (
         <p className="m-0 px-3.5 pb-3 text-sm text-fg-muted">
-          No workspace yet. Add one in Orgs and the captain starts a lane there.
+          No workspace has the captain starting its work. Set Start to Captain in a workspace's Permissions and a lane starts there.
         </p>
       ) : (
         <>

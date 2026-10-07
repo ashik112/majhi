@@ -149,14 +149,14 @@ export function decideAutonomously(call: AutonomyCall, ctx: PolicyContext): Auto
   if (GIT_ACCESS.has(command)) return approved(`A git account or token of ${name} only`);
   if (AUTOMATION_STARTS.has(command)) {
     return left(
-      "An automation's runs start outside autonomous mode's caps and stops, so only the owner starts one",
+      "An automation's runs start outside Auto-pilot's caps and stops, so only the owner starts one",
     );
   }
   if (AUTOMATION_EDITS.has(command)) {
     const action = (input.action as { kind?: unknown } | undefined)?.kind ?? ctx.automationAction;
     if (action === "task.start" || action === "process.run") {
       return left(
-        "An automation that starts tasks or runs commands works outside autonomous mode's caps and stops",
+        "An automation that starts tasks or runs commands works outside Auto-pilot's caps and stops",
       );
     }
   }

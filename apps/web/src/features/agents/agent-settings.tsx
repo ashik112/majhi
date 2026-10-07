@@ -587,7 +587,7 @@ function ContextSection({
     >
       <Field
         label="Cap (k tokens)"
-        hint="Blank uses the org's or majhi's setting. 0 is no cap: the model's full window."
+        hint="Blank uses the workspace's or majhi's setting. 0 is no cap: the model's full window."
         {...(parsed?.error === undefined ? {} : { error: parsed.error })}
       >
         {(p) => (

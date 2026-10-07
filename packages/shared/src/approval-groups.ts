@@ -182,7 +182,7 @@ export const APPROVAL_GROUP_DEFS: Record<ApprovalGroupId, GroupDef> = {
     ],
   },
   accounts: {
-    label: "Orgs, git accounts and secrets",
+    label: "Workspaces, git accounts and secrets",
     about:
       "Org settings, git accounts and tokens, saved logins, accounts, connections, secrets, skills and MCP servers (code that runs in agent runs).",
     commands: [

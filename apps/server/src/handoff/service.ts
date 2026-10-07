@@ -1175,7 +1175,7 @@ export class HandoffService {
     if (quiet) {
       return {
         by: "code",
-        why: "the model reads it when Autonomous is on or you press Check again",
+        why: "the model reads it when Auto-pilot is on or you press Check again",
         notes,
         tokens: 0,
       };

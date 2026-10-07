@@ -499,20 +499,20 @@ export class AutonomyService {
       // The tasks Stop now paused restart only when the owner asks; else they stay the owner's.
       for (const row of this.repo.tasks()) {
         if (row.held !== "owner" || row.heldScope !== STOPPED_NOW) continue;
-        if (resumeStopped) await this.resumeTask(row.task, "autonomous mode turned on");
+        if (resumeStopped) await this.resumeTask(row.task, "Auto-pilot turned on");
         else this.repo.release(row.task);
       }
       await this.refreshHolds();
-      this.wake("Autonomous mode turned on");
+      this.wake("Auto-pilot turned on");
       return this.status();
     }
-    this.setMode("on", "owner", "Resumed", "Autonomous mode resumed.");
+    this.setMode("on", "owner", "Resumed", "Auto-pilot resumed.");
     for (const row of this.repo.tasks()) {
-      if (row.held === "owner") await this.resumeTask(row.task, "autonomous mode resumed");
+      if (row.held === "owner") await this.resumeTask(row.task, "Auto-pilot resumed");
     }
     await this.refreshHolds();
     await this.liftCaps();
-    this.wake("Autonomous mode resumed");
+    this.wake("Auto-pilot resumed");
     return this.status();
   }
 
@@ -536,7 +536,7 @@ export class AutonomyService {
         "stopping",
         "owner",
         "Stopping after the current turns",
-        "Autonomous mode is stopping. Current turns finish, and nothing new starts.",
+        "Auto-pilot is stopping. Current turns finish, and nothing new starts.",
       );
       await this.deps.runs.pauseLimited();
     }
@@ -891,7 +891,7 @@ export class AutonomyService {
     const resumed = row.resumedAt !== undefined && since !== undefined && row.resumedAt >= since;
     if (mode === "stopping" && resumed) return undefined;
     if (mode === "stopping") {
-      return { reason: "owner", why: "Autonomous mode is stopping, so this agent starts nothing new." };
+      return { reason: "owner", why: "Auto-pilot is stopping, so this agent starts nothing new." };
     }
     const org = this.deps.store.tasks.get(task)?.org ?? PRIVATE;
     const cap = capHoldFor(this.holds, org);
@@ -962,7 +962,7 @@ export class AutonomyService {
     // After a restart the held prompts are gone, so the lead is told to go on.
     const lead = task.team[0];
     if (resumed === 0 && lead !== undefined && this.deps.runs.working(id).length === 0) {
-      this.deps.runs.notify(id, lead, "Autonomous mode resumed this task. Continue from where you stopped.");
+      this.deps.runs.notify(id, lead, "Auto-pilot resumed this task. Continue from where you stopped.");
     }
     this.event({ kind: "task", text: `${id} resumed: ${why}`, task: id, ...orgOf(task) });
   }
@@ -1526,7 +1526,7 @@ export class AutonomyService {
     });
     const marked = touched.find((t) => t.noAutonomy === true);
     if (marked !== undefined) {
-      return `Refused: the owner marked ${marked.id} Not for autonomous mode, so autonomous mode leaves it alone.`;
+      return `Refused: the owner marked ${marked.id} Not for Auto-pilot, so Auto-pilot leaves it alone.`;
     }
     // The captain resumes what it or the Autonomous switch paused, never what the owner paused.
     if (command === "tasks.start") {
@@ -1654,7 +1654,7 @@ export class AutonomyService {
   blockedStart(command: string, input: Record<string, unknown>): string | undefined {
     const { mode } = this.repo.state();
     if (mode !== "stopping" || !startsWork(command, input)) return undefined;
-    return "Autonomous is turning off: nothing new starts.";
+    return "Auto-pilot is turning off: nothing new starts.";
   }
 
   /**
@@ -2147,12 +2147,20 @@ export class AutonomyService {
         {
           command: change.command,
           meta: change.meta,
-          summary: `added an instruction for autonomous mode: ${clip(input.text, 80)}`,
+          summary: `added an instruction for Auto-pilot: ${clip(input.text, 80)}`,
         },
       );
-      this.event({ kind: "guide", text: `New standing instruction: ${input.text}` });
+      this.event({
+        kind: "guide",
+        text: `New standing instruction: ${input.text}`,
+        ...(org === PRIVATE ? {} : { org }),
+      });
     } else {
-      this.event({ kind: "guide", text: `The owner said: ${input.text === "" ? "(a file)" : input.text}` });
+      this.event({
+        kind: "guide",
+        text: `The owner said: ${input.text === "" ? "(a file)" : input.text}`,
+        ...(org === PRIVATE ? {} : { org }),
+      });
     }
     await this.deps.tasks.send({
       task: chat.id,
@@ -2172,10 +2180,14 @@ export class AutonomyService {
       {
         command: change.command,
         meta: change.meta,
-        summary: `removed an instruction of autonomous mode: ${clip(gone.text, 80)}`,
+        summary: `removed an instruction of Auto-pilot: ${clip(gone.text, 80)}`,
       },
     );
-    this.event({ kind: "guide", text: `Removed the instruction: ${gone.text}` });
+    this.event({
+      kind: "guide",
+      text: `Removed the instruction: ${gone.text}`,
+      ...(gone.org === undefined || gone.org === PRIVATE ? {} : { org: gone.org }),
+    });
     return this.status();
   }
 
@@ -2191,13 +2203,13 @@ export class AutonomyService {
       this.event({
         kind: "guide",
         text: exclude
-          ? `Marked ${task} Not for autonomous mode: ${found.title}`
-          : `Cleared the mark Not for autonomous mode on ${task}: ${found.title}`,
+          ? `Marked ${task} Not for Auto-pilot: ${found.title}`
+          : `Cleared the mark Not for Auto-pilot on ${task}: ${found.title}`,
         task,
         ...orgOf(found),
       });
       this.deps.events.emit(["autonomy", "tasks"]);
-      if (!exclude) this.wake(`The owner let autonomous mode take ${task} again`, found.org ?? PRIVATE);
+      if (!exclude) this.wake(`The owner let Auto-pilot take ${task} again`, found.org ?? PRIVATE);
     }
     return this.status();
   }
@@ -2346,7 +2358,9 @@ export class AutonomyService {
   ticked(reasons: readonly string[], org?: string, chat?: string): void {
     this.wakes.sent += 1;
     this.repo.setLastTick(this.now().toISOString());
-    const last = reasons.at(-1) ?? "a check";
+    // A wake reason can be a whole prompt (a watch's instructions): the log shows its first line only.
+    const first = (reasons.at(-1) ?? "a check").trim().split("\n", 1)[0] ?? "a check";
+    const last = first.length > 120 ? `${first.slice(0, 117)}...` : first;
     const text = `Woke the captain: ${last}${reasons.length > 1 ? ` (and ${reasons.length - 1} more)` : ""}`;
     this.event({ kind: "tick", text, ...(org === undefined || org === PRIVATE ? {} : { org }) });
     if (chat !== undefined) this.sayIn(chat, text);
@@ -2387,7 +2401,7 @@ export class AutonomyService {
     // Off: the captain acts only when the owner talks to it, so it plans, notes and answers nothing.
     if (mode === "off") return fail("Auto-pilot is off, so the captain acts only when you ask.");
     if (command === "autonomy.answer" && mode !== "on") {
-      return fail(`Autonomous is ${mode === "stopping" ? "turning off" : mode}, so nothing is answered now.`);
+      return fail(`Auto-pilot is ${mode === "stopping" ? "turning off" : mode}, so nothing is answered now.`);
     }
     const refused = await this.refusal(caller, command, input, reason);
     if (refused !== undefined) return fail(refused);
@@ -2438,7 +2452,7 @@ export class AutonomyService {
       if (!parsed.success) return invalid(command, parsed.error);
       return this.answer(caller, parsed.data, reason, lane, authority);
     }
-    return fail(`${command} is not a tool of autonomous mode.`);
+    return fail(`${command} is not a tool of Auto-pilot.`);
   }
 
   /**
@@ -2541,7 +2555,7 @@ export class AutonomyService {
         case "secret-request":
           return fail("Only the owner gives secrets.");
         case "approval":
-          return fail("Approval cards follow the policy. Autonomous mode does not answer them.");
+          return fail("Approval cards follow the policy. Auto-pilot does not answer them.");
         default:
           return fail("That item takes no answer.");
       }

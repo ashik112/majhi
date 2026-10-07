@@ -152,7 +152,7 @@ export function ContextSection({ settings }: { settings: Settings }) {
         <div className={GRID}>
           <NumberField
             label="Context cap (k tokens)"
-            hint="0 is no cap: the model's full window. Orgs and agents can set their own."
+            hint="0 is no cap: the model's full window. Workspaces and agents can set their own."
             name="contextCap"
             draft={context}
           />
@@ -266,7 +266,7 @@ export function TurnsSection({ settings }: { settings: Settings }) {
     <Section
       first
       title="Turn limits"
-      note="Orgs and agents can override these. They apply from the next turn."
+      note="Workspaces and agents can override these. They apply from the next turn."
       draft={turns}
     >
       {limits.map((l) => (
