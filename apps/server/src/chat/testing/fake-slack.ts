@@ -216,7 +216,7 @@ export class FakeSlack {
       name: f.name,
       mimetype: f.mimetype,
       size: f.data.byteLength,
-      url_private: `http://127.0.0.1:${this.port}/files/${f.id}/${f.name}`,
+      url_private: `http://127.0.0.1:${this.port}/files/${f.id}/${encodeURIComponent(f.name)}`,
     };
   }
 
