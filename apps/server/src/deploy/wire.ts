@@ -19,6 +19,7 @@ import { loadSshConfig } from "../scan/sshConfig.ts";
 import type { ShipPlanner } from "../ship/plan.ts";
 import type { Store } from "../store/index.ts";
 import type { TaskService } from "../tasks/service.ts";
+import { createBitbucketProvider } from "./bitbucket.ts";
 import { type CredentialDeps, createDeployCredentials } from "./credentials.ts";
 import { deployGit } from "./git.ts";
 import { createGitHubProvider } from "./github.ts";
@@ -113,6 +114,7 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     "github-workflow": createGitHubProvider(providerDeps),
     "gitlab-pipeline": gitlab,
     "gitlab-job": gitlab,
+    "bitbucket-pipeline": createBitbucketProvider(providerDeps),
     vercel: createVercelProvider(providerDeps),
     ssh: createSshProvider(providerDeps),
   };
