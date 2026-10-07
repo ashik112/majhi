@@ -191,6 +191,41 @@ export class ClientReplies {
     return this.resultOf(draft, undefined);
   }
 
+  /**
+   * What the rails would hold a report back for that nothing can lift: a secret or another client's name. The owner
+   * edits the words until neither is left. Undefined when the text is clean.
+   */
+  async reportProblem(room: string, text: string): Promise<"secret" | "other-client" | undefined> {
+    const row = this.roomOf(room);
+    const verdict = railsFor({
+      tell: "ask",
+      holds: await this.deps.holds(row.org as string),
+      text,
+      flags: undefined,
+      others: await this.others(row),
+      firstContact: false,
+      afterGap: false,
+      report: true,
+    });
+    if (verdict.send) return undefined;
+    return verdict.why === "secret" || verdict.why === "other-client" ? verdict.why : undefined;
+  }
+
+  /**
+   * A report to a client, after the owner clicked Send: it goes at once and the holder of the chat stays as it is.
+   * Only the owner's click reaches this: the captain's own path holds every report.
+   */
+  async report(input: { room: string; text: string }): Promise<ReplyResult> {
+    const room = this.roomOf(input.room);
+    const org = room.org as string;
+    const { draft } = await this.deps.gate.submit(
+      { org, channel: "client", target: room.id, body: input.text },
+      { kind: "owner" },
+      { release: "now", prepared: (made) => this.post(room, made, { by: "you" }) },
+    );
+    return this.resultOf(draft, undefined);
+  }
+
   /** The owner changes the words of a reply that waits. */
   edit(draft: number, text: string): Draft {
     const found = this.deps.gate.get(draft);

@@ -55,7 +55,7 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
     case "ops":
       return [queryKeys.ops, queryKeys.decisions, queryKeys.findings];
     case "clients":
-      return [queryKeys.clients, queryKeys.decisions];
+      return [queryKeys.clients, queryKeys.decisions, queryKeys.incident];
     case "signins":
       return [queryKeys.signins, queryKeys.onboarding];
     case "clones":

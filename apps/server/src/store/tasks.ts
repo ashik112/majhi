@@ -1025,6 +1025,10 @@ function originView(
     }
     case "deploy":
       return { ...origin, name: `${origin.project} ${origin.env}` };
+    case "client": {
+      const name = titleOf(origin.room);
+      return name === undefined ? origin : { ...origin, name };
+    }
     case "owner":
     case "captain":
     case "watch":

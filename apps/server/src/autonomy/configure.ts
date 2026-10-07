@@ -36,9 +36,18 @@ export function mergePatch(current: AutonomySettings, patch: AutonomyPatch): Aut
     if (change.holds !== undefined && change.holds !== null) {
       had.holds = { ...(orgs[id]?.holds ?? {}), ...change.holds };
     }
+    // The incident settings change field by field too.
+    if (change.incident !== undefined && change.incident !== null) {
+      had.incident = { ...(orgs[id]?.incident ?? {}), ...change.incident };
+    }
     // Each field: absent keeps it, null clears it, a value sets it.
     for (const [key, value] of Object.entries(change)) {
-      if (value === undefined || key === "authority" || (key === "holds" && value !== null)) continue;
+      if (
+        value === undefined ||
+        key === "authority" ||
+        ((key === "holds" || key === "incident") && value !== null)
+      )
+        continue;
       if (value === null) delete had[key];
       else had[key] = value;
     }

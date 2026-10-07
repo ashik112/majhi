@@ -2,6 +2,7 @@ import { z } from "zod";
 import { AuthoritySchema } from "./authority.ts";
 import { HoldsPatchSchema } from "./chat.ts";
 import { ContainerCpusSchema, ContainerMemorySchema, ImageRefSchema } from "./containers.ts";
+import { IncidentSettingsSchema } from "./incident.ts";
 import { NotifyKindSchema } from "./notify.ts";
 import { MAX_SHIP_RULES, ShipRuleSchema } from "./ship-rules.ts";
 
@@ -507,6 +508,8 @@ export const AutonomyOrgSchema = z.strictObject({
    * Tell. A class set to `false` is switched off; absent means on. Only the owner changes it.
    */
   holds: HoldsPatchSchema.optional(),
+  /** How long a watch stays green before a client is told Resolved, and how often an open incident updates each client room. */
+  incident: IncidentSettingsSchema.optional(),
 });
 export type AutonomyOrg = z.infer<typeof AutonomyOrgSchema>;
 
@@ -595,6 +598,8 @@ export const AutonomyOrgPatchSchema = z
     tasksAtOnce: z.number().int().min(1).max(10).nullable(),
     /** Only the classes that change. `null` switches every class back on. */
     holds: HoldsPatchSchema.nullable(),
+    /** Only the fields that change. `null` goes back to the defaults. */
+    incident: IncidentSettingsSchema.nullable(),
   })
   .partial();
 export type AutonomyOrgPatch = z.infer<typeof AutonomyOrgPatchSchema>;

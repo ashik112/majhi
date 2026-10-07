@@ -16,7 +16,7 @@ export type Provenance =
   | { kind: "captain"; reason: string }
   | {
       kind: "ref";
-      origin: Extract<StoredOrigin, { kind: "finding" | "watch" | "schedule" | "deploy" }>;
+      origin: Extract<StoredOrigin, { kind: "finding" | "watch" | "schedule" | "deploy" | "client" }>;
       workspace: string;
     }
   | { kind: "child" }

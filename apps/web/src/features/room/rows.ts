@@ -39,6 +39,8 @@ export function beatOf(row: Row): Beat {
     case "team-plan":
     case "client-gap":
     case "same-person":
+    case "incident-event":
+    case "report":
       return "line";
     case "permission":
     case "approval":
@@ -113,6 +115,8 @@ export function rowsOf(items: readonly RoomItem[]): Row[] {
     group = [];
   };
   for (const item of items) {
+    // Facts of an incident and its report are read in the incident card, not in the log.
+    if (item.type === "incident-event" || item.type === "report") continue;
     // Warnings and errors keep their own line, in their tone.
     if (item.type === "system" && item.level === "info") {
       if (group.length > 0 && !sameMoment(group, item)) flush();

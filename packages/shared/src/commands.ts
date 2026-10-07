@@ -220,6 +220,13 @@ import {
   DecisionRecommendInputSchema,
   OwnerDecisionSchema,
 } from "./inbox.ts";
+import {
+  IncidentCauseInputSchema,
+  IncidentEditReportInputSchema,
+  IncidentSendReportInputSchema,
+  IncidentTaskInputSchema,
+  IncidentViewSchema,
+} from "./incident.ts";
 import { BlockerSchema } from "./lifecycle/blocker.ts";
 import {
   McpAgentInputSchema,
@@ -1448,6 +1455,35 @@ export const commands = {
     summary: "Undo a contact merge: both contacts and their identities are back as they were. Owner only",
     input: ContactUndoInputSchema,
     output: z.object({ ok: z.literal(true) }),
+  },
+  // Incidents clients are told about (docs/briefs/client-chats.md, phase 2) ---------
+  "incident.view": {
+    risk: "read",
+    summary:
+      "What the clients of an incident task see: each client room's status (Investigating, Identified, Monitoring, Resolved), when each state began, the linked watch, the updates told, and the report once the incident is resolved. Owner only",
+    input: IncidentTaskInputSchema,
+    output: IncidentViewSchema.nullable(),
+  },
+  "incident.cause": {
+    risk: "change",
+    summary:
+      "Record the cause of an incident task you work on, once it is known. `text` is for the team and the report. `client` is the same cause in words a client may read: no hosts, no other client, no secret. It moves what clients are told to Identified",
+    input: IncidentCauseInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "incident.editReport": {
+    risk: "change",
+    summary:
+      "Change the words of the report of a resolved incident, internal or client version. Refused once the client version was sent to a room. Owner only",
+    input: IncidentEditReportInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "incident.sendReport": {
+    risk: "outbound",
+    summary:
+      "Send the client version of an incident's report to one client room. Only the owner sends it, and the text is frozen from then on. Owner only",
+    input: IncidentSendReportInputSchema,
+    output: z.object({ draft: z.number().int().positive(), state: z.enum(["sent", "held", "failed"]) }),
   },
   // The chat dock -----------------------------------------------------------------
   "conversations.list": {

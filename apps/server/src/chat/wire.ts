@@ -3,6 +3,7 @@ import {
   type ChatApp,
   type ConnectionConfig,
   effectiveHolds,
+  effectiveIncident,
   type Holds,
   PRIVATE,
 } from "@majhi/shared";
@@ -18,6 +19,7 @@ import type { Store } from "../store/index.ts";
 import type { ChatAdapter } from "./adapter.ts";
 import { Contacts } from "./contacts.ts";
 import { ChatHub } from "./hub.ts";
+import { ClientIncidents, type IncidentsDeps } from "./incidents.ts";
 import { ChatIngest } from "./ingest.ts";
 import { ClientReplies } from "./replies.ts";
 import { ClientRooms } from "./rooms.ts";
@@ -41,8 +43,13 @@ export interface ClientChatWiring {
   housekeeper: Pick<Housekeeper, "ask">;
   wiki: (org: string, question: string) => Promise<{ answer: string; found: boolean }>;
   rest: (org: string) => Promise<string | undefined>;
-  findings: Pick<FindingsService, "report" | "dismiss" | "toTask" | "find">;
-  incidents: (org: string) => { id: number; title: string }[];
+  findings: Pick<FindingsService, "report" | "dismiss" | "toTask" | "find" | "ofTask" | "adopt" | "get">;
+  /** The ops watch, for the watch incident an incident task is linked to. */
+  watch: IncidentsDeps["watch"];
+  /** Makes an incident task from a client message: type incident, origin client. */
+  createIncident: IncidentsDeps["create"];
+  /** A workspace's time zone. */
+  tz: IncidentsDeps["tz"];
   decisions: LayaDecisions | undefined;
   lane: ClientChatDeps["lane"];
   deleteWebhook: ClientChatDeps["deleteWebhook"];
@@ -62,6 +69,7 @@ export interface ClientChatParts {
   contacts: Contacts;
   replies: ClientReplies;
   triage: ClientTriage;
+  incidents: ClientIncidents;
 }
 
 /** Builds the client chat parts and joins them. The gate is made first and calls `replies` through the closures given to it. */
@@ -143,6 +151,19 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
   });
   const model: ToolLessModel = async (org, key, prompt, parse) =>
     (await w.housekeeper.ask({ id: key, org }, prompt, parse)).value;
+  const incidents = new ClientIncidents({
+    store: w.store,
+    room: w.room,
+    replies,
+    gate: w.gate,
+    findings: w.findings,
+    watch: w.watch,
+    settings: async (org) => effectiveIncident((await w.config.settings()).autonomy.orgs[org]?.incident),
+    tz: w.tz,
+    create: w.createIncident,
+    changed: w.changed,
+    ...(w.now === undefined ? {} : { now: w.now }),
+  });
   const triage = new ClientTriage({
     store: w.store,
     room: w.room,
@@ -151,7 +172,8 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     replies,
     wiki: w.wiki,
     rest: w.rest,
-    incidents: w.incidents,
+    incidents: (org, room) => incidents.candidates(org, room),
+    incident: incidents,
     injects: async (text) => (await classifyInjection(w.decisions, text, "social")).flagged,
   });
   ingest = new ChatIngest({
@@ -180,5 +202,5 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     lane: w.lane,
     deleteWebhook: w.deleteWebhook,
   });
-  return { chat, hub, ingest, rooms, contacts, replies, triage };
+  return { chat, hub, ingest, rooms, contacts, replies, triage, incidents };
 }

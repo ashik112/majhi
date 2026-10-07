@@ -7,6 +7,7 @@ import {
   Eye,
   Focus,
   type LucideIcon,
+  MessageCircle,
   User,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -18,6 +19,7 @@ const ORIGIN_ICON: Record<OriginKind, LucideIcon> = {
   watch: Eye,
   schedule: Clock,
   deploy: ArrowUpToLine,
+  client: MessageCircle,
   parent: CornerDownRight,
 };
 
@@ -29,6 +31,7 @@ export const ORIGIN_LABEL: Record<OriginKind, string> = {
   watch: "Watch",
   schedule: "Schedule",
   deploy: "Deploy",
+  client: "Client",
   parent: "Subtask",
 };
 
@@ -39,6 +42,7 @@ export const ORIGIN_KINDS: readonly OriginKind[] = [
   "watch",
   "schedule",
   "deploy",
+  "client",
   "parent",
 ];
 
@@ -62,6 +66,8 @@ export function originName(origin: OriginView): string {
       return origin.name ?? ORIGIN_LABEL.schedule;
     case "deploy":
       return origin.name ?? ORIGIN_LABEL.deploy;
+    case "client":
+      return origin.from ?? origin.name ?? ORIGIN_LABEL.client;
     case "parent":
       return origin.task;
   }
@@ -82,6 +88,8 @@ export function originTitle(origin: OriginView): string {
       return "From a schedule";
     case "deploy":
       return `From a failed deploy: ${originName(origin)}`;
+    case "client":
+      return `From a client message: ${originName(origin)}`;
     case "parent":
       return `Subtask of ${origin.task}${origin.name === undefined ? "" : `, ${origin.name}`}`;
   }

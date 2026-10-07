@@ -25,6 +25,7 @@ import { backupHandlers } from "../backup/handlers.ts";
 import { captainHandlers } from "../captain/handlers.ts";
 import { answerOnce } from "../captain/keys.ts";
 import { chatHandlers } from "../chat/handlers.ts";
+import { incidentHandlers } from "../chat/incident-handlers.ts";
 import type { ConfigService } from "../config/service.ts";
 import { connectHandlers } from "../connect/handlers.ts";
 import { connectionHandlers } from "../connections/handlers.ts";
@@ -276,6 +277,15 @@ export function createHandlers({
     ...inboxHandlers(services.inbox),
     ...conversationsHandlers(services.conversations),
     ...chatHandlers(services.chat),
+    ...incidentHandlers({
+      incidents: services.chatParts.incidents,
+      lane: async (task) => {
+        const org = services.lanes.orgOf(task);
+        const boss = await services.lanes.boss();
+        return org === undefined || boss === undefined ? undefined : { boss, org };
+      },
+      orgOf: (task) => services.store.tasks.get(task)?.org,
+    }),
     ...agendaHandlers({
       agenda: services.agenda,
       findings: services.findings,

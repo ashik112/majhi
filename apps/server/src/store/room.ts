@@ -211,6 +211,17 @@ export class RoomRepo {
       .flatMap(readable);
   }
 
+  /** Every item of one type in a task, oldest first. */
+  ofType(task: string, type: RoomItem["type"]): RoomItem[] {
+    return this.db
+      .select()
+      .from(roomItems)
+      .where(and(eq(roomItems.task, task), eq(roomItems.type, type)))
+      .orderBy(asc(roomItems.at))
+      .all()
+      .flatMap(readable);
+  }
+
   /** Items of one type in a task whose `state` is pending, oldest first. */
   pendingOfType(task: string, type: RoomItem["type"]): RoomItem[] {
     return this.db
