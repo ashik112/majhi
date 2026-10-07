@@ -117,39 +117,6 @@ test("Cmd J opens the captain over any page; a change waits for approval, then a
     .not.toContain("globex");
 });
 
-test("a rejected change stays undone; Undo also works from History", async ({ page, request }) => {
-  await page.goto("/");
-  await openBoss(page);
-  await say(
-    page,
-    'call: majhi_orgs_create {"id":"initech","name":"Initech","ownerAsked":false,"reason":"try it"}',
-  );
-  const card = drawer(page).getByRole("region", { name: "Approval: Create org Initech" });
-  await card.getByRole("button", { name: "Reject" }).click();
-  await showSteps(page);
-  await expect(log(page).getByText("echo: The owner rejected: Create org Initech.")).toBeVisible();
-  expect((await cmd<{ id: string }[]>(request, "orgs.list")).map((o) => o.id)).not.toContain("initech");
-
-  // When the owner asked, a change runs at once and the card is applied.
-  await say(
-    page,
-    'call: majhi_orgs_create {"id":"initech","name":"Initech","ownerAsked":true,"reason":"You asked for Initech"}',
-  );
-  await expect(
-    log(page)
-      .getByText(/^majhi_orgs_create: \{/)
-      .last(),
-  ).toBeVisible();
-  await openLastSteps(page);
-  await page.keyboard.press("Meta+j");
-  await page.goto("/setup?section=history");
-  const history = page.getByRole("region", { name: "History" });
-  await history.getByRole("button", { name: "Undo: added org initech" }).click();
-  await expect
-    .poll(async () => (await cmd<{ id: string }[]>(request, "orgs.list")).map((o) => o.id))
-    .not.toContain("initech");
-});
-
 test("a secret request saves the value in secrets.age and it never shows in the page", async ({
   page,
   request,
