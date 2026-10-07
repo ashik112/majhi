@@ -68,6 +68,7 @@ import { CalmWake } from "../machine/calm-wake.ts";
 import type { RoomService } from "../room/service.ts";
 import { noRoomLine } from "../runs/limits.ts";
 import type { RunManager } from "../runs/manager.ts";
+import type { ShipPlan } from "../ship/plan.ts";
 import type { SkillStore } from "../skills/store.ts";
 import type { Store } from "../store/index.ts";
 import { captainAnsweredLine } from "../tasks/cards.ts";
@@ -100,7 +101,6 @@ import { AutonomyRepo, type HeldReason, STOPPED_NOW } from "./repo.ts";
 import { pathsOf, type RepoRuleTask, repoRuleLine } from "./repo-rule.ts";
 import { finishedByDay, flowByDay, hourlySpend, machineOf, spendByDay } from "./report.ts";
 import { mayResume, pausedLabel, type ResumeEnv, resumeRefusal } from "./resume.ts";
-import type { ShipPlan } from "../ship/plan.ts";
 import { type SizeOf, type SizeRater, sizeProblem, TaskSizes } from "./sizes.ts";
 import {
   accountsOf,
@@ -1846,10 +1846,7 @@ export class AutonomyService {
         ship,
         holds,
         accounts: starts ? this.teamAccounts(command, input, world, sections) : [],
-        refused: hardLimit(
-          { command, input: raw, reason: ask.reason, ...pushOf(ship) },
-          world,
-        ),
+        refused: hardLimit({ command, input: raw, reason: ask.reason, ...pushOf(ship) }, world),
         orgName: org?.name,
         automationAction: this.automationAction(command, input),
       },
@@ -1859,7 +1856,8 @@ export class AutonomyService {
   /** The ship decision for the task a shipping call names, or undefined for any other call. */
   private async shipPlanFor(command: string, input: Record<string, unknown>): Promise<ShipPlan | undefined> {
     if (this.deps.shipPlan === undefined || !SHIPPING_CALLS.has(command)) return undefined;
-    const task = typeof input.task === "string" ? input.task : typeof input.id === "string" ? input.id : undefined;
+    const task =
+      typeof input.task === "string" ? input.task : typeof input.id === "string" ? input.id : undefined;
     if (task === undefined || this.deps.store.tasks.get(task) === undefined) return undefined;
     return this.deps.shipPlan(task).catch(() => undefined);
   }

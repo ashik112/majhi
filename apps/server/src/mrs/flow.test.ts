@@ -4,9 +4,9 @@ import { join } from "node:path";
 import type { RoomItem, Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { git, tempDir } from "../testing/fixtures.ts";
-import type { MrDeps } from "./service.ts";
 import { type FakeBitbucket, type FakeHosts, fakeBitbucket, fakeHosts } from "../testing/mrHosts.ts";
 import { taskWorld, type World } from "../testing/world.ts";
+import type { MrDeps } from "./service.ts";
 
 /**
  * Push, open, watch and merge merge requests against local bare repos, with fake `gh`, `glab`

@@ -1802,6 +1802,13 @@ export const commands = {
     input: z.object({ ids: z.array(TaskIdSchema).min(1).max(100) }),
     output: z.array(z.object({ task: TaskIdSchema, areas: TaskAreasSchema })),
   },
+  "tasks.areaNames": {
+    risk: "read",
+    summary:
+      "The names of the parts of the system (wiki components) a workspace's projects have, for choosing the areas a ship rule covers. Empty when the workspace has no wiki",
+    input: z.object({ org: z.string().min(1) }),
+    output: z.object({ names: z.array(z.string()) }),
+  },
   "tasks.setType": {
     risk: "change",
     summary:

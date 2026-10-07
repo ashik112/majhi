@@ -179,6 +179,8 @@ export function shipRuleSentence(rule: ShipRule): string {
   const production =
     rule.deployProduction === "decide" ? "production deploys by itself" : "production asks you";
   const tell =
-    rule.tell === "decide" ? "The reply to the client goes out by itself." : "The reply to the client waits for you.";
+    rule.tell === "decide"
+      ? "The reply to the client goes out by itself."
+      : "The reply to the client waits for you.";
   return `${subject} ${what}; ${production}. ${tell}`;
 }

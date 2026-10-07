@@ -1,8 +1,8 @@
-import { AutonomySettingsSchema, ALL_ASK, type ShipRule, type Task } from "@majhi/shared";
+import { ALL_ASK, AutonomySettingsSchema, type ShipRule, type Task } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { ownerStepOf } from "../tasks/detail.ts";
-import { opensMergeRequest, ShipPlanner } from "./plan.ts";
 import { linesOfNumstat } from "./lines.ts";
+import { opensMergeRequest, ShipPlanner } from "./plan.ts";
 
 const rule: ShipRule = {
   id: "aaaaaaaa",
@@ -63,7 +63,14 @@ describe("who ships a task", () => {
 describe("the step that waits for the owner", () => {
   const code = { repos: [{ project: "api" }] } as unknown as Task;
   const steps = (merge: "captain" | "owner", push: "captain" | "owner") =>
-    ({ merge, push, deployStaging: "owner", deployProduction: "owner", tell: "owner", rule: undefined }) as const;
+    ({
+      merge,
+      push,
+      deployStaging: "owner",
+      deployProduction: "owner",
+      tell: "owner",
+      rule: undefined,
+    }) as const;
 
   it("is the merge when it is the owner's, unless the captain opens a merge request first", () => {
     expect(ownerStepOf(code, { steps: steps("owner", "owner"), way: "local" })).toBe("merge");
@@ -77,7 +84,9 @@ describe("the step that waits for the owner", () => {
   });
 
   it("is nothing for a task that changed no code", () => {
-    expect(ownerStepOf({ repos: [] } as unknown as Task, { steps: steps("owner", "owner"), way: "local" })).toBeUndefined();
+    expect(
+      ownerStepOf({ repos: [] } as unknown as Task, { steps: steps("owner", "owner"), way: "local" }),
+    ).toBeUndefined();
   });
 
   it("opens a merge request when Push is the captain's and Merge is the owner's, or the project works through them", () => {

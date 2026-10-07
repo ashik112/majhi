@@ -8,7 +8,7 @@ import {
   shipSteps,
   type Task,
 } from "@majhi/shared";
-import { askedSentence as rowSentence, authorityOf, shipRulesOf } from "../captain/levels.ts";
+import { authorityOf, askedSentence as rowSentence, shipRulesOf } from "../captain/levels.ts";
 import { restWhy } from "../captain/rules.ts";
 import type { AreasReader } from "../tasks/areas.ts";
 import { changedLinesOfTask } from "./lines.ts";

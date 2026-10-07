@@ -19,6 +19,16 @@ export function useCaptainStatus() {
   });
 }
 
+/** The wiki component names of a workspace, for the areas a ship rule covers. Rarely change, so kept for a minute. */
+export function useAreaNames(org: string) {
+  return useQuery<CommandOutput<"tasks.areaNames">, ApiRequestError>({
+    queryKey: [...queryKeys.captain, "area-names", org],
+    queryFn: () => cmd("tasks.areaNames", { org }),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 /**
  * Warms the Captain page: its code and `captain.status` (the sidebar already keeps `autonomy.status`), so opening it paints from the cache. Called when the
  * app is idle after the first paint and when the pointer reaches the Captain link or the chat button.

@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { type Authority, type AutonomyOrg, type AutonomySettings } from "@majhi/shared";
+import type { Authority, AutonomyOrg, AutonomySettings } from "@majhi/shared";
 import { isMap, parseDocument } from "yaml";
 import { authorityOf } from "../captain/levels.ts";
 import { editConfig } from "./write.ts";

@@ -632,6 +632,7 @@ export function createHandlers({
     "tasks.get": async (input) => services.tasks.get(input.id),
     "tasks.detail": async (input) => services.taskDetails.detail(input.id),
     "tasks.areas": async (input) => services.taskDetails.areas(input.ids),
+    "tasks.areaNames": async (input) => ({ names: await services.taskDetails.areaNames(input.org) }),
     "tasks.setType": async (input, ctx) => {
       const task = services.tasks.get(input.id);
       const who = typist(ctx.meta.actor, {

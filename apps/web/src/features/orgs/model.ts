@@ -1,17 +1,5 @@
-import {
-  type CommandInput,
-  type LeadStart,
-  type MergePolicy,
-  OrgConfigSchema,
-  type OrgView,
-} from "@majhi/shared";
+import { type CommandInput, type LeadStart, OrgConfigSchema, type OrgView } from "@majhi/shared";
 import { capFromField } from "../boss/model";
-
-export const MERGE_LABEL: Record<MergePolicy, string> = {
-  never: "Never, you merge on the host",
-  approve: "Approve, majhi merges when you click",
-  "auto-if-green": "Auto if green",
-};
 
 /** What the owner types in the org's settings form. Everything is text; `""` means not set. */
 export interface OrgDraft {
@@ -31,8 +19,6 @@ export interface OrgDraft {
   commits: "default" | "on" | "off";
   /** Whether the org has a project wiki: majhi's setting, or this org's own. */
   wiki: "default" | "on" | "off";
-  /** When majhi merges the org's MRs. */
-  merge: MergePolicy;
   /** Which tasks a lead may start without asking you. */
   leadStart: LeadStart;
 }
@@ -52,7 +38,6 @@ export function draftFromOrg(org: OrgView): OrgDraft {
     contextCap: capToField(org.context?.cap),
     commits: org.commits?.attribution === undefined ? "default" : org.commits.attribution ? "on" : "off",
     wiki: wikiChoice(org),
-    merge: org.merge,
     leadStart: org.leadStart,
   };
 }
@@ -143,8 +128,6 @@ export function checkOrgDraft(org: OrgView, draft: OrgDraft): OrgCheck {
 
   if (draft.wiki !== wikiChoice(org))
     input.wiki = draft.wiki === "default" ? null : { enabled: draft.wiki === "on" };
-
-  if (draft.merge !== org.merge) input.merge = draft.merge;
 
   if (draft.leadStart !== org.leadStart) input.lead_start = draft.leadStart;
 

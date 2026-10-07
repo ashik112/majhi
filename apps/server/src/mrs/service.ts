@@ -1435,7 +1435,10 @@ export class MrService {
     if (first.status !== "mr")
       throw new UserError(`${id} is ${first.status}. Its merge requests are not open.`, 409);
     if (trigger === "poll") {
-      const may = (await this.deps.captainMerges?.(first)) ?? { yes: false as const, why: "no ship decision" };
+      const may = (await this.deps.captainMerges?.(first)) ?? {
+        yes: false as const,
+        why: "no ship decision",
+      };
       if (!may.yes) throw new CaptainDoesNotMerge(id, may.why);
     }
     if (trigger === "owner") this.resolved(id, "");

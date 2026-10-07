@@ -104,6 +104,13 @@ export class AreasReader {
     return out;
   }
 
+  /** The component names of the given projects, each once, sorted. Empty when the workspace has no wiki. */
+  async componentNames(org: string, projects: readonly string[]): Promise<string[]> {
+    if (!(await this.source.enabled(org))) return [];
+    const lists = await Promise.all(projects.map((p) => this.source.components(org, p).catch(() => [])));
+    return [...new Set(lists.flat().map((c) => c.name))].toSorted((a, b) => a.localeCompare(b));
+  }
+
   forget(task: string): void {
     this.kept.delete(task);
   }

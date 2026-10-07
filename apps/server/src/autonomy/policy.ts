@@ -165,7 +165,9 @@ export function decideAutonomously(call: AutonomyCall, ctx: PolicyContext): Auto
     // A project that works through merge requests lands by one: the branch goes up with tasks.openMrs and
     // its request is merged on the host. A local merge would skip the review the project asks for.
     if (plan.way === "merge-request") {
-      return left(`${name}'s project works through merge requests, so the work lands by one, not by a local merge`);
+      return left(
+        `${name}'s project works through merge requests, so the work lands by one, not by a local merge`,
+      );
     }
     return approved(`In ${name} the captain decides when work is merged`);
   }

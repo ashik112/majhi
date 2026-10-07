@@ -70,7 +70,10 @@ function setup(s: Setup = {}) {
     mrReady: async () => ({ ok: false as const, why: "No remote" }),
     openMrs: async () => ({ urls: [], host: "GitHub" }),
   } as unknown as CaptainPorts;
-  const rules = { ...(s.rules === undefined ? {} : { ships: s.rules }), ...(s.branches === undefined ? {} : { branches: s.branches }) };
+  const rules = {
+    ...(s.rules === undefined ? {} : { ships: s.rules }),
+    ...(s.branches === undefined ? {} : { branches: s.branches }),
+  };
   const ws = (): Workspace => ({
     org: "acme",
     name: "Acme",

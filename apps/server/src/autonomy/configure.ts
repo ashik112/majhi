@@ -114,9 +114,7 @@ export function describePatch(patch: AutonomyPatch, sections: Pick<ConfigSection
   return lines.length === 0 ? "changed nothing in autonomous mode" : lines.join("; ");
 }
 
-function ruleWord(
-  key: "ships" | "hours" | "freeze" | "tz" | "branches" | "providers" | "account",
-): string {
+function ruleWord(key: "ships" | "hours" | "freeze" | "tz" | "branches" | "providers" | "account"): string {
   switch (key) {
     case "ships":
       return "ship rules";

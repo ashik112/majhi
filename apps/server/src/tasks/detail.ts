@@ -8,8 +8,8 @@ import {
   type TrailFacts,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
-import type { Store } from "../store/index.ts";
 import { opensMergeRequest, type ShipPlan } from "../ship/plan.ts";
+import type { Store } from "../store/index.ts";
 import type { AreasReader } from "./areas.ts";
 
 export interface DetailDeps {
@@ -19,6 +19,8 @@ export interface DetailDeps {
   handoff(id: string): Promise<HandoffState>;
   /** Who does each step of shipping a task, by the one ship decision. */
   ship(id: string): Promise<ShipPlan>;
+  /** The ids of a workspace's projects. */
+  projectsOf(org: string): Promise<string[]>;
 }
 
 /** The check of a task as the trail shows it: running or queued, else the result for the current head. Nothing when there is none. */
@@ -112,6 +114,11 @@ export class TaskDetails {
       }),
       ...(plan === undefined ? {} : { ship: shipView(plan) }),
     };
+  }
+
+  /** The names of the parts of the system a workspace's projects have, for the ship rules' area picker. */
+  async areaNames(org: string): Promise<string[]> {
+    return this.deps.areas.componentNames(org, await this.deps.projectsOf(org));
   }
 
   /** The areas of the tasks on a board, a few at a time. Ids that do not exist are left out. */

@@ -36,7 +36,10 @@ describe("folding the org merge switch into the Merge row", () => {
 
   it("writes the full rows for a workspace it changes, keeps every other row, and leaves the rest alone", () => {
     const autonomy = AutonomySettingsSchema.parse({
-      orgs: { acme: { authority: { ...ALL_ASK, start: "decide", push: "decide" } }, globex: { level: "runs" } },
+      orgs: {
+        acme: { authority: { ...ALL_ASK, start: "decide", push: "decide" } },
+        globex: { level: "runs" },
+      },
     });
     const orgs = foldedOrgs(autonomy, [
       { id: "acme", policy: "auto-if-green" },

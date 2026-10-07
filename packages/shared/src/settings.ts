@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { AuthoritySchema } from "./authority.ts";
-import { MAX_SHIP_RULES, ShipRuleSchema } from "./ship-rules.ts";
 import { ContainerCpusSchema, ContainerMemorySchema, ImageRefSchema } from "./containers.ts";
 import { NotifyKindSchema } from "./notify.ts";
+import { MAX_SHIP_RULES, ShipRuleSchema } from "./ship-rules.ts";
 
 /**
  * Runtime settings in majhi.yaml that the owner or the captain can change live

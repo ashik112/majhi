@@ -187,6 +187,7 @@ import { RepoScanner } from "./scan/scanner.ts";
 import { KeyExports } from "./secrets/backup.ts";
 import { SecretService } from "./secrets/service.ts";
 import { SecretStore } from "./secrets/store.ts";
+import { ShipPlanner } from "./ship/plan.ts";
 import { SkillsCli } from "./skills/cli.ts";
 import { skillGitEnv } from "./skills/git-env.ts";
 import { migrateAgentSkills } from "./skills/migrate.ts";
@@ -196,7 +197,6 @@ import { SkillStore } from "./skills/store.ts";
 import { logSqliteBaseline } from "./store/db.ts";
 import { DB_FILE_NAME, Store } from "./store/index.ts";
 import { pruneOld } from "./store/retention.ts";
-import { ShipPlanner } from "./ship/plan.ts";
 import { AreasReader } from "./tasks/areas.ts";
 import { CardActions } from "./tasks/card-actions.ts";
 import { CleanupService } from "./tasks/cleanup.ts";
@@ -2637,6 +2637,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       handoff: (id) => handoff.state(id),
       areas: areasReader,
       ship: (id) => shipPlanner.plan(id),
+      projectsOf: async (org) =>
+        Object.entries((await config.sections()).projects)
+          .filter(([, p]) => p.org === org)
+          .map(([id]) => id),
     }),
     homeChecks: new HomeChecks({
       ids: () => store.tasks.idsWithStatus("review"),

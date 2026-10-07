@@ -1,7 +1,7 @@
 import type { Authority, CaptainUndo, CommandName, ShipFix, TaskPriority } from "@majhi/shared";
 import type { FollowUpPorts } from "../findings/followups.ts";
-import type { ShipPlan } from "../ship/plan.ts";
 import type { FindingsService } from "../findings/service.ts";
+import type { ShipPlan } from "../ship/plan.ts";
 import type { AnswerResult } from "./keys.ts";
 import type { OwnWorkScope } from "./own-work.ts";
 import type { UpkeepPorts, WikiPorts } from "./upkeep-ports.ts";

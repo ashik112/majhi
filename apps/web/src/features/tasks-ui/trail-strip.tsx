@@ -11,6 +11,7 @@ const STEP_ICON = {
   check: ListChecks,
   "merge-request": GitPullRequest,
   "local-merge": GitMerge,
+  ship: GitMerge,
   deploy: ArrowUpToLine,
   reply: Mail,
 } as const;
@@ -112,7 +113,10 @@ function StepButton({ view, actions }: { view: StepView; actions: TrailActions }
       </a>
     );
   }
-  if (actions.onShowRoom !== undefined && (step.kind === "check" || step.kind === "local-merge")) {
+  if (
+    actions.onShowRoom !== undefined &&
+    (step.kind === "check" || step.kind === "local-merge" || step.kind === "ship")
+  ) {
     return (
       <button
         type="button"

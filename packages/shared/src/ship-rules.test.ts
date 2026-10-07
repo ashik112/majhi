@@ -29,7 +29,12 @@ describe("ship steps", () => {
 
   it("with no match the rows decide", () => {
     const rows: Authority = { ...ALL_ASK, merge: "decide", push: "decide" };
-    const s = shipSteps(rows, [bugRule], { type: "feature", changedLines: 10, projects: ["storefront"] }, true);
+    const s = shipSteps(
+      rows,
+      [bugRule],
+      { type: "feature", changedLines: 10, projects: ["storefront"] },
+      true,
+    );
     expect(s).toEqual({
       merge: "captain",
       push: "captain",
