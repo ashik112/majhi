@@ -143,7 +143,9 @@ export function createHandoff(w: HandoffWiring): HandoffService {
         return { command: own, env: {}, from: "set for this project" };
       // The CI of the task's own commit, so a CI file the task changed counts.
       if (key !== "install") {
-        const found = (await readCiChecks(fsRepoFiles(worktree), { fresh: true })).find((c) => c.kind === key);
+        const found = (await readCiChecks(fsRepoFiles(worktree), { fresh: true })).find(
+          (c) => c.kind === key,
+        );
         if (found !== undefined)
           return {
             command: found.command,

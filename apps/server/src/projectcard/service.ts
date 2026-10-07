@@ -52,7 +52,11 @@ export interface CardDeps {
 const PackageScripts = z.looseObject({ scripts: z.record(z.string(), z.string()).optional() });
 
 /** The body of a package.json script in a check's folder, for turning a script that writes into its read-only form. */
-async function scriptOf(files: RepoFiles, workdir: string | undefined, name: string): Promise<string | undefined> {
+async function scriptOf(
+  files: RepoFiles,
+  workdir: string | undefined,
+  name: string,
+): Promise<string | undefined> {
   try {
     const text = await files.read(workdir === undefined ? "package.json" : `${workdir}/package.json`);
     const pkg = text === undefined ? undefined : PackageScripts.safeParse(JSON.parse(text));

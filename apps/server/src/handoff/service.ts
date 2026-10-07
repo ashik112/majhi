@@ -15,6 +15,7 @@ import {
   handoffSeconds,
   handoffSummary,
 } from "@majhi/shared";
+import type { CiService } from "../ci/jobs.ts";
 import { safeLine } from "../ci/safe.ts";
 import { errorMessage, UserError } from "../errors.ts";
 import {
@@ -32,7 +33,6 @@ import {
   reviewPrompt,
   TRIVIAL_LINES,
 } from "./analysis.ts";
-import type { CiService } from "../ci/jobs.ts";
 import type { Checkout } from "./checkout.ts";
 import { substituteBase, usesBase } from "./commands.ts";
 import { impliedMemoryMb, memoryMb, sizeWords } from "./limits.ts";
@@ -1162,7 +1162,8 @@ export class HandoffService {
     if (commit === undefined) return undefined;
     const problemKind: ProblemKind = kind === "tests" ? "test" : kind === "install" ? "build" : kind;
     // The head's installed packages are right for the base only while the task left what is installed alone.
-    const ownInstall = (await ports.dependenciesChanged?.(task.id, r.project, commit).catch(() => false)) === true;
+    const ownInstall =
+      (await ports.dependenciesChanged?.(task.id, r.project, commit).catch(() => false)) === true;
     const key = createHash("sha1")
       .update(
         JSON.stringify([r.project, commit, kind, r.command, r.env, r.workdir ?? "", ownInstall ? "own" : ""]),
@@ -1177,7 +1178,14 @@ export class HandoffService {
           const install = await this.specOf(task, { project: r.project, worktree: installedFrom }, "install");
           // No way to install for the base: the comparison would be off, so the failure is not called existing.
           if (install === undefined || install.command.trim() === "") return undefined;
-          const done = await ports.exec(task.id, copy.path, install.command, this.timeouts.install, limits, install.env);
+          const done = await ports.exec(
+            task.id,
+            copy.path,
+            install.command,
+            this.timeouts.install,
+            limits,
+            install.env,
+          );
           if (done.error !== undefined || done.timedOut || done.code !== 0) return undefined;
         }
         const where = r.workdir === undefined ? copy.path : join(copy.path, r.workdir);
@@ -1297,15 +1305,15 @@ export class HandoffService {
       this.ports.hold(
         task.id,
         existing.action === "told"
-          ? `Checks failed and nothing was committed since the lead was told: ${firstLine(result.failures)}`
-          : `Checks failed${state.escalated ? ` ${state.strikes} times in a row` : ""}: ${firstLine(result.failures)}`,
+          ? `${what(result)} failed. The lead was told and has not committed a fix since.`
+          : `${what(result)} failed${state.escalated ? ` ${state.strikes} times in a row` : ""}.`,
       );
       return;
     }
     const strikes = state.strikes + 1;
     this.repo.addHistory(task.id, item("none"), result);
     if (!tells) {
-      this.ports.hold(task.id, `Checks failed: ${firstLine(result.failures)}`);
+      this.ports.hold(task.id, `${what(result)} failed.`);
       return;
     }
     if (strikes >= HANDOFF_STRIKES || state.escalated) {
@@ -1313,7 +1321,7 @@ export class HandoffService {
       this.repo.setAction(task.id, head, "escalated");
       this.ports.hold(
         task.id,
-        `Checks failed ${strikes} times in a row, so the lead is not told again. The latest: ${firstLine(result.failures)}`,
+        `${what(result)} failed ${strikes} times in a row, so the lead is not told again.`,
       );
       return;
     }
@@ -1329,7 +1337,7 @@ export class HandoffService {
       // No lead to tell (paused, done, no agent): the owner sees the failure on the card.
       this.ports.hold(
         task.id,
-        `Checks failed and the lead could not be told (${errorMessage(err)}): ${firstLine(result.failures)}`,
+        `${what(result)} failed and the lead could not be told (${errorMessage(err)}).`,
       );
     }
   }
@@ -1372,7 +1380,7 @@ export class HandoffService {
 }
 
 /** The first line of the first failure: what the card says, short. */
-function firstLine(failures: readonly string[]): string {
-  const line = (failures[0] ?? "").split("\n")[0] ?? "";
-  return line.length > 200 ? `${line.slice(0, 200)}...` : line;
+/** The step that failed, by its name on the card ("Tests", "Lint"), for the line the card shows. The card has its log. */
+function what(result: HandoffResult): string {
+  return result.failed?.label ?? "The checks";
 }

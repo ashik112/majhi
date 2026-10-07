@@ -180,7 +180,10 @@ export async function pushGuard(
   if (pushUrl.override) {
     // Git rewrites with the longest matching value, and the first of equal ones. The address itself, as
     // its own rewrite, is longer than any value that is only its beginning, so the repo's rewrite never applies.
-    settings.push([`url.${pushUrl.url}.insteadOf`, pushUrl.url], [`url.${pushUrl.url}.pushInsteadOf`, pushUrl.url]);
+    settings.push(
+      [`url.${pushUrl.url}.insteadOf`, pushUrl.url],
+      [`url.${pushUrl.url}.pushInsteadOf`, pushUrl.url],
+    );
   }
   for (const key of new Set(planted.map((e) => e.key))) {
     if (key !== "core.askpass" && key !== "core.alternaterefscommand") continue;

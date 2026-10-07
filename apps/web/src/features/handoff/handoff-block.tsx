@@ -15,9 +15,9 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Lamp, type LampState } from "@/components/ui/lamp";
 import { PageLink } from "@/components/ui/page-link";
+import { TaskRef } from "@/features/autonomy/task-ref";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
-import { TaskRef } from "@/features/autonomy/task-ref";
 import { useFindings, useFindingToTask } from "@/lib/findings-queries";
 import { formatAgo } from "@/lib/format";
 import { useCheckAgain, useHandoff, useRerunStep } from "@/lib/handoff-queries";
@@ -149,7 +149,7 @@ function ExistingFailure({
   const open = useFindingToTask();
   const findings = useFindings("live");
   // The finding may already have a task (this check, another task's, or the captain's): then it is that task.
-  const known = findings.data?.find((f) => f.id === existing.finding)?.task;
+  const known = findings.data?.findings.find((f) => f.id === existing.finding)?.task;
   const made = open.data?.task ?? known;
   return (
     <div className="flex min-w-0 flex-col gap-1 text-xs text-fg-soft sm:ml-[156px]">

@@ -164,7 +164,9 @@ describe("services of the CI job", () => {
     const out = await w.service.ensure("ACM-1", { force: false });
     const commands = w.ran.map((r) => r.command);
     expect(commands).toHaveLength(4);
-    expect(commands[0]).toMatch(/^'docker' 'run' '-d' '--name' 'chk[0-9a-f]{6}-postgres' '-e' 'POSTGRES_PASSWORD=test' '-p' '5432:5432' '--health-cmd' 'pg_isready' '--health-interval' '5s' '--health-retries' '5' 'postgres:16'$/);
+    expect(commands[0]).toMatch(
+      /^'docker' 'run' '-d' '--name' 'chk[0-9a-f]{6}-postgres' '-e' 'POSTGRES_PASSWORD=test' '-p' '5432:5432' '--health-cmd' 'pg_isready' '--health-interval' '5s' '--health-retries' '5' 'postgres:16'$/,
+    );
     expect(commands[1]).toContain("{{.State.Health.Status}}");
     expect(commands[2]).toBe("vitest run");
     expect(commands[3]).toMatch(/^docker rm -f 'chk[0-9a-f]{6}-postgres'$/);

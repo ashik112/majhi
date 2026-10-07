@@ -31,7 +31,9 @@ const line = (argv: string[]): string => argv.map(quote).join(" ");
 
 /** A container name docker takes: lowercase letters, digits and `-_.`, starting with a letter or digit. */
 function containerName(run: string, service: string): string {
-  const clean = [...service.toLowerCase()].map((c) => ("abcdefghijklmnopqrstuvwxyz0123456789-_.".includes(c) ? c : "-"));
+  const clean = [...service.toLowerCase()].map((c) =>
+    "abcdefghijklmnopqrstuvwxyz0123456789-_.".includes(c) ? c : "-",
+  );
   return `chk${run}-${clean.join("").slice(0, 24)}`;
 }
 

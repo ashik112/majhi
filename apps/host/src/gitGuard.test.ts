@@ -207,11 +207,15 @@ describe("the helper's git in a repo whose config names commands", () => {
       await plain(work, "config", `url.${server.base}/other.git.pushInsteadOf`, url);
       await plain(work, "config", `url.${server.base}/other.git.insteadOf`, `${server.base}/`);
       await gitPush(deps, { path: work, url, branch: "main" });
-      expect(await plain(join(root, "up.git"), "rev-parse", "main")).toBe(await plain(work, "rev-parse", "main"));
+      expect(await plain(join(root, "up.git"), "rev-parse", "main")).toBe(
+        await plain(work, "rev-parse", "main"),
+      );
       await expect(plain(join(root, "other.git"), "rev-parse", "--verify", "main")).rejects.toThrow();
       // A rewrite that equals the address and its slashed form too cannot be pushed around: nothing is pushed.
       await plain(work, "config", `url.${server.base}/third.git.insteadOf`, `${url}/`);
-      await expect(gitPush(deps, { path: work, url, branch: "main" })).rejects.toThrow(/rewrites the address/);
+      await expect(gitPush(deps, { path: work, url, branch: "main" })).rejects.toThrow(
+        /rewrites the address/,
+      );
       await plain(work, "config", "--unset-all", `url.${server.base}/third.git.insteadOf`);
 
       // The same checkout with plain git does run them, so the setup above is live.
