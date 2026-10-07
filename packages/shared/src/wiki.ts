@@ -42,21 +42,21 @@ export const ContentHashSchema = z
   .brand<"ContentHash">();
 export type ContentHash = z.infer<typeof ContentHashSchema>;
 
-export const WIKI_PAGE_KINDS = ["overview", "component", "flow", "infra", "gaps"] as const;
+export const WIKI_PAGE_KINDS = ["overview", "component", "flow", "infra", "deploys", "gaps"] as const;
 export const WikiPageKindSchema = z.enum(WIKI_PAGE_KINDS);
 export type WikiPageKind = z.infer<typeof WikiPageKindSchema>;
 
 /** Kinds there is one of per scope. Their id is the kind itself. */
-const SINGLE_PAGE_KINDS = ["overview", "infra", "gaps"] as const;
+const SINGLE_PAGE_KINDS = ["overview", "infra", "deploys", "gaps"] as const;
 /** Kinds there are many of. Their id is `<kind>:<slug>`. */
 const NAMED_PAGE_KINDS = ["component", "flow"] as const;
 
-/** A page id is fixed by its kind: `overview`, `infra`, `gaps`, `component:<slug>` or `flow:<slug>`. */
+/** A page id is fixed by its kind: `overview`, `infra`, `deploys`, `gaps`, `component:<slug>` or `flow:<slug>`. */
 export const WikiPageIdSchema = z
   .string()
   .regex(
-    /^(?:overview|infra|gaps|(?:component|flow):[a-z0-9][a-z0-9-]{0,62})$/,
-    "Use overview, infra, gaps, component:<name> or flow:<name>",
+    /^(?:overview|infra|deploys|gaps|(?:component|flow):[a-z0-9][a-z0-9-]{0,62})$/,
+    "Use overview, infra, deploys, gaps, component:<name> or flow:<name>",
   )
   .brand<"WikiPageId">();
 export type WikiPageId = z.infer<typeof WikiPageIdSchema>;
@@ -85,6 +85,7 @@ export const WIKI_FACT_KINDS = [
   "link",
   "component",
   "step",
+  "deploy",
 ] as const;
 export const WikiFactKindSchema = z.enum(WIKI_FACT_KINDS);
 export type WikiFactKind = z.infer<typeof WikiFactKindSchema>;
@@ -233,6 +234,41 @@ export const CallPathSchema = z
 
 export const WIKI_BOUNDARIES = ["database", "queue", "outside", "repo"] as const;
 
+/** The kinds of file that say how a repo is deployed. One `deploy` fact is one such file. */
+export const WIKI_DEPLOY_SYSTEMS = [
+  "github-actions",
+  "gitlab-ci",
+  "bitbucket",
+  /** A host's own config file: Vercel, Firebase, Fly.io, Cloudflare, Netlify, Render, Heroku. The host is the fact's `name`. */
+  "platform",
+  "docker",
+  /** Helm charts, Kustomize overlays, Argo CD and Flux objects, Kubernetes manifests. */
+  "gitops",
+  "make",
+  "script",
+  "doc",
+] as const;
+export const WikiDeploySystemSchema = z.enum(WIKI_DEPLOY_SYSTEMS);
+export type WikiDeploySystem = z.infer<typeof WikiDeploySystemSchema>;
+
+/** One job (or step, or target) of a deploy file. Names only: never a command, a value or a secret. */
+export const WikiDeployJobSchema = z.object({
+  name: z.string().min(1).max(80),
+  /** A GitLab stage. */
+  stage: z.string().min(1).max(60).optional(),
+  /** The jobs or targets that must have run first. */
+  needs: z.array(z.string().min(1).max(80)).max(8).default([]),
+  /** The environment it deploys to, as the file names it. */
+  environment: z.string().min(1).max(80).optional(),
+  /** A person starts it. */
+  manual: z.boolean().default(false),
+  /** When it runs, as the file writes it: an `if` condition or a branch list. */
+  rule: z.string().min(1).max(160).optional(),
+  /** The names of the variables a person fills in when they start it. */
+  inputs: z.array(z.string().min(1).max(80)).max(12).default([]),
+});
+export type WikiDeployJob = z.infer<typeof WikiDeployJobSchema>;
+
 const factBase = {
   id: WikiFactIdSchema,
   repo: IdSchema,
@@ -329,6 +365,26 @@ export const WikiFactSchema = z
       symbol: z.string().min(1).max(200),
       boundary: z.enum(WIKI_BOUNDARIES).optional(),
     }),
+    /**
+     * One file that shows how the repo is deployed: a CI workflow, a pipeline, a host's config, a Dockerfile, a chart, a
+     * Makefile with deploy targets, a deploy script or a deploy document. What starts it, what it runs and in what order,
+     * with names only. The `deploys` page is written from these and from the files themselves.
+     */
+    z.object({
+      ...factBase,
+      kind: z.literal("deploy"),
+      system: WikiDeploySystemSchema,
+      /** The workflow's name, the host's name, or the file. */
+      name: z.string().min(1).max(160),
+      /** What starts it: "manual", "push to main", "tag v*", "schedule 0 3 * * 1", "after workflow Build". */
+      triggers: z.array(z.string().min(1).max(160)).max(12).default([]),
+      /** The names of the inputs a person fills in when they start it by hand. */
+      inputs: z.array(z.string().min(1).max(80)).max(20).default([]),
+      jobs: z.array(WikiDeployJobSchema).max(30).default([]),
+      /** Conditions on a job and locks (a concurrency group), as the file writes them. */
+      guards: z.array(z.string().min(1).max(160)).max(10).default([]),
+      note: z.string().min(1).max(300).optional(),
+    }),
   ])
   .superRefine((fact, ctx) => {
     if (!fact.id.startsWith(`${fact.repo}:${fact.kind}:`)) {
@@ -353,9 +409,10 @@ export type WikiFactOf<K extends WikiFactKind> = Extract<WikiFact, { kind: K }>;
 
 /**
  * What the sealed reader finds, as a number. Raised when the reader learns to find a new kind of fact (2: HTTP calls with
- * their method and path), so a repo already read at its commit is read again, with no model, and no page is rewritten.
+ * their method and path; 3: deploy files), so a repo already read at its commit is read again, with no model, and no
+ * page is rewritten.
  */
-export const FACTS_READER = 2;
+export const FACTS_READER = 3;
 
 /** What one fact run of a repo leaves in `facts.json`. */
 export const WikiFactsFileSchema = z.object({
@@ -407,11 +464,26 @@ export const OwnerRoleAnswerSchema = z.object({
 });
 export type OwnerRoleAnswer = z.infer<typeof OwnerRoleAnswerSchema>;
 
+/** The most notes one page keeps. */
+export const WIKI_NOTES_PER_PAGE = 12;
+
+/**
+ * A correction the owner or the captain gives a page in words ("kinbe first, then the rest"). It is kept apart from the
+ * page, so a rewrite never loses it: the writer is given it, and the page shows it under "Owner notes".
+ */
+export const WikiNoteSchema = z.object({
+  project: IdSchema,
+  page: WikiPageIdSchema,
+  text: z.string().trim().min(1).max(500),
+});
+export type WikiNote = z.infer<typeof WikiNoteSchema>;
+
 /** Everything the owner told the wiki of a workspace, as stored. */
 export const WikiAnswerSchema = z.discriminatedUnion("kind", [
   OwnerAnswerSchema.extend({ kind: z.literal("address") }),
   OwnerCallAnswerSchema.extend({ kind: z.literal("call") }),
   OwnerRoleAnswerSchema.extend({ kind: z.literal("role") }),
+  WikiNoteSchema.extend({ kind: z.literal("note") }),
 ]);
 export type WikiAnswer = z.infer<typeof WikiAnswerSchema>;
 
@@ -719,11 +791,16 @@ export type WikiView = z.infer<typeof WikiViewSchema>;
 
 /**
  * `replan` picks the flows again instead of keeping the ones chosen at the first build. `page` writes only that page
- * (of `project`, or of the workspace when there is none), with the same caps and the same checks.
+ * (of `project`, or of the workspace when there is none), with the same caps and the same checks. `note` and `dropNote`
+ * add and remove a correction on one page of a project (see `WikiNoteSchema`).
  */
 export const WikiUpdateInputSchema = WikiScopeInputSchema.extend({
   replan: z.boolean().optional(),
   page: WikiPageIdSchema.optional(),
+  /** A correction for `page` of `project`, kept apart from the page: it shows under "Owner notes" and the page is written again with it. */
+  note: WikiNoteSchema.shape.text.optional(),
+  /** The text of a note to take away, exactly as it was given. Only with `page` and `project`. */
+  dropNote: WikiNoteSchema.shape.text.optional(),
 });
 export type WikiUpdateInput = z.infer<typeof WikiUpdateInputSchema>;
 

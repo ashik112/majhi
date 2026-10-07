@@ -1,4 +1,5 @@
 import type { WikiKnownRole } from "@majhi/shared";
+import type { DeployFiles } from "./deploy-files.ts";
 import { depsOf } from "./deps.ts";
 import type { Store } from "./known.ts";
 import { storeOfImage, techsOfDep } from "./known.ts";
@@ -8,6 +9,8 @@ import { type FactSink, slugOf } from "./sink.ts";
 /** What a scanner needs besides the files: where to put facts, and what the other files of the repo already showed. */
 export interface ScanContext {
   scan: RepoScan;
+  /** The CI, host and deploy files, read apart from the manifests (`readDeploy`). */
+  deploy: DeployFiles;
   sink: FactSink;
   /** The roles a member folder's dependencies show, in the order backend, frontend, worker, then the rest. */
   rolesOf(dir: string): readonly WikiKnownRole[];
@@ -37,7 +40,7 @@ export function kebab(text: string): string {
   return out === "" ? "root" : out;
 }
 
-export function buildContext(scan: RepoScan, sink: FactSink): ScanContext {
+export function buildContext(scan: RepoScan, deploy: DeployFiles, sink: FactSink): ScanContext {
   const roles = new Map<string, WikiKnownRole[]>();
   for (const member of scan.members) {
     const found = new Set<WikiKnownRole>();
@@ -64,6 +67,7 @@ export function buildContext(scan: RepoScan, sink: FactSink): ScanContext {
   }
   return {
     scan,
+    deploy,
     sink,
     rolesOf: (dir) => roles.get(dir) ?? [],
     unitFor: (store) => {

@@ -160,6 +160,7 @@ export const DEPLOY_MARKERS: readonly (readonly [string, string])[] = [
   ["wrangler.toml", "Cloudflare"],
   ["wrangler.json", "Cloudflare"],
   ["wrangler.jsonc", "Cloudflare"],
+  ["firebase.json", "Firebase"],
 ];
 
 const ENV_NAMES: ReadonlySet<string> = new Set([".env.example", ".env.sample", ".env.template", ".env.dist"]);
@@ -184,7 +185,7 @@ export function isComposeName(base: string): boolean {
 const isYamlName = (base: string): boolean => base.endsWith(".yaml") || base.endsWith(".yml");
 const isRequirementsName = (base: string): boolean =>
   base.startsWith("requirements") && base.endsWith(".txt");
-const isDockerfileName = (base: string): boolean =>
+export const isDockerfileName = (base: string): boolean =>
   base === "Dockerfile" || base.startsWith("Dockerfile.") || base.endsWith(".Dockerfile");
 
 function isKubeDoc(data: unknown): boolean {

@@ -2,11 +2,14 @@ import {
   type OwnerAnswer,
   type OwnerCallAnswer,
   type OwnerRoleAnswer,
+  WIKI_NOTES_PER_PAGE,
   WIKI_RULES,
+  type WikiPageId,
   type WikiStatus,
   wikiPageId,
   wikiPageKind,
 } from "@majhi/shared";
+import { redactText } from "../admin/policy.ts";
 import type { CommandContext, CommandHandlers } from "../commands/handlers.ts";
 import { UserError } from "../errors.ts";
 import { type FindingsHandlerDeps, findingActor } from "../findings/handlers.ts";
@@ -120,6 +123,36 @@ export function wikiHandlers(deps: WikiHandlerDeps): Pick<CommandHandlers, WikiC
       "role",
       next.map((a) => ({ ...a, kind: "role" as const })),
     );
+  /** Adds or drops the note of a `wiki.update`. A note belongs to one page of one project of the workspace. */
+  const keepNote = async (input: {
+    org: string;
+    project?: string | undefined;
+    page?: WikiPageId | undefined;
+    note?: string | undefined;
+    dropNote?: string | undefined;
+  }): Promise<void> => {
+    const { org, project, page } = input;
+    if (project === undefined || page === undefined) {
+      throw new UserError("A note belongs to one page of one project: give both project and page.", 409);
+    }
+    await inWorkspace(org, project);
+    // A note is one line, and a secret in it is hidden: it is shown on the page and given to the writer.
+    const oneLine = (text: string) => redactText(text.split("\r").join(" ").split("\n").join(" ").trim());
+    if (input.dropNote !== undefined) {
+      if (!repo.dropNote(org, { project, page, text: oneLine(input.dropNote) })) {
+        throw new UserError(`${page} of ${project} has no note with that text.`, 404);
+      }
+    }
+    if (input.note !== undefined) {
+      if (repo.notes(org, project, page).length >= WIKI_NOTES_PER_PAGE) {
+        throw new UserError(
+          `${page} of ${project} has ${WIKI_NOTES_PER_PAGE} notes already. Drop one first with dropNote.`,
+          409,
+        );
+      }
+      repo.addNote(org, { project, page, text: oneLine(input.note) });
+    }
+  };
   return {
     "wiki.system": async (input, ctx) => {
       await scope(ctx, input.org, false);
@@ -218,10 +251,25 @@ export function wikiHandlers(deps: WikiHandlerDeps): Pick<CommandHandlers, WikiC
           );
         }
       }
-      const { finished } = await deps.service.start(input.org, input.project, {
-        ...(input.replan === undefined ? {} : { replan: input.replan }),
-        ...(input.page === undefined ? {} : { page: input.page }),
-      });
+      const noted = input.note !== undefined || input.dropNote !== undefined;
+      if (noted) await keepNote(input);
+      let started: Awaited<ReturnType<typeof deps.service.start>>;
+      try {
+        started = await deps.service.start(input.org, input.project, {
+          ...(input.replan === undefined ? {} : { replan: input.replan }),
+          ...(input.page === undefined ? {} : { page: input.page }),
+        });
+      } catch (err) {
+        // The note is kept and shows on the page; only the rewrite waits.
+        if (noted && err instanceof UserError) {
+          throw new UserError(
+            `The note is saved and shows on the page. The page was not rewritten: ${err.message}`,
+            err.status,
+          );
+        }
+        throw err;
+      }
+      const { finished } = started;
       // The run goes on after the answer; its failure is the project's last error, which the page shows.
       void finished.catch(() => undefined);
       return view(input.org, input.project);

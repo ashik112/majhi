@@ -6,8 +6,8 @@ import type { WikiEnabled } from "./switch.ts";
 
 export const WIKI_TOOL_DESCRIPTION =
   "How this project is built, written by majhi from the code with the file and lines behind every claim. " +
-  "list: the pages of each project (overview, components, flows, infra, gaps) and of the workspace (how the projects connect, cross-repo flows, gaps). read: one page by id, with workspace true for a workspace page. search: the pieces of the pages that best match some words. " +
-  "sources: where a claim is shown in the code. It answers for this task's workspace only. A claim marked guessed was inferred, not proven: check it in the code before relying on it.";
+  "list: the pages of each project (overview, components, flows, infra, deploys, gaps) and of the workspace (how the projects connect, cross-repo flows, gaps). read: one page by id, with workspace true for a workspace page. search: the pieces of the pages that best match some words. " +
+  "sources: where a claim is shown in the code. Read `deploys` before you plan or run a deploy: how the project deploys, from its CI and deploy files, with the owner's notes. It answers for this task's workspace only. A claim marked guessed was inferred, not proven: check it in the code before relying on it.";
 
 /** A page is cut to this many characters when an agent reads it: the rest is a `search` away. */
 const READ_CHARS = 12_000;
