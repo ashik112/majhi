@@ -58,8 +58,11 @@ async function openLastSteps(page: Page) {
     .getByRole("button", { name: /steps? it took/ })
     .last();
   await expect(fold).toBeVisible();
-  if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
-  await expect(fold).toHaveAttribute("aria-expanded", "true");
+  // The log can re-render under the click; click again until the row stays open.
+  await expect(async () => {
+    if ((await fold.getAttribute("aria-expanded")) !== "true") await fold.click();
+    await expect(fold).toHaveAttribute("aria-expanded", "true", { timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
 }
 
 async function openBoss(page: Page) {
