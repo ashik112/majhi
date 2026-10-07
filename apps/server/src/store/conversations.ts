@@ -16,11 +16,12 @@ const LINE_CHARS = 160;
 const LIST_LIMIT = 200;
 
 /**
- * What the dock lists: every task room, and each workspace's captain thread. The owner's own chats
- * (the Chats page, the Cmd J chat, the old autonomy chat) are chats, not task rooms. Mirrors
- * `isOwnerChat` minus the captain lane, which is a thread of the dock.
+ * What the list holds: every task room, each workspace's captain thread, client chats and the chats
+ * the owner started with an agent. Only the old autonomy chat is left out (the captain threads replace it).
  */
-const LISTED = sql`NOT (t.kind = 'chat' AND t.brief IN (${CHAT_BRIEF}, ${BOSS_CHAT_BRIEF}, ${AUTONOMY_CHAT_BRIEF}))`;
+const LISTED = sql`NOT (t.kind = 'chat' AND t.brief = ${AUTONOMY_CHAT_BRIEF})`;
+/** The chats the owner started with an agent: they stay listed after they are done. */
+const AGENT_CHAT = sql`(t.kind = 'chat' AND t.brief IN (${CHAT_BRIEF}, ${BOSS_CHAT_BRIEF}))`;
 
 interface Row {
   id: string;
@@ -33,6 +34,9 @@ interface Row {
   agent_text: string | null;
   owner_at: string | null;
   owner_text: string | null;
+  app: string | null;
+  agent: string | null;
+  archived: number;
 }
 
 /**
@@ -52,6 +56,19 @@ export class ConversationsRepo {
   /** One conversation as it is now, or undefined when it is not listed (no such task, an owner chat, no messages). */
   one(id: string): Conversation | undefined {
     return this.read(sql`AND t.id = ${id}`)[0];
+  }
+
+  /** Hides a conversation or brings it back. False when it is not a listed conversation. */
+  archive(id: string, archived: boolean): boolean {
+    if (!this.exists(id)) return false;
+    if (archived) {
+      this.db.run(sql`
+        INSERT INTO conversation_archive (id, archived_at) VALUES (${id}, ${new Date().toISOString()})
+        ON CONFLICT (id) DO NOTHING`);
+    } else {
+      this.db.run(sql`DELETE FROM conversation_archive WHERE id = ${id}`);
+    }
+    return true;
   }
 
   /**
@@ -80,12 +97,14 @@ export class ConversationsRepo {
   }
 
   /**
-   * Task rooms (not done, unless something in them is unread) and captain threads, each with a
-   * message. `scope` narrows it to one task.
+   * Task rooms (not done, unless something in them is unread), captain threads, client chats and
+   * agent chats, each with a message. `scope` narrows it to one task.
    */
   private read(scope: ReturnType<typeof sql>): Conversation[] {
     const rows = this.db.all<Row>(sql`
       SELECT t.id AS id, t.title AS title, t.org AS org, t.brief AS brief, t.kind AS kind,
+        json_extract(t.client, '$.app') AS app, json_extract(t.team, '$[0]') AS agent,
+        (a.archived_at IS NOT NULL) AS archived,
         (SELECT count(*) FROM room_items r
           WHERE r.task = t.id AND r.type IN ('agent', 'client') AND r.at > coalesce(m.read_at, '')) AS unread,
         (SELECT max(r.at) FROM room_items r WHERE r.task = t.id AND r.type IN ('agent', 'client')) AS agent_at,
@@ -97,9 +116,9 @@ export class ConversationsRepo {
         (SELECT substr(json_extract(r.payload, '$.text'), 1, 600) FROM room_items r
           WHERE r.task = t.id AND r.type IN ('owner', 'client-reply')
             AND (r.type = 'owner' OR json_extract(r.payload, '$.state') = 'sent') ORDER BY r.at DESC LIMIT 1) AS owner_text
-      FROM tasks t LEFT JOIN read_marks m ON m.id = t.id
+      FROM tasks t LEFT JOIN read_marks m ON m.id = t.id LEFT JOIN conversation_archive a ON a.id = t.id
       WHERE ${LISTED}
-        AND (t.status != 'done' OR EXISTS (
+        AND (t.status != 'done' OR ${AGENT_CHAT} OR EXISTS (
           SELECT 1 FROM room_items r
            WHERE r.task = t.id AND r.type IN ('agent', 'client') AND r.at > coalesce(m.read_at, '')))
         ${scope}`);
@@ -110,22 +129,27 @@ export class ConversationsRepo {
       out.push(
         ConversationSchema.parse({
           id: row.id,
-          kind:
-            row.kind === "chat" && row.brief === CAPTAIN_LANE_BRIEF
-              ? "captain"
-              : row.kind === "chat" && row.brief === CLIENT_CHAT_BRIEF
-                ? "client"
-                : "task",
+          kind: kindOf(row),
           ...(row.org === null ? {} : { org: row.org }),
           title: row.title,
           lastLine: last.line,
           lastAt: last.at,
           unread: row.unread,
+          ...(kindOf(row) === "client" && row.app !== null ? { app: row.app } : {}),
+          ...(kindOf(row) === "agent" && row.agent !== null ? { agent: row.agent } : {}),
+          ...(row.archived === 1 ? { archived: true } : {}),
         }),
       );
     }
     return out.sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1)).slice(0, LIST_LIMIT);
   }
+}
+
+function kindOf(row: Row): Conversation["kind"] {
+  if (row.kind !== "chat") return "task";
+  if (row.brief === CAPTAIN_LANE_BRIEF) return "captain";
+  if (row.brief === CLIENT_CHAT_BRIEF) return "client";
+  return "agent";
 }
 
 /** The newer of the newest agent and owner messages, as a one-line preview. */

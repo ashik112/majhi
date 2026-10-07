@@ -31,6 +31,13 @@ export class ConversationsService {
     return known;
   }
 
+  /** Hides or restores a conversation and tells every tab. False when the id is not listed. */
+  archive(id: string, archived: boolean): boolean {
+    const known = this.deps.store.conversations.archive(id, archived);
+    if (known) this.announce(id);
+    return known;
+  }
+
   /** A room item was stored. Only messages change a row. */
   observe(task: string, item: RoomItem): void {
     if (
