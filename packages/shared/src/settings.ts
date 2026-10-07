@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AuthoritySchema } from "./authority.ts";
+import { AuthorityPatchSchema, AuthoritySchema } from "./authority.ts";
 import { HoldsPatchSchema } from "./chat.ts";
 import { ContainerCpusSchema, ContainerMemorySchema, ImageRefSchema } from "./containers.ts";
 import { IncidentSettingsSchema } from "./incident.ts";
@@ -584,7 +584,7 @@ export type AutonomySettings = z.infer<typeof AutonomySettingsSchema>;
 export const AutonomyOrgPatchSchema = z
   .strictObject({
     /** Only the rows that change. Saving writes the new form and drops the old level, push and merge. */
-    authority: AuthoritySchema.partial(),
+    authority: AuthorityPatchSchema,
     /** The whole list, in order. `null` removes every rule. */
     ships: z.array(ShipRuleSchema).max(MAX_SHIP_RULES).nullable(),
     cap: BudgetSchema.nullable(),

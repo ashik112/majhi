@@ -143,6 +143,30 @@ export function previewGate(
 }
 
 /**
+ * The gate of a slot that starts live and has no calibration yet: the base bar, and the slot's own
+ * `startBar` on the model's probability, so a doubtful answer defers to the caller's safe default.
+ */
+export function startGate(
+  slot: Pick<SlotDef, "startBar">,
+  q: Question,
+  a: Answer,
+  settings: GateSettings,
+): Gate {
+  const base = baseGate(q, a, settings);
+  const bar = slot.startBar;
+  if (!base.accepted || bar === undefined) return base;
+  const confidence = answerConfidence(a, 1);
+  const numbers = { lift: base.lift, margin: base.margin, confidence };
+  if (confidence < bar)
+    return {
+      accepted: false,
+      reason: `${confidence.toFixed(2)} sure, under the ${bar.toFixed(2)} it needs until it is calibrated`,
+      ...numbers,
+    };
+  return { ...base, ...numbers };
+}
+
+/**
  * The gate the decision service puts on a Laya answer. A use that an agent or the owner reads
  * themselves keeps the base bar. Any other slot acts only when it is live: calibrated with a passing
  * eval on the model that is answering now, or started live by its definition. Otherwise the answer
@@ -170,7 +194,7 @@ export function liveGate(input: {
     confidence: answerConfidence(a, cal?.temperature ?? 1),
   });
   if (cal === undefined) {
-    if (slot.startMode === "live") return baseGate(q, a, settings);
+    if (slot.startMode === "live") return startGate(slot, q, a, settings);
     return shadow(
       input.labels < MIN_LABELS
         ? `${input.labels} of ${MIN_LABELS} labels so far, so it logs and acts on nothing`

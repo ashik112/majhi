@@ -726,6 +726,7 @@ export class TaskService {
       ?.decide(typeQuestion(args), { use: "routing", task: args.id })
       .catch(() => undefined);
     const { typing, fellBack } = chooseType(guess, result);
+    if (result !== undefined) this.deps.decisions?.link?.("typed", args.id, result.id, "type");
     if (result !== undefined)
       this.deps.decisions?.outcome(result.id, {
         text: `Type: ${typing.type}.`,
@@ -747,6 +748,8 @@ export class TaskService {
     }
     if (task.typing?.type === type && task.typing.by === by) return task;
     this.deps.store.tasks.setTyping(id, { type, by });
+    // What the owner or the captain says it is, is the right answer to Laya's pick.
+    this.deps.decisions?.resolve?.("typed", id, type, `the ${by} set it`);
     const typed = this.get(id);
     this.deps.room.publishTask(typed);
     this.deps.events.emitTask(id, true);

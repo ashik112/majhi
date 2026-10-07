@@ -9,7 +9,7 @@ import {
 } from "@majhi/shared";
 import { authorityOf } from "../captain/levels.ts";
 import type { ConfigService } from "../config/service.ts";
-import { readClientMessage } from "../decisions/uses/client-message.ts";
+import { CLIENT_MESSAGE_QUESTION, readClientMessage } from "../decisions/uses/client-message.ts";
 import type { LayaDecisions } from "../decisions/uses/common.ts";
 import { classifyInjection } from "../decisions/uses/injection.ts";
 import type { FindingsService } from "../findings/service.ts";
@@ -215,6 +215,11 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     incident: incidents,
     injects: async (text) => (await classifyInjection(w.decisions, text, "social")).flagged,
     read: async (text) => readClientMessage(w.decisions, text),
+    taught: (decision, label) => {
+      // The captain's own read of the message is the right answer to Laya's: it labels the decision once.
+      w.decisions?.link?.("client-chat", decision, decision, CLIENT_MESSAGE_QUESTION);
+      w.decisions?.resolve?.("client-chat", decision, label, "the captain's own read");
+    },
     layaAnswered: (answered) => {
       layaDown = !answered;
     },

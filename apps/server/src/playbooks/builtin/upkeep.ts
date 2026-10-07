@@ -296,8 +296,8 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     name: "Laya check",
     pack: "upkeep",
     purpose:
-      "Test each of Laya's decisions on your own corrections every week, and file a finding for any that got worse.",
-    trigger: { cadence: { kind: "weekly", day: 0, at: "03:00" }, events: [] },
+      "Test each of Laya's decisions on your own corrections every day, and file a finding for any that got worse.",
+    trigger: { cadence: { kind: "daily", at: "03:00" }, events: [] },
     scope: "business",
     inputs: [
       "Your corrections and outcomes stored for each decision",
@@ -311,7 +311,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
     readOnly: true,
     enabledByDefault: true,
     turnOn:
-      "Checks Laya against your own corrections once a week and files a finding if a decision got worse. Nothing leaves your machine.",
+      "Checks Laya against your own corrections once a day and files a finding if a decision got worse. Nothing leaves your machine.",
     outcomes: [
       { id: "laya-finding", text: "A decision got worse: file a finding" },
       { id: "laya-backlog", text: "Read a few old findings each week" },
