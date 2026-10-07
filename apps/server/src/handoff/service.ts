@@ -86,6 +86,10 @@ export interface ExecLimits {
 
 /** The hand-off settings of a project: caps, and the minutes its tests and build may take (undefined: the default). */
 export interface HandoffLimits extends ExecLimits {
+  /** The owner set the memory limit (for the workspace or majhi-wide). Then it is a ceiling the CI's own needs do not raise. */
+  memorySet?: boolean | undefined;
+  /** The most a check may be given without a limit set: what the machine can spare, like `12g`. */
+  memoryCeiling?: string | undefined;
   /** The project's own minutes for its tests and build. They win over `stepMinutes`. */
   minutes: number | undefined;
   /** The minutes each step may take, from settings. A step left out gets its default. */
@@ -939,6 +943,16 @@ export class HandoffService {
           : `. To allow more, set containers.handoff_step_minutes.${kind} or containers.handoff_minutes.${r.project} (now ${Math.round(timeoutMs / MINUTE)}) or containers.handoff_cpus${caps === undefined ? "" : ` (now ${caps.cpus})`}`;
       const limits = caps === undefined ? undefined : { cpus: caps.cpus, memory: caps.memory };
       const wantsMb = impliedMemoryMb(r.env);
+      // Without a limit the owner set, a check gets at least what its CI's environment implies.
+      if (
+        limits !== undefined &&
+        caps?.memorySet !== true &&
+        wantsMb !== undefined &&
+        wantsMb > memoryMb(limits.memory)
+      ) {
+        const ceiling = memoryMb(caps?.memoryCeiling ?? limits.memory);
+        limits.memory = `${Math.floor(Math.min(Math.ceil(wantsMb / 1024) * 1024, Math.max(ceiling, memoryMb(limits.memory))) / 1024)}g`;
+      }
       if (limits !== undefined && wantsMb !== undefined && wantsMb > memoryMb(limits.memory)) {
         r.ran.notes.push(
           `the CI gives Node a ${sizeWords(`${Math.round(wantsMb / 1024)}g`)} heap and headroom, and the limit here is ${sizeWords(limits.memory)}`,

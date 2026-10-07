@@ -113,7 +113,7 @@ import type { Fetch } from "./gitConnect/http.ts";
 import { TokenRefused } from "./gitConnect/http.ts";
 import { createGitConnect, createGitTokens, type GitConnect, pushAuthFor } from "./gitConnect/wire.ts";
 import { HomeChecks } from "./handoff/home-checks.ts";
-import { defaultHandoffCpus, defaultHandoffMemory } from "./handoff/limits.ts";
+import { defaultHandoffCpus, defaultHandoffMemory, maxHandoffMemory } from "./handoff/limits.ts";
 import { MergeGate } from "./handoff/merge-gate.ts";
 import { shipReadiness } from "./handoff/ready.ts";
 import type { HandoffService } from "./handoff/service.ts";
@@ -1911,7 +1911,11 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       const c = (await config.settings()).containers;
       const sections = await config.sections();
       const orgId = sections.projects[project]?.org;
+      const set =
+        (orgId === undefined ? undefined : sections.orgs[orgId]?.checks?.memory) ?? c.handoff_memory;
       return {
+        memorySet: set !== undefined,
+        memoryCeiling: maxHandoffMemory(),
         cpus: c.handoff_cpus ?? defaultHandoffCpus(),
         memory:
           (orgId === undefined ? undefined : sections.orgs[orgId]?.checks?.memory) ??

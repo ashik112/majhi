@@ -14,6 +14,11 @@ export function defaultHandoffMemory(total: number = totalmem()): string {
   return `${Math.max(Math.floor(gib / 4), Math.min(6, Math.floor(gib / 2)), 1)}g`;
 }
 
+/** The most a check may be given when no limit is set: half of the machine. */
+export function maxHandoffMemory(total: number = totalmem()): string {
+  return `${Math.max(Math.floor(total / GIB / 2), 1)}g`;
+}
+
 /** Megabytes in a size like `512m` or `6g`. */
 export function memoryMb(size: string): number {
   const n = Number(size.slice(0, -1));
