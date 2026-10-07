@@ -48,6 +48,6 @@ describe("lead orchestration: the parent", () => {
       l.startsWith("Every subtask is done, but ACM-1 stays open"),
     );
     expect(said).toHaveLength(1);
-    expect(said[0]).toContain("1 commit on feat/acm-1-");
+    expect(said[0]).toContain("1 commit on feat/drive-the-api-work");
   });
 });

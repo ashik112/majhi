@@ -51,13 +51,13 @@ describe("the repos of a new task", () => {
 describe("the repos of a new task, refusals", () => {
   it("never takes a working branch that already exists: the new one gets a number", async () => {
     await world();
-    await git(w.repo("api"), "branch", "fix/acm-1-fix-api", "main");
+    await git(w.repo("api"), "branch", "fix/fix-api", "main");
     const res = await cmd("tasks.create", {
       text: "fix api",
       repos: [{ project: "acme-api" }],
       start: false,
     });
     expect(res.status).toBe(200);
-    expect((res.body as Task).repos[0]?.branch).toBe("fix/acm-1-fix-api-2");
+    expect((res.body as Task).repos[0]?.branch).toBe("fix/fix-api-2");
   });
 });
