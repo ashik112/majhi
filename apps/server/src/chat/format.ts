@@ -237,7 +237,8 @@ const SLACK: Markup = {
   link: (href, inner) => `<${escapeMarkup(href).split("|").join("%7C")}|${inner}>`,
   mention: (person, contact) => {
     if (person === undefined) return escapeMarkup(contact);
-    if (person.native !== undefined) return `<@${person.native}>`;
+    // A Slack identity is the team id and the user id (`T01:U02`): the mention names the user.
+    if (person.native !== undefined) return `<@${person.native.slice(person.native.lastIndexOf(":") + 1)}>`;
     return escapeMarkup(person.name);
   },
 };

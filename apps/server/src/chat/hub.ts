@@ -22,8 +22,8 @@ export interface HubDeps {
   adapters: readonly ChatAdapter[];
   /** The chat app connections that exist now. */
   connections: () => Promise<ChatConnectionInfo[]>;
-  /** The token of a connection, from secrets.age. It goes to the adapter and nowhere else. */
-  token: (connection: string) => Promise<string | undefined>;
+  /** The tokens of a connection, from secrets.age. They go to the adapter and nowhere else. */
+  tokens: (connection: string) => Promise<ChatTokens | undefined>;
   majhiHome: string;
   /** Reads and saves the read position of a connection. */
   cursors: {
@@ -44,9 +44,15 @@ export interface HubDeps {
   log?: (line: string) => void;
 }
 
+/** What an app signs in with: its bot token, and for Slack the app-level token too. */
+export interface ChatTokens {
+  token: string;
+  appToken?: string | undefined;
+}
+
 interface Running {
   info: ChatConnectionInfo;
-  token: string;
+  tokens: ChatTokens;
   stop: () => void;
 }
 
@@ -93,34 +99,36 @@ export class ChatHub {
     for (const info of wanted.values()) {
       const adapter = this.adapter(info.app);
       if (adapter === undefined) continue;
-      const token = await this.deps.token(info.id);
+      const tokens = await this.deps.tokens(info.id);
       const had = this.running.get(info.id);
-      if (token === undefined) {
+      if (tokens === undefined) {
         had?.stop();
         this.running.delete(info.id);
         this.troubles.set(info.id, "needs-token");
         continue;
       }
-      if (had !== undefined && had.token === token) continue;
+      if (had !== undefined && had.tokens.token === tokens.token && had.tokens.appToken === tokens.appToken)
+        continue;
       had?.stop();
-      this.start(adapter, info, token);
+      this.start(adapter, info, tokens);
     }
     this.deps.changed();
   }
 
-  private connection(info: ChatConnectionInfo, token: string): ChatConnection {
+  private connection(info: ChatConnectionInfo, tokens: ChatTokens): ChatConnection {
     return {
       id: info.id,
       org: info.org,
       app: info.app,
       account: info.account,
-      token,
+      token: tokens.token,
+      ...(tokens.appToken === undefined ? {} : { appToken: tokens.appToken }),
       filesDir: join(this.deps.majhiHome, "chat-files", info.id),
     };
   }
 
-  private start(adapter: ChatAdapter, info: ChatConnectionInfo, token: string): void {
-    const conn = this.connection(info, token);
+  private start(adapter: ChatAdapter, info: ChatConnectionInfo, tokens: ChatTokens): void {
+    const conn = this.connection(info, tokens);
     const cursor = this.deps.cursors.get(info.id);
     const hours = adapter.capabilities.retentionHours;
     if (cursor !== undefined && hours !== undefined) {
@@ -136,8 +144,9 @@ export class ChatHub {
         this.deps.changed();
       },
       unreachable: (chat) => this.deps.unreachable(conn, chat),
+      gap: (from, to) => this.deps.gap(conn, from, to),
     };
-    this.running.set(info.id, { info, token, stop: adapter.start(conn, sink, cursor) });
+    this.running.set(info.id, { info, tokens, stop: adapter.start(conn, sink, cursor) });
   }
 
   /** The accounts and whether each can be read. */
@@ -171,9 +180,9 @@ export class ChatHub {
     if (adapter === undefined || info === undefined) {
       throw new Error(`No ${app} account ${account} is connected.`);
     }
-    const token = await this.deps.token(info.id);
-    if (token === undefined) throw new Error("The bot token is not saved. Set the app up again.");
-    return { adapter, conn: this.connection(info, token) };
+    const tokens = await this.deps.tokens(info.id);
+    if (tokens === undefined) throw new Error("The bot token is not saved. Set the app up again.");
+    return { adapter, conn: this.connection(info, tokens) };
   }
 
   /** Sends text to a chat of an account. */
