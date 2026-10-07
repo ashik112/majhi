@@ -16,6 +16,6 @@ export default defineConfig({
     // Most tests run real git and real processes, so a test's time is mostly CPU. More workers than
     // this only make every test slower when the machine has other work, and the slowest ones then run
     // out of their timeout. Total run time barely changes.
-    maxWorkers: 5,
+    maxWorkers: 4,
   },
 });

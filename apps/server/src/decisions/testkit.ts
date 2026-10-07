@@ -75,7 +75,9 @@ export function service(
 ) {
   const db = new Database(":memory:");
   migrate(db);
+  let issued = 0;
   const deps = {
+    newId: () => `dec_${String(++issued).padStart(8, "0")}`,
     // No majhi.yaml: the defaults apply (laya, acp, rules).
     config: { file: join("/nonexistent", "majhi.yaml") },
     log: new DecisionLog(db),
