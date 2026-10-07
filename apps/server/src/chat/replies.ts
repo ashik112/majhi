@@ -122,15 +122,18 @@ export class ClientReplies {
     const { draft } = await this.deps.gate.submit(
       { org, channel: "client", target: room.id, body: verdict.text },
       { kind: "captain", org },
-      verdict.send ? { release: "now" } : {},
+      {
+        ...(verdict.send ? { release: "now" as const } : {}),
+        prepared: (made) =>
+          this.post(room, made, {
+            by: "captain",
+            to: input.to,
+            replyTo: input.replyTo,
+            thread: input.thread,
+            ...(verdict.send ? {} : { hold: verdict.why }),
+          }),
+      },
     );
-    this.post(room, draft, {
-      by: "captain",
-      to: input.to,
-      replyTo: input.replyTo,
-      thread: input.thread,
-      ...(verdict.send ? {} : { hold: verdict.why }),
-    });
     return this.resultOf(draft, verdict.send ? undefined : verdict.why);
   }
 
@@ -141,10 +144,12 @@ export class ClientReplies {
     const { draft } = await this.deps.gate.submit(
       { org, channel: "client", target: room.id, body: input.text },
       { kind: "owner" },
-      { release: "now" },
+      {
+        release: "now",
+        prepared: (made) => this.post(room, made, { by: "you", replyTo: input.replyTo }),
+      },
     );
     this.deps.rooms.holder(room.id, "you");
-    this.post(room, draft, { by: "you", replyTo: input.replyTo });
     return this.resultOf(draft, undefined);
   }
 

@@ -310,7 +310,8 @@ export const ProposeRulesInputSchema = z.object({
   org: IdSchema,
   tell: AuthorityChoiceSchema.optional(),
   holds: HoldsPatchSchema.optional(),
-  reason: z.string().trim().min(1).max(300),
+  /** Why the captain proposes it, in a sentence. */
+  why: z.string().trim().min(1).max(300),
 });
 export type ProposeRulesInput = z.infer<typeof ProposeRulesInputSchema>;
 

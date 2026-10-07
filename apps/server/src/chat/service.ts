@@ -170,7 +170,7 @@ export class ClientChat {
       },
       summary: parts.join(", "),
       details: { workspace: input.org, tell: input.tell, holds: input.holds },
-      reason: input.reason,
+      reason: input.why,
     });
     return { text: "Waiting for the owner to approve in the room. Only the owner applies it." };
   }

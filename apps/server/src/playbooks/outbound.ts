@@ -254,7 +254,7 @@ export class OutboundGate {
   async submit(
     input: OutboundSubmitInput,
     actor: GateActor,
-    options: { release?: "now" } = {},
+    options: { release?: "now"; prepared?: (draft: Draft) => void } = {},
   ): Promise<{ draft: Draft; text: string }> {
     const org = actor.kind === "owner" ? input.org : (actor.org ?? input.org);
     if (org === undefined) throw new UserError("Say which workspace this is for.", 400);
@@ -299,6 +299,8 @@ export class OutboundGate {
       );
     const id = Number(info.lastInsertRowid);
     let draft = this.must(id);
+    // The caller shows the draft before anything is sent, so what the send needs (its thread) is there when it runs.
+    options.prepared?.(draft);
     if (options.release === "now" && mode !== "batch") {
       draft = await this.release(draft, actor.kind === "owner" ? "owner" : "auto");
     } else if (mode === "auto" && result === undefined) {
