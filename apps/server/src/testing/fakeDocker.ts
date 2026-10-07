@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { killTree, type Spawned } from "@majhi/acp";
 import { assertSafe, type DockerParts, dockerArgv, type Safety } from "../containers/args.ts";
 import type { ContainerDocker } from "../containers/service.ts";
@@ -6,10 +7,38 @@ import { assertTaskArgv } from "../containers/task-docker.ts";
 
 export interface FakeContainer {
   name: string;
+  /** The image it runs, as docker shows it. */
+  image?: string;
+  /** `Up` unless a test sets another, like `Exited (0)`. */
+  status?: string;
+  /** What `docker inspect` of its state shows: `running 0 none`. */
+  state?: string;
+  /** What `docker logs` prints. */
+  logs?: string;
   /** What `docker run -d` printed, and `inspect` takes. */
   id?: string;
   labels: Record<string, string>;
   child: ChildProcess | undefined;
+}
+
+/** `{{.Names}}`, `{{.Image}}`, `{{.Status}}` and `{{.Label "key"}}` of docker's `--format`, filled from the fake. */
+function render(format: string, c: FakeContainer): string {
+  let out = "";
+  let i = 0;
+  while (i < format.length) {
+    const open = format.indexOf("{{", i);
+    if (open === -1) return out + format.slice(i);
+    const close = format.indexOf("}}", open);
+    out += format.slice(i, open);
+    const expr = format.slice(open + 2, close).trim();
+    if (expr === ".Names") out += c.name;
+    else if (expr === ".Image") out += c.image ?? "";
+    else if (expr === ".Status") out += c.status ?? "Up 2 seconds";
+    else if (expr.startsWith(".Label "))
+      out += c.labels[expr.slice(".Label ".length).replaceAll('"', "")] ?? "";
+    i = close + 2;
+  }
+  return out;
 }
 
 /** Plays docker: keeps networks, volumes, builders, images and containers in memory, and runs `assertSafe` like the real CLI wrapper. */
@@ -26,6 +55,16 @@ export class FakeDocker implements ContainerDocker {
   prunedBuilders: string[] = [];
   /** Every call a task's script made, as docker got it. */
   taskCalls: string[][] = [];
+  /** `docker wait` returns when this resolves, to play a container that runs on. */
+  waitGate: Promise<void> | undefined;
+  /** Runs that fail before a container exists, by container name. */
+  runFails = new Set<string>();
+  /** The Dockerfile each build read, at the moment it ran: the bytes BuildKit would have built. */
+  builtDockerfiles: { file: string; text: string }[] = [];
+  /** Runs just before a build reads its Dockerfile, to play a change made after majhi checked it. */
+  beforeBuild: (() => Promise<void>) | undefined;
+  /** `image ls` waits for this, to play a daemon that is slow to answer. */
+  imageListGate: Promise<void> | undefined;
   /** Makes `ps` answer late, to play a slow daemon. */
   psDelayMs = 0;
 
@@ -50,10 +89,48 @@ export class FakeDocker implements ContainerDocker {
     return { stdout: "", stderr: "" };
   }
 
+  /** The builder guards run, as the arguments of their `docker run`. */
+  builderGuards: string[][] = [];
+  /** Makes the builder guard fail, to play a kernel that cannot filter. */
+  failBuilderGuard = false;
+  /** How many times each builder was stopped: a stopped builder starts again with a new network. */
+  private builderStarts = 0;
+
+  async guardBuilder(parts: DockerParts, safety: Safety): Promise<void> {
+    assertSafe(parts, safety);
+    if (this.failBuilderGuard) throw new Error("iptables-restore failed");
+    this.builderGuards.push(dockerArgv(parts));
+  }
+
+  /** Holders that did not come up, by name, for a test of the failure. */
+  failHolds = new Set<string>();
+  /** The holders started, with the arguments of their `docker run`. */
+  holds: string[][] = [];
+
+  async hold(parts: DockerParts, safety: Safety): Promise<void> {
+    assertSafe(parts, safety);
+    this.holds.push(dockerArgv(parts));
+    const name = parts.flags[parts.flags.indexOf("--name") + 1] ?? "";
+    if (this.failHolds.has(name)) throw new Error(`The network guard of ${name} did not start.`);
+    this.containers.set(name, {
+      name,
+      labels: this.labelsOf(parts),
+      child: undefined,
+      image: parts.image ?? "",
+    });
+  }
+
+  private async readBuild(args: readonly string[]): Promise<void> {
+    await this.beforeBuild?.();
+    const file = args[args.indexOf("--file") + 1] ?? "";
+    this.builtDockerfiles.push({ file, text: readFileSync(file, "utf8") });
+  }
+
   async attached(parts: DockerParts, safety: Safety): Promise<Spawned> {
     assertSafe(parts, safety);
     const verb = parts.verb.join(" ");
     this.calls.push(verb);
+    if (verb === "buildx build") await this.readBuild(dockerArgv(parts));
     // A preview's holder says its guard is set, like netguard --hold.
     const holder = parts.flags.includes("majhi.container=previewhold");
     const child = holder
@@ -68,7 +145,7 @@ export class FakeDocker implements ContainerDocker {
       return { child, cwd: "/", kill: () => killTree(child) };
     }
     const name = parts.flags[parts.flags.indexOf("--name") + 1] ?? "";
-    this.containers.set(name, { name, labels: this.labelsOf(parts), child });
+    this.containers.set(name, { name, labels: this.labelsOf(parts), child, image: parts.image ?? "" });
     return {
       child,
       cwd: "/",
@@ -87,6 +164,7 @@ export class FakeDocker implements ContainerDocker {
   ): Promise<{ code: number | null; stdout: string; stderr: string }> {
     assertTaskArgv(args, safety, allowedImages);
     this.taskCalls.push([...args]);
+    if (args[0] === "wait" && this.waitGate !== undefined) await this.waitGate;
     const ok = (stdout: string) => ({ code: 0, stdout, stderr: "" });
     const at = (flag: string) => args[args.indexOf(flag) + 1] ?? "";
     switch (args[0]) {
@@ -99,16 +177,20 @@ export class FakeDocker implements ContainerDocker {
           labels[a.slice(0, eq)] = a.slice(eq + 1);
         });
         const id = Buffer.from(name).toString("hex").padEnd(64, "0").slice(0, 64);
+        const image =
+          args.find((a, i) => i > 0 && !a.startsWith("-") && !args[i - 1]?.startsWith("--")) ?? "";
+        if (this.runFails.has(name)) return { code: 125, stdout: "", stderr: "Unable to find image\n" };
         if (args.includes("--detach")) {
-          this.containers.set(name, { name, id, labels, child: undefined });
+          this.containers.set(name, { name, id, labels, child: undefined, image });
           return ok(`${id}\n`);
         }
-        if (!args.includes("--rm")) this.containers.set(name, { name, id, labels, child: undefined });
+        if (!args.includes("--rm")) this.containers.set(name, { name, id, labels, child: undefined, image });
         return ok(
           `ran ${args.find((a, i) => i > 0 && !a.startsWith("-") && !args[i - 1]?.startsWith("--")) ?? ""}\n`,
         );
       }
       case "buildx":
+        await this.readBuild(args);
         this.images.add(at("--tag"));
         return ok("built\n");
       case "rm":
@@ -166,6 +248,7 @@ export class FakeDocker implements ContainerDocker {
         this.images.delete(last);
         return out("");
       case "image ls":
+        await this.imageListGate;
         return out([...this.images].join("\n"));
       case "port":
         return out("0.0.0.0:49153\n[::]:49153\n");
@@ -173,6 +256,7 @@ export class FakeDocker implements ContainerDocker {
         if (!this.builders.has(last)) throw new Error("no builder");
         return out("");
       case "buildx stop":
+        this.builderStarts++;
         this.stoppedBuilders.push(last);
         return out("");
       case "buildx prune":
@@ -218,25 +302,37 @@ export class FakeDocker implements ContainerDocker {
         for (const name of args.slice(3)) this.volumes.delete(name);
         return out("");
       case "ps": {
-        if (this.psDelayMs > 0) await new Promise((r) => setTimeout(r, this.psDelayMs));
-        const task = filter("label")
-          .find((f) => f.startsWith("label=majhi.task="))
-          ?.slice("label=majhi.task=".length);
         if (args.includes("label=majhi.runner=1")) return out(this.runners.join("\n"));
-        return out(
+        const labels = filter("label").map((f) => f.slice("label=".length));
+        const all = args.includes("-a");
+        const format = args[args.indexOf("--format") + 1];
+        // The answer is read now and delivered late, like a slow daemon: a start that lands meanwhile is not in it.
+        const answer = out(
           [...this.containers.values()]
-            .filter(
-              (c) =>
-                c.labels["majhi.container"] !== undefined &&
-                (task === undefined || c.labels["majhi.task"] === task),
+            .filter((c) => all || !(c.status ?? "Up").startsWith("Exited"))
+            .filter((c) =>
+              labels.every((l) => {
+                const at = l.indexOf("=");
+                return at === -1 ? c.labels[l] !== undefined : c.labels[l.slice(0, at)] === l.slice(at + 1);
+              }),
             )
-            .map((c) => c.name)
+            .map((c) => (args.includes("--format") && format !== undefined ? render(format, c) : c.name))
             .join("\n"),
         );
+        if (this.psDelayMs > 0) await new Promise((r) => setTimeout(r, this.psDelayMs));
+        return answer;
+      }
+      case "logs": {
+        const c = this.containers.get(last);
+        if (c === undefined) throw new Error("No such container");
+        return out(c.logs ?? "");
       }
       case "inspect": {
+        if (last.startsWith("buildx_buildkit_")) return out(`abc123 started-${this.builderStarts}`);
         const c = [...this.containers.values()].find((x) => x.id === last || x.name === last);
         if (c === undefined) throw new Error("No such object");
+        if (args.includes("{{.State.Status}}")) return out((c.state ?? "running 0 none").split(" ")[0] ?? "");
+        if (args.some((a) => a.includes(".State"))) return out(c.state ?? "running 0 none");
         return out(`/${c.name} ${c.labels["majhi.task"]} ${c.labels["majhi.container"]}`);
       }
       case "rm":

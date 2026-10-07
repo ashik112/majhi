@@ -40,6 +40,29 @@ describe("containers commands", () => {
     expect((await h.cmd("containers.images.remove", { image: "redis" })).status).toBe(404);
   });
 
+  it("allows an image for one workspace only, and the owner's list for every workspace stays", async () => {
+    const { h } = w;
+    const org = (await h.cmd("tasks.get", { id: "ACM-1" })).body.org as string;
+    expect(org).toBeDefined();
+    // Allowed in another workspace: this task's service is still refused.
+    const other = await h.cmd("containers.images.allow", { image: db.image, org: "globex" });
+    expect(other.body.images).toEqual([db.image]);
+    expect((await h.cmd("containers.services.start", db)).status).toBe(400);
+    expect((await h.cmd("settings.get")).body.containers.org_images).toEqual({ globex: [db.image] });
+    // Allowed in this task's workspace: it starts. The global list is untouched.
+    await h.cmd("containers.images.allow", { image: db.image, org, service: "db" });
+    expect((await h.cmd("containers.services.start", db)).status).toBe(200);
+    expect((await h.cmd("settings.get")).body.containers.images).toEqual([]);
+    // An image allowed everywhere is not added to a workspace.
+    await h.cmd("containers.images.allow", { image: "redis:7-alpine" });
+    expect((await h.cmd("containers.images.allow", { image: "redis:7-alpine", org })).body.images).toEqual([
+      db.image,
+    ]);
+    expect((await h.cmd("containers.images.remove", { image: db.image, org: "globex" })).status).toBe(200);
+    expect((await h.cmd("containers.images.remove", { image: db.image, org: "globex" })).status).toBe(404);
+    expect((await h.cmd("settings.set", { containers: { org_images: { x: ["evil"] } } })).status).toBe(400);
+  });
+
   it("starts a service only from an allowed image, and stops it", async () => {
     const { h } = w;
     const refused = await h.cmd("containers.services.start", db);
@@ -72,7 +95,8 @@ describe("a task that ends", () => {
     const { h } = w;
     await h.cmd("containers.images.allow", { image: db.image });
     expect((await h.cmd("containers.services.start", { ...db, volumes })).status).toBe(200);
-    expect(docker.containers.size).toBe(1);
+    // The service and its holder.
+    expect(docker.containers.size).toBe(2);
     expect(docker.networks.has("majhi-acm-1")).toBe(true);
     expect(docker.volumes.has("majhi-acm-1-data-pgdata")).toBe(true);
     docker.images.add("majhi-preview-acm-1");

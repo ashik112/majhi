@@ -930,31 +930,57 @@ export function createHandlers({
     },
     "containers.images.allow": async (input, ctx) => {
       await requireConfigFile(config);
-      const { images } = (await config.settings()).containers;
-      if (images.some((image) => sameImage(image, input.image))) return { images };
-      const next = [...images, input.image];
+      const { images, org_images } = (await config.settings()).containers;
+      const meta = { command: ctx.command, meta: ctx.meta };
+      if (input.org === undefined) {
+        if (images.some((image) => sameImage(image, input.image))) return { images };
+        const next = [...images, input.image];
+        await config.setSettings(
+          { containers: { images: next } },
+          { ...meta, summary: `allowed the image ${input.image} for service containers` },
+        );
+        return { images: next };
+      }
+      const here = org_images[input.org] ?? [];
+      // Allowed everywhere already: nothing to add to the workspace.
+      if (
+        here.some((image) => sameImage(image, input.image)) ||
+        images.some((image) => sameImage(image, input.image))
+      ) {
+        return { images: here };
+      }
+      const next = [...here, input.image];
       await config.setSettings(
-        { containers: { images: next } },
-        {
-          command: ctx.command,
-          meta: ctx.meta,
-          summary: `allowed the image ${input.image} for service containers`,
-        },
+        { containers: { org_images: { ...org_images, [input.org]: next } } },
+        { ...meta, summary: `allowed the image ${input.image} for service containers in ${input.org}` },
       );
       return { images: next };
     },
     "containers.images.remove": async (input, ctx) => {
       await requireConfigFile(config);
-      const { images } = (await config.settings()).containers;
-      const next = images.filter((image) => !sameImage(image, input.image));
-      if (next.length === images.length)
-        throw new UserError(`${input.image} is not in the allowed images.`, 404);
+      const { images, org_images } = (await config.settings()).containers;
+      const meta = { command: ctx.command, meta: ctx.meta };
+      if (input.org === undefined) {
+        const next = images.filter((image) => !sameImage(image, input.image));
+        if (next.length === images.length)
+          throw new UserError(`${input.image} is not in the allowed images.`, 404);
+        await config.setSettings(
+          { containers: { images: next } },
+          { ...meta, summary: `stopped allowing the image ${input.image} for service containers` },
+        );
+        return { images: next };
+      }
+      const here = org_images[input.org] ?? [];
+      const next = here.filter((image) => !sameImage(image, input.image));
+      if (next.length === here.length) {
+        throw new UserError(`${input.image} is not in the images allowed in ${input.org}.`, 404);
+      }
+      const { [input.org]: _removed, ...others } = org_images;
       await config.setSettings(
-        { containers: { images: next } },
+        { containers: { org_images: next.length === 0 ? others : { ...org_images, [input.org]: next } } },
         {
-          command: ctx.command,
-          meta: ctx.meta,
-          summary: `stopped allowing the image ${input.image} for service containers`,
+          ...meta,
+          summary: `stopped allowing the image ${input.image} for service containers in ${input.org}`,
         },
       );
       return { images: next };

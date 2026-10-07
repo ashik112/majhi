@@ -9,12 +9,13 @@ import {
   ContainerRefused,
   type DockerParts,
   dockerArgv,
-  envByName,
   GUARD_SCRIPT,
   type HostPaths,
   isIpv4Cidr,
   type Safety,
+  takeEnv,
 } from "./args.ts";
+import { writePrivateFile } from "./private-file.ts";
 import { assertTaskArgv } from "./task-docker.ts";
 
 /** A short call, like `docker ps`, waits this long at most. */
@@ -52,6 +53,12 @@ export interface DockerResult {
 /** The guard script of the runner image, which `guard` runs as root in a container that holds NET_ADMIN. */
 const GUARD_NODE = "/usr/local/bin/node";
 
+/** What netguard `--hold` prints once its rules are set. */
+const GUARD_READY = "majhi-netguard ready";
+const HOLD_WAIT_MS = 30_000;
+const GUARD_TIMEOUT_MS = 60_000;
+const HOLD_POLL_MS = 120;
+
 const CONTAINER_ID = /^[0-9a-f]{12,64}$/;
 /** The network of a task, like `majhi-prv-53`. Not the runner network, not a preview. */
 const TASK_NETWORK = /^majhi-[a-z][a-z0-9]{0,9}-[1-9][0-9]*$/;
@@ -84,7 +91,7 @@ const REMOVE_FLAGS = new Set(["-f", "--force", "-v"]);
 
 function verbOf(args: readonly string[]): string {
   const first = args[0] ?? "";
-  return ["ps", "port", "inspect", "rm"].includes(first) ? first : `${first} ${args[1] ?? ""}`.trim();
+  return ["ps", "port", "inspect", "rm", "logs"].includes(first) ? first : `${first} ${args[1] ?? ""}`.trim();
 }
 
 /** The age filter of a build cache prune, in hours. */
@@ -94,6 +101,14 @@ const PRUNE_UNTIL = /^until=[1-9][0-9]{0,4}h$/;
 export function assertReadOrRemove(args: readonly string[]): void {
   const verb = verbOf(args);
   if (READ_VERBS.has(verb)) return;
+  if (verb === "logs") {
+    // The end of the output of a majhi container: a holder says when its guard is set.
+    const [, tailFlag, tail = "", name = "", ...rest] = args;
+    if (tailFlag !== "--tail" || !/^[0-9]{1,4}$/.test(tail) || !OWN_NAME.test(name) || rest.length > 0) {
+      throw new ContainerRefused("Only the last lines of a majhi container's output can be read.");
+    }
+    return;
+  }
   if (verb === "buildx prune") {
     // Exactly one shape: the cache of a majhi builder, by age. Never the default builder, never --all.
     const [, , builderFlag, builder = "", force, filterFlag, filter = "", ...rest] = args;
@@ -164,6 +179,58 @@ export class DockerCli {
     return this.tail(args, options.timeoutMs ?? TASK_CALL_TIMEOUT_MS);
   }
 
+  /**
+   * Starts the holder of a task container (detached) and returns when its network guard says it is
+   * set. The container then starts in the holder's network namespace, so it never runs a moment
+   * without the guard. A holder that does not come up is removed and the reason is thrown.
+   */
+  async hold(parts: DockerParts, safety: Safety, options: { waitMs?: number } = {}): Promise<void> {
+    if (parts.verb.join(" ") !== "run" || !parts.flags.includes("majhi.container=taskhold")) {
+      throw new ContainerRefused("hold starts the holder of a task container only.");
+    }
+    assertSafe(parts, safety);
+    const name = parts.flags[parts.flags.indexOf("--name") + 1] ?? "";
+    await this.removals.get(name);
+    await this.raw(dockerArgv(parts));
+    const deadline = Date.now() + (options.waitMs ?? HOLD_WAIT_MS);
+    let said = "";
+    try {
+      while (Date.now() < deadline) {
+        said = await this.raw(["logs", "--tail", "20", name]).then(
+          (out) => out.stdout + out.stderr,
+          (err: unknown) => errorMessage(err),
+        );
+        if (said.includes(GUARD_READY)) return;
+        const running = await this.raw(["inspect", "--format", "{{.State.Running}}", name]).then(
+          (out) => out.stdout.trim() === "true",
+          () => false,
+        );
+        if (!running) break;
+        await new Promise((done) => setTimeout(done, HOLD_POLL_MS));
+      }
+    } catch (err) {
+      this.remove(name);
+      throw err;
+    }
+    this.remove(name);
+    throw new ContainerRefused(
+      `The network guard of ${name} did not start.${said.trim() === "" ? "" : ` ${said.trim().split("\n").slice(-3).join(" ")}`}`,
+    );
+  }
+
+  /**
+   * Sets netguard's rules in the network namespace of a task's builder, where the `RUN` steps of a
+   * build run: a one-shot container shares that namespace, applies the rules and exits. The call is
+   * fixed (`builderGuardRunArgs`); only the task and the id in its name vary.
+   */
+  async guardBuilder(parts: DockerParts, safety: Safety): Promise<void> {
+    if (parts.verb.join(" ") !== "run" || !parts.flags.includes("majhi.container=builderguard")) {
+      throw new ContainerRefused("guardBuilder runs a builder guard only.");
+    }
+    assertSafe(parts, safety);
+    await this.raw(dockerArgv(parts), GUARD_TIMEOUT_MS);
+  }
+
   /** Puts a container on the network of its task. Nothing else can be connected. */
   connect(network: string, container: string): Promise<DockerResult> {
     if (!TASK_NETWORK.test(network)) throw new ContainerRefused(`${network} is not the network of a task.`);
@@ -225,13 +292,22 @@ export class DockerCli {
     const name = verb === "run" ? parts.flags[at + 1] : undefined;
     await mkdir(this.configDir, { recursive: true });
     if (name !== undefined) await this.removals.get(name);
-    // The values of `--env NAME=value` go in the CLI's environment, not on its command line.
-    const byName = envByName(parts);
-    const child = spawn(this.docker, dockerArgv(byName.parts), {
-      env: { ...byName.env, ...this.env },
+    // The values of `--env NAME=value` go in a file docker reads, not on its command line and not in its environment.
+    const moved = takeEnv(parts);
+    const envFile = moved.text === "" ? undefined : await writePrivateFile("majhi-env-", "env", moved.text);
+    const argv = dockerArgv(
+      envFile === undefined
+        ? moved.parts
+        : { ...moved.parts, flags: ["--env-file", envFile.file, ...moved.parts.flags] },
+    );
+    const child = spawn(this.docker, argv, {
+      env: this.env,
       detached: true,
       stdio: ["pipe", "pipe", "pipe"],
     });
+    // The CLI reads the file as it starts; it goes when the CLI ends, or never started.
+    child.once("exit", () => void envFile?.cleanup());
+    child.once("error", () => void envFile?.cleanup());
     let killed = false;
     return {
       child,

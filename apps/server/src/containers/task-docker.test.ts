@@ -51,6 +51,20 @@ describe("docker in a task: what a script may run", () => {
     expect(() => plan(["run", "acme/voice:test"])).toThrow(ImageNotAllowed);
   });
 
+  it("names the container on the owner's card, unless the script gave it no name", () => {
+    const wanted = (argv: string[]) => {
+      try {
+        plan(argv);
+      } catch (err) {
+        if (err instanceof ImageNotAllowed) return [err.image, err.service];
+        throw err;
+      }
+      return undefined;
+    };
+    expect(wanted(["run", "--name", "cache", "redis:7"])).toEqual(["redis:7", "cache"]);
+    expect(wanted(["run", "redis:7"])).toEqual(["redis:7", undefined]);
+  });
+
   it("lists only the task's containers, whatever filter it asks", () => {
     const listed = plan(["ps", "-a", "--filter", "name=web"]);
     expect(listed).toEqual({
@@ -70,6 +84,137 @@ describe("docker in a task: what a script may run", () => {
   });
 });
 
+describe("docker in a task: what it may do", () => {
+  const run = (argv: string[]) => {
+    const result = plan(["run", ...argv]);
+    if (result.kind !== "run") throw new Error("not a run");
+    return result;
+  };
+
+  it("runs in its holder's network namespace and answers to its name on the task network", () => {
+    const result = run(["-d", "--name", "web", "--network-alias", "www", "nginx:1.27-alpine"]);
+    expect(result.args).toEqual(expect.arrayContaining(["--network", "container:majhi-acm-1-h-web"]));
+    expect(result.holder).toEqual({ name: "web", aliases: ["web", "majhi-acm-1-c-web", "www"] });
+    expect(result.name).toBe("majhi-acm-1-c-web");
+  });
+
+  it("drops a published port with a note that names where to reach it, and never publishes", () => {
+    const result = run([
+      "--name",
+      "web",
+      "-p",
+      "8080:80",
+      "-p",
+      "127.0.0.1:9000:90/tcp",
+      "nginx:1.27-alpine",
+    ]);
+    expect(result.args).not.toContain("--publish");
+    expect(result.args).not.toContain("-p");
+    expect(result.notes).toEqual([
+      "Nothing is published on the computer. From this task, reach it at web:80, web:90.",
+    ]);
+  });
+
+  it("takes any network name as the task's one network, and never the host's, none or another container's", () => {
+    expect(run(["--network", "backend", "nginx:1.27-alpine"]).notes[0]).toContain("majhi-acm-1");
+    for (const bad of ["host", "none", "container:x"])
+      expect(() => run(["--network", bad, "nginx:1.27-alpine"])).toThrow();
+  });
+
+  it("accepts a user, a platform, a shared memory size and a health check, checked", () => {
+    const result = run([
+      "--user",
+      "999:999",
+      "--platform",
+      "linux/amd64",
+      "--shm-size",
+      "256m",
+      "--health-cmd",
+      "pg_isready",
+      "--health-interval",
+      "5s",
+      "--health-retries",
+      "5",
+      "nginx:1.27-alpine",
+    ]);
+    expect(result.args).toEqual(
+      expect.arrayContaining([
+        "--user",
+        "999:999",
+        "--platform",
+        "linux/amd64",
+        "--shm-size",
+        "256m",
+        "--health-cmd",
+        "pg_isready",
+        "--health-interval",
+        "5s",
+        "--health-retries",
+        "5",
+      ]),
+    );
+    for (const bad of [
+      ["--shm-size", "10000000g"],
+      ["--health-interval", "soon", "--health-cmd", "x"],
+      ["--user", "a b"],
+    ]) {
+      expect(() => run([...bad, "nginx:1.27-alpine"])).toThrow();
+    }
+  });
+
+  it("reads docker compose into an invocation, and refuses what it cannot run", () => {
+    expect(plan(["compose", "-f", "stack.yaml", "-p", "x", "up", "-d", "web"])).toMatchObject({
+      kind: "compose",
+      invocation: {
+        verb: "up",
+        files: ["stack.yaml"],
+        services: ["web"],
+        notes: ["-p is ignored: the compose project is this task."],
+      },
+    });
+    expect(plan(["compose", "exec", "-T", "app", "pip", "install", "-U", "six"])).toMatchObject({
+      invocation: { verb: "exec", services: ["app"], command: ["pip", "install", "-U", "six"] },
+    });
+  });
+});
+
+describe("docker in a task: health checks", () => {
+  const health = (...flags: string[]) => plan(["run", "--health-cmd", "true", ...flags, "nginx:1.27-alpine"]);
+
+  it("never beat faster than once a second", () => {
+    for (const flags of [
+      ["--health-interval", "500ms"],
+      ["--health-interval", "0s"],
+      ["--health-timeout", "1ms"],
+    ]) {
+      expect(() => health(...flags), flags.join(" ")).toThrow(/too short/);
+    }
+    expect(() =>
+      health("--health-interval", "1s", "--health-timeout", "3s", "--health-start-period", "0s"),
+    ).not.toThrow();
+  });
+});
+
+describe("docker in a task: names that are not its to take", () => {
+  it.each([
+    ["--name", "preview"],
+    ["--name", "localhost"],
+    ["--name", "majhi-server"],
+    ["--network-alias", "preview"],
+    ["--network-alias", "db.host"],
+    ["--network-alias", "host.docker.internal"],
+    ["--network-alias", "gateway.docker.internal"],
+    ["--network-alias", "majhi-run-abc"],
+  ])("refuses %s %s with a code", (flag, name) => {
+    try {
+      plan(["run", ...(flag === "--name" ? [] : ["--name", "web"]), flag, name, "nginx:1.27-alpine"]);
+      throw new Error("accepted");
+    } catch (err) {
+      expect((err as { refusal?: string }).refusal).toBe("name_reserved");
+    }
+  });
+});
+
 describe("docker in a task: what it may never do", () => {
   const refused: [string, string[]][] = [
     ["privileged", ["run", "--privileged", "nginx:1.27-alpine"]],
@@ -81,10 +226,12 @@ describe("docker in a task: what it may never do", () => {
     ["added capability", ["run", "--cap-add", "SYS_ADMIN", "nginx:1.27-alpine"]],
     ["security opt", ["run", "--security-opt", "seccomp=unconfined", "nginx:1.27-alpine"]],
     ["device", ["run", "--device", "/dev/sda", "nginx:1.27-alpine"]],
-    ["user", ["run", "--user", "0", "nginx:1.27-alpine"]],
+    ["a user that is not a name or a number", ["run", "--user", "root;sh", "nginx:1.27-alpine"]],
+    ["a platform that is a flag", ["run", "--platform", "--privileged", "nginx:1.27-alpine"]],
     ["volumes from", ["run", "--volumes-from", "majhi-server", "nginx:1.27-alpine"]],
-    ["published port", ["run", "-p", "80:80", "nginx:1.27-alpine"]],
-    ["own labels", ["run", "--label", "majhi.task=ACM-2", "nginx:1.27-alpine"]],
+    ["none network", ["run", "--network", "none", "nginx:1.27-alpine"]],
+    ["another container's network", ["run", "--network", "container:majhi-server", "nginx:1.27-alpine"]],
+    ["add host", ["run", "--add-host", "x:127.0.0.1", "nginx:1.27-alpine"]],
     ["raw mount flag", ["run", "--mount", "type=bind,source=/,target=/h", "nginx:1.27-alpine"]],
     ["docker socket", ["run", "-v", "/var/run/docker.sock:/var/run/docker.sock", "nginx:1.27-alpine"]],
     ["socket under the task", ["run", "-v", `${folder}/docker.sock:/s`, "nginx:1.27-alpine"]],
@@ -100,8 +247,7 @@ describe("docker in a task: what it may never do", () => {
     ["a comma in the source", ["run", "-v", `${folder}/a,b:/o`, "nginx:1.27-alpine"]],
     ["a build context outside the task", ["build", "-t", "x:1", join(dir, "outside")]],
     ["a build file outside the task", ["build", "-t", "x:1", "-f", "/etc/passwd", "."]],
-    ["compose", ["compose", "up"]],
-    ["pull", ["network", "ls"]],
+    ["network prune", ["network", "prune"]],
     ["volume rm", ["volume", "rm", "x"]],
     ["follow logs", ["logs", "-f", "web"]],
     ["an env file", ["run", "--env-file", "/etc/x", "nginx:1.27-alpine"]],
@@ -160,8 +306,16 @@ describe("docker in a task: the allow list is checked again on the call itself",
     ["a missing cap drop", (a) => without(a, "--cap-drop")],
     ["a privileged flag", (a) => ["run", "--privileged", ...a.slice(1)]],
     ["host pid", (a) => ["run", "--pid", "host", ...a.slice(1)]],
-    ["a host network", (a) => a.map((x) => (x.startsWith("name=majhi-acm-1") ? "host" : x))],
-    ["another task's network", (a) => a.map((x) => x.replace("name=majhi-acm-1", "name=majhi-acm-2"))],
+    ["a host network", (a) => a.map((x) => (x.startsWith("container:majhi-acm-1") ? "host" : x))],
+    [
+      "another task's holder",
+      (a) => a.map((x) => x.replace("container:majhi-acm-1-h-", "container:majhi-acm-2-h-")),
+    ],
+    [
+      "another container's holder",
+      (a) => a.map((x) => x.replace("container:majhi-acm-1-h-web", "container:majhi-acm-1-h-db")),
+    ],
+    ["a bridge network", (a) => a.map((x) => (x.startsWith("container:majhi-acm-1") ? "bridge" : x))],
     ["another task's label", (a) => a.map((x) => (x === "majhi.task=ACM-1" ? "majhi.task=ACM-2" : x))],
     ["a name outside the prefix", (a) => a.map((x) => (x === "majhi-acm-1-c-web" ? "majhi-acm-2-c-web" : x))],
     ["a service's name", (a) => a.map((x) => (x === "majhi-acm-1-c-web" ? "majhi-acm-1-db" : x))],
@@ -198,6 +352,9 @@ describe("docker in a task: the allow list is checked again on the call itself",
     ["the preview image", (a) => [...a.slice(0, -1), "majhi-preview-acm-1"]],
     ["an image the owner did not allow", (a) => [...a.slice(0, -1), "redis:7"]],
     ["a published port", (a) => ["run", "--publish", "80:80", ...a.slice(1)]],
+    ["an unknown label", (a) => ["run", "--label", "majhi.runner=1", ...a.slice(1)]],
+    ["a platform that is a flag", (a) => ["run", "--platform", "--privileged", ...a.slice(1)]],
+    ["a health flag without a command", (a) => ["run", "--health-interval", "5s", ...a.slice(1)]],
     ["a second network", (a) => ["run", "--network", "bridge", ...a.slice(1)]],
   ];
   it.each(bad)("refuses %s", (_name, change) => {

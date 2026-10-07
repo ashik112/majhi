@@ -52,12 +52,12 @@ describe("the captain's Allow for this task", () => {
   it("lets that tool run unasked for the rest of the task, and no other tool of its kind", async () => {
     const { permissions, run, ask, allowances, items } = flow();
     const signal = new AbortController().signal;
-    const first = permissions.ask(run, ask("mcp__majhi-containers__service_start"), signal);
+    const first = permissions.ask(run, ask("mcp__acme-deploy__release"), signal);
     permissions.answer(run, "ACM-8", "perm:4:1", "task", true);
     expect(await first).toBe("task");
-    expect([...allowances]).toEqual(["tool:majhi-containers.service_start"]);
+    expect([...allowances]).toEqual(["tool:acme-deploy.release"]);
 
-    const again = await permissions.ask(run, ask("mcp__majhi-containers__service_start"), signal);
+    const again = await permissions.ask(run, ask("mcp__acme-deploy__release"), signal);
     expect(again).toBe("once");
     expect(items.get("perm:4:2")).toMatchObject({ state: "auto" });
 

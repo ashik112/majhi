@@ -7,10 +7,10 @@ import {
   assertSafe,
   buildArgs,
   builderCreateArgs,
+  builderGuardRunArgs,
   ContainerRefused,
   type DockerParts,
   dockerArgv,
-  envByName,
   hostForwardRunArgs,
   hostNetworkCreateArgs,
   type Limits,
@@ -19,6 +19,8 @@ import {
   previewRunArgs,
   type Safety,
   serviceRunArgs,
+  takeEnv,
+  taskHoldRunArgs,
   volumeCreateArgs,
 } from "./args.ts";
 
@@ -58,6 +60,13 @@ const preview = () =>
   });
 const holder = (subnets: string[] = ["192.168.171.0/24"]) =>
   previewHoldRunArgs(safety, limits, { port: 7070, image: "majhi-runner:dev", taskSubnets: subnets });
+const taskHolder = (name = "db", aliases: string[] = []) =>
+  taskHoldRunArgs(safety, limits, {
+    name,
+    aliases,
+    taskSubnets: ["192.168.171.0/24"],
+    image: "majhi-runner:dev",
+  });
 const service = () =>
   serviceRunArgs(safety, limits, {
     name: "db",
@@ -162,6 +171,119 @@ describe("what majhi builds for containers", () => {
     });
     expect(s.flags).toContain("A=--privileged");
     expect(s.command).toEqual(["--privileged", "-v", "/:/host"]);
+  });
+});
+
+describe("the holder of a task's container", () => {
+  const refused = (parts: DockerParts) => () => assertSafe(parts, safety);
+  it("is the guarded way onto the task network: runner network for the route out, the task network under the container's names, nothing published", () => {
+    const h = taskHolder("db", ["pg"]);
+    expect(h.flags).toContain("--detach");
+    expect(values(h, "--name")).toEqual(["majhi-acm-1-h-db"]);
+    expect(values(h, "--network")).toEqual([
+      "majhi-runners",
+      "name=majhi-acm-1,alias=db,alias=majhi-acm-1-c-db,alias=pg",
+    ]);
+    expect(values(h, "--cap-add")).toEqual(["NET_ADMIN"]);
+    expect(h.flags).not.toContain("--publish");
+    expect(h.command).toEqual([
+      "node",
+      "/usr/local/lib/majhi/netguard.mjs",
+      "--hold",
+      "--allow",
+      "192.168.171.0/24",
+    ]);
+  });
+
+  it("puts the service in the holder's network namespace, so it can never run without the guard", () => {
+    expect(values(service(), "--network")).toEqual(["container:majhi-acm-1-h-db"]);
+    expect(values(service(), "--name")).toEqual(["majhi-acm-1-c-db"]);
+    expect(values(service(), "--label")).toContain("majhi.container=taskrun");
+  });
+
+  it("is refused when widened: another network, a published port, a mount, a capability, a command or another task's names", () => {
+    const h = taskHolder();
+    expect(() => assertSafe(h, safety)).not.toThrow();
+    for (const bad of [
+      plus(h, "--publish", "127.0.0.1::80"),
+      plus(h, "--mount", "type=volume,target=/x"),
+      plus(h, "--cap-add", "NET_RAW"),
+      plus(h, "--network", "majhi-acm-2"),
+      replaced(h, "--network", "host"),
+      replaced(h, "--name", "majhi-acm-2-h-db"),
+      replaced(h, "--name", "majhi-acm-1-c-db"),
+      without(h, "--read-only"),
+      { ...h, command: ["sh", "-c", "sleep 1"] },
+      { ...h, command: ["node", "/usr/local/lib/majhi/netguard.mjs", "--hold", "--allow", "10.0.0.0/8"] },
+      { ...h, command: ["node", "/usr/local/lib/majhi/netguard.mjs", "--hold"] },
+    ]) {
+      expect(refused(bad)).toThrow(ContainerRefused);
+    }
+    // An alias that is not a host name, or more names than a task container needs.
+    expect(() => taskHolder("db", ["Bad Name"])).toThrow(ContainerRefused);
+    expect(() => taskHolder("db", ["a", "b", "c", "d", "e", "f", "g", "h"])).toThrow(ContainerRefused);
+  });
+
+  it("never answers to a name that belongs to something else: the preview, a forwarder, majhi's own, the computer", () => {
+    for (const name of [
+      "preview",
+      "Preview",
+      "localhost",
+      "db.host",
+      "host.docker.internal",
+      "gateway.docker.internal",
+      "majhi-server",
+      "majhi-acm-2-c-db",
+    ]) {
+      for (const make of [() => taskHolder("db", [name]), () => taskHolder(name)]) {
+        try {
+          make();
+          throw new Error(`${name} was allowed`);
+        } catch (err) {
+          expect(err).toBeInstanceOf(ContainerRefused);
+          expect((err as ContainerRefused).refusal, name).toBe("name_reserved");
+        }
+      }
+    }
+    // The checked call itself, whoever built it: a holder with an extra reserved alias is refused.
+    const good = taskHolder("db");
+    expect(
+      refused(replaced(good, "--network", "name=majhi-acm-1,alias=db,alias=majhi-acm-1-c-db,alias=preview")),
+    ).toThrow(ContainerRefused);
+    expect(
+      refused(replaced(good, "--network", "name=majhi-acm-1,alias=db,alias=majhi-acm-1-c-db,alias=x.host")),
+    ).toThrow(ContainerRefused);
+  });
+
+  it("is the only container that may run detached", () => {
+    expect(refused(plus(service(), "--detach"))).toThrow(ContainerRefused);
+    expect(refused(plus(preview(), "--detach"))).toThrow(ContainerRefused);
+  });
+});
+
+describe("the guard of a task's builder", () => {
+  const refused = (parts: DockerParts) => () => assertSafe(parts, safety);
+  const guard = () => builderGuardRunArgs(safety, { image: "majhi-runner:dev", id: "abcd1234" });
+
+  it("shares only the builder's network namespace, adds NET_ADMIN and runs only the network guard", () => {
+    const g = guard();
+    expect(values(g, "--network")).toEqual(["container:buildx_buildkit_majhi-preview-acm-10"]);
+    expect(values(g, "--cap-add")).toEqual(["NET_ADMIN"]);
+    for (const bad of [
+      replaced(g, "--network", "container:buildx_buildkit_majhi-preview-acm-20"),
+      replaced(g, "--network", "container:majhi-server"),
+      replaced(g, "--network", "host"),
+      plus(g, "--mount", "type=volume,target=/x"),
+      plus(g, "--publish", "127.0.0.1::80"),
+      plus(g, "--cap-add", "SYS_ADMIN"),
+      plus(g, "--env", "A=b"),
+      without(g, "--read-only"),
+      replaced(g, "--name", "majhi-acm-2-bg-abcd1234"),
+      { ...g, command: ["sh", "-c", "iptables -F"] },
+      { ...g, command: ["node", "/usr/local/lib/majhi/netguard.mjs", "--hold"] },
+    ]) {
+      expect(refused(bad)).toThrow(ContainerRefused);
+    }
   });
 });
 
@@ -421,6 +543,22 @@ describe("builds", () => {
     ).toThrow(ContainerRefused);
   });
 
+  it("refuse a build argument that BuildKit reads for itself, whatever its case", () => {
+    for (const name of ["BUILDKIT_SYNTAX", "buildkit_syntax", "BUILDKIT_MULTI_PLATFORM"]) {
+      expect(() =>
+        buildArgs(safety, {
+          context: repo,
+          dockerfile: "Dockerfile",
+          buildArgs: { [name]: "evil/frontend:1" },
+        }),
+      ).toThrow(ContainerRefused);
+      expect(refusedBuild(plus(build(), "--build-arg", `${name}=evil/frontend:1`))).toThrow(ContainerRefused);
+    }
+    expect(
+      buildArgs(safety, { context: repo, dockerfile: "Dockerfile", buildArgs: { BUILD_MODE: "x" } }).flags,
+    ).toContain("BUILD_MODE=x");
+  });
+
   it("refuse a context or Dockerfile outside the task folder", () => {
     for (const context of [safety.hostHome, join(safety.hostHome, "Work"), safety.majhiHome, "/", "/etc"]) {
       expect(() => buildArgs(safety, { context, dockerfile: "Dockerfile" })).toThrow(ContainerRefused);
@@ -461,20 +599,37 @@ describe("builds", () => {
 });
 
 describe("environment values stay off the command line", () => {
-  it("moves a service's variables to the CLI's environment and leaves only names", () => {
+  it("moves a service's variables into a file and leaves no value on the line", () => {
     const parts = serviceRunArgs(safety, limits, {
       name: "db",
       image: "postgres:16",
-      env: { POSTGRES_PASSWORD: "pg-secret-1234", PATH: "/custom" },
+      env: { POSTGRES_PASSWORD: "pg-secret-1234", PATH: "/custom", LD_PRELOAD: "/work/evil.so" },
     });
-    const moved = envByName(parts);
-    expect(dockerArgv(moved.parts).join(" ")).not.toContain("pg-secret-1234");
-    expect(moved.parts.flags).toContain("POSTGRES_PASSWORD");
-    expect(moved.env).toEqual({ POSTGRES_PASSWORD: "pg-secret-1234" });
-    // The CLI's own variable keeps its value on the line: passing it by name would give it the CLI's.
-    expect(moved.parts.flags).toContain("PATH=/custom");
+    const moved = takeEnv(parts);
+    const line = dockerArgv(moved.parts).join(" ");
+    for (const value of ["pg-secret-1234", "/custom", "/work/evil.so"]) expect(line).not.toContain(value);
+    // The file docker reads holds every one, verbatim: nothing in it is a variable of the CLI's own.
+    expect(moved.text.split("\n").sort()).toEqual([
+      "",
+      "LD_PRELOAD=/work/evil.so",
+      "PATH=/custom",
+      "POSTGRES_PASSWORD=pg-secret-1234",
+    ]);
     // The check runs on the call as built, before the values move.
     expect(() => assertSafe(parts, safety)).not.toThrow();
+  });
+
+  it("leaves a value that a line of a file cannot hold on the command line, and changes nothing without variables", () => {
+    const parts = serviceRunArgs(safety, limits, {
+      name: "db",
+      image: "postgres:16",
+      env: { MULTI: "a\nb", PLAIN: "x" },
+    });
+    const moved = takeEnv(parts);
+    expect(moved.text).toBe("PLAIN=x\n");
+    expect(moved.parts.flags).toContain("MULTI=a\nb");
+    const none = serviceRunArgs(safety, limits, { name: "db", image: "postgres:16" });
+    expect(takeEnv(none)).toEqual({ parts: none, text: "" });
   });
 });
 

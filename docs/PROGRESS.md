@@ -20,6 +20,36 @@ The approved mockup (`marketing-assets/ship-mockup`) built on the data A1 gave: 
 
 **Known issues.** A budget or usage-limit pause reads back from the stored fields as a budget hold (the account is not stored with it until the hold column ships), so its label says "budget". A pause that majhi lifts itself leaves Waiting as soon as its condition clears, so an isolated server shows it only while the condition holds.
 
+## Docker inside tasks: one network, compose, approvals (branch `fix/task-docker-stack`, built, not merged)
+
+Cause (owner): `docker compose`, `-p`, `--network`, `--env-file` were refused in a task, containers a task started had no internet, `service_start` and script containers could not see each other, a `majhi-processes` process had no name on the network, and the image card named nothing. One task built Postgres and Redis into one image to get round it. Audit gaps 1, 2, 6, 7, 8, 10 (`task-gaps.md`). Design: `docs/design/task-network.md`; decisions dated 2026-10-07.
+
+**Plan.** One mechanism for every container (a holder that carries the guard, the container in its network namespace), then compose on top of the same plan type, then approvals, then processes. Checked with unit tests, the tests CLAUDE.md allows against a fake docker, a real-Docker security test with throwaway names, and a real stack by hand.
+
+**What works.**
+- Every container a task starts (`service_start`, a script's `docker run`, compose services) is a holder `majhi-<key>-h-<name>` plus the container `majhi-<key>-c-<name>` in its network namespace. The holder runs netguard on the runner network (route out) and the task network (names). Public internet works inside a service; private ranges, link-local, the computer, other tasks and the Docker socket do not. The task network stays `--internal`.
+- One name scheme and one list: `docker ps`, `exec`, `logs`, `rm`, and the `list`, `logs` and `service_stop` tools cover services, scripts' containers and compose services.
+- `docker compose up | down | ps | logs | exec` of the repo's own files, translated to the same containers: ports never published (`name:port` inside the task), binds inside the task folder, named per-task volumes, `depends_on` with health and completed-job waits, builds on the task's builder, `.env` and `--env-file` inside the task folder only, anything wider refused before any start with `docker: [code] message` and `error.code`.
+- `docker run` accepts `-p` (dropped with a note), `--network name`, `--env-file`, `--user`, `--platform`, `--shm-size`, `--health-*`, `--network-alias`; `docker network ...` answers that the task has one network.
+- The image card reads `Allow image postgres:16 for db in acme` and allows it in the task's workspace; Setup shows the workspace rows. `majhi-containers` tools are trusted like the other majhi tools.
+- A `majhi-processes` process joins the task network under its name (`list` shows `name:port`).
+- A compose stack stops with the task and comes up again on resume. Cleanup by label at task end, task removal and startup, idempotent; a holder whose container is gone is removed.
+- Review fixes: files a task controls are read through one safe reader (a FIFO named `.env` no longer blocks the server); every container state counts toward the limits and a holder goes when its container is not running; reserved names (`preview`, `localhost`, `*.host`, `majhi-*`, the computer's names) are refused; a done task starts nothing and a start racing its end leaves nothing; at most 16 docker calls wait per task; hostile env names stay out of majhi's docker environment; a task's builder is closed like a holder (public internet only) and every image a Dockerfile pulls must be allowed.
+- The shim posts with `node:http` (no five minute wait for the first byte). `psql` and `redis-cli` are in the runner image.
+
+**How to try it.** In a task, in a folder with a `compose.yaml`: `docker compose up -d`, `docker compose ps`, then from the agent's shell `curl http://app:8000` (any service name). A bad file prints `docker: [compose_privileged] ...`. Tests: `npx vitest run apps/server/src/containers apps/server/src/processes packages/acp/src/runner/docker.test.ts`. The real-Docker test is `containers/network.docker.test.ts` (skipped without a daemon and the `majhi-runner:dev` image; throwaway tasks ZZT-911 and ZZT-912).
+
+**Checked on a real stack.** Scratch repo with an app (built from a Dockerfile), Postgres 18 and Redis 7, through the shim against real Docker on OrbStack: 56 of 56 checks (the first 35, then after the review fixes: a FIFO `.env` and `--env-file` refused at once, six ended containers holding the limit across a restart of majhi, reserved and colliding names refused, a real process reachable by its name, a build's RUN steps closed to the host, the LAN and the metadata address, a FROM nobody allowed refused) (agent container reaches `app:8000` by name before the task had a network, the app reaches `db` and `cache` by name, `pip install` works inside the app, `npm install` works in a `docker run` container, nothing published, another task's container and the host, a private range, link-local and the socket are unreachable, refusals carry their codes, a restart removes every container, holder and network).
+
+**Left.**
+- Owner to check on the real install: update the runner image (shim, `psql`, `redis-cli`), start a compose stack in a real task, answer an image card in a real workspace.
+- Gap 10 is partly done: the runner has the clients and services work by name. A `postgres` or `mysql` connection type and an allowed private range per connection are not built.
+- `containers.per_task` defaults to 6 (owner decision).
+- `docker start` of a container that ended is refused (`restart_not_available`): its holder went with it. Run it again.
+- A script's own `docker run -d` containers are not remembered across a pause (compose stacks and services are). The Hub's "Running now" list shows services and previews, not scripts' containers.
+- A process that serves on `localhost` only is not reachable by name; it must listen on `0.0.0.0`.
+- Existing majhi startup logs `docker buildx rm failed` for builder node names (before this branch; harmless).
+
 ## Hand-off check: full logs, a named failure, reruns and the agent's own world (branch `fix/handoff-full-failure`, built, not merged)
 
 Gaps 4 and 5 of the task-gaps audit. The check kept the last 25 lines of the failing step, told the lead only in Autonomous, gave agents no way to read or rerun it, and ran in a poorer world than the agent.
