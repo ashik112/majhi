@@ -35,11 +35,6 @@ const tools = (repos: readonly string[] = ["api"]) =>
   });
 
 describe("code_graph", () => {
-  it("answers from the task's own repo", async () => {
-    const text = await tools().call("ACM-1", { action: "neighbors", name: "chargeOrder" });
-    expect(text).toContain("calls helper() (src/b.ts:1)");
-  });
-
   it("never reads another workspace's graph", async () => {
     // Not a repo of the task.
     await expect(

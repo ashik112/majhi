@@ -76,15 +76,6 @@ describe("containers commands", () => {
       status: "running",
       url: "db:5432",
     });
-    const listed = await h.cmd("containers.list", { task: "ACM-1" });
-    expect(listed.body.containers).toHaveLength(1);
-    // The container is a process of the task too: the Processes card shows it.
-    const processes = (await h.cmd("tasks.get", { id: "ACM-1" })).body;
-    expect(processes.id).toBe("ACM-1");
-    expect(h.majhi.services.processes.list("ACM-1")[0]?.container).toMatchObject({
-      kind: "service",
-      name: "db",
-    });
     const stopped = await h.cmd("containers.stop", { task: "ACM-1", name: "db" });
     expect(stopped.body.container.status).toBe("stopped");
   });

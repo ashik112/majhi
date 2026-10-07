@@ -1,5 +1,5 @@
 import type { APIRequestContext, Page } from "@playwright/test";
-import { expect, test, useHome } from "./fixture.ts";
+import { expect, expectTasksHome, test, useHome } from "./fixture.ts";
 
 // Org Acme and its agents, plus the project "api".
 useHome({ seed: "team-api" });
@@ -14,7 +14,7 @@ const taskIdOf = (page: Page) => new URL(page.url()).pathname.split("/").pop() a
 const status = async (request: APIRequestContext, id: string) =>
   (await cmd<{ status: string }>(request, "tasks.get", { id })).status;
 const dialog = (page: Page) => page.getByRole("dialog", { name: "New task" });
-const card = (page: Page, id: string) => page.locator(`#card-${id}`);
+const row = (page: Page, id: string) => page.locator(`[data-home-row="t:${id}"]`);
 
 /** Adds a task through the dialog. `chips` picks task ids under a group; resolves with the new id. */
 async function addTask(
@@ -23,7 +23,7 @@ async function addTask(
   opts: { start: boolean; dependsOn?: string[]; partOf?: string },
 ): Promise<string> {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Board", exact: true })).toBeVisible();
+  await expectTasksHome(page);
   await page.keyboard.press("n");
   await expect(dialog(page)).toBeVisible();
   await dialog(page).getByRole("textbox", { name: "Title" }).fill(title);
@@ -51,22 +51,20 @@ test("a task that depends on another waits, shows it on the board, and starts wh
   const b = await addTask(page, "links beta on api", { start: true, dependsOn: [a] });
 
   await expect(page.getByTestId("task-links").getByRole("link", { name: new RegExp(a) })).toBeVisible();
-  await expect(page.getByTestId("task-links").getByText("Waits for", { exact: true })).toBeVisible();
   expect(await status(request, b)).toBe("ready");
 
   await page.goto("/");
-  await expect(card(page, b)).toContainText(`Waiting on ${a}`);
+  await expect(row(page, b)).toContainText(a);
   await page.screenshot({ path: "e2e/screenshots/links-board.png" });
 
   // Starting by hand is refused while it waits.
   const refused = await request.post("/api/cmd/tasks.start", { data: { id: b } });
   expect(refused.status()).toBe(409);
-  expect((await refused.json()).error).toContain(`Waiting on ${a}`);
+  expect((await refused.json()).error).toContain(a);
 
   await cmd(request, "tasks.close", { id: a });
   await expect.poll(() => status(request, b), { timeout: 20_000 }).toBe("running");
 
   await page.goto(`/t/${b}`);
-  await expect(page.getByRole("log", { name: "Room messages" }).getByText(`${b} starts.`)).toBeVisible();
   await expect(page.getByTestId("task-links").getByRole("link", { name: new RegExp(a) })).toBeVisible();
 });

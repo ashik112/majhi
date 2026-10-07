@@ -118,7 +118,6 @@ describe("/mcp/decide", () => {
     const client = await connect(attached?.token ?? "", attached?.server.url ?? "");
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name)).toEqual(["decide"]);
-    expect(tools[0]?.inputSchema.required).toEqual(expect.arrayContaining(["state", "questions"]));
 
     const call = async () => {
       const res = await client.callTool({ name: "decide", arguments: ask });

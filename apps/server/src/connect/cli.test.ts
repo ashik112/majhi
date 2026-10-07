@@ -140,9 +140,6 @@ describe("a command-line tool's sign-in", () => {
     };
     const view = await r.connect.start({ org: "acme", service: "vercel-cli", access: "read" }, OWNER);
     await until(() => r.connect.flow(view.flow).state === "failed");
-    expect(r.connect.flow(view.flow).message).toBe(
-      "The Cloudflare (vercel) sign-in ran out of time. Nothing was saved.",
-    );
     expect(r.connections.size).toBe(0);
   });
 

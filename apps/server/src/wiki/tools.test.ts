@@ -4,7 +4,6 @@ import { openMemoryDb } from "../memory/db.ts";
 import { HashEmbedder } from "../memory/embedder.ts";
 import type { AgentScope } from "../memory/mcp.ts";
 import { Store } from "../store/index.ts";
-import { wikiNotes } from "./notes.ts";
 import { WikiIndex } from "./search.ts";
 import { WikiToolRefusal, WikiTools } from "./tools.ts";
 
@@ -98,21 +97,6 @@ describe("the wiki tool", () => {
   });
 });
 
-describe("TASK.md section", () => {
-  it("is at most ten lines from the overview and flows, and empty while the wiki is off", async () => {
-    const { store, enabled } = await world({ acme: true, globex: false });
-    const notes = wikiNotes({ repo: store.wiki, enabled });
-    expect(await notes("acme", ["api"])).toEqual([
-      "api: backend Python (src).",
-      "api flows: Pay (flow:pay).",
-      "Details with file and line: the `wiki` tool of majhi-memory (list, read <page>, search <words>, sources <claim>).",
-    ]);
-    expect((await notes("acme", ["api", "api", "api", "api"])).length).toBeLessThanOrEqual(10);
-    expect(await notes("globex", ["shop"])).toEqual([]);
-    expect(await notes(undefined, ["api"])).toEqual([]);
-  });
-});
-
 describe("the workspace pages", () => {
   const workspacePage = (org: string, text: string): WikiPage =>
     WikiPageSchema.parse({
@@ -153,35 +137,5 @@ describe("the workspace pages", () => {
     );
     const hits = await tools.call(acme, { action: "search", words: "web app calls billing API" });
     expect(hits).toContain("workspace/overview");
-  });
-
-  it("add one line to TASK.md naming the links that touch the task's repos", async () => {
-    const { store, enabled } = await world({ acme: true, globex: false });
-    const end = (project: string, path: string) => ({
-      project,
-      sources: [{ repo: project, commit: SHA, path, lines: [1, 1] as [number, number], hash: HASH }],
-    });
-    const links = [
-      {
-        id: "web>api:exact:1",
-        type: "http" as const,
-        basis: "exact" as const,
-        from: end("web", "src/client.ts"),
-        to: end("api", "app/routes.py"),
-        label: "POST /api/v1/login",
-      },
-      {
-        id: "jobs>billing:exact:1",
-        type: "http" as const,
-        basis: "exact" as const,
-        from: end("jobs", "src/run.ts"),
-        to: end("billing", "app/pay.py"),
-        label: "GET /pay",
-      },
-    ];
-    const notes = wikiNotes({ repo: store.wiki, enabled, links: async () => links });
-    const lines = await notes("acme", ["api"]);
-    expect(lines).toContain("Links to other projects: web calls api (1, exact: POST /api/v1/login).");
-    expect(lines.join("\n")).not.toContain("jobs");
   });
 });

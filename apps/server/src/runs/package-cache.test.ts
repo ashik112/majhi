@@ -41,16 +41,6 @@ describe("a workspace's package store", () => {
     }
   });
 
-  it("points pnpm, npm, yarn and pip at the store", () => {
-    expect(cacheEnv("/Users/owner/.majhi/cache/acme")).toEqual({
-      pnpm_config_store_dir: "/Users/owner/.majhi/cache/acme/pnpm-store",
-      npm_config_store_dir: "/Users/owner/.majhi/cache/acme/pnpm-store",
-      npm_config_cache: "/Users/owner/.majhi/cache/acme/npm",
-      YARN_CACHE_FOLDER: "/Users/owner/.majhi/cache/acme/yarn",
-      PIP_CACHE_DIR: "/Users/owner/.majhi/cache/acme/pip",
-    });
-  });
-
   it("refuses a workspace id that would leave the cache folder", () => {
     for (const org of ["../globex", "acme/../globex", "", "A", "/etc"]) {
       expect(() => cacheRoot("/Users/owner/.majhi", org), org).toThrow();

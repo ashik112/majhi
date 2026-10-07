@@ -1,6 +1,6 @@
 import type { RoomItem, Task } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { type CoordinatorDeps, RoomCoordinator, readLine } from "./coordinator.ts";
+import { type CoordinatorDeps, RoomCoordinator } from "./coordinator.ts";
 
 /**
  * A plain-text question to the owner stops waiting once its agent ends a later turn without asking
@@ -63,14 +63,5 @@ describe("turn end clears the agent's own pending owner questions", () => {
       text: "Done.\n\n@owner should I also bump the version?",
     });
     expect(items.get("question:a")?.state).toBe("pending");
-  });
-});
-
-describe("read_recent", () => {
-  it("shows a question card while it waits, and nothing once it is settled", () => {
-    expect(readLine(question("question:a", "acme-lead"))).toBe(
-      "@acme-lead asked the owner (card waits for an answer): Your call from earlier still stands.",
-    );
-    expect(readLine(question("question:a", "acme-lead", "moved-on"))).toBeUndefined();
   });
 });

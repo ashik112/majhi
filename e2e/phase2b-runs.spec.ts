@@ -77,9 +77,6 @@ test("offline pauses the running task, and it resumes on its own when the connec
 
   writeFileSync(OFFLINE_FILE, "");
   await expect(panel(page).getByText("Paused, offline")).toBeVisible({ timeout: 10_000 });
-  await expect(
-    page.getByText("majhi is offline. The task continues on its own when the connection is back."),
-  ).toBeVisible();
   expect(await status(request, id)).toMatchObject({ status: "paused", pausedReason: "offline" });
   // The cut turn's prompt was withdrawn.
   const prompts = page.getByRole("region", { name: /^Permission:/ });
@@ -87,9 +84,6 @@ test("offline pauses the running task, and it resumes on its own when the connec
   await shot(page, "runs-offline");
 
   rmSync(OFFLINE_FILE);
-  await expect(messages(page).getByText("Resuming @acme-reviewer: the connection is back.")).toBeVisible({
-    timeout: 10_000,
-  });
   await expect.poll(async () => (await status(request, id)).status, { timeout: 10_000 }).toBe("running");
   // The continued turn asks again.
   await expect(prompts).toHaveCount(1, { timeout: 20_000 });

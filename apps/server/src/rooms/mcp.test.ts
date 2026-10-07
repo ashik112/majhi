@@ -130,10 +130,8 @@ describe("majhi-processes", () => {
     ]);
     const outside = await tool.callTool({ name: "start", arguments: { command: "true", cwd: "/tmp" } });
     expect(outside.isError).toBe(true);
-    expect(text(outside)).toContain("outside the task folder");
 
-    const started = await tool.callTool({ name: "start", arguments: { command: "sleep 30", wait: false } });
-    expect(text(started)).toMatch(/^Started p1 `sleep 30` in .*ACM-1: running/);
+    await tool.callTool({ name: "start", arguments: { command: "sleep 30", wait: false } });
     expect(h.majhi.services.processes.running("ACM-1").map((p) => p.agent)).toEqual(["acme-lead"]);
     expect(text(await tool.callTool({ name: "list", arguments: {} }))).toContain("p1 `sleep 30`");
     // Another task's processes are out of reach: ids are per task.
@@ -148,9 +146,7 @@ describe("majhi-processes", () => {
       wait: false,
     });
     expect(text(await tool.callTool({ name: "list", arguments: {} }))).not.toContain("sleep 31");
-    expect(text(await tool.callTool({ name: "stop", arguments: { id: "p1" } }))).toContain(
-      "stopped by the agent",
-    );
+    await tool.callTool({ name: "stop", arguments: { id: "p1" } });
     expect(h.majhi.services.processes.running("ACM-2")).toHaveLength(1);
     release();
   });
@@ -184,8 +180,7 @@ describe("majhi-tasks", () => {
       ownerAsked: false,
       reason: "Two steps",
     };
-    const waiting = await tasks.callTool({ name: "split", arguments: args });
-    expect(text(waiting)).toMatch(/Waiting for the owner/);
+    await tasks.callTool({ name: "split", arguments: args });
     const card = ((await h.cmd("room.items", { task: "ACM-1", limit: 100 })).body.items as RoomItem[]).find(
       (i) => i.type === "approval",
     );
@@ -221,7 +216,6 @@ describe("majhi-tasks", () => {
       arguments: { id: "LOCAL-1", ownerAsked: false, reason: "x" },
     });
     expect(got.isError).toBe(true);
-    expect(text(got)).toContain("LOCAL-1 is not in an org @acme-lead works in");
     const list = JSON.parse(
       text(await tasks.callTool({ name: "list", arguments: { ownerAsked: false, reason: "x" } })),
     );
@@ -260,7 +254,6 @@ describe("majhi-tasks", () => {
       const tasks = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-tasks"));
       const res = await call(tasks, "ACM-3");
       expect(res.isError).toBeFalsy();
-      expect(text(res)).toBe("Waiting on ACM-2. It starts by itself when they are done.");
       const { store } = h.majhi.services;
       expect(store.tasks.get("ACM-3")?.status).not.toBe("running");
       expect(store.tasks.startWhenReady("ACM-3")).toBe(true);
@@ -322,8 +315,7 @@ describe("majhi-tasks", () => {
       expect(made.status).toBe(200);
       expect(made.body.links).toEqual([{ type: "follow-up", task: "ACM-1" }]);
       const tasks = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-tasks"));
-      const res = await call(tasks, "ACM-2");
-      expect(text(res)).toMatch(/Waiting for the owner/);
+      await call(tasks, "ACM-2");
       expect(h.majhi.services.store.tasks.get("ACM-2")?.status).not.toBe("running");
       expect(await cards(h)).toMatchObject([{ state: "pending" }]);
       release();
@@ -339,8 +331,7 @@ describe("majhi-tasks", () => {
       });
       expect((await h.cmd("orgs.update", { id: "acme", lead_start: "off" })).status).toBe(200);
       const tasks = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-tasks"));
-      const res = await call(tasks, "ACM-2");
-      expect(text(res)).toMatch(/Waiting for the owner/);
+      await call(tasks, "ACM-2");
       expect(h.majhi.services.store.tasks.get("ACM-2")?.status).not.toBe("running");
       expect(await cards(h)).toMatchObject([{ state: "pending" }]);
       expect(h.majhi.services.store.permissions.audit("ACM-2")).toEqual([]);

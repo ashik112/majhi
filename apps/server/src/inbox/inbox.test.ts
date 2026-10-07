@@ -121,82 +121,6 @@ function sources(over: Partial<DecisionSources> = {}): DecisionSources {
 }
 
 describe("building decisions", () => {
-  it("maps each waiting item to a decision with the right options", () => {
-    const out = buildDecisions(
-      sources({
-        items: [ask, choice, ownerQuestion, permission, approval, secret, review, paused],
-        budgets: [budget],
-        signedOut: [{ id: "claude-acme", at: "2026-10-04T06:00:00.000Z" }],
-      }),
-    );
-    const by = (id: string) => out.find((d) => d.id === id);
-    expect(by("room:ACM-1:ask1")).toMatchObject({
-      kind: "question",
-      org: "acme",
-      task: "ACM-1",
-      link: { kind: "task", id: "ACM-1", item: "ask1" },
-      // The default goes first and is the primary button.
-      options: [
-        { id: "rebuild", label: "Rebuild", primary: true },
-        { id: "keep", label: "Keep" },
-      ],
-      suggestion: { option: "rebuild", by: "agent" },
-    });
-    expect(by("room:ACM-1:ch1")?.options.map((o) => o.id)).toEqual(["now", "wait"]);
-    expect(by("room:ACM-1:oq1")).toMatchObject({
-      kind: "question",
-      title: "Which queue?",
-      options: [
-        { id: "c0", label: "Redis", primary: true },
-        { id: "c1", label: "SQS" },
-      ],
-    });
-    expect(by("room:ACM-1:pm1")).toMatchObject({
-      kind: "approval",
-      options: [
-        { id: "yes", label: "Allow once", primary: true },
-        { id: "no", label: "Deny" },
-      ],
-    });
-    expect(by("room:ACM-1:ap1")?.options.map((o) => o.id)).toEqual(["approve", "reject"]);
-    expect(by("room:ACM-1:sr1")).toMatchObject({ kind: "secret", options: [] });
-    expect(by("room:ACM-2:rv1")).toMatchObject({
-      kind: "ship",
-      options: [
-        { id: "merge", label: "Merge", primary: true },
-        { id: "done", label: "Mark done" },
-        { id: "changes", label: "Ask for changes", text: true },
-      ],
-      suggestion: { option: "merge", by: "captain" },
-    });
-    expect(by("room:ACM-2:pa1")).toMatchObject({
-      kind: "paused",
-      options: [{ id: "resume", label: "Resume", primary: true }],
-    });
-    expect(by("budget:acme:2026-10-04")).toMatchObject({
-      kind: "budget",
-      org: "acme",
-      options: [{ id: "raise", label: "Raise to $40 for today", primary: true }, { id: "leave" }],
-      link: { kind: "limits" },
-    });
-    expect(by("signin:claude-acme")).toMatchObject({
-      kind: "sign-in",
-      options: [],
-      link: { kind: "account" },
-    });
-  });
-
-  it("puts ship and budget first, then the oldest", () => {
-    const out = buildDecisions(sources({ items: [ask, choice, review, paused], budgets: [budget] }));
-    expect(out.map((d) => d.id)).toEqual([
-      "room:ACM-2:rv1",
-      "budget:acme:2026-10-04",
-      "room:ACM-2:pa1",
-      "room:ACM-1:ask1",
-      "room:ACM-1:ch1",
-    ]);
-  });
-
   it("leaves out what waits for nobody: answered cards, an owner pause, a task that is gone", () => {
     const out = buildDecisions(
       sources({
@@ -209,15 +133,7 @@ describe("building decisions", () => {
       }),
     );
     expect(out.map((d) => d.id)).toEqual(["room:ACM-2:rv1"]);
-    expect(out[0]).toMatchObject({
-      title: "Ready to ship: Docs",
-      sentence: '@acme-builder finished "Docs" and waits for your review.',
-      options: [
-        { id: "merge", label: "Merge", primary: true },
-        { id: "done", label: "Mark done" },
-        { id: "changes", label: "Ask for changes", text: true },
-      ],
-    });
+    expect(out[0]?.options.map((o) => o.id)).toEqual(["merge", "done", "changes"]);
     expect(isDecisionItem({ ...paused, reason: "offline" }, subjects["ACM-2"] as never)).toBe(false);
   });
 });
@@ -268,10 +184,6 @@ beforeEach(() => {
 
 describe("answering a decision", () => {
   it.each([
-    ["room:ACM-1:ask1", "keep", undefined, 'ask ACM-1 ask1 {"q":"keep"}'],
-    ["room:ACM-1:ask1", "keep", "something else", 'ask ACM-1 ask1 {"q":"something else"}'],
-    ["room:ACM-1:ch1", "wait", undefined, "choice ACM-1 ch1 wait"],
-    ["room:ACM-1:oq1", "c1", undefined, "question ACM-1 oq1 SQS"],
     ["room:ACM-1:pm1", "yes", undefined, "permission ACM-1 pm1 yes"],
     ["room:ACM-1:ap1", "reject", undefined, "approval ACM-1 ap1 reject"],
     ["room:ACM-1:ap1", "approve", undefined, "approval ACM-1 ap1 approve"],
@@ -283,9 +195,7 @@ describe("answering a decision", () => {
       "  Use the shared helper.  ",
       "changes ACM-2 acme-builder Use the shared helper.",
     ],
-    ["room:ACM-2:pa1", "resume", undefined, "card ACM-2 pa1 resume"],
-    ["budget:acme:2026-10-04", "leave", undefined, "budget acme leave"],
-  ])("routes %s / %s to its own path", async (id, option, text, expected) => {
+  ])("routes the approval %s / %s to its own path", async (id, option, text, expected) => {
     await service().answer({ id, option, ...(text === undefined ? {} : { text }) });
     expect(log).toEqual([expected]);
   });

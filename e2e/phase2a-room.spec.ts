@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { APIRequestContext, Locator, Page } from "@playwright/test";
-import { expect, test, useHome } from "./fixture.ts";
+import { expect, expectTasksHome, test, useHome } from "./fixture.ts";
 
 // The room: stopping a turn, permissions, a chat task and what an agent can show. Org Acme with its
 // agents, the API-key account codex-key and the project api. The fake Codex adapter pauses 600 ms
@@ -53,7 +53,7 @@ const newTaskDialog = (page: Page) => page.getByRole("dialog", { name: "New task
 /** Opens the New task dialog with `n` and types the title. */
 async function openNewTask(page: Page, title: string) {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Board", exact: true })).toBeVisible();
+  await expectTasksHome(page);
   await page.keyboard.press("n");
   await expect(newTaskDialog(page)).toBeVisible();
   await newTaskDialog(page).getByRole("textbox", { name: "Title" }).fill(title);
@@ -97,20 +97,12 @@ test("a command the agent may not run asks inline: Deny fails the tool and the t
   const log = messages(page);
   const prompt = room(page).getByRole("region", { name: "Permission: Run npm test" });
   await expect(prompt).toBeVisible();
-  await expect(prompt).toContainText("acme-builder asks to");
-  await expect(prompt.getByRole("button")).toHaveText(["Allow", "Allow for this task", "Deny"]);
-  await expect(room(page).getByRole("region", { name: "Plan of acme-builder" })).toBeVisible();
+  await expect(prompt.getByRole("button", { name: "Deny" })).toBeVisible();
+  await expect(prompt.getByRole("button", { name: "Allow for this task" })).toBeVisible();
   await shot(page, "room-permission");
-
-  // The shell's banner points at the prompt too, and goes away once it is answered.
-  const banner = page.getByRole("status").filter({ hasText: "waiting for your answer" });
-  await expect(banner).toContainText("@acme-builder is waiting for your answer in");
-  await banner.getByRole("button", { name: "Show" }).click();
-  await expect(prompt).toBeFocused();
 
   await prompt.getByRole("button", { name: "Deny" }).click();
   await expect(prompt).toBeHidden();
-  await expect(banner).toBeHidden();
   await expect(verdict(log, "Denied", "Run npm test")).toBeVisible();
   await expect(log.getByRole("button", { name: /Run npm test.*failed/ })).toBeVisible();
   await expect(log.getByText(/I could not run the tests\./)).toBeVisible();

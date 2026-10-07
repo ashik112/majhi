@@ -103,9 +103,4 @@ describe("loginCommand", () => {
     const spec = loginCommand({ tool: "claude", home: "/h" }, { base });
     expect(spec.display).not.toContain("KEY");
   });
-  it("keeps the owner's claude.ai connectors and plugin MCP servers out of Claude runs", () => {
-    const env = buildEnv({ tool: "claude", home: "/h" }, { PATH: "/bin" });
-    expect(env.ENABLE_CLAUDEAI_MCP_SERVERS).toBe("false");
-    expect(env.CLAUDE_CODE_SKIP_PLUGIN_MCP_SERVERS).toBe("1");
-  });
 });

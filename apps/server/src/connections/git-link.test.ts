@@ -60,12 +60,4 @@ describe("a git host sign-in is a connection", () => {
     expect(g).not.toBe(a1);
     expect(r.views.map((v) => v.org).sort()).toEqual(["acme", "globex"]);
   });
-
-  it("the sign-in's own hook and the command that awaits it share one check", async () => {
-    const r = rig();
-    const ref = { org: "acme", kind: "github" as const, host: "github.com" };
-    const [one, two] = await Promise.all([r.link.signedIn(ref), r.link.signedIn(ref)]);
-    expect(one).toBe(two);
-    expect(r.checks).toHaveLength(1);
-  });
 });

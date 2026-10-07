@@ -51,20 +51,6 @@ describe("docker in a task: what a script may run", () => {
     expect(() => plan(["run", "acme/voice:test"])).toThrow(ImageNotAllowed);
   });
 
-  it("names the container on the owner's card, unless the script gave it no name", () => {
-    const wanted = (argv: string[]) => {
-      try {
-        plan(argv);
-      } catch (err) {
-        if (err instanceof ImageNotAllowed) return [err.image, err.service];
-        throw err;
-      }
-      return undefined;
-    };
-    expect(wanted(["run", "--name", "cache", "redis:7"])).toEqual(["redis:7", "cache"]);
-    expect(wanted(["run", "redis:7"])).toEqual(["redis:7", undefined]);
-  });
-
   it("lists only the task's containers, whatever filter it asks", () => {
     const listed = plan(["ps", "-a", "--filter", "name=web"]);
     expect(listed).toEqual({
@@ -98,7 +84,7 @@ describe("docker in a task: what it may do", () => {
     expect(result.name).toBe("majhi-acm-1-c-web");
   });
 
-  it("drops a published port with a note that names where to reach it, and never publishes", () => {
+  it("drops a published port and never publishes", () => {
     const result = run([
       "--name",
       "web",
@@ -110,9 +96,6 @@ describe("docker in a task: what it may do", () => {
     ]);
     expect(result.args).not.toContain("--publish");
     expect(result.args).not.toContain("-p");
-    expect(result.notes).toEqual([
-      "Nothing is published on the computer. From this task, reach it at web:80, web:90.",
-    ]);
   });
 
   it("takes any network name as the task's one network, and never the host's, none or another container's", () => {

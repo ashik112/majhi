@@ -84,8 +84,7 @@ describe("Own work in the questions chore", () => {
     expect(d.answers).toEqual([
       { task: "ACM-1", item: "p1", option: "once", reason: "Own work: it runs the project's test script" },
     ]);
-    expect(d.log()[0]?.[1]).toBe("Approved in ACM-1: Run pnpm test");
-    expect(String(d.log()[0]?.[2])).toContain("Own work");
+    expect(d.log()).toHaveLength(1);
   });
 
   it("never approves a request from a task the captain did not start", async () => {

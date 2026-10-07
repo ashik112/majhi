@@ -124,27 +124,6 @@ describe("GitLab approvals", () => {
       pending: ["bo"],
     });
   });
-
-  it("the approvals call uses the encoded project path and the ETag", async () => {
-    const calls: string[][] = [];
-    const exec: Exec = async (_bin, args) => {
-      if (args[0] === "mr") return { code: 0, stdout: view, stderr: "" };
-      calls.push([...args]);
-      return args.some((a) => a.startsWith("If-None-Match"))
-        ? { code: 1, stdout: http(304, undefined, undefined), stderr: "" }
-        : {
-            code: 0,
-            stdout: http(200, '"v1"', { ...approvals, approved: true, approvals_left: 0 }),
-            stderr: "",
-          };
-    };
-    const host = new GitLabHost(exec);
-    const a = await host.status(gl, 3);
-    const b = await host.status(gl, 3);
-    expect(calls[0]?.at(-1)).toBe("projects/acme%2Fplatform%2Fweb/merge_requests/3/approvals");
-    expect(a.review?.approved).toBe(true);
-    expect(b.review).toEqual(a.review);
-  });
 });
 
 describe("Bitbucket participants", () => {

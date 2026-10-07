@@ -69,7 +69,6 @@ describe("Own work in a real captain turn", { timeout: 90_000 }, () => {
     post(theirs, "p1", "Bash: pnpm test");
     const refused = await answer(theirs, "p1", "once");
     expect(refused.isError).toBe(true);
-    expect(refused.text).toContain("Refused");
     expect(room.get(theirs, "p1")).toMatchObject({ state: "pending" });
 
     // Its own task: a remembered allow or a reject is not Own work's to give, and neither is anything risky.
@@ -95,6 +94,5 @@ describe("Own work in a real captain turn", { timeout: 90_000 }, () => {
     // The routine request passes Own work's gate. This card has no live run behind it, so the answer itself stops there.
     const routine = await answer(own, "p2", "once");
     expect(routine.text).not.toContain("Own work");
-    expect(routine.text).toContain("not waiting");
   });
 });

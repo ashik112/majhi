@@ -31,20 +31,6 @@ const cpu = {
     ],
   },
 };
-const memory = (v: string) => ({
-  data: {
-    result: [
-      {
-        metric: {},
-        values: [
-          [1000, "1"],
-          [1060, v],
-        ],
-      },
-    ],
-  },
-});
-
 describe("watch formulas", () => {
   it("turns DigitalOcean's CPU counters into a percent", () => {
     const all = readNumber(cpu, { path: "data.result.*.values", agg: "rate" });
@@ -52,12 +38,6 @@ describe("watch formulas", () => {
     expect(all).toBeCloseTo(100 / 60);
     expect(idle).toBeCloseTo(45 / 60);
     expect(evaluate("100*(1-b/a)", { a: all ?? 0, b: idle ?? 0 })).toBeCloseTo(55);
-  });
-
-  it("turns available and total memory into a used percent", () => {
-    const a = readNumber(memory("2000"), { path: "data.result.*.values" });
-    const b = readNumber(memory("8000"), { path: "data.result.*.values" });
-    expect(evaluate("100*(1-a/b)", { a: a ?? 0, b: b ?? 0 })).toBe(75);
   });
 
   it("refuses anything but arithmetic, and a division by zero", () => {

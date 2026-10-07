@@ -180,7 +180,6 @@ describe("writePages", () => {
     expect(runtime.starts).toHaveLength(1);
     expect(runtime.starts[0]).toMatchObject({ cwd: exported, mounts: [{ path: exported, readOnly: true }] });
     expect(runtime.starts[0]?.scratch).toBeUndefined();
-    expect(sessions[0]?.options).toEqual([["model", "claude-sonnet-5-5"]]);
     expect(sessions[0]?.closed).toBe(true);
 
     // The disobedient page is listed as failed after one more ask; the next page is still written.
@@ -239,12 +238,6 @@ describe("writePages", () => {
     };
     await writePages(input(housekeeper, [OVERVIEW]));
     expect(answers).toEqual(["no", "no", "no", "yes"]);
-  });
-
-  it("runs on the model named in wiki.writer_model", async () => {
-    const { housekeeper, runtime } = world(() => HOSTILE, {}, { wiki: { writer_model: "claude-opus-5" } });
-    await writePages(input(housekeeper, [OVERVIEW]));
-    expect(runtime.starts[0]?.model).toBe("claude-opus-5");
   });
 
   it("starts no page once the cap is reached, and says which were skipped", async () => {

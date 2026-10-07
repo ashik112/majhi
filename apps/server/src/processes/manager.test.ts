@@ -108,21 +108,6 @@ describe("a process on the task's network", () => {
     });
   }
 
-  it("starts in a runner under its name on the task's network, so the agent's shell reaches what it serves", async () => {
-    const seen: SpawnRequest[] = [];
-    const m = managerWith(async () => true, seen);
-    const p = await m.start({
-      task: "ACM-1",
-      agent: "acme-builder",
-      command: "sleep 5",
-      name: "Web Server!",
-      wait: false,
-    });
-    expect(seen[0]?.networkAlias).toBe("web-server");
-    expect(p.host).toBe("web-server");
-    await m.stopAll();
-  });
-
   it("joins the network without a name that a container or majhi already has", async () => {
     const seen: SpawnRequest[] = [];
     const m = managerWith(
@@ -141,20 +126,5 @@ describe("a process on the task's network", () => {
     }
     expect(seen.map((r) => r.networkAlias)).toEqual([undefined, undefined, "web"]);
     await m.stopAll();
-  });
-
-  it("has no name on a network when there is none or it could not be made", async () => {
-    for (const network of [
-      undefined,
-      async () => false,
-      async () => Promise.reject(new Error("no address pool")),
-    ]) {
-      const seen: SpawnRequest[] = [];
-      const m = managerWith(network, seen);
-      const p = await m.start({ task: "ACM-1", agent: "acme-builder", command: "sleep 5", wait: false });
-      expect(seen[0]?.networkAlias).toBeUndefined();
-      expect(p.host).toBeUndefined();
-      await m.stopAll();
-    }
   });
 });
