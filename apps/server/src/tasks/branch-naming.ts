@@ -1,8 +1,11 @@
 import { BRANCH_TYPE_OF, BRANCH_TYPES, type BranchType, type TaskTyping } from "@majhi/shared";
 import { git } from "../git/git.ts";
 
-/** The pattern used when neither the owner nor the repo's own branches say otherwise. */
-export const DEFAULT_BRANCH_PATTERN = "{type}/{id}-{slug}";
+/**
+ * The pattern used when the owner set none. It has no task id: majhi's ids mean nothing to a repo's
+ * other people. `{id}` and `{ID}` work only in a pattern the owner wrote on a project.
+ */
+export const DEFAULT_BRANCH_PATTERN = "{type}/{slug}";
 
 const MAX_SLUG = 40;
 
@@ -137,34 +140,40 @@ export interface BranchRequest {
   id: string;
   title: string;
   type: BranchType;
-  /** `{type}/{id}-{slug}` by default. */
+  /** `{type}/{slug}` by default. */
   pattern?: string | undefined;
   /** Words the repo uses for each type, when its branches show it (`feature` for `feat`). */
   typeWords?: Partial<Record<BranchType, string>> | undefined;
 }
 
-/** `feat/acm-1-add-login`. A pattern that renders to something git would refuse falls back to the default. */
+/** `feat/add-login`. A pattern that renders to something git would refuse falls back to the default. */
 export function branchName(req: BranchRequest): string {
   const render = (pattern: string): string =>
     pattern
       .replace(/\{type\}/g, req.typeWords?.[req.type] ?? req.type)
       .replace(/\{id\}/g, req.id.toLowerCase())
       .replace(/\{ID\}/g, req.id.toUpperCase())
-      .replace(/\{slug\}/g, shortSlug(req.title))
+      .replace(/\{slug\}/g, shortSlug(req.title) || "task")
       .replace(/[-_.]+$/, "")
       .replace(/\/[-_.]+/g, "/");
   const own = render(req.pattern ?? DEFAULT_BRANCH_PATTERN);
   return usable(own) ? own : render(DEFAULT_BRANCH_PATTERN);
 }
 
-/** `name`, or `name-2`, `name-3` ... the first one `taken` does not say exists. */
-export async function freeBranch(name: string, taken: (branch: string) => Promise<boolean>): Promise<string> {
-  if (!(await taken(name))) return name;
-  for (let n = 2; n < 100; n++) {
-    const next = `${name}-${n}`;
-    if (!(await taken(next))) return next;
+/**
+ * One suffix for every repo: `names` (one wanted name per repo) all get `-2`, `-3` ... together until
+ * each is free in its own repo, so a task has the same branch name wherever that is possible.
+ */
+export async function freeBranchesTogether(
+  names: readonly string[],
+  taken: (index: number, branch: string) => Promise<boolean>,
+): Promise<string[]> {
+  for (let n = 1; n < 100; n++) {
+    const next = names.map((name) => (n === 1 ? name : `${name}-${n}`));
+    const used = await Promise.all(next.map((name, i) => taken(i, name)));
+    if (!used.some(Boolean)) return next;
   }
-  throw new Error(`Could not find a free branch name from ${name}.`);
+  throw new Error(`Could not find a free branch name from ${names[0] ?? ""}.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -174,7 +183,8 @@ export async function freeBranch(name: string, taken: (branch: string) => Promis
 export type BranchStyle =
   | { kind: "default" }
   | { kind: "typed"; words: Partial<Record<BranchType, string>> }
-  | { kind: "key"; upper: boolean };
+  /** Issue keys first (`ABC-123/fix`): majhi has no such key, so it uses the repo's type words, if any. */
+  | { kind: "key"; words: Partial<Record<BranchType, string>> };
 
 /** Branches that say nothing about how people name their own. */
 const SKIPPED =
@@ -189,7 +199,6 @@ export function detectBranchStyle(names: readonly string[]): BranchStyle {
   const counts = new Map<BranchType, Map<string, number>>();
   let typed = 0;
   let keyed = 0;
-  let upper = 0;
   for (const name of seen) {
     const first = name.split("/")[0] ?? "";
     const type = name.includes("/") ? typeOfWord(first) : undefined;
@@ -203,25 +212,22 @@ export function detectBranchStyle(names: readonly string[]): BranchStyle {
     const key = /^([A-Za-z][A-Za-z0-9]*-\d+)(?:[/_-]|$)/.exec(name)?.[1];
     if (key !== undefined && name.length > key.length) {
       keyed++;
-      if (key === key.toUpperCase()) upper++;
     }
   }
-  if (keyed >= MIN_SIGNAL && keyed > typed) return { kind: "key", upper: upper * 2 >= keyed };
-  if (typed < MIN_SIGNAL) return { kind: "default" };
   const words: Partial<Record<BranchType, string>> = {};
   for (const [type, seenWords] of counts) {
     const [top] = [...seenWords].sort((a, b) => b[1] - a[1]);
     if (top !== undefined) words[type] = top[0];
   }
+  if (keyed >= MIN_SIGNAL && keyed > typed) return { kind: "key", words };
+  if (typed < MIN_SIGNAL) return { kind: "default" };
   // A repo that writes `feature/` and never `feat/` also means `feature/` for a type it has no branch of.
   return { kind: "typed", words };
 }
 
-/** What a pattern and type words the repo's style gives, when the owner set no pattern. */
-export function styleOptions(style: BranchStyle): Pick<BranchRequest, "pattern" | "typeWords"> {
-  if (style.kind === "key") return { pattern: style.upper ? "{ID}/{slug}" : "{id}/{slug}" };
-  if (style.kind === "typed") return { typeWords: style.words };
-  return {};
+/** The type words the repo's style gives, when the owner set no pattern. Never an id: a key style adds none. */
+export function styleOptions(style: BranchStyle): Pick<BranchRequest, "typeWords"> {
+  return style.kind === "default" ? {} : { typeWords: style.words };
 }
 
 /** "conventional": recent commits follow `type(scope): summary`. "other": they clearly do not. */
@@ -287,8 +293,44 @@ async function read(repo: string): Promise<RepoStyle> {
   return { branches: detectBranchStyle([...names]), commits: detectCommitStyle(subjects) };
 }
 
-/** `fix(acm-1): login redirect` for a repo whose commits follow the convention, else `ACM-1: Login redirect`. */
-export function titleFor(req: { id: string; title: string; type: BranchType }, commits: CommitStyle): string {
-  if (commits !== "conventional") return `${req.id}: ${req.title}`.slice(0, 200);
-  return `${req.type}(${req.id.toLowerCase()}): ${stripTypePrefix(req.title)}`.slice(0, 200);
+/**
+ * The subject of a commit or merge request for a task: `fix: login redirect` for a repo whose
+ * commits follow Conventional Commits, else `Login redirect`. It never carries the task id.
+ */
+export function titleFor(req: { title: string; type: BranchType }, commits: CommitStyle): string {
+  const bare = stripTypePrefix(req.title).trim();
+  const first = bare.charAt(0);
+  if (commits !== "conventional") return `${first.toUpperCase()}${bare.slice(1)}`.slice(0, 200);
+  const lowered =
+    bare.charAt(1) === bare.charAt(1).toUpperCase() && bare.charAt(1) !== bare.charAt(1).toLowerCase()
+      ? bare
+      : `${first.toLowerCase()}${bare.slice(1)}`;
+  return `${req.type}: ${lowered}`.slice(0, 200);
+}
+
+/** The message of the merge or squash commit majhi makes. It names the branch, never the task id. */
+export function mergeMessage(branch: string, into: string): string {
+  return `${mergeSubject(branch)} into ${into}`;
+}
+
+/** What every such message starts with: how a push tells majhi's own merge commits from other local ones. */
+export function mergeSubject(branch: string): string {
+  return `Merge branch '${branch}'`;
+}
+
+/** Whether a branch name carries majhi's task id as a word of its own (`goa-11` in `fix/goa-11-x`, not in `goa-110`). */
+export function carriesTaskId(branch: string, id: string): boolean {
+  const name = branch.toLowerCase();
+  const key = id.toLowerCase();
+  for (let at = name.indexOf(key); at >= 0; at = name.indexOf(key, at + 1)) {
+    const before = name.charAt(at - 1);
+    const after = name.charAt(at + key.length);
+    const wordBefore = at > 0 && (isDigit(before) || (before >= "a" && before <= "z"));
+    if (!wordBefore && !(after !== "" && isDigit(after))) return true;
+  }
+  return false;
+}
+
+function isDigit(c: string): boolean {
+  return c >= "0" && c <= "9";
 }
