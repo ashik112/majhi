@@ -6,6 +6,8 @@ type ChatCommand =
   | "chat.list"
   | "chat.link"
   | "chat.ignore"
+  | "chat.unlink"
+  | "chat.unignore"
   | "chat.channels"
   | "chat.channelLink"
   | "chat.channelIgnore"
@@ -44,6 +46,16 @@ export function chatHandlers(chat: ClientChat): Pick<CommandHandlers, ChatComman
     "chat.ignore": async (input, ctx) => {
       ownerOnly(ctx);
       chat.ignore(input.room);
+      return { ok: true as const };
+    },
+    "chat.unlink": async (input, ctx) => {
+      ownerOnly(ctx);
+      chat.unlink(input.room);
+      return { ok: true as const };
+    },
+    "chat.unignore": async (input, ctx) => {
+      ownerOnly(ctx);
+      chat.unignore(input.room);
       return { ok: true as const };
     },
     "chat.channels": async (input, ctx) => {

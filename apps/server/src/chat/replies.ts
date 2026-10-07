@@ -69,6 +69,8 @@ export class ClientReplies {
   private roomOf(id: string): RoomRow {
     const room = this.deps.rooms.room(id);
     if (room.org === undefined) throw new UserError("Link the chat to a workspace first.", 409);
+    if (room.chat.archived === true)
+      throw new UserError("That chat is unlinked. Its history is read only.", 409);
     return room;
   }
 
@@ -315,6 +317,7 @@ export class ClientReplies {
     send: async (draft) => {
       const room = this.deps.store.client.room(draft.target);
       if (room === undefined) return { ok: false, detail: "The chat is gone." };
+      if (room.chat.archived === true) return { ok: false, detail: "The chat is unlinked." };
       const item = this.deps.room.get(room.id, `reply:${draft.id}`);
       const reply = item?.type === "client-reply" ? item : undefined;
       try {

@@ -41,6 +41,8 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "chat.channels",
   "chat.channelLink",
   "chat.channelIgnore",
+  "chat.unlink",
+  "chat.unignore",
   "chat.holder",
   "chat.send",
   "chat.editReply",

@@ -101,6 +101,10 @@ export const ChatCursorSchema = z.strictObject({
   position: z.record(z.string(), z.string()),
   /** When the last batch was stored. A gap longer than the app keeps is shown in the rooms. */
   at: z.string(),
+  /** Slack: permissions the app refused a call for, until a later read of its scopes shows them granted. */
+  needed: z.array(z.string()).optional(),
+  /** Slack: a message event has arrived on this connection. */
+  eventSeen: z.boolean().optional(),
 });
 export type ChatCursor = z.infer<typeof ChatCursorSchema>;
 
@@ -125,6 +129,8 @@ export const ClientRoomSchema = z.strictObject({
   people: z.number().int().nonnegative().optional(),
   holder: ChatHolderSchema.default("captain"),
   ignored: z.boolean().optional(),
+  /** Unlinked by the owner: its history stays under its workspace, read only, and nothing is read or sent. */
+  archived: z.boolean().optional(),
   trouble: ChatTroubleSchema.optional(),
 });
 export type ClientRoom = z.infer<typeof ClientRoomSchema>;
@@ -141,6 +147,8 @@ export const ClientRowSchema = z.object({
   org: IdSchema.optional(),
   holder: ChatHolderSchema,
   trouble: ChatTroubleSchema.optional(),
+  /** Unlinked: shown read only under its workspace. */
+  archived: z.boolean().optional(),
   /** The newest line and when. Absent until a message is stored. */
   lastLine: z.string().optional(),
   lastAt: z.string().optional(),
@@ -185,6 +193,18 @@ export const ChatChannelSchema = z.object({
 });
 export type ChatChannel = z.infer<typeof ChatChannelSchema>;
 
+/** What is known of a permission: held, refused, or not told. Never a silent pass. */
+export const ChatPermissionStateSchema = z.enum(["granted", "missing", "unknown"]);
+export type ChatPermissionState = z.infer<typeof ChatPermissionStateSchema>;
+
+export const ChatPermissionSchema = z.object({
+  scope: z.string(),
+  /** What it is for, in a few words. */
+  use: z.string(),
+  state: ChatPermissionStateSchema,
+});
+export type ChatPermission = z.infer<typeof ChatPermissionSchema>;
+
 export const ChatChannelsSchema = z.object({
   connection: IdSchema,
   /** The bot's name, for the `/invite @name` line. */
@@ -192,8 +212,14 @@ export const ChatChannelsSchema = z.object({
   /** The app's page of permissions, when majhi knows the app. */
   appId: z.string().optional(),
   channels: z.array(ChatChannelSchema),
-  /** Permissions majhi needs that the connection lacks. Empty when none, or when the app does not say. */
-  missingScopes: z.array(z.string()),
+  /** Every permission majhi needs, with what is known of it. */
+  permissions: z.array(ChatPermissionSchema),
+  /** Whether Socket Mode is on, from the connection's check. */
+  socketMode: ChatPermissionStateSchema,
+  /** A message event has arrived on this connection. */
+  messageEvents: z.boolean(),
+  /** The app manifest majhi would use, as JSON the owner pastes under App Manifest. */
+  manifest: z.string(),
 });
 export type ChatChannels = z.infer<typeof ChatChannelsSchema>;
 
@@ -205,8 +231,8 @@ export const ChatChannelLinkInputSchema = z.object({
 });
 export const ChatChannelIgnoreInputSchema = z.object({ connection: IdSchema, channel: z.string().min(1) });
 
-/** The Slack permissions majhi needs beyond reading channel messages: posting, files, group chats and joining public channels. */
-export const SLACK_NEEDED_SCOPES = ["chat:write", "files:read", "mpim:read", "channels:join"] as const;
+export const ChatUnlinkInputSchema = z.object({ room: z.string().min(1) });
+export const ChatUnignoreInputSchema = z.object({ room: z.string().min(1) });
 export const ChatHolderInputSchema = z.object({ room: z.string().min(1), holder: ChatHolderSchema });
 export const ChatSendInputSchema = z.object({
   room: z.string().min(1),

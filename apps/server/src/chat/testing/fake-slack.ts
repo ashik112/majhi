@@ -86,6 +86,8 @@ export class FakeSlack {
     "channels:join",
     "chat:write",
   ];
+  /** While true, answers carry no `x-oauth-scopes`: what the panel sees when Slack does not say what a token holds. */
+  hideScopes = false;
   readonly bot = { user: "U0BOT", bot_id: "B0BOT", name: "majhi" };
   readonly users = new Map<string, FakeUser>();
   readonly channels = new Map<string, FakeChannel>();
@@ -398,11 +400,18 @@ export class FakeSlack {
     }
     const wanted = method === "apps.connections.open" ? FakeSlack.APP_TOKEN : FakeSlack.BOT_TOKEN;
     if (token !== wanted) return send(200, { ok: false, error: "invalid_auth" });
-    return send(
-      200,
-      this.answer(method, params),
-      method === "auth.test" ? { "x-oauth-scopes": this.scopes.join(",") } : {},
-    );
+    const needs = SCOPE_OF_METHOD[method];
+    if (needs !== undefined && !this.scopes.includes(needs))
+      return send(
+        200,
+        { ok: false, error: "missing_scope", needed: needs, provided: this.scopes.join(",") },
+        this.scopeHeader(),
+      );
+    return send(200, this.answer(method, params), this.scopeHeader());
+  }
+
+  private scopeHeader(): Record<string, string> {
+    return this.hideScopes ? {} : { "x-oauth-scopes": this.scopes.join(",") };
   }
 
   private answer(method: string, params: Record<string, string>): Record<string, unknown> {
@@ -554,6 +563,12 @@ export class FakeSlack {
     }
   }
 }
+
+/** The scope a method needs, as Slack's `missing_scope` names it. */
+const SCOPE_OF_METHOD: Record<string, string> = {
+  "chat.postMessage": "chat:write",
+  "conversations.join": "channels:join",
+};
 
 /** Compares two ts strings by their parts, as majhi must. */
 function compare(a: string, b: string): number {

@@ -119,6 +119,26 @@ export function slackBotScopes(access: ConnectAccess): string[] {
   return [...new Set(scopesAt(entry, access).flatMap((s) => s.oauth ?? []))];
 }
 
+/** What each Slack permission is for, in a few words, for the permissions list of a chat connection. */
+export const SLACK_SCOPE_USE: Readonly<Record<string, string>> = {
+  "channels:history": "Read public channel messages",
+  "groups:history": "Read private channel messages",
+  "im:history": "Read direct messages",
+  "mpim:history": "Read group messages",
+  "channels:read": "List public channels",
+  "groups:read": "List private channels",
+  "mpim:read": "List group chats",
+  "users:read": "Show who wrote",
+  "files:read": "Fetch shared files",
+  "channels:join": "Join public channels",
+  "chat:write": "Post replies",
+};
+
+/** Every bot scope a Slack chat connection needs: reading and replying. */
+export function slackChatScopes(): string[] {
+  return slackBotScopes("readwrite");
+}
+
 /** The Slack app manifest. Socket Mode on, so majhi connects out and Slack needs no public address. */
 export function slackManifest(appName: string, access: ConnectAccess): Record<string, unknown> {
   return {

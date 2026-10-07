@@ -101,12 +101,14 @@ export class ClientRepo {
     return row === undefined ? undefined : parseRoom(row);
   }
 
+  /** The live room of a chat. An unlinked (archived) room no longer holds the chat. */
   roomOfChat(app: ChatApp, account: string, chat: string): RoomRow | undefined {
     const row = this.sqlite
       .prepare(
         `SELECT id, org, client FROM tasks
           WHERE client IS NOT NULL AND json_extract(client, '$.app') = ?
-            AND json_extract(client, '$.account') = ? AND json_extract(client, '$.chat') = ?`,
+            AND json_extract(client, '$.account') = ? AND json_extract(client, '$.chat') = ?
+            AND json_extract(client, '$.archived') IS NOT 1`,
       )
       .get(app, account, chat) as TaskClientRow | undefined;
     return row === undefined ? undefined : parseRoom(row);
@@ -364,7 +366,31 @@ export class ClientRepo {
     }
   }
 
+  /** The read position moves; what majhi noted about the connection (`needed`, `eventSeen`) stays. */
   setCursor(connection: string, cursor: ChatCursor, at: string): void {
+    const had = this.cursor(connection);
+    this.writeCursor(
+      connection,
+      {
+        ...cursor,
+        ...(cursor.needed === undefined && had?.needed !== undefined ? { needed: had.needed } : {}),
+        ...(cursor.eventSeen === undefined && had?.eventSeen !== undefined
+          ? { eventSeen: had.eventSeen }
+          : {}),
+      },
+      at,
+    );
+  }
+
+  /** Notes about a connection, kept beside its read position, which they never move. */
+  setNotes(connection: string, notes: { needed?: string[]; eventSeen?: boolean }, at: string): void {
+    const had = this.cursor(connection) ?? { position: {}, at };
+    const next: ChatCursor = { ...had, ...notes };
+    if (next.needed?.length === 0) delete next.needed;
+    this.writeCursor(connection, next, at);
+  }
+
+  private writeCursor(connection: string, cursor: ChatCursor, at: string): void {
     // A row made for the cursor alone holds `null` as its health, which the health reader ignores.
     this.sqlite
       .prepare(

@@ -93,6 +93,8 @@ export class ChatSendError extends Error {
   constructor(
     message: string,
     readonly kind: "unreachable" | "needs-token" | "rejected",
+    /** Of a refusal for want of a permission: the permission the call needs. */
+    readonly needed?: string,
   ) {
     super(message);
   }

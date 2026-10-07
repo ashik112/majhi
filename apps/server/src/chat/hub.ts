@@ -31,6 +31,11 @@ export interface HubDeps {
     get: (connection: string) => ChatCursor | undefined;
     set: (connection: string, cursor: ChatCursor) => void;
   };
+  /** What majhi noted about a connection: permissions an app refused a call for, and that a message event arrived. */
+  notes?: {
+    get: (connection: string) => ChatNotes;
+    set: (connection: string, notes: Partial<ChatNotes>) => void;
+  };
   /** Stores one delivery. */
   deliver: (conn: ChatConnection, envelope: ChatEnvelope) => Promise<void>;
   /** Messages were missed between two times: the rooms of the account show it. */
@@ -43,6 +48,13 @@ export interface HubDeps {
   changed: () => void;
   now?: () => Date;
   log?: (line: string) => void;
+}
+
+export interface ChatNotes {
+  /** Permissions an app refused a call for, until a later read of its scopes shows them granted. */
+  needed: string[];
+  /** A message event has arrived on the connection. */
+  eventSeen: boolean;
 }
 
 /** What an app signs in with: its bot token, and for Slack the app-level token too. */
@@ -65,6 +77,7 @@ export class ChatHub {
   private readonly running = new Map<string, Running>();
   private readonly troubles = new Map<string, ChatTrouble>();
   private syncing: Promise<void> = Promise.resolve();
+  private readonly seen = new Set<string>();
 
   constructor(private readonly deps: HubDeps) {}
 
@@ -137,7 +150,10 @@ export class ChatHub {
       if (missed > hours * 3_600_000) this.deps.gap(conn, cursor.at, this.now().toISOString());
     }
     const sink: ChatSink = {
-      deliver: (envelope) => this.deps.deliver(conn, envelope),
+      deliver: async (envelope) => {
+        await this.deps.deliver(conn, envelope);
+        this.sawEvent(info.id);
+      },
       save: (next) => this.deps.cursors.set(info.id, next),
       trouble: (trouble) => {
         if (trouble === undefined) this.troubles.delete(info.id);
@@ -148,6 +164,30 @@ export class ChatHub {
       gap: (from, to) => this.deps.gap(conn, from, to),
     };
     this.running.set(info.id, { info, tokens, stop: adapter.start(conn, sink, cursor) });
+  }
+
+  private sawEvent(connection: string): void {
+    const { notes } = this.deps;
+    if (notes === undefined || this.seen.has(connection)) return;
+    this.seen.add(connection);
+    if (!notes.get(connection).eventSeen) notes.set(connection, { eventSeen: true });
+  }
+
+  /** A call was refused for want of a permission: it stays on the connection until its scopes show it granted. */
+  private noteNeeded(connection: string, err: unknown): void {
+    const needed = err instanceof ChatSendError ? err.needed : undefined;
+    const { notes } = this.deps;
+    if (needed === undefined || notes === undefined) return;
+    const had = notes.get(connection).needed;
+    if (!had.includes(needed)) {
+      notes.set(connection, { needed: [...had, needed] });
+      this.deps.changed();
+    }
+  }
+
+  /** What is noted about a connection. */
+  notesOf(connection: string): ChatNotes {
+    return this.deps.notes?.get(connection) ?? { needed: [], eventSeen: false };
   }
 
   /** The accounts and whether each can be read. */
@@ -198,17 +238,38 @@ export class ChatHub {
   }
 
   /** The channels of a connection's workspace. */
-  async channels(connection: string): Promise<{ info: ChatConnectionInfo; list: ChatChannelList }> {
+  async channels(
+    connection: string,
+  ): Promise<{ info: ChatConnectionInfo; list: ChatChannelList; notes: ChatNotes }> {
     const { adapter, info, conn } = await this.byConnection(connection);
     if (adapter.channels === undefined) throw new Error(`${info.app} has no channel list.`);
-    return { info, list: await adapter.channels(conn) };
+    let list: ChatChannelList;
+    try {
+      list = await adapter.channels(conn);
+    } catch (err) {
+      this.noteNeeded(connection, err);
+      throw err;
+    }
+    const scopes = list.scopes;
+    const notes = this.notesOf(connection);
+    if (scopes !== undefined) {
+      // A permission the token holds now is no longer missing.
+      const still = notes.needed.filter((s) => !scopes.includes(s));
+      if (still.length !== notes.needed.length) this.deps.notes?.set(connection, { needed: still });
+    }
+    return { info, list, notes: this.notesOf(connection) };
   }
 
   /** The bot joins a public channel of a connection's workspace. */
   async join(connection: string, channel: string): Promise<void> {
     const { adapter, info, conn } = await this.byConnection(connection);
     if (adapter.join === undefined) throw new Error(`${info.app} bots do not join channels.`);
-    await adapter.join(conn, channel);
+    try {
+      await adapter.join(conn, channel);
+    } catch (err) {
+      this.noteNeeded(connection, err);
+      throw err;
+    }
   }
 
   /** Sends text to a chat of an account. */
@@ -222,6 +283,7 @@ export class ChatHub {
     try {
       return await adapter.send(conn, target, message);
     } catch (err) {
+      this.noteNeeded(conn.id, err);
       if (err instanceof ChatSendError && err.kind === "unreachable")
         this.deps.unreachable(conn, target.chat);
       if (err instanceof ChatSendError && err.kind === "needs-token") {

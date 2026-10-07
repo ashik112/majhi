@@ -2,13 +2,17 @@ import {
   type AuthorityChoice,
   type ChatApp,
   type ChatChannels,
+  type ChatPermission,
+  type ChatPermissionState,
   type ChatReplyInput,
   type ClientList,
   type ClientRow,
   type ContactView,
   type HoldsPatch,
   REPLY_HOLD_LABEL,
-  SLACK_NEEDED_SCOPES,
+  SLACK_SCOPE_USE,
+  slackChatScopes,
+  slackManifest,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
@@ -27,7 +31,7 @@ export interface ClientChatDeps {
   contacts: Contacts;
   replies: ClientReplies;
   ingest: ChatIngest;
-  hub: Pick<ChatHub, "accounts" | "capabilities" | "restart" | "channels" | "join">;
+  hub: Pick<ChatHub, "accounts" | "capabilities" | "restart" | "channels" | "join" | "notesOf">;
   /** The chat app connections that exist now. */
   connections: () => Promise<ChatConnectionInfo[]>;
   /** The owner's Hold list of a workspace, as saved. */
@@ -55,8 +59,8 @@ export class ClientChat {
   private async fetched(connection: string, fresh: boolean) {
     const had = this.listed.get(connection);
     if (!fresh && had !== undefined && Date.now() - had.at < CHANNELS_TTL_MS) return had;
-    const got = await this.deps.hub.channels(connection);
-    const made = { at: Date.now(), ...got };
+    const { info, list } = await this.deps.hub.channels(connection);
+    const made = { at: Date.now(), info, list };
     this.listed.set(connection, made);
     return made;
   }
@@ -64,6 +68,7 @@ export class ClientChat {
   /** The channels of a connection's workspace, with what majhi has done with each. */
   async channels(connection: string, refresh: boolean): Promise<ChatChannels> {
     const { info, list } = await this.fetched(connection, refresh);
+    const notes = this.deps.hub.notesOf(connection);
     const channels = list.channels.map((c) => {
       const room = this.deps.rooms.find(info.app, info.account, c.id);
       return {
@@ -73,15 +78,36 @@ export class ClientChat {
         ...(room?.chat.ignored === true ? { ignored: true } : {}),
       };
     });
-    const missing =
-      list.scopes === undefined ? [] : SLACK_NEEDED_SCOPES.filter((s) => !list.scopes?.includes(s));
+    // What Slack says of the token is the answer; when it says nothing, a refusal it gave majhi is, else it is not known.
+    const permissions: ChatPermission[] = slackChatScopes().map((scope) => {
+      const state: ChatPermissionState =
+        list.scopes !== undefined
+          ? list.scopes.includes(scope)
+            ? "granted"
+            : "missing"
+          : notes.needed.includes(scope)
+            ? "missing"
+            : "unknown";
+      return { scope, use: SLACK_SCOPE_USE[scope] ?? scope, state };
+    });
     return {
       connection,
       bot: list.bot,
       ...(list.appId === undefined ? {} : { appId: list.appId }),
       channels,
-      missingScopes: missing,
+      permissions,
+      socketMode: this.socketMode(connection),
+      messageEvents: notes.eventSeen,
+      manifest: JSON.stringify(slackManifest(list.bot, "readwrite")),
     };
+  }
+
+  /** Socket Mode is on when the connection's own check opened a socket; a failed check says it is not. */
+  private socketMode(connection: string): ChatPermissionState {
+    const health = this.deps.store.connectionHealth.get(connection);
+    if (health?.state === "connected") return "granted";
+    if (health?.state === "failed") return "missing";
+    return "unknown";
   }
 
   /** The room of a channel, made if the channel has none yet. */
@@ -143,6 +169,17 @@ export class ClientChat {
 
   ignore(room: string): void {
     this.deps.rooms.ignore(room);
+  }
+
+  unignore(room: string): void {
+    this.deps.rooms.unignore(room);
+    this.listed.clear();
+  }
+
+  /** Stops triage and replies for a linked chat. Its history stays, read only, under its workspace. */
+  unlink(room: string): void {
+    this.deps.rooms.unlink(room);
+    this.listed.clear();
   }
 
   holder(room: string, holder: "captain" | "you"): ClientRow {

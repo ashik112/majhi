@@ -111,6 +111,8 @@ export class ClientRooms {
   async link(id: string, org: string): Promise<RoomRow> {
     const room = this.room(id);
     if (!(await this.deps.knownOrg(org))) throw new UserError(`There is no workspace "${org}".`, 404);
+    if (room.chat.archived === true)
+      throw new UserError("That chat was unlinked. Link the channel again.", 409);
     if (room.org !== undefined && room.org !== org) {
       throw new UserError("That chat is linked to another workspace already.", 409);
     }
@@ -127,6 +129,24 @@ export class ClientRooms {
     if (room.org !== undefined)
       throw new UserError("A linked chat is not ignored. Remove the bot from it instead.", 409);
     return this.patch(room, { ignored: true });
+  }
+
+  /** Watch an ignored chat again: it is a New chat once more. */
+  unignore(id: string): RoomRow {
+    const room = this.room(id);
+    if (room.chat.ignored !== true) return room;
+    return this.patch(room, { ignored: undefined });
+  }
+
+  /**
+   * Unlinks a chat from its workspace. Nothing is read or sent for it any more; its room and history stay under the
+   * workspace, read only. The chat is free to be linked again: that makes a fresh room, so a new workspace never sees this one's history.
+   */
+  unlink(id: string): RoomRow {
+    const room = this.room(id);
+    if (room.org === undefined) throw new UserError("That chat is not linked.", 409);
+    if (room.chat.archived === true) return room;
+    return this.patch(room, { archived: true });
   }
 
   holder(id: string, holder: ChatHolder): RoomRow {
@@ -153,6 +173,7 @@ export class ClientRooms {
         ...(r.org === undefined ? {} : { org: r.org }),
         holder: r.chat.holder,
         ...(r.chat.trouble === undefined ? {} : { trouble: r.chat.trouble }),
+        ...(r.chat.archived === true ? { archived: true } : {}),
         ...(conversation === undefined
           ? {}
           : { lastLine: conversation.lastLine, lastAt: conversation.lastAt }),

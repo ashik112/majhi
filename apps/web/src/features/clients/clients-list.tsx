@@ -155,9 +155,11 @@ export function ClientRows({
                 {row.title}
               </span>
               <span className="truncate text-xs text-fg-faint">
-                {row.trouble === "unreachable"
-                  ? "The bot cannot write here"
-                  : (row.lastLine ?? kindLine(row))}
+                {row.archived === true
+                  ? "Unlinked"
+                  : row.trouble === "unreachable"
+                    ? "The bot cannot write here"
+                    : (row.lastLine ?? kindLine(row))}
               </span>
             </span>
             {row.waiting && (

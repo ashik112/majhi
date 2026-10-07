@@ -234,7 +234,12 @@ export class ChatIngest {
   /** Messages are missing between two times in every linked chat of an account. */
   gap(conn: ChatConnection, from: string, to: string): void {
     for (const room of this.deps.store.client.rooms()) {
-      if (room.chat.app !== conn.app || room.chat.account !== conn.account || room.org === undefined)
+      if (
+        room.chat.app !== conn.app ||
+        room.chat.account !== conn.account ||
+        room.org === undefined ||
+        room.chat.archived === true
+      )
         continue;
       this.deps.room.post(room.id as TaskId, `gap:${from}`, { type: "client-gap", from, to });
     }
@@ -256,7 +261,13 @@ export class ChatIngest {
     const since = this.now().getTime() - 24 * 3_600_000;
     let n = 0;
     for (const room of this.deps.store.client.rooms()) {
-      if (room.org === undefined || room.chat.ignored === true || room.chat.holder !== "captain") continue;
+      if (
+        room.org === undefined ||
+        room.chat.ignored === true ||
+        room.chat.archived === true ||
+        room.chat.holder !== "captain"
+      )
+        continue;
       for (const item of this.deps.store.room.page(room.id, 100).items.toReversed()) {
         if (item.type !== "client" || item.us === true || !item.sender.verified) continue;
         if (Date.parse(item.at) < since || check(room.org, `client:${externalKeyText(item.external)}`))
@@ -274,6 +285,6 @@ export class ChatIngest {
   roomsOf(conn: ChatConnection): RoomRow[] {
     return this.deps.store.client
       .rooms()
-      .filter((r) => r.chat.app === conn.app && r.chat.account === conn.account);
+      .filter((r) => r.chat.app === conn.app && r.chat.account === conn.account && r.chat.archived !== true);
   }
 }
