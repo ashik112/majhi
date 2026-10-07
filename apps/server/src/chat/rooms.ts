@@ -201,22 +201,19 @@ export class ClientRooms {
     const { store } = this.deps;
     const conversations = new Map(store.conversations.list().map((c) => [c.id, c]));
     const held = store.client.heldRooms();
-    return store.client
-      .rooms()
-      .filter(
-        (r) =>
-          r.chat.app === app &&
-          r.chat.account === account &&
-          r.chat.kind !== "private",
-      )
-      // An unlinked chat is listed only until the chat has a live room again, so it can be linked again from here.
-      .filter(
-        (r, _i, all) =>
-          r.chat.archived !== true ||
-          !all.some((o) => o.chat.chat === r.chat.chat && o.chat.archived !== true),
-      )
-      .map((r) => this.rowOf(r, conversations.get(r.id), held))
-      .toSorted((a, b) => a.title.localeCompare(b.title));
+    return (
+      store.client
+        .rooms()
+        .filter((r) => r.chat.app === app && r.chat.account === account && r.chat.kind !== "private")
+        // An unlinked chat is listed only until the chat has a live room again, so it can be linked again from here.
+        .filter(
+          (r, _i, all) =>
+            r.chat.archived !== true ||
+            !all.some((o) => o.chat.chat === r.chat.chat && o.chat.archived !== true),
+        )
+        .map((r) => this.rowOf(r, conversations.get(r.id), held))
+        .toSorted((a, b) => a.title.localeCompare(b.title))
+    );
   }
 
   private rowOf(r: RoomRow, conversation: Conversation | undefined, held: ReadonlySet<string>): ClientRow {
@@ -232,9 +229,7 @@ export class ClientRooms {
       ...(r.chat.trouble === undefined ? {} : { trouble: r.chat.trouble }),
       ...(r.chat.archived === true ? { archived: true } : {}),
       ...(r.chat.ignored === true ? { ignored: true } : {}),
-      ...(conversation === undefined
-        ? {}
-        : { lastLine: conversation.lastLine, lastAt: conversation.lastAt }),
+      ...(conversation === undefined ? {} : { lastLine: conversation.lastLine, lastAt: conversation.lastAt }),
       unread: conversation?.unread ?? 0,
       waiting: held.has(r.id),
     };

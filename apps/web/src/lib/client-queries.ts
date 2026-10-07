@@ -117,9 +117,14 @@ export function useUnlinkChat() {
     mutationFn: (input) => cmd("chat.unlink", input),
     onSuccess: async (out) => {
       if (out.discarded > 0)
-        toast(out.discarded === 1 ? "1 waiting reply was discarded" : `${out.discarded} waiting replies were discarded`, {
-          detail: "The chat is unlinked, so nothing would be sent.",
-        });
+        toast(
+          out.discarded === 1
+            ? "1 waiting reply was discarded"
+            : `${out.discarded} waiting replies were discarded`,
+          {
+            detail: "The chat is unlinked, so nothing would be sent.",
+          },
+        );
       await done();
       await client.invalidateQueries({ queryKey: [...queryKeys.clients, "channels"] });
     },

@@ -252,10 +252,12 @@ function Row({
         </button>
         <p className="truncate text-sm text-fg-muted" title={[account, host].filter(Boolean).join(" · ")}>
           {host !== undefined && account !== undefined ? `${account} · ${host}` : sub}
-          <span className={cn("min-[1320px]:hidden", view.agents.length === 0 && "text-amber")}>
-            {" · "}
-            {view.agents.length === 0 ? "no agents" : plural(view.agents.length, "agent")}
-          </span>
+          {view.type !== "chat" && (
+            <span className={cn("min-[1320px]:hidden", view.agents.length === 0 && "text-amber")}>
+              {" · "}
+              {view.agents.length === 0 ? "no agents" : plural(view.agents.length, "agent")}
+            </span>
+          )}
         </p>
       </div>
       <span
@@ -269,11 +271,15 @@ function Row({
       <span
         className={cn(
           "hidden truncate text-sm min-[1320px]:block",
-          view.agents.length === 0 ? "text-amber" : "text-fg-muted",
+          view.agents.length === 0 && view.type !== "chat" ? "text-amber" : "text-fg-muted",
         )}
         title={view.agents.map((a) => `@${a}`).join(", ")}
       >
-        {view.agents.length === 0 ? "No agents" : plural(view.agents.length, "agent")}
+        {view.type === "chat"
+          ? "No agent access"
+          : view.agents.length === 0
+            ? "No agents"
+            : plural(view.agents.length, "agent")}
       </span>
       <RowAction view={view} status={status} checking={checking} onOpen={onOpen} onCheck={onCheck} />
       <ChevronRight aria-hidden="true" className="size-4 text-fg-faint" />
@@ -343,7 +349,7 @@ function Empty({ filtered, onAdd }: { filtered: boolean; onAdd: () => void }) {
         </p>
       </div>
       <ul className="grid w-full max-w-[760px] gap-2.5 sm:grid-cols-2">
-        {GROUPS.filter((g) => g.id !== "own").map((g) => (
+        {GROUPS.filter((g) => g.id !== "own" && g.id !== "chat").map((g) => (
           <li
             key={g.id}
             className="flex flex-col gap-0.5 rounded-xl border border-line-strong bg-card p-3 text-left"

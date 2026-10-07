@@ -271,11 +271,13 @@ describe('"any update?" from a client', () => {
     expect(after?.text).toContain("resolved");
   });
 
-  it("in a chat with no linked incident is not answered; the owner is asked", async () => {
+  it("in a chat with no linked incident is told there is no open issue, under the Tell rules", async () => {
     const { t } = await ask("-300");
-    expect(t.w.sent).toEqual([]);
+    expect(t.w.sent.map((m) => m.text)).toEqual([
+      "No open issue on our side right now. What are you seeing?",
+    ]);
     const room = t.w.rooms.find("telegram", CONN.account, "-300");
     const message = t.w.store.room.page(room?.id ?? "", 20).items.find((i) => i.type === "client");
-    expect(message).toMatchObject({ outcome: { state: "waits" } });
+    expect(message).toMatchObject({ outcome: { state: "replied" } });
   });
 });

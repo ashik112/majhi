@@ -101,7 +101,8 @@ export function ClientRoom({ taskId }: { taskId: string }) {
         <Log row={row} items={room.state.items} more={room.state.more} loadOlder={room.loadOlder} />
         {row.archived === true ? (
           <p className="shrink-0 text-center text-sm text-fg-faint">
-            Unlinked. This history is read only. Link the {row.app === "slack" || row.kind === "channel" ? "channel" : "group"} again to talk in it.
+            Unlinked. This history is read only. Link the{" "}
+            {row.app === "slack" || row.kind === "channel" ? "channel" : "group"} again to talk in it.
           </p>
         ) : (
           <Box row={row} />

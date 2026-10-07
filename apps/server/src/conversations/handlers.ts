@@ -6,7 +6,10 @@ import type { ConversationsService } from "./service.ts";
 /** The `conversations.*` commands of the chat dock. What the owner has read is the owner's alone. */
 export function conversationsHandlers(
   conversations: ConversationsService,
-): Pick<CommandHandlers, "conversations.list" | "conversations.search" | "conversations.markRead" | "conversations.archive"> {
+): Pick<
+  CommandHandlers,
+  "conversations.list" | "conversations.search" | "conversations.markRead" | "conversations.archive"
+> {
   return {
     "conversations.list": async (_input, ctx) => {
       ownerOnly(ctx);

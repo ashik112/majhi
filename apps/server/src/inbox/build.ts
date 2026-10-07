@@ -446,7 +446,10 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
     const client = d.channel === "client" ? src.clientDraft?.(d) : undefined;
     if (client !== undefined) {
       const who = client.from === undefined ? "a client" : client.from;
-      const said = client.said === undefined ? "" : ` ${client.from ?? "They"} wrote: "${oneLine(client.said).slice(0, 160)}".`;
+      const said =
+        client.said === undefined
+          ? ""
+          : ` ${client.from ?? "They"} wrote: "${oneLine(client.said).slice(0, 160)}".`;
       const why = client.hold === undefined ? "" : ` Waiting because: ${client.hold}.`;
       out.push({
         id,

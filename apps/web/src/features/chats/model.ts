@@ -74,9 +74,7 @@ export function visibleConversations(
     if (!kindMatches(row, filter.kind)) return false;
     if (q === "") return true;
     const title = rowTitle(row, workspaceOf(row, all).name);
-    return (
-      title.toLowerCase().includes(q) || row.lastLine.toLowerCase().includes(q) || inHistory.has(row.id)
-    );
+    return title.toLowerCase().includes(q) || row.lastLine.toLowerCase().includes(q) || inHistory.has(row.id);
   });
 }
 

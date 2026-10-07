@@ -20,7 +20,6 @@ import { Segmented } from "@/components/ui/segmented";
 import { Select } from "@/components/ui/select";
 import { Sheet } from "@/components/ui/sheet";
 import { useToast } from "@/components/ui/toast";
-import { Cell } from "@/features/captain/delegation";
 import {
   useChatHolder,
   useChatSettings,
@@ -37,14 +36,11 @@ const SEARCH_OVER = 20;
 
 const SELECT = "h-8 px-2 text-sm";
 
-/** One setting: its name and a line under it on the left, its control on the right. */
-function Row({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
+/** One setting: its name on the left, its control on the right. */
+function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-center gap-3 border-b border-line py-2">
-      <div className="flex min-w-0 flex-1 flex-col pr-2 leading-snug">
-        <span className="text-base text-fg">{label}</span>
-        {hint !== undefined && <span className="text-xs text-fg-faint">{hint}</span>}
-      </div>
+      <span className="min-w-0 flex-1 pr-2 text-base text-fg">{label}</span>
       <div className="shrink-0">{children}</div>
     </div>
   );
@@ -129,7 +125,6 @@ function Body({ data, onClose }: { data: ChatSettingsView; onClose: () => void }
   const keepCount = useKeepCount(data.room);
   const unlink = useUnlinkChat();
   const [pendingKeep, setPendingKeep] = useState<{ keep: Keep; remove: number }>();
-  const app = CHAT_APP_LABEL[data.app];
   const failed = (title: string) => ({
     onError: (error: Error) => toast(title, { detail: describeError(error), tone: "error" }),
   });
@@ -164,7 +159,7 @@ function Body({ data, onClose }: { data: ChatSettingsView; onClose: () => void }
   return (
     <fieldset disabled={readOnly} className="m-0 min-w-0 border-0 p-0">
       <Section>Replies</Section>
-      <Row label="Reply when" hint="Laya reads every message first">
+      <Row label="Reply when">
         <Segmented<ReplyWhen>
           label="Reply when"
           value={data.replyWhen}
@@ -176,7 +171,7 @@ function Body({ data, onClose }: { data: ChatSettingsView; onClose: () => void }
           onChange={(replyWhen) => change({ replyWhen })}
         />
       </Row>
-      <Row label="Send as" hint={data.me.allowed ? `Me posts with your ${app} account` : data.me.why}>
+      <Row label="Send as">
         <Segmented<"bot" | "me">
           label="Send as"
           value={data.sendAs}
@@ -192,7 +187,7 @@ function Body({ data, onClose }: { data: ChatSettingsView; onClose: () => void }
           onChange={(next) => sendAs.mutate({ sendAs: next }, failed("Could not change it"))}
         />
       </Row>
-      <Row label="Who replies now" hint="You take over when you write here">
+      <Row label="Who replies now">
         <Segmented<"captain" | "you">
           label="Who replies now"
           value={data.holder}
@@ -203,7 +198,7 @@ function Body({ data, onClose }: { data: ChatSettingsView; onClose: () => void }
           onChange={(next) => holder.mutate({ room: data.room, holder: next }, failed("Could not change it"))}
         />
       </Row>
-      <Row label="Replies a day" hint="Then the next ones wait for you">
+      <Row label="Replies a day">
         <Select
           aria-label="Replies a day"
           className={`${SELECT} w-[110px]`}
@@ -223,23 +218,24 @@ function Body({ data, onClose }: { data: ChatSettingsView; onClose: () => void }
       {HOLD_CLASSES.map((kind) => {
         const asks = data.holds[kind] ?? data.workspaceHolds[kind];
         return (
-          <Row
-            key={kind}
-            label={HOLD_LABEL[kind]}
-            hint={`Workspace: ${data.workspaceHolds[kind] ? "ask" : "captain"}`}
-          >
-            <Cell
-              checked={!asks}
+          <Row key={kind} label={HOLD_LABEL[kind]}>
+            <Segmented<"ask" | "send">
               label={HOLD_LABEL[kind]}
-              disabled={save.isPending}
-              onToggle={() => askToggle(kind)}
+              value={asks ? "ask" : "send"}
+              segments={[
+                { value: "ask", label: "Ask me" },
+                { value: "send", label: "Send" },
+              ]}
+              onChange={(next) => {
+                if ((next === "ask") !== asks) askToggle(kind);
+              }}
             />
           </Row>
         );
       })}
 
       <Section>History</Section>
-      <Row label="Keep" hint={`Older messages are removed from majhi, not from ${app}`}>
+      <Row label="Keep">
         <Select
           aria-label="Keep"
           className={`${SELECT} w-[110px]`}
@@ -271,8 +267,7 @@ function Body({ data, onClose }: { data: ChatSettingsView; onClose: () => void }
       <Section>People</Section>
       <People data={data} />
 
-      <div className="flex items-center justify-between pt-5">
-        <span className="text-xs text-fg-faint">Unlink keeps the history read only.</span>
+      <div className="flex items-center justify-end pt-5">
         <Button
           size="sm"
           disabled={readOnly || unlink.isPending}
@@ -311,7 +306,6 @@ function Rules({ rules, busy, onSave }: { rules: string; busy: boolean; onSave: 
       <label htmlFor="chat-rules" className="text-base text-fg">
         Rules
       </label>
-      <span className="text-xs text-fg-faint">The captain follows these in this chat</span>
       <textarea
         id="chat-rules"
         value={text}

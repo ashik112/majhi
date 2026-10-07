@@ -350,7 +350,10 @@ export class TelegramAdapter implements ChatAdapter {
     if (cached !== undefined && this.now().getTime() - cached.at < PEOPLE_TTL_MS) return;
     try {
       const list = await api.call("getChatAdministrators", { chat_id: chat }, TgAdmins, signal);
-      this.adminCache.set(chat, { ids: new Set(list.map((a) => String(a.user.id))), at: this.now().getTime() });
+      this.adminCache.set(chat, {
+        ids: new Set(list.map((a) => String(a.user.id))),
+        at: this.now().getTime(),
+      });
     } catch {
       this.adminCache.set(chat, { ids: cached?.ids ?? new Set(), at: this.now().getTime() });
     }

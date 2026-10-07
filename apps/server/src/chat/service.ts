@@ -44,7 +44,10 @@ export interface ClientChatDeps {
   settings: ChatSettings;
   /** Laya did not answer the last time it read a client message: the captain's triage stood in. */
   layaDown?: () => boolean;
-  hub: Pick<ChatHub, "accounts" | "capabilities" | "restart" | "channels" | "join" | "notesOf" | "checkYou" | "hasUserToken">;
+  hub: Pick<
+    ChatHub,
+    "accounts" | "capabilities" | "restart" | "channels" | "join" | "notesOf" | "checkYou" | "hasUserToken"
+  >;
   /** The chat app connections that exist now. */
   connections: () => Promise<ChatConnectionInfo[]>;
   /** The owner's Hold list of a workspace, as saved. */

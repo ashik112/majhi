@@ -440,7 +440,9 @@ export class ClientTriage {
         });
         this.deps.findings.dismiss(
           finding,
-          status === undefined ? "Told the client there is no open issue" : "Answered from the incident status",
+          status === undefined
+            ? "Told the client there is no open issue"
+            : "Answered from the incident status",
           CAPTAIN,
         );
         return replyOutcome(sent);
