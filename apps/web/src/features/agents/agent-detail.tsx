@@ -32,7 +32,7 @@ import { describeError } from "@/lib/errors";
 import { badgeLetters, formatTokens, plural } from "@/lib/format";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useConfig } from "@/lib/queries";
-import { useSetBoss } from "@/lib/studio-queries";
+import { useAccounts, useAgents, useSetBoss } from "@/lib/studio-queries";
 import { useNow } from "@/lib/use-now";
 import { AgentHealthDialog, DuplicateDialog, RemoveAgentDialog, RenameDialog } from "./agent-dialogs";
 import { AgentEmojiButton } from "./agent-emoji";
@@ -224,14 +224,17 @@ function NowBlock({
   tasks: readonly TaskSummary[];
 }) {
   const { org: filter } = useOrgFilter();
-  const state = lamp?.lamp ?? "idle";
+  const account = useAgents().data?.find((e) => e.status === "ok" && e.agent.frontmatter.id === id);
+  const accountId = account?.status === "ok" ? account.agent.frontmatter.account : undefined;
+  const signedOut = useAccounts().data?.find((a) => a.id === accountId)?.status === "needs-login";
+  const state = signedOut ? "needs" : (lamp?.lamp ?? "idle");
   const mine = tasksOf(id, tasks);
   const working = mine.find((t) => t.working.includes(id));
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <p className="flex items-center gap-2 text-base">
         <Lamp state={state} />
-        <span className={LAMP_TEXT[state]}>{lamp?.state ?? "Idle"}</span>
+        <span className={LAMP_TEXT[state]}>{signedOut ? "Signed out" : (lamp?.state ?? "Idle")}</span>
         {working && <span className="min-w-0 truncate text-fg-muted">on {working.id}</span>}
       </p>
       {mine.length === 0 ? (

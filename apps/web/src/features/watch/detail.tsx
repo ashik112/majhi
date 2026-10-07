@@ -15,6 +15,7 @@ import { useCaptainStatus } from "@/lib/captain-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
+import { useAskCaptain } from "@/lib/incident-queries";
 import { useFixCheck } from "@/lib/ops-queries";
 import { useAckIncident, useCheckNow, useRemoveService } from "@/lib/watch-queries";
 import {
@@ -117,12 +118,14 @@ export function IncidentDetail({
   const isConnection = incident.fix?.check.startsWith("connection:") === true;
   const thing = incident.title.replace(/^majhi: /, "").replace(/ is failing$/, "");
   const asked = `Incident: ${incident.title}. ${incident.timeline[0]?.text ?? ""} Look into it, fix what you can, and acknowledge it with majhi_ops_ack once it is handled. Tell me what was wrong in one or two lines.`;
+  const askNow = useAskCaptain();
   const noLook =
-    mode !== "on"
+    incident.quiet ??
+    (mode !== "on"
       ? "Auto-pilot is off"
       : lane === undefined
         ? `it has no thread in ${workspace} yet`
-        : undefined;
+        : undefined);
   const runFix = () => {
     if (incident.fix === undefined) return;
     fix.mutate(incident.fix.check, {
@@ -218,9 +221,21 @@ export function IncidentDetail({
             <div className="flex flex-wrap items-center gap-3">
               <p className="m-0 text-base text-fg-soft text-pretty">The captain did not look: {noLook}.</p>
               {open && (
-                <Button onClick={() => boss.show(wsTab(incident.org), asked)}>
+                <Button
+                  disabled={askNow.isPending}
+                  onClick={() =>
+                    incident.task === undefined
+                      ? boss.show(wsTab(incident.org), asked)
+                      : askNow.mutate(incident.task, {
+                          onSuccess: () =>
+                            toast("Asked the captain", { detail: `It is looking at ${incident.task}.` }),
+                          onError: (e) =>
+                            toast("Could not ask the captain", { detail: describeError(e), tone: "error" }),
+                        })
+                  }
+                >
                   <MessageSquare aria-hidden="true" />
-                  Ask the captain
+                  Ask the captain now
                 </Button>
               )}
             </div>

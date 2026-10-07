@@ -14,11 +14,14 @@ export function TaskAction({
   task,
   yourTurn,
   cardAsks = false,
+  shipAsk = 0,
 }: {
   task: Task;
   yourTurn: boolean;
   /** A card in the room's dock asks for the same decision and holds the primary button. */
   cardAsks?: boolean;
+  /** Counts up each time something outside asks for the Ship panel. */
+  shipAsk?: number;
 }) {
   const start = useStartTask();
   const stop = useStopTask();
@@ -36,14 +39,20 @@ export function TaskAction({
   const shippable = [options.data?.merge, options.data?.push].some((o) => o?.ok === true);
   // No repo changed since the task started: nothing to ship, so no Ship.
   const nothing = options.data?.changed?.length === 0 && (options.data?.protected ?? []).length === 0;
+  // Every repo's work is merged (here or through its merge request): nothing is left to ship.
+  const allShipped =
+    task.repos.length > 0 && task.repos.every((r) => r.shipped !== undefined || r.mr?.state === "merged");
   const canShip =
-    hasTree && !nothing && (done ? shippable : !["inbox", "ready", "running"].includes(task.status));
+    hasTree &&
+    !nothing &&
+    !(done && allShipped) &&
+    (done ? shippable : !["inbox", "ready", "running"].includes(task.status));
   const fail = (title: string) => (error: ApiRequestError) =>
     toast(title, { detail: error.message, tone: "error" });
 
   return (
     <>
-      {canShip && <Ship task={task} run={ship} />}
+      {canShip && <Ship task={task} run={ship} openAsk={shipAsk} />}
       {copy.warm && <span className="mr-1 max-w-[320px] truncate text-xs text-lamp-paused">{copy.text}</span>}
       {copy.kind === "start" && (
         <Button
@@ -70,8 +79,8 @@ export function TaskAction({
         </Button>
       )}
       {copy.kind === "done" && unshipped.length > 0 && (
-        // Narrow headers have no room for it: the button's tooltip and the review card say it too.
-        <span className="mr-1 hidden whitespace-nowrap text-xs text-amber-soft lg:inline">
+        // A narrow header has no room for it: the button's tooltip and the review card say it too.
+        <span className="mr-1 hidden whitespace-nowrap text-xs text-amber-soft @[49rem]:inline">
           {unshippedCount(unshipped)}
         </span>
       )}

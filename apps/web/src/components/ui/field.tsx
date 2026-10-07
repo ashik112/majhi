@@ -40,7 +40,10 @@ export function Field({
       {note && (
         <p
           id={noteId}
-          className={cn("text-sm text-pretty", error ? "text-red" : warning ? "text-amber" : "text-fg-faint")}
+          className={cn(
+            "break-words text-sm text-pretty",
+            error ? "text-red" : warning ? "text-amber" : "text-fg-faint",
+          )}
         >
           {note}
         </p>

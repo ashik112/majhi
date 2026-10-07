@@ -253,6 +253,13 @@ export function budgetDecisionId(scope: string, day: string): string {
 export function signInDecisionId(account: string): string {
   return `signin:${account}`;
 }
+/** What an incident task asks of the owner: start it, say which project, close it after it recovered, see a failed deploy. */
+export const INCIDENT_ASKS = ["start", "project", "recovered", "deploy"] as const;
+export type IncidentAsk = (typeof INCIDENT_ASKS)[number];
+/** `ref` is a task id, or a deploy id for `deploy`. */
+export function incidentAskDecisionId(what: IncidentAsk, ref: string): string {
+  return `iask:${what}:${ref}`;
+}
 /** The one decision that says the Mac has notifications off for majhi. */
 export const NOTIFY_ACCESS_DECISION_ID = "notify:mac";
 
@@ -265,6 +272,7 @@ export type ParsedDecisionId =
   | { kind: "incident"; id: number }
   | { kind: "trust"; id: number }
   | { kind: "ceiling"; month: string }
+  | { kind: "iask"; what: IncidentAsk; ref: string }
   | { kind: "notify" };
 
 /** The parts of a decision id, or undefined when it is none of ours. Ids are short and hold no secrets. */
@@ -292,6 +300,10 @@ export function parseDecisionId(id: string): ParsedDecisionId | undefined {
     return { kind: "trust", id: Number(rest[0]) };
   }
   if (id === NOTIFY_ACCESS_DECISION_ID) return { kind: "notify" };
+  if (head === "iask" && rest.length === 2 && rest[1] !== "") {
+    const what = INCIDENT_ASKS.find((a) => a === rest[0]);
+    if (what !== undefined) return { kind: "iask", what, ref: rest[1] as string };
+  }
   if (head === "ceiling" && rest.length === 1 && /^\d{4}-\d{2}$/.test(rest[0] ?? "")) {
     return { kind: "ceiling", month: rest[0] as string };
   }

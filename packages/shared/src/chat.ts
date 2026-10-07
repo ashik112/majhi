@@ -514,7 +514,7 @@ export const ChatReplyResultSchema = z.object({
 export type ChatReplyInput = z.infer<typeof ChatReplyInputSchema>;
 
 /** What a client message says about itself, as the triage step reports it: no tools, only these answers. */
-export const TRIAGE_ACTIONS = ["ignore", "answer", "ask", "attach", "update", "task"] as const;
+export const TRIAGE_ACTIONS = ["ignore", "answer", "ask", "clarify", "attach", "update", "task"] as const;
 export const TriageActionSchema = z.enum(TRIAGE_ACTIONS);
 export type TriageAction = z.infer<typeof TriageActionSchema>;
 

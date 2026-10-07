@@ -61,6 +61,16 @@ export interface DeployWorldDeps {
   credentials: CredentialDeps;
   checksConfigured: (project: string) => boolean;
   tellOwner: (key: string, text: string) => void;
+  /** Opens or joins the incident of a failed deploy (the incident engine). Absent: the task is made here. */
+  incident?:
+    | ((input: {
+        org: string;
+        project: string;
+        record: DeployRecord;
+        title: string;
+        text: string;
+      }) => Promise<string | undefined>)
+    | undefined;
   /** One line in a task's room. */
   taskNote: (task: string, key: string, level: "info" | "warn", text: string) => void;
   /** A deploy went live: the captain's ship chore of the workspace looks again. */
@@ -142,6 +152,7 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     title: string;
     text: string;
   }): Promise<string | undefined> => {
+    if (deps.incident !== undefined) return deps.incident(input);
     const origin = {
       kind: "deploy" as const,
       deploy: input.record.id,

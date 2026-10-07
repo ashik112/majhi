@@ -38,7 +38,8 @@ export function useFindingToTask() {
   const done = useRefetchAfter();
   return useMutation<CommandOutput<"findings.toTask">, ApiRequestError, { id: number }>({
     mutationFn: ({ id }) => cmd("findings.toTask", { id }, { reason: "Owner made a task from a finding" }),
-    onSuccess: done,
+    // On a refusal too: the finding may already have a task, which the list then shows.
+    onSettled: done,
   });
 }
 

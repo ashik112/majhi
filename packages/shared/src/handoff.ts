@@ -279,10 +279,14 @@ function stepWords(step: HandoffStep): string | undefined {
   }
 }
 
+/** The task changed no code: there was nothing to check, merge or ship. */
+export function handoffNoChanges(steps: readonly HandoffStep[]): boolean {
+  return steps.some((s) => s.id === "ready" && s.status === "none");
+}
+
 /** The line the review card and the Decisions item show, collapsed: what ran and how it ended. */
 export function handoffSummary(steps: readonly HandoffStep[], review: HandoffReview): string {
-  if (steps.some((s) => s.id === "ready" && s.status === "none"))
-    return "No code changes. Nothing to check or ship.";
+  if (handoffNoChanges(steps)) return "No code changes. Nothing to check or ship.";
   const parts = steps.filter((s) => s.id !== "review").flatMap((s) => stepWords(s) ?? []);
   const ready = steps.find((s) => s.id === "ready");
   if (ready !== undefined && ready.status !== "pass") parts.unshift(ready.detail);

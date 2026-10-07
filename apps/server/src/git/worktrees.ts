@@ -74,9 +74,8 @@ async function create(req: WorktreeRequest): Promise<WorktreeResult> {
   if (remote !== undefined) {
     const failed = await fetchWithKeys(source, remote, base, req.reloadKeys);
     if (failed !== undefined) {
-      warnings.push(
-        `Could not fetch ${base} from ${remote} (${failed}). Using the last copy on this machine.`,
-      );
+      console.warn(`Could not fetch ${base} from ${remote} for ${source}: ${failed}`);
+      warnings.push(fetchFailureNote(base, remote, failed));
     }
     // A named branch that exists only on the remote needs its own fetch. Missing is fine.
     await tryFetch(source, remote, branch);
@@ -116,6 +115,32 @@ async function excludeCaches(path: string, warnings: string[]): Promise<void> {
 
 async function lockFor(req: WorktreeRequest): Promise<void> {
   if (req.task !== undefined) await lock(req.source, req.path, lockReason(req.task));
+}
+
+/**
+ * What a failed fetch of the base says to the owner: why in plain words, and what to do. Never git's own
+ * text. The task starts from the last copy of the base on this machine.
+ */
+export function fetchFailureNote(base: string, remote: string, raw: string): string {
+  const text = raw.toLowerCase();
+  const had = `Using the last copy of ${base} on this machine.`;
+  if (
+    isSshAuthFailure(raw) ||
+    [
+      "could not read from remote repository",
+      "authentication failed",
+      "permission denied",
+      "access denied",
+    ].some((w) => text.includes(w))
+  ) {
+    return `majhi could not sign in to ${remote} to get the latest ${base}. ${had} To fix it, open Connections and sign in to this project's Git account again, or reload your SSH keys.`;
+  }
+  if (
+    ["could not resolve host", "timed out", "unable to access", "connection"].some((w) => text.includes(w))
+  ) {
+    return `majhi could not reach ${remote} to get the latest ${base}. ${had} It tries again on the next task.`;
+  }
+  return `majhi could not get the latest ${base} from ${remote}. ${had} Check the remote's address in Projects.`;
 }
 
 /** ssh's way of saying no key it had was accepted, or the host could not be verified. */

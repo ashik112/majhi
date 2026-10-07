@@ -649,10 +649,13 @@ export class MrService {
               if ((await this.token(ctx.project, ctx.target.host, ctx.remoteConfig)) === undefined) {
                 const org =
                   (await this.deps.config.sections()).orgs[ctx.project.org]?.name ?? ctx.project.org;
-                throw new FixableError(`No ${HOST_LABEL[ctx.target.host]} token: add one in Orgs > ${org}.`, {
-                  page: "orgs",
-                  org: ctx.project.org,
-                });
+                throw new FixableError(
+                  `No ${HOST_LABEL[ctx.target.host]} token: add one in Workspaces > ${org}.`,
+                  {
+                    page: "orgs",
+                    org: ctx.project.org,
+                  },
+                );
               }
             }
           });

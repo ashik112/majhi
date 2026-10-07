@@ -15,6 +15,7 @@ import {
 import { memo, type ReactNode, useContext, useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
+import { PageLink } from "@/components/ui/page-link";
 import { useToast } from "@/components/ui/toast";
 import { WrongButton } from "@/features/decisions/wrong-button";
 import { LogLink } from "@/features/handoff/handoff-block";
@@ -25,6 +26,7 @@ import { type ApiRequestError, cmd } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
+import { useExtractMemory } from "@/lib/memory-queries";
 import { useNow } from "@/lib/use-now";
 import { ApprovalCard, SecretRequestCard } from "./approval-card";
 import { PendingAsk } from "./ask-card";
@@ -807,6 +809,35 @@ const SYSTEM_ICON = {
   error: <CircleAlert className="size-3.5" />,
 };
 
+/** Reads the task for memory again, after a read that did not give a usable answer. */
+function RetryMemory({ task }: { task: string }) {
+  const extract = useExtractMemory();
+  const toast = useToast();
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="h-6 px-2"
+      disabled={extract.isPending}
+      onClick={() =>
+        extract.mutate(
+          { task },
+          {
+            onSuccess: () => toast("Memory saved", { detail: task }),
+            onError: () =>
+              toast("Memory was not saved", {
+                detail: "The answer could not be used. Try again.",
+                tone: "error",
+              }),
+          },
+        )
+      }
+    >
+      {extract.isPending ? "Reading..." : "Retry"}
+    </Button>
+  );
+}
+
 /** A warning or an error from majhi. Plain notes come grouped as a NotesRow instead. */
 function SystemLine({ item, repeat }: { item: Of<"system">; repeat: number }) {
   const task = useContext(RoomTaskContext);
@@ -822,6 +853,14 @@ function SystemLine({ item, repeat }: { item: Of<"system">; repeat: number }) {
           <WrongButton decision={item.decision} />
         ) : failed?.log !== undefined && task !== undefined ? (
           <LogLink task={task} log={failed.log} />
+        ) : item.action === "memory-retry" && task !== undefined ? (
+          <RetryMemory task={task} />
+        ) : item.action === "runner-memory" ? (
+          <Button asChild size="sm" variant="ghost" className="h-6 px-2">
+            <PageLink page="setup" search={{ section: "containers" }}>
+              Raise memory
+            </PageLink>
+          </Button>
         ) : undefined
       }
     />

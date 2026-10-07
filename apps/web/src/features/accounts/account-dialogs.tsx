@@ -67,7 +67,6 @@ export function SignInAgainDialog({
           accountId: account.id,
           loginHint: hint,
           terminalId: started.terminalId,
-          command: started.command,
           state: { phase: "running" },
         }),
       (error) =>

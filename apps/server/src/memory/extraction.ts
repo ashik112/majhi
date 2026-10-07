@@ -44,7 +44,7 @@ export interface ExtractionDeps {
   /** A project's own checkout and its org. */
   project: (id: string) => Promise<{ path: string; org: string } | undefined>;
   /** A line in the task's room. */
-  say: (task: string, level: "info" | "warn", text: string) => void;
+  say: (task: string, level: "info" | "warn", text: string, action?: "memory-retry") => void;
   /** Reads git for one repo. Tests may replace it. */
   repoFacts?: (repo: TaskRepo, createdAt: string) => Promise<RepoFacts>;
   /** The registered orgs and projects, for the scopes the Housekeeper may give. Default: none. */
@@ -129,7 +129,8 @@ export class Extraction {
     if (!agentSpoke(this.deps.room(task.id))) return;
     void this.background.track(this.read(task.id, { again: false })).catch((err: unknown) => {
       if (err instanceof NoHousekeeper) return;
-      this.say(task.id, "warn", `Memory was not written: ${errorMessage(err)}`);
+      console.error(`Memory of ${task.id} was not written: ${errorMessage(err)}`);
+      this.say(task.id, "warn", "Memory for this task was not saved.", "memory-retry");
     });
   }
 
@@ -336,9 +337,9 @@ export class Extraction {
   }
 
   /** A line in the room. The room may be gone (shutdown): then nobody is left to tell. */
-  private say(id: string, level: "info" | "warn", text: string): void {
+  private say(id: string, level: "info" | "warn", text: string, action?: "memory-retry"): void {
     try {
-      this.deps.say(id, level, text);
+      this.deps.say(id, level, text, action);
     } catch {
       // Nothing to do.
     }

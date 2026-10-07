@@ -55,7 +55,11 @@ export interface TriageDeps {
   /** What becoming an incident does: link the chat to one, or make one. */
   incident: {
     attach(room: RoomRow, choice: string, item: string): Promise<{ task: string; reopened: boolean }>;
-    open(room: RoomRow, item: Extract<RoomItem, { type: "client" }>, finding: number): Promise<string>;
+    claim(
+      room: RoomRow,
+      item: Extract<RoomItem, { type: "client" }>,
+      finding: number,
+    ): Promise<{ task: string; joined: boolean } | undefined>;
     /** Whether the chat is linked to an open incident. */
     linked(room: string): boolean;
     /** The answer to "any update?" from the incident's derived status, or nothing when no open incident is linked. */
@@ -82,6 +86,10 @@ const DecisionSchema = z.object({
   /** A new problem that is down or failing for the client now, so it is an incident, not a piece of work. */
   outage: z.boolean().optional(),
 });
+
+/** What a client is asked when a report says too little to act on. Plain words, no promise. */
+const CLARIFY_TEXT =
+  "Thanks for telling us. To look into it we need a few details: what exactly is failing, since when, and the error or page you see.";
 
 const WriterSchema = ReplyFlagsSchema.extend({ text: z.string().trim().min(1).max(3000) });
 
@@ -350,7 +358,7 @@ export class ClientTriage {
       addressed
         ? "The message names our bot or answers one of its messages, so it is addressed to the team: it is never ignored."
         : "",
-      `Choose "action" from: ${addressed ? "" : "ignore (nothing to do), "}answer (a question the team's wiki can answer), ask (a person must decide), attach (it reports an incident already listed, or says a resolved one is still broken or back), update (it asks for news, like "any update?"${linked ? ", and an incident is linked to this chat" : ", and no incident is linked to this chat"}), task (new work or a new problem to look into).`,
+      `Choose "action" from: ${addressed ? "" : "ignore (nothing to do), "}answer (a question the team's wiki can answer), ask (a person must decide), clarify (the report is too vague to act on: it says something is wrong without saying what), attach (it reports an incident already listed, or says a resolved one is still broken or back), update (it asks for news, like "any update?"${linked ? ", and an incident is linked to this chat" : ", and no incident is linked to this chat"}), task (new work or a new problem to look into).`,
       `{"action": "...", "reason": "one short sentence", "incident": "<id of the listed incident it belongs to, or null>", "outage": true if it is a new problem that is down or failing for the client right now}`,
       incidents.length === 0
         ? "Incidents: none."
@@ -403,6 +411,15 @@ export class ClientTriage {
       const sent = await this.deps.replies.captain({ ...target, text: written.text, flags: written.flags });
       return { ...replyOutcome(sent), why, ...(task === undefined ? {} : { task }) };
     };
+    /** The report is too vague, or nothing shows it: the client is asked what exactly is failing. */
+    const clarify = async (why: string): Promise<ClientOutcome> => {
+      const sent = await this.deps.replies.captain({
+        ...target,
+        text: CLARIFY_TEXT,
+        flags: { promisedTime: false, money: false, security: false, severalClients: false },
+      });
+      return { ...replyOutcome(sent), why };
+    };
     /** A person follows up: the owner reads the finding. */
     const waits = (why: string): Promise<ClientOutcome> | ClientOutcome =>
       addressed ? acknowledge(why) : { state: "waits", why };
@@ -410,6 +427,8 @@ export class ClientTriage {
     const handled = (why: string, task?: string): Promise<ClientOutcome> | ClientOutcome =>
       addressed ? acknowledge(why, task) : { state: "handled", why, ...(task === undefined ? {} : { task }) };
     switch (decision.action) {
+      case "clarify":
+        return clarify(decision.reason);
       case "ignore":
         this.deps.findings.dismiss(finding, `Nothing to do: ${decision.reason}`, CAPTAIN);
         return { state: "ignored", why: decision.reason };
@@ -449,8 +468,14 @@ export class ClientTriage {
       }
       case "task": {
         if (decision.outage === true) {
-          const task = await this.deps.incident.open(room, item, finding);
-          return handled(`Opened incident ${task}`, task);
+          const found = await this.deps.incident.claim(room, item, finding);
+          // No watch, no failed deploy: nothing backs the claim yet. The client is asked for specifics.
+          if (found === undefined)
+            return clarify("No watch or deploy shows a problem: asked the client for details");
+          return handled(
+            found.joined ? `Joined incident ${found.task}` : `Opened incident ${found.task}`,
+            found.task,
+          );
         }
         const { task } = await this.deps.findings.toTask(finding, { kind: "captain", org });
         return handled(`Proposed a task: ${task}`, task);
