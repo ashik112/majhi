@@ -234,7 +234,12 @@ export class FindingsService {
       evidence,
       ...(input.detail !== "" && input.detail !== known.detail ? { detail: input.detail } : {}),
       ...(SEVERITY_RANK[input.severity] > SEVERITY_RANK[known.severity] ? { severity: input.severity } : {}),
-      ...(reopen ? { status: "open" as const, task: null, decision: null } : {}),
+      // An incident that fires again keeps its task: the engine opens that task again, so no second fix task appears.
+      ...(reopen
+        ? known.source === "incident" && known.task !== undefined
+          ? { status: "task" as const, decision: null }
+          : { status: "open" as const, task: null, decision: null }
+        : {}),
     });
     this.deps.changed?.();
     if (reopen) this.deps.appeared?.(refreshed);

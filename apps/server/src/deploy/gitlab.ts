@@ -12,8 +12,8 @@ import {
 
 /**
  * Deploy through a GitLab pipeline created on a branch, using the workspace's own GitLab sign-in.
- * GitLab starts a pipeline from a branch or a tag, not from a commit, so a rollback cannot start the
- * earlier commit again: the owner writes the rollback for these targets (the project's setup says so).
+ * GitLab starts a pipeline from a branch or a tag, not from a commit, so a rollback gives the earlier commit a
+ * branch and runs the same pipeline (same inputs) on it; a job target runs the job that deployed it again.
  */
 
 interface Access {
@@ -237,16 +237,37 @@ export function createGitLabProvider(deps: ProviderDeps): DeployProvider {
       return { state: "failed", detail: `The pipeline ${status.replaceAll("_", " ")}` };
     },
 
-    // A job of the commit's pipeline can be run again, which is what deployed that commit. A new pipeline cannot.
+    // A job of the commit's pipeline is run again. A pipeline starts from a branch, so the earlier commit gets a
+    // branch of its own (named by the commit, made once) and the same pipeline, with the same inputs, runs on it.
     async redeploy(ctx, run, previous) {
       const step = gitlabStep(run);
-      if (step.kind !== "gitlab-job") {
-        throw new DeployProblem("A GitLab pipeline starts from a branch, not from an earlier commit.");
-      }
-      if (previous.run === undefined)
-        throw new DeployProblem("The earlier deploy has no GitLab job to run again.");
       const a = await access(ctx, step, deps);
-      return retryJob(a, Number(previous.run.id), deps);
+      if (step.kind === "gitlab-job") {
+        if (previous.run === undefined)
+          throw new DeployProblem("The earlier deploy has no GitLab job to run again.");
+        return retryJob(a, Number(previous.run.id), deps);
+      }
+      const branch = `majhi-rollback-${previous.commit.slice(0, 12)}`;
+      const made = await api(deps, a, `/projects/${a.id}/repository/branches`, {
+        branch,
+        ref: previous.commit,
+      });
+      // 400 is "the branch exists": an earlier rollback to this commit made it.
+      if (made.status !== 201 && made.status !== 400) {
+        throw new DeployProblem(
+          `GitLab would not make a branch at ${previous.commit.slice(0, 7)} (it answered ${made.status}).`,
+        );
+      }
+      const variables = Object.entries(step.variables ?? {}).map(([key, value]) => ({ key, value }));
+      const started = await api(deps, a, `/projects/${a.id}/pipeline`, {
+        ref: branch,
+        ...(variables.length === 0 ? {} : { variables }),
+      });
+      const id = num(started.body, "id");
+      if (started.status !== 201 || id === undefined) {
+        throw new DeployProblem(`GitLab did not run the pipeline again (it answered ${started.status}).`);
+      }
+      return { id: String(id), url: str(started.body, "web_url") };
     },
   };
 }

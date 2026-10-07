@@ -8,6 +8,7 @@ import { OrgBadge } from "@/components/ui/org-badge";
 import type { RosterRow } from "@/features/board/roster";
 import { cn } from "@/lib/cn";
 import { badgeLetters } from "@/lib/format";
+import { useAccounts } from "@/lib/studio-queries";
 import { type AgentGroup, entryId, INVALID_GROUP, ROOT_SCOPE, scopeBadge } from "./model";
 
 /** Root first, then each org: a head with the org's badge and a New agent button, then its agents. */
@@ -102,7 +103,11 @@ function AgentRow({
   onSelect: () => void;
 }) {
   const id = entryId(entry);
-  const state = lamp?.lamp ?? "idle";
+  const accounts = useAccounts().data;
+  const signedOut =
+    entry.status === "ok" &&
+    accounts?.find((a) => a.id === entry.agent.frontmatter.account)?.status === "needs-login";
+  const state = signedOut ? "needs" : (lamp?.lamp ?? "idle");
   return (
     <button
       type="button"
@@ -132,7 +137,9 @@ function AgentRow({
         {entry.status === "ok" ? (
           <span className="flex min-w-0 items-center gap-1.5 text-xs">
             <Lamp state={state} size={7} />
-            <span className={cn("shrink-0", LAMP_TEXT[state])}>{lamp?.state ?? "Idle"}</span>
+            <span className={cn("shrink-0", LAMP_TEXT[state])}>
+              {signedOut ? "Signed out" : (lamp?.state ?? "Idle")}
+            </span>
             <span aria-hidden="true" className="text-fg-dim">
               ·
             </span>

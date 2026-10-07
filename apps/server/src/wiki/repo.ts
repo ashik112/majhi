@@ -5,6 +5,7 @@ import {
   type OwnerCallAnswer,
   type OwnerRoleAnswer,
   RepoPathSchema,
+  WIKI_OWNER_NOTES_HEADING,
   type WikiAnswer,
   WikiAnswerSchema,
   type WikiNote,
@@ -70,7 +71,7 @@ export function noteKey(n: Pick<WikiNote, "project" | "page" | "text">): string 
 }
 
 /** The heading of the notes a page shows under its text. */
-export const OWNER_NOTES_HEADING = "Owner notes";
+export const OWNER_NOTES_HEADING = WIKI_OWNER_NOTES_HEADING;
 
 export interface StoredPage {
   page: WikiPage;

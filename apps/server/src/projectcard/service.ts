@@ -94,6 +94,21 @@ export class ProjectCards {
     return project === undefined ? all : all.filter((c) => c.project === project);
   }
 
+  /** The cards as the owner views them: the remotes are read from the repo now, since a change to origin moves no tip. */
+  async listLive(project?: string): Promise<ProjectCard[]> {
+    const paths = new Map((await this.deps.projects()).map((p) => [p.id, p.path]));
+    return Promise.all(
+      this.list(project).map(async (card) => {
+        const path = paths.get(card.project);
+        if (path === undefined) return card;
+        const live = await this.deps.git.remotes(path).catch(() => undefined);
+        return live === undefined
+          ? card
+          : { ...card, remotes: live.map((r) => ({ name: r.name, url: plainUrl(r.url) })) };
+      }),
+    );
+  }
+
   /** The owner's Refresh (or the captain's): reads the files now and rewrites the card. */
   refresh(id: string): Promise<ProjectCard> {
     return this.run(id, { auto: false });
@@ -152,6 +167,22 @@ export class ProjectCards {
       this.deps.onBaseMoved?.(p, tip);
       // "Refresh a project card when its base branch moves" is off: the card stays as it is until Refresh.
       if (this.deps.ruleOff?.(p.org, "proj-cards") === true) continue;
+      await this.settle(p, have, tip).catch((err: unknown) => this.log(`cards: ${p.id}: ${String(err)}`));
+    }
+  }
+
+  /**
+   * Looks at the cards as the owner opens them: a card whose base tip moved is brought up to date now, without the
+   * debounce a merge burst gets, so what the page shows is never older than the repo.
+   */
+  async refreshMoved(): Promise<void> {
+    for (const p of await this.deps.projects()) {
+      if (!p.exists || p.base === undefined) continue;
+      const have = this.deps.repo.get(p.id)?.card;
+      if (have === undefined || this.deps.ruleOff?.(p.org, "proj-cards") === true) continue;
+      const tip = await this.deps.git.tip(p.path, p.base);
+      if (tip === undefined || have.commit === tip) continue;
+      this.pending.delete(p.id);
       await this.settle(p, have, tip).catch((err: unknown) => this.log(`cards: ${p.id}: ${String(err)}`));
     }
   }

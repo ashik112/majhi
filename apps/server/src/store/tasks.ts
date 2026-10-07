@@ -630,6 +630,11 @@ export class TaskRepo {
       );
   }
 
+  /** Changes a task's kind: an incident made without a project becomes a code task once its project is known. */
+  setKind(id: string, kind: Task["kind"], at: string): void {
+    this.db.update(tasks).set({ kind, updatedAt: at }).where(eq(tasks.id, id)).run();
+  }
+
   /** Tasks with a merge request that is not merged: open, or closed without merging. */
   unmergedMrs(): Set<string> {
     return new Set(this.q.unmerged.all().map((r) => r.task));
@@ -918,6 +923,26 @@ export class TaskRepo {
       .set({ pushedAt: at })
       .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
       .run();
+  }
+
+  /** The task's branch in this repo was renamed. Tasks stacked on it follow. */
+  setBranch(task: string, project: string, branch: string): void {
+    this.db.transaction((tx) => {
+      const old = tx
+        .select({ branch: taskRepos.branch })
+        .from(taskRepos)
+        .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
+        .get()?.branch;
+      tx.update(taskRepos)
+        .set({ branch })
+        .where(and(eq(taskRepos.task, task), eq(taskRepos.project, project)))
+        .run();
+      if (old === undefined) return;
+      tx.update(taskRepos)
+        .set({ stackBranch: branch })
+        .where(and(eq(taskRepos.stackTask, task), eq(taskRepos.stackBranch, old)))
+        .run();
+    });
   }
 
   /** majhi merged the branch at `head` into `into`. */

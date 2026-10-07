@@ -50,6 +50,8 @@ export interface Pending {
   resolve: (option: string | undefined) => void;
   /** Connection writes the prompt is for (5.14), each logged with the owner's answer. */
   writes?: readonly GateWrite[] | undefined;
+  /** An MCP tool's allow key: the prompt also offers "Allow in this task" and "Always allow this tool" for it. */
+  alwaysKey?: string | undefined;
 }
 
 /**

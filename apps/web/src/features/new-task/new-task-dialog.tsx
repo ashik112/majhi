@@ -1,4 +1,13 @@
-import { ATTACHMENT_ACCEPT, type ParsedTask, parseTaskText, type TaskKind, taskKindOf } from "@majhi/shared";
+import {
+  ATTACHMENT_ACCEPT,
+  type ParsedTask,
+  parseTaskText,
+  TASK_TYPE_LABEL,
+  TASK_TYPES,
+  type TaskKind,
+  type TaskType,
+  taskKindOf,
+} from "@majhi/shared";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronDown, Lock, Paperclip, X } from "lucide-react";
 import {
@@ -16,6 +25,7 @@ import { ChoiceChip } from "@/components/ui/choice-chip";
 import { Menu } from "@/components/ui/menu";
 import { Modal } from "@/components/ui/modal";
 import { OrgBadge } from "@/components/ui/org-badge";
+import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
 import { useAgentIndex } from "@/lib/agent-index";
@@ -59,6 +69,9 @@ const KINDS: readonly { id: TaskKind; hint: string }[] = [
   { id: "chat", hint: "One agent, no project." },
 ];
 
+/** The type picker's first choice: majhi reads the type from the words. */
+const AUTO_TYPE = "auto";
+
 /** A code task needs a project, a chat task has none. An ops task may have either. */
 function kindFits(kind: TaskKind, projects: number): boolean {
   return kind === "ops" || (kind === "code") === projects > 0;
@@ -90,6 +103,8 @@ export function NewTaskDialog({ onClose, project }: { onClose: () => void; proje
   // A base branch typed per repo. Empty: the project's own base.
   const [bases, setBases] = useState<Record<string, string>>({});
   const [kindPick, setKindPick] = useState<TaskKind | undefined>();
+  const [typePick, setTypePick] = useState<TaskType | undefined>();
+  const [sendingStart, setSendingStart] = useState<boolean | undefined>();
   const [agentOverride, setAgentOverride] = useState<string | undefined>();
   const [dependsOn, setDependsOn] = useState<string[]>([]);
   const [parent, setParent] = useState<string[]>([]);
@@ -135,15 +150,17 @@ export function NewTaskDialog({ onClose, project }: { onClose: () => void; proje
   // longer fits the projects falls back.
   const inferred = taskKindOf(deferred, chosen.length > 0);
   const kind = kindPick !== undefined && kindFits(kindPick, chosen.length) ? kindPick : inferred;
+  // Nothing typed and nothing picked: no kind is suggested yet.
+  const kindShown = kindPick !== undefined || deferred.trim() !== "" || chosen.length > 0;
   const team = agentOverride ?? parsed?.mentions[0] ?? defaultAgentId(agents ?? [], chosenOrg, kind);
   const groups = groupProjects(projects.data ?? [], orgs, filterOrg);
-  const orgName = orgs.find((o) => o.id === chosenOrg)?.name;
   const choices = linkChoices(openTasks ?? [], filterOrg);
   const ready = canAdd(draft, attachments.uploading, create.isPending) && mixed === undefined;
 
   function submit(start: boolean) {
     if (!ready || sending.current) return;
     sending.current = true;
+    setSendingStart(start);
     setFailure(undefined);
     create.mutate(
       {
@@ -157,24 +174,30 @@ export function NewTaskDialog({ onClose, project }: { onClose: () => void; proje
         attachments: attachmentIds(attachments.items),
         start,
         ...(kindPick !== undefined && kind === kindPick ? { kind } : {}),
+        ...(typePick === undefined ? {} : { type: typePick }),
         ...linkFields(parent[0], dependsOn),
         ...(agentOverride ? { agent: agentOverride } : {}),
       },
       {
         onSuccess: (task) => {
+          const open = () =>
+            void navigate({ to: "/t/$taskId", params: { taskId: task.id }, search: orgSearch(filterOrg) });
+          onClose();
           toast(
             start
               ? dependsOn.length > 0
                 ? "Added, starts when ready"
                 : "Task started"
               : "Added to the inbox",
-            { detail: task.id },
+            {
+              detail: task.id,
+            },
           );
-          onClose();
-          void navigate({ to: "/t/$taskId", params: { taskId: task.id }, search: orgSearch(filterOrg) });
+          open();
         },
         onError: (error) => {
           sending.current = false;
+          setSendingStart(undefined);
           setFailure([error.message, ...error.details].join(". "));
         },
       },
@@ -285,10 +308,6 @@ export function NewTaskDialog({ onClose, project }: { onClose: () => void; proje
             ) : (
               <span className="text-sm text-amber">No agent can work here yet. Add one in Agents.</span>
             )}
-            <span className="text-sm text-fg-muted">
-              {agentOverride ? "Your pick." : `${orgName ?? "Default"} agent, picked for you.`} This agent
-              does the task.
-            </span>
           </div>
 
           <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
@@ -297,7 +316,7 @@ export function NewTaskDialog({ onClose, project }: { onClose: () => void; proje
               {KINDS.map((k) => (
                 <ChoiceChip
                   key={k.id}
-                  pressed={kind === k.id}
+                  pressed={kindShown && kind === k.id}
                   disabled={!kindFits(k.id, chosen.length)}
                   className="h-[34px] text-sm"
                   title={k.hint}
@@ -306,12 +325,29 @@ export function NewTaskDialog({ onClose, project }: { onClose: () => void; proje
                   {k.id}
                 </ChoiceChip>
               ))}
-              <span className="text-sm text-fg-muted">
-                {kindPick === undefined ? "Picked from your words. " : ""}
-                {KINDS.find((k) => k.id === kind)?.hint}
-              </span>
             </div>
           </fieldset>
+
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="nt-type" className="text-sm text-fg-faint">
+              Type
+            </label>
+            <Select
+              id="nt-type"
+              value={typePick ?? AUTO_TYPE}
+              onChange={(event) =>
+                setTypePick(event.target.value === AUTO_TYPE ? undefined : (event.target.value as TaskType))
+              }
+              className="w-44"
+            >
+              <option value={AUTO_TYPE}>Auto</option>
+              {TASK_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {TASK_TYPE_LABEL[type]}
+                </option>
+              ))}
+            </Select>
+          </div>
 
           <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
             <legend className="mb-2 p-0 text-sm text-fg-faint">Project</legend>
@@ -376,9 +412,6 @@ export function NewTaskDialog({ onClose, project }: { onClose: () => void; proje
                     autoComplete="off"
                     className={cn(FIELD, "h-8 w-44 px-2.5 font-mono text-sm placeholder:text-fg-faint")}
                   />
-                  <span className="text-xs text-fg-faint">
-                    {bases[id]?.trim() ? "" : "the project's default"}
-                  </span>
                 </div>
               );
             })}
@@ -409,15 +442,6 @@ export function NewTaskDialog({ onClose, project }: { onClose: () => void; proje
                     Add {id}
                   </button>
                 ))}
-                <span>Only picked projects get a branch. Agents can read the others.</span>
-              </p>
-            )}
-            {projects.data && projects.data.length > 0 && chosen.length === 0 && (
-              <p className="text-sm text-fg-muted">
-                No project chosen:{" "}
-                {kind === "ops"
-                  ? "this is an ops task, with no worktree."
-                  : "this becomes a chat task, with no worktree."}
               </p>
             )}
           </fieldset>
@@ -486,21 +510,21 @@ export function NewTaskDialog({ onClose, project }: { onClose: () => void; proje
             size="xl"
             className="bg-field"
             disabled={!ready}
-            aria-busy={create.isPending}
+            aria-busy={create.isPending && sendingStart === false}
             onClick={() => submit(false)}
           >
-            Add to inbox
+            {create.isPending && sendingStart === false ? "Adding..." : "Add to inbox"}
           </Button>
           <Button
             variant="primary"
             size="xl"
             disabled={!ready}
-            aria-busy={create.isPending}
+            aria-busy={create.isPending && sendingStart === true}
             title={`Add and start (${MOD_KEY} Enter)`}
             aria-keyshortcuts="Meta+Enter Control+Enter"
             onClick={() => submit(true)}
           >
-            {create.isPending ? "Adding..." : "Add and start"}
+            {create.isPending && sendingStart === true ? "Adding..." : "Add and start"}
           </Button>
         </div>
       </div>

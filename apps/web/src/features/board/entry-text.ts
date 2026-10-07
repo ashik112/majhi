@@ -131,8 +131,9 @@ export function deployLine(deploy: HomeDeploy): Pick<EntryLine, "lamp" | "text" 
   if (step === undefined) return { lamp: "done", text: "Live", tone: "ok" };
   switch (step.state) {
     case "failed":
+      return { lamp: "needs", text: `${capital(step.env)} deploy failed`, tone: "needs" };
     case "rolled-back":
-      return { lamp: "needs", text: `${capital(step.env)} failed, rolled back`, tone: "needs" };
+      return { lamp: "needs", text: `${capital(step.env)} deploy failed, rolled back`, tone: "needs" };
     case "waits-for-owner":
       return { lamp: "needs", text: `${capital(step.env)} deploy waits for you`, tone: "needs" };
     case "verifying":

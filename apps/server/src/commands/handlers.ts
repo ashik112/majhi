@@ -308,6 +308,10 @@ export function createHandlers({
         return org === undefined || boss === undefined ? undefined : { boss, org };
       },
       orgOf: (task) => services.store.tasks.get(task)?.org,
+      askCaptain: async (org, text) => {
+        const chat = await services.lanes.ensure(org);
+        await services.tasks.send({ task: chat.id, text, attachments: [], mode: "queue" });
+      },
     }),
     ...agendaHandlers({
       agenda: services.agenda,
@@ -676,7 +680,10 @@ export function createHandlers({
       services.cards.onRegistered(input.id);
       return view;
     },
-    "projects.cards": async (input) => services.cards.list(input.project),
+    "projects.cards": async (input) => {
+      await services.cards.refreshMoved();
+      return services.cards.listLive(input.project);
+    },
     "projects.cardRefresh": (input) => services.cards.refresh(input.project),
     "projects.update": async (input, ctx) => {
       // Protection is the owner's guard on their infra: an agent may turn it on, never off.
@@ -1294,6 +1301,7 @@ export function createHandlers({
         meta: ctx.meta,
         summary: `changed ${describePatch(patch)}`,
       });
+      if (patch.containers !== undefined) await services.applyRunMemory();
       // Limits apply live: starts waiting in line may fit now.
       if (patch.limits !== undefined) await services.runs.limitsChanged();
       // Budgets apply live: a raised one re-arms its alerts, a lowered one may fire now.

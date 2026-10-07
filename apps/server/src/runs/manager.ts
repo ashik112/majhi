@@ -1748,7 +1748,7 @@ export class RunManager {
    */
   private async signedOutMidTurn(run: AgentRun, account: string, said: string): Promise<void> {
     const line = said.split("\n", 1)[0]?.trim() ?? said;
-    const detail = `A run of @${run.agent} could not sign in: ${line} Sign in again from Studio > Accounts.`;
+    const detail = `A run of @${run.agent} could not sign in: ${line} Sign in again from Accounts.`;
     await this.deps.markSignedOut?.(account, detail).catch(() => undefined);
     const cannot = `@${run.agent} cannot run: its account ${account} needs a new sign-in.`;
     const lead = this.deps.store.tasks.get(run.task)?.team[0];

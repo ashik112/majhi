@@ -1,6 +1,7 @@
 import type { PermissionAsk } from "@majhi/acp";
 import type { RoomItem } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
+import type { ConfigService } from "../config/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
 import type { RunLive } from "./live.ts";
@@ -19,6 +20,7 @@ function flow() {
     get: (_task: string, id: string) => items.get(id),
   } as unknown as RoomService;
   const store = {
+    tasks: { get: () => ({ org: "acme" }) },
     permissions: {
       allow: (task: string, key: string) => {
         allowances.add(key);
@@ -44,8 +46,15 @@ function flow() {
       added.push(`${as}:${id}.${tool}`);
     },
   };
+  const rules: { agent: string; command: string; org?: string }[] = [];
+  const config = {
+    settings: async () => ({ policy: { rules } }),
+    setSettings: async (patch: { policy: { rules: typeof rules } }) => {
+      rules.splice(0, rules.length, ...patch.policy.rules);
+    },
+  } as unknown as ConfigService;
   const permissions = new PermissionFlow(
-    { store, room, connections },
+    { store, room, connections, config },
     live,
     () => new Date("2026-10-04T12:00:00Z"),
   );
@@ -70,14 +79,17 @@ function flow() {
         secrets: [],
       },
     }) as unknown as AgentRun;
-  return { permissions, run, ask, allowances, items, held, added };
+  return { permissions, run, ask, allowances, items, held, added, rules };
 }
+
+const tick = () => new Promise((r) => setTimeout(r, 0));
 
 describe("the captain's Allow for this task", () => {
   it("lets that tool run unasked for the rest of the task, and no other tool of its kind", async () => {
     const { permissions, run, ask, allowances, items } = flow();
     const signal = new AbortController().signal;
     const first = permissions.ask(run, ask("mcp__acme-deploy__release"), signal);
+    await tick();
     permissions.answer(run, "ACM-8", "perm:4:1", "task", true);
     expect(await first).toBe("task");
     expect([...allowances]).toEqual(["tool:acme-deploy.release"]);
@@ -88,6 +100,7 @@ describe("the captain's Allow for this task", () => {
 
     // Another tool of the same kind still asks.
     void permissions.ask(run, ask("mcp__other__deploy"), signal);
+    await tick();
     expect(items.get("perm:4:3")).toMatchObject({ state: "pending" });
   });
 });
@@ -146,5 +159,30 @@ describe("a connection's MCP tool write", () => {
     permissions.answer(run, "ACM-8", "perm:4:2", "majhi:reads");
     await Promise.resolve();
     expect(added).toEqual(["allow:acme-obs.sync_data", "read:acme-obs.sync_data"]);
+  });
+});
+
+describe("Always allow on an MCP tool that is not a connection's", () => {
+  const tool = "mcp__acme-deploy__release";
+  const signal = new AbortController().signal;
+
+  it("is the owner's: the captain cannot pick it, and the owner's pick keeps a rule that lets the next call run", async () => {
+    const { permissions, run, ask, items, rules } = flow();
+    const first = permissions.ask(run, ask(tool), signal);
+    await tick();
+    expect(items.get("perm:4:1")).toMatchObject({
+      options: [{ id: "once" }, { id: "majhi:always" }, { id: "task" }, { id: "no" }],
+    });
+    expect(() => permissions.answer(run, "ACM-8", "perm:4:1", "majhi:always", true)).toThrow(
+      "Only the owner can make that choice.",
+    );
+    permissions.answer(run, "ACM-8", "perm:4:1", "majhi:always", false);
+    expect(await first).toBe("once");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(rules).toEqual([{ agent: "acme-claude", command: "tool:acme-deploy.release", org: "acme" }]);
+
+    const again = await permissions.ask({ ...run, pending: new Map() } as AgentRun, ask(tool), signal);
+    expect(again).toBe("once");
+    expect(items.get("perm:4:2")).toMatchObject({ state: "auto" });
   });
 });

@@ -36,3 +36,30 @@ export class MemoryWatch {
     return fresh;
   }
 }
+
+/** The warning's id: one line per task and level, whatever number of runs or checks reach the bar. */
+export function hotMemoryItemId(task: string, level: "hot"): string {
+  return `memory:${task}:${level}`;
+}
+
+export const HOT_MEMORY_TEXT =
+  "An agent on this task is using almost all of its memory limit and may be slow or get stopped. Raise the memory limit for runs, or ask it to do less at once.";
+
+/**
+ * Posts the warning for each hot container's task. The id is the task's and the level's, so the same
+ * condition read again (every check, every reading) updates the one line instead of adding another.
+ * `rows` is `docker ps` with a name and a task per line.
+ */
+export function noteHotContainers(args: {
+  hot: readonly string[];
+  rows: string;
+  taskExists: (task: string) => boolean;
+  post: (task: string, id: string, text: string) => void;
+}): void {
+  for (const line of args.rows.split("\n")) {
+    const [name, task] = line.split("\t");
+    if (name === undefined || task === undefined || task === "" || !args.hot.includes(name)) continue;
+    if (!args.taskExists(task)) continue;
+    args.post(task, hotMemoryItemId(task, "hot"), HOT_MEMORY_TEXT);
+  }
+}

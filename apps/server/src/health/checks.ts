@@ -305,7 +305,7 @@ export function checkHostHelper(host: HostSource): Check {
     return {
       ...base,
       status: "warn",
-      detail: `Connected${version}, but it cannot run Docker, so remounts and updates need \`make up\`. If Docker is installed now, restart the helper.`,
+      detail: `Connected${version}, but it cannot reach Docker, so remounts and updates are off. Start Docker, then restart the helper.`,
       fix: { label: "Restart helper" },
     };
   }

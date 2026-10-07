@@ -41,3 +41,23 @@ export function useSendReport() {
     onSuccess: done,
   });
 }
+
+/** `incident.askCaptain`: the owner asks the workspace's captain to look at an incident now. */
+export function useAskCaptain() {
+  return useMutation<CommandOutput<"incident.askCaptain">, ApiRequestError, string>({
+    mutationFn: (task) => cmd("incident.askCaptain", { task }),
+  });
+}
+
+/** An incident's own Needs-you card answered from the task page: the same call the card makes. */
+export function useAnswerIncident() {
+  const done = useRefetch();
+  const client = useQueryClient();
+  return useMutation<unknown, ApiRequestError, { id: string; option: string }>({
+    mutationFn: (input) => cmd("decisions.answer", input),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: queryKeys.decisions });
+      await done();
+    },
+  });
+}

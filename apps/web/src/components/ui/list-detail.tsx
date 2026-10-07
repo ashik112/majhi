@@ -46,7 +46,10 @@ export function ListPane({
   );
 }
 
-/** The detail side: a fixed head (name and actions) over a body that scrolls. */
+/**
+ * The detail side: a fixed head (name and actions) over a body that scrolls. The body and footer keep room on the
+ * right for the chat bubble, which floats over the bottom right corner of the page.
+ */
 export function DetailPane({
   label,
   head,
@@ -67,10 +70,10 @@ export function DetailPane({
       className={cn("flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl", GLASS, className)}
     >
       {head && <div className="shrink-0 border-b border-line px-5 py-3.5">{head}</div>}
-      <div className="@container min-h-0 flex-1 overflow-y-auto overscroll-contain pr-5 pb-8 pl-5 scroll-fade min-[1000px]:pr-14">
+      <div className="@container min-h-0 flex-1 overflow-y-auto overscroll-contain pr-12 pl-5 pb-8 scroll-fade">
         {children}
       </div>
-      {footer && <div className="shrink-0 border-t border-line px-5 py-3">{footer}</div>}
+      {footer && <div className="shrink-0 border-t border-line py-3 pr-12 pl-5">{footer}</div>}
     </section>
   );
 }

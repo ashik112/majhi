@@ -51,7 +51,7 @@ describe("flapping protection", () => {
     expect(listed(w, "live")).toHaveLength(1);
   });
 
-  it("a service that fails again soon after it closed reopens the same incident, quietly", async () => {
+  it("a service that fails again soon after it closed reopens the same incident, alerts again and wakes the captain with the same task", async () => {
     const w = opsWorld();
     w.ops.watch.setSettings({ resolveMin: 5 });
     await addService(w);
@@ -69,9 +69,16 @@ describe("flapping protection", () => {
     const [inc] = incidents(w);
     expect(inc?.id).toBe(1);
     expect(inc?.flaps).toBe(1);
-    expect(inc?.timeline.at(-1)?.kind).toBe("reopened");
-    expect(w.wakes).toHaveLength(1);
-    expect(w.alerts).toHaveLength(1);
+    expect(inc?.timeline.some((t) => t.kind === "reopened")).toBe(true);
+    expect(w.wakes).toHaveLength(2);
+    expect(w.wakes[1]?.text).toContain("Failing again");
+    expect(w.wakes[1]?.text).toContain("ACM-1");
+    expect(w.alerts).toHaveLength(2);
+    // The engine is told it is the same incident coming back, so it opens that task again and no second one.
+    expect(w.tasks).toEqual([
+      { incident: 1, again: false },
+      { incident: 1, again: true },
+    ]);
   });
 });
 

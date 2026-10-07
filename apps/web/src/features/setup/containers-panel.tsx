@@ -35,6 +35,7 @@ export function ContainersSection() {
             orgImages={settings.data.containers.org_images}
           />
           <LimitsForm saved={settings.data.containers} />
+          <RunMemoryForm saved={settings.data.containers} />
           <HandoffTimeoutsForm saved={settings.data.containers} />
         </>
       )}
@@ -320,6 +321,76 @@ function LimitsForm({ saved }: { saved: ContainersSettings }) {
             )}
           </Field>
         ))}
+        <button type="submit" hidden />
+      </form>
+    </SaveSection>
+  );
+}
+
+/** The most memory one agent run may use. It applies from the next run; the ones going keep theirs. */
+function RunMemoryForm({ saved }: { saved: ContainersSettings }) {
+  const save = useSaveSettings();
+  const [edit, setEdit] = useState<string>();
+  const [state, setState] = useState<SaveState>(IDLE);
+  const [showErrors, setShowErrors] = useState(false);
+  const value = edit ?? saved.run_memory ?? "";
+  const dirty = value.trim() !== (saved.run_memory ?? "");
+  const parsed = ContainersPatchSchema.safeParse({ run_memory: value.trim() });
+  const problem = parsed.success ? undefined : (parsed.error.issues[0]?.message ?? "Use a size like 8g");
+
+  function submit() {
+    setShowErrors(true);
+    if (!parsed.success || !dirty) return;
+    setState({ kind: "saving" });
+    save.mutate(
+      { containers: parsed.data },
+      {
+        onSuccess: () => {
+          setEdit(undefined);
+          setShowErrors(false);
+          setState({ kind: "saved" });
+        },
+        onError: (e) => setState({ kind: "error", message: e.message, details: e.details }),
+      },
+    );
+  }
+
+  return (
+    <SaveSection
+      title="Agent runs"
+      note="From the next run"
+      dirty={dirty}
+      state={state}
+      onSave={submit}
+      onDiscard={() => {
+        setEdit(undefined);
+        setShowErrors(false);
+        setState(IDLE);
+      }}
+    >
+      <form
+        aria-label="Agent run memory"
+        noValidate
+        className="max-w-[320px]"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+      >
+        <Field label="Memory per agent run" error={showErrors ? problem : undefined}>
+          {(p) => (
+            <Input
+              {...p}
+              className="font-mono"
+              placeholder="Automatic"
+              value={value}
+              onChange={(e) => {
+                if (state.kind !== "saving") setState(IDLE);
+                setEdit(e.target.value);
+              }}
+            />
+          )}
+        </Field>
         <button type="submit" hidden />
       </form>
     </SaveSection>

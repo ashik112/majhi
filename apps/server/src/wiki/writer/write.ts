@@ -1,6 +1,5 @@
 import { isAbsolute } from "node:path";
 import type { CommitSha, WikiFact, WikiPageId } from "@majhi/shared";
-import { errorMessage } from "../../errors.ts";
 import {
   BadReply,
   type Housekeeper,
@@ -10,6 +9,7 @@ import {
   type SessionMode,
   type Spend,
 } from "../../memory/housekeeper.ts";
+import { plainReason } from "../plain-error.ts";
 import { type DraftPage, type WriterPage, writerPageId } from "./draft.ts";
 import { hintBlock } from "./hints.ts";
 import { pagePrompt } from "./prompt.ts";
@@ -171,7 +171,7 @@ export async function askPages<P, D>(input: AskPagesInput<P, D>): Promise<WriteO
       try {
         out.drafts.push(await session.ask(input.job.prompt(page, i === 0), input.job.parse(page)));
       } catch (err) {
-        out.failed.push({ page: id, problem: errorMessage(err) });
+        out.failed.push({ page: id, problem: plainReason(err) });
         if (!(err instanceof BadReply)) ended = true;
       }
       input.progress?.(i + 1, pages.length);

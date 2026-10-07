@@ -62,6 +62,8 @@ export interface OpsWorld {
   alerts: { id: number; severity: string; text: string; repeat: boolean }[];
   /** News sent to a workspace's captain lane. */
   wakes: { org: string; text: string }[];
+  /** The incident task the engine would open: each call, with whether it was a re-fire. */
+  tasks: { incident: number; again: boolean }[];
   /** Requests the ntfy server got. */
   ntfy: { url: string; body: Record<string, unknown> }[];
   ntfyDown: boolean;
@@ -113,6 +115,7 @@ export function opsWorld(
     net,
     alerts: over.keep?.alerts ?? [],
     wakes: over.keep?.wakes ?? [],
+    tasks: over.keep?.tasks ?? [],
     ntfy: over.keep?.ntfy ?? [],
     ntfyDown: over.keep?.ntfyDown ?? false,
     decisions: over.keep?.decisions ?? [],
@@ -166,6 +169,10 @@ export function opsWorld(
       }),
     } as unknown as Notifier,
     wake: (org, text) => world.wakes.push({ org, text }),
+    incidentTask: async (inc, _subject, _evidence, again) => {
+      world.tasks.push({ incident: inc.id, again });
+      return { task: "ACM-1", started: false, readOnly: false };
+    },
     orgName: async (org) => (org === PRIVATE ? "Private" : org === "acme" ? "Acme" : org),
     projectOrg: async (id) => (id === "acme-api" ? "acme" : undefined),
     connections: {

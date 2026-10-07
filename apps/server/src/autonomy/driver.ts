@@ -26,6 +26,8 @@ import type { AutonomyService } from "./service.ts";
 export const DEBOUNCE_MS = 20_000;
 /** A burst of task changes is looked at once. */
 const WATCH_MS = 1_000;
+/** While a workspace rests, held news is looked at again this often. */
+const REST_RETRY_MS = 60_000;
 const REASONS_MAX = 50;
 
 /** `news`: something the captain can act on. `soft`: an alarm that matters only if the facts changed. */
@@ -243,6 +245,15 @@ export class AutonomyDriver {
     // A lane's chat that was removed or closed is made again first: a tick never goes into nothing.
     const chat = await this.deps.autonomy.laneChat(org);
     if (chat === undefined) {
+      // At rest (working hours, a freeze) the news is kept and delivered when the captain resumes, not lost.
+      if (this.deps.autonomy.mode() === "on" && (await this.deps.autonomy.restingWhy(org)) !== undefined) {
+        lane.timer ??= setTimeout(() => {
+          lane.timer = undefined;
+          void this.fire(org).catch(() => undefined);
+        }, REST_RETRY_MS);
+        lane.timer.unref();
+        return;
+      }
       this.clearBatch(lane);
       return;
     }

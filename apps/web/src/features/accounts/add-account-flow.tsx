@@ -1,7 +1,6 @@
 import type { HealthCheck } from "@majhi/shared";
 import { type AuthMode, IdSchema, PRIVATE, type ToolId, type ToolInfo } from "@majhi/shared";
 import { type FormEvent, lazy, type ReactNode, Suspense, useEffect, useRef, useState } from "react";
-import { CommandLine } from "@/components/command-line";
 import { Button } from "@/components/ui/button";
 import { ChoiceGroup } from "@/components/ui/choice-group";
 import { Field } from "@/components/ui/field";
@@ -35,7 +34,6 @@ export type Stage =
       accountId: string;
       loginHint: string;
       terminalId: string;
-      command: string;
       state: LoginState;
     }
   | { kind: "checking"; accountId: string }
@@ -166,7 +164,6 @@ function AccountForm({
           accountId,
           loginHint: tool.loginHint,
           terminalId: started.terminalId,
-          command: started.command,
           state: { phase: "running" },
         });
       } else {
@@ -290,7 +287,6 @@ export function AccountProgress({
         accountId,
         loginHint,
         terminalId: started.terminalId,
-        command: started.command,
         state: { phase: "running" },
       });
     } catch (error) {
@@ -344,7 +340,6 @@ export function AccountProgress({
   return (
     <div className="flex flex-col gap-3">
       <p className="text-base text-fg-soft text-pretty">{stage.loginHint}</p>
-      <CommandLine command={stage.command} />
       <Suspense fallback={<p className="text-sm text-fg-faint">Opening the terminal</p>}>
         <TerminalView
           key={stage.terminalId}
