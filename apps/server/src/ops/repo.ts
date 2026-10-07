@@ -245,6 +245,14 @@ export class OpsRepo {
     return row === undefined ? undefined : toIncident(row);
   }
 
+  /** The newest incident a finding was made for. */
+  byFinding(finding: number): StoredIncident | undefined {
+    const row = this.db
+      .prepare("SELECT * FROM ops_incidents WHERE finding = ? ORDER BY id DESC LIMIT 1")
+      .get(finding) as IncidentRow | undefined;
+    return row === undefined ? undefined : toIncident(row);
+  }
+
   /** The newest incident with this key, open or not. */
   latestByKey(key: string): StoredIncident | undefined {
     const row = this.db

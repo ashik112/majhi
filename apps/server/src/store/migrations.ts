@@ -1861,6 +1861,60 @@ ALTER TABLE deploys ADD COLUMN seq INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE deploys ADD COLUMN note TEXT;
 `,
   },
+  {
+    // Client chats (docs/briefs/client-chats.md). A client room is a chat task with `client`, the chat it is (JSON,
+    // ClientRoom), unique per chat. A message of a chat app carries `external`, its key as one string, unique, so a
+    // repeat delivery stores nothing. Contacts are who the clients are: identities are unique per workspace and
+    // app account, and a merge keeps a snapshot of what it absorbed, so it can be undone exactly. A connection's
+    // runtime state gets the read position of its chat app (`cursor`).
+    id: 179,
+    name: "client chats",
+    sql: `
+ALTER TABLE tasks ADD COLUMN client TEXT;
+CREATE UNIQUE INDEX tasks_client_chat ON tasks (
+  json_extract(client, '$.app'), json_extract(client, '$.account'), json_extract(client, '$.chat')
+) WHERE client IS NOT NULL;
+ALTER TABLE room_items ADD COLUMN external TEXT;
+CREATE UNIQUE INDEX room_items_external ON room_items (external) WHERE external IS NOT NULL;
+CREATE TABLE contacts (
+  id TEXT PRIMARY KEY,
+  org TEXT NOT NULL,
+  name TEXT NOT NULL,
+  tz TEXT,
+  lang TEXT,
+  us INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX contacts_org ON contacts (org);
+CREATE TABLE contact_ids (
+  contact TEXT NOT NULL,
+  org TEXT NOT NULL,
+  app TEXT NOT NULL,
+  account TEXT NOT NULL,
+  native TEXT NOT NULL,
+  PRIMARY KEY (org, app, account, native)
+);
+CREATE INDEX contact_ids_contact ON contact_ids (contact);
+CREATE TABLE contact_merges (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kept TEXT NOT NULL,
+  absorbed TEXT NOT NULL,
+  snapshot TEXT NOT NULL,
+  at TEXT NOT NULL,
+  undone_at TEXT
+);
+ALTER TABLE connection_health ADD COLUMN cursor TEXT;
+`,
+  },
+  {
+    // The handle a chat app shows for a person (Telegram's @username), kept beside the app's own user id. It can
+    // change, so it is refreshed on each message. Identity stays the user id.
+    id: 180,
+    name: "contact usernames",
+    sql: `
+ALTER TABLE contact_ids ADD COLUMN username TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

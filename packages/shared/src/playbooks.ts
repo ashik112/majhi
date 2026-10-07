@@ -441,7 +441,7 @@ export const GoalRemoveInputSchema = z.object({ id: IdSchema });
 // The outbound gate
 
 /** What leaves the machine. Each kind is a channel per workspace. */
-export const OUTBOUND_CHANNELS = ["email", "post", "form", "message"] as const;
+export const OUTBOUND_CHANNELS = ["email", "post", "form", "message", "client"] as const;
 export const OutboundChannelSchema = z.enum(OUTBOUND_CHANNELS);
 export type OutboundChannel = z.infer<typeof OutboundChannelSchema>;
 
@@ -450,6 +450,7 @@ export const OUTBOUND_CHANNEL_LABEL: Record<OutboundChannel, string> = {
   post: "Social post",
   form: "Form submit",
   message: "Message",
+  client: "Client chat",
 };
 
 /** Draft: the owner approves each. Batch: the owner approves a batch on a schedule. Auto: allowed within a daily limit. */

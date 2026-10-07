@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ChatAppSchema } from "./chat.ts";
 import { FindingSeveritySchema, FindingSourceSchema } from "./findings.ts";
 import { IdSchema, TaskIdSchema } from "./ids.ts";
 
@@ -38,6 +39,13 @@ const deploy = z.object({
   env: z.string().min(1).max(40),
 });
 const parent = z.object({ kind: z.literal("parent"), task: TaskIdSchema });
+const client = z.object({
+  kind: z.literal("client"),
+  /** The client room (a chat task) the report came in. */
+  room: TaskIdSchema,
+  /** The room item of the message that reported it. */
+  item: z.string().min(1).max(200),
+});
 
 export const StoredOriginSchema = z.discriminatedUnion("kind", [
   owner,
@@ -46,6 +54,7 @@ export const StoredOriginSchema = z.discriminatedUnion("kind", [
   watch,
   schedule,
   deploy,
+  client,
 ]);
 export type StoredOrigin = z.infer<typeof StoredOriginSchema>;
 
@@ -56,6 +65,7 @@ export const TaskOriginSchema = z.discriminatedUnion("kind", [
   watch,
   schedule,
   deploy,
+  client,
   parent,
 ]);
 export type TaskOrigin = z.infer<typeof TaskOriginSchema>;
@@ -72,6 +82,8 @@ export const OriginViewSchema = z.discriminatedUnion("kind", [
   watch.extend({ name: z.string().optional() }),
   schedule.extend({ name: z.string().optional() }),
   deploy.extend({ name: z.string().optional() }),
+  /** `name`: the room's title. `from`: the line the task shows, like "Telegram · Acme ops · Sara". */
+  client.extend({ name: z.string().optional(), from: z.string().optional(), app: ChatAppSchema.optional() }),
   parent.extend({ name: z.string().optional() }),
 ]);
 export type OriginView = z.infer<typeof OriginViewSchema>;

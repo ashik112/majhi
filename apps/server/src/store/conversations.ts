@@ -3,6 +3,7 @@ import {
   BOSS_CHAT_BRIEF,
   CAPTAIN_LANE_BRIEF,
   CHAT_BRIEF,
+  CLIENT_CHAT_BRIEF,
   type Conversation,
   ConversationSchema,
 } from "@majhi/shared";
@@ -62,7 +63,7 @@ export class ConversationsRepo {
     this.db.run(sql`
       INSERT INTO read_marks (id, read_at, updated_at)
       SELECT ${id}, min(${upTo}, newest), ${new Date().toISOString()}
-        FROM (SELECT max(at) AS newest FROM room_items WHERE task = ${id} AND type = 'agent')
+        FROM (SELECT max(at) AS newest FROM room_items WHERE task = ${id} AND type IN ('agent', 'client'))
        WHERE newest IS NOT NULL
       ON CONFLICT (id) DO UPDATE
          SET read_at = excluded.read_at, updated_at = excluded.updated_at
@@ -86,18 +87,21 @@ export class ConversationsRepo {
     const rows = this.db.all<Row>(sql`
       SELECT t.id AS id, t.title AS title, t.org AS org, t.brief AS brief, t.kind AS kind,
         (SELECT count(*) FROM room_items r
-          WHERE r.task = t.id AND r.type = 'agent' AND r.at > coalesce(m.read_at, '')) AS unread,
-        (SELECT max(r.at) FROM room_items r WHERE r.task = t.id AND r.type = 'agent') AS agent_at,
+          WHERE r.task = t.id AND r.type IN ('agent', 'client') AND r.at > coalesce(m.read_at, '')) AS unread,
+        (SELECT max(r.at) FROM room_items r WHERE r.task = t.id AND r.type IN ('agent', 'client')) AS agent_at,
+        (SELECT CASE WHEN r.type = 'client' THEN coalesce(json_extract(r.payload, '$.sender.name'), '') || ': ' ELSE '' END
+            || substr(json_extract(r.payload, '$.text'), 1, 600) FROM room_items r
+          WHERE r.task = t.id AND r.type IN ('agent', 'client') ORDER BY r.at DESC LIMIT 1) AS agent_text,
+        (SELECT max(r.at) FROM room_items r WHERE r.task = t.id AND r.type IN ('owner', 'client-reply')
+            AND (r.type = 'owner' OR json_extract(r.payload, '$.state') = 'sent')) AS owner_at,
         (SELECT substr(json_extract(r.payload, '$.text'), 1, 600) FROM room_items r
-          WHERE r.task = t.id AND r.type = 'agent' ORDER BY r.at DESC LIMIT 1) AS agent_text,
-        (SELECT max(r.at) FROM room_items r WHERE r.task = t.id AND r.type = 'owner') AS owner_at,
-        (SELECT substr(json_extract(r.payload, '$.text'), 1, 600) FROM room_items r
-          WHERE r.task = t.id AND r.type = 'owner' ORDER BY r.at DESC LIMIT 1) AS owner_text
+          WHERE r.task = t.id AND r.type IN ('owner', 'client-reply')
+            AND (r.type = 'owner' OR json_extract(r.payload, '$.state') = 'sent') ORDER BY r.at DESC LIMIT 1) AS owner_text
       FROM tasks t LEFT JOIN read_marks m ON m.id = t.id
       WHERE ${LISTED}
         AND (t.status != 'done' OR EXISTS (
           SELECT 1 FROM room_items r
-           WHERE r.task = t.id AND r.type = 'agent' AND r.at > coalesce(m.read_at, '')))
+           WHERE r.task = t.id AND r.type IN ('agent', 'client') AND r.at > coalesce(m.read_at, '')))
         ${scope}`);
     const out: Conversation[] = [];
     for (const row of rows) {
@@ -106,7 +110,12 @@ export class ConversationsRepo {
       out.push(
         ConversationSchema.parse({
           id: row.id,
-          kind: row.brief === CAPTAIN_LANE_BRIEF && row.kind === "chat" ? "captain" : "task",
+          kind:
+            row.kind === "chat" && row.brief === CAPTAIN_LANE_BRIEF
+              ? "captain"
+              : row.kind === "chat" && row.brief === CLIENT_CHAT_BRIEF
+                ? "client"
+                : "task",
           ...(row.org === null ? {} : { org: row.org }),
           title: row.title,
           lastLine: last.line,

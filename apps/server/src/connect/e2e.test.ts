@@ -93,7 +93,7 @@ describe("a connected service reaches only its own workspace's agent sessions", 
     const token = headers.Authorization?.replace("Bearer ", "") ?? "";
     expect(auth.accessOf(token)?.account).toBe("maria@acme.example");
     const tools = await listTools(remoteTransport(mcp.url, headers), 10_000);
-    expect(tools).toEqual(["list_issues", "create_issue"]);
+    expect(tools.map((t) => t.name)).toEqual(["list_issues", "create_issue"]);
     expect(lastServers().map((s) => s.name)).not.toContain("fakesvc-2");
 
     // Globex's agent, in a Globex task, gets Globex's account, not Acme's.

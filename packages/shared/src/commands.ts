@@ -82,6 +82,23 @@ import {
   CaptainUndoResultSchema,
   SlotCapacitySchema,
 } from "./captain.ts";
+import {
+  ChatEditReplyInputSchema,
+  ChatHolderInputSchema,
+  ChatIgnoreInputSchema,
+  ChatLinkInputSchema,
+  ChatMarkUsInputSchema,
+  ChatReplyInputSchema,
+  ChatReplyResultSchema,
+  ChatSendInputSchema,
+  ClientListSchema,
+  ClientRowSchema,
+  ContactMergeInputSchema,
+  ContactMergeResultSchema,
+  ContactUndoInputSchema,
+  ContactViewSchema,
+  SamePersonAnswerInputSchema,
+} from "./chat.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
 import {
   ConnectCatalogSchema,
@@ -203,6 +220,13 @@ import {
   DecisionRecommendInputSchema,
   OwnerDecisionSchema,
 } from "./inbox.ts";
+import {
+  IncidentCauseInputSchema,
+  IncidentEditReportInputSchema,
+  IncidentSendReportInputSchema,
+  IncidentTaskInputSchema,
+  IncidentViewSchema,
+} from "./incident.ts";
 import { BlockerSchema } from "./lifecycle/blocker.ts";
 import {
   McpAgentInputSchema,
@@ -1342,6 +1366,125 @@ export const commands = {
     input: WikiSetRoleInputSchema,
     output: WikiPageViewSchema,
   },
+  // Client chats (docs/briefs/client-chats.md) ------------------------------------
+  "chat.list": {
+    risk: "read",
+    summary:
+      "The clients' chats: each workspace's linked chats with their newest line, the chats nobody linked yet (New chats), and whether each chat app account can be read. Owner only",
+    input: z.object({}),
+    output: ClientListSchema,
+  },
+  "chat.link": {
+    risk: "change",
+    summary:
+      "Link a New chat to a workspace. From then on the captain reads what the client writes there. Owner only",
+    input: ChatLinkInputSchema,
+    output: ClientRowSchema,
+  },
+  "chat.ignore": {
+    risk: "change",
+    summary: "Ignore a New chat: what arrives from it is dropped. Owner only",
+    input: ChatIgnoreInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.holder": {
+    risk: "change",
+    summary:
+      "Say who writes to the client in a chat: the captain (replies go through the owner's Tell setting) or the owner (the captain does not write). Owner only",
+    input: ChatHolderInputSchema,
+    output: ClientRowSchema,
+  },
+  "chat.send": {
+    risk: "outbound",
+    summary:
+      "Write to the client in a chat as the owner. It goes at once, and the owner holds the chat from then on. Owner only",
+    input: ChatSendInputSchema,
+    output: z.object({ draft: z.number().int().positive(), state: z.enum(["sent", "held", "failed"]) }),
+  },
+  "chat.editReply": {
+    risk: "change",
+    summary: "Change the words of a reply to a client that waits for the owner. Owner only",
+    input: ChatEditReplyInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.samePerson": {
+    risk: "change",
+    summary:
+      "Answer the captain's question whether two contacts are one person: Same merges them, Not same remembers it. Owner only",
+    input: SamePersonAnswerInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.confirmWebhook": {
+    risk: "change",
+    summary:
+      "Telegram has a webhook set for the bot, which stops majhi from reading. Remove it so majhi can read the chats. Owner only",
+    input: z.object({ connection: IdSchema }),
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.markUs": {
+    risk: "change",
+    summary:
+      'Say that the sender of a message is one of us, the owner or a teammate, or is not. What an "us" writes in a chat is not a client\'s: the captain does not triage it, and the chat goes to the owner (Replies: You). Owner only',
+    input: ChatMarkUsInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.reply": {
+    // `read` on purpose: the owner's Tell setting and the Hold list decide whether this sends or waits (a held reply is a
+    // draft of the outbound gate), so no approval card is asked on top of them.
+    risk: "read",
+    summary:
+      "Write a reply to a client chat of this workspace. State what the text says: promisedTime (it names a time or date), money (price, refund, contract), security (an incident or leak) and severalClients (the chat shows more than one client company). Under Tell Ask me, or when a hold applies, the reply waits for the owner as a draft; otherwise it goes at once. A secret or another client's name always waits. Format the text with a small Markdown subset: **bold**, _italic_, `code`, ``` code blocks, [links](https://...) and - lists; each chat app shows it in its own markup. Mention a person with @[contact:<id>], using the contact ids listed for that chat; a name typed as plain text is not a mention",
+    input: ChatReplyInputSchema,
+    output: ChatReplyResultSchema,
+  },
+  "contacts.list": {
+    risk: "read",
+    summary: "The clients' contacts of a workspace with the chat identities each has. Owner only",
+    input: z.object({ org: IdSchema }),
+    output: z.array(ContactViewSchema),
+  },
+  "contacts.merge": {
+    risk: "change",
+    summary:
+      "Merge one contact into another of the same workspace. It is logged, so it can be undone with both contacts as they were. Owner only",
+    input: ContactMergeInputSchema,
+    output: ContactMergeResultSchema,
+  },
+  "contacts.undoMerge": {
+    risk: "change",
+    summary: "Undo a contact merge: both contacts and their identities are back as they were. Owner only",
+    input: ContactUndoInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  // Incidents clients are told about (docs/briefs/client-chats.md, phase 2) ---------
+  "incident.view": {
+    risk: "read",
+    summary:
+      "What the clients of an incident task see: each client room's status (Investigating, Identified, Monitoring, Resolved), when each state began, the linked watch, the updates told, and the report once the incident is resolved. Owner only",
+    input: IncidentTaskInputSchema,
+    output: IncidentViewSchema.nullable(),
+  },
+  "incident.cause": {
+    risk: "change",
+    summary:
+      "Record the cause of an incident task you work on, once it is known. `text` is for the team and the report. `client` is the same cause in words a client may read: no hosts, no other client, no secret. It moves what clients are told to Identified",
+    input: IncidentCauseInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "incident.editReport": {
+    risk: "change",
+    summary:
+      "Change the words of the report of a resolved incident, internal or client version. Refused once the client version was sent to a room. Owner only",
+    input: IncidentEditReportInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "incident.sendReport": {
+    risk: "outbound",
+    summary:
+      "Send the client version of an incident's report to one client room. Only the owner sends it, and the text is frozen from then on. Owner only",
+    input: IncidentSendReportInputSchema,
+    output: z.object({ draft: z.number().int().positive(), state: z.enum(["sent", "held", "failed"]) }),
+  },
   // The chat dock -----------------------------------------------------------------
   "conversations.list": {
     risk: "read",
@@ -1689,7 +1832,7 @@ export const commands = {
   "projects.setEnvironments": {
     risk: "change",
     summary:
-      "Set the whole list of a project's deploy environments: name (one / allowed), tier (production or staging), the branch whose push or merge deploys it, and an address that answers 2xx when it is up. The captain may add environments (always production) and set branch and check; only the owner sets a staging tier or removes a production environment. How the project deploys goes in its wiki, not here",
+      "Set the whole list of a project's deploy environments: name (one / allowed), tier (production or staging), the branch whose push or merge deploys it, and an address that answers 2xx when it is up. The captain may add environments (always production) and set branch and check; a staging tier or removing a production environment is the owner's: your call for it becomes a proposal the owner applies with one click. How the project deploys goes in its wiki, not here",
     input: SetEnvironmentsInputSchema,
     output: ProjectDeployViewSchema,
   },
@@ -3716,7 +3859,7 @@ export const commands = {
   "autonomy.start": {
     risk: "change",
     summary:
-      "Turn Autonomous on. resumeStopped also resumes the tasks it paused when it was turned off. Owner only. Refused when there is no captain",
+      "Turn Autonomous on. resumeStopped also resumes the tasks it paused when it was turned off. Owner only. Refused when there is no captain. The captain's call is a proposal the owner applies",
     input: AutonomyStartInputSchema,
     output: AutonomyStatusSchema,
   },
@@ -3737,7 +3880,7 @@ export const commands = {
   "autonomy.configure": {
     risk: "change",
     summary:
-      "Change autonomous mode's day cap, account floors, summary time, time zone and the largest task size it may start, or a workspace's entry under orgs: who decides what there (authority: start, questions, approvals, upkeep, merge, push, deployStaging, deployProduction, tell and own, each decide or ask; only the rows you name change), its ship rules (ships: the whole ordered list that refines merge, deploy and tell by task type, first match wins), its daily budget (cap), and the More rules (hours, freeze, tz, branches, providers, account). null clears a field. Owner only",
+      "Change autonomous mode's day cap, account floors, summary time, time zone and the largest task size it may start, or a workspace's entry under orgs: who decides what there (authority: start, questions, approvals, upkeep, merge, push, deployStaging, deployProduction, tell and own, each decide or ask; only the rows you name change), its ship rules (ships: the whole ordered list that refines merge, deploy and tell by task type, first match wins), its daily budget (cap), and the More rules (hours, freeze, tz, branches, providers, account). null clears a field. Owner only; the captain's call is a proposal the owner applies",
     input: AutonomyPatchSchema,
     output: AutonomyStatusSchema,
   },

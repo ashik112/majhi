@@ -66,6 +66,10 @@ export const queryKeys = {
   /** Every `playbooks.*`, `goals.*` and `outbound.*` read. */
   playbooks: ["playbooks"],
   ops: ["ops"],
+  /** `chat.list` and `contacts.list`: the clients' chats. */
+  clients: ["clients"],
+  /** `incident.view` of every incident task: what its client rooms see and the report. */
+  incident: ["incident"],
   /** Every `wiki.*` read: a workspace's or project's wiki, its pages and what the next update would cost. */
   wiki: ["wiki"],
   /** `agenda.today`: the brief, the agenda, Watch and Plan. */

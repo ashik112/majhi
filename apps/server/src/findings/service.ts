@@ -280,7 +280,8 @@ export class FindingsService {
 
   /** The open findings of a workspace for the captain's digest: worst first, at most `max`. */
   digestLines(org: string, max = 6): string[] {
-    const open = this.repo.list({ org, statuses: ["open"], limit: 200 });
+    // A client's words are data for the owner, never a line in the captain's own briefing.
+    const open = this.repo.list({ org, statuses: ["open"], limit: 200 }).filter((f) => f.source !== "client");
     const rank = { high: 3, medium: 2, low: 1, info: 0 } as const;
     return open
       .toSorted((a, b) => rank[b.severity] - rank[a.severity] || b.id - a.id)
@@ -397,6 +398,23 @@ export class FindingsService {
     this.labelled(actor, found, "keep", "the owner made a task of it");
     this.deps.changed?.();
     return { finding, task: task.id };
+  }
+
+  /** Every finding linked to a task. */
+  ofTask(task: string): Finding[] {
+    return this.repo.ofTask(task);
+  }
+
+  /**
+   * A task made for a finding by another path (an incident a client reported) becomes the finding's task, as a
+   * proposal: the owner sees it as they see any task the captain made from a finding. A finding that has a task keeps it.
+   */
+  adopt(id: number, task: string): Finding {
+    const found = this.get(id);
+    if (found.task !== undefined || !canMoveFinding(found.status, "proposed")) return found;
+    const finding = this.repo.patch(id, { at: this.at(), status: "proposed", task });
+    this.deps.changed?.();
+    return finding;
   }
 
   /** Follows the linked tasks: a proposal the owner started is a task, a finished task fixed the finding. */

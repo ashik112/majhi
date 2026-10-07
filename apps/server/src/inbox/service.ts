@@ -88,6 +88,8 @@ export interface InboxDeps {
   answered?: (decision: OwnerDecision, option: string) => void;
   /** Workspace names by id, for the sentences that name one. */
   orgNames?: () => Promise<Readonly<Record<string, string>>>;
+  /** Whether a captain's proposal no longer matches the setting it was measured against. */
+  proposalStale?: (item: Extract<RoomItem, { type: "approval" }>) => Promise<boolean>;
   /** The agent's last message in the task. */
   lastAgentMessage?: (task: string) => { agent: string; text: string; at: string } | undefined;
   /**
@@ -271,10 +273,28 @@ export class InboxService {
       orgName: (org) => names[org],
       extras: deps.extras?.() ?? [],
     });
+    await this.markStale(all, items);
     const now = (deps.now?.() ?? new Date()).getTime();
     deps.recommendations.prune(new Set(all.map((d) => d.id)), new Date(now - KEEP_MS).toISOString());
     this.lastDecisions = all;
     return all;
+  }
+
+  /** A proposal whose setting changed since says so and offers only Reject: it needs a fresh proposal. */
+  private async markStale(all: OwnerDecision[], items: readonly RoomItem[]): Promise<void> {
+    const check = this.deps.proposalStale;
+    if (check === undefined) return;
+    for (const [i, d] of all.entries()) {
+      const parsed = parseDecisionId(d.id);
+      if (parsed?.kind !== "room") continue;
+      const item = items.find((x) => x.task === parsed.task && x.id === parsed.item);
+      if (item?.type !== "approval" || item.proposal === undefined || !(await check(item))) continue;
+      all[i] = {
+        ...d,
+        blocked: "This changed since the captain proposed it. Reject it and ask for a new proposal.",
+        options: [{ id: "reject", label: "Reject", primary: true }],
+      };
+    }
   }
 
   /** The decisions left after the answer, so a screen can show them without asking again. */
@@ -473,7 +493,10 @@ export class InboxService {
       out.command = item.connection?.action ?? item.title;
       out.agent = item.agent;
     }
-    if (item?.type === "approval") {
+    if (item?.type === "approval" && item.proposal !== undefined) {
+      out.changes = item.proposal.changes;
+      out.agent = item.agent;
+    } else if (item?.type === "approval") {
       out.command =
         item.reason === undefined || item.reason === "" ? item.summary : `${item.summary}\n${item.reason}`;
       out.agent = item.agent;

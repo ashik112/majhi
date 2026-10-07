@@ -54,6 +54,8 @@ export function topicQueryKeys(topic: EventTopic): readonly (readonly string[])[
       ];
     case "ops":
       return [queryKeys.ops, queryKeys.decisions, queryKeys.findings];
+    case "clients":
+      return [queryKeys.clients, queryKeys.decisions, queryKeys.incident];
     case "signins":
       return [queryKeys.signins, queryKeys.onboarding];
     case "clones":
@@ -144,6 +146,7 @@ export const ALL_TOPICS: readonly EventTopic[] = [
   "clones",
   "checks",
   "wiki",
+  "clients",
 ];
 
 /** Parses one WebSocket text frame. Anything that is not a known event is dropped. */

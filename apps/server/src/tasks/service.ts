@@ -3031,7 +3031,8 @@ export class TaskService {
         global: sections.connections,
       });
       for (const h of held) {
-        if (found.has(h.id)) continue;
+        // A chat app's account is majhi's own: an agent is not told it exists.
+        if (found.has(h.id) || h.connection.type === "chat") continue;
         found.set(h.id, {
           id: h.id,
           name: h.connection.name,

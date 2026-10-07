@@ -243,6 +243,11 @@ export class FindingsRepo {
     ).n;
   }
 
+  /** Every finding linked to this task, whatever its status. */
+  ofTask(task: string): Finding[] {
+    return readFindings(this.db.prepare("SELECT * FROM findings WHERE task = ?").all(task) as Row[]);
+  }
+
   /** Findings linked to a task, to follow the task. */
   linked(): Finding[] {
     return readFindings(

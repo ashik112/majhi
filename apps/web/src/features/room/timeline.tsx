@@ -5,8 +5,10 @@ import { Button } from "@/components/ui/button";
 import { useTaskDeploys } from "@/features/deploy/use-task-deploys";
 import { cn } from "@/lib/cn";
 import { GLASS } from "@/lib/glass";
+import { useIncident } from "@/lib/incident-queries";
 import { DeployPlanCard, deployPlanOpen } from "./deploy-plan";
 import { dockItems, waitsForOwner } from "./dock";
+import { IncidentCard, incidentCardOpen } from "./incident-card";
 import { type ItemContext, NotesRow, OWNER_CARD_TYPES, PinnedPlan, RoomItemView, rowDomId } from "./items";
 import { RoomTaskContext } from "./media";
 import type { RoomState } from "./model";
@@ -275,6 +277,9 @@ export function Timeline({
     owner !== undefined && owner.task.kind !== "chat",
   );
   const planOpen = deployPlanOpen(deploys);
+  // An incident a client room is told about shows what they see, and its report once resolved.
+  const incident = useIncident(task.id, owner?.task.typing?.type === "incident").data;
+  const incidentOpen = incidentCardOpen(incident);
 
   return (
     <RoomTaskContext.Provider value={task.id}>
@@ -369,7 +374,7 @@ export function Timeline({
             )
           )}
         </div>
-        {(waiting.length > 0 || planOpen) && (
+        {(waiting.length > 0 || planOpen || incidentOpen) && (
           // Whatever waits for the owner stays here, above the message box, until it is answered,
           // so new messages never bury it. Answered, it goes back into the log in its place.
           <section
@@ -389,6 +394,7 @@ export function Timeline({
                   <DeployPlanCard steps={deploys} change={() => owner?.compose("")} />
                 </li>
               )}
+              {incidentOpen && <IncidentCard view={incident} />}
             </ol>
           </section>
         )}

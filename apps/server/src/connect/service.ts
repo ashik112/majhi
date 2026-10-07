@@ -27,6 +27,7 @@ import {
   suggestConnectionId,
   textValue,
 } from "@majhi/shared";
+import { annotationsOf, type ListedTool } from "../connections/mcp-client.ts";
 import { UserError } from "../errors.ts";
 import type { AppClientStore } from "./app-client.ts";
 import { AppService } from "./app-service.ts";
@@ -137,7 +138,7 @@ export interface ConnectDeps {
       }
     | undefined;
   /** Lists the tools of the server with a bearer token. Throws with a sentence when it cannot. */
-  listTools: (url: string, token: string) => Promise<string[]>;
+  listTools: (url: string, token: string) => Promise<ListedTool[]>;
   /** True while a session holds the connection, so its token is renewed ahead of time. */
   inUse?: (connection: string) => boolean;
   /** Restarts the sessions that hold the connection at their next turn end. */
@@ -150,6 +151,8 @@ export interface ConnectDeps {
   apps: AppClientStore;
   /** Public client IDs majhi ships, by app. */
   builtInApps?: Readonly<Record<string, string>>;
+  /** Telegram's Bot API address, when it is not Telegram's own (a trial against a fake bot server). */
+  telegramApi?: string | undefined;
   /** The client ID of the workspace-wide GitHub OAuth app git sign-in already uses, if any. */
   githubClientId?: () => Promise<string | undefined>;
   /** Command-line tool sign-ins through the host helper. */
@@ -283,6 +286,8 @@ export class ConnectService {
       orgName: deps.orgName,
       redirect: deps.redirect,
       fetch: () => this.fetchFn,
+      telegramApi: deps.telegramApi,
+      observe: (id, result) => this.deps.health?.observe(id, result),
       connections: deps.connections,
       connectionIds: deps.connectionIds,
       secretOf: deps.secretOf,
@@ -369,7 +374,7 @@ export class ConnectService {
 
   /** An `env` connection a guided app setup made (Slack, Discord): tokens, no sign-in to renew. */
   private isTokenService(connection: ConnectionConfig): boolean {
-    if (connection.type !== "env") return false;
+    if (connection.type !== "env" && connection.type !== "chat") return false;
     const id = connection.fields?.service;
     const kind = id === undefined ? undefined : this.service(id)?.kind;
     return kind === "api-key" || kind === "token";
@@ -1755,7 +1760,9 @@ export class ConnectService {
     const products = await this.productsOf(grant);
     if (products !== undefined) return this.testProducts(grant, products, started);
     try {
-      const tools = await this.deps.listTools(grant.serverUrl, grant.tokens.accessToken);
+      const listed = await this.deps.listTools(grant.serverUrl, grant.tokens.accessToken);
+      const tools = listed.map((t) => t.name);
+      const toolAnnotations = annotationsOf(listed);
       if (grant.state === "error") await this.markState(grant.connection, "connected", "");
       return this.result(
         true,
@@ -1769,6 +1776,7 @@ export class ConnectService {
             `Listed ${tools.length} tool${tools.length === 1 ? "" : "s"} (tools/list)`,
           ],
           ...(grant.account.label === undefined ? {} : { account: grant.account.label }),
+          ...(toolAnnotations === undefined ? {} : { toolAnnotations }),
         },
       );
     } catch (err) {
@@ -1806,12 +1814,14 @@ export class ConnectService {
     }
     const lines: string[] = [];
     const tools: string[] = [];
+    const annotations: NonNullable<ConnectionTestResult["toolAnnotations"]> = {};
     const failed: string[] = [];
     let lastError: unknown;
     for (const product of products) {
       try {
         const listed = await this.deps.listTools(product.mcpUrl, grant.tokens.accessToken);
-        tools.push(...listed);
+        tools.push(...listed.map((t) => t.name));
+        Object.assign(annotations, annotationsOf(listed));
         lines.push(`${product.name}: ${listed.length} tool${listed.length === 1 ? "" : "s"}`);
       } catch (err) {
         const why = refusalReason(null, JSON.stringify({ message: errorText(err) }));
@@ -1833,6 +1843,7 @@ export class ConnectService {
           `Listed the tools of ${lines.length} product${lines.length === 1 ? "" : "s"} with the stored sign-in`,
         ],
         ...(grant.account.label === undefined ? {} : { account: grant.account.label }),
+        ...(Object.keys(annotations).length === 0 ? {} : { toolAnnotations: annotations }),
       }),
       warnings: failed.map((f) => `${f}. Agents still get the other products.`),
     };
@@ -1844,7 +1855,11 @@ export class ConnectService {
     started: number,
     tools?: string[],
     failure?: ConnectionFailure,
-    passed?: { checked: string[]; account?: string },
+    passed?: {
+      checked: string[];
+      account?: string;
+      toolAnnotations?: ConnectionTestResult["toolAnnotations"];
+    },
   ): ConnectionTestResult {
     return {
       ok,

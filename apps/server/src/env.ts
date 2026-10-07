@@ -78,6 +78,13 @@ const EnvSchema = z.object({
    * `http://127.0.0.1:${MAJHI_PORT}`, the host-side port, which the server itself cannot see.
    */
   MAJHI_ORIGIN: z.url({ protocol: /^https?$/, error: "Use an http:// URL" }).optional(),
+  /**
+   * Whether this server reads chat apps (Telegram long polling). One reader per bot token: only the real server does,
+   * so a preview or a test server never takes the owner's messages. Default: on when agents run in containers.
+   */
+  MAJHI_CHATS: z.enum(["on", "off"]).optional(),
+  /** Where Telegram's Bot API is. Only a test or a trial against a fake bot server sets it. */
+  MAJHI_TELEGRAM_API: z.url({ protocol: /^https?$/, error: "Use an http:// URL" }).optional(),
   /** Memory cap per run. */
   MAJHI_RUNNER_MEMORY: z
     .string()
@@ -119,6 +126,8 @@ export interface ServerEnv {
   laya?: { url: string; container?: string };
   /** `MAJHI_ORIGIN` without a trailing slash: where the browser reaches majhi. */
   origin: string;
+  /** Chat apps: whether this server reads them, and where Telegram's API is when it is not Telegram's own. */
+  chats?: { polling: boolean; telegramApi?: string };
 }
 
 export interface RunnerEnv {
@@ -174,6 +183,12 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
           },
         }),
     origin: (env.MAJHI_ORIGIN ?? DEFAULT_MAJHI_ORIGIN).replace(/\/+$/, ""),
+    chats: {
+      polling: (env.MAJHI_CHATS ?? (env.MAJHI_RUNNER === "container" ? "on" : "off")) === "on",
+      ...(env.MAJHI_TELEGRAM_API === undefined
+        ? {}
+        : { telegramApi: env.MAJHI_TELEGRAM_API.replace(/\/+$/, "") }),
+    },
     runner: {
       mode: env.MAJHI_RUNNER,
       image: env.MAJHI_RUNNER_IMAGE,

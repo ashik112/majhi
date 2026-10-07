@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { CommandMeta, ConnectionConfig, ConnectionHealth, ConnectionTestResult } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { ConnectionHealthService } from "../connections/health.ts";
-import { listTools, remoteTransport } from "../connections/mcp-client.ts";
+import { type ListedTool, listTools, remoteTransport } from "../connections/mcp-client.ts";
 import { UserError } from "../errors.ts";
 import { generateKey, SecretStore } from "../secrets/store.ts";
 import { tempDir, writeKeyFile } from "../testing/fixtures.ts";
@@ -44,7 +44,7 @@ interface Rig {
 
 async function rig(
   options: {
-    listTools?: (url: string, token: string) => Promise<string[]>;
+    listTools?: (url: string, token: string) => Promise<ListedTool[]>;
     lookup?: (name: string) => Promise<string[]>;
     fetch?: typeof fetch;
     catalog?: boolean;

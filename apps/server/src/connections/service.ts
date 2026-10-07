@@ -28,6 +28,7 @@ import {
   reservedVariable,
   suggestConnectionId,
   TOOL_CATALOG,
+  words,
 } from "@majhi/shared";
 import type { AgentStore, StoredAgent } from "../agents/store.ts";
 import { type ConfigSections, connectionScopes } from "../config/sections.ts";
@@ -128,6 +129,44 @@ export class ConnectionService {
 
   recordTest(id: string, result: ConnectionTestResult): void {
     this.tests.set(id, result);
+  }
+
+  /** The last Test of a connection since majhi started: its tool names and the hints the server gave. */
+  lastTest(id: string): ConnectionTestResult | undefined {
+    return this.tests.get(id);
+  }
+
+  /**
+   * Adds one MCP tool to what a connection allows without asking (`allow`) or to the tools it knows
+   * only read (`read_tools`), after the owner chose that on a card. Only the owner, like the commands
+   * `connections.allow` and `connections.edit`.
+   */
+  async addTool(
+    id: string,
+    tool: string,
+    as: "allow" | "read",
+    command: string,
+    meta: CommandMeta,
+  ): Promise<void> {
+    const found = await this.require(id);
+    if (as === "allow") {
+      await this.setAllow(id, [...(found.connection.allow ?? []), tool], command, meta);
+      return;
+    }
+    const reads = words(found.connection.fields?.read_tools);
+    // The owner's word wins in the gate, so a tool listed as a write must leave that list.
+    const writes = words(found.connection.fields?.write_tools).filter((w) => w !== tool);
+    await this.update(
+      {
+        id,
+        fields: {
+          read_tools: [...new Set([...reads, tool])].join(" "),
+          write_tools: writes.length === 0 ? null : writes.join(" "),
+        },
+      },
+      command,
+      meta,
+    );
   }
 
   async create(input: ConnectionCreateInput, command: string, meta: CommandMeta): Promise<ConnectionView> {
@@ -606,7 +645,9 @@ function viewOf(
     headers: list("headers"),
     env: list("env"),
     allow: connection.allow ?? [],
+    // A chat app's account is majhi's own: no agent holds it.
     agents: known.agents.flatMap((a) =>
+      connection.type !== "chat" &&
       a.ok &&
       !(connection.agents_off ?? []).includes(a.id) &&
       (org === GLOBAL_CONNECTIONS ||

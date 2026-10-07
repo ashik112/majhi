@@ -1,4 +1,4 @@
-import type { Task } from "@majhi/shared";
+import { isClientRoom, type Task } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { Pencil, SearchX, SquarePen } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { OrgBadge } from "@/components/ui/org-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
+import { ClientRoom } from "@/features/clients/client-room";
 import { permissionDomId } from "@/features/room/items";
 import { RoomPane } from "@/features/room/room-pane";
 import { useRoom } from "@/features/room/use-room";
@@ -69,6 +70,7 @@ export function ChatView({
       </div>
     );
   }
+  if (isClientRoom(task.data)) return <ClientRoom key={task.data.id} taskId={task.data.id} />;
   return (
     <OpenChat
       key={task.data.id}

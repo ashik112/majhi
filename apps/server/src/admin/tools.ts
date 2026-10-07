@@ -1,4 +1,10 @@
-import { AGENT_BLOCKED_COMMANDS, type CommandName, commands, type RiskClass } from "@majhi/shared";
+import {
+  AGENT_BLOCKED_COMMANDS,
+  CAPTAIN_PROPOSALS,
+  type CommandName,
+  commands,
+  type RiskClass,
+} from "@majhi/shared";
 import { z } from "zod";
 import { CLIPBOARD_COPY_TOOL } from "./clipboard-copy.ts";
 import { SAVE_FROM_SCRIPT_TOOL, WITHDRAW_SECRET_TOOL } from "./fetch-secret.ts";
@@ -44,6 +50,19 @@ export const OWNER_ONLY_INPUTS: Partial<Record<CommandName, readonly string[]>> 
   "connect.start": ["allowPrivate"],
 };
 
+/**
+ * What the captain is told about the commands it may only propose: the call does not run, it becomes a card
+ * the owner applies with one click.
+ */
+const PROPOSE_NOTE: Partial<Record<CommandName, string>> = {
+  "autonomy.start":
+    " The captain in its workspace lane only. This does not run: it proposes the change, the owner applies it with one click. Nothing changes until then.",
+  "autonomy.configure":
+    " The captain in its workspace lane only, for its own workspace (orgs.<its id> and nothing else). This does not run: it proposes the change, the owner applies it with one click. Nothing changes until then.",
+  "projects.setEnvironments":
+    " A change you may not make alone (a staging tier, removing a production environment) does not run: it is proposed to the owner, who applies it with one click.",
+};
+
 function commandSchema(command: CommandName): AdminTool["inputSchema"] {
   const schema = z.toJSONSchema(commands[command].input, { io: "input", unrepresentable: "any" });
   const { $schema: _dropped, ...rest } = schema as Record<string, unknown>;
@@ -65,14 +84,14 @@ function commandSchema(command: CommandName): AdminTool["inputSchema"] {
 /** One tool per command that makes sense for an agent, plus `majhi_request_secret`. */
 export function adminTools(): AdminTool[] {
   const tools: AdminTool[] = (Object.keys(commands) as CommandName[])
-    .filter((name) => !NOT_TOOLS.has(name))
+    .filter((name) => !NOT_TOOLS.has(name) || CAPTAIN_PROPOSALS.has(name))
     .map((command) => {
       const def = commands[command];
       return {
         name: toolName(command),
         command,
         risk: def.risk,
-        description: `${def.summary}. Risk: ${def.risk}.`,
+        description: `${def.summary}. Risk: ${def.risk}.${PROPOSE_NOTE[command] ?? ""}`,
         inputSchema: commandSchema(command),
       };
     });

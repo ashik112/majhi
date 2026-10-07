@@ -826,6 +826,16 @@ export class OpsWatch {
     return out;
   }
 
+  /** One incident, open or closed. */
+  incident(id: number): OpsIncident | undefined {
+    return this.deps.repo.incident(id);
+  }
+
+  /** The incident a finding was made for. */
+  incidentOfFinding(finding: number): OpsIncident | undefined {
+    return this.deps.repo.byFinding(finding);
+  }
+
   /** Open incidents, newest first, for the sidebar lamp and the page. */
   openIncidents(): OpsIncident[] {
     return this.deps.repo.open();

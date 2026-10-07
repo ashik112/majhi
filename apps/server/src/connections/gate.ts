@@ -1,4 +1,4 @@
-import type { ConnectionType } from "@majhi/shared";
+import type { ConnectionType, ToolAnnotations } from "@majhi/shared";
 import { parseLine, ShellParseError, type SimpleCommand } from "./shell.ts";
 
 /**
@@ -24,6 +24,8 @@ export interface GateConnection {
   readTools?: readonly string[] | undefined;
   /** Tool names that write, whatever their names say. */
   writeTools?: readonly string[] | undefined;
+  /** What the server said about its tools in tools/list, by tool name (last Test). Below the owner's own lists. */
+  toolAnnotations?: Readonly<Record<string, ToolAnnotations>> | undefined;
   /** The exact actions the org allows without asking. */
   allow: readonly string[];
 }
@@ -39,6 +41,8 @@ export interface GateWrite {
   destructive: boolean;
   /** Runs without asking: the connection's `allow` holds this exact action and it is not destructive. */
   allowed: boolean;
+  /** Set for a call of an MCP tool: the tool's name, which `allow` and `readTools` hold. */
+  tool?: string;
 }
 
 /** Words of a command or tool name that delete or destroy what they act on. */
@@ -91,8 +95,10 @@ function gateWrite(
   action: string,
   why: string,
   allow: readonly string[],
+  /** The server flagged the tool as destructive (`destructiveHint`), whatever its name says. */
+  flagged = false,
 ): GateWrite {
-  const destroys = destructive(action);
+  const destroys = flagged || destructive(action);
   return {
     connection,
     action,
@@ -383,22 +389,35 @@ export function toolWords(name: string): string[] {
     .filter((w) => w !== "");
 }
 
-/** How an MCP tool call of one of the run's connection servers counts. */
+/**
+ * How an MCP tool call of one of the run's connection servers counts. Three voices, in this order:
+ * the owner's own `writeTools` and `readTools` on the connection, then what the server says in its
+ * tool annotations (`readOnlyHint` makes a read, `destructiveHint` a destructive write), then the
+ * tool's name. Only an explicit `true` counts: the spec's defaults (not read-only, destructive) are
+ * not a statement by the server.
+ */
 export function classifyTool(server: string, tool: string, held: readonly GateConnection[]): GateVerdict {
   const connection = held.find((c) => c.server !== undefined && c.server === server);
   if (connection === undefined) return { kind: "other" };
-  const read = connection.writeTools?.includes(tool)
-    ? false
-    : connection.readTools?.includes(tool)
-      ? true
-      : (() => {
-          const words = toolWords(tool);
-          return words.some((w) => TOOL_READ_VERBS.has(w)) && !words.some((w) => TOOL_WRITE_VERBS.has(w));
-        })();
+  const hints = connection.toolAnnotations?.[tool];
+  let why = "its name does not say it only reads";
+  let flagged = false;
+  let read: boolean;
+  if (connection.writeTools?.includes(tool)) read = false;
+  else if (connection.readTools?.includes(tool)) read = true;
+  else if (hints?.readOnlyHint === true) read = true;
+  else if (hints?.destructiveHint === true) {
+    read = false;
+    flagged = true;
+  } else {
+    const words = toolWords(tool);
+    read = words.some((w) => TOOL_READ_VERBS.has(w)) && !words.some((w) => TOOL_WRITE_VERBS.has(w));
+    if (!read && hints?.readOnlyHint === false) why = "the server says this tool changes data";
+  }
   if (read) return { kind: "read", connections: [connection.id] };
   return {
     kind: "write",
-    writes: [gateWrite(connection.id, tool, "its name does not say it only reads", connection.allow)],
+    writes: [{ ...gateWrite(connection.id, tool, why, connection.allow, flagged), tool }],
   };
 }
 

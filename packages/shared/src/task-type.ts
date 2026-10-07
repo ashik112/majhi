@@ -97,6 +97,7 @@ const FINDING_TYPE: Record<FindingSource, { type: TaskType; high?: TaskType } | 
   deal: undefined,
   social: undefined,
   inbox: { type: "request" },
+  client: { type: "request" },
   analysis: { type: "research" },
   legal: { type: "research" },
   other: undefined,

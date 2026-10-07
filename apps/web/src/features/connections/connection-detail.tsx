@@ -100,15 +100,27 @@ export function ConnectionPanel({
       }
     >
       <StatusBlock view={view} orgs={orgs} checking={checking} now={now} onCheck={onCheck} />
-      <UsageSection view={view} orgs={orgs} />
-      <SharingSection view={view} orgs={orgs} />
-      {service?.products !== undefined && (
-        <ProductsSection key={`products-${view.id}`} view={view} products={service.products} />
+      {view.type === "chat" ? (
+        <DetailSection title="Client chats" className="border-t border-line">
+          <p className="text-base text-fg-muted text-pretty">
+            majhi reads the groups this bot is added to and sends replies as it. No agent gets its token.
+          </p>
+        </DetailSection>
+      ) : (
+        <>
+          <UsageSection view={view} orgs={orgs} />
+          <SharingSection view={view} orgs={orgs} />
+          {service?.products !== undefined && (
+            <ProductsSection key={`products-${view.id}`} view={view} products={service.products} />
+          )}
+          <AgentsSection view={view} orgs={orgs} />
+          <DetailsSection key={`details-${view.id}`} view={view} />
+          {!managed && (
+            <ValuesSection key={`values-${view.id}`} view={view} title={`${def.label} settings`} />
+          )}
+          {view.type !== "host" && <AllowSection key={`allow-${view.id}`} view={view} />}
+        </>
       )}
-      <AgentsSection view={view} orgs={orgs} />
-      <DetailsSection key={`details-${view.id}`} view={view} />
-      {!managed && <ValuesSection key={`values-${view.id}`} view={view} title={`${def.label} settings`} />}
-      {view.type !== "host" && <AllowSection key={`allow-${view.id}`} view={view} />}
       {removing && (
         <ConfirmDialog
           title={`Remove ${view.name}?`}
@@ -232,9 +244,9 @@ function StatusBlock({
       {failed && view.type === "git" && (other || status.action === "fix") && (
         <GitFix view={view} orgs={orgs} />
       )}
-      {failed && view.type === "env" && view.fields.service?.value !== undefined && (
-        <TokenReplace view={view} />
-      )}
+      {failed &&
+        (view.type === "env" || view.type === "chat") &&
+        view.fields.service?.value !== undefined && <TokenReplace view={view} />}
       {failed && view.type === "mcp" && view.fields.auth?.value !== "oauth" && (
         <p className="text-sm text-fg-faint text-pretty">
           Replace the token under MCP server settings below, then check again.

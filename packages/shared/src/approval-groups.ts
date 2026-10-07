@@ -34,6 +34,22 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "conversations.markRead",
   "chats.create",
   "chats.rename",
+  // What clients wrote, who they are and what is sent to them are the owner's: no agent reads or changes them.
+  "chat.list",
+  "chat.link",
+  "chat.ignore",
+  "chat.holder",
+  "chat.send",
+  "chat.editReply",
+  "chat.samePerson",
+  "chat.confirmWebhook",
+  "chat.markUs",
+  "contacts.list",
+  "contacts.merge",
+  "contacts.undoMerge",
+  "incident.view",
+  "incident.editReport",
+  "incident.sendReport",
   // Autonomous mode is the owner's switch: the captain never turns it on, widens its limits or guides itself.
   "autonomy.start",
   "autonomy.pause",
@@ -65,6 +81,17 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "git.signIn.confirm",
   "git.signIn.token",
   "git.signOut",
+]);
+
+/**
+ * What the captain may propose but never run: its call is stored as a card the owner applies with one
+ * click. `autonomy.*` stay in the blocked list (no other agent calls them, no policy mode, rule or full
+ * access runs them); `projects.setEnvironments` is proposed only when the captain's own rail refuses it.
+ */
+export const CAPTAIN_PROPOSALS: ReadonlySet<CommandName> = new Set<CommandName>([
+  "autonomy.start",
+  "autonomy.configure",
+  "projects.setEnvironments",
 ]);
 
 export const ApprovalGroupIdSchema = z.enum([

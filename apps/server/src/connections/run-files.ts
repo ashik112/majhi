@@ -60,6 +60,8 @@ export interface RunFilesDeps {
   gitToken?: PlanDeps["gitToken"];
   /** Whether a connection's one state is connected (5.14). */
   connected?: PlanDeps["connected"];
+  /** What an MCP server said about its tools at its last Test. */
+  toolAnnotations?: PlanDeps["toolAnnotations"];
   /**
    * Starts the forwarder of the services on this computer a run reaches, on the task's own network,
    * before the run starts. Rejects with a plain message when it cannot.
