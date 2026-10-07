@@ -7,7 +7,7 @@ const options = [
   { id: "task", kind: "allow_always" },
   { id: "no", kind: "reject_once" },
 ];
-const START = "mcp__majhi-containers__service_start";
+const START = "mcp__acme-deploy__release";
 
 describe("what the captain's yes becomes", () => {
   it("stays Allow once for a judgment call, a rejection, and a prompt without the option", () => {
@@ -34,7 +34,9 @@ describe("what the captain's yes becomes", () => {
     const decide = (title: string) =>
       decidePermission(ask(title), { perms: [], rememberedFor: (k) => remembered.includes(k) });
     expect(decide(START)).toEqual({ action: "allow", option: "once", via: "task" });
-    expect(decide("mcp__majhi-containers__service_stop")).toEqual({ action: "ask" });
+    expect(decide("mcp__acme-deploy__rollback")).toEqual({ action: "ask" });
+    // majhi's own container tools never ask: the image allow list guards what they run.
+    expect(decide("mcp__majhi-containers__service_stop")).toMatchObject({ action: "allow" });
     expect(decide("mcp__other__deploy")).toEqual({ action: "ask" });
   });
 });
