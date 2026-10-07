@@ -69,6 +69,8 @@ export interface TriageDeps {
   read?: ((text: string) => Promise<ClientMessageRead | undefined>) | undefined;
   /** Told after each Laya read whether Laya answered, so Health can say once that the captain's triage stood in. */
   layaAnswered?: ((answered: boolean) => void) | undefined;
+  /** The captain read a message Laya called "needs a reply": its answer is the right label for Laya's decision. */
+  taught?: ((decision: string, label: "needs-reply" | "chit-chat") => void) | undefined;
 }
 
 const DecisionSchema = z.object({
@@ -163,6 +165,8 @@ type Gate =
       injection: boolean;
       urgent: boolean /** Laya read it, so the injection check is done. */;
       read: boolean;
+      /** Laya's decision on a message it called "needs a reply": the captain's own read then labels it. */
+      readId?: string;
     };
 
 export class ClientTriage {
@@ -253,7 +257,7 @@ export class ClientTriage {
       case "urgent":
         return { go: true, injection: false, urgent: true, read: true };
       default:
-        return { ...open, read: true };
+        return { ...open, read: true, ...(read.decision === undefined ? {} : { readId: read.decision }) };
     }
   }
 
@@ -290,6 +294,8 @@ export class ClientTriage {
       const { finding } = await this.deps.findings.report(input, { kind: "captain", org });
       try {
         const decision = await this.decide(room, item, gate);
+        if (gate.readId !== undefined)
+          this.deps.taught?.(gate.readId, decision.action === "ignore" ? "chit-chat" : "needs-reply");
         const outcome = await this.act(room, item, finding.id, decision);
         mark(outcome);
         return { action: decision.action, reason: decision.reason, finding: finding.id };

@@ -24,7 +24,6 @@ import {
   useAskDecision,
   useDecisionsStatus,
   useInstallLaya,
-  useSaveJevKey,
   useSetDecisions,
 } from "@/lib/decisions-queries";
 import { describeError } from "@/lib/errors";
@@ -62,9 +61,6 @@ export function DecisionsSection() {
         <Providers status={status.data} />
       </DetailSection>
       <Picks key={JSON.stringify(status.data.settings)} status={status.data} />
-      <DetailSection title="Jev key">
-        <JevKey status={status.data} />
-      </DetailSection>
       <DetailSection title="Ask the decision model" note="Try a question against the order above">
         <AskBox />
       </DetailSection>
@@ -80,7 +76,8 @@ function Providers({ status }: { status: DecisionsStatus }) {
   const install = useInstallLaya();
   const host = useHostStatus().data?.info;
   const order = status.settings.order;
-  const off = ALL.filter((id) => !order.includes(id));
+  // Jev has no client yet, so it is not offered; it only shows when an older setup already lists it.
+  const off = ALL.filter((id) => id !== "jev" && !order.includes(id));
   const info = (id: ProviderId) => status.providers.find((p) => p.id === id);
   const change = (next: ProviderId[]) =>
     save.mutate(
@@ -150,7 +147,7 @@ function Providers({ status }: { status: DecisionsStatus }) {
       </ol>
       {off.length > 0 && (
         <p className="m-0 flex flex-wrap items-center gap-2 text-sm text-fg-faint">
-          Off:
+          Not in use:
           {off.map((id) => (
             <Button key={id} size="sm" onClick={() => change([...order, id])}>
               Add {NAME[id]}
@@ -358,50 +355,6 @@ function layaLine({ laya }: DecisionsStatus): string {
     case "unsupported":
       return laya.detail ?? laya.state;
   }
-}
-
-function JevKey({ status }: { status: DecisionsStatus }) {
-  const toast = useToast();
-  const save = useSaveJevKey();
-  const [value, setValue] = useState("");
-  const has = status.settings.jev_key !== undefined;
-  return (
-    <form
-      aria-label="Jev key"
-      className="flex max-w-[640px] items-end gap-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (value === "") return;
-        save.mutate(value, {
-          onSuccess: () => {
-            setValue("");
-            toast("Jev key saved");
-          },
-          onError: (e) => toast("Could not save the key", { detail: describeError(e), tone: "error" }),
-        });
-      }}
-    >
-      <Field
-        label="Jev API key"
-        className="flex-1"
-        hint={has ? "A key is saved. Type a new one to replace it." : "Optional. Jev is off without a key."}
-      >
-        {(p) => (
-          <Input
-            {...p}
-            type="password"
-            autoComplete="off"
-            className="font-mono"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-          />
-        )}
-      </Field>
-      <Button type="submit" size="sm" disabled={value === "" || save.isPending}>
-        Save key
-      </Button>
-    </form>
-  );
 }
 
 /** Ask the decision model typed questions about some text (5.12). Also behind the palette's command. */
