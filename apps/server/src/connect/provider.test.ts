@@ -133,12 +133,8 @@ async function begin(r: Rig, o: { access?: "read" | "readwrite" | "send"; org?: 
   return { connect, view, page };
 }
 
-const until = async (check: () => boolean | Promise<boolean>, ms = 5_000) => {
-  const end = Date.now() + ms;
-  while (!(await check())) {
-    if (Date.now() > end) throw new Error("timed out");
-    await new Promise((r) => setTimeout(r, 10));
-  }
+const until = async (check: () => boolean | Promise<boolean>) => {
+  while (!(await check())) await new Promise((r) => setTimeout(r, 10));
 };
 
 let r: Rig;

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { RoomItem } from "@majhi/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { git } from "../testing/fixtures.ts";
+import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
 let w: World;
@@ -14,14 +15,6 @@ afterEach(async () => {
   releaseAll = () => undefined;
   await w?.cleanup();
 });
-
-async function until(check: () => boolean | Promise<boolean>, what: string): Promise<void> {
-  for (let i = 0; i < 600; i++) {
-    if (await check()) return;
-    await new Promise((r) => setTimeout(r, 5));
-  }
-  throw new Error(`Timed out waiting for ${what}`);
-}
 
 const status = async (id: string) => (await w.h.cmd("tasks.get", { id })).body.status as string;
 const roomItems = async (id: string) =>

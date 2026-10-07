@@ -4,6 +4,7 @@ import type { PendingShip, RoomItem, Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
 import { git, tempDir } from "../testing/fixtures.ts";
+import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
 /**
@@ -31,14 +32,6 @@ const notes = async () => (await items()).flatMap((i) => (i.type === "system" ? 
 const tree = () => join(world().taskDir("ACM-1"), "acme-api");
 const tip = async (repo: string, ref: string) => (await git(repo, "rev-parse", ref)).trim();
 const who = ["-c", "user.name=Builder", "-c", "user.email=builder@example.com"];
-
-async function until(check: () => Promise<boolean>, what: string): Promise<void> {
-  for (let i = 0; i < 1000; i++) {
-    if (await check()) return;
-    await new Promise((r) => setTimeout(r, 10));
-  }
-  throw new Error(`Timed out waiting for ${what}`);
-}
 
 /** What the agent does on its next turn. */
 let next: (prompt: string) => Promise<void>;

@@ -171,14 +171,12 @@ describe("a workspace's own sign-in", () => {
   it("a login that hangs times out, kills the tool and cleans up", async () => {
     const home = await temp();
     const bin = await fakeTool(home);
-    const started = Date.now();
     await expect(
       logins(home, bin, "x", { mode: "hang", timeoutMs: 400 }).login(
         { signIn: "hang-signin", tool: "vercel", connection: "acme-cf" },
         () => undefined,
       ),
     ).rejects.toThrow(/ran out of time/);
-    expect(Date.now() - started).toBeLessThan(5_000);
     expect(await exists(profileFolder(home, "acme-cf"))).toBe(false);
   });
 
@@ -248,10 +246,7 @@ async function readdirNames(dir: string): Promise<string[]> {
   return readdir(dir);
 }
 
-async function until(check: () => boolean, ms = 5_000): Promise<void> {
-  const end = Date.now() + ms;
-  while (!check()) {
-    if (Date.now() > end) throw new Error("timed out");
-    await new Promise((r) => setTimeout(r, 20));
-  }
+/** Waits until `check` holds. It has no deadline of its own: the test's timeout is the only clock. */
+async function until(check: () => boolean): Promise<void> {
+  while (!check()) await new Promise((r) => setTimeout(r, 20));
 }

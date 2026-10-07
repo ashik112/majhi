@@ -1,5 +1,6 @@
 import type { RoomItem, Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
+import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
 /** Starting a task the owner was needed on (paused `blocked`) must run its agent. */
@@ -16,13 +17,6 @@ const world = (): World => {
 const cmd = (name: string, body?: unknown) => world().h.cmd(name, body);
 const get = async (): Promise<Task> => (await cmd("tasks.get", { id: "ACM-1" })).body;
 const items = async () => (await cmd("room.items", { task: "ACM-1", limit: 300 })).body.items as RoomItem[];
-async function until(check: () => Promise<boolean> | boolean, what: string): Promise<void> {
-  for (let i = 0; i < 500; i++) {
-    if (await check()) return;
-    await new Promise((r) => setTimeout(r, 10));
-  }
-  throw new Error(`Timed out waiting for ${what}`);
-}
 
 let prompts: string[] = [];
 async function blockedTask(): Promise<void> {

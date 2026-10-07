@@ -146,12 +146,11 @@ describe("update", () => {
       });
       expect(start()).toBe(true);
       // Wait for the background run to end.
-      for (let i = 0; i < 200; i += 1) {
+      for (;;) {
         const status = await readStatus();
         if (status && status.state !== "running") return status;
         await new Promise((r) => setTimeout(r, 10));
       }
-      throw new Error("update did not finish");
     };
     const readStatus = async (): Promise<UpdateStatus | undefined> => {
       try {

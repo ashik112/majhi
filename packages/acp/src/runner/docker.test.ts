@@ -426,12 +426,9 @@ if (args[0] === "run") {
   };
 }
 
+/** Waits until `check` holds. It has no deadline of its own: the test's timeout is the only clock. */
 async function waitFor(check: () => Promise<boolean>): Promise<void> {
-  for (let i = 0; i < 300; i++) {
-    if (await check()) return;
-    await new Promise((r) => setTimeout(r, 10));
-  }
-  throw new Error("timed out");
+  while (!(await check())) await new Promise((r) => setTimeout(r, 10));
 }
 
 describe("runner containers converge to one per live run", () => {

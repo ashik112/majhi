@@ -126,12 +126,11 @@ function setup(
 
 /** Lets the background poll loop run until the flow leaves `pending`. */
 async function settle(s: Setup, id: string): Promise<SignInStatus> {
-  for (let i = 0; i < 200; i++) {
+  for (;;) {
     const status = s.service.poll(id);
     if (status.state !== "pending") return status;
     await new Promise((r) => setImmediate(r));
   }
-  return s.service.poll(id);
 }
 
 function githubDevice(s: Setup, polls: Array<{ status?: number; json: unknown }>, login = "octo-acme"): void {

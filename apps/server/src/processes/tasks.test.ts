@@ -1,6 +1,7 @@
 import type { RoomItem } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Harness } from "../testing/harness.ts";
+import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
 /** How background processes hold a task in running and wake its agent (5.15), with in-memory sessions. */
@@ -15,14 +16,6 @@ afterEach(async () => {
   }
   await w?.cleanup();
 });
-
-const until = async (check: () => boolean | Promise<boolean>, what: string): Promise<void> => {
-  for (let i = 0; i < 600; i++) {
-    if (await check()) return;
-    await new Promise((r) => setTimeout(r, 10));
-  }
-  throw new Error(`Timed out waiting for ${what}`);
-};
 
 const status = async (h: Harness) =>
   ((await h.cmd("tasks.get", { id: "ACM-1" })).body as { status: string }).status;

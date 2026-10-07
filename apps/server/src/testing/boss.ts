@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import { startSession } from "@majhi/acp";
 import { fakeAdapter } from "@majhi/acp/testing";
 import type { RoomItem, Task } from "@majhi/shared";
+import { until } from "./until.ts";
 import { taskWorld, type World, type WorldOptions } from "./world.ts";
 
 export interface BossWorld extends World {
@@ -71,13 +72,7 @@ export async function bossWorld(
       const page = await h.cmd("room.items", { task, limit: 500 });
       return [...(page.body.items as RoomItem[])].sort((a, b) => (a.at < b.at ? -1 : 1));
     },
-    async until(check, what) {
-      for (let i = 0; i < 1500; i++) {
-        if (await check()) return;
-        await new Promise((r) => setTimeout(r, 10));
-      }
-      throw new Error(`Timed out waiting for ${what}`);
-    },
+    until,
     cleanup: async () => {
       server.closeAllConnections?.();
       server.close();

@@ -8,6 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { afterEach, describe, expect, it } from "vitest";
+import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
 let w: World | undefined;
@@ -69,8 +70,7 @@ async function world() {
       start: true,
     })) as { id: string };
   const memoryOf = async (account: string): Promise<Client> => {
-    for (let i = 0; i < 600 && servers[account] === undefined; i++)
-      await new Promise((r) => setTimeout(r, 5));
+    await until(() => servers[account] !== undefined);
     const spec = servers[account]?.find((x) => x.name === "majhi-memory");
     if (spec === undefined) throw new Error(`no majhi-memory on ${account}`);
     const client = new Client({ name: "test", version: "1" });

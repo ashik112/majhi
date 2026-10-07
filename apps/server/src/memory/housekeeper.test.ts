@@ -1,6 +1,7 @@
 import type { TaskRecord, Thread, UsageSummary } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import type { FakeSession } from "../testing/fakeSession.ts";
+import { until } from "../testing/until.ts";
 import { taskWorld, type World } from "../testing/world.ts";
 
 let w: World | undefined;
@@ -91,11 +92,6 @@ async function world(options: { housekeeper?: boolean } = {}) {
     (await must("memory.threads", input)) as Thread[];
   return { h, must, replies, sessions, task, newTask, usage, extract, record, threads };
 }
-
-const until = async (check: () => boolean | Promise<boolean>) => {
-  for (let i = 0; i < 400 && !(await check()); i++) await new Promise((r) => setTimeout(r, 5));
-  expect(await check()).toBe(true);
-};
 
 describe("memory.extract", () => {
   it("never reads a task on another org's account", async () => {

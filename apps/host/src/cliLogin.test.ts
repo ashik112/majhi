@@ -30,12 +30,9 @@ const exists = (path: string) =>
     () => false,
   );
 
-async function until(check: () => Promise<boolean> | boolean, ms = 5_000): Promise<void> {
-  const end = Date.now() + ms;
-  while (!(await check())) {
-    if (Date.now() > end) throw new Error("timed out");
-    await new Promise((r) => setTimeout(r, 20));
-  }
+/** Waits until `check` holds. It has no deadline of its own: the test's timeout is the only clock. */
+async function until(check: () => Promise<boolean> | boolean): Promise<void> {
+  while (!(await check())) await new Promise((r) => setTimeout(r, 20));
 }
 
 /**
