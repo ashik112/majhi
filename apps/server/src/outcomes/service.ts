@@ -56,6 +56,9 @@ const ROW_NAME: Record<AuthorityRow, string> = {
   upkeep: "Upkeep",
   merge: "Merge",
   push: "Push",
+  deployStaging: "Deploy to staging",
+  deployProduction: "Deploy to production",
+  tell: "Tell the client",
   own: "Own work",
 };
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AuthoritySchema } from "./authority.ts";
+import { MAX_SHIP_RULES, ShipRuleSchema } from "./ship-rules.ts";
 import { ContainerCpusSchema, ContainerMemorySchema, ImageRefSchema } from "./containers.ts";
 import { NotifyKindSchema } from "./notify.ts";
 
@@ -466,6 +467,11 @@ const ACCOUNT_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 export const AutonomyOrgSchema = z.strictObject({
   /** Who decides each row (SPEC 5.18). Absent: derived from `level`, `push` and `merge`, or the defaults. */
   authority: AuthoritySchema.optional(),
+  /**
+   * Ship rules (ship-rules.ts): an ordered list that refines Merge, Deploy and Tell by what the task is.
+   * The first rule that matches decides; with none, the rows do. Absent: the rows decide.
+   */
+  ships: z.array(ShipRuleSchema).max(MAX_SHIP_RULES).optional(),
   /** Before the authority table: how much the captain does here. Read only while `authority` is absent. */
   level: CaptainLevelSchema.optional(),
   /** This org's cap per day (the daily budget next to the authority table). Absent: only the overall `day` cap holds it. */
@@ -570,6 +576,8 @@ export const AutonomyOrgPatchSchema = z
   .strictObject({
     /** Only the rows that change. Saving writes the new form and drops the old level, push and merge. */
     authority: AuthoritySchema.partial(),
+    /** The whole list, in order. `null` removes every rule. */
+    ships: z.array(ShipRuleSchema).max(MAX_SHIP_RULES).nullable(),
     cap: BudgetSchema.nullable(),
     hours: WorkHoursSchema.nullable(),
     freeze: z.array(FreezeSchema).max(50).nullable(),

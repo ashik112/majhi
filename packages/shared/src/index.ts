@@ -8,6 +8,7 @@ export * from "./approval-stats.ts";
 export * from "./attribution.ts";
 export * from "./audit.ts";
 export * from "./authority.ts";
+export * from "./ship-rules.ts";
 export * from "./automation.ts";
 export * from "./autonomy.ts";
 export * from "./backup.ts";

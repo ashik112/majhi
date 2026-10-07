@@ -10,7 +10,9 @@ import {
   CaptainChoreSchema,
   type CaptainLevel,
   FULL_ACCESS_KEEPS,
+  FULL_ACCESS_NEVER,
   PRIVATE,
+  type ShipRule,
 } from "@majhi/shared";
 
 /**
@@ -30,6 +32,9 @@ function fromLevel(level: CaptainLevel, push: boolean, merge: boolean): Authorit
     upkeep: "decide",
     merge: merge ? "decide" : "ask",
     push: push ? "decide" : "ask",
+    deployStaging: "ask",
+    deployProduction: "ask",
+    tell: "ask",
     own: "ask",
   };
 }
@@ -47,6 +52,9 @@ const ALL_DECIDE: Authority = {
   upkeep: "decide",
   merge: "decide",
   push: "decide",
+  deployStaging: "decide",
+  deployProduction: "decide",
+  tell: "decide",
   own: "decide",
 };
 
@@ -59,6 +67,8 @@ export function authorityOf(settings: Pick<AutonomySettings, "orgs">, org: strin
       (own.level !== undefined ? fromLevel(own.level, own.push === true, own.merge === true) : undefined);
     const kept: Partial<Authority> = {};
     for (const row of FULL_ACCESS_KEEPS) if (saved?.[row] === "ask") kept[row] = "ask";
+    // What leaves for a server or a client is never granted by full access: it is the saved choice, else You.
+    for (const row of FULL_ACCESS_NEVER) kept[row] = saved?.[row] ?? "ask";
     return { ...ALL_DECIDE, ...kept };
   }
   if (own?.authority !== undefined) return own.authority;
@@ -71,6 +81,11 @@ export function authorityOf(settings: Pick<AutonomySettings, "orgs">, org: strin
     ...(own?.merge === true ? { merge: "decide" as const } : {}),
     ...(own?.push === true ? { push: "decide" as const } : {}),
   };
+}
+
+/** The workspace's ship rules, in order. None saved: the rows alone decide. */
+export function shipRulesOf(settings: Pick<AutonomySettings, "orgs">, org: string): readonly ShipRule[] {
+  return settings.orgs[org]?.ships ?? [];
 }
 
 /**

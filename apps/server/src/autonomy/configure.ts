@@ -97,7 +97,7 @@ export function describePatch(patch: AutonomyPatch, sections: Pick<ConfigSection
     }
     if (change.cap === null) own.push(`no budget of its own for ${name}`);
     else if (change.cap !== undefined) own.push(`${name}'s daily budget to ${capText(change.cap)}`);
-    const rules = (["hours", "freeze", "tz", "branches", "providers", "account"] as const).filter(
+    const rules = (["ships", "hours", "freeze", "tz", "branches", "providers", "account"] as const).filter(
       (k) => change[k] !== undefined,
     );
     if (rules.length > 0) own.push(`${name}'s ${rules.map(ruleWord).join(", ")}`);
@@ -114,8 +114,12 @@ export function describePatch(patch: AutonomyPatch, sections: Pick<ConfigSection
   return lines.length === 0 ? "changed nothing in autonomous mode" : lines.join("; ");
 }
 
-function ruleWord(key: "hours" | "freeze" | "tz" | "branches" | "providers" | "account"): string {
+function ruleWord(
+  key: "ships" | "hours" | "freeze" | "tz" | "branches" | "providers" | "account",
+): string {
   switch (key) {
+    case "ships":
+      return "ship rules";
     case "hours":
       return "working hours";
     case "freeze":
