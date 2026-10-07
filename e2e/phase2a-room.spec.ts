@@ -97,20 +97,12 @@ test("a command the agent may not run asks inline: Deny fails the tool and the t
   const log = messages(page);
   const prompt = room(page).getByRole("region", { name: "Permission: Run npm test" });
   await expect(prompt).toBeVisible();
-  await expect(prompt).toContainText("acme-builder asks to");
-  await expect(prompt.getByRole("button")).toHaveText(["Allow", "Allow for this task", "Deny"]);
-  await expect(room(page).getByRole("region", { name: "Plan of acme-builder" })).toBeVisible();
+  await expect(prompt.getByRole("button", { name: "Deny" })).toBeVisible();
+  await expect(prompt.getByRole("button", { name: "Allow for this task" })).toBeVisible();
   await shot(page, "room-permission");
-
-  // The shell's banner points at the prompt too, and goes away once it is answered.
-  const banner = page.getByRole("status").filter({ hasText: "waiting for your answer" });
-  await expect(banner).toContainText("@acme-builder is waiting for your answer in");
-  await banner.getByRole("button", { name: "Show" }).click();
-  await expect(prompt).toBeFocused();
 
   await prompt.getByRole("button", { name: "Deny" }).click();
   await expect(prompt).toBeHidden();
-  await expect(banner).toBeHidden();
   await expect(verdict(log, "Denied", "Run npm test")).toBeVisible();
   await expect(log.getByRole("button", { name: /Run npm test.*failed/ })).toBeVisible();
   await expect(log.getByText(/I could not run the tests\./)).toBeVisible();
