@@ -236,8 +236,10 @@ describe("the captain's lane", () => {
     const t = await on();
     const remove = await t.h.cmd("tasks.remove", { id: t.chat });
     expect(remove.status).toBe(409);
+    expect(JSON.stringify(remove.body)).toContain(`${t.chat} is a captain thread, not a task`);
     const close = await t.h.cmd("tasks.close", { id: t.chat });
     expect(close.status).toBe(409);
+    expect(JSON.stringify(close.body)).toContain("cannot be closed");
     // Off changes nothing: the thread is never the owner's to delete.
     expect((await t.h.cmd("autonomy.stop", { how: "now" })).status).toBe(200);
     expect((await t.h.cmd("tasks.remove", { id: t.chat })).status).toBe(409);
@@ -260,6 +262,8 @@ describe("the captain's lane", () => {
     expect(chat).toBeDefined();
     expect(chat).not.toBe(t.chat);
     expect(t.h.majhi.services.store.tasks.get(chat ?? "")?.team[0]).toBe("boss");
+    const events = (await t.h.cmd("autonomy.events", { limit: 20 })).body.events as AutonomyEvent[];
+    expect(events[0]?.text).toBe(`The captain works in Acme in its lane ${chat}`);
     // A closed lane is reopened, not replaced.
     seedStatus(t.h.majhi.services.store, chat ?? "", "done", undefined, new Date().toISOString());
     expect(await t.autonomy.laneChat("acme")).toBe(chat);

@@ -48,4 +48,8 @@ describe("commitSubjects", () => {
     expect(await commitSubjects(ctx(gitExec({ log: "x" }, seen)), "--output=/etc/passwd")).toEqual([]);
     expect(seen).toEqual([]);
   });
+
+  it("is empty when the commit is not in this checkout", async () => {
+    expect(await commitSubjects(ctx(gitExec({})), "abcdef1")).toEqual([]);
+  });
 });

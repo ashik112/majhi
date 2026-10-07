@@ -48,12 +48,13 @@ function setup(
 
 describe("secrets key backup in the Keychain", () => {
   it("saves the key when the Keychain has none, through stdin only", async () => {
-    const { backup, runs, stored } = setup({ file: `# created by make up\n${KEY}\n` });
+    const { backup, runs, logs, stored } = setup({ file: `# created by make up\n${KEY}\n` });
     const status = await backup.ensure();
     expect(stored()).toBe(KEY);
     expect(status).toEqual({ saved: keyFingerprint(KEY), checkedAt: "2026-10-02T10:00:00.000Z" });
     for (const run of runs) expect(run.args.join(" ")).not.toContain(KEY);
     expect(runs.find((r) => r.args[0] === "-i")?.options.input).toContain(`"${SECRETS_KEY_ITEM.service}"`);
+    expect(logs).toEqual(["keyring: keychain", "secrets key: saved a copy in the Keychain"]);
     expect(backup.keyring()).toEqual({ kind: "keychain" });
   });
 
@@ -88,8 +89,13 @@ describe("secrets key backup in the Keychain", () => {
     const { backup } = setup({ file: KEY, refuse: true });
     const status = await backup.ensure();
     expect(status?.saved).toBeUndefined();
-    expect(status?.error).toBeDefined();
+    expect(status?.error).toBe("The Keychain did not take the majhi secrets key. Is it locked?");
     expect(JSON.stringify(status)).not.toContain(KEY);
+  });
+
+  it("reads the key back to restore a lost key file", async () => {
+    const { backup } = setup({ stored: KEY });
+    expect(await backup.read()).toBe(KEY);
   });
 
   it("fingerprints the key as the server does", () => {
@@ -100,7 +106,7 @@ describe("secrets key backup in the Keychain", () => {
 
 describe("secrets key backup in a Linux keyring", () => {
   it("saves the key through secret-tool's stdin, with no newline, and reads it back", async () => {
-    const { backup, runs, stored } = setup({ os: "linux", file: `${KEY}\n` });
+    const { backup, runs, logs, stored } = setup({ os: "linux", file: `${KEY}\n` });
     expect(await backup.ensure()).toEqual({
       saved: keyFingerprint(KEY),
       checkedAt: "2026-10-02T10:00:00.000Z",
@@ -117,6 +123,7 @@ describe("secrets key backup in a Linux keyring", () => {
     ]);
     expect(store?.options.input).toBe(KEY);
     for (const run of runs) expect(run.args.join(" ")).not.toContain(KEY);
+    expect(logs).toEqual(["keyring: secret-service", "secrets key: saved a copy in the keyring"]);
     expect(await backup.read()).toBe(KEY);
   });
 
@@ -151,6 +158,11 @@ describe("secrets key backup in a Linux keyring", () => {
     state = "absent";
     expect(await backup.ensure()).toBeUndefined();
     expect(backup.status()).toBeUndefined();
+    expect(logs).toEqual([
+      "keyring: secret-service",
+      "secrets key: saved a copy in the keyring",
+      "keyring: none, No keyring is running.",
+    ]);
   });
 
   it("checks the key file before anything goes to the keyring", async () => {

@@ -24,7 +24,7 @@ describe("repo rule", () => {
       [task("ACM-12", "main", ["src"])],
       "It waits.",
     );
-    expect(line).toContain("ACM-12");
+    expect(line).toBe("Not starting ACM-14: ACM-12 is already changing acme-api on main. It waits.");
   });
 
   it("runs two tasks on different files of the same folder, and waits when they name the same file or a folder holding it", () => {

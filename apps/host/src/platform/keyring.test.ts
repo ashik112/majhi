@@ -69,11 +69,15 @@ describe("the Keychain on macOS", () => {
   it("says when the Keychain kept nothing or did not answer, never with the secret", async () => {
     const refused = keychain({ refuse: true });
     const error = await refused.keyring.write(SECRETS_KEY_ITEM, KEY).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe("The Keychain did not take the majhi secrets key. Is it locked?");
 
     const broken = keychain({ security: () => failed(51, "User interaction is not allowed.") });
-    await expect(broken.keyring.read(SECRETS_KEY_ITEM)).rejects.toThrow();
-    await expect(broken.keyring.remove(SECRETS_KEY_ITEM)).rejects.toThrow();
+    await expect(broken.keyring.read(SECRETS_KEY_ITEM)).rejects.toThrow(
+      "The Keychain did not answer. Is it locked?",
+    );
+    await expect(broken.keyring.remove(SECRETS_KEY_ITEM)).rejects.toThrow(
+      "The Keychain did not answer. Is it locked?",
+    );
   });
 });
 
@@ -177,10 +181,12 @@ describe("the Secret Service keyring on Linux", () => {
       secretTool: (args) => (args[0] === "lookup" ? failed(1) : ok()),
     });
     const error = await forgetful.keyring.write(KEY_ITEM, PHRASE).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe(
+      "The keyring did not take the majhi SSH key passphrase for ~/.ssh/id_ed25519.",
+    );
 
     const broken = secretService("unlocked", { secretTool: () => failed(1, "Cannot autolaunch D-Bus") });
-    await expect(broken.keyring.read(KEY_ITEM)).rejects.toThrow();
-    await expect(broken.keyring.remove(KEY_ITEM)).rejects.toThrow();
+    await expect(broken.keyring.read(KEY_ITEM)).rejects.toThrow("The keyring did not answer.");
+    await expect(broken.keyring.remove(KEY_ITEM)).rejects.toThrow("The keyring did not answer.");
   });
 });

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HostReply } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { CANNOT_UPDATE, type JobHandlers, runJob } from "./jobs.ts";
+import { CANNOT_REMOUNT, CANNOT_UPDATE, type JobHandlers, runJob } from "./jobs.ts";
 import { composeEnv, createRemounter, type ExecFn, type ExecOptions, OVERRIDE_FILE } from "./remount.ts";
 
 const SSH_OK = { loaded: 2, needsPassphrase: [], checkedAt: "2026-09-29T10:00:00.000Z" };
@@ -124,6 +124,7 @@ describe("host jobs", () => {
     }
     expect(await readFile(join(repo, OVERRIDE_FILE), "utf8")).toBe(OVERRIDE);
     expect(await readdir(repo)).toEqual([OVERRIDE_FILE]);
+    expect(logs.at(-1)).toMatch(/^remount: done in \d+\.\ds$/);
   });
 
   it("answers secretsKey.restore before it restarts majhi", async () => {
@@ -189,6 +190,16 @@ describe("host jobs", () => {
       "up started",
       "up finished",
     ]);
+  });
+
+  it("refuses remount when the helper cannot run docker compose", async () => {
+    await runJob(
+      { id: "j3", method: "remount", params: {} },
+      { ...handlers(fakeExec()), remount: undefined },
+      reply,
+    );
+    expect(replies.at(-1)).toEqual({ id: "j3", ok: false, error: CANNOT_REMOUNT });
+    expect(calls).toEqual([]);
   });
 
   it("starts an update once, and refuses without Docker or while one runs", async () => {

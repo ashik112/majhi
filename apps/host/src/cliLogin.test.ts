@@ -213,7 +213,7 @@ describe("CliLogins", () => {
       () => undefined,
       (e: unknown) => e as Error,
     );
-    expect(err).toBeInstanceOf(Error);
+    expect(err?.message).toBe("The sign-in was refused on GitHub. Nothing was saved.");
     expect(err?.message).not.toContain(TOKEN);
   });
 

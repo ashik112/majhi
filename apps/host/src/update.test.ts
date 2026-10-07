@@ -168,6 +168,7 @@ describe("update", () => {
     const status = await s.run();
     expect(status.state).toBe("done");
     expect(status.commit).toBe(HEAD);
+    expect(status.lines.join("\n")).toContain("changes you have not committed");
 
     const docker = s.calls.filter((c) => c.file === "/usr/bin/docker").map((c) => c.args);
     const order = [
@@ -200,6 +201,7 @@ describe("update", () => {
     expect(status.state).toBe("done");
     expect(s.calls.some((c) => c.args.startsWith("run --rm"))).toBe(false);
     expect(await readFile(s.key, "utf8")).toBe("AGE-SECRET-KEY-1SAVED\n");
+    expect(status.lines).toContain("Putting back the secrets key from the Keychain");
   });
 
   it("keeps an existing secrets key and does not exit when it is not running from the installed bundle", async () => {
@@ -215,8 +217,9 @@ describe("update", () => {
     const s = setup({ failOn: "compose --profile runner build", selfIsBundle: true });
     const status = await s.run();
     expect(status.state).toBe("failed");
+    expect(status.error).toContain("build failed");
+    expect(status.error).toContain("no space left");
     expect(s.calls.some((c) => c.args.startsWith("compose up"))).toBe(false);
-    expect(s.calls.filter((c) => c.args === "compose --profile runner build")).toHaveLength(1);
     expect(s.exit).toEqual([]);
   });
 
@@ -225,7 +228,9 @@ describe("update", () => {
     await writeFile(join(dir, "repo", "docker-compose.override.yml"), "old mounts\n");
     const status = await s.run();
     expect(status.state).toBe("failed");
-    expect(status.error).toBeDefined();
+    expect(status.error).toContain("SqliteError: malformed JSON");
+    expect(status.lines).toContain("The new majhi said: SqliteError: malformed JSON");
+    expect(status.lines.join("\n")).toContain("Went back to the previous version");
     const docker = s.calls.filter((c) => c.file === "/usr/bin/docker").map((c) => c.args);
     const tagBack = docker.indexOf("tag sha256:old majhi-server:dev");
     const firstUp = docker.indexOf("compose up -d --wait");
@@ -249,6 +254,7 @@ describe("update", () => {
     const s = setup({ failOnce: "compose up", noImage: true });
     const status = await s.run();
     expect(status.state).toBe("failed");
+    expect(status.lines.join("\n")).toContain("No previous version to go back to");
     expect(s.calls.some((c) => c.args.startsWith("tag "))).toBe(false);
   });
 
@@ -257,12 +263,14 @@ describe("update", () => {
     const status = await s.run();
     expect(status.state).toBe("done");
     expect(s.calls.filter((c) => c.args === "compose --profile runner build")).toHaveLength(3);
+    expect(status.lines.join("\n")).toContain("The image registry did not answer. Trying again");
   });
 
   it("gives up after three network failures with a plain reason, and leaves majhi running", async () => {
     const s = setup({ netFails: 5 });
     const status = await s.run();
     expect(status.state).toBe("failed");
+    expect(status.error).toContain("the image registry could not be reached after 3 tries");
     expect(s.calls.filter((c) => c.args === "compose --profile runner build")).toHaveLength(3);
     expect(s.calls.some((c) => c.args.startsWith("compose up"))).toBe(false);
   });
@@ -281,6 +289,7 @@ describe("update", () => {
       expect(status.state).toBe("done");
       expect(s.latestAsked).toEqual([LATEST]);
       expect(status.commit).toBe(NEWER);
+      expect(status.lines).toContain("Getting the majhi v1.1.0 images");
       expect(await env()).toBe(`MAJHI_PORT=7071\nMAJHI_LATEST_URL=${LATEST}\nMAJHI_VERSION=v1.1.0\n`);
       const fetchedAt = s.calls.findIndex((c) => c.args.includes("fetch --quiet --tags"));
       const checkout = s.calls.findIndex((c) =>
@@ -299,6 +308,7 @@ describe("update", () => {
       const s = setup({ latestTag: "v1.1.0", failOn: "compose --profile runner build" });
       const status = await s.run();
       expect(status.state).toBe("failed");
+      expect(status.lines).toContain("Back on majhi v1.0.0");
       expect(await env()).toBe(dotenv);
       expect(git(s).at(-1)).toContain(`checkout --quiet --detach ${HEAD}`);
       expect(s.calls.some((c) => c.args.startsWith("compose up"))).toBe(false);
@@ -308,6 +318,7 @@ describe("update", () => {
       const s = setup({ latestTag: "v1.1.0", failOnce: "compose up" });
       const status = await s.run();
       expect(status.state).toBe("failed");
+      expect(status.lines.join("\n")).toContain("Went back to the previous version");
       expect(await env()).toBe(dotenv);
       const back = s.calls.findIndex((c) => c.args.endsWith(`checkout --quiet --detach ${HEAD}`));
       const lastUp = s.calls.map((c) => c.args).lastIndexOf("compose up -d --wait");
@@ -346,5 +357,11 @@ describe("update", () => {
     expect((await s.run()).state).toBe("done");
     expect(s.latestAsked).toEqual([]);
     expect(s.calls.some((c) => c.args.includes("fetch"))).toBe(false);
+  });
+
+  it("does not retry a build that failed for another reason", async () => {
+    const s = setup({ failOn: "compose --profile runner build" });
+    await s.run();
+    expect(s.calls.filter((c) => c.args === "compose --profile runner build")).toHaveLength(1);
   });
 });

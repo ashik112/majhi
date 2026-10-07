@@ -167,6 +167,7 @@ describe("gitClone", () => {
       () => undefined,
     ).catch((e: unknown) => e as Error);
     expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toBe("The repo was not found, or the workspace's account cannot see it.");
     expect((err as Error).message).not.toContain(TOKEN);
     expect(await exists(target)).toBe(false);
     expect(await exists(cloneTempPath(target, "cl_DDDDDDDDDDDDDDDD"))).toBe(false);

@@ -92,7 +92,8 @@ describe("the day cap of autonomous mode", () => {
     expect(h.majhi.services.autonomy.repo.task(id)?.held).toBe("limit");
     // The paused card names the cap that stopped it, not a generic budget.
     const items = (await h.cmd("room.items", { task: id, limit: 500 })).body.items as RoomItem[];
-    expect(items.some((i) => i.type === "paused" && i.state === "pending")).toBe(true);
+    const card = items.find((i) => i.type === "paused" && i.state === "pending");
+    expect(card?.type === "paused" && card.why).toContain("Waiting for the autonomous daily budget, $");
 
     const status = (await h.cmd("autonomy.status", { detail: true })).body as AutonomyStatus;
     const used = status.spend.total.used.cost;

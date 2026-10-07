@@ -305,6 +305,8 @@ describe("the captain's own tools", () => {
     // The captain's answer, not the owner's: the card says so, and no owner message is posted.
     expect(room.get(id, "ask:db")).toMatchObject({ state: "answered", answers: { q1: "pg" }, by: "captain" });
     const items = (await w?.items(id)) ?? [];
+    const lines = items.flatMap((i) => (i.type === "system" ? [i.text] : []));
+    expect(lines).toContain("Captain answered: Postgres (the plan says so)");
     expect(items.some((i) => i.type === "owner" && i.text.includes("chose"))).toBe(false);
     expect((await t.events()).find((e) => e.kind === "answer")).toMatchObject({ task: id, item: "ask:db" });
 

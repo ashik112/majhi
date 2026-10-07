@@ -46,7 +46,7 @@ describe("showNotification on Linux", () => {
     const refused = fakeOs({ programs: { "/usr/bin/notify-send": () => failed(1) } });
     await expect(
       showNotification(linuxPlatform(refused.deps).notifier, base, { ...params, sound: false }),
-    ).rejects.toThrow();
+    ).rejects.toThrow("Install libnotify-bin (Debian, Ubuntu) or libnotify.");
   });
 });
 
