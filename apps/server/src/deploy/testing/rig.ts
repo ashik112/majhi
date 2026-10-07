@@ -1,6 +1,7 @@
 import type { DeployEnvironment, DeployRecord, DeployRunStep } from "@majhi/shared";
 import type { RemoteRunFn } from "../../connections/remote.ts";
 import { Store } from "../../store/index.ts";
+import { createBitbucketProvider } from "../bitbucket.ts";
 import { createGitHubProvider } from "../github.ts";
 import { createGitLabProvider } from "../gitlab.ts";
 import { type DeployProject, DeployService } from "../service.ts";
@@ -100,6 +101,7 @@ export async function rig(
     "github-workflow": createGitHubProvider(providerDeps),
     "gitlab-pipeline": gitlab,
     "gitlab-job": gitlab,
+    "bitbucket-pipeline": createBitbucketProvider(providerDeps),
     vercel: createVercelProvider(providerDeps),
     ssh: createSshProvider(providerDeps),
   };
