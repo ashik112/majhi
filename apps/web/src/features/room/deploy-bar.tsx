@@ -22,7 +22,9 @@ export function DeployAskBar({ task, ask, change }: { task: string; ask: DeployA
     toast(what, { detail: describeError(error), tone: "error" });
   const line = [
     ask.after === undefined ? undefined : `${capital(ask.after)} is healthy at ${ask.commit.slice(0, 7)}.`,
-    ask.lines === undefined ? undefined : `The ${change} is ${ask.lines} lines.`,
+    ask.lines === undefined
+      ? undefined
+      : `The ${change} is ${ask.lines} ${ask.lines === 1 ? "line" : "lines"}.`,
   ]
     .filter((part) => part !== undefined)
     .join(" ");
@@ -36,6 +38,8 @@ export function DeployAskBar({ task, ask, change }: { task: string; ask: DeployA
         <>
           <Button
             size="sm"
+            variant="primary"
+            data-primary-action=""
             disabled={deploy.isPending || hold.isPending}
             onClick={() =>
               deploy.mutate(

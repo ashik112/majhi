@@ -98,7 +98,10 @@ export const DEPLOY_KIND_LABEL: Record<DeployKind, string> = {
 export const DeployVerifySchema = z
   .object({
     /** A URL that answers 2xx when the new version is up. */
-    health: z.url({ protocol: /^https?$/ }).max(500).optional(),
+    health: z
+      .url({ protocol: /^https?$/ })
+      .max(500)
+      .optional(),
     /** A watch of the same workspace that must read ok for the wait. */
     watch: WatchRefSchema.optional(),
     waitSeconds: z.number().int().min(0).max(1800).default(60),
@@ -287,7 +290,7 @@ export const DEPLOY_STATE_WORD: Record<DeployStepState, string> = {
   none: "not set up",
   "captain-next": "next",
   "waits-for-owner": "waits for you",
-  "waits-for-previous": "after the one before",
+  "waits-for-previous": "waiting",
   blocked: "blocked",
   held: "held",
   queued: "queued",

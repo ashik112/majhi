@@ -4,9 +4,11 @@ import {
   type HomeDeploy,
   PRIVATE,
   type ProjectDeployView,
+  shipRuleSubject,
   textValue,
 } from "@majhi/shared";
 import { auditActor, auditDetail } from "../audit.ts";
+import { shipRulesOf } from "../captain/levels.ts";
 import type { DeployNext, DeployPorts } from "../captain/ports.ts";
 import type { ConfigSections } from "../config/sections.ts";
 import type { ConfigService } from "../config/service.ts";
@@ -282,11 +284,15 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
       },
       info.deploy,
     ).catch(() => []);
+    const rules = shipRulesOf((await deps.config.settings()).autonomy, info.org);
+    // The rule the project's tasks meet first: one that names no project, or this one.
+    const rule = rules.find((r) => r.when.projects === undefined || r.when.projects.includes(info.id));
     return {
       project: info.id,
       targets: info.deploy,
       suggestions,
       history: service.history(info.id),
+      ...(rule === undefined ? {} : { rule: shipRuleSubject(rule.when) }),
     };
   };
 

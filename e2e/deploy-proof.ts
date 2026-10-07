@@ -15,8 +15,8 @@
 import { execFile, execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { startFakeHosts } from "../apps/server/src/deploy/testing/fake-hosts.ts";
 import { generateKey, SecretStore } from "../apps/server/src/secrets/store.ts";
 import { fakeAdapter, fakeUsage } from "../packages/acp/testing/index.ts";
@@ -25,8 +25,13 @@ import { E2E_PORT, E2E_ROOT, HOST_HOME, MAJHI_HOME, OFFLINE_FILE, SECRETS_KEY_FI
 
 // The server's own dependencies, resolved from its folder.
 const need = createRequire(new URL("../apps/server/package.json", import.meta.url));
-const { serve } = need("@hono/node-server") as typeof import("@hono/node-server");
-const { parse, stringify } = need("yaml") as typeof import("yaml");
+// biome-ignore lint/suspicious/noExplicitAny: resolved from the server's folder, so it has no types here
+type Loose = any;
+const { serve } = need("@hono/node-server") as { serve: (options: Loose) => Loose };
+const { parse, stringify } = need("yaml") as {
+  parse: (text: string) => Loose;
+  stringify: (value: unknown) => string;
+};
 
 const gitEnv = {
   GIT_CONFIG_GLOBAL: "/dev/null",
@@ -38,7 +43,9 @@ const gitEnv = {
   GIT_SSH_COMMAND: "false",
 };
 const git = (cwd: string, ...args: string[]) =>
-  execFileSync("git", args, { cwd, env: { ...process.env, ...gitEnv }, stdio: "pipe" }).toString().trim();
+  execFileSync("git", args, { cwd, env: { ...process.env, ...gitEnv }, stdio: "pipe" })
+    .toString()
+    .trim();
 
 export const SSH_DIR = "/tmp/majhi-proof-ssh";
 const SSH_PORT = 2299;
@@ -92,7 +99,7 @@ export async function startProof(): Promise<Proof> {
   // The team of the e2e seed, then the proof's own workspace entries on top.
   await (await import("./home-seed.ts")).seedHome("team");
   const file = join(MAJHI_HOME, "majhi.yaml");
-  const doc = parse(readFileSync(file, "utf8")) as Record<string, any>;
+  const doc = parse(readFileSync(file, "utf8"));
   doc.orgs.acme.mr_tokens = { github: "secret:proof-github" };
   doc.orgs.acme.connections = {
     "acme-github": { type: "git", name: "Acme GitHub", fields: { provider: "github", host: hosts.host } },
@@ -191,10 +198,13 @@ export async function startProof(): Promise<Proof> {
 }
 
 /** POST /api/cmd/<name> as the owner. */
-export async function cmd(url: string, name: string, input: unknown = {}): Promise<any> {
+export async function cmd(url: string, name: string, input: unknown = {}): Promise<Loose> {
   const res = await fetch(`${url}/api/cmd/${name}`, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-majhi-meta": JSON.stringify({ actor: { kind: "owner" } }) },
+    headers: {
+      "content-type": "application/json",
+      "x-majhi-meta": JSON.stringify({ actor: { kind: "owner" } }),
+    },
     body: JSON.stringify(input),
   });
   const body = (await res.json()) as unknown;

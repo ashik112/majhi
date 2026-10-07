@@ -43,7 +43,7 @@ export function RollbackPair({
             title={off ? blocked : undefined}
             onClick={() => onChange?.(s.value)}
             className={cn(
-              "rounded-md whitespace-nowrap transition-colors duration-150 disabled:cursor-default",
+              "min-w-0 truncate rounded-md whitespace-nowrap transition-colors duration-150 disabled:cursor-default",
               size === "sm" ? "h-[22px] px-2 text-sm" : "h-8 px-2.5 text-sm",
               off && "opacity-45",
               on
