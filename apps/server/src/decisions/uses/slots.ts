@@ -263,9 +263,9 @@ export const LAYA_USE_SLOTS: readonly SlotDef[] = [
     use: "captain",
     question: /^triage$/,
     target: 0.95,
-    // A hint on a finding: the owner still sees and can reopen every finding, so it acts on a very sure answer.
+    // A hint on a finding: the owner still sees and can reopen every finding, so it acts on a sure answer.
     startMode: "live",
-    startBar: 0.95,
+    startBar: 0.9,
     fixtures: TRIAGE,
   },
   {
