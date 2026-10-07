@@ -126,6 +126,7 @@ export class ChatIngest {
       ...(env.thread === undefined ? {} : { thread: env.thread }),
       ...(env.replyTo === undefined ? {} : { replyTo: env.replyTo }),
       ...(env.forwarded === true ? { forwarded: true as const } : {}),
+      ...(env.addressed === true ? { addressed: true as const } : {}),
       revisions: [],
       sentAt: env.at,
     });

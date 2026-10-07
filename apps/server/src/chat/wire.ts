@@ -7,7 +7,7 @@ import {
   type Holds,
   PRIVATE,
 } from "@majhi/shared";
-import { authorityOf, effectiveAuthority } from "../captain/levels.ts";
+import { authorityOf } from "../captain/levels.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { LayaDecisions } from "../decisions/uses/common.ts";
 import { classifyInjection } from "../decisions/uses/injection.ts";
@@ -37,8 +37,6 @@ export interface ClientChatWiring {
   room: RoomService;
   gate: Pick<OutboundGate, "submit" | "edit" | "get">;
   config: ConfigService;
-  /** Autonomous mode now: Tell only counts while it is `on`. */
-  autonomyMode: () => "off" | "on" | "paused" | "stopping";
   adapters: readonly ChatAdapter[];
   /** Every connection of every workspace. */
   connectionIds: () => Promise<{ org: string; id: string; connection: ConnectionConfig }[]>;
@@ -142,8 +140,9 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     ...(w.log === undefined ? {} : { log: w.log }),
   });
   const tell = async (org: string): Promise<AuthorityChoice> => {
+    // The row as the owner set it. Tell does not wait for Autonomous: a client message is answered either way.
     const { autonomy } = await w.config.settings();
-    return effectiveAuthority(authorityOf(autonomy, org), w.autonomyMode()).tell;
+    return authorityOf(autonomy, org).tell;
   };
   const holds = async (org: string): Promise<Holds> =>
     effectiveHolds((await w.config.settings()).autonomy.orgs[org]?.holds);

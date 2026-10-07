@@ -90,10 +90,24 @@ export const ChatEnvelopeSchema = z.strictObject({
   forwarded: z.boolean().optional(),
   /** The people the text names, as the app marks them. */
   mentions: z.array(ChatMentionSchema).max(200).optional(),
+  /** The message names the bot (a mention of it) or answers one of its messages: it is addressed to us. */
+  addressed: z.boolean().optional(),
   /** The chat moved to another id (a Telegram group became a supergroup): `external.chat` is the old id. */
   movedTo: z.string().max(200).optional(),
 });
 export type ChatEnvelope = z.infer<typeof ChatEnvelopeSchema>;
+
+/**
+ * What became of a client message, kept on the message itself and drawn as one faint line under it. `replied`,
+ * `waits` and `failed` with a `draft` are read live from that reply (sent, held, failed), so the line stays true
+ * when the owner sends or discards a held one.
+ */
+export const ClientOutcomeSchema = z.strictObject({
+  state: z.enum(["working", "replied", "ignored", "waits", "failed", "handled"]),
+  why: z.string().max(400).optional(),
+  draft: z.number().int().positive().optional(),
+});
+export type ClientOutcome = z.infer<typeof ClientOutcomeSchema>;
 
 /** Where Telegram's own state is kept in a connection's runtime state. */
 export const ChatCursorSchema = z.strictObject({
