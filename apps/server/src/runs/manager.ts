@@ -504,7 +504,7 @@ export class RunManager {
     input: { text: string; attachments: Attachment[]; mode: "queue" | "interrupt" },
   ): RoomItem {
     // The run exists before the item: a run made later reads queued items back from the store.
-    const run = this.runFor(task, agent);
+    this.runFor(task, agent);
     const id = `owner:${randomUUID()}`;
     this.deps.room.post(task, id, {
       type: "owner",

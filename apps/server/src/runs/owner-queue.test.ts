@@ -21,7 +21,11 @@ async function owner(id: string): Promise<Extract<RoomItem, { type: "owner" }>> 
 /** A started task whose agent finished its first turn, with another agent holding its worktree. */
 async function lockedTask() {
   w = await taskWorld();
-  const res = await w.h.cmd("tasks.create", { text: "fix api", repos: [{ project: "acme-api" }], start: true });
+  const res = await w.h.cmd("tasks.create", {
+    text: "fix api",
+    repos: [{ project: "acme-api" }],
+    start: true,
+  });
   expect(res.status).toBe(200);
   await until(() => services().room.getLive("ACM-1", "acme-builder")?.status === "idle", "idle");
   const worktree = services().store.tasks.get("ACM-1")?.repos[0]?.worktree;
