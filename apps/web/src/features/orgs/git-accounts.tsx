@@ -2,6 +2,7 @@ import {
   type GitAccountStatus,
   type GitHost,
   type LoginOffer,
+  OrgConfigSchema,
   type OrgView,
   type SignOut,
   tokenPageUrl,
@@ -137,6 +138,12 @@ export function GitAccounts({ org }: { org: OrgView }) {
               ))}
             </ul>
           )}
+          {data.accounts[0] !== undefined && (
+            <div className="flex min-w-0 flex-col gap-2 border-t border-line pt-4">
+              <span className="text-sm text-fg-faint">Commit identity for every account of {org.name}</span>
+              <IdentityLine org={org} account={data.accounts[0].account} />
+            </div>
+          )}
           {data.tokens.map((t) => (
             <p key={t.kind} className="m-0 text-sm text-fg-muted">
               A {HOST_LABEL[t.kind]} token is saved for merge requests. Add the account it belongs to and it
@@ -201,9 +208,6 @@ function AccountRow({
         </Line>
         <Line label="Merge requests">
           <TokenLine org={org.id} status={status} />
-        </Line>
-        <Line label="Commit identity">
-          <IdentityLine org={org} account={status.account} />
         </Line>
       </dl>
     </li>
@@ -409,6 +413,10 @@ function IdentityLine({ org, account }: { org: OrgView; account: string }) {
   const action = useAction();
   const [name, setName] = useState(account);
   const [email, setEmail] = useState("");
+  const validEmail = OrgConfigSchema.shape.identity.safeParse({
+    name: name.trim() || "x",
+    email: email.trim(),
+  }).success;
   if (org.identity !== undefined) {
     return (
       <State tone="green">
@@ -442,11 +450,16 @@ function IdentityLine({ org, account }: { org: OrgView; account: string }) {
           onChange={(e) => setEmail(e.target.value)}
           className="w-[220px] flex-none"
         />
-        <Button type="submit" disabled={name.trim() === "" || email.trim() === "" || action.busy}>
+        <Button type="submit" disabled={name.trim() === "" || !validEmail || action.busy}>
           Set identity
         </Button>
       </form>
-      <Failure text={action.failure} />
+      <Failure
+        text={
+          action.failure ??
+          (email.trim() !== "" && !validEmail ? "Use an email address like you@company.com" : undefined)
+        }
+      />
     </>
   );
 }

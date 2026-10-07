@@ -61,7 +61,7 @@ export function rowStatus(
     case "needs-attention": {
       const action = failureAction(view.type, health.reason);
       return {
-        lamp: action === "check" ? "paused" : "needs",
+        lamp: "needs",
         word: health.state === "failed" ? "Failed" : "Needs attention",
         line: failureLine(view),
         action,
