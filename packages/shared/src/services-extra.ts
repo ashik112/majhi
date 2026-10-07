@@ -392,6 +392,7 @@ export const EXTRA_SERVICES: readonly unknown[] = [
           "mpim:read",
           "users:read",
           "files:read",
+          "channels:join",
         ],
       },
       {

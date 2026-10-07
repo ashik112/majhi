@@ -1,16 +1,19 @@
 import {
   type AuthorityChoice,
   type ChatApp,
+  type ChatChannels,
   type ChatReplyInput,
   type ClientList,
   type ClientRow,
   type ContactView,
   type HoldsPatch,
   REPLY_HOLD_LABEL,
+  SLACK_NEEDED_SCOPES,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
 import type { Store } from "../store/index.ts";
+import type { ChatChannelList } from "./adapter.ts";
 import type { Contacts } from "./contacts.ts";
 import type { ChatConnectionInfo, ChatHub } from "./hub.ts";
 import type { ChatIngest } from "./ingest.ts";
@@ -24,7 +27,7 @@ export interface ClientChatDeps {
   contacts: Contacts;
   replies: ClientReplies;
   ingest: ChatIngest;
-  hub: ChatHub;
+  hub: Pick<ChatHub, "accounts" | "capabilities" | "restart" | "channels" | "join">;
   /** The chat app connections that exist now. */
   connections: () => Promise<ChatConnectionInfo[]>;
   /** The owner's Hold list of a workspace, as saved. */
@@ -37,9 +40,88 @@ export interface ClientChatDeps {
   deleteWebhook: (connection: string) => Promise<void>;
 }
 
+/** How long a channel list from the app is reused. */
+const CHANNELS_TTL_MS = 30_000;
+
 /** What the commands of client chats do. The handlers only check who asks and call these. */
 export class ClientChat {
+  private readonly listed = new Map<
+    string,
+    { at: number; info: ChatConnectionInfo; list: ChatChannelList }
+  >();
+
   constructor(private readonly deps: ClientChatDeps) {}
+
+  private async fetched(connection: string, fresh: boolean) {
+    const had = this.listed.get(connection);
+    if (!fresh && had !== undefined && Date.now() - had.at < CHANNELS_TTL_MS) return had;
+    const got = await this.deps.hub.channels(connection);
+    const made = { at: Date.now(), ...got };
+    this.listed.set(connection, made);
+    return made;
+  }
+
+  /** The channels of a connection's workspace, with what majhi has done with each. */
+  async channels(connection: string, refresh: boolean): Promise<ChatChannels> {
+    const { info, list } = await this.fetched(connection, refresh);
+    const channels = list.channels.map((c) => {
+      const room = this.deps.rooms.find(info.app, info.account, c.id);
+      return {
+        ...c,
+        ...(room === undefined ? {} : { room: room.id }),
+        ...(room?.org === undefined ? {} : { org: room.org }),
+        ...(room?.chat.ignored === true ? { ignored: true } : {}),
+      };
+    });
+    const missing =
+      list.scopes === undefined ? [] : SLACK_NEEDED_SCOPES.filter((s) => !list.scopes?.includes(s));
+    return {
+      connection,
+      bot: list.bot,
+      ...(list.appId === undefined ? {} : { appId: list.appId }),
+      channels,
+      missingScopes: missing,
+    };
+  }
+
+  /** The room of a channel, made if the channel has none yet. */
+  private channelRoom(info: ChatConnectionInfo, channel: ChatChannelList["channels"][number]): string {
+    return this.deps.rooms.open({
+      app: info.app,
+      account: info.account,
+      chat: channel.id,
+      title: `#${channel.name}`,
+      kind: "group",
+      holder: "captain",
+    }).id;
+  }
+
+  /**
+   * Links a channel to a workspace the way a New chat is linked. A public channel the bot is not in is joined first;
+   * a private one needs the owner's invite, so it is not linked until the bot is in.
+   */
+  async channelLink(connection: string, channel: string, org: string): Promise<ClientRow> {
+    const { info, list } = await this.fetched(connection, true);
+    const found = list.channels.find((c) => c.id === channel);
+    if (found === undefined) throw new UserError("The bot cannot see that channel.", 404);
+    if (!found.member) {
+      if (found.private)
+        throw new UserError(
+          `The bot is not in that private channel yet. Type /invite @${list.bot} there.`,
+          409,
+        );
+      await this.deps.hub.join(connection, channel);
+      this.listed.delete(connection);
+    }
+    return this.link(this.channelRoom(info, found), org);
+  }
+
+  async channelIgnore(connection: string, channel: string): Promise<void> {
+    const { info, list } = await this.fetched(connection, false);
+    const found = list.channels.find((c) => c.id === channel);
+    if (found === undefined) throw new UserError("The bot cannot see that channel.", 404);
+    this.ignore(this.channelRoom(info, found));
+  }
 
   async list(): Promise<ClientList> {
     const rooms = this.deps.rooms.list();

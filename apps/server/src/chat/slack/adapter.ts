@@ -6,6 +6,7 @@ import { errorMessage } from "../../errors.ts";
 import {
   type ChatAdapter,
   type ChatCapabilities,
+  type ChatChannelList,
   type ChatConnection,
   type ChatMessage,
   ChatSendError,
@@ -28,6 +29,7 @@ import {
   SlackPosted,
   SlackUser,
 } from "./api.ts";
+import { joinSlackChannel, listSlackChannels } from "./channels.ts";
 import { beforeTs, compareTs, laterTs, readSlackText, tsToIso } from "./read.ts";
 
 /** One message of Slack's text holds this much: below the 4,000 Slack recommends, so a long reply splits cleanly. */
@@ -798,6 +800,18 @@ export class SlackAdapter implements ChatAdapter {
       this.options.log?.(`slack ${conn.id}: the read loop ended: ${errorMessage(err)}`);
     });
     return () => session.stop();
+  }
+
+  channels(conn: ChatConnection): Promise<ChatChannelList> {
+    return listSlackChannels(new SlackApi({ base: this.options.base, fetch: this.options.fetch }), conn);
+  }
+
+  join(conn: ChatConnection, channel: string): Promise<void> {
+    return joinSlackChannel(
+      new SlackApi({ base: this.options.base, fetch: this.options.fetch }),
+      conn,
+      channel,
+    );
   }
 
   // -------------------------------------------------------------------------

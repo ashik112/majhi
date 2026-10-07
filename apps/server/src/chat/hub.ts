@@ -3,6 +3,7 @@ import type { ChatAccount, ChatApp, ChatCursor, ChatEnvelope, ChatFileRef, ChatT
 import { errorMessage } from "../errors.ts";
 import {
   type ChatAdapter,
+  type ChatChannelList,
   type ChatConnection,
   type ChatMessage,
   ChatSendError,
@@ -183,6 +184,31 @@ export class ChatHub {
     const tokens = await this.deps.tokens(info.id);
     if (tokens === undefined) throw new Error("The bot token is not saved. Set the app up again.");
     return { adapter, conn: this.connection(info, tokens) };
+  }
+
+  private async byConnection(
+    id: string,
+  ): Promise<{ adapter: ChatAdapter; info: ChatConnectionInfo; conn: ChatConnection }> {
+    const info = (await this.deps.connections()).find((c) => c.id === id);
+    const adapter = info === undefined ? undefined : this.adapter(info.app);
+    if (info === undefined || adapter === undefined) throw new Error("That chat connection does not exist.");
+    const tokens = await this.deps.tokens(id);
+    if (tokens === undefined) throw new Error("The bot token is not saved. Set the app up again.");
+    return { adapter, info, conn: this.connection(info, tokens) };
+  }
+
+  /** The channels of a connection's workspace. */
+  async channels(connection: string): Promise<{ info: ChatConnectionInfo; list: ChatChannelList }> {
+    const { adapter, info, conn } = await this.byConnection(connection);
+    if (adapter.channels === undefined) throw new Error(`${info.app} has no channel list.`);
+    return { info, list: await adapter.channels(conn) };
+  }
+
+  /** The bot joins a public channel of a connection's workspace. */
+  async join(connection: string, channel: string): Promise<void> {
+    const { adapter, info, conn } = await this.byConnection(connection);
+    if (adapter.join === undefined) throw new Error(`${info.app} bots do not join channels.`);
+    await adapter.join(conn, channel);
   }
 
   /** Sends text to a chat of an account. */

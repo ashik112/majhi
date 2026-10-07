@@ -82,6 +82,17 @@ export class SlackApi {
     schema: z.ZodType<T>,
     signal?: AbortSignal,
   ): Promise<T> {
+    return (await this.callWithHeaders(method, token, params, schema, signal)).data;
+  }
+
+  /** Like `call`, and the answer's headers too: `auth.test` lists the token's scopes in `x-oauth-scopes`. */
+  async callWithHeaders<T>(
+    method: string,
+    token: string,
+    params: Record<string, string | number | boolean | undefined>,
+    schema: z.ZodType<T>,
+    signal?: AbortSignal,
+  ): Promise<{ data: T; headers: Headers }> {
     const form = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined) form.set(key, String(value));
@@ -115,7 +126,7 @@ export class SlackApi {
       const result = schema.safeParse(ok.data);
       if (!result.success)
         throw new SlackNetworkError(`Slack's answer to ${method} had an unexpected shape.`);
-      return result.data;
+      return { data: result.data, headers: res.headers };
     }
     const failed = ErrorBody.safeParse(body);
     if (failed.success) throw new SlackError(failed.data.error);
@@ -197,6 +208,22 @@ export const SlackAuth = z.object({
   user: z.string().optional(),
   bot_id: z.string().optional(),
 });
+
+/** One page of `conversations.list`. Each channel is parsed on its own: one of a shape majhi does not know costs that channel. */
+export const SlackChannelsPage = z.object({
+  channels: z.array(z.unknown()).default([]),
+  response_metadata: z.object({ next_cursor: z.string().optional() }).optional(),
+});
+
+export const SlackChannelRow = z.object({
+  id: z.string(),
+  name: z.string().optional(),
+  is_private: z.boolean().optional(),
+  is_member: z.boolean().optional(),
+  is_archived: z.boolean().optional(),
+});
+
+export const SlackBotInfo = z.object({ bot: z.object({ app_id: z.string().optional() }) });
 
 export const SlackOpen = z.object({ url: z.string() });
 

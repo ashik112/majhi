@@ -57,6 +57,16 @@ export interface ChatSink {
   gap?(from: string, to: string): void;
 }
 
+/** The channels of a chat app's workspace the bot can see. */
+export interface ChatChannelList {
+  /** The bot's name, for the invite line. */
+  bot: string;
+  appId?: string;
+  channels: { id: string; name: string; private: boolean; member: boolean }[];
+  /** The permissions the token holds, when the app says. */
+  scopes: string[] | undefined;
+}
+
 /** One interface for every chat app. Slack, Discord and email are written against it, not beside it. */
 export interface ChatAdapter {
   app: ChatApp;
@@ -67,6 +77,10 @@ export interface ChatAdapter {
   render(body: Body, people: People): string;
   /** Writes the message, rendered by this adapter's `render`; falls back to plain words if the app refuses the markup. */
   send(conn: ChatConnection, target: ChatTarget, message: ChatMessage): Promise<{ message: string }>;
+  /** The channels of the workspace, for the owner's channel picker. Only apps with channels have it. */
+  channels?(conn: ChatConnection): Promise<ChatChannelList>;
+  /** The bot joins a public channel. Only apps that allow it have it. */
+  join?(conn: ChatConnection, channel: string): Promise<void>;
   /** Fetches a file now. Refuses one over the size cap. */
   file(conn: ChatConnection, ref: ChatFileRef): Promise<{ path: string; type: string; bytes: number }>;
 }

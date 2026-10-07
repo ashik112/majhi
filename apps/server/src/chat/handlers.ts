@@ -6,6 +6,9 @@ type ChatCommand =
   | "chat.list"
   | "chat.link"
   | "chat.ignore"
+  | "chat.channels"
+  | "chat.channelLink"
+  | "chat.channelIgnore"
   | "chat.holder"
   | "chat.send"
   | "chat.editReply"
@@ -41,6 +44,19 @@ export function chatHandlers(chat: ClientChat): Pick<CommandHandlers, ChatComman
     "chat.ignore": async (input, ctx) => {
       ownerOnly(ctx);
       chat.ignore(input.room);
+      return { ok: true as const };
+    },
+    "chat.channels": async (input, ctx) => {
+      ownerOnly(ctx);
+      return chat.channels(input.connection, input.refresh === true);
+    },
+    "chat.channelLink": async (input, ctx) => {
+      ownerOnly(ctx);
+      return chat.channelLink(input.connection, input.channel, input.org);
+    },
+    "chat.channelIgnore": async (input, ctx) => {
+      ownerOnly(ctx);
+      await chat.channelIgnore(input.connection, input.channel);
       return { ok: true as const };
     },
     "chat.holder": async (input, ctx) => {
