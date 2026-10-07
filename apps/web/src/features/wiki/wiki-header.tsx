@@ -168,7 +168,7 @@ function StatusLine({
           )}
         </span>
       )}
-      {status.builtCommit !== undefined && status.behind !== undefined && (
+      {status.builtCommit !== undefined && status.behind !== undefined && status.lastError === undefined && (
         <span className="flex items-center gap-1.5 whitespace-nowrap">
           <span
             aria-hidden="true"
