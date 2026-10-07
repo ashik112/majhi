@@ -4,8 +4,8 @@ import { UPKEEP_PLAYBOOKS } from "./builtin/upkeep.ts";
 
 /**
  * The playbooks that ship with majhi, as data (`./builtin`). They are read once and checked against the
- * schema; a malformed one stops the server at start, not at the first run. User-defined playbooks come
- * later and will join this list.
+ * schema. A malformed one is left out and logged, so one bad playbook never keeps the server from
+ * starting; `catalog.test.ts` fails the build on it instead.
  */
 
 export class Catalog {
@@ -13,9 +13,13 @@ export class Catalog {
 
   constructor(playbooks: readonly Playbook[] = BUILTIN) {
     for (const raw of playbooks) {
-      const pb = PlaybookSchema.parse(raw);
-      if (this.byId.has(pb.id)) throw new Error(`Two playbooks use the id "${pb.id}".`);
-      this.byId.set(pb.id, pb);
+      const parsed = PlaybookSchema.safeParse(raw);
+      if (!parsed.success || this.byId.has(parsed.data.id)) {
+        const why = parsed.success ? "its id is used twice" : parsed.error.message;
+        console.error(`majhi: playbook "${raw.id}" is left out: ${why}`);
+        continue;
+      }
+      this.byId.set(parsed.data.id, parsed.data);
     }
   }
 

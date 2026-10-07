@@ -50,7 +50,7 @@ export const UPKEEP_PLAYBOOKS: Playbook[] = [
       { id: "ship-notready", text: "Not committed, a card waits or a secret in the diff: tell me why" },
       {
         id: "ship-deploy-plan",
-        text: "Work is ready to ship, its project has deploy environments and the task has no deploy plan: ask the captain to plan it from the project's wiki and the diff, and do not merge it until the plan is in (an empty plan counts)",
+        text: "A task ready to ship in a project with environments gets its deploy plan from the captain first; it merges only once the plan is in (an empty plan counts)",
       },
       {
         id: "ship-deploy",
