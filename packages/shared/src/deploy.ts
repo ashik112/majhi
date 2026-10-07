@@ -193,6 +193,14 @@ export function deployIsActive(state: DeployState): boolean {
 
 export const DeployByIdSchema = z.enum(["owner", "captain"]);
 
+/** The run a provider started: its id, its page, and for GitHub which attempt of it is ours. */
+export const DeployRunSchema = z.object({
+  id: z.string().min(1).max(200),
+  url: z.string().max(500).optional(),
+  attempt: z.number().int().positive().optional(),
+});
+export type DeployRun = z.infer<typeof DeployRunSchema>;
+
 export const DeployRecordSchema = z.object({
   id: z.number().int().positive(),
   org: IdSchema,
@@ -207,7 +215,7 @@ export const DeployRecordSchema = z.object({
   task: TaskIdSchema.optional(),
   by: DeployByIdSchema,
   /** The run the provider started: its id and its page. */
-  run: z.object({ id: z.string(), url: z.string().optional() }).optional(),
+  run: DeployRunSchema.optional(),
   /** What the check found. */
   check: z.object({ ok: z.boolean(), detail: z.string(), at: z.string() }).optional(),
   /** Why it failed or was held, in a sentence. Display only. */
@@ -219,7 +227,7 @@ export const DeployRecordSchema = z.object({
       detail: z.string(),
       /** The commit the target went back to. */
       commit: z.string().optional(),
-      run: z.object({ id: z.string(), url: z.string().optional() }).optional(),
+      run: DeployRunSchema.optional(),
       at: z.string(),
     })
     .optional(),
