@@ -125,13 +125,18 @@ export function fetchFailureNote(base: string, remote: string, raw: string): str
   const had = `Using the last copy of ${base} on this machine.`;
   if (
     isSshAuthFailure(raw) ||
-    ["could not read from remote repository", "authentication failed", "permission denied", "access denied"].some(
-      (w) => text.includes(w),
-    )
+    [
+      "could not read from remote repository",
+      "authentication failed",
+      "permission denied",
+      "access denied",
+    ].some((w) => text.includes(w))
   ) {
     return `majhi could not sign in to ${remote} to get the latest ${base}. ${had} To fix it, open Connections and sign in to this project's Git account again, or reload your SSH keys.`;
   }
-  if (["could not resolve host", "timed out", "unable to access", "connection"].some((w) => text.includes(w))) {
+  if (
+    ["could not resolve host", "timed out", "unable to access", "connection"].some((w) => text.includes(w))
+  ) {
     return `majhi could not reach ${remote} to get the latest ${base}. ${had} It tries again on the next task.`;
   }
   return `majhi could not get the latest ${base} from ${remote}. ${had} Check the remote's address in Projects.`;

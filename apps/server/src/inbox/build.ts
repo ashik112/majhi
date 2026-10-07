@@ -264,7 +264,7 @@ function draftOf(
           kind: "ship",
           title: `Finished: ${oneLine(subject.title, 120)}`,
           sentence: shipBlock.empty
-            ? `${who} finished ${name}. Nothing changed in the code, so there is nothing to merge: mark it done or ask for changes.`
+            ? `${who} finished ${name}. It changed no code, so there is nothing to merge.`
             : `${who} finished ${name}. It cannot be merged yet.`,
           blocked: why.slice(0, 300),
           options: withPrimary(rest, undefined),
