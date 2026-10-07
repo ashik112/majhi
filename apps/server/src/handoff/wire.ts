@@ -89,12 +89,16 @@ const INSTALL_FILES: ReadonlySet<string> = new Set([
 
 const PackageSchema = z.looseObject({ scripts: z.record(z.string(), z.string()).optional() });
 
-/** The task's head commits, one per repo: the branch tips, so a state of the work is one string. */
+/**
+ * The task's head per repo, so a state of the work is one string. It is the tree of the branch tip,
+ * not the commit: checks vouch for the files, and majhi folds a branch's checkpoints into one commit
+ * before it leaves (`cleanOutgoing`), which changes the commit and never the files.
+ */
 export async function taskHeads(task: Task): Promise<string> {
   const heads: string[] = [];
   for (const r of task.repos) {
     const tip = (
-      await git(r.source, ["rev-parse", "--verify", `refs/heads/${r.branch}`]).catch(() => "")
+      await git(r.source, ["rev-parse", "--verify", `refs/heads/${r.branch}^{tree}`]).catch(() => "")
     ).trim();
     heads.push(`${r.project}@${tip.slice(0, 12)}`);
   }

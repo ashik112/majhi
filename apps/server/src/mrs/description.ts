@@ -7,7 +7,6 @@ export interface MrSibling {
 }
 
 export interface DescriptionInput {
-  taskId: string;
   title: string;
   brief: string;
   /** The repo this MR is for. */
@@ -31,7 +30,7 @@ export function briefSummary(title: string, brief: string): string {
 }
 
 export function renderMrDescription(input: DescriptionInput): string {
-  const out: string[] = [`Task ${input.taskId}: ${input.title}`];
+  const out: string[] = [input.title];
   const summary = briefSummary(input.title, input.brief);
   if (summary !== "") out.push("", summary);
   if (input.siblings.length > 1) {
