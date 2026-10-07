@@ -1927,6 +1927,24 @@ CREATE UNIQUE INDEX tasks_client_chat ON tasks (
 ) WHERE client IS NOT NULL AND json_extract(client, '$.archived') IS NOT 1;
 `,
   },
+  {
+    // The Chats list holds the chats the owner started with an agent too. They had no read marks, so each
+    // starts fully read, and the owner can archive any conversation: hidden from the list, history kept.
+    id: 182,
+    name: "conversation archive and agent chat read marks",
+    sql: `
+CREATE TABLE conversation_archive (
+  id TEXT PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+  archived_at TEXT NOT NULL
+);
+INSERT INTO read_marks (id, read_at, updated_at)
+  SELECT r.task, max(r.at), strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    FROM room_items r JOIN tasks t ON t.id = r.task
+   WHERE r.type = 'agent' AND t.kind = 'chat' AND t.brief IN ('Chat', 'Captain chat')
+     AND r.task NOT IN (SELECT id FROM read_marks)
+   GROUP BY r.task;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

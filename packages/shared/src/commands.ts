@@ -142,7 +142,11 @@ import {
   PreviewRunInputSchema,
   ServiceStartInputSchema,
 } from "./containers.ts";
-import { ConversationListSchema, ConversationMarkReadInputSchema } from "./conversations.ts";
+import {
+  ConversationArchiveInputSchema,
+  ConversationListSchema,
+  ConversationMarkReadInputSchema,
+} from "./conversations.ts";
 import {
   DecisionLabelSchema,
   EvalInputSchema,
@@ -1544,7 +1548,7 @@ export const commands = {
   "conversations.list": {
     risk: "read",
     summary:
-      "The owner's task rooms and workspace captain threads for the chat dock: title, newest line and how many agent messages the owner has not read, newest first. Owner only",
+      "The owner's conversations (task rooms, captain threads, client chats, agent chats): title, newest line and how many agent messages the owner has not read, newest first. Owner only",
     input: z.object({}),
     output: ConversationListSchema,
   },
@@ -1553,6 +1557,13 @@ export const commands = {
     summary:
       "Mark a conversation read up to the newest message on screen. The mark never moves back and never passes the newest agent message. Owner only",
     input: ConversationMarkReadInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "conversations.archive": {
+    risk: "change",
+    summary:
+      "Hide a conversation from the Chats list, or bring it back. The history stays; a task room follows its task. Owner only",
+    input: ConversationArchiveInputSchema,
     output: z.object({ ok: z.literal(true) }),
   },
   "notify.pending": {

@@ -1,13 +1,13 @@
 import { z } from "zod";
+import { ChatAppSchema } from "./chat.ts";
 import { IdSchema } from "./ids.ts";
 
 /**
- * The chat dock: the conversations the owner can read replies in without leaving a page. A
- * conversation is a task's room (`task`) or a workspace's captain thread (`captain`). Both are rooms
- * in the same store, so one row shape and one unread rule cover them. The owner's own chats on the
- * Chats page are not conversations here.
+ * The one list of the Chats page and the chat dock. A conversation is a task's room (`task`), a
+ * workspace's captain thread (`captain`), a client's chat (`client`) or a chat the owner started with
+ * an agent (`agent`). All are rooms in the same store, so one row shape and one unread rule cover them.
  */
-export const ConversationKindSchema = z.enum(["task", "captain", "client"]);
+export const ConversationKindSchema = z.enum(["task", "captain", "client", "agent"]);
 export type ConversationKind = z.infer<typeof ConversationKindSchema>;
 
 export const ConversationSchema = z.object({
@@ -23,6 +23,12 @@ export const ConversationSchema = z.object({
   lastAt: z.string(),
   /** Agent messages that appeared after the owner last read this conversation. */
   unread: z.number().int().nonnegative(),
+  /** The chat app of a client chat. */
+  app: ChatAppSchema.optional(),
+  /** The agent of an agent chat. */
+  agent: z.string().min(1).optional(),
+  /** The owner hid it. It keeps its history and is listed under Archived. */
+  archived: z.boolean().optional(),
 });
 export type Conversation = z.infer<typeof ConversationSchema>;
 
@@ -38,6 +44,13 @@ export const ConversationMarkReadInputSchema = z.object({
   upTo: z.string().min(1),
 });
 export type ConversationMarkReadInput = z.infer<typeof ConversationMarkReadInputSchema>;
+
+/** `conversations.archive`: hide a conversation from the list (or bring it back). Its history stays. */
+export const ConversationArchiveInputSchema = z.object({
+  id: z.string().min(1),
+  archived: z.boolean(),
+});
+export type ConversationArchiveInput = z.infer<typeof ConversationArchiveInputSchema>;
 
 /**
  * Pushed on the events socket when one conversation changed (a message arrived, the owner read it).

@@ -151,6 +151,12 @@ export const readMarks = sqliteTable("read_marks", {
   updatedAt: text("updated_at").notNull(),
 });
 
+/** Conversations the owner archived (migration 182): hidden from the list, history kept. */
+export const conversationArchive = sqliteTable("conversation_archive", {
+  id: text("id").primaryKey(),
+  archivedAt: text("archived_at").notNull(),
+});
+
 export const runs = sqliteTable(
   "runs",
   {

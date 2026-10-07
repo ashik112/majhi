@@ -1,56 +1,93 @@
-import { type AgentEntry, DEFAULT_CHAT_TITLES, type OrgView, type TaskSummary } from "@majhi/shared";
-import { type AgentGroup, entryId, groupAgents, INVALID_GROUP, type OkAgent } from "@/features/agents/model";
+import {
+  type Conversation,
+  DEFAULT_CHAT_TITLES,
+  type OrgView,
+  PRIVATE,
+  PRIVATE_COLOR,
+  PRIVATE_KEY,
+  PRIVATE_NAME,
+} from "@majhi/shared";
+import type { ChatFilter, KindFilter } from "@/lib/chat-filter";
+import { badgeLetters } from "@/lib/format";
 
 /** The name a chat shows: its title, or "New chat" until the first message names it. */
-export function chatTitle(chat: Pick<TaskSummary, "title">): string {
+export function chatTitle(chat: { title: string }): string {
   return DEFAULT_CHAT_TITLES.includes(chat.title) ? "New chat" : chat.title;
 }
 
-export interface ChatAgentRow {
-  entry: OkAgent;
+/** A workspace as a tab and a badge shows it. */
+export interface Workspace {
   id: string;
-  chats: TaskSummary[];
-  /** A chat of this agent waits for the owner. */
-  asking: boolean;
+  name: string;
+  letters: string;
+  color: string | undefined;
 }
 
-export interface ChatGroup {
-  group: AgentGroup;
-  agents: ChatAgentRow[];
+export const KIND_LABEL: Record<Conversation["kind"], string> = {
+  client: "Client",
+  task: "Task",
+  agent: "Agent",
+  captain: "Captain",
+};
+
+/** Private first, then each workspace. */
+export function workspaces(orgs: readonly OrgView[] | undefined): Workspace[] {
+  return [
+    { id: PRIVATE, name: PRIVATE_NAME, letters: badgeLetters(PRIVATE_KEY), color: PRIVATE_COLOR },
+    ...(orgs ?? [])
+      .filter((o) => o.id !== PRIVATE)
+      .map((o) => ({ id: o.id, name: o.name, letters: badgeLetters(o.key), color: o.color })),
+  ];
 }
 
-/**
- * Agents by org for the chat list: Root first with the captain on top, then each org. An org filter keeps
- * Root and that org. A search keeps the chats whose title matches, and the agents whose id does.
- */
-export function chatGroups(input: {
-  entries: readonly AgentEntry[];
-  orgs: readonly OrgView[];
-  chats: readonly TaskSummary[];
-  org: string | undefined;
-  query: string;
-}): ChatGroup[] {
-  const q = input.query.trim().toLowerCase();
-  const byAgent = new Map<string, TaskSummary[]>();
-  for (const chat of input.chats) {
-    const lead = chat.team[0];
-    if (lead === undefined) continue;
-    byAgent.set(lead, [...(byAgent.get(lead) ?? []), chat]);
-  }
-  const out: ChatGroup[] = [];
-  for (const group of groupAgents(input.entries, input.orgs)) {
-    if (input.org !== undefined && group.scope !== "root" && group.scope !== input.org) continue;
-    const agents: ChatAgentRow[] = [];
-    for (const entry of group.entries) {
-      if (entry.status !== "ok") continue;
-      const id = entryId(entry);
-      const all = byAgent.get(id) ?? [];
-      const nameHit = q === "" || id.toLowerCase().includes(q);
-      const chats = q === "" || nameHit ? all : all.filter((c) => chatTitle(c).toLowerCase().includes(q));
-      if (q !== "" && !nameHit && chats.length === 0) continue;
-      agents.push({ entry, id, chats, asking: all.some((c) => c.asking === true) });
-    }
-    if (agents.length > 0 || (q === "" && group.scope !== INVALID_GROUP)) out.push({ group, agents });
+/** The workspace a conversation belongs to; one without a workspace is Private. */
+export function workspaceOf(row: Conversation, all: readonly Workspace[]): Workspace {
+  const id = row.org ?? PRIVATE;
+  return all.find((w) => w.id === id) ?? { id, name: id, letters: badgeLetters(id), color: undefined };
+}
+
+/** A row's name: a captain thread is the workspace's captain, an untitled agent chat is a new chat. */
+export function rowTitle(row: Conversation, workspace: string): string {
+  if (row.kind === "captain") return `Captain in ${workspace}`;
+  return row.kind === "agent" ? chatTitle(row) : row.title;
+}
+
+function kindMatches(row: Conversation, kind: KindFilter): boolean {
+  if (kind === "all") return true;
+  if (kind === "agent") return row.kind === "agent" || row.kind === "captain";
+  return row.kind === kind;
+}
+
+/** What the filter and the search keep, in the list's order (newest first). */
+export function visibleConversations(
+  list: readonly Conversation[],
+  filter: ChatFilter,
+  query: string,
+  all: readonly Workspace[],
+): Conversation[] {
+  const q = query.trim().toLowerCase();
+  return list.filter((row) => {
+    if ((row.archived === true) !== filter.archived) return false;
+    if (filter.tab !== "all" && (row.org ?? PRIVATE) !== filter.tab) return false;
+    if (!kindMatches(row, filter.kind)) return false;
+    if (q === "") return true;
+    const title = rowTitle(row, workspaceOf(row, all).name);
+    return title.toLowerCase().includes(q) || row.lastLine.toLowerCase().includes(q);
+  });
+}
+
+/** Unread agent messages per workspace tab (`all` is the total). Archived conversations do not count. */
+export function unreadByTab(list: readonly Conversation[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const row of list) {
+    if (row.archived === true) continue;
+    const id = row.org ?? PRIVATE;
+    out.set(id, (out.get(id) ?? 0) + row.unread);
+    out.set("all", (out.get("all") ?? 0) + row.unread);
   }
   return out;
+}
+
+export function badgeText(count: number): string {
+  return count > 99 ? "99+" : String(count);
 }

@@ -32,6 +32,7 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   // Read state is the owner's: what they have seen is not for an agent to read or move.
   "conversations.list",
   "conversations.markRead",
+  "conversations.archive",
   "chats.create",
   "chats.rename",
   // What clients wrote, who they are and what is sent to them are the owner's: no agent reads or changes them.
