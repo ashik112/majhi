@@ -149,6 +149,8 @@ export function actionOf(link: DecisionLink): BannerAction {
       return { kind: "page", to: "/watch" };
     case "connections":
       return { kind: "page", to: "/connections" };
+    case "decision":
+      return { kind: "page", to: "/decisions", search: { id: link.id } };
     case "setup":
       return { kind: "page", to: "/setup", search: { section: link.section } };
   }
@@ -172,6 +174,8 @@ export function openLabel(link: DecisionLink): string {
       return "Open Watch";
     case "connections":
       return "Open Connections";
+    case "decision":
+      return "Review";
     case "setup":
       return "Open settings";
   }

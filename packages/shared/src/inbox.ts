@@ -58,6 +58,8 @@ export const DecisionLinkSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("playbooks") }),
   z.object({ kind: z.literal("watch") }),
   z.object({ kind: z.literal("connections") }),
+  /** This decision itself, on the Needs you page: where a draft is read and answered. */
+  z.object({ kind: z.literal("decision"), id: z.string().min(1).max(300) }),
   /** A section of Hub setup, like `notifications`. */
   z.object({ kind: z.literal("setup"), section: z.string().min(1).max(40) }),
 ]);

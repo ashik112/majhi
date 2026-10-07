@@ -194,6 +194,7 @@ export function createUpkeepChores(ports: CaptainPorts): Chores {
           const outcome = await run.act({
             key: `tidy:retest:${c.id}:${run.ws.day}`,
             text: `Tested the connection ${c.name} again`,
+            failText: `Could not fix the connection ${c.name}`,
             reason: "Its last test failed",
             do: async () => {
               if (await u.retest(c.id)) return { text: `The connection ${c.name} passes its test now` };
@@ -292,6 +293,7 @@ export function createUpkeepChores(ports: CaptainPorts): Chores {
           const outcome = await run.act({
             key: `health:fix:${check.id}:${run.ws.day}`,
             text: `Fixed the health check ${check.label}: ${label}`,
+            failText: `Could not fix the health check ${check.label}`,
             reason: check.detail,
             do: async () => {
               const r = await u.healthFix(check.id);

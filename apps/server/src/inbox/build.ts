@@ -457,7 +457,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       sentence: `${"aeiou".includes(what.charAt(0)) ? "An" : "A"} ${what} to ${d.target} is drafted${d.voice === undefined ? "" : ` in the voice "${d.voice}"`}. Nothing is sent until you approve it.`,
       ...decorate(id, options, undefined, src.orgName?.(d.org)),
       at: d.createdAt,
-      link: { kind: "playbooks" },
+      link: { kind: "decision", id },
     });
   }
 
@@ -476,7 +476,7 @@ export function buildDecisions(src: DecisionSources): OwnerDecision[] {
       sentence: `${b.drafts.length} ${label} ${b.drafts.length === 1 ? "draft waits" : "drafts wait"} in this batch. Nothing is sent until you approve.`,
       ...decorate(id, options, undefined, src.orgName?.(b.org)),
       at: b.drafts[0]?.createdAt ?? new Date(0).toISOString(),
-      link: { kind: "playbooks" },
+      link: { kind: "decision", id },
     });
   }
 

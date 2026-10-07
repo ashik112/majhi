@@ -1,5 +1,5 @@
 import type { AgendaItem, AgendaToday } from "@majhi/shared";
-import { PAGE_PATH } from "@majhi/shared";
+import { PAGE_PATH, parseDecisionId } from "@majhi/shared";
 import { Link } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight, CircleCheck, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -436,10 +436,18 @@ function RightNowPanel({ today, org }: { today: AgendaToday; org: string | undef
   );
   const incidents = watch.incidents.filter((i) => !onAgenda.has(i.id));
   const asFinding = new Set(watch.incidents.map((i) => i.id));
+  // An incident that waits in Needs you is on the agenda: it is not listed here again.
+  const asDecision = new Set(
+    (useDecisions().data?.decisions ?? []).flatMap((d) => {
+      const parsed = parseDecisionId(d.id);
+      return parsed?.kind === "incident" ? [parsed.id] : [];
+    }),
+  );
   const services = (useWatch().data?.incidents ?? []).filter(
     (i) =>
       i.status === "open" &&
       (org === undefined || i.org === org) &&
+      !asDecision.has(i.id) &&
       (i.finding === undefined || !asFinding.has(i.finding)),
   );
   const pct = watch.budget === undefined || watch.budget === 0 ? 0 : (watch.spent / watch.budget) * 100;

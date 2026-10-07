@@ -81,7 +81,7 @@ export interface ActInput {
   irreversible?: boolean | undefined;
   /** Read right before the step, after the workspace's own rules: why it may not go now. */
   recheck?: (() => Promise<string | undefined>) | undefined;
-  /** What the log says when the step fails, before the reason. Default: the step's text and "failed". */
+  /** What the log says when the step fails, before the reason. Default: "Failed: " and the step's text. */
   failText?: string | undefined;
   /** Runs after a failed step is logged, to say so where the owner looks. Never throws. */
   onFail?: ((error: string) => Promise<void>) | undefined;
@@ -183,7 +183,7 @@ export class ChoreRun {
         chore: this.chore,
         day: this.ws.day,
         at,
-        text: `${a.failText ?? `${a.text} failed`}: ${error}`,
+        text: `${a.failText ?? `Failed: ${a.text}`}: ${error}`,
         reason: a.reason,
         evidence: a.evidence,
         task: a.task,

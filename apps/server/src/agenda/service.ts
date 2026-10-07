@@ -7,6 +7,7 @@ import {
   type Finding,
   type Goal,
   type OwnerDecision,
+  parseDecisionId,
 } from "@majhi/shared";
 import { dayStart, localDay } from "../usage/ranges.ts";
 import { minutesWord, oneLine, type Writer, writeBrief } from "./brief.ts";
@@ -220,8 +221,16 @@ export class AgendaService {
     const planned = this.planned(scope, decisions, when.tz, orgName);
     const findings = inScope(this.deps.findings(), scope);
     const live = findings.filter((f) => ["open", "proposed", "task", "decision"].includes(f.status));
+    // An incident that is a Needs you decision is on the agenda already: Right now does not list it again.
+    const onAgenda = new Set(
+      decisions.flatMap((d) => {
+        const parsed = parseDecisionId(d.id);
+        return d.kind === "incident" && parsed?.kind === "incident" ? [parsed.id] : [];
+      }),
+    );
     const incidents = live
       .filter((f) => f.source === "incident" && f.severity !== "info")
+      .filter((f) => !onAgenda.has(this.deps.incidentOf?.(f.id) ?? -1))
       .map((f) => ({
         id: f.id,
         title: f.title,

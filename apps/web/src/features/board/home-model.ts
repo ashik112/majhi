@@ -696,6 +696,8 @@ function linkAction(decision: OwnerDecision): BannerAction {
       return { kind: "page", to: "/watch" };
     case "connections":
       return { kind: "page", to: "/connections" };
+    case "decision":
+      return { kind: "page", to: "/decisions", search: { id: link.id } };
     case "setup":
       return { kind: "page", to: "/setup", search: { section: link.section } };
   }
