@@ -199,11 +199,24 @@ describe("the helper's git in a repo whose config names commands", () => {
       const asked = await ran();
       expect(asked).toMatch(/^(owner-helper\n)+$/);
 
-      // A rewrite the checkout's config makes is refused before git runs.
+      // A rewrite the checkout's config makes for this address does not apply: the push goes where it was asked to,
+      // whether the rewrite is the beginning of the address or the whole of it.
+      await writeFile(join(work, "b.txt"), "two\n");
+      await plain(work, "add", "b.txt");
+      await plain(work, ...ID, "commit", "-qm", "two");
       await plain(work, "config", `url.${server.base}/other.git.pushInsteadOf`, url);
-      await expect(gitPush(deps, { path: work, url, branch: "main" })).rejects.toThrow(/another URL/);
+      await plain(work, "config", `url.${server.base}/other.git.insteadOf`, `${server.base}/`);
+      await gitPush(deps, { path: work, url, branch: "main" });
+      expect(await plain(join(root, "up.git"), "rev-parse", "main")).toBe(
+        await plain(work, "rev-parse", "main"),
+      );
       await expect(plain(join(root, "other.git"), "rev-parse", "--verify", "main")).rejects.toThrow();
-      expect(await ran()).toBe(asked);
+      // A rewrite that equals the address and its slashed form too cannot be pushed around: nothing is pushed.
+      await plain(work, "config", `url.${server.base}/third.git.insteadOf`, `${url}/`);
+      await expect(gitPush(deps, { path: work, url, branch: "main" })).rejects.toThrow(
+        /rewrites the address/,
+      );
+      await plain(work, "config", "--unset-all", `url.${server.base}/third.git.insteadOf`);
 
       // The same checkout with plain git does run them, so the setup above is live.
       await plain(work, "push", "--quiet", url, "main:refs/heads/plain").catch(() => undefined);
@@ -217,7 +230,7 @@ describe("the helper's git in a repo whose config names commands", () => {
     } finally {
       server.close();
     }
-  });
+  }, 30_000);
 });
 
 describe("the helper's git in a majhi checkout whose shared .git/config names commands", () => {

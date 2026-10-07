@@ -1,6 +1,5 @@
-import { type CardCheck, type CardCommands, detectSecrets } from "@majhi/shared";
-import { ciChecks } from "../ci/jobs.ts";
-import { readCiFiles } from "../ci/read.ts";
+import { type CardCommands, detectSecrets } from "@majhi/shared";
+import { readCiChecks } from "../ci/checks.ts";
 import { chunkDoc } from "../memory/repo-docs.ts";
 import { folderName, fsRepoFiles, type RepoFiles } from "./files.ts";
 
@@ -8,8 +7,6 @@ import { folderName, fsRepoFiles, type RepoFiles } from "./files.ts";
 export interface ScanFacts {
   stack: string[];
   commands: CardCommands;
-  /** The checks the repo's own CI runs, with their environment. */
-  checks: CardCheck[];
   structure: { path: string; note: string }[];
   conventions: string[];
   ci: { provider?: string | undefined; workflows: string[] };
@@ -479,17 +476,7 @@ export async function scanRepo(files: RepoFiles, ctx: ScanContext): Promise<Scan
     provider ??= label;
     if (provider === label) workflows.push(file);
   }
-  const checks = ciChecks(await readCiFiles(files)).map(
-    (c): CardCheck => ({
-      kind: c.kind,
-      command: c.command,
-      env: c.env,
-      ...(c.workdir === undefined ? {} : { workdir: c.workdir }),
-      from: c.from,
-      ...(c.minutes === undefined ? {} : { minutes: c.minutes }),
-      services: c.services,
-    }),
-  );
+  const checks = await readCiChecks(files);
   for (const c of checks) if (c.workdir === undefined) commands[c.kind] ??= c.command;
 
   // Deploy hints
@@ -585,7 +572,6 @@ export async function scanRepo(files: RepoFiles, ctx: ScanContext): Promise<Scan
   return {
     stack: clean(stack),
     commands: safeCommands,
-    checks: checks.filter((c) => safeText(c.command) !== undefined),
     structure,
     conventions: clean(conventions),
     ci: { ...(provider === undefined ? {} : { provider }), workflows },

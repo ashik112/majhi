@@ -112,7 +112,28 @@ export function withConfig<E extends Record<string, string | undefined>>(
   return out as E;
 }
 
+/**
+ * The address a push goes to when the checkout's config has rewrites (`values` of its `insteadOf` and
+ * `pushInsteadOf`). None that matches: the address as it is. Matches that are only the beginning of the
+ * address are overridden by the address's own rewrite, which is longer. One that equals the address
+ * ties with it, and the repo's comes first, so the address gets a closing slash, which every git host
+ * takes and no value the repo planted for the plain address matches whole. Undefined when a value
+ * equals that one too: then nothing is pushed.
+ */
+export function pushUrlFor(
+  url: string,
+  values: readonly string[],
+): { url: string; override: boolean } | undefined {
+  const hits = values.filter((v) => url.startsWith(v));
+  if (hits.length === 0) return { url, override: false };
+  if (!hits.includes(url)) return { url, override: true };
+  const slashed = `${url}/`;
+  return values.includes(slashed) ? undefined : { url: slashed, override: true };
+}
+
 export interface PushGuard {
+  /** The address to push to: the one asked for, or it with a closing slash when a rewrite of the repo's equals it. */
+  url: string;
   /** Options that go right after `push`. */
   options: string[];
   /** Environment to add to the push's: settings in `GIT_CONFIG_*`, and https only. */
@@ -146,12 +167,24 @@ export async function pushGuard(
   const entries = read.code === 0 ? parseConfig(read.stdout) : [];
   const planted = entries.filter(fromRepo);
   const owners = entries.filter((e) => !fromRepo(e));
-  if (planted.some((e) => REWRITE.test(e.key) && e.value !== undefined && url.startsWith(e.value))) {
+  const pushUrl = pushUrlFor(
+    url,
+    planted.flatMap((e) => (REWRITE.test(e.key) && e.value !== undefined ? [e.value] : [])),
+  );
+  if (pushUrl === undefined) {
     throw new Error(
-      "The checkout's own git config sends this push to another URL (url.<base>.insteadOf). Remove that setting from its .git/config, then push again.",
+      "The checkout's own git config rewrites the address of this push to another one, and majhi could not push around it. Ask the lead to remove the url.<base>.insteadOf lines from the checkout's git config.",
     );
   }
   const settings: [string, string][] = [["push.gpgSign", "false"]];
+  if (pushUrl.override) {
+    // Git rewrites with the longest matching value, and the first of equal ones. The address itself, as
+    // its own rewrite, is longer than any value that is only its beginning, so the repo's rewrite never applies.
+    settings.push(
+      [`url.${pushUrl.url}.insteadOf`, pushUrl.url],
+      [`url.${pushUrl.url}.pushInsteadOf`, pushUrl.url],
+    );
+  }
   for (const key of new Set(planted.map((e) => e.key))) {
     if (key !== "core.askpass" && key !== "core.alternaterefscommand") continue;
     const own = owners.filter((e) => e.key === key && e.value !== undefined).at(-1)?.value;
@@ -169,5 +202,5 @@ export async function pushGuard(
     out[`GIT_CONFIG_KEY_${i}`] = key;
     out[`GIT_CONFIG_VALUE_${i}`] = value;
   });
-  return { options: ["--receive-pack=git-receive-pack"], env: out };
+  return { options: ["--receive-pack=git-receive-pack"], env: out, url: pushUrl.url };
 }

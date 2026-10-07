@@ -381,8 +381,8 @@ function sourceOf(
   const ci = card?.checks.find((c) => c.kind === key);
   if (ci !== undefined)
     return {
-      command: ci.command,
-      from: `${ci.from}${ci.workdir === undefined ? "" : `, in ${ci.workdir}`}`,
+      command: ci.runs ?? ci.command,
+      from: `${ci.from}${ci.workdir === undefined ? "" : `, in ${ci.workdir}`}${ci.runs === undefined ? "" : ", run read-only"}${ci.notRun === undefined ? "" : `, not run: ${ci.notRun}`}`,
       env: Object.entries(ci.env).map(([k, v]) => `${k}=${v}`),
     };
   const fromCard = card?.commands[key];

@@ -73,7 +73,7 @@ export function MrCard({ task }: { task: Task }) {
           />
         ))}
       </ol>
-      <p className="text-xs text-fg-faint text-pretty">{MERGE_BY_LABEL[mergeBy]}</p>
+      {step !== "done" && <p className="text-xs text-fg-faint text-pretty">{MERGE_BY_LABEL[mergeBy]}</p>}
       <MrActions task={task} step={step} />
     </Card>
   );
