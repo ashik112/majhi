@@ -2381,7 +2381,6 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         .filter((i) => i.org === org)
         .map((i) => ({ id: i.id, title: i.title })),
     decisions,
-    offer: (card) => admin.offer(card),
     lane: async (task) => {
       const org = lanes.orgOf(task);
       const boss = await lanes.boss();

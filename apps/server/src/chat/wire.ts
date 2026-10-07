@@ -44,7 +44,6 @@ export interface ClientChatWiring {
   findings: Pick<FindingsService, "report" | "dismiss" | "toTask" | "find">;
   incidents: (org: string) => { id: number; title: string }[];
   decisions: LayaDecisions | undefined;
-  offer: ClientChatDeps["offer"];
   lane: ClientChatDeps["lane"];
   deleteWebhook: ClientChatDeps["deleteWebhook"];
   majhiHome: string;
@@ -178,7 +177,6 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     connections: chatConnections,
     savedHolds: async (org) => (await w.config.settings()).autonomy.orgs[org]?.holds,
     tell,
-    offer: w.offer,
     lane: w.lane,
     deleteWebhook: w.deleteWebhook,
   });

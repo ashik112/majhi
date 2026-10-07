@@ -5,14 +5,8 @@ import {
   type ClientList,
   type ClientRow,
   type ContactView,
-  effectiveHolds,
-  HOLD_CLASSES,
-  HOLD_LABEL,
   type HoldsPatch,
-  type ProposeRulesInput,
   REPLY_HOLD_LABEL,
-  type RoomItem,
-  type TaskId,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
@@ -37,16 +31,6 @@ export interface ClientChatDeps {
   savedHolds: (org: string) => Promise<HoldsPatch | undefined>;
   /** The Tell row of a workspace now. */
   tell: (org: string) => Promise<AuthorityChoice>;
-  /** Puts a card in a task's room that, when the owner approves it, runs a command as the owner. */
-  offer: (card: {
-    task: TaskId;
-    agent: string;
-    command: "autonomy.configure";
-    input: Record<string, unknown>;
-    summary: string;
-    details: unknown;
-    reason: string;
-  }) => RoomItem;
   /** The captain, and the workspace of a task that is its lane. */
   lane: (task: string) => Promise<{ boss: string; org: string } | undefined>;
   /** Removes Telegram's webhook so majhi may read with getUpdates. */
@@ -175,58 +159,6 @@ export class ClientChat {
     if (out.state === "sent") return { state: "sent" };
     if (out.state === "failed") return { state: "failed", why: out.why };
     return { state: "held", why: REPLY_HOLD_LABEL[out.why] };
-  }
-
-  /**
-   * The captain proposes a change to Tell or to the Hold list. It is a card in the lane's room that runs
-   * `autonomy.configure` as the owner when the owner approves it: the captain never applies it.
-   */
-  async proposeRules(
-    input: ProposeRulesInput,
-    caller: { agent: string; task: string },
-  ): Promise<{ text: string }> {
-    const lane = await this.deps.lane(caller.task);
-    if (lane === undefined || lane.boss !== caller.agent) {
-      throw new UserError("Only the captain proposes this, from its workspace lane.", 409);
-    }
-    if (lane.org !== input.org) {
-      throw new UserError(`Refused: this lane works in its own workspace only, not ${input.org}.`, 409);
-    }
-    if (input.tell === undefined && input.holds === undefined) {
-      throw new UserError("Say what to change: tell, holds, or both.", 400);
-    }
-    const now = effectiveHolds(await this.deps.savedHolds(input.org));
-    const parts: string[] = [];
-    if (input.tell !== undefined) {
-      parts.push(
-        input.tell === "decide"
-          ? "let the captain tell the clients"
-          : "make every reply to the clients wait for you",
-      );
-    }
-    for (const kind of HOLD_CLASSES) {
-      const wanted = input.holds?.[kind];
-      if (wanted === undefined || wanted === now[kind]) continue;
-      parts.push(`${wanted ? "hold" : "stop holding"}: ${HOLD_LABEL[kind].toLowerCase()}`);
-    }
-    if (parts.length === 0) return { text: "That is how it is set already. Nothing to propose." };
-    this.deps.offer({
-      task: caller.task as TaskId,
-      agent: caller.agent,
-      command: "autonomy.configure",
-      input: {
-        orgs: {
-          [input.org]: {
-            ...(input.tell === undefined ? {} : { authority: { tell: input.tell } }),
-            ...(input.holds === undefined ? {} : { holds: input.holds }),
-          },
-        },
-      },
-      summary: parts.join(", "),
-      details: { workspace: input.org, tell: input.tell, holds: input.holds },
-      reason: input.why,
-    });
-    return { text: "Waiting for the owner to approve in the room. Only the owner applies it." };
   }
 
   /** Whether a chat app of a kind exists. */

@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { AuthorityChoiceSchema } from "./authority.ts";
 import { IdSchema } from "./ids.ts";
 
 /**
@@ -333,15 +332,7 @@ export const ChatReplyResultSchema = z.object({
   why: z.string().optional(),
 });
 
-export const ProposeRulesInputSchema = z.object({
-  org: IdSchema,
-  tell: AuthorityChoiceSchema.optional(),
-  holds: HoldsPatchSchema.optional(),
-  /** Why the captain proposes it, in a sentence. */
-  why: z.string().trim().min(1).max(300),
-});
 export type ChatReplyInput = z.infer<typeof ChatReplyInputSchema>;
-export type ProposeRulesInput = z.infer<typeof ProposeRulesInputSchema>;
 
 /** What a client message says about itself, as the triage step reports it: no tools, only these answers. */
 export const TRIAGE_ACTIONS = ["ignore", "answer", "ask", "attach", "task"] as const;

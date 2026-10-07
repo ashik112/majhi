@@ -83,7 +83,9 @@ describe("a client room of another workspace", () => {
     }));
     expect(blocked.isError).toBe(true);
     // Its proposal for another workspace is refused too.
-    const proposal = await call("chat.proposeRules", { org: "globex", tell: "decide", why: "try" });
+    const proposal = await call("autonomy.configure", {
+      orgs: { globex: { authority: { tell: "decide" } } },
+    });
     expect(proposal.isError).toBe(true);
     expect(proposal.text).toMatch(/Refused|own workspace/);
   });
@@ -95,20 +97,13 @@ describe("a client room of another workspace", () => {
     const lane = (await services.lanes.ensure("acme")).id;
     const call = (command: string, input: Record<string, unknown>) =>
       services.admin.call({ task: lane, agent: "boss" }, toolName(command), { reason: "reading", ...input });
-    const res = await call("chat.proposeRules", {
-      org: "acme",
-      tell: "decide",
-      why: "Replies are always fine.",
-    });
+    const res = await call("autonomy.configure", { orgs: { acme: { authority: { tell: "decide" } } } });
     expect(res.isError).toBe(false);
     const cards = (await w.items(lane)).filter((i) => i.type === "approval");
     expect(cards).toHaveLength(1);
     expect(cards[0]).toMatchObject({ type: "approval", command: "autonomy.configure", state: "pending" });
     const settings = await must(h.cmd("settings.get"));
     expect(JSON.stringify(settings)).not.toContain('"tell":"decide"');
-    // The captain cannot apply it itself.
-    const direct = await call("autonomy.configure", { orgs: { acme: { authority: { tell: "decide" } } } });
-    expect(direct.isError).toBe(true);
     const approved = await h.cmd("room.approve", {
       task: lane,
       item: cards[0]?.id ?? "",

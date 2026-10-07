@@ -13,7 +13,6 @@ type ChatCommand =
   | "chat.confirmWebhook"
   | "chat.markUs"
   | "chat.reply"
-  | "chat.proposeRules"
   | "contacts.list"
   | "contacts.merge"
   | "contacts.undoMerge";
@@ -78,12 +77,6 @@ export function chatHandlers(chat: ClientChat): Pick<CommandHandlers, ChatComman
         throw new UserError("Only the captain writes to a client chat, from its workspace lane.", 409);
       }
       return chat.reply(input, { agent: ctx.meta.actor.id, task: ctx.meta.task });
-    },
-    "chat.proposeRules": async (input, ctx) => {
-      if (ctx.meta.actor.kind !== "agent" || ctx.meta.task === undefined) {
-        throw new UserError("Only the captain proposes this, from its workspace lane.", 409);
-      }
-      return chat.proposeRules(input, { agent: ctx.meta.actor.id, task: ctx.meta.task });
     },
     "contacts.list": async (input, ctx) => {
       ownerOnly(ctx);

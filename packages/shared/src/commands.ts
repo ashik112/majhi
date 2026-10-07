@@ -97,7 +97,6 @@ import {
   ContactMergeResultSchema,
   ContactUndoInputSchema,
   ContactViewSchema,
-  ProposeRulesInputSchema,
   SamePersonAnswerInputSchema,
 } from "./chat.ts";
 import { CleanupPreviewSchema, CleanupReportSchema, CleanupRunInputSchema } from "./cleanup.ts";
@@ -1430,13 +1429,6 @@ export const commands = {
       "Write a reply to a client chat of this workspace. State what the text says: promisedTime (it names a time or date), money (price, refund, contract), security (an incident or leak) and severalClients (the chat shows more than one client company). Under Tell Ask me, or when a hold applies, the reply waits for the owner as a draft; otherwise it goes at once. A secret or another client's name always waits",
     input: ChatReplyInputSchema,
     output: ChatReplyResultSchema,
-  },
-  "chat.proposeRules": {
-    risk: "read",
-    summary:
-      "The captain proposes a change to who decides what to tell a workspace's clients (the Tell setting) or to its Hold list. It only puts a card in the room for the owner to approve; nothing changes until the owner does",
-    input: ProposeRulesInputSchema,
-    output: z.object({ text: z.string() }),
   },
   "contacts.list": {
     risk: "read",
