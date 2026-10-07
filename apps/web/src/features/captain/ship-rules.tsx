@@ -10,7 +10,17 @@ import {
   TASK_TYPES,
   type TaskType,
 } from "@majhi/shared";
-import { ArrowDown, ArrowUp, Check, Filter, Plus, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Filter,
+  Plus,
+  Sparkles,
+  Trash2,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import { type CSSProperties, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Menu } from "@/components/ui/menu";
@@ -252,7 +262,7 @@ function RuleRow({
               <X aria-hidden="true" className="size-3" />
             </button>
           ))}
-          {freeAreas.length > 0 && (
+          {freeAreas.length > 0 ? (
             <Menu
               label="Limit this rule to an area"
               align="left"
@@ -278,6 +288,16 @@ function RuleRow({
                 </button>
               )}
             />
+          ) : (
+            <button
+              type="button"
+              disabled
+              aria-label="Limit this rule to an area"
+              title="This workspace has no wiki components to choose from"
+              className={cn(MINI, "size-[22px]")}
+            >
+              <Filter aria-hidden="true" className="size-3.5" />
+            </button>
           )}
         </div>
       </div>
@@ -305,7 +325,7 @@ function RuleRow({
           onClick={() => onChange(movedRule(rules, index, -1), `${org.name}: moved a rule up`)}
           className={MINI}
         >
-          <ArrowUp aria-hidden="true" className="size-3.5" />
+          <ChevronUp aria-hidden="true" className="size-3.5" />
         </button>
         <button
           type="button"
@@ -315,7 +335,7 @@ function RuleRow({
           onClick={() => onChange(movedRule(rules, index, 1), `${org.name}: moved a rule down`)}
           className={MINI}
         >
-          <ArrowDown aria-hidden="true" className="size-3.5" />
+          <ChevronDown aria-hidden="true" className="size-3.5" />
         </button>
         <button
           type="button"
@@ -382,7 +402,9 @@ export function ShipRules({ orgs }: { orgs: readonly CaptainOrg[] }) {
   const save = useCaptainRules();
   const [picked, setPicked] = useState<string>();
   const [selected, setSelected] = useState(0);
-  const org = orgs.find((o) => o.org === picked) ?? orgs[0];
+  // The workspace picked, else the first that has rules, else the first.
+  const org =
+    orgs.find((o) => o.org === picked) ?? orgs.find((o) => (o.rules.ships ?? []).length > 0) ?? orgs[0];
   const areas = useAreaNames(org?.org ?? "");
   if (org === undefined) return null;
   const rules = org.rules.ships ?? [];
@@ -463,7 +485,7 @@ export function ShipRules({ orgs }: { orgs: readonly CaptainOrg[] }) {
       </Button>
       {current !== undefined && (
         <div className="flex items-start gap-3 rounded-[10px] border border-line-strong bg-raised px-3 py-2.5">
-          <Sparkles aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-accent-text" />
+          <Sparkles aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-fg-muted" />
           <p className="text-[13px] leading-[1.55] text-fg text-pretty">{shipRuleSentence(current)}</p>
         </div>
       )}
