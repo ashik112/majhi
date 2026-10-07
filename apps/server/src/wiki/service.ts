@@ -25,6 +25,7 @@ import { extractFacts } from "./facts/extract.ts";
 import { ProjectFiles } from "./facts/files.ts";
 import { branchTip } from "./git.ts";
 import { wikiCacheDir } from "./paths.ts";
+import { plainReason } from "./plain-error.ts";
 import {
   flowAlive,
   flowLeads,
@@ -293,6 +294,10 @@ export class WikiService {
       price === undefined
         ? undefined
         : (tokens * (INPUT_SHARE * price.input + (1 - INPUT_SHARE) * price.output)) / 1_000_000;
+    const retry = [...projects.map((p) => p.id), WORKSPACE_STATE].some((id) => {
+      const state = this.deps.repo.state(org, id);
+      return state.lastError !== undefined || flowsNotChosen(state);
+    });
     const note =
       projects.length === 0
         ? "This workspace has no projects on this computer."
@@ -306,6 +311,7 @@ export class WikiService {
       ...(usd === undefined ? {} : { usd }),
       cap,
       overCap: (usd !== undefined && usd > cap) || tokens > capTokens,
+      ...(retry ? { retry } : {}),
       ...(note === undefined ? {} : { note }),
     };
   }
@@ -337,11 +343,19 @@ export class WikiService {
     const changes = new Changes(p.path, tip);
     // A wiki built before the Deploys page existed gets it on the next update.
     let n = stored.some((page) => page.kind === "deploys") ? 0 : 1;
+    // Pages the last update could not write are tried again.
+    const failed = new Set(state.gaps.failed.map((f) => f.page));
     for (const page of stored) {
       const sources = state.sources[page.id] ?? citedPaths(page);
-      if ((await staleReason(page, sources, [], p.id, state.rules, changes)) !== undefined) n += 1;
+      failed.delete(page.id);
+      if (
+        state.gaps.failed.some((f) => f.page === page.id) ||
+        (await staleReason(page, sources, [], p.id, state.rules, changes)) !== undefined
+      ) {
+        n += 1;
+      }
     }
-    return n;
+    return n + failed.size;
   }
 
   private async runWorkspace(
@@ -423,6 +437,7 @@ export class WikiService {
       !replan &&
       stored.size > 0 &&
       stored.has(wikiPageId({ kind: "deploys" })) &&
+      !flowsNotChosen(state) &&
       (await readFactsFile(cacheDir))?.reader === FACTS_READER
     ) {
       return report;
@@ -461,7 +476,7 @@ export class WikiService {
       }
       const leads = hintFacts(page, file.facts).flatMap((f) => f.sources.map((s) => s.path));
       const why =
-        had === undefined
+        had === undefined || state.gaps.failed.some((f) => f.page === id)
           ? "new"
           : await staleReason(had, state.sources[id] ?? citedPaths(had), leads, p.id, state.rules, changes);
       if (why !== undefined) toWrite.push(page);
@@ -550,7 +565,7 @@ export class WikiService {
       return { flows, plan: { flows, plannedAt: this.now() }, note: undefined };
     } catch (err) {
       // The plan is not kept: the next update asks again. Pages of the flows that survive are still written.
-      return { flows: kept, plan: had, note: `The main flows were not chosen: ${errorMessage(err)}` };
+      return { flows: kept, plan: had, note: `The main flows were not chosen. ${plainReason(err)}` };
     }
   }
 
@@ -692,6 +707,11 @@ export class WikiService {
       }
     }
   }
+}
+
+/** Whether the last update could not choose the main flows. */
+export function flowsNotChosen(state: WikiState): boolean {
+  return state.gaps.couldNot.some((c) => c.topic === PLAN_TOPIC);
 }
 
 /** An overview's role tiles open the component page that covers where they are. */
