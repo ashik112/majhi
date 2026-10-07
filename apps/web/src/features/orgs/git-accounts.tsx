@@ -263,7 +263,11 @@ function PushLine({ org, status }: { org: string; status: GitAccountStatus }) {
   return (
     <>
       <State tone="amber">
-        No SSH key on this computer logs in as <span className="font-mono text-fg">{status.account}</span>
+        {push.note ?? (
+          <>
+            No SSH key on this computer logs in as <span className="font-mono text-fg">{status.account}</span>
+          </>
+        )}
       </State>
       {push.choices.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2">

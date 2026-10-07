@@ -14,6 +14,8 @@ export const PushStatusSchema = z.discriminatedUnion("state", [
     state: z.literal("missing"),
     /** Detected SSH routes that log in as this account. `ssh` is `default` or an alias. */
     choices: z.array(z.object({ ssh: z.string(), label: z.string() })),
+    /** Why no key was found, when a key was accepted but could not be tied to this account. */
+    note: z.string().optional(),
   }),
 ]);
 export type PushStatus = z.infer<typeof PushStatusSchema>;

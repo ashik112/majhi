@@ -36,6 +36,7 @@ import { editorPath } from "../editor/allowed.ts";
 import { UserError } from "../errors.ts";
 import { findingsHandlers } from "../findings/handlers.ts";
 import { isDirectory } from "../fs.ts";
+import { bitbucketKeyFingerprints, type KeyOwner } from "../git/keyOwners.ts";
 import { gitConnectHandlers } from "../gitConnect/handlers.ts";
 import { handoffHandlers } from "../handoff/handlers.ts";
 import type { HealthService } from "../health/service.ts";
@@ -173,6 +174,40 @@ export function createHandlers({
   const recentCreates = new Map<string, { at: number; made: ReturnType<typeof services.tasks.create> }>();
   const readSaved = async (host: string, account: string) =>
     (await hostLink.call("git.credential", { host, username: account }, GIT_TOKEN_TIMEOUT_MS)).secret;
+  /**
+   * The SSH keys registered on each Bitbucket account the orgs have a token for, so an accepted key that
+   * names no account can be tied to one by fingerprint. Cached with the other status checks.
+   */
+  const keyOwnersOf = async (host: string): Promise<KeyOwner[]> => {
+    if (classifyHost(host) !== "bitbucket") return [];
+    const orgs = (await config.sections()).orgs;
+    const seen = new Map<string, string>();
+    for (const org of Object.values(orgs)) {
+      for (const a of org.git_accounts ?? []) {
+        const ref = a.token ?? org.mr_tokens?.bitbucket;
+        if (a.host === host && ref !== undefined && !seen.has(a.account.toLowerCase() + "\n" + ref)) {
+          seen.set(a.account.toLowerCase() + "\n" + ref, a.account);
+        }
+      }
+    }
+    return Promise.all(
+      [...seen.entries()].map(async ([id, account]): Promise<KeyOwner> => {
+        const ref = id.split("\n")[1] ?? "";
+        const fingerprints = await gitChecks.get(`keys\n${host}\n${id}`, async () => {
+          const value = await services.gitConnect.tokens.value(ref).catch(() => undefined);
+          if (value === undefined) return undefined;
+          const request = tokenRequest(host, "bitbucket", account, value, { stored: true });
+          const me = await fetchProbe(request.url, request.headers).catch(() => undefined);
+          const uuid = (me?.body as { uuid?: unknown } | undefined)?.uuid;
+          return typeof uuid === "string"
+            ? bitbucketKeyFingerprints(fetchProbe, request.headers, uuid)
+            : undefined;
+        });
+        return { account, fingerprints };
+      }),
+    );
+  };
+  services.gitLogins.setKeyOwners(keyOwnersOf);
   /** Host names of the remotes of an org's projects, with ~/.ssh/config aliases resolved. */
   const usedHosts = async (id: string): Promise<string[]> => {
     const aliases = await sshConfigHosts(config.paths.hostHome).catch(() => []);
@@ -434,6 +469,7 @@ export function createHandlers({
               checkSavedLogin({ readSecret: readSaved, probe: fetchProbe }, host, kind, account),
             ),
           classify: classifyHost,
+          keyOwners: keyOwnersOf,
         },
         input.id,
       );
