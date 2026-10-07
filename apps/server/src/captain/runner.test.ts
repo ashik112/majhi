@@ -1,6 +1,7 @@
 import { ALL_ASK, type Authority, type AutonomyMode, type CaptainChore } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
+import { until } from "../testing/until.ts";
 import { CaptainRepo } from "./repo.ts";
 import { type ChoreRun, ChoreRunner, type RunnerDeps, type Workspace } from "./runner.ts";
 
@@ -93,7 +94,7 @@ describe("the chore runner", () => {
       if (passes === 1) await new Promise<void>((r) => (release = r));
     });
     const first = t.runner.start("acme", "cards", "a card arrived");
-    await new Promise((r) => setTimeout(r, 5));
+    await until(() => passes === 1);
     expect(await t.runner.start("acme", "cards", "another card")).toBeUndefined();
     expect(
       await t.runner.trigger({ org: "acme", chore: "cards", cause: "captain", why: "its own card" }),

@@ -27,16 +27,8 @@ const say = (text: string) => async () => text;
 const refuse =
   (text = "") =>
   async (): Promise<Step> => ({ text, stop: "refusal" });
-const QUIET_MS = 20;
-const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-async function until(check: () => boolean | Promise<boolean>, what: string): Promise<void> {
-  for (let i = 0; i < 600; i++) {
-    if (await check()) return;
-    await pause(5);
-  }
-  throw new Error(`Timed out waiting for ${what}`);
-}
+/** The watch's own timer never fires in these tests: `settle` runs its check, so no wall clock decides. */
+const NEVER_MS = 3_600_000;
 
 /** Two models on offer, for agents that can fall back after a refusal. */
 const TWO_MODELS = [
@@ -50,7 +42,7 @@ const TWO_MODELS = [
  * `alone`: the task has the lead only and no subtask, so it would go to review when it is idle.
  */
 async function parentWorld(scripts: Record<string, Turns>, opts: { opus?: string[]; alone?: boolean } = {}) {
-  w = await taskWorld({ idleWatchMs: QUIET_MS });
+  w = await taskWorld({ idleWatchMs: NEVER_MS });
   const { h } = w;
   const must = async (name: string, body: unknown) => {
     const res = await h.cmd(name, body);
@@ -120,17 +112,20 @@ async function parentWorld(scripts: Record<string, Turns>, opts: { opus?: string
 const task = async () =>
   (await w.h.cmd("tasks.get", { id: "ACM-1" })).body as { status: string; pausedReason?: string };
 
-/** Lets every turn end and the watch look at the room a few times over. */
+/** Lets every turn end and the watch look at the room after each one, until no turn is left. */
 async function settle(): Promise<void> {
-  await w.h.majhi.services.runs.idle();
-  await pause(QUIET_MS * 10);
-  await w.h.majhi.services.runs.idle();
+  const { runs, idleWatch } = w.h.majhi.services;
+  await runs.idle();
+  // A refusal can chain (switch model, refuse again, ask the owner): a few looks cover the longest chain.
+  for (let look = 0; look < 6; look++) {
+    await idleWatch.check("ACM-1");
+    await runs.idle();
+  }
 }
 
 describe("a turn the model's safeguards stopped", () => {
   it("pauses the task for the owner when the lead refuses with no other model, and never sends it to review", async () => {
     const { prompts } = await parentWorld({ "acme-lead": [refuse("Planning the export.")] }, { alone: true });
-    await until(async () => (await task()).status !== "running", "the task to stop running");
     await settle();
 
     expect(prompts["acme-lead"]).toHaveLength(1);
@@ -143,9 +138,7 @@ describe("a turn the model's safeguards stopped", () => {
       { "acme-lead": always, "acme-builder": always },
       { opus: ["acme-lead", "acme-builder"] },
     );
-    await until(async () => (await task()).status === "paused", "the owner asked");
     await settle();
-    await pause(QUIET_MS * 10);
 
     expect(prompts["acme-lead"]).toHaveLength(2);
     expect(prompts["acme-builder"]).toBeUndefined();
@@ -209,8 +202,8 @@ describe("a turn that failed on its account's sign-in", () => {
       "acme-builder": [signedOut],
       "acme-reviewer": [say("Built it.")],
     });
-    await until(() => (prompts["acme-reviewer"]?.length ?? 0) === 1, "the reviewer taking the step");
     await settle();
+    expect(prompts["acme-reviewer"]).toHaveLength(1);
 
     expect(await statusOf("claude-acme")).toBe("needs-login");
     // The second handoff to the builder is refused: it never gets another prompt.
@@ -219,7 +212,8 @@ describe("a turn that failed on its account's sign-in", () => {
 
   it("refuses the mention tool for an agent whose account needs a sign-in", async () => {
     const { prompts } = await parentWorld({ "acme-lead": [say("Planning.")] });
-    await until(() => (prompts["acme-lead"]?.length ?? 0) === 1, "the lead's turn");
+    await w.h.majhi.services.runs.idle();
+    expect(prompts["acme-lead"]).toHaveLength(1);
     await w.h.majhi.services.accounts.markSignedOut("claude-acme", "Failed to authenticate");
     await expect(
       w.h.majhi.services.coordinator.mention(

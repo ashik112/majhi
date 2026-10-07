@@ -23,8 +23,13 @@ const CAP = 1;
 const STEP = 0.02;
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** A long turn: a tool call and a higher running cost every few ms, until it is cancelled. Reports its cost at the end. */
-async function spender(turn: Turn, spent: { usd: number }): Promise<"end_turn"> {
+/**
+ * A long turn: a tool call and a higher running cost, one after the other, until it is cancelled. After
+ * each one `settle` lets what the cost set off (the usage record, the cap, the cancel) finish, so how far
+ * the cost runs past the cap depends on the code, never on how fast the machine is. Reports its cost at
+ * the end.
+ */
+async function spender(turn: Turn, spent: { usd: number }, settle: () => Promise<void>): Promise<"end_turn"> {
   let cancelled = false;
   void turn.untilCancelled().then(() => {
     cancelled = true;
@@ -34,7 +39,7 @@ async function spender(turn: Turn, spent: { usd: number }): Promise<"end_turn"> 
     cost = Math.round((cost + STEP) * 100) / 100;
     turn.emit({ type: "usage", used: 10_000, size: 200_000, cost: { amount: cost, currency: "USD" } });
     turn.emit({ type: "tool", toolCallId: `t${i}`, title: "Edit a file", kind: "edit", status: "completed" });
-    await pause(3);
+    await settle();
   }
   spent.usd = cost;
   turn.emit({
@@ -61,7 +66,11 @@ describe("the day cap of autonomous mode", () => {
     h.runtime.onSession = (session) => {
       sessions.push(session);
       session.script = async (turn) => {
-        if (sessions.indexOf(session) === 0 && session.prompts.length === 1) return spender(turn, spent);
+        if (sessions.indexOf(session) === 0 && session.prompts.length === 1)
+          return spender(turn, spent, async () => {
+            await h.majhi.services.usageRecorder.flush();
+            await new Promise((r) => setImmediate(r));
+          });
         turn.emit({ type: "text", messageId: `m${session.prompts.length}`, text: "ok" });
         return "end_turn";
       };

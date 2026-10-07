@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listTools, remoteTransport } from "../connections/mcp-client.ts";
 import { generateKey, SecretStore } from "../secrets/store.ts";
 import { tempDir, writeKeyFile } from "../testing/fixtures.ts";
+import { until } from "../testing/until.ts";
 import { AppClientStore } from "./app-client.ts";
 import { GrantStore } from "./grant.ts";
 import { ConnectService, FLOW_TTL_MS } from "./service.ts";
@@ -312,7 +313,7 @@ describe("tokens: fresh, single flight, saved before use", () => {
     r.auth.expireAccessTokens();
     r.auth.hold();
     const calls = Array.from({ length: 5 }, () => r.connect.bearer("fakesvc"));
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await until(() => r.auth.refreshCalls >= 1);
     r.auth.release();
     const answers = await Promise.all(calls);
     const tokens = new Set(answers.map((a) => ("token" in a ? a.token : a.problem)));

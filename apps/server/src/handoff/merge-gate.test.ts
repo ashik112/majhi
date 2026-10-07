@@ -142,6 +142,9 @@ async function reviewed(testBody: string, withChecks = true) {
   });
   const id = (made.body as Task).id;
   await h.cmd("room.send", { task: id, text: "create acme-api/work.txt" });
+  // The status reads review when the turn ends, a moment before the run lets go of the task: merging in
+  // that gap is refused as "an agent is working", so wait for the run itself.
+  await h.majhi.services.runs.idle(id);
   await w.until(async () => ((await h.cmd("tasks.get", { id })).body as Task).status === "review", "review");
   await w.until(async () => (await handoff(id)).history.length > 0, "the check judged");
   await h.majhi.services.handoff.settled();

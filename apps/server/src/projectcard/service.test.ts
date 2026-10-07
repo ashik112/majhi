@@ -116,7 +116,7 @@ The Acme orders API, version ${i} of the text.
       t.repo.tip = `c${i}`;
       t.repo.changed = ["package.json"];
       t.cards.onRegistered("acme-api");
-      await new Promise((r) => setTimeout(r, 5));
+      await t.cards.idle();
     }
     expect(t.summaries.filter((id) => id === "acme-api").length).toBe(MODEL_PASSES_PER_DAY);
   });

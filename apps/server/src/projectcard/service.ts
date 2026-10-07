@@ -111,7 +111,11 @@ export class ProjectCards {
 
   /** A project was registered: its card is written now, without waiting for a tick. */
   onRegistered(id: string): void {
-    void this.run(id, { auto: true }).catch((err: unknown) => this.log(`cards: ${id}: ${String(err)}`));
+    const job: Promise<void> = this.run(id, { auto: true })
+      .then(() => undefined)
+      .catch((err: unknown) => this.log(`cards: ${id}: ${String(err)}`))
+      .finally(() => this.polishing.delete(job));
+    this.polishing.add(job);
   }
 
   forget(project: string): void {
@@ -269,7 +273,7 @@ export class ProjectCards {
     this.polishing.add(job);
   }
 
-  /** Resolves when the by-itself paragraph passes have ended. */
+  /** Resolves when the by-itself runs, and the paragraph passes they start, have ended. */
   async idle(): Promise<void> {
     while (this.polishing.size > 0) await Promise.all([...this.polishing]);
   }
