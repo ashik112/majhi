@@ -21,10 +21,10 @@ function config(global: WikiPatch | undefined, orgs: Record<string, WikiPatch | 
 }
 
 describe("the wiki switch", () => {
-  it("is off when nothing says otherwise", async () => {
+  it("is on when nothing says otherwise", async () => {
     const enabled = wikiEnabledFrom(config(undefined, { acme: undefined }));
-    expect(await enabled("acme")).toBe(false);
-    expect(await enabled("unknown")).toBe(false);
+    expect(await enabled("acme")).toBe(true);
+    expect(await enabled("unknown")).toBe(true);
   });
 
   it("follows the global setting when a workspace has none", async () => {
