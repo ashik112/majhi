@@ -381,7 +381,7 @@ function Workspaces({
           className={cn(
             "h-[22px] shrink-0 cursor-pointer whitespace-nowrap rounded-md px-[9px] text-xs transition-colors",
             o.org === value
-              ? "bg-selected font-medium text-fg shadow-[inset_0_0_0_1px_var(--c-line-control)]"
+              ? "bg-accent font-semibold text-accent-ink"
               : "text-fg-muted hover:bg-raised hover:text-fg",
           )}
         >

@@ -620,7 +620,7 @@ function TopBar({
     cn(
       "inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-sm transition-colors max-[1279px]:px-2",
       pressed
-        ? "border-accent-line bg-accent-wash text-fg"
+        ? "border-accent bg-accent font-semibold text-accent-ink"
         : "border-line-strong bg-card text-fg-muted hover:border-line-hover hover:text-fg",
     );
   return (
