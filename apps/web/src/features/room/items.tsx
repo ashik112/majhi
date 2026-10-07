@@ -447,13 +447,14 @@ function waitingText(agent: string, live: AgentLive | undefined, now: number): s
   switch (live?.status) {
     case "working":
       return live.turnAt === undefined
-        ? `Waiting for @${agent}'s current turn`
-        : `Waiting for @${agent}'s current turn (started ${formatAgo(live.turnAt, now)})`;
+        ? `Waits for @${agent} to finish its step`
+        : `Waits for @${agent} to finish its step (started ${formatAgo(live.turnAt, now)})`;
     case "starting":
       return `Waiting for @${agent} to start`;
     case "queued":
       return `Waiting for a free slot for @${agent}`;
     case "waiting":
+      if (live.lockedBy !== undefined) return `Waits for the folder @${live.lockedBy} is using`;
       return live.nowDoing === undefined
         ? `Waiting for @${agent}`
         : `Waiting for @${agent}: ${live.nowDoing}`;
@@ -473,16 +474,18 @@ function QueuedNote({ item, live }: { item: Of<"owner">; live: AgentLive | undef
   const agent = item.to ?? live?.agent ?? "the agent";
   const sendNow = useMutation<unknown, ApiRequestError>({
     mutationFn: () => cmd("room.sendNow", { task: item.task, item: item.id }),
+    onSuccess: () => toast(`Sent to @${agent} now`),
     onError: (error) => toast("Could not send it now", { detail: describeError(error), tone: "error" }),
   });
   const remove = useMutation<unknown, ApiRequestError>({
     mutationFn: () => cmd("room.unqueue", { task: item.task, item: item.id }),
+    onSuccess: () => toast("Removed. The agent never gets it."),
     onError: (error) => toast("Could not remove it", { detail: describeError(error), tone: "error" }),
   });
   const busy = sendNow.isPending || remove.isPending;
   const turning = live?.status === "working";
   return (
-    <div className="flex min-w-0 items-center gap-1 text-sm text-fg-faint">
+    <div className="flex min-w-0 items-center gap-1 pb-1 text-sm text-fg-faint">
       <span aria-live="polite" className="mr-1 min-w-0 text-pretty">
         {waitingText(agent, live, now)}
       </span>
@@ -491,7 +494,11 @@ function QueuedNote({ item, live }: { item: Of<"owner">; live: AgentLive | undef
         variant="ghost"
         className="h-6 shrink-0 px-1.5"
         disabled={busy}
-        title={turning ? `Stop @${agent}'s current turn and send this message now` : "Send this message now"}
+        title={
+          turning
+            ? `Stop @${agent}'s current step and send this message now`
+            : "Send this message now, without waiting"
+        }
         onClick={() => sendNow.mutate()}
       >
         <SendHorizontal aria-hidden="true" />
