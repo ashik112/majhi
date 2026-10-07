@@ -21,6 +21,7 @@ import {
   useChatHolder,
   useChatSend,
   useClients,
+  useContacts,
   useDecideReply,
   useEditReply,
   useMarkUs,
@@ -34,6 +35,7 @@ import { GLASS } from "@/lib/glass";
 import { useOrgs } from "@/lib/studio-queries";
 import { AppMark } from "./app-mark";
 import { kindLine } from "./clients-list";
+import { mentionQuery, namesToTokens, type Person, roomPeople, tokensToNames } from "./mentions";
 
 /** A text with each mention token shown as the person's name. */
 function withNames(text: string, names: Record<string, string> | undefined, wrap = ""): string {
@@ -167,6 +169,8 @@ function Log({
   const pinned = useRef(true);
   const [unseen, setUnseen] = useState(false);
   const shown = useMemo(() => items.filter(visible), [items]);
+  const contacts = useContacts(row.org);
+  const people = useMemo(() => roomPeople(items, contacts.data), [items, contacts.data]);
   const last = shown.at(-1)?.id;
   const count = shown.length;
   // Follows the newest message while the owner is at the bottom; else offers a way back down.
@@ -200,7 +204,7 @@ function Log({
         )}
         <ol className="m-0 mt-auto flex w-full max-w-[920px] flex-col p-0">
           {shown.map((item, i) => (
-            <Row key={item.id} item={item} row={row} previous={shown[i - 1]} />
+            <Row key={item.id} item={item} row={row} previous={shown[i - 1]} people={people} />
           ))}
         </ol>
       </div>
@@ -238,7 +242,17 @@ function visible(item: RoomItem): boolean {
   }
 }
 
-function Row({ item, row, previous }: { item: RoomItem; row: ClientRow; previous: RoomItem | undefined }) {
+function Row({
+  item,
+  row,
+  previous,
+  people,
+}: {
+  item: RoomItem;
+  row: ClientRow;
+  previous: RoomItem | undefined;
+  people: readonly Person[];
+}) {
   switch (item.type) {
     case "client":
       return (
@@ -249,7 +263,7 @@ function Row({ item, row, previous }: { item: RoomItem; row: ClientRow; previous
     case "client-reply":
       return item.state === "held" ? (
         <li className="mt-3 list-none pl-[34px]">
-          <HeldReply item={item} />
+          <HeldReply item={item} people={people} />
         </li>
       ) : (
         <li className="mt-4 list-none">
@@ -426,15 +440,35 @@ function Reply({ item, row }: { item: Of<"client-reply">; row: ClientRow }) {
   );
 }
 
-function HeldReply({ item }: { item: Of<"client-reply"> }) {
+function HeldReply({ item, people }: { item: Of<"client-reply">; people: readonly Person[] }) {
   const toast = useToast();
   const decide = useDecideReply();
   const edit = useEditReply();
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(item.text);
+  // The owner edits names (`@Sara`); the saved text has the mention tokens back.
+  const shownText = tokensToNames(item.text, people);
+  const [draft, setDraft] = useState(shownText);
+  const [caret, setCaret] = useState(0);
+  const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
-    if (!editing) setDraft(item.text);
-  }, [item.text, editing]);
+    if (!editing) setDraft(shownText);
+  }, [shownText, editing]);
+  const typing = editing ? mentionQuery(draft, caret) : undefined;
+  const picks =
+    typing === undefined
+      ? []
+      : people.filter((p) => p.name.toLowerCase().startsWith(typing.query.toLowerCase())).slice(0, 5);
+  const pick = (person: Person) => {
+    if (typing === undefined) return;
+    const next = `${draft.slice(0, typing.at)}@${person.name} ${draft.slice(caret)}`;
+    const at = typing.at + person.name.length + 2;
+    setDraft(next);
+    setCaret(at);
+    requestAnimationFrame(() => {
+      field.current?.focus();
+      field.current?.setSelectionRange(at, at);
+    });
+  };
   const id = item.draft;
   const fail = (title: string) => (error: unknown) =>
     toast(title, { detail: describeError(error), tone: "error" });
@@ -467,20 +501,49 @@ function HeldReply({ item }: { item: Of<"client-reply"> }) {
       {editing ? (
         <div className="flex flex-col gap-2">
           <textarea
+            ref={field}
             aria-label="The reply"
             value={draft}
             rows={3}
             spellCheck={false}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setCaret(event.target.selectionStart);
+            }}
+            onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+            onKeyDown={(event) => {
+              const first = picks[0];
+              if (event.key === "Tab" && first !== undefined) {
+                event.preventDefault();
+                pick(first);
+              }
+            }}
             className="w-full resize-y rounded-md border border-line-control bg-field px-2.5 py-2 text-base text-fg focus-visible:border-accent focus-visible:outline-none"
           />
+          {picks.length > 0 && (
+            <div role="listbox" aria-label="People in this chat" className="flex flex-wrap gap-1.5">
+              {picks.map((p) => (
+                <Button
+                  key={p.id}
+                  size="sm"
+                  variant="secondary"
+                  role="option"
+                  aria-selected={false}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => pick(p)}
+                >
+                  @{p.name}
+                </Button>
+              ))}
+            </div>
+          )}
           <div className="flex justify-end gap-1.5">
             <Button
               size="sm"
               variant="ghost"
               onClick={() => {
                 setEditing(false);
-                setDraft(item.text);
+                setDraft(shownText);
               }}
             >
               Cancel
@@ -492,7 +555,7 @@ function HeldReply({ item }: { item: Of<"client-reply"> }) {
               onClick={() =>
                 id !== undefined &&
                 edit.mutate(
-                  { draft: id, text: draft.trim() },
+                  { draft: id, text: namesToTokens(draft.trim(), people) },
                   { onSuccess: () => setEditing(false), onError: fail("Could not save it") },
                 )
               }

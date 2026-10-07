@@ -54,6 +54,10 @@ export interface IncidentsDeps {
     room: string;
     item: string;
   }) => Promise<{ id: string }>;
+  /** Moves a done task back to an open state through the task lifecycle. */
+  reopen: (task: string) => Promise<void>;
+  /** Tells the incident task's lead something, as majhi. Refused when the task has no agent or is done. */
+  askLead: (task: string, text: string) => Promise<void>;
   changed: () => void;
   now?: () => Date;
 }
@@ -401,9 +405,52 @@ export class ClientIncidents {
         `reopened:${room.id}:${this.at()}`,
       );
       reopened = true;
+      // A done task goes back to work through the lifecycle, so the board and the card agree.
+      if (task.status === "done") await this.deps.reopen(taskId);
     }
     this.deps.changed();
     return { task: taskId, reopened };
+  }
+
+  /** The incident tasks a chat is linked to, whatever the task's own status: the client status says what is open. */
+  private incidentsOf(room: string): Task[] {
+    const out: Task[] = [];
+    for (const link of this.deps.store.tasks.linksTo(room)) {
+      if (link.type !== "client") continue;
+      const task = this.deps.store.tasks.get(link.task);
+      if (task !== undefined && task.typing?.type === "incident") out.push(task);
+    }
+    return out;
+  }
+
+  /** Whether the chat is linked to an incident: a question like "any update?" is then about it. */
+  linked(room: string): boolean {
+    return this.incidentsOf(room).length > 0;
+  }
+
+  /**
+   * The answer to "any update?" in a chat linked to an incident: the derived status in the same words an update
+   * uses, with the facts a client may read (the cause in its client wording, when the fix went live). An incident
+   * that is not Resolved comes first, even when its task is done and still soaking; after Resolved the client gets
+   * the Resolved wording. Nothing from the wiki and nothing guessed. Undefined when no incident is linked.
+   */
+  async answer(room: string): Promise<{ text: string; flags: ReplyFlags } | undefined> {
+    const reads: { read: Read; result: ReturnType<typeof clientStatus> }[] = [];
+    for (const task of this.incidentsOf(room).toSorted((x, y) => y.updatedAt.localeCompare(x.updatedAt))) {
+      const read = await this.read(task);
+      reads.push({ read, result: clientStatus(read.facts) });
+    }
+    const chosen = reads.find((r) => r.result.status !== "resolved") ?? reads[0];
+    if (chosen === undefined) return undefined;
+    const { read, result } = chosen;
+    const tz = await this.deps.tz(read.org);
+    const parts = [UPDATE_TEXT[result.status]];
+    const cause = read.events.find((e) => e.detail.event === "cause")?.detail;
+    if (result.status === "identified" && cause?.event === "cause" && cause.client !== undefined)
+      parts.push(`Cause: ${clip(cause.client, 200)}.`);
+    if (result.status === "monitoring" && result.at.monitoring !== undefined)
+      parts.push(`The fix went live at ${this.clock(result.at.monitoring, tz)}.`);
+    return { text: parts.join(" "), flags: UPDATE_FLAGS };
   }
 
   private toldResolved(task: string, room: string): boolean {
@@ -463,9 +510,11 @@ export class ClientIncidents {
         if (task === undefined) continue;
         const read = await this.read(task);
         const result = clientStatus(read.facts);
+        if (this.settled(id, result)) continue;
         for (const room of this.rooms(id)) {
           if (await this.tell(read, result.status, room)) changed = true;
         }
+        if (result.status === "monitoring" && (await this.askCause(read))) changed = true;
         if (result.status === "resolved" && result.at.resolved !== undefined) {
           if (await this.ensureReport(read, result.at.resolved)) changed = true;
         }
@@ -474,6 +523,36 @@ export class ClientIncidents {
       }
     }
     if (changed) this.deps.changed();
+  }
+
+  /** Resolved more than a day ago and no client has written since: nothing more to say, so the pass skips it. */
+  private settled(task: string, result: ReturnType<typeof clientStatus>): boolean {
+    const resolvedAt = result.status === "resolved" ? result.at.resolved : undefined;
+    if (resolvedAt === undefined || Date.parse(resolvedAt) > this.now().getTime() - DAY_MS) return false;
+    return !this.rooms(task).some((room) =>
+      this.deps.store.room
+        .ofType(room.id, "client")
+        .some((i) => i.type === "client" && i.us !== true && (i.sentAt ?? i.at) > resolvedAt),
+    );
+  }
+
+  /** The fix is live and no cause is recorded: asks the lead for it, once. */
+  private async askCause(read: Read): Promise<boolean> {
+    const { task } = read;
+    if (read.events.some((e) => e.detail.event === "cause")) return false;
+    if (task.status === "done" || task.team.length === 0) return false;
+    const id = `ask-cause:${task.id}`;
+    if (this.deps.room.get(task.id, id) !== undefined) return false;
+    await this.deps.askLead(
+      task.id,
+      "The fix for this incident is live, and no cause is recorded yet. Record it now with majhi_incident_cause: `text` for the team and, in `client`, the same cause in words a client may read (no hosts, no other client, no secret).",
+    );
+    this.deps.room.post(task.id as TaskId, id, {
+      type: "system",
+      level: "info",
+      text: "Asked the lead to record the cause.",
+    });
+    return true;
   }
 
   private async tell(read: Read, status: ClientStatus, room: RoomRow): Promise<boolean> {
