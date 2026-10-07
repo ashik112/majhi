@@ -134,6 +134,10 @@ export const OpsIncidentSchema = z.object({
   resolvedAt: z.string().optional(),
   /** Times it came back within the reopen window instead of starting a new incident. */
   flaps: z.number().int().nonnegative(),
+  /** The incident task the engine opened or joined for it. Read from the task links, not stored on the incident. */
+  task: z.string().optional(),
+  /** Why nobody looked at it: "Auto-pilot is off", "The captain rests: outside working hours (09:00 to 18:00)". */
+  quiet: z.string().optional(),
   /** A Health fix the owner can press, for majhi's own checks. */
   fix: z.object({ check: z.string(), label: z.string() }).optional(),
   timeline: z.array(OpsTimelineEntrySchema),

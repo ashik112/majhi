@@ -13,6 +13,7 @@ export function UpdateDialog({
   org,
   project,
   page,
+  first = false,
   onClose,
 }: {
   org: string;
@@ -20,12 +21,14 @@ export function UpdateDialog({
   project?: string;
   /** Rewrite only this page. */
   page?: WikiPageId;
+  /** Nothing has been built yet: the dialog says Build, not Update. */
+  first?: boolean;
   onClose: () => void;
 }) {
   const estimate = useWikiEstimate(org, project, true, page);
   const update = useWikiUpdate();
   const data = estimate.data;
-  const nothing = data !== undefined && data.pages === 0;
+  const nothing = data !== undefined && data.pages === 0 && data.retry !== true;
   let body: React.ReactNode;
   if (estimate.isPending) body = "Working out what an update would cost.";
   else if (estimate.isError) body = "majhi cannot say yet what an update would cost.";
@@ -35,9 +38,12 @@ export function UpdateDialog({
   else {
     body = (
       <>
+        {data.retry === true && (
+          <p className="m-0 mb-2">The last update did not finish. This one tries what failed again.</p>
+        )}
         <p className="m-0">
-          Rewrites {plural(data.pages, "page")} of {plural(data.projects, "project")}: about{" "}
-          {formatTokens(data.tokens)} tokens
+          {first ? "Writes" : "Rewrites"} {plural(data.pages, "page")} of {plural(data.projects, "project")}:
+          about {formatTokens(data.tokens)} tokens
           {data.usd === undefined ? "" : `, about ${formatMoney(data.usd)}`}.
         </p>
         <p className="m-0 mt-2">
@@ -54,9 +60,9 @@ export function UpdateDialog({
       : undefined;
   return (
     <ConfirmDialog
-      title={page === undefined ? "Update the wiki" : "Update this page"}
+      title={page !== undefined ? "Update this page" : first ? "Build the wiki" : "Update the wiki"}
       body={body}
-      confirmLabel="Update"
+      confirmLabel={first ? "Build" : "Update"}
       busy={update.isPending}
       confirmDisabled={estimate.isPending || estimate.isError || nothing}
       error={error}

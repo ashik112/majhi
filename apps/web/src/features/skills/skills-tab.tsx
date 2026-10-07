@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ApiRequestError } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { plural } from "@/lib/format";
 import { useSkillSearch, useSkillsCommand, useSkillZipPreview } from "@/lib/skills-queries";
-import { Block, ErrorLine, NameList, SourceLink } from "./parts";
+import { Block, ErrorLine, NameList, RebuildMajhi, SourceLink } from "./parts";
 
 /** What the card on top shows: a preview, and whether committing it installs or updates. */
 export interface Review {
@@ -121,6 +122,11 @@ function InstallBox({ orgs, onPreview }: { orgs: readonly OrgView[]; onPreview: 
         </div>
       </div>
       {error && <ErrorLine>{describeError(error)}</ErrorLine>}
+      {error instanceof ApiRequestError && error.status === 501 && (
+        <div>
+          <RebuildMajhi />
+        </div>
+      )}
     </Block>
   );
 }

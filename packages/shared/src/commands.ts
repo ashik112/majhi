@@ -1626,6 +1626,13 @@ export const commands = {
     input: IncidentSendReportInputSchema,
     output: z.object({ draft: z.number().int().positive(), state: z.enum(["sent", "held", "failed"]) }),
   },
+  "incident.askCaptain": {
+    risk: "change",
+    summary:
+      "The owner asks the captain of an incident's workspace to look at it now, even when nobody did (Auto-pilot off, outside working hours). It is the owner's message in the captain's lane. Owner only",
+    input: IncidentTaskInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
   // The chat dock -----------------------------------------------------------------
   "conversations.list": {
     risk: "read",

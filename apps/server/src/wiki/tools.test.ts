@@ -32,7 +32,7 @@ function pageOf(org: string, project: string, kind: "overview" | "flow", text: s
   });
 }
 
-async function world(on: Record<string, boolean>) {
+async function world(on: Record<string, boolean>, registered: Record<string, string[]> = {}) {
   const store = new Store(":memory:");
   const db = openMemoryDb(":memory:");
   const embedder = new HashEmbedder();
@@ -58,7 +58,8 @@ async function world(on: Record<string, boolean>) {
     gaps: { couldNot: [], failed: [] },
   });
   const enabled = async (org: string) => on[org] === true;
-  return { store, index, tools: new WikiTools({ repo: store.wiki, enabled, index }), enabled };
+  const projects = async (org: string) => registered[org] ?? ["api", "shop"];
+  return { store, index, tools: new WikiTools({ repo: store.wiki, enabled, index, projects }), enabled };
 }
 
 const acme: AgentScope = { org: "acme", scopes: ["global", "org:acme", "project:api"] };
@@ -87,6 +88,17 @@ describe("the wiki tool", () => {
     const found = await tools.call(acme, { action: "sources", claim: "Acme billing charges cards Stripe" });
     expect(found).toContain("src/app.py:3-5 at aaaaaaa (api)");
     expect(found).toContain("proven, on api/overview, claim 1");
+  });
+
+  it("never finds the pages of a project that was removed from majhi", async () => {
+    const { tools } = await world({ acme: true }, { acme: [] });
+    expect(await tools.call(acme, { action: "list" })).toBe("No project of this workspace has a wiki yet.");
+    expect(await tools.call(acme, { action: "search", words: "Acme billing service charges cards" })).toBe(
+      "Nothing in the wiki matches those words.",
+    );
+    await expect(
+      tools.call(acme, { action: "read", project: "api", page: "overview" }),
+    ).rejects.toBeInstanceOf(WikiToolRefusal);
   });
 
   it("is not offered, and refuses a call, while the workspace has the wiki off", async () => {

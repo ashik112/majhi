@@ -630,6 +630,11 @@ export class TaskRepo {
       );
   }
 
+  /** Changes a task's kind: an incident made without a project becomes a code task once its project is known. */
+  setKind(id: string, kind: Task["kind"], at: string): void {
+    this.db.update(tasks).set({ kind, updatedAt: at }).where(eq(tasks.id, id)).run();
+  }
+
   /** Tasks with a merge request that is not merged: open, or closed without merging. */
   unmergedMrs(): Set<string> {
     return new Set(this.q.unmerged.all().map((r) => r.task));

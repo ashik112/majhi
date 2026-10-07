@@ -3,13 +3,15 @@ import { ListPane, ROW, ROW_SELECTED } from "@/components/ui/list-detail";
 import { cn } from "@/lib/cn";
 import { COPY } from "./copy";
 import { groupsOf, subline } from "./model";
-import { StaleMark } from "./parts";
+import { FailedMark, StaleMark } from "./parts";
 
 /** One page of the list as the view knows it: its summary, the page once read, and whether a newer commit touched it. */
 export interface ListEntry {
   summary: WikiPageSummary;
   page: WikiPage | undefined;
   stale: boolean;
+  /** The last update could not write this page: the next one tries again. */
+  failed: boolean;
 }
 
 /** The left side: pages by group, each with what it is about; Gaps carries the count of what needs a look. */
@@ -17,6 +19,8 @@ export function PageList({
   entries,
   selected,
   openItems,
+  notWritten,
+  flowsNotChosen,
   workspace,
   onSelect,
 }: {
@@ -24,6 +28,10 @@ export function PageList({
   selected: WikiPageId | undefined;
   /** How many guesses and unconfirmed claims there are across the pages. */
   openItems: number;
+  /** Pages the last update could not write that have no stored page to list. */
+  notWritten: readonly WikiPageId[];
+  /** The last update could not choose the main flows. */
+  flowsNotChosen: boolean;
   /** The workspace's own pages: no components, and its flows cross repos. */
   workspace: boolean;
   onSelect: (id: WikiPageId) => void;
@@ -56,13 +64,35 @@ export function PageList({
             </section>
           );
         })}
+        {(notWritten.length > 0 || flowsNotChosen) && (
+          <section aria-label={COPY.failed.group} className="flex flex-col gap-px pb-2">
+            <h2 className="flex h-8 items-center px-2.5 pt-1.5 text-[11px] font-medium tracking-[0.08em] text-fg-faint uppercase">
+              {COPY.failed.group}
+            </h2>
+            {flowsNotChosen && <FailedRow title={COPY.failed.flows} />}
+            {notWritten.map((id) => (
+              <FailedRow key={id} title={id} mono />
+            ))}
+          </section>
+        )}
       </div>
     </ListPane>
   );
 }
 
+function FailedRow({ title, mono = false }: { title: string; mono?: boolean }) {
+  return (
+    <div className={cn(ROW, "min-h-[46px] flex-col justify-center gap-0.5 px-2.5 py-1.5")}>
+      <span className={cn("w-full truncate text-body font-medium text-fg-soft", mono && "font-mono")}>
+        {title}
+      </span>
+      <FailedMark />
+    </div>
+  );
+}
+
 function Row({ entry, on, onSelect }: { entry: ListEntry; on: boolean; onSelect: (id: WikiPageId) => void }) {
-  const { summary, page, stale } = entry;
+  const { summary, page, stale, failed } = entry;
   const kind = summary.kind;
   return (
     <button
@@ -78,7 +108,9 @@ function Row({ entry, on, onSelect }: { entry: ListEntry; on: boolean; onSelect:
       >
         {kind === "gaps" ? COPY.openItemsTitle : summary.title}
       </span>
-      {stale ? (
+      {failed ? (
+        <FailedMark />
+      ) : stale ? (
         <StaleMark />
       ) : (
         page !== undefined && (
