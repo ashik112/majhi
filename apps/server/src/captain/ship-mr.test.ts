@@ -105,8 +105,8 @@ describe("ship with Merge on the owner", () => {
 describe("a task with uncommitted changes", () => {
   const dirty = (files: string[]) => ({
     ready: false,
-    why: `oryza has uncommitted changes: ${files.join(", ")}`,
-    uncommitted: { project: "oryza", files },
+    why: `globex has uncommitted changes: ${files.join(", ")}`,
+    uncommitted: { project: "globex", files },
   });
 
   it("asks twice at most, then leaves it for the owner", async () => {

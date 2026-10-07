@@ -25,7 +25,7 @@ Read `docs/briefs/quality-bar.md`. Owner rules that override everything here:
 ```ts
 export const DeployTierSchema = z.enum(["production", "staging"]);
 
-// Replaces DeployTargetSchema. Env names may hold one "/" (GitLab style: app/kinbe, voice/bd-dhaka-1).
+// Replaces DeployTargetSchema. Env names may hold one "/" (GitLab style: app/acme, voice/east-1).
 export const DeployEnvironmentSchema = z.object({
   env: EnvNameSchema,
   tier: DeployTierSchema.default("production"),   // unknown means production

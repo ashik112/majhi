@@ -468,7 +468,7 @@ export type OwnerRoleAnswer = z.infer<typeof OwnerRoleAnswerSchema>;
 export const WIKI_NOTES_PER_PAGE = 12;
 
 /**
- * A correction the owner or the captain gives a page in words ("kinbe first, then the rest"). It is kept apart from the
+ * A correction the owner or the captain gives a page in words ("acme first, then the rest"). It is kept apart from the
  * page, so a rewrite never loses it: the writer is given it, and the page shows it under "Owner notes".
  */
 export const WikiNoteSchema = z.object({

@@ -250,7 +250,7 @@ describe("limits", () => {
 
 describe("notes on the Deploys page", () => {
   const deploys = wikiPageId({ kind: "deploys" });
-  const note = "kinbe first, then the rest";
+  const note = "acme first, then the rest";
 
   it("survive every rewrite, reach the writer, and belong to one page of one project", async () => {
     await files({
