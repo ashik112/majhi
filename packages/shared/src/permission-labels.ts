@@ -12,6 +12,14 @@ export const PERMISSION_OPTION_LABEL: Record<PermissionOptionKind, string> = {
   reject_always: "Deny",
 };
 
-export function permissionOptionLabel(option: { kind: PermissionOptionKind }): string {
+/** The id prefix of the options majhi adds to a connection write's card, which carry their own words. */
+export const MAJHI_OPTION_PREFIX = "majhi:";
+
+export function permissionOptionLabel(option: {
+  id?: string;
+  name?: string;
+  kind: PermissionOptionKind;
+}): string {
+  if (option.id?.startsWith(MAJHI_OPTION_PREFIX) === true && option.name !== undefined) return option.name;
   return PERMISSION_OPTION_LABEL[option.kind];
 }

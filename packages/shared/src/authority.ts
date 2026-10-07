@@ -64,6 +64,20 @@ export const AUTHORITY_LABEL: Record<AuthorityRow, string> = {
   own: "Own work: approve routine requests of tasks it started",
 };
 
+/** Each row as a short verb phrase, for one-line titles ("captain decides merge, push"). */
+export const AUTHORITY_SHORT: Record<AuthorityRow, string> = {
+  start: "start work",
+  questions: "answer questions",
+  approvals: "answer approvals",
+  upkeep: "upkeep",
+  merge: "merge",
+  push: "push",
+  deployStaging: "deploy staging",
+  deployProduction: "deploy production",
+  tell: "tell the client",
+  own: "own work",
+};
+
 /** What finishes "Refused: in Acme you decide ...". */
 export const AUTHORITY_REFUSAL: Record<AuthorityRow, string> = {
   start: "when work starts, so the captain does not start it",

@@ -80,6 +80,17 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "git.signOut",
 ]);
 
+/**
+ * What the captain may propose but never run: its call is stored as a card the owner applies with one
+ * click. `autonomy.*` stay in the blocked list (no other agent calls them, no policy mode, rule or full
+ * access runs them); `projects.setEnvironments` is proposed only when the captain's own rail refuses it.
+ */
+export const CAPTAIN_PROPOSALS: ReadonlySet<CommandName> = new Set<CommandName>([
+  "autonomy.start",
+  "autonomy.configure",
+  "projects.setEnvironments",
+]);
+
 export const ApprovalGroupIdSchema = z.enum([
   "bookkeeping",
   "previews",

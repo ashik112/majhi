@@ -67,14 +67,15 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
   const settings = useSettings();
   const org = useTask(item.task).data?.org;
   // No checkbox for a destructive command: only the owner's click approves it. It waits for the settings.
-  const canAlways = settings.data !== undefined && !isDestructiveCommand(item.command);
+  const canAlways =
+    settings.data !== undefined && !isDestructiveCommand(item.command) && item.proposal === undefined;
 
   if (outcome === undefined) {
     return (
       <DockBar
         label={`Approval: ${item.summary}`}
         lamp="needs"
-        title={`@${item.agent} wants to`}
+        title={item.proposal === undefined ? `@${item.agent} wants to` : `@${item.agent} proposes`}
         line={item.summary}
         actions={
           <>
@@ -85,7 +86,7 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
               disabled={decide.isPending}
               onClick={() => decide.mutate({ decision: "approve", ...(always ? { always: scope } : {}) })}
             >
-              Approve
+              {item.proposal === undefined ? "Approve" : "Apply"}
             </Button>
             <Button
               size="sm"
@@ -124,10 +125,16 @@ export function ApprovalCard({ item }: { item: Item<"approval"> }) {
                 </PageLink>
               </p>
             )}
-            <p className="text-fg-muted">
-              Input <span className="font-mono">{item.command}</span>
-            </p>
-            <pre className={PRE}>{item.input}</pre>
+            {item.proposal === undefined ? (
+              <>
+                <p className="text-fg-muted">
+                  Input <span className="font-mono">{item.command}</span>
+                </p>
+                <pre className={PRE}>{item.input}</pre>
+              </>
+            ) : (
+              <pre className={PRE}>{item.proposal.changes.join("\n")}</pre>
+            )}
             {canAlways && (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                 <label className="flex min-w-0 items-center gap-2 text-sm text-fg-muted">

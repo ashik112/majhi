@@ -73,6 +73,8 @@ export interface PlanDeps {
    * The run gets it as a header at session start; the refresh token never leaves majhi.
    */
   oauth?: ((connection: string) => Promise<{ token: string } | { problem: string }>) | undefined;
+  /** What an MCP connection's server said about its tools at its last Test, by tool name. The gate reads it. */
+  toolAnnotations?: ((connection: string) => GateConnection["toolAnnotations"]) | undefined;
   /** Whether a connection's one state is `connected`. A service on this computer is offered only then. */
   connected?: ((connection: string) => boolean) | undefined;
   /** The workspace's own git sign-in for a host, renewed when it ends soon (a `git` connection). */
@@ -185,8 +187,16 @@ export async function planConnections(
       description: h.connection.description ?? "",
       use: line,
     });
-  const gate = (h: HeldConnection, extra: Partial<GateConnection> = {}) =>
-    plan.gate.push({ id: h.id, type: h.connection.type, allow: h.connection.allow ?? [], ...extra });
+  const gate = (h: HeldConnection, extra: Partial<GateConnection> = {}) => {
+    const toolAnnotations = deps.toolAnnotations?.(h.id);
+    plan.gate.push({
+      id: h.id,
+      type: h.connection.type,
+      allow: h.connection.allow ?? [],
+      ...(toolAnnotations === undefined ? {} : { toolAnnotations }),
+      ...extra,
+    });
+  };
 
   // Every kubectl connection is one context of one kubeconfig, named after the connection.
   const kube: { id: string; text: string; context: string; namespace?: string | undefined }[] = [];
