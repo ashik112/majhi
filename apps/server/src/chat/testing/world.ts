@@ -108,6 +108,7 @@ export function world(options: WorldOptions = {}) {
     hub,
     rooms,
     tell: async () => state.tell,
+    autopilot: () => true,
     holds: async () => state.holds,
     orgNames: async () => ORGS,
     changed: () => undefined,

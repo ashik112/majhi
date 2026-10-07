@@ -1,5 +1,6 @@
 import {
   type AuthorityChoice,
+  CHAT_APP_LABEL,
   type ChatApp,
   chatRoomSettings,
   type Draft,
@@ -7,6 +8,7 @@ import {
   holdsForRoom,
   mentionedContacts,
   PRIVATE,
+  REPLY_HOLD_LABEL,
   type ReplyFlags,
   type ReplyHold,
   type RoomItem,
@@ -27,11 +29,13 @@ import { dayBegins } from "./settings.ts";
 export interface RepliesDeps {
   store: Store;
   room: Pick<RoomService, "post" | "get">;
-  gate: Pick<OutboundGate, "submit" | "edit" | "get">;
+  gate: Pick<OutboundGate, "submit" | "edit" | "get" | "decide" | "pending">;
   hub: Pick<ChatHub, "send">;
   rooms: ClientRooms;
   /** The Tell row of a workspace as it is now: Ask me whenever Auto-pilot is not On. */
   tell: (org: string) => Promise<AuthorityChoice>;
+  /** Whether Auto-pilot is on. While it is not, no reply goes to a client without the owner. */
+  autopilot: () => boolean;
   /** The Hold list of a workspace, every class filled in. */
   holds: (org: string) => Promise<Holds>;
   /** The names of the workspaces, to keep one workspace's name out of another's replies. */
@@ -53,6 +57,18 @@ export interface ReplyInput {
   thread?: string | undefined;
   /** A report, like an RCA. It always waits. */
   report?: boolean;
+}
+
+/** What a reply that waits answers: shown in Needs you so the owner can decide without opening the chat. */
+export interface ClientDraftInfo {
+  room: string;
+  chat: string;
+  /** The chat app's name, like Slack. */
+  app: string;
+  from?: string;
+  said?: string;
+  /** Why it waits, in plain words. */
+  hold?: string;
 }
 
 export type ReplyResult =
@@ -149,6 +165,7 @@ export class ClientReplies {
     }
     const rails = {
       tell: await this.deps.tell(org),
+      autopilot: this.deps.autopilot(),
       // The chat's own Ask-me cases over the workspace's list.
       holds: holdsForRoom(await this.deps.holds(org), room.chat),
 
@@ -221,6 +238,7 @@ export class ClientReplies {
     const row = this.roomOf(room);
     const verdict = railsFor({
       tell: "ask",
+      autopilot: true,
       holds: await this.deps.holds(row.org as string),
       text,
       flags: undefined,
@@ -246,6 +264,35 @@ export class ClientReplies {
       { release: "now", prepared: (made) => this.post(room, made, { by: "you" }) },
     );
     return this.resultOf(draft, undefined);
+  }
+
+  /** The replies of a room that wait for the owner are discarded: the chat is no longer linked. Returns how many. */
+  async discardPending(room: string): Promise<number> {
+    const waiting = this.deps.gate.pending().filter((d) => d.channel === "client" && d.target === room);
+    for (const draft of waiting) await this.deps.gate.decide(draft.id, "discard");
+    return waiting.length;
+  }
+
+  /** What a waiting reply answers, for the inbox: the chat, who wrote, what they said, and why it waits. */
+  describe(draft: Draft): ClientDraftInfo | undefined {
+    const room = this.deps.store.client.room(draft.target);
+    if (room === undefined) return undefined;
+    const reply = this.deps.room.get(room.id, `reply:${draft.id}`);
+    const mine = reply?.type === "client-reply" ? reply : undefined;
+    const said =
+      mine?.replyTo === undefined
+        ? undefined
+        : this.deps.store.room
+            .page(room.id, 200)
+            .items.find((i) => i.type === "client" && i.external.message === mine.replyTo);
+    const client = said?.type === "client" ? said : undefined;
+    return {
+      room: room.id,
+      chat: room.chat.title,
+      app: CHAT_APP_LABEL[room.chat.app],
+      ...(client === undefined ? {} : { from: client.sender.name, said: client.text }),
+      ...(mine?.hold === undefined ? {} : { hold: REPLY_HOLD_LABEL[mine.hold] }),
+    };
   }
 
   /** The owner changes the words of a reply that waits. */

@@ -7,6 +7,7 @@ import {
   type ClientList,
   type ClientRoom,
   type ClientRow,
+  type Conversation,
   LOCAL_TASK_PREFIX,
   type RoomItem,
   sendAsMeProblem,
@@ -110,12 +111,31 @@ export class ClientRooms {
 
   /** Links a New chat to a workspace. From then on its messages are read and triaged. */
   async link(id: string, org: string): Promise<RoomRow> {
-    const room = this.room(id);
+    let room = this.room(id);
     if (!(await this.deps.knownOrg(org))) throw new UserError(`There is no workspace "${org}".`, 404);
-    if (room.chat.archived === true)
-      throw new UserError("That chat was unlinked. Link the channel again.", 409);
+    if (room.chat.archived === true) {
+      // Linking an unlinked chat again starts from the chat as it is now: its live room, or a new one.
+      const { archived: _a, ignored: _i, trouble: _t, ...chat } = room.chat;
+      room = this.find(chat.app, chat.account, chat.chat) ?? this.open(chat);
+    }
     if (room.org !== undefined && room.org !== org) {
       throw new UserError("That chat is linked to another workspace already.", 409);
+    }
+    // The chat was linked to this workspace before: its old room comes back with its history, and the empty
+    // New chat made since goes. Another workspace never gets the old room.
+    const before = this.deps.store.client.archivedRoomOfChat(
+      room.chat.app,
+      room.chat.account,
+      room.chat.chat,
+      org,
+    );
+    if (before !== undefined && room.org === undefined && this.deps.store.room.count(id) === 0) {
+      this.deps.store.tasks.remove(id);
+      const back = this.patch(before, { archived: undefined, ignored: undefined, trouble: undefined });
+      const refreshed = this.refresh(back, { title: room.chat.title, people: room.chat.people });
+      const task = this.deps.store.tasks.get(before.id);
+      if (task !== undefined) this.deps.room.publishTask(task);
+      return { ...refreshed, org };
     }
     this.deps.store.client.setOrg(id, org, this.at());
     const linked = this.patch(room, { ignored: undefined });
@@ -164,35 +184,60 @@ export class ClientRooms {
   /** Every linked chat with what the list shows, and the chats not linked yet. */
   list(): Omit<ClientList, "accounts"> {
     const { store } = this.deps;
-    const rooms = store.client.rooms();
     const conversations = new Map(store.conversations.list().map((c) => [c.id, c]));
     const held = store.client.heldRooms();
     const clients: ClientRow[] = [];
     const newChats: ClientRow[] = [];
-    for (const r of rooms) {
+    for (const r of store.client.rooms()) {
       if (r.chat.ignored === true) continue;
-      const conversation = conversations.get(r.id);
-      const row: ClientRow = {
-        id: r.id,
-        app: r.chat.app,
-        title: r.chat.title,
-        kind: r.chat.kind,
-        ...(r.chat.people === undefined ? {} : { people: r.chat.people }),
-        ...(r.org === undefined ? {} : { org: r.org }),
-        holder: r.chat.holder,
-        sendAs: r.chat.sendAs,
-        ...(r.chat.trouble === undefined ? {} : { trouble: r.chat.trouble }),
-        ...(r.chat.archived === true ? { archived: true } : {}),
-        ...(conversation === undefined
-          ? {}
-          : { lastLine: conversation.lastLine, lastAt: conversation.lastAt }),
-        unread: conversation?.unread ?? 0,
-        waiting: held.has(r.id),
-      };
-      (r.org === undefined ? newChats : clients).push(row);
+      (r.org === undefined ? newChats : clients).push(this.rowOf(r, conversations.get(r.id), held));
     }
     const byRecent = (a: ClientRow, b: ClientRow) => (b.lastAt ?? "").localeCompare(a.lastAt ?? "");
     return { clients: clients.toSorted(byRecent), newChats };
+  }
+
+  /** The groups and channels of one account, ignored ones too: what a connection page lists. Unlinked ones are history, not listed. */
+  groups(app: ChatApp, account: string): ClientRow[] {
+    const { store } = this.deps;
+    const conversations = new Map(store.conversations.list().map((c) => [c.id, c]));
+    const held = store.client.heldRooms();
+    return store.client
+      .rooms()
+      .filter(
+        (r) =>
+          r.chat.app === app &&
+          r.chat.account === account &&
+          r.chat.kind !== "private",
+      )
+      // An unlinked chat is listed only until the chat has a live room again, so it can be linked again from here.
+      .filter(
+        (r, _i, all) =>
+          r.chat.archived !== true ||
+          !all.some((o) => o.chat.chat === r.chat.chat && o.chat.archived !== true),
+      )
+      .map((r) => this.rowOf(r, conversations.get(r.id), held))
+      .toSorted((a, b) => a.title.localeCompare(b.title));
+  }
+
+  private rowOf(r: RoomRow, conversation: Conversation | undefined, held: ReadonlySet<string>): ClientRow {
+    return {
+      id: r.id,
+      app: r.chat.app,
+      title: r.chat.title,
+      kind: r.chat.kind,
+      ...(r.chat.people === undefined ? {} : { people: r.chat.people }),
+      ...(r.org === undefined ? {} : { org: r.org }),
+      holder: r.chat.holder,
+      sendAs: r.chat.sendAs,
+      ...(r.chat.trouble === undefined ? {} : { trouble: r.chat.trouble }),
+      ...(r.chat.archived === true ? { archived: true } : {}),
+      ...(r.chat.ignored === true ? { ignored: true } : {}),
+      ...(conversation === undefined
+        ? {}
+        : { lastLine: conversation.lastLine, lastAt: conversation.lastAt }),
+      unread: conversation?.unread ?? 0,
+      waiting: held.has(r.id),
+    };
   }
 
   /** The text of a room's newest items of a type, newest first. */

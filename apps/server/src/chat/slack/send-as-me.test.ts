@@ -75,6 +75,7 @@ async function setup() {
     hub,
     rooms: w.rooms,
     tell: async () => "decide",
+    autopilot: () => true,
     holds: async () => ({
       promisedTime: true,
       firstContact: false,

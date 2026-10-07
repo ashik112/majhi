@@ -9,12 +9,14 @@ type ChatCommand =
   | "chat.unlink"
   | "chat.unignore"
   | "chat.channels"
+  | "chat.groups"
   | "chat.channelLink"
   | "chat.channelIgnore"
   | "chat.holder"
   | "chat.send"
   | "chat.editReply"
   | "chat.samePerson"
+  | "chat.whoIs"
   | "chat.confirmWebhook"
   | "chat.markUs"
   | "chat.settings"
@@ -56,8 +58,7 @@ export function chatHandlers(chat: ClientChat): Pick<CommandHandlers, ChatComman
     },
     "chat.unlink": async (input, ctx) => {
       ownerOnly(ctx);
-      chat.unlink(input.room);
-      return { ok: true as const };
+      return { ok: true as const, ...(await chat.unlink(input.room)) };
     },
     "chat.unignore": async (input, ctx) => {
       ownerOnly(ctx);
@@ -67,6 +68,10 @@ export function chatHandlers(chat: ClientChat): Pick<CommandHandlers, ChatComman
     "chat.channels": async (input, ctx) => {
       ownerOnly(ctx);
       return chat.channels(input.connection, input.refresh === true);
+    },
+    "chat.groups": async (input, ctx) => {
+      ownerOnly(ctx);
+      return chat.groups(input.connection);
     },
     "chat.channelLink": async (input, ctx) => {
       ownerOnly(ctx);
@@ -96,6 +101,11 @@ export function chatHandlers(chat: ClientChat): Pick<CommandHandlers, ChatComman
       chat.samePerson(input.room, input.item, input.answer);
       return { ok: true as const };
     },
+    "chat.whoIs": async (input, ctx) => {
+      ownerOnly(ctx);
+      await chat.whoIs(input.room, input.item, input.answer);
+      return { ok: true as const };
+    },
     "chat.confirmWebhook": async (input, ctx) => {
       ownerOnly(ctx);
       await chat.confirmWebhook(input.connection);
@@ -108,7 +118,7 @@ export function chatHandlers(chat: ClientChat): Pick<CommandHandlers, ChatComman
     },
     "chat.sendAs": async (input, ctx) => {
       ownerOnly(ctx);
-      chat.setSendAs(input.room, input.sendAs);
+      await chat.setSendAs(input.room, input.sendAs);
       return { ok: true as const };
     },
     "chat.userToken": async (input, ctx) => {

@@ -248,6 +248,9 @@ export const SlackUser = z.object({
     real_name: z.string().optional(),
     team_id: z.string().optional(),
     is_bot: z.boolean().optional(),
+    is_admin: z.boolean().optional(),
+    is_owner: z.boolean().optional(),
+    is_primary_owner: z.boolean().optional(),
     profile: z.object({ display_name: z.string().optional(), real_name: z.string().optional() }).optional(),
   }),
 });

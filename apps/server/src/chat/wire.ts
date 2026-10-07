@@ -39,7 +39,7 @@ export const TOKEN_VARIABLES: Partial<
 export interface ClientChatWiring {
   store: Store;
   room: RoomService;
-  gate: Pick<OutboundGate, "submit" | "edit" | "get">;
+  gate: Pick<OutboundGate, "submit" | "edit" | "get" | "decide" | "pending">;
   config: ConfigService;
   adapters: readonly ChatAdapter[];
   /** Every connection of every workspace. */
@@ -64,6 +64,8 @@ export interface ClientChatWiring {
   deleteWebhook: ClientChatDeps["deleteWebhook"];
   saveUserToken: ClientChatDeps["saveUserToken"];
   majhiHome: string;
+  /** Whether Auto-pilot is on. */
+  autopilot: () => boolean;
   /** Whether the read loops run: only the real server's. */
   polling: boolean;
   changed: () => void;
@@ -164,7 +166,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     ...(w.log === undefined ? {} : { log: w.log }),
   });
   const tell = async (org: string): Promise<AuthorityChoice> => {
-    // The row as the owner set it. Tell does not wait for Autonomous: a client message is answered either way.
+    // The row as the owner set it. Whether Auto-pilot is on is a separate rule, checked by the rails.
     const { autonomy } = await w.config.settings();
     return authorityOf(autonomy, org).tell;
   };
@@ -177,6 +179,7 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     hub,
     rooms,
     tell,
+    autopilot: w.autopilot,
     holds,
     dayBegins: async (org) => dayBegins(w.now?.() ?? new Date(), await w.tz(org)),
     orgNames: async () =>

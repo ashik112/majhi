@@ -20,7 +20,7 @@ export interface ContactsDeps {
 }
 
 /** A name as words, lower case: how two names are compared. */
-function wordsOf(name: string): string[] {
+export function wordsOf(name: string): string[] {
   const out: string[] = [];
   let word = "";
   for (const ch of `${name.toLowerCase()} `) {

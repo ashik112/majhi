@@ -81,6 +81,8 @@ export interface InboxDeps {
     batchesDue(): Promise<{ org: string; channel: OutboundChannel; drafts: Draft[] }[]>;
     get(id: number): Draft | undefined;
   };
+  /** What a client reply draft answers, for its row. */
+  clientDraft?: DecisionSources["clientDraft"];
   actions: DecisionActions;
   /** Decisions the trust ladder and the money ceiling build themselves. */
   extras?: () => readonly OwnerDecision[];
@@ -268,6 +270,7 @@ export class InboxService {
       signedOut,
       recommendations: deps.recommendations.all(),
       drafts: deps.outbound?.pending() ?? [],
+      ...(deps.clientDraft === undefined ? {} : { clientDraft: deps.clientDraft }),
       batches: (await deps.outbound?.batchesDue()) ?? [],
       incidents: deps.incidents?.() ?? [],
       orgName: (org) => names[org],

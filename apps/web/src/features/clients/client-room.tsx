@@ -7,6 +7,7 @@ import {
   type RoomItem,
   replaceMentions,
 } from "@majhi/shared";
+import { Link } from "@tanstack/react-router";
 import { ArrowDown, FileText, Info } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { EMOJI_FONT } from "@/components/agent-avatar";
@@ -30,6 +31,7 @@ import {
   useSamePerson,
   useUndoMerge,
   useUnlinkChat,
+  useWhoIs,
 } from "@/lib/client-queries";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
@@ -99,7 +101,7 @@ export function ClientRoom({ taskId }: { taskId: string }) {
         <Log row={row} items={room.state.items} more={room.state.more} loadOlder={room.loadOlder} />
         {row.archived === true ? (
           <p className="shrink-0 text-center text-sm text-fg-faint">
-            Unlinked. This history is read only. Link the channel again to talk in it.
+            Unlinked. This history is read only. Link the {row.app === "slack" || row.kind === "channel" ? "channel" : "group"} again to talk in it.
           </p>
         ) : (
           <Box row={row} />
@@ -272,6 +274,7 @@ function visible(item: RoomItem): boolean {
     case "client":
     case "client-gap":
     case "same-person":
+    case "who-is":
       return true;
     case "client-reply":
       return item.state !== "discarded";
@@ -316,6 +319,12 @@ function Row({
       return (
         <li className="mt-3 list-none pl-[34px]">
           <SamePerson item={item} />
+        </li>
+      );
+    case "who-is":
+      return (
+        <li className="mt-3 list-none pl-[34px]">
+          <WhoIs item={item} />
         </li>
       );
     case "client-gap":
@@ -373,7 +382,26 @@ function outcomeText(outcome: ClientOutcome, reply: Of<"client-reply"> | undefin
       return `Can't reply${why}`;
     case "handled":
       return outcome.why ?? "Handled";
+    case "skipped":
+      return outcome.why ?? "Not read";
   }
+}
+
+/** The faint line under a message. A task or incident it became is a link. */
+function OutcomeLine({ outcome, reply }: { outcome: ClientOutcome; reply: Of<"client-reply"> | undefined }) {
+  const text = outcomeText(outcome, reply);
+  const task = outcome.task;
+  const at = task === undefined ? -1 : text.indexOf(task);
+  if (task === undefined || at === -1) return <span className="text-xs text-fg-faint">{text}</span>;
+  return (
+    <span className="text-xs text-fg-faint">
+      {text.slice(0, at)}
+      <Link to="/t/$taskId" params={{ taskId: task }} className="underline hover:text-fg">
+        {task}
+      </Link>
+      {text.slice(at + task.length)}
+    </span>
+  );
 }
 
 function Message({
@@ -392,9 +420,6 @@ function Message({
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex h-6 min-w-0 items-center gap-2">
           <SenderName item={item} name={name} />
-          <span className="min-w-0 truncate font-mono text-xs text-fg-faint">
-            {row.title} · {CHAT_APP_LABEL[row.app]}
-          </span>
           <span className="shrink-0 font-mono text-xs text-fg-dim">{clock(item.sentAt ?? item.at)}</span>
           {item.sender.verified ? null : <Badge>unverified</Badge>}
           {item.forwarded === true && <span className="shrink-0 text-xs text-fg-faint">forwarded</span>}
@@ -421,12 +446,10 @@ function Message({
           </ul>
         )}
         {item.outcome !== undefined && (
-          <span className="text-xs text-fg-faint">
-            {outcomeText(
-              item.outcome,
-              item.outcome.draft === undefined ? undefined : replies.get(item.outcome.draft),
-            )}
-          </span>
+          <OutcomeLine
+            outcome={item.outcome}
+            reply={item.outcome.draft === undefined ? undefined : replies.get(item.outcome.draft)}
+          />
         )}
       </div>
     </article>
@@ -511,9 +534,6 @@ function Reply({ item, row }: { item: Of<"client-reply">; row: ClientRow }) {
             )}
           >
             {you ? "You" : item.as === "you" ? "You (by the captain)" : `@${boss?.id ?? "captain"}`}
-          </span>
-          <span className="min-w-0 truncate font-mono text-xs text-fg-faint">
-            to {row.title} · {CHAT_APP_LABEL[row.app]}
           </span>
           <span className="shrink-0 font-mono text-xs text-fg-dim">{clock(item.at)}</span>
         </div>
@@ -664,6 +684,36 @@ function HeldReply({ item, people }: { item: Of<"client-reply">; people: readonl
         <div className="max-w-[72ch] text-base text-fg-soft">
           <Markdown text={withNames(item.text, item.mentions, "**")} size="chat" />
         </div>
+      )}
+    </section>
+  );
+}
+
+/** Asked once in the chat: is a sender who looks like one of us (an admin) one of us, or a client. */
+function WhoIs({ item }: { item: Of<"who-is"> }) {
+  const toast = useToast();
+  const answer = useWhoIs();
+  const ask = (value: "us" | "client") =>
+    answer.mutate(
+      { room: item.task, item: item.id, answer: value },
+      { onError: (error) => toast("Could not answer", { detail: describeError(error), tone: "error" }) },
+    );
+  return (
+    <section className="flex items-center gap-3 rounded-xl border border-line bg-raised px-3 py-2">
+      <Initial name={item.name} seed={item.sender} />
+      <span className="text-sm text-fg">{`Is ${item.name} one of us?`}</span>
+      <span className="flex-1" />
+      {item.state === "asking" ? (
+        <>
+          <Button size="sm" variant="secondary" disabled={answer.isPending} onClick={() => ask("us")}>
+            Us
+          </Button>
+          <Button size="sm" variant="secondary" disabled={answer.isPending} onClick={() => ask("client")}>
+            Client
+          </Button>
+        </>
+      ) : (
+        <span className="text-xs text-fg-faint">{item.state === "us" ? "Us" : "Client"}</span>
       )}
     </section>
   );
