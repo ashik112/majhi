@@ -807,6 +807,19 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     /** Why the agent wants it, in its words. */
     reason: z.string().optional(),
     state: z.enum(["pending", "applied", "rejected", "failed", "undone"]),
+    /**
+     * Set when the captain proposed a change it may not make: nothing ran. `input` is the exact call,
+     * unredacted, that Apply runs as the owner. `basis` is what the call was measured against; if the
+     * setting reads differently when the owner applies, the proposal is stale. `changes`: plain diff lines.
+     */
+    proposal: z
+      .object({
+        /** The workspace the captain proposed it for. */
+        org: z.string(),
+        basis: z.string().max(20000),
+        changes: z.array(z.string().max(300)).max(60),
+      })
+      .optional(),
     /** Set when a saved "always allow" rule ran this without asking: the rule's scope. */
     rule: z.enum(["task", "org"]).optional(),
     /**

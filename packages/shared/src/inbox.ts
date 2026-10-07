@@ -132,6 +132,8 @@ export const DecisionDetailSchema = z.object({
   blocked: z.record(z.string(), z.string()).optional(),
   /** What a permission or approval asks to run, whole: the command, the tool call. */
   command: z.string().max(8000).optional(),
+  /** A captain proposal's diff, one line each ("Merge: You → Captain"). */
+  changes: z.array(z.string()).max(60).optional(),
   /** Who asks, so the pane can say "@agent in ACM-3". */
   agent: z.string().optional(),
 });
