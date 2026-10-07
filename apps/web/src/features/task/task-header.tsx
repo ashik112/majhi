@@ -7,10 +7,12 @@ import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
 import { badgeLetters, formatTokens } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
+import { useIncident } from "@/lib/incident-queries";
 import { orgSearch, useOrgFilter } from "@/lib/org-filter";
 import { useOrgs } from "@/lib/studio-queries";
 import { useTaskDetail, useTaskRow, useUpdateTask } from "@/lib/task-queries";
 import { useUsageSummary } from "@/lib/usage-queries";
+import { AppMark } from "../clients/app-mark";
 import { AreaChips, areaNames } from "../tasks-ui/area-chips";
 import type { OrgTag } from "../tasks-ui/project-names";
 import { TrailStrip } from "../tasks-ui/trail-strip";
@@ -64,6 +66,7 @@ export function TaskHeader({
   const detail = useTaskDetail(task.id).data;
   const origin: OriginView | undefined = detail?.origin ?? row?.origin;
   const trail: readonly TrailStep[] = detail?.trail ?? row?.trail ?? [];
+  const incident = useIncident(task.id, task.typing?.type === "incident").data ?? undefined;
   const areas = useMemo(() => areaNames(detail?.areas), [detail?.areas]);
   const [briefOpen, setBriefOpen] = useState(() => !started(task));
 
@@ -77,6 +80,25 @@ export function TaskHeader({
       <TypeChip id={task.id} typing={task.typing} size="sm" />
       <AreaChips names={areas} max={3} />
     </span>
+  );
+  // A client's report names its chat, and the watch that fires for it shows beside the type.
+  const incidentChips = (
+    <>
+      {origin?.kind === "client" && (
+        <span className="inline-flex h-5 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm border border-line px-1.5 text-xs text-fg-soft">
+          {origin.app !== undefined && <AppMark app={origin.app} size={14} />}
+          {`From ${origin.from ?? origin.name ?? "a client"}`}
+        </span>
+      )}
+      {incident?.watch !== undefined && (
+        <span
+          title={incident.watch.firing ? "The watch is firing" : "The watch is green"}
+          className="inline-flex h-5 min-w-0 shrink-0 items-center gap-1 whitespace-nowrap rounded-sm border border-amber-line bg-amber-wash px-1.5 text-xs text-amber"
+        >
+          {`Watch ${incident.watch.title}`}
+        </span>
+      )}
+    </>
   );
 
   const openTask = useCallback(
@@ -117,6 +139,7 @@ export function TaskHeader({
       <div className="flex min-h-7 min-w-0 items-center gap-2.5">
         <EditableTitle task={task} />
         {fit !== "full" && chips}
+        {incidentChips}
         {brief !== "" && (
           <button
             type="button"

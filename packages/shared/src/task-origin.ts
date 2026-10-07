@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ChatAppSchema } from "./chat.ts";
 import { FindingSeveritySchema, FindingSourceSchema } from "./findings.ts";
 import { IdSchema, TaskIdSchema } from "./ids.ts";
 
@@ -82,7 +83,7 @@ export const OriginViewSchema = z.discriminatedUnion("kind", [
   schedule.extend({ name: z.string().optional() }),
   deploy.extend({ name: z.string().optional() }),
   /** `name`: the room's title. `from`: the line the task shows, like "Telegram · Acme ops · Sara". */
-  client.extend({ name: z.string().optional(), from: z.string().optional() }),
+  client.extend({ name: z.string().optional(), from: z.string().optional(), app: ChatAppSchema.optional() }),
   parent.extend({ name: z.string().optional() }),
 ]);
 export type OriginView = z.infer<typeof OriginViewSchema>;

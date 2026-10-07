@@ -106,7 +106,9 @@ export class TaskDetails {
       origin.name,
       item?.type === "client" ? item.sender.name : undefined,
     ].filter((p): p is string => p !== undefined && p !== "");
-    return parts.length === 0 ? origin : { ...origin, from: parts.join(" · ") };
+    return parts.length === 0
+      ? origin
+      : { ...origin, from: parts.join(" · "), ...(app === undefined ? {} : { app }) };
   }
 
   async detail(id: string): Promise<TaskDetail> {
