@@ -68,16 +68,16 @@ function fromTargets(value: unknown): unknown {
   });
 }
 
+/** A list of environments, each listed once. */
+export const DeployEnvironmentListSchema = z
+  .array(DeployEnvironmentSchema)
+  .max(20)
+  .refine((list) => new Set(list.map((e) => e.env)).size === list.length, {
+    message: "Each environment is listed once",
+  });
+
 /** A project's environments, in the order they usually go live. Reads the older target form too. */
-export const DeployEnvironmentsSchema = z.preprocess(
-  fromTargets,
-  z
-    .array(DeployEnvironmentSchema)
-    .max(20)
-    .refine((list) => new Set(list.map((e) => e.env)).size === list.length, {
-      message: "Each environment is listed once",
-    }),
-);
+export const DeployEnvironmentsSchema = z.preprocess(fromTargets, DeployEnvironmentListSchema);
 
 const FileName = z
   .string()
@@ -521,7 +521,7 @@ export const DeployViewInputSchema = z.object({ project: IdSchema });
 /** `projects.setEnvironments`: the whole list of a project's environments. An empty list removes them. */
 export const SetEnvironmentsInputSchema = z.object({
   project: IdSchema,
-  environments: DeployEnvironmentsSchema,
+  environments: DeployEnvironmentListSchema,
 });
 
 /** One step of a task's deploy plan. `hold`: the step waits for the owner, and says why. */
