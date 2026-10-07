@@ -26,10 +26,10 @@ function rawLines(text: string): string[] {
 }
 
 /** A continued line without its escape character and the blanks after it, and whether it goes on. */
-function continued(line: string, escape: string): { text: string; goes: boolean } {
+function continued(line: string, escapeChar: string): { text: string; goes: boolean } {
   let end = line.length;
   while (end > 0 && (line[end - 1] === " " || line[end - 1] === "\t")) end--;
-  return line[end - 1] === escape
+  return line[end - 1] === escapeChar
     ? { text: line.slice(0, end - 1), goes: true }
     : { text: line, goes: false };
 }
@@ -39,18 +39,18 @@ function continued(line: string, escape: string): { text: string; goes: boolean 
  * character, blanks after it, no space added). Comment lines and empty lines go, inside a continued
  * instruction too. A line read differently from BuildKit would hide an instruction from the check.
  */
-function instructions(lines: readonly string[], escape: string): string[] {
+function instructions(lines: readonly string[], escapeChar: string): string[] {
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     const first = trimLeft(lines[i] ?? "");
     if (first === "" || first.startsWith("#")) continue;
-    let step = continued(first, escape);
+    let step = continued(first, escapeChar);
     let joined = step.text;
     while (step.goes && i + 1 < lines.length) {
       const next = lines[++i] ?? "";
       const bare = trimLeft(next);
       if (bare === "" || bare.startsWith("#")) continue;
-      step = continued(next, escape);
+      step = continued(next, escapeChar);
       joined += step.text;
     }
     out.push(joined.trim());
