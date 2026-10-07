@@ -25,8 +25,21 @@ export interface CiCheck {
   from: string;
   /** The minutes the CI gives the job, when it says. */
   minutes?: number | undefined;
-  /** Services the job starts next to it (images of a database, a cache). */
-  services: string[];
+  /** Services the job starts next to it (a database, a cache), as the job declares them. */
+  services: CiService[];
+}
+
+/** A container the CI job starts next to its steps. */
+export interface CiService {
+  /** The name the job gives it (`postgres`), which is also the host name its steps reach it by in CI. */
+  name: string;
+  image: string;
+  /** Literal environment of the container. */
+  env: Record<string, string>;
+  /** `5432:5432` or `5432`, as the job writes them. */
+  ports: string[];
+  /** Health options the job gives it: `--health-cmd` and its timing. Nothing else of `options` is followed. */
+  health?: { cmd: string; interval?: string; timeout?: string; retries?: number } | undefined;
 }
 
 interface Line {
@@ -41,7 +54,7 @@ interface CiJob {
   name: string;
   lines: Line[];
   minutes: number | undefined;
-  services: string[];
+  services: CiService[];
 }
 
 const record = (value: unknown): Record<string, unknown> =>
@@ -89,6 +102,54 @@ export function safeEnv(env: Record<string, string>): Record<string, string> {
   return out;
 }
 
+/** A service's own environment: literal values, which are not secrets of the CI (they go to a throwaway container, never to an agent). */
+function serviceEnv(value: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, text] of Object.entries(envOf(value))) {
+    if (text.includes("${{") || text.includes("$") || text.includes("`")) continue;
+    if (detectSecrets(text).length > 0 || text.length > 400) continue;
+    out[name] = text;
+  }
+  return out;
+}
+
+/** The name a GitLab service answers to without an alias: its image without the registry, tag and path. */
+function defaultServiceName(image: string): string {
+  const last = image.split("/").pop() ?? image;
+  return last.split(":")[0] ?? last;
+}
+
+/** A number of up to four digits, with `ms`, `s` or `m` after it or nothing. */
+function isDuration(text: string): boolean {
+  const digits = text.length - (text.endsWith("ms") ? 2 : "sm".includes(text.slice(-1)) ? 1 : 0);
+  const n = text.slice(0, digits);
+  return n.length >= 1 && n.length <= 4 && [...n].every((c) => c >= "0" && c <= "9");
+}
+
+/** `--health-cmd "pg_isready" --health-interval 10s ...` of a GitHub service's `options`. Other flags are not followed. */
+function healthOf(options: unknown): CiService["health"] {
+  if (typeof options !== "string") return undefined;
+  const parsed = parseShell(`x ${options}`);
+  if (!parsed.ok) return undefined;
+  const argv = parsed.segments[0]?.argv.slice(1) ?? [];
+  const value = (flag: string): string | undefined => {
+    const i = argv.findIndex((a) => a === flag || a.startsWith(`${flag}=`));
+    if (i < 0) return undefined;
+    return argv[i]?.startsWith(`${flag}=`) ? argv[i]?.slice(flag.length + 1) : argv[i + 1];
+  };
+  const cmd = value("--health-cmd");
+  if (cmd === undefined || cmd.trim() === "") return undefined;
+  const retries = Number(value("--health-retries"));
+  const interval = value("--health-interval");
+  const timeout = value("--health-timeout");
+  return {
+    cmd,
+    ...(interval !== undefined && isDuration(interval) ? { interval } : {}),
+    ...(timeout !== undefined && isDuration(timeout) ? { timeout } : {}),
+    ...(Number.isInteger(retries) && retries > 0 && retries <= 60 ? { retries } : {}),
+  };
+}
+
 const linesOf = (value: unknown): string[] => {
   if (typeof value === "string") return value.split("\n");
   if (Array.isArray(value)) return value.flatMap(linesOf);
@@ -119,9 +180,20 @@ function githubJobs(files: CiFiles): CiJob[] {
         for (const text of linesOf(s.run))
           lines.push({ text, env, workdir: typeof dir === "string" ? dir : undefined });
       }
-      const services = Object.values(record(job.services)).flatMap((v) => {
-        const image = record(v).image;
-        return typeof image === "string" ? [image] : [];
+      const services = Object.entries(record(job.services)).flatMap(([name, v]) => {
+        const svc = record(v);
+        if (typeof svc.image !== "string") return [];
+        return [
+          {
+            name,
+            image: svc.image,
+            env: serviceEnv(svc.env),
+            ports: (Array.isArray(svc.ports) ? svc.ports : []).flatMap((p) =>
+              typeof p === "string" || typeof p === "number" ? [String(p)] : [],
+            ),
+            health: healthOf(svc.options),
+          },
+        ];
       });
       out.push({
         system: "github-actions",
@@ -180,9 +252,12 @@ function gitlabJobs(files: CiFiles): CiJob[] {
     if (!("script" in job)) continue;
     const env = { ...globals, ...envOf(job.variables) };
     const lines = linesOf(job.script).map((text) => ({ text, env, workdir: undefined }));
-    const services = (Array.isArray(job.services) ? job.services : []).flatMap((v) => {
-      const image = typeof v === "string" ? v : record(v).name;
-      return typeof image === "string" ? [image] : [];
+    const services = (Array.isArray(job.services) ? job.services : []).flatMap((v): CiService[] => {
+      const svc = typeof v === "string" ? { name: v } : record(v);
+      const image = svc.name;
+      if (typeof image !== "string") return [];
+      const name = typeof svc.alias === "string" ? svc.alias : defaultServiceName(image);
+      return [{ name, image, env: serviceEnv(svc.variables), ports: [], health: undefined }];
     });
     out.push({ system: "gitlab-ci", file: first, name: id, lines, minutes: undefined, services });
   }

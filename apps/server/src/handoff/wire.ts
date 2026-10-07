@@ -4,8 +4,7 @@ import type { BaseEnv, RunMount, Spawner } from "@majhi/acp";
 import { type HandoffCommands, PRIVATE, type Task } from "@majhi/shared";
 import type Database from "better-sqlite3";
 import { z } from "zod";
-import { ciChecks } from "../ci/jobs.ts";
-import { readCiFiles } from "../ci/read.ts";
+import { readCiChecks } from "../ci/checks.ts";
 import { git } from "../git/git.ts";
 import { changeBase } from "../git/since-start.ts";
 import type { Housekeeper } from "../memory/housekeeper.ts";
@@ -70,6 +69,24 @@ export interface HandoffWiring {
   exec?: HandoffPorts["exec"] | undefined;
 }
 
+/** Files whose change means what a project installs may differ. */
+const INSTALL_FILES: ReadonlySet<string> = new Set([
+  "package.json",
+  "pnpm-lock.yaml",
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "yarn.lock",
+  "bun.lock",
+  "bun.lockb",
+  "pyproject.toml",
+  "requirements.txt",
+  "uv.lock",
+  "poetry.lock",
+  "Pipfile.lock",
+  "composer.json",
+  "composer.lock",
+]);
+
 const PackageSchema = z.looseObject({ scripts: z.record(z.string(), z.string()).optional() });
 
 /** The task's head commits, one per repo: the branch tips, so a state of the work is one string. */
@@ -126,7 +143,7 @@ export function createHandoff(w: HandoffWiring): HandoffService {
         return { command: own, env: {}, from: "set for this project" };
       // The CI of the task's own commit, so a CI file the task changed counts.
       if (key !== "install") {
-        const found = ciChecks(await readCiFiles(fsRepoFiles(worktree))).find((c) => c.kind === key);
+        const found = (await readCiChecks(fsRepoFiles(worktree), { fresh: true })).find((c) => c.kind === key);
         if (found !== undefined)
           return {
             command: found.command,
@@ -134,6 +151,7 @@ export function createHandoff(w: HandoffWiring): HandoffService {
             workdir: found.workdir,
             from: found.from,
             minutes: found.minutes,
+            services: found.services,
           };
       }
       const card = w.projectCards.get(project)?.commands[key];
@@ -162,6 +180,12 @@ export function createHandoff(w: HandoffWiring): HandoffService {
       const r = t?.repos.find((x) => x.project === project);
       if (t === undefined || r === undefined) throw new Error("the task is gone");
       return makeCheckout({ source: r.source, folder: t.folder, project, commit, installedFrom });
+    },
+    dependenciesChanged: async (id, project, base) => {
+      const r = w.store.tasks.get(id)?.repos.find((x) => x.project === project);
+      if (r === undefined) return false;
+      const out = await git(r.source, ["diff", "--name-only", base, `refs/heads/${r.branch}`]);
+      return out.split("\n").some((file) => INSTALL_FILES.has(file.split("/").pop() ?? ""));
     },
     ...(w.baseRunsDir === undefined ? {} : { baseRuns: baseRunStore(w.baseRunsDir) }),
     ...(w.reportExisting === undefined ? {} : { reportExisting: w.reportExisting }),

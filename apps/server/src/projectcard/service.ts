@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import type { ProjectCard, ReadinessItem } from "@majhi/shared";
+import type { CardCheck, ProjectCard, ReadinessItem } from "@majhi/shared";
+import { readCiChecks } from "../ci/checks.ts";
 import { UserError } from "../errors.ts";
 import { folderName, fsRepoFiles, type RepoFiles } from "./files.ts";
 import { readiness, gaps as readinessGaps } from "./readiness.ts";
 import type { CardRepo } from "./repo.ts";
-import { isCardRelevant, type ScanFacts, scanRepo } from "./scanner.ts";
+import { isCardRelevant, type ScanFacts, safeText, scanRepo } from "./scanner.ts";
 
 /** How often base tips are looked at. */
 export const CARD_WATCH_MS = 60_000;
@@ -52,9 +53,9 @@ export function plainUrl(url: string): string {
 }
 
 function hashOf(facts: ScanFacts): string {
-  const { stack, commands, checks, structure, conventions, ci, deploy, readme } = facts;
+  const { stack, commands, structure, conventions, ci, deploy, readme } = facts;
   return createHash("sha1")
-    .update(JSON.stringify({ stack, commands, checks, structure, conventions, ci, deploy, readme }))
+    .update(JSON.stringify({ stack, commands, structure, conventions, ci, deploy, readme }))
     .digest("hex");
 }
 
@@ -87,6 +88,39 @@ export class ProjectCards {
 
   get(project: string): ProjectCard | undefined {
     return this.deps.repo.get(project)?.card;
+  }
+
+  /**
+   * The cards as the page shows them: the stored card with the checks the repo's CI runs now, read
+   * through the one CI reader (cached for a minute), so they are right without a refresh.
+   */
+  async listLive(project?: string): Promise<ProjectCard[]> {
+    const projects = await this.deps.projects();
+    return Promise.all(
+      this.list(project).map(async (card) => {
+        const path = projects.find((p) => p.id === card.project)?.path;
+        if (path === undefined) return card;
+        const found = await readCiChecks((this.deps.files ?? fsRepoFiles)(path), { key: path }).catch(
+          () => [],
+        );
+        return {
+          ...card,
+          checks: found
+            .filter((c) => safeText(c.command) !== undefined)
+            .map(
+              (c): CardCheck => ({
+                kind: c.kind,
+                command: c.command,
+                env: c.env,
+                ...(c.workdir === undefined ? {} : { workdir: c.workdir }),
+                from: c.from,
+                ...(c.minutes === undefined ? {} : { minutes: c.minutes }),
+                services: c.services.map((s) => s.image),
+              }),
+            ),
+        };
+      }),
+    );
   }
 
   list(project?: string): ProjectCard[] {
@@ -223,7 +257,7 @@ export class ProjectCards {
       whatItIsBy: by,
       stack: facts.stack,
       commands: facts.commands,
-      checks: facts.checks,
+      checks: [],
       structure: facts.structure,
       conventions: facts.conventions,
       ci: {
