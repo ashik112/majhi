@@ -313,6 +313,27 @@ export class AutonomyService {
     return this.deps.lanes.orgOf(task);
   }
 
+  /** Why the workspace is at rest (hours, a freeze), or undefined. The captain resumes by itself when it ends. */
+  async restingWhy(org: string): Promise<string | undefined> {
+    const settings = (await this.deps.config.settings()).autonomy;
+    const rules = settings.orgs[org];
+    return restWhy(rules, this.now(), zoneOr(rules?.tz ?? settings.tz));
+  }
+
+  /**
+   * Why nobody looked at this workspace's alerts, in the owner's words, or undefined when the captain is listening:
+   * Auto-pilot off, no captain deciding or doing upkeep here, a rest, or the day's cap.
+   */
+  async quietWhy(org: string): Promise<string | undefined> {
+    if (this.repo.state().mode !== "on") return "Auto-pilot is off";
+    if (!(await this.thinksIn()).includes(org))
+      return "Start and Upkeep are You here, so the captain is not listening";
+    const rest = await this.restingWhy(org);
+    if (rest !== undefined) return `The captain rests: ${rest}`;
+    if (this.dayCapped()) return "the day's spend cap is reached";
+    return undefined;
+  }
+
   /**
    * The lane a tick goes to, while the mode is on and the workspace is where the captain starts work. When the
    * lane's chat was removed or closed, majhi makes or reopens it first and says so in the feed.

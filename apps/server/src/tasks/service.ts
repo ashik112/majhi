@@ -712,6 +712,19 @@ export class TaskService {
   }
 
   /**
+   * Gives an incident that waits in the inbox with no repo its project, once the owner (or the evidence) says which
+   * one it is about: it becomes a code task, and the project joins the way `addRepo` adds one.
+   */
+  async attachProject(id: string, project: string): Promise<Task> {
+    const task = this.get(id);
+    if (task.status !== "inbox" || task.repos.length > 0) {
+      throw new UserError(`${id} already has its project or has started.`, 409);
+    }
+    this.deps.store.tasks.setKind(id, "code", this.now().toISOString());
+    return this.addRepo({ id, project, byOwner: false });
+  }
+
+  /**
    * The type of a task made without one: the rules' reading of the branch type the creator named, the
    * finding's source or the title, and Laya's pick (recorded on the task) when they say nothing.
    */

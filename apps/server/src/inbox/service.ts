@@ -48,6 +48,8 @@ export interface DecisionActions {
   answerIncident?(id: number, option: string): Promise<unknown>;
   /** A trust ladder notice: demotion read or given back, a promotion taken or put off, a mute undone. */
   answerTrust?(id: number, option: string): Promise<unknown>;
+  /** An incident task asks something of the owner: start it, which project, close it, a failed deploy. */
+  answerIncidentAsk?(what: string, ref: string, option: string): Promise<unknown>;
   /** The monthly ceiling: raise it for the month or keep it. */
   answerCeiling?(month: string, option: string): Promise<unknown>;
   /** The Mac has notifications off for majhi: `settings` opens the pane, `check` sends a test. */
@@ -405,6 +407,7 @@ export class InboxService {
     } else if (parsed.kind === "trust") await actions.answerTrust?.(parsed.id, input.option);
     else if (parsed.kind === "ceiling") await actions.answerCeiling?.(parsed.month, input.option);
     else if (parsed.kind === "notify") await actions.answerNotifyAccess?.(input.option);
+    else if (parsed.kind === "iask") await actions.answerIncidentAsk?.(parsed.what, parsed.ref, input.option);
     else if (parsed.kind === "draft") {
       await actions.decideDraft(parsed.id, input.option === "send" ? "send" : "discard");
     } else if (parsed.kind === "batch") {

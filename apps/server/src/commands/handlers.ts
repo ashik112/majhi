@@ -308,6 +308,10 @@ export function createHandlers({
         return org === undefined || boss === undefined ? undefined : { boss, org };
       },
       orgOf: (task) => services.store.tasks.get(task)?.org,
+      askCaptain: async (org, text) => {
+        const chat = await services.lanes.ensure(org);
+        await services.tasks.send({ task: chat.id, text, attachments: [], mode: "queue" });
+      },
     }),
     ...agendaHandlers({
       agenda: services.agenda,

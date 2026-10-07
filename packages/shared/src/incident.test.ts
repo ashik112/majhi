@@ -56,7 +56,32 @@ describe("the status a client sees", () => {
     // A deploy that has not gone live yet holds it back.
     expect(clientStatus(facts({ doneAt: t("10:50"), deploysPending: true })).status).toBe("investigating");
     // Live but the task is not done: not resolved.
-    expect(clientStatus(facts({ liveAt: t("10:41") })).status).toBe("monitoring");
+    expect(clientStatus(facts({ liveAt: t("10:41"), now: t("10:50") })).status).toBe("monitoring");
+    // Live for the soak with no watch to look at: resolved.
+    expect(clientStatus(facts({ liveAt: t("10:41"), now: t("11:00") })).status).toBe("resolved");
+  });
+
+  it("a watch that went green with nothing shipped is only recovered: the incident stays open", () => {
+    const r = clientStatus(facts({ watch: { greenAt: t("10:30") }, now: t("13:00") }));
+    expect(r.status).toBe("investigating");
+    expect(r.recoveredAt).toBe(t("10:30"));
+    // The owner closing it after the recovery resolves it once the soak has run.
+    const closed = clientStatus(
+      facts({ watch: { greenAt: t("10:30") }, doneAt: t("10:45"), now: t("13:00") }),
+    );
+    expect(closed.status).toBe("resolved");
+    expect(closed.at.resolved).toBe(t("11:00"));
+  });
+
+  it("needs a shipped fix AND a green watch for the soak to resolve", () => {
+    // Fix live but the watch is still firing.
+    expect(clientStatus(facts({ liveAt: t("10:41"), watch: {}, now: t("13:00") })).status).toBe("monitoring");
+    // Fix live, watch green, soak not over.
+    const soaking = clientStatus(
+      facts({ liveAt: t("10:41"), watch: { greenAt: t("10:50") }, now: t("10:55") }),
+    );
+    expect(soaking.status).toBe("monitoring");
+    expect(soaking.soakEndsAt).toBe(t("11:05"));
   });
 
   it("is reopened by a client who says it is still broken, even while the watch is green", () => {
