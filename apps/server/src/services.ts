@@ -1502,6 +1502,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
         .filter((a) => a.status === "needs-login" || a.status === "unreachable")
         .map((a) => ({ id: a.id, at: a.lastHealth?.checkedAt ?? new Date().toISOString() })),
     recommendations: new RecommendationRepo(store.raw),
+    proposalStale: (item) => admin.proposalStale(item),
     orgNames: async () =>
       Object.fromEntries(Object.entries((await config.sections()).orgs).map(([id, o]) => [id, o.name])),
     lastAgentMessage: (task) => {
@@ -1719,6 +1720,19 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     }),
   );
   admin.useAutonomy(autonomy);
+  admin.useProposals({
+    autonomy: async () => (await config.settings()).autonomy,
+    mode: () => autonomy.mode(),
+    project: async (id) => {
+      try {
+        const info = await projects.get(id);
+        return { org: info.org, deploy: info.deploy };
+      } catch {
+        return undefined;
+      }
+    },
+    orgName: async (org) => (await config.sections()).orgs[org]?.name ?? (org === PRIVATE ? "Private" : org),
+  });
   const cleanup = new CleanupService({ store, room, events, projects });
   const folderSweep = new TaskFolderSweep({
     store,
