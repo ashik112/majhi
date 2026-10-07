@@ -146,6 +146,18 @@ describe("the gates", () => {
     expect(liveGate({ ...input, slot: { ...slot, startMode: "live" } }).accepted).toBe(true);
   });
 
+  it("a slot that starts live answers above its start bar and defers below it", () => {
+    const eager: SlotDef = { ...slot, startMode: "live", startBar: 0.9 };
+    const input = { q: choice, cal: undefined, settings, version: "m1", labels: 0, slot: eager };
+    expect(liveGate({ ...input, a: answer("a", 0.95) })).toMatchObject({ accepted: true });
+    const doubtful = liveGate({ ...input, a: answer("a", 0.8) });
+    expect(doubtful).toMatchObject({ accepted: false });
+    expect(doubtful.shadow).toBeUndefined();
+    expect(doubtful.reason).toContain("under the 0.90");
+    // Once calibrated, the measured bar takes over from the start bar.
+    expect(liveGate({ ...input, cal: cal({ threshold: 0.75 }), a: answer("a", 0.8) }).accepted).toBe(true);
+  });
+
   it("live gate: a live calibration acts, a shadow one does not, and a new checkpoint needs a new eval", () => {
     const a = answer("a", 0.97);
     const input = { slot, q: choice, a, settings, labels: 80 };
@@ -205,6 +217,23 @@ describe("fitSlot", () => {
     expect(fit?.calibration.mode).toBe("live");
     expect(fit?.calibration.threshold).toBeLessThan(1);
     expect(fit?.heldOut.precision).toBeGreaterThanOrEqual(0.85);
+  });
+
+  it("a live slot goes back to shadow when its precision drops, and then stops acting", () => {
+    const good = fitSlot({ ...slot, target: 0.85 }, items(200, 1), "m1", opts);
+    expect(good?.calibration.mode).toBe("live");
+    const worse = fitSlot({ ...slot, target: 0.85 }, items(200, 0), "m1", opts);
+    expect(worse?.calibration.mode).toBe("shadow");
+    const gate = liveGate({
+      slot: { ...slot, startMode: "live" },
+      q: choice,
+      a: answer("a", 0.99),
+      cal: worse?.calibration,
+      settings,
+      version: "m1",
+      labels: 200,
+    });
+    expect(gate).toMatchObject({ accepted: false, shadow: true });
   });
 
   it("stays in shadow for a model at chance, however sure it sounds", () => {

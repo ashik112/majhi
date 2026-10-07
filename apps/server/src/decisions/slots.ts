@@ -29,6 +29,14 @@ export interface SlotDef {
    * protection.
    */
   startMode?: "shadow" | "live";
+  /**
+   * For a slot that starts live: the sureness (0 to 1, from the model's own probabilities) an answer
+   * needs before it acts, until the slot is calibrated and moves to its measured bar. Below it the
+   * answer defers to the caller's safe default. Default: no bar beyond the base one.
+   */
+  startBar?: number;
+  /** A bigger model may label this slot's answers, a few a day (the stand-in agent, never an outside one). */
+  teacher?: boolean;
   /** The class an answer counts as when comparing it with a label. Default: the answer itself. */
   classOf?: (value: string) => string;
   /** Built-in labeled examples. Report only: they never move a slot to live. */
@@ -37,6 +45,12 @@ export interface SlotDef {
 
 /** Labels a slot needs before majhi tries to fit it. */
 export const MIN_LABELS = 50;
+
+/** New labels a slot collects before it is fitted again. */
+export const REFIT_EVERY = 10;
+
+/** Answers a day (per use) the stand-in agent may give as a teacher. */
+export const TEACHER_PER_DAY = 12;
 
 /** The uses whose answers an agent or the owner reads themselves: never in shadow, nothing acts on them. */
 export const READ_BY_HAND: ReadonlySet<Use> = new Set<Use>(["tool", "owner"]);
