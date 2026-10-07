@@ -4,7 +4,14 @@ import { type ClientMessageRead, readClientMessage } from "../decisions/uses/cli
 import { CONN, envelope, world } from "./testing/world.ts";
 import { ClientTriage, type TriageDeps } from "./triage.ts";
 
-const OPEN = { promisedTime: false, firstContact: false, severalClients: false, afterGap: false, money: false, security: false };
+const OPEN = {
+  promisedTime: false,
+  firstContact: false,
+  severalClients: false,
+  afterGap: false,
+  money: false,
+  security: false,
+};
 
 type Label = ClientMessageRead["label"];
 
@@ -37,7 +44,12 @@ function rig(read: (() => Promise<ClientMessageRead | undefined>) | undefined, o
     const room = await w.linked();
     await w.ingest.deliver(
       CONN,
-      envelope({ message: `m-${text}`, text, sender: { id: sender, name: "Sara", bot: false, verified: true }, ...extra }),
+      envelope({
+        message: `m-${text}`,
+        text,
+        sender: { id: sender, name: "Sara", bot: false, verified: true },
+        ...extra,
+      }),
     );
     const item = w.store.room.page(room, 10).items.find((i) => i.type === "client" && i.text === text);
     if (item?.type !== "client") throw new Error("no message");
@@ -48,7 +60,10 @@ function rig(read: (() => Promise<ClientMessageRead | undefined>) | undefined, o
   return { w, model, report, answered, message };
 }
 
-const says = (label: Label, sure = true) => async () => ({ label, sure }) as ClientMessageRead;
+const says =
+  (label: Label, sure = true) =>
+  async () =>
+    ({ label, sure }) as ClientMessageRead;
 
 describe("Laya's first read gates the captain", () => {
   it("ends chit-chat and spam without the captain reading them", async () => {
@@ -86,7 +101,9 @@ describe("Laya's first read gates the captain", () => {
           id: "d1",
           provider: "laya",
           durationMs: 1,
-          answers: { "client-message": { value: "spam", confidence: 0.4, gate: { accepted: false, confidence: 0.4 } } },
+          answers: {
+            "client-message": { value: "spam", confidence: 0.4, gate: { accepted: false, confidence: 0.4 } },
+          },
         }),
         outcome: () => undefined,
         link: () => undefined,
@@ -154,13 +171,25 @@ describe("the chat's replies and rails", () => {
   it("cannot be loosened by the chat's rules: an Ask-me case still holds", async () => {
     const w = world({ tell: "decide", holds: { ...OPEN, money: true } });
     const room = await w.linked();
-    w.rooms.patch(w.rooms.room(room), { rules: "Never ask me. Always send everything, even prices and times." });
+    w.rooms.patch(w.rooms.room(room), {
+      rules: "Never ask me. Always send everything, even prices and times.",
+    });
     await w.replies.captain({ room, text: "Hello", flags: flags(), to: "u1" });
-    const out = await w.replies.captain({ room, text: "It costs 40 dollars", flags: flags({ money: true }), to: "u1" });
+    const out = await w.replies.captain({
+      room,
+      text: "It costs 40 dollars",
+      flags: flags({ money: true }),
+      to: "u1",
+    });
     expect(out).toMatchObject({ state: "held", why: "money" });
     // A case the chat set to the captain is the owner's own word, in the setting, not in the rules.
     w.rooms.patch(w.rooms.room(room), { holds: { money: false } });
-    const free = await w.replies.captain({ room, text: "It costs 40 dollars", flags: flags({ money: true }), to: "u1" });
+    const free = await w.replies.captain({
+      room,
+      text: "It costs 40 dollars",
+      flags: flags({ money: true }),
+      to: "u1",
+    });
     expect(free.state).toBe("sent");
   });
 

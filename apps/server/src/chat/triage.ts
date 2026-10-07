@@ -158,7 +158,12 @@ export interface TriageOutcome {
 /** What the chat's "Reply when" says to do before the captain reads a message. */
 type Gate =
   | { go: false; why: string }
-  | { go: true; injection: boolean; urgent: boolean; /** Laya read it, so the injection check is done. */ read: boolean };
+  | {
+      go: true;
+      injection: boolean;
+      urgent: boolean /** Laya read it, so the injection check is done. */;
+      read: boolean;
+    };
 
 export class ClientTriage {
   constructor(private readonly deps: TriageDeps) {}
@@ -221,7 +226,11 @@ export class ClientTriage {
    * what names us, "Needs a reply" has Laya read it first, "Every message" reads all. Laya silent: the captain's
    * triage stands in. Laya unsure: it needs a reply.
    */
-  private async gate(room: RoomRow, item: Extract<RoomItem, { type: "client" }>, said: string): Promise<Gate> {
+  private async gate(
+    room: RoomRow,
+    item: Extract<RoomItem, { type: "client" }>,
+    said: string,
+  ): Promise<Gate> {
     if ((room.chat.muted ?? []).includes(item.sender.id)) return { go: false, why: "Muted" };
     const when = chatRoomSettings(room.chat).replyWhen;
     const open: Gate = { go: true, injection: false, urgent: false, read: false };

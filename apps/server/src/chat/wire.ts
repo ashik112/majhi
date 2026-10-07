@@ -9,8 +9,8 @@ import {
 } from "@majhi/shared";
 import { authorityOf } from "../captain/levels.ts";
 import type { ConfigService } from "../config/service.ts";
-import type { LayaDecisions } from "../decisions/uses/common.ts";
 import { readClientMessage } from "../decisions/uses/client-message.ts";
+import type { LayaDecisions } from "../decisions/uses/common.ts";
 import { classifyInjection } from "../decisions/uses/injection.ts";
 import type { FindingsService } from "../findings/service.ts";
 import type { Housekeeper } from "../memory/housekeeper.ts";
@@ -24,8 +24,8 @@ import { ClientIncidents, type IncidentsDeps } from "./incidents.ts";
 import { ChatIngest } from "./ingest.ts";
 import { ClientReplies } from "./replies.ts";
 import { ClientRooms } from "./rooms.ts";
-import { ChatSettings, dayBegins } from "./settings.ts";
 import { ClientChat, type ClientChatDeps } from "./service.ts";
+import { ChatSettings, dayBegins } from "./settings.ts";
 import { ClientTriage, type ToolLessModel } from "./triage.ts";
 
 /** Where each chat app keeps its tokens among the connection's secret entries. */

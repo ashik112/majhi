@@ -149,5 +149,20 @@ export function world(options: WorldOptions = {}) {
     severalClients: false,
     ...over,
   });
-  return { store, room, rooms, contacts, gate, replies, ingest, sent, triaged, state, linked, flags, hub, settings };
+  return {
+    store,
+    room,
+    rooms,
+    contacts,
+    gate,
+    replies,
+    ingest,
+    sent,
+    triaged,
+    state,
+    linked,
+    flags,
+    hub,
+    settings,
+  };
 }

@@ -95,7 +95,8 @@ export class ChatSettings {
 
   async set(input: ChatSettingsInput): Promise<ChatSettingsView> {
     const room = this.linked(input.room);
-    if (room.chat.archived === true) throw new UserError("That chat is unlinked. Its settings are read only.", 409);
+    if (room.chat.archived === true)
+      throw new UserError("That chat is unlinked. Its settings are read only.", 409);
     const change: Partial<RoomRow["chat"]> = {};
     if (input.replyWhen !== undefined) change.replyWhen = input.replyWhen;
     if (input.dailyLimit !== undefined) change.dailyLimit = input.dailyLimit;
@@ -129,7 +130,11 @@ export class ChatSettings {
     const known = this.deps.store.client.senders(room.id).find((s) => s.id === sender);
     if (known === undefined) throw new UserError("Nobody with that id wrote in this chat.", 404);
     const contact = known.verified
-      ? this.deps.store.client.byIdentity(room.org, { app: room.chat.app, account: room.chat.account, native: sender })
+      ? this.deps.store.client.byIdentity(room.org, {
+          app: room.chat.app,
+          account: room.chat.account,
+          native: sender,
+        })
       : undefined;
     if (role === "us" && contact === undefined) {
       throw new UserError("That sender is not verified, so it cannot be marked as one of us.", 409);

@@ -266,7 +266,7 @@ function HoldList({ org }: { org: CaptainOrg }) {
   const holds = effectiveHolds(org.rules.holds);
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <span className="text-sm text-fg-faint">Hold for me</span>
+      <span className="text-sm text-fg-faint">Ask me before sending</span>
       <div className="grid gap-x-6 min-[1180px]:grid-cols-3">
         {HOLD_CLASSES.map((kind) => (
           <Switch

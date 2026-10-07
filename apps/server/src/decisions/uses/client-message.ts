@@ -49,7 +49,8 @@ export function clientMessageRequest(text: string): DecideRequestInput {
           },
           {
             key: "urgent",
-            description: "something is down or broken for the client right now, money or data is at risk, or they are angry",
+            description:
+              "something is down or broken for the client right now, money or data is at risk, or they are angry",
           },
         ],
       },

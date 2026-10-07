@@ -1,8 +1,8 @@
 import {
   type AuthorityChoice,
   type ChatApp,
-  type Draft,
   chatRoomSettings,
+  type Draft,
   type Holds,
   holdsForRoom,
   mentionedContacts,
@@ -21,8 +21,8 @@ import { ChatSendError } from "./adapter.ts";
 import { type People, parseBody, renderPlain } from "./format.ts";
 import type { ChatHub } from "./hub.ts";
 import { railsFor, withoutSecrets } from "./rails.ts";
-import { dayBegins } from "./settings.ts";
 import type { ClientRooms } from "./rooms.ts";
+import { dayBegins } from "./settings.ts";
 
 export interface RepliesDeps {
   store: Store;
@@ -193,8 +193,7 @@ export class ClientReplies {
     const limit = chatRoomSettings(room.chat).dailyLimit;
     if (limit === "none") return false;
     const now = this.deps.now?.() ?? new Date();
-    const since =
-      (await this.deps.dayBegins?.(room.org as string)) ?? dayBegins(now, "UTC");
+    const since = (await this.deps.dayBegins?.(room.org as string)) ?? dayBegins(now, "UTC");
     return this.deps.store.client.captainRepliesSince(room.id, since) >= limit;
   }
 

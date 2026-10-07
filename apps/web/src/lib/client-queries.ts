@@ -1,4 +1,4 @@
-import type { ClientList, CommandOutput } from "@majhi/shared";
+import type { ChatSettingsInput, ClientList, CommandOutput, Keep, PersonRole } from "@majhi/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ApiRequestError, cmd } from "./api";
 import { queryKeys } from "./queries";
@@ -198,5 +198,41 @@ export function useConfirmWebhook() {
   return useMutation<CommandOutput<"chat.confirmWebhook">, ApiRequestError, { connection: string }>({
     mutationFn: (input) => cmd("chat.confirmWebhook", input),
     onSuccess: done,
+  });
+}
+
+/** `chat.settings`: the settings of one client chat. The `clients` topic refetches it. */
+export function useChatSettings(room: string) {
+  return useQuery<CommandOutput<"chat.settings">, ApiRequestError>({
+    queryKey: [...queryKeys.clients, "settings", room],
+    queryFn: () => cmd("chat.settings", { room }),
+  });
+}
+
+/** Changes the named settings of a chat. */
+export function useSetChatSettings(room: string) {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"chat.settingsSet">, ApiRequestError, Omit<ChatSettingsInput, "room">>({
+    mutationFn: (input) => cmd("chat.settingsSet", { room, ...input }),
+    onSuccess: (data) => {
+      client.setQueryData([...queryKeys.clients, "settings", room], data);
+      void client.invalidateQueries({ queryKey: queryKeys.conversations });
+    },
+  });
+}
+
+/** How many messages a Keep setting would remove now. */
+export function useKeepCount(room: string) {
+  return useMutation<CommandOutput<"chat.keepCount">, ApiRequestError, { keep: Keep }>({
+    mutationFn: (input) => cmd("chat.keepCount", { room, ...input }),
+  });
+}
+
+/** What a sender is in a chat: a client, one of us, or muted. */
+export function useSetPerson(room: string) {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"chat.person">, ApiRequestError, { sender: string; role: PersonRole }>({
+    mutationFn: (input) => cmd("chat.person", { room, ...input }),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.clients }),
   });
 }

@@ -8,9 +8,9 @@ import {
   AutonomyStartInputSchema,
   type ChatRoomSettings,
   ChatSettingsInputSchema,
+  type DeployEnvironment,
   HOLD_CLASSES,
   HOLD_LABEL,
-  type DeployEnvironment,
   SetEnvironmentsInputSchema,
 } from "@majhi/shared";
 import { mergePatch } from "../autonomy/configure.ts";
@@ -238,7 +238,10 @@ async function planChatSettings(world: ProposalWorld, input: unknown, lane: stri
   const found = await world.chatSettings(parsed.data.room);
   if (found === undefined) return { kind: "refuse", error: "There is no such linked client chat." };
   if (found.org !== lane) {
-    return { kind: "refuse", error: "That chat belongs to another workspace; the captain proposes for its own only." };
+    return {
+      kind: "refuse",
+      error: "That chat belongs to another workspace; the captain proposes for its own only.",
+    };
   }
   const lines: string[] = [];
   for (const key of ["replyWhen", "dailyLimit", "rules", "keep", "notify"] as const) {

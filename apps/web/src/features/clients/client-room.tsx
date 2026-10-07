@@ -37,6 +37,7 @@ import { formatBytes } from "@/lib/format";
 import { GLASS } from "@/lib/glass";
 import { useOrgs } from "@/lib/studio-queries";
 import { AppMark } from "./app-mark";
+import { ChatSettingsSheet } from "./chat-settings";
 import { kindLine } from "./clients-list";
 import { mentionQuery, namesToTokens, type Person, roomPeople, tokensToNames } from "./mentions";
 
@@ -114,6 +115,7 @@ function Header({ row }: { row: ClientRow }) {
   const toast = useToast();
   const holder = useChatHolder();
   const unlink = useUnlinkChat();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const set = (next: "captain" | "you") => {
     if (next === row.holder) return;
     holder.mutate(
@@ -154,6 +156,7 @@ function Header({ row }: { row: ClientRow }) {
           <Menu
             label="Chat actions"
             items={[
+              { label: "Chat settings", onSelect: () => setSettingsOpen(true) },
               {
                 label: "Unlink",
                 disabled: unlink.isPending,
@@ -171,6 +174,9 @@ function Header({ row }: { row: ClientRow }) {
         </div>
       )}
       {row.archived === true && <span className="shrink-0 text-xs text-fg-faint">Unlinked</span>}
+      {settingsOpen && (
+        <ChatSettingsSheet room={row.id} orgName={org?.name ?? ""} onClose={() => setSettingsOpen(false)} />
+      )}
     </header>
   );
 }

@@ -5,8 +5,8 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Command, dockerTty, localSpawner, orphanRuns } from "@majhi/acp";
 import {
-  chatRoomSettings,
   BUILT_IN_CONNECT_APPS,
+  chatRoomSettings,
   DEFAULT_GIT_HOST,
   failureFromError,
   GLOBAL_CONNECTIONS,
@@ -2475,7 +2475,10 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   );
   incidentSweep.unref();
   // Each chat keeps only the newest messages its Keep says, once a day (and once at start).
-  const keepSweep = setInterval(() => background.run(async () => void chatParts.settings.sweep()), KEEP_SWEEP_MS);
+  const keepSweep = setInterval(
+    () => background.run(async () => void chatParts.settings.sweep()),
+    KEEP_SWEEP_MS,
+  );
   keepSweep.unref();
   background.run(async () => void chatParts.settings.sweep());
   // The read loops follow the connections: a new bot starts reading, a removed one stops.

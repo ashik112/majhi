@@ -53,7 +53,7 @@ const SIZE_HELP: Record<TaskSizeLimit, string> = {
 };
 
 /** One choice in the grid: filled when the captain decides, hollow when you do. */
-function Cell({
+export function Cell({
   checked,
   label,
   disabled,
