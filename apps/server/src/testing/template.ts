@@ -20,8 +20,15 @@ declare module "vitest" {
 }
 
 const own: { root?: Promise<string> } = {};
+/** Set by the global setup, which has no injected root of its own: it is the one that makes it. */
+let forcedRoot: string | undefined;
+
+export function useTemplateRoot(root: string | undefined): void {
+  forcedRoot = root;
+}
 
 async function templateRoot(): Promise<string> {
+  if (forcedRoot !== undefined) return forcedRoot;
   const provided = inject("majhiTemplateRoot");
   if (typeof provided === "string" && provided !== "") return provided;
   own.root ??= mkdtemp(join(tmpdir(), "majhi-templates-"));
@@ -69,7 +76,18 @@ async function assertRelocatable(built: BuiltTemplate): Promise<void> {
  * removed.
  */
 async function templateFor(key: string, build: () => Promise<BuiltTemplate>): Promise<string> {
-  const root = await templateRoot();
+  return buildTemplate(await templateRoot(), key, build);
+}
+
+/**
+ * Makes the template named `key` under `root` if no process has, and waits for the one that is making
+ * it. The run's global setup calls this for the templates most tests need, so no test pays for them.
+ */
+export async function buildTemplate(
+  root: string,
+  key: string,
+  build: () => Promise<BuiltTemplate>,
+): Promise<string> {
   const name = createHash("sha1").update(key).digest("hex").slice(0, 16);
   const final = join(root, name);
   const lock = join(root, `${name}.lock`);
