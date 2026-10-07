@@ -41,6 +41,7 @@ import { scopeAudience, scopeName, WorkspaceTag } from "./scope-picker";
 import { SlackChannels } from "./slack-channels";
 import { fixOf, rowStatus } from "./status";
 import { TokenForm } from "./token-form";
+import { ToolGateList } from "./tool-gate-list";
 
 /**
  * The picked connection, in a side panel: its one status and what to do about it, what agents can do
@@ -430,6 +431,7 @@ function UsageSection({ view, orgs }: { view: ConnectionView; orgs: readonly Org
             .
           </p>
         )}
+        {view.toolGate !== undefined && <ToolGateList tools={view.toolGate} />}
         <p className="text-sm text-fg-faint text-pretty">
           Anything that changes something asks you first, unless the exact action is allowed below.
           {sign?.account !== undefined && (

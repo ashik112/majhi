@@ -1061,6 +1061,18 @@ export const ToolAnnotationsSchema = z.object({
 });
 export type ToolAnnotations = z.infer<typeof ToolAnnotationsSchema>;
 
+/**
+ * What the gate does for one tool of an MCP server: `read` runs without asking, `ask` asks the owner,
+ * `allowed` is a change the owner allowed, `destructive` always asks.
+ */
+export const ToolGateSchema = z.object({
+  tool: z.string(),
+  gate: z.enum(["read", "ask", "allowed", "destructive"]),
+  /** Why a change is held, in a few words. Absent for a read. */
+  why: z.string().optional(),
+});
+export type ToolGate = z.infer<typeof ToolGateSchema>;
+
 /** What a Test found. */
 export const ConnectionTestResultSchema = z.object({
   ok: z.boolean(),
@@ -1106,6 +1118,8 @@ export const ConnectionViewSchema = z.object({
   problems: z.array(z.string()),
   /** The last Test since majhi started. */
   lastTest: ConnectionTestResultSchema.optional(),
+  /** MCP servers: what the gate does for each tool of the last Test. Empty before a Test. */
+  toolGate: z.array(ToolGateSchema).optional(),
   /**
    * Where the connection stands: connecting, connected (a real call passed, and when), failed (a typed
    * reason and the fix) or needs-attention (it worked, and the last re-check failed). Absent only for a

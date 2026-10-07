@@ -38,6 +38,7 @@ import { errorCode, formatIssues, UserError } from "../errors.ts";
 import type { SecretService } from "../secrets/service.ts";
 import type { SecretStore } from "../secrets/store.ts";
 import { assertConnectionFile, type UploadStore } from "../uploads/store.ts";
+import { toolGateOf } from "./tool-gate.ts";
 
 /** Under the majhi home: one folder of files per connection. Never in the config history. */
 export const CONNECTIONS_DIR_NAME = "connections";
@@ -660,6 +661,8 @@ function viewOf(
     problems: connectionProblems(connection, stored),
   };
   if (known.lastTest !== undefined) view.lastTest = known.lastTest;
+  const toolGate = toolGateOf(id, connection, known.lastTest);
+  if (toolGate.length > 0) view.toolGate = toolGate;
   if (known.health !== undefined) view.health = known.health;
   return view;
 }
