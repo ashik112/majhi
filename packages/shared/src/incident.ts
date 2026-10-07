@@ -109,8 +109,16 @@ export function clientStatus(f: StatusFacts): StatusResult {
     // Resolved needs a shipped fix and a watch that stayed green after it. A watch that went green with nothing
     // shipped, or with a fix older than the last reopen, is only "recovered": the incident stays open.
     if (green !== undefined) {
-      if (liveAt === undefined) recoveredAt = green;
-      else {
+      if (liveAt === undefined) {
+        recoveredAt = green;
+        // The owner closed it after it recovered: that is the resolution.
+        // The soak then runs from the later of the two, as it does after a shipped fix.
+        if (doneAt !== undefined) {
+          const end = new Date(ms(later(green, doneAt)) + f.soakMin * 60_000).toISOString();
+          if (ms(end) <= ms(f.now)) resolvedAt = end;
+          else soakEndsAt = end;
+        }
+      } else {
         const end = new Date(ms(later(green, liveAt)) + f.soakMin * 60_000).toISOString();
         if (ms(end) <= ms(f.now)) resolvedAt = end;
         else soakEndsAt = end;
@@ -155,13 +163,13 @@ export const IncidentEventSchema = z.discriminatedUnion("event", [
     at: z.string(),
   }),
   /** A client said it was still broken after Resolved. */
-  z.object({ event: z.literal("reopened"), room: TaskIdSchema, at: z.string() }),
+  z.object({ event: z.literal("reopened"), room: TaskIdSchema.optional(), at: z.string() }),
   /** The owner answered the "recovered on its own" card: close the incident, or let the lead go on. */
   z.object({ event: z.literal("recovered"), choice: z.enum(["closed", "continue"]), at: z.string() }),
   /** The owner saw a card of this incident (a failed deploy): it leaves Needs you. */
   z.object({ event: z.literal("seen"), what: z.string().min(1).max(80), at: z.string() }),
   /** The owner or the captain wrote the incident down: where it came from and the facts it was opened on. */
-  z.object({ event: z.literal("opened"), source: z.enum(["watch", "client", "deploy"]), facts: z.string().max(2000), at: z.string() }),
+  z.object({ event: z.literal("opened"), source: z.enum(["watch", "client", "deploy"]), facts: z.string().max(2000), projectUnknown: z.literal(true).optional(), at: z.string() }),
   /** An update to a client room: what it was told, and the outbound draft it went as. */
   z.object({
     event: z.literal("told"),

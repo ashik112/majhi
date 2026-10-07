@@ -1,5 +1,6 @@
 import type { OpsIncident, Task } from "@majhi/shared";
 import { describe, expect, it, vi } from "vitest";
+import { IncidentFacts } from "../incident/facts.ts";
 import { incidentHandlers } from "./incident-handlers.ts";
 import { ClientIncidents } from "./incidents.ts";
 import { CONN, envelope, world } from "./testing/world.ts";
@@ -14,25 +15,33 @@ async function setup(status: Task["status"] = "inbox") {
   const w = world({ tell: "decide", holds: { firstContact: false } });
   const watch: { incident?: OpsIncident } = {};
   const reopened: string[] = [];
+  const findings = {
+    ofTask: () => (watch.incident === undefined ? [] : [{ id: 1 } as never]),
+    adopt: () => ({}) as never,
+    get: () => ({}) as never,
+    dismiss: () => ({}) as never,
+  };
+  const facts = new IncidentFacts({
+    store: w.store,
+    findings,
+    watch: { incident: () => watch.incident, incidentOfFinding: () => watch.incident },
+    settings: async () => ({ soakMin: 15, cadenceMin: 30 }),
+    envs: async () => 0,
+  });
   const incidents = new ClientIncidents({
     store: w.store,
     room: w.room,
     replies: w.replies,
     gate: w.gate,
-    findings: {
-      ofTask: () => (watch.incident === undefined ? [] : [{ id: 1 } as never]),
-      adopt: () => ({}) as never,
-      get: () => ({}) as never,
-      dismiss: () => ({}) as never,
-    },
+    findings,
     watch: {
       incident: () => watch.incident,
       incidentOfFinding: () => watch.incident,
       open: () => [],
     },
-    settings: async () => ({ soakMin: 15, cadenceMin: 30 }),
     tz: async () => "UTC",
-    create: async () => ({ id: "ACM-1" }),
+    facts,
+    engine: { open: async () => ({ task: "ACM-1", joined: false, started: false, projectUnknown: false }), evidence: () => [] },
     reopen: async (id) => {
       reopened.push(id);
       // What the lifecycle's reopen does to the row: a done task is open again.
@@ -117,7 +126,7 @@ describe("the report to a client", () => {
     const sentBefore = w.sent.length;
 
     // An agent, even the captain, cannot send or edit it.
-    const handlers = incidentHandlers({ incidents, lane: async () => undefined, orgOf: () => "acme" });
+    const handlers = incidentHandlers({ incidents, lane: async () => undefined, orgOf: () => "acme", askCaptain: async () => undefined });
     const agent = {
       command: "incident.sendReport",
       meta: { actor: { kind: "agent", id: "captain" } },
@@ -267,6 +276,10 @@ describe('"any update?" from a client', () => {
     const soaking = await t.incidents.answer(t.rooms[0] as string);
     expect(soaking?.text).not.toContain("resolved");
     t.watch.incident = { ...t.watch.incident, resolvedAt: new Date(now.getTime() - 3_600_000).toISOString() };
+    // Closed with nothing shipped: the soak runs from the close, so the close was an hour ago too.
+    t.w.store.raw
+      .prepare("UPDATE tasks SET updated_at = ? WHERE id = 'ACM-9'")
+      .run(new Date(now.getTime() - 3_000_000).toISOString());
     const after = await t.incidents.answer(t.rooms[0] as string);
     expect(after?.text).toContain("resolved");
   });

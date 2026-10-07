@@ -20,6 +20,7 @@ import type { Store } from "../store/index.ts";
 import type { ChatAdapter } from "./adapter.ts";
 import { Contacts } from "./contacts.ts";
 import { type ChatConnectionInfo, ChatHub } from "./hub.ts";
+import type { IncidentFacts } from "../incident/facts.ts";
 import { ClientIncidents, type IncidentsDeps } from "./incidents.ts";
 import { ChatIngest } from "./ingest.ts";
 import { ClientReplies } from "./replies.ts";
@@ -39,7 +40,7 @@ export const TOKEN_VARIABLES: Partial<
 export interface ClientChatWiring {
   store: Store;
   room: RoomService;
-  gate: Pick<OutboundGate, "submit" | "edit" | "get">;
+  gate: Pick<OutboundGate, "submit" | "edit" | "get" | "decide">;
   config: ConfigService;
   adapters: readonly ChatAdapter[];
   /** Every connection of every workspace. */
@@ -51,8 +52,11 @@ export interface ClientChatWiring {
   findings: Pick<FindingsService, "report" | "dismiss" | "toTask" | "find" | "ofTask" | "adopt" | "get">;
   /** The ops watch, for the watch incident an incident task is linked to. */
   watch: IncidentsDeps["watch"];
-  /** Makes an incident task from a client message: type incident, origin client. */
-  createIncident: IncidentsDeps["create"];
+  /** The one reader of an incident's facts, and the engine that opens and joins incidents. */
+  facts: IncidentFacts;
+  engine: IncidentsDeps["engine"];
+  /** Why nobody looked at a workspace's incidents, or undefined. */
+  quiet?: IncidentsDeps["quiet"];
   /** A workspace's time zone. */
   tz: IncidentsDeps["tz"];
   /** Moves a done incident task back to an open state through the task lifecycle. */
@@ -195,9 +199,17 @@ export function createClientChat(w: ClientChatWiring): ClientChatParts {
     gate: w.gate,
     findings: w.findings,
     watch: w.watch,
-    settings: async (org) => effectiveIncident((await w.config.settings()).autonomy.orgs[org]?.incident),
     tz: w.tz,
-    create: w.createIncident,
+    facts: w.facts,
+    engine: w.engine,
+    ...(w.quiet === undefined ? {} : { quiet: w.quiet }),
+    write: async (org, key, prompt) => {
+      try {
+        return (await w.housekeeper.ask({ id: key, org }, prompt, (text) => ({ ok: true, value: text }))).value;
+      } catch {
+        return undefined;
+      }
+    },
     reopen: w.reopenIncident,
     askLead: w.askLead,
     changed: w.changed,

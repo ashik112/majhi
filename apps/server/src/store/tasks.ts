@@ -630,6 +630,27 @@ export class TaskRepo {
       );
   }
 
+  /** Gives a task that has no repo its first repos, and the kind that goes with them. For a task that waits in the inbox. */
+  setRepos(id: string, kind: Task["kind"], repos: Task["repos"], at: string): void {
+    this.db.transaction((tx) => {
+      tx.update(tasks).set({ kind, updatedAt: at }).where(eq(tasks.id, id)).run();
+      repos.forEach((r, pos) => {
+        tx.insert(taskRepos)
+          .values({
+            task: id,
+            project: r.project,
+            source: r.source,
+            base: r.base,
+            branch: r.branch,
+            createdBranch: r.createdBranch,
+            pos,
+            writes: r.writes === true,
+          })
+          .run();
+      });
+    });
+  }
+
   /** Tasks with a merge request that is not merged: open, or closed without merging. */
   unmergedMrs(): Set<string> {
     return new Set(this.q.unmerged.all().map((r) => r.task));

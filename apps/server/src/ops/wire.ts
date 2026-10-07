@@ -22,7 +22,7 @@ import { PhoneChannel, SECRET_KEY, type SecretsPort } from "./phone.ts";
 import { numberAt, type ProbePorts, systemPorts } from "./probes.ts";
 import { OpsRepo } from "./repo.ts";
 import { PhoneTokens } from "./tokens.ts";
-import { OpsWatch } from "./watch.ts";
+import { type OpsDeps, OpsWatch } from "./watch.ts";
 
 /** The pieces the ops watch needs from the rest of majhi, as small ports. */
 export interface OpsWiring {
@@ -80,6 +80,8 @@ export interface OpsWiring {
   notifications: () => Promise<NotificationsSettings>;
   /** False when this machine has no network. */
   online: () => Promise<boolean>;
+  /** An incident opened or fired again: the incident engine's task for it (see `OpsDeps.incidentTask`). */
+  incidentTask?: OpsDeps["incidentTask"];
   changed: () => void;
   now?: () => Date;
   /** For tests: the network behind the checks, the ntfy server, and the wait between two looks. */
@@ -188,6 +190,7 @@ export function createOps(w: OpsWiring): Ops {
     ...(w.retryMs === undefined ? {} : { retryMs: w.retryMs }),
     now,
     changed: w.changed,
+    ...(w.incidentTask === undefined ? {} : { incidentTask: w.incidentTask }),
     onAcked: (inc) => engine?.onAcked(inc),
     onResolved: (inc) => engine?.onResolved(inc),
     question: (inc) => engine?.question(inc),
