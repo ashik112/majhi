@@ -11,6 +11,7 @@ import type { AgentRun } from "./run.ts";
 function flow() {
   const items = new Map<string, RoomItem>();
   const allowances = new Set<string>();
+  const byTask = new Set<string>();
   const room = {
     post: (task: string, id: string, payload: object) => {
       items.set(id, { id, task, seq: items.size, at: "2026-10-04T12:00:00Z", ...payload } as RoomItem);
@@ -19,8 +20,11 @@ function flow() {
   } as unknown as RoomService;
   const store = {
     permissions: {
-      allow: (_task: string, key: string) => allowances.add(key),
-      allowed: (_task: string, key: string) => allowances.has(key),
+      allow: (task: string, key: string) => {
+        allowances.add(key);
+        byTask.add(`${task}|${key}`);
+      },
+      allowed: (task: string, key: string) => byTask.has(`${task}|${key}`),
       log: () => {},
     },
   } as unknown as Store;
@@ -34,7 +38,17 @@ function flow() {
     pending: new Map(),
     live: { status: "working" },
   } as unknown as AgentRun;
-  const permissions = new PermissionFlow({ store, room }, live, () => new Date("2026-10-04T12:00:00Z"));
+  const added: string[] = [];
+  const connections = {
+    addTool: async (id: string, tool: string, as: "allow" | "read") => {
+      added.push(`${as}:${id}.${tool}`);
+    },
+  };
+  const permissions = new PermissionFlow(
+    { store, room, connections },
+    live,
+    () => new Date("2026-10-04T12:00:00Z"),
+  );
   const ask = (title: string): PermissionAsk =>
     ({
       title,
@@ -45,7 +59,18 @@ function flow() {
         { id: "no", name: "Deny", kind: "reject_once" },
       ],
     }) as PermissionAsk;
-  return { permissions, run, ask, allowances, items };
+  const held = (task: string): AgentRun =>
+    ({
+      ...run,
+      task,
+      pending: new Map(),
+      connections: {
+        gate: [{ id: "acme-obs", type: "mcp", server: "acme-obs", allow: [] }],
+        uses: [{ id: "acme-obs", name: "Acme Observability" }],
+        secrets: [],
+      },
+    }) as unknown as AgentRun;
+  return { permissions, run, ask, allowances, items, held, added };
 }
 
 describe("the captain's Allow for this task", () => {
@@ -64,5 +89,62 @@ describe("the captain's Allow for this task", () => {
     // Another tool of the same kind still asks.
     void permissions.ask(run, ask("mcp__other__deploy"), signal);
     expect(items.get("perm:4:3")).toMatchObject({ state: "pending" });
+  });
+});
+
+describe("a connection's MCP tool write", () => {
+  const sync = "mcp__acme-obs__sync_data";
+  const signal = new AbortController().signal;
+
+  it("offers task and always choices, and Allow in this task covers the next call in the same task only", async () => {
+    const { permissions, ask, items, held } = flow();
+    const run = held("ACM-8");
+    const first = permissions.ask(run, ask(sync), signal);
+    expect(items.get("perm:4:1")).toMatchObject({
+      state: "pending",
+      options: [
+        { id: "once" },
+        { id: "majhi:task" },
+        { id: "majhi:always" },
+        { id: "majhi:reads" },
+        { id: "no" },
+      ],
+    });
+    permissions.answer(run, "ACM-8", "perm:4:1", "majhi:task");
+    // The agent is told the plain Allow once, so its own CLI does not remember anything.
+    expect(await first).toBe("once");
+
+    expect(await permissions.ask(run, ask(sync), signal)).toBe("once");
+    expect(items.get("perm:4:2")).toMatchObject({ state: "auto" });
+
+    // Another task still asks.
+    void permissions.ask(held("ACM-9"), ask(sync), signal);
+    expect(items.get("perm:4:1")).toMatchObject({ state: "pending" });
+  });
+
+  it("keeps a destructive write to Allow once and Deny", () => {
+    const { permissions, ask, items, held } = flow();
+    const run = held("ACM-8");
+    void permissions.ask(run, ask("mcp__acme-obs__delete_view"), signal);
+    expect(items.get("perm:4:1")).toMatchObject({
+      options: [{ id: "once" }, { id: "no" }],
+      connection: { destructive: true },
+    });
+    expect(() => permissions.answer(run, "ACM-8", "perm:4:1", "majhi:task")).toThrow();
+  });
+
+  it("refuses Always allow and It only reads from the captain, and saves them for the owner", async () => {
+    const { permissions, ask, held, added } = flow();
+    const run = held("ACM-8");
+    void permissions.ask(run, ask(sync), signal);
+    expect(() => permissions.answer(run, "ACM-8", "perm:4:1", "majhi:always", true)).toThrow(/owner/);
+    expect(() => permissions.answer(run, "ACM-8", "perm:4:1", "majhi:reads", true)).toThrow(/owner/);
+    expect(added).toEqual([]);
+
+    permissions.answer(run, "ACM-8", "perm:4:1", "majhi:always");
+    void permissions.ask(run, ask(sync), signal);
+    permissions.answer(run, "ACM-8", "perm:4:2", "majhi:reads");
+    await Promise.resolve();
+    expect(added).toEqual(["allow:acme-obs.sync_data", "read:acme-obs.sync_data"]);
   });
 });

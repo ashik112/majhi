@@ -70,7 +70,7 @@ import { capacityOf, globalCap, type Limits, runsTotal, Slots } from "./limits.t
 import { type LivePatch, RunLive, WORKING } from "./live.ts";
 import { taskMediaSink } from "./media.ts";
 import { looksLikeNetworkError, looksLikeOverload, OVERLOAD_BACKOFF_MS } from "./network.ts";
-import { PermissionFlow } from "./permission-flow.ts";
+import { type ConnectionToolRules, PermissionFlow } from "./permission-flow.ts";
 import { pickForSession } from "./pick.ts";
 import { briefBlocks, ownerBlocks } from "./prompt.ts";
 import { currentModelName, switchAfterRefusal } from "./refusal.ts";
@@ -130,6 +130,8 @@ export interface RunDeps {
   config: ConfigService;
   secrets: SecretStore;
   majhiHome: string;
+  /** What a connection write's card changes on the connection: "Always allow this tool", "It only reads". */
+  connections?: ConnectionToolRules;
   /** Gives sessions of the captain (and other admin agents) the majhi-admin MCP server. */
   admin?: AdminAccess;
   /** The decision provider: majhi-decide for every session, and model picks for `auto` agents. */

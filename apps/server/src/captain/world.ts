@@ -487,7 +487,11 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
           case "permission": {
             // A tool a rule covers is allowed for the task, so its next call does not ask again.
             const item = deps.room.get(card.task, card.item);
-            const chosen = item?.type === "permission" ? answerFor(item.title, item.options, option) : option;
+            // A connection write is never widened: its extra options are majhi's, not a rule's.
+            const chosen =
+              item?.type === "permission" && item.connection === undefined
+                ? answerFor(item.title, item.options, option)
+                : option;
             if (item?.type === "permission") widened = widenedNote(item.title, option, chosen);
             answered = deps.tasks.answerPermission(card.task, card.item, chosen, captain);
             break;

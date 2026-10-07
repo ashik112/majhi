@@ -27,7 +27,14 @@ import { type BrowserServer, browserServer } from "./browser.ts";
 import { type PortAnswer, probePort } from "./host-probe.ts";
 import { cutKubeconfig, KubeconfigError } from "./kubeconfig.ts";
 import { imapLogin, smtpGreeting } from "./mail.ts";
-import { callTool, listTools, remoteTransport, SpawnedTransport } from "./mcp-client.ts";
+import {
+  annotationsOf,
+  callTool,
+  type ListedTool,
+  listTools,
+  remoteTransport,
+  SpawnedTransport,
+} from "./mcp-client.ts";
 import { gitTarget, productsOf } from "./plan.ts";
 import { type ConnectionService, ownerOnlyDir } from "./service.ts";
 
@@ -91,6 +98,8 @@ interface Outcome {
   detail: string;
   /** An MCP server's tool names. */
   tools?: string[];
+  /** The hints the server gave about them. */
+  toolAnnotations?: ConnectionTestResult["toolAnnotations"];
   warnings: string[];
   /** Why it failed, read from a status, an error code or an exit code. */
   failure?: ConnectionFailure;
@@ -249,6 +258,7 @@ export class ConnectionTester {
       ok: outcome.ok,
       detail: redact(outcome.detail, id, secrets),
       ...(outcome.tools === undefined ? {} : { tools: outcome.tools.map((t) => redact(t, id, secrets)) }),
+      ...(outcome.toolAnnotations === undefined ? {} : { toolAnnotations: outcome.toolAnnotations }),
       warnings: outcome.warnings.map((w) => redact(w, id, secrets)),
       at: (this.deps.now?.() ?? new Date()).toISOString(),
       durationMs: Math.max(0, Date.now() - started),
@@ -311,10 +321,11 @@ export class ConnectionTester {
       const key = `${id} ${product.id}`;
       let known = this.productTools.get(key);
       if (known === undefined || now - known.at > PRODUCT_TOOLS_TTL_MS) {
-        const names = await listTools(
-          remoteTransport(product.mcpUrl, headers, protocol),
-          MCP_TIMEOUT_MS,
-        ).catch(() => [] as string[]);
+        const names = (
+          await listTools(remoteTransport(product.mcpUrl, headers, protocol), MCP_TIMEOUT_MS).catch(
+            () => [] as ListedTool[],
+          )
+        ).map((t) => t.name);
         known = { at: now, names: new Set(names) };
         this.productTools.set(key, known);
       }
@@ -609,8 +620,8 @@ export class ConnectionTester {
       args: ["-y", `${server.package}@${server.version}`],
     };
     return this.scratch(async (dir) => {
-      const names = await this.stdioTools({ command, env: this.runEnv(dir), cwd: dir }, BROWSER_TIMEOUT_MS);
-      const tools = toolsOutcome(names);
+      const listed = await this.stdioTools({ command, env: this.runEnv(dir), cwd: dir }, BROWSER_TIMEOUT_MS);
+      const tools = toolsOutcome(listed);
       return {
         ...tools,
         detail: `${server.label} starts. ${tools.detail}`,
@@ -645,7 +656,7 @@ export class ConnectionTester {
     return out;
   }
 
-  private async stdioTools(request: SpawnRequest, timeoutMs: number): Promise<string[]> {
+  private async stdioTools(request: SpawnRequest, timeoutMs: number): Promise<ListedTool[]> {
     const spawned = await this.deps.spawner(request);
     const transport = new SpawnedTransport(spawned);
     try {
@@ -763,7 +774,9 @@ function fail(detail: string, failure: ConnectionFailure): Outcome {
   return { ok: false, detail, warnings: [], failure };
 }
 
-function toolsOutcome(names: readonly string[]): Outcome {
+function toolsOutcome(listed: readonly ListedTool[]): Outcome {
+  const names = listed.map((t) => t.name);
+  const toolAnnotations = annotationsOf(listed);
   if (names.length === 0)
     return {
       ok: true,
@@ -778,6 +791,7 @@ function toolsOutcome(names: readonly string[]): Outcome {
     ok: true,
     detail: `${names.length} ${names.length === 1 ? "tool" : "tools"}: ${shown}${more}.`,
     tools: [...names],
+    ...(toolAnnotations === undefined ? {} : { toolAnnotations }),
     warnings: [],
     checked: [
       "Initialized the MCP server",

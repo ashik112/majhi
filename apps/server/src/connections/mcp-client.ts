@@ -1,4 +1,5 @@
 import type { Spawned } from "@majhi/acp";
+import type { ToolAnnotations } from "@majhi/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -8,9 +9,33 @@ import type { JSONRPCMessage, MessageExtraInfo } from "@modelcontextprotocol/sdk
 import { z } from "zod";
 
 const ToolNamesSchema = z.object({
-  tools: z.array(z.looseObject({ name: z.string() })),
+  // `annotations` is read apart, field by field: a server that sends one badly typed must not fail the list.
+  tools: z.array(z.looseObject({ name: z.string(), annotations: z.unknown().optional() })),
   nextCursor: z.string().optional(),
 });
+
+/** A tool the server lists: its name and the hints it gives about it (MCP `Tool.annotations`). */
+export interface ListedTool {
+  name: string;
+  annotations?: ToolAnnotations;
+}
+
+/** The hints of a tool's `annotations` that are booleans. The others (title, openWorldHint) are not kept. */
+function readAnnotations(value: unknown): ToolAnnotations | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const given = value as Record<string, unknown>;
+  const out: ToolAnnotations = {};
+  if (typeof given.readOnlyHint === "boolean") out.readOnlyHint = given.readOnlyHint;
+  if (typeof given.destructiveHint === "boolean") out.destructiveHint = given.destructiveHint;
+  if (typeof given.idempotentHint === "boolean") out.idempotentHint = given.idempotentHint;
+  return Object.keys(out).length === 0 ? undefined : out;
+}
+
+/** The hints of the listed tools that gave any, by tool name. Undefined when none did. */
+export function annotationsOf(tools: readonly ListedTool[]): Record<string, ToolAnnotations> | undefined {
+  const given = tools.flatMap((t) => (t.annotations === undefined ? [] : [[t.name, t.annotations] as const]));
+  return given.length === 0 ? undefined : Object.fromEntries(given);
+}
 
 /** Pages of `tools/list` read at most. */
 const MAX_PAGES = 10;
@@ -83,26 +108,29 @@ export function remoteTransport(
   }) as unknown as Transport;
 }
 
-/** Connects, reads the names of the server's tools and closes. Throws with why it could not. */
-export async function listTools(transport: Transport, timeoutMs: number): Promise<string[]> {
+/** Connects, reads the server's tools with their annotations and closes. Throws with why it could not. */
+export async function listTools(transport: Transport, timeoutMs: number): Promise<ListedTool[]> {
   const client = new Client({ name: "majhi-connection-test", version: "1.0.0" });
   try {
     await client.connect(transport, { timeout: timeoutMs });
-    const names: string[] = [];
+    const found: ListedTool[] = [];
     let cursor: string | undefined;
     for (let page = 0; page < MAX_PAGES; page++) {
-      // Only the names: a strict read of every tool's schemas fails the whole list on one tool a
-      // server describes loosely (DigitalOcean's Networking and Functions do).
+      // Only the names and hints: a strict read of every tool's schemas fails the whole list on one
+      // tool a server describes loosely (DigitalOcean's Networking and Functions do).
       const result = await client.request(
         { method: "tools/list", ...(cursor === undefined ? {} : { params: { cursor } }) },
         ToolNamesSchema,
         { timeout: timeoutMs },
       );
-      names.push(...result.tools.map((t) => t.name));
+      for (const t of result.tools) {
+        const annotations = readAnnotations(t.annotations);
+        found.push({ name: t.name, ...(annotations === undefined ? {} : { annotations }) });
+      }
       cursor = result.nextCursor;
       if (cursor === undefined) break;
     }
-    return names;
+    return found;
   } finally {
     await client.close().catch(() => undefined);
   }
