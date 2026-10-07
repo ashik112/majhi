@@ -79,7 +79,7 @@ function Frame() {
   const permission = usePendingPermission();
   const { task: drawerTask, peek } = useSearch({ from: "__root__" });
   const onHome = useRouterState({ select: (s) => s.location.pathname === "/" });
-  // On `/t/<id>` the page is that task: the banner and the captain's line leave it alone.
+  // On `/t/<id>` the page is that task: the banner leaves it alone.
   const openTask = useRouterState({
     select: (s) => {
       const [, first, id] = s.location.pathname.split("/");
@@ -120,7 +120,8 @@ function Frame() {
   const pinned = section === "/" || PINNED.has(section) || settings;
 
   return (
-    <div className="flex min-h-0 flex-1 gap-3 p-3">
+    // The chat bubble sits in the right gutter, so no control is ever under it.
+    <div className="flex min-h-0 flex-1 gap-3 py-3 pr-16 pl-3">
       <Sidebar />
       <main id="main" tabIndex={-1} className="flex h-full min-w-0 flex-1 flex-col outline-none">
         <StaleBuildBar />
@@ -135,7 +136,7 @@ function Frame() {
             })
           }
         />
-        {openTask === undefined && <CaptainTicker />}
+        {section === PAGE_PATH.captain && <CaptainTicker />}
         <m.div
           key={settings ? "settings" : section}
           initial={{ opacity: 0, y: 4 }}

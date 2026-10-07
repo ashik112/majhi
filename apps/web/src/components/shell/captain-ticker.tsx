@@ -29,7 +29,7 @@ export function useCaptainTitle(): string | undefined {
 }
 
 /**
- * One line on every page except a task's: what the captain did last, where and when, with a lamp
+ * One line on the Captain page: what the captain did last, where and when, with a lamp
  * while it works. Clicking it opens the captain's All chat, where every workspace thread reports as it lands.
  */
 export function CaptainTicker() {

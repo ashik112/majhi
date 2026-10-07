@@ -1,137 +1,115 @@
-import type { TaskSummary } from "@majhi/shared";
+import type { Conversation } from "@majhi/shared";
+import { PAGE_PATH } from "@majhi/shared";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { MessagesSquare } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
+import { AccountNotices, NewChats } from "@/features/clients/clients-list";
+import { useChatFilter } from "@/lib/chat-filter";
 import { useNewChat } from "@/lib/chat-queries";
 import { useClients } from "@/lib/client-queries";
+import { cn } from "@/lib/cn";
+import { useConversations } from "@/lib/conversation-queries";
 import { describeError } from "@/lib/errors";
-import { useOrgFilter } from "@/lib/org-filter";
+import { GLASS } from "@/lib/glass";
 import { useAgents, useOrgs } from "@/lib/studio-queries";
-import { useChats, useRemoveTask } from "@/lib/task-queries";
-import { useNow } from "@/lib/use-now";
-import { ChatList } from "./chat-list";
 import { ChatView } from "./chat-view";
-import { chatGroups, chatTitle } from "./model";
+import { ConversationList } from "./conversation-list";
+import { WorkspaceTabs } from "./workspace-tabs";
 
-/** `/chats` and `/chats/<id>`: talk to any agent without making a task. Agents by org on the left, the chat on the right. */
+/** `/chats` and `/chats/<id>`: workspace tabs on top, the one list of conversations on the left, the chat on the right. */
 export function ChatsScreen() {
   const { taskId } = useParams({ strict: false }) as { taskId?: string };
   const navigate = useNavigate();
   const toast = useToast();
   const agents = useAgents();
   const orgs = useOrgs();
-  const chats = useChats();
+  const list = useConversations();
   const clients = useClients();
-  const { org } = useOrgFilter();
-  const now = useNow(60_000);
+  const filter = useChatFilter();
   const newChat = useNewChat();
-  const remove = useRemoveTask();
-  const [query, setQuery] = useState("");
   const [renaming, setRenaming] = useState<string>();
-  const [deleting, setDeleting] = useState<TaskSummary>();
 
-  const entries = useMemo(() => agents.data ?? [], [agents.data]);
-  const orgList = useMemo(() => orgs.data ?? [], [orgs.data]);
-  const groups = useMemo(
-    () => chatGroups({ entries, orgs: orgList, chats: chats.data ?? [], org, query }),
-    [entries, orgList, chats.data, org, query],
-  );
-  const orgKeys = useMemo(
-    () => new Map(orgList.map((o) => [o.id, { key: o.key, color: o.color }])),
-    [orgList],
-  );
-  const boss = entries.find((e) => e.status === "ok" && e.isBoss);
+  const boss = (agents.data ?? []).find((e) => e.status === "ok" && e.isBoss);
   const bossId = boss?.status === "ok" ? boss.agent.frontmatter.id : undefined;
 
-  function open(id: string) {
+  function openChat(id: string) {
     void navigate({ to: "/chats/$taskId", params: { taskId: id } });
+  }
+  function open(row: Conversation) {
+    if (row.kind === "task") void navigate({ to: "/t/$taskId", params: { taskId: row.id } });
+    else if (row.kind === "captain") {
+      void navigate({ to: PAGE_PATH.captain, search: row.org === undefined ? {} : { thread: row.org } });
+    } else openChat(row.id);
   }
   function start(agent: string) {
     newChat.mutate(agent, {
-      onSuccess: (task) => open(task.id),
+      onSuccess: (task) => openChat(task.id),
       onError: (error) => toast("Could not start the chat", { detail: describeError(error), tone: "error" }),
     });
   }
-  function confirmDelete() {
-    if (!deleting) return;
-    const id = deleting.id;
-    remove.mutate(
-      { id },
-      {
-        onSuccess: () => {
-          setDeleting(undefined);
-          if (taskId === id) void navigate({ to: "/chats" });
-        },
-      },
-    );
-  }
+  const showNew =
+    filter.tab === "all" && !filter.archived && (filter.kind === "all" || filter.kind === "client");
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 gap-3">
-      <ChatList
-        groups={groups}
-        clients={clients.data}
-        orgs={orgList}
-        orgKeys={orgKeys}
-        selected={taskId}
-        query={query}
-        onQuery={setQuery}
-        onOpen={open}
-        onNew={start}
-        onRename={(chat) => {
-          setRenaming(chat.id);
-          if (chat.id !== taskId) open(chat.id);
-        }}
-        onDelete={setDeleting}
-        creating={newChat.isPending ? newChat.variables : undefined}
-        now={now}
-      />
-      <section aria-label="Chat" className="flex min-h-0 min-w-0 flex-1 flex-col pr-1">
-        {taskId ? (
-          <ChatView
-            key={taskId}
-            taskId={taskId}
-            renaming={renaming === taskId}
-            onRename={() => setRenaming(taskId)}
-            onRenamed={() => setRenaming(undefined)}
-            onNew={start}
-            creating={newChat.isPending}
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <WorkspaceTabs list={list.data ?? []} orgs={orgs.data} className="mb-2" />
+      <div className="flex min-h-0 min-w-0 flex-1 gap-3">
+        <nav
+          aria-label="Chats"
+          className={cn(
+            "flex w-[264px] shrink-0 flex-col overflow-hidden rounded-2xl min-[1320px]:w-[296px]",
+            GLASS,
+          )}
+        >
+          <ConversationList
+            selected={taskId}
+            onOpen={open}
+            onNewChat={openChat}
+            onDeleted={(id) => {
+              if (taskId === id) void navigate({ to: "/chats" });
+            }}
+            top={
+              showNew ? (
+                <>
+                  <NewChats rows={clients.data?.newChats ?? []} orgs={orgs.data ?? []} />
+                  <AccountNotices accounts={clients.data?.accounts ?? []} />
+                </>
+              ) : undefined
+            }
           />
-        ) : (
-          <div className="m-auto flex max-w-[360px] flex-col items-center gap-3 text-center">
-            <MessagesSquare aria-hidden="true" className="size-6 text-fg-faint" />
-            <h1 className="text-md font-semibold">Chat with an agent</h1>
-            <p className="text-base text-fg-muted text-pretty">
-              Pick a chat on the left, or start one. A chat is just a conversation. The agent can make a task
-              when you ask for one.
-            </p>
-            {bossId !== undefined && (
-              <Button variant="primary" disabled={newChat.isPending} onClick={() => start(bossId)}>
-                <AgentAvatar id={bossId} size={18} decorative />
-                Chat with @{bossId}
-              </Button>
-            )}
-          </div>
-        )}
-      </section>
-      {deleting && (
-        <ConfirmDialog
-          title="Delete this chat?"
-          body={`"${chatTitle(deleting)}" and its messages are removed. Tasks the agent made stay.`}
-          confirmLabel="Delete"
-          busy={remove.isPending}
-          error={remove.isError ? describeError(remove.error) : undefined}
-          onConfirm={confirmDelete}
-          onCancel={() => {
-            remove.reset();
-            setDeleting(undefined);
-          }}
-        />
-      )}
+        </nav>
+        <section aria-label="Chat" className="flex min-h-0 min-w-0 flex-1 flex-col pr-1">
+          {taskId ? (
+            <ChatView
+              key={taskId}
+              taskId={taskId}
+              renaming={renaming === taskId}
+              onRename={() => setRenaming(taskId)}
+              onRenamed={() => setRenaming(undefined)}
+              onNew={start}
+              creating={newChat.isPending}
+            />
+          ) : (
+            <div className="m-auto flex max-w-[360px] flex-col items-center gap-3 text-center">
+              <MessagesSquare aria-hidden="true" className="size-6 text-fg-faint" />
+              <h1 className="text-md font-semibold">Chat with an agent</h1>
+              <p className="text-base text-fg-muted text-pretty">
+                Pick a chat on the left, or start one. A chat is just a conversation. The agent can make a
+                task when you ask for one.
+              </p>
+              {bossId !== undefined && (
+                <Button variant="primary" disabled={newChat.isPending} onClick={() => start(bossId)}>
+                  <AgentAvatar id={bossId} size={18} decorative />
+                  Chat with @{bossId}
+                </Button>
+              )}
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
