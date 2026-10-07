@@ -183,16 +183,17 @@ export function NewTaskDialog({ onClose, project }: { onClose: () => void; proje
           const open = () =>
             void navigate({ to: "/t/$taskId", params: { taskId: task.id }, search: orgSearch(filterOrg) });
           onClose();
-          if (start) {
-            toast(dependsOn.length > 0 ? "Added, starts when ready" : "Task started", { detail: task.id });
-            open();
-          } else {
-            toast("Added to the inbox", {
+          toast(
+            start
+              ? dependsOn.length > 0
+                ? "Added, starts when ready"
+                : "Task started"
+              : "Added to the inbox",
+            {
               detail: task.id,
-              action: { label: "Open", onClick: open },
-              ms: 6000,
-            });
-          }
+            },
+          );
+          open();
         },
         onError: (error) => {
           sending.current = false;
