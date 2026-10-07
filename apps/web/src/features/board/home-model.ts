@@ -620,9 +620,7 @@ export type ActionSpec =
   | { kind: "recheck"; task: string; label: string }
   /** Nothing to press: the row shows a spinner and the time. */
   | { kind: "wait"; label: string }
-  | { kind: "undo"; id: number; label: string }
-  /** Deploy what waits for the owner: the commit of the step the task page asks about. */
-  | { kind: "deploy"; task: string; project: string; env: string; commit: string; label: string };
+  | { kind: "undo"; id: number; label: string };
 
 const open = (task: string, label: string): ActionSpec => ({
   kind: "go",
@@ -713,20 +711,8 @@ export function runningActions(item: RunningItem): ActionSpec[] {
 /** A hold only the owner lifts: Resume leads, then the task. */
 export function heldActions(item: HeldItem): ActionSpec[] {
   const id = item.task.id;
-  const ask = item.deploy?.steps.find((s) => s.state === "waits-for-owner" && s.commit !== undefined);
-  if (ask?.commit !== undefined) {
-    return [
-      {
-        kind: "deploy",
-        task: id,
-        project: ask.project,
-        env: ask.env,
-        commit: ask.commit,
-        label: `Deploy ${ask.env}`,
-      },
-      open(id, "Open"),
-    ];
-  }
+  // A deploy that waits for the owner is answered on the task page, on its plan card.
+  if (item.deploy?.steps.some((s) => s.state === "waits-for-owner") === true) return [open(id, "Open")];
   return [{ kind: "start", task: id, label: "Resume" }, open(id, "Open")];
 }
 

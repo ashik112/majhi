@@ -80,14 +80,6 @@ export function useHomeActions(): {
           fail(`Could not message ${spec.task}`),
         );
         return;
-      case "deploy":
-        cmd("projects.deploy", {
-          project: spec.project,
-          env: spec.env,
-          task: spec.task,
-          commit: spec.commit,
-        }).then(() => say(`Deploying ${spec.env}`), fail(`Could not deploy ${spec.env}`));
-        return;
       case "undo":
         revert.mutate(
           { id: spec.id },
