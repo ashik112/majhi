@@ -311,7 +311,14 @@ export function permissionSummary(item: PermissionItem): PermissionSummary {
   if (item.state === "cancelled") return { pending: false, verdict: "Cancelled", ...base };
   const option = item.options.find((o) => o.id === item.chosen);
   const allowed = option ? option.kind.startsWith("allow") : true;
-  const extra = option?.kind === "allow_always" && item.connection === undefined ? " for this task" : "";
+  const extra =
+    option?.id === "majhi:task"
+      ? " for this task"
+      : option?.id === "majhi:always"
+        ? ", always"
+        : option?.kind === "allow_always" && item.connection === undefined
+          ? " for this task"
+          : "";
   const by =
     item.state !== "auto"
       ? ""

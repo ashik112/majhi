@@ -93,6 +93,14 @@ export function toolAllowKey(title: string): string {
   return tool === undefined ? `tool:${title.trim()}` : `tool:${tool.server}.${tool.tool}`;
 }
 
+/**
+ * The key an "Allow in this task" on a connection's MCP tool is kept under. It is not the key of
+ * `toolAllowKey`: that one is the captain's for tools a rule covers, and never covers a connection write.
+ */
+export function connectionToolKey(connection: string, tool: string): string {
+  return `connection-tool:${connection}.${tool}`;
+}
+
 /** The server and tool of an MCP call: Claude names it `mcp__<server>__<tool>`, Codex `mcp.<server>.<tool>`. */
 export function mcpToolOf(title: string | undefined): { server: string; tool: string } | undefined {
   const text = (title ?? "").trim();
