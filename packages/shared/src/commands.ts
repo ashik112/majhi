@@ -501,6 +501,16 @@ export interface CommandDef<I extends z.ZodType, O extends z.ZodType> {
   output: O;
 }
 
+/** A public SSH key to add on a git host. The private key is never part of it. */
+export const SshPublicKeySchema = z.object({
+  /** The `.pub` file with `~`. */
+  path: z.string(),
+  /** The one line to paste on the host. */
+  publicKey: z.string(),
+  fingerprint: z.string().optional(),
+});
+export type SshPublicKey = z.infer<typeof SshPublicKeySchema>;
+
 const Empty = z.object({});
 
 /**
@@ -880,6 +890,20 @@ export const commands = {
       "The public SSH keys majhi can see in the owner's ~/.ssh, to pick the key a host uses. Never a private key",
     input: Empty,
     output: z.array(z.string()),
+  },
+  "ssh.publicKeys": {
+    risk: "read",
+    summary:
+      "The public SSH keys in the owner's ~/.ssh with their fingerprints, to show the one to add on a git host. Never a private key",
+    input: Empty,
+    output: z.array(SshPublicKeySchema),
+  },
+  "ssh.makeKey": {
+    risk: "change",
+    summary:
+      "Make an ed25519 SSH key with no passphrase in a free name in ~/.ssh through the host helper, load it, and return its public key. Never replaces a key; the private key stays on the owner's computer",
+    input: Empty,
+    output: SshPublicKeySchema,
   },
   "ssh.reload": {
     risk: "change",
@@ -3382,6 +3406,13 @@ export const commands = {
         undone: z.boolean(),
       }),
     ),
+  },
+  "config.restoreLast": {
+    risk: "change",
+    summary:
+      "Put back the newest earlier majhi.yaml that loads, when the current one has errors. The broken file stays in the config history. Owner only",
+    input: Empty,
+    output: z.object({ at: z.string() }),
   },
   "history.undo": {
     risk: "change",

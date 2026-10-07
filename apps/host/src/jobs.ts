@@ -13,6 +13,7 @@ import type {
   LayaDecideResult,
   LayaStatus,
   MachineHost,
+  MadeSshKey,
   RootSuggestion,
   SecretsKeyBackup,
   SecretsKeyRestore,
@@ -27,6 +28,8 @@ export interface JobHandlers {
   /** Undefined when this helper cannot run `docker compose`. */
   remount: (() => Promise<unknown>) | undefined;
   sshReload(): Promise<SshStatus>;
+  /** Throws an error whose message is safe to show. */
+  sshKeygen(): Promise<MadeSshKey>;
   /** HEAD of the checkout and the subjects after `from`. Throws when there is no checkout. */
   versionChanges(params: { from: string }): Promise<{ head: string; dirty: boolean; changes: string[] }>;
   /** Load, memory and free disk of this computer. Absent in tests that do not read them. */
@@ -296,6 +299,9 @@ export async function runJob(
       }
       case "git.credential":
         await reply({ id: job.id, ok: true, result: { secret: await handlers.gitCredential(job.params) } });
+        return;
+      case "ssh.keygen":
+        await reply({ id: job.id, ok: true, result: await handlers.sshKeygen() });
         return;
       case "ssh.unlock":
         await reply({ id: job.id, ok: true, result: await handlers.sshUnlock(job.params) });

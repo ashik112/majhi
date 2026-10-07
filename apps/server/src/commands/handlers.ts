@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   Budget,
@@ -11,6 +11,7 @@ import type {
   commands,
   Remount,
   RoomItem,
+  SshPublicKey,
   TaskId,
 } from "@majhi/shared";
 import { CHAT_BRIEF, PRIVATE, RESTART_COMMAND, sameImage, type Task } from "@majhi/shared";
@@ -38,7 +39,7 @@ import { editorPath } from "../editor/allowed.ts";
 import { UserError } from "../errors.ts";
 import { findingsHandlers } from "../findings/handlers.ts";
 import { isDirectory } from "../fs.ts";
-import { bitbucketKeyFingerprints, type KeyOwner } from "../git/keyOwners.ts";
+import { bitbucketKeyFingerprints, fingerprintOfPublicKey, type KeyOwner } from "../git/keyOwners.ts";
 import { gitConnectHandlers } from "../gitConnect/handlers.ts";
 import { handoffHandlers } from "../handoff/handlers.ts";
 import type { HealthService } from "../health/service.ts";
@@ -87,6 +88,15 @@ import { wikiEnabledFrom } from "../wiki/switch.ts";
 
 /** Loading keys and asking the Keychain or keyring can take a few seconds. */
 const SSH_CALL_TIMEOUT_MS = 40_000;
+const PUBLIC_KEY_TYPES = [
+  "ssh-ed25519",
+  "ssh-rsa",
+  "ecdsa-sha2-nistp256",
+  "ecdsa-sha2-nistp384",
+  "ecdsa-sha2-nistp521",
+  "sk-ssh-ed25519@openssh.com",
+  "sk-ecdsa-sha2-nistp256@openssh.com",
+];
 
 /** `gh auth token` is quick, but the helper may be busy. */
 const GIT_TOKEN_TIMEOUT_MS = 20_000;
@@ -442,6 +452,31 @@ export function createHandlers({
         .filter((n) => /^[A-Za-z0-9._-]{1,128}\.pub$/.test(n))
         .map((n) => `~/.ssh/${n}`)
         .sort();
+    },
+    "ssh.publicKeys": async () => {
+      const dir = join(config.paths.hostHome, ".ssh");
+      const names = (await readdir(dir).catch(() => [] as string[]))
+        .filter((n) => /^[A-Za-z0-9._-]{1,128}\.pub$/.test(n))
+        .sort();
+      const keys: SshPublicKey[] = [];
+      for (const n of names) {
+        const text = await readFile(join(dir, n), "utf8").catch(() => "");
+        const publicKey = text.split("\n")[0]?.trim() ?? "";
+        if (!PUBLIC_KEY_TYPES.some((t) => publicKey.startsWith(`${t} `))) continue;
+        const fingerprint = fingerprintOfPublicKey(publicKey);
+        keys.push({ path: `~/.ssh/${n}`, publicKey, ...(fingerprint === undefined ? {} : { fingerprint }) });
+      }
+      return keys;
+    },
+    "ssh.makeKey": async () => {
+      const made = await hostLink.call("ssh.keygen", {}, SSH_CALL_TIMEOUT_MS);
+      await hostLink.call("ssh.reload", {}, SSH_CALL_TIMEOUT_MS).then((ssh) => hostLink.noteSsh(ssh));
+      await sshHosts?.refresh().catch(() => undefined);
+      return {
+        path: `${made.path}.pub`,
+        publicKey: made.publicKey,
+        ...(made.fingerprint === undefined ? {} : { fingerprint: made.fingerprint }),
+      };
     },
     "git.logins": (input) => services.gitLogins.list(input.refresh === true),
 
@@ -1237,6 +1272,12 @@ export function createHandlers({
         writeKey: (key) => hostLink.call("secretsKey.restore", { key }, KEY_RESTORE_TIMEOUT_MS),
       }),
     "history.list": (input) => config.historyEntries(input.limit),
+    "config.restoreLast": async (_input, ctx) =>
+      config.restoreLastWorking({
+        command: ctx.command,
+        meta: ctx.meta,
+        summary: "restored the last majhi.yaml that loads",
+      }),
     "history.undo": async (input, ctx) => {
       const done = await config.undo(input.commit, {
         command: ctx.command,

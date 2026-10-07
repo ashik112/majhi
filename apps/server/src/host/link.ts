@@ -32,6 +32,7 @@ const parseResult: { [M in HostMethod]: (value: unknown) => z.ZodSafeParseResult
   suggestRoots: (value) => HostResultSchemas.suggestRoots.safeParse(value),
   remount: (value) => HostResultSchemas.remount.safeParse(value),
   "ssh.reload": (value) => HostResultSchemas["ssh.reload"].safeParse(value),
+  "ssh.keygen": (value) => HostResultSchemas["ssh.keygen"].safeParse(value),
   "ssh.unlock": (value) => HostResultSchemas["ssh.unlock"].safeParse(value),
   "secretsKey.save": (value) => HostResultSchemas["secretsKey.save"].safeParse(value),
   "secretsKey.restore": (value) => HostResultSchemas["secretsKey.restore"].safeParse(value),

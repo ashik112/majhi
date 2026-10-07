@@ -27,6 +27,7 @@ import {
   useUseSavedLogin,
 } from "@/lib/studio-queries";
 import { useNow } from "@/lib/use-now";
+import { SshKeyStep } from "./ssh-key-step";
 
 /** Where a host lists the account's SSH keys, for when no key on this computer logs in as it. */
 const SSH_KEYS_PAGE: Partial<Record<GitHost, (host: string) => string>> = {
@@ -125,7 +126,14 @@ export function GitAccounts({ org }: { org: OrgView }) {
                 <AccountRow key={`${a.host}/${a.account}`} org={org} status={a} onSignedOut={setSignedOut} />
               ))}
               {data.missing.map((m) => (
-                <MissingRow key={m.host} org={org} host={m.host} kind={m.kind} offers={m.offers} />
+                <MissingRow
+                  key={m.host}
+                  org={org}
+                  host={m.host}
+                  kind={m.kind}
+                  offers={m.offers}
+                  keyAccepted={m.keyAccepted === true}
+                />
               ))}
             </ul>
           )}
@@ -287,12 +295,7 @@ function PushLine({ org, status }: { org: string; status: GitAccountStatus }) {
           ))}
         </div>
       ) : (
-        keys && (
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-faint">
-            <ExternalButton href={keys}>Add an SSH key on {status.host}</ExternalButton>
-            then Detect again.
-          </span>
-        )
+        <SshKeyStep host={status.host} keysPage={keys} tried={push.tried} />
       )}
       <Failure text={action.failure} />
     </>
@@ -454,11 +457,13 @@ function MissingRow({
   host,
   kind,
   offers,
+  keyAccepted,
 }: {
   org: OrgView;
   host: string;
   kind: GitHost;
   offers: readonly LoginOffer[];
+  keyAccepted: boolean;
 }) {
   const { set } = useSetGitAccount();
   const dismiss = useDismissGitLogin();
@@ -508,7 +513,9 @@ function MissingRow({
             }}
           >
             <span className="text-sm text-fg-faint">
-              Type the account {org.name} uses on {host}.
+              {keyAccepted
+                ? `${host} accepted this computer's SSH key. Only the account name is missing. Type the account ${org.name} uses.`
+                : `Type the account ${org.name} uses on ${host}.`}
             </span>
             <span className="flex items-center gap-2">
               <Input

@@ -317,6 +317,7 @@ async function main(): Promise<void> {
       return remount;
     },
     sshReload: () => ssh.reload(),
+    sshKeygen: () => ssh.makeKey(),
     editorOpen,
     machineRead: () => readMachine({ os, exec, home: config.home, env: { ...process.env, PATH: path } }),
     versionChanges: async (params: { from: string }) => {

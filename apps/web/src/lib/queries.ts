@@ -202,6 +202,37 @@ export function useSshReload() {
   });
 }
 
+/** The public SSH keys in ~/.ssh, to show the one to add on a git host. */
+export function useSshPublicKeys() {
+  return useQuery<CommandOutput<"ssh.publicKeys">, ApiRequestError>({
+    queryKey: ["ssh", "public-keys"],
+    queryFn: () => cmd("ssh.publicKeys", {}),
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+/** Puts back the newest earlier majhi.yaml that loads, then reads the config again. */
+export function useRestoreConfig() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"config.restoreLast">, ApiRequestError, void>({
+    mutationFn: () => cmd("config.restoreLast", {}, { reason: "Owner restored the last working majhi.yaml" }),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.config }),
+  });
+}
+
+/** Makes an SSH key on this computer through the host helper. The private key never leaves it. */
+export function useMakeSshKey() {
+  const client = useQueryClient();
+  return useMutation<CommandOutput<"ssh.makeKey">, ApiRequestError, void>({
+    mutationFn: () => cmd("ssh.makeKey", {}, { reason: "Owner asked majhi to make an SSH key" }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["ssh", "public-keys"] });
+      void client.invalidateQueries({ queryKey: queryKeys.hostStatus });
+    },
+  });
+}
+
 /**
  * Gives one key its passphrase. The passphrase lives only in this call: the mutation is not
  * kept after it settles (`gcTime: 0`), and no reason or log line carries it.

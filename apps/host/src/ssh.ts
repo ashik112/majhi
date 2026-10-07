@@ -8,7 +8,7 @@
  * Logs name key files and the first characters of fingerprints, never key
  * contents and never a passphrase.
  */
-import { access, chmod, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { collapseHome, expandHome, type SshStatus, sshUnlockCommand } from "@majhi/shared";
@@ -81,6 +81,25 @@ export interface SshDeps {
   tmpRoot?: string;
   /** Report only: skip everything that changes the agent or the keyring. */
   dryRun?: boolean;
+  /** Makes `~/.ssh` (owner only) before a key is made in it. Absent: the real one. */
+  ensureDir?: (dir: string) => Promise<void>;
+}
+
+/** A public key the helper made: where it is, its line, and its SHA256 fingerprint. */
+export interface MadeKey {
+  /** The private key's path with `~`. The key never leaves this computer. */
+  path: string;
+  publicKey: string;
+  fingerprint: string | undefined;
+}
+
+/** The first name in `~/.ssh` that is free, so a key already there is never touched. */
+export async function freeKeyName(exists: (path: string) => Promise<boolean>, dir: string): Promise<string> {
+  for (let n = 0; ; n++) {
+    const name = n === 0 ? "id_ed25519" : n === 1 ? "id_ed25519_majhi" : `id_ed25519_majhi_${n}`;
+    const path = join(dir, name);
+    if (!(await exists(path)) && !(await exists(`${path}.pub`))) return path;
+  }
 }
 
 /** The owner-facing reason an unlock failed. Safe to show and to log. */
@@ -223,6 +242,11 @@ export interface Ssh {
   reload(): Promise<SshStatus>;
   /** Same as `reload` but returns the per-key report as well. */
   inspect(): Promise<SshReport>;
+  /**
+   * Makes an ed25519 key with no passphrase in a free name in `~/.ssh` and loads it into the agent.
+   * Never replaces a key. Throws a plain sentence.
+   */
+  makeKey(): Promise<MadeKey>;
   /** Gives a key its passphrase once. Throws `SshUnlockError` with a plain message on refusal. */
   unlock(key: string, passphrase: string): Promise<SshStatus>;
   /**
@@ -509,8 +533,38 @@ export function createSsh(deps: SshDeps): Ssh {
     return (await runCheck()).status;
   }
 
+  async function makeKeyNow(): Promise<MadeKey> {
+    const session = await openSession("The SSH agent is not running, so there is nothing to load keys into.");
+    if ("error" in session) throw new SshUnlockError(session.error);
+    const dir = join(home, ".ssh");
+    await (
+      deps.ensureDir ?? ((d: string) => mkdir(d, { recursive: true, mode: 0o700 }).then(() => undefined))
+    )(dir);
+    const path = await freeKeyName(deps.exists, dir);
+    // No passphrase: majhi never asks for one. `-f` on a name that is free cannot overwrite anything.
+    const made = await deps.run(session.sshKeygen, ["-t", "ed25519", "-N", "", "-C", "majhi", "-f", path], {
+      env: session.env,
+      timeoutMs: COMMAND_TIMEOUT_MS,
+    });
+    const publicKey = (await deps.readText(`${path}.pub`))?.trim();
+    if (made.code !== 0 || publicKey === undefined || publicKey === "") {
+      log(`ssh-keygen could not make ${collapseHome(path, home)} (exit ${made.code ?? "none"})`);
+      throw new SshUnlockError(
+        "ssh-keygen could not make a key. Check that ~/.ssh is writable, then try again.",
+      );
+    }
+    log(`made ${collapseHome(path, home)}`);
+    await runCheck();
+    return {
+      path: collapseHome(path, home),
+      publicKey,
+      fingerprint: await fingerprintOf(session, path),
+    };
+  }
+
   return {
     status: () => latest,
+    makeKey: () => enqueue(makeKeyNow),
     reload: () => enqueue(runCheck).then((r) => r.status),
     inspect: () => enqueue(runCheck),
     unlock: (key, passphrase) => enqueue(() => unlockNow(key, passphrase)),

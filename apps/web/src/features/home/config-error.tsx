@@ -3,9 +3,11 @@ import { FileWarning, RotateCw } from "lucide-react";
 import { CommandLine } from "@/components/command-line";
 import { Problem } from "@/components/problem";
 import { Button } from "@/components/ui/button";
+import { describeError } from "@/lib/errors";
 import { plural } from "@/lib/format";
+import { useRestoreConfig } from "@/lib/queries";
 
-/** majhi.yaml exists but does not pass the schema. The owner fixes the file by hand, then retries. */
+/** majhi.yaml exists but does not pass the schema. majhi puts back the last version that loaded, or the owner fixes the lines by hand. */
 export function ConfigError({
   file,
   home,
@@ -19,12 +21,13 @@ export function ConfigError({
   onRetry: () => void;
   retrying: boolean;
 }) {
+  const restore = useRestoreConfig();
   return (
     <Problem
       icon={<FileWarning />}
       tone="red"
       title="majhi.yaml has errors"
-      body="majhi could not load its config. Fix the file, then retry. Nothing changes until it loads."
+      body="majhi could not load its config. Put back the last version that worked, or fix the lines below and retry. Nothing changes until it loads."
     >
       <div className="flex flex-col gap-1.5">
         <span className="text-sm text-fg-muted">File</span>
@@ -48,11 +51,21 @@ export function ConfigError({
         </ul>
       </section>
 
-      <div>
-        <Button variant="primary" onClick={onRetry} disabled={retrying}>
-          <RotateCw aria-hidden="true" className={retrying ? "animate-spin" : undefined} />
-          {retrying ? "Checking" : "Retry"}
-        </Button>
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="primary" onClick={() => restore.mutate()} disabled={restore.isPending}>
+            {restore.isPending ? "Restoring" : "Restore last working version"}
+          </Button>
+          <Button onClick={onRetry} disabled={retrying}>
+            <RotateCw aria-hidden="true" className={retrying ? "animate-spin" : undefined} />
+            {retrying ? "Checking" : "Retry"}
+          </Button>
+        </div>
+        {restore.error && (
+          <p role="alert" className="m-0 text-sm text-red">
+            {describeError(restore.error)}
+          </p>
+        )}
       </div>
     </Problem>
   );
