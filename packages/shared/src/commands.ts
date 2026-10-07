@@ -1689,7 +1689,7 @@ export const commands = {
   "projects.setEnvironments": {
     risk: "change",
     summary:
-      "Set the whole list of a project's deploy environments: name (one / allowed), tier (production or staging), the branch whose push or merge deploys it, and an address that answers 2xx when it is up. The captain may add environments (always production) and set branch and check; only the owner sets a staging tier or removes a production environment. How the project deploys goes in its wiki, not here",
+      "Set the whole list of a project's deploy environments: name (one / allowed), tier (production or staging), the branch whose push or merge deploys it, and an address that answers 2xx when it is up. The captain may add environments (always production) and set branch and check; a staging tier or removing a production environment is the owner's: your call for it becomes a proposal the owner applies with one click. How the project deploys goes in its wiki, not here",
     input: SetEnvironmentsInputSchema,
     output: ProjectDeployViewSchema,
   },
@@ -3716,7 +3716,7 @@ export const commands = {
   "autonomy.start": {
     risk: "change",
     summary:
-      "Turn Autonomous on. resumeStopped also resumes the tasks it paused when it was turned off. Owner only. Refused when there is no captain",
+      "Turn Autonomous on. resumeStopped also resumes the tasks it paused when it was turned off. Owner only. Refused when there is no captain. The captain's call is a proposal the owner applies",
     input: AutonomyStartInputSchema,
     output: AutonomyStatusSchema,
   },
@@ -3737,7 +3737,7 @@ export const commands = {
   "autonomy.configure": {
     risk: "change",
     summary:
-      "Change autonomous mode's day cap, account floors, summary time, time zone and the largest task size it may start, or a workspace's entry under orgs: who decides what there (authority: start, questions, approvals, upkeep, merge, push, deployStaging, deployProduction, tell and own, each decide or ask; only the rows you name change), its ship rules (ships: the whole ordered list that refines merge, deploy and tell by task type, first match wins), its daily budget (cap), and the More rules (hours, freeze, tz, branches, providers, account). null clears a field. Owner only",
+      "Change autonomous mode's day cap, account floors, summary time, time zone and the largest task size it may start, or a workspace's entry under orgs: who decides what there (authority: start, questions, approvals, upkeep, merge, push, deployStaging, deployProduction, tell and own, each decide or ask; only the rows you name change), its ship rules (ships: the whole ordered list that refines merge, deploy and tell by task type, first match wins), its daily budget (cap), and the More rules (hours, freeze, tz, branches, providers, account). null clears a field. Owner only; the captain's call is a proposal the owner applies",
     input: AutonomyPatchSchema,
     output: AutonomyStatusSchema,
   },

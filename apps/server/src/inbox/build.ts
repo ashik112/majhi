@@ -203,6 +203,18 @@ function draftOf(
         subject.newestSubtask >= item.at
       )
         return undefined;
+      // The captain's proposal: the owner's Apply or Reject, whatever state the lane task is in. Never in a batch.
+      if (item.state === "pending" && item.proposal !== undefined) {
+        return {
+          kind: "approval",
+          title: oneLine(item.summary),
+          sentence: item.summary,
+          options: [
+            { id: "approve", label: "Apply", primary: true },
+            { id: "reject", label: "Reject" },
+          ],
+        };
+      }
       return item.state === "pending" && acting
         ? {
             kind: "approval",

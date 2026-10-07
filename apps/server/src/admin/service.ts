@@ -3,6 +3,7 @@ import {
   type AllowRule,
   AUTONOMY_BOSS_COMMANDS,
   type AutonomyMode,
+  CAPTAIN_PROPOSALS,
   type CommandMeta,
   type CommandName,
   type ConnectionTestResult,
@@ -51,6 +52,7 @@ import {
   WithdrawSecretInputSchema,
 } from "./fetch-secret.ts";
 import { decide as decideMode, matchRule, redact, redactOutput, redactText, sameRule } from "./policy.ts";
+import { PROPOSED_TEXT, type ProposalWorld, planProposal, proposalBasis } from "./proposals.ts";
 import { summarize } from "./summary.ts";
 import type { AdminCaller } from "./tokens.ts";
 import { adminTools, REQUEST_SECRET_TOOL } from "./tools.ts";
@@ -197,6 +199,7 @@ export class AdminService {
   private autonomy: AutonomyGate | undefined;
   private script: ScriptFetch | undefined;
   private clipboard: ClipboardCopier | undefined;
+  private proposals: ProposalWorld | undefined;
 
   constructor(private readonly deps: AdminDeps) {}
 
@@ -213,6 +216,11 @@ export class AdminService {
   /** The runner a captain's secret fetch uses: built after this service, from the connections. */
   useScript(script: ScriptFetch): void {
     this.script = script;
+  }
+
+  /** What a captain's proposal is measured against: built after this service, from the settings and projects. */
+  useProposals(world: ProposalWorld): void {
+    this.proposals = world;
   }
 
   /** The host helper's clipboard: built after this service, from the helper link and the config. */
@@ -240,6 +248,11 @@ export class AdminService {
       if (spec?.command === undefined) return error(`Unknown tool: ${tool}`);
       const { ownerAsked, reason, ...input } = args;
       const why = typeof reason === "string" ? reason.trim().slice(0, 500) : "";
+      // What the captain may not do alone becomes a proposal for the owner: no policy, rule, mode or trust applies.
+      if (CAPTAIN_PROPOSALS.has(spec.command)) {
+        const proposed = await this.propose(caller, spec.command, input, why);
+        if (proposed !== undefined) return proposed;
+      }
       // The captain's own tools in autonomous mode: no policy and no card, like a secret request.
       if (BOSS_TOOLS.has(spec.command)) {
         return (
@@ -274,6 +287,66 @@ export class AdminService {
     } catch (err) {
       return error(errorMessage(err));
     }
+  }
+
+  /**
+   * A captain's call that it may not make alone, kept as a card the owner applies or rejects. Undefined when
+   * the call is not a proposal (the normal path carries on). Only the captain in its workspace lane proposes.
+   */
+  private async propose(
+    caller: AdminCaller,
+    command: CommandName,
+    input: Record<string, unknown>,
+    why: string,
+  ): Promise<ToolResult | undefined> {
+    const lane = await this.laneOf(caller, command);
+    if ("problem" in lane) {
+      // projects.setEnvironments is an ordinary tool for other callers; the autonomy ones are the captain's alone.
+      if (command === "projects.setEnvironments") return undefined;
+      return error(`${command} is the owner's. Only the captain, in its workspace lane, can propose it.`);
+    }
+    const world = this.proposals;
+    if (world === undefined) return error("Proposals are not available.");
+    const planned = await planProposal(world, command, input, lane.org);
+    if (planned.kind === "run") return undefined;
+    if (planned.kind === "refuse") return error(planned.error);
+    const stored = JSON.stringify(input);
+    const waiting = this.deps.store.room
+      .pendingOfType(caller.task, "approval")
+      .find(
+        (i) =>
+          i.type === "approval" && i.proposal !== undefined && i.command === command && i.input === stored,
+      );
+    if (waiting === undefined) {
+      this.deps.room.post(caller.task as TaskId, `approval:${randomUUID()}`, {
+        type: "approval",
+        agent: caller.agent,
+        command,
+        risk: commands[command].risk,
+        summary: redactText(planned.summary),
+        // Exact, so Apply runs what the captain sent: these commands carry no secrets.
+        input: stored,
+        ...(why === "" ? {} : { reason: redactText(why) }),
+        state: "pending",
+        proposal: { org: lane.org, basis: planned.basis, changes: planned.changes },
+      });
+    }
+    return { text: PROPOSED_TEXT, isError: false };
+  }
+
+  /** Whether a pending proposal still matches the setting it was measured against. */
+  async proposalStale(item: ApprovalItem): Promise<boolean> {
+    const { proposal } = item;
+    if (proposal === undefined) return false;
+    const world = this.proposals;
+    if (world === undefined) return true;
+    let input: unknown;
+    try {
+      input = JSON.parse(item.input);
+    } catch {
+      return true;
+    }
+    return (await proposalBasis(world, item.command, input, proposal.org)) !== proposal.basis;
   }
 
   /**
@@ -837,6 +910,10 @@ export class AdminService {
     if (item.state !== "pending" || this.deciding.has(item.id)) {
       throw new UserError("That request was already decided.", 409);
     }
+    // A proposal is the owner's alone: no captain, rule or saved "always" answers it.
+    if (item.proposal !== undefined && (dismissal.by !== "owner" || always !== undefined)) {
+      throw new UserError("Only the owner applies or rejects a proposal, and never with a saved rule.", 409);
+    }
     this.deciding.add(item.id);
     try {
       if (decision === "reject") {
@@ -849,6 +926,12 @@ export class AdminService {
         this.pending.delete(item.id);
         this.ownerCards.delete(item.id);
         return rejected;
+      }
+      if (item.proposal !== undefined && (await this.proposalStale(item))) {
+        throw new UserError(
+          "This changed since the captain proposed it. Reject it and ask the captain to propose again.",
+          409,
+        );
       }
       const input = this.inputOf(item);
       if (always !== undefined) await this.saveRule(item, always.scope, always.change);
@@ -903,6 +986,8 @@ export class AdminService {
   ): { command: CommandName; input: Record<string, unknown>; parsed: Record<string, unknown> } | undefined {
     const item = this.deps.room.get(taskId, itemId);
     if (item?.type !== "approval" || item.state !== "pending") return undefined;
+    // A proposal is for the owner: the captain's upkeep never sees it as a card to answer.
+    if (item.proposal !== undefined) return undefined;
     if (!Object.hasOwn(commands, item.command)) return undefined;
     const command = item.command as CommandName;
     let input: unknown;
@@ -935,6 +1020,7 @@ export class AdminService {
     if (item?.type !== "approval" || item.state !== "pending" || this.deciding.has(item.id)) {
       return { ok: false, error: "The card is no longer waiting" };
     }
+    if (item.proposal !== undefined) return { ok: false, error: "A proposal is for the owner to apply" };
     const marker = {
       decision: verdict.decision,
       why: verdict.why,
@@ -998,6 +1084,7 @@ export class AdminService {
   async captainInstead(taskId: string, itemId: string, line: string, captain: string): Promise<void> {
     const item = this.deps.room.get(taskId, itemId);
     if (item?.type !== "approval" || item.state !== "pending" || this.deciding.has(item.id)) return;
+    if (item.proposal !== undefined) return;
     this.pending.delete(item.id);
     this.update(item, {
       state: "applied",
@@ -1155,7 +1242,7 @@ export class AdminService {
   }
 
   private metaOf(item: ApprovalItem): CommandMeta {
-    return this.ownerCards.has(item.id)
+    return this.ownerCards.has(item.id) || item.proposal !== undefined
       ? {
           actor: { kind: "owner" },
           task: item.task,
