@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Lamp } from "@/components/ui/lamp";
 import { Menu } from "@/components/ui/menu";
+import { Segmented } from "@/components/ui/segmented";
 import { useToast } from "@/components/ui/toast";
 import { Markdown } from "@/features/room/markdown";
 import { useRoom } from "@/features/room/use-room";
@@ -138,26 +139,17 @@ function Header({ row }: { row: ClientRow }) {
       {row.archived !== true && (
         <div className="flex items-center gap-2">
           <span className="text-xs text-fg-faint">Replies</span>
-          <fieldset
-            aria-label="Who replies"
-            className="m-0 inline-flex rounded-md border border-line-control bg-field p-0.5 text-sm"
-          >
-            {(["captain", "you"] as const).map((h) => (
-              <button
-                key={h}
-                type="button"
-                aria-pressed={row.holder === h}
-                disabled={holder.isPending}
-                onClick={() => set(h)}
-                className={cn(
-                  "cursor-pointer rounded px-2 py-0.5 transition-colors",
-                  row.holder === h ? "bg-selected text-fg" : "text-fg-muted hover:text-fg",
-                )}
-              >
-                {h === "captain" ? "Captain" : "You"}
-              </button>
-            ))}
-          </fieldset>
+          <Segmented
+            label="Who replies"
+            value={row.holder}
+            segments={[
+              { value: "captain", label: "Captain" },
+              { value: "you", label: "You" },
+            ]}
+            onChange={(h) => {
+              if (!holder.isPending) set(h);
+            }}
+          />
           <Menu
             label="Chat actions"
             items={[

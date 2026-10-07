@@ -40,13 +40,15 @@ export function Segmented<T extends string>({
             className={cn(
               "h-8 cursor-pointer rounded-md px-2.5 text-sm transition-colors duration-150",
               on
-                ? "bg-selected text-fg shadow-[inset_0_0_0_1px_var(--c-line-control)]"
+                ? "bg-accent font-semibold text-accent-ink shadow-[0_1px_2px_rgb(0_0_0/0.18)]"
                 : "text-fg-muted hover:bg-raised hover:text-fg",
             )}
           >
             {segment.label}
             {segment.count !== undefined && (
-              <span className="tnum ml-1.5 font-mono text-fg-faint">{segment.count}</span>
+              <span className={cn("tnum ml-1.5 font-mono", on ? "text-accent-ink/75" : "text-fg-faint")}>
+                {segment.count}
+              </span>
             )}
           </button>
         );
