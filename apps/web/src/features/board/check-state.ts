@@ -87,11 +87,18 @@ const STEP_WORD: Record<HandoffStepId, string> = {
   tests: "tests",
   build: "build",
   lint: "lint",
+  typecheck: "type check",
   acceptance: "brief",
   review: "review",
 };
 
-const CHECK_WORD = { test: "Tests", build: "Build", lint: "Lint", secret: "Secret scan" } as const;
+const CHECK_WORD = {
+  test: "Tests",
+  build: "Build",
+  lint: "Lint",
+  typecheck: "Type check",
+  secret: "Secret scan",
+} as const;
 
 /** The one line a review row's detail column shows for its checks. */
 export function checkLine(fact: HomeCheck, now: number): string {

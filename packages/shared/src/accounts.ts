@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { ContainerMemorySchema } from "./containers.ts";
 import { AgentToolRefSchema } from "./agent-tools.ts";
 import { ConnectionConfigSchema, duplicateConnectionIds, GLOBAL_CONNECTIONS } from "./connections.ts";
+import { ContainerMemorySchema } from "./containers.ts";
 import { ConversationEventSchema } from "./conversations.ts";
 import { EmojiSchema } from "./emoji.ts";
 import { IdSchema, SecretRefSchema } from "./ids.ts";

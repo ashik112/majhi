@@ -27,7 +27,16 @@ export type HandoffStepId = z.infer<typeof HandoffStepIdSchema>;
  * `existing`: it failed, and fails the same way on the commit the task branched from, so it is not this
  * task's and blocks nothing.
  */
-export const HandoffStatusSchema = z.enum(["pass", "fail", "timeout", "flaky", "none", "skipped", "note", "existing"]);
+export const HandoffStatusSchema = z.enum([
+  "pass",
+  "fail",
+  "timeout",
+  "flaky",
+  "none",
+  "skipped",
+  "note",
+  "existing",
+]);
 export type HandoffStatus = z.infer<typeof HandoffStatusSchema>;
 
 /** What a failed step says besides its name: how it ended and how long it ran, like "exit 1" and "24 s". */
@@ -224,7 +233,7 @@ export const HandoffRerunInputSchema = z.object({
  */
 export const HandoffToolRerunSchema = z.object({
   step: HandoffCommandStepSchema.optional().describe(
-    "The step to run again: install, lint, build or tests. Leave it out to run every step.",
+    "The step to run again: install, lint, typecheck, build or tests. Leave it out to run every step.",
   ),
 });
 

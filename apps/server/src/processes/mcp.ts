@@ -50,13 +50,13 @@ const TOOLS = [
   {
     name: "handoff",
     description:
-      "The majhi hand-off check of this task: how each step (install, tests, build, lint) ended on the latest commit, the first failure, and the log file of every step in the task folder. The check is run by majhi, not by you; this reads it. Only this task's.",
+      "The majhi hand-off check of this task: how each step (install, tests, build, lint, type check) ended on the latest commit, the first failure, and the log file of every step in the task folder. The check is run by majhi, not by you; this reads it. Only this task's.",
     input: z.object({}),
   },
   {
     name: "handoff_rerun",
     description:
-      "Run this task's hand-off check again, one step (install, lint, build or tests) or all of them, on the latest commit. It runs in the background through the same queue and limits as majhi's own check, one at a time per task, and the lead is told how it ended. End your turn instead of waiting; read the result with handoff.",
+      "Run this task's hand-off check again, one step (install, lint, typecheck, build or tests) or all of them, on the latest commit. It runs in the background through the same queue and limits as majhi's own check, one at a time per task, and the lead is told how it ended. End your turn instead of waiting; read the result with handoff.",
     input: HandoffToolRerunSchema,
   },
 ] as const;
