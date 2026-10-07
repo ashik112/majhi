@@ -21,6 +21,7 @@ import {
   SLACK_USER_SCOPES,
   slackChatScopes,
   slackManifest,
+  type TaskId,
 } from "@majhi/shared";
 import { UserError } from "../errors.ts";
 import type { RoomService } from "../room/service.ts";
@@ -39,11 +40,14 @@ export interface ClientChatDeps {
   rooms: ClientRooms;
   contacts: Contacts;
   replies: ClientReplies;
-  ingest: ChatIngest;
+  ingest: Pick<ChatIngest, "settleWaiting">;
   settings: ChatSettings;
   /** Laya did not answer the last time it read a client message: the captain's triage stood in. */
   layaDown?: () => boolean;
-  hub: Pick<ChatHub, "accounts" | "capabilities" | "restart" | "channels" | "join" | "notesOf" | "checkYou">;
+  hub: Pick<
+    ChatHub,
+    "accounts" | "capabilities" | "restart" | "channels" | "join" | "notesOf" | "checkYou" | "hasUserToken"
+  >;
   /** The chat app connections that exist now. */
   connections: () => Promise<ChatConnectionInfo[]>;
   /** The owner's Hold list of a workspace, as saved. */
@@ -93,7 +97,14 @@ export class ClientChat {
       };
     });
     // What Slack says of the token is the answer; when it says nothing, a refusal it gave majhi is, else it is not known.
-    const permissions: ChatPermission[] = slackChatScopes().map((scope) => {
+    type Who = "bot" | "you";
+    const rows = new Map<string, { use: string; held: Map<Who, ChatPermissionState> }>();
+    const hold = (scope: string, who: Who, use: string, state: ChatPermissionState) => {
+      const row = rows.get(scope) ?? { use, held: new Map<Who, ChatPermissionState>() };
+      row.held.set(who, state);
+      rows.set(scope, row);
+    };
+    for (const scope of slackChatScopes()) {
       const state: ChatPermissionState =
         list.scopes !== undefined
           ? list.scopes.includes(scope)
@@ -102,8 +113,8 @@ export class ClientChat {
           : notes.needed.includes(scope)
             ? "missing"
             : "unknown";
-      return { scope, use: SLACK_SCOPE_USE[scope] ?? scope, state };
-    });
+      hold(scope, "bot", SLACK_SCOPE_USE[scope] ?? scope, state);
+    }
     const you = list.you ?? { state: "none" as const };
     // The owner's own permissions are listed once a user token is saved.
     if (you.state !== "none") {
@@ -117,9 +128,25 @@ export class ClientChat {
             : notes.needed.includes(`user:${scope}`)
               ? "missing"
               : "unknown";
-        permissions.push({ scope, as: "you", use: `As you: ${SLACK_USER_SCOPE_USE[scope] ?? scope}`, state });
+        hold(scope, "you", SLACK_USER_SCOPE_USE[scope] ?? scope, state);
       }
     }
+    const permissions: ChatPermission[] = [...rows].map(([scope, row]) => {
+      const states = [...row.held.values()];
+      const lacking = [...row.held].filter(([, s]) => s === "missing").map(([who]) => who);
+      const state: ChatPermissionState = states.includes("missing")
+        ? "missing"
+        : states.every((s) => s === "granted")
+          ? "granted"
+          : "unknown";
+      return {
+        scope,
+        use: row.use,
+        state,
+        who: [...row.held.keys()],
+        ...(lacking.length === 0 ? {} : { lacking }),
+      };
+    });
     return {
       connection,
       bot: list.bot,
@@ -134,7 +161,14 @@ export class ClientChat {
   }
 
   /** Chooses whose name replies in one chat go out under. Me waits for a good user token at send time. */
-  setSendAs(room: string, sendAs: ChatSendAs): ClientRow {
+  async setSendAs(room: string, sendAs: ChatSendAs): Promise<ClientRow> {
+    const chat = this.deps.rooms.room(room).chat;
+    if (sendAs === "me" && !(await this.deps.hub.hasUserToken(chat.app, chat.account))) {
+      throw new UserError(
+        "Add your Slack user token first: Connections, Slack, Your Slack user token. Replies cannot go out as you without it.",
+        409,
+      );
+    }
     this.deps.rooms.sendAs(room, sendAs);
     return this.row(room);
   }
@@ -211,6 +245,13 @@ export class ClientChat {
     return { ...rooms, accounts: this.deps.hub.accounts(await this.deps.connections()) };
   }
 
+  /** The groups and channels of one connection's account, ignored ones too. */
+  async groups(connection: string): Promise<ClientRow[]> {
+    const info = (await this.deps.connections()).find((c) => c.id === connection);
+    if (info === undefined) throw new UserError("That chat connection does not exist.", 404);
+    return this.deps.rooms.groups(info.app, info.account);
+  }
+
   private row(id: string): ClientRow {
     const all = this.deps.rooms.list();
     const found = [...all.clients, ...all.newChats].find((r) => r.id === id);
@@ -234,9 +275,11 @@ export class ClientChat {
   }
 
   /** Stops triage and replies for a linked chat. Its history stays, read only, under its workspace. */
-  unlink(room: string): void {
+  async unlink(room: string): Promise<{ discarded: number }> {
     this.deps.rooms.unlink(room);
     this.listed.clear();
+    // Replies that waited for the owner would fail on approval: they are discarded now, and the owner is told how many.
+    return { discarded: await this.deps.replies.discardPending(room) };
   }
 
   holder(room: string, holder: "captain" | "you"): ClientRow {
@@ -267,6 +310,21 @@ export class ClientChat {
     if (contact === undefined)
       throw new UserError("That sender is not verified, so it cannot be marked.", 409);
     this.deps.contacts.setUs(contact.id, us);
+  }
+
+  /** The owner's answer to "who is this?": us (the captain stays out of what they write) or a client. */
+  async whoIs(room: string, item: string, answer: "us" | "client"): Promise<void> {
+    const card = this.deps.room.get(room, item);
+    if (card?.type !== "who-is") throw new UserError("That is not a who-is question.", 404);
+    if (card.state !== "asking") throw new UserError("That was answered already.", 409);
+    this.deps.settings.person(room, card.sender, answer);
+    this.deps.room.post(room as TaskId, card.id, {
+      type: "who-is",
+      sender: card.sender,
+      name: card.name,
+      state: answer,
+    });
+    await this.deps.ingest.settleWaiting(room, card.sender, answer === "us");
   }
 
   samePerson(room: string, item: string, answer: "same" | "not-same"): void {

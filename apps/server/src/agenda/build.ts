@@ -35,6 +35,7 @@ const DECISION_MINUTES: Record<OwnerDecisionKind, number> = {
   "sign-in": 2,
   secret: 1,
   draft: 2,
+  reply: 1,
   batch: 3,
   trust: 1,
   notifications: 1,
@@ -50,6 +51,7 @@ const DECISION_WEIGHT: Record<OwnerDecisionKind, number> = {
   ship: 50,
   paused: 48,
   draft: 45,
+  reply: 46,
   batch: 44,
   // A row that went back to You, or a promotion proposal: read when there is time.
   trust: 40,

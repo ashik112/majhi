@@ -15,9 +15,10 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Lamp, type LampState } from "@/components/ui/lamp";
 import { PageLink } from "@/components/ui/page-link";
+import { TaskRef } from "@/features/autonomy/task-ref";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
-import { useFindingToTask } from "@/lib/findings-queries";
+import { useFindings, useFindingToTask } from "@/lib/findings-queries";
 import { formatAgo } from "@/lib/format";
 import { useCheckAgain, useHandoff, useRerunStep } from "@/lib/handoff-queries";
 
@@ -146,6 +147,10 @@ function ExistingFailure({
   existing: NonNullable<HandoffStep["existing"]>;
 }) {
   const open = useFindingToTask();
+  const findings = useFindings("live");
+  // The finding may already have a task (this check, another task's, or the captain's): then it is that task.
+  const known = findings.data?.findings.find((f) => f.id === existing.finding)?.task;
+  const made = open.data?.task ?? known;
   return (
     <div className="flex min-w-0 flex-col gap-1 text-xs text-fg-soft sm:ml-[156px]">
       {existing.problems.length > 0 && (
@@ -160,15 +165,21 @@ function ExistingFailure({
       )}
       {existing.finding !== undefined && (
         <span className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={open.isPending || open.isSuccess}
-            onClick={() => open.mutate({ id: existing.finding ?? 0 })}
-            aria-label={`Open a task to fix the failure on ${existing.base} (${task})`}
-          >
-            {open.isSuccess ? "Task opened" : "Open a task to fix it"}
-          </Button>
+          {made === undefined ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={open.isPending}
+              onClick={() => open.mutate({ id: existing.finding ?? 0 })}
+              aria-label={`Open a task to fix the failure on ${existing.base} (${task})`}
+            >
+              Open a task to fix it
+            </Button>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              Task <TaskRef task={made} />
+            </span>
+          )}
           {open.isError && <span className="text-red">{describeError(open.error)}</span>}
         </span>
       )}

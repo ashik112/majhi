@@ -1,4 +1,4 @@
-import type { Conversation } from "@majhi/shared";
+import { CHAT_APP_LABEL, type Conversation } from "@majhi/shared";
 import { Anchor, MoreHorizontal, Search, SquareCheck } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
@@ -19,6 +19,7 @@ import { useUnlinkChat } from "@/lib/client-queries";
 import { cn } from "@/lib/cn";
 import {
   useArchiveConversation,
+  useConversationSearch,
   useConversations,
   useMarkConversationRead,
 } from "@/lib/conversation-queries";
@@ -73,9 +74,10 @@ export function ConversationList({
   const [query, setQuery] = useState("");
   const all = useMemo(() => workspaces(orgs), [orgs]);
   const tab = filter.tab === "all" || all.some((w) => w.id === filter.tab) ? filter.tab : "all";
+  const history = useConversationSearch(query).data;
   const rows = useMemo(
-    () => visibleConversations(list.data ?? [], { ...filter, tab }, query, all),
-    [list.data, filter, tab, query, all],
+    () => visibleConversations(list.data ?? [], { ...filter, tab }, query, all, new Set(history)),
+    [list.data, filter, tab, query, all, history],
   );
   const archivedCount = useMemo(
     () => (list.data ?? []).filter((c) => c.archived === true).length,
@@ -251,6 +253,7 @@ function Row({
                 {KIND_LABEL[row.kind]}
               </Badge>
             )}
+            {row.unlinked === true && <Badge className="h-4 px-1 text-2xs">Unlinked</Badge>}
             <span className="truncate text-sm text-fg-faint">{row.lastLine}</span>
           </span>
         </span>
@@ -292,7 +295,7 @@ function Row({
   );
 }
 
-/** The row menu: Mark as read, Archive, Unlink (client chats), Delete (agent chats). */
+/** The row menu: Mark as read, Archive, Unlink and Delete (client chats), Delete (agent chats). */
 function useRowActions(onDeleted: ((id: string) => void) | undefined) {
   const toast = useToast();
   const archive = useArchiveConversation();
@@ -320,13 +323,13 @@ function useRowActions(onDeleted: ((id: string) => void) | undefined) {
           ),
       },
     ];
-    if (row.kind === "client") {
+    if (row.kind === "client" && row.unlinked !== true) {
       out.push({
         label: "Unlink",
         onSelect: () => unlink.mutate({ room: row.id }, { onError: fail("Could not unlink the chat") }),
       });
     }
-    if (row.kind === "agent") {
+    if (row.kind === "agent" || row.kind === "client") {
       out.push({ label: "Delete", tone: "danger", onSelect: () => setDeleting(row) });
     }
     return out;
@@ -335,7 +338,11 @@ function useRowActions(onDeleted: ((id: string) => void) | undefined) {
   const dialog = deleting && (
     <ConfirmDialog
       title="Delete this chat?"
-      body={`"${chatTitle(deleting)}" and its messages are removed. Tasks the agent made stay.`}
+      body={
+        deleting.kind === "client"
+          ? `"${chatTitle(deleting)}" and its messages are removed from majhi only. Nothing is deleted in ${deleting.app === undefined ? "the chat app" : CHAT_APP_LABEL[deleting.app]}, and replies waiting for you are discarded. A new message from the chat shows up again under New chats.`
+          : `"${chatTitle(deleting)}" and its messages are removed. Tasks the agent made stay.`
+      }
       confirmLabel="Delete"
       busy={remove.isPending}
       error={remove.isError ? describeError(remove.error) : undefined}

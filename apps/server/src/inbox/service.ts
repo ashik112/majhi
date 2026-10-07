@@ -84,6 +84,8 @@ export interface InboxDeps {
     batchesDue(): Promise<{ org: string; channel: OutboundChannel; drafts: Draft[] }[]>;
     get(id: number): Draft | undefined;
   };
+  /** What a client reply draft answers, for its row. */
+  clientDraft?: DecisionSources["clientDraft"];
   actions: DecisionActions;
   /** Decisions the trust ladder and the money ceiling build themselves. */
   extras?: () => readonly OwnerDecision[] | Promise<readonly OwnerDecision[]>;
@@ -281,6 +283,7 @@ export class InboxService {
       signedOut,
       recommendations: deps.recommendations.all(),
       drafts: deps.outbound?.pending() ?? [],
+      ...(deps.clientDraft === undefined ? {} : { clientDraft: deps.clientDraft }),
       batches: (await deps.outbound?.batchesDue()) ?? [],
       incidents: deps.incidents?.() ?? [],
       orgName: (org) => names[org],
@@ -518,7 +521,17 @@ export class InboxService {
     }
     if (parsed?.kind === "draft") {
       const draft = deps.outbound?.get(parsed.id);
-      if (draft !== undefined) out.draft = draft;
+      if (draft !== undefined) {
+        // A client reply names the person and the chat, not the room's id.
+        const client = draft.channel === "client" ? deps.clientDraft?.(draft) : undefined;
+        out.draft =
+          client === undefined
+            ? draft
+            : {
+                ...draft,
+                target: client.from === undefined ? client.chat : `${client.from} in ${client.chat}`,
+              };
+      }
       return out;
     }
     if (parsed?.kind !== "room") return out;

@@ -34,6 +34,10 @@ export const CardCheckSchema = z.object({
   minutes: z.number().optional(),
   /** Services the CI job starts next to it, like a database image. */
   services: z.array(z.string()),
+  /** The line the check runs: `command` in its read-only form, when that differs from it. */
+  runs: z.string().optional(),
+  /** Why majhi does not run this check (a script that changes files in steps it cannot make read-only). */
+  notRun: z.string().optional(),
 });
 export type CardCheck = z.infer<typeof CardCheckSchema>;
 

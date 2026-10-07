@@ -3,7 +3,6 @@ import { Check, Lock, Minus, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { CopyButton } from "@/features/room/copy-button";
 import {
@@ -11,11 +10,16 @@ import {
   useIgnoreChannel,
   useLinkChannel,
   useRefreshChannels,
-  useUnignoreChat,
-  useUnlinkChat,
   useUserToken,
 } from "@/lib/client-queries";
 import { describeError } from "@/lib/errors";
+import { ChatRowActions } from "./chat-row-actions";
+
+/** Who needs a permission: the bot, the owner's own token, or both. */
+function whoText(who: readonly ("bot" | "you")[]): string {
+  if (who.length > 1) return "Bot and you";
+  return who[0] === "you" ? "You" : "Bot";
+}
 
 /** One row of the permissions list: a mark, the name, and what it is for or what is known. */
 function Row({
@@ -68,11 +72,11 @@ function YourToken({ connection, data }: { connection: string; data: ChatChannel
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm text-fg-faint">Your token</span>
+        <span className="text-sm text-fg-faint">Your Slack user token</span>
         {you.state === "ok" ? (
           <span className="text-sm text-fg-soft">{you.name}</span>
         ) : (
-          <span className="text-sm text-fg-faint">Not saved</span>
+          <span className="text-sm text-fg-faint">Not saved. Send as Me needs it.</span>
         )}
         <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
           {you.state === "ok" ? "Replace" : "Add"}
@@ -119,8 +123,6 @@ export function SlackChannels({ connection, orgs }: { connection: string; orgs: 
   const refresh = useRefreshChannels(connection);
   const link = useLinkChannel(connection);
   const ignore = useIgnoreChannel(connection);
-  const unlink = useUnlinkChat();
-  const unignore = useUnignoreChat();
   const data = channels.data;
   if (data === undefined) {
     return (
@@ -138,7 +140,9 @@ export function SlackChannels({ connection, orgs }: { connection: string; orgs: 
   });
   const missing = data.permissions
     .filter((p) => p.state === "missing")
-    .map((p) => (p.as === "you" ? `${p.scope} (user)` : p.scope));
+    .map((p) =>
+      p.lacking?.length === 1 && p.lacking[0] === "you" && p.who.length > 1 ? `${p.scope} (user)` : p.scope,
+    );
   const lacking = missing.length > 0 || data.socketMode === "missing";
   async function copyManifest() {
     try {
@@ -185,7 +189,7 @@ export function SlackChannels({ connection, orgs }: { connection: string; orgs: 
         )}
         <ul aria-label="Permissions" className="m-0 flex list-none flex-col gap-1 p-0">
           {data.permissions.map((p) => (
-            <Row key={`${p.as ?? "bot"}:${p.scope}`} state={p.state} name={p.scope} note={p.use} />
+            <Row key={p.scope} state={p.state} name={p.scope} note={`${p.use}. ${whoText(p.who)}`} />
           ))}
           <Row state={data.socketMode} name="Socket Mode" note="Lets majhi read without a public address" />
           <Row
@@ -220,61 +224,17 @@ export function SlackChannels({ connection, orgs }: { connection: string; orgs: 
                 <CopyButton text={`/invite @${data.bot}`} label={`Copy the invite for ${c.name}`} />
               </div>
             ) : (
-              <div className="flex items-center gap-1.5">
-                <Select
-                  aria-label={`Link ${c.name} to a workspace`}
-                  value={c.org ?? ""}
-                  disabled={c.org !== undefined || link.isPending}
-                  onChange={(event) => {
-                    const org = event.target.value;
-                    if (org !== "") link.mutate({ channel: c.id, org }, fail("Could not link the channel"));
-                  }}
-                  className="h-7 flex-1 px-2 text-sm"
-                >
-                  <option value="">Link to workspace</option>
-                  {orgs.map((org) => (
-                    <option key={org.id} value={org.id}>
-                      {org.name}
-                    </option>
-                  ))}
-                </Select>
-                {c.org !== undefined && c.room !== undefined && (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    aria-label={`Unlink ${c.name}`}
-                    disabled={unlink.isPending}
-                    onClick={() =>
-                      unlink.mutate({ room: c.room ?? "" }, fail("Could not unlink the channel"))
-                    }
-                  >
-                    Unlink
-                  </Button>
-                )}
-                {c.org === undefined && c.ignored !== true && (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={ignore.isPending}
-                    onClick={() => ignore.mutate({ channel: c.id }, fail("Could not ignore the channel"))}
-                  >
-                    Ignore
-                  </Button>
-                )}
-                {c.ignored === true && c.room !== undefined && (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    aria-label={`Watch ${c.name} again`}
-                    disabled={unignore.isPending}
-                    onClick={() =>
-                      unignore.mutate({ room: c.room ?? "" }, fail("Could not watch the channel"))
-                    }
-                  >
-                    Watch again
-                  </Button>
-                )}
-              </div>
+              <ChatRowActions
+                name={c.name}
+                org={c.org}
+                room={c.room}
+                ignored={c.ignored === true}
+                orgs={orgs}
+                linking={link.isPending}
+                ignoring={ignore.isPending}
+                onLink={(org, onError) => link.mutate({ channel: c.id, org }, { onError })}
+                onIgnore={(onError) => ignore.mutate({ channel: c.id }, { onError })}
+              />
             )}
           </div>
         );

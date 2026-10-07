@@ -27,10 +27,16 @@ export const ConversationSchema = z.object({
   app: ChatAppSchema.optional(),
   /** The agent of an agent chat. */
   agent: z.string().min(1).optional(),
+  /** A client chat the owner unlinked: read only, nothing is read or sent for it. */
+  unlinked: z.boolean().optional(),
   /** The owner hid it. It keeps its history and is listed under Archived. */
   archived: z.boolean().optional(),
 });
 export type Conversation = z.infer<typeof ConversationSchema>;
+
+/** `conversations.search`: the conversations whose messages hold the words, not only their title and last line. */
+export const ConversationSearchInputSchema = z.object({ query: z.string().trim().min(2).max(200) });
+export const ConversationSearchResultSchema = z.array(z.string().min(1));
 
 /** `conversations.list`: newest message first. */
 export const ConversationListSchema = z.array(ConversationSchema);

@@ -40,7 +40,7 @@ export const TOKEN_VARIABLES: Partial<
 export interface ClientChatWiring {
   store: Store;
   room: RoomService;
-  gate: Pick<OutboundGate, "submit" | "edit" | "get" | "decide">;
+  gate: Pick<OutboundGate, "submit" | "edit" | "get" | "decide" | "pending">;
   config: ConfigService;
   adapters: readonly ChatAdapter[];
   /** Every connection of every workspace. */

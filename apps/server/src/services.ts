@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { type Command, dockerTty, localSpawner, orphanRuns } from "@majhi/acp";
 import {
   BUILT_IN_CONNECT_APPS,
+  CLIENT_CHAT_BRIEF,
   chatRoomSettings,
   DEFAULT_GIT_HOST,
   effectiveIncident,
@@ -1164,6 +1165,8 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     },
     onRemoving: async (task) => {
       handoffService?.forget(task.id);
+      // A client chat taken out of majhi: replies that waited for the owner would have nowhere to go.
+      if (task.brief === CLIENT_CHAT_BRIEF) await clientChat?.replies.discardPending(task.id);
       await promotion.release(task);
     },
     // Bound below: autonomous mode keeps its chat while the mode is not off.
@@ -1531,6 +1534,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
   let incidentEngine: IncidentEngine | undefined;
   const inbox = new InboxService({
     outbound,
+    clientDraft: (draft) => clientChat?.replies.describe(draft),
     incidents: () => opsWatch?.unacked() ?? [],
     incidentDetail: (id) => {
       const inc = opsWatch?.incident(id);
@@ -1602,7 +1606,13 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
           ...(lead === undefined ? {} : { agent: lead }),
         }),
       answerBudget: (scope, answer) => autonomy.answerBudget(scope, answer),
-      decideDraft: (id, decision) => outbound.decide(id, decision),
+      decideDraft: async (id, decision) => {
+        const done = await outbound.decide(id, decision);
+        // A client reply that could not go (the chat is unlinked, the app refused) says why instead of vanishing.
+        if (done.channel === "client" && done.status === "failed")
+          throw new UserError(done.result ?? "The reply did not go.", 409);
+        return done;
+      },
       decideBatch: (org, channel, decision) => outbound.decideBatch(org, channel, decision),
       ackIncident: async (id) => {
         await opsWatch?.ack(id);

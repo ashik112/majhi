@@ -21,6 +21,7 @@ export const KIND_FILTERS = [
   { id: "access", label: DECISION_KIND_LABEL.secret },
   { id: "money", label: DECISION_KIND_LABEL.budget },
   { id: "paused", label: DECISION_KIND_LABEL.paused },
+  { id: "reply", label: DECISION_KIND_LABEL.reply },
   { id: "incident", label: DECISION_KIND_LABEL.incident },
   { id: "trust", label: DECISION_KIND_LABEL.trust },
 ] as const;
@@ -35,6 +36,7 @@ const GROUP: Record<OwnerDecisionKind, KindFilter> = {
   budget: "money",
   paused: "paused",
   draft: "access",
+  reply: "reply",
   batch: "access",
   incident: "incident",
   trust: "trust",

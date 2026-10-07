@@ -135,6 +135,8 @@ export async function gitPush(deps: GitPushDeps, params: PushParams): Promise<vo
   if (token && deps.authEnv === undefined)
     throw new Error("This host helper cannot push with a workspace's token.");
   const guard = await pushGuard(deps.run, params.path, env(deps), url, !token);
+  // A rewrite in the checkout's config that equals the address is pushed around with a closing slash.
+  if (guard.url !== url) args[args.indexOf(url)] = guard.url;
   const auth =
     token && params.auth !== undefined && deps.authEnv !== undefined
       ? await deps.authEnv(params.auth)
