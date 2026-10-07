@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { ALL_ASK, type ShipRule, type Task, type TaskDetail } from "@majhi/shared";
+import { ALL_ASK, type HandoffState, type ShipRule, type Task, type TaskDetail } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
 import { git } from "../testing/fixtures.ts";
@@ -61,6 +61,15 @@ async function shipAsCaptain(world: BossWorld, id: string, rules: ShipRule[]) {
     (await h.cmd("autonomy.configure", { orgs: { acme: { authority: rows, ships: rules } } })).status,
   ).toBe(200);
   expect((await h.cmd("autonomy.start")).status).toBe(200);
+  // The check of this head ends before the captain looks, as it does once a real check is done.
+  await h.cmd("handoff.check", { task: id });
+  const until = Date.now() + 90_000;
+  for (;;) {
+    const state = (await h.cmd("handoff.get", { task: id })).body as HandoffState;
+    if (!state.running && !state.queued && state.current !== undefined) break;
+    if (Date.now() > until) throw new Error(`the check of ${id} never ended`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
   h.majhi.services.captain.reviewReached(id);
   await h.majhi.services.captain.settled();
 }

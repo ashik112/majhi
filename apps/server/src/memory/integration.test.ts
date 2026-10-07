@@ -115,6 +115,7 @@ describe("majhi-memory", () => {
       "recall",
       "records",
       "threads",
+      "wiki",
     ]);
 
     const seen = text(

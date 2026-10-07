@@ -258,7 +258,8 @@ describe("memory.extract", () => {
       [1, "built", task.id],
     ]);
     expect(current.body).toContain("The probe uses the new route.");
-    expect(current.body).toContain("Handlers in src/");
+    // A section the later patch did not name is kept.
+    expect(current.body).toContain("The Acme api.");
     expect(current.body).not.toContain("The health check answers 200.");
     expect(((await must("memory.brief", { project: "globex-web" })) as { versions: [] }).versions).toEqual(
       [],
