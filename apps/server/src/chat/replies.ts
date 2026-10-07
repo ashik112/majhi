@@ -286,7 +286,7 @@ export class ClientReplies {
       room: room.id,
       chat: room.chat.title,
       app: CHAT_APP_LABEL[room.chat.app],
-      ...(client === undefined ? {} : { from: client.sender.name, said: client.text }),
+      ...(client === undefined ? {} : { from: client.sender.name, said: this.plain(room, client.text) }),
       ...(mine?.hold === undefined ? {} : { hold: REPLY_HOLD_LABEL[mine.hold] }),
     };
   }

@@ -276,7 +276,7 @@ function Row({
         title={view.agents.map((a) => `@${a}`).join(", ")}
       >
         {view.type === "chat"
-          ? "No agent access"
+          ? ""
           : view.agents.length === 0
             ? "No agents"
             : plural(view.agents.length, "agent")}

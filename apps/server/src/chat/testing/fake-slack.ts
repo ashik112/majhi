@@ -27,6 +27,7 @@ export interface FakeUser {
   real_name: string;
   team_id?: string;
   is_bot?: boolean;
+  is_admin?: boolean;
 }
 
 export interface FakeFile {
@@ -504,6 +505,7 @@ export class FakeSlack {
             real_name: user.real_name,
             team_id: user.team_id,
             is_bot: user.is_bot === true,
+            ...(user.is_admin === true ? { is_admin: true } : {}),
             profile: { display_name: "", real_name: user.real_name },
           },
         };

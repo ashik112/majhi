@@ -485,7 +485,17 @@ export class InboxService {
     const parsed = parseDecisionId(id);
     if (parsed?.kind === "draft") {
       const draft = deps.outbound?.get(parsed.id);
-      if (draft !== undefined) out.draft = draft;
+      if (draft !== undefined) {
+        // A client reply names the person and the chat, not the room's id.
+        const client = draft.channel === "client" ? deps.clientDraft?.(draft) : undefined;
+        out.draft =
+          client === undefined
+            ? draft
+            : {
+                ...draft,
+                target: client.from === undefined ? client.chat : `${client.from} in ${client.chat}`,
+              };
+      }
       return out;
     }
     if (parsed?.kind !== "room") return out;

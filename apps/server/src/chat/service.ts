@@ -165,7 +165,7 @@ export class ClientChat {
     const chat = this.deps.rooms.room(room).chat;
     if (sendAs === "me" && !(await this.deps.hub.hasUserToken(chat.app, chat.account))) {
       throw new UserError(
-        "Add your Slack user token first: Connections, Slack, Your token. Replies cannot go out as you without it.",
+        "Add your Slack user token first: Connections, Slack, Your Slack user token. Replies cannot go out as you without it.",
         409,
       );
     }

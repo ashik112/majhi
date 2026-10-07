@@ -42,12 +42,33 @@ const SENDER_WINDOW_MS = 10 * 60_000;
 
 type ClientItem = Extract<RoomItem, { type: "client" }>;
 
-/** Whether an edit changed what the message asks: more than a word swapped (a typo), or a very short text rewritten. */
+/** How many single-character edits turn one text into the other. Used on short messages only. */
+function distance(a: string, b: string): number {
+  let row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) {
+      next[j] = Math.min(
+        (row[j] ?? 0) + 1,
+        (next[j - 1] ?? 0) + 1,
+        (row[j - 1] ?? 0) + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+    row = next;
+  }
+  return row[b.length] ?? 0;
+}
+
+/**
+ * Whether an edit changed what the message asks: two or more new words, or in a very short text a rewrite (a few
+ * letters changed is a typo). One word swapped in a longer text is a correction.
+ */
 export function changedMeaning(before: string, after: string): boolean {
   const had = wordsOf(before);
   const known = new Set(had);
   const added = wordsOf(after).filter((w) => !known.has(w)).length;
-  return added >= 2 || (had.length <= 2 && added >= 1);
+  if (added >= 2) return true;
+  return added === 1 && had.length <= 2 && distance(before.toLowerCase(), after.toLowerCase()) > 3;
 }
 
 /** The item id of a delivery: the same key is always the same id. */
