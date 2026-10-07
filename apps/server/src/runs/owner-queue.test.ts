@@ -27,7 +27,12 @@ async function lockedTask() {
     start: true,
   });
   expect(res.status).toBe(200);
-  await until(() => services().room.getLive("ACM-1", "acme-builder")?.status === "idle", "idle");
+  await until(
+    () =>
+      w.h.runtime.sessions[0]?.prompts.length === 1 &&
+      services().room.getLive("ACM-1", "acme-builder")?.status === "idle",
+    "first turn done",
+  );
   const worktree = services().store.tasks.get("ACM-1")?.repos[0]?.worktree;
   if (worktree === undefined) throw new Error("no worktree");
   const release = await services().runs.locks.acquire([worktree], "ACM-1\u0000acme-lead");
