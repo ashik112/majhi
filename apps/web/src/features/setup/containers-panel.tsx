@@ -30,7 +30,10 @@ export function ContainersSection() {
       {settings.isError && <p className="pt-5 text-sm text-red">{describeError(settings.error)}</p>}
       {settings.data && (
         <>
-          <ImagesList images={settings.data.containers.images} />
+          <ImagesList
+            images={settings.data.containers.images}
+            orgImages={settings.data.containers.org_images}
+          />
           <LimitsForm saved={settings.data.containers} />
           <HandoffTimeoutsForm saved={settings.data.containers} />
         </>
@@ -127,11 +130,21 @@ function RunningList() {
   );
 }
 
-function ImagesList({ images }: { images: readonly string[] }) {
+function ImagesList({
+  images,
+  orgImages,
+}: {
+  images: readonly string[];
+  orgImages: Readonly<Record<string, readonly string[]>>;
+}) {
   const toast = useToast();
   const change = useAllowImage();
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string>();
+  const rows: { image: string; org?: string }[] = [
+    ...images.map((image) => ({ image })),
+    ...Object.entries(orgImages).flatMap(([org, list]) => list.map((image) => ({ image, org }))),
+  ];
 
   function add() {
     const parsed = ImageRefSchema.safeParse(draft);
@@ -156,21 +169,25 @@ function ImagesList({ images }: { images: readonly string[] }) {
       title="Allowed images"
       note="Agents may start services only from these. A new one asks you first."
     >
-      {images.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="text-sm text-fg-faint">No images yet.</p>
       ) : (
         <ul aria-label="Allowed images" className="-mx-1.5 flex max-w-[640px] flex-col">
-          {images.map((image) => (
-            <li key={image} className="flex min-h-8 min-w-0 items-center gap-2 px-1.5 text-sm">
+          {rows.map(({ image, org }) => (
+            <li
+              key={`${org ?? ""} ${image}`}
+              className="flex min-h-8 min-w-0 items-center gap-2 px-1.5 text-sm"
+            >
               <span className="min-w-0 flex-1 truncate font-mono">{image}</span>
+              {org !== undefined && <Badge tone="neutral">{org}</Badge>}
               <Button
                 size="sm"
                 variant="ghost"
                 disabled={change.isPending}
-                aria-label={`Remove ${image}`}
+                aria-label={`Remove ${image}${org === undefined ? "" : ` from ${org}`}`}
                 onClick={() =>
                   change.mutate(
-                    { image, allow: false },
+                    { image, allow: false, ...(org === undefined ? {} : { org }) },
                     {
                       onSuccess: () => toast("Image removed", { detail: "Running containers keep running." }),
                       onError: (e) => toast("Could not remove", { detail: describeError(e), tone: "error" }),
@@ -214,12 +231,12 @@ function ImagesList({ images }: { images: readonly string[] }) {
   );
 }
 
-type LimitKey = Exclude<keyof ContainersSettings, "images">;
+type LimitKey = Exclude<keyof ContainersSettings, "images" | "org_images">;
 const LIMITS: readonly { key: LimitKey; label: string; hint: string }[] = [
   { key: "cpus", label: "CPUs per container", hint: "0.25 to 16" },
   { key: "memory", label: "Memory per container", hint: "Like 512m or 2g" },
-  { key: "per_task", label: "Containers per task", hint: "Previews and services at once, 1 to 10" },
-  { key: "total", label: "Containers across all tasks", hint: "Previews and services at once, 1 to 100" },
+  { key: "per_task", label: "Containers per task", hint: "At most this many at once, 1 to 10" },
+  { key: "total", label: "Containers across all tasks", hint: "At most this many at once, 1 to 100" },
   { key: "build_total", label: "Concurrent preview builds", hint: "Across all tasks, 1 to 10" },
   { key: "build_cpus", label: "CPUs for a preview build", hint: "0.25 to 16" },
   { key: "build_memory", label: "Memory for a preview build", hint: "Like 4g" },

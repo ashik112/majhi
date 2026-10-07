@@ -310,8 +310,10 @@ export const NotificationsFilePatchSchema = z.strictObject(notificationsFields).
 
 /** Containers majhi runs for agents: previews and test services (PRV-53). */
 const containersFields = {
-  /** Service images the owner allowed. Changed only by `containers.images.allow` and `.remove`. */
+  /** Service images the owner allowed in every workspace. Changed only by `containers.images.allow` and `.remove`. */
   images: z.array(ImageRefSchema).max(100),
+  /** Service images the owner allowed in one workspace (`private` for tasks with no workspace), by workspace id. Same commands, with `org`. */
+  org_images: z.record(z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/), z.array(ImageRefSchema).max(100)),
   /** CPUs per preview or service container. */
   cpus: ContainerCpusSchema,
   /** Memory per preview or service container. */
@@ -342,9 +344,10 @@ const containersFields = {
 };
 export const ContainersSettingsSchema = z.strictObject({
   images: containersFields.images.default([]),
+  org_images: containersFields.org_images.default({}),
   cpus: containersFields.cpus.default(1),
   memory: containersFields.memory.default("512m"),
-  per_task: containersFields.per_task.default(3),
+  per_task: containersFields.per_task.default(6),
   total: containersFields.total.default(8),
   build_total: containersFields.build_total.default(1),
   build_cpus: containersFields.build_cpus.default(2),
@@ -358,7 +361,7 @@ export type ContainersSettings = z.infer<typeof ContainersSettingsSchema>;
 /** What majhi.yaml may hold and what majhi writes: the limits and the image list. */
 export const ContainersFilePatchSchema = z.strictObject(containersFields).partial();
 /** What `settings.set` accepts: the limits, never `images`, so every new image goes through its own card. */
-export const ContainersPatchSchema = ContainersFilePatchSchema.omit({ images: true });
+export const ContainersPatchSchema = ContainersFilePatchSchema.omit({ images: true, org_images: true });
 export type ContainersPatch = z.infer<typeof ContainersPatchSchema>;
 
 /** How the captain's commands are approved, per risk class (5.16). */

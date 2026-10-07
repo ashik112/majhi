@@ -35,7 +35,12 @@ export function runningLine(running: readonly ProcessInfo[]): string | undefined
 /** A process as the `list` tool shows it. */
 export function listLine(p: ProcessInfo, now: string): string {
   const time = duration(p.startedAt, p.endedAt ?? now);
-  const port = p.port === undefined ? "" : `, port ${p.port}`;
+  const port =
+    p.port === undefined
+      ? ""
+      : p.host !== undefined && p.status === "running"
+        ? `, port ${p.port} (from this task's other containers and your shell: ${p.host}:${p.port}, if it listens on 0.0.0.0)`
+        : `, port ${p.port}`;
   const wait = p.wait ? "" : ", wait: false";
   return `${p.id} ${label(p)} in ${p.cwd}: ${endLine(p)}, ${time}${port}${wait}, started by @${p.agent}`;
 }

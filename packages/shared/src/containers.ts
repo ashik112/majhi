@@ -31,10 +31,48 @@ export function sameImage(a: string, b: string): boolean {
   return normalizeImage(a) === normalizeImage(b);
 }
 
+/**
+ * Allowing an image. `org` limits it to one workspace (`private` for tasks with no workspace); left
+ * out it holds everywhere. `service` is the container or compose service that asked: the owner's card names it.
+ */
+export const ContainerImageScopeSchema = z.object({
+  image: ImageRefSchema,
+  org: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]{0,62}$/)
+    .optional(),
+  service: z.string().max(60).optional(),
+});
+export type ContainerImageScope = z.infer<typeof ContainerImageScopeSchema>;
+
 /** A service or volume name. Part of docker names and network aliases, so lowercase and short. */
 export const ContainerNameSchema = z
   .string()
   .regex(/^[a-z][a-z0-9-]{0,30}$/, "Use lowercase letters, digits and dashes, starting with a letter");
+
+/**
+ * Names that answer on a task's network for something that is not a task container: the preview, a
+ * connection's forwarder (`<id>.host`), majhi's own containers (`majhi-*`) and the names a runtime gives the
+ * computer. A container, service, alias or process named one of these would take the place of that thing.
+ */
+export const RESERVED_HOST_NAMES = [
+  "preview",
+  "localhost",
+  "host.docker.internal",
+  "gateway.docker.internal",
+  "host.orb.internal",
+  "host.internal",
+  "host.containers.internal",
+] as const;
+
+/** Why `name` may not be a container's name or alias on a task's network, or undefined when it may. */
+export function reservedNameReason(name: string): string | undefined {
+  const lower = name.toLowerCase();
+  if ((RESERVED_HOST_NAMES as readonly string[]).includes(lower)) return `${name} is a name majhi keeps`;
+  if (lower.endsWith(".host")) return `${name} ends in .host, the name of a service on the owner's computer`;
+  if (lower.startsWith("majhi-")) return `${name} starts with majhi-, which is for majhi's own containers`;
+  return undefined;
+}
 
 /**
  * An absolute path inside a container. Only letters, digits and `._/@+-`: a comma or a quote would
@@ -189,10 +227,49 @@ export const TaskDockerRequestSchema = z.strictObject({
 });
 export type TaskDockerRequest = z.infer<typeof TaskDockerRequestSchema>;
 
-/** What the shim prints and exits with. */
+/**
+ * Why majhi refused a task's `docker` call, for a script or an agent to read and act on. The shim
+ * prints it as `docker: [code] message`. `refused` is any other refusal, with its reason in the message.
+ */
+export const TaskDockerErrorCodeSchema = z.enum([
+  "refused",
+  "image_not_allowed",
+  "flag_not_allowed",
+  "privileged",
+  "host_network",
+  "network_not_allowed",
+  "namespace_not_allowed",
+  "device_not_allowed",
+  "capability_not_allowed",
+  "socket_mount",
+  "mount_outside",
+  "env_file_outside",
+  "limit_reached",
+  "command_not_available",
+  "restart_not_available",
+  "name_in_use",
+  "name_reserved",
+  "task_not_open",
+  "compose_file_not_found",
+  "compose_invalid",
+  "compose_unsupported_key",
+  "compose_unsupported_flag",
+  "compose_privileged",
+  "compose_host_network",
+  "compose_device",
+  "compose_socket_mount",
+  "compose_mount_outside",
+  "compose_env_file_outside",
+  "compose_build_outside",
+  "compose_dependency_failed",
+]);
+export type TaskDockerErrorCode = z.infer<typeof TaskDockerErrorCodeSchema>;
+
+/** What the shim prints and exits with. `error` is set when majhi refused the call. */
 export const TaskDockerResultSchema = z.strictObject({
   code: z.number().int(),
   stdout: z.string(),
   stderr: z.string(),
+  error: z.strictObject({ code: TaskDockerErrorCodeSchema, message: z.string() }).optional(),
 });
 export type TaskDockerResult = z.infer<typeof TaskDockerResultSchema>;

@@ -25,6 +25,11 @@ export interface SpawnRequest {
    */
   task?: string;
   /**
+   * The name this run's container answers to on the task's network, so the agent's shell and the
+   * task's other containers reach what the run serves (a dev server) by name. A runner only.
+   */
+  networkAlias?: string;
+  /**
    * A throwaway reader of files, not an agent (the map's graphify extraction): no network at all, a read-only
    * root filesystem with a small scratch `/tmp`, and at most one writable mount. Only a runner container
    * can honor this; a local spawner refuses it.

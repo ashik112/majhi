@@ -166,6 +166,20 @@ describe("runner mounts", () => {
     ).toEqual(["majhi-runners", "majhi-acm-1"]);
   });
 
+  it("gives a run a name on the task's network, and refuses a name that is not a host name", () => {
+    const withNetworks: RunnerConfig = { ...cfg, taskNetworks: () => ["majhi-acm-1"] };
+    const args = dockerRunArgs(request({ task: "ACM-1", networkAlias: "web" }), withNetworks, "n");
+    expect(args.flatMap((a, i) => (args[i - 1] === "--network" ? [a] : []))).toEqual([
+      "majhi-runners",
+      "name=majhi-acm-1,alias=web",
+    ]);
+    for (const bad of ["web,driver-opt=x", "Web", "a b", "-x", ""]) {
+      expect(() => dockerRunArgs(request({ task: "ACM-1", networkAlias: bad }), withNetworks, "n")).toThrow(
+        MountRefused,
+      );
+    }
+  });
+
   it("gives a scratch run its own /tmp instead of a mount", () => {
     const args = dockerRunArgs(request({ scratch: true, mounts: [] }), cfg, "majhi-run-test");
     expect(mountArgs(args)).toHaveLength(1);

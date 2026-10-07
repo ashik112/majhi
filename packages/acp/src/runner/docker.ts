@@ -220,6 +220,9 @@ export function guardArgs(
   ];
 }
 
+/** A network alias of a run: a host name. Part of a comma separated `--network` value, so nothing else gets through. */
+const NETWORK_ALIAS = /^[a-z0-9][a-z0-9-]{0,62}$/;
+
 /** The only writable place of an isolated run besides its one output mount. */
 export const ISOLATED_TMP = "/tmp:rw,noexec,nosuid,nodev,size=512m,mode=1777";
 
@@ -230,6 +233,9 @@ export function dockerRunArgs(
   name: string,
   options: { tty?: boolean; spawner?: string } = {},
 ): string[] {
+  if (req.networkAlias !== undefined && !NETWORK_ALIAS.test(req.networkAlias)) {
+    throw new MountRefused(`A run's network name is a host name, not ${req.networkAlias}.`);
+  }
   const args = [
     "run",
     options.tty === true ? "-it" : "-i",
@@ -246,7 +252,10 @@ export function dockerRunArgs(
     req.isolated === true ? "none" : cfg.network,
     ...(req.task === undefined || req.isolated === true
       ? []
-      : (cfg.taskNetworks?.(req.task) ?? []).flatMap((n) => ["--network", n])),
+      : (cfg.taskNetworks?.(req.task) ?? []).flatMap((n) => [
+          "--network",
+          req.networkAlias === undefined ? n : `name=${n},alias=${req.networkAlias}`,
+        ])),
     ...(req.isolated === true ? ["--read-only", "--tmpfs", ISOLATED_TMP] : []),
     "--cap-drop",
     "ALL",
