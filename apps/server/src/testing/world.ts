@@ -9,6 +9,7 @@ import type { Probe } from "../runs/network.ts";
 import type { LinkOptions } from "../tasks/links.ts";
 import { git, tempDir } from "./fixtures.ts";
 import { type Harness, type HarnessOptions, harness, harnessOver } from "./harness.ts";
+import { QUIET_GIT } from "./quiet-git.ts";
 import { type BuiltTemplate, buildTemplate, copyTemplate, useTemplateRoot } from "./template.ts";
 
 export interface World {
@@ -94,19 +95,21 @@ const COMMON_REPOS = ["web", "ops"];
  * setup, which has no world of its own: git runs without the machine's config here too.
  */
 export async function prebuildTemplates(root: string): Promise<void> {
-  const keep = { global: process.env.GIT_CONFIG_GLOBAL, system: process.env.GIT_CONFIG_NOSYSTEM };
+  const keys = ["GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", ...Object.keys(QUIET_GIT)];
+  const keep = keys.map((key) => [key, process.env[key]] as const);
   process.env.GIT_CONFIG_GLOBAL = "/dev/null";
   process.env.GIT_CONFIG_NOSYSTEM = "1";
+  Object.assign(process.env, QUIET_GIT);
   useTemplateRoot(root);
   try {
     await buildTemplate(root, JSON.stringify({}), () => builtWorld({}));
     for (const name of COMMON_REPOS) await buildTemplate(root, `repo:${name}`, () => builtRepo(name));
   } finally {
     useTemplateRoot(undefined);
-    if (keep.global === undefined) delete process.env.GIT_CONFIG_GLOBAL;
-    else process.env.GIT_CONFIG_GLOBAL = keep.global;
-    if (keep.system === undefined) delete process.env.GIT_CONFIG_NOSYSTEM;
-    else process.env.GIT_CONFIG_NOSYSTEM = keep.system;
+    for (const [key, value] of keep) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 }
 

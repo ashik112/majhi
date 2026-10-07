@@ -143,8 +143,10 @@ async function reviewed(testBody: string, withChecks = true) {
   const id = (made.body as Task).id;
   await h.cmd("room.send", { task: id, text: "create acme-api/work.txt" });
   await w.until(async () => ((await h.cmd("tasks.get", { id })).body as Task).status === "review", "review");
-  await w.until(async () => (await handoff(id)).history.length > 0, "the check judged");
-  await h.majhi.services.handoff.settled();
+  // `handoff.get` runs git, so it is asked once the checks have settled, not on every tick of a wait.
+  // A check that has not started yet leaves nothing to settle, so ask again after it does.
+  do await h.majhi.services.handoff.settled();
+  while ((await handoff(id)).history.length === 0);
   // The status reads review when the turn ends, a moment before the run lets go of the task, and merging
   // in that gap is refused as "an agent is working": wait for the thing the merge checks.
   await w.until(() => h.majhi.services.runs.working(id).length === 0, "the agent to stop working");

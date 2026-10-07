@@ -11,6 +11,15 @@ const OBJECT_ID = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
  * symbolic or unreadable ref file, an odd name), and the caller then asks git.
  */
 export async function refExists(cwd: string, ref: string): Promise<boolean | undefined> {
+  const id = await refId(cwd, ref);
+  return id === undefined ? undefined : id !== false;
+}
+
+/**
+ * The commit a full ref name points at, read from the same files as `refExists`. False when the ref is
+ * not there, undefined when the files cannot settle it.
+ */
+export async function refId(cwd: string, ref: string): Promise<string | false | undefined> {
   try {
     if (!ref.startsWith("refs/") || ref.includes("\0") || ref.includes("//") || ref.endsWith("/")) {
       return undefined;
@@ -24,7 +33,7 @@ export async function refExists(cwd: string, ref: string): Promise<boolean | und
     const loose = await stat(join(dirs.commonDir, ref)).catch(() => undefined);
     if (loose?.isFile()) {
       const text = (await readFile(join(dirs.commonDir, ref), "utf8")).trim();
-      return OBJECT_ID.test(text) ? true : undefined;
+      return OBJECT_ID.test(text) ? text : undefined;
     }
     const packed = await readFile(join(dirs.commonDir, "packed-refs"), "utf8").catch(
       (err: NodeJS.ErrnoException) => {
@@ -34,7 +43,9 @@ export async function refExists(cwd: string, ref: string): Promise<boolean | und
     );
     for (const line of packed.split("\n")) {
       const space = line.indexOf(" ");
-      if (space > 0 && line.slice(space + 1) === ref && OBJECT_ID.test(line.slice(0, space))) return true;
+      if (space > 0 && line.slice(space + 1) === ref && OBJECT_ID.test(line.slice(0, space))) {
+        return line.slice(0, space);
+      }
     }
     return false;
   } catch {

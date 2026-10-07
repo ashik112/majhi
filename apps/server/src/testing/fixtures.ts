@@ -28,7 +28,19 @@ function cleanGitEnv(): NodeJS.ProcessEnv {
 export async function git(cwd: string, ...args: string[]): Promise<string> {
   const { stdout } = await run(
     "git",
-    ["-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", ...args],
+    [
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.com",
+      "-c",
+      "commit.gpgsign=false",
+      "-c",
+      "maintenance.auto=false",
+      "-c",
+      "gc.auto=0",
+      ...args,
+    ],
     { cwd, env: { ...cleanGitEnv(), GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } },
   );
   return stdout.trim();

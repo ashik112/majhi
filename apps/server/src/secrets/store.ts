@@ -100,10 +100,11 @@ export class SecretStore {
    * The key file's content, encrypted with a passphrase (age scrypt) and armored, so it can leave
    * this computer. `age -d` with the passphrase gives back a key file majhi reads as is.
    */
-  async exportKey(passphrase: string): Promise<string> {
+  async exportKey(passphrase: string, scryptLogN?: number): Promise<string> {
     const identity = await this.requireIdentity();
     const encrypter = new Encrypter();
     encrypter.setPassphrase(passphrase);
+    if (scryptLogN !== undefined) encrypter.setScryptWorkFactor(scryptLogN);
     return armor.encode(await encrypter.encrypt(`${identity}\n`));
   }
 

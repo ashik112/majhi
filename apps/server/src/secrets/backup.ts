@@ -47,8 +47,8 @@ export class KeyExports {
   }
 
   /** The armored age file for the owner to download. The passphrase is used once and dropped. */
-  async export(passphrase: string): Promise<{ fileName: string; content: string }> {
-    const content = await this.secrets.exportKey(passphrase);
+  async export(passphrase: string, scryptLogN?: number): Promise<{ fileName: string; content: string }> {
+    const content = await this.secrets.exportKey(passphrase, scryptLogN);
     const fingerprint = await this.secrets.fingerprint();
     if (fingerprint !== undefined) {
       await this.write({ fingerprint, exportedAt: this.now().toISOString() });

@@ -1,4 +1,5 @@
 import { git, gitOk, refIsThere } from "./git.ts";
+import { refId } from "./refs.ts";
 
 type Repo = {
   source: string;
@@ -29,6 +30,63 @@ export async function changeBase(
   options: { mergeBase?: boolean } = {},
 ): Promise<ChangeBase> {
   const refs = await baseCandidates(cwd, repo.base);
+  const key = await memoKey(cwd, repo, tip, refs, options.mergeBase === true);
+  const known = key === undefined ? undefined : measured.get(key);
+  if (known !== undefined) return known;
+  const found = await measureChangeBase(cwd, repo, tip, refs, options);
+  if (key !== undefined) remember(key, found);
+  return found;
+}
+
+/**
+ * What `changeBase` found, by the commits it was found from. Ancestry between commits never changes,
+ * so the same commits give the same answer; a branch that moved is another key. A ship asks this
+ * for each repo a dozen times (the diff, the checks, the plan, the card), each a chain of git runs.
+ */
+const measured = new Map<string, ChangeBase>();
+const MEASURED_LIMIT = 500;
+
+function remember(key: string, value: ChangeBase): void {
+  if (measured.size >= MEASURED_LIMIT) {
+    const oldest = measured.keys().next();
+    if (oldest.done !== true) measured.delete(oldest.value);
+  }
+  measured.set(key, value);
+}
+
+const COMMIT_ID = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
+
+/**
+ * The commits an answer depends on, as one string. Undefined when any of them cannot be read from the
+ * ref files (a start that is not a full id, a tip that is neither a branch ref nor an id): then git is
+ * asked every time.
+ */
+async function memoKey(
+  cwd: string,
+  repo: Repo,
+  tip: string,
+  refs: readonly Candidate[],
+  mergeBase: boolean,
+): Promise<string | undefined> {
+  const tipId = COMMIT_ID.test(tip) ? tip : await refId(cwd, tip);
+  if (typeof tipId !== "string") return undefined;
+  if (!mergeBase && repo.startCommit !== undefined && !COMMIT_ID.test(repo.startCommit)) return undefined;
+  const parts = [cwd, repo.base, repo.branch, mergeBase ? "" : (repo.startCommit ?? ""), tipId];
+  for (const ref of refs) {
+    const id = await refId(cwd, ref.name);
+    if (typeof id !== "string") return undefined;
+    parts.push(ref.name, ref.label, id);
+  }
+  return parts.join("\0");
+}
+
+async function measureChangeBase(
+  cwd: string,
+  repo: Repo,
+  tip: string,
+  refs: readonly Candidate[],
+  options: { mergeBase?: boolean },
+): Promise<ChangeBase> {
   if (
     options.mergeBase !== true &&
     repo.startCommit !== undefined &&
@@ -53,12 +111,17 @@ export async function changeBase(
 }
 
 /** The local base first, then each remote's copy of it, those that exist. */
-async function baseCandidates(cwd: string, base: string): Promise<{ name: string; label: string }[]> {
+interface Candidate {
+  name: string;
+  label: string;
+}
+
+async function baseCandidates(cwd: string, base: string): Promise<Candidate[]> {
   const remotes = (await git(cwd, ["remote"]))
     .split("\n")
     .map((r) => r.trim())
     .filter((r) => r !== "");
-  const out: { name: string; label: string }[] = [];
+  const out: Candidate[] = [];
   if (await refIsThere(cwd, `refs/heads/${base}`)) out.push({ name: `refs/heads/${base}`, label: base });
   for (const r of remotes) {
     if (await refIsThere(cwd, `refs/remotes/${r}/${base}`))
