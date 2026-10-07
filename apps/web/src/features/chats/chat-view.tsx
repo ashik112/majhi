@@ -192,7 +192,7 @@ function OpenChat({
             to="/t/$taskId"
             params={{ taskId: t.id }}
             title={t.title}
-            className="rounded-xs font-mono text-fg underline-offset-2 hover:underline"
+            className="rounded-xs font-mono text-fg underline decoration-fg-faint underline-offset-2 hover:decoration-fg"
           >
             {t.id}
           </Link>
