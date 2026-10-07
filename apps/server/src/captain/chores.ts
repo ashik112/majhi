@@ -488,6 +488,21 @@ export function createChores(
         // A task that changes a project with deploy environments gets its deploy planned before it ships: one turn
         // of the captain in the lane, which reads the project's wiki and the diff and calls projects.planDeploy.
         if (await planDeploy(run, t)) continue;
+        // The plan is not in yet (asked and not answered, or planning is off): the captain does not merge, and says so.
+        if (plan.waits !== undefined) {
+          if (!ruleOff(run, "ship-notready")) {
+            const reason = ruleOff(run, "ship-deploy-plan")
+              ? `${plan.waits}, and planning deploys is turned off for the captain. Ship it yourself, or turn that rule on`
+              : `${shipAsked("merge", ws.name, plan)}. You can still ship it yourself`;
+            run.note(
+              `ship:${t.id}:${t.heads}:plan`,
+              `${t.id} is ready but waits for its deploy plan`,
+              reason,
+              t.id,
+            );
+          }
+          continue;
+        }
         const into = [...new Set(check.targets.map((x) => x.into))].join(", ");
         const outside = check.targets.filter((x) => !branchAllowed(ws.rules, x.into, x.base));
         const blocker =

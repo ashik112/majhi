@@ -6,9 +6,10 @@ import {
   type Task,
 } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
+import { createNothingDeploys } from "../deploy/nothing.ts";
 import { ownerStepOf } from "../tasks/detail.ts";
 import { linesOfNumstat } from "./lines.ts";
-import { opensMergeRequest, ShipPlanner } from "./plan.ts";
+import { opensMergeRequest, ShipPlanner, shipAsked } from "./plan.ts";
 
 const rule: ShipRule = {
   id: "aaaaaaaa",
@@ -33,6 +34,7 @@ function planner(
   way: "local" | "merge-request" = "local",
   environments: DeployEnvironment[] = [],
   into?: string,
+  needsPlan = false,
 ) {
   const tasks = new Map<string, Task>([
     ["ACM-1", task("ACM-1", "acme", "bug", into)],
@@ -51,6 +53,7 @@ function planner(
     mode: () => mode,
     areas: { of: async () => ({ areas: [], unmapped: 0 }), forget: () => undefined },
     environments: async () => environments,
+    needsDeployPlan: async () => needsPlan,
     viaMergeRequests: async () => way === "merge-request",
     zone: () => "UTC",
     now: () => new Date("2026-10-04T10:00:00.000Z"),
@@ -103,6 +106,7 @@ describe("a merge into the branch of an environment", () => {
       mode: () => "on",
       areas: { of: async () => ({ areas: [], unmapped: 0 }), forget: () => undefined },
       environments: async () => deployOnMain("staging"),
+      needsDeployPlan: async () => false,
       viaMergeRequests: async () => false,
       zone: () => "UTC",
       now: () => new Date("2026-10-04T10:00:00.000Z"),
@@ -110,6 +114,46 @@ describe("a merge into the branch of an environment", () => {
     const plan = await p.plan("ACM-1");
     expect(plan.steps.merge).toBe("captain");
     expect(plan.gated).toBeUndefined();
+  });
+});
+
+describe("a task whose deploy is not planned yet", () => {
+  const staging: DeployEnvironment[] = [{ env: "staging", tier: "staging" }];
+
+  it("is not merged or pushed by the captain until the plan, or an empty one, is in", async () => {
+    const waiting = await planner("on", "local", staging, "develop", true).plan("ACM-1");
+    expect(waiting.steps.merge).toBe("owner");
+    expect(waiting.steps.push).toBe("owner");
+    expect(waiting.waits).toBe("Waits for the deploy plan");
+    expect(shipAsked("merge", "Acme", waiting)).toBe(
+      "In Acme the merge waits for the deploy plan of this task",
+    );
+    const planned = await planner("on", "local", staging, "develop", false).plan("ACM-1");
+    expect(planned.steps.merge).toBe("captain");
+    expect(planned.waits).toBeUndefined();
+  });
+});
+
+describe("the answer that nothing deploys", () => {
+  it("counts as the plan for that task only", async () => {
+    const lines = new Set<string>();
+    const nothing = createNothingDeploys({
+      repo: {
+        addAction: (a) => {
+          lines.add(a.key);
+          return 1;
+        },
+        hasAction: (key) => lines.has(key),
+      },
+      day: async () => "2026-10-07",
+      now: () => new Date("2026-10-07T10:00:00.000Z"),
+    });
+    const acme = task("ACM-1", "acme", "bug");
+    const other = task("ACM-2", "acme", "feature");
+    expect(await nothing.has(acme)).toBe(false);
+    await nothing.record(acme, "captain");
+    expect(await nothing.has(acme)).toBe(true);
+    expect(await nothing.has(other)).toBe(false);
   });
 });
 

@@ -68,7 +68,13 @@ export const TrailStepSchema = z.discriminatedUnion("kind", [
    * A step of shipping the rules leave to the owner: the task waits for them to do it. Only in the
    * single read (`tasks.detail`), since it is read from the ship decision for the task's diff now.
    */
-  z.object({ kind: z.literal("ship"), ...tone, step: z.enum(["merge", "push"]) }),
+  z.object({
+    kind: z.literal("ship"),
+    ...tone,
+    step: z.enum(["merge", "push"]),
+    /** The captain's merge waits for the deploy plan of the task, which the captain is asked for. Not the owner's step. */
+    waits: z.literal("deploy-plan").optional(),
+  }),
   /** One target of a project the task changed: its state is the deploy record's, or what the ship rules say happens next. */
   z.object({
     kind: z.literal("deploy"),
@@ -133,6 +139,8 @@ export const ShipViewSchema = z.object({
   way: z.enum(["local", "merge-request"]),
   /** What the rule that decided covers ("A bug up to 200 lines"). Absent when the rows decided. */
   rule: z.string().optional(),
+  /** Set while the captain's merge waits for the task's deploy plan ("Waits for the deploy plan"). */
+  waits: z.string().optional(),
 });
 export type ShipView = z.infer<typeof ShipViewSchema>;
 
