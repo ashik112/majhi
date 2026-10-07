@@ -1,6 +1,7 @@
 import { ALL_ASK, type Authority } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
+import { planOf } from "./authority-fixtures.ts";
 import { createChores } from "./chores.ts";
 import type { CaptainPorts } from "./ports.ts";
 import { CaptainRepo } from "./repo.ts";
@@ -28,6 +29,7 @@ function world() {
   const reads = new Set([
     "reviewTasks",
     "shipCheck",
+    "shipPlan",
     "answerTasks",
     "approvals",
     "questions",
@@ -42,6 +44,7 @@ function world() {
       evidence: "checks pass",
       targets: [{ project: "app", into: "main", base: "main" }],
     }),
+    shipPlan: () => planOf(RUNS),
     answerTasks: () => [],
     approvals: () => [
       {

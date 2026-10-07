@@ -4,9 +4,10 @@ import {
   type CommandName,
   commands,
   isDestructiveCommand,
-  type MergePolicy,
+  shipSteps,
 } from "@majhi/shared";
-import { askedSentence, authorityOf } from "../captain/levels.ts";
+import { askedSentence, authorityOf, shipRulesOf } from "../captain/levels.ts";
+import { type ShipPlan, shipAsked } from "../ship/plan.ts";
 import { holdCovering } from "./spend.ts";
 
 /**
@@ -29,8 +30,11 @@ export interface AutonomyCall {
 
 export interface PolicyContext {
   settings: Pick<AutonomySettings, "orgs">;
-  /** The org's own merge policy for its MRs. Absent: never. */
-  orgMerge?: MergePolicy | undefined;
+  /**
+   * For a call that ships a task: who does each step of shipping it and how it lands, read now by the one
+   * ship decision (`ShipPlanner`). Absent: the workspace's rows decide.
+   */
+  ship?: Pick<ShipPlan, "steps" | "way" | "ruleSubject"> | undefined;
   holds: readonly AutonomyHold[];
   /** The accounts of the agents that would do the work. */
   accounts: readonly string[];
@@ -89,9 +93,8 @@ const GIT_ACCESS: ReadonlySet<string> = new Set([
   "orgs.useSavedLogin",
 ]);
 
-/** `orgs.update` fields that change identity, git accounts, or what agents may do alone. */
 /** `orgs.update` fields that change identity, git accounts, where merges land, or what agents may do alone. */
-const SENSITIVE_ORG_FIELDS = ["identity", "commits", "git_accounts", "merge", "lead_start", "base"] as const;
+const SENSITIVE_ORG_FIELDS = ["identity", "commits", "git_accounts", "lead_start", "base"] as const;
 
 /** Automations that start tasks or run commands later, outside the run gate and the caps. */
 const AUTOMATION_EDITS: ReadonlySet<string> = new Set([
@@ -118,6 +121,11 @@ export function decideAutonomously(call: AutonomyCall, ctx: PolicyContext): Auto
   const risk = commands[command].risk;
   const name = ctx.orgName ?? call.org;
   const authority = authorityOf(ctx.settings, call.org);
+  const plan = ctx.ship ?? {
+    steps: shipSteps(authority, shipRulesOf(ctx.settings, call.org), { projects: [] }, true),
+    way: "local" as const,
+    ruleSubject: undefined,
+  };
   if (call.confirm) return left("A fix task starts only when the owner approves it");
   if (risk === "destructive" || isDestructiveCommand(command)) return left("Only the owner removes things");
   // Registering a repo the workspace's folder holds is upkeep, like the projects chore (the lane gate
@@ -153,26 +161,32 @@ export function decideAutonomously(call: AutonomyCall, ctx: PolicyContext): Auto
     }
   }
   if (command === "tasks.merge") {
-    return authority.merge === "decide"
-      ? approved(`In ${name} the captain decides when work is merged`)
-      : left(askedSentence("merge", name));
+    if (plan.steps.merge !== "captain") return left(shipAsked("merge", name, plan));
+    // A project that works through merge requests lands by one: the branch goes up with tasks.openMrs and
+    // its request is merged on the host. A local merge would skip the review the project asks for.
+    if (plan.way === "merge-request") {
+      return left(
+        `${name}'s project works through merge requests, so the work lands by one, not by a local merge`,
+      );
+    }
+    return approved(`In ${name} the captain decides when work is merged`);
   }
-  // Asking the lead to resolve conflicts with main is part of a merge: it follows the Merge row. The
-  // merge it ends in never pushes (the hard limits refuse mergePush); a push follows the Push row.
+  // Asking the lead to resolve conflicts with main is part of a merge: it follows the same decision. A push
+  // follows the Push row.
   if (command === "tasks.resolveShip" && call.boss === true) {
-    return authority.merge === "decide"
+    return plan.steps.merge === "captain"
       ? approved(`In ${name} the captain decides when work is merged, and a conflict is part of it`)
-      : left(askedSentence("merge", name));
+      : left(shipAsked("merge", name, plan));
   }
   if (command === "tasks.push" || command === "tasks.openMrs") {
-    return authority.push === "decide"
+    return plan.steps.push === "captain"
       ? approved(`In ${name} the captain decides when work is pushed`)
-      : left(askedSentence("push", name));
+      : left(shipAsked("push", name, plan));
   }
   if (command === "tasks.mergeMrs" || command === "tasks.markMerged") {
-    if (authority.merge !== "decide") return left(askedSentence("merge", name));
-    if ((ctx.orgMerge ?? "never") === "never") return left(`${name}'s merge policy is never`);
-    return approved(`In ${name} the captain decides when work is merged, and its merge policy allows it`);
+    return plan.steps.merge === "captain"
+      ? approved(`In ${name} the captain decides when work is merged`)
+      : left(shipAsked("merge", name, plan));
   }
   if (risk === "outbound") return left("It reaches outside majhi, which only the owner allows");
   if (starts) {

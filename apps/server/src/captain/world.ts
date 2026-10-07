@@ -26,6 +26,7 @@ import { HOST_LABEL, type MrService } from "../mrs/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { IdleWatch } from "../rooms/idle-watch.ts";
 import type { RepoScanner } from "../scan/scanner.ts";
+import type { ShipPlanner } from "../ship/plan.ts";
 import type { Store } from "../store/index.ts";
 import { captainAnsweredLine } from "../tasks/cards.ts";
 import type { CleanupService } from "../tasks/cleanup.ts";
@@ -36,7 +37,7 @@ import type { WikiEnabled } from "../wiki/switch.ts";
 import { isAnswerTask } from "./answer-check.ts";
 import { answerOnce } from "./keys.ts";
 import type { Lanes } from "./lanes.ts";
-import { askedSentence, SHIP_ROW } from "./levels.ts";
+import { askedSentence } from "./levels.ts";
 import { laneScopes } from "./memory-scopes.ts";
 import { scopeOfTask } from "./own-work.ts";
 import { answerFor, widenedNote } from "./permission-rules.ts";
@@ -84,6 +85,8 @@ export interface WorldDeps {
   protectedProjects: () => Promise<ReadonlySet<string>>;
   /** The command dispatcher, bound once the server made it. */
   dispatch: () => Dispatch | undefined;
+  /** Who does each step of shipping a task: the one decision the chore, the lane and the poller read. */
+  ship: Pick<ShipPlanner, "plan">;
   /** The checked hand-off, bound once the server made it. Absent: ship readiness is the cheap checks only. */
   handoff?: (() => HandoffService | undefined) | undefined;
 }
@@ -224,6 +227,8 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
       }
       return out;
     },
+
+    shipPlan: (_org, id) => deps.ship.plan(id),
 
     async shipCheck(_org, id, except): Promise<ShipCheck> {
       const base = await shipReadiness(deps, id, except);
@@ -409,10 +414,10 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
           risky: true,
         };
       if (verdict.decision === "left") return verdict;
-      const row = startsWork(call.command, call.parsed) ? "start" : SHIP_ROW[call.command];
-      if (row !== undefined && authority[row] !== "decide") {
+      // Shipping calls were decided by the one ship decision above (the rows and the rules); starting is the Start row.
+      if (startsWork(call.command, call.parsed) && authority.start !== "decide") {
         const name = (await deps.config.sections()).orgs[org]?.name ?? (org === PRIVATE ? "Private" : org);
-        return { decision: "left", why: askedSentence(row, name) };
+        return { decision: "left", why: askedSentence("start", name) };
       }
       return verdict;
     },

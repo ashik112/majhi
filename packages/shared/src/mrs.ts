@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { IdSchema, MergePolicySchema } from "./accounts.ts";
+import { IdSchema } from "./accounts.ts";
 import { TaskIdSchema, TaskSchema } from "./tasks.ts";
 
 /**
@@ -42,7 +42,6 @@ export type MergeOrder = z.infer<typeof MergeOrderSchema>;
 
 export const RefreshMrsResultSchema = z.object({
   task: TaskSchema,
-  policy: MergePolicySchema,
 });
 export type RefreshMrsResult = z.infer<typeof RefreshMrsResultSchema>;
 

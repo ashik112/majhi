@@ -1,4 +1,10 @@
-import type { HandoffStepId, TrailKind, TrailStep, TrailTone } from "@majhi/shared";
+import {
+  type HandoffStepId,
+  SHIP_STEP_LABEL,
+  type TrailKind,
+  type TrailStep,
+  type TrailTone,
+} from "@majhi/shared";
 import type { LampState } from "@/components/ui/lamp";
 
 /**
@@ -93,6 +99,8 @@ function stepView(step: TrailStep, index: number): StepView {
         word: step.stage === "merged" ? "merged" : "waits for the lead",
         waiting,
       };
+    case "ship":
+      return { ...base, label: SHIP_STEP_LABEL[step.step], word: "waits for you", waiting };
     case "deploy":
       return { ...base, label: capital(step.env), word: BY_TONE.deploy[step.tone], waiting };
     case "reply":

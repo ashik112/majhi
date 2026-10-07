@@ -632,6 +632,7 @@ export function createHandlers({
     "tasks.get": async (input) => services.tasks.get(input.id),
     "tasks.detail": async (input) => services.taskDetails.detail(input.id),
     "tasks.areas": async (input) => services.taskDetails.areas(input.ids),
+    "tasks.areaNames": async (input) => ({ names: await services.taskDetails.areaNames(input.org) }),
     "tasks.setType": async (input, ctx) => {
       const task = services.tasks.get(input.id);
       const who = typist(ctx.meta.actor, {
@@ -821,7 +822,8 @@ export function createHandlers({
     "tasks.openMrs": (input, ctx) =>
       services.mrs.open(input.id, { into: input.into, targets: input.targets }, actorName(ctx.meta.actor)),
     "tasks.refreshMrs": (input) => services.mrs.refresh(input.id),
-    "tasks.mergeMrs": (input) => services.mrs.merge(input.id, "owner"),
+    "tasks.mergeMrs": (input, ctx) =>
+      services.mrs.merge(input.id, ctx.meta.actor.kind === "agent" ? "poll" : "owner"),
     "tasks.markMerged": (input) => services.mrs.markMerged(input),
     "tasks.changeBranch": (input, ctx) =>
       changeTaskBranch(

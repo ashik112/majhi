@@ -1,5 +1,6 @@
 import type { CaptainChore } from "@majhi/shared";
 import { runFollowUps } from "../findings/followups.ts";
+import { opensMergeRequest, type ShipPlan, shipAsked } from "../ship/plan.ts";
 import { sizeText } from "../tasks/folder-sweep.ts";
 import { answerGate, judgeReport, summaryLine } from "./answer-check.ts";
 import { shipState } from "./keys.ts";
@@ -42,6 +43,19 @@ const SPLIT_ITEMS = 8;
 /** The log key of the memory chore's look at one memory: a memory it looked at is not counted as waiting. */
 export function memoryKey(fact: number): string {
   return `memory:${fact}`;
+}
+
+/** Why the captain opens a merge request: who merges it, and the row or rule that says so. */
+const lowerFirst = (text: string) => `${text.charAt(0).toLowerCase()}${text.slice(1)}`;
+
+function mrReason(workspace: string, plan: ShipPlan, host: string): string {
+  return plan.steps.merge === "captain"
+    ? `In ${workspace} the captain decides when work is merged and pushed, and the project works through merge requests, so it opens the merge request on ${host} and merges it once it is green`
+    : `${
+        plan.ruleSubject === undefined
+          ? `In ${workspace} the captain decides when work is pushed and you merge`
+          : `In ${workspace} the rule for ${lowerFirst(plan.ruleSubject)} leaves the merge to you and the captain decides when work is pushed`
+      }, so it opens the merge request on ${host}`;
 }
 
 export function createChores(
@@ -135,6 +149,7 @@ export function createChores(
     run: ChoreRun,
     t: ReviewTask,
     check: Extract<ShipCheck, { ready: true }>,
+    plan: ShipPlan,
     recheck: () => Promise<string | undefined>,
   ): Promise<void> => {
     const { org, ws } = run;
@@ -162,7 +177,7 @@ export function createChores(
       });
       return;
     }
-    const reason = `In ${ws.name} the captain decides when work is pushed and you merge, so it opens the merge request on ${ready.host}`;
+    const reason = mrReason(ws.name, plan, ready.host);
     await run.act({
       key: `ship:mr:${t.id}:${shipState(t)}`,
       text: `Opened a merge request for ${t.id} on ${ready.host}: ${t.title}`,
@@ -176,7 +191,7 @@ export function createChores(
         if (out.failed !== undefined) throw new Error(out.failed);
         const links = out.urls.length === 0 ? "" : ` ${out.urls.join(", ")}.`;
         return {
-          text: `Opened a merge request for ${t.id} on ${out.host}: ${t.title}.${links} Merge it on ${out.host}`,
+          text: `Opened a merge request for ${t.id} on ${out.host}: ${t.title}.${links} ${plan.steps.merge === "captain" ? `The captain merges it on ${out.host} once it is green` : `Merge it on ${out.host}`}`,
           undoNote:
             "The branch is pushed and the merge request is open: close it on the host to take it back",
         };
@@ -218,7 +233,7 @@ export function createChores(
       });
       return true;
     }
-    const reason = `In ${ws.name} the captain decides when work is pushed and you merge, so it opens the merge request on ${ready.host}`;
+    const reason = mrReason(ws.name, await ports.shipPlan(org, id), ready.host);
     await run.act({
       key: `card:${card.task}:${card.item}:mr`,
       text: `Opened a merge request for ${id} on ${ready.host} instead of merging: ${card.summary}`,
@@ -334,9 +349,11 @@ export function createChores(
           continue;
         }
         const check = await ports.shipCheck(org, t.id);
+        // Who does each step: the one decision the lane's calls and the lead's cards read too.
+        const plan = await ports.shipPlan(org, t.id);
         if (!check.ready) {
           // A conflict with main: where Merge is Captain the lead is asked to bring main in, resolve and merge.
-          if (check.conflict === true && ws.authority.merge === "decide" && !ruleOff(run, "ship-conflict")) {
+          if (check.conflict === true && plan.steps.merge === "captain" && !ruleOff(run, "ship-conflict")) {
             const reason = `${check.why}. In ${ws.name} the captain decides when work is merged`;
             await run.act({
               key: `ship:resolve:${t.id}:${shipState(t)}`,
@@ -386,20 +403,28 @@ export function createChores(
         const into = [...new Set(check.targets.map((x) => x.into))].join(", ");
         const outside = check.targets.filter((x) => !branchAllowed(ws.rules, x.into, x.base));
         const blocker =
-          ws.authority.merge !== "decide"
-            ? `In ${ws.name} you decide when work is merged, so the captain asks before shipping`
+          plan.steps.merge !== "captain"
+            ? `${shipAsked("merge", ws.name, plan)}, so the captain asks before shipping`
             : outside.length > 0
               ? `${outside.map((o) => o.into).join(", ")} is not a branch ${ws.name} ships to`
-              : undefined;
+              : plan.way === "merge-request" && plan.steps.push !== "captain"
+                ? `${shipAsked("push", ws.name, plan)}, and the project works through merge requests, so the captain asks before opening one`
+                : undefined;
         const recheck = async () => {
           const again = away(t.id);
           if (again !== undefined) return again;
           const fresh = await ports.shipCheck(org, t.id);
-          return fresh.ready ? undefined : fresh.why;
+          if (!fresh.ready) return fresh.why;
+          // The decision is read again with the head: a rule that covered it a moment ago may not now.
+          const now = await ports.shipPlan(org, t.id);
+          return now.steps.merge === plan.steps.merge && now.steps.push === plan.steps.push
+            ? undefined
+            : "who ships it changed";
         };
-        // Merge is the owner's and Push is the captain's: the branch goes to its host as a merge request.
-        if (ws.authority.merge !== "decide" && ws.authority.push === "decide") {
-          if (!ruleOff(run, "ship-mr")) await openMr(run, t, check, recheck);
+        // The branch goes to its host as a merge request: Merge is the owner's and Push the captain's, or the
+        // project works through merge requests and the captain merges the request once it is green.
+        if (opensMergeRequest(plan)) {
+          if (!ruleOff(run, "ship-mr")) await openMr(run, t, check, plan, recheck);
           continue;
         }
         // The owner's switches: a rule that is off stops its action, and the task waits.
@@ -420,8 +445,11 @@ export function createChores(
           });
           continue;
         }
-        const push = ws.authority.push === "decide";
-        const reason = `In ${ws.name} the captain decides when work is merged${push ? " and pushed" : ""}`;
+        const push = plan.steps.push === "captain";
+        const reason =
+          plan.ruleSubject === undefined
+            ? `In ${ws.name} the captain decides when work is merged${push ? " and pushed" : ""}`
+            : `In ${ws.name} the rule for ${lowerFirst(plan.ruleSubject)} lets the captain merge${push ? " and push" : ""}`;
         await run.act({
           key: `ship:${t.id}:${shipState(t)}`,
           text: `Shipped ${t.id} to ${into}: ${t.title}`,
@@ -454,9 +482,8 @@ export function createChores(
         // merge request on the host, never left as a dead end.
         if (
           card.command === "tasks.merge" &&
-          ws.authority.merge !== "decide" &&
-          ws.authority.push === "decide" &&
           !ruleOff(run, "ship-mr") &&
+          opensMergeRequest(await ports.shipPlan(org, card.task)) &&
           (await mergeCardAsMr(run, card))
         ) {
           continue;

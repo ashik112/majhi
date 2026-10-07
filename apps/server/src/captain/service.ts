@@ -211,7 +211,7 @@ export class CaptainService {
     for (const org of this.closed ? [] : workspaceIds(sections.orgs)) {
       const ws = await this.workspace(org);
       if (ws === undefined || ws.rest !== undefined) continue;
-      for (const chore of choresNow(ws.authority, ws.mode)) {
+      for (const chore of choresNow(ws.authority, ws.mode, ws.rules?.ships)) {
         if (this.runner.running(org, chore) || this.repo.chore(org, chore).offAt !== undefined) continue;
         const why = this.plays.due(org, chore, ws, {
           any: this.repo.lastRun(org, chore),
@@ -447,7 +447,7 @@ export class CaptainService {
         ...(ws.rest === undefined ? {} : { resting: ws.rest }),
         ...(lane === undefined ? {} : { lane }),
         thread: lane === undefined ? "idle" : (threadOf?.(lane, org) ?? "idle"),
-        chores: choresNow(authority, mode).map((chore) => {
+        chores: choresNow(authority, mode, settings.autonomy.orgs[org]?.ships).map((chore) => {
           const c = this.repo.chore(org, chore);
           const last = this.repo.lastRun(org, chore);
           return {

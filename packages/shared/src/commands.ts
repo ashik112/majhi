@@ -1436,7 +1436,6 @@ export const commands = {
       tiers: OrgConfigSchema.shape.tiers.nullable().optional(),
       /** The default team for new tasks, lead first. null lets the decision provider pick. */
       team: OrgConfigSchema.shape.team.nullable().optional(),
-      merge: OrgConfigSchema.shape.merge.nullable().optional(),
       /** Which tasks a lead may start without asking. null goes back to `children`. */
       lead_start: OrgConfigSchema.shape.lead_start.nullable().optional(),
       mr_tokens: OrgConfigSchema.shape.mr_tokens.nullable().optional(),
@@ -1802,6 +1801,13 @@ export const commands = {
       "The parts of the system each of these tasks touches, for a board that shows area chips and filters by area (at most 100 ids). Reads each task's worktree diff, so ask for the tasks on screen. Ids that do not exist are left out",
     input: z.object({ ids: z.array(TaskIdSchema).min(1).max(100) }),
     output: z.array(z.object({ task: TaskIdSchema, areas: TaskAreasSchema })),
+  },
+  "tasks.areaNames": {
+    risk: "read",
+    summary:
+      "The names of the parts of the system (wiki components) a workspace's projects have, for choosing the areas a ship rule covers. Empty when the workspace has no wiki",
+    input: z.object({ org: z.string().min(1) }),
+    output: z.object({ names: z.array(z.string()) }),
   },
   "tasks.setType": {
     risk: "change",
@@ -2289,14 +2295,14 @@ export const commands = {
   "tasks.mergeMrs": {
     risk: "outbound",
     summary:
-      "Merge the task's MRs on their hosts, in merge order, stopping at the first that fails or has failing CI, and say why. Not for the never policy: merge on the host, then use markMerged",
+      "Merge the task's MRs on their hosts, in merge order, stopping at the first that fails or has failing CI, and say why. Merging is the Merge row's and the ship rules': the owner always may. Merge on the host instead and use markMerged",
     input: z.object({ id: TaskIdSchema }),
     output: MergeMrsResultSchema,
   },
   "tasks.markMerged": {
     risk: "change",
     summary:
-      "The owner merged the MRs on the host (the never policy). Checks each with its host; force records them as merged without that check. When every MR is merged, the task is done",
+      "The owner merged the MRs on the host. Checks each with its host; force records them as merged without that check. When every MR is merged, the task is done",
     input: z.object({
       id: TaskIdSchema,
       /** Only this repo. Default: every repo with an MR. */
@@ -3693,7 +3699,7 @@ export const commands = {
   "autonomy.configure": {
     risk: "change",
     summary:
-      "Change autonomous mode's day cap, account floors, summary time, time zone and the largest task size it may start, or a workspace's entry under orgs: who decides what there (authority: start, questions, approvals, upkeep, merge and push, each decide or ask; only the rows you name change), its daily budget (cap), and the More rules (hours, freeze, tz, branches, providers, account). null clears a field. Owner only",
+      "Change autonomous mode's day cap, account floors, summary time, time zone and the largest task size it may start, or a workspace's entry under orgs: who decides what there (authority: start, questions, approvals, upkeep, merge, push, deployStaging, deployProduction, tell and own, each decide or ask; only the rows you name change), its ship rules (ships: the whole ordered list that refines merge, deploy and tell by task type, first match wins), its daily budget (cap), and the More rules (hours, freeze, tz, branches, providers, account). null clears a field. Owner only",
     input: AutonomyPatchSchema,
     output: AutonomyStatusSchema,
   },

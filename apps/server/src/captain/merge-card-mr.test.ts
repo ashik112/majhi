@@ -1,7 +1,7 @@
 import type { Authority, ShipFix } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
 import { Store } from "../store/index.ts";
-import { RUNS } from "./authority-fixtures.ts";
+import { planOf, RUNS } from "./authority-fixtures.ts";
 import { createChores } from "./chores.ts";
 import type { ApprovalCard, CaptainPorts } from "./ports.ts";
 import { CaptainRepo } from "./repo.ts";
@@ -36,6 +36,7 @@ function setup(authority: Authority, mr: MrReady = { ok: true, host: "GitHub" })
     typing: () => false,
     approvals: () => [CARD],
     questions: () => [],
+    shipPlan: async () => planOf(authority),
     shipCheck: async () => ({
       ready: true,
       evidence: "checks pass",

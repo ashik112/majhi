@@ -1,6 +1,6 @@
 import type { Authority } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { RUNS } from "../captain/authority-fixtures.ts";
+import { planOf, RUNS } from "../captain/authority-fixtures.ts";
 import { createChores } from "../captain/chores.ts";
 import type { CaptainPorts } from "../captain/ports.ts";
 import { CaptainRepo } from "../captain/repo.ts";
@@ -14,8 +14,10 @@ function ship(merge: "decide" | "ask", off: string[]) {
   const repo = new CaptainRepo(store.raw);
   const calls = { merged: 0, asked: 0 };
   // Only the ports the ship chore reads; the rest is never called by it.
+  const authority: Authority = { ...RUNS, merge };
   const ports = {
     typing: () => false,
+    shipPlan: async () => planOf(authority),
     answerTasks: async () => [],
     reviewTasks: async () => [{ id: "ACM-1", title: "Add export", heads: "abc" }],
     shipCheck: async () => ({
@@ -32,7 +34,6 @@ function ship(merge: "decide" | "ask", off: string[]) {
     },
   } as unknown as CaptainPorts;
   const now = () => new Date("2026-10-04T10:00:00.000Z");
-  const authority: Authority = { ...RUNS, merge };
   const ws = (): Workspace => ({
     org: "acme",
     name: "Acme",

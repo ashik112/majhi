@@ -1,8 +1,9 @@
-import type { CiState, MergePolicy, MrState } from "@majhi/shared";
+import type { CiState, MrState } from "@majhi/shared";
 
 /**
- * What to merge next under an org's merge policy (SPEC 5.5). Pure: the service reads the states
- * from the hosts, asks here, and does what it answers.
+ * What to merge next (SPEC 5.5). Pure: the service reads the states from the hosts, asks here, and does
+ * what it answers. Whether majhi merges at all is not decided here: the owner's click always may, and the
+ * timer's merge runs only when the ship decision says the captain merges (`ShipPlanner`).
  */
 
 /** With no CI reported, wait this long after the push before calling the MR green: checks may not have started. */
@@ -24,8 +25,7 @@ export type MergeDecision =
   | { action: "done" };
 
 export interface MergeQuery {
-  policy: MergePolicy;
-  /** `owner`: the owner clicked merge. `poll`: the timer. */
+  /** `owner`: the owner clicked merge. `poll`: the captain's merge, on the timer or through a call. */
   trigger: "owner" | "poll";
   /** Repos in merge order. Repos without an MR are not in the list. */
   order: readonly RepoMrState[];
@@ -36,12 +36,6 @@ export function nextMerge(q: MergeQuery): MergeDecision {
   const next = q.order.find((r) => r.mr?.state !== "merged");
   if (next === undefined) return { action: "done" };
   const project = next.project;
-  if (q.policy === "never") {
-    return { action: "wait", project, reason: "The merge policy is never. Merge on the host, then say so." };
-  }
-  if (q.trigger === "poll" && q.policy === "approve") {
-    return { action: "wait", project, reason: "Waiting for the owner to approve the merge." };
-  }
   if (next.mr === undefined) return { action: "stop", project, reason: `${project} has no merge request.` };
   if (next.mr.state === "closed") {
     return { action: "stop", project, reason: `The merge request of ${project} was closed without merging.` };

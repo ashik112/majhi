@@ -1,4 +1,4 @@
-import { type MergePolicy, reviewLine, type Task, type TaskRepo } from "@majhi/shared";
+import { reviewLine, type Task, type TaskRepo } from "@majhi/shared";
 import { ArrowDown, ArrowUp, ExternalLink, GitPullRequest } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -6,30 +6,28 @@ import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
-import { useOrgs } from "@/lib/studio-queries";
-import { useMergeOrder, useMrCommand } from "@/lib/task-queries";
+import { useMergeOrder, useMrCommand, useTaskDetail } from "@/lib/task-queries";
 import {
   CI_LABEL,
   CI_TONE,
   inMergeOrder,
+  MERGE_BY_LABEL,
   MR_STATE_LABEL,
   type MrStep,
   moveProject,
   nextMrStep,
-  POLICY_LABEL,
 } from "./model";
 
 type Dialog = "open" | "merge" | "mark" | null;
 
 /** Merge requests of a task: one row per repo in merge order, what each is doing, and the next step. */
 export function MrCard({ task }: { task: Task }) {
-  const orgs = useOrgs().data;
-  const policy: MergePolicy = orgs?.find((o) => o.id === task.org)?.merge ?? "never";
+  const mergeBy = useTaskDetail(task.id).data?.ship?.merge ?? "owner";
   const order = useMergeOrder(task.id, task.repos.length > 0);
   const setOrder = useMrCommand("tasks.setMergeOrder");
   const toast = useToast();
   const rows = inMergeOrder(task.repos, order.data?.order);
-  const step = nextMrStep(task, policy);
+  const step = nextMrStep(task, mergeBy);
   const canReorder = rows.length > 1 && step !== "done" && order.data !== undefined;
 
   function move(project: string, by: -1 | 1) {
@@ -75,7 +73,7 @@ export function MrCard({ task }: { task: Task }) {
           />
         ))}
       </ol>
-      <p className="text-xs text-fg-faint text-pretty">{POLICY_LABEL[policy]}</p>
+      <p className="text-xs text-fg-faint text-pretty">{MERGE_BY_LABEL[mergeBy]}</p>
       <MrActions task={task} step={step} />
     </Card>
   );
@@ -188,8 +186,8 @@ function MrActions({ task, step }: { task: Task; step: MrStep }) {
             {step === "merge" ? "Merge in order" : "Merge now"}
           </Button>
         )}
-        {step === "mark-merged" && (
-          <Button size="sm" variant="primary" onClick={() => setDialog("mark")}>
+        {(step === "merge" || step === "watch") && (
+          <Button size="sm" onClick={() => setDialog("mark")}>
             I merged it
           </Button>
         )}

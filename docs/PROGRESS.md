@@ -1,5 +1,28 @@
 # Progress
 
+## Ship without me, phase B: ship rules on the authority rows, one merge path (branch `feat/ship-rules`, built, not merged)
+
+Who ships a task is one decision now: the workspace's authority rows refined by an ordered list of ship rules by task type, read the same way by the captain's ship chore, its lane, a lead's merge card, the hand-off and the merge request timer.
+
+**Plan.** Shared rows and rules, then the one decision (`ShipPlanner`), then move every reader onto it, then the migration of `orgs.<id>.merge` and the deletion of the field, then the Permissions sheet, checked against screen D.
+
+**What works.**
+- Three new rows, Deploy staging, Deploy production and Tell the client, default You, stored and editable; nothing acts on them yet (phase C deploys, phase D sends). Full access never grants them.
+- Ship rules under `autonomy.orgs.<id>.ships`: `when {types, areas?, maxChangedLines?, projects?}` and Captain or You for Merge, Deploy staging, Deploy production and Tell. First match wins, else the row. A rule that cannot see the task never matches it. Another workspace's rules never apply. While Autonomous is Off every step is the owner's.
+- One decision, `apps/server/src/ship/plan.ts`: the chore, the lane gate, the policy table, the hard limits, the lead's merge card, the hand-off's conflict question and the merge request timer all read it. Every guard stays where it was (green hand-off for the exact head, secret scan, protected repos, branch allowlist, hours and freezes, typing, one ship per state, the re-check).
+- `orgs.<id>.merge` is folded into the Merge row at start (`auto-if-green` becomes Captain) and removed, with the field, its form control and its code. The owner's own Merge click on a merge request is always allowed.
+- A project whose repos all have a merge request token lands by merge request: the captain opens it and merges it once CI passes. Others merge locally, pushing the base branch only where Push is the captain's. The lane's `tasks.merge` pushes where the chore would.
+- The trail's `ship` step says "Merge waits for you" (or Push) for a task in review whose step the rules leave to the owner, read from `tasks.detail`. The merge request card says who merges.
+- Permissions sheet: the three new rows with a "new" tag, and a "By type" section with the workspace picker, type chips, up to N lines, areas, the four cells, add, reorder and delete, the plain sentence, the production caution and the guard chips.
+
+**How to try it.** Captain, Permissions, scroll to By type, pick a workspace, Add a type, flip cells. Turn Auto-pilot on, and a bug under the line limit with green checks merges with no click; a feature asks, and its trail says "Merge waits for you".
+
+**Checked.** Typecheck (shared, server, web). Tests: the rule resolver, the migration over every combination of the old switch and the rows, the chore and lane reaching one decision, guards no rule lifts, one workspace's rules never applying to another, and four real-git runs with a real captain and the fake agent (`captain/ship-rules-real.test.ts`: a typed bug merges with no click, a feature asks and the trail waits for you, a failing hand-off check never merges, a secret in the diff never merges, the lane merges the bug and not the feature). In a browser on an isolated server (port 7421, seeded home, rules like the mockup), dark and light at 1440 and 1100, next to screen D (`marketing-assets/ship-mockup/proof-b/side-*.png`), with real clicks: toggles, add and remove types, lines (empty clears, 0 refused), reorder, add and delete a rule, the caution, full access leaving the new rows alone, no sideways scroll.
+
+**Left.** Deploy and Tell do nothing yet (phases C and D). The trail's waiting step is in the single read only, not on a board card. No hold kind was added: see DECISIONS. The area filter lists wiki components, so it is off in a workspace with no wiki. Not seen in a browser: the trail strip with the new step on a real review task (the seeded home has none with a repo); the data is proven by the real-git test.
+
+**Known issues.** Where a workspace had the Merge row on Captain and its projects have merge request tokens, work now lands by a merge request that waits for CI instead of merging locally and pushing. An org on `auto-if-green` with the row on You gets the row on Captain.
+
 ## Ship without me, phase A, units A2 and A3: the Tasks screen and the task page (branch `feat/tasks-phase-a`, built, not merged)
 
 The approved mockup (`marketing-assets/ship-mockup`) built on the data A1 gave: types, origin, areas and the trail. Web only, plus one read of the lifecycle's hold.

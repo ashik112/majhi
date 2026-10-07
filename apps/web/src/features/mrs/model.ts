@@ -1,4 +1,4 @@
-import type { CiState, MergePolicy, MrState, Task, TaskRepo } from "@majhi/shared";
+import type { CiState, MrState, ShipView, Task, TaskRepo } from "@majhi/shared";
 
 export const MR_STATE_LABEL: Record<MrState, string> = {
   open: "Open",
@@ -20,10 +20,10 @@ export const CI_TONE: Record<CiState, string> = {
   failing: "text-red",
 };
 
-export const POLICY_LABEL: Record<MergePolicy, string> = {
-  never: "Never: you merge on the host",
-  approve: "Approve: majhi merges in order when you click",
-  "auto-if-green": "Auto if green: majhi merges in order once checks pass",
+/** Who merges the task's requests, in a line. The ship decision gives it; until it is read, the owner does. */
+export const MERGE_BY_LABEL: Record<ShipView["merge"], string> = {
+  owner: "You merge: majhi merges in order when you click",
+  captain: "The captain merges: majhi merges in order once checks pass",
 };
 
 /** The task's repos in merge order. Repos the order does not name (a stale answer) keep the task's order at the end. */
@@ -47,20 +47,20 @@ export function moveProject(order: readonly string[], project: string, by: -1 | 
   return next;
 }
 
-export type MrStep = "none" | "open" | "retry-open" | "merge" | "mark-merged" | "watch" | "done";
+export type MrStep = "none" | "open" | "retry-open" | "merge" | "watch" | "done";
 
 /**
  * What the owner can do next with the task's MRs. `open` when review work has no MR yet;
- * `retry-open` when some repos have an MR and others do not; then the policy decides who merges.
+ * `retry-open` when some repos have an MR and others do not; then who merges decides: the owner's
+ * click (`merge`) or the captain once checks pass (`watch`).
  */
-export function nextMrStep(task: Pick<Task, "status" | "repos">, policy: MergePolicy): MrStep {
+export function nextMrStep(task: Pick<Task, "status" | "repos">, mergeBy: ShipView["merge"]): MrStep {
   if (task.status === "done") return "done";
   const withMr = task.repos.filter((r) => r.mr !== undefined);
   if (withMr.length === 0) return task.status === "review" && task.repos.length > 0 ? "open" : "none";
   if (withMr.length < task.repos.length) return "retry-open";
   if (withMr.every((r) => r.mr?.state === "merged")) return "done";
-  if (policy === "never") return "mark-merged";
-  return policy === "approve" ? "merge" : "watch";
+  return mergeBy === "captain" ? "watch" : "merge";
 }
 
 /** The card tracks merge requests once one is open; Ship opens them. */

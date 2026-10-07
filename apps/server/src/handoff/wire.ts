@@ -37,8 +37,8 @@ export interface HandoffWiring {
   tools?: ExecDeps["tools"];
   /** The check's `docker` shim: see `ExecDeps.dockerShim`. */
   dockerShim?: ExecDeps["dockerShim"];
-  /** The workspace's Merge row is Captain: only then does the captain have a lead resolve a conflict. */
-  mergeDecides: (org: string) => Promise<boolean>;
+  /** The ship decision leaves the merge of this task to the captain: only then does it have a lead resolve a conflict. */
+  mergeDecides: (task: string) => Promise<boolean>;
   /** Autonomous is on. */
   autonomous: () => boolean;
   /** The owner switched an outcome rule off in a workspace. Bound late: the playbooks come after the hand-off. */
@@ -99,9 +99,8 @@ export function createHandoff(w: HandoffWiring): HandoffService {
       const r = await shipReadiness(w, id);
       if (r.ready) return { ok: true, evidence: r.evidence };
       if (r.unmergeable === "empty") return { ok: false, why: r.why, empty: true };
-      // Resolving a conflict follows the Merge row: where the owner decides, it is the owner's.
-      const org = w.store.tasks.get(id)?.org ?? PRIVATE;
-      const owner = r.owner === true || (r.conflict === true && !(await w.mergeDecides(org)));
+      // Resolving a conflict follows who merges this task: where the owner does, it is the owner's.
+      const owner = r.owner === true || (r.conflict === true && !(await w.mergeDecides(id)));
       return { ok: false, why: r.why, ...(owner ? { owner: true } : {}) };
     },
     commands: async (project) =>

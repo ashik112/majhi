@@ -66,6 +66,7 @@ export * from "./secrets-detect.ts";
 export * from "./self-host.ts";
 export * from "./services.ts";
 export * from "./settings.ts";
+export * from "./ship-rules.ts";
 export * from "./skills.ts";
 export * from "./task-hold.ts";
 export * from "./task-origin.ts";

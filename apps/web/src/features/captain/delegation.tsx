@@ -7,6 +7,7 @@ import {
   type CaptainStatus,
   CHORE_LABEL,
   FULL_ACCESS_KEEPS,
+  FULL_ACCESS_NEVER,
   TASKS_AT_ONCE,
   type TaskSizeLimit,
 } from "@majhi/shared";
@@ -34,6 +35,7 @@ import { useAccounts } from "@/lib/studio-queries";
 import { AUTHORITY_PRESETS, AUTHORITY_ROW_TEXT, AUTHORITY_ROWS_ORDER } from "./model";
 import { MoreRules } from "./more-rules";
 import { useStartReview } from "./review-now";
+import { ShipRules } from "./ship-rules";
 
 const FIRST_COLUMN = "w-[184px] shrink-0";
 const COLUMN = "w-[116px] shrink-0";
@@ -203,9 +205,10 @@ function Grid({
       { [row]: value },
       `${org.name}: ${AUTHORITY_ROW_TEXT[row].label} is ${value === "decide" ? "the captain's" : "yours"}`,
     );
-  // Full access gives every row but Merge and Push, which keep their own switch.
+  // Full access gives every row but Merge and Push, which keep their own switch, and the rows that leave for a
+  // server or a client, which are only ever the owner's choice.
   const covered = (org: CaptainOrg, row: AuthorityRow) =>
-    org.rules.fullAccess === true && !FULL_ACCESS_KEEPS.includes(row);
+    org.rules.fullAccess === true && !FULL_ACCESS_KEEPS.includes(row) && !FULL_ACCESS_NEVER.includes(row);
   const review = useStartReview();
   const sticky = "sticky left-0 z-10 bg-glass-strong";
   return (
@@ -253,7 +256,14 @@ function Grid({
               className={cn(FIRST_COLUMN, sticky, "flex flex-col pr-2 leading-snug")}
               title={AUTHORITY_ROW_TEXT[row].detail}
             >
-              <span className="text-base text-fg">{AUTHORITY_ROW_TEXT[row].label}</span>
+              <span className="flex items-center gap-1.5 text-base text-fg">
+                {AUTHORITY_ROW_TEXT[row].label}
+                {AUTHORITY_ROW_TEXT[row].isNew === true && (
+                  <span className="rounded-[4px] border border-accent-line px-1 py-px font-mono text-[10px] font-medium tracking-[0.06em] text-accent-text uppercase">
+                    new
+                  </span>
+                )}
+              </span>
               <span className="text-xs text-fg-faint">{AUTHORITY_ROW_TEXT[row].hint}</span>
             </div>
             {orgs.map((org) => (
@@ -580,6 +590,7 @@ export function DelegationSheet({
         <Legend />
         <Grid orgs={captain.orgs} mode={captain.autonomy} onMore={setMore} />
         <OffChores orgs={captain.orgs} />
+        <ShipRules orgs={captain.orgs} />
         {autonomy && (
           <>
             <SizeLimit status={autonomy} />

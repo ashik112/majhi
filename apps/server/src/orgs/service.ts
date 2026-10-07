@@ -1,7 +1,6 @@
 import type { CommandInput, CommandMeta } from "@majhi/shared";
 import {
   DEFAULT_LEAD_START,
-  DEFAULT_MERGE_POLICY,
   GLOBAL_CONNECTIONS,
   LEGACY_PERSONAL,
   type OrgConfig,
@@ -78,7 +77,6 @@ export class OrgService {
       "turns",
       "tiers",
       "team",
-      "merge",
       "lead_start",
       "mr_tokens",
       "git_accounts",
@@ -152,7 +150,6 @@ function view(
     key,
     accountCount: accounts.filter((a) => a.org === id).length,
     agentCount: agentScopes.filter((s) => s === id).length,
-    merge: org.merge ?? DEFAULT_MERGE_POLICY,
     leadStart: org.lead_start ?? DEFAULT_LEAD_START,
   };
   if (org.color !== undefined) out.color = org.color;

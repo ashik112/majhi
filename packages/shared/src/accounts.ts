@@ -61,11 +61,6 @@ export const OrgIdSchema = z
 export const MrHostSchema = z.enum(["github", "gitlab", "bitbucket"]);
 export type MrHost = z.infer<typeof MrHostSchema>;
 
-/** When majhi merges an org's MRs (5.5). */
-export const MergePolicySchema = z.enum(["never", "approve", "auto-if-green"]);
-export type MergePolicy = z.infer<typeof MergePolicySchema>;
-export const DEFAULT_MERGE_POLICY: MergePolicy = "never";
-
 /** Which tasks a lead may start on its own: its subtasks, any task of the org, or none (5.4a). */
 export const LeadStartSchema = z.enum(["children", "org", "off"]);
 export type LeadStart = z.infer<typeof LeadStartSchema>;
@@ -224,8 +219,6 @@ export const OrgConfigSchema = z.looseObject({
   tiers: TiersPatchSchema.optional(),
   /** The default team for new tasks, lead first. Absent: the decision provider picks one (Phase 3). */
   team: z.array(IdSchema).optional(),
-  /** When majhi merges the org's MRs (5.5). Absent: `never`. */
-  merge: MergePolicySchema.optional(),
   /** Which tasks a lead may start without asking the owner. Absent: `children`. */
   lead_start: LeadStartSchema.optional(),
   /** Credentials for opening and merging MRs, one secret per host. A project remote's own `token` wins. */
@@ -520,8 +513,6 @@ export const OrgViewSchema = z.object({
   tiers: OrgConfigSchema.shape.tiers,
   /** The default team for new tasks, when set. */
   team: OrgConfigSchema.shape.team,
-  /** The merge policy in force: the org's `merge`, else `never`. */
-  merge: MergePolicySchema,
   /** The lead-start setting in force: the org's `lead_start`, else `children`. */
   leadStart: LeadStartSchema,
   /** Secret references (never values) for the MR hosts, when set. */

@@ -11,7 +11,6 @@ import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
 import { useRenameOrg, useUpdateOrg } from "@/lib/studio-queries";
 import { checkOrgDraft, draftFromOrg, type OrgDraft, type OrgErrors } from "./model";
-import { MrSettings } from "./mr-settings";
 
 /**
  * The org's settings, always open where they sit. Cancel and Save show while something changed;
@@ -256,7 +255,6 @@ export function OrgSettings({ org, onRenamed }: { org: OrgView; onRenamed: (id: 
               </Select>
             )}
           </Field>
-          <MrSettings draft={draft} onChange={set} />
           <Field
             label="Leads can start tasks"
             hint="Without asking you. A task that waits on another still waits for it."

@@ -10,7 +10,9 @@ import {
   CaptainChoreSchema,
   type CaptainLevel,
   FULL_ACCESS_KEEPS,
+  FULL_ACCESS_NEVER,
   PRIVATE,
+  type ShipRule,
 } from "@majhi/shared";
 
 /**
@@ -30,6 +32,9 @@ function fromLevel(level: CaptainLevel, push: boolean, merge: boolean): Authorit
     upkeep: "decide",
     merge: merge ? "decide" : "ask",
     push: push ? "decide" : "ask",
+    deployStaging: "ask",
+    deployProduction: "ask",
+    tell: "ask",
     own: "ask",
   };
 }
@@ -47,6 +52,9 @@ const ALL_DECIDE: Authority = {
   upkeep: "decide",
   merge: "decide",
   push: "decide",
+  deployStaging: "decide",
+  deployProduction: "decide",
+  tell: "decide",
   own: "decide",
 };
 
@@ -59,6 +67,8 @@ export function authorityOf(settings: Pick<AutonomySettings, "orgs">, org: strin
       (own.level !== undefined ? fromLevel(own.level, own.push === true, own.merge === true) : undefined);
     const kept: Partial<Authority> = {};
     for (const row of FULL_ACCESS_KEEPS) if (saved?.[row] === "ask") kept[row] = "ask";
+    // What leaves for a server or a client is never granted by full access: it is the saved choice, else You.
+    for (const row of FULL_ACCESS_NEVER) kept[row] = saved?.[row] ?? "ask";
     return { ...ALL_DECIDE, ...kept };
   }
   if (own?.authority !== undefined) return own.authority;
@@ -71,6 +81,11 @@ export function authorityOf(settings: Pick<AutonomySettings, "orgs">, org: strin
     ...(own?.merge === true ? { merge: "decide" as const } : {}),
     ...(own?.push === true ? { push: "decide" as const } : {}),
   };
+}
+
+/** The workspace's ship rules, in order. None saved: the rows alone decide. */
+export function shipRulesOf(settings: Pick<AutonomySettings, "orgs">, org: string): readonly ShipRule[] {
+  return settings.orgs[org]?.ships ?? [];
 }
 
 /**
@@ -86,8 +101,12 @@ export function effectiveAuthority(authority: Authority, mode: AutonomyMode): Au
 export const OFF_CHORES: readonly CaptainChore[] = ["memory", "cleanup"];
 
 /** The chores that run in a workspace now: all of its table's chores while On, else only `OFF_CHORES`. */
-export function choresNow(authority: Authority, mode: AutonomyMode): readonly CaptainChore[] {
-  const chores = choresOf(authority);
+export function choresNow(
+  authority: Authority,
+  mode: AutonomyMode,
+  rules: readonly ShipRule[] = [],
+): readonly CaptainChore[] {
+  const chores = choresOf(authority, rules);
   return mode === "on" ? chores : chores.filter((chore) => OFF_CHORES.includes(chore));
 }
 
@@ -98,10 +117,10 @@ export function withAuthority(current: Authority, change: Partial<Authority>): A
 
 /**
  * The chores the captain runs. Each follows the row that governs it: cards `approvals`, questions
- * `questions`, the rest `upkeep`. Shipping runs when the captain merges, pushes, answers or does upkeep: with merge on
- * "Ask me" it only hands the owner a ready-to-ship card.
+ * `questions`, the rest `upkeep`. Shipping runs when the captain merges, pushes, answers or does upkeep, or
+ * when a ship rule has it merge: with merge on "Ask me" it only hands the owner a ready-to-ship card.
  */
-export function choresOf(authority: Authority): readonly CaptainChore[] {
+export function choresOf(authority: Authority, rules: readonly ShipRule[] = []): readonly CaptainChore[] {
   return CaptainChoreSchema.options.filter((chore) => {
     switch (chore) {
       case "cards":
@@ -113,6 +132,7 @@ export function choresOf(authority: Authority): readonly CaptainChore[] {
         return (
           authority.merge === "decide" ||
           authority.push === "decide" ||
+          rules.some((rule) => rule.merge === "decide") ||
           authority.upkeep === "decide" ||
           authority.questions === "decide"
         );
@@ -121,16 +141,6 @@ export function choresOf(authority: Authority): readonly CaptainChore[] {
     }
   });
 }
-
-/** The authority row that governs a command that ships work. The others need no row here. */
-export const SHIP_ROW: Readonly<Record<string, "merge" | "push">> = {
-  "tasks.merge": "merge",
-  "tasks.mergeMrs": "merge",
-  "tasks.markMerged": "merge",
-  "tasks.resolveShip": "merge",
-  "tasks.push": "push",
-  "tasks.openMrs": "push",
-};
 
 /** The refusal line when a row is "Ask me": "Refused: in Acme you decide when work starts, ...". */
 export function askedWhy(row: AuthorityRow, name: string): string {

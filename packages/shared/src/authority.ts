@@ -1,13 +1,25 @@
 import { z } from "zod";
 
 /**
- * Who decides, per workspace (SPEC 5.18): seven rows, each `decide` (the captain does it while
- * Autonomous is On) or `ask` (it waits for the owner).
+ * Who decides, per workspace (SPEC 5.18): ten rows, each `decide` (the captain does it while
+ * Autonomous is On) or `ask` (it waits for the owner). Merge, the two Deploy rows and Tell can be
+ * refined per task type (`ship-rules.ts`); the row is what applies when no rule matches.
  */
 export const AuthorityChoiceSchema = z.enum(["decide", "ask"]);
 export type AuthorityChoice = z.infer<typeof AuthorityChoiceSchema>;
 
-export const AUTHORITY_ROWS = ["start", "questions", "approvals", "upkeep", "merge", "push", "own"] as const;
+export const AUTHORITY_ROWS = [
+  "start",
+  "questions",
+  "approvals",
+  "upkeep",
+  "merge",
+  "push",
+  "deployStaging",
+  "deployProduction",
+  "tell",
+  "own",
+] as const;
 export const AuthorityRowSchema = z.enum(AUTHORITY_ROWS);
 export type AuthorityRow = z.infer<typeof AuthorityRowSchema>;
 
@@ -20,10 +32,16 @@ export const AuthoritySchema = z.strictObject({
   approvals: AuthorityChoiceSchema,
   /** Memory, projects, triage, cleanup, follow-ups. */
   upkeep: AuthorityChoiceSchema,
-  /** Merge into the base branch (shipping). */
+  /** Merge into the base branch, or merge the open merge request on the host (shipping). */
   merge: AuthorityChoiceSchema,
   /** Push and open merge requests. */
   push: AuthorityChoiceSchema,
+  /** Deploy to staging after a merge. Absent in settings saved before this row: You. */
+  deployStaging: AuthorityChoiceSchema.default("ask"),
+  /** Deploy to production. Absent in settings saved before this row: You. */
+  deployProduction: AuthorityChoiceSchema.default("ask"),
+  /** Send the reply to the client. Absent in settings saved before this row: You. */
+  tell: AuthorityChoiceSchema.default("ask"),
   /**
    * Own work: the captain approves the routine permission requests of tasks it started itself, inside
    * the task's scope. Absent in settings saved before this row: You.
@@ -38,8 +56,11 @@ export const AUTHORITY_LABEL: Record<AuthorityRow, string> = {
   questions: "Answer agents' questions",
   approvals: "Answer routine approval cards",
   upkeep: "Upkeep: memory, projects, triage, cleanup",
-  merge: "Merge into the base branch",
+  merge: "Merge into the base branch, or the merge request on its host",
   push: "Push and open merge requests",
+  deployStaging: "Deploy to staging",
+  deployProduction: "Deploy to production",
+  tell: "Tell the client",
   own: "Own work: approve routine requests of tasks it started",
 };
 
@@ -51,6 +72,9 @@ export const AUTHORITY_REFUSAL: Record<AuthorityRow, string> = {
   upkeep: "the upkeep, so the captain does not do it",
   merge: "when work is merged, so the captain does not merge it",
   push: "when work is pushed, so the captain does not push it",
+  deployStaging: "when work is deployed to staging, so the captain does not deploy it",
+  deployProduction: "when work is deployed to production, so the captain does not deploy it",
+  tell: "what the client is told, so the captain does not tell them",
   own: "the routine requests of work the captain started, so the captain does not approve them",
 };
 
@@ -65,6 +89,9 @@ export const ALL_ASK: Authority = {
   upkeep: "ask",
   merge: "ask",
   push: "ask",
+  deployStaging: "ask",
+  deployProduction: "ask",
+  tell: "ask",
   own: "ask",
 };
 
@@ -73,3 +100,9 @@ export const ALL_ASK: Authority = {
  * still merge, or push, themselves.
  */
 export const FULL_ACCESS_KEEPS: readonly AuthorityRow[] = ["merge", "push"];
+
+/**
+ * The rows full access never grants: what leaves the machine for a server or a client. They are
+ * the owner's own choice, "You" until the owner sets them, so full access cannot deploy or talk by itself.
+ */
+export const FULL_ACCESS_NEVER: readonly AuthorityRow[] = ["deployStaging", "deployProduction", "tell"];

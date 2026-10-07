@@ -68,6 +68,7 @@ import { CalmWake } from "../machine/calm-wake.ts";
 import type { RoomService } from "../room/service.ts";
 import { noRoomLine } from "../runs/limits.ts";
 import type { RunManager } from "../runs/manager.ts";
+import type { ShipPlan } from "../ship/plan.ts";
 import type { SkillStore } from "../skills/store.ts";
 import type { Store } from "../store/index.ts";
 import { captainAnsweredLine } from "../tasks/cards.ts";
@@ -170,6 +171,8 @@ export interface AutonomyDeps {
   processWaiting?: (task: string) => boolean;
   /** The last reading of the owner's computer and majhi's containers (the machine sensor). */
   machine?: () => MachineReading | undefined;
+  /** Who does each step of shipping a task, by the one ship decision (the rows and the ship rules). */
+  shipPlan?: (task: string) => Promise<ShipPlan>;
   now?: () => Date;
 }
 
@@ -753,6 +756,23 @@ export class AutonomyService {
     }
     const p = await this.staffing().propose(request);
     return { team: p.team, lead: p.lead ?? null, reason: p.reason, ranked: p.ranked };
+  }
+
+  /**
+   * For the captain's `tasks.merge`: the push the Push step decides, the same as the ship chore's. An agent
+   * never passes `push` itself; where the ship decision leaves Push to the captain and the project lands
+   * locally, the merge it makes pushes too. Undefined when the call is not that, or nothing changes.
+   */
+  async shipCall(
+    caller: AdminCaller,
+    command: CommandName,
+    input: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | undefined> {
+    if (command !== "tasks.merge" || input.push !== undefined) return undefined;
+    if ((await this.callerKind(caller)) !== "boss") return undefined;
+    const plan = await this.shipPlanFor(command, input);
+    if (plan === undefined || plan.steps.merge !== "captain") return undefined;
+    return plan.steps.push === "captain" && plan.way === "local" ? { ...input, push: true } : undefined;
   }
 
   /**
@@ -1364,7 +1384,7 @@ export class AutonomyService {
     input: Record<string, unknown>,
     reason: string,
   ): Promise<string | undefined> {
-    const call = { command, input, reason };
+    const call = { command, input, reason, ...pushOf(await this.shipPlanFor(command, input)) };
     // A read passes nothing between orgs: only the text limits apply, and no org's files are read.
     // In a lane a read still stays in the lane's workspace: another workspace's task or project is refused.
     const read = commands[command].risk === "read";
@@ -1812,6 +1832,7 @@ export class AutonomyService {
     const holds = starts ? await this.refreshHolds() : this.holds;
     const settings = (await this.deps.config.settings()).autonomy;
     const org = sections.orgs[world.org];
+    const ship = await this.shipPlanFor(command, raw);
     return decideAutonomously(
       {
         command,
@@ -1822,14 +1843,23 @@ export class AutonomyService {
       },
       {
         settings,
-        orgMerge: org?.merge,
+        ship,
         holds,
         accounts: starts ? this.teamAccounts(command, input, world, sections) : [],
-        refused: hardLimit({ command, input: raw, reason: ask.reason }, world),
+        refused: hardLimit({ command, input: raw, reason: ask.reason, ...pushOf(ship) }, world),
         orgName: org?.name,
         automationAction: this.automationAction(command, input),
       },
     );
+  }
+
+  /** The ship decision for the task a shipping call names, or undefined for any other call. */
+  private async shipPlanFor(command: string, input: Record<string, unknown>): Promise<ShipPlan | undefined> {
+    if (this.deps.shipPlan === undefined || !SHIPPING_CALLS.has(command)) return undefined;
+    const task =
+      typeof input.task === "string" ? input.task : typeof input.id === "string" ? input.id : undefined;
+    if (task === undefined || this.deps.store.tasks.get(task) === undefined) return undefined;
+    return this.deps.shipPlan(task).catch(() => undefined);
   }
 
   /** The action a schedule or trigger has now, for its update. */
@@ -3120,3 +3150,19 @@ function withChanged(spend: AutonomySpend, changed: readonly string[]): Autonomy
 
 /** A backlog task with its size and why the pick rules leave it out, if they do. */
 type Rated = { item: BacklogTask & { task: Task }; size: SizeOf; leftOut: string | undefined };
+
+/** The calls that ship a task: the ship decision is read for the task they name. */
+const SHIPPING_CALLS: ReadonlySet<string> = new Set([
+  "tasks.merge",
+  "tasks.resolveShip",
+  "tasks.push",
+  "tasks.openMrs",
+  "tasks.mergeMrs",
+  "tasks.markMerged",
+  "room.cardAction",
+]);
+
+/** What the hard limits need of the ship decision: whether the captain may push for this task. */
+function pushOf(plan: ShipPlan | undefined): { pushDecides?: boolean } {
+  return plan === undefined ? {} : { pushDecides: plan.steps.push === "captain" };
+}

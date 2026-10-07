@@ -17,6 +17,9 @@ describe("full access", () => {
             upkeep: "ask",
             merge: "ask",
             push: "decide",
+            deployStaging: "ask",
+            deployProduction: "ask",
+            tell: "ask",
             own: "ask",
           },
         },
@@ -30,7 +33,15 @@ describe("full access", () => {
       upkeep: "decide",
       merge: "ask",
       push: "decide",
+      deployStaging: "ask",
+      deployProduction: "ask",
+      tell: "ask",
       own: "decide",
     });
+  });
+
+  it("never grants a deploy or a reply to the client, even with nothing saved", () => {
+    const a = authorityOf(settings({ acme: { fullAccess: true } }), "acme");
+    expect([a.deployStaging, a.deployProduction, a.tell]).toEqual(["ask", "ask", "ask"]);
   });
 });
