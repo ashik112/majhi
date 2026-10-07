@@ -12,7 +12,7 @@ import type { LampState } from "@/components/ui/lamp";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/cn";
 import { describeError } from "@/lib/errors";
-import { useEditReport, useSendReport } from "@/lib/incident-queries";
+import { useAnswerIncident, useAskCaptain, useEditReport, useSendReport } from "@/lib/incident-queries";
 import { DockBar } from "./dock-bar";
 
 const LAMP: Record<ClientStatus, LampState> = {
@@ -25,11 +25,10 @@ const LAMP: Record<ClientStatus, LampState> = {
 const clock = (iso: string): string =>
   new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 
-/** The card shows while an incident is open, and while its report waits to be sent. */
+/** The card shows while an incident is open, and stays once it has a report, frozen after it was sent. */
 export function incidentCardOpen(view: IncidentView | null | undefined): view is IncidentView {
   if (view === null || view === undefined) return false;
-  if (view.status !== "resolved") return true;
-  return view.report !== undefined && view.report.sent.length < view.rooms.length;
+  return view.status !== "resolved" || view.report !== undefined;
 }
 
 /**
@@ -38,16 +37,84 @@ export function incidentCardOpen(view: IncidentView | null | undefined): view is
  * the owner's click; the text freezes once it went.
  */
 export function IncidentCard({ view }: { view: IncidentView }) {
+  const ask = useAskCaptain();
+  const answer = useAnswerIncident();
+  const toast = useToast();
+  const fail = (what: string) => (error: unknown) =>
+    toast(what, { detail: describeError(error), tone: "error" });
+  const showStatus = view.rooms.length === 0 || view.quiet !== undefined || view.recovered !== undefined;
   return (
     <>
+      {showStatus && view.status !== "resolved" && (
+        <li className="list-none">
+          <DockBar
+            label="Incident"
+            lamp={view.recovered === undefined ? LAMP[view.status] : "working"}
+            title={view.recovered === undefined ? CLIENT_STATUS_LABEL[view.status] : "Recovered"}
+            line={[view.facts, view.quiet === undefined ? "" : `Nobody has looked: ${view.quiet}`]
+              .filter((p) => p !== "")
+              .join(" · ")}
+            actions={
+              <>
+                {view.quiet !== undefined && (
+                  <Button
+                    size="sm"
+                    disabled={ask.isPending}
+                    onClick={() => ask.mutate(view.task, { onError: fail("Could not ask the captain") })}
+                  >
+                    Ask the captain now
+                  </Button>
+                )}
+                {view.recovered !== undefined && !view.recovered.closed && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      disabled={answer.isPending}
+                      onClick={() =>
+                        answer.mutate(
+                          { id: `iask:recovered:${view.task}`, option: "close" },
+                          { onError: fail("Could not close the incident") },
+                        )
+                      }
+                    >
+                      Close: it recovered
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={answer.isPending}
+                      onClick={() =>
+                        answer.mutate(
+                          { id: `iask:recovered:${view.task}`, option: "continue" },
+                          { onError: fail("Could not answer") },
+                        )
+                      }
+                    >
+                      Let the lead continue
+                    </Button>
+                  </>
+                )}
+              </>
+            }
+          />
+        </li>
+      )}
       {view.rooms.map((room, i) => (
         <li key={room.room} className="list-none">
           <DockBar
             label={`${room.title} sees`}
-            lamp={LAMP[room.sees ?? view.status]}
-            title={`${room.title} sees: ${room.sees === undefined ? "nothing yet" : CLIENT_STATUS_LABEL[room.sees]}`}
-            line={lineOf(view, room)}
-            below={i === 0 ? <Steps view={view} /> : undefined}
+            lamp={room.joined === true ? "idle" : LAMP[room.sees ?? view.status]}
+            title={
+              room.joined === true
+                ? `${room.title}: joined`
+                : `${room.title} sees: ${room.sees === undefined ? "nothing yet" : CLIENT_STATUS_LABEL[room.sees]}`
+            }
+            line={
+              room.joined === true
+                ? "This chat follows a newer incident and hears about that one"
+                : lineOf(view, room)
+            }
+            below={i === 0 && room.joined !== true && view.status !== "resolved" ? <Steps view={view} /> : undefined}
           />
         </li>
       ))}
@@ -120,7 +187,7 @@ function Report({ view, report }: { view: IncidentView; report: NonNullable<Inci
   return (
     <DockBar
       label="Report"
-      lamp={unsent.length === 0 ? "done" : "needs"}
+      lamp={frozen && unsent.length === 0 ? "done" : view.rooms.length === 0 ? "idle" : "needs"}
       title={
         <span className="flex items-center gap-2">
           RCA
@@ -145,7 +212,13 @@ function Report({ view, report }: { view: IncidentView; report: NonNullable<Inci
           </span>
         </span>
       }
-      line={frozen ? `sent ${report.sent.map((s) => clock(s.at)).join(", ")}` : undefined}
+      line={
+        frozen
+          ? report.sent
+              .map((s) => `Sent to ${view.rooms.find((r) => r.room === s.room)?.title ?? "the chat"} at ${clock(s.at)}`)
+              .join(" · ")
+          : report.warn
+      }
       actions={
         draft === undefined ? (
           <>

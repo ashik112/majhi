@@ -98,6 +98,8 @@ export interface OpsDeps {
   incidentTask?:
     | ((inc: OpsIncident, subject: Subject, evidence: string[], again: boolean) => Promise<IncidentTaskNote | undefined>)
     | undefined;
+  /** The incident task of an incident, and why nobody looked at it, for the Watch page. */
+  incidentMeta?: ((inc: OpsIncident) => Promise<{ task?: string; quiet?: string }>) | undefined;
   /** A question the owner waits to answer on an open incident (a fix to approve), as Needs you shows it. */
   question?: (inc: OpsIncident) => { text: string; options: { id: string; label: string }[] } | undefined;
 }
@@ -1073,7 +1075,12 @@ export class OpsWatch {
     );
     return {
       services,
-      incidents: incidents.map(({ key: _key, phoneAt: _p, phoneEscalatedAt: _pe, ...rest }) => rest),
+      incidents: await Promise.all(
+        incidents.map(async ({ key: _key, phoneAt: _p, phoneEscalatedAt: _pe, ...rest }) => ({
+          ...rest,
+          ...(rest.status === "open" ? ((await this.deps.incidentMeta?.(rest).catch(() => ({}))) ?? {}) : {}),
+        })),
+      ),
       phone: await this.deps.phone.status(),
       settings: this.settings(),
     };

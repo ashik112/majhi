@@ -2796,6 +2796,20 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       orgOf: async (id) => (await connections.find(id))?.org,
     },
     host: watchHost,
+    incidentMeta: async (inc) => {
+      const quiet = await autonomy.quietWhy(inc.org);
+      const task =
+        inc.finding === undefined
+          ? undefined
+          : (() => {
+              try {
+                return findings.get(inc.finding).task;
+              } catch {
+                return undefined;
+              }
+            })();
+      return { ...(task === undefined ? {} : { task }), ...(quiet === undefined ? {} : { quiet }) };
+    },
     incidentTask: async (inc, subject, evidence) => {
       if (incidentEngine === undefined) return undefined;
       const made = await incidentEngine.open({

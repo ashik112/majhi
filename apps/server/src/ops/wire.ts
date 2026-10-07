@@ -82,6 +82,7 @@ export interface OpsWiring {
   online: () => Promise<boolean>;
   /** An incident opened or fired again: the incident engine's task for it (see `OpsDeps.incidentTask`). */
   incidentTask?: OpsDeps["incidentTask"];
+  incidentMeta?: OpsDeps["incidentMeta"];
   changed: () => void;
   now?: () => Date;
   /** For tests: the network behind the checks, the ntfy server, and the wait between two looks. */
@@ -191,6 +192,7 @@ export function createOps(w: OpsWiring): Ops {
     now,
     changed: w.changed,
     ...(w.incidentTask === undefined ? {} : { incidentTask: w.incidentTask }),
+    ...(w.incidentMeta === undefined ? {} : { incidentMeta: w.incidentMeta }),
     onAcked: (inc) => engine?.onAcked(inc),
     onResolved: (inc) => engine?.onResolved(inc),
     question: (inc) => engine?.question(inc),

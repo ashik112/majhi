@@ -139,15 +139,19 @@ export class ClientIncidents {
     });
   }
 
-  /** Every incident task that has a client room linked. */
+  /** Every incident task: the ones clients are told about, and the ones a watch or a deploy opened. */
   incidentTasks(): string[] {
     return [
-      ...new Set(
-        this.deps.store.tasks
+      ...new Set([
+        ...this.deps.store.tasks
           .allLinks()
           .filter((l) => l.type === "client")
           .map((l) => l.task),
-      ),
+        ...this.deps.store.tasks
+          .list(true)
+          .filter((t) => t.typing?.type === "incident")
+          .map((t) => t.id),
+      ]),
     ];
   }
 
@@ -223,7 +227,8 @@ export class ClientIncidents {
   async view(taskId: string): Promise<IncidentView | null> {
     const task = this.deps.store.tasks.get(taskId);
     const rooms = this.rooms(taskId);
-    if (task === undefined || rooms.length === 0) return null;
+    // An incident no client room is told about still has its status, its quiet reason and its report.
+    if (task === undefined || (rooms.length === 0 && task.typing?.type !== "incident")) return null;
     const read = await this.read(task);
     const result = clientStatus(read.facts);
     const tz = await this.deps.tz(read.org);
