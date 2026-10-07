@@ -349,7 +349,7 @@ function Grid({
       {mode !== "on" && (
         <p className="mt-2 text-xs text-fg-faint text-pretty">
           Auto-pilot is off, so only Upkeep acts, and only on memory and cleanup. The rest waits for you until
-          it is on.
+          it is on, except Tell the client, which follows its row.
         </p>
       )}
     </fieldset>

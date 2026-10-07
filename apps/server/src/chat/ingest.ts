@@ -15,15 +15,16 @@ import type { RoomService } from "../room/service.ts";
 import type { RoomRow } from "../store/client.ts";
 import type { Store } from "../store/index.ts";
 import { type ChatConnection, FILE_CAP_BYTES } from "./adapter.ts";
-import type { Contacts } from "./contacts.ts";
+import { type Contacts, wordsOf } from "./contacts.ts";
 import type { ChatHub } from "./hub.ts";
+import { writeOutcome } from "./outcome.ts";
 import { withoutSecrets } from "./rails.ts";
 import type { ClientRooms } from "./rooms.ts";
 import type { ClientTriage } from "./triage.ts";
 
 export interface IngestDeps {
   store: Store;
-  room: Pick<RoomService, "postExternal" | "post">;
+  room: Pick<RoomService, "postExternal" | "post" | "get">;
   rooms: ClientRooms;
   contacts: Contacts;
   hub: Pick<ChatHub, "file">;
@@ -40,6 +41,35 @@ const SENDER_LIMIT = 20;
 const SENDER_WINDOW_MS = 10 * 60_000;
 
 type ClientItem = Extract<RoomItem, { type: "client" }>;
+
+/** How many single-character edits turn one text into the other. Used on short messages only. */
+function distance(a: string, b: string): number {
+  let row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) {
+      next[j] = Math.min(
+        (row[j] ?? 0) + 1,
+        (next[j - 1] ?? 0) + 1,
+        (row[j - 1] ?? 0) + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+    row = next;
+  }
+  return row[b.length] ?? 0;
+}
+
+/**
+ * Whether an edit changed what the message asks: two or more new words, or in a very short text a rewrite (a few
+ * letters changed is a typo). One word swapped in a longer text is a correction.
+ */
+export function changedMeaning(before: string, after: string): boolean {
+  const had = wordsOf(before);
+  const known = new Set(had);
+  const added = wordsOf(after).filter((w) => !known.has(w)).length;
+  if (added >= 2) return true;
+  return added === 1 && had.length <= 2 && distance(before.toLowerCase(), after.toLowerCase()) > 3;
+}
 
 /** The item id of a delivery: the same key is always the same id. */
 function itemId(key: string): string {
@@ -156,20 +186,102 @@ export class ChatIngest {
         revisions: [...existing.revisions, { text: existing.text, at: env.at }],
       };
     });
-    if (stored === undefined || !stored.created || stored.item.type !== "client") return;
+    if (stored === undefined || stored.item.type !== "client") return;
     const item = stored.item;
+    if (!stored.created && !this.worthReading(env, item)) return;
     if (us) {
       // The owner or a teammate writes here: the captain stays out of it.
-      rooms.holder(room.id, "you");
+      if (stored.created) rooms.holder(room.id, "you");
       return;
     }
-    if (contact?.fresh === true) this.deps.contacts.propose(room.id, contact.contact);
-    if (!sender.verified || room.chat.holder !== "captain" || this.limited(env)) return;
+    if (stored.created && contact?.fresh === true) this.deps.contacts.propose(room.id, contact.contact);
+    if (!sender.verified) return;
+    if (room.chat.holder !== "captain") {
+      if (stored.created) this.skipped(room, item, "You hold this chat");
+      return;
+    }
+    if (this.limited(env)) {
+      this.skipped(
+        room,
+        item,
+        `Not read: more than ${SENDER_LIMIT} messages in ${SENDER_WINDOW_MS / 60_000} minutes from ${sender.name}`,
+      );
+      return;
+    }
+    if (stored.created && contact !== undefined && this.asksWho(room, item, contact.contact.name)) return;
+    if (this.whoWaits(room.id, sender.id)) {
+      this.waitsForWho(room, item, sender.name);
+      return;
+    }
     const work = this.deps.triage
       .run(room, item)
       .catch((err) => this.deps.log?.(`chat: triage of ${item.id} failed: ${errorMessage(err)}`))
       .finally(() => this.pending.delete(work));
     this.pending.add(work);
+  }
+
+  private skipped(room: RoomRow, item: ClientItem, why: string): void {
+    writeOutcome(this.deps, room.id, item, { state: "skipped", why });
+  }
+
+  /**
+   * An edit is read again only when it could change what became of the message: one nobody answered or acted on,
+   * and words that changed, not a typo fixed.
+   */
+  private worthReading(env: ChatEnvelope, item: ClientItem): boolean {
+    if (env.kind !== "edit" || item.deleted === true) return false;
+    const state = item.outcome?.state;
+    if (state === "replied" || state === "handled" || state === "working") return false;
+    const before = item.revisions.at(-1)?.text ?? "";
+    return changedMeaning(before, item.text);
+  }
+
+  /** The card that asks whether a sender is one of us, once per person per chat. */
+  private whoCard(room: string, sender: string): Extract<RoomItem, { type: "who-is" }> | undefined {
+    const found = this.deps.room.get(room, `who:${sender}`);
+    return found?.type === "who-is" ? found : undefined;
+  }
+
+  private whoWaits(room: string, sender: string): boolean {
+    return this.whoCard(room, sender)?.state === "asking";
+  }
+
+  private waitsForWho(room: RoomRow, item: ClientItem, name: string): void {
+    writeOutcome(this.deps, room.id, item, { state: "waits", why: `Is ${name} one of us?` });
+  }
+
+  /**
+   * An admin of the workspace or chat that nobody marked may be the owner or a teammate. The chat is asked once,
+   * and the message is not read until the answer: a captain's reply to its own owner is the bug it guards against.
+   */
+  private asksWho(room: RoomRow, item: ClientItem, name: string): boolean {
+    if (item.sender.staff !== true || this.whoCard(room.id, item.sender.id) !== undefined) return false;
+    this.deps.room.post(room.id as TaskId, `who:${item.sender.id}`, {
+      type: "who-is",
+      sender: item.sender.id,
+      name,
+      state: "asking",
+    });
+    this.waitsForWho(room, item, name);
+    return true;
+  }
+
+  /** The owner answered who a sender is: their messages that waited are read now (a client) or left alone (one of us). */
+  async settleWaiting(roomId: string, sender: string, us: boolean): Promise<void> {
+    const room = this.deps.store.client.room(roomId);
+    if (room === undefined || room.org === undefined) return;
+    for (const item of this.deps.store.room.page(roomId, 100).items.toReversed()) {
+      if (item.type !== "client" || item.sender.id !== sender || item.outcome?.state !== "waits") continue;
+      if (item.outcome.why?.startsWith("Is ") !== true) continue;
+      if (us) {
+        this.skipped(room, item, "One of us, not read");
+        continue;
+      }
+      if (room.chat.holder !== "captain") continue;
+      await this.deps.triage
+        .run(room, item)
+        .catch((err) => this.deps.log?.(`chat: triage of ${item.id} failed: ${errorMessage(err)}`));
+    }
   }
 
   /** Whether a message of the chat is one majhi sent (a reply of the room with that message id). */

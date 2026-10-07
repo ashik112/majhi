@@ -9,6 +9,7 @@ import {
   Mail,
   Mails,
   MessageCircleQuestion,
+  MessageSquareReply,
   Scale,
   ShieldCheck,
 } from "lucide-react";
@@ -29,6 +30,7 @@ const ICON: Record<OwnerDecisionKind, ReactNode> = {
   paused: <CirclePause aria-hidden="true" />,
   "sign-in": <LogIn aria-hidden="true" />,
   draft: <Mail aria-hidden="true" />,
+  reply: <MessageSquareReply aria-hidden="true" />,
   batch: <Mails aria-hidden="true" />,
   incident: <BellRing aria-hidden="true" />,
   trust: <Scale aria-hidden="true" />,

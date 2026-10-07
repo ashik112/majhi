@@ -114,6 +114,20 @@ export class ClientRepo {
     return row === undefined ? undefined : parseRoom(row);
   }
 
+  /** The newest unlinked room of a chat that was linked to this workspace: what a relink to it takes back. */
+  archivedRoomOfChat(app: ChatApp, account: string, chat: string, org: string): RoomRow | undefined {
+    const row = this.sqlite
+      .prepare(
+        `SELECT id, org, client FROM tasks
+          WHERE client IS NOT NULL AND org = ? AND json_extract(client, '$.app') = ?
+            AND json_extract(client, '$.account') = ? AND json_extract(client, '$.chat') = ?
+            AND json_extract(client, '$.archived') = 1
+          ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(org, app, account, chat) as TaskClientRow | undefined;
+    return row === undefined ? undefined : parseRoom(row);
+  }
+
   rooms(): RoomRow[] {
     const rows = this.sqlite
       .prepare("SELECT id, org, client FROM tasks WHERE client IS NOT NULL AND brief = ?")

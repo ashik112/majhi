@@ -21,6 +21,7 @@ import type { RoomService } from "../room/service.ts";
 import type { RoomRow } from "../store/client.ts";
 import type { Store } from "../store/index.ts";
 import type { IncidentChoice } from "./incidents.ts";
+import { writeOutcome } from "./outcome.ts";
 import type { ClientReplies, ReplyResult } from "./replies.ts";
 
 /**
@@ -91,6 +92,10 @@ const CLARIFY_TEXT =
   "Thanks for telling us. To look into it we need a few details: what exactly is failing, since when, and the error or page you see.";
 
 const WriterSchema = ReplyFlagsSchema.extend({ text: z.string().trim().min(1).max(3000) });
+
+/** What a client who asks for news is told when no incident is open for their chat. It promises nothing. */
+const NO_INCIDENT_REPLY = "No open issue on our side right now. What are you seeing?";
+const NO_FLAGS: ReplyFlags = { promisedTime: false, money: false, security: false, severalClients: false };
 
 const CAPTAIN: FindingActor = { kind: "captain" };
 
@@ -182,10 +187,7 @@ export class ClientTriage {
 
   /** The one line under the message: what became of it. Written onto the message itself. */
   private outcome(room: RoomRow, item: Extract<RoomItem, { type: "client" }>, outcome: ClientOutcome): void {
-    const now = this.deps.store.room.get(room.id, item.id);
-    const current = now?.type === "client" ? now : item;
-    const { id: _id, task: _task, seq: _seq, at: _at, ...payload } = current;
-    this.deps.room.post(room.id as TaskId, item.id, { ...payload, outcome });
+    writeOutcome(this.deps, room.id, item, outcome);
   }
 
   /** The owner's rules for this chat, as instructions that cannot loosen the fixed rails or the Ask-me cases. */
@@ -295,7 +297,8 @@ export class ClientTriage {
         `\n\n${this.people(room)}`,
       evidence: [`${room.chat.title} (${room.id})`],
       severity: "low",
-      dedupeKey: `client:${externalKeyText(item.external)}`,
+      // An edit that changes what the message asks is read again as its own finding.
+      dedupeKey: `client:${externalKeyText(item.external)}${item.revisions.length === 0 ? "" : `:edit${item.revisions.length}`}`,
     };
     mark({ state: "working" });
     try {
@@ -355,7 +358,7 @@ export class ClientTriage {
       addressed
         ? "The message names our bot or answers one of its messages, so it is addressed to the team: it is never ignored."
         : "",
-      `Choose "action" from: ${addressed ? "" : "ignore (nothing to do), "}answer (a question the team's wiki can answer), ask (a person must decide), clarify (the report is too vague to act on: it says something is wrong without saying what), attach (it reports an incident already listed, or says a resolved one is still broken or back), ${linked ? 'update (it asks how the incident this chat is linked to is going, like "any update?"), ' : ""}task (new work or a new problem to look into).`,
+      `Choose "action" from: ${addressed ? "" : "ignore (nothing to do), "}answer (a question the team's wiki can answer), ask (a person must decide), clarify (the report is too vague to act on: it says something is wrong without saying what), attach (it reports an incident already listed, or says a resolved one is still broken or back), update (it asks for news, like "any update?"${linked ? ", and an incident is linked to this chat" : ", and no incident is linked to this chat"}), task (new work or a new problem to look into).`,
       `{"action": "...", "reason": "one short sentence", "incident": "<id of the listed incident it belongs to, or null>", "outage": true if it is a new problem that is down or failing for the client right now}`,
       incidents.length === 0
         ? "Incidents: none."
@@ -398,7 +401,7 @@ export class ClientTriage {
       ...(item.thread === undefined ? {} : { thread: item.thread }),
     };
     /** An addressed message always gets a short acknowledgement that a person follows up. */
-    const acknowledge = async (why: string): Promise<ClientOutcome> => {
+    const acknowledge = async (why: string, task?: string): Promise<ClientOutcome> => {
       const written = await this.write(
         org,
         room,
@@ -406,7 +409,7 @@ export class ClientTriage {
         "Nothing is known yet that answers this. Say only that the team has seen the message and a person will follow up. Promise no time, no price and no result.",
       );
       const sent = await this.deps.replies.captain({ ...target, text: written.text, flags: written.flags });
-      return { ...replyOutcome(sent), why };
+      return { ...replyOutcome(sent), why, ...(task === undefined ? {} : { task }) };
     };
     /** The report is too vague, or nothing shows it: the client is asked what exactly is failing. */
     const clarify = async (why: string): Promise<ClientOutcome> => {
@@ -421,8 +424,8 @@ export class ClientTriage {
     const waits = (why: string): Promise<ClientOutcome> | ClientOutcome =>
       addressed ? acknowledge(why) : { state: "waits", why };
     /** The captain did something with it (attached, proposed a task, opened an incident). */
-    const handled = (why: string): Promise<ClientOutcome> | ClientOutcome =>
-      addressed ? acknowledge(why) : { state: "handled", why };
+    const handled = (why: string, task?: string): Promise<ClientOutcome> | ClientOutcome =>
+      addressed ? acknowledge(why, task) : { state: "handled", why, ...(task === undefined ? {} : { task }) };
     switch (decision.action) {
       case "clarify":
         return clarify(decision.reason);
@@ -440,22 +443,27 @@ export class ClientTriage {
           done.reopened
             ? `Incident ${done.task} reopened: the client says it is back`
             : `Linked to incident ${done.task}: ${clip(incident.title, 120)}`,
+          done.task,
         );
       }
       case "update": {
-        // Only a chat linked to an open incident is answered from its status; anywhere else the owner reads it.
+        // A chat linked to an open incident is answered from its status. With none, the client is told so and asked what they see.
         const status = await this.deps.incident.answer(room.id);
-        if (status === undefined)
-          return waits("It asks for an update, but no open incident is linked to this chat");
         const sent = await this.deps.replies.captain({
           room: room.id,
-          text: status.text,
-          flags: status.flags,
+          text: status?.text ?? NO_INCIDENT_REPLY,
+          flags: status?.flags ?? NO_FLAGS,
           to: item.sender.id,
           replyTo: item.external.message,
           ...(item.thread === undefined ? {} : { thread: item.thread }),
         });
-        this.deps.findings.dismiss(finding, "Answered from the incident status", CAPTAIN);
+        this.deps.findings.dismiss(
+          finding,
+          status === undefined
+            ? "Told the client there is no open issue"
+            : "Answered from the incident status",
+          CAPTAIN,
+        );
         return replyOutcome(sent);
       }
       case "task": {
@@ -464,10 +472,13 @@ export class ClientTriage {
           // No watch, no failed deploy: nothing backs the claim yet. The client is asked for specifics.
           if (found === undefined)
             return clarify("No watch or deploy shows a problem: asked the client for details");
-          return handled(found.joined ? `Joined incident ${found.task}` : `Opened incident ${found.task}`);
+          return handled(
+            found.joined ? `Joined incident ${found.task}` : `Opened incident ${found.task}`,
+            found.task,
+          );
         }
         const { task } = await this.deps.findings.toTask(finding, { kind: "captain", org });
-        return handled(`Proposed a task: ${task}`);
+        return handled(`Proposed a task: ${task}`, task);
       }
       case "answer": {
         const wiki = await this.deps.wiki(org, readable(room, item).slice(0, 1000));

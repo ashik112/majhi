@@ -62,6 +62,8 @@ export const ChatSenderSchema = z.strictObject({
   username: z.string().max(200).optional(),
   /** False for an anonymous admin or a sender the app could not name. Never triggers an action. */
   verified: z.boolean().default(true),
+  /** The app lists them as an owner or admin of the workspace or the chat: someone who may be one of us. */
+  staff: z.boolean().optional(),
 });
 export type ChatSender = z.infer<typeof ChatSenderSchema>;
 
@@ -105,11 +107,13 @@ export type ChatEnvelope = z.infer<typeof ChatEnvelopeSchema>;
  * when the owner sends or discards a held one.
  */
 export const ClientOutcomeSchema = z.strictObject({
-  state: z.enum(["working", "replied", "ignored", "waits", "failed", "handled"]),
+  state: z.enum(["working", "replied", "ignored", "waits", "failed", "handled", "skipped"]),
   why: z.string().max(400).optional(),
   draft: z.number().int().positive().optional(),
   /** Laya read it as urgent: the owner is told whatever the chat's Notify setting says. */
   urgent: z.boolean().optional(),
+  /** The task or incident it became or joined: the line links to it. */
+  task: z.string().max(100).optional(),
 });
 export type ClientOutcome = z.infer<typeof ClientOutcomeSchema>;
 
@@ -256,6 +260,8 @@ export const ClientRowSchema = z.object({
   unread: z.number().int().nonnegative(),
   /** A reply waits for the owner. */
   waiting: z.boolean(),
+  /** The owner chose not to read it. Only the connection's group list shows such a row. */
+  ignored: z.boolean().optional(),
 });
 export type ClientRow = z.infer<typeof ClientRowSchema>;
 
@@ -275,6 +281,10 @@ export const ClientListSchema = z.object({
   accounts: z.array(ChatAccountSchema),
 });
 export type ClientList = z.infer<typeof ClientListSchema>;
+
+/** `chat.groups`: the groups and channels of one connection's account, ignored ones too. */
+export const ChatGroupsInputSchema = z.object({ connection: IdSchema });
+export const ChatGroupsSchema = z.array(ClientRowSchema);
 
 export const ChatLinkInputSchema = z.object({ room: z.string().min(1), org: IdSchema });
 export const ChatIgnoreInputSchema = z.object({ room: z.string().min(1) });
@@ -300,11 +310,14 @@ export type ChatPermissionState = z.infer<typeof ChatPermissionStateSchema>;
 
 export const ChatPermissionSchema = z.object({
   scope: z.string(),
-  /** Set when the permission is the owner's own (a user scope), shown as "As you". */
-  as: z.literal("you").optional(),
+  /** Who needs it: the bot, the owner's user token (Send as Me), or both. One row per scope. */
+  who: z.array(z.enum(["bot", "you"])).min(1),
   /** What it is for, in a few words. */
   use: z.string(),
+  /** Missing when any holder lacks it. */
   state: ChatPermissionStateSchema,
+  /** Of a missing permission: who lacks it. */
+  lacking: z.array(z.enum(["bot", "you"])).optional(),
 });
 export type ChatPermission = z.infer<typeof ChatPermissionSchema>;
 
@@ -421,6 +434,12 @@ export const ContactMergeResultSchema = z.object({
 });
 
 /** The owner's answer to a "same person?" card. */
+export const WhoIsAnswerInputSchema = z.object({
+  room: z.string().min(1),
+  item: z.string().min(1),
+  answer: z.enum(["us", "client"]),
+});
+
 export const SamePersonAnswerInputSchema = z.object({
   room: z.string().min(1),
   item: z.string().min(1),
@@ -463,7 +482,7 @@ export type ReplyHold = z.infer<typeof ReplyHoldSchema>;
 
 /** The line a held reply shows beside "Reply waits for you": what in the reply made it wait. */
 export const REPLY_HOLD_LABEL: Record<ReplyHold, string> = {
-  tell: "You decide replies here",
+  tell: "Tell is set to You",
   limit: "Daily limit reached",
   secret: "Holds a secret",
   "other-client": "Names another client",

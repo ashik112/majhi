@@ -1051,6 +1051,14 @@ export const RoomItemSchema = z.discriminatedUnion("type", [
     /** The merge it made, for Undo. */
     merge: z.number().int().positive().optional(),
   }),
+  /** Asked once in the chat: a sender who looks like one of us (an admin of the chat or workspace). The answer is the person's role. */
+  RoomItemBase.extend({
+    type: z.literal("who-is"),
+    /** The sender's id in the app. */
+    sender: z.string(),
+    name: z.string(),
+    state: z.enum(["asking", "us", "client"]),
+  }),
   /** A fact about a client incident: the cause, a reopen, an update told to a room. Read by the incident card, not drawn in the log. */
   RoomItemBase.extend({
     type: z.literal("incident-event"),

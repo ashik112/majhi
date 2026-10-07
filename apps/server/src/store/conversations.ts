@@ -8,6 +8,7 @@ import {
   ConversationSchema,
 } from "@majhi/shared";
 import { sql } from "drizzle-orm";
+import { parseBody, renderPlain } from "../chat/format.ts";
 import type { Db } from "./db.ts";
 
 /** A last line is cut to this many characters, on the way out of the database. */
@@ -47,6 +48,8 @@ interface Row {
   owner_text: string | null;
   app: string | null;
   agent: string | null;
+  unlinked: number | null;
+  created_at: string;
   archived: number;
   promoted: number;
 }
@@ -68,6 +71,17 @@ export class ConversationsRepo {
   /** One conversation as it is now, or undefined when it is not listed (no such task, an owner chat, no messages). */
   one(id: string): Conversation | undefined {
     return this.read(sql`AND t.id = ${id}`)[0];
+  }
+
+  /** The listed conversations with a message that holds the words (case ignored). Not only the newest line. */
+  matching(query: string): string[] {
+    const like = `%${query.toLowerCase().split("\\").join("\\\\").split("%").join("\\%").split("_").join("\\_")}%`;
+    const rows = this.db.all<{ task: string }>(sql`
+      SELECT DISTINCT r.task AS task FROM room_items r JOIN tasks t ON t.id = r.task
+       WHERE r.type IN ('agent', 'owner', 'client', 'client-reply') AND ${LISTED}
+         AND lower(json_extract(r.payload, '$.text')) LIKE ${like} ESCAPE '\\'
+       LIMIT ${LIST_LIMIT}`);
+    return rows.map((r) => r.task);
   }
 
   /** Hides a conversation or brings it back. False when it is not a listed conversation. */
@@ -116,6 +130,7 @@ export class ConversationsRepo {
     const rows = this.db.all<Row>(sql`
       SELECT t.id AS id, t.title AS title, t.org AS org, t.brief AS brief, t.kind AS kind,
         json_extract(t.client, '$.app') AS app, json_extract(t.team, '$[0]') AS agent,
+        json_extract(t.client, '$.archived') AS unlinked, t.created_at AS created_at,
         (a.archived_at IS NOT NULL) AS archived, (${PROMOTED}) AS promoted,
         (SELECT count(*) FROM room_items r
           WHERE r.task = t.id AND r.type IN ('agent', 'client') AND r.at > coalesce(m.read_at, '')
@@ -137,7 +152,12 @@ export class ConversationsRepo {
         ${scope}`);
     const out: Conversation[] = [];
     for (const row of rows) {
-      const last = lastOf(row);
+      // A chat linked and not written in yet is still listed: the owner linked it and looks for it.
+      const last =
+        lastOf(row) ??
+        (kindOf(row) === "client" && row.org !== null
+          ? { at: row.created_at, line: "No messages yet" }
+          : undefined);
       if (last === undefined) continue;
       out.push(
         ConversationSchema.parse({
@@ -150,6 +170,7 @@ export class ConversationsRepo {
           unread: row.unread,
           ...(kindOf(row) === "client" && row.app !== null ? { app: row.app } : {}),
           ...(kindOf(row) === "agent" && row.agent !== null ? { agent: row.agent } : {}),
+          ...(row.unlinked === 1 ? { unlinked: true } : {}),
           ...(row.archived === 1 ? { archived: true } : {}),
         }),
       );
@@ -176,12 +197,21 @@ function lastOf(row: Row): { at: string; line: string } | undefined {
   return owner.at > agent.at ? owner : agent;
 }
 
-/** The first non-empty line of a message, cut to fit a list row. */
+/** The first non-empty line of a message as plain words (its Markdown read, not shown), cut to fit a list row. */
 function oneLine(text: string | null): string {
   const first =
-    (text ?? "")
+    plain(text ?? "")
       .split("\n")
       .map((l) => l.trim())
       .find((l) => l !== "") ?? "";
   return first.length > LINE_CHARS ? `${first.slice(0, LINE_CHARS - 1)}…` : first;
+}
+
+/** A message's words without its markup. A mention the list cannot name reads as "someone". */
+function plain(text: string): string {
+  try {
+    return renderPlain(parseBody(text), () => ({ name: "someone", native: undefined, username: undefined }));
+  } catch {
+    return text;
+  }
 }
