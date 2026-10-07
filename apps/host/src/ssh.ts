@@ -35,7 +35,9 @@ export function isWake(lastTickAt: number, now: number, tickMs = WAKE_TICK_MS): 
   return now - lastTickAt > tickMs + WAKE_GAP_MS;
 }
 const COMMAND_TIMEOUT_MS = 10_000;
-const DEFAULT_KEY_NAMES = ["id_ed25519", "id_ecdsa", "id_rsa"];
+/** Keys majhi makes are named `id_ed25519_majhi`, then `_2` to `_5`, so the helper finds them again and reloads them. */
+const MAJHI_KEY_NAMES = ["id_ed25519_majhi", ...[2, 3, 4, 5].map((n) => `id_ed25519_majhi_${n}`)];
+const DEFAULT_KEY_NAMES = ["id_ed25519", "id_ecdsa", "id_rsa", ...MAJHI_KEY_NAMES];
 const NO_TOOLS =
   "ssh-add and ssh-keygen are not installed. Install openssh-client (Debian, Ubuntu) or openssh.";
 
@@ -95,11 +97,13 @@ export interface MadeKey {
 
 /** The first name in `~/.ssh` that is free, so a key already there is never touched. */
 export async function freeKeyName(exists: (path: string) => Promise<boolean>, dir: string): Promise<string> {
-  for (let n = 0; ; n++) {
-    const name = n === 0 ? "id_ed25519" : n === 1 ? "id_ed25519_majhi" : `id_ed25519_majhi_${n}`;
+  for (const name of ["id_ed25519", ...MAJHI_KEY_NAMES]) {
     const path = join(dir, name);
     if (!(await exists(path)) && !(await exists(`${path}.pub`))) return path;
   }
+  throw new SshUnlockError(
+    "~/.ssh already holds every key name majhi uses. Remove a key you no longer need.",
+  );
 }
 
 /** The owner-facing reason an unlock failed. Safe to show and to log. */
@@ -554,6 +558,8 @@ export function createSsh(deps: SshDeps): Ssh {
       );
     }
     log(`made ${collapseHome(path, home)}`);
+    // The agent offers it to every host from now on, whatever its name.
+    await deps.run(session.sshAdd, [path], { env: session.env, timeoutMs: COMMAND_TIMEOUT_MS });
     await runCheck();
     return {
       path: collapseHome(path, home),
