@@ -104,11 +104,13 @@ export type DeployActor = DeployRecord["by"];
 
 /** What a decision to deploy says before anything starts: the sentence that stops it, or what it would run with. */
 export type Evaluated =
-  | { ok: false; why: string; kind: DeployRefusal["kind"] | "setup" }
+  | { ok: false; why: string; kind: DeployRefusal["kind"] | "setup" | "unpushed" }
   | { ok: true; project: DeployProject; target: DeployTarget; ctx: DeployContext; unchecked: boolean };
 
 /** Calls to a provider that fail this many times in a row end the follow: what the run did is not known. */
 const MAX_POLL_ERRORS = 5;
+/** How long the host's answer about a commit is kept: a board that reads every few seconds asks the host once. */
+const PREFLIGHT_KEEP_MS = 30_000;
 
 const reasonOf = (err: unknown): string => {
   const text = err instanceof DeployProblem ? err.message : errorMessage(err);
@@ -120,6 +122,10 @@ export class DeployService {
   private readonly lanes = new Map<string, Promise<void>>();
   private readonly rollingBack = new Set<number>();
   private readonly listeners: (() => void)[] = [];
+  private readonly preflights = new Map<
+    string,
+    { at: number; answer: { kind: "unpushed" | "setup"; why: string } | undefined }
+  >();
 
   constructor(private readonly deps: DeployDeps) {}
 
@@ -157,21 +163,38 @@ export class DeployService {
     };
     const refused = deployRefusal(facts);
     if (refused !== undefined) return { ok: false, ...refused };
-    return {
-      ok: true,
-      project,
+    const ctx: DeployContext = {
+      org: project.org,
+      project: project.id,
+      env: target.env,
+      base,
+      commit,
+      repo: await this.deps.repoRef(project),
       target,
-      unchecked: deployIsUnchecked(facts),
-      ctx: {
-        org: project.org,
-        project: project.id,
-        env: target.env,
-        base,
-        commit,
-        repo: await this.deps.repoRef(project),
-        target,
-      },
     };
+    // The host must have the commit before a run starts. A commit not pushed yet is a wait, not a failure.
+    const missing = await this.hostLacks(ctx);
+    if (missing !== undefined) return { ok: false, ...missing };
+    return { ok: true, project, target, unchecked: deployIsUnchecked(facts), ctx };
+  }
+
+  /** Asks the provider whether the host has the commit, once in a while for the same target and commit. */
+  private async hostLacks(
+    ctx: DeployContext,
+  ): Promise<{ kind: "unpushed" | "setup"; why: string } | undefined> {
+    const key = `${ctx.project}:${ctx.env}:${ctx.commit}`;
+    const seen = this.preflights.get(key);
+    const at = this.deps.now().getTime();
+    if (seen !== undefined && at - seen.at < PREFLIGHT_KEEP_MS) return seen.answer;
+    let answer: { kind: "unpushed" | "setup"; why: string } | undefined;
+    try {
+      const why = await this.deps.providers[ctx.target.via.kind].preflight(ctx);
+      if (why !== undefined) answer = { kind: "unpushed", why };
+    } catch (err) {
+      answer = { kind: "setup", why: reasonOf(err) };
+    }
+    this.preflights.set(key, { at, answer });
+    return answer;
   }
 
   /**

@@ -27,6 +27,8 @@ export interface FakeHosts {
   outcome: { github: "success" | "failure"; gitlab: "success" | "failed"; vercel: "READY" | "ERROR" };
   /** Looks at a run before it reads as finished. */
   pollsToFinish: number;
+  /** What `GET /health/<name>` answers, by name. Absent: 200. */
+  health: Map<string, number>;
   calls: FakeCall[];
   close(): Promise<void>;
 }
@@ -75,6 +77,7 @@ export async function startFakeHosts(
     branches: new Map(),
     outcome: { github: "success", gitlab: "success", vercel: "READY" },
     pollsToFinish: init.pollsToFinish ?? 1,
+    health: new Map(),
     calls: [],
     close: async () => undefined,
   };
@@ -101,6 +104,13 @@ export async function startFakeHosts(
       run.polls += 1;
       return run.polls > state.pollsToFinish;
     };
+
+    const probe = /^\/health\/([^/]+)$/.exec(path);
+    if (probe !== null) {
+      const status = state.health.get(decodeURIComponent(probe[1] ?? "")) ?? 200;
+      res.writeHead(status, { "content-type": "text/plain" });
+      return void res.end(status < 300 ? "ok" : "down");
+    }
 
     // GitHub: /api/v3/repos/<owner>/<repo>/...
     const gh = /^\/api\/v3\/repos\/([^/]+\/[^/]+)\/(.*)$/.exec(path);

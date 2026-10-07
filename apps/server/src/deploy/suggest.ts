@@ -44,11 +44,13 @@ function hasDispatch(doc: unknown): boolean {
 /** The environments a suggestion may take, in the order they go live. */
 const ENVS = ["staging", "production"] as const;
 
-function envFor(label: string, taken: ReadonlySet<string>): string {
+function envFor(label: string, taken: ReadonlySet<string>, fallback: string): string {
   const lower = label.toLowerCase();
   const named = lower.includes("prod") ? "production" : lower.includes("stag") ? "staging" : undefined;
   if (named !== undefined && !taken.has(named)) return named;
-  return ENVS.find((e) => !taken.has(e)) ?? `env-${taken.size + 1}`;
+  return (
+    ENVS.find((e) => !taken.has(e)) ?? (taken.has(fallback) ? `${fallback}-${taken.size + 1}` : fallback)
+  );
 }
 
 export async function suggestDeploys(
@@ -116,7 +118,7 @@ export async function suggestDeploys(
       ) {
         continue;
       }
-      const env = envFor(`${wf.file} ${wf.name}`, taken);
+      const env = envFor(`${wf.file} ${wf.name}`, taken, "workflow");
       taken.add(env);
       const watch = watchFor(env);
       const via =
@@ -143,7 +145,7 @@ export async function suggestDeploys(
     const id = "gitlab-pipeline:.gitlab-ci.yml";
     const gitlab = connections.find((c) => c.type === "git" && c.provider === "gitlab");
     if (!hidden.includes(id) && !existing.some((t) => t.via.kind === "gitlab-pipeline")) {
-      const env = envFor("", taken);
+      const env = envFor("", taken, "pipeline");
       taken.add(env);
       const watch = watchFor(env);
       out.push({
@@ -172,7 +174,7 @@ export async function suggestDeploys(
       } catch {
         // A vercel.json that does not parse still says the project is on Vercel.
       }
-      const env = envFor("production", taken);
+      const env = envFor("production", taken, "vercel");
       taken.add(env);
       const watch = watchFor(env);
       const via =
@@ -205,7 +207,7 @@ export async function suggestDeploys(
   if (compose !== undefined && host !== undefined) {
     const id = `ssh:${compose.name}`;
     if (!hidden.includes(id) && !existing.some((t) => t.via.kind === "ssh")) {
-      const env = envFor("", taken);
+      const env = envFor("", taken, "host");
       taken.add(env);
       out.push({
         id,

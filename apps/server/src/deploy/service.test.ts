@@ -161,17 +161,15 @@ describe("deploy", () => {
       ).rejects.toThrow(/not in the workspace of storefront/);
     });
 
-    it("fails without calling the host when the workspace has no such connection", async () => {
+    it("refuses without calling the host when the workspace has no such connection", async () => {
       r.project.targets = [
         workflow("staging", {
           via: { kind: "github-workflow", connection: "globex-github", workflow: "deploy.yml", ref: "base" },
         }),
       ];
-      const out = await r.service.deploy({ project: "storefront", env: "staging" }, "owner");
-      await r.service.idle();
-      const rec = r.store.deploys.get(out.record.id);
-      expect(rec?.state).toBe("failed");
-      expect(rec?.reason).toBe("acme has no connection globex-github");
+      await expect(r.service.deploy({ project: "storefront", env: "staging" }, "owner")).rejects.toThrow(
+        "acme has no connection globex-github",
+      );
       expect(r.hosts.calls).toHaveLength(0);
     });
 
@@ -183,16 +181,13 @@ describe("deploy", () => {
       expect(rec).not.toContain(r.hosts.tokens.github);
     });
 
-    it("refuses a branch the host does not have at the commit, before any run starts", async () => {
+    it("waits for a commit the host does not have yet: no record and no run", async () => {
       r.hosts.branches.set("github:acme/storefront:main", C3);
-      const out = await r.service.deploy({ project: "storefront", env: "staging" }, "owner");
-      await r.service.idle();
-      const rec = r.store.deploys.get(out.record.id);
-      expect(rec?.state).toBe("failed");
-      expect(rec?.reason).toContain("Push it first");
+      await expect(r.service.deploy({ project: "storefront", env: "staging" }, "owner")).rejects.toThrow(
+        /Push it first/,
+      );
       expect(r.hosts.calls.some((c) => c.path.endsWith("/dispatches"))).toBe(false);
-      // Nothing was deployed, so nothing was rolled back.
-      expect(rec?.rollback).toBeUndefined();
+      expect(r.store.deploys.ofProject("storefront", 10)).toEqual([]);
     });
 
     it("picks a deploy that was moving back up after a restart", async () => {
