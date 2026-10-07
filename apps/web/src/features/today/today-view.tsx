@@ -14,6 +14,7 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { UsageBar } from "@/components/ui/usage-bar";
+import { applyFilters } from "@/features/decisions/model";
 import { incidentLamp } from "@/features/watch/model";
 import {
   useAgendaToday,
@@ -23,7 +24,6 @@ import {
   useSetReviewBudget,
 } from "@/lib/agenda-queries";
 import { cn } from "@/lib/cn";
-import { applyFilters } from "@/features/decisions/model";
 import { useDecisions } from "@/lib/decision-queries";
 import { describeError } from "@/lib/errors";
 import { formatMoney } from "@/lib/format";
@@ -459,7 +459,13 @@ function RightNowPanel({ today, org }: { today: AgendaToday; org: string | undef
       {watch.budget !== undefined && (
         <UsageBar pct={pct} tone={pct > 100 ? "red" : "calm"} className="mb-2.5" />
       )}
-      {quiet && <p className="m-0 text-sm text-fg-muted">Nothing is running and no incident is open.</p>}
+      {quiet && (
+        <p className="m-0 text-sm text-fg-muted">
+          {watch.incidents.length > 0
+            ? "Nothing is running. Open incidents are on the agenda."
+            : "Nothing is running and no incident is open."}
+        </p>
+      )}
       <ul className="m-0 flex max-h-[220px] list-none flex-col gap-0.5 overflow-y-auto overscroll-contain p-0">
         {services.map((i) => (
           <li key={`s${i.id}`}>
@@ -575,7 +581,10 @@ export function TodayView() {
   const dismiss = useDismissFinding();
   const ack = useAckIncident();
   const decisions = useDecisions();
-  const needsCount = applyFilters(decisions.data?.decisions ?? [], { org, kind: undefined }).length;
+  const waiting = applyFilters(decisions.data?.decisions ?? [], { org, kind: undefined });
+  const needsCount = waiting.length;
+  // An incident that is already a Needs you decision is not counted a second time as something to look at.
+  const incidentsWaiting = waiting.filter((d) => d.kind === "incident").length;
   const [picked, setPicked] = useState<string | undefined>();
   const [later, setLater] = useState(false);
 
@@ -675,7 +684,11 @@ export function TodayView() {
             : subtitleOf({
                 day: today.day,
                 needs: needsCount,
-                look: [...today.today, ...today.later].filter((i) => i.target.to !== "decision").length,
+                look: Math.max(
+                  0,
+                  [...today.today, ...today.later].filter((i) => i.target.to !== "decision").length -
+                    incidentsWaiting,
+                ),
                 minutes: today.usedMinutes,
                 later: today.later.length,
               })

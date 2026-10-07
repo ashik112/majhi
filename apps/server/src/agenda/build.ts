@@ -1,5 +1,5 @@
 import type { AgendaItem, AgendaToday, Finding, OwnerDecision, OwnerDecisionKind } from "@majhi/shared";
-import { ageWord } from "./time.ts";
+import { ageWord, agoWord } from "./time.ts";
 
 /**
  * The agenda (SPEC 5.18): one ordered list from what already exists, computed in code. Pure: every input is
@@ -79,18 +79,19 @@ function named(org: string | undefined, orgName: AgendaInput["orgName"]) {
 
 function decisionItem(d: OwnerDecision, input: AgendaInput): AgendaItem {
   const waited = ageWord(d.at, input.now);
+  const waiting = waited === "just now" ? "just arrived" : `waiting ${waited}`;
   const hold = d.kind === "budget";
   const kind = hold ? "budget" : d.kind === "draft" || d.kind === "batch" ? "draft" : "decision";
   const why =
     d.kind === "ship"
-      ? `Ready to ship, waiting ${waited}`
+      ? `Ready to ship, ${waiting}`
       : hold
         ? "New work is on hold until you answer"
         : d.kind === "sign-in"
-          ? `An account is signed out, waiting ${waited}`
+          ? `An account is signed out, ${waiting}`
           : d.kind === "draft" || d.kind === "batch"
             ? `A draft waits for you, ${waited}`
-            : `Waiting ${waited}`;
+            : waiting.charAt(0).toUpperCase() + waiting.slice(1);
   const action =
     d.kind === "ship"
       ? "Ship"
@@ -135,7 +136,7 @@ function findingItem(f: Finding, input: AgendaInput): AgendaItem | undefined {
     ...named(f.org, input.orgName),
     title: f.title,
     why: incident
-      ? `Open incident, first seen ${ageWord(f.createdAt, input.now)} ago`
+      ? `Open incident, first seen ${agoWord(f.createdAt, input.now)}`
       : "High severity, nobody has taken it",
     action: incident ? "Open" : "Review",
     target: { to: "finding", id: f.id },

@@ -388,6 +388,16 @@ export function FindingsSheet({
     getItemKey: (i) => rows[i]?.id ?? i,
   });
 
+  // A link to a finding that already has a task opens on Tasks, where it is.
+  const placed = useRef(false);
+  useEffect(() => {
+    if (focus === undefined || placed.current || live.data === undefined) return;
+    const found = live.data.findings.find((f) => f.id === focus);
+    if (found === undefined) return;
+    placed.current = true;
+    if (inGroup(found, "tasks")) setGroup("tasks");
+  }, [focus, live.data]);
+
   const index = rows.findIndex((f) => f.id === selectedId);
   const selected = index >= 0 ? rows[index] : undefined;
   // The first row is selected when the list changes, so the keys work at once.

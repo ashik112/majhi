@@ -69,10 +69,10 @@ export function Conversation({ className }: { className?: string }) {
   const current = org === undefined ? undefined : threads.find((t) => t.org === org);
   return (
     <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", className)}>
-      <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-line px-3 py-2">
         <fieldset
           aria-label="Talk to"
-          className="m-0 flex min-w-0 gap-1.5 overflow-x-auto border-0 p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="m-0 flex min-w-[220px] flex-1 gap-1.5 overflow-x-auto border-0 p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           <Chip
             label="All"

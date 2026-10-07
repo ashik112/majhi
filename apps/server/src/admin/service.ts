@@ -378,7 +378,8 @@ export class AdminService {
     const world = this.proposals;
     if (world === undefined) return;
     for (const item of this.deps.store.room.waitingOnOwner()) {
-      if (item.type !== "approval" || item.proposal === undefined || !(await this.proposalStale(item))) continue;
+      if (item.type !== "approval" || item.proposal === undefined || !(await this.proposalStale(item)))
+        continue;
       let input: unknown;
       try {
         input = JSON.parse(item.input);

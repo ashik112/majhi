@@ -1,7 +1,7 @@
 import {
   type ConnectionHealth,
-  connectionFailing,
   type ConnectionView,
+  connectionFailing,
   FAILURE_FIX,
   FAILURE_LINE,
   type FailureReason,

@@ -1221,16 +1221,12 @@ export function createHandlers({
       const answer = () => services.tasks.answerAsk(input.task, input.item, input.answers);
       // The owner's Undo time is kept here: closing the tab does not lose the answer.
       if (input.holdMs !== undefined && ctx.meta.actor.kind !== "agent") {
-        services.inbox.held.hold(
-          `ask:${input.task}:${input.item}`,
-          input.holdMs,
-          answer,
-          (error) =>
-            services.room.post(input.task as TaskId, `warn:${randomUUID()}`, {
-              type: "system",
-              level: "warn",
-              text: `Could not send your answer: ${errorMessage(error)}`,
-            }),
+        services.inbox.held.hold(`ask:${input.task}:${input.item}`, input.holdMs, answer, (error) =>
+          services.room.post(input.task as TaskId, `warn:${randomUUID()}`, {
+            type: "system",
+            level: "warn",
+            text: `Could not send your answer: ${errorMessage(error)}`,
+          }),
         );
         const item = services.room.get(input.task, input.item);
         if (item === undefined) throw new UserError(`There is no card ${input.item} in ${input.task}.`, 404);

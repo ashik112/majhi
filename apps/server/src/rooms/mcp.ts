@@ -489,15 +489,13 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
     if (isChat()) {
       const task = chat();
       const captain =
-        task !== undefined &&
-        (isAutonomyChat(task) || (await deps.config.sections()).boss === caller.agent);
+        task !== undefined && (isAutonomyChat(task) || (await deps.config.sections()).boss === caller.agent);
       return ROOM_TOOLS.filter((t) => (captain ? CAPTAIN_CHAT_TOOLS : DRAWING_TOOLS).has(t.name));
     }
     return ROOM_TOOLS.filter(
-          (t) =>
-            (t.name !== "code_graph" || deps.codeGraph !== undefined) &&
-            (t.name !== "record_plan" || isLead()),
-        );
+      (t) =>
+        (t.name !== "code_graph" || deps.codeGraph !== undefined) && (t.name !== "record_plan" || isLead()),
+    );
   };
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: listed(await offered(), false) }));
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<Result> => {

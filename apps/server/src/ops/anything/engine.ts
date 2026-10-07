@@ -1180,7 +1180,12 @@ export class WatchEngine {
           : "Snoozed";
     if (status === "new") return "Checking";
     if (status === "unknown") return "Unknown";
-    if (status === "ok") return w.def.spec.kind === "website" ? "Up" : "OK";
+    if (status === "ok") {
+      const spec = w.def.spec;
+      if (spec.kind === "website")
+        return spec.jsonPath === undefined || spec.jsonPath === "" ? "Up" : "Normal";
+      return "OK";
+    }
     const c = w.def.condition;
     const k = w.def.spec.kind;
     switch (c.type) {

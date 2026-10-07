@@ -416,11 +416,7 @@ export class OutboundGate {
     }
     const transport = this.deps.transports?.[draft.channel];
     if (transport === undefined) {
-      this.setStatus(
-        draft.id,
-        "approved",
-        `Approved. Nothing was sent: ${NO_SENDER[draft.channel]}`,
-      );
+      this.setStatus(draft.id, "approved", `Approved. Nothing was sent: ${NO_SENDER[draft.channel]}`);
       return this.must(draft.id);
     }
     // Claim it first so a second click cannot send the same draft twice.

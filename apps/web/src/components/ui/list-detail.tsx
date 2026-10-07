@@ -67,7 +67,7 @@ export function DetailPane({
       className={cn("flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl", GLASS, className)}
     >
       {head && <div className="shrink-0 border-b border-line px-5 py-3.5">{head}</div>}
-      <div className="@container min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-8 scroll-fade">
+      <div className="@container min-h-0 flex-1 overflow-y-auto overscroll-contain pr-5 pb-8 pl-5 scroll-fade min-[1000px]:pr-14">
         {children}
       </div>
       {footer && <div className="shrink-0 border-t border-line px-5 py-3">{footer}</div>}

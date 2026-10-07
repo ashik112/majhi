@@ -32,7 +32,8 @@ export function discoverKey(c: Pick<Candidate, "kind" | "id">): string {
 
 /** "fixed 2, 1 for you", or the words for nothing. */
 /** The log key of a run's one summary line, and the test for it, so a page reads the run's result from that line. */
-export const summaryKey = (chore: string, org: string, day: string): string => `${chore}:summary:${org}:${day}`;
+export const summaryKey = (chore: string, org: string, day: string): string =>
+  `${chore}:summary:${org}:${day}`;
 export const isSummaryKey = (key: string): boolean => key.split(":")[1] === "summary";
 
 function line(fixed: number, left: number, none: string): string {

@@ -4,8 +4,8 @@ import { useCallback, useSyncExternalStore } from "react";
 import { useToast } from "@/components/ui/toast";
 import { cmd } from "@/lib/api";
 import { useAnswerDecision } from "@/lib/decision-queries";
-import { queryKeys } from "@/lib/queries";
 import { describeError } from "@/lib/errors";
+import { queryKeys } from "@/lib/queries";
 import { rowTitle } from "./model";
 
 /** How long a one-click answer to a question waits before it is sent, as in the room. */
@@ -103,7 +103,10 @@ export function useSendDecision() {
         holds.delete(decision.id);
         changed();
         void client.invalidateQueries({ queryKey: queryKeys.decisions });
-        void cmd("decisions.list", {}).then((left) => options.onDone?.(left), () => undefined);
+        void cmd("decisions.list", {}).then(
+          (left) => options.onDone?.(left),
+          () => undefined,
+        );
       }, UNDO_MS + 400);
       holds.set(decision.id, { option, timer });
       changed();

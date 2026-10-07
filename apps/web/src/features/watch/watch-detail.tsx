@@ -244,15 +244,15 @@ export function WatchDetail({
               onChange={(phone) => setFire({ alert: { ...fire.alert, phone } })}
             />
           )}
-          {fire.alert.on && fire.alert.phone && !phoneOn && (
-            <>
-              <span className="text-sm text-amber">No phone is set up, so nothing reaches it.</span>
-              <Button size="sm" onClick={onSetUpPhone}>
-                Set up phone
-              </Button>
-            </>
-          )}
         </Row>
+        {fire.alert.on && fire.alert.phone && !phoneOn && (
+          <Row>
+            <span className="text-sm text-amber">No phone is set up, so nothing reaches it.</span>
+            <Button size="sm" onClick={onSetUpPhone}>
+              Set up phone
+            </Button>
+          </Row>
+        )}
         <Switch
           label={isPrice ? "Compare other stores" : "Captain looks into it"}
           checked={fire.investigate}

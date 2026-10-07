@@ -9,7 +9,7 @@ import { Panel } from "./panel";
 
 /** Seven columns on a wide window; Review and Last action give way first on a narrow one. */
 export const COLUMNS =
-  "grid-cols-[minmax(100px,1fr)_minmax(0,1.7fr)_minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,1fr)] min-[1280px]:grid-cols-[minmax(150px,1.3fr)_minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1.1fr)_minmax(0,1.7fr)]";
+  "grid-cols-[minmax(100px,1fr)_minmax(0,1fr)_minmax(0,0.8fr)_minmax(110px,1.1fr)_minmax(110px,1.2fr)] min-[1280px]:grid-cols-[minmax(150px,1.3fr)_minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,0.8fr)_minmax(0,1.1fr)_minmax(0,1.7fr)]";
 
 const HEAD = "px-2 py-1.5 text-xs font-medium tracking-wide text-fg-faint uppercase";
 
@@ -196,7 +196,8 @@ export function Workspaces({ rows, nowMs }: { rows: readonly WorkspaceRow[]; now
     >
       {rows.length === 0 ? (
         <p className="m-0 px-3.5 pb-3 text-sm text-fg-muted">
-          No workspace has the captain starting its work. Set Start to Captain in a workspace's Permissions and a lane starts there.
+          No workspace has the captain starting its work. Set Start to Captain in a workspace's Permissions
+          and a lane starts there.
         </p>
       ) : (
         <>
