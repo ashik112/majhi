@@ -92,6 +92,8 @@ export const ChatEnvelopeSchema = z.strictObject({
   mentions: z.array(ChatMentionSchema).max(200).optional(),
   /** The message names the bot (a mention of it) or answers one of its messages: it is addressed to us. */
   addressed: z.boolean().optional(),
+  /** The account of the owner wrote it (Slack: the user token's user), typed in the app, not sent by majhi. */
+  owner: z.boolean().optional(),
   /** The chat moved to another id (a Telegram group became a supergroup): `external.chat` is the old id. */
   movedTo: z.string().max(200).optional(),
 });
@@ -214,6 +216,7 @@ export const ClientRoomSchema = z.strictObject({
   holder: ChatHolderSchema.default("captain"),
   /** Slack: whose name replies in this chat go out under. Me needs the owner's user token on the connection. */
   sendAs: z.enum(["bot", "me"]).default("bot"),
+<<<<<<< HEAD
   /** The chat's own settings (the sheet "Chat settings"). Absent: the default, or the workspace's. */
   replyWhen: ReplyWhenSchema.optional(),
   dailyLimit: ReplyLimitSchema.optional(),
@@ -225,6 +228,8 @@ export const ClientRoomSchema = z.strictObject({
   notify: NotifySchema.optional(),
   /** Senders (the app's user ids) whose messages are stored and never read by the captain. */
   muted: z.array(z.string().min(1).max(200)).max(500).optional(),
+=======
+>>>>>>> main
   ignored: z.boolean().optional(),
   /** Unlinked by the owner: its history stays under its workspace, read only, and nothing is read or sent. */
   archived: z.boolean().optional(),
@@ -243,6 +248,8 @@ export const ClientRowSchema = z.object({
   /** The workspace; absent in New chats. */
   org: IdSchema.optional(),
   holder: ChatHolderSchema,
+  /** Whose name replies go out under (Slack): the bot, or the owner. */
+  sendAs: z.enum(["bot", "me"]),
   trouble: ChatTroubleSchema.optional(),
   /** Unlinked: shown read only under its workspace. */
   archived: z.boolean().optional(),
@@ -296,11 +303,25 @@ export type ChatPermissionState = z.infer<typeof ChatPermissionStateSchema>;
 
 export const ChatPermissionSchema = z.object({
   scope: z.string(),
+  /** Set when the permission is the owner's own (a user scope), shown as "As you". */
+  as: z.literal("you").optional(),
   /** What it is for, in a few words. */
   use: z.string(),
   state: ChatPermissionStateSchema,
 });
 export type ChatPermission = z.infer<typeof ChatPermissionSchema>;
+
+/** Whose name Slack replies go out under. */
+export const ChatSendAsSchema = z.enum(["bot", "me"]);
+export type ChatSendAs = z.infer<typeof ChatSendAsSchema>;
+
+/** The owner's user token: none saved, accepted (and whose it is), or refused with the step that fixes it. */
+export const ChatYouSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("none") }),
+  z.object({ state: z.literal("ok"), name: z.string() }),
+  z.object({ state: z.literal("refused"), fix: z.string() }),
+]);
+export type ChatYou = z.infer<typeof ChatYouSchema>;
 
 export const ChatChannelsSchema = z.object({
   connection: IdSchema,
@@ -315,10 +336,20 @@ export const ChatChannelsSchema = z.object({
   socketMode: ChatPermissionStateSchema,
   /** A message event has arrived on this connection. */
   messageEvents: z.boolean(),
+  /** The user token that makes "Me" possible. */
+  you: ChatYouSchema,
   /** The app manifest majhi would use, as JSON the owner pastes under App Manifest. */
   manifest: z.string(),
 });
 export type ChatChannels = z.infer<typeof ChatChannelsSchema>;
+
+/** Save the owner's User OAuth Token on a Slack connection, after checking it. */
+export const ChatUserTokenInputSchema = z.object({
+  connection: IdSchema,
+  userToken: z.string().trim().min(1).max(500),
+});
+/** Choose Bot or Me for one client chat. */
+export const ChatSendAsInputSchema = z.object({ room: z.string().min(1), sendAs: ChatSendAsSchema });
 
 export const ChatChannelsInputSchema = z.object({ connection: IdSchema, refresh: z.boolean().optional() });
 export const ChatChannelLinkInputSchema = z.object({

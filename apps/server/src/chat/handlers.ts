@@ -17,6 +17,8 @@ type ChatCommand =
   | "chat.samePerson"
   | "chat.confirmWebhook"
   | "chat.markUs"
+  | "chat.sendAs"
+  | "chat.userToken"
   | "chat.reply"
   | "contacts.list"
   | "contacts.merge"
@@ -98,6 +100,16 @@ export function chatHandlers(chat: ClientChat): Pick<CommandHandlers, ChatComman
     "chat.markUs": async (input, ctx) => {
       ownerOnly(ctx);
       chat.markUs(input.room, input.item, input.us);
+      return { ok: true as const };
+    },
+    "chat.sendAs": async (input, ctx) => {
+      ownerOnly(ctx);
+      chat.setSendAs(input.room, input.sendAs);
+      return { ok: true as const };
+    },
+    "chat.userToken": async (input, ctx) => {
+      ownerOnly(ctx);
+      await chat.setUserToken(input.connection, input.userToken, ctx.meta);
       return { ok: true as const };
     },
     "chat.reply": async (input, ctx) => {

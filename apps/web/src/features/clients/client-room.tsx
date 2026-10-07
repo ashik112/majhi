@@ -498,8 +498,13 @@ function Reply({ item, row }: { item: Of<"client-reply">; row: ClientRow }) {
       )}
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex h-6 min-w-0 items-center gap-2">
-          <span className={cn("shrink-0 text-base font-semibold text-fg", !you && "font-mono")}>
-            {you ? "You" : `@${boss?.id ?? "captain"}`}
+          <span
+            className={cn(
+              "shrink-0 text-base font-semibold text-fg",
+              !you && item.as !== "you" && "font-mono",
+            )}
+          >
+            {you ? "You" : item.as === "you" ? "You (by the captain)" : `@${boss?.id ?? "captain"}`}
           </span>
           <span className="min-w-0 truncate font-mono text-xs text-fg-faint">
             to {row.title} · {CHAT_APP_LABEL[row.app]}

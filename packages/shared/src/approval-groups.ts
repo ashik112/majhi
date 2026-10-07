@@ -49,10 +49,15 @@ export const AGENT_BLOCKED_COMMANDS: ReadonlySet<CommandName> = new Set<CommandN
   "chat.samePerson",
   "chat.confirmWebhook",
   "chat.markUs",
+<<<<<<< HEAD
   "chat.settings",
   "chat.keepCount",
   "chat.person",
   "chat.settingsSet",
+=======
+  "chat.sendAs",
+  "chat.userToken",
+>>>>>>> main
   "contacts.list",
   "contacts.merge",
   "contacts.undoMerge",

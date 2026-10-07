@@ -29,6 +29,24 @@ export function useRefreshChannels(connection: string) {
   });
 }
 
+/** Saves the owner's User OAuth Token on a Slack connection, after the server checked it. */
+export function useUserToken(connection: string) {
+  const done = useRefetch();
+  return useMutation<CommandOutput<"chat.userToken">, ApiRequestError, { userToken: string }>({
+    mutationFn: (input) => cmd("chat.userToken", { connection, ...input }),
+    onSuccess: done,
+  });
+}
+
+/** Chooses Bot or Me for one client chat. */
+export function useSendAs(room: string) {
+  const done = useRefetch();
+  return useMutation<CommandOutput<"chat.sendAs">, ApiRequestError, { sendAs: "bot" | "me" }>({
+    mutationFn: (input) => cmd("chat.sendAs", { room, ...input }),
+    onSuccess: done,
+  });
+}
+
 export function useLinkChannel(connection: string) {
   const done = useRefetch();
   return useMutation<CommandOutput<"chat.channelLink">, ApiRequestError, { channel: string; org: string }>({

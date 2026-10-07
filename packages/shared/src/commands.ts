@@ -99,9 +99,11 @@ import {
   ChatSettingsViewSchema,
   ChatReplyInputSchema,
   ChatReplyResultSchema,
+  ChatSendAsInputSchema,
   ChatSendInputSchema,
   ChatUnignoreInputSchema,
   ChatUnlinkInputSchema,
+  ChatUserTokenInputSchema,
   ClientListSchema,
   ClientRowSchema,
   ContactMergeInputSchema,
@@ -1463,6 +1465,20 @@ export const commands = {
     summary:
       "Telegram has a webhook set for the bot, which stops majhi from reading. Remove it so majhi can read the chats. Owner only",
     input: z.object({ connection: IdSchema }),
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.sendAs": {
+    risk: "change",
+    summary:
+      "Choose whether replies in one Slack client chat go out as the bot or as the owner (Me, which needs the owner's user token on the connection). A chat set to Me whose token is missing or refused holds its replies. Owner only",
+    input: ChatSendAsInputSchema,
+    output: z.object({ ok: z.literal(true) }),
+  },
+  "chat.userToken": {
+    risk: "change",
+    summary:
+      "Save the owner's User OAuth Token on a Slack chat connection, after checking it is Slack's and of the same workspace as the bot. Owner only",
+    input: ChatUserTokenInputSchema,
     output: z.object({ ok: z.literal(true) }),
   },
   "chat.markUs": {

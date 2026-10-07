@@ -49,6 +49,7 @@ function setup(fake: FakeSlack) {
     tell: async () => "ask",
     lane: async () => undefined,
     deleteWebhook: async () => undefined,
+    saveUserToken: async () => undefined,
   });
   return { hub, chat, info };
 }
@@ -121,6 +122,7 @@ it("joins a public channel then links it through the New chats path, and never j
     tell: async () => "ask",
     lane: async () => undefined,
     deleteWebhook: async () => undefined,
+    saveUserToken: async () => undefined,
   });
 
   const row = await chat.channelLink("slack-acme", "C2PUB", "acme");

@@ -1,6 +1,8 @@
-import type { ChatPermissionState, OrgView } from "@majhi/shared";
+import type { ChatChannels, ChatPermissionState, OrgView } from "@majhi/shared";
 import { Check, Lock, Minus, X } from "lucide-react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { CopyButton } from "@/features/room/copy-button";
@@ -11,6 +13,7 @@ import {
   useRefreshChannels,
   useUnignoreChat,
   useUnlinkChat,
+  useUserToken,
 } from "@/lib/client-queries";
 import { describeError } from "@/lib/errors";
 
@@ -41,6 +44,74 @@ function Row({
   );
 }
 
+/** The owner's own token, so a chat can be set to send as them. Shows the exact step to get it, and checks it on save. */
+function YourToken({ connection, data }: { connection: string; data: ChatChannels }) {
+  const toast = useToast();
+  const save = useUserToken(connection);
+  const [open, setOpen] = useState(false);
+  const [token, setToken] = useState("");
+  const you = data.you;
+  const asking = open || you.state === "refused";
+  function submit() {
+    save.mutate(
+      { userToken: token.trim() },
+      {
+        onError: (error) =>
+          toast("Slack did not take the token", { detail: describeError(error), tone: "error" }),
+        onSuccess: () => {
+          setToken("");
+          setOpen(false);
+        },
+      },
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm text-fg-faint">Your token</span>
+        {you.state === "ok" ? (
+          <span className="text-sm text-fg-soft">{you.name}</span>
+        ) : (
+          <span className="text-sm text-fg-faint">Not saved</span>
+        )}
+        <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
+          {you.state === "ok" ? "Replace" : "Add"}
+        </Button>
+      </div>
+      {you.state === "refused" && (
+        <p className="rounded-lg border border-amber-line bg-amber-wash px-2 py-1.5 text-sm text-fg-soft">
+          {you.fix}
+        </p>
+      )}
+      {asking && (
+        <div className="flex flex-col gap-1.5 rounded-lg border border-line px-2 py-1.5">
+          <ol className="m-0 flex list-decimal flex-col gap-0.5 pl-4 text-sm text-fg-soft">
+            <li>In the Slack app open OAuth & Permissions.</li>
+            <li>
+              Under User Token Scopes add chat:write, channels:history, groups:history, im:history and
+              mpim:history.
+            </li>
+            <li>Press Reinstall to Workspace.</li>
+            <li>Copy the User OAuth Token (it starts with xoxp-) and paste it here.</li>
+          </ol>
+          <div className="flex items-center gap-1.5">
+            <Input
+              type="password"
+              aria-label="User OAuth Token"
+              placeholder="xoxp-"
+              value={token}
+              onChange={(event) => setToken(event.target.value)}
+            />
+            <Button size="sm" disabled={token.trim() === "" || save.isPending} onClick={submit}>
+              Save
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** The Slack workspace's channels: link one to a workspace without going to Slack, or ignore it. */
 export function SlackChannels({ connection, orgs }: { connection: string; orgs: readonly OrgView[] }) {
   const toast = useToast();
@@ -65,7 +136,9 @@ export function SlackChannels({ connection, orgs }: { connection: string; orgs: 
   const fail = (what: string) => ({
     onError: (error: unknown) => toast(what, { detail: describeError(error), tone: "error" }),
   });
-  const missing = data.permissions.filter((p) => p.state === "missing").map((p) => p.scope);
+  const missing = data.permissions
+    .filter((p) => p.state === "missing")
+    .map((p) => (p.as === "you" ? `${p.scope} (user)` : p.scope));
   const lacking = missing.length > 0 || data.socketMode === "missing";
   async function copyManifest() {
     try {
@@ -77,6 +150,7 @@ export function SlackChannels({ connection, orgs }: { connection: string; orgs: 
   }
   return (
     <div className="flex flex-col gap-2">
+      <YourToken connection={connection} data={data} />
       <div className="flex flex-col gap-1.5">
         <span className="text-sm text-fg-faint">Permissions</span>
         {lacking && (
@@ -111,7 +185,7 @@ export function SlackChannels({ connection, orgs }: { connection: string; orgs: 
         )}
         <ul aria-label="Permissions" className="m-0 flex list-none flex-col gap-1 p-0">
           {data.permissions.map((p) => (
-            <Row key={p.scope} state={p.state} name={p.scope} note={p.use} />
+            <Row key={`${p.as ?? "bot"}:${p.scope}`} state={p.state} name={p.scope} note={p.use} />
           ))}
           <Row state={data.socketMode} name="Socket Mode" note="Lets majhi read without a public address" />
           <Row

@@ -149,6 +149,10 @@ export class ClientRooms {
     return this.patch(room, { archived: true });
   }
 
+  sendAs(id: string, sendAs: "bot" | "me"): RoomRow {
+    return this.patch(this.room(id), { sendAs });
+  }
+
   holder(id: string, holder: ChatHolder): RoomRow {
     return this.patch(this.room(id), { holder });
   }
@@ -172,6 +176,7 @@ export class ClientRooms {
         ...(r.chat.people === undefined ? {} : { people: r.chat.people }),
         ...(r.org === undefined ? {} : { org: r.org }),
         holder: r.chat.holder,
+        sendAs: r.chat.sendAs,
         ...(r.chat.trouble === undefined ? {} : { trouble: r.chat.trouble }),
         ...(r.chat.archived === true ? { archived: true } : {}),
         ...(conversation === undefined

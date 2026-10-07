@@ -2426,6 +2426,26 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       const boss = await lanes.boss();
       return org === undefined || boss === undefined ? undefined : { boss, org };
     },
+    saveUserToken: async (connection, userToken, meta) => {
+      const found = Object.entries(connectionScopes(await config.sections()))
+        .flatMap(([, entry]) => Object.entries(entry.connections ?? {}))
+        .find(([id]) => id === connection)?.[1];
+      if (found === undefined) throw new UserError("That chat connection does not exist.", 404);
+      // The token's entry is added to the connection's variables, keeping every secret already there.
+      const kept = Object.fromEntries(
+        Object.entries(found.vars ?? {}).map(([name, entry]) => [name, { kind: entry.kind }] as const),
+      );
+      await connections.update(
+        { id: connection, vars: { ...kept, SLACK_USER_TOKEN: { kind: "secret" as const } } },
+        "chat.userToken",
+        meta,
+      );
+      await connections.setSecret(
+        { id: connection, field: "SLACK_USER_TOKEN", list: "vars", value: userToken },
+        "chat.userToken",
+        meta,
+      );
+    },
     deleteWebhook: async (connection) => {
       const token = await connectionSecret(connection, "TELEGRAM_BOT_TOKEN");
       if (token === undefined) throw new UserError("The bot token is not saved.", 409);
