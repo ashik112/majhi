@@ -59,6 +59,8 @@ export interface SentMessage {
   text: string;
   thread_ts?: string;
   ts: string;
+  /** Whose token posted it. */
+  by: "bot" | "owner";
 }
 
 interface Failure {
@@ -69,6 +71,8 @@ interface Failure {
 
 export class FakeSlack {
   static readonly BOT_TOKEN = "xoxb-000000000000-fake-token-aaaaaaaaaaaaaaaaaaaa";
+  /** The owner's User OAuth Token: it can call `auth.test` and `chat.postMessage`, and posts as the owner. */
+  static readonly USER_TOKEN = "xoxp-000000000000-000000000000-fake-user-aaaaaaaaaaaaaaaa";
   static readonly APP_TOKEN = "xapp-1-A000000-fake-token-aaaaaaaaaaaaaaaaaaaaaaaa";
 
   readonly team = { id: "T01ACME", name: "Acme" };
@@ -86,6 +90,14 @@ export class FakeSlack {
     "channels:join",
     "chat:write",
   ];
+  /** The user scopes the owner's token holds. */
+  userScopes: string[] = ["chat:write", "channels:history", "groups:history", "im:history", "mpim:history"];
+  /** The workspace the owner's token belongs to; another id is a token of a different workspace. */
+  userTeam: string | undefined;
+  /** While false, Slack refuses the owner's token (`invalid_auth`), as after it was revoked. */
+  userTokenValid = true;
+  /** The owner: their user token posts as them. */
+  readonly owner = { user: "U0OWNER", name: "owner" };
   /** While true, answers carry no `x-oauth-scopes`: what the panel sees when Slack does not say what a token holds. */
   hideScopes = false;
   readonly bot = { user: "U0BOT", bot_id: "B0BOT", name: "majhi" };
@@ -111,6 +123,12 @@ export class FakeSlack {
   private port = 0;
 
   constructor() {
+    this.users.set(this.owner.user, {
+      id: this.owner.user,
+      name: this.owner.name,
+      real_name: "Owner Acme",
+      team_id: this.team.id,
+    });
     this.users.set(this.bot.user, {
       id: this.bot.user,
       name: this.bot.name,
@@ -398,26 +416,38 @@ export class FakeSlack {
         );
       return send(failure.status ?? 200, { ok: false, error: failure.error ?? "internal_error" });
     }
+    const user = token === FakeSlack.USER_TOKEN;
     const wanted = method === "apps.connections.open" ? FakeSlack.APP_TOKEN : FakeSlack.BOT_TOKEN;
-    if (token !== wanted) return send(200, { ok: false, error: "invalid_auth" });
+    const userMethod = method === "auth.test" || method === "chat.postMessage";
+    if (user ? !(this.userTokenValid && userMethod) : token !== wanted)
+      return send(200, { ok: false, error: "invalid_auth" });
+    const scopes = user ? this.userScopes : this.scopes;
     const needs = SCOPE_OF_METHOD[method];
-    if (needs !== undefined && !this.scopes.includes(needs))
+    if (needs !== undefined && !scopes.includes(needs))
       return send(
         200,
-        { ok: false, error: "missing_scope", needed: needs, provided: this.scopes.join(",") },
-        this.scopeHeader(),
+        { ok: false, error: "missing_scope", needed: needs, provided: scopes.join(",") },
+        this.scopeHeader(user),
       );
-    return send(200, this.answer(method, params), this.scopeHeader());
+    return send(200, this.answer(method, params, user), this.scopeHeader(user));
   }
 
-  private scopeHeader(): Record<string, string> {
-    return this.hideScopes ? {} : { "x-oauth-scopes": this.scopes.join(",") };
+  private scopeHeader(user = false): Record<string, string> {
+    return this.hideScopes ? {} : { "x-oauth-scopes": (user ? this.userScopes : this.scopes).join(",") };
   }
 
-  private answer(method: string, params: Record<string, string>): Record<string, unknown> {
+  private answer(method: string, params: Record<string, string>, user = false): Record<string, unknown> {
     const fail = (error: string) => ({ ok: false, error });
     switch (method) {
       case "auth.test":
+        if (user)
+          return {
+            ok: true,
+            team_id: this.userTeam ?? this.team.id,
+            team: this.team.name,
+            user_id: this.owner.user,
+            user: this.owner.name,
+          };
         return {
           ok: true,
           team_id: this.team.id,
@@ -536,7 +566,7 @@ export class FakeSlack {
       }
       case "chat.postMessage": {
         // Like Slack, a token without chat:write is refused and told what it lacks.
-        if (!this.scopes.includes("chat:write"))
+        if (!(user ? this.userScopes : this.scopes).includes("chat:write"))
           return { ok: false, error: "missing_scope", needed: "chat:write", provided: this.scopes.join(",") };
         const channel = this.channels.get(params.channel ?? "");
         if (channel === undefined) return fail("channel_not_found");
@@ -545,8 +575,8 @@ export class FakeSlack {
         const stored: StoredMessage = {
           channel: channel.id,
           ts: this.nextTs(),
-          user: this.bot.user,
-          bot_id: this.bot.bot_id,
+          user: user ? this.owner.user : this.bot.user,
+          ...(user ? {} : { bot_id: this.bot.bot_id }),
           text: params.text ?? "",
           ...(params.thread_ts === undefined ? {} : { thread_ts: params.thread_ts }),
         };
@@ -555,6 +585,7 @@ export class FakeSlack {
           channel: channel.id,
           text: stored.text,
           ts: stored.ts,
+          by: user ? ("owner" as const) : ("bot" as const),
           ...(params.thread_ts === undefined ? {} : { thread_ts: params.thread_ts }),
         });
         // Slack tells the app of its own messages too.

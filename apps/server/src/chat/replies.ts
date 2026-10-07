@@ -291,7 +291,7 @@ export class ClientReplies {
   /** The same reply with some fields changed. */
   private replace(
     item: ReplyItem,
-    change: Partial<Pick<ReplyItem, "text" | "state" | "result" | "external">>,
+    change: Partial<Pick<ReplyItem, "text" | "state" | "result" | "external" | "as">>,
   ): void {
     const { id: _id, task, seq: _seq, at: _at, mentions: _m, ...payload } = item;
     const room = this.deps.store.client.room(task);
@@ -332,6 +332,7 @@ export class ClientReplies {
             chat: room.chat.chat,
             ...(reply?.thread === undefined ? {} : { thread: reply.thread }),
             ...(reply?.replyTo === undefined ? {} : { replyTo: reply.replyTo }),
+            ...(room.chat.sendAs === "me" ? { asYou: true } : {}),
           },
           { body: parseBody(clean), people: this.people(room) },
         );
@@ -343,6 +344,7 @@ export class ClientReplies {
               chat: room.chat.chat,
               message: sent.message,
             },
+            ...(sent.as === undefined ? {} : { as: sent.as }),
           });
         }
         return { ok: true, detail: `Sent to ${room.chat.title}.` };
