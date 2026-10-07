@@ -193,7 +193,6 @@ export function DeployPlanCard({
               className="ml-4 flex flex-wrap items-center gap-2 rounded-md border border-amber-line bg-amber-wash px-2.5 py-1.5 text-sm"
             >
               <span className="font-medium text-amber">Migration</span>
-              {view.why !== undefined && <span className="font-mono text-xs text-fg">{view.why}</span>}
               {view.note !== undefined && <span className="text-fg-muted">{view.note}</span>}
               <span className="flex-1" />
               <Button

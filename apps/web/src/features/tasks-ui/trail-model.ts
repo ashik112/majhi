@@ -43,8 +43,6 @@ const FAILED_STEP: Record<HandoffStepId, string> = {
   review: "review failed",
 };
 
-const capital = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
-
 const REPLY_WORD = {
   done: "sent",
   working: "sending",
@@ -106,7 +104,7 @@ function stepView(step: TrailStep, index: number): StepView {
     case "ship":
       return { ...base, label: SHIP_STEP_LABEL[step.step], word: "waits for you", waiting };
     case "deploy":
-      return { ...base, label: capital(step.env), word: DEPLOY_STATE_WORD[step.state], waiting };
+      return { ...base, label: step.env, word: DEPLOY_STATE_WORD[step.state], waiting };
     case "reply":
       return { ...base, label: "Reply", word: REPLY_WORD[step.tone], waiting };
   }
