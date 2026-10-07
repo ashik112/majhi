@@ -336,6 +336,14 @@ export function needsOwner(reason: FailureReason): boolean {
   return !TRANSIENT_FAILURES.has(reason);
 }
 
+/**
+ * Whether a connection is failing in a way the owner has to fix: failed, or worked once and fails now, and the
+ * fix is theirs. The one rule behind every count of failing connections.
+ */
+export function connectionFailing(health: ConnectionHealth | undefined): boolean {
+  return (health?.state === "failed" || health?.state === "needs-attention") && needsOwner(health.reason);
+}
+
 /** The single lamp of a state, for rows and the sidebar: one word each. */
 export function healthLine(health: ConnectionHealth | undefined): { word: string; line: string } {
   if (health === undefined) return { word: "Checking", line: "Not checked yet" };

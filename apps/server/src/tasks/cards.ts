@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
-import type { Actor, CardOutcome, CardState, PausedReason, RoomItem, Task, TaskId } from "@majhi/shared";
+import {
+  type Actor,
+  type CardOutcome,
+  type CardState,
+  type PausedReason,
+  type RoomItem,
+  SHIP_FAILED_PREFIX,
+  type Task,
+  type TaskId,
+} from "@majhi/shared";
 import type { RoomService } from "../room/service.ts";
 import type { RoomPayload, Store } from "../store/index.ts";
 
@@ -105,6 +114,20 @@ export class OwnerCards {
       ...(card.lead === undefined ? {} : { lead: card.lead }),
       ...(card.why === undefined ? {} : { why: card.why }),
       ready: line,
+      state: "pending",
+    });
+    return true;
+  }
+
+  /** The review card says the captain tried to ship the task and failed, and why. False when no review card waits. */
+  shipFailed(task: string, error: string): boolean {
+    const card = this.pending(task, "review");
+    if (card?.type !== "review") return false;
+    this.deps.room.post(task as TaskId, card.id, {
+      type: "review",
+      ...(card.lead === undefined ? {} : { lead: card.lead }),
+      why: `${SHIP_FAILED_PREFIX}${error}`.slice(0, 400),
+      ...(card.ready === undefined ? {} : { ready: card.ready }),
       state: "pending",
     });
     return true;

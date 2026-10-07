@@ -6,6 +6,7 @@ import {
   DEFAULT_LEAD_START,
   type DiagramSpec,
   DiagramSpecSchema,
+  isAutonomyChat,
   TaskDockerRequestSchema,
   type TeamPlan,
   TeamPlanSchema,
@@ -147,6 +148,8 @@ const ROOM_TOOLS: Tool[] = [
 
 /** The tools a chat is offered from majhi-room. */
 const DRAWING_TOOLS: ReadonlySet<string> = new Set(["show_diagram"]);
+/** What the captain's lanes and chats may also use: a question to the owner is a card in Needs you. */
+const CAPTAIN_CHAT_TOOLS: ReadonlySet<string> = new Set([...DRAWING_TOOLS, "ask"]);
 
 // ---------------------------------------------------------------------------
 // majhi-tasks (5.4a, 5.10)
@@ -478,19 +481,25 @@ function roomServer(caller: ToolCaller, deps: RoomMcpDeps): Server {
   const server = new Server({ name: ROOM_SERVER_NAME, version: "1" }, { capabilities: { tools: {} } });
   // Only the lead records the plan, so only the lead is offered the tool.
   const isLead = () => deps.store.tasks.get(caller.task)?.team[0] === caller.agent;
-  // A chat (the owner's chats and the captain's threads) has no team: it is offered the drawing tools only.
-  const isChat = () => deps.store.tasks.get(caller.task)?.kind === "chat";
-  const offered = () =>
-    isChat()
-      ? ROOM_TOOLS.filter((t) => DRAWING_TOOLS.has(t.name))
-      : ROOM_TOOLS.filter(
-          (t) =>
-            (t.name !== "code_graph" || deps.codeGraph !== undefined) &&
-            (t.name !== "record_plan" || isLead()),
-        );
-  server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: listed(offered(), false) }));
+  // A chat (the owner's chats and the captain's threads) has no team: it is offered the drawing tools only,
+  // and the captain's lanes and chats also the ask tool, so its question reaches Needs you.
+  const chat = () => deps.store.tasks.get(caller.task);
+  const isChat = () => chat()?.kind === "chat";
+  const offered = async () => {
+    if (isChat()) {
+      const task = chat();
+      const captain =
+        task !== undefined && (isAutonomyChat(task) || (await deps.config.sections()).boss === caller.agent);
+      return ROOM_TOOLS.filter((t) => (captain ? CAPTAIN_CHAT_TOOLS : DRAWING_TOOLS).has(t.name));
+    }
+    return ROOM_TOOLS.filter(
+      (t) =>
+        (t.name !== "code_graph" || deps.codeGraph !== undefined) && (t.name !== "record_plan" || isLead()),
+    );
+  };
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: listed(await offered(), false) }));
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<Result> => {
-    const tool = offered().find((t) => t.name === request.params.name);
+    const tool = (await offered()).find((t) => t.name === request.params.name);
     if (tool === undefined) return fail(`There is no tool ${request.params.name}.`);
     const parsed = tool.input.safeParse(request.params.arguments ?? {});
     if (!parsed.success) return fail(`Invalid arguments:\n${formatIssues(parsed.error).join("\n")}`);

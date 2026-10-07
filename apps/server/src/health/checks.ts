@@ -155,18 +155,28 @@ export function connectionCheck(view: ConnectionView): Check {
   if (h?.state === "failed" || h?.state === "needs-attention") {
     // The same sentence the Connections page shows, and the same next step.
     const action = failureAction(view.type, h.reason);
+    const transient = TRANSIENT_FAILURES.has(h.reason);
     return {
       ...base,
-      status: "fail",
+      status: transient ? "warn" : "fail",
       detail: failureSentence(view),
       checkedAt: h.at,
-      ...(action === "check" ? {} : { fix: { label: FAILURE_ACTION_LABEL[action] } }),
+      ...(transient || action === "check" ? {} : { fix: { label: FAILURE_ACTION_LABEL[action] } }),
     };
   }
   const result = view.lastTest;
   if (result !== undefined) {
     if (!result.ok) {
-      return { ...base, status: "fail", detail: result.detail, checkedAt: result.at };
+      const reason = result.failure?.reason;
+      const transient = reason !== undefined && TRANSIENT_FAILURES.has(reason);
+      const action = reason === undefined ? "reconnect" : failureAction(view.type, reason);
+      return {
+        ...base,
+        status: transient ? "warn" : "fail",
+        detail: result.detail,
+        checkedAt: result.at,
+        ...(transient || action === "check" ? {} : { fix: { label: FAILURE_ACTION_LABEL[action] } }),
+      };
     }
     const warning = result.warnings[0];
     return warning === undefined
@@ -224,7 +234,7 @@ async function checkMajhiHome(dir: string, home: string): Promise<Check> {
     if (errorCode(err) === "ENOENT") {
       return {
         ...base,
-        status: "warn",
+        status: "pass",
         detail: `${shown} does not exist yet. majhi creates it on the first save.`,
         fix: { label: "Create folder" },
       };
@@ -424,7 +434,7 @@ async function checkTasksDir(state: ConfigState, home: string): Promise<Check[]>
   return [
     {
       ...base,
-      status: "warn",
+      status: "pass",
       detail: `${shown} does not exist yet. majhi creates it with your first task.`,
       fix: { label: "Create folder" },
     },

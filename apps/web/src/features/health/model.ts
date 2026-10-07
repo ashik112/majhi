@@ -62,6 +62,11 @@ export function checksHeadline(checks: readonly CheckRow[]): string {
   return open === 1 ? "1 check to fix" : `${open} checks to fix`;
 }
 
+/** The checks that need the owner: failures only. A warning is a note, and does not count. */
+export function failedChecks(checks: readonly CheckRow[]): number {
+  return checks.filter((c) => levelOf(c) === "fail").length;
+}
+
 /** The checks that are not passing, failures first: always shown open, with their fixes. */
 export function openChecks(checks: readonly CheckRow[]): CheckRow[] {
   const rank = { fail: 0, warn: 1, pass: 2 } as const;
@@ -75,8 +80,9 @@ export function passingChecks(checks: readonly CheckRow[]): CheckRow[] {
 
 /** "Checked 31: 28 ok, 3 need you". */
 export function runSummary(checks: readonly CheckRow[]): string {
-  const need = checks.filter((c) => levelOf(c) !== "pass").length;
-  return `Checked ${checks.length}: ${checks.length - need} ok, ${need} need you`;
+  const need = failedChecks(checks);
+  const notes = checks.filter((c) => levelOf(c) === "warn").length;
+  return `Checked ${checks.length}: ${checks.length - need - notes} ok, ${need} need you${notes > 0 ? `, ${notes} to know` : ""}`;
 }
 
 /**

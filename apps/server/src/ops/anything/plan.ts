@@ -282,11 +282,21 @@ export function rulesPlan(
   accounts?: AccountList,
 ): Core | undefined {
   const t = text.trim();
+  const url = URL_RE.exec(t)?.[0].replace(/[.,;]+$/, "");
+  const th = thresholdOf(t);
+  // An address with a JSON path is a number to read there, whatever else the sentence mentions.
+  const jsonPath = /\bjson\s?path\s*[:=]?\s*([\w.[\]-]+)/i.exec(t)?.[1];
+  if (url !== undefined && jsonPath !== undefined) {
+    return {
+      name: `${new URL(url).hostname} ${jsonPath}`,
+      spec: WatchCheckSchema.parse({ kind: "website", url, jsonPath }),
+      condition: cond(t, th, { type: "above", value: 90, forMin: 0 }),
+      everyMin: everyOf(t, 5),
+    };
+  }
   const event = eventPlan(t, tasks, accounts);
   if (event !== undefined) return event;
   const low = t.toLowerCase();
-  const url = URL_RE.exec(t)?.[0].replace(/[.,;]+$/, "");
-  const th = thresholdOf(t);
   const every = (n: number) => everyOf(t, n);
 
   const priceWords =

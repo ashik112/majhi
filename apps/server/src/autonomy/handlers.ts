@@ -22,7 +22,7 @@ type AutonomyCommand =
 function ownerOnly(ctx: CommandContext): void {
   if (ctx.meta.actor.kind === "agent") {
     throw new UserError(
-      `${ctx.command} is the owner's. Autonomous mode never changes its own switch or limits; the owner does it on ${pageRef("captain")}${ctx.command === "autonomy.configure" ? ` or ${pageRef("limits")}` : ""}.`,
+      `${ctx.command} is the owner's. Auto-pilot never changes its own switch or limits; the owner does it on ${pageRef("captain")}${ctx.command === "autonomy.configure" ? ` or ${pageRef("limits")}` : ""}.`,
       409,
     );
   }

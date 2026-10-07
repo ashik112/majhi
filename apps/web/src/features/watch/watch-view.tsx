@@ -212,6 +212,8 @@ export function WatchView() {
           incident={incidents.find((i) => i.id === w.incident)}
           now={now}
           workspace={nameOf(w.org)}
+          phoneOn={data?.phone.state === "on"}
+          onSetUpPhone={() => setAlerts(true)}
           onEdit={() => setForm({ watch: { id: w.id, org: w.org, def: w.def } })}
           onBack={back}
         />

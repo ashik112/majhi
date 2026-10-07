@@ -37,7 +37,7 @@ export function Stuck({
       ) : stuck === undefined ? (
         <RowsSkeleton rows={2} height={32} />
       ) : stuck.length === 0 ? (
-        <p className="m-0 text-sm text-fg-muted">Nothing stuck. Every autonomous task moved recently.</p>
+        <p className="m-0 text-sm text-fg-muted">Nothing stuck. Every Auto-pilot task moved recently.</p>
       ) : (
         <ul className="m-0 max-h-52 min-h-0 flex-1 list-none overflow-y-auto overscroll-contain p-0">
           {stuck.map((s) => (

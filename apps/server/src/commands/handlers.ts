@@ -37,7 +37,7 @@ import { connectionDir } from "../connections/service.ts";
 import { conversationsHandlers } from "../conversations/handlers.ts";
 import { environmentsProblem } from "../deploy/rails.ts";
 import { editorPath } from "../editor/allowed.ts";
-import { UserError } from "../errors.ts";
+import { errorMessage, UserError } from "../errors.ts";
 import { findingsHandlers } from "../findings/handlers.ts";
 import { isDirectory } from "../fs.ts";
 import { bitbucketKeyFingerprints, fingerprintOfPublicKey, type KeyOwner } from "../git/keyOwners.ts";
@@ -1285,8 +1285,23 @@ export function createHandlers({
       answerCard(services, ctx, input, () =>
         services.tasks.answerQuestion(input.task, input.item, input.choice),
       ),
-    "room.answerAsk": (input, ctx) =>
-      answerCard(services, ctx, input, () => services.tasks.answerAsk(input.task, input.item, input.answers)),
+    "room.answerAsk": async (input, ctx) => {
+      const answer = () => services.tasks.answerAsk(input.task, input.item, input.answers);
+      // The owner's Undo time is kept here: closing the tab does not lose the answer.
+      if (input.holdMs !== undefined && ctx.meta.actor.kind !== "agent") {
+        services.inbox.held.hold(`ask:${input.task}:${input.item}`, input.holdMs, answer, (error) =>
+          services.room.post(input.task as TaskId, `warn:${randomUUID()}`, {
+            type: "system",
+            level: "warn",
+            text: `Could not send your answer: ${errorMessage(error)}`,
+          }),
+        );
+        const item = services.room.get(input.task, input.item);
+        if (item === undefined) throw new UserError(`There is no card ${input.item} in ${input.task}.`, 404);
+        return { item };
+      }
+      return answerCard(services, ctx, input, answer);
+    },
     "secrets.list": () => services.secretService.list(),
     "secrets.save": (input) => services.secretService.save(input),
     "secrets.remove": async (input) => {

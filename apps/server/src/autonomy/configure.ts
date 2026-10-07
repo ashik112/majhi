@@ -125,9 +125,9 @@ export function describePatch(patch: AutonomyPatch, sections: Pick<ConfigSection
   if (patch.pick?.size !== undefined) parts.push(`the task size it takes to ${limitWord(patch.pick.size)}`);
   const lines = [
     ...(own.length === 0 ? [] : [`set ${own.join(", ")}`]),
-    ...(parts.length === 0 ? [] : [`set autonomous mode's ${parts.join(", ")}`]),
+    ...(parts.length === 0 ? [] : [`set Auto-pilot's ${parts.join(", ")}`]),
   ];
-  return lines.length === 0 ? "changed nothing in autonomous mode" : lines.join("; ");
+  return lines.length === 0 ? "changed nothing in Auto-pilot" : lines.join("; ");
 }
 
 function ruleWord(key: "ships" | "hours" | "freeze" | "tz" | "branches" | "providers" | "account"): string {

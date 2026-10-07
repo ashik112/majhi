@@ -172,6 +172,8 @@ export interface CaptainPorts {
   resolveShip(org: string, task: string, reason: string): Promise<void>;
   /** Puts the captain's line on the task's review card: ready to ship, the owner decides. */
   shipReady(org: string, task: string, line: string): Promise<void>;
+  /** Puts "the captain tried to ship it and failed" on the task's review card. */
+  shipFailed(org: string, task: string, error: string): Promise<void>;
   /**
    * Whether a task that passed the ship checks can go to its host as a merge request, and where.
    * Not ok: no remote or no MR token, with the one line why.

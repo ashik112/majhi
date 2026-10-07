@@ -123,7 +123,7 @@ async function planConfigure(world: ProposalWorld, input: unknown, lane: string)
   try {
     next = mergePatch(current, patch);
   } catch {
-    return { kind: "refuse", error: "That change is not valid for autonomous mode's settings." };
+    return { kind: "refuse", error: "That change is not valid for Auto-pilot's settings." };
   }
   const { rows, lines, other } = orgChanges(current, next, lane);
   const gone = patch.orgs?.[lane] === null && lines.length === 0 && current.orgs[lane] !== undefined;
@@ -154,14 +154,14 @@ function planStart(world: ProposalWorld, input: unknown): Planned {
   const parsed = AutonomyStartInputSchema.safeParse(input);
   if (!parsed.success) return { kind: "refuse", error: "Invalid input for autonomy.start." };
   if (world.mode() === "on" && !parsed.data.resumeStopped) {
-    return { kind: "refuse", error: "Autonomous is already on." };
+    return { kind: "refuse", error: "Auto-pilot is already on." };
   }
   return {
     kind: "propose",
-    summary: "Turn Autonomous on",
+    summary: "Turn Auto-pilot on",
     basis: startBasis(world),
     changes: [
-      `Autonomous: ${world.mode() === "on" ? "On" : "Off"} → On`,
+      `Auto-pilot: ${world.mode() === "on" ? "On" : "Off"} → On`,
       ...(parsed.data.resumeStopped ? ["Resume the tasks it paused"] : []),
     ],
   };
@@ -319,4 +319,40 @@ export async function proposalBasis(
     default:
       return undefined;
   }
+}
+
+/**
+ * What a pending proposal is about: two proposals with the same command and target in one task are one card.
+ * Undefined for a command that has no target to share.
+ */
+export function proposalTarget(command: string, input: unknown): string | undefined {
+  if (typeof input !== "object" || input === null) return undefined;
+  const record = input as Record<string, unknown>;
+  switch (command) {
+    case "autonomy.configure":
+      return Object.keys((record.orgs ?? {}) as object).join(",");
+    case "projects.setEnvironments":
+      return typeof record.project === "string" ? record.project : undefined;
+    case "chat.settingsSet":
+      return typeof record.room === "string" ? record.room : undefined;
+    default:
+      return undefined;
+  }
+}
+
+function deepMerge(older: unknown, newer: unknown): unknown {
+  const plain = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null && !Array.isArray(v);
+  if (!plain(older) || !plain(newer)) return newer;
+  const out: Record<string, unknown> = { ...older };
+  for (const [k, v] of Object.entries(newer)) out[k] = k in older ? deepMerge(older[k], v) : v;
+  return out;
+}
+
+/**
+ * One call out of two for the same target. A settings patch keeps both changes, the newer one winning where
+ * they touch the same field; the other commands set the whole value, so the newer call stands.
+ */
+export function mergeProposalInput(command: string, older: unknown, newer: unknown): unknown {
+  return command === "autonomy.configure" ? deepMerge(older, newer) : newer;
 }

@@ -20,7 +20,7 @@ export const NOTIFY_KIND_LABEL: Record<NotifyKind, string> = {
   review: "Ready to ship",
   stopped: "Stopped or stuck",
   update: "Update failed",
-  autonomy: "The captain and autonomous mode",
+  autonomy: "The captain and Auto-pilot",
   brief: "The morning brief",
 };
 

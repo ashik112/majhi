@@ -75,7 +75,7 @@ export async function checkpointTurn(
     room.post(task.id, IDENTITY_HINT_ID, {
       type: "system",
       level: "info",
-      text: `Commits are authored as ${DEFAULT_IDENTITY.name} <${DEFAULT_IDENTITY.email}>. To use your own name, set a commit identity for ${identity.orgName} in Orgs.`,
+      text: `Commits are authored as ${DEFAULT_IDENTITY.name} <${DEFAULT_IDENTITY.email}>. To use your own name, set a commit identity for ${identity.orgName} in Workspaces.`,
     });
   }
   return warnings;
