@@ -17,7 +17,7 @@ import type { Dispatch } from "../commands/dispatch.ts";
 import type { ConfigService } from "../config/service.ts";
 import type { DecisionService } from "../decisions/service.ts";
 import type { FindingsService } from "../findings/service.ts";
-import { defaultBranch, git } from "../git/git.ts";
+import { defaultBranch } from "../git/git.ts";
 import { shipReadiness } from "../handoff/ready.ts";
 import type { HandoffService } from "../handoff/service.ts";
 import type { MemoryService } from "../memory/service.ts";
@@ -26,6 +26,7 @@ import { HOST_LABEL, type MrService } from "../mrs/service.ts";
 import type { RoomService } from "../room/service.ts";
 import type { IdleWatch } from "../rooms/idle-watch.ts";
 import type { RepoScanner } from "../scan/scanner.ts";
+import { basesOf, branchTip, headsOf } from "../ship/heads.ts";
 import type { ShipPlanner } from "../ship/plan.ts";
 import type { Store } from "../store/index.ts";
 import { captainAnsweredLine } from "../tasks/cards.ts";
@@ -144,9 +145,6 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
     );
   };
 
-  const branchTip = async (source: string, branch: string) =>
-    (await git(source, ["rev-parse", "--verify", `refs/heads/${branch}`]).catch(() => "")).trim();
-
   const questionOf = (task: string, item: RoomItem): QuestionCard | undefined => {
     switch (item.type) {
       case "choice":
@@ -219,13 +217,12 @@ export function captainWorld(deps: WorldDeps): CaptainPorts {
         if (summary.status !== "review") continue;
         const task = store.tasks.get(summary.id);
         if (task === undefined || task.repos.length === 0) continue;
-        const heads: string[] = [];
-        const bases: string[] = [];
-        for (const r of task.repos) {
-          heads.push(`${r.project}@${(await branchTip(r.source, r.branch)).slice(0, 12)}`);
-          bases.push(`${r.project}@${(await branchTip(r.source, r.base)).slice(0, 12)}`);
-        }
-        out.push({ id: task.id, title: task.title, heads: heads.join(","), bases: bases.join(",") });
+        out.push({
+          id: task.id,
+          title: task.title,
+          heads: await headsOf(task.repos),
+          bases: await basesOf(task.repos),
+        });
       }
       return out;
     },

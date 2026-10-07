@@ -91,6 +91,7 @@ import { rulesProvider } from "./decisions/rules.ts";
 import { DecisionService } from "./decisions/service.ts";
 import { DecideTokens } from "./decisions/tokens.ts";
 import { layaEvalRunner } from "./decisions/uses/weekly-eval.ts";
+import { createNothingDeploys } from "./deploy/nothing.ts";
 import { createDeploy, type DeployTiming, type DeployWorld } from "./deploy/wire.ts";
 import type { ServerEnv } from "./env.ts";
 import { errorMessage, UserError } from "./errors.ts";
@@ -215,6 +216,7 @@ import { openTaskTerminal } from "./terminal/task-terminal.ts";
 import { ToolInstaller } from "./tools/installer.ts";
 import { UploadStore } from "./uploads/store.ts";
 import { readPrices } from "./usage/prices.ts";
+import { localDay } from "./usage/ranges.ts";
 import { UsageRecorder } from "./usage/recorder.ts";
 import { UsageRepo } from "./usage/repo.ts";
 import { UsageService } from "./usage/service.ts";
@@ -1873,12 +1875,23 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
       );
     },
   });
+  // "Nothing deploys" is a line in the captain's log; the ship decision and the deploy service both read it there.
+  const nothingDeploys = createNothingDeploys({
+    repo: captainRepo,
+    day: async (org) => {
+      const autonomy = (await config.settings()).autonomy;
+      return localDay(new Date(), zoneOr(autonomy.orgs[org]?.tz ?? autonomy.tz));
+    },
+    now: () => new Date(),
+  });
   const shipPlanner = new ShipPlanner({
     tasks: { get: (id) => store.tasks.get(id) },
     settings: async () => (await config.settings()).autonomy,
     mode: () => autonomy.mode(),
     areas: areasReader,
     environments: async (id) => (await projects.get(id).catch(() => undefined))?.deploy ?? [],
+    needsDeployPlan: async (task) =>
+      (await deployWorld.ports.needsPlan(task.org ?? PRIVATE, task.id)) !== undefined,
     viaMergeRequests: (task) => mrs.viaMergeRequests(task),
     zone: zoneOr,
     now: () => new Date(),
@@ -1891,6 +1904,7 @@ export function createServices(env: ServerEnv, options: ServiceOptions = {}): Se
     projects,
     tasks,
     ship: shipPlanner,
+    nothing: nothingDeploys,
     credentials: {
       connections: { find: (id) => connections.find(id) },
       secrets,

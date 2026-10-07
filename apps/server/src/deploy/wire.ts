@@ -23,6 +23,7 @@ import { type CredentialDeps, createDeployCredentials } from "./credentials.ts";
 import { deployGit } from "./git.ts";
 import { createGitHubProvider } from "./github.ts";
 import { createGitLabProvider } from "./gitlab.ts";
+import type { NothingDeploys } from "./nothing.ts";
 import { DeployPlanner } from "./plan.ts";
 import { type DeployProject, DeployService } from "./service.ts";
 import { createSshProvider } from "./ssh.ts";
@@ -54,6 +55,8 @@ export interface DeployWorldDeps {
   projects: ProjectService;
   tasks: Pick<TaskService, "create" | "get">;
   ship: Pick<ShipPlanner, "plan">;
+  /** The captain's answer "nothing deploys", kept in its log. */
+  nothing: NothingDeploys;
   credentials: CredentialDeps;
   checksConfigured: (project: string) => boolean;
   tellOwner: (key: string, text: string) => void;
@@ -209,6 +212,10 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     changed: deps.changed,
     onLive: (record) => deps.onLive(record.org),
     taskNote: deps.taskNote,
+    nothingDeploys: async (id, by) => {
+      const task = deps.store.tasks.get(id);
+      if (task !== undefined) await deps.nothing.record(task, by);
+    },
     now,
     sleep,
     ...timing,
@@ -260,7 +267,10 @@ export function createDeploy(deps: DeployWorldDeps): DeployWorld {
     next,
     async needsPlan(_org, id) {
       const task = deps.store.tasks.get(id);
-      if (task === undefined || deps.store.deploys.ofTask(id).length > 0) return undefined;
+      // Planned means it has deploy records, or the plan came back empty for this head of the work.
+      if (task === undefined || deps.store.deploys.ofTask(id).length > 0 || (await deps.nothing.has(task))) {
+        return undefined;
+      }
       const projects: { project: string; environments: string[] }[] = [];
       for (const repo of task.repos) {
         if (repo.writes === false) continue;
