@@ -12,7 +12,8 @@ import { ContainerService } from "./service.ts";
 
 /**
  * The task network against a real Docker daemon: what a task's containers can and cannot reach.
- * Skipped when there is no daemon or no runner image. Throwaway tasks (ZZT-911, ZZT-912) and a
+ * Opt in with MAJHI_DOCKER_TESTS=1 (`pnpm test:docker`): it takes minutes and starts real containers, so the
+ * default run leaves it out. Also skipped when there is no daemon or no runner image. Throwaway tasks (ZZT-911, ZZT-912) and a
  * throwaway runner network; everything is removed at the end, by label.
  */
 
@@ -23,7 +24,7 @@ const A = "ZZT-911";
 const B = "ZZT-912";
 
 const docker = (...args: string[]) => spawnSync("docker", args, { encoding: "utf8" });
-const ready = docker("image", "inspect", RUNNER).status === 0;
+const ready = process.env.MAJHI_DOCKER_TESTS === "1" && docker("image", "inspect", RUNNER).status === 0;
 
 const dir = mkdtempSync(join(tmpdir(), "majhi-net-"));
 const runners = `majhitest-${randomBytes(3).toString("hex")}`;

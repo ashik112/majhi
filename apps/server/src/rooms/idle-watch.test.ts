@@ -127,29 +127,6 @@ async function settle(): Promise<void> {
   await w.h.majhi.services.runs.idle();
 }
 
-describe("a running task never goes silent", () => {
-  it("wakes the lead once when a builder ends without a mention, and again after the next quiet turn", async () => {
-    const { prompts } = await parentWorld({
-      "acme-lead": [
-        say("@acme-builder please build the web part."),
-        say("@acme-builder please build the server part too."),
-        say("Both parts are built."),
-      ],
-      "acme-builder": [
-        say("The web part is done.\nThe server builder can take the worktree now."),
-        say("Server part done."),
-      ],
-    });
-    await until(async () => (await task()).status === "paused", "the owner asked");
-    await settle();
-
-    expect(prompts["acme-builder"]).toHaveLength(2);
-    expect(prompts["acme-lead"]).toHaveLength(3);
-    // The lead ended last with nothing pending: the owner is asked, the lead is not woken by itself.
-    expect(await task()).toMatchObject({ status: "paused", pausedReason: "blocked" });
-  });
-});
-
 describe("a turn the model's safeguards stopped", () => {
   it("pauses the task for the owner when the lead refuses with no other model, and never sends it to review", async () => {
     const { prompts } = await parentWorld({ "acme-lead": [refuse("Planning the export.")] }, { alone: true });

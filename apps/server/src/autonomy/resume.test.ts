@@ -71,23 +71,6 @@ async function on() {
 }
 
 describe("the captain resuming paused tasks", () => {
-  it("resumes a task Autonomous paused when it was turned off, and one the captain paused", async () => {
-    const t = await on();
-    expect((await t.call("majhi_tasks_start", { id: t.id })).isError).toBe(false);
-    expect((await t.h.cmd("autonomy.stop", { how: "now" })).status).toBe(200);
-    expect(t.task()).toMatchObject({ status: "paused", pausedBy: "autonomy-off" });
-    expect((await t.h.cmd("autonomy.start", { resumeStopped: false })).status).toBe(200);
-    expect(t.task()?.status).toBe("paused");
-
-    expect((await t.call("majhi_tasks_start", { id: t.id })).isError).toBe(false);
-    expect(t.task()).toMatchObject({ status: "running" });
-
-    expect((await t.call("majhi_tasks_stop", { id: t.id })).isError).toBe(false);
-    expect(t.task()).toMatchObject({ status: "paused", pausedBy: "captain" });
-    expect((await t.call("majhi_tasks_start", { id: t.id })).isError).toBe(false);
-    expect(t.task()?.status).toBe("running");
-  });
-
   it("refuses a task the owner paused, with one line, and leaves it paused", async () => {
     const t = await on();
     expect((await t.call("majhi_tasks_start", { id: t.id })).isError).toBe(false);

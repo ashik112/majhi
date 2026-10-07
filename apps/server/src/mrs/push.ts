@@ -1,4 +1,4 @@
-import { FETCH_TIMEOUT_MS, GitError, git, gitOk, refIsThere } from "../git/git.ts";
+import { FETCH_TIMEOUT_MS, GitError, git, refIsThere } from "../git/git.ts";
 import { isSshAuthFailure } from "../git/worktrees.ts";
 
 /** Pushing takes longer than the default git timeout. */

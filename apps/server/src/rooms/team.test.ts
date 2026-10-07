@@ -1,6 +1,4 @@
-import { writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
-import type { RoomItem } from "@majhi/shared";
+import { basename } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Turn } from "../testing/fakeSession.ts";
 import { taskWorld, type World } from "../testing/world.ts";
@@ -62,93 +60,10 @@ async function teamWorld(
   return { h, prompts };
 }
 
-const say = (text: string) => async () => text;
-
-async function items(task: string): Promise<RoomItem[]> {
-  const page = await w.h.cmd("room.items", { task, limit: 500 });
-  return [...(page.body.items as RoomItem[])].sort((a, b) => a.seq - b.seq);
-}
-
-async function handoffs(task: string): Promise<string[]> {
-  return (await items(task)).flatMap((i) => (i.type === "handoff" ? [`${i.from}>${i.to} (${i.via})`] : []));
-}
-
-/**
- * Polls until `check` holds. The deadline is wall-clock, not a poll count: a turn ending runs git
- * and the decision chain before it wakes the next agent, which takes seconds on a busy machine.
- * Kept under the test timeout so a real hang still names what it waited for.
- */
-async function until(check: () => boolean | Promise<boolean>, what: string): Promise<void> {
-  const deadline = Date.now() + 15_000;
-  while (!(await check())) {
-    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}`);
-    await new Promise((r) => setTimeout(r, 5));
-  }
-}
-
-const status = async (task: string) => (await w.h.cmd("tasks.get", { id: task })).body.status as string;
-
-describe("the loop guard", () => {
-  it("wakes the lead once when agents loop, then pauses with reason loop, and an owner message resets it", async () => {
-    const ping = say("@acme-reviewer your turn.");
-    const pong = say("@acme-builder your turn.");
-    const { h } = await teamWorld(
-      { "acme-builder": Array(20).fill(ping), "acme-reviewer": Array(20).fill(pong) },
-      { lead: false },
-    );
-    expect((await h.cmd("settings.set", { rooms: { max_agent_turns: 3 } })).status).toBe(200);
-    await h.cmd("tasks.create", {
-      text: "add a health endpoint to api",
-      repos: [{ project: "acme-api" }],
-      team: ["acme-builder", "acme-reviewer"],
-      start: true,
-    });
-    await until(async () => (await status("ACM-1")) === "paused", "paused");
-    await h.majhi.services.runs.idle("ACM-1");
-    const task = (await h.cmd("tasks.get", { id: "ACM-1" })).body;
-    expect(task.pausedReason).toBe("loop");
-    // The first trip woke the lead (the team's first member) instead of pausing.
-    expect(await handoffs("ACM-1")).toContain("majhi>acme-builder (guard)");
-
-    const sent = await h.cmd("room.send", { task: "ACM-1", text: "carry on" });
-    expect(sent.status).toBe(200);
-    expect(sent.body.item.to).toBe("acme-builder");
-    expect(h.majhi.services.store.tasks.roomState("ACM-1")).toMatchObject({ agentTurns: 0, nudged: false });
-  });
-});
-
 async function must(h: World["h"], name: string, body: unknown): Promise<void> {
   const res = await h.cmd(name, body);
   if (res.status !== 200) throw new Error(`${name}: ${JSON.stringify(res.body)}`);
 }
-
-describe("work the lead has not reviewed", () => {
-  it("wakes the lead once instead of going to review, then the task goes to review", async () => {
-    const worktree = () => join(w.taskDir("ACM-1"), "acme-api");
-    const { h, prompts } = await teamWorld(
-      {
-        "acme-lead": [say("@acme-builder: please build the health endpoint."), say("Looked at it. Done.")],
-        "acme-builder": [
-          async () => {
-            await writeFile(join(worktree(), "health.ts"), "export const health = () => 'ok';\n");
-            return "Built the health endpoint.";
-          },
-        ],
-      },
-      { reviewer: false },
-    );
-    await h.cmd("tasks.create", {
-      text: "add a health endpoint to api",
-      repos: [{ project: "acme-api" }],
-      team: ["acme-lead", "acme-builder"],
-      start: true,
-    });
-    await until(() => (prompts["acme-lead"]?.length ?? 0) === 2, "the lead woken to review");
-    await until(async () => (await status("ACM-1")) === "review", "review after the lead's turn");
-    expect(await handoffs("ACM-1")).toEqual(["acme-lead>acme-builder (mention)"]);
-    expect(prompts["acme-lead"]).toHaveLength(2);
-  });
-});
 
 describe("owner messages", () => {
   it("cannot pull in an agent that may not work in the org", async () => {

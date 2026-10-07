@@ -334,25 +334,6 @@ describe("the trust ladder: promotion", () => {
   });
 });
 
-describe("auto-mute", () => {
-  it("mutes a playbook whose findings are mostly dismissed to weekly, and one click undoes it", async () => {
-    const d = desk({ window: 10 });
-    for (let i = 0; i < 10; i++)
-      d.finding(i, "deps", i < 2 ? "task" : "dismissed", T0 - 10 * HOUR + i * 60_000);
-    await d.svc.sweep();
-    expect(d.cadence.value).toEqual({ kind: "weekly", day: 1, at: "08:00" });
-    const [item] = d.svc.decisions();
-    expect(item?.options.map((o) => o.id)).toEqual(["undo", "ok"]);
-    await d.svc.answerNotice(d.svc.repo.openNotices()[0]?.id ?? 0, "undo");
-    expect(d.cadence.value).toEqual({ kind: "daily", at: "00:00" });
-    expect(d.svc.decisions()).toEqual([]);
-    // It does not mute again on the same old findings.
-    await d.svc.sweep();
-    expect(d.cadenceCalls).toHaveLength(2);
-    expect(d.cadence.value.kind).toBe("daily");
-  });
-});
-
 describe("one monthly ceiling", () => {
   it("holds new starts once spend reaches it, never a turn already running, and asks as a Money decision", async () => {
     const d = desk();

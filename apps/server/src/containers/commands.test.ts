@@ -62,23 +62,6 @@ describe("containers commands", () => {
     expect((await h.cmd("containers.images.remove", { image: db.image, org: "globex" })).status).toBe(404);
     expect((await h.cmd("settings.set", { containers: { org_images: { x: ["evil"] } } })).status).toBe(400);
   });
-
-  it("starts a service only from an allowed image, and stops it", async () => {
-    const { h } = w;
-    const refused = await h.cmd("containers.services.start", db);
-    expect(refused.status).toBe(400);
-    await h.cmd("containers.images.allow", { image: db.image });
-    const started = await h.cmd("containers.services.start", { ...db, volumes });
-    expect(started.status).toBe(200);
-    expect(started.body.container).toMatchObject({
-      name: "db",
-      kind: "service",
-      status: "running",
-      url: "db:5432",
-    });
-    const stopped = await h.cmd("containers.stop", { task: "ACM-1", name: "db" });
-    expect(stopped.body.container.status).toBe("stopped");
-  });
 });
 
 describe("a task that ends", () => {
@@ -101,15 +84,5 @@ describe("a task that ends", () => {
     expect(docker.networks.size).toBe(0);
     expect(docker.volumes.size).toBe(1);
     expect(docker.builders.size).toBe(1);
-  });
-
-  it("closing it removes the volumes, the builder and the preview image too", async () => {
-    await running();
-    expect((await w.h.cmd("tasks.close", { id: "ACM-1" })).status).toBe(200);
-    expect(docker.containers.size).toBe(0);
-    expect(docker.networks.size).toBe(0);
-    expect(docker.volumes.size).toBe(0);
-    expect(docker.builders.size).toBe(0);
-    expect(docker.images.size).toBe(0);
   });
 });

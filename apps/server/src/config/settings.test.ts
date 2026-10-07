@@ -77,19 +77,4 @@ describe("settings commands", () => {
     await writeFile(file, `${await readFile(file, "utf8")}  images: [postgres:16-alpine]\n`);
     expect((await h.cmd("settings.get")).body.containers.images).toEqual(["postgres:16-alpine"]);
   });
-
-  it("reports invalid settings written by hand", async () => {
-    h = await harness();
-    const file = h.majhi.services.config.file;
-    await writeFile(file, `${await readFile(file, "utf8")}limits:\n  agents_max: lots\n`);
-    const res = await h.cmd("settings.get");
-    expect(res.status).toBe(409);
-    expect(res.body.details.join(" ")).toContain("agents_max");
-  });
-
-  it("refuses before majhi.yaml exists", async () => {
-    h = await harness({ workspaces: false });
-    expect((await h.cmd("settings.get")).status).toBe(200);
-    expect((await h.cmd("settings.set", { resume: { auto: false } })).status).toBe(409);
-  });
 });

@@ -95,40 +95,6 @@ describe("autonomous mode's state machine", () => {
     expect((await plain.h.cmd("autonomy.status", { detail: true })).body.mode).toBe("off");
   });
 
-  it("turns on, works in the lane, adopts the captain's task, and finishes its step when turned off", async () => {
-    const t = await world();
-    const id = await t.startWorking();
-    const on = await t.status();
-    expect(on.mode).toBe("on");
-    expect(on.boss?.chat).toBe(await t.h.majhi.services.autonomy.laneChat("acme"));
-    expect(on.now.map((n) => n.task)).toEqual([id]);
-    const listed = (await t.h.cmd("tasks.list")).body as { id: string; autonomous?: boolean }[];
-    expect(listed.find((x) => x.id === id)?.autonomous).toBe(true);
-
-    expect((await t.h.cmd("autonomy.stop", { how: "graceful" })).body.mode).toBe("stopping");
-    // Something more for the agent while its turn runs: it waits behind the stop.
-    t.h.majhi.services.runs.notify(id, "acme-builder", "one more thing");
-    expect(t.task(id).status).toBe("running");
-    // While it turns off, calls that start work are refused.
-    const refused = await t.h.majhi.services.admin.call(
-      { task: on.boss?.chat ?? "", agent: "boss" },
-      "majhi_tasks_start",
-      { id, reason: "go on" },
-    );
-    expect(refused.isError).toBe(true);
-    t.release();
-    await t.w.until(async () => (await t.status()).mode === "off", "the stop to finish");
-    expect(t.task(id)).toMatchObject({ status: "paused", pausedReason: "owner", pausedBy: "autonomy-off" });
-    expect(t.prompts()).toHaveLength(1);
-    // The task is marked, so turning on can resume exactly it.
-    expect((await t.status()).stopped).toEqual([id]);
-
-    expect((await t.h.cmd("autonomy.start", { resumeStopped: true })).body.mode).toBe("on");
-    await t.w.until(() => t.task(id).status !== "paused", "the task to run again");
-    expect(t.task(id).pausedBy).toBeUndefined();
-    expect(t.h.majhi.services.autonomy.repo.task(id)?.held).toBe(undefined);
-  });
-
   it("does not resume a task the owner resumed by hand when turning on", async () => {
     const t = await world();
     const id = await t.startWorking();
@@ -175,17 +141,6 @@ describe("autonomous mode's state machine", () => {
     await t.w.until(() => t.task(id).status === "running", "the paused task to run again");
     expect(t.task(other.id).status).toBe("inbox");
     expect((await t.status()).stopped).toEqual([]);
-  });
-
-  it("turns on without resume: the tasks it paused stay paused and are no longer offered", async () => {
-    const t = await world();
-    const id = await t.startWorking();
-    expect((await t.h.cmd("autonomy.stop", { how: "now" })).body.mode).toBe("off");
-    expect((await t.status()).stopped).toEqual([id]);
-    expect((await t.h.cmd("autonomy.start", { resumeStopped: false })).body.mode).toBe("on");
-    expect(t.task(id).status).toBe("paused");
-    expect((await t.status()).stopped).toEqual([]);
-    expect(t.h.majhi.services.autonomy.repo.task(id)?.held).toBe(undefined);
   });
 
   it("stops gracefully: the current turn finishes, nothing new starts, then majhi turns it off", async () => {

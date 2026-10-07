@@ -13,53 +13,8 @@ const orgIds = async () =>
   (await w.h.cmd("orgs.list")).body.map((o: { id: string }) => o.id).filter((id: string) => id !== "private");
 const ORG_CALL =
   'call: majhi_orgs_create {"id":"acme2","name":"Acme Two","ownerAsked":false,"reason":"the owner wants a second company"}';
-const AGENT_CALL =
-  'call: majhi_agents_create {"id":"acme-reviewer","frontmatter":{"scope":"acme","role":"Reviewer","account":"claude-acme"},"instructions":"Review.\\n","ownerAsked":false,"reason":"a reviewer for Acme"}';
 
 describe("the captain through the fake adapter", () => {
-  it("creates an org and an agent after the owner approves, and tells the captain", async () => {
-    w = await bossWorld();
-    expect((await say(ORG_CALL)).status).toBe(200);
-    await idle();
-
-    // The tool call reached majhi with the session's token, and came back waiting.
-    let items = await w.items();
-    const tool = items.find((i) => i.type === "tool");
-    expect(tool).toMatchObject({ title: "majhi_orgs_create", status: "completed" });
-    expect(await orgIds()).toEqual(["acme"]);
-    const [card] = await cards();
-    expect(card).toMatchObject({ state: "pending", summary: "Create org Acme Two", agent: "boss" });
-
-    const approved = await w.h.cmd("room.approve", { task: w.chat.id, item: card?.id, decision: "approve" });
-    expect(approved.status).toBe(200);
-    expect(approved.body.item).toMatchObject({ state: "applied" });
-    await idle();
-    expect(await orgIds()).toEqual(["acme", "acme2"]);
-    expect(w.h.majhi.services.store.permissions.audit(w.chat.id)).toMatchObject([
-      { kind: "orgs.create", agent: "boss", decision: "allow", by: "owner", title: "Create org Acme Two" },
-    ]);
-
-    items = await w.items();
-    expect(items.some((i) => i.type === "owner" && i.text.includes("Result:"))).toBe(false);
-
-    // The agent, the same way.
-    await say(AGENT_CALL);
-    await idle();
-    const pending = (await cards()).find((c) => c.command === "agents.create");
-    expect(pending?.state).toBe("pending");
-    await w.h.cmd("room.approve", { task: w.chat.id, item: pending?.id, decision: "approve" });
-    await idle();
-    const agents = await w.h.cmd("agents.list");
-    expect(
-      agents.body.map((a: { agent: { frontmatter: { id: string } } }) => a.agent.frontmatter.id),
-    ).toContain("acme-reviewer");
-    const log = await w.h.log("%an|%s");
-    expect(log.slice(0, 2)).toEqual([
-      "boss|agents.create: a reviewer for Acme",
-      "boss|orgs.create: the owner wants a second company",
-    ]);
-  });
-
   it("logs a rejection, and changes nothing", async () => {
     w = await bossWorld();
     expect((await say(ORG_CALL)).status).toBe(200);

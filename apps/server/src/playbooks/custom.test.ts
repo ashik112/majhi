@@ -1,6 +1,6 @@
 import { CUSTOM_MAX_TOKENS } from "@majhi/shared";
 import { describe, expect, it } from "vitest";
-import { customPlaybook, parsePlan, planPrompt } from "./custom.ts";
+import { parsePlan } from "./custom.ts";
 
 /** A sentence-planned playbook is a checked spec: no owner-only outputs, a small budget, off until turned on. */
 

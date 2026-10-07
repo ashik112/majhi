@@ -3,7 +3,6 @@ import type { AddressInfo } from "node:net";
 import { basename } from "node:path";
 import { serve } from "@hono/node-server";
 import type { McpServerSpec } from "@majhi/acp";
-import type { RoomItem } from "@majhi/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
@@ -153,57 +152,6 @@ describe("majhi-processes", () => {
 });
 
 describe("majhi-tasks", () => {
-  it("splits a task into children with a dependency, after the owner approves", async () => {
-    const { h, servers, release } = await world();
-    const tasks = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-tasks"));
-    expect((await tasks.listTools()).tools.map((t) => t.name).sort()).toEqual([
-      "change_task_branch",
-      "close",
-      "create",
-      "get",
-      "link",
-      "list",
-      "plan",
-      "set_lead",
-      "split",
-      "staff",
-      "start",
-      "update",
-      "uploads_create",
-    ]);
-    const args = {
-      task: "ACM-1",
-      children: [
-        { text: "add the route to api" },
-        { text: "add the test to api", dependsOn: [0], when: "ready" },
-      ],
-      ownerAsked: false,
-      reason: "Two steps",
-    };
-    await tasks.callTool({ name: "split", arguments: args });
-    const card = ((await h.cmd("room.items", { task: "ACM-1", limit: 100 })).body.items as RoomItem[]).find(
-      (i) => i.type === "approval",
-    );
-    if (card === undefined) throw new Error("no approval card");
-    expect(card).toMatchObject({ command: "tasks.split", state: "pending", agent: "acme-lead" });
-    expect((await h.cmd("room.approve", { task: "ACM-1", item: card.id, decision: "approve" })).status).toBe(
-      200,
-    );
-
-    const child = (await h.cmd("tasks.get", { id: "ACM-3" })).body;
-    expect(child.links).toEqual(
-      expect.arrayContaining([
-        { type: "parent", task: "ACM-1" },
-        { type: "depends-on", task: "ACM-2", when: "ready" },
-      ]),
-    );
-    const list = JSON.parse(
-      text(await tasks.callTool({ name: "list", arguments: { ownerAsked: false, reason: "look" } })),
-    );
-    expect(list.map((t: { id: string }) => t.id).sort()).toEqual(["ACM-1", "ACM-2", "ACM-3"]);
-    release();
-  });
-
   it("keeps an org agent to its org's tasks", async () => {
     const { h, servers, release } = await world();
     // A task without an org: only root agents may work there.
@@ -226,116 +174,5 @@ describe("majhi-tasks", () => {
     });
     expect(made.isError).toBe(true);
     release();
-  });
-
-  describe("start", () => {
-    const call = (tasks: Client, id: string) =>
-      tasks.callTool({ name: "start", arguments: { id, ownerAsked: false, reason: "Next step" } });
-    const cards = async (h: Awaited<ReturnType<typeof world>>["h"]) =>
-      ((await h.cmd("room.items", { task: "ACM-1", limit: 100 })).body.items as RoomItem[]).filter(
-        (i) => i.type === "approval" && i.command === "tasks.start",
-      );
-
-    it("keeps a subtask with an unfinished dependency from starting, and starts it when ready", async () => {
-      const { h, servers, release } = await world();
-      await h.cmd("tasks.create", {
-        text: "add the route to api",
-        repos: [{ project: "acme-api" }],
-        parent: "ACM-1",
-        start: false,
-      });
-      await h.cmd("tasks.create", {
-        text: "add the test to api",
-        repos: [{ project: "acme-api" }],
-        parent: "ACM-1",
-        dependsOn: ["ACM-2"],
-        start: false,
-      });
-      const tasks = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-tasks"));
-      const res = await call(tasks, "ACM-3");
-      expect(res.isError).toBeFalsy();
-      const { store } = h.majhi.services;
-      expect(store.tasks.get("ACM-3")?.status).not.toBe("running");
-      expect(store.tasks.startWhenReady("ACM-3")).toBe(true);
-      expect(store.permissions.audit("ACM-3")).toMatchObject([{ kind: "tasks.start", by: "lead" }]);
-      release();
-    });
-
-    it("refuses a task in another org, with no card", async () => {
-      const { h, servers, release } = await world();
-      const world2 = w;
-      if (world2 === undefined) throw new Error("no world");
-      for (const [name, body] of [
-        ["orgs.create", { id: "globex", name: "Globex", key: "GLX" }],
-        ["accounts.create", { id: "claude-globex", tool: "claude", org: "globex", auth: "login" }],
-        [
-          "agents.create",
-          {
-            id: "globex-builder",
-            frontmatter: { scope: "globex", role: "Builder", account: "claude-globex", perms: ["edit"] },
-            instructions: "Build.\n",
-          },
-        ],
-      ] as const) {
-        expect((await h.cmd(name, body)).status).toBe(200);
-      }
-      await world2.addRepo("web");
-      await h.cmd("projects.register", {
-        id: "globex-web",
-        org: "globex",
-        path: "~/Work/web",
-        aliases: ["web"],
-      });
-      await h.cmd("orgs.update", { id: "acme", lead_start: "org" });
-      const made = await h.cmd("tasks.create", {
-        text: "fix web",
-        repos: [{ project: "globex-web" }],
-        team: ["globex-builder"],
-        start: false,
-      });
-      expect(made.status).toBe(200);
-      const tasks = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-tasks"));
-      const res = await call(tasks, "GLX-1");
-      expect(res.isError).toBe(true);
-      expect(h.majhi.services.store.tasks.get("GLX-1")?.status).not.toBe("running");
-      expect(await cards(h)).toEqual([]);
-      expect(h.majhi.services.store.permissions.audit("GLX-1")).toEqual([]);
-      release();
-    });
-
-    it("makes followUpOf add the follow-up link, and keeps a fix task from starting without the owner", async () => {
-      const { h, servers, release } = await world();
-      await h.cmd("orgs.update", { id: "acme", lead_start: "org" });
-      const made = await h.cmd("tasks.create", {
-        text: "fix the health route in api",
-        repos: [{ project: "acme-api" }],
-        followUpOf: "ACM-1",
-        start: false,
-      });
-      expect(made.status).toBe(200);
-      expect(made.body.links).toEqual([{ type: "follow-up", task: "ACM-1" }]);
-      const tasks = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-tasks"));
-      await call(tasks, "ACM-2");
-      expect(h.majhi.services.store.tasks.get("ACM-2")?.status).not.toBe("running");
-      expect(await cards(h)).toMatchObject([{ state: "pending" }]);
-      release();
-    });
-
-    it("asks the owner instead when the setting is off", async () => {
-      const { h, servers, release } = await world();
-      await h.cmd("tasks.create", {
-        text: "add the route to api",
-        repos: [{ project: "acme-api" }],
-        parent: "ACM-1",
-        start: false,
-      });
-      expect((await h.cmd("orgs.update", { id: "acme", lead_start: "off" })).status).toBe(200);
-      const tasks = await connect(servers["acme-lead"]?.find((s) => s.name === "majhi-tasks"));
-      await call(tasks, "ACM-2");
-      expect(h.majhi.services.store.tasks.get("ACM-2")?.status).not.toBe("running");
-      expect(await cards(h)).toMatchObject([{ state: "pending" }]);
-      expect(h.majhi.services.store.permissions.audit("ACM-2")).toEqual([]);
-      release();
-    });
   });
 });

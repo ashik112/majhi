@@ -1,6 +1,5 @@
 import type { DeployTarget } from "@majhi/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { DeployProject } from "./service.ts";
 import { C1, C2, C3, push, type Rig, rig, workflow } from "./testing/rig.ts";
 
 describe("deploy", () => {

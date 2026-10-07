@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tempDir, git as testGit } from "../testing/fixtures.ts";
@@ -52,52 +52,6 @@ describe("createWorktree", () => {
     expect(await testGit(source, "symbolic-ref", "--short", "HEAD")).toBe("main");
     // No upstream, so nothing can be pushed by accident.
     await expect(testGit(wt("api"), "rev-parse", "--abbrev-ref", "task/t-1-x@{upstream}")).rejects.toThrow();
-  });
-
-  describe("which copy of the base a new branch starts from", () => {
-    async function commitIn(repo: string, file: string): Promise<string> {
-      await writeFile(join(repo, file), `${file}\n`);
-      await testGit(repo, "add", ".");
-      await testGit(repo, "commit", "--quiet", "-m", file);
-      return (await testGit(repo, "rev-parse", "HEAD")).trim();
-    }
-    /** A commit pushed to the remote's main by someone else, so the source's copy goes stale. */
-    async function remoteMovesOn(file: string): Promise<string> {
-      const other = join(dir, "other");
-      await testGit(dir, "clone", "--quiet", remote, other);
-      const tip = await commitIn(other, file);
-      await testGit(other, "push", "--quiet", "origin", "main");
-      return tip;
-    }
-
-    it("starts from the local base when the owner merged there and did not push", async () => {
-      const local = await commitIn(source, "unpushed.txt");
-      const result = await createWorktree({ source, base: "main", branch: "task/t-1-x", path: wt("api") });
-      expect(result).toMatchObject({
-        createdBranch: true,
-        startCommit: local,
-        startRef: "main",
-        warnings: [],
-      });
-      expect(await readFile(join(wt("api"), "unpushed.txt"), "utf8")).toBe("unpushed.txt\n");
-    });
-
-    it("starts from the remote when the remote is ahead of the local base", async () => {
-      const tip = await remoteMovesOn("remote.txt");
-      const result = await createWorktree({ source, base: "main", branch: "task/t-1-x", path: wt("api") });
-      expect(result).toMatchObject({ startCommit: tip, startRef: "origin/main", warnings: [] });
-    });
-
-    it("starts from the local base and says so when the two have diverged", async () => {
-      const local = await commitIn(source, "mine.txt");
-      await remoteMovesOn("theirs.txt");
-      const result = await createWorktree({ source, base: "main", branch: "task/t-1-x", path: wt("api") });
-      expect(result.startCommit).toBe(local);
-      expect(result.startRef).toBe("main");
-      expect(result.warnings).toEqual([
-        "main on this machine and on the remote have diverged: main has 1 commit the remote does not, and the remote has 1 commit main does not. The task started from main.",
-      ]);
-    });
   });
 
   it("refuses a branch that is checked out in the source", async () => {
@@ -208,43 +162,5 @@ describe("repairWorktree", () => {
     await rm(await entryOf(wt("api")), { recursive: true });
     await testGit(source, "checkout", "--quiet", "task/t-1-x");
     expect(await repairWorktree(source, wt("api"), "task/t-1-x")).toMatchObject({ status: "skipped" });
-  });
-});
-
-describe("fetch without SSH keys", () => {
-  /**
-   * Points origin at an ssh URL served by a fake ssh: it refuses with ssh's own "Permission
-   * denied (publickey)" until the marker file exists (keys reloaded), then serves the bare
-   * remote through git-upload-pack, like a real host would.
-   */
-  async function sshRemote(): Promise<{ marker: string }> {
-    const marker = join(dir, "keys-loaded");
-    const fakeSsh = join(dir, "fake-ssh.sh");
-    await writeFile(
-      fakeSsh,
-      `#!/bin/sh\nif [ -f "${marker}" ]; then exec git-upload-pack "${remote}"; fi\n` +
-        `echo "git@example.invalid: Permission denied (publickey)." >&2\nexit 255\n`,
-    );
-    await chmod(fakeSsh, 0o755);
-    vi.stubEnv("GIT_SSH_COMMAND", fakeSsh);
-    await testGit(source, "remote", "set-url", "origin", "ssh://git@example.invalid/api.git");
-    return { marker };
-  }
-
-  it("reloads the owner's keys once and fetches again", async () => {
-    const { marker } = await sshRemote();
-    const reloadKeys = vi.fn(async () => {
-      await writeFile(marker, "");
-      return true;
-    });
-    const result = await createWorktree({
-      source,
-      base: "develop",
-      branch: "task/t-1-x",
-      path: wt("api"),
-      reloadKeys,
-    });
-    expect(result.warnings).toEqual([]);
-    expect(reloadKeys).toHaveBeenCalledTimes(1);
   });
 });

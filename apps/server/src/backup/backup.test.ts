@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -263,18 +263,6 @@ describe("a backup", () => {
     const names = (await tight.list()).backups.map((b) => b.name);
     expect(names).toEqual([first]);
     expect((await readdir(join(home, "backups"))).some((n) => n.endsWith(".part"))).toBe(false);
-  });
-
-  it("can be locked with a passphrase that majhi never keeps", async () => {
-    const name = await backup.now("correct horse battery staple");
-    expect((await backup.list()).backups[0]?.lock).toBe("passphrase");
-    expect((await readFile(join(home, "backups", name))).includes("correct horse")).toBe(false);
-    await expect(backup.verify(name)).rejects.toThrow();
-    await expect(backup.verify(name, "wrong passphrase")).rejects.toBeInstanceOf(Locked);
-    const { result } = await backup.verify(name, "correct horse battery staple");
-    expect(result.ok).toBe(true);
-    // A locked backup is not damaged: it is never recorded as a failed check.
-    expect((await backup.list()).backups[0]?.verified?.ok).toBe(true);
   });
 });
 

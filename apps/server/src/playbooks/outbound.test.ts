@@ -1,4 +1,4 @@
-import { AUTO_DAILY_LIMIT, type Draft, type OutboundChannel, type OutboundSubmitInput } from "@majhi/shared";
+import { AUTO_DAILY_LIMIT, type Draft, type OutboundSubmitInput } from "@majhi/shared";
 import { describe, expect, it, vi } from "vitest";
 import { Store } from "../store/index.ts";
 import { type GateActor, OutboundGate, type OutboundTransport } from "./outbound.ts";

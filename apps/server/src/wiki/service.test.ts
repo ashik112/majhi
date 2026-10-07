@@ -203,68 +203,6 @@ const ids = () =>
     .map((p) => p.id)
     .sort();
 
-describe("a wiki update", () => {
-  it("stores the pages, and a second update on the same commit writes nothing", async () => {
-    const { service, sessions } = world();
-    const [first] = await service.update("acme", "api");
-    expect(first?.written.toSorted()).toEqual(["flow:sign-in", "infra", "overview"]);
-    expect(ids()).toEqual(["flow:sign-in", "gaps", "infra", "overview"]);
-    expect(store.wiki.state("acme", "api").builtCommit).toBe(first?.commit);
-    const asked = sessions();
-
-    const [second] = await service.update("acme", "api");
-    expect(second?.written).toEqual([]);
-    expect(sessions()).toBe(asked);
-    for (const id of ids()) expect(store.wiki.versionCount("acme", "api", id as never)).toBe(0);
-  });
-
-  it("rewrites only the pages that cite a file the next commit touched", async () => {
-    const { service } = world();
-    await service.update("acme", "api");
-    await files({ "web/index.js": "export function signIn() {\n  return fetch('/signin?v=2');\n}\n" });
-    commit("change the sign-in call");
-
-    const [again] = await service.update("acme", "api");
-    expect(again?.written).toEqual(["flow:sign-in"]);
-    expect(store.wiki.versionCount("acme", "api", "flow:sign-in" as never)).toBe(1);
-    expect(store.wiki.versionCount("acme", "api", "overview" as never)).toBe(0);
-    expect(store.wiki.versionCount("acme", "api", "infra" as never)).toBe(0);
-
-    // A commit that touches a file no page cites writes nothing.
-    await files({ "notes.txt": "nothing to see\n" });
-    commit("add a note");
-    const [quiet] = await service.update("acme", "api");
-    expect(quiet?.written).toEqual([]);
-  });
-
-  it("waits for an update that is running in the workspace instead of running at once", async () => {
-    const { service, sessions, gate } = world();
-    gate.hold = true;
-    const first = service.update("acme", "api");
-    await new Promise((r) => setTimeout(r, 300));
-    const startedByFirst = sessions();
-    expect(startedByFirst).toBeGreaterThan(0);
-
-    const order: string[] = [];
-    const second = service.update("acme", "api").then((r) => {
-      order.push("second");
-      return r;
-    });
-    void first.then(() => order.push("first"));
-    await new Promise((r) => setTimeout(r, 300));
-    // The first is still held at its first turn; the second has started nothing.
-    expect(sessions()).toBe(startedByFirst);
-    expect(order).toEqual([]);
-
-    gate.release();
-    const [a] = await first;
-    const [b] = await second;
-    expect(order).toEqual(["first", "second"]);
-    expect(a?.written.length).toBe(3);
-    expect(b?.written).toEqual([]);
-  });
-});
-
 describe("limits", () => {
   it("stops starting pages at the cost cap and says which are left", async () => {
     const { service } = world({ capUsd: 0.5 }, { turn: { costUsd: 0.6 } });

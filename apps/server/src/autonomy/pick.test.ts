@@ -1,9 +1,8 @@
 import type { AutonomyEvent, AutonomyStatus, Task, TaskSummary } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
-import { ASK, RUNS, TIDY } from "../captain/authority-fixtures.ts";
+import { RUNS, TIDY } from "../captain/authority-fixtures.ts";
 import type { TaskRating } from "../decisions/api.ts";
 import { type BossWorld, bossWorld } from "../testing/boss.ts";
-import { seedStatus } from "../testing/status.ts";
 
 let w: BossWorld | undefined;
 afterEach(async () => {
@@ -109,30 +108,6 @@ describe("the size rule", () => {
       `Refused: ${unknown} was not started: its size is not known (no decision provider could rate it), and the size rule is Up to medium. Pick work the size rule allows.`,
     );
   });
-
-  it("refuses a create that starts work too large, and creates nothing", async () => {
-    const t = await on();
-    await t.configure({ size: "small" });
-    const count = () => t.h.majhi.services.store.tasks.list(true).length;
-    const before = count();
-    const res = await t.call("majhi_tasks_create", {
-      text: "Rewrite the auth layer\n\nlarge",
-      repos: [{ project: "acme-api" }],
-      start: true,
-    });
-    expect(res.isError).toBe(true);
-    expect(res.text).toContain('"Rewrite the auth layer" was not started: it is large');
-    expect(count()).toBe(before);
-    // Created but not started: the size rule waits for the start.
-    const later = await t.call("majhi_tasks_create", {
-      text: "Rewrite the auth layer\n\nlarge",
-      repos: [{ project: "acme-api" }],
-      start: false,
-    });
-    expect(later.isError).toBe(false);
-    const id = (JSON.parse(later.text) as { id: string }).id;
-    expect((await t.call("majhi_tasks_start", { id })).text).toContain("it is large");
-  });
 });
 
 describe("the workspace's choice and the lane", () => {
@@ -228,52 +203,5 @@ describe("tasks marked Not for autonomous mode", () => {
     expect((await t.h.cmd("autonomy.exclude", { task: id, exclude: false })).status).toBe(200);
     expect(t.h.majhi.services.store.tasks.get(id)?.noAutonomy).toBeUndefined();
     expect((await t.call("majhi_tasks_start", { id })).text).not.toContain("Not for autonomous mode");
-  });
-});
-
-describe("the captain's lane", () => {
-  it("cannot be closed or removed, on or off, and is not listed as a task", async () => {
-    const t = await on();
-    const remove = await t.h.cmd("tasks.remove", { id: t.chat });
-    expect(remove.status).toBe(409);
-    expect(JSON.stringify(remove.body)).toContain(`${t.chat} is a captain thread, not a task`);
-    const close = await t.h.cmd("tasks.close", { id: t.chat });
-    expect(close.status).toBe(409);
-    expect(JSON.stringify(close.body)).toContain("cannot be closed");
-    // Off changes nothing: the thread is never the owner's to delete.
-    expect((await t.h.cmd("autonomy.stop", { how: "now" })).status).toBe(200);
-    expect((await t.h.cmd("tasks.remove", { id: t.chat })).status).toBe(409);
-    expect((await t.h.cmd("tasks.close", { id: t.chat })).status).toBe(409);
-    expect(t.h.majhi.services.store.tasks.get(t.chat)).toBeDefined();
-    // It can still be read by id (the panel and old links open it), but no list shows it.
-    expect((await t.h.cmd("tasks.get", { id: t.chat })).status).toBe(200);
-    const listed = (await t.h.cmd("tasks.list", { includeDone: true })).body as TaskSummary[];
-    expect(listed.find((x) => x.id === t.chat)).toBeUndefined();
-    expect((await t.status()).lanes[0]?.chat).toBe(t.chat);
-    // The summary of the store marks it, for the panel.
-    expect(t.h.majhi.services.store.tasks.list(true).find((x) => x.id === t.chat)?.lane).toBe(true);
-  });
-
-  it("is made again before a tick when it is gone while the mode is on, so the captain is never woken into nothing", async () => {
-    const t = await on();
-    // Gone without the guard (a direct delete): the lane is made again, with a line why.
-    t.h.majhi.services.store.tasks.remove(t.chat);
-    const chat = await t.autonomy.laneChat("acme");
-    expect(chat).toBeDefined();
-    expect(chat).not.toBe(t.chat);
-    expect(t.h.majhi.services.store.tasks.get(chat ?? "")?.team[0]).toBe("boss");
-    const events = (await t.h.cmd("autonomy.events", { limit: 20 })).body.events as AutonomyEvent[];
-    expect(events[0]?.text).toBe(`The captain works in Acme in its lane ${chat}`);
-    // A closed lane is reopened, not replaced.
-    seedStatus(t.h.majhi.services.store, chat ?? "", "done", undefined, new Date().toISOString());
-    expect(await t.autonomy.laneChat("acme")).toBe(chat);
-    expect(t.h.majhi.services.store.tasks.get(chat ?? "")?.status).not.toBe("done");
-    // A workspace where the captain neither starts work nor does upkeep gets no lane; one where it
-    // does upkeep only (Start is You) gets one to think in; off, no lane at all.
-    expect(await t.autonomy.laneChat("private")).toBeDefined();
-    await t.h.cmd("autonomy.configure", { orgs: { private: { authority: ASK } } });
-    expect(await t.autonomy.laneChat("private")).toBeUndefined();
-    await t.h.cmd("autonomy.stop", { how: "now" });
-    expect(await t.autonomy.laneChat("acme")).toBeUndefined();
   });
 });

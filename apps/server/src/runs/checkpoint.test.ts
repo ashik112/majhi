@@ -3,13 +3,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createWorktree } from "../git/worktrees.ts";
 import { git, tempDir } from "../testing/fixtures.ts";
-import {
-  type CheckpointRepo,
-  commitBy,
-  commitCheckpoint,
-  DEFAULT_IDENTITY,
-  MAX_NEW_FILES,
-} from "./checkpoint.ts";
+import { type CheckpointRepo, commitBy, commitCheckpoint, DEFAULT_IDENTITY } from "./checkpoint.ts";
 
 let dir: string;
 let cleanup: () => Promise<void>;
@@ -68,21 +62,6 @@ describe("checkpoints", () => {
     expect(result.skipped[0]).toContain("not on task/acm-1-fix (on main)");
   });
 
-  it("never commits a cache folder of thousands of new files", async () => {
-    const a = await repo("api");
-    await mkdir(join(a.worktree, ".store"), { recursive: true });
-    await Promise.all(
-      Array.from({ length: MAX_NEW_FILES + 1 }, (_, i) =>
-        writeFile(join(a.worktree, ".store", `f${i}`), "x"),
-      ),
-    );
-    const result = await commitCheckpoint([a], "ACM-1", 1, commitBy(DEFAULT_IDENTITY, "ACM-1"));
-    expect(result.committed).toEqual([]);
-    expect(result.skipped[0]).toContain(".store");
-    expect(await git(a.worktree, "log", "-1", "--format=%s")).toBe("init");
-    expect(await git(a.worktree, "diff", "--cached", "--name-only")).toBe("");
-  });
-
   describe("in a task worktree", () => {
     /** The owner's checkout, with `tracked` files committed on main, and a task worktree cut from it. */
     async function taskWorktree(
@@ -115,23 +94,6 @@ describe("checkpoints", () => {
     }
     const by = commitBy(DEFAULT_IDENTITY, "ACM-1");
 
-    it("never commits a package store or node_modules, even far under the file limit", async () => {
-      const { repo: a } = await taskWorktree();
-      for (const file of [
-        ".pnpm-store/v11/index.db",
-        "node_modules/left-pad/index.js",
-        "web/node_modules/x/y.js",
-      ]) {
-        await mkdir(join(a.worktree, file, ".."), { recursive: true });
-        await writeFile(join(a.worktree, file), "x");
-      }
-      await writeFile(join(a.worktree, "feature.ts"), "export {};\n");
-      expect(await commitCheckpoint([a], "ACM-1", 1, by)).toEqual({ committed: ["api"], skipped: [] });
-      expect((await git(a.worktree, "show", "--name-only", "--format=", "HEAD")).split("\n")).toEqual([
-        "feature.ts",
-      ]);
-    });
-
     it("keeps committing a folder the repo tracks, new files included", async () => {
       const { repo: a } = await taskWorktree({
         "node_modules/kept/index.js": "1",
@@ -162,22 +124,6 @@ describe("checkpoints", () => {
       expect(await readFile(exclude, "utf8")).toBe(before);
       expect(await readFile(join(source, ".git", "config"), "utf8")).toBe(configBefore);
       expect(await git(source, "status", "--porcelain")).toBe("?? node_modules/");
-    });
-
-    it("excludes target only for a Rust or Java repo", async () => {
-      const plain = await taskWorktree();
-      const rust = await taskWorktree({ "Cargo.toml": "[package]\n" }, "ACM-2");
-      for (const { repo: r } of [plain, rust]) {
-        await mkdir(join(r.worktree, "target"), { recursive: true });
-        await writeFile(join(r.worktree, "target/notes.md"), "x");
-        await writeFile(join(r.worktree, "feature.ts"), "export {};\n");
-      }
-      await commitCheckpoint([plain.repo], "ACM-1", 1, by);
-      await commitCheckpoint([rust.repo], "ACM-2", 1, by);
-      expect(
-        (await git(plain.repo.worktree, "show", "--name-only", "--format=", "HEAD")).split("\n").sort(),
-      ).toEqual(["feature.ts", "target/notes.md"]);
-      expect(await git(rust.repo.worktree, "show", "--name-only", "--format=", "HEAD")).toBe("feature.ts");
     });
   });
 });

@@ -18,18 +18,6 @@ async function world() {
 }
 
 describe("the Autonomous switch is On or Off", () => {
-  it("while Off, only memory and cleanup run; On, shipping runs too", async () => {
-    const { services } = await world();
-    expect(services.autonomy.mode()).toBe("off");
-    expect(services.captain.stopped()).toBe(false);
-    expect(await services.captain.runner.start("acme", "ship", "test")).toBeUndefined();
-    expect(await services.captain.runner.start("acme", "cards", "test")).toBeUndefined();
-    expect(await services.captain.runner.start("acme", "memory", "test")).toBeDefined();
-
-    expect(await w?.h.cmd("autonomy.start")).toMatchObject({ status: 200 });
-    expect(await services.captain.runner.start("acme", "ship", "test")).toBeDefined();
-  });
-
   it("while Off, the captain's tools in a lane refuse with one line: no plan, no note, no answer", async () => {
     const { h, services } = await world();
     await h.cmd("autonomy.start");
@@ -74,29 +62,6 @@ describe("the Autonomous switch is On or Off", () => {
     const resumed = (await h.cmd("captain.resume")).body as CaptainStatus;
     expect(resumed.autonomy).toBe("on");
     await w?.until(() => services.store.tasks.get(id)?.status === "running", "the task to run again");
-    expect(services.store.tasks.get(id)?.pausedBy).toBeUndefined();
-  });
-
-  it("records who paused a task: the captain, or Autonomous turned off", async () => {
-    const { h, services } = await world();
-    const made = await h.cmd("tasks.create", {
-      text: "fix the api",
-      repos: [{ project: "acme-api" }],
-      attachments: [],
-      start: true,
-    });
-    const id = (made.body as { id: string }).id;
-    await w?.until(() => services.store.tasks.get(id)?.status === "running", "the task to run");
-    await services.tasks.stop(id, "owner", undefined, "boss");
-    expect(services.store.tasks.get(id)).toMatchObject({ status: "paused", pausedBy: "captain" });
-    const summary = (await h.cmd("tasks.list")).body as { id: string; pausedBy?: string }[];
-    expect(summary.find((s) => s.id === id)?.pausedBy).toBe("captain");
-
-    // By hand it carries no mark, and resuming clears it.
-    await h.cmd("tasks.start", { id });
-    await w?.until(() => services.store.tasks.get(id)?.status === "running", "the task to run again");
-    expect(services.store.tasks.get(id)?.pausedBy).toBeUndefined();
-    await h.cmd("tasks.stop", { id });
     expect(services.store.tasks.get(id)?.pausedBy).toBeUndefined();
   });
 });

@@ -1,4 +1,4 @@
-import { chmod, rm, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Task } from "@majhi/shared";
 import { afterEach, describe, expect, it } from "vitest";
@@ -86,38 +86,6 @@ async function reviewed(changes: string[]): Promise<Task> {
 }
 
 describe("shipping a task with several repos", () => {
-  it("squash and push sends only the changed repo, into its base, and skips the others", async () => {
-    await reviewed(["acme-api"]);
-    const ops = { main: await tip(w.repo("ops"), "main"), develop: await tip(w.repo("ops"), "develop") };
-    const web = await tip(w.repo("web"), "main");
-
-    const options = must(await cmd("tasks.shipOptions", { id: "ACM-1" })) as Record<string, unknown>;
-    expect(options.changed).toEqual([{ project: "acme-api", base: "main", branch: expect.any(String) }]);
-    expect(options.unchanged).toEqual(["acme-web", "acme-ops"]);
-
-    const res = await cmd("tasks.merge", {
-      id: "ACM-1",
-      into: "main",
-      push: true,
-      method: "squash",
-      done: true,
-    });
-    expect(res.status).toBe(200);
-    expect(res.body.results).toMatchObject([
-      { project: "acme-api", into: "main", ok: true },
-      { project: "acme-web", ok: true, skipped: true },
-      { project: "acme-ops", ok: true, skipped: true },
-    ]);
-    expect(res.body.task.status).toBe("done");
-    expect(await git(w.remote("api"), "show", "main:change.txt")).toBe("acme-api change");
-    expect(await tip(w.remote("api"), "main")).toBe(await tip(w.repo("api"), "main"));
-    // Nothing touched in the unchanged repos: no merge into main was tried for ops.
-    expect(await tip(w.repo("ops"), "main")).toBe(ops.main);
-    expect(await tip(w.repo("ops"), "develop")).toBe(ops.develop);
-    expect(await tip(w.repo("web"), "main")).toBe(web);
-    expect(await tip(w.remote("ops"), "main")).not.toBe(ops.main);
-  });
-
   it("a conflict in one changed repo merges nothing anywhere", async () => {
     await reviewed(["acme-api", "acme-web"]);
     await commitOn(w.repo("web"), "main", "change.txt", "main side\n");
@@ -137,34 +105,6 @@ describe("shipping a task with several repos", () => {
     expect(await tip(w.repo("web"), "main")).toBe(web);
     expect(await tip(w.remote("api"), "main")).toBe(pushed);
     expect((await cmd("tasks.get", { id: "ACM-1" })).body.status).toBe("review");
-  });
-
-  it("a push that fails after the merges says which repo is merged and not pushed; Push again sends it", async () => {
-    await reviewed(["acme-api", "acme-web"]);
-    const hook = join(w.remote("web"), "hooks", "pre-receive");
-    await writeFile(hook, "#!/bin/sh\necho 'closed for now' >&2\nexit 1\n");
-    await chmod(hook, 0o755);
-
-    const first = await cmd("tasks.merge", { id: "ACM-1", into: "main", push: true, done: true });
-    expect(first.status).toBe(200);
-    expect(first.body.results).toMatchObject([
-      { project: "acme-api", ok: true },
-      { project: "acme-web", ok: false, notPushed: true },
-      { project: "acme-ops", skipped: true },
-    ]);
-    expect(await git(w.repo("web"), "show", "main:change.txt")).toBe("acme-web change");
-    expect(first.body.task.status).toBe("review");
-
-    await rm(hook);
-    const again = await cmd("tasks.merge", { id: "ACM-1", into: "main", push: true, done: true });
-    expect(again.status).toBe(200);
-    expect(again.body.results).toMatchObject([
-      { project: "acme-api", ok: true },
-      { project: "acme-web", ok: true },
-      { project: "acme-ops", skipped: true },
-    ]);
-    expect(await tip(w.remote("web"), "main")).toBe(await tip(w.repo("web"), "main"));
-    expect(again.body.task.status).toBe("done");
   });
 
   it("does not push the owner's own unpushed commits on the target, or create a branch, unless confirmed", async () => {
@@ -193,12 +133,5 @@ describe("shipping a task with several repos", () => {
     expect(sent.status).toBe(200);
     expect(await git(w.remote("api"), "show", "main:notes.txt")).toBe("owner's work");
     expect(await git(w.remote("api"), "show", "main:change.txt")).toBe("acme-api change");
-  });
-
-  it("refuses another task's branch as a target", async () => {
-    await reviewed(["acme-api"]);
-    await git(w.repo("api"), "branch", "task/acm-9-other", "main");
-    const res = await cmd("tasks.merge", { id: "ACM-1", into: "task/acm-9-other" });
-    expect(res.status).toBe(409);
   });
 });

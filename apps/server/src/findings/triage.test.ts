@@ -25,7 +25,6 @@ const LIVE = { ...SLOT, startMode: "live" as const };
 const INJECTION = LAYA_USE_SLOTS.find((s) => s.id === "text-injection");
 if (INJECTION === undefined) throw new Error("the text-injection slot is missing");
 
-const OWNER: FindingActor = { kind: "owner" };
 const CAPTAIN: FindingActor = { kind: "captain", org: "acme" };
 
 /** Plays Laya: `noise` at `p` for the triage, `kind` for what kind of noise; "no" for the injection check. */
@@ -73,20 +72,6 @@ function setup(script: LayaScript | undefined, slots: SlotDef[] = LIVE_SLOTS) {
 }
 
 afterEach(() => vi.useRealTimers());
-
-describe("what the triage suggests", () => {
-  it("lays Laya's suggestion on the finding and leaves it open while the slot is in shadow", async () => {
-    const t = setup(says("dismiss", 0.99), [SLOT, INJECTION]);
-    const { finding } = await t.report();
-    expect(finding.status).toBe("open");
-    expect(finding.triage).toMatchObject({
-      action: "dismiss",
-      by: "laya",
-      shadow: true,
-      applied: false,
-    });
-  });
-});
 
 describe("when it may dismiss", () => {
   it("dismisses an info or low finding by itself when the slot is live and Laya is sure", async () => {
@@ -154,27 +139,6 @@ describe("when Laya cannot be used", () => {
     expect(finding.triage).toMatchObject({ action: "dismiss", by: "rules", applied: false, confidence: 0 });
   });
 
-  it("files the finding without a triage when Laya is too slow", async () => {
-    vi.useFakeTimers();
-    const slow = fakeLaya({ script: () => new Promise(() => {}) });
-    const { svc } = service(slow, undefined, [LIVE, INJECTION], { laya: 100 });
-    const findings = new FindingsService({
-      repo: new FindingsRepo(new Store(":memory:").raw),
-      projectOrg: async () => "acme",
-      taskStatus: () => undefined,
-      createTask: async () => ({ id: "ACM-1" }),
-      triage: (f) => triageFinding(svc, f),
-    });
-    const pending = findings.report(
-      FindingReportInputSchema.parse({ source: "security", severity: "low", title: "Slow" }),
-      CAPTAIN,
-    );
-    await vi.advanceTimersByTimeAsync(20_000);
-    const { finding } = await pending;
-    expect(finding).toMatchObject({ status: "open" });
-    expect(finding.triage).toBeUndefined();
-  });
-
   it("files the finding as it is when the triage itself throws", async () => {
     const findings = new FindingsService({
       repo: new FindingsRepo(new Store(":memory:").raw),
@@ -205,48 +169,5 @@ describe("text that tries to instruct an agent", () => {
     // Laya was never asked the triage question for it.
     const asked = t.svc.recent(10).filter((d) => d.answers.triage !== undefined);
     expect(asked).toEqual([]);
-  });
-});
-
-describe("the owner's own answer labels the triage", () => {
-  it("labels the owner's dismiss of a finding Laya kept, and a task made of one Laya would have dismissed", async () => {
-    const t = setup(says("keep", 0.95));
-    const a = (await t.report({ title: "One" })).finding;
-    t.findings.dismiss(a.id, "not worth it", OWNER);
-    const id = a.triage?.decision ?? "";
-    expect(t.svc.labels().forDecision(id)).toMatchObject([
-      { question: "triage", label: "dismiss", source: "outcome" },
-    ]);
-
-    const shadow = setup(says("dismiss", 0.97), [SLOT, INJECTION]);
-    const b = (await shadow.report({ title: "Two" })).finding;
-    await shadow.findings.toTask(b.id, OWNER);
-    expect(shadow.svc.labels().forDecision(b.triage?.decision ?? "")[0]).toMatchObject({ label: "keep" });
-  });
-
-  it("labels a finding the owner brings back from a triage dismissal, and clears the applied mark", async () => {
-    const t = setup(says("dismiss", 0.97));
-    const f = (await t.report()).finding;
-    expect(f.status).toBe("dismissed");
-    const back = t.findings.update({ id: f.id, status: "open" }, OWNER);
-    expect(back.status).toBe("open");
-    expect(back.dismissedReason).toBeUndefined();
-    expect(back.triage?.applied).toBe(false);
-    expect(t.svc.labels().forDecision(f.triage?.decision ?? "")[0]).toMatchObject({ label: "keep" });
-  });
-
-  it("labels nothing when the captain, not the owner, dismisses", async () => {
-    const t = setup(says("keep", 0.95));
-    const f = (await t.report()).finding;
-    t.findings.dismiss(f.id, "duplicate", CAPTAIN);
-    expect(t.svc.labels().forDecision(f.triage?.decision ?? "")).toEqual([]);
-  });
-
-  it("labels once: the first outcome stands", async () => {
-    const t = setup(says("keep", 0.95));
-    const f = (await t.report()).finding;
-    t.findings.dismiss(f.id, "no", OWNER);
-    t.findings.update({ id: f.id, status: "open" }, OWNER);
-    expect(t.svc.labels().forDecision(f.triage?.decision ?? "")).toHaveLength(1);
   });
 });

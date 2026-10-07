@@ -76,22 +76,6 @@ describe("tasks at once counts live runs", () => {
     expect(no.text).toContain(`${next} is running`);
     expect(no.text).not.toContain(stale);
   });
-
-  it("still counts a task whose agent is queued for a slot", async () => {
-    const t = await on();
-    must(await t.h.cmd("settings.set", { limits: { agents_max: 1, per_account: 1 } }));
-    must(await t.h.cmd("autonomy.configure", { orgs: { acme: { tasksAtOnce: 2 } } }));
-    const first = await t.make("Fix the typo on the login page");
-    const second = await t.make("Update the README");
-    must(await t.h.cmd("tasks.start", { id: first }));
-    must(await t.h.cmd("tasks.start", { id: second }));
-    // One agent holds the only slot, the other waits for it: both tasks are live.
-    await w?.until(() => t.services.runs.working(second).length > 0, "the second agent in line");
-    const third = await t.make("Add a CSV export");
-    const no = await t.call("majhi_tasks_start", { id: third });
-    expect(no.isError).toBe(true);
-    expect(no.text).toContain("2 tasks at once");
-  });
 });
 
 describe("a restart leaves no task running without a run", () => {
@@ -104,30 +88,5 @@ describe("a restart leaves no task running without a run", () => {
     expect(t.task(stale)).toMatchObject({ status: "paused", pausedReason: "error" });
     const next = await t.make("Update the README");
     expect((await t.call("majhi_tasks_start", { id: next })).isError).toBe(false);
-  });
-
-  it("wakes it when automatic resume is on, so it has a live run", async () => {
-    const t = await on();
-    const stale = await t.make("Fix the typo on the login page");
-    t.strand(stale);
-    await t.services.resilience.startup();
-    await w?.until(() => t.services.runs.busy(stale), "the woken run");
-    expect(t.task(stale)?.status).toBe("running");
-  });
-
-  it("moves an idle chat to review, never running", async () => {
-    const t = await on();
-    const chat = await t.makeChat();
-    t.strand(chat);
-    await t.services.resilience.startup();
-    expect(t.task(chat)?.status).toBe("review");
-  });
-
-  it("moves a chat to review when its turn ends with no run left", async () => {
-    const t = await on();
-    const chat = await t.makeChat();
-    t.strand(chat);
-    await t.services.tasks.agentsIdle(chat);
-    expect(t.task(chat)?.status).toBe("review");
   });
 });

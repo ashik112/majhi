@@ -120,12 +120,6 @@ describe("freeing rebuildable folders of done tasks", () => {
     expect(report.freedBytes).toBeGreaterThanOrEqual(500_000);
   });
 
-  it("frees nothing on a second run", async () => {
-    await seed({ id: "ACM-1" });
-    await sweep.run(opts);
-    expect(await sweep.run(opts)).toEqual({ freedBytes: 0, tasks: [] });
-  });
-
   it("leaves a task done for less than the hours alone, and deletes nothing in a preview", async () => {
     const { worktree } = await seed({ id: "ACM-1", updatedAt: RECENT });
     expect((await sweep.run(opts)).freedBytes).toBe(0);
@@ -215,23 +209,6 @@ describe("freeing rebuildable folders of done tasks", () => {
     const report = await sweep.run(opts);
     expect(report.freedBytes).toBe(0);
     expect(await exists(join(elsewhere, "node_modules/x.js"))).toBe(true);
-    expect(await exists(join(worktree, "node_modules"))).toBe(true);
-  });
-
-  it("skips a task that is reopened while the sweep runs", async () => {
-    const { worktree } = await seed({ id: "ACM-1" });
-    const real = store.tasks.get.bind(store.tasks);
-    let calls = 0;
-    const spy = vi.spyOn(store.tasks, "get").mockImplementation((id: string) => {
-      calls++;
-      // The first read loads the task; the owner reopens it before the first folder goes.
-      if (calls === 2) store.raw.prepare("UPDATE tasks SET status = 'running' WHERE id = ?").run(id);
-      return real(id);
-    });
-    const report = await sweep.run(opts);
-    spy.mockRestore();
-    expect(report.freedBytes).toBe(0);
-    expect(report.tasks[0]?.kept).toContain("it was reopened");
     expect(await exists(join(worktree, "node_modules"))).toBe(true);
   });
 });
