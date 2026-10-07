@@ -1906,6 +1906,15 @@ CREATE TABLE contact_merges (
 ALTER TABLE connection_health ADD COLUMN cursor TEXT;
 `,
   },
+  {
+    // The handle a chat app shows for a person (Telegram's @username), kept beside the app's own user id. It can
+    // change, so it is refreshed on each message. Identity stays the user id.
+    id: 180,
+    name: "contact usernames",
+    sql: `
+ALTER TABLE contact_ids ADD COLUMN username TEXT;
+`,
+  },
 ];
 
 /** Applies every migration not yet recorded, each in its own transaction. Returns the ids it applied. */

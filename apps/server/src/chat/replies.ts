@@ -3,6 +3,7 @@ import {
   type ChatApp,
   type Draft,
   type Holds,
+  mentionedContacts,
   PRIVATE,
   type ReplyFlags,
   type ReplyHold,
@@ -15,6 +16,7 @@ import type { RoomService } from "../room/service.ts";
 import type { RoomRow } from "../store/client.ts";
 import type { Store } from "../store/index.ts";
 import { ChatSendError } from "./adapter.ts";
+import { type People, parseBody, renderPlain } from "./format.ts";
 import type { ChatHub } from "./hub.ts";
 import { railsFor, withoutSecrets } from "./rails.ts";
 import type { ClientRooms } from "./rooms.ts";
@@ -106,6 +108,31 @@ export class ClientReplies {
     return false;
   }
 
+  /** Who a mention names on the chat app of a room: a contact of the room's workspace with an identity there. */
+  private people(room: RoomRow): People {
+    return (contact) => {
+      const view = this.deps.store.client.view(contact);
+      if (view === undefined || view.org !== room.org) return undefined;
+      const id = view.ids.find((i) => i.app === room.chat.app && i.account === room.chat.account);
+      return { name: view.name, native: id?.native, username: id?.username };
+    };
+  }
+
+  private plain(room: RoomRow, text: string): string {
+    return renderPlain(parseBody(text), this.people(room));
+  }
+
+  /** The names of the contacts a text mentions, for a reader that sees only the item. */
+  private mentionNames(room: RoomRow, text: string): Record<string, string> {
+    const people = this.people(room);
+    const names: Record<string, string> = {};
+    for (const id of mentionedContacts(text)) {
+      const person = people(id);
+      if (person !== undefined) names[id] = person.name;
+    }
+    return names;
+  }
+
   /** The captain's reply. Sent now when the rails allow it, else held for the owner. */
   async captain(input: ReplyInput): Promise<ReplyResult> {
     const room = this.roomOf(input.room);
@@ -113,16 +140,23 @@ export class ClientReplies {
     if (room.chat.holder !== "captain") {
       throw new UserError("You hold this chat, so the captain does not write in it.", 409);
     }
-    const verdict = railsFor({
+    const rails = {
       tell: await this.deps.tell(org),
       holds: await this.deps.holds(org),
-      text: input.text,
       flags: input.flags,
       others: await this.others(room),
       firstContact: this.firstContact(room.id, input.to),
       afterGap: this.afterGap(room.id),
       ...(input.report === true ? { report: true } : {}),
-    });
+    };
+    let verdict = railsFor({ ...rails, text: input.text });
+    // The words a client reads are the text without its markup and with the names of whoever is mentioned: the
+    // secret scan and the holds read those too.
+    const plain = this.plain(room, input.text);
+    if (verdict.send && plain !== input.text) {
+      const read = railsFor({ ...rails, text: plain });
+      if (!read.send) verdict = read.why === "secret" ? read : { ...read, text: input.text };
+    }
     const { draft } = await this.deps.gate.submit(
       { org, channel: "client", target: room.id, body: verdict.text },
       { kind: "captain", org },
@@ -200,6 +234,7 @@ export class ClientReplies {
       type: "client-reply",
       by: more.by,
       text: draft.body,
+      ...this.mentionField(room, draft.body),
       ...(more.to === undefined ? {} : { to: more.to }),
       ...(more.thread === undefined ? {} : { thread: more.thread }),
       ...(more.replyTo === undefined ? {} : { replyTo: more.replyTo }),
@@ -211,13 +246,20 @@ export class ClientReplies {
     this.deps.changed();
   }
 
+  private mentionField(room: RoomRow, text: string): { mentions?: Record<string, string> } {
+    const names = this.mentionNames(room, text);
+    return Object.keys(names).length === 0 ? {} : { mentions: names };
+  }
+
   /** The same reply with some fields changed. */
   private replace(
     item: ReplyItem,
     change: Partial<Pick<ReplyItem, "text" | "state" | "result" | "external">>,
   ): void {
-    const { id: _id, task, seq: _seq, at: _at, ...payload } = item;
-    this.deps.room.post(task as TaskId, item.id, { ...payload, ...change });
+    const { id: _id, task, seq: _seq, at: _at, mentions: _m, ...payload } = item;
+    const room = this.deps.store.client.room(task);
+    const names = room === undefined ? undefined : this.mentionField(room, change.text ?? item.text);
+    this.deps.room.post(task as TaskId, item.id, { ...payload, ...names, ...change });
     this.deps.changed();
   }
 
@@ -241,6 +283,10 @@ export class ClientReplies {
       const item = this.deps.room.get(room.id, `reply:${draft.id}`);
       const reply = item?.type === "client-reply" ? item : undefined;
       try {
+        const clean = withoutSecrets(draft.body);
+        if (withoutSecrets(this.plain(room, clean)) !== this.plain(room, clean)) {
+          return { ok: false, detail: "The words hold a secret." };
+        }
         const sent = await this.deps.hub.send(
           room.chat.app as ChatApp,
           room.chat.account,
@@ -249,7 +295,7 @@ export class ClientReplies {
             ...(reply?.thread === undefined ? {} : { thread: reply.thread }),
             ...(reply?.replyTo === undefined ? {} : { replyTo: reply.replyTo }),
           },
-          withoutSecrets(draft.body),
+          { body: parseBody(clean), people: this.people(room) },
         );
         if (reply !== undefined) {
           this.replace(reply, {

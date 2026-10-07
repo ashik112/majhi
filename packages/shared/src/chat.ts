@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ChatMentionSchema } from "./chat-body.ts";
 import { IdSchema } from "./ids.ts";
 
 /**
@@ -57,6 +58,8 @@ export const ChatSenderSchema = z.strictObject({
   id: z.string().min(1).max(200),
   name: z.string().max(200),
   bot: z.boolean(),
+  /** The handle the app shows for them (Telegram `@name`, without the @), when it has one. It can change. */
+  username: z.string().max(200).optional(),
   /** False for an anonymous admin or a sender the app could not name. Never triggers an action. */
   verified: z.boolean().default(true),
 });
@@ -85,6 +88,8 @@ export const ChatEnvelopeSchema = z.strictObject({
   thread: z.string().max(200).optional(),
   replyTo: z.string().max(200).optional(),
   forwarded: z.boolean().optional(),
+  /** The people the text names, as the app marks them. */
+  mentions: z.array(ChatMentionSchema).max(200).optional(),
   /** The chat moved to another id (a Telegram group became a supergroup): `external.chat` is the old id. */
   movedTo: z.string().max(200).optional(),
 });
@@ -211,6 +216,8 @@ export const ContactIdSchema = z.strictObject({
   account: z.string().min(1).max(200),
   /** The app's own user id. */
   native: z.string().min(1).max(200),
+  /** The handle the app shows for them, when it has one. It can change: refreshed on each message. */
+  username: z.string().max(200).optional(),
 });
 export type ContactIdentity = z.infer<typeof ContactIdSchema>;
 

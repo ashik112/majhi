@@ -10,8 +10,9 @@ import {
 import { OutboundGate } from "../../playbooks/outbound.ts";
 import { RoomService } from "../../room/service.ts";
 import { Store } from "../../store/index.ts";
-import type { ChatConnection } from "../adapter.ts";
+import type { ChatConnection, ChatMessage } from "../adapter.ts";
 import { Contacts } from "../contacts.ts";
+import { renderPlain } from "../format.ts";
 import { ChatIngest } from "../ingest.ts";
 import { ClientReplies } from "../replies.ts";
 import { ClientRooms } from "../rooms.ts";
@@ -78,9 +79,10 @@ export function world(options: WorldOptions = {}) {
       _app: string,
       _account: string,
       target: { chat: string; thread?: string; replyTo?: string },
-      text: string,
+      message: ChatMessage,
     ) => {
       if (options.failSend === true) throw new Error("Telegram is down");
+      const text = renderPlain(message.body, message.people);
       sent.push({ chat: target.chat, text, thread: target.thread, replyTo: target.replyTo });
       return { message: String(500 + sent.length) };
     },

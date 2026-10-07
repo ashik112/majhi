@@ -144,6 +144,13 @@ const File = z.object({
   mime_type: z.string().optional(),
 });
 
+const TgEntity = z.object({
+  type: z.string(),
+  offset: z.number().int(),
+  length: z.number().int(),
+  user: TgUser.optional(),
+});
+
 export const TgMessage = z.object({
   message_id: z.number(),
   message_thread_id: z.number().optional(),
@@ -155,6 +162,8 @@ export const TgMessage = z.object({
   edit_date: z.number().optional(),
   text: z.string().optional(),
   caption: z.string().optional(),
+  entities: z.array(TgEntity).optional(),
+  caption_entities: z.array(TgEntity).optional(),
   reply_to_message: z.object({ message_id: z.number() }).optional(),
   forward_origin: z.unknown().optional(),
   forward_date: z.number().optional(),
